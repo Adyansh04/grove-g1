@@ -1,0 +1,36 @@
+# ROS 2 workspace build artifacts
+workspace/build/
+workspace/install/
+workspace/log/
+
+workspace/.clang-format
+workspace/.clangd
+workspace/ruff.toml
+
+# Keep source directory structure
+!workspace/src/
+!workspace/src/.gitkeep
+
+# Environment files (keep .env.example)
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+
+# IDE
+.idea/
+workspace/.vscode/
+workspace/src/.vscode/
+
+# Temporary files
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db

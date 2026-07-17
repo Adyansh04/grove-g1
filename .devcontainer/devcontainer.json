@@ -1,0 +1,40 @@
+// .devcontainer/devcontainer.json
+{
+	"name": "ROS 2 Development Environment",
+	"dockerComposeFile": [
+		"../docker-compose.yml"
+	],
+	"service": "ros-dev",
+	"runServices": [
+		"ros-dev"
+	],
+	"shutdownAction": "none",
+	"workspaceFolder": "/root/workspace",
+	"remoteUser": "root",
+	"overrideCommand": false,
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				// C/C++ Language Support (Clangd)
+				"llvm-vs-code-extensions.vscode-clangd",
+				"xaver.clang-format",
+				// Python Language Support (Ruff)
+				"ms-python.python",
+				"charliermarsh.ruff",
+				// ROS 2 Development Pack and Tools
+				"Ranch-Hand-Robotics.rde-pack",
+				"althack.ament-task-provider",
+				"AlessandroSofia.ros2-topic-viewer",
+				"KodoRobotics.launchmap",
+				// AI Code Assistance
+				"GitHub.copilot-chat",
+				// Other useful tools
+				"twxs.cmake",
+				"ms-vscode.cmake-tools",
+				"cheshirekow.cmake-format"
+			]
+		}
+	},
+	// Build once to generate compile_commands.json for clangd. Uses ROS_DISTRO from image env.
+	"postCreateCommand": "bash -lc 'source /opt/ros/${ROS_DISTRO:-jazzy}/setup.bash && cd /root/workspace && colcon build --symlink-install --cmake-args -DCMAKE_EXPORT_COMPILE_COMMANDS=ON || true'"
+}

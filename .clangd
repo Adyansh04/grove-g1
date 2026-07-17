@@ -1,0 +1,68 @@
+CompileFlags:
+  Add: [-std=c++17]
+
+Diagnostics:
+  UnusedIncludes: Strict
+  MissingIncludes: None # or Strict
+  ClangTidy:
+    # FastCheckFilter: None
+    Add:
+      - performance-*
+      - llvm-namespace-comment
+      - modernize-redundant-void-arg
+      - modernize-use-nullptr
+      - modernize-use-override
+      - modernize-loop-convert
+      - modernize-make-shared
+      - modernize-make-unique
+      - modernize-avoid-bind
+      - misc-unused-parameters
+      - readability-braces-around-statements
+      - readability-named-parameter
+      - readability-redundant-smartptr-get
+      - readability-redundant-string-cstr
+      - readability-simplify-boolean-expr
+      # - readability-container-size-empty
+      - readability-identifier-naming
+      - readability-static-definition-in-anonymous-namespace
+    Remove:
+      - performance-enum-size
+    CheckOptions:
+      llvm-namespace-comment.ShortNamespaceLines: 10
+      llvm-namespace-comment.SpacesBeforeComments: 2
+      misc-unused-parameters.StrictMode: 1
+      readability-braces-around-statements.ShortStatementLines: 2
+      readability-identifier-naming.ClassCase: CamelCase
+      readability-identifier-naming.EnumCase: CamelCase
+      readability-identifier-naming.UnionCase: CamelCase
+      readability-identifier-naming.FunctionCase: camelBack
+      readability-identifier-naming.MethodCase: camelBack
+      readability-identifier-naming.VariableCase: lower_case
+      readability-identifier-naming.ProtectedMemberSuffix: _
+      readability-identifier-naming.PrivateMemberSuffix: _
+      readability-identifier-naming.EnumConstantCase: UPPER_CASE
+      readability-identifier-naming.StaticVariableCasePrefix: s_
+      readability-identifier-naming.StaticConstantCase: UPPER_CASE
+      readability-identifier-naming.GlobalConstantCase: UPPER_CASE
+      readability-identifier-naming.ClassConstantCase: UPPER_CASE
+
+InlayHints:
+  Enabled: false
+  ParameterNames: true
+  DeducedTypes: true
+  Designators: true
+  BlockEnd: true
+  DefaultArguments: true
+  TypeNameLimit: 24
+
+Hover:
+  ShowAKA: true
+
+Completion:
+  AllScopes: Yes
+  HeaderInsertion: IWYU
+
+Documentation:
+  CommentFormat: Doxygen
+
+

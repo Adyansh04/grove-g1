@@ -1,0 +1,18 @@
+.git
+.gitmodules
+
+# Local editor config is bind-mounted; no need in build context
+.vscode
+
+# Build artifacts
+workspace/build
+workspace/install
+workspace/log
+
+# Runtime data may be large (bags, datasets)
+data/*
+!data/.gitkeep
+
+# Python caches
+__pycache__/
+*.py[cod]

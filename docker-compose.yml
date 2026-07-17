@@ -1,0 +1,80 @@
+name: ${COMPOSE_PROJECT_NAME:-ros2_project_template}
+
+services:
+  ros-dev:
+    # Derived development image (distinct from BASE_IMAGE)
+    image: ${DEV_IMAGE_REPO:-adyansh04/ros-dev-workspace}:${ROS_DISTRO:-jazzy}
+    build:
+      context: .
+      dockerfile: .devcontainer/Dockerfile
+      args:
+        # Base image from your pre-built upstream images
+        BASE_IMAGE: ${BASE_IMAGE_REPO:-adyansh04/ros-dev}:${ROS_DISTRO:-jazzy}${BASE_IMAGE_TAG_SUFFIX:--latest}
+
+    # Keep the container running and attachable
+    tty: true
+    stdin_open: true
+
+    # Container name includes the ROS distro for clarity
+    container_name: ${CONTAINER_PREFIX:-ros_dev}_${ROS_DISTRO:-jazzy}
+
+    # Persistent host mounts using long (object) syntax
+    volumes:
+      - type: bind
+        source: ./workspace
+        target: /root/workspace
+        read_only: false
+      - type: bind
+        source: ./.vscode
+        target: /root/workspace/.vscode
+        read_only: false
+      - type: bind
+        source: ./.clangd
+        target: /root/workspace/.clangd
+        read_only: false
+      - type: bind
+        source: ./.clang-format
+        target: /root/workspace/.clang-format
+        read_only: false
+      - type: bind
+        source: ./ruff.toml
+        target: /root/workspace/ruff.toml
+        read_only: false
+      - type: bind
+        source: ./data
+        target: /root/data
+      - type: bind
+        source: /dev
+        target: /dev
+      - type: bind
+        source: /tmp/.X11-unix
+        target: /tmp/.X11-unix
+        read_only: false
+      - type: bind
+        source: ${HOME}/.ssh
+        target: /root/.ssh
+        read_only: true
+
+    # Hardware, networking, and IPC settings suitable for dev workflows
+    privileged: true
+    network_mode: "host"
+    ipc: host
+    pid: host
+
+    # GPU support with Compose (requires Docker Compose v2.3+ and NVIDIA Container Toolkit on host)
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu, compute, utility, graphics, display]
+
+    # GUI environment
+    environment:
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+      - ROS_DISTRO=${ROS_DISTRO:-jazzy}
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - __GLX_VENDOR_LIBRARY_NAME=nvidia
+      - __EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/10_nvidia.json

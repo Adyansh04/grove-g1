@@ -1,0 +1,21 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "colcon build (R)",
+      "type": "shell",
+      // Build with debug info and generate compile_commands.json for clangd.
+      // Uses ROS_DISTRO from the container environment.
+      "command": "source /opt/ros/${ROS_DISTRO:-jazzy}/setup.bash && colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": ["$gcc"],
+      "detail": "Builds the workspace and generates compile_commands.json for clangd."
+    }
+  ]
+}

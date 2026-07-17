@@ -1,0 +1,33 @@
+{
+    "configurations": [
+        {
+            "name": "ROS",
+            "compilerPath": "/usr/bin/gcc",
+            "cStandard": "c17",
+            "cppStandard": "c++20",
+            "intelliSenseMode": "linux-gcc-x64",
+            "compileCommands": "${workspaceFolder}/build/compile_commands.json",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "${workspaceFolder}/install/include/**",
+                "/opt/ros/${env:ROS_DISTRO}/include/**",
+                "/usr/include",
+                "/usr/local/include"
+            ],
+            "defines": [
+                "ROS_DISTRO=${env:ROS_DISTRO}"
+            ],
+            "browse": {
+                "path": [
+                    "${workspaceFolder}/**",
+                    "${workspaceFolder}/install/include/**",
+                    "/opt/ros/${env:ROS_DISTRO}/include/**",
+                    "/usr/include"
+                ],
+                "limitSymbolsToIncludedHeaders": true,
+                "databaseFilename": "${workspaceFolder}/.vscode/browse.vc.db"
+            }
+        }
+    ],
+    "version": 4
+}

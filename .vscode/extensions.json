@@ -1,0 +1,22 @@
+{
+  "recommendations": [
+    // C/C++ Language Support (Clangd)
+    "llvm-vs-code-extensions.vscode-clangd",
+    "xaver.clang-format",
+    // Python Language Support (Ruff)
+    "ms-python.python",
+    "charliermarsh.ruff",
+    // ROS 2 Development Pack and Tools
+    "Ranch-Hand-Robotics.rde-pack",
+    "althack.ament-task-provider",
+    "AlessandroSofia.ros2-topic-viewer",
+    "KodoRobotics.launchmap",
+    // AI Code Assistance
+    "GitHub.copilot",
+    "GitHub.copilot-chat",
+    // Other useful tools
+    "twxs.cmake",
+    "ms-vscode.cmake-tools",
+    "cheshirekow.cmake-format"
+  ]
+}

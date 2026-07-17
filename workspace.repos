@@ -1,0 +1,13 @@
+repositories:
+  repo1:
+    type: git
+    url: https://github.com/example-org/repo1.git
+    version: main
+  repo2:
+    type: git
+    url: https://github.com/example-org/repo2.git
+    version: main
+  repo3:
+    type: git
+    url: https://github.com/example-org/repo3.git
+    version: main
