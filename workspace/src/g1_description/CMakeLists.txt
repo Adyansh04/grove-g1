@@ -1,0 +1,42 @@
+cmake_minimum_required(VERSION 3.8)
+project(g1_description)
+
+find_package(ament_cmake REQUIRED)
+
+install(
+  DIRECTORY urdf config
+  DESTINATION share/${PROJECT_NAME}
+)
+
+if(BUILD_TESTING)
+  # ament_lint_common is deliberately not used here: it pulls in
+  # ament_flake8/ament_copyright, whose defaults (single-quote preference, a
+  # mandatory copyright header) conflict with the repo's root ruff.toml and
+  # its no-header convention. Only the linters that don't conflict with ruff
+  # are wired in; ruff itself is the python linter, added as a plain test below.
+  find_package(ament_lint_auto REQUIRED)
+  ament_lint_auto_find_test_dependencies()
+
+  find_package(ament_cmake_pytest REQUIRED)
+  ament_add_pytest_test(test_arm_sdk_xacro test/test_arm_sdk_xacro.py
+    ENV "G1_DESCRIPTION_XACRO=${CMAKE_CURRENT_SOURCE_DIR}/urdf/g1_arm_sdk.urdf.xacro"
+  )
+
+  # workspace/ruff.toml is the workspace-root config bind-mounted alongside
+  # src/ (see docker-compose.yml); this package normally lives two levels
+  # below it (workspace/src/g1_description). If that layout doesn't hold
+  # (e.g. package built standalone after the multi-repo split), skip rather
+  # than fail the whole suite on a path that no longer applies.
+  find_program(RUFF_EXECUTABLE ruff)
+  set(_ruff_config "${CMAKE_CURRENT_SOURCE_DIR}/../../ruff.toml")
+  if(RUFF_EXECUTABLE AND EXISTS "${_ruff_config}")
+    add_test(
+      NAME ruff_check_g1_description
+      COMMAND ${RUFF_EXECUTABLE} check --config ${_ruff_config} ${CMAKE_CURRENT_SOURCE_DIR}/test
+    )
+  else()
+    message(WARNING "ruff and/or workspace ruff.toml not found; skipping ruff_check_g1_description test")
+  endif()
+endif()
+
+ament_package()
