@@ -11,6 +11,13 @@ workspace/ruff.toml
 !workspace/src/
 !workspace/src/.gitkeep
 
+# vcs-imported externals (see workspace.repos) — pulled in by `vcs import`,
+# not tracked here. Listed explicitly per external repo rather than a broad
+# workspace/src/* + !workspace/src/g1_* pattern: git prunes directories that
+# match an ignore rule before it can evaluate a later negation on their
+# contents, so the broad form silently drops g1_* packages too.
+workspace/src/unitree_ros2/
+
 # Environment files (keep .env.example)
 .env
 
