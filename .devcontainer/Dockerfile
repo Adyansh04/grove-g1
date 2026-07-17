@@ -1,6 +1,6 @@
 # Extends your pre-built image (tag is provided by docker-compose.yml via BASE_IMAGE)
 
-ARG BASE_IMAGE=adyansh04/ros-dev:jazzy
+ARG BASE_IMAGE=adyansh04/ros-dev:humble
 FROM ${BASE_IMAGE}
 
 # Allow pip installs in distro-managed Python images (required on Ubuntu 24.04+/ROS Jazzy).
