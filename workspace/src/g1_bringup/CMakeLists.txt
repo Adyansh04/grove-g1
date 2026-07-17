@@ -41,7 +41,14 @@ install(
 )
 install(TARGETS arm_sdk_sim_bridge DESTINATION lib/${PROJECT_NAME})
 
-install(DIRECTORY config DESTINATION share/${PROJECT_NAME})
+install(DIRECTORY config launch DESTINATION share/${PROJECT_NAME})
+
+install(
+  PROGRAMS
+    scripts/activate_arm
+    scripts/deactivate_arm
+  DESTINATION lib/${PROJECT_NAME}
+)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
@@ -73,6 +80,26 @@ if(BUILD_TESTING)
   else()
     message(WARNING
       "clang-format and/or workspace .clang-format not found; skipping clang_format_check_g1_bringup test")
+  endif()
+
+  find_program(RUFF_EXECUTABLE ruff)
+  set(_ruff_config "${CMAKE_CURRENT_SOURCE_DIR}/../../ruff.toml")
+  if(RUFF_EXECUTABLE AND EXISTS "${_ruff_config}")
+    # scripts/activate_arm and scripts/deactivate_arm are extensionless
+    # (ros2 run expects no .py suffix): ruff's directory-mode file discovery
+    # silently skips extensionless files ("No Python files found"), so they
+    # must be named explicitly -- only launch/ and test/ are safe to hand
+    # ruff as bare directories.
+    add_test(
+      NAME ruff_check_g1_bringup
+      COMMAND ${RUFF_EXECUTABLE} check --config ${_ruff_config}
+        ${CMAKE_CURRENT_SOURCE_DIR}/launch
+        ${CMAKE_CURRENT_SOURCE_DIR}/scripts/activate_arm
+        ${CMAKE_CURRENT_SOURCE_DIR}/scripts/deactivate_arm
+        ${CMAKE_CURRENT_SOURCE_DIR}/test
+    )
+  else()
+    message(WARNING "ruff and/or workspace ruff.toml not found; skipping ruff_check_g1_bringup test")
   endif()
 endif()
 

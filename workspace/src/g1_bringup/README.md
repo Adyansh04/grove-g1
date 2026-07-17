@@ -5,6 +5,85 @@ Sim bring-up for the G1 arm bridge milestone: launches `unitree_mujoco` alongsid
 stands in for the onboard motion service so the simulated robot doesn't collapse. `ament_cmake`,
 C++17 node + Python launch files and integration tests.
 
+## Nodes and launch files
+
+| File | What it does |
+|---|---|
+| `launch/sim.launch.py` | The main entry point. Env fail-fast, then `unitree_mujoco` + `arm_sdk_sim_bridge` + `control.launch.py`. Args: `headless` (default `true`). |
+| `launch/control.launch.py` | Composition-pure: `robot_state_publisher` + `ros2_control_node` + spawners. No sim, no bridge -- carries over unchanged to hardware bring-up. |
+| `launch/activate_arm.launch.py` | Runs `scripts/activate_arm`: the explicit, ordered acquire step. |
+| `launch/deactivate_arm.launch.py` | Runs `scripts/deactivate_arm`: the explicit, ordered release step. |
+| `arm_sdk_sim_bridge` (executable) | SIM-ONLY node, see below. |
+
+### Topics (beyond what `g1_hardware_interface`'s README already documents for `/lowstate`/`/arm_sdk`)
+
+| Topic | Direction | Type | QoS | Published/consumed by |
+|---|---|---|---|---|
+| `/lowcmd` | out | `unitree_hg/msg/LowCmd` | best-effort, keep-last(1), volatile | `arm_sdk_sim_bridge` -> `unitree_mujoco` |
+| `/joint_states` | out | `sensor_msgs/msg/JointState` | default (reliable, keep-last) | `joint_state_broadcaster`, ~200 Hz (`controller_manager`'s `update_rate`) |
+| `/robot_description` | out | `std_msgs/msg/String` | transient-local | `robot_state_publisher` |
+
+## Operating procedure
+
+```bash
+# 1. Bring the sim + bridge + control stack up (headless by default).
+ros2 launch g1_bringup sim.launch.py
+
+# 2. Once it's settled (robot standing, controllers loaded), acquire control
+#    authority in the mandatory order (component, then controller):
+ros2 launch g1_bringup activate_arm.launch.py
+
+# 3. Command the arms, e.g. via a FollowJointTrajectory goal to
+#    arm_trajectory_controller, or MoveIt/Servo in a later milestone.
+
+# 4. Release control authority in the mandatory reverse order (controller,
+#    then component) before tearing down:
+ros2 launch g1_bringup deactivate_arm.launch.py
+
+# 5. Stop the launch (Ctrl-C).
+```
+
+**Deactivate before killing the launch is the documented clean stop.** `deactivate_arm.launch.py`
+blocks for roughly `blend_ramp_down_s` (2.0 s default) while `G1ArmSdkSystem`'s own `on_deactivate`
+ramps the blend weight to 0 synchronously -- that's by design (see `g1_hardware_interface`'s
+README), not a hang. **Ctrl-C while the component is still active also ramps down safely**: Humble's
+`controller_manager` runs the component's `on_deactivate` (the same ~2 s clean ramp) before
+`on_shutdown` on SIGINT/SIGTERM, and `sim.launch.py`'s `RegisterEventHandler` on the sim process's
+exit additionally guarantees a dead sim tears down the whole launch rather than leaving controllers
+commanding nothing.
+
+**Acquire/release order is mandatory, not stylistic:** Humble ties command-interface availability to
+hardware component state, so activating the controller before the component (or deactivating the
+component before the controller) can fail the switch, or leave a controller claiming interfaces out
+from under a deactivating component. `activate_arm`/`deactivate_arm` encode the correct order so
+this is never left to be gotten right by hand.
+
+## Domain/DDS story
+
+The whole container runs on `ROS_DOMAIN_ID=1` (set unconditionally by `.devcontainer/Dockerfile`)
+with CycloneDDS pinned to the `lo` interface, for this sim-first milestone -- this is a dedicated
+local domain so a real robot on the network (default domain, its own interface) is never at risk of
+crosstalk. `unitree_mujoco`'s own `simulate/config.yaml` independently defaults to `domain_id: 1`,
+`interface: "lo"` -- the same values, so its bare-DDS layer and our ROS graph can see each other.
+Switching from sim to hardware is a domain/interface change, not a code change.
+`sim.launch.py` asserts `RMW_IMPLEMENTATION`, `CYCLONEDDS_URI`, and `ROS_DOMAIN_ID` up front and
+fails fast with an actionable message if the container isn't configured as expected, rather than
+leaving you to debug a silently empty ROS graph.
+
+### A footgun specific to launching `unitree_mujoco` from a ROS environment
+
+`unitree_mujoco` is a native `unitree_sdk2` DDS application, not a ROS node, and links its own
+build of CycloneDDS from `/opt/unitree_robotics/lib`. Sourcing a ROS environment (as any shell
+running `ros2 launch` already has) prepends `/opt/ros/humble/lib*` to `LD_LIBRARY_PATH` ahead of
+that directory; since the binary's own rpath is a `RUNPATH` (resolved *after* `LD_LIBRARY_PATH`,
+unlike the older `RPATH`), this shadows the correct build with ROS's own, separately-built
+`libddsc.so.0` -- an ABI-incompatible copy that crashes the sim on its very first DDS write
+(observed directly: a heap-corruption/assertion abort inside `libddsc.so.0`; a `gdb` backtrace
+confirmed the crash was inside `/opt/ros/humble/lib/.../libddsc.so.0`, not
+`/opt/unitree_robotics/lib`). `sim.launch.py` works around this by prepending
+`/opt/unitree_robotics/lib` back onto `LD_LIBRARY_PATH` for the sim process specifically (not
+replacing it -- `xvfb-run`/GL still need the rest of the path).
+
 ## `arm_sdk_sim_bridge` -- SIM-ONLY, read this before running anything
 
 **This node is never to be launched near real hardware.** On the real G1, the onboard motion
@@ -81,21 +160,58 @@ more conservative of the two for a component that's locking a static pose rather
 locomotion. `arm_hold_kp`/`arm_hold_kd` match this repo's own
 `g1_description/config/arm_sdk_params.yaml` shoulder/elbow default.
 
-## Building and testing
+## `config/controllers.yaml`
+
+`controller_manager` at `update_rate: 200`. `G1ArmSdkSystem` starts `inactive` (configured but not
+publishing -- see the operating procedure above). `joint_state_broadcaster` is spawned active with
+its own defaults (nothing to tune: it broadcasts whatever state interfaces the one hardware
+component exports). `arm_trajectory_controller`
+(`joint_trajectory_controller/JointTrajectoryController`, position command, position+velocity
+state) is spawned `--inactive`, covering exactly the 14 arm joints from `g1_description`, with
+relaxed, explicitly-commented sim tolerances (`stopped_velocity_tolerance`, `goal_time`) -- the
+bridge's own weight/slew ramping adds latency the defaults don't expect; re-tighten against real
+hardware dynamics when that milestone arrives.
+
+## Hand joints stay inert this milestone
+
+`g1_description`'s vendored URDF includes the DEX3 hand joints for correct kinematic structure, but
+they get no `ros2_control` interfaces, and `unitree_mujoco`'s G1 MJCF has no hand joints or
+feedback at all (see `g1_description/README.md`). Nothing in this package's launch/config touches
+hand joints; their TF frames simply don't resolve to a live pose until the hand-control milestone.
+
+## Building, testing, and a fresh clone
 
 ```bash
+# From a fresh clone: pull in the vcs-imported externals. workspace/src/unitree_ros2 is
+# gitignored by design -- this template keeps most ROS packages in their own repos,
+# assembled into workspace/src via workspace.repos.
+vcs import workspace/src < workspace.repos
+
 colcon build --symlink-install --packages-select g1_bringup
 colcon test --packages-select g1_bringup
 colcon test-result --verbose
 ```
 
 `test_blend_math` covers the pure weight decay/resume policy and the hold/commanded blend with no
-sim or DDS required. Plus `clang-format` against the repo root's `.clang-format`, `ament_lint_cmake`,
-and `xmllint` on this package's own XML files.
+sim or DDS required. `test/test_sim_bringup.launch.py` and `test/test_arm_command.launch.py` are
+headless `launch_testing` integration suites against the real sim (see their own docstrings for
+what each asserts). Plus `clang-format` against the repo root's `.clang-format`, `ruff` against
+`ruff.toml` (launch files, scripts, and tests), `ament_lint_cmake`, and `xmllint` on this package's
+own XML files.
 
 ## Language note
 
 The bridge node is C++17 (a >50 Hz control-rate loop, squarely in the "always C++" category).
-Python is used elsewhere in this package for launch files and integration tests -- ROS 2 launch
-descriptions and `launch_testing` are Python-only surfaces, so there is no C++ path for either
-of those.
+Everything else in this package is Python:
+
+- **Launch files** (`launch/*.launch.py`): ROS 2 launch descriptions are authored in Python --
+  there is no C++ path for this.
+- **`launch_testing` suites** (`test/*.launch.py`): `launch_testing` is the standard ROS 2
+  integration-test harness for exercising launch files against a live system, and it's
+  Python-only.
+- **`scripts/activate_arm`, `scripts/deactivate_arm`**: one-shot administrative sequencing tools
+  (a handful of bounded-retry service calls, well under 1 Hz) -- the same category as the launch
+  files they're siblings to, not a control loop. `rclpy`'s synchronous `spin_until_future_complete`
+  ergonomics are a natural fit for "wait for a topic, then call two services in order, with
+  retries"; a C++ rewrite would just be more code for the same one-shot sequencing logic with no
+  real-time or performance argument for it.
