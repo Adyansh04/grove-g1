@@ -41,6 +41,21 @@ colcon test --packages-select g1_hardware_interface
 colcon test-result --verbose
 ```
 
+Three gmock binaries, no sim required:
+
+- `test_pluginlib_loading` -- the pluginlib discovery proof (see "Exported plugin").
+- `test_arm_ramp_engine` -- the safety-critical surface: weight monotonicity and slope bounds in
+  both directions (including a ramp-down triggered mid-ramp-up), the emergency ramp's duration,
+  the slew clamp (exact at the boundary, independent per joint), seed-from-measured, motor-index
+  map validation, and the staleness-escalation decision (idempotent -- never oscillates or
+  de-escalates on its own).
+- `test_assemble_low_cmd` -- the outgoing `LowCmd` assembly: every non-arm, non-weight slot stays
+  zeroed; arm slots get exactly `q`/`kp`/`kd` (never `mode`); the weight lands on `motor_cmd[29]`;
+  `mode_pr`/`mode_machine` are never touched.
+
+Plus `clang-format` (against the repo root's `.clang-format`), `ament_lint_cmake`, and `xmllint` on
+the package's own XML files.
+
 ## Exported plugin
 
 `g1_hardware_interface/G1ArmSdkSystem`, declared with `type="system"` in the robot's URDF

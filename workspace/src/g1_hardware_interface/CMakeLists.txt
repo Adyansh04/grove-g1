@@ -60,6 +60,17 @@ if(BUILD_TESTING)
   target_link_libraries(test_pluginlib_loading g1_arm_sdk_system)
   ament_target_dependencies(test_pluginlib_loading pluginlib hardware_interface)
 
+  # The safety-critical surface: pure, ROS-free ramp/slew/staleness logic --
+  # no pluginlib, no rclcpp node, no sim needed to exercise it.
+  ament_add_gmock(test_arm_ramp_engine test/test_arm_ramp_engine.cpp)
+  target_link_libraries(test_arm_ramp_engine g1_arm_sdk_system)
+
+  # LowCmd slot assembly (arm/weight slots touched, everything else stays
+  # zeroed) -- directly testable without a live hardware component.
+  ament_add_gmock(test_assemble_low_cmd test/test_assemble_low_cmd.cpp)
+  target_link_libraries(test_assemble_low_cmd g1_arm_sdk_system)
+  ament_target_dependencies(test_assemble_low_cmd unitree_hg)
+
   # workspace/ruff.toml's sibling root config; see g1_description/CMakeLists.txt
   # for why this is a plain CTest instead of ament_lint_common's uncrustify.
   find_program(CLANG_FORMAT_EXECUTABLE clang-format)
