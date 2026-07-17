@@ -101,6 +101,14 @@ if(BUILD_TESTING)
   else()
     message(WARNING "ruff and/or workspace ruff.toml not found; skipping ruff_check_g1_bringup test")
   endif()
+
+  # Headless sim integration suites -- both exercise the real unitree_mujoco
+  # sim end to end (see each file's own docstring for what it asserts).
+  # Generous timeouts: sim.launch.py's own settle window plus the test
+  # bodies' own bounded waits (ramp, trajectory, rogue-guard poll).
+  find_package(launch_testing_ament_cmake REQUIRED)
+  add_launch_test(test/test_sim_bringup.launch.py TIMEOUT 120)
+  add_launch_test(test/test_arm_command.launch.py TIMEOUT 180)
 endif()
 
 ament_package()
