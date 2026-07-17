@@ -2,7 +2,11 @@
 #define G1_HARDWARE_INTERFACE__G1_ARM_SDK_SYSTEM_HPP_
 
 #include <array>
+#include <chrono>
+#include <cstdint>
+#include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "g1_hardware_interface/arm_ramp_engine.hpp"
@@ -11,8 +15,13 @@
 #include "hardware_interface/system_interface.hpp"
 #include "hardware_interface/types/hardware_interface_return_values.hpp"
 #include "rclcpp/duration.hpp"
+#include "rclcpp/executors/single_threaded_executor.hpp"
+#include "rclcpp/node.hpp"
+#include "rclcpp/subscription.hpp"
 #include "rclcpp/time.hpp"
 #include "rclcpp_lifecycle/state.hpp"
+#include "realtime_tools/realtime_buffer.hpp"
+#include "unitree_hg/msg/low_state.hpp"
 
 namespace g1_hardware_interface
 {
@@ -24,6 +33,13 @@ namespace g1_hardware_interface
 class G1ArmSdkSystem : public hardware_interface::SystemInterface
 {
 public:
+    // Belt-and-braces: controller_manager doesn't guarantee on_cleanup runs
+    // before the process exits (e.g. an ungraceful SIGKILL, or a plugin
+    // unload with a component left inactive-but-configured). Without this,
+    // a joinable executor_thread_ at destruction calls std::terminate() --
+    // observed directly during manual sim validation.
+    ~G1ArmSdkSystem() override;
+
     hardware_interface::CallbackReturn
     on_init(const hardware_interface::HardwareInfo& info) override;
 
@@ -73,6 +89,32 @@ private:
     std::array<double, kNumArmJoints> command_position_{};
 
     ArmRampEngine ramp_engine_{ RampConfig{} };
+
+    // LowState carries no timestamp field of its own, so freshness is judged
+    // against a steady-clock stamp taken when the subscription callback
+    // received it (immune to wall-clock jumps, unlike system_clock).
+    struct StampedLowState
+    {
+        unitree_hg::msg::LowState             state;
+        std::chrono::steady_clock::time_point arrival{};
+    };
+
+    static std::string makeInternalNodeName();
+    void               lowstateCallback(const unitree_hg::msg::LowState::SharedPtr msg);
+    // Cancels the executor, joins its thread, and tears down the node/sub.
+    // Idempotent -- safe to call from both on_cleanup and the destructor.
+    void shutdownInternalNode();
+
+    // Hidden node + single-threaded executor for DDS I/O, torn down in
+    // on_cleanup. Never added to the controller_manager's own executor: its
+    // only job is servicing /lowstate and (from the next commit) the
+    // /arm_sdk publisher's background thread and the advisory
+    // publisher-count timer.
+    rclcpp::Node::SharedPtr                                    node_;
+    rclcpp::executors::SingleThreadedExecutor::SharedPtr       executor_;
+    std::thread                                                executor_thread_;
+    rclcpp::Subscription<unitree_hg::msg::LowState>::SharedPtr lowstate_sub_;
+    realtime_tools::RealtimeBuffer<StampedLowState>            lowstate_buffer_;
 };
 
 }  // namespace g1_hardware_interface
