@@ -1,0 +1,35 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>g1_bringup</name>
+  <version>0.1.0</version>
+  <description>
+    Sim bring-up for the G1 arm bridge: launches unitree_mujoco alongside the
+    ros2_control stack, plus the sim-only arm_sdk_sim_bridge node that stands
+    in for the onboard motion service in simulation. See README for the full
+    operating procedure.
+  </description>
+  <maintainer email="gupta.adyansh@gmail.com">Adyansh</maintainer>
+  <license>BSD-3-Clause</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>unitree_hg</depend>
+  <depend>g1_hardware_interface</depend>
+
+  <!-- ament_lint_common is intentionally not used (see g1_description's and
+       g1_hardware_interface's package.xml for the rationale): it drags in
+       ament_uncrustify/ament_flake8/ament_copyright, which conflict with
+       this repo's root .clang-format/ruff.toml and no-header-comment
+       convention. clang-format/ruff run as plain CTests instead (see
+       CMakeLists.txt). -->
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_cmake_lint_cmake</test_depend>
+  <test_depend>ament_cmake_xmllint</test_depend>
+  <test_depend>ament_cmake_gmock</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

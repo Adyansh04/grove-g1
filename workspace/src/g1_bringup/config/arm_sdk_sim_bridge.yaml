@@ -1,0 +1,37 @@
+# Parameters for g1_bringup's arm_sdk_sim_bridge node (SIM-ONLY -- see
+# README.md's safety banner). Wildcard node match so this file works
+# regardless of the node's name/namespace at launch time.
+/**:
+  ros__parameters:
+    publish_rate_hz: 500.0        # Hz; /lowcmd publish rate
+
+    # Legs (motors 0-11) + waist (12-14) stiff-hold gains, standing in for
+    # the onboard balance controller that isn't emulated in sim. Values are
+    # Unitree's own conservative "hold a captured pose" gains from
+    # unitree_ros2's example/src/src/g1/lowlevel/g1_low_level_example.cpp
+    # (motor_cmd[i].kp = i < 13 ? 100.0 : 50.0, kd = 1.0 for all motors):
+    # legs + waist_yaw (motor 12) used kp=100 there; waist_roll/pitch (13,14)
+    # used the gentler kp=50 alongside the arms. We hold the whole waist
+    # group at that gentler value uniformly -- the more conservative of the
+    # two for a component that's just locking a static pose, not driving
+    # locomotion.
+    leg_kp: 100.0
+    leg_kd: 1.0
+    waist_kp: 50.0
+    waist_kd: 1.0
+
+    # Arm gains used at blend weight 0 -- this bridge's stand-in for
+    # whatever default arm behavior the real onboard controller would apply.
+    # Matches this repo's own g1_description/config/arm_sdk_params.yaml
+    # shoulder/elbow default (a single scalar pair approximates all 14 arm
+    # joints here, which is fine for a static hold pose).
+    arm_hold_kp: 40.0
+    arm_hold_kd: 1.0
+
+    # arm_sdk staleness policy -- BRIDGE policy, not vendor semantics (see
+    # README): /arm_sdk older than this is "stale", and the effective blend
+    # weight decays toward 0 at a rate of 1 / timeout_ramp_down_s per second
+    # until a fresh message resumes it (from wherever it currently sits, no
+    # snap either way).
+    arm_sdk_timeout_ms: 500.0
+    timeout_ramp_down_s: 1.0
