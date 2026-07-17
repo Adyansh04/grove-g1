@@ -4,8 +4,10 @@
 #include <chrono>
 #include <pluginlib/class_list_macros.hpp>
 #include <string>
+#include <thread>
 #include <unordered_map>
 
+#include "g1_hardware_interface/motor_crc_hg.hpp"
 #include "hardware_interface/types/hardware_interface_type_values.hpp"
 #include "rclcpp/logging.hpp"
 #include "rclcpp/qos.hpp"
@@ -57,7 +59,31 @@ bool parseInt(
     }
     return true;
 }
+
+// Fixed step for rampDownSynchronously()'s own loop -- matches the normal
+// /arm_sdk publish cadence (command_publish_rate's default), but this path
+// doesn't read that param: it runs during on_deactivate/on_error/
+// on_shutdown/the advisory conflict guard, all off the RT path, where a
+// simple fixed period is clearer than deriving one.
+constexpr std::chrono::milliseconds kRampDownTickPeriod{ 10 };
 }  // namespace
+
+void assembleLowCmd(
+    unitree_hg::msg::LowCmd& cmd, const std::array<int, kNumArmJoints>& motor_index,
+    const std::array<double, kNumArmJoints>& position, const std::array<double, kNumArmJoints>& kp,
+    const std::array<double, kNumArmJoints>& kd, float weight)
+{
+    for (std::size_t i = 0; i < kNumArmJoints; ++i)
+    {
+        auto& motor = cmd.motor_cmd[static_cast<std::size_t>(motor_index[i])];
+        motor.q     = static_cast<float>(position[i]);
+        motor.dq    = 0.0F;
+        motor.tau   = 0.0F;
+        motor.kp    = static_cast<float>(kp[i]);
+        motor.kd    = static_cast<float>(kd[i]);
+    }
+    cmd.motor_cmd[kWeightMotorIndex].q = weight;
+}
 
 G1ArmSdkSystem::~G1ArmSdkSystem() { shutdownInternalNode(); }
 
@@ -189,6 +215,18 @@ hardware_interface::CallbackReturn G1ArmSdkSystem::on_configure(const rclcpp_lif
         lowstate_qos,
         [this](const unitree_hg::msg::LowState::SharedPtr msg) { lowstateCallback(msg); });
 
+    // Reliable: we're the sole authority on this channel (single writer by
+    // construction -- see the README), so the DDS layer should retry rather
+    // than silently drop a command; keep-last(1) because only the newest
+    // ramp/slew tick ever matters.
+    const auto arm_sdk_qos = rclcpp::QoS(rclcpp::KeepLast(1)).reliable().durability_volatile();
+    auto arm_sdk_pub = node_->create_publisher<unitree_hg::msg::LowCmd>("/arm_sdk", arm_sdk_qos);
+    arm_sdk_rt_pub_ =
+        std::make_shared<realtime_tools::RealtimePublisher<unitree_hg::msg::LowCmd>>(arm_sdk_pub);
+
+    publisher_count_timer_ =
+        node_->create_wall_timer(std::chrono::seconds(1), [this] { checkPublisherCount(); });
+
     executor_ = std::make_shared<rclcpp::executors::SingleThreadedExecutor>();
     executor_->add_node(node_);
     executor_thread_ = std::thread([this] { executor_->spin(); });
@@ -204,23 +242,67 @@ hardware_interface::CallbackReturn G1ArmSdkSystem::on_cleanup(const rclcpp_lifec
 
 hardware_interface::CallbackReturn G1ArmSdkSystem::on_activate(const rclcpp_lifecycle::State&)
 {
-    // Freshness-gated hold-in-place seeding and the weight ramp-up land with
-    // the arm_sdk command path commit.
+    // A previous activation's conflict guard may still be winding down.
+    if (conflict_ramp_thread_.joinable())
+    {
+        conflict_ramp_thread_.join();
+    }
+
+    // on_activate runs on the CM's lifecycle (non-RT) thread, never
+    // read()/write()'s RT thread, so the non-RT accessor is the correct one
+    // here (readFromRT() is reserved for the RT side).
+    const StampedLowState* sample = lowstate_buffer_.readFromNonRT();
+    if (isStale(sample->arrival, lowstateTimeoutDuration()))
+    {
+        RCLCPP_ERROR(
+            node_->get_logger(),
+            "refusing to activate: /lowstate is older than lowstate_timeout_ms -- nothing "
+            "published");
+        return hardware_interface::CallbackReturn::ERROR;
+    }
+
+    // Hold-in-place seed: the exported command interface starts at exactly
+    // the measured position (no unimplementable "first command arrived"
+    // detection, no slew toward some other q) -- JTC's own activation covers
+    // the controller side.
+    std::array<double, kNumArmJoints> measured{};
+    for (std::size_t i = 0; i < kNumArmJoints; ++i)
+    {
+        measured[i] = sample->state.motor_state[static_cast<std::size_t>(motor_index_[i])].q;
+        command_position_[i] = measured[i];
+    }
+    ramp_engine_.seedFromMeasured(measured);
+
+    time_since_last_publish_s_ = 0.0;
+    writer_token_claimed_.store(false, std::memory_order_release);
+    // Publishing authority is acquired last, only once everything it needs
+    // (seed, cleared token) is already in place.
+    mode_.store(BlendMode::kActive, std::memory_order_release);
+
     return hardware_interface::CallbackReturn::SUCCESS;
 }
 
 hardware_interface::CallbackReturn G1ArmSdkSystem::on_deactivate(const rclcpp_lifecycle::State&)
 {
+    rampDownSynchronously(BlendMode::kRampDown);
     return hardware_interface::CallbackReturn::SUCCESS;
 }
 
 hardware_interface::CallbackReturn G1ArmSdkSystem::on_shutdown(const rclcpp_lifecycle::State&)
 {
+    // Belt-and-braces: confirmed directly (manual sim validation) that
+    // Humble's controller_manager already runs on_deactivate before
+    // on_shutdown on a SIGTERM/SIGINT while active, so by the time this runs
+    // mode_ is normally already kInactive and rampDownSynchronously() below
+    // is a no-op. Kept in case some kill path reaches shutdown without
+    // deactivate.
+    rampDownSynchronously(BlendMode::kEmergencyRampDown);
     return hardware_interface::CallbackReturn::SUCCESS;
 }
 
 hardware_interface::CallbackReturn G1ArmSdkSystem::on_error(const rclcpp_lifecycle::State&)
 {
+    rampDownSynchronously(BlendMode::kEmergencyRampDown);
     return hardware_interface::CallbackReturn::SUCCESS;
 }
 
@@ -271,23 +353,107 @@ G1ArmSdkSystem::read(const rclcpp::Time& /*time*/, const rclcpp::Duration& /*per
         state_effort_[i]   = motor.tau_est;
     }
 
-    // Staleness isn't checked yet: CM calls read() on every loaded component
-    // every cycle regardless of lifecycle state (confirmed during manual sim
-    // validation), so immediately after on_configure the internal node
-    // hasn't had time for DDS discovery + a first /lowstate sample -- an
-    // unconditional ERROR return here was tried and is demonstrably wrong:
-    // resource_manager reacts to a read() ERROR by driving the component
-    // through on_error back to UNCONFIGURED with no automatic recovery, so
-    // it fired on essentially every configure. The freshness check belongs
-    // here only once "meaningfully active" is a real, checkable concept
-    // (the mode_ atomic lands with the arm_sdk command path commit).
+    // Belt-and-braces only: write() is the primary protection and
+    // autonomously ramps down on stale feedback regardless of what read()
+    // reports here (see write()). Gated on ACTIVE specifically -- CM calls
+    // read() on every loaded component every cycle regardless of lifecycle
+    // state (confirmed during manual sim validation), and staleness before
+    // the first /lowstate sample arrives (e.g. right after on_configure) is
+    // expected, not an error; an unconditional ERROR return here was tried
+    // and is demonstrably wrong (resource_manager reacts to any read()
+    // ERROR by driving the component through on_error back to UNCONFIGURED
+    // with no automatic recovery, so it fired on essentially every
+    // configure).
+    if (mode_.load(std::memory_order_relaxed) == BlendMode::kActive &&
+        isStale(sample->arrival, lowstateTimeoutDuration()))
+    {
+        return hardware_interface::return_type::ERROR;
+    }
     return hardware_interface::return_type::OK;
 }
 
 hardware_interface::return_type
-G1ArmSdkSystem::write(const rclcpp::Time& /*time*/, const rclcpp::Duration& /*period*/)
+G1ArmSdkSystem::write(const rclcpp::Time& /*time*/, const rclcpp::Duration& period)
 {
-    // arm_sdk command path lands with the ramp/slew wiring commit.
+    if (writer_token_claimed_.load(std::memory_order_acquire))
+    {
+        // Ownership has been claimed by a lifecycle/advisory transition
+        // currently running rampDownSynchronously() -- never touch the
+        // publisher again this activation. In practice this codepath is
+        // defense-in-depth: resource_manager serializes those transitions
+        // against write() anyway (see rampDownSynchronously()'s comment),
+        // so write() shouldn't be running concurrently with one at all.
+        return hardware_interface::return_type::OK;
+    }
+
+    const BlendMode requested = mode_.load(std::memory_order_acquire);
+    if (requested == BlendMode::kInactive)
+    {
+        // Self-gated: Humble may still call write() while inactive.
+        return hardware_interface::return_type::OK;
+    }
+
+    const StampedLowState* sample    = lowstate_buffer_.readFromRT();
+    const bool             stale     = isStale(sample->arrival, lowstateTimeoutDuration());
+    const BlendMode        effective = resolveEffectiveMode(requested, stale);
+    if (effective != requested)
+    {
+        // Autonomous emergency escalation: write() doesn't wait for
+        // resource_manager to notice read()'s ERROR and call on_error --
+        // it protects the arm itself, the instant it notices stale
+        // feedback, and publishes the escalation back to the shared atomic
+        // so any lifecycle thread watching it sees the true state too.
+        mode_.store(effective, std::memory_order_release);
+    }
+
+    const double dt     = period.seconds();
+    const double weight = ramp_engine_.step(effective, command_position_, dt);
+
+    // Throttle to command_publish_rate_hz_ (independent of the CM's own
+    // update_rate) using the slower-hardware-comms period-guard pattern:
+    // ramp/slew state still advances every tick above (correct at any CM
+    // rate), only the DDS publish itself is throttled.
+    time_since_last_publish_s_ += dt;
+    const double publish_period_s = 1.0 / command_publish_rate_hz_;
+    const bool   due              = time_since_last_publish_s_ >= publish_period_s;
+    // Force a publish on the exact tick the ramp reaches its target so the
+    // true terminal weight (0) is always actually transmitted at least
+    // once before self-gating off below -- otherwise the throttle could
+    // silently swallow that last, safety-relevant sample.
+    const bool ramp_finished = effective != BlendMode::kActive && weight <= 0.0;
+
+    if (due || ramp_finished)
+    {
+        if (due)
+        {
+            time_since_last_publish_s_ -= publish_period_s;
+        }
+        if (arm_sdk_rt_pub_ && arm_sdk_rt_pub_->trylock())
+        {
+            assembleLowCmd(
+                arm_sdk_rt_pub_->msg_,
+                motor_index_,
+                ramp_engine_.publishedPositions(),
+                kp_,
+                kd_,
+                static_cast<float>(weight));
+            vendored::computeLowCmdCrc(arm_sdk_rt_pub_->msg_);
+            arm_sdk_rt_pub_->unlockAndPublish();
+        }
+    }
+
+    if (ramp_finished)
+    {
+        // Reached here only via the autonomous emergency-escalation path
+        // above (a lifecycle-triggered ramp-down is driven and finished
+        // entirely by rampDownSynchronously() instead, which write() never
+        // runs concurrently with): write() noticed the staleness itself,
+        // ramped itself down over these ticks, and now self-terminates --
+        // from the next tick on, self-gating above stops publishing
+        // entirely.
+        mode_.store(BlendMode::kInactive, std::memory_order_release);
+    }
+
     return hardware_interface::return_type::OK;
 }
 
@@ -310,6 +476,13 @@ void G1ArmSdkSystem::lowstateCallback(const unitree_hg::msg::LowState::SharedPtr
 
 void G1ArmSdkSystem::shutdownInternalNode()
 {
+    // Any in-flight advisory ramp-down touches arm_sdk_rt_pub_ off this same
+    // internal-executor-spawned thread -- it must finish before the members
+    // below are reset out from under it.
+    if (conflict_ramp_thread_.joinable())
+    {
+        conflict_ramp_thread_.join();
+    }
     if (executor_)
     {
         executor_->cancel();
@@ -318,13 +491,95 @@ void G1ArmSdkSystem::shutdownInternalNode()
     {
         executor_thread_.join();
     }
+    publisher_count_timer_.reset();
     lowstate_sub_.reset();
+    arm_sdk_rt_pub_.reset();
     if (executor_ && node_)
     {
         executor_->remove_node(node_);
     }
     executor_.reset();
     node_.reset();
+}
+
+bool G1ArmSdkSystem::isStale(
+    const std::chrono::steady_clock::time_point& arrival,
+    std::chrono::steady_clock::duration          timeout)
+{
+    return (std::chrono::steady_clock::now() - arrival) > timeout;
+}
+
+std::chrono::steady_clock::duration G1ArmSdkSystem::lowstateTimeoutDuration() const
+{
+    return std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+        std::chrono::duration<double>(lowstate_timeout_s_));
+}
+
+void G1ArmSdkSystem::checkPublisherCount()
+{
+    if (mode_.load(std::memory_order_relaxed) == BlendMode::kInactive)
+    {
+        return;
+    }
+    if (conflict_ramp_thread_.joinable())
+    {
+        return;  // already handling a previously detected conflict
+    }
+    if (node_->count_publishers("/arm_sdk") <= 1)
+    {
+        return;
+    }
+
+    // Advisory only: real cross-process arbitration is a future
+    // behavior-tree authority arbiter. This just refuses to let two
+    // publishers command the arms at once -- two publishers owning one
+    // low-level channel is unsafe -- by ramping ourselves down. Off this timer's
+    // own thread (not the internal executor thread directly) so /lowstate
+    // reception and this same timer keep servicing while it blocks.
+    RCLCPP_ERROR(
+        node_->get_logger(),
+        "second /arm_sdk publisher detected while active -- ramping down (advisory guard only)");
+    conflict_ramp_thread_ =
+        std::thread([this] { rampDownSynchronously(BlendMode::kEmergencyRampDown); });
+}
+
+void G1ArmSdkSystem::rampDownSynchronously(BlendMode target_mode)
+{
+    if (mode_.load(std::memory_order_acquire) == BlendMode::kInactive)
+    {
+        return;  // already down -- an earlier ramp-down already got here
+    }
+
+    // See this method's declaration for why claiming unconditionally (not
+    // just after detecting a conflict) is correct here rather than a race.
+    writer_token_claimed_.store(true, std::memory_order_release);
+    mode_.store(target_mode, std::memory_order_release);
+
+    const double dt     = std::chrono::duration<double>(kRampDownTickPeriod).count();
+    double       weight = ramp_engine_.weight();
+    while (weight > 0.0)
+    {
+        weight = ramp_engine_.step(target_mode, command_position_, dt);
+        if (arm_sdk_rt_pub_)
+        {
+            // A blocking lock (not trylock) is fine here: this isn't the RT
+            // path, and nothing else can be publishing concurrently once
+            // the token above is claimed.
+            arm_sdk_rt_pub_->lock();
+            assembleLowCmd(
+                arm_sdk_rt_pub_->msg_,
+                motor_index_,
+                ramp_engine_.publishedPositions(),
+                kp_,
+                kd_,
+                static_cast<float>(weight));
+            vendored::computeLowCmdCrc(arm_sdk_rt_pub_->msg_);
+            arm_sdk_rt_pub_->unlockAndPublish();
+        }
+        std::this_thread::sleep_for(kRampDownTickPeriod);
+    }
+
+    mode_.store(BlendMode::kInactive, std::memory_order_release);
 }
 
 }  // namespace g1_hardware_interface

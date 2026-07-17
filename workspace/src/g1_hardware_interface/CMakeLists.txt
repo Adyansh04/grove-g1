@@ -11,6 +11,7 @@ find_package(unitree_hg REQUIRED)
 
 add_library(g1_arm_sdk_system SHARED
   src/arm_ramp_engine.cpp
+  src/motor_crc_hg.cpp
   src/g1_arm_sdk_system.cpp
 )
 target_include_directories(g1_arm_sdk_system PUBLIC

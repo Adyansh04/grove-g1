@@ -94,4 +94,13 @@ std::string validateMotorIndexMap(const std::array<int, kNumArmJoints>& motor_in
     return "";
 }
 
+BlendMode resolveEffectiveMode(BlendMode requested_mode, bool lowstate_stale) noexcept
+{
+    if (requested_mode == BlendMode::kActive && lowstate_stale)
+    {
+        return BlendMode::kEmergencyRampDown;
+    }
+    return requested_mode;
+}
+
 }  // namespace g1_hardware_interface

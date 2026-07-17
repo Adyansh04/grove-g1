@@ -83,6 +83,15 @@ private:
 // to log.
 std::string validateMotorIndexMap(const std::array<int, kNumArmJoints>& motor_index);
 
+// Resolves the mode write() should actually drive this tick, given the mode
+// currently requested (via the shared lifecycle atomic) and whether
+// LowState is stale. Staleness can only escalate a requested kActive to
+// kEmergencyRampDown; a request that's already ramping down is left alone
+// (already shutting down at least as fast). Pure and deterministic, so
+// calling it repeatedly with the same stale reading never re-escalates or
+// oscillates -- staleness trips the escalation exactly once per activation.
+BlendMode resolveEffectiveMode(BlendMode requested_mode, bool lowstate_stale) noexcept;
+
 }  // namespace g1_hardware_interface
 
 #endif  // G1_HARDWARE_INTERFACE__ARM_RAMP_ENGINE_HPP_
