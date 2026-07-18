@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstddef>
+#include <cstring>
 
 namespace g1_hardware_interface
 {
@@ -11,10 +12,15 @@ namespace vendored
 namespace
 {
 // Mirrors unitree_hg::msg::LowCmd's field layout exactly (mode_pr,
-// mode_machine, motor_cmd[35], reserve[4], crc) as a tightly-packed struct
-// -- the CRC is computed over these raw bytes, so the field order and types
-// must match the firmware/motion-service's own struct bit-for-bit, not just
-// semantically.
+// mode_machine, motor_cmd[35], reserve[4], crc) -- naturally aligned, not
+// literally packed, so the compiler inserts real padding between/after
+// these fields (see the static_assert below, which only holds because of
+// that padding). The CRC is computed over the raw bytes including that
+// padding, so the field order and types must match the firmware/
+// motion-service's own struct bit-for-bit, and the padding bytes themselves
+// must be zeroed explicitly (computeLowCmdCrc() does this via memset)
+// rather than relied on to come out zeroed from aggregate-init `{}`, which
+// the standard doesn't guarantee for padding.
 struct RawMotorCmd
 {
     std::uint8_t  mode;
@@ -23,7 +29,7 @@ struct RawMotorCmd
     float         tau;
     float         kp;
     float         kd;
-    std::uint32_t reserve = 0;
+    std::uint32_t reserve;
 };
 
 struct RawLowCmd
@@ -69,7 +75,12 @@ std::uint32_t crc32Core(const std::uint32_t* ptr, std::uint32_t len)
 
 void computeLowCmdCrc(unitree_hg::msg::LowCmd& msg)
 {
-    RawLowCmd raw{};
+    RawLowCmd raw;
+    // Explicit, not aggregate-init `{}': guarantees the alignment padding
+    // the CRC covers is actually zero, rather than relying on
+    // compiler-specific (if universally observed) zero-init-of-padding
+    // behavior the standard doesn't formally promise.
+    std::memset(&raw, 0, sizeof(raw));
     raw.mode_pr      = msg.mode_pr;
     raw.mode_machine = msg.mode_machine;
     for (std::size_t i = 0; i < raw.motor_cmd.size(); ++i)
