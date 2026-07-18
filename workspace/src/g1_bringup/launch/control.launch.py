@@ -9,7 +9,9 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import ExecuteProcess
+from launch.actions import EmitEvent, ExecuteProcess, RegisterEventHandler
+from launch.event_handlers import OnProcessExit
+from launch.events import Shutdown
 from launch.substitutions import Command, FindExecutable
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
@@ -34,12 +36,21 @@ from launch_ros.parameter_descriptions import ParameterValue
 # it has no SIGTERM handler of its own to forward a directed kill. Launched
 # bare under `ros2 launch`, a stop signal reaches only that wrapper (which
 # has no handler for it and just dies), orphaning the actual
-# ros2_control_node binary underneath -- confirmed directly. The
-# `set -m; ... & child=$!; trap ...; wait $child` shell wrapper below puts
-# the wrapper-and-binary pair in their own process group and explicitly
-# forwards TERM/INT to it, so stopping this action (including sim.launch.py's
-# whole-launch teardown) actually stops the real process.
-_SIGNAL_FORWARDING_WRAPPER = "set -m; {command} & child=$!; trap 'kill -TERM -$child 2>/dev/null' TERM INT; wait $child"
+# ros2_control_node binary underneath -- confirmed directly. The shell
+# wrapper below puts the wrapper-and-binary pair in their own process group
+# and forwards TERM/INT to it, so stopping this action (including
+# sim.launch.py's whole-launch teardown) actually stops the real process.
+# The trap itself re-waits on the child after forwarding the signal (not
+# just forwarding and returning): without that, bash's outer `wait $child`
+# is what's interrupted by the signal and this script -- and therefore the
+# whole ExecuteProcess action -- would exit immediately, with launch
+# reporting the action dead while ros2_control_node is still mid-shutdown
+# (e.g. running a hardware component's ramp-down).
+_SIGNAL_FORWARDING_WRAPPER = (
+    "set -m; {command} & child=$!; "
+    "trap 'kill -TERM -$child 2>/dev/null; wait $child' TERM INT; "
+    "wait $child"
+)
 
 
 def generate_launch_description():
@@ -105,11 +116,24 @@ def generate_launch_description():
         output="screen",
     )
 
+    # A dead controller_manager leaves robot_state_publisher publishing TF
+    # for a robot nothing is commanding and the spawners pointed at a
+    # controller_manager that no longer exists -- tear down the whole
+    # launch rather than limp on, symmetric to sim.launch.py's handler for
+    # a dead simulator.
+    shutdown_on_control_node_exit = RegisterEventHandler(
+        OnProcessExit(
+            target_action=control_node,
+            on_exit=[EmitEvent(event=Shutdown(reason="ros2_control_node exited"))],
+        )
+    )
+
     return LaunchDescription(
         [
             robot_state_publisher_node,
             control_node,
             joint_state_broadcaster_spawner,
             arm_trajectory_controller_spawner,
+            shutdown_on_control_node_exit,
         ]
     )

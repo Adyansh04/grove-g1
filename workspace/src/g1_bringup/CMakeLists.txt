@@ -34,12 +34,10 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   target_compile_options(blend_math PRIVATE -Wall -Wextra)
 endif()
 
-install(
-  TARGETS blend_math
-  ARCHIVE DESTINATION lib
-  LIBRARY DESTINATION lib
-  RUNTIME DESTINATION bin
-)
+# blend_math is an internal build artifact (statically linked into
+# arm_sdk_sim_bridge and test_blend_math/test_assemble_sim_low_cmd only) --
+# no install rule: installing the bare archive with neither its headers nor
+# an exported target would be unusable downstream anyway.
 install(TARGETS arm_sdk_sim_bridge DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY config launch DESTINATION share/${PROJECT_NAME})
@@ -107,9 +105,17 @@ if(BUILD_TESTING)
   # sim end to end (see each file's own docstring for what it asserts).
   # Generous timeouts: sim.launch.py's own settle window plus the test
   # bodies' own bounded waits (ramp, trajectory, rogue-guard poll).
+  #
+  # Both hard-require ROS_DOMAIN_ID=1 and bind the same headless Xvfb
+  # display -- RESOURCE_LOCK makes ctest serialize them explicitly (rather
+  # than relying on ctest's default parallelism happening to be 1), so a
+  # parallel run can never let one test's simulator/DDS graph bleed into
+  # the other's.
   find_package(launch_testing_ament_cmake REQUIRED)
-  add_launch_test(test/test_sim_bringup.launch.py TIMEOUT 120)
-  add_launch_test(test/test_arm_command.launch.py TIMEOUT 180)
+  add_launch_test(test/test_sim_bringup.launch.py TARGET test_sim_bringup TIMEOUT 120)
+  set_tests_properties(test_sim_bringup PROPERTIES RESOURCE_LOCK g1_sim)
+  add_launch_test(test/test_arm_command.launch.py TARGET test_arm_command TIMEOUT 180)
+  set_tests_properties(test_arm_command PROPERTIES RESOURCE_LOCK g1_sim)
 endif()
 
 ament_package()
