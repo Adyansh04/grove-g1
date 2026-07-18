@@ -561,20 +561,35 @@ void G1ArmSdkSystem::checkPublisherCount()
 
 void G1ArmSdkSystem::rampDownSynchronously(BlendMode target_mode)
 {
-    const BlendMode current = mode_.load(std::memory_order_acquire);
-    if (current == BlendMode::kInactive)
-    {
-        return;  // already down -- an earlier ramp-down already got here
-    }
-
     // Never de-escalate: an on_deactivate/on_error/on_shutdown landing
-    // while write() has already autonomously escalated to
+    // while write() or the advisory guard's timer has already escalated to
     // kEmergencyRampDown (e.g. /lowstate went stale right as a clean
     // deactivate started) must not downgrade to the slower requested mode
     // -- emergency_ramp_down_s is the ceiling on how long this blind-
     // publishes regardless of which caller asked for the gentler ramp.
-    target_mode = (current == BlendMode::kEmergencyRampDown) ? current : target_mode;
-    mode_.store(target_mode, std::memory_order_release);
+    // CAS loop rather than load-then-store: the guard timer's escalation
+    // can land between the two, and a plain store would overwrite it.
+    BlendMode current = mode_.load(std::memory_order_acquire);
+    while (true)
+    {
+        if (current == BlendMode::kInactive)
+        {
+            return;  // already down -- an earlier ramp-down already got here
+        }
+        if (current == BlendMode::kEmergencyRampDown)
+        {
+            target_mode = current;
+            break;
+        }
+        if (mode_.compare_exchange_weak(
+                current,
+                target_mode,
+                std::memory_order_acq_rel,
+                std::memory_order_acquire))
+        {
+            break;
+        }
+    }
 
     const double dt     = std::chrono::duration<double>(kRampDownTickPeriod).count();
     double       weight = ramp_engine_.weight();
