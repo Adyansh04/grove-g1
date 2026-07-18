@@ -206,14 +206,19 @@ different, full-authority channel; the arm_sdk motion service evidently doesn't 
 - **The component's own hidden node + `SingleThreadedExecutor`** (started in `on_configure`, torn
   down in `on_cleanup`, idempotently rebuilt if `on_configure` runs again): services the `/lowstate`
   subscription and the ~1 Hz advisory publisher-count timer. Never added to `controller_manager`'s
-  own executor.
+  own executor. `on_configure` bounded-waits for `is_spinning()` before returning, so a later
+  `cancel()` (from `on_cleanup`/the destructor) can never land before the executor thread has
+  actually entered `spin()` -- Humble's `Executor::cancel()`/`spin()` both write the same internal
+  flag with no ordering guarantee otherwise, and losing that race would spin forever and deadlock
+  `executor_thread_.join()`.
 - **`RealtimePublisher`'s own internal thread**: does the actual DDS `publish()` call, decoupled
   from the RT thread by the trylock/copy-then-publish pattern.
 - **Lifecycle callbacks** (`on_activate`/`on_deactivate`/`on_error`/`on_shutdown`): run on whatever
   thread `resource_manager` invokes them from (confirmed serialized against the RT thread -- see
   the safety model above). `on_deactivate`/`on_error`/`on_shutdown` block that thread for the
   relevant ramp duration, via `rampDownSynchronously()`. `on_activate` does a single non-blocking
-  `readFromNonRT()` and returns.
+  `readFromRT()` (safe off the RT thread specifically because that serialization leaves the RT side
+  quiescent for the transition's duration) and returns.
 - **The advisory publisher-count timer** (on the hidden executor thread above): never spawns a
   thread of its own. It only ever compare-and-swaps the shared `mode_` atomic from `ACTIVE` to
   `EMERGENCY_RAMP_DOWN` -- the actual ramp-down is then driven by whichever thread already owns

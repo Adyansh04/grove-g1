@@ -231,6 +231,27 @@ hardware_interface::CallbackReturn G1ArmSdkSystem::on_configure(const rclcpp_lif
     executor_->add_node(node_);
     executor_thread_ = std::thread([this] { executor_->spin(); });
 
+    // Bounded handshake: is_spinning() is thread-safe to poll from here.
+    // spin() and cancel() both write the same internal flag with no
+    // ordering guarantee against "the thread has been started" -- a rapid
+    // configure-then-cleanup could run shutdownInternalNode()'s cancel()
+    // before executor_thread_ has entered spin() at all, and spin()'s own
+    // startup would then silently overwrite cancel()'s effect and spin
+    // forever with no future cancel() call to catch it, permanently
+    // deadlocking executor_thread_.join(). Waiting here for is_spinning()
+    // to actually flip true before returning guarantees any later cancel()
+    // is observed.
+    const auto spin_start_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (!executor_->is_spinning() && std::chrono::steady_clock::now() < spin_start_deadline)
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    if (!executor_->is_spinning())
+    {
+        RCLCPP_ERROR(rclcpp::get_logger(kLoggerName), "internal executor failed to start spinning");
+        return hardware_interface::CallbackReturn::ERROR;
+    }
+
     return hardware_interface::CallbackReturn::SUCCESS;
 }
 
@@ -242,10 +263,17 @@ hardware_interface::CallbackReturn G1ArmSdkSystem::on_cleanup(const rclcpp_lifec
 
 hardware_interface::CallbackReturn G1ArmSdkSystem::on_activate(const rclcpp_lifecycle::State&)
 {
-    // on_activate runs on the CM's lifecycle (non-RT) thread, never
-    // read()/write()'s RT thread, so the non-RT accessor is the correct one
-    // here (readFromRT() is reserved for the RT side).
-    const StampedLowState* sample = lowstate_buffer_.readFromNonRT();
+    // readFromRT(), not readFromNonRT(): resource_manager serializes this
+    // lifecycle transition against read()/write() (see
+    // rampDownSynchronously()'s comment), so the RT side is quiescent for
+    // the whole duration of on_activate -- there is no concurrent RT reader
+    // to race against, making readFromRT()'s non-blocking trylock-swap safe
+    // to call from this (non-RT) thread too. readFromNonRT() would instead
+    // race lowstateCallback()'s writeFromNonRT() calls arriving continuously
+    // off the internal executor thread: its own lock only protects the call
+    // itself, not the caller dereferencing the returned pointer afterward,
+    // which is exactly what seeding below does across 14 fields.
+    const StampedLowState* sample = lowstate_buffer_.readFromRT();
     if (isStale(sample->arrival, lowstateTimeoutDuration()))
     {
         RCLCPP_ERROR(
