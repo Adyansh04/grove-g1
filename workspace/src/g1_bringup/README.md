@@ -9,7 +9,7 @@ C++17 node + Python launch files and integration tests.
 
 | File | What it does |
 |---|---|
-| `launch/sim.launch.py` | The main entry point. Env fail-fast, then `unitree_mujoco` + `arm_sdk_sim_bridge` + `control.launch.py`. Args: `headless` (default `true`). |
+| `launch/sim.launch.py` | The main entry point. Env fail-fast, then `unitree_mujoco` + `arm_sdk_sim_bridge` + `control.launch.py`. Args: `headless` (default `true`), `pin_pelvis` (default `true`, see "Pelvis pin"), `sim_start_delay_s` (default `2.0`). |
 | `launch/control.launch.py` | Composition-pure: `robot_state_publisher` + `ros2_control_node` + spawners. No sim, no bridge -- carries over unchanged to hardware bring-up. |
 | `launch/activate_arm.launch.py` | Runs `scripts/activate_arm`: the explicit, ordered acquire step. |
 | `launch/deactivate_arm.launch.py` | Runs `scripts/deactivate_arm`: the explicit, ordered release step. |
@@ -132,6 +132,44 @@ they last held. A fresh message resumes tracking from whatever the effective wei
 at, never snapping. **This is this bridge's own policy, invented for sim test scaffolding, not a
 documented property of the real motion service** -- what the real onboard controller does if its
 `/arm_sdk` publisher goes silent at weight 1 is unverified and stays a hardware re-validation item.
+
+## Pelvis pin -- SIM-ONLY standing scaffolding, not a balance controller
+
+The real G1 stays upright because the **vendor's onboard controller owns balance and
+locomotion** -- this stack only ever commands the arms (weight-blended via `rt/arm_sdk`, through
+`arm_sdk_sim_bridge` here) and, in a later milestone, drives the legs at the velocity level
+through Unitree's `LocoClient`. We never write balance ourselves. `unitree_mujoco` does **not**
+emulate that onboard controller: it is a low-level device only. So in sim there is nothing
+holding the robot up, and a joint-space stiff-hold cannot substitute for it -- a floating-base
+biped is an inverted pendulum, and holding each joint stiff still lets the whole body topple
+about the feet (no centre-of-mass/ZMP feedback). Measured directly: the robot tips to ~55-60 deg
+within ~1.5 s of spawn even with the bridge commanding a full-body hold from the first tick, so
+this is not a startup-timing gap -- it is a missing capability.
+
+To validate the arm bridge in isolation until a real balance/locomotion controller exists,
+`sim.launch.py` welds the pelvis to the world:
+
+- **What:** a `weld` equality constraint (fixes the floating base in **both** position and
+  orientation -- a `connect` point-pin would still allow toppling rotation) at the pelvis's spawn
+  pose, in `mjcf/g1_pinned_scene.xml`, a `g1_bringup`-owned scene overlay that composes the
+  vendored G1 model via `<include>`. The vendored model files are not modified.
+- **Scope:** the weld constrains the pelvis body only. All 29 actuated joints -- the 14 arm
+  joints included -- remain driven exactly as before via `/lowcmd`; a weld on the floating base
+  adds no constraint to any actuated joint. Verified: with the pin active, a commanded arm
+  trajectory still tracks to target while the pelvis holds at its spawn pose (z 0.793, < 1 deg
+  tilt).
+- **Toggle:** on by default; `ros2 launch g1_bringup sim.launch.py pin_pelvis:=false` disables it
+  (the robot then topples on spawn, as above). **This is testing scaffolding, not balance** --
+  expected to be removed or replaced when the `LocoClient` milestone adds genuine
+  standing/locomotion.
+- **Staging note:** the overlay is copied next to the vendored model at launch (and removed on
+  shutdown) because MuJoCo 3.3.6 does not reliably resolve the model's relative `meshdir` when the
+  including file lives in a foreign directory. See the overlay's header comment.
+
+The integration tests assert the pelvis stays pinned (height and orientation within bounds)
+across the whole bring-up -> idle -> activate -> command -> deactivate sequence, so a broken or
+disabled pin fails the suite loudly rather than silently validating the arm bridge on a collapsed
+robot.
 
 ### Why a plain node, not lifecycle-managed
 

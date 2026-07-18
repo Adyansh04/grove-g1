@@ -6,6 +6,7 @@ the domain/DDS story, and the sim-bridge safety banner.
 """
 
 import os
+import shutil
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
@@ -18,13 +19,26 @@ from launch.actions import (
     RegisterEventHandler,
     TimerAction,
 )
-from launch.event_handlers import OnProcessExit
+from launch.event_handlers import OnProcessExit, OnShutdown
 from launch.events import Shutdown
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 UNITREE_MUJOCO_BIN = "/opt/unitree_robotics/unitree_mujoco/simulate/build/unitree_mujoco"
+
+# The vendored G1 model directory (holds g1_29dof.xml, meshes/, scene.xml). The
+# sim resolves a relative -s scene against <sim>/../unitree_robots/<robot>/, i.e.
+# this directory. Derived from the binary location so it tracks the Dockerfile.
+G1_MODEL_DIR = os.path.normpath(
+    os.path.join(os.path.dirname(UNITREE_MUJOCO_BIN), "..", "..", "unitree_robots", "g1")
+)
+
+# Name of the pelvis-pin scene overlay once staged into G1_MODEL_DIR. The source
+# lives in g1_bringup (mjcf/g1_pinned_scene.xml); it is copied here at launch so
+# its relative <include> and the model's own meshdir resolve against the vendored
+# directory (see the overlay's header comment for why staging is required).
+STAGED_SCENE_NAME = "g1_pinned_scene.staged.xml"
 
 # unitree_mujoco is a native unitree_sdk2 DDS app, not a ROS node, and links
 # its own build of CycloneDDS from here. Sourcing a ROS environment (as any
@@ -50,17 +64,15 @@ UNITREE_ROBOTICS_LIB = "/opt/unitree_robotics/lib"
 # down too.
 XVFB_DISPLAY = ":133"
 
-# The sim's first physics tick applies zero actuator torque until
-# arm_sdk_sim_bridge captures its first /lowstate sample and starts
-# publishing /lowcmd -- with no balance controller, a humanoid stance
-# collapses within the first few unactuated ticks. Delaying the sim's start
-# (not the rest of the stack) gives the bridge's /lowstate subscription and
-# controller_manager time to come up and DDS-match first, so the sim's very
-# first physics step is already commanded. This must apply unconditionally,
-# not just in headless mode: it was originally sized for Xvfb's startup
-# alone, and headless mode's incidental head start over the ROS graph is
-# what masked this race in validation -- headless:=false has zero delay by
-# default and can free-fall before the bridge is ready.
+# Delay the sim's start (only the sim, not the rest of the stack) so Xvfb is
+# accepting connections and the bridge/controller_manager have DDS-matched
+# /lowstate before the first physics tick. This is startup-ordering hygiene,
+# NOT what keeps the robot upright: standing is handled by the pelvis weld pin
+# (pin_pelvis), because unitree_mujoco has no balance controller and a
+# joint-space hold cannot balance a floating-base biped on its own (see the
+# mjcf/g1_pinned_scene.xml overlay and the README). A too-short delay was
+# observed to crash headless startup (Xvfb/GLFW not ready), which is the real
+# reason not to set this to 0.
 SIM_START_DELAY_S = 2.0
 
 
@@ -105,6 +117,7 @@ def _check_environment(context, *args, **kwargs):
 
 def _launch_setup(context, *args, **kwargs):
     headless = LaunchConfiguration("headless").perform(context).lower() == "true"
+    pin_pelvis = LaunchConfiguration("pin_pelvis").perform(context).lower() == "true"
 
     sim_env = dict(os.environ)
     sim_env["LD_LIBRARY_PATH"] = UNITREE_ROBOTICS_LIB + ":" + sim_env.get("LD_LIBRARY_PATH", "")
@@ -119,8 +132,36 @@ def _launch_setup(context, *args, **kwargs):
         actions.append(xvfb_process)
         sim_env["DISPLAY"] = XVFB_DISPLAY
 
+    # sim-only balance scaffolding: stage the pelvis-pin overlay next to the
+    # vendored model and load it via -s, so the sim spawns with the pelvis
+    # welded upright (unitree_mujoco has no balance controller). Staging (rather
+    # than an absolute -s path) is required for MuJoCo's relative asset
+    # resolution -- see mjcf/g1_pinned_scene.xml. Without pinning the sim loads
+    # its default scene and the robot topples on spawn.
+    sim_cmd = [UNITREE_MUJOCO_BIN, "-r", "g1"]
+    if pin_pelvis:
+        staged_path = os.path.join(G1_MODEL_DIR, STAGED_SCENE_NAME)
+        overlay_src = os.path.join(
+            get_package_share_directory("g1_bringup"), "mjcf", "g1_pinned_scene.xml"
+        )
+        shutil.copyfile(overlay_src, staged_path)
+        sim_cmd += ["-s", STAGED_SCENE_NAME]
+
+        def _remove_staged_scene(context, *a, **k):
+            try:
+                os.remove(staged_path)
+            except OSError:
+                pass
+            return []
+
+        actions.append(
+            RegisterEventHandler(
+                OnShutdown(on_shutdown=[OpaqueFunction(function=_remove_staged_scene)])
+            )
+        )
+
     sim_process = ExecuteProcess(
-        cmd=[UNITREE_MUJOCO_BIN, "-r", "g1"],
+        cmd=sim_cmd,
         name="unitree_mujoco",
         output="screen",
         env=sim_env,
@@ -173,6 +214,14 @@ def generate_launch_description():
                 "headless",
                 default_value="true",
                 description="Run unitree_mujoco against our own managed Xvfb (no GUI window).",
+            ),
+            DeclareLaunchArgument(
+                "pin_pelvis",
+                default_value="true",
+                description="Weld the pelvis to the world (SIM-ONLY balance scaffolding) so the "
+                "arm bridge can be validated without a balance controller. Set false once a real "
+                "balance/locomotion controller (LocoClient milestone) is available; the robot "
+                "will otherwise topple on spawn in unitree_mujoco.",
             ),
             DeclareLaunchArgument(
                 "sim_start_delay_s",

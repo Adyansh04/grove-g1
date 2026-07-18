@@ -40,7 +40,7 @@ endif()
 # an exported target would be unusable downstream anyway.
 install(TARGETS arm_sdk_sim_bridge DESTINATION lib/${PROJECT_NAME})
 
-install(DIRECTORY config launch DESTINATION share/${PROJECT_NAME})
+install(DIRECTORY config launch mjcf DESTINATION share/${PROJECT_NAME})
 
 install(
   PROGRAMS
