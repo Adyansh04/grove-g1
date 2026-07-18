@@ -62,9 +62,9 @@ bool parseInt(
 
 // Fixed step for rampDownSynchronously()'s own loop -- matches the normal
 // /arm_sdk publish cadence (command_publish_rate's default), but this path
-// doesn't read that param: it runs during on_deactivate/on_error/
-// on_shutdown/the advisory conflict guard, all off the RT path, where a
-// simple fixed period is clearer than deriving one.
+// doesn't read that param: it only runs during on_deactivate/on_error/
+// on_shutdown, off the RT path, where a simple fixed period is clearer than
+// deriving one.
 constexpr std::chrono::milliseconds kRampDownTickPeriod{ 10 };
 }  // namespace
 
@@ -242,12 +242,6 @@ hardware_interface::CallbackReturn G1ArmSdkSystem::on_cleanup(const rclcpp_lifec
 
 hardware_interface::CallbackReturn G1ArmSdkSystem::on_activate(const rclcpp_lifecycle::State&)
 {
-    // A previous activation's conflict guard may still be winding down.
-    if (conflict_ramp_thread_.joinable())
-    {
-        conflict_ramp_thread_.join();
-    }
-
     // on_activate runs on the CM's lifecycle (non-RT) thread, never
     // read()/write()'s RT thread, so the non-RT accessor is the correct one
     // here (readFromRT() is reserved for the RT side).
@@ -274,9 +268,8 @@ hardware_interface::CallbackReturn G1ArmSdkSystem::on_activate(const rclcpp_life
     ramp_engine_.seedFromMeasured(measured);
 
     time_since_last_publish_s_ = 0.0;
-    writer_token_claimed_.store(false, std::memory_order_release);
-    // Publishing authority is acquired last, only once everything it needs
-    // (seed, cleared token) is already in place.
+    // Publishing authority is acquired last, only once the seed above is
+    // already in place.
     mode_.store(BlendMode::kActive, std::memory_order_release);
 
     return hardware_interface::CallbackReturn::SUCCESS;
@@ -375,17 +368,6 @@ G1ArmSdkSystem::read(const rclcpp::Time& /*time*/, const rclcpp::Duration& /*per
 hardware_interface::return_type
 G1ArmSdkSystem::write(const rclcpp::Time& /*time*/, const rclcpp::Duration& period)
 {
-    if (writer_token_claimed_.load(std::memory_order_acquire))
-    {
-        // Ownership has been claimed by a lifecycle/advisory transition
-        // currently running rampDownSynchronously() -- never touch the
-        // publisher again this activation. In practice this codepath is
-        // defense-in-depth: resource_manager serializes those transitions
-        // against write() anyway (see rampDownSynchronously()'s comment),
-        // so write() shouldn't be running concurrently with one at all.
-        return hardware_interface::return_type::OK;
-    }
-
     const BlendMode requested = mode_.load(std::memory_order_acquire);
     if (requested == BlendMode::kInactive)
     {
@@ -422,6 +404,7 @@ G1ArmSdkSystem::write(const rclcpp::Time& /*time*/, const rclcpp::Duration& peri
     // silently swallow that last, safety-relevant sample.
     const bool ramp_finished = effective != BlendMode::kActive && weight <= 0.0;
 
+    bool terminal_publish_succeeded = false;
     if (due || ramp_finished)
     {
         if (due)
@@ -439,18 +422,22 @@ G1ArmSdkSystem::write(const rclcpp::Time& /*time*/, const rclcpp::Duration& peri
                 static_cast<float>(weight));
             vendored::computeLowCmdCrc(arm_sdk_rt_pub_->msg_);
             arm_sdk_rt_pub_->unlockAndPublish();
+            terminal_publish_succeeded = true;
         }
     }
 
-    if (ramp_finished)
+    if (ramp_finished && terminal_publish_succeeded)
     {
-        // Reached here only via the autonomous emergency-escalation path
-        // above (a lifecycle-triggered ramp-down is driven and finished
-        // entirely by rampDownSynchronously() instead, which write() never
-        // runs concurrently with): write() noticed the staleness itself,
-        // ramped itself down over these ticks, and now self-terminates --
-        // from the next tick on, self-gating above stops publishing
-        // entirely.
+        // Reached here via either autonomous escalation that funnels into
+        // this same RT-thread ramp -- write()'s own stale-feedback
+        // escalation above, or checkPublisherCount()'s rogue-publisher
+        // escalation (a lifecycle-triggered ramp-down is instead driven and
+        // finished entirely by rampDownSynchronously(), which write() never
+        // runs concurrently with). Gated on the publish having actually gone
+        // out: trylock() can fail on any given tick, and self-gating off
+        // before the terminal weight-0 sample is confirmed transmitted
+        // would silently drop it. Retrying next tick is harmless -- the
+        // weight is already clamped at 0.
         mode_.store(BlendMode::kInactive, std::memory_order_release);
     }
 
@@ -476,13 +463,6 @@ void G1ArmSdkSystem::lowstateCallback(const unitree_hg::msg::LowState::SharedPtr
 
 void G1ArmSdkSystem::shutdownInternalNode()
 {
-    // Any in-flight advisory ramp-down touches arm_sdk_rt_pub_ off this same
-    // internal-executor-spawned thread -- it must finish before the members
-    // below are reset out from under it.
-    if (conflict_ramp_thread_.joinable())
-    {
-        conflict_ramp_thread_.join();
-    }
     if (executor_)
     {
         executor_->cancel();
@@ -517,14 +497,6 @@ std::chrono::steady_clock::duration G1ArmSdkSystem::lowstateTimeoutDuration() co
 
 void G1ArmSdkSystem::checkPublisherCount()
 {
-    if (mode_.load(std::memory_order_relaxed) == BlendMode::kInactive)
-    {
-        return;
-    }
-    if (conflict_ramp_thread_.joinable())
-    {
-        return;  // already handling a previously detected conflict
-    }
     if (node_->count_publishers("/arm_sdk") <= 1)
     {
         return;
@@ -533,26 +505,43 @@ void G1ArmSdkSystem::checkPublisherCount()
     // Advisory only: real cross-process arbitration is a future
     // behavior-tree authority arbiter. This just refuses to let two
     // publishers command the arms at once -- two publishers owning one
-    // low-level channel is unsafe -- by ramping ourselves down. Off this timer's
-    // own thread (not the internal executor thread directly) so /lowstate
-    // reception and this same timer keep servicing while it blocks.
-    RCLCPP_ERROR(
-        node_->get_logger(),
-        "second /arm_sdk publisher detected while active -- ramping down (advisory guard only)");
-    conflict_ramp_thread_ =
-        std::thread([this] { rampDownSynchronously(BlendMode::kEmergencyRampDown); });
+    // low-level channel is unsafe -- by escalating mode_ toward the
+    // emergency ramp, exactly mirroring write()'s own stale-feedback
+    // escalation (resolveEffectiveMode) so the still-ticking write() on the
+    // RT thread drives and finishes the ramp itself; this timer never
+    // touches ramp_engine_/arm_sdk_rt_pub_ directly, so there is never a
+    // second thread doing so concurrently with write(). The
+    // compare-exchange only fires from kActive: if mode_ has already moved
+    // on for any other reason (ramping down, inactive), there's nothing to
+    // escalate.
+    BlendMode expected = BlendMode::kActive;
+    if (mode_.compare_exchange_strong(
+            expected,
+            BlendMode::kEmergencyRampDown,
+            std::memory_order_acq_rel))
+    {
+        RCLCPP_ERROR(
+            node_->get_logger(),
+            "second /arm_sdk publisher detected while active -- ramping down (advisory guard "
+            "only)");
+    }
 }
 
 void G1ArmSdkSystem::rampDownSynchronously(BlendMode target_mode)
 {
-    if (mode_.load(std::memory_order_acquire) == BlendMode::kInactive)
+    const BlendMode current = mode_.load(std::memory_order_acquire);
+    if (current == BlendMode::kInactive)
     {
         return;  // already down -- an earlier ramp-down already got here
     }
 
-    // See this method's declaration for why claiming unconditionally (not
-    // just after detecting a conflict) is correct here rather than a race.
-    writer_token_claimed_.store(true, std::memory_order_release);
+    // Never de-escalate: an on_deactivate/on_error/on_shutdown landing
+    // while write() has already autonomously escalated to
+    // kEmergencyRampDown (e.g. /lowstate went stale right as a clean
+    // deactivate started) must not downgrade to the slower requested mode
+    // -- emergency_ramp_down_s is the ceiling on how long this blind-
+    // publishes regardless of which caller asked for the gentler ramp.
+    target_mode = (current == BlendMode::kEmergencyRampDown) ? current : target_mode;
     mode_.store(target_mode, std::memory_order_release);
 
     const double dt     = std::chrono::duration<double>(kRampDownTickPeriod).count();
@@ -563,8 +552,9 @@ void G1ArmSdkSystem::rampDownSynchronously(BlendMode target_mode)
         if (arm_sdk_rt_pub_)
         {
             // A blocking lock (not trylock) is fine here: this isn't the RT
-            // path, and nothing else can be publishing concurrently once
-            // the token above is claimed.
+            // path, and write() never runs concurrently with a lifecycle
+            // transition callback (see this method's declaration), so
+            // nothing else is publishing at the same time.
             arm_sdk_rt_pub_->lock();
             assembleLowCmd(
                 arm_sdk_rt_pub_->msg_,

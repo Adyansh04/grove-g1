@@ -110,9 +110,13 @@ Per joint: `motor_index` (position in the `LowCmd`/`LowState` motor array; must 
 
 **Single writer by construction.** One `<ros2_control>` System in the URDF means one
 `G1ArmSdkSystem`, the only thing in this stack that ever publishes `/arm_sdk`. While active, a
-~1 Hz advisory timer counts `/arm_sdk` publishers; if a second one ever appears, this component logs
-the conflict and ramps itself down. Advisory only -- real cross-process arbitration over control
-authority is a future behavior-tree authority arbiter.
+~1 Hz advisory timer counts `/arm_sdk` publishers; if a second one ever appears, it logs the
+conflict and escalates the shared `mode_` atomic from `ACTIVE` to `EMERGENCY_RAMP_DOWN` -- exactly
+the same compare-and-swap `write()` performs on itself for stale feedback (see below) -- so the
+still-ticking `write()` on the RT thread drives and finishes the ramp-down itself. The timer never
+touches the ramp engine or the publisher directly, so there is never a second thread doing so
+concurrently with `write()`. Advisory only -- real cross-process arbitration over control authority
+is a future behavior-tree authority arbiter.
 
 **Self-gated, not framework-gated.** `write()` publishes only while an internal
 `ACTIVE`/`RAMP_DOWN`/`EMERGENCY_RAMP_DOWN` atomic (`mode_`) says so. Humble's `controller_manager`
@@ -138,21 +142,25 @@ on stale feedback too, purely as belt-and-braces for whatever `resource_manager`
 
 **Lifecycle authority and the concurrency contract.** `on_deactivate`/`on_error`/`on_shutdown` do
 **not** ask `write()` to ramp down and wait for it -- they run the ramp-down themselves,
-synchronously, before returning. This is deliberate, not an oversight: `resource_manager` serializes
-a hardware component's lifecycle transitions against its own `read()`/`write()` calls (confirmed
-directly during manual sim validation -- `write()` provably never ticks while a transition callback
-is running). The original design called for the transition to *request* a ramp-down via the shared
-atomic and block waiting for `write()` to report weight 0; in practice that deadlocks (avoided only
-by a stall-detection timeout firing early, which produced an instantaneous, unwanted snap to weight
-0 -- observed directly). Since the transition callback and `write()` can never run concurrently
-anyway, whichever one currently holds the floor is the sole writer for that window, so the
-transition callback simply *is* the writer while it's in progress: it claims a `writer_token_claimed_`
-atomic (defense-in-depth, in case that locking behavior ever changes) and drives the ramp to
-completion itself. A consequence worth flagging for later milestones: because `resource_manager`
-appears to serialize transitions against its *entire* read/write loop, a ~2 s clean deactivate (or
-~0.5 s emergency ramp) blocks the whole `controller_manager` cycle for that duration -- fine for a
-single active hardware component (this milestone), but worth re-examining once multiple
-concurrently-active components exist.
+synchronously, before returning, via `rampDownSynchronously()`, which is reachable *only* from these
+three lifecycle transitions (never from the advisory guard above, which only ever touches the shared
+atomic). This is deliberate, not an oversight: `resource_manager` serializes a hardware component's
+lifecycle transitions against its own `read()`/`write()` calls (confirmed directly during manual sim
+validation -- `write()` provably never ticks while a transition callback is running). The original
+design called for the transition to *request* a ramp-down via the shared atomic and block waiting
+for `write()` to report weight 0; in practice that deadlocks (avoided only by a stall-detection
+timeout firing early, which produced an instantaneous, unwanted snap to weight 0 -- observed
+directly). Since the transition callback and `write()` can never run concurrently anyway, whichever
+one currently holds the floor is unambiguously the sole writer for that window, so the transition
+callback simply *is* the writer while it's in progress and drives the ramp to completion itself.
+`rampDownSynchronously()` also never de-escalates: if `write()` has already autonomously escalated to
+`EMERGENCY_RAMP_DOWN` (e.g. `/lowstate` went stale right as a clean deactivate starts), the
+transition callback continues that faster ramp rather than downgrading to the slower one it was
+asked for. A consequence worth flagging for later milestones: because `resource_manager` appears to
+serialize transitions against its *entire* read/write loop, a ~2 s clean deactivate (or ~0.5 s
+emergency ramp) blocks the whole `controller_manager` cycle for that duration -- fine for a single
+active hardware component (this milestone), but worth re-examining once multiple concurrently-active
+components exist.
 
 **Activation/release ordering.** Acquire: activate this component *before* activating
 `arm_trajectory_controller` (Humble ties command-interface availability to component state; the
@@ -204,10 +212,12 @@ different, full-authority channel; the arm_sdk motion service evidently doesn't 
 - **Lifecycle callbacks** (`on_activate`/`on_deactivate`/`on_error`/`on_shutdown`): run on whatever
   thread `resource_manager` invokes them from (confirmed serialized against the RT thread -- see
   the safety model above). `on_deactivate`/`on_error`/`on_shutdown` block that thread for the
-  relevant ramp duration; `on_activate` does a single non-blocking `readFromNonRT()` and returns.
-- **The advisory conflict guard**: runs its ramp-down on a short-lived `conflict_ramp_thread_`
-  (joined on the next `on_activate` or on teardown), not the internal executor thread directly, so
-  `/lowstate` reception and the timer itself keep servicing while it blocks.
+  relevant ramp duration, via `rampDownSynchronously()`. `on_activate` does a single non-blocking
+  `readFromNonRT()` and returns.
+- **The advisory publisher-count timer** (on the hidden executor thread above): never spawns a
+  thread of its own. It only ever compare-and-swaps the shared `mode_` atomic from `ACTIVE` to
+  `EMERGENCY_RAMP_DOWN` -- the actual ramp-down is then driven by whichever thread already owns
+  publishing, `write()` on the RT thread, exactly like the stale-feedback escalation path.
 
 ## Exercising this against the sim
 
