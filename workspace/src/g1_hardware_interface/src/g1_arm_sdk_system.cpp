@@ -185,10 +185,14 @@ G1ArmSdkSystem::on_init(const hardware_interface::HardwareInfo& info)
         return hardware_interface::CallbackReturn::ERROR;
     }
 
+    // nominal_period_s: see RampConfig's comment for why command_publish_rate
+    // (already validated strictly positive above) is the closest available
+    // proxy for step()'s expected per-tick dt.
     ramp_engine_ = ArmRampEngine(RampConfig{ blend_ramp_up_s_,
                                              blend_ramp_down_s_,
                                              emergency_ramp_down_s_,
-                                             max_joint_velocity_rad_s_ });
+                                             max_joint_velocity_rad_s_,
+                                             1.0 / command_publish_rate_hz_ });
 
     return hardware_interface::CallbackReturn::SUCCESS;
 }

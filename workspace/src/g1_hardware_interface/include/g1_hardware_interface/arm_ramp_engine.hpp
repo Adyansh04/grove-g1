@@ -32,7 +32,23 @@ struct RampConfig
     double blend_ramp_down_s{ 0.0 };
     double emergency_ramp_down_s{ 0.0 };
     double max_joint_velocity_rad_s{ 0.0 };
+    // Reference tick period used only to bound a pathologically large dt_s
+    // passed to step() (e.g. a stalled control loop) before it's integrated
+    // -- see kMaxDtNominalPeriodMultiple. Sourced from command_publish_rate,
+    // the only period-like <param> this pure engine has any visibility into
+    // (controller_manager's own update_rate, which is what actually paces
+    // step()'s real per-tick dt, lives in controller_manager's YAML and
+    // never reaches a hardware plugin) -- a conservative proxy, not a claim
+    // that dt is normally this large.
+    double nominal_period_s{ 0.0 };
 };
+
+// Caps a single step() tick's dt at this many nominal_period_s before
+// integrating the weight ramp and position slew, so neither can blow
+// through arbitrarily far in one tick on a pathologically large or stalled
+// period. Exposed (not just an implementation constant) so tests can pin
+// the exact bound.
+inline constexpr double kMaxDtNominalPeriodMultiple = 3.0;
 
 // Pure, ROS-free ramp/slew logic for the arm_sdk blend weight and per-joint
 // command targets -- the safety-critical unit-testable surface. Not
@@ -58,7 +74,16 @@ public:
     // target currently is -- never a jump. `mode` is never kInactive in
     // practice (callers self-gate before reaching this call); it's treated
     // the same as kRampDown here as a defensive fallback rather than left
-    // unhandled. Returns the resulting weight.
+    // unhandled.
+    //
+    // dt_s <= 0 (e.g. a system-clock step-back -- callers aren't guaranteed a
+    // monotonic source) holds rather than integrates: returns the current
+    // weight/positions unchanged instead of snapping, and avoids clamp()'s UB
+    // on an inverted [-max_step, max_step] range from a negative dt_s. A
+    // dt_s larger than kMaxDtNominalPeriodMultiple * nominal_period_s (e.g. a
+    // stalled control loop) is clamped to that bound first, so neither the
+    // weight ramp nor the position slew can blow arbitrarily far through in
+    // one tick. Returns the resulting weight.
     double
     step(BlendMode mode, const std::array<double, kNumArmJoints>& commanded_positions, double dt_s);
 
