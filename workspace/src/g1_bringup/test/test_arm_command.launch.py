@@ -15,8 +15,10 @@ proves the resulting ramp-down actually finished, not just started. Run via
 `colcon test --packages-select g1_bringup`.
 """
 
+import math
 import os
 import subprocess
+import threading
 import time
 import unittest
 
@@ -30,11 +32,13 @@ from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription, TimerAction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from rclpy.action import ActionClient
+from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile, QoSReliabilityPolicy
 from sensor_msgs.msg import JointState
 from trajectory_msgs.msg import JointTrajectoryPoint
-from unitree_hg.msg import LowCmd
+from unitree_go.msg import SportModeState
+from unitree_hg.msg import LowCmd, LowState
 
 # See test_sim_bringup.launch.py's comment on this constant: kept below
 # launch_testing's own hardcoded 15 s process-startup deadline.
@@ -81,6 +85,25 @@ ARM_SDK_QOS = QoSProfile(
     history=QoSHistoryPolicy.KEEP_LAST,
 )
 
+# For the sim's own bare-DDS topics (/sportmodestate, /lowstate): best-effort,
+# matching how unitree_mujoco publishes them.
+SIM_STATE_QOS = QoSProfile(
+    depth=1,
+    reliability=QoSReliabilityPolicy.BEST_EFFORT,
+    durability=QoSDurabilityPolicy.VOLATILE,
+    history=QoSHistoryPolicy.KEEP_LAST,
+)
+
+# Pelvis-pin bounds (sim.launch.py's pin_pelvis welds the floating base upright
+# at its spawn pose). Measured pinned behaviour: z steady at 0.7925, tilt < 1
+# deg, xy drift ~1 cm. A collapse instead drops the pelvis to z ~= 0.48 with a
+# ~60 deg tilt, so these bounds separate the two decisively while tolerating the
+# weld's small constraint compliance.
+PELVIS_SPAWN_Z = 0.793
+PELVIS_MIN_Z = 0.70
+PELVIS_MAX_TILT_DEG = 15.0
+PELVIS_MAX_XY_M = 0.15
+
 # Deeper subscriber-side history than the publisher's own KEEP_LAST(1) --
 # history depth is a subscriber-local setting, independent of what any
 # publisher declares. Used where a rogue publisher's own samples could
@@ -114,10 +137,64 @@ class TestArmCommand(unittest.TestCase):
         rclpy.init()
         cls.node = Node("test_arm_command")
 
+        # Pelvis-pin monitor, on its OWN node spun by a background thread rather
+        # than sharing cls.node. It subscribes the sim's ~900 Hz /sportmodestate
+        # (position) and /lowstate (orientation); if those callbacks ran on
+        # cls.node they would compete with the main test's rclpy.spin_once()
+        # loop, which processes only one ready callback per call, and starve the
+        # rogue-guard step's shallow-history /arm_sdk captures of the terminal
+        # weight-0 sample (observed directly). A dedicated executor thread keeps
+        # them fully decoupled while still accumulating the pelvis's worst-case
+        # deviation across the whole bring-up -> ... -> guard sequence, which
+        # test_pelvis_stayed_pinned_through_sequence (sorted after it) asserts.
+        cls.pelvis = {"min_z": float("inf"), "max_tilt_deg": 0.0, "max_xy": 0.0, "pos_n": 0, "tilt_n": 0}
+        cls._pelvis_node = Node("test_arm_command_pelvis_monitor")
+        cls._pelvis_node.create_subscription(
+            SportModeState, "/sportmodestate", cls._pelvis_pos_cb, SIM_STATE_QOS
+        )
+        cls._pelvis_node.create_subscription(
+            LowState, "/lowstate", cls._pelvis_tilt_cb, SIM_STATE_QOS
+        )
+        cls._pelvis_exec = SingleThreadedExecutor()
+        cls._pelvis_exec.add_node(cls._pelvis_node)
+        cls._pelvis_stop = threading.Event()
+        cls._pelvis_thread = threading.Thread(target=cls._spin_pelvis_monitor, daemon=True)
+        cls._pelvis_thread.start()
+
+    @classmethod
+    def _spin_pelvis_monitor(cls):
+        while not cls._pelvis_stop.is_set():
+            cls._pelvis_exec.spin_once(timeout_sec=0.1)
+
+    @classmethod
+    def _stop_pelvis_monitor(cls):
+        if cls._pelvis_stop.is_set():
+            return
+        cls._pelvis_stop.set()
+        cls._pelvis_thread.join(timeout=5.0)
+        cls._pelvis_exec.remove_node(cls._pelvis_node)
+        cls._pelvis_node.destroy_node()
+
     @classmethod
     def tearDownClass(cls):
+        cls._stop_pelvis_monitor()
         cls.node.destroy_node()
         rclpy.shutdown()
+
+    @classmethod
+    def _pelvis_pos_cb(cls, msg):
+        x, y, z = msg.position[0], msg.position[1], msg.position[2]
+        cls.pelvis["min_z"] = min(cls.pelvis["min_z"], z)
+        cls.pelvis["max_xy"] = max(cls.pelvis["max_xy"], math.hypot(x, y))
+        cls.pelvis["pos_n"] += 1
+
+    @classmethod
+    def _pelvis_tilt_cb(cls, msg):
+        # Tilt of the base frame from upright, from the IMU quaternion's scalar
+        # part: angle = 2 * acos(|w|).
+        w = max(-1.0, min(1.0, abs(msg.imu_state.quaternion[0])))
+        cls.pelvis["max_tilt_deg"] = max(cls.pelvis["max_tilt_deg"], 2.0 * math.degrees(math.acos(w)))
+        cls.pelvis["tilt_n"] += 1
 
     def _spin_for(self, duration_s):
         deadline = time.monotonic() + duration_s
@@ -523,4 +600,35 @@ class TestArmCommand(unittest.TestCase):
             len(guard_samples),
             quiet_window_start_len,
             "component kept publishing /arm_sdk after the rogue guard should have gone quiet",
+        )
+
+    def test_pelvis_stayed_pinned_through_sequence(self):
+        # Sorts after test_full_arm_command_sequence (alphabetical method order),
+        # so by now the background pelvis monitor has accumulated across the
+        # entire sequence. Stop it first for a stable snapshot. This is the
+        # regression guard for the sim-only pelvis weld (sim.launch.py's
+        # pin_pelvis): without it the floating-base G1 topples on spawn in
+        # unitree_mujoco (no balance controller), and the arm-side checks above
+        # would still pass on a fully collapsed robot -- exactly the blind spot
+        # this closes. Fails loudly if the pin is off or not holding.
+        self._stop_pelvis_monitor()
+        self.assertGreater(self.pelvis["pos_n"], 0, "no /sportmodestate pelvis samples collected")
+        self.assertGreater(self.pelvis["tilt_n"], 0, "no /lowstate orientation samples collected")
+        self.assertGreater(
+            self.pelvis["min_z"],
+            PELVIS_MIN_Z,
+            f"pelvis fell to z={self.pelvis['min_z']:.3f} m (spawn {PELVIS_SPAWN_Z}) during the "
+            "sequence -- pelvis weld pin is not holding height",
+        )
+        self.assertLess(
+            self.pelvis["max_tilt_deg"],
+            PELVIS_MAX_TILT_DEG,
+            f"pelvis tilted {self.pelvis['max_tilt_deg']:.1f} deg from upright during the "
+            "sequence -- pelvis weld pin is not holding orientation",
+        )
+        self.assertLess(
+            self.pelvis["max_xy"],
+            PELVIS_MAX_XY_M,
+            f"pelvis translated {self.pelvis['max_xy']:.3f} m in xy during the sequence -- "
+            "pelvis weld pin is not holding position",
         )

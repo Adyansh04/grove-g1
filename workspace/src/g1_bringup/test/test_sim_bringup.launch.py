@@ -26,7 +26,15 @@ from launch.actions import IncludeLaunchDescription, TimerAction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
+from unitree_go.msg import SportModeState
 from unitree_hg.msg import LowState
+
+# Pelvis-pin bounds -- see test_arm_command.launch.py for the measured pinned-vs-
+# collapsed separation these come from. Here they gate the bring-up -> idle phase
+# specifically: the robot must already be standing (pelvis welded upright) before
+# any arm command, which is where an unpinned floating-base G1 topples.
+PELVIS_MIN_Z = 0.70
+PELVIS_MAX_TILT_DEG = 15.0
 
 # Xvfb + a 2 s sim-start delay + unitree_mujoco's own startup +
 # control.launch.py's controller loading all happen within this window (see
@@ -119,3 +127,29 @@ class TestSimBringup(unittest.TestCase):
         self.assertEqual(len(last.name), 14)
         for value in list(last.position) + list(last.velocity):
             self.assertTrue(math.isfinite(value), f"non-finite joint_states value: {value}")
+
+    def test_pelvis_pinned_upright_at_idle(self):
+        # bring-up -> idle: with sim.launch.py's pin_pelvis (default), the
+        # floating base is welded upright at spawn. An unpinned G1 topples here,
+        # before any arm command -- and every other check in this file passes on
+        # a collapsed robot, so this is the one that actually notices.
+        pose = self._collect_for(SportModeState, "/sportmodestate", 2.0)
+        tilt = self._collect_for(LowState, "/lowstate", 1.0)
+        self.assertGreater(len(pose), 0, "no /sportmodestate samples -- cannot check pelvis height")
+        self.assertGreater(len(tilt), 0, "no /lowstate samples -- cannot check pelvis orientation")
+
+        min_z = min(s.position[2] for s in pose)
+        self.assertGreater(
+            min_z,
+            PELVIS_MIN_Z,
+            f"pelvis at z={min_z:.3f} m at idle -- weld pin not holding; robot toppled on spawn",
+        )
+        max_tilt = max(
+            2.0 * math.degrees(math.acos(max(-1.0, min(1.0, abs(s.imu_state.quaternion[0])))))
+            for s in tilt
+        )
+        self.assertLess(
+            max_tilt,
+            PELVIS_MAX_TILT_DEG,
+            f"pelvis tilted {max_tilt:.1f} deg at idle -- weld pin not holding orientation",
+        )
