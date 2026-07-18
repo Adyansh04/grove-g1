@@ -49,10 +49,19 @@ UNITREE_ROBOTICS_LIB = "/opt/unitree_robotics/lib"
 # (which does correctly signal every process it started directly) tears it
 # down too.
 XVFB_DISPLAY = ":133"
-# Xvfb needs a moment to start accepting X11 connections; xvfb-run itself
-# polls for the socket to appear. A fixed delay is simpler here and
-# comfortably covers Xvfb's actual (sub-second) startup time.
-XVFB_STARTUP_DELAY_S = 2.0
+
+# The sim's first physics tick applies zero actuator torque until
+# arm_sdk_sim_bridge captures its first /lowstate sample and starts
+# publishing /lowcmd -- with no balance controller, a humanoid stance
+# collapses within the first few unactuated ticks. Delaying the sim's start
+# (not the rest of the stack) gives the bridge's /lowstate subscription and
+# controller_manager time to come up and DDS-match first, so the sim's very
+# first physics step is already commanded. This must apply unconditionally,
+# not just in headless mode: it was originally sized for Xvfb's startup
+# alone, and headless mode's incidental head start over the ROS graph is
+# what masked this race in validation -- headless:=false has zero delay by
+# default and can free-fall before the bridge is ready.
+SIM_START_DELAY_S = 2.0
 
 
 def _check_environment(context, *args, **kwargs):
@@ -101,7 +110,6 @@ def _launch_setup(context, *args, **kwargs):
     sim_env["LD_LIBRARY_PATH"] = UNITREE_ROBOTICS_LIB + ":" + sim_env.get("LD_LIBRARY_PATH", "")
 
     actions = []
-    sim_start_action = None
     if headless:
         xvfb_process = ExecuteProcess(
             cmd=["Xvfb", XVFB_DISPLAY, "-screen", "0", "1280x1024x24", "-nolisten", "tcp"],
@@ -117,13 +125,12 @@ def _launch_setup(context, *args, **kwargs):
         output="screen",
         env=sim_env,
     )
-    if headless:
-        # Delay only the sim's start, not the rest of the stack -- Xvfb, the
-        # bridge, and control.launch.py can all start immediately.
-        sim_start_action = TimerAction(period=XVFB_STARTUP_DELAY_S, actions=[sim_process])
-    else:
-        sim_start_action = sim_process
-    actions.append(sim_start_action)
+    # Delay only the sim's start, not the rest of the stack -- Xvfb (headless
+    # only), the bridge, and control.launch.py can all start immediately and
+    # use the head start to get their /lowstate subscription DDS-matched
+    # before the sim's first physics tick (see SIM_START_DELAY_S above).
+    sim_start_delay_s = float(LaunchConfiguration("sim_start_delay_s").perform(context))
+    actions.append(TimerAction(period=sim_start_delay_s, actions=[sim_process]))
 
     arm_sdk_sim_bridge_node = Node(
         package="g1_bringup",
@@ -166,6 +173,14 @@ def generate_launch_description():
                 "headless",
                 default_value="true",
                 description="Run unitree_mujoco against our own managed Xvfb (no GUI window).",
+            ),
+            DeclareLaunchArgument(
+                "sim_start_delay_s",
+                default_value=str(SIM_START_DELAY_S),
+                description="Seconds to delay unitree_mujoco's start relative to the rest of "
+                "the launch, so the bridge and controller_manager are DDS-ready before the "
+                "sim's first physics tick. Raise this if the robot still topples on startup "
+                "(slower discovery); do not set to 0.",
             ),
             OpaqueFunction(function=_launch_setup),
         ]
