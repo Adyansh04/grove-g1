@@ -60,6 +60,12 @@ if(BUILD_TESTING)
   ament_add_gmock(test_blend_math test/test_blend_math.cpp)
   target_link_libraries(test_blend_math blend_math)
 
+  # publishTick()'s /lowcmd assembly, extracted into assembleSimLowCmd() --
+  # leg/waist stiff-hold slots+gains, arm blend, weight-slot echo -- same
+  # directly-testable-without-a-live-node treatment as test_blend_math.
+  ament_add_gmock(test_assemble_sim_low_cmd test/test_assemble_sim_low_cmd.cpp)
+  target_link_libraries(test_assemble_sim_low_cmd blend_math)
+
   # workspace/ruff.toml and .clang-format are the workspace-root configs
   # bind-mounted alongside src/ (see g1_description/CMakeLists.txt for why
   # this is a plain CTest instead of ament_lint_common's uncrustify/flake8).

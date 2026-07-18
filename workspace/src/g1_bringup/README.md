@@ -193,11 +193,14 @@ colcon test-result --verbose
 ```
 
 `test_blend_math` covers the pure weight decay/resume policy and the hold/commanded blend with no
-sim or DDS required. `test/test_sim_bringup.launch.py` and `test/test_arm_command.launch.py` are
-headless `launch_testing` integration suites against the real sim (see their own docstrings for
-what each asserts). Plus `clang-format` against the repo root's `.clang-format`, `ruff` against
-`ruff.toml` (launch files, scripts, and tests), `ament_lint_cmake`, and `xmllint` on this package's
-own XML files.
+sim or DDS required. `test_assemble_sim_low_cmd` covers `publishTick()`'s `/lowcmd` assembly
+(extracted into `assembleSimLowCmd()`): leg/waist slots hold at the captured pose with their group
+gains, arm slots blend hold and commanded values by weight, and the weight slot echoes the
+effective weight -- same no-sim/no-DDS treatment as `test_blend_math`. `test/test_sim_bringup.launch.py`
+and `test/test_arm_command.launch.py` are headless `launch_testing` integration suites against the
+real sim (see their own docstrings for what each asserts). Plus `clang-format` against the repo
+root's `.clang-format`, `ruff` against `ruff.toml` (launch files, scripts, and tests),
+`ament_lint_cmake`, and `xmllint` on this package's own XML files.
 
 ## Language note
 
