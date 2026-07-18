@@ -1,5 +1,7 @@
 #include "g1_bringup/arm_sdk_sim_bridge_node.hpp"
 
+#include <stdexcept>
+
 #include "g1_bringup/blend_math.hpp"
 #include "g1_hardware_interface/motor_crc_hg.hpp"
 
@@ -19,6 +21,30 @@ ArmSdkSimBridge::ArmSdkSimBridge(const rclcpp::NodeOptions& options)
     const double arm_sdk_timeout_ms = declare_parameter("arm_sdk_timeout_ms", 500.0);
     arm_sdk_timeout_s_              = arm_sdk_timeout_ms / 1000.0;
     timeout_ramp_down_s_            = declare_parameter("timeout_ramp_down_s", 1.0);
+
+    // Fail fast on a nonsensical rate/duration tunable, mirroring
+    // g1_hardware_interface::G1ArmSdkSystem::on_init's strictly-positive
+    // gate. publish_rate_hz <= 0 makes the wall-timer period's
+    // duration_cast undefined and breaks the first tick's dt;
+    // arm_sdk_timeout_s/timeout_ramp_down_s <= 0 turns the advertised
+    // no-snap staleness decay into an instantaneous snap (or an upward
+    // ramp) via stepEffectiveWeight's max_step. Gains (leg/waist/arm_hold
+    // kp/kd) are left unchecked here, same as G1ArmSdkSystem::on_init
+    // leaves its own per-joint kp/kd unchecked -- only the rate/duration
+    // tunables are load-bearing for avoiding UB/snap-on-misconfiguration.
+    if (publish_rate_hz_ <= 0.0 || arm_sdk_timeout_s_ <= 0.0 || timeout_ramp_down_s_ <= 0.0)
+    {
+        RCLCPP_FATAL(
+            get_logger(),
+            "publish_rate_hz (%f), arm_sdk_timeout_ms (%f s), and timeout_ramp_down_s (%f) must "
+            "all be strictly positive",
+            publish_rate_hz_,
+            arm_sdk_timeout_s_,
+            timeout_ramp_down_s_);
+        throw std::invalid_argument(
+            "arm_sdk_sim_bridge: publish_rate_hz/arm_sdk_timeout_ms/timeout_ramp_down_s must be "
+            "strictly positive");
+    }
 
     // Best-effort: matches unitree_mujoco's own rt/lowstate publisher QoS
     // family (best-effort-compatible; verified RELIABLE in the milestone-1
@@ -60,12 +86,6 @@ ArmSdkSimBridge::ArmSdkSimBridge(const rclcpp::NodeOptions& options)
 
 void ArmSdkSimBridge::lowstateCallback(unitree_hg::msg::LowState::SharedPtr msg)
 {
-    for (int i = 0; i < kNumArmMotors; ++i)
-    {
-        latest_arm_measured_[static_cast<std::size_t>(i)] =
-            msg->motor_state[static_cast<std::size_t>(kFirstArmMotor + i)].q;
-    }
-
     if (hold_pose_captured_)
     {
         return;
@@ -116,43 +136,21 @@ void ArmSdkSimBridge::publishTick()
     effective_weight_ =
         stepEffectiveWeight(effective_weight_, arm_cmd_weight_, stale, timeout_ramp_down_s_, dt);
 
-    unitree_hg::msg::LowCmd cmd;  // rosidl-generated: zero-initialized, including reserved slots
-                                  // and mode/mode_pr/mode_machine -- see the comment below on why
-                                  // those are deliberately left untouched.
-
-    for (int i = 0; i < kNumLegMotors; ++i)
-    {
-        auto& motor = cmd.motor_cmd[static_cast<std::size_t>(i)];
-        motor.q     = static_cast<float>(hold_q_[static_cast<std::size_t>(i)]);
-        motor.dq    = 0.0F;
-        motor.tau   = 0.0F;
-        motor.kp    = static_cast<float>(leg_kp_);
-        motor.kd    = static_cast<float>(leg_kd_);
-    }
-    for (int i = kNumLegMotors; i < kFirstArmMotor; ++i)
-    {
-        auto& motor = cmd.motor_cmd[static_cast<std::size_t>(i)];
-        motor.q     = static_cast<float>(hold_q_[static_cast<std::size_t>(i)]);
-        motor.dq    = 0.0F;
-        motor.tau   = 0.0F;
-        motor.kp    = static_cast<float>(waist_kp_);
-        motor.kd    = static_cast<float>(waist_kd_);
-    }
-    for (int i = 0; i < kNumArmMotors; ++i)
-    {
-        const auto idx         = static_cast<std::size_t>(i);
-        const int  motor_index = kFirstArmMotor + i;
-        auto&      motor       = cmd.motor_cmd[static_cast<std::size_t>(motor_index)];
-        motor.q                = static_cast<float>(blend(
-            hold_q_[static_cast<std::size_t>(motor_index)],
-            arm_cmd_q_[idx],
-            effective_weight_));
-        motor.dq               = 0.0F;
-        motor.tau              = 0.0F;
-        motor.kp = static_cast<float>(blend(arm_hold_kp_, arm_cmd_kp_[idx], effective_weight_));
-        motor.kd = static_cast<float>(blend(arm_hold_kd_, arm_cmd_kd_[idx], effective_weight_));
-    }
-    cmd.motor_cmd[kWeightMotorIndex].q = static_cast<float>(effective_weight_);
+    // assembleSimLowCmd() (blend_math) does the leg/waist stiff-hold,
+    // arm blend, and weight-slot echo -- unit-tested directly (see
+    // test/test_assemble_sim_low_cmd.cpp) without a live node or DDS.
+    unitree_hg::msg::LowCmd cmd = assembleSimLowCmd(
+        hold_q_,
+        arm_cmd_q_,
+        arm_cmd_kp_,
+        arm_cmd_kd_,
+        effective_weight_,
+        leg_kp_,
+        leg_kd_,
+        waist_kp_,
+        waist_kd_,
+        arm_hold_kp_,
+        arm_hold_kd_);
 
     // mode/mode_pr/mode_machine are deliberately never set: read directly
     // from unitree_mujoco's own source

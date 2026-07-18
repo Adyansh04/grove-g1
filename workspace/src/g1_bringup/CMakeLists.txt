@@ -12,6 +12,7 @@ target_include_directories(blend_math PUBLIC
   $<INSTALL_INTERFACE:include>
 )
 target_compile_features(blend_math PUBLIC cxx_std_17)
+ament_target_dependencies(blend_math PUBLIC unitree_hg)
 
 add_executable(arm_sdk_sim_bridge
   src/arm_sdk_sim_bridge_node.cpp

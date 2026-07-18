@@ -2,26 +2,15 @@
 #define G1_BRINGUP__ARM_SDK_SIM_BRIDGE_NODE_HPP_
 
 #include <array>
-#include <atomic>
 #include <chrono>
 
+#include "g1_bringup/blend_math.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "unitree_hg/msg/low_cmd.hpp"
 #include "unitree_hg/msg/low_state.hpp"
 
 namespace g1_bringup
 {
-
-// Motor index layout shared with g1_hardware_interface and Unitree's own G1
-// examples: legs 0-11, waist 12-14, arms 15-28, weight slot 29 (see
-// unitree_ros2's example/src/include/g1/g1.hpp, G1Arm7JointIndex).
-inline constexpr int kNumLegMotors  = 12;
-inline constexpr int kFirstArmMotor = 15;
-inline constexpr int kNumArmMotors  = 14;
-// 29 total, matching the sim's G1 MJCF (29-DoF, no hands -- confirmed in the
-// milestone-1 spike).
-inline constexpr int         kNumBodyMotors    = kFirstArmMotor + kNumArmMotors;
-inline constexpr std::size_t kWeightMotorIndex = 29;
 
 // SIM-ONLY stand-in for the onboard motion service -- see the package
 // README's safety banner. unitree_mujoco emulates only the low-level device
@@ -83,11 +72,6 @@ private:
     double                                arm_cmd_weight_{ 0.0 };
     bool                                  arm_sdk_received_{ false };
     std::chrono::steady_clock::time_point arm_sdk_arrival_{};
-
-    // Kept for diagnostics only (e.g. comparing commanded vs. measured arm
-    // position when debugging sim behavior) -- the LowCmd assembly below
-    // always blends from the frozen hold_q_, never from this.
-    std::array<double, kNumArmMotors> latest_arm_measured_{};
 
     // Persistent across ticks: stepEffectiveWeight() needs the previous
     // value to slew from, and last_tick_ gives it a real dt even though this
