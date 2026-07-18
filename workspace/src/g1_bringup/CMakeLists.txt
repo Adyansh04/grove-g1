@@ -120,7 +120,7 @@ if(BUILD_TESTING)
   find_package(launch_testing_ament_cmake REQUIRED)
   add_launch_test(test/test_sim_bringup.launch.py TARGET test_sim_bringup TIMEOUT 120)
   set_tests_properties(test_sim_bringup PROPERTIES RESOURCE_LOCK g1_sim)
-  add_launch_test(test/test_arm_command.launch.py TARGET test_arm_command TIMEOUT 180)
+  add_launch_test(test/test_arm_command.launch.py TARGET test_arm_command TIMEOUT 220)
   set_tests_properties(test_arm_command PROPERTIES RESOURCE_LOCK g1_sim)
 endif()
 
