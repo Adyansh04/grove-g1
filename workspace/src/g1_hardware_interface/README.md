@@ -83,8 +83,9 @@ Per arm joint (14 total: shoulder pitch/roll/yaw, elbow, wrist roll/pitch/yaw, l
 The sim (`unitree_mujoco`) emulates only the low-level device: it subscribes `/lowcmd` and
 publishes `/lowstate`, but nothing in sim subscribes `/arm_sdk` -- there's no onboard motion
 service to close the loop with in simulation. Validating against the sim (see below) proves this
-plugin's own output (ramp shape, hold accuracy, publish rate, CRC, safety behavior); a separate
-sim-only bridge node (a later package) closes the loop kinematically for end-to-end sim testing.
+plugin's own output (ramp shape, hold accuracy, publish rate, CRC, safety behavior); `g1_bringup`'s
+`arm_sdk_sim_bridge` node closes the loop kinematically for end-to-end sim testing (see that
+package's README).
 
 ## Parameters (all via the URDF's `<ros2_control><hardware><param>` tags)
 
@@ -165,7 +166,8 @@ components exist.
 **Activation/release ordering.** Acquire: activate this component *before* activating
 `arm_trajectory_controller` (Humble ties command-interface availability to component state; the
 reverse order can fail the controller switch). Release: deactivate the controller *before*
-deactivating this component. Enforced in `g1_bringup`'s launch sequencing (a later package).
+deactivating this component. Enforced by `g1_bringup`'s `activate_arm`/`deactivate_arm` (see that
+package's README).
 
 **Stop procedure.** Deactivate before killing the launch is the documented normal path. Killing the
 process while active still ramps down safely: confirmed directly that Humble's `controller_manager`
@@ -226,10 +228,13 @@ different, full-authority channel; the arm_sdk motion service evidently doesn't 
 
 ## Exercising this against the sim
 
-Not yet wired into a launch file -- that's `g1_bringup`, the next package in this milestone. In the
-meantime, manual validation used a scratch `controller_manager` (`ros2_control_node`) loaded with
+Wired end to end into `g1_bringup`'s `sim.launch.py` (`unitree_mujoco` + this component +
+`arm_sdk_sim_bridge`) and its `activate_arm`/`deactivate_arm` operating procedure -- see that
+package's README, plus its `test/test_sim_bringup.launch.py` and `test/test_arm_command.launch.py`
+integration suites. The representative numbers below predate `g1_bringup` and were captured during
+manual validation with a scratch `controller_manager` (`ros2_control_node`) loaded with
 `g1_description`'s expanded URDF and `robot_state_publisher`, against a headless `unitree_mujoco`
-(G1). Representative numbers observed:
+(G1):
 
 - `/lowstate` at ~900 Hz in sim; `/joint_states` (via `joint_state_broadcaster`) at the configured
   200 Hz with real, non-zero measured arm positions.
