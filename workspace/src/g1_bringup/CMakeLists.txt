@@ -15,6 +15,15 @@ target_include_directories(blend_math PUBLIC
 target_compile_features(blend_math PUBLIC cxx_std_17)
 ament_target_dependencies(blend_math PUBLIC unitree_hg)
 
+# Sim-only LocoClient FSM legality table behind motion_service_sim's /api/sport/request
+# responder -- pure C++, no ROS deps, same internal-build-artifact treatment as blend_math.
+add_library(loco_fsm src/loco_fsm.cpp)
+target_include_directories(loco_fsm PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+target_compile_features(loco_fsm PUBLIC cxx_std_17)
+
 add_executable(motion_service_sim
   src/motion_service_sim_node.cpp
   src/motion_service_sim_main.cpp
@@ -33,6 +42,7 @@ ament_target_dependencies(motion_service_sim rclcpp unitree_hg)
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   target_compile_options(motion_service_sim PRIVATE -Wall -Wextra)
   target_compile_options(blend_math PRIVATE -Wall -Wextra)
+  target_compile_options(loco_fsm PRIVATE -Wall -Wextra)
 endif()
 
 # blend_math is an internal build artifact (statically linked into
@@ -66,6 +76,11 @@ if(BUILD_TESTING)
   # directly-testable-without-a-live-node treatment as test_blend_math.
   ament_add_gmock(test_assemble_sim_low_cmd test/test_assemble_sim_low_cmd.cpp)
   target_link_libraries(test_assemble_sim_low_cmd blend_math)
+
+  # The sim-only LocoClient FSM legality table -- every legal/illegal SET_FSM_ID edge and
+  # SET_VELOCITY's Start-only gate, directly testable without a live node or DDS.
+  ament_add_gmock(test_loco_fsm test/test_loco_fsm.cpp)
+  target_link_libraries(test_loco_fsm loco_fsm)
 
   # workspace/ruff.toml and .clang-format are the workspace-root configs
   # bind-mounted alongside src/ (see g1_description/CMakeLists.txt for why
