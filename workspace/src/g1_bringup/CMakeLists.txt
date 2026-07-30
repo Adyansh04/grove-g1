@@ -4,7 +4,10 @@ project(g1_bringup)
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(unitree_hg REQUIRED)
+find_package(geometry_msgs REQUIRED)
 find_package(g1_hardware_interface REQUIRED)
+# Sim-only: drives the walking policy. Nothing hardware-facing links Torch.
+find_package(Torch REQUIRED)
 
 add_library(blend_math src/blend_math.cpp)
 target_include_directories(blend_math PUBLIC
@@ -29,16 +32,40 @@ target_link_libraries(motion_service_sim
 )
 ament_target_dependencies(motion_service_sim rclcpp unitree_hg)
 
+# Pure observation/action math for the walking policy, kept separate from the
+# node so it is unit-testable without libtorch or a live sim.
+add_library(walk_policy src/walk_policy.cpp)
+target_include_directories(walk_policy PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+target_compile_features(walk_policy PUBLIC cxx_std_17)
+
+add_executable(walk_policy_sim
+  src/walk_policy_sim_node.cpp
+  src/walk_policy_sim_main.cpp
+)
+target_include_directories(walk_policy_sim PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+target_compile_features(walk_policy_sim PUBLIC cxx_std_17)
+target_link_libraries(walk_policy_sim walk_policy "${TORCH_LIBRARIES}")
+ament_target_dependencies(walk_policy_sim rclcpp unitree_hg geometry_msgs)
+
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   target_compile_options(motion_service_sim PRIVATE -Wall -Wextra)
   target_compile_options(blend_math PRIVATE -Wall -Wextra)
+  target_compile_options(walk_policy PRIVATE -Wall -Wextra)
+  # Torch's own headers trip -Wall/-Wextra, so the node target is left at
+  # default warnings; its logic lives in walk_policy, which is covered above.
 endif()
 
 # blend_math is an internal build artifact (statically linked into
 # motion_service_sim and test_blend_math/test_assemble_sim_low_cmd only) --
 # no install rule: installing the bare archive with neither its headers nor
 # an exported target would be unusable downstream anyway.
-install(TARGETS motion_service_sim DESTINATION lib/${PROJECT_NAME})
+install(TARGETS motion_service_sim walk_policy_sim DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY config launch mjcf DESTINATION share/${PROJECT_NAME})
 
@@ -65,6 +92,12 @@ if(BUILD_TESTING)
   # directly-testable-without-a-live-node treatment as test_blend_math.
   ament_add_gmock(test_assemble_sim_low_cmd test/test_assemble_sim_low_cmd.cpp)
   target_link_libraries(test_assemble_sim_low_cmd blend_math)
+
+  # The walking policy's observation layout and scales, transcribed from the
+  # vendored source -- pinned here so a silent drift shows up as a test
+  # failure rather than as a policy that runs and then falls over.
+  ament_add_gmock(test_walk_policy test/test_walk_policy.cpp)
+  target_link_libraries(test_walk_policy walk_policy)
 
   # workspace/ruff.toml and .clang-format are the workspace-root configs
   # bind-mounted alongside src/ (see g1_description/CMakeLists.txt for why

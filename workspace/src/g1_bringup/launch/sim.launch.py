@@ -185,6 +185,27 @@ def _launch_setup(context, *args, **kwargs):
         ],
     )
 
+    """Walking policy runs exactly when the pelvis is free.
+
+    Tying both to one argument makes the two broken combinations
+    unrepresentable: a welded pelvis with a policy thrashing against the weld,
+    and a free pelvis with nothing balancing it (which topples in about a
+    second and a half).
+    """
+    walk_policy_node = None
+    if not pin_pelvis:
+        walk_policy_node = Node(
+            package="g1_bringup",
+            executable="walk_policy_sim",
+            name="walk_policy_sim",
+            output="screen",
+            parameters=[
+                os.path.join(
+                    get_package_share_directory("g1_bringup"), "config", "walk_policy_sim.yaml"
+                )
+            ],
+        )
+
     control_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(get_package_share_directory("g1_bringup"), "launch", "control.launch.py")
@@ -202,7 +223,10 @@ def _launch_setup(context, *args, **kwargs):
         )
     )
 
-    actions.extend([motion_service_sim_node, control_launch, shutdown_on_sim_exit])
+    actions.append(motion_service_sim_node)
+    if walk_policy_node is not None:
+        actions.append(walk_policy_node)
+    actions.extend([control_launch, shutdown_on_sim_exit])
     return actions
 
 
@@ -218,10 +242,11 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "pin_pelvis",
                 default_value="true",
-                description="Weld the pelvis to the world (SIM-ONLY balance scaffolding) so the "
-                "arm bridge can be validated without a balance controller. Set false once a real "
-                "balance/locomotion controller (LocoClient milestone) is available; the robot "
-                "will otherwise topple on spawn in unitree_mujoco.",
+                description="Weld the pelvis to the world (SIM-ONLY scaffolding), and with it "
+                "suppress the walking policy, which is launched exactly when this is false. "
+                "Still true by default: the pretrained policy does not yet balance this 29-DoF "
+                "robot (see the README's walking-policy status), so an unpinned launch topples. "
+                "Set false to work on that.",
             ),
             DeclareLaunchArgument(
                 "sim_start_delay_s",

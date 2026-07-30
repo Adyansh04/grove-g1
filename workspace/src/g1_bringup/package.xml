@@ -16,6 +16,7 @@
 
   <depend>rclcpp</depend>
   <depend>unitree_hg</depend>
+  <depend>geometry_msgs</depend>
   <depend>g1_hardware_interface</depend>
 
   <depend>g1_description</depend>

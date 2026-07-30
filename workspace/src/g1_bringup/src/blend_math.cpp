@@ -33,7 +33,8 @@ unitree_hg::msg::LowCmd assembleSimLowCmd(
     const std::array<double, kNumArmMotors>&  arm_cmd_q,
     const std::array<double, kNumArmMotors>&  arm_cmd_kp,
     const std::array<double, kNumArmMotors>& arm_cmd_kd, double weight, double leg_kp,
-    double leg_kd, double waist_kp, double waist_kd, double arm_hold_kp, double arm_hold_kd)
+    double leg_kd, double waist_kp, double waist_kd, double arm_hold_kp, double arm_hold_kd,
+    const LegPolicyCommand& leg_policy)
 {
     /*
      * rosidl-generated: zero-initialized, including reserved slots and mode/mode_pr/mode_machine
@@ -41,14 +42,21 @@ unitree_hg::msg::LowCmd assembleSimLowCmd(
      */
     unitree_hg::msg::LowCmd cmd;
 
+    /*
+     * Legs blend between the captured hold pose and the walking policy on q, kp
+     * and kd alike -- the same shape the arms already use for the arm_sdk
+     * weight. At leg_policy.weight == 0 every term collapses to the hold value,
+     * so this reproduces the stiff-hold-only assembly bit for bit.
+     */
     for (int i = 0; i < kNumLegMotors; ++i)
     {
-        auto& motor = cmd.motor_cmd[static_cast<std::size_t>(i)];
-        motor.q     = static_cast<float>(hold_q[static_cast<std::size_t>(i)]);
-        motor.dq    = 0.0F;
-        motor.tau   = 0.0F;
-        motor.kp    = static_cast<float>(leg_kp);
-        motor.kd    = static_cast<float>(leg_kd);
+        const auto idx   = static_cast<std::size_t>(i);
+        auto&      motor = cmd.motor_cmd[idx];
+        motor.q   = static_cast<float>(blend(hold_q[idx], leg_policy.q[idx], leg_policy.weight));
+        motor.dq  = 0.0F;
+        motor.tau = 0.0F;
+        motor.kp  = static_cast<float>(blend(leg_kp, leg_policy.kp[idx], leg_policy.weight));
+        motor.kd  = static_cast<float>(blend(leg_kd, leg_policy.kd[idx], leg_policy.weight));
     }
     for (int i = kNumLegMotors; i < kFirstArmMotor; ++i)
     {

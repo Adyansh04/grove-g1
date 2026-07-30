@@ -74,6 +74,22 @@ double stepEffectiveWeight(
     double timeout_ramp_down_s, double dt_s);
 
 /**
+ * @brief Leg targets from the sim walking policy, and how much authority it currently has.
+ *
+ * `weight` is the leg handoff: 0 leaves the legs stiff-held at the captured
+ * pose (the behavior before a walking policy existed), 1 hands them entirely to
+ * the policy, and values between are the ramp. It is slewed rather than
+ * switched so authority never changes in a single tick.
+ */
+struct LegPolicyCommand
+{
+    std::array<double, kNumLegMotors> q{};
+    std::array<double, kNumLegMotors> kp{};
+    std::array<double, kNumLegMotors> kd{};
+    double                            weight{ 0.0 };
+};
+
+/**
  * @brief Assembles a full-body /lowcmd from the frozen hold pose and the latest /arm_sdk command.
  *
  * Legs (0-11) + waist (12-14) are stiff-held at `hold_q`'s value with the
@@ -103,7 +119,8 @@ unitree_hg::msg::LowCmd assembleSimLowCmd(
     const std::array<double, kNumArmMotors>&  arm_cmd_q,
     const std::array<double, kNumArmMotors>&  arm_cmd_kp,
     const std::array<double, kNumArmMotors>& arm_cmd_kd, double weight, double leg_kp,
-    double leg_kd, double waist_kp, double waist_kd, double arm_hold_kp, double arm_hold_kd);
+    double leg_kd, double waist_kp, double waist_kd, double arm_hold_kp, double arm_hold_kd,
+    const LegPolicyCommand& leg_policy = {});
 
 }  // namespace g1_bringup
 

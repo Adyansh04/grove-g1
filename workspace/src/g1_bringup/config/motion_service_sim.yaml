@@ -35,3 +35,10 @@
     # snap either way).
     arm_sdk_timeout_ms: 500.0
     timeout_ramp_down_s: 1.0
+
+    # Leg handoff between the stiff-hold and the sim walking policy. The ramp
+    # is slewed (never switched) so leg authority cannot change in one tick;
+    # the timeout is what "the policy is gone" means, after which the legs ease
+    # back to a freshly-captured hold pose.
+    leg_handoff_s: 0.5
+    walk_policy_timeout_ms: 200.0
