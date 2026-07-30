@@ -3,12 +3,14 @@ project(g1_locomotion)
 
 find_package(ament_cmake REQUIRED)
 find_package(nlohmann_json REQUIRED)
+find_package(unitree_api REQUIRED)
 
 # Pure, ROS-free wire-contract logic -- unit-tested directly with no rclcpp node needed (mirrors
 # g1_hardware_interface's arm_ramp_engine and g1_bringup's blend_math). Grows across later commits;
 # g1_loco_bridge (the lifecycle node) links it once it lands.
 add_library(g1_loco_bridge_core
   src/loco_payloads.cpp
+  src/loco_request_correlator.cpp
 )
 target_include_directories(g1_loco_bridge_core PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -16,6 +18,7 @@ target_include_directories(g1_loco_bridge_core PUBLIC
 )
 target_compile_features(g1_loco_bridge_core PUBLIC cxx_std_17)
 target_link_libraries(g1_loco_bridge_core PUBLIC nlohmann_json::nlohmann_json)
+ament_target_dependencies(g1_loco_bridge_core PUBLIC unitree_api)
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   target_compile_options(g1_loco_bridge_core PRIVATE -Wall -Wextra)
 endif()
@@ -29,6 +32,11 @@ if(BUILD_TESTING)
   # Exact-JSON wire-payload builders/parser -- directly testable without a live node or DDS.
   ament_add_gmock(test_loco_payloads test/test_loco_payloads.cpp)
   target_link_libraries(test_loco_payloads g1_loco_bridge_core)
+
+  # The async correlator: overlapping/out-of-order requests, sweep() timeouts, the orphaned-
+  # response race, supersede(), and the max_pending bound.
+  ament_add_gmock(test_loco_correlator test/test_loco_correlator.cpp)
+  target_link_libraries(test_loco_correlator g1_loco_bridge_core)
 
   # workspace/ruff.toml's sibling root config; see g1_hardware_interface/CMakeLists.txt for why
   # this is a plain CTest instead of ament_lint_common's uncrustify.
