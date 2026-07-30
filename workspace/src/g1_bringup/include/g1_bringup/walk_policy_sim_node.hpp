@@ -57,18 +57,17 @@ private:
     void publishLegTargets(const std::array<double, kNumPolicyJoints>& targets);
 
     /**
-     * @brief Startup phases, mirroring the vendor's own deployment sequence.
+     * @brief Startup phases: wait for state feedback, then run.
      *
-     * The policy is only valid around the posture it was trained from, so the
-     * robot has to be eased into that posture before the first inference. The
-     * vendor's deploy script does exactly this (`move_to_default_pos()` for two
-     * seconds, then the policy loop); skipping it makes the very first action
-     * garbage and the robot falls over immediately -- measured, not theorised.
+     * Deliberately no posture ramp. The vendor's MuJoCo deployment enters its
+     * policy loop immediately with the default posture as the initial target,
+     * and matching that matters: easing a spawned, upright, unbalanced robot
+     * into the crouched default posture instead makes it squat and topple
+     * before the policy runs at all (measured).
      */
     enum class Phase : std::uint8_t
     {
         kWaitingForState,
-        kMovingToDefault,
         kRunning,
     };
 
@@ -76,8 +75,6 @@ private:
     torch::jit::script::Module policy_;
 
     double publish_rate_hz_{};
-    /// Seconds spent easing from the spawn posture into the policy's default posture.
-    double default_pose_ramp_s_{};
     /// Per-joint gains the policy expects; from the vendor's `kps`/`kds` for the legs.
     std::array<double, kNumPolicyJoints> kps_{};
     std::array<double, kNumPolicyJoints> kds_{};
@@ -98,9 +95,7 @@ private:
     std::array<double, kNumPolicyJoints> previous_action_{};
     std::array<double, 3>                command_mps_{};
 
-    Phase phase_{ Phase::kWaitingForState };
-    /// Posture measured when the ramp began; the ramp interpolates from here.
-    std::array<double, kNumPolicyJoints>  ramp_start_q_{};
+    Phase                                 phase_{ Phase::kWaitingForState };
     std::chrono::steady_clock::time_point phase_start_{};
     /// Gait clock starts when inference does, not at construction.
     std::chrono::steady_clock::time_point run_start_{};

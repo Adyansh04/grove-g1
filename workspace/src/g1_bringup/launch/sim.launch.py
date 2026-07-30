@@ -38,7 +38,7 @@ G1_MODEL_DIR = os.path.normpath(
 # lives in g1_bringup (mjcf/g1_pinned_scene.xml); it is copied here at launch so
 # its relative <include> and the model's own meshdir resolve against the vendored
 # directory (see the overlay's header comment for why staging is required).
-STAGED_SCENE_NAME = "g1_pinned_scene.staged.xml"
+STAGED_SCENE_NAME = "g1_grove_scene.staged.xml"
 
 # unitree_mujoco is a native unitree_sdk2 DDS app, not a ROS node, and links
 # its own build of CycloneDDS from here. Sourcing a ROS environment (as any
@@ -138,27 +138,34 @@ def _launch_setup(context, *args, **kwargs):
     # than an absolute -s path) is required for MuJoCo's relative asset
     # resolution -- see mjcf/g1_pinned_scene.xml. Without pinning the sim loads
     # its default scene and the robot topples on spawn.
-    sim_cmd = [UNITREE_MUJOCO_BIN, "-r", "g1"]
-    if pin_pelvis:
-        staged_path = os.path.join(G1_MODEL_DIR, STAGED_SCENE_NAME)
-        overlay_src = os.path.join(
-            get_package_share_directory("g1_bringup"), "mjcf", "g1_pinned_scene.xml"
-        )
-        shutil.copyfile(overlay_src, staged_path)
-        sim_cmd += ["-s", STAGED_SCENE_NAME]
+    """Always stage one of our own scenes -- never fall through to the sim's default.
 
-        def _remove_staged_scene(context, *a, **k):
-            try:
-                os.remove(staged_path)
-            except OSError:
-                pass
-            return []
+    unitree_mujoco's own g1 scene.xml is an obstacle course (103 geoms: boxes,
+    cylinders, ramps, stairs, height fields). Loading it for locomotion work
+    spawns the robot among obstacles that knock it over, which looks exactly
+    like a balance failure and is not one. Both of our scenes are a bare floor;
+    the only difference between them is the pelvis weld.
+    """
+    overlay_name = "g1_pinned_scene.xml" if pin_pelvis else "g1_flat_scene.xml"
+    staged_path  = os.path.join(G1_MODEL_DIR, STAGED_SCENE_NAME)
+    overlay_src  = os.path.join(
+        get_package_share_directory("g1_bringup"), "mjcf", overlay_name
+    )
+    shutil.copyfile(overlay_src, staged_path)
+    sim_cmd = [UNITREE_MUJOCO_BIN, "-r", "g1", "-s", STAGED_SCENE_NAME]
 
-        actions.append(
-            RegisterEventHandler(
-                OnShutdown(on_shutdown=[OpaqueFunction(function=_remove_staged_scene)])
-            )
+    def _remove_staged_scene(context, *a, **k):
+        try:
+            os.remove(staged_path)
+        except OSError:
+            pass
+        return []
+
+    actions.append(
+        RegisterEventHandler(
+            OnShutdown(on_shutdown=[OpaqueFunction(function=_remove_staged_scene)])
         )
+    )
 
     sim_process = ExecuteProcess(
         cmd=sim_cmd,

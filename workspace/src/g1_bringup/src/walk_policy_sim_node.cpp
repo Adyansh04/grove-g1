@@ -29,8 +29,7 @@ WalkPolicySim::WalkPolicySim(const rclcpp::NodeOptions& options)
     const std::string policy_path = declare_parameter(
         "policy_path",
         "/opt/unitree_robotics/unitree_rl_gym/deploy/pre_train/g1/motion.pt");
-    publish_rate_hz_     = declare_parameter("publish_rate_hz", 50.0);  // vendor control_dt = 0.02
-    default_pose_ramp_s_ = declare_parameter("default_pose_ramp_s", 2.0);
+    publish_rate_hz_ = declare_parameter("publish_rate_hz", 50.0);  // vendor control_dt = 0.02
 
     config_.ang_vel_scale = declare_parameter("ang_vel_scale", config_.ang_vel_scale);
     config_.dof_pos_scale = declare_parameter("dof_pos_scale", config_.dof_pos_scale);
@@ -182,35 +181,24 @@ void WalkPolicySim::inferenceTick()
 
     if (phase_ == Phase::kWaitingForState)
     {
-        // First state in hand: latch the posture the ramp starts from.
-        ramp_start_q_ = joint_position_;
-        phase_start_  = now;
-        phase_        = Phase::kMovingToDefault;
-        RCLCPP_INFO(
-            get_logger(),
-            "easing into the policy's default posture over %.1f s before inference starts",
-            default_pose_ramp_s_);
-    }
-
-    if (phase_ == Phase::kMovingToDefault)
-    {
-        const double elapsed_s = std::chrono::duration<double>(now - phase_start_).count();
-        const double alpha     = std::clamp(elapsed_s / default_pose_ramp_s_, 0.0, 1.0);
-
-        std::array<double, kNumPolicyJoints> targets{};
-        for (std::size_t i = 0; i < kNumPolicyJoints; ++i)
-        {
-            targets[i] = (ramp_start_q_[i] * (1.0 - alpha)) + (config_.default_angles[i] * alpha);
-        }
-        publishLegTargets(targets);
-
-        if (alpha >= 1.0)
-        {
-            phase_     = Phase::kRunning;
-            run_start_ = now;
-            RCLCPP_INFO(get_logger(), "default posture reached; running the walking policy");
-        }
-        return;
+        /*
+         * Straight to inference on the first state sample, matching the
+         * vendor's own MuJoCo deployment: it sets the default posture as the
+         * initial target and enters the policy loop immediately.
+         *
+         * Its other entry point, deploy_real.py, first eases from wherever the
+         * limp robot is lying into that posture over two seconds -- that is for
+         * a real robot with an operator present, and it is actively wrong here.
+         * Measured: ramping a spawned, upright, unbalanced robot into the
+         * crouched default posture makes it squat and topple before the policy
+         * ever runs, and no locomotion policy recovers from a fall.
+         *
+         * previous_action_ starts zeroed, so the first target this publishes is
+         * exactly the default posture -- the vendor's pre-loop initial value.
+         */
+        phase_     = Phase::kRunning;
+        run_start_ = now;
+        RCLCPP_INFO(get_logger(), "state feedback acquired; running the walking policy");
     }
 
     const double elapsed_s = std::chrono::duration<double>(now - run_start_).count();
