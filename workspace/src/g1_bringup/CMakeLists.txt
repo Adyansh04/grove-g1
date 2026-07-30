@@ -142,6 +142,8 @@ if(BUILD_TESTING)
   set_tests_properties(test_sim_bringup PROPERTIES RESOURCE_LOCK g1_sim)
   add_launch_test(test/test_arm_command.launch.py TARGET test_arm_command TIMEOUT 220)
   set_tests_properties(test_arm_command PROPERTIES RESOURCE_LOCK g1_sim)
+  add_launch_test(test/test_loco.launch.py TARGET test_loco TIMEOUT 180)
+  set_tests_properties(test_loco PROPERTIES RESOURCE_LOCK g1_sim)
 endif()
 
 ament_package()

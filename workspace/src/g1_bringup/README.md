@@ -9,8 +9,9 @@ C++17 node + Python launch files and integration tests.
 
 | File | What it does |
 |---|---|
-| `launch/sim.launch.py` | The main entry point. Env fail-fast, then `unitree_mujoco` + `motion_service_sim` + `control.launch.py`. Args: `headless` (default `true`), `pin_pelvis` (default `true`, see "Pelvis pin"), `sim_start_delay_s` (default `2.0`). |
+| `launch/sim.launch.py` | The main entry point. Env fail-fast, then `unitree_mujoco` + `motion_service_sim` + `control.launch.py` + `loco.launch.py`. Args: `headless` (default `true`), `pin_pelvis` (default `true`, see "Pelvis pin"), `sim_start_delay_s` (default `2.0`). |
 | `launch/control.launch.py` | Composition-pure: `robot_state_publisher` + `ros2_control_node` + spawners. No sim, no bridge -- carries over unchanged to hardware bring-up. |
+| `launch/loco.launch.py` | Brings up `g1_locomotion`'s `g1_loco_bridge` and drives it configure -> active automatically (`RegisterEventHandler`/`OnStateTransition` chained off the node's own lifecycle events, not a timing guess). |
 | `launch/activate_arm.launch.py` | Runs `scripts/activate_arm`: the explicit, ordered acquire step. |
 | `launch/deactivate_arm.launch.py` | Runs `scripts/deactivate_arm`: the explicit, ordered release step. |
 | `motion_service_sim` (executable) | SIM-ONLY node, see below. |
@@ -285,9 +286,10 @@ gains, arm slots blend hold and commanded values by weight, and the weight slot 
 effective weight -- same no-sim/no-DDS treatment as `test_blend_math`. `test_loco_fsm` covers the
 LocoClient FSM legality table (`include/g1_bringup/loco_fsm.hpp`): every legal `SET_FSM_ID` edge,
 every illegal one, and `SET_VELOCITY`'s Start-only gate -- same no-sim/no-DDS treatment again.
-`test/test_sim_bringup.launch.py` and `test/test_arm_command.launch.py` are headless
-`launch_testing` integration suites against the real sim (see their own docstrings for what each
-asserts). Plus `clang-format` against the repo
+`test/test_sim_bringup.launch.py`, `test/test_arm_command.launch.py`, and `test/test_loco.launch.py`
+are headless `launch_testing` integration suites against the real sim (see their own docstrings for
+what each asserts -- the last one drives `g1_locomotion`'s bridge itself through this responder end
+to end). Plus `clang-format` against the repo
 root's `.clang-format`, `ruff` against `ruff.toml` (launch files, scripts, and tests),
 `ament_lint_cmake`, and `xmllint` on this package's own XML files.
 

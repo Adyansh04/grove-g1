@@ -198,6 +198,16 @@ def _launch_setup(context, *args, **kwargs):
         )
     )
 
+    # g1_locomotion's LocoClient bridge, lifecycle-configured and activated automatically -- see
+    # loco.launch.py's own docstring. It only needs motion_service_sim's /api/sport/* responder
+    # (already wired above), not the sim's physics or /lowstate, so it starts immediately rather
+    # than waiting on sim_start_delay_s.
+    loco_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(get_package_share_directory("g1_bringup"), "launch", "loco.launch.py")
+        )
+    )
+
     # A dead sim leaves the controllers commanding nothing and the bridge
     # holding onto a stale world -- tear down the whole launch rather than
     # limp on -- the same "no dangling control authority" rule that governs
@@ -209,7 +219,7 @@ def _launch_setup(context, *args, **kwargs):
         )
     )
 
-    actions.extend([motion_service_sim_node, control_launch, shutdown_on_sim_exit])
+    actions.extend([motion_service_sim_node, control_launch, loco_launch, shutdown_on_sim_exit])
     return actions
 
 
