@@ -1,10 +1,14 @@
 /**
  * @file motion_service_sim_node.cpp
- * @brief Sim-only bridge that turns /arm_sdk weighted commands into /lowcmd for unitree_mujoco.
+ * @brief Sim-only bridge that turns /arm_sdk weighted commands into /lowcmd for unitree_mujoco,
+ * and a protocol-only responder for the LocoClient wire contract (/api/sport/request,
+ * /api/sport/response).
  */
 
 #include "g1_bringup/motion_service_sim_node.hpp"
 
+#include <nlohmann/json.hpp>
+#include <optional>
 #include <stdexcept>
 
 #include "g1_bringup/blend_math.hpp"
@@ -12,6 +16,59 @@
 
 namespace g1_bringup
 {
+
+namespace
+{
+/*
+ * LocoClient wire API ids this responder answers. Duplicated from g1_locomotion's own
+ * loco_api_ids.hpp rather than depending on that package: those headers are an intentionally
+ * unexported internal build artifact (see g1_locomotion/CMakeLists.txt), and these are stable
+ * wire-protocol integers, not logic worth sharing a build target over.
+ */
+constexpr std::int64_t kApiIdGetFsmId    = 7001;
+constexpr std::int64_t kApiIdSetFsmId    = 7101;
+constexpr std::int64_t kApiIdSetVelocity = 7105;
+constexpr std::int64_t kApiIdSetArmTask  = 7106;
+
+/// UT_ROBOT_TASK_UNKNOWN_ERROR -- matches g1_locomotion::kCodeTaskUnknownError.
+constexpr std::int32_t kCodeTaskUnknownError = -2;
+
+/// Parses `{"data": <int>}` -- the shape both 7101's request parameter and 7001's response data
+/// share. Malformed JSON or a non-integer `data` field are both reported as nullopt, never as an
+/// exception escaping to the caller.
+std::optional<int> parseIntDataField(const std::string& json_text)
+{
+    try
+    {
+        const auto js = nlohmann::json::parse(json_text);
+        if (!js.contains("data") || !js["data"].is_number_integer())
+        {
+            return std::nullopt;
+        }
+        return js["data"].get<int>();
+    }
+    catch (const nlohmann::json::parse_error&)
+    {
+        return std::nullopt;
+    }
+}
+
+/// Just enough shape-checking on a 7105 SET_VELOCITY parameter to reject something that plainly
+/// isn't one. This responder is protocol-only and never reads vx/vy/vyaw/duration themselves
+/// (see dispatchSportRequest()) -- there is nothing beyond shape worth validating.
+bool looksLikeSetVelocityPayload(const std::string& json_text)
+{
+    try
+    {
+        const auto js = nlohmann::json::parse(json_text);
+        return js.contains("velocity") && js["velocity"].is_array() && js.contains("duration");
+    }
+    catch (const nlohmann::json::parse_error&)
+    {
+        return false;
+    }
+}
+}  // namespace
 
 /**
  * @brief Declare parameters, wire the /lowstate, /arm_sdk, and /lowcmd topics, and start the
@@ -97,10 +154,24 @@ MotionServiceSim::MotionServiceSim(const rclcpp::NodeOptions& options)
             publishTick();
         });
 
+    /*
+     * Vendor-matched -- do not deviate (see g1_locomotion's README for the identical rule on the
+     * bridge side of this same exchange). This is the exact QoS BaseClient's own publisher/
+     * subscription use.
+     */
+    const auto sport_qos = rclcpp::QoS(1).reliable().durability_volatile();
+    sport_request_sub_   = create_subscription<unitree_api::msg::Request>(
+        "/api/sport/request",
+        sport_qos,
+        [this](const unitree_api::msg::Request::ConstSharedPtr& msg) { sportRequestCallback(msg); });
+    sport_response_pub_ =
+        create_publisher<unitree_api::msg::Response>("/api/sport/response", sport_qos);
+
     RCLCPP_WARN(
         get_logger(),
-        "motion_service_sim is SIM-ONLY: it owns /lowcmd in this process and must never run "
-        "against real hardware (see README.md).");
+        "motion_service_sim is SIM-ONLY: it owns /lowcmd in this process and answers "
+        "/api/sport/* protocol-only (no leg motion); must never run against real hardware (see "
+        "README.md).");
 }
 
 void MotionServiceSim::lowstateCallback(const unitree_hg::msg::LowState::ConstSharedPtr& msg)
@@ -186,6 +257,65 @@ void MotionServiceSim::publishTick()
      */
     g1_hardware_interface::vendored::computeLowCmdCrc(cmd);
     lowcmd_pub_->publish(cmd);
+}
+
+void MotionServiceSim::sportRequestCallback(const unitree_api::msg::Request::ConstSharedPtr& msg)
+{
+    unitree_api::msg::Response response;
+    /*
+     * Correlation contract: g1_locomotion's LocoRequestCorrelator matches purely on
+     * header.identity.id, but the wire contract carries api_id alongside it in the same struct --
+     * echo the whole identity back verbatim regardless of what this handler does with the
+     * request.
+     */
+    response.header.identity = msg->header.identity;
+    response.header.status.code =
+        dispatchSportRequest(msg->header.identity.api_id, msg->parameter, response.data);
+    sport_response_pub_->publish(response);
+}
+
+std::int32_t MotionServiceSim::dispatchSportRequest(
+    std::int64_t api_id, const std::string& parameter, std::string& response_data)
+{
+    if (api_id == kApiIdGetFsmId)
+    {
+        nlohmann::json js;
+        js["data"]    = loco_fsm_state_;
+        response_data = js.dump();
+        return kLocoFsmCodeSuccess;
+    }
+    if (api_id == kApiIdSetFsmId)
+    {
+        const auto requested = parseIntDataField(parameter);
+        if (!requested)
+        {
+            return kCodeTaskUnknownError;
+        }
+        const auto result = applySetFsmId(loco_fsm_state_, *requested);
+        loco_fsm_state_   = result.new_state;
+        return result.error_code;
+    }
+    if (api_id == kApiIdSetVelocity)
+    {
+        if (!looksLikeSetVelocityPayload(parameter))
+        {
+            return kCodeTaskUnknownError;
+        }
+        return checkVelocityAllowed(loco_fsm_state_);
+    }
+    if (api_id == kApiIdSetArmTask)
+    {
+        /*
+         * Deliberately unsupported. SET_ARM_TASK (WaveHand/ShakeHand-style moves) hands arm
+         * authority to the onboard controller, which would fight this stack's rt/arm_sdk blend
+         * weight -- see g1_locomotion's README for the identical call on the bridge side, where
+         * the api id isn't even defined for the same reason. Rejecting it here (rather than a
+         * silent no-op success) makes the omission a tested fact this milestone, not an
+         * unverified assumption.
+         */
+        return kCodeTaskUnknownError;
+    }
+    return kCodeTaskUnknownError;
 }
 
 }  // namespace g1_bringup

@@ -4,8 +4,10 @@ project(g1_bringup)
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(unitree_hg REQUIRED)
+find_package(unitree_api REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(g1_hardware_interface REQUIRED)
+find_package(nlohmann_json REQUIRED)
 
 add_library(blend_math src/blend_math.cpp)
 target_include_directories(blend_math PUBLIC
@@ -35,9 +37,11 @@ target_include_directories(motion_service_sim PUBLIC
 target_compile_features(motion_service_sim PUBLIC cxx_std_17)
 target_link_libraries(motion_service_sim
   blend_math
+  loco_fsm
   g1_hardware_interface::g1_arm_sdk_system
+  nlohmann_json::nlohmann_json
 )
-ament_target_dependencies(motion_service_sim rclcpp unitree_hg)
+ament_target_dependencies(motion_service_sim rclcpp unitree_hg unitree_api)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   target_compile_options(motion_service_sim PRIVATE -Wall -Wextra)

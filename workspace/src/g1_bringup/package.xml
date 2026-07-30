@@ -16,8 +16,10 @@
 
   <depend>rclcpp</depend>
   <depend>unitree_hg</depend>
+  <depend>unitree_api</depend>
   <depend>geometry_msgs</depend>
   <depend>g1_hardware_interface</depend>
+  <depend>nlohmann_json</depend>
 
   <depend>g1_description</depend>
   <depend>robot_state_publisher</depend>

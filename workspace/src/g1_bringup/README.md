@@ -20,6 +20,8 @@ C++17 node + Python launch files and integration tests.
 | Topic | Direction | Type | QoS | Published/consumed by |
 |---|---|---|---|---|
 | `/lowcmd` | out | `unitree_hg/msg/LowCmd` | best-effort, keep-last(1), volatile | `motion_service_sim` -> `unitree_mujoco` |
+| `/api/sport/request` | in | `unitree_api/msg/Request` | `rclcpp::QoS(1)`, reliable, volatile | `g1_locomotion`'s bridge -> `motion_service_sim` (LocoClient wire responder, see below) |
+| `/api/sport/response` | out | `unitree_api/msg/Response` | `rclcpp::QoS(1)`, reliable, volatile | `motion_service_sim` -> `g1_locomotion`'s bridge |
 | `/joint_states` | out | `sensor_msgs/msg/JointState` | default (reliable, keep-last) | `joint_state_broadcaster`, ~200 Hz (`controller_manager`'s `update_rate`) |
 | `/robot_description` | out | `std_msgs/msg/String` | transient-local | `robot_state_publisher` |
 
@@ -133,6 +135,52 @@ at, never snapping. **This is this bridge's own policy, invented for sim test sc
 documented property of the real motion service** -- what the real onboard controller does if its
 `/arm_sdk` publisher goes silent at weight 1 is unverified and stays a hardware re-validation item.
 
+### LocoClient wire responder -- protocol-only, the other SIM-ONLY role of this same node
+
+On the real robot, one onboard motion service owns `/lowcmd` **and** answers the `LocoClient` wire
+protocol (`/api/sport/request`/`/api/sport/response`) -- `unitree_mujoco` emulates neither.
+Mirroring that single-service reality, `motion_service_sim` is also this stack's `/api/sport/*`
+responder, rather than a second node. This half of the node is **protocol-only**: it tracks an FSM
+state and applies the same `SET_FSM_ID`/`SET_VELOCITY` acceptance rules a real onboard controller
+would (see `include/g1_bringup/loco_fsm.hpp`), but it never actuates a leg -- nothing here touches
+`/lowcmd`, `hold_q_`, or the arm-blend path above, and the robot stays pelvis-welded regardless of
+FSM state or velocity requests. Walking-in-sim is out of scope this milestone (the pretrained
+walking policy this stack briefly evaluated couldn't balance the full 29-DoF hand-equipped robot);
+see `g1_locomotion`'s README for the bridge this responder talks to.
+
+- Subscribes `/api/sport/request` (`unitree_api/msg/Request`) and publishes `/api/sport/response`
+  (`unitree_api/msg/Response`), both `rclcpp::QoS(1)` reliable, volatile -- **vendor-matched, do
+  not deviate**, the same rule `g1_locomotion`'s bridge documents for its own side of this exchange.
+- **Echoes `header.identity` (both `id` and `api_id`) back on every response**, regardless of
+  outcome -- that full identity, not just `id`, is the correlation contract `g1_locomotion`'s
+  `LocoRequestCorrelator` matches responses against.
+- FSM state starts at `Damp(1)` (matching the real robot's own boot state) and only changes on a
+  successful `SET_FSM_ID`.
+
+| API id | Name | Behavior |
+|---|---|---|
+| `7001` | `GET_FSM_ID` | `data = {"data": <fsm_id>}`, code `0`. |
+| `7101` | `SET_FSM_ID` | Parses `{"data": <fsm_id>}`, applies the legality table below, code `0` or `7302`. |
+| `7105` | `SET_VELOCITY` | Parses `{"velocity": [...], "duration": d}` (the values themselves are never read -- this responder never drives a leg); code `7301` unless the FSM is currently `Start`, else `0`. |
+| `7106` | `SET_ARM_TASK` | **Always rejected, `-2`.** Deliberately unsupported: `WaveHand`/`ShakeHand`-style moves hand arm authority to the onboard controller, fighting this stack's `rt/arm_sdk` blend weight -- see `g1_locomotion`'s README, where the api id isn't even defined for the same reason. Rejecting it here (rather than a silent no-op `0`) makes the omission a tested fact this milestone, not an unverified assumption. |
+| anything else, or malformed JSON | -- | `-2` (`UT_ROBOT_TASK_UNKNOWN_ERROR`). |
+
+#### FSM legality table (`include/g1_bringup/loco_fsm.hpp`)
+
+```
+Damp(1)    -> StandUp(4)
+StandUp(4) -> Start(500)
+Start(500) -> StandUp(4)
+Start(500) -> Damp(1)
+StandUp(4) -> Damp(1)
+```
+
+Every other edge -- into `Squat(2)`/`Sit(3)`/`ZeroTorque(0)`, a same-state no-op, or any pair not
+listed above -- is rejected `7302`. The vendor wire contract has no status code specific to
+"illegal transition" (only `7301` "LocoState not available" and `7302` "invalid fsm id"); reusing
+`7302` here is this responder's own approximation, not a verified vendor behavior, and stays a
+hardware re-validation item.
+
 ## Pelvis pin -- SIM-ONLY standing scaffolding, not a balance controller
 
 The real G1 stays upright because the **vendor's onboard controller owns balance and
@@ -234,9 +282,12 @@ colcon test-result --verbose
 sim or DDS required. `test_assemble_sim_low_cmd` covers `publishTick()`'s `/lowcmd` assembly
 (extracted into `assembleSimLowCmd()`): leg/waist slots hold at the captured pose with their group
 gains, arm slots blend hold and commanded values by weight, and the weight slot echoes the
-effective weight -- same no-sim/no-DDS treatment as `test_blend_math`. `test/test_sim_bringup.launch.py`
-and `test/test_arm_command.launch.py` are headless `launch_testing` integration suites against the
-real sim (see their own docstrings for what each asserts). Plus `clang-format` against the repo
+effective weight -- same no-sim/no-DDS treatment as `test_blend_math`. `test_loco_fsm` covers the
+LocoClient FSM legality table (`include/g1_bringup/loco_fsm.hpp`): every legal `SET_FSM_ID` edge,
+every illegal one, and `SET_VELOCITY`'s Start-only gate -- same no-sim/no-DDS treatment again.
+`test/test_sim_bringup.launch.py` and `test/test_arm_command.launch.py` are headless
+`launch_testing` integration suites against the real sim (see their own docstrings for what each
+asserts). Plus `clang-format` against the repo
 root's `.clang-format`, `ruff` against `ruff.toml` (launch files, scripts, and tests),
 `ament_lint_cmake`, and `xmllint` on this package's own XML files.
 
