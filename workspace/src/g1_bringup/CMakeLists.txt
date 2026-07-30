@@ -14,31 +14,31 @@ target_include_directories(blend_math PUBLIC
 target_compile_features(blend_math PUBLIC cxx_std_17)
 ament_target_dependencies(blend_math PUBLIC unitree_hg)
 
-add_executable(arm_sdk_sim_bridge
-  src/arm_sdk_sim_bridge_node.cpp
-  src/arm_sdk_sim_bridge_main.cpp
+add_executable(motion_service_sim
+  src/motion_service_sim_node.cpp
+  src/motion_service_sim_main.cpp
 )
-target_include_directories(arm_sdk_sim_bridge PUBLIC
+target_include_directories(motion_service_sim PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
-target_compile_features(arm_sdk_sim_bridge PUBLIC cxx_std_17)
-target_link_libraries(arm_sdk_sim_bridge
+target_compile_features(motion_service_sim PUBLIC cxx_std_17)
+target_link_libraries(motion_service_sim
   blend_math
   g1_hardware_interface::g1_arm_sdk_system
 )
-ament_target_dependencies(arm_sdk_sim_bridge rclcpp unitree_hg)
+ament_target_dependencies(motion_service_sim rclcpp unitree_hg)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  target_compile_options(arm_sdk_sim_bridge PRIVATE -Wall -Wextra)
+  target_compile_options(motion_service_sim PRIVATE -Wall -Wextra)
   target_compile_options(blend_math PRIVATE -Wall -Wextra)
 endif()
 
 # blend_math is an internal build artifact (statically linked into
-# arm_sdk_sim_bridge and test_blend_math/test_assemble_sim_low_cmd only) --
+# motion_service_sim and test_blend_math/test_assemble_sim_low_cmd only) --
 # no install rule: installing the bare archive with neither its headers nor
 # an exported target would be unusable downstream anyway.
-install(TARGETS arm_sdk_sim_bridge DESTINATION lib/${PROJECT_NAME})
+install(TARGETS motion_service_sim DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY config launch mjcf DESTINATION share/${PROJECT_NAME})
 

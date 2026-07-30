@@ -9,17 +9,17 @@ C++17 node + Python launch files and integration tests.
 
 | File | What it does |
 |---|---|
-| `launch/sim.launch.py` | The main entry point. Env fail-fast, then `unitree_mujoco` + `arm_sdk_sim_bridge` + `control.launch.py`. Args: `headless` (default `true`), `pin_pelvis` (default `true`, see "Pelvis pin"), `sim_start_delay_s` (default `2.0`). |
+| `launch/sim.launch.py` | The main entry point. Env fail-fast, then `unitree_mujoco` + `motion_service_sim` + `control.launch.py`. Args: `headless` (default `true`), `pin_pelvis` (default `true`, see "Pelvis pin"), `sim_start_delay_s` (default `2.0`). |
 | `launch/control.launch.py` | Composition-pure: `robot_state_publisher` + `ros2_control_node` + spawners. No sim, no bridge -- carries over unchanged to hardware bring-up. |
 | `launch/activate_arm.launch.py` | Runs `scripts/activate_arm`: the explicit, ordered acquire step. |
 | `launch/deactivate_arm.launch.py` | Runs `scripts/deactivate_arm`: the explicit, ordered release step. |
-| `arm_sdk_sim_bridge` (executable) | SIM-ONLY node, see below. |
+| `motion_service_sim` (executable) | SIM-ONLY node, see below. |
 
 ### Topics (beyond what `g1_hardware_interface`'s README already documents for `/lowstate`/`/arm_sdk`)
 
 | Topic | Direction | Type | QoS | Published/consumed by |
 |---|---|---|---|---|
-| `/lowcmd` | out | `unitree_hg/msg/LowCmd` | best-effort, keep-last(1), volatile | `arm_sdk_sim_bridge` -> `unitree_mujoco` |
+| `/lowcmd` | out | `unitree_hg/msg/LowCmd` | best-effort, keep-last(1), volatile | `motion_service_sim` -> `unitree_mujoco` |
 | `/joint_states` | out | `sensor_msgs/msg/JointState` | default (reliable, keep-last) | `joint_state_broadcaster`, ~200 Hz (`controller_manager`'s `update_rate`) |
 | `/robot_description` | out | `std_msgs/msg/String` | transient-local | `robot_state_publisher` |
 
@@ -84,7 +84,7 @@ confirmed the crash was inside `/opt/ros/humble/lib/.../libddsc.so.0`, not
 `/opt/unitree_robotics/lib` back onto `LD_LIBRARY_PATH` for the sim process specifically (not
 replacing it -- `xvfb-run`/GL still need the rest of the path).
 
-## `arm_sdk_sim_bridge` -- SIM-ONLY, read this before running anything
+## `motion_service_sim` -- SIM-ONLY, read this before running anything
 
 **This node is never to be launched near real hardware.** On the real G1, the onboard motion
 service is the sole owner of `/lowcmd` and provides the weight-blended `/arm_sdk` interface
@@ -92,7 +92,7 @@ service is the sole owner of `/lowcmd` and provides the weight-blended `/arm_sdk
 the low-level device (subscribes `/lowcmd`, publishes `/lowstate`). Nothing in sim services
 `/arm_sdk`, and with nothing commanding the legs, the simulated robot collapses.
 
-`arm_sdk_sim_bridge` closes that gap kinematically, sim-side only:
+`motion_service_sim` closes that gap kinematically, sim-side only:
 
 - Subscribes `/lowstate` (`unitree_hg/msg/LowState`, best-effort, keep-last(1), volatile) and, on
   the first sample received, captures the full-body measured pose as a frozen **hold pose** --
@@ -137,7 +137,7 @@ documented property of the real motion service** -- what the real onboard contro
 
 The real G1 stays upright because the **vendor's onboard controller owns balance and
 locomotion** -- this stack only ever commands the arms (weight-blended via `rt/arm_sdk`, through
-`arm_sdk_sim_bridge` here) and, in a later milestone, drives the legs at the velocity level
+`motion_service_sim` here) and, in a later milestone, drives the legs at the velocity level
 through Unitree's `LocoClient`. We never write balance ourselves. `unitree_mujoco` does **not**
 emulate that onboard controller: it is a low-level device only. So in sim there is nothing
 holding the robot up, and a joint-space stiff-hold cannot substitute for it -- a floating-base
@@ -178,7 +178,7 @@ activate/deactivate concept of its own on the real robot -- there's no meaningfu
 for it to sit in. It is launched exclusively by `sim.launch.py` and lives for exactly as long as
 the sim does.
 
-### Parameters (`config/arm_sdk_sim_bridge.yaml`)
+### Parameters (`config/motion_service_sim.yaml`)
 
 | Param | Default | Meaning |
 |---|---|---|

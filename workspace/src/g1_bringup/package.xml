@@ -5,7 +5,7 @@
   <version>0.1.0</version>
   <description>
     Sim bring-up for the G1 arm bridge: launches unitree_mujoco alongside the
-    ros2_control stack, plus the sim-only arm_sdk_sim_bridge node that stands
+    ros2_control stack, plus the sim-only motion_service_sim node that stands
     in for the onboard motion service in simulation. See README for the full
     operating procedure.
   </description>

@@ -1,9 +1,9 @@
 /**
- * @file arm_sdk_sim_bridge_node.cpp
+ * @file motion_service_sim_node.cpp
  * @brief Sim-only bridge that turns /arm_sdk weighted commands into /lowcmd for unitree_mujoco.
  */
 
-#include "g1_bringup/arm_sdk_sim_bridge_node.hpp"
+#include "g1_bringup/motion_service_sim_node.hpp"
 
 #include <stdexcept>
 
@@ -20,8 +20,8 @@ namespace g1_bringup
  * @throws std::invalid_argument If publish_rate_hz, arm_sdk_timeout_ms, or timeout_ramp_down_s
  *         resolve to a non-positive value.
  */
-ArmSdkSimBridge::ArmSdkSimBridge(const rclcpp::NodeOptions& options)
-  : rclcpp::Node("arm_sdk_sim_bridge", options)
+MotionServiceSim::MotionServiceSim(const rclcpp::NodeOptions& options)
+  : rclcpp::Node("motion_service_sim", options)
 {
     publish_rate_hz_                = declare_parameter("publish_rate_hz", 500.0);
     leg_kp_                         = declare_parameter("leg_kp", 100.0);
@@ -55,7 +55,7 @@ ArmSdkSimBridge::ArmSdkSimBridge(const rclcpp::NodeOptions& options)
             arm_sdk_timeout_s_,
             timeout_ramp_down_s_);
         throw std::invalid_argument(
-            "arm_sdk_sim_bridge: publish_rate_hz/arm_sdk_timeout_ms/timeout_ramp_down_s must be "
+            "motion_service_sim: publish_rate_hz/arm_sdk_timeout_ms/timeout_ramp_down_s must be "
             "strictly positive");
     }
 
@@ -99,11 +99,11 @@ ArmSdkSimBridge::ArmSdkSimBridge(const rclcpp::NodeOptions& options)
 
     RCLCPP_WARN(
         get_logger(),
-        "arm_sdk_sim_bridge is SIM-ONLY: it owns /lowcmd in this process and must never run "
+        "motion_service_sim is SIM-ONLY: it owns /lowcmd in this process and must never run "
         "against real hardware (see README.md).");
 }
 
-void ArmSdkSimBridge::lowstateCallback(const unitree_hg::msg::LowState::ConstSharedPtr& msg)
+void MotionServiceSim::lowstateCallback(const unitree_hg::msg::LowState::ConstSharedPtr& msg)
 {
     if (hold_pose_captured_)
     {
@@ -116,7 +116,7 @@ void ArmSdkSimBridge::lowstateCallback(const unitree_hg::msg::LowState::ConstSha
     hold_pose_captured_ = true;
 }
 
-void ArmSdkSimBridge::armSdkCallback(const unitree_hg::msg::LowCmd::ConstSharedPtr& msg)
+void MotionServiceSim::armSdkCallback(const unitree_hg::msg::LowCmd::ConstSharedPtr& msg)
 {
     for (std::size_t i = 0; i < static_cast<std::size_t>(kNumArmMotors); ++i)
     {
@@ -130,7 +130,7 @@ void ArmSdkSimBridge::armSdkCallback(const unitree_hg::msg::LowCmd::ConstSharedP
     arm_sdk_arrival_  = std::chrono::steady_clock::now();
 }
 
-void ArmSdkSimBridge::publishTick()
+void MotionServiceSim::publishTick()
 {
     if (!hold_pose_captured_)
     {

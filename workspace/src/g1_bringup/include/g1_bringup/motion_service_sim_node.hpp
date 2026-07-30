@@ -1,8 +1,8 @@
-#ifndef G1_BRINGUP__ARM_SDK_SIM_BRIDGE_NODE_HPP_
-#define G1_BRINGUP__ARM_SDK_SIM_BRIDGE_NODE_HPP_
+#ifndef G1_BRINGUP__MOTION_SERVICE_SIM_NODE_HPP_
+#define G1_BRINGUP__MOTION_SERVICE_SIM_NODE_HPP_
 
 /**
- * @file arm_sdk_sim_bridge_node.hpp
+ * @file motion_service_sim_node.hpp
  * @brief Sim-only node that synthesizes /lowcmd from /arm_sdk and /lowstate for MuJoCo bring-up.
  */
 
@@ -36,17 +36,17 @@ namespace g1_bringup
  * already owns /lowcmd entirely, and two publishers on that channel is exactly the dual-writer
  * hazard that must never occur on a shared control channel.
  */
-class ArmSdkSimBridge : public rclcpp::Node
+class MotionServiceSim : public rclcpp::Node
 {
 public:
-    explicit ArmSdkSimBridge(const rclcpp::NodeOptions& options);
+    explicit MotionServiceSim(const rclcpp::NodeOptions& options);
 
 private:
     void lowstateCallback(const unitree_hg::msg::LowState::ConstSharedPtr& msg);
     void armSdkCallback(const unitree_hg::msg::LowCmd::ConstSharedPtr& msg);
     void publishTick();
 
-    /// Parameters (config/arm_sdk_sim_bridge.yaml) -- see README for meaning
+    /// Parameters (config/motion_service_sim.yaml) -- see README for meaning
     /// and provenance of the defaults.
     double publish_rate_hz_{};
     double leg_kp_{};
@@ -90,4 +90,4 @@ private:
 
 }  // namespace g1_bringup
 
-#endif  // G1_BRINGUP__ARM_SDK_SIM_BRIDGE_NODE_HPP_
+#endif  // G1_BRINGUP__MOTION_SERVICE_SIM_NODE_HPP_

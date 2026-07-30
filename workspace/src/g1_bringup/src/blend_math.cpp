@@ -37,7 +37,7 @@ unitree_hg::msg::LowCmd assembleSimLowCmd(
 {
     /*
      * rosidl-generated: zero-initialized, including reserved slots and mode/mode_pr/mode_machine
-     * -- deliberately left untouched (see arm_sdk_sim_bridge_node's README).
+     * -- deliberately left untouched (see motion_service_sim_node's README).
      */
     unitree_hg::msg::LowCmd cmd;
 

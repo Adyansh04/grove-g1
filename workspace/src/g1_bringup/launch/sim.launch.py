@@ -1,4 +1,4 @@
-"""Sim bring-up: unitree_mujoco + arm_sdk_sim_bridge + control.launch.py.
+"""Sim bring-up: unitree_mujoco + motion_service_sim + control.launch.py.
 
 See README.md for the full operating procedure (sim.launch.py ->
 activate_arm.launch.py -> command -> deactivate_arm.launch.py -> stop),
@@ -173,14 +173,14 @@ def _launch_setup(context, *args, **kwargs):
     sim_start_delay_s = float(LaunchConfiguration("sim_start_delay_s").perform(context))
     actions.append(TimerAction(period=sim_start_delay_s, actions=[sim_process]))
 
-    arm_sdk_sim_bridge_node = Node(
+    motion_service_sim_node = Node(
         package="g1_bringup",
-        executable="arm_sdk_sim_bridge",
-        name="arm_sdk_sim_bridge",
+        executable="motion_service_sim",
+        name="motion_service_sim",
         output="screen",
         parameters=[
             os.path.join(
-                get_package_share_directory("g1_bringup"), "config", "arm_sdk_sim_bridge.yaml"
+                get_package_share_directory("g1_bringup"), "config", "motion_service_sim.yaml"
             )
         ],
     )
@@ -202,7 +202,7 @@ def _launch_setup(context, *args, **kwargs):
         )
     )
 
-    actions.extend([arm_sdk_sim_bridge_node, control_launch, shutdown_on_sim_exit])
+    actions.extend([motion_service_sim_node, control_launch, shutdown_on_sim_exit])
     return actions
 
 
