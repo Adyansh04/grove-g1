@@ -30,9 +30,7 @@ const char* const kLoggerName = "g1_arm_sdk_system";
  * on_init runs once, off the RT path: std::sto* exceptions on a malformed
  * <param> are caught here and turned into a logged FAILURE rather than an
  * exception escaping a pluginlib-loaded on_init.
- * @param params  the string-keyed parameter map to search.
- * @param key     the parameter name to look up.
- * @param out     set to the parsed value on success; left untouched on failure.
+ * @param out  set to the parsed value on success; left untouched on failure.
  * @return true if `key` was present in `params` and parsed as a double, false otherwise.
  */
 bool parseDouble(
@@ -421,17 +419,16 @@ G1ArmSdkSystem::read(const rclcpp::Time& /*time*/, const rclcpp::Duration& /*per
     }
 
     /*
-     * Belt-and-braces only: write() is the primary protection and
-     * autonomously ramps down on stale feedback regardless of what read()
-     * reports here (see write()). Gated on ACTIVE specifically -- CM calls
-     * read() on every loaded component every cycle regardless of lifecycle
-     * state (confirmed during manual sim validation), and staleness before
-     * the first /lowstate sample arrives (e.g. right after on_configure) is
-     * expected, not an error; an unconditional ERROR return here was tried
-     * and is demonstrably wrong (resource_manager reacts to any read()
-     * ERROR by driving the component through on_error back to UNCONFIGURED
-     * with no automatic recovery, so it fired on essentially every
-     * configure).
+     * Belt-and-braces only: write() is the primary protection and ramps down
+     * on stale feedback whatever read() reports here.
+     *
+     * Gated on ACTIVE deliberately. CM calls read() on every loaded component
+     * every cycle, whatever its lifecycle state, and staleness before the
+     * first /lowstate sample (right after on_configure, say) is expected
+     * rather than an error. Returning ERROR unconditionally was tried and is
+     * wrong: resource_manager drives the component through on_error back to
+     * UNCONFIGURED with no automatic recovery, so it fired on nearly every
+     * configure.
      */
     if (mode_.load(std::memory_order_relaxed) == BlendMode::kActive &&
         isStale(sample->arrival, lowstateTimeoutDuration()))
@@ -511,16 +508,15 @@ G1ArmSdkSystem::write(const rclcpp::Time& /*time*/, const rclcpp::Duration& peri
     if (ramp_finished && terminal_publish_succeeded)
     {
         /*
-         * Reached here via either autonomous escalation that funnels into
-         * this same RT-thread ramp -- write()'s own stale-feedback
-         * escalation above, or checkPublisherCount()'s rogue-publisher
-         * escalation (a lifecycle-triggered ramp-down is instead driven and
-         * finished entirely by rampDownSynchronously(), which write() never
-         * runs concurrently with). Gated on the publish having actually gone
-         * out: trylock() can fail on any given tick, and self-gating off
-         * before the terminal weight-0 sample is confirmed transmitted
-         * would silently drop it. Retrying next tick is harmless -- the
-         * weight is already clamped at 0.
+         * Only autonomous escalations land here: write()'s own stale-feedback
+         * one above, or checkPublisherCount()'s rogue-publisher one. A
+         * lifecycle ramp-down is driven start to finish by
+         * rampDownSynchronously(), which never runs concurrently with write().
+         *
+         * Gate on the publish having actually gone out -- trylock() can fail
+         * on any tick, and self-gating before the terminal weight-0 sample is
+         * confirmed sent would silently drop it. Retrying next tick costs
+         * nothing; the weight is already clamped at 0.
          */
         mode_.store(BlendMode::kInactive, std::memory_order_release);
     }
@@ -589,18 +585,13 @@ void G1ArmSdkSystem::checkPublisherCount()
     }
 
     /*
-     * Advisory only: real cross-process arbitration is a future
-     * behavior-tree authority arbiter. This just refuses to let two
-     * publishers command the arms at once -- two publishers owning one
-     * low-level channel is unsafe -- by escalating mode_ toward the
-     * emergency ramp, exactly mirroring write()'s own stale-feedback
-     * escalation (resolveEffectiveMode) so the still-ticking write() on the
-     * RT thread drives and finishes the ramp itself; this timer never
-     * touches ramp_engine_/arm_sdk_rt_pub_ directly, so there is never a
-     * second thread doing so concurrently with write(). The
-     * compare-exchange only fires from kActive: if mode_ has already moved
-     * on for any other reason (ramping down, inactive), there's nothing to
-     * escalate.
+     * Advisory only -- real cross-process arbitration belongs to the future
+     * behavior-tree authority arbiter. Two publishers on one low-level
+     * channel is unsafe, so escalate mode_ to the emergency ramp and let the
+     * still-ticking write() finish it on the RT thread, the same way the
+     * stale-feedback path does. This timer never touches ramp_engine_ or
+     * arm_sdk_rt_pub_, so nothing here can race write(). The CAS only fires
+     * from kActive; any other mode is already on its way down.
      */
     BlendMode expected = BlendMode::kActive;
     if (mode_.compare_exchange_strong(

@@ -17,7 +17,6 @@ namespace g1_bringup
  * @brief Declare parameters, wire the /lowstate, /arm_sdk, and /lowcmd topics, and start the
  * publish timer for this sim-only bridge.
  *
- * @param options Node options forwarded to rclcpp::Node.
  * @throws std::invalid_argument If publish_rate_hz, arm_sdk_timeout_ms, or timeout_ramp_down_s
  *         resolve to a non-positive value.
  */
@@ -36,16 +35,15 @@ ArmSdkSimBridge::ArmSdkSimBridge(const rclcpp::NodeOptions& options)
     timeout_ramp_down_s_            = declare_parameter("timeout_ramp_down_s", 1.0);
 
     /*
-     * Fail fast on a nonsensical rate/duration tunable, mirroring
-     * g1_hardware_interface::G1ArmSdkSystem::on_init's strictly-positive
-     * gate. publish_rate_hz <= 0 makes the wall-timer period's
-     * duration_cast undefined and breaks the first tick's dt;
-     * arm_sdk_timeout_s/timeout_ramp_down_s <= 0 turns the advertised
-     * no-snap staleness decay into an instantaneous snap (or an upward
-     * ramp) via stepEffectiveWeight's max_step. Gains (leg/waist/arm_hold
-     * kp/kd) are left unchecked here, same as G1ArmSdkSystem::on_init
-     * leaves its own per-joint kp/kd unchecked -- only the rate/duration
-     * tunables are load-bearing for avoiding UB/snap-on-misconfiguration.
+     * Fail fast on a nonsensical rate or duration, mirroring
+     * G1ArmSdkSystem::on_init's strictly-positive gate. A publish_rate_hz of
+     * 0 or less makes the wall-timer period's duration_cast undefined and
+     * breaks the first tick's dt; a non-positive arm_sdk_timeout_s or
+     * timeout_ramp_down_s turns the no-snap staleness decay into a snap (or
+     * an upward ramp) via stepEffectiveWeight's max_step.
+     *
+     * The gains are left unchecked, as they are in on_init: only the rate
+     * and duration tunables can cause UB or a snap when misconfigured.
      */
     if (publish_rate_hz_ <= 0.0 || arm_sdk_timeout_s_ <= 0.0 || timeout_ramp_down_s_ <= 0.0)
     {
@@ -178,15 +176,13 @@ void ArmSdkSimBridge::publishTick()
         arm_hold_kd_);
 
     /*
-     * mode/mode_pr/mode_machine are deliberately never set: read directly
-     * from unitree_mujoco's own source
-     * (simulate/src/unitree_sdk2_bridge.h, RobotBridge::run()), its actuator
-     * torque is computed purely as
-     * `tau_ff + kp * (q_des - q_meas) + kd * (dq_des - dq_meas)` per motor
-     * slot -- the incoming LowCmd's mode fields are never read for
-     * actuation. This is a sim-specific finding; the real onboard motion
-     * service's use of these fields (if any) is unverified and stays a
-     * hardware re-validation item.
+     * mode/mode_pr/mode_machine are deliberately left unset. unitree_mujoco
+     * computes actuator torque as tau_ff + kp * (q_des - q_meas) + kd *
+     * (dq_des - dq_meas) per motor slot and never reads the mode fields
+     * (simulate/src/unitree_sdk2_bridge.h, RobotBridge::run()).
+     *
+     * That is a sim-specific finding. What the real motion service does with
+     * these fields is unverified, and stays a hardware re-validation item.
      */
     g1_hardware_interface::vendored::computeLowCmdCrc(cmd);
     lowcmd_pub_->publish(cmd);
