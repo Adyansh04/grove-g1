@@ -13,8 +13,14 @@
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
-  <depend>nlohmann_json</depend>
+  <depend>rclcpp</depend>
+  <depend>rclcpp_action</depend>
+  <depend>rclcpp_lifecycle</depend>
+  <depend>lifecycle_msgs</depend>
+  <depend>geometry_msgs</depend>
   <depend>unitree_api</depend>
+  <depend>g1_msgs</depend>
+  <depend>nlohmann_json</depend>
 
   <!-- ament_lint_common is intentionally not used (see g1_hardware_interface's package.xml for
        the rationale): it drags in ament_uncrustify/ament_copyright, which conflict with this

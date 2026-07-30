@@ -1,0 +1,528 @@
+/**
+ * @file g1_loco_bridge_node.cpp
+ * @brief LifecycleNode bridging cmd_vel/SetLocoMode onto the LocoClient wire contract.
+ */
+#include "g1_locomotion/g1_loco_bridge_node.hpp"
+
+#include <algorithm>
+#include <utility>
+#include <vector>
+
+#include "g1_locomotion/loco_api_ids.hpp"
+#include "g1_locomotion/loco_payloads.hpp"
+#include "lifecycle_msgs/msg/state.hpp"
+#include "rcl_action/action_server.h"
+
+namespace g1_locomotion
+{
+
+namespace
+{
+const char* const kSportRequestTopic  = "/api/sport/request";
+const char* const kSportResponseTopic = "/api/sport/response";
+
+constexpr std::chrono::milliseconds kSweepPeriod{ 50 };
+constexpr std::chrono::seconds      kHeartbeatPeriod{ 1 };
+}  // namespace
+
+G1LocoBridge::G1LocoBridge(const rclcpp::NodeOptions& options)
+  : rclcpp_lifecycle::LifecycleNode("g1_loco_bridge", options)
+  , correlator_(LocoRequestCorrelator::Config{})
+  , velocity_gate_(VelocityGate::Config{})
+{
+    declare_parameter("request_timeout_s", request_timeout_s_);
+    declare_parameter("max_pending", static_cast<int>(max_pending_));
+    declare_parameter("velocity_reissue_hz", velocity_reissue_hz_);
+    declare_parameter("cmd_vel_timeout_ms", cmd_vel_timeout_s_ * 1000.0);
+    declare_parameter("failure_streak_limit", failure_streak_limit_);
+    declare_parameter(
+        "max_velocity",
+        std::vector<double>(max_velocity_.begin(), max_velocity_.end()));
+    declare_parameter("axis_sign", std::vector<double>(axis_sign_.begin(), axis_sign_.end()));
+
+    /*
+     * One named group for every callback source this node creates (see the class's
+     * thread-ownership contract comment) -- created here, not on_configure, so it exists for the
+     * node's whole lifetime regardless of how many times on_configure runs.
+     */
+    callback_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+}
+
+bool G1LocoBridge::readParameters()
+{
+    request_timeout_s_      = get_parameter("request_timeout_s").as_double();
+    max_pending_            = static_cast<std::size_t>(get_parameter("max_pending").as_int());
+    velocity_reissue_hz_    = get_parameter("velocity_reissue_hz").as_double();
+    cmd_vel_timeout_s_      = get_parameter("cmd_vel_timeout_ms").as_double() / 1000.0;
+    failure_streak_limit_   = static_cast<int>(get_parameter("failure_streak_limit").as_int());
+    const auto max_velocity = get_parameter("max_velocity").as_double_array();
+    const auto axis_sign    = get_parameter("axis_sign").as_double_array();
+
+    if (max_velocity.size() != 3 || axis_sign.size() != 3)
+    {
+        RCLCPP_ERROR(
+            get_logger(),
+            "max_velocity and axis_sign must each have exactly 3 entries [vx, vy, vyaw]");
+        return false;
+    }
+    std::copy(max_velocity.begin(), max_velocity.end(), max_velocity_.begin());
+    std::copy(axis_sign.begin(), axis_sign.end(), axis_sign_.begin());
+
+    if (velocity_reissue_hz_ <= 1.0)
+    {
+        RCLCPP_ERROR(
+            get_logger(),
+            "velocity_reissue_hz (%f) must be > 1.0 -- otherwise duration's 1 s dead-man can "
+            "expire between re-issues",
+            velocity_reissue_hz_);
+        return false;
+    }
+    if (request_timeout_s_ <= 0.0 || max_pending_ == 0 || cmd_vel_timeout_s_ <= 0.0 ||
+        failure_streak_limit_ <= 0)
+    {
+        RCLCPP_ERROR(
+            get_logger(),
+            "request_timeout_s/max_pending/cmd_vel_timeout_ms/failure_streak_limit must all be "
+            "strictly positive");
+        return false;
+    }
+    return true;
+}
+
+G1LocoBridge::CallbackReturn
+G1LocoBridge::on_configure(const rclcpp_lifecycle::State& /*previous_state*/)
+{
+    resetEntities();
+
+    if (!readParameters())
+    {
+        return CallbackReturn::FAILURE;
+    }
+    correlator_ =
+        LocoRequestCorrelator(LocoRequestCorrelator::Config{ request_timeout_s_, max_pending_ });
+    velocity_gate_ =
+        VelocityGate(VelocityGate::Config{ cmd_vel_timeout_s_, failure_streak_limit_ });
+    last_known_fsm_id_     = -1;
+    last_error_code_       = 0;
+    last_published_status_ = g1_msgs::msg::LocoStatus{};
+
+    rclcpp::SubscriptionOptions sub_options;
+    sub_options.callback_group = callback_group_;
+    rclcpp::PublisherOptions pub_options;
+    pub_options.callback_group = callback_group_;
+
+    /*
+     * Vendor-matched -- do not deviate. This is the exact QoS BaseClient's own publisher/
+     * subscription use (rclcpp::QoS(1), reliable, volatile); hardware endpoint compatibility
+     * depends on matching it exactly, not just "something reliable".
+     */
+    const auto sport_qos = rclcpp::QoS(1).reliable().durability_volatile();
+    request_pub_ =
+        create_publisher<unitree_api::msg::Request>(kSportRequestTopic, sport_qos, pub_options);
+    response_sub_ = create_subscription<unitree_api::msg::Response>(
+        kSportResponseTopic,
+        sport_qos,
+        [this](const unitree_api::msg::Response::ConstSharedPtr& msg) { onSportResponse(*msg); },
+        sub_options);
+
+    /*
+     * Node-relative by design, not bare /cmd_vel: arbitrating multiple command sources (Nav2,
+     * teleop, a future behavior tree) is the future orchestration layer's job, not this bridge's.
+     */
+    const auto cmd_vel_qos = rclcpp::QoS(rclcpp::KeepLast(1)).reliable().durability_volatile();
+    cmd_vel_sub_           = create_subscription<geometry_msgs::msg::Twist>(
+        "~/cmd_vel",
+        cmd_vel_qos,
+        [this](const geometry_msgs::msg::Twist::ConstSharedPtr& msg) { cmdVelCallback(msg); },
+        sub_options);
+
+    /*
+     * Transient-local: a late-joining monitor (e.g. a CLI echo started after activation) should
+     * see the current status immediately rather than waiting for the next 1 Hz heartbeat.
+     */
+    const auto status_qos = rclcpp::QoS(rclcpp::KeepLast(1)).reliable().transient_local();
+    status_pub_ = create_publisher<g1_msgs::msg::LocoStatus>("~/status", status_qos, pub_options);
+
+    action_server_ = rclcpp_action::create_server<SetLocoMode>(
+        get_node_base_interface(),
+        get_node_clock_interface(),
+        get_node_logging_interface(),
+        get_node_waitables_interface(),
+        "~/set_mode",
+        [this](const rclcpp_action::GoalUUID& uuid, std::shared_ptr<const SetLocoMode::Goal> goal) {
+            return handleGoal(uuid, goal);
+        },
+        [this](const std::shared_ptr<GoalHandleSetLocoMode> goal_handle) {
+            return handleCancel(goal_handle);
+        },
+        [this](const std::shared_ptr<GoalHandleSetLocoMode> goal_handle) {
+            handleAccepted(goal_handle);
+        },
+        rcl_action_server_get_default_options(),
+        callback_group_);
+
+    sweep_timer_ = create_wall_timer(
+        kSweepPeriod,
+        [this] { correlator_.sweep(std::chrono::steady_clock::now()); },
+        callback_group_);
+    const auto reissue_period = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::duration<double>(1.0 / velocity_reissue_hz_));
+    reissue_timer_ = create_wall_timer(
+        reissue_period,
+        [this] { onReissueTick(); },
+        callback_group_);
+    heartbeat_timer_ = create_wall_timer(
+        kHeartbeatPeriod,
+        [this] { onHeartbeatTick(); },
+        callback_group_);
+
+    return CallbackReturn::SUCCESS;
+}
+
+G1LocoBridge::CallbackReturn
+G1LocoBridge::on_cleanup(const rclcpp_lifecycle::State& /*previous_state*/)
+{
+    resetEntities();
+    return CallbackReturn::SUCCESS;
+}
+
+G1LocoBridge::CallbackReturn G1LocoBridge::on_activate(const rclcpp_lifecycle::State& previous_state)
+{
+    /*
+     * Activates status_pub_ (a LifecyclePublisher) via the base class's own managed-entity walk
+     * -- must run before publishStatus() below, or that first publish is silently dropped.
+     */
+    const auto base_result = LifecycleNode::on_activate(previous_state);
+    if (base_result != CallbackReturn::SUCCESS)
+    {
+        return base_result;
+    }
+    publishStatus(/*force=*/true);
+    RCLCPP_INFO(get_logger(), "g1_loco_bridge active -- accepting SetLocoMode goals");
+    return CallbackReturn::SUCCESS;
+}
+
+G1LocoBridge::CallbackReturn
+G1LocoBridge::on_deactivate(const rclcpp_lifecycle::State& previous_state)
+{
+    if (velocity_gate_.authority() != LocoAuthority::kReleased)
+    {
+        RCLCPP_WARN(
+            get_logger(),
+            "deactivating while locomotion authority was not released -- forcing release");
+        velocity_gate_.forceRelease();
+    }
+    return LifecycleNode::on_deactivate(previous_state);
+}
+
+G1LocoBridge::CallbackReturn
+G1LocoBridge::on_shutdown(const rclcpp_lifecycle::State& /*previous_state*/)
+{
+    /*
+     * No synchronous ramp-down needed here, unlike g1_hardware_interface's arm bridge: we never
+     * actuate anything ourselves. If re-issuing simply stops (this process exiting included),
+     * the onboard controller's own duration dead-man (kVelocityDurationS, 1 s) takes over on its
+     * own -- an emergent safety property of always re-issuing with a short duration rather than
+     * latching the vendor's 10-day "continuous" value.
+     */
+    resetEntities();
+    return CallbackReturn::SUCCESS;
+}
+
+G1LocoBridge::CallbackReturn
+G1LocoBridge::on_error(const rclcpp_lifecycle::State& /*previous_state*/)
+{
+    resetEntities();
+    return CallbackReturn::SUCCESS;
+}
+
+rclcpp_action::GoalResponse G1LocoBridge::handleGoal(
+    const rclcpp_action::GoalUUID& /*uuid*/, std::shared_ptr<const SetLocoMode::Goal> goal)
+{
+    /*
+     * Self-gated, not framework-gated: create_server()'s raw interface-pointer overload has no
+     * lifecycle awareness of its own (unlike create_publisher/create_subscription, whose
+     * LifecyclePublisher/-Subscription wrappers the base class silences automatically while
+     * inactive) -- so goals would otherwise be accepted even before this node is ever activated.
+     */
+    if (get_current_state().id() != lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE)
+    {
+        RCLCPP_WARN(get_logger(), "rejecting SetLocoMode goal: bridge is not active");
+        return rclcpp_action::GoalResponse::REJECT;
+    }
+    if (goal->fsm_id != SetLocoMode::Goal::DAMP && goal->fsm_id != SetLocoMode::Goal::STAND_UP &&
+        goal->fsm_id != SetLocoMode::Goal::START)
+    {
+        RCLCPP_WARN(
+            get_logger(),
+            "rejecting SetLocoMode goal: fsm_id %d is not one of DAMP(1)/STAND_UP(4)/START(500) "
+            "-- Squat/Sit/ZeroTorque have no caller and unverified transition legality",
+            goal->fsm_id);
+        return rclcpp_action::GoalResponse::REJECT;
+    }
+    if (active_goal_handle_)
+    {
+        RCLCPP_WARN(get_logger(), "rejecting SetLocoMode goal: a previous goal is still in flight");
+        return rclcpp_action::GoalResponse::REJECT;
+    }
+    return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
+}
+
+rclcpp_action::CancelResponse
+G1LocoBridge::handleCancel(const std::shared_ptr<GoalHandleSetLocoMode>& /*goal_handle*/)
+{
+    /*
+     * Goals are short-lived (bounded by request_timeout_s) and every terminal path already lands
+     * cleanly (see VelocityGate's authority machine). Supporting mid-flight cancellation would
+     * need to unwind a request already in flight on the wire -- the correlator's supersede() can
+     * do that, but nothing in this milestone needs it, and rejecting keeps the authority
+     * transition atomic instead of leaving a "cancel requested but the wire request is still out
+     * there" window.
+     */
+    return rclcpp_action::CancelResponse::REJECT;
+}
+
+void G1LocoBridge::handleAccepted(const std::shared_ptr<GoalHandleSetLocoMode>& goal_handle)
+{
+    const int fsm_id  = goal_handle->get_goal()->fsm_id;
+    auto      request = correlator_.send(
+        kApiIdSetFsmId,
+        buildSetFsmIdPayload(fsm_id),
+        std::chrono::steady_clock::now(),
+        [this, goal_handle, fsm_id](std::int32_t error_code, const std::string& /*data*/) {
+            onSetLocoModeResult(goal_handle, fsm_id, error_code);
+        });
+    if (!request)
+    {
+        auto result        = std::make_shared<SetLocoMode::Result>();
+        result->success    = false;
+        result->error_code = kCodeTaskUnknownError;
+        result->message    = "too many LocoClient requests already in flight; try again";
+        goal_handle->abort(result);
+        return;
+    }
+
+    active_goal_handle_ = goal_handle;
+    if (fsm_id == SetLocoMode::Goal::START)
+    {
+        velocity_gate_.beginAcquire();
+    }
+    else if (fsm_id == SetLocoMode::Goal::DAMP && velocity_gate_.authority() == LocoAuthority::kHeld)
+    {
+        velocity_gate_.beginRelease();
+    }
+    publishStatus();
+    request_pub_->publish(*request);
+}
+
+void G1LocoBridge::onSetLocoModeResult(
+    const std::shared_ptr<GoalHandleSetLocoMode>& goal_handle, int fsm_id, std::int32_t error_code)
+{
+    const bool success = (error_code == kCodeSuccess);
+    if (success)
+    {
+        last_known_fsm_id_ = fsm_id;
+    }
+    last_error_code_ = error_code;
+
+    if (fsm_id == SetLocoMode::Goal::START)
+    {
+        velocity_gate_.onAcquireResult(success);
+    }
+    else if (fsm_id == SetLocoMode::Goal::DAMP)
+    {
+        velocity_gate_.onReleaseResult();
+    }
+
+    if (active_goal_handle_ == goal_handle)
+    {
+        active_goal_handle_.reset();
+    }
+    publishStatus();
+
+    auto result        = std::make_shared<SetLocoMode::Result>();
+    result->success    = success;
+    result->error_code = error_code;
+    result->message    = success ? "fsm transition accepted" :
+                                   ("fsm transition rejected: code " + std::to_string(error_code));
+    if (success)
+    {
+        goal_handle->succeed(result);
+    }
+    else
+    {
+        goal_handle->abort(result);
+    }
+}
+
+void G1LocoBridge::cmdVelCallback(const geometry_msgs::msg::Twist::ConstSharedPtr& msg)
+{
+    if (get_current_state().id() != lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE)
+    {
+        return;
+    }
+    const double vx =
+        std::clamp(msg->linear.x * axis_sign_[0], -max_velocity_[0], max_velocity_[0]);
+    const double vy =
+        std::clamp(msg->linear.y * axis_sign_[1], -max_velocity_[1], max_velocity_[1]);
+    const double vyaw =
+        std::clamp(msg->angular.z * axis_sign_[2], -max_velocity_[2], max_velocity_[2]);
+    velocity_gate_.setCommand(vx, vy, vyaw, std::chrono::steady_clock::now());
+}
+
+void G1LocoBridge::onSportResponse(const unitree_api::msg::Response& msg)
+{
+    const auto dropped_before = correlator_.droppedResponseCount();
+    correlator_.onResponse(msg);
+    if (correlator_.droppedResponseCount() != dropped_before)
+    {
+        RCLCPP_DEBUG(
+            get_logger(),
+            "dropped an unmatched /api/sport/response (id %ld)",
+            static_cast<long>(msg.header.identity.id));
+    }
+}
+
+void G1LocoBridge::onReissueTick()
+{
+    if (get_current_state().id() != lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE)
+    {
+        return;
+    }
+    const auto now    = std::chrono::steady_clock::now();
+    const auto intent = velocity_gate_.tick(now);
+    if (!intent)
+    {
+        return;
+    }
+
+    /*
+     * Only the newest velocity intent ever matters (duration is a 1 s dead-man; a stale in-flight
+     * request from a previous tick is noise once a fresher one is issued) -- supersede rather
+     * than let stale ones pile up in the correlator.
+     */
+    if (pending_velocity_request_id_)
+    {
+        correlator_.supersede(*pending_velocity_request_id_);
+        pending_velocity_request_id_.reset();
+    }
+
+    auto request = correlator_.send(
+        kApiIdSetVelocity,
+        buildSetVelocityPayload(
+            static_cast<float>(intent->vx),
+            static_cast<float>(intent->vy),
+            static_cast<float>(intent->vyaw)),
+        now,
+        [this](std::int32_t error_code, const std::string& /*data*/) {
+            pending_velocity_request_id_.reset();
+            velocity_gate_.onVelocityResult(error_code);
+            last_error_code_ = error_code;
+            publishStatus();
+        });
+    if (!request)
+    {
+        RCLCPP_DEBUG(get_logger(), "skipped a SetVelocity re-issue: too many requests in flight");
+        return;
+    }
+    pending_velocity_request_id_ = request->header.identity.id;
+    request_pub_->publish(*request);
+}
+
+void G1LocoBridge::onHeartbeatTick()
+{
+    /*
+     * GET_FSM_ID poll: keeps fsm_id authoritative (confirmed by the robot) rather than solely
+     * inferred from our own SetLocoMode outcomes. A read, not a command -- harmless regardless of
+     * lifecycle state or locomotion authority, so it isn't gated on either.
+     */
+    if (pending_fsm_poll_id_)
+    {
+        correlator_.supersede(*pending_fsm_poll_id_);
+        pending_fsm_poll_id_.reset();
+    }
+    auto poll_request = correlator_.send(
+        kApiIdGetFsmId,
+        "",
+        std::chrono::steady_clock::now(),
+        [this](std::int32_t error_code, const std::string& data) {
+            pending_fsm_poll_id_.reset();
+            if (error_code != kCodeSuccess)
+            {
+                return;
+            }
+            const auto fsm_id = parseFsmIdResponse(data);
+            if (fsm_id)
+            {
+                last_known_fsm_id_ = *fsm_id;
+                publishStatus();
+            }
+        });
+    if (poll_request)
+    {
+        pending_fsm_poll_id_ = poll_request->header.identity.id;
+        request_pub_->publish(*poll_request);
+    }
+
+    /*
+     * Single-writer advisory guard: two publishers on this low-level channel is unsafe regardless
+     * of our own state, but only act (idle + a defensive stop) if we're actually holding velocity
+     * authority right now -- mirrors G1ArmSdkSystem's own advisory-guard pattern.
+     */
+    if (count_publishers(kSportRequestTopic) > 1)
+    {
+        RCLCPP_ERROR(get_logger(), "second publisher detected on /api/sport/request");
+        if (velocity_gate_.authority() == LocoAuthority::kHeld)
+        {
+            auto stop_request = correlator_.send(
+                kApiIdSetVelocity,
+                buildSetVelocityPayload(0.0F, 0.0F, 0.0F),
+                std::chrono::steady_clock::now(),
+                [](std::int32_t, const std::string&) {});
+            if (stop_request)
+            {
+                request_pub_->publish(*stop_request);
+            }
+            velocity_gate_.forceRelease();
+            publishStatus();
+        }
+    }
+
+    publishStatus(/*force=*/true);
+}
+
+void G1LocoBridge::publishStatus(bool force)
+{
+    g1_msgs::msg::LocoStatus msg;
+    msg.stamp           = get_clock()->now();
+    msg.fsm_id          = last_known_fsm_id_;
+    msg.authority       = static_cast<std::uint8_t>(velocity_gate_.authority());
+    msg.last_error_code = last_error_code_;
+
+    const bool changed = (msg.fsm_id != last_published_status_.fsm_id) ||
+                         (msg.authority != last_published_status_.authority) ||
+                         (msg.last_error_code != last_published_status_.last_error_code);
+    if (!force && !changed)
+    {
+        return;
+    }
+    last_published_status_ = msg;
+    status_pub_->publish(msg);
+}
+
+void G1LocoBridge::resetEntities()
+{
+    sweep_timer_.reset();
+    reissue_timer_.reset();
+    heartbeat_timer_.reset();
+    action_server_.reset();
+    cmd_vel_sub_.reset();
+    response_sub_.reset();
+    status_pub_.reset();
+    request_pub_.reset();
+    active_goal_handle_.reset();
+    pending_velocity_request_id_.reset();
+    pending_fsm_poll_id_.reset();
+}
+
+}  // namespace g1_locomotion

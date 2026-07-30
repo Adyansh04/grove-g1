@@ -2,12 +2,19 @@ cmake_minimum_required(VERSION 3.8)
 project(g1_locomotion)
 
 find_package(ament_cmake REQUIRED)
-find_package(nlohmann_json REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(rclcpp_action REQUIRED)
+find_package(rclcpp_lifecycle REQUIRED)
+find_package(lifecycle_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
 find_package(unitree_api REQUIRED)
+find_package(g1_msgs REQUIRED)
+find_package(nlohmann_json REQUIRED)
 
 # Pure, ROS-free wire-contract logic -- unit-tested directly with no rclcpp node needed (mirrors
-# g1_hardware_interface's arm_ramp_engine and g1_bringup's blend_math). Grows across later commits;
-# g1_loco_bridge (the lifecycle node) links it once it lands.
+# g1_hardware_interface's arm_ramp_engine and g1_bringup's blend_math). Internal build artifact
+# only, like blend_math: statically linked into g1_loco_bridge and the unit tests below, no
+# install/export rule of its own.
 add_library(g1_loco_bridge_core
   src/loco_payloads.cpp
   src/loco_request_correlator.cpp
@@ -20,9 +27,34 @@ target_include_directories(g1_loco_bridge_core PUBLIC
 target_compile_features(g1_loco_bridge_core PUBLIC cxx_std_17)
 target_link_libraries(g1_loco_bridge_core PUBLIC nlohmann_json::nlohmann_json)
 ament_target_dependencies(g1_loco_bridge_core PUBLIC unitree_api)
+
+add_executable(g1_loco_bridge
+  src/g1_loco_bridge_node.cpp
+  src/g1_loco_bridge_main.cpp
+)
+target_include_directories(g1_loco_bridge PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+target_compile_features(g1_loco_bridge PUBLIC cxx_std_17)
+target_link_libraries(g1_loco_bridge g1_loco_bridge_core)
+ament_target_dependencies(g1_loco_bridge
+  rclcpp
+  rclcpp_action
+  rclcpp_lifecycle
+  lifecycle_msgs
+  geometry_msgs
+  unitree_api
+  g1_msgs
+)
+
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   target_compile_options(g1_loco_bridge_core PRIVATE -Wall -Wextra)
+  target_compile_options(g1_loco_bridge PRIVATE -Wall -Wextra)
 endif()
+
+install(TARGETS g1_loco_bridge DESTINATION lib/${PROJECT_NAME})
+install(DIRECTORY config DESTINATION share/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
