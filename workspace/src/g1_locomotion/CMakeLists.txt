@@ -11,6 +11,7 @@ find_package(unitree_api REQUIRED)
 add_library(g1_loco_bridge_core
   src/loco_payloads.cpp
   src/loco_request_correlator.cpp
+  src/velocity_gate.cpp
 )
 target_include_directories(g1_loco_bridge_core PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -37,6 +38,11 @@ if(BUILD_TESTING)
   # response race, supersede(), and the max_pending bound.
   ament_add_gmock(test_loco_correlator test/test_loco_correlator.cpp)
   target_link_libraries(test_loco_correlator g1_loco_bridge_core)
+
+  # Re-issue cadence, stale/zero-command idling, the failure-streak release, and the
+  # kAcquiring/kReleasing/kHeld/kReleased authority machine.
+  ament_add_gmock(test_velocity_gate test/test_velocity_gate.cpp)
+  target_link_libraries(test_velocity_gate g1_loco_bridge_core)
 
   # workspace/ruff.toml's sibling root config; see g1_hardware_interface/CMakeLists.txt for why
   # this is a plain CTest instead of ament_lint_common's uncrustify.
