@@ -1,0 +1,62 @@
+controller_manager:
+  ros__parameters:
+    # LowState arrives far faster than this (~900 Hz sim / 500 Hz hardware);
+    # read() just takes the latest sample either way.
+    update_rate: 200
+
+    # G1ArmSdkSystem starts configured-but-inactive: on_configure stands up
+    # its /lowstate subscription so activation can require fresh feedback
+    # immediately, but nothing publishes to /arm_sdk until the explicit
+    # activate_arm step (see README.md's operating procedure and the
+    # mandatory component-then-controller acquire order).
+    hardware_components_initial_state:
+      inactive:
+        - "G1ArmSdkSystem"
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+    arm_trajectory_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+
+joint_state_broadcaster:
+  ros__parameters:
+    # No explicit joints/interfaces list: this broadcasts every state
+    # interface exported by every configured hardware component, which is
+    # exactly the 14 arm joints here. Left at ros2_controllers' own default
+    # deliberately -- there's nothing to tune.
+    {}
+
+arm_trajectory_controller:
+  ros__parameters:
+    joints:
+      - left_shoulder_pitch_joint
+      - left_shoulder_roll_joint
+      - left_shoulder_yaw_joint
+      - left_elbow_joint
+      - left_wrist_roll_joint
+      - left_wrist_pitch_joint
+      - left_wrist_yaw_joint
+      - right_shoulder_pitch_joint
+      - right_shoulder_roll_joint
+      - right_shoulder_yaw_joint
+      - right_elbow_joint
+      - right_wrist_roll_joint
+      - right_wrist_pitch_joint
+      - right_wrist_yaw_joint
+    command_interfaces:
+      - position
+    state_interfaces:
+      - position
+      - velocity
+    state_publish_rate: 100.0   # Hz; default
+    action_monitor_rate: 20.0   # Hz; default
+    allow_partial_joints_goal: false
+
+    # Sim-tuning: unitree_mujoco's PD tracking plus the arm_sdk_sim_bridge's
+    # own weight/slew ramping add latency the JTC's tight built-in defaults
+    # don't expect. Relaxed here for the sim milestone -- re-tighten against
+    # real hardware dynamics when that milestone arrives.
+    constraints:
+      stopped_velocity_tolerance: 0.05
+      goal_time: 5.0

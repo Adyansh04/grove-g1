@@ -1,0 +1,162 @@
+#!/usr/bin/env python3
+"""Acquires control authority over the G1 arm bridge, in the mandatory order.
+
+Waits for /lowstate to be flowing (covers the sim/CM discovery race: the
+hardware component refuses to activate on stale/absent feedback -- see
+g1_hardware_interface's README), then activates G1ArmSdkSystem *before*
+arm_trajectory_controller. That order is mandatory: Humble ties
+command-interface availability to hardware component state, so switching the
+controller in first can fail (see g1_bringup's README).
+
+Python, not C++: this is a one-shot administrative sequencing tool (service
+calls + a bounded retry loop, well under 1 Hz), the same category as the
+launch files it's a sibling to -- not a control loop, so there's no
+real-time/hot-path argument for C++ here.
+"""
+
+import sys
+import time
+
+import rclpy
+from controller_manager_msgs.srv import SetHardwareComponentState, SwitchController
+from lifecycle_msgs.msg import State
+from rclpy.node import Node
+from rclpy.qos import QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile, QoSReliabilityPolicy
+from unitree_hg.msg import LowState
+
+COMPONENT_NAME = "G1ArmSdkSystem"
+CONTROLLER_NAME = "arm_trajectory_controller"
+LOWSTATE_TOPIC = "/lowstate"
+
+# Generous versus the component's own lowstate_timeout_ms (100 ms default):
+# this check only proves /lowstate is flowing at all before we even attempt
+# activation, not the component's own freshness gate.
+LOWSTATE_FRESH_WINDOW_S = 0.5
+LOWSTATE_WAIT_TIMEOUT_S = 30.0
+
+COMPONENT_RETRY_PERIOD_S = 0.5
+COMPONENT_ACTIVATE_TIMEOUT_S = 15.0
+SERVICE_CALL_TIMEOUT_S = 5.0
+
+
+def wait_for_fresh_lowstate(node, timeout_s):
+    """Blocks until at least one recent /lowstate sample has arrived."""
+    last_arrival = {"time": None}
+
+    def _cb(_msg):
+        last_arrival["time"] = time.monotonic()
+
+    qos = QoSProfile(
+        depth=1,
+        reliability=QoSReliabilityPolicy.BEST_EFFORT,
+        durability=QoSDurabilityPolicy.VOLATILE,
+        history=QoSHistoryPolicy.KEEP_LAST,
+    )
+    sub = node.create_subscription(LowState, LOWSTATE_TOPIC, _cb, qos)
+    try:
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            rclpy.spin_once(node, timeout_sec=0.1)
+            if (
+                last_arrival["time"] is not None
+                and (time.monotonic() - last_arrival["time"]) < LOWSTATE_FRESH_WINDOW_S
+            ):
+                return True
+        return False
+    finally:
+        node.destroy_subscription(sub)
+
+
+def set_component_state(node, client, target_state_id, target_label, retry_timeout_s):
+    """Bounded retry: the component/controller_manager may not be discovered
+    yet, or activation may be legitimately refused if /lowstate just barely
+    missed the freshness window (see g1_hardware_interface's on_activate).
+    """
+    deadline = time.monotonic() + retry_timeout_s
+    last_error = "no attempt made"
+    while time.monotonic() < deadline:
+        if not client.wait_for_service(timeout_sec=1.0):
+            last_error = "set_hardware_component_state service not available yet"
+            time.sleep(COMPONENT_RETRY_PERIOD_S)
+            continue
+
+        request = SetHardwareComponentState.Request()
+        request.name = COMPONENT_NAME
+        request.target_state.id = target_state_id
+        request.target_state.label = target_label
+
+        future = client.call_async(request)
+        rclpy.spin_until_future_complete(node, future, timeout_sec=SERVICE_CALL_TIMEOUT_S)
+        result = future.result() if future.done() else None
+        if result is not None and result.ok:
+            return True
+        last_error = f"rejected (result={result})"
+        time.sleep(COMPONENT_RETRY_PERIOD_S)
+
+    node.get_logger().error(f"timed out setting {COMPONENT_NAME} to {target_label!r}: {last_error}")
+    return False
+
+
+def switch_controller(node, client, activate, deactivate, timeout_s):
+    if not client.wait_for_service(timeout_sec=timeout_s):
+        node.get_logger().error("switch_controller service not available")
+        return False
+
+    request = SwitchController.Request()
+    request.activate_controllers = activate
+    request.deactivate_controllers = deactivate
+    request.strictness = SwitchController.Request.STRICT
+    request.activate_asap = True
+    request.timeout.sec = int(timeout_s)
+
+    future = client.call_async(request)
+    rclpy.spin_until_future_complete(node, future, timeout_sec=timeout_s + 1.0)
+    result = future.result() if future.done() else None
+    return result is not None and result.ok
+
+
+def main():
+    rclpy.init()
+    node = Node("g1_bringup_activate_arm")
+    try:
+        node.get_logger().info(f"waiting for {LOWSTATE_TOPIC} to be flowing...")
+        if not wait_for_fresh_lowstate(node, LOWSTATE_WAIT_TIMEOUT_S):
+            node.get_logger().error(
+                f"{LOWSTATE_TOPIC} never became fresh -- is sim.launch.py running?"
+            )
+            return 1
+
+        component_client = node.create_client(
+            SetHardwareComponentState, "/controller_manager/set_hardware_component_state"
+        )
+        controller_client = node.create_client(
+            SwitchController, "/controller_manager/switch_controller"
+        )
+
+        node.get_logger().info(f"activating hardware component {COMPONENT_NAME}...")
+        if not set_component_state(
+            node,
+            component_client,
+            State.PRIMARY_STATE_ACTIVE,
+            "active",
+            COMPONENT_ACTIVATE_TIMEOUT_S,
+        ):
+            return 1
+
+        # Component-then-controller: see this script's module docstring.
+        node.get_logger().info(f"activating controller {CONTROLLER_NAME}...")
+        if not switch_controller(
+            node, controller_client, [CONTROLLER_NAME], [], SERVICE_CALL_TIMEOUT_S
+        ):
+            node.get_logger().error(f"failed to activate {CONTROLLER_NAME}")
+            return 1
+
+        node.get_logger().info("activation complete: component and controller both active.")
+        return 0
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
+
+if __name__ == "__main__":
+    sys.exit(main())

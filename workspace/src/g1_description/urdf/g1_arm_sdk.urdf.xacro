@@ -1,0 +1,56 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="g1_29dof_with_hand_rev_1_0">
+
+  <!-- Verbatim upstream description (see README for provenance). Only its
+       children are spliced in here: xacro:include discards the included
+       file's own <robot> wrapper, so the vendored file needs no edits. -->
+  <xacro:include filename="g1_29dof_with_hand_rev_1_0.urdf"/>
+
+  <!-- Humble hardware plugins only see params parsed from this URDF's
+       <ros2_control> block, never controller_manager's own YAML, so this
+       load is the one place the tunable YAML meets the exported XML. -->
+  <xacro:property name="arm_sdk_params" value="${xacro.load_yaml('../config/arm_sdk_params.yaml')}"/>
+
+  <xacro:macro name="g1_arm_joint" params="name">
+    <joint name="${name}">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+      <state_interface name="effort"/>
+      <param name="motor_index">${arm_sdk_params.joints[name].motor_index}</param>
+      <param name="kp">${arm_sdk_params.joints[name].kp}</param>
+      <param name="kd">${arm_sdk_params.joints[name].kd}</param>
+    </joint>
+  </xacro:macro>
+
+  <!-- Arms only: waist/legs/hands stay with the onboard controller for
+       balance safety, so this system exports command/state interfaces for
+       exactly the 14 arm joints and nothing else. -->
+  <ros2_control name="G1ArmSdkSystem" type="system">
+    <hardware>
+      <plugin>g1_hardware_interface/G1ArmSdkSystem</plugin>
+      <param name="command_publish_rate">${arm_sdk_params.system.command_publish_rate}</param>
+      <param name="blend_ramp_up_s">${arm_sdk_params.system.blend_ramp_up_s}</param>
+      <param name="blend_ramp_down_s">${arm_sdk_params.system.blend_ramp_down_s}</param>
+      <param name="emergency_ramp_down_s">${arm_sdk_params.system.emergency_ramp_down_s}</param>
+      <param name="max_joint_velocity_rad_s">${arm_sdk_params.system.max_joint_velocity_rad_s}</param>
+      <param name="lowstate_timeout_ms">${arm_sdk_params.system.lowstate_timeout_ms}</param>
+    </hardware>
+
+    <xacro:g1_arm_joint name="left_shoulder_pitch_joint"/>
+    <xacro:g1_arm_joint name="left_shoulder_roll_joint"/>
+    <xacro:g1_arm_joint name="left_shoulder_yaw_joint"/>
+    <xacro:g1_arm_joint name="left_elbow_joint"/>
+    <xacro:g1_arm_joint name="left_wrist_roll_joint"/>
+    <xacro:g1_arm_joint name="left_wrist_pitch_joint"/>
+    <xacro:g1_arm_joint name="left_wrist_yaw_joint"/>
+    <xacro:g1_arm_joint name="right_shoulder_pitch_joint"/>
+    <xacro:g1_arm_joint name="right_shoulder_roll_joint"/>
+    <xacro:g1_arm_joint name="right_shoulder_yaw_joint"/>
+    <xacro:g1_arm_joint name="right_elbow_joint"/>
+    <xacro:g1_arm_joint name="right_wrist_roll_joint"/>
+    <xacro:g1_arm_joint name="right_wrist_pitch_joint"/>
+    <xacro:g1_arm_joint name="right_wrist_yaw_joint"/>
+  </ros2_control>
+
+</robot>

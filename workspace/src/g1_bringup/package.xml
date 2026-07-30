@@ -1,0 +1,63 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>g1_bringup</name>
+  <version>0.1.0</version>
+  <description>
+    Sim bring-up for the G1 arm bridge: launches unitree_mujoco alongside the
+    ros2_control stack, plus the sim-only arm_sdk_sim_bridge node that stands
+    in for the onboard motion service in simulation. See README for the full
+    operating procedure.
+  </description>
+  <maintainer email="gupta.adyansh@gmail.com">Adyansh</maintainer>
+  <license>BSD-3-Clause</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>unitree_hg</depend>
+  <depend>g1_hardware_interface</depend>
+
+  <depend>g1_description</depend>
+  <depend>robot_state_publisher</depend>
+  <depend>controller_manager</depend>
+  <depend>joint_state_broadcaster</depend>
+  <depend>joint_trajectory_controller</depend>
+  <depend>xacro</depend>
+  <depend>controller_manager_msgs</depend>
+  <depend>lifecycle_msgs</depend>
+  <depend>rclpy</depend>
+  <depend>launch</depend>
+  <depend>launch_ros</depend>
+
+  <!-- ament_index_python is imported directly by sim.launch.py,
+       control.launch.py, and both test launch files; today it's only
+       pulled in transitively through launch_ros, so it's declared
+       explicitly here to reflect the real dependency. xvfb (the rosdep
+       key for the Xvfb binary) is exec'd directly by sim.launch.py's
+       default headless path. -->
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>xvfb</exec_depend>
+
+  <!-- ament_lint_common is intentionally not used (see g1_description's and
+       g1_hardware_interface's package.xml for the rationale): it drags in
+       ament_uncrustify/ament_flake8/ament_copyright, which conflict with
+       this repo's root .clang-format/ruff.toml and no-header-comment
+       convention. clang-format/ruff run as plain CTests instead (see
+       CMakeLists.txt). -->
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_cmake_lint_cmake</test_depend>
+  <test_depend>ament_cmake_xmllint</test_depend>
+  <test_depend>ament_cmake_gmock</test_depend>
+  <test_depend>launch_testing</test_depend>
+  <test_depend>launch_testing_ament_cmake</test_depend>
+  <test_depend>sensor_msgs</test_depend>
+  <test_depend>control_msgs</test_depend>
+  <test_depend>trajectory_msgs</test_depend>
+  <test_depend>builtin_interfaces</test_depend>
+  <test_depend>unitree_go</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

@@ -38,8 +38,8 @@
         "editor.formatOnSave": false,
         "editor.codeActionsOnSave": {}
     },
-    "ROS2.distro": "jazzy",
+    "ROS2.distro": "humble",
     "python.autoComplete.extraPaths": [
-        "/opt/ros/jazzy/lib/python3.12/site-packages"
+        "/opt/ros/humble/lib/python3.10/site-packages"
     ]
 }
