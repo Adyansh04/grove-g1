@@ -1,3 +1,7 @@
+/**
+ * @file test_blend_math.cpp
+ * @brief Unit tests for blend() and the stepEffectiveWeight() staleness ramp/resume policy.
+ */
 #include <gmock/gmock.h>
 
 #include "g1_bringup/blend_math.hpp"
@@ -8,8 +12,11 @@ namespace
 {
 
 constexpr double kTimeoutRampDownS = 1.0;
-constexpr double kDt               = 0.01;  // 100 Hz-ish tick, matches the sim's own /arm_sdk rate
-constexpr double kEpsilon          = 1e-9;
+/**
+ * @brief 100 Hz-ish tick, matches the sim's own /arm_sdk rate.
+ */
+constexpr double kDt      = 0.01;
+constexpr double kEpsilon = 1e-9;
 
 // -------------------------------------------------------------------------
 // blend()
@@ -80,8 +87,10 @@ TEST(StepEffectiveWeight, ResumeAfterStalenessContinuesFromCurrentValueWithoutSn
     ASSERT_GT(weight_at_resume, 0.0);
     ASSERT_LT(weight_at_resume, 1.0);
 
-    // A fresh message with raw weight 1.0 arrives: the very next tick must
-    // move toward 1.0 from weight_at_resume, never jump straight to it.
+    /*
+     * A fresh message with raw weight 1.0 arrives: the very next tick must
+     * move toward 1.0 from weight_at_resume, never jump straight to it.
+     */
     const double next =
         stepEffectiveWeight(weight, 1.0, /*arm_sdk_stale=*/false, kTimeoutRampDownS, kDt);
     EXPECT_GT(next, weight_at_resume);
@@ -91,9 +100,11 @@ TEST(StepEffectiveWeight, ResumeAfterStalenessContinuesFromCurrentValueWithoutSn
 
 TEST(StepEffectiveWeight, NeverReceivedTreatedAsStaleStaysAtZero)
 {
-    // The bridge feeds raw_weight=0.0 with arm_sdk_stale=true before the
-    // first /arm_sdk message ever arrives -- confirm that's a stable
-    // fixed point, not just a coincidental zero.
+    /*
+     * The bridge feeds raw_weight=0.0 with arm_sdk_stale=true before the
+     * first /arm_sdk message ever arrives -- confirm that's a stable
+     * fixed point, not just a coincidental zero.
+     */
     double weight = 0.0;
     for (int i = 0; i < 100; ++i)
     {

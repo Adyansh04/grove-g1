@@ -1,12 +1,20 @@
+/**
+ * @file test_pluginlib_loading.cpp
+ * @brief Verifies the G1ArmSdkSystem hardware_interface plugin is discoverable via pluginlib.
+ */
+
 #include <gmock/gmock.h>
 
 #include <hardware_interface/system_interface.hpp>
 #include <pluginlib/class_loader.hpp>
 
-// Confirms g1_hardware_interface/G1ArmSdkSystem is actually discoverable
-// through pluginlib's ament-index plugin description lookup -- the same
-// path controller_manager uses -- rather than merely compiling. This is the
-// discovery proof for the plugin export wiring.
+/**
+ * @brief Confirms g1_hardware_interface/G1ArmSdkSystem is actually discoverable through
+ * pluginlib's ament-index plugin description lookup -- the same path controller_manager
+ * uses -- rather than merely compiling.
+ *
+ * This is the discovery proof for the plugin export wiring.
+ */
 TEST(G1ArmSdkSystemPluginlib, DiscoversAndInstantiates)
 {
     pluginlib::ClassLoader<hardware_interface::SystemInterface> loader(

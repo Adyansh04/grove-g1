@@ -1,3 +1,8 @@
+/**
+ * @file arm_sdk_sim_bridge_node.cpp
+ * @brief Sim-only bridge that turns /arm_sdk weighted commands into /lowcmd for unitree_mujoco.
+ */
+
 #include "g1_bringup/arm_sdk_sim_bridge_node.hpp"
 
 #include <stdexcept>
@@ -8,6 +13,14 @@
 namespace g1_bringup
 {
 
+/**
+ * @brief Declare parameters, wire the /lowstate, /arm_sdk, and /lowcmd topics, and start the
+ * publish timer for this sim-only bridge.
+ *
+ * @param options Node options forwarded to rclcpp::Node.
+ * @throws std::invalid_argument If publish_rate_hz, arm_sdk_timeout_ms, or timeout_ramp_down_s
+ *         resolve to a non-positive value.
+ */
 ArmSdkSimBridge::ArmSdkSimBridge(const rclcpp::NodeOptions& options)
   : rclcpp::Node("arm_sdk_sim_bridge", options)
 {
@@ -22,16 +35,18 @@ ArmSdkSimBridge::ArmSdkSimBridge(const rclcpp::NodeOptions& options)
     arm_sdk_timeout_s_              = arm_sdk_timeout_ms / 1000.0;
     timeout_ramp_down_s_            = declare_parameter("timeout_ramp_down_s", 1.0);
 
-    // Fail fast on a nonsensical rate/duration tunable, mirroring
-    // g1_hardware_interface::G1ArmSdkSystem::on_init's strictly-positive
-    // gate. publish_rate_hz <= 0 makes the wall-timer period's
-    // duration_cast undefined and breaks the first tick's dt;
-    // arm_sdk_timeout_s/timeout_ramp_down_s <= 0 turns the advertised
-    // no-snap staleness decay into an instantaneous snap (or an upward
-    // ramp) via stepEffectiveWeight's max_step. Gains (leg/waist/arm_hold
-    // kp/kd) are left unchecked here, same as G1ArmSdkSystem::on_init
-    // leaves its own per-joint kp/kd unchecked -- only the rate/duration
-    // tunables are load-bearing for avoiding UB/snap-on-misconfiguration.
+    /*
+     * Fail fast on a nonsensical rate/duration tunable, mirroring
+     * g1_hardware_interface::G1ArmSdkSystem::on_init's strictly-positive
+     * gate. publish_rate_hz <= 0 makes the wall-timer period's
+     * duration_cast undefined and breaks the first tick's dt;
+     * arm_sdk_timeout_s/timeout_ramp_down_s <= 0 turns the advertised
+     * no-snap staleness decay into an instantaneous snap (or an upward
+     * ramp) via stepEffectiveWeight's max_step. Gains (leg/waist/arm_hold
+     * kp/kd) are left unchecked here, same as G1ArmSdkSystem::on_init
+     * leaves its own per-joint kp/kd unchecked -- only the rate/duration
+     * tunables are load-bearing for avoiding UB/snap-on-misconfiguration.
+     */
     if (publish_rate_hz_ <= 0.0 || arm_sdk_timeout_s_ <= 0.0 || timeout_ramp_down_s_ <= 0.0)
     {
         RCLCPP_FATAL(
@@ -46,29 +61,35 @@ ArmSdkSimBridge::ArmSdkSimBridge(const rclcpp::NodeOptions& options)
             "strictly positive");
     }
 
-    // Best-effort: matches unitree_mujoco's own rt/lowstate publisher QoS
-    // family (best-effort-compatible; verified RELIABLE in the milestone-1
-    // spike, which a best-effort request is still compatible with) and only
-    // the newest of the ~900 Hz stream ever matters.
+    /*
+     * Best-effort: matches unitree_mujoco's own rt/lowstate publisher QoS
+     * family (best-effort-compatible; verified RELIABLE in the milestone-1
+     * spike, which a best-effort request is still compatible with) and only
+     * the newest of the ~900 Hz stream ever matters.
+     */
     const auto lowstate_qos = rclcpp::QoS(rclcpp::KeepLast(1)).best_effort().durability_volatile();
     lowstate_sub_           = create_subscription<unitree_hg::msg::LowState>(
         "/lowstate",
         lowstate_qos,
         [this](unitree_hg::msg::LowState::SharedPtr msg) { lowstateCallback(msg); });
 
-    // Reliable: matches g1_hardware_interface's G1ArmSdkSystem, the sole
-    // /arm_sdk publisher in this stack.
+    /*
+     * Reliable: matches g1_hardware_interface's G1ArmSdkSystem, the sole
+     * /arm_sdk publisher in this stack.
+     */
     const auto arm_sdk_qos = rclcpp::QoS(rclcpp::KeepLast(1)).reliable().durability_volatile();
     arm_sdk_sub_           = create_subscription<unitree_hg::msg::LowCmd>(
         "/arm_sdk",
         arm_sdk_qos,
         [this](unitree_hg::msg::LowCmd::SharedPtr msg) { armSdkCallback(msg); });
 
-    // Best-effort: matches unitree_mujoco's own rt/lowcmd subscription
-    // exactly (verified in the milestone-1 spike). This bridge is the sim's
-    // only /lowcmd publisher, so there's no reliability contention to
-    // protect against, and only the newest tick ever matters at
-    // publish_rate_hz_.
+    /*
+     * Best-effort: matches unitree_mujoco's own rt/lowcmd subscription
+     * exactly (verified in the milestone-1 spike). This bridge is the sim's
+     * only /lowcmd publisher, so there's no reliability contention to
+     * protect against, and only the newest tick ever matters at
+     * publish_rate_hz_.
+     */
     const auto lowcmd_qos = rclcpp::QoS(rclcpp::KeepLast(1)).best_effort().durability_volatile();
     lowcmd_pub_           = create_publisher<unitree_hg::msg::LowCmd>("/lowcmd", lowcmd_qos);
 
@@ -124,9 +145,11 @@ void ArmSdkSimBridge::publishTick()
                            std::chrono::duration<double>(now - last_tick_).count();
     last_tick_       = now;
 
-    // No /arm_sdk received yet is treated the same as stale: the effective
-    // weight target is 0 either way, so arms simply hold at hold_q_ until
-    // the first real command shows up.
+    /*
+     * No /arm_sdk received yet is treated the same as stale: the effective
+     * weight target is 0 either way, so arms simply hold at hold_q_ until
+     * the first real command shows up.
+     */
     bool stale = true;
     if (arm_sdk_received_)
     {
@@ -136,9 +159,11 @@ void ArmSdkSimBridge::publishTick()
     effective_weight_ =
         stepEffectiveWeight(effective_weight_, arm_cmd_weight_, stale, timeout_ramp_down_s_, dt);
 
-    // assembleSimLowCmd() (blend_math) does the leg/waist stiff-hold,
-    // arm blend, and weight-slot echo -- unit-tested directly (see
-    // test/test_assemble_sim_low_cmd.cpp) without a live node or DDS.
+    /*
+     * assembleSimLowCmd() (blend_math) does the leg/waist stiff-hold,
+     * arm blend, and weight-slot echo -- unit-tested directly (see
+     * test/test_assemble_sim_low_cmd.cpp) without a live node or DDS.
+     */
     unitree_hg::msg::LowCmd cmd = assembleSimLowCmd(
         hold_q_,
         arm_cmd_q_,
@@ -152,15 +177,17 @@ void ArmSdkSimBridge::publishTick()
         arm_hold_kp_,
         arm_hold_kd_);
 
-    // mode/mode_pr/mode_machine are deliberately never set: read directly
-    // from unitree_mujoco's own source
-    // (simulate/src/unitree_sdk2_bridge.h, RobotBridge::run()), its actuator
-    // torque is computed purely as
-    // `tau_ff + kp * (q_des - q_meas) + kd * (dq_des - dq_meas)` per motor
-    // slot -- the incoming LowCmd's mode fields are never read for
-    // actuation. This is a sim-specific finding; the real onboard motion
-    // service's use of these fields (if any) is unverified and stays a
-    // hardware re-validation item.
+    /*
+     * mode/mode_pr/mode_machine are deliberately never set: read directly
+     * from unitree_mujoco's own source
+     * (simulate/src/unitree_sdk2_bridge.h, RobotBridge::run()), its actuator
+     * torque is computed purely as
+     * `tau_ff + kp * (q_des - q_meas) + kd * (dq_des - dq_meas)` per motor
+     * slot -- the incoming LowCmd's mode fields are never read for
+     * actuation. This is a sim-specific finding; the real onboard motion
+     * service's use of these fields (if any) is unverified and stays a
+     * hardware re-validation item.
+     */
     g1_hardware_interface::vendored::computeLowCmdCrc(cmd);
     lowcmd_pub_->publish(cmd);
 }

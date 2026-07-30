@@ -1,3 +1,9 @@
+/**
+ * @file test_arm_ramp_engine.cpp
+ * @brief Unit tests for ArmRampEngine's ramp/slew/dt-hardening behavior and
+ *        its helper functions.
+ */
+
 #include <gmock/gmock.h>
 
 #include <array>
@@ -14,9 +20,15 @@ constexpr double kBlendRampUpS       = 2.0;
 constexpr double kBlendRampDownS     = 2.0;
 constexpr double kEmergencyRampDownS = 0.5;
 constexpr double kMaxJointVelocity   = 1.0;
-constexpr double kDt                 = 0.01;  // 100 Hz, matches command_publish_rate's default
-constexpr double kNominalPeriodS     = kDt;   // same rate -- see RampConfig::nominal_period_s
-constexpr double kEpsilon            = 1e-9;
+/**
+ * @brief 100 Hz, matches command_publish_rate's default.
+ */
+constexpr double kDt = 0.01;
+/**
+ * @brief Same rate -- see RampConfig::nominal_period_s.
+ */
+constexpr double kNominalPeriodS = kDt;
+constexpr double kEpsilon        = 1e-9;
 
 RampConfig makeConfig()
 {
@@ -63,10 +75,12 @@ TEST(ArmRampEngine, WeightRampsUpMonotonicallyAndReachesOneInExpectedTicks)
     engine.seedFromMeasured(zeroPositions());
     const auto commanded = zeroPositions();
 
-    // Per-tick slope bound (not just monotonicity + a completion deadline):
-    // catches a regression that ramps up faster than blend_ramp_up_s
-    // allows even if it still happens to finish inside the tick budget
-    // below.
+    /*
+     * Per-tick slope bound (not just monotonicity + a completion deadline):
+     * catches a regression that ramps up faster than blend_ramp_up_s
+     * allows even if it still happens to finish inside the tick budget
+     * below.
+     */
     const double max_slope      = kDt / kBlendRampUpS;
     const int    expected_ticks = static_cast<int>(kBlendRampUpS / kDt);
     int          ticks_taken    = 0;
@@ -82,9 +96,11 @@ TEST(ArmRampEngine, WeightRampsUpMonotonicallyAndReachesOneInExpectedTicks)
     }
 
     EXPECT_NEAR(engine.weight(), 1.0, 1e-6);
-    // Mirrors the emergency-ramp test's duration pin: a snap-to-1.0 would
-    // finish in a handful of ticks and trip this, not just the slope check
-    // above.
+    /*
+     * Mirrors the emergency-ramp test's duration pin: a snap-to-1.0 would
+     * finish in a handful of ticks and trip this, not just the slope check
+     * above.
+     */
     EXPECT_NEAR(ticks_taken, expected_ticks, 1);
 }
 
@@ -134,9 +150,11 @@ TEST(ArmRampEngine, RampDownTriggeredMidRampUpStaysMonotonicDownwardToZero)
     ASSERT_GT(weight_at_switch, 0.0);
     ASSERT_LT(weight_at_switch, 1.0);
 
-    // Switch to ramp-down mid-flight: must only ever decrease from here,
-    // never jump back up or oscillate, regardless of having been ramping up
-    // a moment before.
+    /*
+     * Switch to ramp-down mid-flight: must only ever decrease from here,
+     * never jump back up or oscillate, regardless of having been ramping up
+     * a moment before.
+     */
     double previous = weight_at_switch;
     for (int i = 0; i < static_cast<int>(kBlendRampDownS / kDt) + 1; ++i)
     {
@@ -171,9 +189,11 @@ TEST(ArmRampEngine, EmergencyRampDurationIsHonoredAndFasterThanNormalRampDown)
         ++ticks_taken;
     }
 
-    // Emergency ramp (0.5 s) is four times faster than the normal ramp-down
-    // (2.0 s) with this config -- confirm it actually finishes in roughly
-    // expected_ticks, not blend_ramp_down_s's ticks.
+    /*
+     * Emergency ramp (0.5 s) is four times faster than the normal ramp-down
+     * (2.0 s) with this config -- confirm it actually finishes in roughly
+     * expected_ticks, not blend_ramp_down_s's ticks.
+     */
     EXPECT_NEAR(ticks_taken, expected_ticks, 1);
     EXPECT_NEAR(engine.weight(), 0.0, 1e-6);
 }
@@ -248,13 +268,17 @@ TEST(ArmRampEngine, NonPositiveDtHoldsWeightAndPositionsInstead)
     std::array<double, kNumArmJoints> far_target{};
     far_target.fill(5.0);
 
-    // Zero dt: no snap-to-target (the pre-hardening fallback), no change at
-    // all.
+    /*
+     * Zero dt: no snap-to-target (the pre-hardening fallback), no change at
+     * all.
+     */
     EXPECT_DOUBLE_EQ(engine.step(BlendMode::kActive, far_target, 0.0), weight_before);
     EXPECT_EQ(engine.publishedPositions(), positions_before);
 
-    // Negative dt: same hold, and not UB (a naive clamp(-max_step, max_step)
-    // with a negative max_step would invert the bounds).
+    /*
+     * Negative dt: same hold, and not UB (a naive clamp(-max_step, max_step)
+     * with a negative max_step would invert the bounds).
+     */
     EXPECT_DOUBLE_EQ(engine.step(BlendMode::kActive, far_target, -0.01), weight_before);
     EXPECT_EQ(engine.publishedPositions(), positions_before);
 }
@@ -264,8 +288,10 @@ TEST(ArmRampEngine, LargeDtClampsWeightRampToNominalPeriodMultiple)
     ArmRampEngine engine(makeConfig());
     engine.seedFromMeasured(zeroPositions());
 
-    // Unclamped, this dt's max_step (huge_dt / blend_ramp_up_s) would exceed
-    // 1.0 and snap the weight straight to its target in one tick.
+    /*
+     * Unclamped, this dt's max_step (huge_dt / blend_ramp_up_s) would exceed
+     * 1.0 and snap the weight straight to its target in one tick.
+     */
     constexpr double huge_dt = 10.0;
     const double     weight  = engine.step(BlendMode::kActive, zeroPositions(), huge_dt);
 
@@ -358,10 +384,12 @@ TEST(ResolveEffectiveMode, StaleFeedbackEscalatesActiveToEmergencyRampDown)
 
 TEST(ResolveEffectiveMode, StalenessTriggersEmergencyExactlyOnceAndNeverOscillatesOrDeescalates)
 {
-    // Once the caller's shared mode has been escalated (no longer kActive),
-    // resolveEffectiveMode never re-escalates or reverts it, regardless of
-    // whether the feedback is still stale or has recovered -- the only way
-    // back to kActive is a fresh on_activate, outside this function entirely.
+    /*
+     * Once the caller's shared mode has been escalated (no longer kActive),
+     * resolveEffectiveMode never re-escalates or reverts it, regardless of
+     * whether the feedback is still stale or has recovered -- the only way
+     * back to kActive is a fresh on_activate, outside this function entirely.
+     */
     EXPECT_EQ(
         resolveEffectiveMode(BlendMode::kEmergencyRampDown, true),
         BlendMode::kEmergencyRampDown);

@@ -1,3 +1,7 @@
+/**
+ * @file test_assemble_sim_low_cmd.cpp
+ * @brief Unit tests for assembleSimLowCmd() -- per-slot hold/blend gains and the weight echo.
+ */
 #include <gmock/gmock.h>
 
 #include <array>

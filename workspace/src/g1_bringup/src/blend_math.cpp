@@ -1,3 +1,7 @@
+/**
+ * @file blend_math.cpp
+ * @brief Implements the arm_sdk blend-weight ramp and the sim bridge's full-body /lowcmd assembly.
+ */
 #include "g1_bringup/blend_math.hpp"
 
 #include <algorithm>
@@ -31,9 +35,11 @@ unitree_hg::msg::LowCmd assembleSimLowCmd(
     const std::array<double, kNumArmMotors>& arm_cmd_kd, double weight, double leg_kp,
     double leg_kd, double waist_kp, double waist_kd, double arm_hold_kp, double arm_hold_kd)
 {
-    unitree_hg::msg::LowCmd cmd;  // rosidl-generated: zero-initialized, including reserved
-                                  // slots and mode/mode_pr/mode_machine -- deliberately left
-                                  // untouched (see arm_sdk_sim_bridge_node's README).
+    /*
+     * rosidl-generated: zero-initialized, including reserved slots and mode/mode_pr/mode_machine
+     * -- deliberately left untouched (see arm_sdk_sim_bridge_node's README).
+     */
+    unitree_hg::msg::LowCmd cmd;
 
     for (int i = 0; i < kNumLegMotors; ++i)
     {

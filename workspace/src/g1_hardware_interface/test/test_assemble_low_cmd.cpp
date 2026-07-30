@@ -1,3 +1,7 @@
+/**
+ * @file test_assemble_low_cmd.cpp
+ * @brief Unit tests for assembleLowCmd() -- arm slot writes, the weight slot, and untouched slots.
+ */
 #include <gmock/gmock.h>
 
 #include <array>
