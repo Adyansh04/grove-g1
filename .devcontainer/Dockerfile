@@ -167,6 +167,47 @@ EOF
 # apt is what Humble's rosidl expects.
 RUN python3 -m pip uninstall -y em
 
+# --- Milestone 2: locomotion deps -------------------------------------------
+# Appended after the unitree_sdk2/MuJoCo builds on purpose: these layers change
+# independently of those, and putting them last keeps the expensive source
+# builds above cached.
+
+# nlohmann-json: the LocoClient wire format is JSON in Request.parameter /
+# Response.data, and this is the same library the vendor's own client uses, so
+# our serialisation is byte-identical to what the robot expects.
+RUN apt-get update && apt-get install -y nlohmann-json3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# libtorch (CPU): runs the sim-only walking policy. CPU-only is deliberate --
+# the policy is 12 leg actions at 50 Hz, and a GPU build would triple image
+# size for a testbed. SIM-ONLY: nothing hardware-facing links this.
+ARG LIBTORCH_VERSION=2.4.1
+RUN curl -fsSL -o /tmp/libtorch.zip \
+      "https://download.pytorch.org/libtorch/cpu/libtorch-cxx11-abi-shared-with-deps-${LIBTORCH_VERSION}%2Bcpu.zip" \
+    && unzip -q /tmp/libtorch.zip -d /opt \
+    && rm /tmp/libtorch.zip
+ENV Torch_DIR=/opt/libtorch/share/cmake/Torch
+
+# unitree_rl_gym: Unitree's own repo (BSD-3-Clause), for its pretrained G1
+# walking policy at deploy/pre_train/g1/motion.pt.
+#
+# SIM-ONLY TESTBED SCAFFOLDING. The real G1 walks exclusively through
+# LocoClient / the onboard motion service via the real SDK. This policy's gait,
+# limits and recovery differ from the vendor's; it exists so the simulated
+# robot can stand and walk, and must never run near hardware.
+#
+# The checkout is kept whole (not trimmed to the .pt) because the observation
+# layout and gains must be transcribed from this exact source rather than
+# re-derived -- a wrong obs layout yields a policy that runs and then falls.
+# Pinned 2026-07-30 — current tip at authoring time.
+ARG UNITREE_RL_GYM_SHA=276801e46c5d433564f24658bac64f254b7d2d4b
+RUN git init -q /opt/unitree_robotics/unitree_rl_gym && \
+    cd /opt/unitree_robotics/unitree_rl_gym && \
+    git remote add origin https://github.com/unitreerobotics/unitree_rl_gym.git && \
+    git fetch --depth 1 origin ${UNITREE_RL_GYM_SHA} && \
+    git checkout -q FETCH_HEAD && \
+    rm -rf .git
+
 # Ensure default workspace exists (mounted from host: ./workspace -> /root/workspace)
 RUN mkdir -p /root/workspace/src
 RUN mkdir -p /root/data/
