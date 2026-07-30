@@ -23,15 +23,12 @@
 
 #include "unitree_hg/msg/low_cmd.hpp"
 
-namespace g1_hardware_interface
-{
-namespace vendored
+namespace g1_hardware_interface::vendored
 {
 
 std::uint32_t crc32Core(const std::uint32_t* ptr, std::uint32_t len);
 void          computeLowCmdCrc(unitree_hg::msg::LowCmd& msg);
 
-}  // namespace vendored
-}  // namespace g1_hardware_interface
+}  // namespace g1_hardware_interface::vendored
 
 #endif  // G1_HARDWARE_INTERFACE__MOTOR_CRC_HG_HPP_

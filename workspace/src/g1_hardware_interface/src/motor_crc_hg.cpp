@@ -10,9 +10,7 @@
 #include <cstddef>
 #include <cstring>
 
-namespace g1_hardware_interface
-{
-namespace vendored
+namespace g1_hardware_interface::vendored
 {
 
 namespace
@@ -72,6 +70,8 @@ std::uint32_t crc32Core(const std::uint32_t* ptr, std::uint32_t len)
             {
                 crc32 ^= kPolynomial;
             }
+            // Kept byte-for-byte as upstream writes it; see the file header.
+            // NOLINTNEXTLINE(readability-implicit-bool-conversion)
             if (data & xbit)
             {
                 crc32 ^= kPolynomial;
@@ -112,5 +112,4 @@ void computeLowCmdCrc(unitree_hg::msg::LowCmd& msg)
     msg.crc = raw.crc;
 }
 
-}  // namespace vendored
-}  // namespace g1_hardware_interface
+}  // namespace g1_hardware_interface::vendored

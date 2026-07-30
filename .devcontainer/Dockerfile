@@ -10,9 +10,10 @@ ENV PIP_BREAK_SYSTEM_PACKAGES=1
 # EDITOR TOOLING
 # These are pre-configured tools for C++ and Python development.
 # ============================================================================
-RUN apt-get update && apt-get install -y clangd-14 clang-format-14 && \
+RUN apt-get update && apt-get install -y clangd-14 clang-format-14 clang-tidy-14 && \
     update-alternatives --install /usr/bin/clangd clangd /usr/bin/clangd-14 100 && \
     update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-14 100 && \
+    update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-14 100 && \
     (python3 -m pip install --no-cache-dir --break-system-packages ruff || \
      python3 -m pip install --no-cache-dir ruff) && \
     rm -rf /var/lib/apt/lists/*

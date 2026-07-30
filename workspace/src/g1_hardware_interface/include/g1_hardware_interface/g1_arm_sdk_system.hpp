@@ -153,7 +153,7 @@ private:
     };
 
     static std::string makeInternalNodeName();
-    void               lowstateCallback(const unitree_hg::msg::LowState::SharedPtr msg);
+    void               lowstateCallback(const unitree_hg::msg::LowState::ConstSharedPtr& msg);
     /**
      * @brief Cancels the executor, joins its thread, and tears down the node/sub/pub.
      *

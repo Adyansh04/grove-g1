@@ -45,8 +45,10 @@ double ArmRampEngine::rampDurationFor(BlendMode mode) const
             return config_.blend_ramp_up_s;
         case BlendMode::kEmergencyRampDown:
             return config_.emergency_ramp_down_s;
+        // kInactive shares kRampDown's duration: step() never sees it in
+        // practice (callers self-gate), and the gentler ramp is the safe
+        // fallback if it ever does.
         case BlendMode::kRampDown:
-            return config_.blend_ramp_down_s;
         case BlendMode::kInactive:
             return config_.blend_ramp_down_s;
     }

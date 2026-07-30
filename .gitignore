@@ -4,6 +4,7 @@ workspace/install/
 workspace/log/
 
 workspace/.clang-format
+workspace/.clang-tidy
 workspace/.clangd
 workspace/ruff.toml
 

@@ -22,7 +22,7 @@ namespace g1_hardware_interface
 
 namespace
 {
-constexpr char kLoggerName[] = "g1_arm_sdk_system";
+const char* const kLoggerName = "g1_arm_sdk_system";
 
 /**
  * @brief Parses a double-valued entry out of a string-keyed <param> map.
@@ -215,7 +215,8 @@ G1ArmSdkSystem::on_init(const hardware_interface::HardwareInfo& info)
     return hardware_interface::CallbackReturn::SUCCESS;
 }
 
-hardware_interface::CallbackReturn G1ArmSdkSystem::on_configure(const rclcpp_lifecycle::State&)
+hardware_interface::CallbackReturn
+G1ArmSdkSystem::on_configure(const rclcpp_lifecycle::State& /*previous_state*/)
 {
     /*
      * Idempotent: on_configure can run more than once per process (e.g. an
@@ -239,7 +240,7 @@ hardware_interface::CallbackReturn G1ArmSdkSystem::on_configure(const rclcpp_lif
     lowstate_sub_           = node_->create_subscription<unitree_hg::msg::LowState>(
         "/lowstate",
         lowstate_qos,
-        [this](const unitree_hg::msg::LowState::SharedPtr msg) { lowstateCallback(msg); });
+        [this](const unitree_hg::msg::LowState::ConstSharedPtr& msg) { lowstateCallback(msg); });
 
     /*
      * Reliable: we're the sole authority on this channel (single writer by
@@ -285,13 +286,15 @@ hardware_interface::CallbackReturn G1ArmSdkSystem::on_configure(const rclcpp_lif
     return hardware_interface::CallbackReturn::SUCCESS;
 }
 
-hardware_interface::CallbackReturn G1ArmSdkSystem::on_cleanup(const rclcpp_lifecycle::State&)
+hardware_interface::CallbackReturn
+G1ArmSdkSystem::on_cleanup(const rclcpp_lifecycle::State& /*previous_state*/)
 {
     shutdownInternalNode();
     return hardware_interface::CallbackReturn::SUCCESS;
 }
 
-hardware_interface::CallbackReturn G1ArmSdkSystem::on_activate(const rclcpp_lifecycle::State&)
+hardware_interface::CallbackReturn
+G1ArmSdkSystem::on_activate(const rclcpp_lifecycle::State& /*previous_state*/)
 {
     /*
      * readFromRT(), not readFromNonRT(): resource_manager serializes this
@@ -339,13 +342,15 @@ hardware_interface::CallbackReturn G1ArmSdkSystem::on_activate(const rclcpp_life
     return hardware_interface::CallbackReturn::SUCCESS;
 }
 
-hardware_interface::CallbackReturn G1ArmSdkSystem::on_deactivate(const rclcpp_lifecycle::State&)
+hardware_interface::CallbackReturn
+G1ArmSdkSystem::on_deactivate(const rclcpp_lifecycle::State& /*previous_state*/)
 {
     rampDownSynchronously(BlendMode::kRampDown);
     return hardware_interface::CallbackReturn::SUCCESS;
 }
 
-hardware_interface::CallbackReturn G1ArmSdkSystem::on_shutdown(const rclcpp_lifecycle::State&)
+hardware_interface::CallbackReturn
+G1ArmSdkSystem::on_shutdown(const rclcpp_lifecycle::State& /*previous_state*/)
 {
     /*
      * Belt-and-braces: confirmed directly (manual sim validation) that
@@ -359,7 +364,8 @@ hardware_interface::CallbackReturn G1ArmSdkSystem::on_shutdown(const rclcpp_life
     return hardware_interface::CallbackReturn::SUCCESS;
 }
 
-hardware_interface::CallbackReturn G1ArmSdkSystem::on_error(const rclcpp_lifecycle::State&)
+hardware_interface::CallbackReturn
+G1ArmSdkSystem::on_error(const rclcpp_lifecycle::State& /*previous_state*/)
 {
     rampDownSynchronously(BlendMode::kEmergencyRampDown);
     return hardware_interface::CallbackReturn::SUCCESS;
@@ -533,7 +539,7 @@ std::string G1ArmSdkSystem::makeInternalNodeName()
     return "g1_arm_sdk_system_internal_" + std::to_string(counter.fetch_add(1));
 }
 
-void G1ArmSdkSystem::lowstateCallback(const unitree_hg::msg::LowState::SharedPtr msg)
+void G1ArmSdkSystem::lowstateCallback(const unitree_hg::msg::LowState::ConstSharedPtr& msg)
 {
     StampedLowState sample;
     sample.state   = *msg;

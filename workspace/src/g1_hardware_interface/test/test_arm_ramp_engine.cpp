@@ -289,11 +289,11 @@ TEST(ArmRampEngine, LargeDtClampsWeightRampToNominalPeriodMultiple)
     engine.seedFromMeasured(zeroPositions());
 
     /*
-     * Unclamped, this dt's max_step (huge_dt / blend_ramp_up_s) would exceed
+     * Unclamped, this dt's max_step (kHugeDt / blend_ramp_up_s) would exceed
      * 1.0 and snap the weight straight to its target in one tick.
      */
-    constexpr double huge_dt = 10.0;
-    const double     weight  = engine.step(BlendMode::kActive, zeroPositions(), huge_dt);
+    constexpr double kHugeDt = 10.0;
+    const double     weight  = engine.step(BlendMode::kActive, zeroPositions(), kHugeDt);
 
     const double clamped_dt = kMaxDtNominalPeriodMultiple * kNominalPeriodS;
     EXPECT_NEAR(weight, clamped_dt / kBlendRampUpS, 1e-9);

@@ -71,7 +71,7 @@ ArmSdkSimBridge::ArmSdkSimBridge(const rclcpp::NodeOptions& options)
     lowstate_sub_           = create_subscription<unitree_hg::msg::LowState>(
         "/lowstate",
         lowstate_qos,
-        [this](unitree_hg::msg::LowState::SharedPtr msg) { lowstateCallback(msg); });
+        [this](const unitree_hg::msg::LowState::ConstSharedPtr& msg) { lowstateCallback(msg); });
 
     /*
      * Reliable: matches g1_hardware_interface's G1ArmSdkSystem, the sole
@@ -81,7 +81,7 @@ ArmSdkSimBridge::ArmSdkSimBridge(const rclcpp::NodeOptions& options)
     arm_sdk_sub_           = create_subscription<unitree_hg::msg::LowCmd>(
         "/arm_sdk",
         arm_sdk_qos,
-        [this](unitree_hg::msg::LowCmd::SharedPtr msg) { armSdkCallback(msg); });
+        [this](const unitree_hg::msg::LowCmd::ConstSharedPtr& msg) { armSdkCallback(msg); });
 
     /*
      * Best-effort: matches unitree_mujoco's own rt/lowcmd subscription
@@ -105,7 +105,7 @@ ArmSdkSimBridge::ArmSdkSimBridge(const rclcpp::NodeOptions& options)
         "against real hardware (see README.md).");
 }
 
-void ArmSdkSimBridge::lowstateCallback(unitree_hg::msg::LowState::SharedPtr msg)
+void ArmSdkSimBridge::lowstateCallback(const unitree_hg::msg::LowState::ConstSharedPtr& msg)
 {
     if (hold_pose_captured_)
     {
@@ -118,14 +118,14 @@ void ArmSdkSimBridge::lowstateCallback(unitree_hg::msg::LowState::SharedPtr msg)
     hold_pose_captured_ = true;
 }
 
-void ArmSdkSimBridge::armSdkCallback(unitree_hg::msg::LowCmd::SharedPtr msg)
+void ArmSdkSimBridge::armSdkCallback(const unitree_hg::msg::LowCmd::ConstSharedPtr& msg)
 {
-    for (int i = 0; i < kNumArmMotors; ++i)
+    for (std::size_t i = 0; i < static_cast<std::size_t>(kNumArmMotors); ++i)
     {
-        const auto& motor = msg->motor_cmd[static_cast<std::size_t>(kFirstArmMotor + i)];
-        arm_cmd_q_[static_cast<std::size_t>(i)]  = motor.q;
-        arm_cmd_kp_[static_cast<std::size_t>(i)] = motor.kp;
-        arm_cmd_kd_[static_cast<std::size_t>(i)] = motor.kd;
+        const auto& motor = msg->motor_cmd[static_cast<std::size_t>(kFirstArmMotor) + i];
+        arm_cmd_q_[i]     = motor.q;
+        arm_cmd_kp_[i]    = motor.kp;
+        arm_cmd_kd_[i]    = motor.kd;
     }
     arm_cmd_weight_   = msg->motor_cmd[kWeightMotorIndex].q;
     arm_sdk_received_ = true;

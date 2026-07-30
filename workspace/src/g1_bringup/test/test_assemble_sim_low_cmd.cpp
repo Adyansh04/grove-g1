@@ -112,14 +112,14 @@ TEST(AssembleSimLowCmd, ArmSlotsBlendHoldAndCommandedByWeight)
     std::array<double, kNumArmMotors> arm_cmd_kd{};
     arm_cmd_kp.fill(80.0);
     arm_cmd_kd.fill(2.0);
-    constexpr double weight = 0.25;
+    constexpr double kWeight = 0.25;
 
     const auto cmd = assembleSimLowCmd(
         hold_q,
         arm_cmd_q,
         arm_cmd_kp,
         arm_cmd_kd,
-        weight,
+        kWeight,
         kLegKp,
         kLegKd,
         kWaistKp,
@@ -133,9 +133,9 @@ TEST(AssembleSimLowCmd, ArmSlotsBlendHoldAndCommandedByWeight)
         const int    motor_index = kFirstArmMotor + i;
         const auto&  motor       = cmd.motor_cmd[static_cast<std::size_t>(motor_index)];
         const double expected_q =
-            blend(hold_q[static_cast<std::size_t>(motor_index)], arm_cmd_q[idx], weight);
-        const double expected_kp = blend(kArmHoldKp, arm_cmd_kp[idx], weight);
-        const double expected_kd = blend(kArmHoldKd, arm_cmd_kd[idx], weight);
+            blend(hold_q[static_cast<std::size_t>(motor_index)], arm_cmd_q[idx], kWeight);
+        const double expected_kp = blend(kArmHoldKp, arm_cmd_kp[idx], kWeight);
+        const double expected_kd = blend(kArmHoldKd, arm_cmd_kd[idx], kWeight);
 
         EXPECT_FLOAT_EQ(motor.q, static_cast<float>(expected_q)) << "arm slot " << motor_index;
         EXPECT_FLOAT_EQ(motor.dq, 0.0F) << "arm slot " << motor_index;
@@ -151,14 +151,14 @@ TEST(AssembleSimLowCmd, WeightSlotEchoesEffectiveWeight)
     const std::array<double, kNumArmMotors> arm_cmd_q{};
     const std::array<double, kNumArmMotors> arm_cmd_kp{};
     const std::array<double, kNumArmMotors> arm_cmd_kd{};
-    constexpr double                        weight = 0.42;
+    constexpr double                        kWeight = 0.42;
 
     const auto cmd = assembleSimLowCmd(
         hold_q,
         arm_cmd_q,
         arm_cmd_kp,
         arm_cmd_kd,
-        weight,
+        kWeight,
         kLegKp,
         kLegKd,
         kWaistKp,
@@ -167,7 +167,7 @@ TEST(AssembleSimLowCmd, WeightSlotEchoesEffectiveWeight)
         kArmHoldKd);
 
     ASSERT_EQ(kWeightMotorIndex, 29U);
-    EXPECT_FLOAT_EQ(cmd.motor_cmd[29].q, static_cast<float>(weight));
+    EXPECT_FLOAT_EQ(cmd.motor_cmd[29].q, static_cast<float>(kWeight));
 }
 
 }  // namespace

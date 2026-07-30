@@ -37,6 +37,10 @@ services:
         target: /root/workspace/.clang-format
         read_only: false
       - type: bind
+        source: ./.clang-tidy
+        target: /root/workspace/.clang-tidy
+        read_only: false
+      - type: bind
         source: ./ruff.toml
         target: /root/workspace/ruff.toml
         read_only: false

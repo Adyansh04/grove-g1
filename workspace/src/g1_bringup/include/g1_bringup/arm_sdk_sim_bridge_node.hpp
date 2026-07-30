@@ -42,8 +42,8 @@ public:
     explicit ArmSdkSimBridge(const rclcpp::NodeOptions& options);
 
 private:
-    void lowstateCallback(unitree_hg::msg::LowState::SharedPtr msg);
-    void armSdkCallback(unitree_hg::msg::LowCmd::SharedPtr msg);
+    void lowstateCallback(const unitree_hg::msg::LowState::ConstSharedPtr& msg);
+    void armSdkCallback(const unitree_hg::msg::LowCmd::ConstSharedPtr& msg);
     void publishTick();
 
     /// Parameters (config/arm_sdk_sim_bridge.yaml) -- see README for meaning
