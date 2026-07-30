@@ -192,27 +192,6 @@ def _launch_setup(context, *args, **kwargs):
         ],
     )
 
-    """Walking policy runs exactly when the pelvis is free.
-
-    Tying both to one argument makes the two broken combinations
-    unrepresentable: a welded pelvis with a policy thrashing against the weld,
-    and a free pelvis with nothing balancing it (which topples in about a
-    second and a half).
-    """
-    walk_policy_node = None
-    if not pin_pelvis:
-        walk_policy_node = Node(
-            package="g1_bringup",
-            executable="walk_policy_sim",
-            name="walk_policy_sim",
-            output="screen",
-            parameters=[
-                os.path.join(
-                    get_package_share_directory("g1_bringup"), "config", "walk_policy_sim.yaml"
-                )
-            ],
-        )
-
     control_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(get_package_share_directory("g1_bringup"), "launch", "control.launch.py")
@@ -230,10 +209,7 @@ def _launch_setup(context, *args, **kwargs):
         )
     )
 
-    actions.append(motion_service_sim_node)
-    if walk_policy_node is not None:
-        actions.append(walk_policy_node)
-    actions.extend([control_launch, shutdown_on_sim_exit])
+    actions.extend([motion_service_sim_node, control_launch, shutdown_on_sim_exit])
     return actions
 
 
@@ -249,11 +225,11 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "pin_pelvis",
                 default_value="true",
-                description="Weld the pelvis to the world (SIM-ONLY scaffolding), and with it "
-                "suppress the walking policy, which is launched exactly when this is false. "
-                "Still true by default: the pretrained policy does not yet balance this 29-DoF "
-                "robot (see the README's walking-policy status), so an unpinned launch topples. "
-                "Set false to work on that.",
+                description="Weld the pelvis to the world (SIM-ONLY scaffolding). Nothing in this "
+                "stack balances the robot -- the vendor's onboard controller does that on real "
+                "hardware and is not emulated by unitree_mujoco -- so an unpinned launch topples "
+                "on spawn. Both settings load a bare floor; see the README's locomotion-in-sim "
+                "section.",
             ),
             DeclareLaunchArgument(
                 "sim_start_delay_s",

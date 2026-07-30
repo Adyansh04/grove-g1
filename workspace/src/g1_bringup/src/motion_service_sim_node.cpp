@@ -23,19 +23,16 @@ namespace g1_bringup
 MotionServiceSim::MotionServiceSim(const rclcpp::NodeOptions& options)
   : rclcpp::Node("motion_service_sim", options)
 {
-    publish_rate_hz_                    = declare_parameter("publish_rate_hz", 500.0);
-    leg_kp_                             = declare_parameter("leg_kp", 100.0);
-    leg_kd_                             = declare_parameter("leg_kd", 1.0);
-    waist_kp_                           = declare_parameter("waist_kp", 50.0);
-    waist_kd_                           = declare_parameter("waist_kd", 1.0);
-    arm_hold_kp_                        = declare_parameter("arm_hold_kp", 40.0);
-    arm_hold_kd_                        = declare_parameter("arm_hold_kd", 1.0);
-    const double arm_sdk_timeout_ms     = declare_parameter("arm_sdk_timeout_ms", 500.0);
-    arm_sdk_timeout_s_                  = arm_sdk_timeout_ms / 1000.0;
-    timeout_ramp_down_s_                = declare_parameter("timeout_ramp_down_s", 1.0);
-    leg_handoff_s_                      = declare_parameter("leg_handoff_s", 0.5);
-    const double walk_policy_timeout_ms = declare_parameter("walk_policy_timeout_ms", 200.0);
-    walk_policy_timeout_s_              = walk_policy_timeout_ms / 1000.0;
+    publish_rate_hz_                = declare_parameter("publish_rate_hz", 500.0);
+    leg_kp_                         = declare_parameter("leg_kp", 100.0);
+    leg_kd_                         = declare_parameter("leg_kd", 1.0);
+    waist_kp_                       = declare_parameter("waist_kp", 50.0);
+    waist_kd_                       = declare_parameter("waist_kd", 1.0);
+    arm_hold_kp_                    = declare_parameter("arm_hold_kp", 40.0);
+    arm_hold_kd_                    = declare_parameter("arm_hold_kd", 1.0);
+    const double arm_sdk_timeout_ms = declare_parameter("arm_sdk_timeout_ms", 500.0);
+    arm_sdk_timeout_s_              = arm_sdk_timeout_ms / 1000.0;
+    timeout_ramp_down_s_            = declare_parameter("timeout_ramp_down_s", 1.0);
 
     /*
      * Fail fast on a nonsensical rate or duration, mirroring
@@ -48,20 +45,18 @@ MotionServiceSim::MotionServiceSim(const rclcpp::NodeOptions& options)
      * The gains are left unchecked, as they are in on_init: only the rate
      * and duration tunables can cause UB or a snap when misconfigured.
      */
-    if (publish_rate_hz_ <= 0.0 || arm_sdk_timeout_s_ <= 0.0 || timeout_ramp_down_s_ <= 0.0 ||
-        leg_handoff_s_ <= 0.0 || walk_policy_timeout_s_ <= 0.0)
+    if (publish_rate_hz_ <= 0.0 || arm_sdk_timeout_s_ <= 0.0 || timeout_ramp_down_s_ <= 0.0)
     {
         RCLCPP_FATAL(
             get_logger(),
-            "publish_rate_hz (%f), arm_sdk_timeout_ms (%f s), timeout_ramp_down_s (%f), "
-            "leg_handoff_s (%f) and walk_policy_timeout_ms (%f s) must all be strictly positive",
+            "publish_rate_hz (%f), arm_sdk_timeout_ms (%f s), and timeout_ramp_down_s (%f) must "
+            "all be strictly positive",
             publish_rate_hz_,
             arm_sdk_timeout_s_,
-            timeout_ramp_down_s_,
-            leg_handoff_s_,
-            walk_policy_timeout_s_);
+            timeout_ramp_down_s_);
         throw std::invalid_argument(
-            "motion_service_sim: rate/duration tunables must be strictly positive");
+            "motion_service_sim: publish_rate_hz/arm_sdk_timeout_ms/timeout_ramp_down_s must be "
+            "strictly positive");
     }
 
     /*
@@ -87,17 +82,6 @@ MotionServiceSim::MotionServiceSim(const rclcpp::NodeOptions& options)
         [this](const unitree_hg::msg::LowCmd::ConstSharedPtr& msg) { armSdkCallback(msg); });
 
     /*
-     * Best-effort, matching walk_policy_sim's publisher: a 50 Hz stream where
-     * only the newest tick matters and staleness is handled below.
-     */
-    const auto walk_policy_qos =
-        rclcpp::QoS(rclcpp::KeepLast(1)).best_effort().durability_volatile();
-    walk_policy_sub_ = create_subscription<unitree_hg::msg::LowCmd>(
-        "/sim/walk_policy_cmd",
-        walk_policy_qos,
-        [this](const unitree_hg::msg::LowCmd::ConstSharedPtr& msg) { walkPolicyCallback(msg); });
-
-    /*
      * Best-effort: matches unitree_mujoco's own rt/lowcmd subscription
      * exactly (verified in the milestone-1 spike). This bridge is the sim's
      * only /lowcmd publisher, so there's no reliability contention to
@@ -121,13 +105,6 @@ MotionServiceSim::MotionServiceSim(const rclcpp::NodeOptions& options)
 
 void MotionServiceSim::lowstateCallback(const unitree_hg::msg::LowState::ConstSharedPtr& msg)
 {
-    // Tracked every sample so the leg hold pose can be re-captured wherever the
-    // robot currently stands, rather than at spawn (see publishTick()).
-    for (std::size_t i = 0; i < static_cast<std::size_t>(kNumLegMotors); ++i)
-    {
-        measured_q_[i] = msg->motor_state[i].q;
-    }
-
     if (hold_pose_captured_)
     {
         return;
@@ -151,23 +128,6 @@ void MotionServiceSim::armSdkCallback(const unitree_hg::msg::LowCmd::ConstShared
     arm_cmd_weight_   = msg->motor_cmd[kWeightMotorIndex].q;
     arm_sdk_received_ = true;
     arm_sdk_arrival_  = std::chrono::steady_clock::now();
-}
-
-void MotionServiceSim::walkPolicyCallback(const unitree_hg::msg::LowCmd::ConstSharedPtr& msg)
-{
-    /*
-     * Read only slots 0-11. walk_policy_sim writes only those slots, and this
-     * reads only those slots -- two independent guarantees that the leg policy
-     * can never disturb the arms owned by rt/arm_sdk.
-     */
-    for (std::size_t i = 0; i < static_cast<std::size_t>(kNumLegMotors); ++i)
-    {
-        leg_policy_.q[i]  = msg->motor_cmd[i].q;
-        leg_policy_.kp[i] = msg->motor_cmd[i].kp;
-        leg_policy_.kd[i] = msg->motor_cmd[i].kd;
-    }
-    walk_policy_received_ = true;
-    walk_policy_arrival_  = std::chrono::steady_clock::now();
 }
 
 void MotionServiceSim::publishTick()
@@ -198,32 +158,6 @@ void MotionServiceSim::publishTick()
         stepEffectiveWeight(effective_weight_, arm_cmd_weight_, stale, timeout_ramp_down_s_, dt);
 
     /*
-     * Leg authority follows policy freshness, not the locomotion FSM: the sim
-     * has no balance controller of its own, so the policy has to be driving the
-     * legs even when the robot is only standing. The FSM decides whether a
-     * non-zero velocity reaches the policy, not who owns the legs.
-     *
-     * Re-capture the leg hold pose whenever the policy is absent, because the
-     * spawn pose stops being a sane target once the robot has walked away from
-     * it. Waist and arms keep the frozen first-sample reference.
-     */
-    bool walk_policy_stale = true;
-    if (walk_policy_received_)
-    {
-        const auto policy_age_s = std::chrono::duration<double>(now - walk_policy_arrival_).count();
-        walk_policy_stale       = policy_age_s > walk_policy_timeout_s_;
-    }
-    if (walk_policy_stale && leg_policy_.weight <= 0.0)
-    {
-        for (std::size_t i = 0; i < static_cast<std::size_t>(kNumLegMotors); ++i)
-        {
-            hold_q_[i] = measured_q_[i];
-        }
-    }
-    leg_policy_.weight =
-        stepEffectiveWeight(leg_policy_.weight, 1.0, walk_policy_stale, leg_handoff_s_, dt);
-
-    /*
      * assembleSimLowCmd() (blend_math) does the leg/waist stiff-hold,
      * arm blend, and weight-slot echo -- unit-tested directly (see
      * test/test_assemble_sim_low_cmd.cpp) without a live node or DDS.
@@ -239,8 +173,7 @@ void MotionServiceSim::publishTick()
         waist_kp_,
         waist_kd_,
         arm_hold_kp_,
-        arm_hold_kd_,
-        leg_policy_);
+        arm_hold_kd_);
 
     /*
      * mode/mode_pr/mode_machine are deliberately left unset. unitree_mujoco

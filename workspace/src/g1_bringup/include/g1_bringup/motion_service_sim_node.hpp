@@ -43,7 +43,6 @@ public:
 
 private:
     void lowstateCallback(const unitree_hg::msg::LowState::ConstSharedPtr& msg);
-    void walkPolicyCallback(const unitree_hg::msg::LowCmd::ConstSharedPtr& msg);
     void armSdkCallback(const unitree_hg::msg::LowCmd::ConstSharedPtr& msg);
     void publishTick();
 
@@ -58,14 +57,9 @@ private:
     double arm_hold_kd_{};
     double arm_sdk_timeout_s_{};
     double timeout_ramp_down_s_{};
-    /// Leg handoff: how long the hold<->policy authority ramp takes, and when the
-    /// policy counts as gone.
-    double leg_handoff_s_{};
-    double walk_policy_timeout_s_{};
 
     rclcpp::Subscription<unitree_hg::msg::LowState>::SharedPtr lowstate_sub_;
     rclcpp::Subscription<unitree_hg::msg::LowCmd>::SharedPtr   arm_sdk_sub_;
-    rclcpp::Subscription<unitree_hg::msg::LowCmd>::SharedPtr   walk_policy_sub_;
     rclcpp::Publisher<unitree_hg::msg::LowCmd>::SharedPtr      lowcmd_pub_;
     rclcpp::TimerBase::SharedPtr                               publish_timer_;
 
@@ -86,17 +80,6 @@ private:
     double                                arm_cmd_weight_{ 0.0 };
     bool                                  arm_sdk_received_{ false };
     std::chrono::steady_clock::time_point arm_sdk_arrival_{};
-
-    /*
-     * Latest walking-policy leg targets and their arrival time. Only motor slots
-     * 0-11 are ever read out of that message, so a policy fault can never reach
-     * the arms owned by rt/arm_sdk.
-     */
-    /// Latest measured leg positions, used to re-capture the leg hold pose.
-    std::array<double, kNumLegMotors>     measured_q_{};
-    LegPolicyCommand                      leg_policy_{};
-    bool                                  walk_policy_received_{ false };
-    std::chrono::steady_clock::time_point walk_policy_arrival_{};
 
     /// Persistent across ticks: stepEffectiveWeight() needs the previous
     /// value to slew from, and last_tick_ gives it a real dt even though this
