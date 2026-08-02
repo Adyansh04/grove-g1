@@ -205,6 +205,31 @@ G1LocoBridge::CallbackReturn G1LocoBridge::on_activate(const rclcpp_lifecycle::S
 G1LocoBridge::CallbackReturn
 G1LocoBridge::on_deactivate(const rclcpp_lifecycle::State& previous_state)
 {
+    /*
+     * Terminate any in-flight SetLocoMode exchange before touching authority. response_sub_
+     * survives deactivation (only on_cleanup/on_shutdown/on_error tear entities down via
+     * resetEntities()), so a reply to a pre-deactivate SET_FSM_ID can otherwise still arrive
+     * afterwards and, via onSetLocoModeResult()'s promotion, re-acquire authority that this very
+     * function is about to release -- superseding the correlator entry first means that reply, if
+     * it ever comes, is silently dropped instead of invoking the callback at all, and aborting the
+     * goal here (rather than leaving it for the reply to resolve) means it lands on a terminal
+     * result immediately instead of hanging until request_timeout_s.
+     */
+    if (active_goal_handle_)
+    {
+        if (pending_set_loco_mode_request_id_)
+        {
+            correlator_.supersede(*pending_set_loco_mode_request_id_);
+            pending_set_loco_mode_request_id_.reset();
+        }
+        auto result        = std::make_shared<SetLocoMode::Result>();
+        result->success    = false;
+        result->error_code = kCodeTaskUnknownError;
+        result->message    = "bridge deactivated while this goal was in flight";
+        active_goal_handle_->abort(result);
+        active_goal_handle_.reset();
+    }
+
     if (velocity_gate_.authority() != LocoAuthority::kReleased)
     {
         RCLCPP_WARN(
@@ -302,7 +327,8 @@ void G1LocoBridge::handleAccepted(const std::shared_ptr<GoalHandleSetLocoMode>& 
         return;
     }
 
-    active_goal_handle_ = goal_handle;
+    active_goal_handle_               = goal_handle;
+    pending_set_loco_mode_request_id_ = request->header.identity.id;
     if (fsm_id == SetLocoMode::Goal::START)
     {
         velocity_gate_.beginAcquire();
@@ -318,7 +344,17 @@ void G1LocoBridge::handleAccepted(const std::shared_ptr<GoalHandleSetLocoMode>& 
 void G1LocoBridge::onSetLocoModeResult(
     const std::shared_ptr<GoalHandleSetLocoMode>& goal_handle, int fsm_id, std::int32_t error_code)
 {
-    const bool success = (error_code == kCodeSuccess);
+    pending_set_loco_mode_request_id_.reset();
+
+    /*
+     * Guards the one authority-promoting callback the same way cmdVelCallback()/onReissueTick()
+     * already self-gate on PRIMARY_STATE_ACTIVE. on_deactivate() supersedes this goal's correlator
+     * entry before it returns, so a stale response should never reach here post-deactivation --
+     * this is the same defensive standard as those two callbacks, not the primary fix.
+     */
+    const bool node_active =
+        get_current_state().id() == lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE;
+    const bool success = node_active && (error_code == kCodeSuccess);
     if (success)
     {
         last_known_fsm_id_ = fsm_id;
@@ -523,6 +559,7 @@ void G1LocoBridge::resetEntities()
     active_goal_handle_.reset();
     pending_velocity_request_id_.reset();
     pending_fsm_poll_id_.reset();
+    pending_set_loco_mode_request_id_.reset();
 }
 
 }  // namespace g1_locomotion

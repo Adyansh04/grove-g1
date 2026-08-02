@@ -121,8 +121,11 @@ private:
     std::optional<std::int64_t> pending_velocity_request_id_;
     std::optional<std::int64_t> pending_fsm_poll_id_;
     // At most one SetLocoMode goal in flight at a time -- handleGoal() rejects a new one while
-    // this is set.
+    // this is set. pending_set_loco_mode_request_id_ tracks its correlator request id so
+    // on_deactivate() can supersede that entry (and resetEntities() can clear it) before a late
+    // reply can mutate authority state that no longer belongs to the goal it answers.
     std::shared_ptr<GoalHandleSetLocoMode> active_goal_handle_;
+    std::optional<std::int64_t>            pending_set_loco_mode_request_id_;
 
     rclcpp::CallbackGroup::SharedPtr callback_group_;
 

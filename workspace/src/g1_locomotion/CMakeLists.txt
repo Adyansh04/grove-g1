@@ -28,17 +28,17 @@ target_compile_features(g1_loco_bridge_core PUBLIC cxx_std_17)
 target_link_libraries(g1_loco_bridge_core PUBLIC nlohmann_json::nlohmann_json)
 ament_target_dependencies(g1_loco_bridge_core PUBLIC unitree_api)
 
-add_executable(g1_loco_bridge
-  src/g1_loco_bridge_node.cpp
-  src/g1_loco_bridge_main.cpp
-)
-target_include_directories(g1_loco_bridge PUBLIC
+# The node class itself, split out from the executable so test/test_loco_bridge_node.cpp can
+# instantiate G1LocoBridge directly in-process (no sim, no launch_testing) -- same
+# lib-behind-the-executable split g1_loco_bridge_core already uses for the ROS-free logic.
+add_library(g1_loco_bridge_node_lib src/g1_loco_bridge_node.cpp)
+target_include_directories(g1_loco_bridge_node_lib PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
-target_compile_features(g1_loco_bridge PUBLIC cxx_std_17)
-target_link_libraries(g1_loco_bridge g1_loco_bridge_core)
-ament_target_dependencies(g1_loco_bridge
+target_compile_features(g1_loco_bridge_node_lib PUBLIC cxx_std_17)
+target_link_libraries(g1_loco_bridge_node_lib PUBLIC g1_loco_bridge_core)
+ament_target_dependencies(g1_loco_bridge_node_lib PUBLIC
   rclcpp
   rclcpp_action
   rclcpp_lifecycle
@@ -48,8 +48,14 @@ ament_target_dependencies(g1_loco_bridge
   g1_msgs
 )
 
+add_executable(g1_loco_bridge src/g1_loco_bridge_main.cpp)
+target_compile_features(g1_loco_bridge PUBLIC cxx_std_17)
+target_link_libraries(g1_loco_bridge g1_loco_bridge_node_lib)
+ament_target_dependencies(g1_loco_bridge rclcpp)
+
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   target_compile_options(g1_loco_bridge_core PRIVATE -Wall -Wextra)
+  target_compile_options(g1_loco_bridge_node_lib PRIVATE -Wall -Wextra)
   target_compile_options(g1_loco_bridge PRIVATE -Wall -Wextra)
 endif()
 
@@ -75,6 +81,13 @@ if(BUILD_TESTING)
   # kAcquiring/kReleasing/kHeld/kReleased authority machine.
   ament_add_gmock(test_velocity_gate test/test_velocity_gate.cpp)
   target_link_libraries(test_velocity_gate g1_loco_bridge_core)
+
+  # G1LocoBridge itself, in-process against a fake /api/sport/* responder on an isolated
+  # ROS_DOMAIN_ID (no sim, no launch_testing) -- lifecycle-transition/authority races the pure
+  # engines above can't exercise on their own, since they only exist once DDS, the action server,
+  # and the correlator's timers are all wired together on a live node.
+  ament_add_gmock(test_loco_bridge_node test/test_loco_bridge_node.cpp)
+  target_link_libraries(test_loco_bridge_node g1_loco_bridge_node_lib)
 
   # workspace/ruff.toml's sibling root config; see g1_hardware_interface/CMakeLists.txt for why
   # this is a plain CTest instead of ament_lint_common's uncrustify.
