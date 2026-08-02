@@ -15,6 +15,7 @@ import os
 import random
 import time
 import unittest
+from collections import deque
 
 import launch_testing
 import pytest
@@ -81,9 +82,15 @@ class WalkTeleopTest(unittest.TestCase):
     def setUpClass(cls):
         rclpy.init()
         cls.node = Node("test_walk_teleop")
-        cls.sport_states = []
-        cls.low_states = []
-        cls.responses = []
+        # Bounded: /lowstate publishes at ~900 Hz, so unbounded lists accumulate tens of
+        # thousands of messages over a multi-minute suite. That is not just memory -- the
+        # Python callback runs per message and the growth starves the simulator, which then
+        # falls behind real time and the policy (paced on a wall timer) destabilises. Observed
+        # directly: the same command sequences that topple the robot under the full suite run
+        # cleanly against a hand-driven sim.
+        cls.sport_states = deque(maxlen=400)
+        cls.low_states = deque(maxlen=1500)
+        cls.responses = deque(maxlen=200)
         cls.node.create_subscription(
             SportModeState, "/sportmodestate", cls.sport_states.append, _best_effort_qos()
         )
@@ -142,11 +149,19 @@ class WalkTeleopTest(unittest.TestCase):
         rpy = self.low_states[-1].imu_state.rpy
         return max(abs(rpy[0]), abs(rpy[1]))
 
-    def _await_standing(self):
+    def _await_standing(self, settle_s=0.0):
+        """Waits for the robot to be up; `settle_s` additionally waits out the spawn transient.
+
+        The robot spawns straight-legged at 0.793 m and the policy settles it into its crouch, so
+        height crosses STAND_HEIGHT_MIN while the base is still moving. Any test measuring
+        displacement has to wait that out, or it charges the settle to whatever it is asserting on.
+        """
         self.assertTrue(
             self._wait_until(lambda: (self._height() or 0.0) > STAND_HEIGHT_MIN, SETTLE_TIMEOUT_S),
             "robot never stood up",
         )
+        if settle_s:
+            self._spin(settle_s)
 
     def _set_mode(self, fsm_id, timeout_s=10.0):
         """Drives the REAL SetLocoMode action -- the same path an operator or Nav2 would use."""
@@ -189,7 +204,9 @@ class WalkTeleopTest(unittest.TestCase):
         dual-writer protection doing its job -- but a session-lifetime publisher would leave
         authority released for every test after this one.
         """
-        self._await_standing()
+        # Settle first: the measurement below is about whether a REJECTED command moved the
+        # robot, so the spawn transient must not be inside the window.
+        self._await_standing(settle_s=4.0)
         before = list(self._position())
 
         raw_pub = self.node.create_publisher(Request, "/api/sport/request", _sport_qos())
@@ -214,10 +231,10 @@ class WalkTeleopTest(unittest.TestCase):
             self.node.destroy_publisher(raw_pub)
 
         # Bound derived from the measured standing behaviour, not from zero: this policy drifts
-        # roughly 0.02 m/s underfoot even at a zero command (a documented characteristic, see the
-        # README), so over this window a standing robot moves a few centimetres. A robot that
-        # actually accepted vx=0.7 would cover well over a metre, so this cleanly separates
-        # "drifting while standing" from "walked because the gate leaked".
+        # underfoot even at a zero command (a documented characteristic, see the README), so a
+        # standing robot still creeps over this window. A robot that actually accepted vx=0.7
+        # would cover roughly two metres in the same time, so this cleanly separates "drifting
+        # while standing" from "walked because the gate leaked".
         drift = self._planar_distance(self._position(), before)
         self.assertLess(
             drift,

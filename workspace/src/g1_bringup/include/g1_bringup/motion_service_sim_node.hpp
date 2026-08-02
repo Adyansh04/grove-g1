@@ -151,13 +151,19 @@ private:
     PolicyConfig                       walk_policy_config_{};
     std::unique_ptr<WalkPolicySession> walk_policy_session_;
 
-    /// Wall timer, deliberately. The policy was trained at a fixed decimation of the simulator's
-    /// own step, so pacing it off SIM time would be the more faithful choice -- but LowState.tick
-    /// does not carry the millisecond units that would make that decimation correct, and a wrong
-    /// guess at its scale runs the policy at the wrong rate and topples the robot (measured).
-    /// unitree_mujoco tracks real time closely when the machine keeps up, so a wall timer is
-    /// accurate in practice; see the README's known-limitations note on behaviour under load.
+    /// Wall timer, established empirically.
+    ///
+    /// Pacing inference on SIM time instead (LowState.tick is sim milliseconds -- the bridge sets
+    /// it to round(mj_data_->time / 1e-3)) is the more faithful choice on paper, since the policy
+    /// was trained at a fixed decimation of the simulator's step. It was tried twice, gated both
+    /// off the /lowstate callback and off a faster wall timer, and BOTH destabilised the robot
+    /// where the plain wall timer holds it stable. Not re-litigated without new evidence.
+    /// Decimating off the /lowstate message count is the same thing as a wall timer, not a third
+    /// option: that topic is published by a 1 kHz wall-clock RecurrentThread in unitree_mujoco's
+    /// bridge, not from its sim loop.
     rclcpp::TimerBase::SharedPtr walk_policy_timer_;
+    /// Latest LowState.tick (sim milliseconds), for the sim-rate health check.
+    std::uint32_t walk_sim_tick_ms_{ 0 };
 
     std::array<float, kActionDim>         walk_last_action_{};
     std::array<double, kNumLowerMotors>   walk_target_q_{};

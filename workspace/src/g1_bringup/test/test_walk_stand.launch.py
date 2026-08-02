@@ -15,6 +15,7 @@ second. That settle is the thing this suite pins.
 import os
 import time
 import unittest
+from collections import deque
 
 import launch_testing
 import pytest
@@ -81,14 +82,28 @@ class WalkStandTest(unittest.TestCase):
     def setUpClass(cls):
         rclpy.init()
         cls.node = Node("test_walk_stand")
-        cls.sport_states = []
-        cls.low_states = []
+        # Bounded: see the note in test_walk_teleop.launch.py -- unbounded accumulation of
+        # ~900 Hz /lowstate starves the simulator over a long suite.
+        cls.sport_states = deque(maxlen=400)
+        cls.low_states = deque(maxlen=1500)
         cls.node.create_subscription(
             SportModeState, "/sportmodestate", cls.sport_states.append, _best_effort_qos()
         )
-        cls.node.create_subscription(
-            LowState, "/lowstate", cls.low_states.append, _best_effort_qos()
-        )
+        # The entry transient is measured in the callback rather than by keeping the messages:
+        # the bounded buffer would have evicted the first second long before test_04 runs.
+        cls.entry_peak_dq = 0.0
+        cls.entry_samples = 0
+
+        def on_low_state(msg):
+            cls.low_states.append(msg)
+            if cls.entry_samples < 1000:
+                cls.entry_samples += 1
+                cls.entry_peak_dq = max(
+                    cls.entry_peak_dq,
+                    max(abs(msg.motor_state[i].dq) for i in range(LOWER_MOTORS)),
+                )
+
+        cls.node.create_subscription(LowState, "/lowstate", on_low_state, _best_effort_qos())
 
     @classmethod
     def tearDownClass(cls):
@@ -152,9 +167,8 @@ class WalkStandTest(unittest.TestCase):
         """Tilt stays small: a robot can hold height briefly while already toppling."""
         self._spin(2.0)
         self.assertTrue(self.low_states, "no /lowstate received")
-        worst_tilt = max(
-            max(abs(s.imu_state.rpy[0]), abs(s.imu_state.rpy[1])) for s in self.low_states[-200:]
-        )
+        recent = list(self.low_states)[-200:]
+        worst_tilt = max(max(abs(s.imu_state.rpy[0]), abs(s.imu_state.rpy[1])) for s in recent)
         self.assertLess(
             worst_tilt,
             0.35,
@@ -169,11 +183,8 @@ class WalkStandTest(unittest.TestCase):
         so there is no prior setpoint to ramp from, and SIM_SETUP.md records that adding a posture
         ramp made the previous walking attempt strictly worse. This bounds the transient instead.
         """
-        self.assertTrue(self.low_states, "no /lowstate received")
-        peak_dq = max(
-            max(abs(s.motor_state[i].dq) for i in range(LOWER_MOTORS))
-            for s in self.low_states[: min(len(self.low_states), 1000)]
-        )
+        self.assertGreater(self.entry_samples, 0, "no /lowstate received during entry")
+        peak_dq = self.entry_peak_dq
         self.assertLess(
             peak_dq,
             ENTRY_PEAK_DQ_MAX,

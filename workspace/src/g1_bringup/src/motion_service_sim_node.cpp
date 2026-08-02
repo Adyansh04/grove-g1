@@ -338,6 +338,7 @@ void MotionServiceSim::lowstateCallback(const unitree_hg::msg::LowState::ConstSh
     {
         walk_inputs_.base_ang_vel_body[i] = msg->imu_state.gyroscope[i];
     }
+    walk_sim_tick_ms_ = msg->tick;
 
     if (!hold_pose_captured_)
     {
@@ -372,7 +373,6 @@ void MotionServiceSim::walkPolicyTick()
     {
         return;
     }
-
     const auto now     = std::chrono::steady_clock::now();
     const auto command = activeCommand(walk_velocity_, now);
     const auto observation =
