@@ -202,6 +202,10 @@ if(BUILD_TESTING)
   # and the randomized/whiplash command sequences.
   add_launch_test(test/test_walk_teleop.launch.py TARGET test_walk_teleop TIMEOUT 400)
   set_tests_properties(test_walk_teleop PROPERTIES RESOURCE_LOCK g1_sim)
+
+  # Milestone 3's acceptance bar: legs walking and arms running a trajectory in one session.
+  add_launch_test(test/test_walk_and_arm.launch.py TARGET test_walk_and_arm TIMEOUT 400)
+  set_tests_properties(test_walk_and_arm PROPERTIES RESOURCE_LOCK g1_sim)
 endif()
 
 ament_package()
