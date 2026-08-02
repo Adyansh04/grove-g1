@@ -67,13 +67,11 @@ class LocoBridgeNodeTest : public ::testing::Test
 protected:
     void SetUp() override
     {
-        /*
-         * Isolated domain, the same methodology the review's own repro used: this driver_ node
-         * publishes/subscribes the exact topic names (/api/sport/request, ~/cmd_vel, ...) a live
-         * sim or a concurrently-running colcon-test package could also be using, so this process
-         * must not share a domain with either. CycloneDDS's own container config pins the `lo`
-         * interface, not a specific domain id, so any id is fine here.
-         */
+        // Isolated domain: this driver_ node publishes/subscribes the exact topic names
+        // (/api/sport/request, ~/cmd_vel, ...) a live sim or a concurrently-running colcon-test
+        // package could also be using, so this process must not share a domain with either.
+        // CycloneDDS's container config pins the `lo` interface, not a specific domain id, so any
+        // id is fine here.
         setenv("ROS_DOMAIN_ID", "67", 1);
         rclcpp::init(0, nullptr);
 
@@ -297,12 +295,10 @@ TEST_F(LocoBridgeNodeTest, LateSetLocoModeReplyAfterDeactivateDoesNotReviveAutho
     bridge_->deactivate();
     ASSERT_EQ(bridge_->get_current_state().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
 
-    /*
-     * The reply that would have promoted authority to HELD is delivered only now -- after
-     * deactivate already ran -- mirroring the review's own repro ("reply 3 s later"). Whether it
-     * ever arrives at all must not matter: on_deactivate()'s fix makes this unreachable regardless
-     * of timing, not because the reply happens to lose a race against this test's own spinning.
-     */
+    // The reply that would have promoted authority to HELD is delivered only now -- after
+    // deactivate already ran. Whether it ever arrives at all must not matter: on_deactivate()
+    // must make this unreachable regardless of timing, not merely lose a race against this
+    // test's own spinning.
     publishSetFsmIdResult(request_id, kCodeSuccess);
     spinFor(200ms);
 
@@ -341,15 +337,12 @@ TEST_F(LocoBridgeNodeTest, UnansweredVelocityRequestsStillReleaseAuthority)
         1s))
         << "authority never reached HELD";
 
-    /*
-     * The fake responder never answers SET_VELOCITY (see the fixture's class comment) -- standing
-     * in for a round trip slower than the re-issue period, the condition the review's own repro
-     * measured at 400 ms against the 200 ms default re-issue period. A live, non-zero cmd_vel has
-     * to keep flowing throughout: VelocityGate only re-issues continuously for a fresh non-zero
-     * command, and continuous re-issuing against a channel that never answers is exactly what used
-     * to make the failure streak unreachable (supersede() alone drops the outcome with no
-     * callback).
-     */
+    // The fake responder never answers SET_VELOCITY (see the fixture's class comment) -- standing
+    // in for a round trip slower than the re-issue period (observed at ~400 ms against the
+    // 200 ms default). A live, non-zero cmd_vel must keep flowing throughout: VelocityGate only
+    // re-issues continuously for a fresh non-zero command, and continuous re-issuing against a
+    // channel that never answers is exactly what used to make the failure streak unreachable
+    // (supersede() alone drops the outcome with no callback).
     publishCmdVelFor(0.1, 2s);
 
     ASSERT_TRUE(latest_status_.has_value());
@@ -445,14 +438,11 @@ TEST_F(LocoBridgeNodeTest, ShutdownWhileGoalInFlightTerminatesItInsteadOfWedging
     // pulling the rug out from under it.
     spinFor(200ms);
 
-    /*
-     * shutdown() reaches on_shutdown() directly from ACTIVE, bypassing on_deactivate() entirely --
-     * Humble's lifecycle state machine allows a direct shutdown transition from any primary state.
-     * This is the one path that still reached resetEntities() with a goal in flight even after
-     * Commit 1's on_deactivate() fix, mirroring the review's own repro (a dead
-     * /api/sport/request target left the goal hanging past the sweep timer resetEntities() itself
-     * destroys).
-     */
+    // shutdown() reaches on_shutdown() directly from ACTIVE, bypassing on_deactivate() entirely
+    // -- Humble's lifecycle state machine allows a direct shutdown transition from any primary
+    // state. This is the one path that can still reach resetEntities() with a goal in flight (a
+    // dead /api/sport/request target would otherwise leave the goal hanging past the sweep timer
+    // resetEntities() itself destroys).
     bridge_->shutdown();
     ASSERT_EQ(
         bridge_->get_current_state().id(),

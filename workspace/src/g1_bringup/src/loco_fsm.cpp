@@ -9,11 +9,9 @@ namespace g1_bringup
 
 namespace
 {
-/*
- * Only Damp/StandUp/Start ever appear on the left of a legal edge (see the header's table) --
- * a current value outside that set (Squat/Sit/ZeroTorque, or anything else) falls through to
- * the switch's default, with no need to name it here.
- */
+// Only Damp/StandUp/Start ever appear on the left of a legal edge (see the header's table) -- a
+// current value outside that set (Squat/Sit/ZeroTorque, etc.) falls through to the switch's
+// default, no need to name it here.
 bool isLegalSetFsmIdEdge(int current, int requested)
 {
     switch (current)

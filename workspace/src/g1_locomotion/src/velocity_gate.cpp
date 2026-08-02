@@ -29,10 +29,8 @@ void VelocityGate::beginAcquire()
 void VelocityGate::onAcquireResult(bool success)
 {
     authority_ = success ? LocoAuthority::kHeld : LocoAuthority::kReleased;
-    /*
-     * Fresh hold: judge whatever cmd_vel is currently latched on its own merits (fresh vs.
-     * stale, zero vs. not) instead of treating it as already-stopped-once from a previous hold.
-     */
+    // Fresh hold: judge whatever cmd_vel is currently latched on its own merits (fresh vs. stale,
+    // zero vs. not) instead of treating it as already-stopped-once from a previous hold.
     stopped_once_ = false;
 }
 

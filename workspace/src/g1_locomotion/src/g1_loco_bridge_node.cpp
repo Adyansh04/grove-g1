@@ -57,11 +57,9 @@ G1LocoBridge::G1LocoBridge(const rclcpp::NodeOptions& options)
         std::vector<double>(max_velocity_.begin(), max_velocity_.end()));
     declare_parameter("axis_sign", std::vector<double>(axis_sign_.begin(), axis_sign_.end()));
 
-    /*
-     * One named group for every callback source this node creates (see the class's
-     * thread-ownership contract comment) -- created here, not on_configure, so it exists for the
-     * node's whole lifetime regardless of how many times on_configure runs.
-     */
+    // One named group for every callback source this node creates (see the class's
+    // thread-ownership contract comment) -- created here, not on_configure, so it exists for the
+    // node's whole lifetime regardless of how many times on_configure runs.
     callback_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
 }
 
@@ -129,18 +127,13 @@ G1LocoBridge::on_configure(const rclcpp_lifecycle::State& /*previous_state*/)
     rclcpp::PublisherOptions pub_options;
     pub_options.callback_group = callback_group_;
 
-    /*
-     * Vendor-matched -- do not deviate on RELIABILITY/DURABILITY: this is the exact QoS
-     * BaseClient's own publisher/subscription use, and hardware endpoint compatibility depends on
-     * those two policies matching exactly. HISTORY depth is not one of the RxO-matched policies
-     * DDS uses for endpoint compatibility, so it's ours to pick per side: the publisher stays at
-     * depth 1 (only the newest outgoing request ever needs to be retained), but the response
-     * reader goes deeper than the vendor-matched depth-1 responder can afford on its own -- a
-     * response landing in the same DDS write batch as another read (e.g. onHeartbeatTick's own
-     * GET_FSM_ID poll) must not overwrite an unread SET_VELOCITY/stop result still sitting in a
-     * depth-1 KEEP_LAST history cache. Measured ~20% SET_VELOCITY loss against motion_service_sim's
-     * old depth-1 request reader before this and the matching onReissueTick() phase fix.
-     */
+    // Vendor-matched -- do not deviate on RELIABILITY/DURABILITY: this is the exact QoS
+    // BaseClient's publisher/subscription use, and hardware endpoint compatibility depends on
+    // those two policies matching exactly. HISTORY depth isn't RxO-matched, so it's ours to pick
+    // per side: the publisher stays at depth 1 (only the newest outgoing request matters), but
+    // the response reader goes deeper -- a response landing in the same DDS batch as another read
+    // (e.g. onHeartbeatTick's GET_FSM_ID poll) must not overwrite an unread SET_VELOCITY/stop
+    // result in a depth-1 KEEP_LAST cache. Measured ~20% SET_VELOCITY loss at depth 1.
     const auto sport_request_qos  = rclcpp::QoS(1).reliable().durability_volatile();
     const auto sport_response_qos = rclcpp::QoS(10).reliable().durability_volatile();
     request_pub_                  = create_publisher<unitree_api::msg::Request>(
@@ -153,10 +146,8 @@ G1LocoBridge::on_configure(const rclcpp_lifecycle::State& /*previous_state*/)
         [this](const unitree_api::msg::Response::ConstSharedPtr& msg) { onSportResponse(*msg); },
         sub_options);
 
-    /*
-     * Node-relative by design, not bare /cmd_vel: arbitrating multiple command sources (Nav2,
-     * teleop, a future behavior tree) is the future orchestration layer's job, not this bridge's.
-     */
+    // Node-relative by design, not bare /cmd_vel: arbitrating multiple command sources (Nav2,
+    // teleop, a future behavior tree) is the future orchestration layer's job, not this bridge's.
     const auto cmd_vel_qos = rclcpp::QoS(rclcpp::KeepLast(1)).reliable().durability_volatile();
     cmd_vel_sub_           = create_subscription<geometry_msgs::msg::Twist>(
         "~/cmd_vel",
@@ -164,10 +155,8 @@ G1LocoBridge::on_configure(const rclcpp_lifecycle::State& /*previous_state*/)
         [this](const geometry_msgs::msg::Twist::ConstSharedPtr& msg) { cmdVelCallback(msg); },
         sub_options);
 
-    /*
-     * Transient-local: a late-joining monitor (e.g. a CLI echo started after activation) should
-     * see the current status immediately rather than waiting for the next 1 Hz heartbeat.
-     */
+    // Transient-local: a late-joining monitor (e.g. a CLI echo started after activation) should
+    // see the current status immediately rather than waiting for the next 1 Hz heartbeat.
     const auto status_qos = rclcpp::QoS(rclcpp::KeepLast(1)).reliable().transient_local();
     status_pub_ = create_publisher<g1_msgs::msg::LocoStatus>("~/status", status_qos, pub_options);
 
@@ -200,17 +189,13 @@ G1LocoBridge::on_configure(const rclcpp_lifecycle::State& /*previous_state*/)
         [this] { onReissueTick(); },
         callback_group_);
 
-    /*
-     * heartbeat_timer_'s first tick is deliberately phase-offset from reissue_timer_'s, not just
-     * created right after it: two independently-created wall timers with harmonically related
-     * periods (the default 1000 ms heartbeat is an exact multiple of the default 200 ms reissue
-     * period) start counting within microseconds of each other here and so fire together once a
-     * second, publishing SET_VELOCITY and GET_FSM_ID back-to-back on a channel whose vendor
-     * contract assumes one call in flight -- measured ~20% SET_VELOCITY loss against
-     * motion_service_sim's own request reader. A one-shot bootstrap fires the first heartbeat tick
-     * half a reissue period late and creates the real recurring heartbeat_timer_ from there, so
-     * every later tick inherits that same offset.
-     */
+    // heartbeat_timer_'s first tick is deliberately phase-offset from reissue_timer_'s: two
+    // independently-created wall timers with harmonically related periods (1000 ms heartbeat,
+    // 200 ms reissue) start counting within microseconds of each other and fire together once a
+    // second, publishing SET_VELOCITY and GET_FSM_ID back-to-back on a channel whose vendor
+    // contract assumes one call in flight -- measured ~20% SET_VELOCITY loss. A one-shot
+    // bootstrap fires the first heartbeat tick half a reissue period late and creates the real
+    // recurring heartbeat_timer_ from there, so every later tick inherits that offset.
     const auto heartbeat_phase_offset =
         std::chrono::duration_cast<std::chrono::nanoseconds>(reissue_period) / 2;
     heartbeat_phase_timer_ = create_wall_timer(
@@ -237,10 +222,8 @@ G1LocoBridge::on_cleanup(const rclcpp_lifecycle::State& /*previous_state*/)
 
 G1LocoBridge::CallbackReturn G1LocoBridge::on_activate(const rclcpp_lifecycle::State& previous_state)
 {
-    /*
-     * Activates status_pub_ (a LifecyclePublisher) via the base class's own managed-entity walk
-     * -- must run before publishStatus() below, or that first publish is silently dropped.
-     */
+    // Activates status_pub_ (a LifecyclePublisher) via the base class's managed-entity walk --
+    // must run before publishStatus() below, or that first publish is silently dropped.
     const auto base_result = LifecycleNode::on_activate(previous_state);
     if (base_result != CallbackReturn::SUCCESS)
     {
@@ -254,16 +237,13 @@ G1LocoBridge::CallbackReturn G1LocoBridge::on_activate(const rclcpp_lifecycle::S
 G1LocoBridge::CallbackReturn
 G1LocoBridge::on_deactivate(const rclcpp_lifecycle::State& previous_state)
 {
-    /*
-     * Terminate any in-flight SetLocoMode exchange before touching authority. response_sub_
-     * survives deactivation (only on_cleanup/on_shutdown/on_error tear entities down via
-     * resetEntities()), so a reply to a pre-deactivate SET_FSM_ID can otherwise still arrive
-     * afterwards and, via onSetLocoModeResult()'s promotion, re-acquire authority that this very
-     * function is about to release -- superseding the correlator entry first means that reply, if
-     * it ever comes, is silently dropped instead of invoking the callback at all, and aborting the
-     * goal here (rather than leaving it for the reply to resolve) means it lands on a terminal
-     * result immediately instead of hanging until request_timeout_s.
-     */
+    // Terminate any in-flight SetLocoMode exchange before touching authority. response_sub_
+    // survives deactivation (only on_cleanup/on_shutdown/on_error tear entities down via
+    // resetEntities()), so a reply to a pre-deactivate SET_FSM_ID could otherwise arrive later
+    // and, via onSetLocoModeResult()'s promotion, re-acquire authority this function is about to
+    // release -- superseding the correlator entry first makes that reply a silent drop instead,
+    // and aborting the goal here lands it on a terminal result immediately instead of hanging
+    // until request_timeout_s.
     if (active_goal_handle_)
     {
         if (pending_set_loco_mode_request_id_)
@@ -292,13 +272,11 @@ G1LocoBridge::on_deactivate(const rclcpp_lifecycle::State& previous_state)
 G1LocoBridge::CallbackReturn
 G1LocoBridge::on_shutdown(const rclcpp_lifecycle::State& /*previous_state*/)
 {
-    /*
-     * No synchronous ramp-down needed here, unlike g1_hardware_interface's arm bridge: we never
-     * actuate anything ourselves. If re-issuing simply stops (this process exiting included),
-     * the onboard controller's own duration dead-man (kVelocityDurationS, 1 s) takes over on its
-     * own -- an emergent safety property of always re-issuing with a short duration rather than
-     * latching the vendor's 10-day "continuous" value.
-     */
+    // No synchronous ramp-down needed here, unlike g1_hardware_interface's arm bridge: we never
+    // actuate anything ourselves. If re-issuing simply stops (process exit included), the onboard
+    // controller's own duration dead-man (kVelocityDurationS, 1 s) takes over -- an emergent
+    // safety property of always re-issuing short rather than latching the vendor's 10-day
+    // "continuous" value.
     resetEntities();
     return CallbackReturn::SUCCESS;
 }
@@ -313,15 +291,12 @@ G1LocoBridge::on_error(const rclcpp_lifecycle::State& /*previous_state*/)
 rclcpp_action::GoalResponse G1LocoBridge::handleGoal(
     const rclcpp_action::GoalUUID& /*uuid*/, std::shared_ptr<const SetLocoMode::Goal> goal)
 {
-    /*
-     * Self-gated, not framework-gated: create_server()'s raw interface-pointer overload has no
-     * lifecycle awareness of its own, so goals would otherwise be accepted even before this node
-     * is ever activated. This is not just belt-and-braces on top of create_publisher's own
-     * activation check: Humble ships no LifecycleSubscription at all (create_subscription on a
-     * LifecycleNode forwards straight to the plain rclcpp version), and even status_pub_/
-     * request_pub_'s LifecyclePublisher guarantee only holds because each is declared with that
-     * type -- it is not a property every create_publisher() call gets for free.
-     */
+    // Self-gated, not framework-gated: create_server()'s raw interface-pointer overload has no
+    // lifecycle awareness, so goals would otherwise be accepted before this node is ever
+    // activated. Not just belt-and-braces either: Humble ships no LifecycleSubscription at all
+    // (create_subscription on a LifecycleNode forwards straight to plain rclcpp), and even
+    // status_pub_/request_pub_'s LifecyclePublisher guarantee only holds because each is declared
+    // with that type, not something every create_publisher() call gets for free.
     if (get_current_state().id() != lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE)
     {
         RCLCPP_WARN(get_logger(), "rejecting SetLocoMode goal: bridge is not active");
@@ -348,16 +323,13 @@ rclcpp_action::GoalResponse G1LocoBridge::handleGoal(
 rclcpp_action::CancelResponse
 G1LocoBridge::handleCancel(const std::shared_ptr<GoalHandleSetLocoMode>& /*goal_handle*/)
 {
-    /*
-     * Goals are short-lived and every terminal path lands cleanly (see VelocityGate's authority
-     * machine): bounded by request_timeout_s during normal operation (a response or a sweep()
-     * timeout resolves it), and immediately if the node tears down mid-goal (resetEntities()
-     * aborts any in-flight goal directly -- see its own comment -- rather than relying on the
-     * sweep timer it's about to destroy). Supporting mid-flight cancellation would need to unwind
-     * a request already in flight on the wire -- the correlator's supersede() can do that, but
-     * nothing in this milestone needs it, and rejecting keeps the authority transition atomic
-     * instead of leaving a "cancel requested but the wire request is still out there" window.
-     */
+    // Goals are short-lived and every terminal path lands cleanly: bounded by request_timeout_s
+    // in normal operation (a response or a sweep() timeout resolves it), and immediately if the
+    // node tears down mid-goal (resetEntities() aborts any in-flight goal directly rather than
+    // relying on the sweep timer it's about to destroy). Mid-flight cancellation would need to
+    // unwind a request already on the wire -- correlator's supersede() can do that, but nothing
+    // here needs it, and rejecting keeps the authority transition atomic instead of leaving a
+    // "cancel requested but the wire request is still out there" window.
     return rclcpp_action::CancelResponse::REJECT;
 }
 
@@ -389,14 +361,12 @@ void G1LocoBridge::handleAccepted(const std::shared_ptr<GoalHandleSetLocoMode>& 
     }
     else if (velocity_gate_.authority() == LocoAuthority::kHeld)
     {
-        /*
-         * Any accepted transition away from Start -- DAMP or STAND_UP alike -- means the robot is
-         * about to leave the FSM state velocity authority depends on. Key release on that, not on
-         * the literal DAMP id: a STAND_UP goal accepted from kHeld (Start -> StandUp is a legal
-         * edge, see loco_fsm's table) otherwise leaves this gate believing it still holds velocity
-         * authority after the robot has left Start, with the re-issue timer still publishing
-         * SET_VELOCITY onto a channel the transition is racing on.
-         */
+        // Any accepted transition away from Start -- DAMP or STAND_UP alike -- means the robot is
+        // about to leave the FSM state velocity authority depends on. Key release on that, not on
+        // the literal DAMP id: a STAND_UP goal from kHeld (Start -> StandUp is a legal edge, see
+        // loco_fsm's table) would otherwise leave this gate believing it still holds velocity
+        // authority after the robot has left Start, re-issuing SET_VELOCITY onto a channel the
+        // transition is racing on.
         velocity_gate_.beginRelease();
     }
     publishStatus();
@@ -408,12 +378,10 @@ void G1LocoBridge::onSetLocoModeResult(
 {
     pending_set_loco_mode_request_id_.reset();
 
-    /*
-     * Guards the one authority-promoting callback the same way cmdVelCallback()/onReissueTick()
-     * already self-gate on PRIMARY_STATE_ACTIVE. on_deactivate() supersedes this goal's correlator
-     * entry before it returns, so a stale response should never reach here post-deactivation --
-     * this is the same defensive standard as those two callbacks, not the primary fix.
-     */
+    // Guards the one authority-promoting callback the same way cmdVelCallback()/onReissueTick()
+    // already self-gate on PRIMARY_STATE_ACTIVE. on_deactivate() supersedes this goal's
+    // correlator entry before it returns, so a stale response should never reach here
+    // post-deactivation -- same defensive standard as those two callbacks, not the primary fix.
     const bool node_active =
         get_current_state().id() == lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE;
     const bool success = node_active && (error_code == kCodeSuccess);
@@ -429,14 +397,12 @@ void G1LocoBridge::onSetLocoModeResult(
     }
     else
     {
-        /*
-         * Mirrors handleAccepted()'s beginRelease() call: any non-START result (DAMP or STAND_UP)
-         * resolves whatever release beginRelease() may have started. onReleaseResult() lands
-         * unconditionally at kReleased, so this is a harmless no-op when authority was never
-         * kReleasing in the first place (e.g. a STAND_UP accepted from kReleased/kAcquiring never
-         * called beginRelease()) -- otherwise a STAND_UP result would strand the gate in
-         * kReleasing, with ~/status showing RELEASING indefinitely (fails safe, but wrong).
-         */
+        // Mirrors handleAccepted()'s beginRelease() call: any non-START result (DAMP or
+        // STAND_UP) resolves whatever release beginRelease() may have started. onReleaseResult()
+        // lands unconditionally at kReleased, so this is a harmless no-op when authority was
+        // never kReleasing (e.g. a STAND_UP accepted from kReleased/kAcquiring never called
+        // beginRelease()) -- otherwise a STAND_UP result would strand the gate in kReleasing,
+        // with ~/status showing RELEASING indefinitely (fails safe, but wrong).
         velocity_gate_.onReleaseResult();
     }
 
@@ -502,17 +468,14 @@ void G1LocoBridge::onReissueTick()
         return;
     }
 
-    /*
-     * Only the newest velocity intent ever matters (duration is a 1 s dead-man; a stale in-flight
-     * request from a previous tick is noise once a fresher one is issued) -- supersede rather
-     * than let stale ones pile up in the correlator. But supersede() drops the outcome with no
-     * callback, so a round trip slower than the re-issue period would otherwise vanish silently
-     * every tick, and the failure-streak safety net -- which only advances through
-     * onVelocityResult() -- would never trip on a channel that's simply too slow, only on one that
-     * answers with an error. Feed it a synthetic timeout first, exactly the outcome sweep() would
-     * eventually report anyway, so a slow or dead channel counts against the streak like any other
-     * missed response.
-     */
+    // Only the newest velocity intent matters (duration is a 1 s dead-man; a stale in-flight
+    // request is noise once a fresher one is issued) -- supersede rather than let stale ones pile
+    // up in the correlator. But supersede() drops the outcome with no callback, so a round trip
+    // slower than the re-issue period would otherwise vanish silently every tick, and the
+    // failure-streak safety net (which only advances through onVelocityResult()) would never trip
+    // on a channel that's merely slow, only one that errors. Feed it a synthetic timeout first --
+    // the same outcome sweep() would eventually report -- so a slow or dead channel counts
+    // against the streak like any other missed response.
     if (pending_velocity_request_id_)
     {
         velocity_gate_.onVelocityResult(kCodeTaskTimeout);
@@ -546,11 +509,9 @@ void G1LocoBridge::onReissueTick()
 
 void G1LocoBridge::onHeartbeatTick()
 {
-    /*
-     * GET_FSM_ID poll: keeps fsm_id authoritative (confirmed by the robot) rather than solely
-     * inferred from our own SetLocoMode outcomes. A read, not a command -- harmless regardless of
-     * lifecycle state or locomotion authority, so it isn't gated on either.
-     */
+    // GET_FSM_ID poll: keeps fsm_id authoritative (confirmed by the robot) rather than solely
+    // inferred from our own SetLocoMode outcomes. A read, not a command -- harmless regardless of
+    // lifecycle state or locomotion authority, so it isn't gated on either.
     if (pending_fsm_poll_id_)
     {
         correlator_.supersede(*pending_fsm_poll_id_);
@@ -579,11 +540,9 @@ void G1LocoBridge::onHeartbeatTick()
         request_pub_->publish(*poll_request);
     }
 
-    /*
-     * Single-writer advisory guard: two publishers on this low-level channel is unsafe regardless
-     * of our own state, but only act (idle + a defensive stop) if we're actually holding velocity
-     * authority right now -- mirrors G1ArmSdkSystem's own advisory-guard pattern.
-     */
+    // Single-writer advisory guard: two publishers on this channel is unsafe regardless of our
+    // own state, but only act (a defensive stop) if we're actually holding velocity authority
+    // right now -- mirrors G1ArmSdkSystem's own advisory-guard pattern.
     if (count_publishers(kSportRequestTopic) > 1)
     {
         RCLCPP_ERROR(get_logger(), "second publisher detected on /api/sport/request");
@@ -627,16 +586,13 @@ void G1LocoBridge::publishStatus(bool force)
 
 void G1LocoBridge::resetEntities()
 {
-    /*
-     * Terminate any in-flight SetLocoMode goal before tearing anything else down. handleAccepted()
-     * captures the goal handle by value into the correlator's pending entry, which is the only
-     * code path left that can call succeed()/abort() on it -- once this function returns, nothing
-     * stands that could ever fire that callback (no sweep timer, no response subscription), so an
-     * un-terminated goal here would simply hang forever. Ordering matters: abort while
-     * action_server_ still exists, so the terminal result actually reaches the client, and only
-     * then clear the correlator so its now-pointless pending entries (including this same goal's
-     * own) don't outlive the entities their callbacks captured.
-     */
+    // Terminate any in-flight SetLocoMode goal before tearing anything else down.
+    // handleAccepted() captures the goal handle by value into the correlator's pending entry, the
+    // only path left that can call succeed()/abort() on it -- once this function returns, nothing
+    // remains to fire that callback (no sweep timer, no response subscription), so an
+    // un-terminated goal here would hang forever. Ordering matters: abort while action_server_
+    // still exists so the terminal result reaches the client, then clear the correlator so its
+    // now-pointless pending entries don't outlive the entities their callbacks captured.
     if (active_goal_handle_)
     {
         auto result        = std::make_shared<SetLocoMode::Result>();

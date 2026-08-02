@@ -35,10 +35,8 @@ unitree_hg::msg::LowCmd assembleSimLowCmd(
     const std::array<double, kNumArmMotors>& arm_cmd_kd, double weight, double leg_kp,
     double leg_kd, double waist_kp, double waist_kd, double arm_hold_kp, double arm_hold_kd)
 {
-    /*
-     * rosidl-generated: zero-initialized, including reserved slots and mode/mode_pr/mode_machine
-     * -- deliberately left untouched (see motion_service_sim_node's README).
-     */
+    // rosidl-generated: zero-initialized, including reserved slots and mode/mode_pr/mode_machine
+    // -- deliberately left untouched (see motion_service_sim_node's README).
     unitree_hg::msg::LowCmd cmd;
 
     for (int i = 0; i < kNumLegMotors; ++i)

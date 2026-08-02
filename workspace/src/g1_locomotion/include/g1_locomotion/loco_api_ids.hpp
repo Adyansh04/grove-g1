@@ -24,12 +24,10 @@ inline constexpr std::int64_t kApiIdSetFsmId = 7101;
  */
 inline constexpr std::int64_t kApiIdSetVelocity = 7105;
 
-/*
- * SET_ARM_TASK (7106) deliberately has no constant here: it crosses into rt/arm_sdk's control
- * authority (WaveHand/ShakeHand make the onboard controller move the arms, fighting whatever
- * blend weight our rt/arm_sdk publisher currently holds), and no arbitration rule between the
- * two paths exists. Leaving it undefined means nothing in this package can send it by accident.
- */
+// SET_ARM_TASK (7106) deliberately has no constant here: it crosses into rt/arm_sdk's control
+// authority (WaveHand/ShakeHand make the onboard controller move the arms, fighting whatever
+// blend weight our rt/arm_sdk publisher currently holds), and no arbitration rule between the two
+// paths exists. Leaving it undefined means nothing here can send it by accident.
 
 inline constexpr std::int32_t kCodeSuccess = 0;
 /// LocoState not available -- the onboard controller isn't in a state that can service the call.
@@ -37,11 +35,9 @@ inline constexpr std::int32_t kCodeLocoStateNotAvailable = 7301;
 /// Invalid fsm id (e.g. rejected by the onboard controller's own transition table).
 inline constexpr std::int32_t kCodeInvalidFsmId = 7302;
 
-/*
- * 7303 (invalid task id) deliberately has no constant here, for the same reason 7106 SET_ARM_TASK
- * has none in loco_payloads.hpp: this bridge never sends a task-id-bearing request, so it can
- * never receive that specific rejection, and nothing here needs to name an error it can't produce.
- */
+// 7303 (invalid task id) deliberately has no constant here, same reason 7106 SET_ARM_TASK has
+// none: this bridge never sends a task-id-bearing request, so it can never receive that specific
+// rejection.
 
 /// UT_ROBOT_TASK_TIMEOUT -- sweep()'s own timeout code, matching the vendored BaseClient's value.
 inline constexpr std::int32_t kCodeTaskTimeout = -1;
