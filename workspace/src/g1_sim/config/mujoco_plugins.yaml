@@ -6,12 +6,15 @@
 #
 # Topic and frame names deliberately match the real drivers' defaults, so swapping to
 # hardware is a driver launch rather than a pile of remaps.
-# Scoped to controller_manager, NOT the `/**` wildcard the upstream demo uses. A
-# wildcard block matches every node in the process, including each controller, and
-# because this file is loaded after controllers.yaml it shadows their own node-keyed
-# sections -- which shows up as "'joints' parameter was empty" and a controller stuck
-# in `unconfigured`.
-controller_manager:
+# Keyed to mujoco_ros2_control_node, the node that actually reads `mujoco_plugins`. It is
+# a second node living inside the same process as controller_manager, so the key matters:
+#   - `/**` (what the upstream demo uses) also matches every controller, and since this
+#     file loads after controllers.yaml it shadows their sections. Symptom: "'joints'
+#     parameter was empty" and a controller stuck in `unconfigured`.
+#   - `controller_manager` reaches the wrong node of the two. Symptom is quieter and worse:
+#     "No 'mujoco_plugins' parameter found!", the lidar plugin never loads at all, and the
+#     camera silently auto-registers on default topics at the default rate.
+mujoco_ros2_control_node:
   ros__parameters:
     mujoco_plugins:
       # Publishes every mujoco.plugin.lidar sensor. PointCloud2 for multi-row (3D)
