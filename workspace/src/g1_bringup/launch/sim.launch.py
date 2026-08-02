@@ -106,7 +106,17 @@ def _launch_setup(context, *args, **kwargs):
 
     # Stage one of our scenes (bare floor). The vendored obstacle course spawns the robot
     # among obstacles that look like balance failures.
-    overlay_name = "g1_pinned_scene.xml" if pin_pelvis else "g1_flat_scene.xml"
+    #
+    # The perception scene is the same floor plus a room with known geometry, which is what
+    # the sensor assertions measure against. Selected separately from pin_pelvis because a
+    # pinned pelvis and a walking robot both want sensors eventually.
+    sensors = LaunchConfiguration("sensors").perform(context).lower() == "true"
+    if pin_pelvis:
+        overlay_name = "g1_pinned_scene.xml"
+    elif sensors:
+        overlay_name = "g1_perception_scene.xml"
+    else:
+        overlay_name = "g1_flat_scene.xml"
     staged_path  = os.path.join(G1_MODEL_DIR, STAGED_SCENE_NAME)
     overlay_src  = os.path.join(
         get_package_share_directory("g1_bringup"), "mjcf", overlay_name
@@ -185,6 +195,13 @@ def generate_launch_description():
                 "headless",
                 default_value="true",
                 description="Run unitree_mujoco against our own managed Xvfb (no GUI window).",
+            ),
+            DeclareLaunchArgument(
+                "sensors",
+                default_value="false",
+                description="Stage the perception scene (a room with known geometry) and "
+                "run the sensor thread. Off by default so the locomotion suites keep their "
+                "existing bare-floor conditions until the timing gate says otherwise.",
             ),
             DeclareLaunchArgument(
                 "pin_pelvis",
