@@ -226,9 +226,11 @@ class WalkAndArmTest(unittest.TestCase):
         travelled = (
             (self._position()[0] - before[0]) ** 2 + (self._position()[1] - before[1]) ** 2
         ) ** 0.5
+        # See test_walk_teleop.launch.py: 0.5 m is inside the standing-drift budget and cannot
+        # fail. Shorter drive window here than there, so 1.5 m rather than 2.0.
         self.assertGreater(
             travelled,
-            0.5,
+            1.5,
             f"robot travelled only {travelled:.2f} m while the arms were moving -- locomotion "
             "and the arm bridge are not coexisting",
         )

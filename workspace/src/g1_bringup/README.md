@@ -143,11 +143,11 @@ protocol (`/api/sport/request`/`/api/sport/response`) -- `unitree_mujoco` emulat
 Mirroring that single-service reality, `motion_service_sim` is also this stack's `/api/sport/*`
 responder, rather than a second node. This half of the node is **protocol-only**: it tracks an FSM
 state and applies the same `SET_FSM_ID`/`SET_VELOCITY` acceptance rules a real onboard controller
-would (see `include/g1_bringup/loco_fsm.hpp`), but it never actuates a leg -- nothing here touches
-`/lowcmd`, `hold_q_`, or the arm-blend path above, and the robot stays pelvis-welded regardless of
-FSM state or velocity requests. Walking-in-sim is out of scope this milestone (the pretrained
-walking policy this stack briefly evaluated couldn't balance the full 29-DoF hand-equipped robot);
-see `g1_locomotion`'s README for the bridge this responder talks to.
+would (see `include/g1_bringup/loco_fsm.hpp`). Those rules are now load-bearing rather than
+advisory: an **accepted** `SET_VELOCITY` latches the command the walking policy consumes, so this
+path does drive motors 0-14. It still never touches the arm slots, never publishes anything itself,
+and outside FSM `Start` nothing is latched at all -- the legality table is the authority gate. See
+`g1_locomotion`'s README for the bridge this responder talks to.
 
 - Subscribes `/api/sport/request` (`unitree_api/msg/Request`, `rclcpp::QoS(10)` reliable, volatile)
   and publishes `/api/sport/response` (`unitree_api/msg/Response`, `rclcpp::QoS(1)` reliable,

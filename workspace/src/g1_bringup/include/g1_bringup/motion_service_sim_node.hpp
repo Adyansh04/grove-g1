@@ -80,8 +80,9 @@ private:
 
     /**
      * @brief Dispatches one /api/sport/request by api_id -- the responder's entire behavior
-     * (see the README's dispatch table). The only side effect is loco_fsm_state_, and only for a
-     * successful SET_FSM_ID; nothing here ever touches /lowcmd or any arm/leg state.
+     * (see the README's dispatch table). Side effects are loco_fsm_state_ and, for an ACCEPTED
+     * SET_VELOCITY, the latched command the walking policy consumes -- so this path does reach
+     * motors 0-14. It still never touches the arm slots or publishes anything itself.
      * @param api_id         The request's header.identity.api_id.
      * @param parameter      The request's JSON parameter string.
      * @param response_data  Out param: the response's `data` field (only GET_FSM_ID populates it).
@@ -162,8 +163,6 @@ private:
     /// option: that topic is published by a 1 kHz wall-clock RecurrentThread in unitree_mujoco's
     /// bridge, not from its sim loop.
     rclcpp::TimerBase::SharedPtr walk_policy_timer_;
-    /// Latest LowState.tick (sim milliseconds), for the sim-rate health check.
-    std::uint32_t walk_sim_tick_ms_{ 0 };
 
     std::array<float, kActionDim>         walk_last_action_{};
     std::array<double, kNumLowerMotors>   walk_target_q_{};

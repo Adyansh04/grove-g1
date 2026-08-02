@@ -114,7 +114,7 @@ private:
     double                velocity_reissue_hz_{ 5.0 };
     double                cmd_vel_timeout_s_{ 0.5 };
     int                   failure_streak_limit_{ 3 };
-    std::array<double, 3> max_velocity_{ 0.3, 0.2, 0.5 };
+    std::array<double, 3> max_velocity_{ 0.8, 0.5, 1.57 };
     std::array<double, 3> axis_sign_{ 1.0, 1.0, 1.0 };
 
     // Pure engines -- see their own headers. Placeholder-constructed here; on_configure replaces

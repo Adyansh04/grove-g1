@@ -338,7 +338,6 @@ void MotionServiceSim::lowstateCallback(const unitree_hg::msg::LowState::ConstSh
     {
         walk_inputs_.base_ang_vel_body[i] = msg->imu_state.gyroscope[i];
     }
-    walk_sim_tick_ms_ = msg->tick;
 
     if (!hold_pose_captured_)
     {
@@ -378,7 +377,24 @@ void MotionServiceSim::walkPolicyTick()
     const auto observation =
         assembleObservation(walk_inputs_, walk_policy_config_, walk_last_action_, command);
 
-    walk_last_action_  = walk_policy_session_->run(observation);
+    // A throw here must not escape: this runs from a timer under a bare rclcpp::spin(), so an
+    // Ort::Exception would terminate the process and stop /lowcmd entirely -- the robot would
+    // collapse instead of falling back to the stiff hold. Leaving walk_target_stamp_ untouched
+    // lets the freshness gate engage exactly as it would for any other stall.
+    try
+    {
+        walk_last_action_ = walk_policy_session_->run(observation);
+    }
+    catch (const std::exception& e)
+    {
+        RCLCPP_ERROR_THROTTLE(
+            get_logger(),
+            *get_clock(),
+            1000,
+            "walking policy inference failed: %s",
+            e.what());
+        return;
+    }
     const auto targets = actionToJointTargets(walk_last_action_, walk_policy_config_);
     std::copy(targets.begin(), targets.begin() + kNumLowerMotors, walk_target_q_.begin());
     walk_target_valid_ = true;
@@ -437,13 +453,18 @@ void MotionServiceSim::publishTick()
     for (std::size_t i = 0; i < kFirstArmMotor; ++i)
     {
         const bool is_waist = static_cast<int>(i) >= kNumLegMotors;
-        lower_q[i]          = policy_fresh ? walk_target_q_[i] : hold_q_[i];
+        // Freezes at the last policy output once the policy has ever run, rather than reverting
+        // to hold_q_. hold_q_ is the spawn pose -- straight-legged, captured before the policy
+        // started -- so falling back to it mid-stance would step both knees ~0.67 rad at stiff
+        // gains and topple the robot. Before the first target hold_q_ IS the live pose, so it
+        // stays correct there.
+        lower_q[i] = walk_target_valid_ ? walk_target_q_[i] : hold_q_[i];
         lower_kp[i] =
             policy_fresh ? walk_policy_config_.lower_kp[i] : (is_waist ? waist_kp_ : leg_kp_);
         lower_kd[i] =
             policy_fresh ? walk_policy_config_.lower_kd[i] : (is_waist ? waist_kd_ : leg_kd_);
     }
-    if (walk_policy_enabled_ && !policy_fresh)
+    if (walk_policy_enabled_ && walk_target_valid_ && !policy_fresh)
     {
         RCLCPP_WARN_THROTTLE(
             get_logger(),

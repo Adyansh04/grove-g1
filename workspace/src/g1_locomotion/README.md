@@ -275,8 +275,7 @@ drives it `configure -> active` automatically, chained off the node's own lifecy
 timing guess -- see `g1_bringup/README.md`'s launch-file table). `motion_service_sim` (also
 started by `sim.launch.py`) is this stack's `/api/sport/*` responder: it answers `7001`/`7101`/
 `7105` **protocol-only** -- FSM state tracking and the `SET_VELOCITY` `Start`-only gate, exactly
-per the wire contract -- but never actuates a leg; the robot stays pelvis-welded regardless of FSM
-state or velocity requests (see `g1_bringup/README.md`'s "LocoClient wire responder" section for
+per the wire contract -- but latches a velocity command for the sim walking policy, which drives motors 0-14.md`'s "LocoClient wire responder" section for
 the full dispatch table and why walking-in-sim is a separate, out-of-scope concern this
 milestone). Once the stack is up:
 

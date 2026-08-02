@@ -40,6 +40,9 @@ STAND_HEIGHT_MIN = 0.60
 DRIVE_VX = 0.7
 API_ID_SET_VELOCITY = 7105
 CODE_LOCO_STATE_NOT_AVAILABLE = 7301
+# This policy creeps underfoot even at a zero command (documented in the README). One figure,
+# used by every drift bound here, so the suite cannot contradict itself about the same physics.
+ZERO_COMMAND_DRIFT_M_PER_S = 0.10
 
 
 def _best_effort_qos():
@@ -237,7 +240,7 @@ class WalkTeleopTest(unittest.TestCase):
         drift = self._planar_distance(self._position(), before)
         self.assertLess(
             drift,
-            0.35,
+            ZERO_COMMAND_DRIFT_M_PER_S * 3.5,
             f"robot moved {drift:.3f} m on a REJECTED velocity command -- the FSM legality gate is "
             "not actually gating the policy",
         )
@@ -252,9 +255,12 @@ class WalkTeleopTest(unittest.TestCase):
         self._drive(DRIVE_VX, 8.0)
         travelled = self._planar_distance(self._position(), before)
 
+        # 2.0 m, not 0.5: this suite budgets ~0.1 m/s of zero-command drift elsewhere, which is
+        # 0.8 m over this window -- a robot that never stepped would clear a 0.5 m bound. Measured
+        # walking at this command is ~0.5-0.6 m/s, i.e. ~4 m here, so 2.0 m separates the two.
         self.assertGreater(
             travelled,
-            0.5,
+            2.0,
             f"robot travelled only {travelled:.2f} m at vx={DRIVE_VX} over 8 s -- velocity is not "
             "reaching the policy through the LocoClient path",
         )
@@ -267,7 +273,7 @@ class WalkTeleopTest(unittest.TestCase):
         self._drive(0.0, 3.0)
         self.assertLess(
             self._planar_distance(self._position(), before),
-            0.15,
+            ZERO_COMMAND_DRIFT_M_PER_S * 3.0,
             "robot kept moving on a zero command",
         )
 
@@ -299,7 +305,7 @@ class WalkTeleopTest(unittest.TestCase):
         self._drive(DRIVE_VX, 3.0)
         self.assertLess(
             self._planar_distance(self._position(), before),
-            0.15,
+            ZERO_COMMAND_DRIFT_M_PER_S * 3.0,
             "cmd_vel still moved the robot after Damp released locomotion authority",
         )
         self._spin(3.0)

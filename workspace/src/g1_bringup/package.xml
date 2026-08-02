@@ -26,6 +26,9 @@
        pinned prebuilt tarball under /opt/onnxruntime (see .devcontainer/Dockerfile) found by
        path in CMakeLists.txt. -->
   <depend>ament_index_cpp</depend>
+  <!-- SportModeState carries the base linear velocity the walking policy observes;
+       /lowstate has no such field. Linked into motion_service_sim, not test-only. -->
+  <depend>unitree_go</depend>
 
   <depend>g1_description</depend>
   <depend>robot_state_publisher</depend>
@@ -73,7 +76,6 @@
   <test_depend>control_msgs</test_depend>
   <test_depend>trajectory_msgs</test_depend>
   <test_depend>builtin_interfaces</test_depend>
-  <test_depend>unitree_go</test_depend>
   <!-- test_loco.launch.py drives g1_locomotion's SetLocoMode action/LocoStatus directly and
        publishes raw unitree_api Requests: both are only imported from Python in this package. -->
   <test_depend>g1_msgs</test_depend>
