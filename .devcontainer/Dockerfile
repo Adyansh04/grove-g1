@@ -94,8 +94,12 @@ RUN git init -q /opt/unitree_robotics/unitree_mujoco && \
              -DCMAKE_PREFIX_PATH=/opt/unitree_robotics/lib/cmake && \
     cmake --build . --target unitree_mujoco --parallel "$(nproc)" && \
     rm -rf CMakeFiles && \
-    rm -rf ../mujoco/include ../mujoco/simulate ../mujoco/sample \
-           ../mujoco/bin ../mujoco/doc ../mujoco/model
+    rm -rf ../mujoco/sample ../mujoco/bin ../mujoco/doc ../mujoco/model
+# include/ and simulate/ are deliberately kept (they used to be stripped here). Milestone 5
+# compiles our own sensor source into this app, and keeping them is what makes an
+# in-container rebuild possible -- CMakeLists globs mujoco/simulate/*.cc, so without them
+# every one-line change costs a full image rebuild. They are small; the bulk was
+# model/bin/doc/sample, still removed.
 # Binary at simulate/build/unitree_mujoco; g1_bringup overrides config via CLI flags.
 
 # --- CycloneDDS / ROS domain (unconditional -- required by Unitree SDK) -----
