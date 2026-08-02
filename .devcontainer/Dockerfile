@@ -167,6 +167,17 @@ EOF
 # apt is what Humble's rosidl expects.
 RUN python3 -m pip uninstall -y em
 
+# --- Milestone 2: LocoClient deps -------------------------------------------
+# Appended after the unitree_sdk2/MuJoCo builds on purpose: these layers change
+# independently of those, and putting them last keeps the expensive source
+# builds above cached.
+
+# nlohmann-json: the LocoClient wire format is JSON in Request.parameter /
+# Response.data, and this is the same library the vendor's own client uses, so
+# our serialisation is byte-identical to what the robot expects.
+RUN apt-get update && apt-get install -y nlohmann-json3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
 # Ensure default workspace exists (mounted from host: ./workspace -> /root/workspace)
 RUN mkdir -p /root/workspace/src
 RUN mkdir -p /root/data/

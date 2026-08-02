@@ -4,7 +4,9 @@ project(g1_bringup)
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(unitree_hg REQUIRED)
+find_package(unitree_api REQUIRED)
 find_package(g1_hardware_interface REQUIRED)
+find_package(nlohmann_json REQUIRED)
 
 add_library(blend_math src/blend_math.cpp)
 target_include_directories(blend_math PUBLIC
@@ -14,31 +16,43 @@ target_include_directories(blend_math PUBLIC
 target_compile_features(blend_math PUBLIC cxx_std_17)
 ament_target_dependencies(blend_math PUBLIC unitree_hg)
 
-add_executable(arm_sdk_sim_bridge
-  src/arm_sdk_sim_bridge_node.cpp
-  src/arm_sdk_sim_bridge_main.cpp
-)
-target_include_directories(arm_sdk_sim_bridge PUBLIC
+# Sim-only LocoClient FSM legality table behind motion_service_sim's /api/sport/request
+# responder -- pure C++, no ROS deps, same internal-build-artifact treatment as blend_math.
+add_library(loco_fsm src/loco_fsm.cpp)
+target_include_directories(loco_fsm PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
-target_compile_features(arm_sdk_sim_bridge PUBLIC cxx_std_17)
-target_link_libraries(arm_sdk_sim_bridge
-  blend_math
-  g1_hardware_interface::g1_arm_sdk_system
+target_compile_features(loco_fsm PUBLIC cxx_std_17)
+
+add_executable(motion_service_sim
+  src/motion_service_sim_node.cpp
+  src/motion_service_sim_main.cpp
 )
-ament_target_dependencies(arm_sdk_sim_bridge rclcpp unitree_hg)
+target_include_directories(motion_service_sim PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+target_compile_features(motion_service_sim PUBLIC cxx_std_17)
+target_link_libraries(motion_service_sim
+  blend_math
+  loco_fsm
+  g1_hardware_interface::g1_arm_sdk_system
+  nlohmann_json::nlohmann_json
+)
+ament_target_dependencies(motion_service_sim rclcpp unitree_hg unitree_api)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  target_compile_options(arm_sdk_sim_bridge PRIVATE -Wall -Wextra)
+  target_compile_options(motion_service_sim PRIVATE -Wall -Wextra)
   target_compile_options(blend_math PRIVATE -Wall -Wextra)
+  target_compile_options(loco_fsm PRIVATE -Wall -Wextra)
 endif()
 
 # blend_math is an internal build artifact (statically linked into
-# arm_sdk_sim_bridge and test_blend_math/test_assemble_sim_low_cmd only) --
+# motion_service_sim and test_blend_math/test_assemble_sim_low_cmd only) --
 # no install rule: installing the bare archive with neither its headers nor
 # an exported target would be unusable downstream anyway.
-install(TARGETS arm_sdk_sim_bridge DESTINATION lib/${PROJECT_NAME})
+install(TARGETS motion_service_sim DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY config launch mjcf DESTINATION share/${PROJECT_NAME})
 
@@ -65,6 +79,11 @@ if(BUILD_TESTING)
   # directly-testable-without-a-live-node treatment as test_blend_math.
   ament_add_gmock(test_assemble_sim_low_cmd test/test_assemble_sim_low_cmd.cpp)
   target_link_libraries(test_assemble_sim_low_cmd blend_math)
+
+  # The sim-only LocoClient FSM legality table -- every legal/illegal SET_FSM_ID edge and
+  # SET_VELOCITY's Start-only gate, directly testable without a live node or DDS.
+  ament_add_gmock(test_loco_fsm test/test_loco_fsm.cpp)
+  target_link_libraries(test_loco_fsm loco_fsm)
 
   # workspace/ruff.toml and .clang-format are the workspace-root configs
   # bind-mounted alongside src/ (see g1_description/CMakeLists.txt for why
@@ -122,6 +141,8 @@ if(BUILD_TESTING)
   set_tests_properties(test_sim_bringup PROPERTIES RESOURCE_LOCK g1_sim)
   add_launch_test(test/test_arm_command.launch.py TARGET test_arm_command TIMEOUT 220)
   set_tests_properties(test_arm_command PROPERTIES RESOURCE_LOCK g1_sim)
+  add_launch_test(test/test_loco.launch.py TARGET test_loco TIMEOUT 180)
+  set_tests_properties(test_loco PROPERTIES RESOURCE_LOCK g1_sim)
 endif()
 
 ament_package()

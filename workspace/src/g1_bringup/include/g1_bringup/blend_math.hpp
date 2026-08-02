@@ -36,7 +36,7 @@ inline constexpr std::size_t kWeightMotorIndex = 29;
  * @brief Linear blend between the captured hold value and the commanded value.
  *
  * Weight is clamped to [0, 1] -- used identically for arm q, kp, and kd (see
- * arm_sdk_sim_bridge_node's README section for the emulated motion-service
+ * motion_service_sim_node's README section for the emulated motion-service
  * contract). Header-only: trivial and called on every motor slot, every
  * tick.
  *
@@ -80,7 +80,7 @@ double stepEffectiveWeight(
  * given per-group gains, arms (kFirstArmMotor..) are blended between
  * `hold_q` and the commanded arm targets at `weight` via blend() (on q, kp,
  * and kd alike), and the weight slot echoes `weight` back out.
- * mode/mode_pr/mode_machine are left at zero -- see arm_sdk_sim_bridge_node's
+ * mode/mode_pr/mode_machine are left at zero -- see motion_service_sim_node's
  * README section for why. Free function (not a member) so the slot/gain
  * assembly is unit-testable without a live node or DDS, mirroring
  * g1_hardware_interface's assembleLowCmd().

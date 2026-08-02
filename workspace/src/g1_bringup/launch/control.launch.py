@@ -1,6 +1,6 @@
 """Composition-pure control stack: robot_state_publisher + controller_manager.
 
-No sim, no arm_sdk_sim_bridge here -- this is the launch file that carries
+No sim, no motion_service_sim here -- this is the launch file that carries
 over unchanged to hardware bring-up (see README.md's domain/DDS story).
 Included by sim.launch.py for the simulation milestone.
 """

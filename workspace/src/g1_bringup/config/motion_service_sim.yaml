@@ -1,4 +1,4 @@
-# Parameters for g1_bringup's arm_sdk_sim_bridge node (SIM-ONLY -- see
+# Parameters for g1_bringup's motion_service_sim node (SIM-ONLY -- see
 # README.md's safety banner). Wildcard node match so this file works
 # regardless of the node's name/namespace at launch time.
 /**:

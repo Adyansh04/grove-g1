@@ -53,7 +53,7 @@ arm_trajectory_controller:
     action_monitor_rate: 20.0   # Hz; default
     allow_partial_joints_goal: false
 
-    # Sim-tuning: unitree_mujoco's PD tracking plus the arm_sdk_sim_bridge's
+    # Sim-tuning: unitree_mujoco's PD tracking plus the motion_service_sim's
     # own weight/slew ramping add latency the JTC's tight built-in defaults
     # don't expect. Relaxed here for the sim milestone -- re-tighten against
     # real hardware dynamics when that milestone arrives.

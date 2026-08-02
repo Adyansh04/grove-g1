@@ -1,4 +1,4 @@
-"""Sim bring-up: unitree_mujoco + arm_sdk_sim_bridge + control.launch.py.
+"""Sim bring-up: unitree_mujoco + motion_service_sim + control.launch.py + loco.launch.py.
 
 See README.md for the full operating procedure (sim.launch.py ->
 activate_arm.launch.py -> command -> deactivate_arm.launch.py -> stop),
@@ -38,7 +38,7 @@ G1_MODEL_DIR = os.path.normpath(
 # lives in g1_bringup (mjcf/g1_pinned_scene.xml); it is copied here at launch so
 # its relative <include> and the model's own meshdir resolve against the vendored
 # directory (see the overlay's header comment for why staging is required).
-STAGED_SCENE_NAME = "g1_pinned_scene.staged.xml"
+STAGED_SCENE_NAME = "g1_grove_scene.staged.xml"
 
 # unitree_mujoco is a native unitree_sdk2 DDS app, not a ROS node, and links
 # its own build of CycloneDDS from here. Sourcing a ROS environment (as any
@@ -132,33 +132,35 @@ def _launch_setup(context, *args, **kwargs):
         actions.append(xvfb_process)
         sim_env["DISPLAY"] = XVFB_DISPLAY
 
-    # sim-only balance scaffolding: stage the pelvis-pin overlay next to the
-    # vendored model and load it via -s, so the sim spawns with the pelvis
-    # welded upright (unitree_mujoco has no balance controller). Staging (rather
-    # than an absolute -s path) is required for MuJoCo's relative asset
-    # resolution -- see mjcf/g1_pinned_scene.xml. Without pinning the sim loads
-    # its default scene and the robot topples on spawn.
-    sim_cmd = [UNITREE_MUJOCO_BIN, "-r", "g1"]
-    if pin_pelvis:
-        staged_path = os.path.join(G1_MODEL_DIR, STAGED_SCENE_NAME)
-        overlay_src = os.path.join(
-            get_package_share_directory("g1_bringup"), "mjcf", "g1_pinned_scene.xml"
-        )
-        shutil.copyfile(overlay_src, staged_path)
-        sim_cmd += ["-s", STAGED_SCENE_NAME]
+    # Always stage one of our own scenes -- never fall through to the sim's default. Staging
+    # (rather than an absolute -s path) is required for MuJoCo's relative asset resolution -- see
+    # mjcf/g1_pinned_scene.xml's header comment. unitree_mujoco's own g1 scene.xml is an obstacle
+    # course (103 geoms: boxes, cylinders, ramps, stairs, height fields); loading it for
+    # locomotion work spawns the robot among obstacles that knock it over, which looks exactly
+    # like a balance failure and is not one. Both of our scenes are the same bare floor -- the
+    # only difference is whether the pelvis is welded (pin_pelvis:=false loads the unpinned one
+    # and the robot topples on spawn, since nothing else balances it; see the README's "Pelvis
+    # pin" section).
+    overlay_name = "g1_pinned_scene.xml" if pin_pelvis else "g1_flat_scene.xml"
+    staged_path  = os.path.join(G1_MODEL_DIR, STAGED_SCENE_NAME)
+    overlay_src  = os.path.join(
+        get_package_share_directory("g1_bringup"), "mjcf", overlay_name
+    )
+    shutil.copyfile(overlay_src, staged_path)
+    sim_cmd = [UNITREE_MUJOCO_BIN, "-r", "g1", "-s", STAGED_SCENE_NAME]
 
-        def _remove_staged_scene(context, *a, **k):
-            try:
-                os.remove(staged_path)
-            except OSError:
-                pass
-            return []
+    def _remove_staged_scene(context, *a, **k):
+        try:
+            os.remove(staged_path)
+        except OSError:
+            pass
+        return []
 
-        actions.append(
-            RegisterEventHandler(
-                OnShutdown(on_shutdown=[OpaqueFunction(function=_remove_staged_scene)])
-            )
+    actions.append(
+        RegisterEventHandler(
+            OnShutdown(on_shutdown=[OpaqueFunction(function=_remove_staged_scene)])
         )
+    )
 
     sim_process = ExecuteProcess(
         cmd=sim_cmd,
@@ -173,14 +175,14 @@ def _launch_setup(context, *args, **kwargs):
     sim_start_delay_s = float(LaunchConfiguration("sim_start_delay_s").perform(context))
     actions.append(TimerAction(period=sim_start_delay_s, actions=[sim_process]))
 
-    arm_sdk_sim_bridge_node = Node(
+    motion_service_sim_node = Node(
         package="g1_bringup",
-        executable="arm_sdk_sim_bridge",
-        name="arm_sdk_sim_bridge",
+        executable="motion_service_sim",
+        name="motion_service_sim",
         output="screen",
         parameters=[
             os.path.join(
-                get_package_share_directory("g1_bringup"), "config", "arm_sdk_sim_bridge.yaml"
+                get_package_share_directory("g1_bringup"), "config", "motion_service_sim.yaml"
             )
         ],
     )
@@ -188,6 +190,16 @@ def _launch_setup(context, *args, **kwargs):
     control_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(get_package_share_directory("g1_bringup"), "launch", "control.launch.py")
+        )
+    )
+
+    # g1_locomotion's LocoClient bridge, lifecycle-configured and activated automatically -- see
+    # loco.launch.py's own docstring. It only needs motion_service_sim's /api/sport/* responder
+    # (already wired above), not the sim's physics or /lowstate, so it starts immediately rather
+    # than waiting on sim_start_delay_s.
+    loco_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(get_package_share_directory("g1_bringup"), "launch", "loco.launch.py")
         )
     )
 
@@ -202,7 +214,7 @@ def _launch_setup(context, *args, **kwargs):
         )
     )
 
-    actions.extend([arm_sdk_sim_bridge_node, control_launch, shutdown_on_sim_exit])
+    actions.extend([motion_service_sim_node, control_launch, loco_launch, shutdown_on_sim_exit])
     return actions
 
 
@@ -218,10 +230,11 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "pin_pelvis",
                 default_value="true",
-                description="Weld the pelvis to the world (SIM-ONLY balance scaffolding) so the "
-                "arm bridge can be validated without a balance controller. Set false once a real "
-                "balance/locomotion controller (LocoClient milestone) is available; the robot "
-                "will otherwise topple on spawn in unitree_mujoco.",
+                description="Weld the pelvis to the world (SIM-ONLY scaffolding). Nothing in this "
+                "stack balances the robot -- the vendor's onboard controller does that on real "
+                "hardware and is not emulated by unitree_mujoco -- so an unpinned launch topples "
+                "on spawn. Both settings load a bare floor (mjcf/g1_pinned_scene.xml or "
+                "mjcf/g1_flat_scene.xml); see the README's 'Pelvis pin' section.",
             ),
             DeclareLaunchArgument(
                 "sim_start_delay_s",

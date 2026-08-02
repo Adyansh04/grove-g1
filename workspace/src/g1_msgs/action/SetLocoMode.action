@@ -1,0 +1,13 @@
+# Target FSM id for the onboard motion service. Only these three are accepted --
+# g1_locomotion's bridge rejects anything else in its action server's handle_goal.
+# Squat(2)/Sit(3)/ZeroTorque(0) have no constant here: no caller needs them yet and
+# their transition legality was never checked against a real onboard controller.
+int32 DAMP=1
+int32 STAND_UP=4
+int32 START=500
+int32 fsm_id
+---
+bool success
+int32 error_code
+string message
+---
