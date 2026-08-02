@@ -30,32 +30,29 @@ double stepEffectiveWeight(
 
 unitree_hg::msg::LowCmd assembleSimLowCmd(
     const std::array<double, kNumBodyMotors>& hold_q,
+    const std::array<double, kFirstArmMotor>& lower_q,
+    const std::array<double, kFirstArmMotor>& lower_kp,
+    const std::array<double, kFirstArmMotor>& lower_kd,
     const std::array<double, kNumArmMotors>&  arm_cmd_q,
     const std::array<double, kNumArmMotors>&  arm_cmd_kp,
-    const std::array<double, kNumArmMotors>& arm_cmd_kd, double weight, double leg_kp,
-    double leg_kd, double waist_kp, double waist_kd, double arm_hold_kp, double arm_hold_kd)
+    const std::array<double, kNumArmMotors>& arm_cmd_kd, double weight, double arm_hold_kp,
+    double arm_hold_kd)
 {
     // rosidl-generated: zero-initialized, including reserved slots and mode/mode_pr/mode_machine
     // -- deliberately left untouched (see motion_service_sim_node's README).
     unitree_hg::msg::LowCmd cmd;
 
-    for (int i = 0; i < kNumLegMotors; ++i)
+    // Legs and waist share one loop now: they are one authority block, owned either by the hold
+    // pose or by the walking policy, and the caller has already resolved which.
+    for (int i = 0; i < kFirstArmMotor; ++i)
     {
-        auto& motor = cmd.motor_cmd[static_cast<std::size_t>(i)];
-        motor.q     = static_cast<float>(hold_q[static_cast<std::size_t>(i)]);
-        motor.dq    = 0.0F;
-        motor.tau   = 0.0F;
-        motor.kp    = static_cast<float>(leg_kp);
-        motor.kd    = static_cast<float>(leg_kd);
-    }
-    for (int i = kNumLegMotors; i < kFirstArmMotor; ++i)
-    {
-        auto& motor = cmd.motor_cmd[static_cast<std::size_t>(i)];
-        motor.q     = static_cast<float>(hold_q[static_cast<std::size_t>(i)]);
-        motor.dq    = 0.0F;
-        motor.tau   = 0.0F;
-        motor.kp    = static_cast<float>(waist_kp);
-        motor.kd    = static_cast<float>(waist_kd);
+        const auto idx   = static_cast<std::size_t>(i);
+        auto&      motor = cmd.motor_cmd[idx];
+        motor.q          = static_cast<float>(lower_q[idx]);
+        motor.dq         = 0.0F;
+        motor.tau        = 0.0F;
+        motor.kp         = static_cast<float>(lower_kp[idx]);
+        motor.kd         = static_cast<float>(lower_kd[idx]);
     }
     for (int i = 0; i < kNumArmMotors; ++i)
     {

@@ -9,11 +9,7 @@ install(
 )
 
 if(BUILD_TESTING)
-  # ament_lint_common is deliberately not used here: it pulls in
-  # ament_flake8/ament_copyright, whose defaults (single-quote preference, a
-  # mandatory copyright header) conflict with the repo's root ruff.toml and
-  # its no-header convention. Only the linters that don't conflict with ruff
-  # are wired in; ruff itself is the python linter, added as a plain test below.
+  # Linters that don't conflict with ruff.
   find_package(ament_lint_auto REQUIRED)
   ament_lint_auto_find_test_dependencies()
 
@@ -22,11 +18,7 @@ if(BUILD_TESTING)
     ENV "G1_DESCRIPTION_XACRO=${CMAKE_CURRENT_SOURCE_DIR}/urdf/g1_arm_sdk.urdf.xacro"
   )
 
-  # workspace/ruff.toml is the workspace-root config bind-mounted alongside
-  # src/ (see docker-compose.yml); this package normally lives two levels
-  # below it (workspace/src/g1_description). If that layout doesn't hold
-  # (e.g. package built standalone after the multi-repo split), skip rather
-  # than fail the whole suite on a path that no longer applies.
+  # Use workspace-root ruff.toml if available.
   find_program(RUFF_EXECUTABLE ruff)
   set(_ruff_config "${CMAKE_CURRENT_SOURCE_DIR}/../../ruff.toml")
   if(RUFF_EXECUTABLE AND EXISTS "${_ruff_config}")

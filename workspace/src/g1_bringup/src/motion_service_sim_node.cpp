@@ -7,10 +7,13 @@
 
 #include "g1_bringup/motion_service_sim_node.hpp"
 
+#include <cmath>
 #include <nlohmann/json.hpp>
 #include <optional>
 #include <stdexcept>
+#include <vector>
 
+#include "ament_index_cpp/get_package_share_directory.hpp"
 #include "g1_bringup/blend_math.hpp"
 #include "g1_hardware_interface/motor_crc_hg.hpp"
 
@@ -19,10 +22,7 @@ namespace g1_bringup
 
 namespace
 {
-// LocoClient wire API ids this responder answers, duplicated from g1_locomotion's own
-// loco_api_ids.hpp rather than depending on that package: those headers are an unexported
-// internal build artifact (see g1_locomotion/CMakeLists.txt), and these are stable wire-protocol
-// integers, not logic worth sharing a build target over.
+// Duplicated from g1_locomotion's loco_api_ids.hpp (unexported internal header).
 constexpr std::int64_t kApiIdGetFsmId    = 7001;
 constexpr std::int64_t kApiIdSetFsmId    = 7101;
 constexpr std::int64_t kApiIdSetVelocity = 7105;
@@ -51,19 +51,43 @@ std::optional<int> parseIntDataField(const std::string& json_text)
     }
 }
 
-/// Just enough shape-checking on a 7105 SET_VELOCITY parameter to reject something that plainly
-/// isn't one. This responder is protocol-only and never reads vx/vy/vyaw/duration themselves
-/// (see dispatchSportRequest()) -- there is nothing beyond shape worth validating.
-bool looksLikeSetVelocityPayload(const std::string& json_text)
+/// A parsed 7105 SET_VELOCITY parameter: {"velocity":[vx,vy,vyaw],"duration":d}.
+struct SetVelocityPayload
+{
+    double vx{ 0.0 };
+    double vy{ 0.0 };
+    double vyaw{ 0.0 };
+    double duration_s{ 0.0 };
+};
+
+/// Parses a 7105 SET_VELOCITY parameter, rejecting anything that isn't one. Returns nullopt for
+/// malformed JSON, a missing/short velocity array, or non-numeric entries -- never throws.
+std::optional<SetVelocityPayload> parseSetVelocityPayload(const std::string& json_text)
 {
     try
     {
         const auto js = nlohmann::json::parse(json_text);
-        return js.contains("velocity") && js["velocity"].is_array() && js.contains("duration");
+        if (!js.contains("velocity") || !js["velocity"].is_array() || js["velocity"].size() < 3 ||
+            !js.contains("duration") || !js["duration"].is_number())
+        {
+            return std::nullopt;
+        }
+        const auto& v = js["velocity"];
+        for (std::size_t i = 0; i < 3; ++i)
+        {
+            if (!v[i].is_number())
+            {
+                return std::nullopt;
+            }
+        }
+        return SetVelocityPayload{ v[0].get<double>(),
+                                   v[1].get<double>(),
+                                   v[2].get<double>(),
+                                   js["duration"].get<double>() };
     }
     catch (const nlohmann::json::parse_error&)
     {
-        return false;
+        return std::nullopt;
     }
 }
 }  // namespace
@@ -89,13 +113,7 @@ MotionServiceSim::MotionServiceSim(const rclcpp::NodeOptions& options)
     arm_sdk_timeout_s_              = arm_sdk_timeout_ms / 1000.0;
     timeout_ramp_down_s_            = declare_parameter("timeout_ramp_down_s", 1.0);
 
-    // Fail fast on a nonsensical rate or duration, mirroring G1ArmSdkSystem::on_init's
-    // strictly-positive gate: publish_rate_hz <= 0 makes the wall-timer period's duration_cast
-    // undefined, and a non-positive arm_sdk_timeout_s/timeout_ramp_down_s turns the no-snap
-    // staleness decay into a snap (or an upward ramp) via stepEffectiveWeight's max_step.
-    //
-    // Gains are left unchecked, same as on_init -- only the rate and duration tunables can cause
-    // UB or a snap when misconfigured.
+    // Fail fast on non-positive rate/duration (same gate as G1ArmSdkSystem::on_init).
     if (publish_rate_hz_ <= 0.0 || arm_sdk_timeout_s_ <= 0.0 || timeout_ramp_down_s_ <= 0.0)
     {
         RCLCPP_FATAL(
@@ -110,26 +128,21 @@ MotionServiceSim::MotionServiceSim(const rclcpp::NodeOptions& options)
             "strictly positive");
     }
 
-    // Best-effort: matches unitree_mujoco's rt/lowstate publisher QoS family (verified RELIABLE
-    // in the milestone-1 spike, which a best-effort reader is still compatible with); only the
-    // newest of the ~900 Hz stream ever matters.
+    // Best-effort, depth 1 — matches unitree_mujoco's /lowstate publisher.
     const auto lowstate_qos = rclcpp::QoS(rclcpp::KeepLast(1)).best_effort().durability_volatile();
     lowstate_sub_           = create_subscription<unitree_hg::msg::LowState>(
         "/lowstate",
         lowstate_qos,
         [this](const unitree_hg::msg::LowState::ConstSharedPtr& msg) { lowstateCallback(msg); });
 
-    // Reliable: matches g1_hardware_interface's G1ArmSdkSystem, the sole /arm_sdk publisher in
-    // this stack.
+    // Reliable, depth 1 — matches G1ArmSdkSystem's /arm_sdk publisher.
     const auto arm_sdk_qos = rclcpp::QoS(rclcpp::KeepLast(1)).reliable().durability_volatile();
     arm_sdk_sub_           = create_subscription<unitree_hg::msg::LowCmd>(
         "/arm_sdk",
         arm_sdk_qos,
         [this](const unitree_hg::msg::LowCmd::ConstSharedPtr& msg) { armSdkCallback(msg); });
 
-    // Best-effort: matches unitree_mujoco's rt/lowcmd subscription exactly (verified in the
-    // milestone-1 spike). This bridge is the sim's only /lowcmd publisher, so there's no
-    // reliability contention to protect against, and only the newest tick matters.
+    // Best-effort, depth 1 — matches unitree_mujoco's /lowcmd subscription.
     const auto lowcmd_qos = rclcpp::QoS(rclcpp::KeepLast(1)).best_effort().durability_volatile();
     lowcmd_pub_           = create_publisher<unitree_hg::msg::LowCmd>("/lowcmd", lowcmd_qos);
 
@@ -139,13 +152,8 @@ MotionServiceSim::MotionServiceSim(const rclcpp::NodeOptions& options)
             publishTick();
         });
 
-    // Vendor-matched RELIABILITY/DURABILITY -- must not deviate, that's what hardware endpoint
-    // compatibility depends on (see g1_locomotion's README for the identical rule on the bridge
-    // side). HISTORY depth isn't RxO-matched, so it's ours to pick per side: the response
-    // publisher stays at depth 1 (only the newest reply matters), but this request reader goes
-    // deeper -- two requests landing in the same DDS batch (e.g. a SET_VELOCITY re-issue and a
-    // GET_FSM_ID heartbeat poll) must not overwrite each other in a depth-1 KEEP_LAST cache
-    // before this callback drains them.
+    // Vendor-matched reliability/durability. Request reader depth 10 to avoid
+    // overwrites when multiple requests land in one DDS batch.
     const auto sport_request_qos  = rclcpp::QoS(10).reliable().durability_volatile();
     const auto sport_response_qos = rclcpp::QoS(1).reliable().durability_volatile();
     sport_request_sub_            = create_subscription<unitree_api::msg::Request>(
@@ -155,24 +163,213 @@ MotionServiceSim::MotionServiceSim(const rclcpp::NodeOptions& options)
     sport_response_pub_ =
         create_publisher<unitree_api::msg::Response>("/api/sport/response", sport_response_qos);
 
-    RCLCPP_WARN(
+    // Best-effort — base linear velocity for the policy observation.
+    const auto sportmodestate_qos =
+        rclcpp::QoS(rclcpp::KeepLast(1)).best_effort().durability_volatile();
+    sportmodestate_sub_ = create_subscription<unitree_go::msg::SportModeState>(
+        "/sportmodestate",
+        sportmodestate_qos,
+        [this](const unitree_go::msg::SportModeState::ConstSharedPtr& msg) {
+            sportModeStateCallback(msg);
+        });
+
+    if (setUpWalkPolicy())
+    {
+        RCLCPP_WARN(
+            get_logger(),
+            "motion_service_sim is SIM-ONLY: it owns /lowcmd in this process, walks the robot with "
+            "an RL policy, and answers /api/sport/*; must never run against real hardware (see "
+            "README.md).");
+    }
+    else
+    {
+        RCLCPP_WARN(
+            get_logger(),
+            "motion_service_sim is SIM-ONLY: it owns /lowcmd in this process and answers "
+            "/api/sport/* (walking policy disabled -- legs stiff-hold); must never run against "
+            "real hardware (see README.md).");
+    }
+}
+
+bool MotionServiceSim::setUpWalkPolicy()
+{
+    walk_policy_enabled_          = declare_parameter("walk_policy.enabled", false);
+    const auto   model_path_param = declare_parameter("walk_policy.onnx_model_path", std::string{});
+    const double rate_hz          = declare_parameter("walk_policy.rate_hz", 50.0);
+    walk_policy_staleness_timeout_s_ =
+        declare_parameter("walk_policy.staleness_timeout_ms", 100.0) / 1000.0;
+    const auto joint_names =
+        declare_parameter("walk_policy.joint_names", std::vector<std::string>{});
+    const auto default_joint_pos =
+        declare_parameter("walk_policy.default_joint_pos", std::vector<double>{});
+    const auto action_scales =
+        declare_parameter("walk_policy.action_scales", std::vector<double>{});
+    const auto lower_kp = declare_parameter("walk_policy.lower_kp", std::vector<double>{});
+    const auto lower_kd = declare_parameter("walk_policy.lower_kd", std::vector<double>{});
+    const auto max_velocity =
+        declare_parameter("walk_policy.max_velocity", std::vector<double>{ 1.0, 0.8, 2.0 });
+    const auto thresholds = declare_parameter(
+        "walk_policy.gait_initiation_threshold",
+        std::vector<double>{ 0.4, 0.5, 1.5 });
+    walk_policy_config_.velocity_duration_max_s =
+        declare_parameter("walk_policy.velocity_duration_max_s", 2.0);
+
+    if (!walk_policy_enabled_)
+    {
+        RCLCPP_INFO(
+            get_logger(),
+            "walking policy disabled -- legs and waist stiff-hold the captured pose (this is what "
+            "pin_pelvis:=true selects, since the weld and the policy cannot both own the legs)");
+        return false;
+    }
+
+    // Every gain and target below is indexed by DDS motor number, so a permuted joint list would
+    // silently drive the wrong joints. Refuse rather than guess.
+    const auto order_problem = checkJointOrder(joint_names);
+    if (!order_problem.empty())
+    {
+        RCLCPP_ERROR(
+            get_logger(),
+            "walk_policy.joint_names does not match the Unitree DDS motor order (%s) -- disabling "
+            "the policy; legs will stiff-hold",
+            order_problem.c_str());
+        walk_policy_enabled_ = false;
+        return false;
+    }
+    if (default_joint_pos.size() != kNumBodyMotors || action_scales.size() != kNumBodyMotors ||
+        lower_kp.size() != kNumLowerMotors || lower_kd.size() != kNumLowerMotors ||
+        max_velocity.size() != 3 || thresholds.size() != 3 || rate_hz <= 0.0)
+    {
+        RCLCPP_ERROR(
+            get_logger(),
+            "walk_policy parameters are malformed (expected %d default_joint_pos/action_scales, "
+            "%d lower_kp/lower_kd, 3 max_velocity, 3 gait_initiation_threshold, positive rate_hz) "
+            "-- disabling the policy; legs will stiff-hold",
+            kNumBodyMotors,
+            kNumLowerMotors);
+        walk_policy_enabled_ = false;
+        return false;
+    }
+
+    std::copy(
+        default_joint_pos.begin(),
+        default_joint_pos.end(),
+        walk_policy_config_.default_joint_pos.begin());
+    std::copy(action_scales.begin(), action_scales.end(), walk_policy_config_.action_scales.begin());
+    std::copy(lower_kp.begin(), lower_kp.end(), walk_policy_config_.lower_kp.begin());
+    std::copy(lower_kd.begin(), lower_kd.end(), walk_policy_config_.lower_kd.begin());
+    std::copy(max_velocity.begin(), max_velocity.end(), walk_policy_config_.max_velocity.begin());
+    std::copy(
+        thresholds.begin(),
+        thresholds.end(),
+        walk_policy_config_.gait_initiation_threshold.begin());
+
+    // The weights are an external file ONNX Runtime resolves against the model path, so the
+    // default points at the installed share directory where both were installed together.
+    const std::string model_path =
+        model_path_param.empty() ?
+            ament_index_cpp::get_package_share_directory("g1_bringup") + "/policy/walker.onnx" :
+            model_path_param;
+    try
+    {
+        walk_policy_session_ = std::make_unique<WalkPolicySession>(model_path);
+    }
+    catch (const std::exception& e)
+    {
+        RCLCPP_ERROR(
+            get_logger(),
+            "failed to load the walking policy from '%s' (%s) -- disabling the policy; legs will "
+            "stiff-hold",
+            model_path.c_str(),
+            e.what());
+        walk_policy_enabled_ = false;
+        return false;
+    }
+
+    const auto policy_period = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::duration<double>(1.0 / rate_hz));
+    walk_policy_timer_ = create_wall_timer(policy_period, [this] { walkPolicyTick(); });
+
+    RCLCPP_INFO(
         get_logger(),
-        "motion_service_sim is SIM-ONLY: it owns /lowcmd in this process and answers "
-        "/api/sport/* protocol-only (no leg motion); must never run against real hardware (see "
-        "README.md).");
+        "walking policy loaded from '%s' (warm-up %.1f ms), running at %.1f Hz and owning motors "
+        "0-%d; /arm_sdk keeps the arms",
+        model_path.c_str(),
+        walk_policy_session_->warmupSeconds() * 1000.0,
+        rate_hz,
+        kNumLowerMotors - 1);
+    return true;
 }
 
 void MotionServiceSim::lowstateCallback(const unitree_hg::msg::LowState::ConstSharedPtr& msg)
 {
-    if (hold_pose_captured_)
+    // Refreshed every sample, unlike hold_q_ below: the policy observes live joint state.
+    for (std::size_t i = 0; i < kNumBodyMotors; ++i)
+    {
+        walk_inputs_.joint_pos[i] = msg->motor_state[i].q;
+        walk_inputs_.joint_vel[i] = msg->motor_state[i].dq;
+    }
+    for (std::size_t i = 0; i < 4; ++i)
+    {
+        walk_inputs_.base_quat[i] = msg->imu_state.quaternion[i];
+    }
+    for (std::size_t i = 0; i < 3; ++i)
+    {
+        walk_inputs_.base_ang_vel_body[i] = msg->imu_state.gyroscope[i];
+    }
+
+    if (!hold_pose_captured_)
+    {
+        for (int i = 0; i < kNumBodyMotors; ++i)
+        {
+            hold_q_[static_cast<std::size_t>(i)] = msg->motor_state[static_cast<std::size_t>(i)].q;
+        }
+        hold_pose_captured_ = true;
+    }
+}
+
+void MotionServiceSim::sportModeStateCallback(
+    const unitree_go::msg::SportModeState::ConstSharedPtr& msg)
+{
+    // World-frame; assembleObservation() rotates it into the base frame.
+    for (std::size_t i = 0; i < 3; ++i)
+    {
+        walk_inputs_.base_lin_vel_world[i] = msg->velocity[i];
+    }
+    sportmodestate_received_ = true;
+}
+
+void MotionServiceSim::walkPolicyTick()
+{
+    // Wait for both /lowstate and /sportmodestate before first inference.
+    // Running earlier with zeros is measurably worse.
+    if (!walk_policy_session_ || !hold_pose_captured_ || !sportmodestate_received_)
     {
         return;
     }
-    for (int i = 0; i < kNumBodyMotors; ++i)
+    const auto now     = std::chrono::steady_clock::now();
+    const auto command = activeCommand(walk_velocity_, now);
+    const auto observation =
+        assembleObservation(walk_inputs_, walk_policy_config_, walk_last_action_, command);
+
+    // Catch exceptions — a throw here would kill the process and collapse the robot.
+    const auto action =
+        runPolicyGuarded([this, &observation] { return walk_policy_session_->run(observation); });
+    if (!action)
     {
-        hold_q_[static_cast<std::size_t>(i)] = msg->motor_state[static_cast<std::size_t>(i)].q;
+        RCLCPP_ERROR_THROTTLE(
+            get_logger(),
+            *get_clock(),
+            1000,
+            "walking policy inference threw -- skipping this tick; leaving the freshness stamp "
+            "untouched so the stiff-hold fallback engages if it keeps failing");
+        return;
     }
-    hold_pose_captured_ = true;
+    walk_last_action_  = *action;
+    const auto targets = actionToJointTargets(walk_last_action_, walk_policy_config_);
+    std::copy(targets.begin(), targets.begin() + kNumLowerMotors, walk_target_q_.begin());
+    walk_target_valid_ = true;
+    walk_target_stamp_ = now;
 }
 
 void MotionServiceSim::armSdkCallback(const unitree_hg::msg::LowCmd::ConstSharedPtr& msg)
@@ -202,8 +399,7 @@ void MotionServiceSim::publishTick()
                            std::chrono::duration<double>(now - last_tick_).count();
     last_tick_       = now;
 
-    // No /arm_sdk received yet is treated the same as stale: the effective weight target is 0
-    // either way, so arms simply hold at hold_q_ until the first real command shows up.
+    // No /arm_sdk received yet is treated as stale (weight target = 0).
     bool stale = true;
     if (arm_sdk_received_)
     {
@@ -213,28 +409,50 @@ void MotionServiceSim::publishTick()
     effective_weight_ =
         stepEffectiveWeight(effective_weight_, arm_cmd_weight_, stale, timeout_ramp_down_s_, dt);
 
-    // assembleSimLowCmd() (blend_math) does the leg/waist stiff-hold, arm blend, and weight-slot
-    // echo -- unit-tested directly (test/test_assemble_sim_low_cmd.cpp) without a live node or
-    // DDS.
+    // Walking policy owns motors 0-14 only while its targets are fresh.
+    const bool policy_fresh = walk_policy_enabled_ && walk_target_valid_ &&
+                              std::chrono::duration<double>(now - walk_target_stamp_).count() <=
+                                  walk_policy_staleness_timeout_s_;
+
+    // Computed once, as one value: see LegAuthority's own comment on why this is not two bools.
+    const LegAuthority authority = !walk_target_valid_ ? LegAuthority::kHoldPose :
+                                   policy_fresh        ? LegAuthority::kLivePolicy :
+                                                         LegAuthority::kFrozenPolicy;
+    const auto         lower     = selectLowerBodyCommand(
+        authority,
+        walk_target_q_,
+        hold_q_,
+        walk_policy_config_.lower_kp,
+        walk_policy_config_.lower_kd,
+        leg_kp_,
+        leg_kd_,
+        waist_kp_,
+        waist_kd_);
+    if (walk_policy_enabled_ && authority == LegAuthority::kFrozenPolicy)
+    {
+        RCLCPP_WARN_THROTTLE(
+            get_logger(),
+            *get_clock(),
+            1000,
+            "walking policy targets are stale -- legs and waist are frozen at the last policy "
+            "output and held at stiff-hold gains");
+    }
+
+    // assembleSimLowCmd() does the lower-body assignment, arm blend, and weight-slot echo.
     unitree_hg::msg::LowCmd cmd = assembleSimLowCmd(
         hold_q_,
+        lower.q,
+        lower.kp,
+        lower.kd,
         arm_cmd_q_,
         arm_cmd_kp_,
         arm_cmd_kd_,
         effective_weight_,
-        leg_kp_,
-        leg_kd_,
-        waist_kp_,
-        waist_kd_,
         arm_hold_kp_,
         arm_hold_kd_);
 
-    // mode/mode_pr/mode_machine are deliberately left unset: unitree_mujoco computes actuator
-    // torque as tau_ff + kp * (q_des - q_meas) + kd * (dq_des - dq_meas) per motor slot and never
-    // reads the mode fields (simulate/src/unitree_sdk2_bridge.h, RobotBridge::run()).
-    //
-    // That's a sim-specific finding -- what the real motion service does with these fields is
-    // unverified and stays a hardware re-validation item.
+    // mode/mode_pr/mode_machine left unset — unitree_mujoco never reads them
+    // (computes torque from q/kp/kd/dq directly). Real hardware may differ.
     g1_hardware_interface::vendored::computeLowCmdCrc(cmd);
     lowcmd_pub_->publish(cmd);
 }
@@ -242,10 +460,7 @@ void MotionServiceSim::publishTick()
 void MotionServiceSim::sportRequestCallback(const unitree_api::msg::Request::ConstSharedPtr& msg)
 {
     unitree_api::msg::Response response;
-    // Correlation contract: g1_locomotion's LocoRequestCorrelator matches purely on
-    // header.identity.id, but the wire contract carries api_id alongside it in the same struct --
-    // echo the whole identity back verbatim regardless of what this handler does with the
-    // request.
+    // Echo the full identity back for correlation.
     response.header.identity = msg->header.identity;
     response.header.status.code =
         dispatchSportRequest(msg->header.identity.api_id, msg->parameter, response.data);
@@ -271,22 +486,57 @@ std::int32_t MotionServiceSim::dispatchSportRequest(
         }
         const auto result = applySetFsmId(loco_fsm_state_, *requested);
         loco_fsm_state_   = result.new_state;
+        // Leaving Start releases locomotion authority — clear any latched velocity.
+        if (loco_fsm_state_ != kFsmStart)
+        {
+            walk_velocity_.reset();
+        }
         return result.error_code;
     }
     if (api_id == kApiIdSetVelocity)
     {
-        if (!looksLikeSetVelocityPayload(parameter))
+        const auto payload = parseSetVelocityPayload(parameter);
+        if (!payload)
         {
             return kCodeTaskUnknownError;
         }
-        return checkVelocityAllowed(loco_fsm_state_);
+        // Velocity only allowed in Start state.
+        const std::int32_t code = checkVelocityAllowed(loco_fsm_state_);
+        if (code != kLocoFsmCodeSuccess)
+        {
+            return code;
+        }
+
+        const auto command =
+            clampVelocity(payload->vx, payload->vy, payload->vyaw, walk_policy_config_);
+        if (isBelowGaitThreshold(command, walk_policy_config_))
+        {
+            // Passed through unmodified regardless. Operator gets told.
+            RCLCPP_WARN_THROTTLE(
+                get_logger(),
+                *get_clock(),
+                5000,
+                "commanded velocity (%.2f, %.2f, %.2f) is below this policy's measured "
+                "gait-initiation thresholds (%.2f, %.2f, %.2f) -- the robot will stand still "
+                "rather than step (see README)",
+                command[0],
+                command[1],
+                command[2],
+                walk_policy_config_.gait_initiation_threshold[0],
+                walk_policy_config_.gait_initiation_threshold[1],
+                walk_policy_config_.gait_initiation_threshold[2]);
+        }
+        walk_velocity_ = latchVelocity(
+            command,
+            payload->duration_s,
+            std::chrono::steady_clock::now(),
+            walk_policy_config_);
+        return kLocoFsmCodeSuccess;
     }
     if (api_id == kApiIdSetArmTask)
     {
-        // Deliberately unsupported: SET_ARM_TASK (WaveHand/ShakeHand-style moves) hands arm
-        // authority to the onboard controller, fighting this stack's rt/arm_sdk blend weight
-        // (see g1_locomotion's README -- the api id isn't even defined there, same reason).
-        // Rejecting it here, not a silent no-op, makes the omission a tested fact.
+        // Deliberately unsupported — SET_ARM_TASK conflicts with this stack's
+        // rt/arm_sdk blend weight authority.
         return kCodeTaskUnknownError;
     }
     return kCodeTaskUnknownError;

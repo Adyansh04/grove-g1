@@ -25,15 +25,8 @@ RUN apt-get update && apt-get install -y clangd-14 clang-format-14 clang-tidy-14
 # unitree_mujoco from source, installed in the layer below.
 # ============================================================================
 
-# ros2_control stack, CycloneDDS RMW, and the unitree_sdk2/unitree_mujoco
-# source builds' own deps, in one layer. libgl1-mesa-dri/libglx-mesa0:
-# software GL — without mesa, GLFW under Xvfb dies on context creation.
-# libeigen3-dev/libfmt-dev aren't in unitree_sdk2's or unitree_mujoco's own
-# published dep lists but are genuinely required transitively: the G1
-# dds_wrapper headers unitree_mujoco includes pull in Eigen, and
-# unitree_mujoco/simulate links libfmt directly. rosidl-generator-dds-idl:
-# required by the unitree_ros2 message packages (unitree_api/go/hg) built in
-# the workspace; not part of the desktop install.
+# ros2_control, unitree_sdk2/mujoco build deps. Mesa GL for headless Xvfb;
+# libeigen3-dev/libfmt-dev are transitive deps of unitree_mujoco.
 RUN apt-get update && apt-get install -y \
         libboost-all-dev \
         libeigen3-dev \
@@ -56,11 +49,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # --- unitree_sdk2 -----------------------------------------------------------
-# Vendors its own CycloneDDS thirdparty libs; installs straight into
-# /opt/unitree_robotics so unitree_mujoco's find_package(unitree_sdk2) below
-# needs no extra CMAKE_PREFIX_PATH plumbing. Only include/lib are
-# runtime-relevant, so the source/build tree is discarded once install
-# finishes — unlike unitree_mujoco below, nothing reads it at runtime.
+# Build and install unitree_sdk2; source tree discarded after install.
 # Pinned 2026-07-17 — current tip of unitree_sdk2 at authoring time.
 ARG UNITREE_SDK2_SHA=21d0a3b2c46ee48c8fdf2783becb6be3beb0a59b
 RUN git init -q /opt/unitree_robotics/unitree_sdk2 && \
@@ -77,11 +66,7 @@ RUN git init -q /opt/unitree_robotics/unitree_sdk2 && \
     rm -rf /opt/unitree_robotics/unitree_sdk2
 
 # --- MuJoCo ------------------------------------------------------------------
-# unitree_mujoco/simulate/CMakeLists.txt compiles MuJoCo's own "simulate"
-# viewer sources (glfw_adapter.cc etc.) directly into our binary, not just a
-# prebuilt library, so the release tarball is extracted whole rather than
-# just headers + .so. Must match the exact version unitree_mujoco's own tip
-# instructs extracting, not just "latest" MuJoCo.
+# Full tarball needed — unitree_mujoco compiles MuJoCo viewer sources directly.
 # Pinned 2026-07-17 — the release unitree_mujoco's current tip's README
 # instructs extracting (mujoco-3.3.6).
 ARG MUJOCO_VERSION=3.3.6
@@ -90,17 +75,9 @@ RUN mkdir -p /opt/unitree_robotics/mujoco-${MUJOCO_VERSION} && \
       | tar -xz --strip-components=1 -C /opt/unitree_robotics/mujoco-${MUJOCO_VERSION}
 
 # --- unitree_mujoco (the `simulate` app) ------------------------------------
-# Same DDS topics as the real robot (unitree_hg, rt/arm_sdk), per
-# unitreerobotics/unitree_mujoco upstream. The binary resolves its config and MJCF
-# assets relative to its own on-disk location (simulate/config.yaml,
-# ../unitree_robots/<robot>/...), so this source tree — including the
-# extracted MuJoCo release moved under simulate/mujoco/ — stays in the
-# image; only build byproducts are trimmed.
-# `jstest` (a joystick self-test target we don't use — config.yaml ships
-# with use_joystick: 0) fails to build against this unitree_sdk2 tip: its
-# `xKeySwitchUnion` fields were renamed upstream since unitree_mujoco's last
-# update. Unrelated to the `simulate` binary itself, so scope the build to
-# the one target we ship.
+# unitree_mujoco — DDS-based sim binary. Source tree stays in image (binary resolves
+# assets relative to its own location). Only the `unitree_mujoco` target is built
+# (jstest fails against current unitree_sdk2 tip — unrelated upstream rename).
 # Pinned 2026-07-17 — current tip of unitree_mujoco at authoring time,
 # resolved together with UNITREE_SDK2_SHA above.
 ARG UNITREE_MUJOCO_SHA=ae6a8403e272733e9996ef59990880330496177f
@@ -119,17 +96,10 @@ RUN git init -q /opt/unitree_robotics/unitree_mujoco && \
     rm -rf CMakeFiles && \
     rm -rf ../mujoco/include ../mujoco/simulate ../mujoco/sample \
            ../mujoco/bin ../mujoco/doc ../mujoco/model
-# Binary: /opt/unitree_robotics/unitree_mujoco/simulate/build/unitree_mujoco
-# Config: /opt/unitree_robotics/unitree_mujoco/simulate/config.yaml, or
-# override per-run with the binary's own -r/-i/-n/-s flags (robot/domain/
-# interface/scene) — g1_bringup's ExecuteProcess uses the flags rather than
-# mutating this file in place.
+# Binary at simulate/build/unitree_mujoco; g1_bringup overrides config via CLI flags.
 
 # --- CycloneDDS / ROS domain (unconditional -- required by Unitree SDK) -----
-# Pin discovery to loopback so the ROS graph and unitree_mujoco's native DDS
-# app land on the same interface — the sim's own config.yaml pins `lo` too;
-# without this, both sides can silently pick different interfaces and never
-# discover each other.
+# Pin DDS discovery to loopback so ROS and unitree_mujoco find each other.
 RUN mkdir -p /etc/cyclonedds && \
     cat > /etc/cyclonedds/cyclonedds.xml <<'EOF'
 <?xml version="1.0" encoding="UTF-8" ?>
@@ -142,40 +112,48 @@ RUN mkdir -p /etc/cyclonedds && \
         <NetworkInterface name="lo" priority="default" multicast="default" />
       </Interfaces>
     </General>
+    <Discovery>
+      <!-- Default cap of 9 is too low for the multi-node sim stack; raise it. -->
+      <MaxAutoParticipantIndex>60</MaxAutoParticipantIndex>
+    </Discovery>
   </Domain>
 </CycloneDDS>
 EOF
 
 ENV RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 ENV CYCLONEDDS_URI=file:///etc/cyclonedds/cyclonedds.xml
-# Sim-only for this milestone — revisit at hardware bring-up when the real
-# robot needs the default domain (see g1_bringup README).
+# Sim-only domain; revisit at hardware bring-up.
 ENV ROS_DOMAIN_ID=1
 
-# The base image's /etc/profile.d/10-ros-env.sh re-exports ROS_DOMAIN_ID=0 in
-# login shells, silently overriding the ENV above. 99- sorts after 10-, so this
-# wins in every login shell and keeps interactive terminals on the sim domain.
+# Override base image's /etc/profile.d/10-ros-env.sh which resets ROS_DOMAIN_ID=0.
 RUN cat > /etc/profile.d/99-grove-g1-env.sh <<'EOF'
 export ROS_DOMAIN_ID="1"
 export RMW_IMPLEMENTATION="rmw_cyclonedds_cpp"
 export CYCLONEDDS_URI="file:///etc/cyclonedds/cyclonedds.xml"
 EOF
 
-# The base image ships the pip package `em` (a terminal highlighter) in
-# /usr/local, shadowing apt's python3-empy and breaking all rosidl generation
-# ("cannot import name 'Interpreter' from 'em'"). Remove it; empy 3.3.4 from
-# apt is what Humble's rosidl expects.
+# Remove pip `em` — it shadows apt's python3-empy and breaks rosidl generation.
 RUN python3 -m pip uninstall -y em
 
 # --- Milestone 2: LocoClient deps -------------------------------------------
-# Appended after the unitree_sdk2/MuJoCo builds on purpose: these layers change
-# independently of those, and putting them last keeps the expensive source
-# builds above cached.
 
-# nlohmann-json: the LocoClient wire format is JSON in Request.parameter /
-# Response.data, and this is the same library the vendor's own client uses, so
-# our serialisation is byte-identical to what the robot expects.
+# nlohmann-json: used for the LocoClient wire format (matches vendor's client).
 RUN apt-get update && apt-get install -y nlohmann-json3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# --- Milestone 3: walking-policy deps ---------------------------------------
+
+# ONNX Runtime CPU tarball. ldconfig (not RPATH) avoids LD_LIBRARY_PATH shadowing
+# by ROS's /opt/ros/humble/lib.
+ARG ONNXRUNTIME_VERSION=1.20.1
+RUN mkdir -p /opt/onnxruntime && \
+    curl -fsSL "https://github.com/microsoft/onnxruntime/releases/download/v${ONNXRUNTIME_VERSION}/onnxruntime-linux-x64-${ONNXRUNTIME_VERSION}.tgz" \
+      | tar -xz --strip-components=1 -C /opt/onnxruntime && \
+    echo /opt/onnxruntime/lib > /etc/ld.so.conf.d/onnxruntime.conf && \
+    ldconfig
+
+# teleop_twist_keyboard for manual velocity testing via ~/cmd_vel.
+RUN apt-get update && apt-get install -y ros-humble-teleop-twist-keyboard \
     && rm -rf /var/lib/apt/lists/*
 
 # Ensure default workspace exists (mounted from host: ./workspace -> /root/workspace)

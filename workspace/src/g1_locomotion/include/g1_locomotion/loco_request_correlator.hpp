@@ -21,21 +21,9 @@ namespace g1_locomotion
 {
 
 /**
- * @brief Async LocoClient request/response correlator -- replaces the vendored BaseClient.
+ * @brief Async LocoClient request/response correlator.
  *
- * BaseClient::Call() allows one request in flight per call, creates and destroys a fresh DDS
- * subscription *per call* (endpoint churn at re-issue rate), captures a stack-local std::promise
- * by reference into that subscription's callback with no synchronisation against its own 5 s
- * timeout return, and blocks a std::future for up to 5 s -- so it can never be called from inside
- * an executor callback without deadlocking (the per-call subscription can never be serviced while
- * the callback holds the executor). This class instead owns only bookkeeping: a pending-request
- * map keyed on `header.identity.id`. It never touches a subscription or publisher itself -- the
- * node publishes what send() returns and feeds every /api/sport/response back through
- * onResponse() -- so it is exercised in tests with no rclcpp node or executor at all.
- *
- * Not thread-safe by design -- see G1LocoBridge's single-callback-group thread-ownership
- * contract for why that's fine here (mirrors ArmRampEngine's "exactly one thread drives it"
- * contract in g1_hardware_interface).
+ * Bookkeeps pending requests by ID and handles response callbacks and timeouts non-blockingly.
  */
 class LocoRequestCorrelator
 {

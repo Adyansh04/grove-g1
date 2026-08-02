@@ -40,6 +40,25 @@ std::array<double, kNumArmMotors> makeArmCmdQ()
     return arm_cmd_q;
 }
 
+/// The lower-body arrays a stiff-hold caller builds: hold pose at the per-group leg/waist gains.
+/// Keeps these tests expressing the same intent they did when assembleSimLowCmd() took scalars.
+std::array<double, kFirstArmMotor> makeHoldLowerQ(const std::array<double, kNumBodyMotors>& hold_q)
+{
+    std::array<double, kFirstArmMotor> lower_q{};
+    std::copy(hold_q.begin(), hold_q.begin() + kFirstArmMotor, lower_q.begin());
+    return lower_q;
+}
+
+std::array<double, kFirstArmMotor> makeGroupGains(double leg_value, double waist_value)
+{
+    std::array<double, kFirstArmMotor> gains{};
+    for (int i = 0; i < kFirstArmMotor; ++i)
+    {
+        gains[static_cast<std::size_t>(i)] = i < kNumLegMotors ? leg_value : waist_value;
+    }
+    return gains;
+}
+
 TEST(AssembleSimLowCmd, LegSlotsHoldAtHoldQWithLegGains)
 {
     const auto                              hold_q = makeHoldQ();
@@ -49,14 +68,13 @@ TEST(AssembleSimLowCmd, LegSlotsHoldAtHoldQWithLegGains)
 
     const auto cmd = assembleSimLowCmd(
         hold_q,
+        makeHoldLowerQ(hold_q),
+        makeGroupGains(kLegKp, kWaistKp),
+        makeGroupGains(kLegKd, kWaistKd),
         arm_cmd_q,
         arm_cmd_kp,
         arm_cmd_kd,
         /*weight=*/0.0,
-        kLegKp,
-        kLegKd,
-        kWaistKp,
-        kWaistKd,
         kArmHoldKp,
         kArmHoldKd);
 
@@ -81,14 +99,13 @@ TEST(AssembleSimLowCmd, WaistSlotsHoldAtHoldQWithWaistGains)
 
     const auto cmd = assembleSimLowCmd(
         hold_q,
+        makeHoldLowerQ(hold_q),
+        makeGroupGains(kLegKp, kWaistKp),
+        makeGroupGains(kLegKd, kWaistKd),
         arm_cmd_q,
         arm_cmd_kp,
         arm_cmd_kd,
         /*weight=*/0.0,
-        kLegKp,
-        kLegKd,
-        kWaistKp,
-        kWaistKd,
         kArmHoldKp,
         kArmHoldKd);
 
@@ -116,14 +133,13 @@ TEST(AssembleSimLowCmd, ArmSlotsBlendHoldAndCommandedByWeight)
 
     const auto cmd = assembleSimLowCmd(
         hold_q,
+        makeHoldLowerQ(hold_q),
+        makeGroupGains(kLegKp, kWaistKp),
+        makeGroupGains(kLegKd, kWaistKd),
         arm_cmd_q,
         arm_cmd_kp,
         arm_cmd_kd,
         kWeight,
-        kLegKp,
-        kLegKd,
-        kWaistKp,
-        kWaistKd,
         kArmHoldKp,
         kArmHoldKd);
 
@@ -155,14 +171,13 @@ TEST(AssembleSimLowCmd, WeightSlotEchoesEffectiveWeight)
 
     const auto cmd = assembleSimLowCmd(
         hold_q,
+        makeHoldLowerQ(hold_q),
+        makeGroupGains(kLegKp, kWaistKp),
+        makeGroupGains(kLegKd, kWaistKd),
         arm_cmd_q,
         arm_cmd_kp,
         arm_cmd_kd,
         kWeight,
-        kLegKp,
-        kLegKd,
-        kWaistKp,
-        kWaistKd,
         kArmHoldKp,
         kArmHoldKd);
 

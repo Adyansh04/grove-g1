@@ -217,22 +217,16 @@ hardware_interface::CallbackReturn
 G1ArmSdkSystem::on_configure(const rclcpp_lifecycle::State& /*previous_state*/)
 {
     /*
-     * Idempotent: on_configure can run more than once per process (e.g. an
-     * error-triggered reset to UNCONFIGURED followed by a fresh
-     * configure+activate). Tearing down any still-running executor/thread
-     * from a previous configure *before* replacing the members is required
-     * -- overwriting a live executor_ shared_ptr while its thread is still
-     * inside spin() destroys the executor out from under it (observed
-     * directly as a segfault during manual sim validation).
+     * Idempotent: tear down any still-running executor/thread from a previous
+     * configure before replacing members.
      */
     shutdownInternalNode();
 
     node_ = std::make_shared<rclcpp::Node>(makeInternalNodeName());
 
     /*
-     * Best-effort: compatible with either a best-effort or reliable
-     * publisher (the sim's /lowstate happens to be RELIABLE; real hardware
-     * may differ) and only the newest sample ever matters at ~500 Hz.
+     * Best-effort, depth 1: compatible with any publisher reliability;
+     * only the newest ~500 Hz sample matters.
      */
     const auto lowstate_qos = rclcpp::QoS(rclcpp::KeepLast(1)).best_effort().durability_volatile();
     lowstate_sub_           = node_->create_subscription<unitree_hg::msg::LowState>(
@@ -241,10 +235,7 @@ G1ArmSdkSystem::on_configure(const rclcpp_lifecycle::State& /*previous_state*/)
         [this](const unitree_hg::msg::LowState::ConstSharedPtr& msg) { lowstateCallback(msg); });
 
     /*
-     * Reliable: we're the sole authority on this channel (single writer by
-     * construction -- see the README), so the DDS layer should retry rather
-     * than silently drop a command; keep-last(1) because only the newest
-     * ramp/slew tick ever matters.
+     * Reliable, depth 1: sole authority on this channel (single writer).
      */
     const auto arm_sdk_qos = rclcpp::QoS(rclcpp::KeepLast(1)).reliable().durability_volatile();
     auto arm_sdk_pub = node_->create_publisher<unitree_hg::msg::LowCmd>("/arm_sdk", arm_sdk_qos);
@@ -259,16 +250,9 @@ G1ArmSdkSystem::on_configure(const rclcpp_lifecycle::State& /*previous_state*/)
     executor_thread_ = std::thread([this] { executor_->spin(); });
 
     /*
-     * Bounded handshake: is_spinning() is thread-safe to poll from here.
-     * spin() and cancel() both write the same internal flag with no
-     * ordering guarantee against "the thread has been started" -- a rapid
-     * configure-then-cleanup could run shutdownInternalNode()'s cancel()
-     * before executor_thread_ has entered spin() at all, and spin()'s own
-     * startup would then silently overwrite cancel()'s effect and spin
-     * forever with no future cancel() call to catch it, permanently
-     * deadlocking executor_thread_.join(). Waiting here for is_spinning()
-     * to actually flip true before returning guarantees any later cancel()
-     * is observed.
+     * Wait for the executor to start spinning before returning, so any
+     * later cancel() call is guaranteed to be observed. Without this,
+     * a rapid configure-then-cleanup could deadlock.
      */
     const auto spin_start_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
     while (!executor_->is_spinning() && std::chrono::steady_clock::now() < spin_start_deadline)
@@ -295,16 +279,9 @@ hardware_interface::CallbackReturn
 G1ArmSdkSystem::on_activate(const rclcpp_lifecycle::State& /*previous_state*/)
 {
     /*
-     * readFromRT(), not readFromNonRT(): resource_manager serializes this
-     * lifecycle transition against read()/write() (see
-     * rampDownSynchronously()'s comment), so the RT side is quiescent for
-     * the whole duration of on_activate -- there is no concurrent RT reader
-     * to race against, making readFromRT()'s non-blocking trylock-swap safe
-     * to call from this (non-RT) thread too. readFromNonRT() would instead
-     * race lowstateCallback()'s writeFromNonRT() calls arriving continuously
-     * off the internal executor thread: its own lock only protects the call
-     * itself, not the caller dereferencing the returned pointer afterward,
-     * which is exactly what seeding below does across 14 fields.
+     * readFromRT() is safe here: resource_manager serializes lifecycle
+     * transitions against read()/write(), so no concurrent RT reader
+     * exists. readFromNonRT() would race lowstateCallback()'s writes.
      */
     const StampedLowState* sample = lowstate_buffer_.readFromRT();
     if (isStale(sample->arrival, lowstateTimeoutDuration()))
@@ -317,10 +294,7 @@ G1ArmSdkSystem::on_activate(const rclcpp_lifecycle::State& /*previous_state*/)
     }
 
     /*
-     * Hold-in-place seed: the exported command interface starts at exactly
-     * the measured position (no unimplementable "first command arrived"
-     * detection, no slew toward some other q) -- JTC's own activation covers
-     * the controller side.
+     * Seed command interface at the current measured position (hold-in-place).
      */
     std::array<double, kNumArmJoints> measured{};
     for (std::size_t i = 0; i < kNumArmJoints; ++i)
@@ -331,10 +305,7 @@ G1ArmSdkSystem::on_activate(const rclcpp_lifecycle::State& /*previous_state*/)
     ramp_engine_.seedFromMeasured(measured);
 
     time_since_last_publish_s_ = 0.0;
-    /*
-     * Publishing authority is acquired last, only once the seed above is
-     * already in place.
-     */
+    /* Publishing authority acquired last, after seeding. */
     mode_.store(BlendMode::kActive, std::memory_order_release);
 
     return hardware_interface::CallbackReturn::SUCCESS;
@@ -351,12 +322,8 @@ hardware_interface::CallbackReturn
 G1ArmSdkSystem::on_shutdown(const rclcpp_lifecycle::State& /*previous_state*/)
 {
     /*
-     * Belt-and-braces: confirmed directly (manual sim validation) that
-     * Humble's controller_manager already runs on_deactivate before
-     * on_shutdown on a SIGTERM/SIGINT while active, so by the time this runs
-     * mode_ is normally already kInactive and rampDownSynchronously() below
-     * is a no-op. Kept in case some kill path reaches shutdown without
-     * deactivate.
+     * Belt-and-braces: controller_manager normally runs on_deactivate
+     * before on_shutdown, but this catches any path that skips it.
      */
     rampDownSynchronously(BlendMode::kEmergencyRampDown);
     return hardware_interface::CallbackReturn::SUCCESS;
@@ -405,10 +372,7 @@ std::vector<hardware_interface::CommandInterface> G1ArmSdkSystem::export_command
 hardware_interface::return_type
 G1ArmSdkSystem::read(const rclcpp::Time& /*time*/, const rclcpp::Duration& /*period*/)
 {
-    /*
-     * readFromRT never blocks (try_lock internally): worst case this tick
-     * sees the previous sample again, never a torn one.
-     */
+    /* readFromRT: never blocks; worst case sees the previous sample. */
     const StampedLowState* sample = lowstate_buffer_.readFromRT();
     for (std::size_t i = 0; i < kNumArmJoints; ++i)
     {
@@ -419,16 +383,8 @@ G1ArmSdkSystem::read(const rclcpp::Time& /*time*/, const rclcpp::Duration& /*per
     }
 
     /*
-     * Belt-and-braces only: write() is the primary protection and ramps down
-     * on stale feedback whatever read() reports here.
-     *
-     * Gated on ACTIVE deliberately. CM calls read() on every loaded component
-     * every cycle, whatever its lifecycle state, and staleness before the
-     * first /lowstate sample (right after on_configure, say) is expected
-     * rather than an error. Returning ERROR unconditionally was tried and is
-     * wrong: resource_manager drives the component through on_error back to
-     * UNCONFIGURED with no automatic recovery, so it fired on nearly every
-     * configure.
+     * Only report ERROR while active — staleness before the first /lowstate
+     * (e.g. right after on_configure) is expected, not an error.
      */
     if (mode_.load(std::memory_order_relaxed) == BlendMode::kActive &&
         isStale(sample->arrival, lowstateTimeoutDuration()))
@@ -444,7 +400,7 @@ G1ArmSdkSystem::write(const rclcpp::Time& /*time*/, const rclcpp::Duration& peri
     const BlendMode requested = mode_.load(std::memory_order_acquire);
     if (requested == BlendMode::kInactive)
     {
-        // Self-gated: Humble may still call write() while inactive.
+        // Not active — nothing to publish.
         return hardware_interface::return_type::OK;
     }
 
@@ -454,11 +410,8 @@ G1ArmSdkSystem::write(const rclcpp::Time& /*time*/, const rclcpp::Duration& peri
     if (effective != requested)
     {
         /*
-         * Autonomous emergency escalation: write() doesn't wait for
-         * resource_manager to notice read()'s ERROR and call on_error --
-         * it protects the arm itself, the instant it notices stale
-         * feedback, and publishes the escalation back to the shared atomic
-         * so any lifecycle thread watching it sees the true state too.
+         * Autonomous emergency escalation: ramp down immediately on stale
+         * feedback without waiting for resource_manager's lifecycle path.
          */
         mode_.store(effective, std::memory_order_release);
     }
@@ -467,19 +420,15 @@ G1ArmSdkSystem::write(const rclcpp::Time& /*time*/, const rclcpp::Duration& peri
     const double weight = ramp_engine_.step(effective, command_position_, dt);
 
     /*
-     * Throttle to command_publish_rate_hz_ (independent of the CM's own
-     * update_rate) using the slower-hardware-comms period-guard pattern:
-     * ramp/slew state still advances every tick above (correct at any CM
-     * rate), only the DDS publish itself is throttled.
+     * Throttle to command_publish_rate_hz_ — ramp/slew still advances
+     * every tick, only the DDS publish is throttled.
      */
     time_since_last_publish_s_ += dt;
     const double publish_period_s = 1.0 / command_publish_rate_hz_;
     const bool   due              = time_since_last_publish_s_ >= publish_period_s;
     /*
-     * Force a publish on the exact tick the ramp reaches its target so the
-     * true terminal weight (0) is always actually transmitted at least
-     * once before self-gating off below -- otherwise the throttle could
-     * silently swallow that last, safety-relevant sample.
+     * Force a publish when the ramp finishes, so the terminal weight=0
+     * is always transmitted (the throttle could otherwise skip it).
      */
     const bool ramp_finished = effective != BlendMode::kActive && weight <= 0.0;
 
@@ -508,15 +457,8 @@ G1ArmSdkSystem::write(const rclcpp::Time& /*time*/, const rclcpp::Duration& peri
     if (ramp_finished && terminal_publish_succeeded)
     {
         /*
-         * Only autonomous escalations land here: write()'s own stale-feedback
-         * one above, or checkPublisherCount()'s rogue-publisher one. A
-         * lifecycle ramp-down is driven start to finish by
-         * rampDownSynchronously(), which never runs concurrently with write().
-         *
-         * Gate on the publish having actually gone out -- trylock() can fail
-         * on any tick, and self-gating before the terminal weight-0 sample is
-         * confirmed sent would silently drop it. Retrying next tick costs
-         * nothing; the weight is already clamped at 0.
+         * Self-gate after the terminal weight=0 publish succeeds. Gate on
+         * the publish actually going out — trylock() can fail on any tick.
          */
         mode_.store(BlendMode::kInactive, std::memory_order_release);
     }
@@ -526,11 +468,7 @@ G1ArmSdkSystem::write(const rclcpp::Time& /*time*/, const rclcpp::Duration& peri
 
 std::string G1ArmSdkSystem::makeInternalNodeName()
 {
-    /*
-     * Suffixed so multiple instances in one process (e.g. a test harness)
-     * never collide on the node name; controller_manager itself only ever
-     * loads one.
-     */
+    /* Unique suffix to avoid node name collisions in multi-instance setups. */
     static std::atomic<std::uint64_t> counter{ 0 };
     return "g1_arm_sdk_system_internal_" + std::to_string(counter.fetch_add(1));
 }
@@ -585,13 +523,8 @@ void G1ArmSdkSystem::checkPublisherCount()
     }
 
     /*
-     * Advisory only -- real cross-process arbitration belongs to the future
-     * behavior-tree authority arbiter. Two publishers on one low-level
-     * channel is unsafe, so escalate mode_ to the emergency ramp and let the
-     * still-ticking write() finish it on the RT thread, the same way the
-     * stale-feedback path does. This timer never touches ramp_engine_ or
-     * arm_sdk_rt_pub_, so nothing here can race write(). The CAS only fires
-     * from kActive; any other mode is already on its way down.
+     * Advisory guard: two publishers on /arm_sdk is unsafe. Escalate to
+     * emergency ramp-down and let write() finish it on the RT thread.
      */
     BlendMode expected = BlendMode::kActive;
     if (mode_.compare_exchange_strong(
@@ -609,14 +542,9 @@ void G1ArmSdkSystem::checkPublisherCount()
 void G1ArmSdkSystem::rampDownSynchronously(BlendMode target_mode)
 {
     /*
-     * Never de-escalate: an on_deactivate/on_error/on_shutdown landing
-     * while write() or the advisory guard's timer has already escalated to
-     * kEmergencyRampDown (e.g. /lowstate went stale right as a clean
-     * deactivate started) must not downgrade to the slower requested mode
-     * -- emergency_ramp_down_s is the ceiling on how long this blind-
-     * publishes regardless of which caller asked for the gentler ramp.
-     * CAS loop rather than load-then-store: the guard timer's escalation
-     * can land between the two, and a plain store would overwrite it.
+     * Never de-escalate: if write() or the advisory guard already set
+     * kEmergencyRampDown, don't downgrade to a slower ramp. CAS loop
+     * prevents a concurrent escalation from being overwritten.
      */
     BlendMode current = mode_.load(std::memory_order_acquire);
     while (true)
@@ -647,12 +575,7 @@ void G1ArmSdkSystem::rampDownSynchronously(BlendMode target_mode)
         weight = ramp_engine_.step(target_mode, command_position_, dt);
         if (arm_sdk_rt_pub_)
         {
-            /*
-             * A blocking lock (not trylock) is fine here: this isn't the RT
-             * path, and write() never runs concurrently with a lifecycle
-             * transition callback (see this method's declaration), so
-             * nothing else is publishing at the same time.
-             */
+            /* Blocking lock is fine: not the RT path, and write() is quiescent. */
             arm_sdk_rt_pub_->lock();
             assembleLowCmd(
                 arm_sdk_rt_pub_->msg_,

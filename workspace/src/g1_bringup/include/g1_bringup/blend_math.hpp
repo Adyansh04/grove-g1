@@ -76,8 +76,10 @@ double stepEffectiveWeight(
 /**
  * @brief Assembles a full-body /lowcmd from the frozen hold pose and the latest /arm_sdk command.
  *
- * Legs (0-11) + waist (12-14) are stiff-held at `hold_q`'s value with the
- * given per-group gains, arms (kFirstArmMotor..) are blended between
+ * Legs (0-11) + waist (12-14) take `lower_q` with per-joint `lower_kp`/`lower_kd` -- either the
+ * frozen hold pose at stiff-hold gains, or the walking policy's targets at its own gains; the
+ * caller picks, so the leg-authority decision stays visible at the call site instead of hiding in
+ * here. Arms (kFirstArmMotor..) are blended between
  * `hold_q` and the commanded arm targets at `weight` via blend() (on q, kp,
  * and kd alike), and the weight slot echoes `weight` back out.
  * mode/mode_pr/mode_machine are left at zero -- see motion_service_sim_node's
@@ -85,25 +87,27 @@ double stepEffectiveWeight(
  * assembly is unit-testable without a live node or DDS, mirroring
  * g1_hardware_interface's assembleLowCmd().
  *
- * @param hold_q       Frozen hold pose for all body motors.
+ * @param hold_q       Frozen hold pose, supplying the arm slots' blend-toward value.
+ * @param lower_q      Position targets for the legs and waist.
+ * @param lower_kp     Per-joint position gains for the legs and waist.
+ * @param lower_kd     Per-joint velocity gains for the legs and waist.
  * @param arm_cmd_q    Commanded arm joint positions from /arm_sdk.
  * @param arm_cmd_kp   Commanded arm position gains from /arm_sdk.
  * @param arm_cmd_kd   Commanded arm velocity gains from /arm_sdk.
  * @param weight       Arm blend weight passed to blend() for q, kp, and kd.
- * @param leg_kp       Stiff-hold position gain for the leg motors.
- * @param leg_kd       Stiff-hold velocity gain for the leg motors.
- * @param waist_kp     Stiff-hold position gain for the waist motors.
- * @param waist_kd     Stiff-hold velocity gain for the waist motors.
  * @param arm_hold_kp  Hold-side position gain blended for the arm motors.
  * @param arm_hold_kd  Hold-side velocity gain blended for the arm motors.
  * @return The assembled /lowcmd message.
  */
 unitree_hg::msg::LowCmd assembleSimLowCmd(
     const std::array<double, kNumBodyMotors>& hold_q,
+    const std::array<double, kFirstArmMotor>& lower_q,
+    const std::array<double, kFirstArmMotor>& lower_kp,
+    const std::array<double, kFirstArmMotor>& lower_kd,
     const std::array<double, kNumArmMotors>&  arm_cmd_q,
     const std::array<double, kNumArmMotors>&  arm_cmd_kp,
-    const std::array<double, kNumArmMotors>& arm_cmd_kd, double weight, double leg_kp,
-    double leg_kd, double waist_kp, double waist_kd, double arm_hold_kp, double arm_hold_kd);
+    const std::array<double, kNumArmMotors>& arm_cmd_kd, double weight, double arm_hold_kp,
+    double arm_hold_kd);
 
 }  // namespace g1_bringup
 

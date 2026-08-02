@@ -28,18 +28,7 @@ enum class LocoAuthority : std::uint8_t
 };
 
 /**
- * @brief Pure, ROS-free re-issue/authority engine behind G1LocoBridge's cmd_vel handling.
- *
- * Owns the latest commanded (vx, vy, vyaw) and its arrival time, the stale/zero-command
- * single-stop-then-idle policy, the consecutive-failure streak, and the kReleased/kAcquiring/
- * kHeld/kReleasing authority state. Driven entirely by explicit calls from the node
- * (setCommand() from the cmd_vel subscription, tick() from the re-issue timer,
- * beginAcquire()/onAcquireResult()/beginRelease()/onReleaseResult() from SetLocoMode handling,
- * onVelocityResult() from the correlator callback) -- no timers, no DDS, no clock reads of its
- * own beyond comparing the `now` each caller passes in.
- *
- * Not thread-safe by design, matching ArmRampEngine's contract in g1_hardware_interface: exactly
- * one thread drives it (see G1LocoBridge's single-callback-group contract).
+ * @brief Velocity re-issue and locomotion-authority state engine.
  */
 class VelocityGate
 {

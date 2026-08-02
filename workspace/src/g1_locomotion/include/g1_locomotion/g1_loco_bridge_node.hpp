@@ -29,34 +29,10 @@ namespace g1_locomotion
 {
 
 /**
- * @brief LocoClient bridge: translates `~/cmd_vel` and `~/set_mode` goals into the LocoClient
- * wire contract's async request/response exchange, without ever blocking an executor callback on
- * a DDS round trip (see the package README for why the vendored BaseClient can't be reused).
+ * @brief LocoClient bridge node.
  *
- * @par Thread-ownership contract -- read before touching this class
- * Exactly one thread ever touches this node's state, but that guarantee is two-part, not one:
- * every callback source *this class itself creates* is placed without exception in ONE explicitly
- * created and named `MutuallyExclusive` callback group (`callback_group_`, built in the
- * constructor) -- the `/api/sport/response` subscription, the ~50 ms sweep timer, the velocity
- * re-issue timer, the ~1 Hz heartbeat/FSM-poll/rogue-guard timer, `~/cmd_vel`, and the
- * `~/set_mode` action server -- AND `main()` spins that group on a single
- * `rclcpp::executors::SingleThreadedExecutor` (see `g1_loco_bridge_main.cpp`). The group alone
- * does not cover everything: `rclcpp_lifecycle::LifecycleNode`'s own transition/parameter services
- * (`~/change_state`, `~/get_state`, `~/set_parameters`, ...) are created by the *base class*, land
- * in Humble's default callback group, and cannot be redirected -- so `on_configure`/`on_cleanup`/
- * `on_deactivate` (which reset `request_pub_`, `status_pub_`, and every timer) are only kept out
- * from under a concurrently running `onHeartbeatTick()`/etc. by `main()`'s executor being
- * single-threaded, not by `callback_group_` on its own. No locks, no atomics, anywhere in this
- * class, `LocoRequestCorrelator`, or `VelocityGate` -- moving one of *this class's own* callbacks
- * to a different group would need a deliberate, visible edit right here in `on_configure()`; a
- * genuine `MultiThreadedExecutor` migration would additionally need the base class's lifecycle
- * services serialised against `callback_group_` by some other means, since the group can't do that
- * part. Contrast this with g1_hardware_interface's G1ArmSdkSystem, which genuinely needs
- * `std::atomic`: its RT read()/write() thread (controller_manager's) and its own hidden executor
- * thread are two real, independently-scheduled threads by construction, so shared state there
- * truly is concurrent. Nothing here blocks: correlator sends are fire-and-forget publishes, and
- * every outcome -- success, failure, or timeout -- arrives later through this same executor as
- * another ordinary callback.
+ * Translates `~/cmd_vel` and `~/set_mode` action goals into the LocoClient wire
+ * contract (`/api/sport/request`, `/api/sport/response`) using non-blocking DDS callbacks.
  */
 class G1LocoBridge : public rclcpp_lifecycle::LifecycleNode
 {
@@ -114,7 +90,7 @@ private:
     double                velocity_reissue_hz_{ 5.0 };
     double                cmd_vel_timeout_s_{ 0.5 };
     int                   failure_streak_limit_{ 3 };
-    std::array<double, 3> max_velocity_{ 0.3, 0.2, 0.5 };
+    std::array<double, 3> max_velocity_{ 0.8, 0.5, 1.57 };
     std::array<double, 3> axis_sign_{ 1.0, 1.0, 1.0 };
 
     // Pure engines -- see their own headers. Placeholder-constructed here; on_configure replaces
