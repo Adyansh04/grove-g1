@@ -28,8 +28,10 @@ if(BUILD_TESTING)
     TARGET test_lidar_stream TIMEOUT 300)
   add_launch_test(test/test_camera_stream.launch.py
     TARGET test_camera_stream TIMEOUT 300)
+  add_launch_test(test/test_odom_ground_truth.launch.py
+    TARGET test_odom_ground_truth TIMEOUT 300)
   set_tests_properties(test_perception_sim_bringup test_lidar_stream test_camera_stream
-    PROPERTIES RESOURCE_LOCK g1_sim)
+    test_odom_ground_truth PROPERTIES RESOURCE_LOCK g1_sim)
 endif()
 
 ament_package()

@@ -15,14 +15,21 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
+    EmitEvent,
     ExecuteProcess,
     OpaqueFunction,
+    RegisterEventHandler,
     Shutdown,
     TimerAction,
 )
+from launch.event_handlers import OnProcessStart
+from launch.events import matches_action
 from launch.substitutions import Command, FindExecutable, LaunchConfiguration
-from launch_ros.actions import Node
+from launch_ros.actions import LifecycleNode, Node
+from launch_ros.event_handlers import OnStateTransition
+from launch_ros.events.lifecycle import ChangeState
 from launch_ros.parameter_descriptions import ParameterFile, ParameterValue
+from lifecycle_msgs.msg import Transition
 
 # g1_bringup owns :133. A separate display so a stray process from either track cannot
 # collide with the other's.
@@ -196,6 +203,55 @@ def _launch_setup(context, *args, **kwargs):
                 output="both",
             )
         )
+
+    # odom -> base_link. sim_ground_truth is set here rather than left to the package
+    # default, which is `hardware` and refuses to configure on purpose.
+    odometry_params = os.path.join(
+        get_package_share_directory("g1_state_estimation"), "config", "g1_odometry_publisher.yaml"
+    )
+    odometry_node = LifecycleNode(
+        package="g1_state_estimation",
+        executable="g1_odometry_publisher",
+        name="g1_odometry_publisher",
+        namespace="",
+        output="both",
+        parameters=[odometry_params, use_sim_time],
+        remappings=[("~/base_state", "/base_joint_states")],
+    )
+    actions.append(odometry_node)
+
+    # Event-chained rather than delayed, same shape as g1_bringup's loco.launch.py.
+    actions.append(
+        RegisterEventHandler(
+            OnProcessStart(
+                target_action=odometry_node,
+                on_start=[
+                    EmitEvent(
+                        event=ChangeState(
+                            lifecycle_node_matcher=matches_action(odometry_node),
+                            transition_id=Transition.TRANSITION_CONFIGURE,
+                        )
+                    )
+                ],
+            )
+        )
+    )
+    actions.append(
+        RegisterEventHandler(
+            OnStateTransition(
+                target_lifecycle_node=odometry_node,
+                goal_state="inactive",
+                entities=[
+                    EmitEvent(
+                        event=ChangeState(
+                            lifecycle_node_matcher=matches_action(odometry_node),
+                            transition_id=Transition.TRANSITION_ACTIVATE,
+                        )
+                    )
+                ],
+            )
+        )
+    )
 
     return actions
 

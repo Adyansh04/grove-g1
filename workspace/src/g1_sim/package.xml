@@ -27,6 +27,7 @@
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>xvfb</exec_depend>
+  <exec_depend>lifecycle_msgs</exec_depend>
 
   <!-- ament_lint_common is intentionally not used (see g1_bringup's package.xml for the
        rationale): clang-format/ruff run as plain CTests instead. -->
@@ -44,6 +45,9 @@
   <test_depend>geometry_msgs</test_depend>
   <test_depend>tf2_ros</test_depend>
   <test_depend>rosgraph_msgs</test_depend>
+  <test_depend>nav_msgs</test_depend>
+  <test_depend>tf2_geometry_msgs</test_depend>
+  <test_depend>python3-numpy</test_depend>
 
   <export>
     <build_type>ament_cmake</build_type>
