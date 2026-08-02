@@ -446,9 +446,12 @@ void MotionServiceSim::publishTick()
                               std::chrono::duration<double>(now - walk_target_stamp_).count() <=
                                   walk_policy_staleness_timeout_s_;
 
-    const auto lower = selectLowerBodyCommand(
-        policy_fresh,
-        walk_target_valid_,
+    // Computed once, as one value: see LegAuthority's own comment on why this is not two bools.
+    const LegAuthority authority = !walk_target_valid_ ? LegAuthority::kHoldPose :
+                                   policy_fresh        ? LegAuthority::kLivePolicy :
+                                                         LegAuthority::kFrozenPolicy;
+    const auto         lower     = selectLowerBodyCommand(
+        authority,
         walk_target_q_,
         hold_q_,
         walk_policy_config_.lower_kp,
@@ -457,7 +460,7 @@ void MotionServiceSim::publishTick()
         leg_kd_,
         waist_kp_,
         waist_kd_);
-    if (walk_policy_enabled_ && walk_target_valid_ && !policy_fresh)
+    if (walk_policy_enabled_ && authority == LegAuthority::kFrozenPolicy)
     {
         RCLCPP_WARN_THROTTLE(
             get_logger(),

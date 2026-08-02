@@ -210,31 +210,44 @@ struct LowerBodyCommand
 };
 
 /**
- * @brief Resolves the lower-body target and gains from policy freshness.
+ * @brief Who owns the legs and waist this tick.
  *
- * Position and gains deliberately switch on DIFFERENT conditions:
- * - Position follows the policy's last output as soon as one exists (`policy_has_run`), even when
- *   stale. Reverting a stale tick to `hold_q` would step the legs from the stance the robot is
- *   actually in back to the spawn pose captured before the policy started -- a large snap at stiff
- *   gains. Freezing is the no-snap option.
- * - Gains revert to the stiff hold the moment the policy goes stale, so the frozen pose is held
- *   firmly rather than tracked softly by a controller nothing is driving.
- * Before the policy has ever produced a target, `hold_q` IS the live pose, so it is correct there.
+ * One value rather than a pair of booleans on purpose. The position target and the gains switch on
+ * DIFFERENT conditions, so expressing this as two adjacent `bool`s let a caller swap them silently
+ * -- and the swapped form is exactly the snap-to-spawn-pose bug this path already shipped once.
+ * Three named states make that failure mode unrepresentable.
+ */
+enum class LegAuthority : std::uint8_t
+{
+    /// Policy has never produced a target: hold the captured pose, which IS the live pose here.
+    kHoldPose = 0,
+    /// Policy ran but its target is stale: freeze at its last output, held at stiff-hold gains.
+    kFrozenPolicy = 1,
+    /// Policy target is fresh: it owns both the target and the gains.
+    kLivePolicy = 2,
+};
+
+/**
+ * @brief Resolves the lower-body target and gains from who currently owns the legs.
  *
- * @param policy_fresh    Whether a policy target arrived within the staleness window.
- * @param policy_has_run  Whether the policy has ever produced a target.
- * @param policy_q        The policy's most recent lower-body targets.
- * @param hold_q          The captured hold pose (spawn pose), indexed by body motor.
- * @param policy_kp       Per-joint policy position gains.
- * @param policy_kd       Per-joint policy velocity gains.
- * @param leg_kp          Stiff-hold position gain for the legs.
- * @param leg_kd          Stiff-hold velocity gain for the legs.
- * @param waist_kp        Stiff-hold position gain for the waist.
- * @param waist_kd        Stiff-hold velocity gain for the waist.
+ * `kFrozenPolicy` keeps the policy's last target rather than reverting to `hold_q`: that pose is
+ * the straight-legged spawn capture, so reverting mid-stance would step the legs back to it at
+ * stiff gains and topple the robot. The gains still revert, so the frozen pose is held firmly
+ * rather than tracked softly by a controller nothing is driving.
+ *
+ * @param authority  Who owns the legs this tick.
+ * @param policy_q   The policy's most recent lower-body targets.
+ * @param hold_q     The captured hold pose, indexed by body motor.
+ * @param policy_kp  Per-joint policy position gains.
+ * @param policy_kd  Per-joint policy velocity gains.
+ * @param leg_kp     Stiff-hold position gain for the legs.
+ * @param leg_kd     Stiff-hold velocity gain for the legs.
+ * @param waist_kp   Stiff-hold position gain for the waist.
+ * @param waist_kd   Stiff-hold velocity gain for the waist.
  * @return The resolved lower-body command.
  */
 LowerBodyCommand selectLowerBodyCommand(
-    bool policy_fresh, bool policy_has_run, const std::array<double, kNumLowerMotors>& policy_q,
+    LegAuthority authority, const std::array<double, kNumLowerMotors>& policy_q,
     const std::array<double, kNumBodyMotors>&  hold_q,
     const std::array<double, kNumLowerMotors>& policy_kp,
     const std::array<double, kNumLowerMotors>& policy_kd, double leg_kp, double leg_kd,

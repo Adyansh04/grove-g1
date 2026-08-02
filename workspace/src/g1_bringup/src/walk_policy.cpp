@@ -144,19 +144,22 @@ std::array<double, 3> activeCommand(
 }
 
 LowerBodyCommand selectLowerBodyCommand(
-    bool policy_fresh, bool policy_has_run, const std::array<double, kNumLowerMotors>& policy_q,
+    LegAuthority authority, const std::array<double, kNumLowerMotors>& policy_q,
     const std::array<double, kNumBodyMotors>&  hold_q,
     const std::array<double, kNumLowerMotors>& policy_kp,
     const std::array<double, kNumLowerMotors>& policy_kd, double leg_kp, double leg_kd,
     double waist_kp, double waist_kd)
 {
+    const bool policy_owns_target = authority != LegAuthority::kHoldPose;
+    const bool policy_owns_gains  = authority == LegAuthority::kLivePolicy;
+
     LowerBodyCommand out;
     for (std::size_t i = 0; i < kNumLowerMotors; ++i)
     {
         const bool is_waist = static_cast<int>(i) >= kNumLegMotors;
-        out.q[i]            = policy_has_run ? policy_q[i] : hold_q[i];
-        out.kp[i]           = policy_fresh ? policy_kp[i] : (is_waist ? waist_kp : leg_kp);
-        out.kd[i]           = policy_fresh ? policy_kd[i] : (is_waist ? waist_kd : leg_kd);
+        out.q[i]            = policy_owns_target ? policy_q[i] : hold_q[i];
+        out.kp[i]           = policy_owns_gains ? policy_kp[i] : (is_waist ? waist_kp : leg_kp);
+        out.kd[i]           = policy_owns_gains ? policy_kd[i] : (is_waist ? waist_kd : leg_kd);
     }
     return out;
 }
