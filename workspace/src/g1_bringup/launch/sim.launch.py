@@ -1,4 +1,4 @@
-"""Sim bring-up: unitree_mujoco + motion_service_sim + control.launch.py.
+"""Sim bring-up: unitree_mujoco + motion_service_sim + control.launch.py + loco.launch.py.
 
 See README.md for the full operating procedure (sim.launch.py ->
 activate_arm.launch.py -> command -> deactivate_arm.launch.py -> stop),
@@ -132,20 +132,15 @@ def _launch_setup(context, *args, **kwargs):
         actions.append(xvfb_process)
         sim_env["DISPLAY"] = XVFB_DISPLAY
 
-    # sim-only balance scaffolding: stage the pelvis-pin overlay next to the
-    # vendored model and load it via -s, so the sim spawns with the pelvis
-    # welded upright (unitree_mujoco has no balance controller). Staging (rather
-    # than an absolute -s path) is required for MuJoCo's relative asset
-    # resolution -- see mjcf/g1_pinned_scene.xml. Without pinning the sim loads
-    # its default scene and the robot topples on spawn.
-    """Always stage one of our own scenes -- never fall through to the sim's default.
-
-    unitree_mujoco's own g1 scene.xml is an obstacle course (103 geoms: boxes,
-    cylinders, ramps, stairs, height fields). Loading it for locomotion work
-    spawns the robot among obstacles that knock it over, which looks exactly
-    like a balance failure and is not one. Both of our scenes are a bare floor;
-    the only difference between them is the pelvis weld.
-    """
+    # Always stage one of our own scenes -- never fall through to the sim's default. Staging
+    # (rather than an absolute -s path) is required for MuJoCo's relative asset resolution -- see
+    # mjcf/g1_pinned_scene.xml's header comment. unitree_mujoco's own g1 scene.xml is an obstacle
+    # course (103 geoms: boxes, cylinders, ramps, stairs, height fields); loading it for
+    # locomotion work spawns the robot among obstacles that knock it over, which looks exactly
+    # like a balance failure and is not one. Both of our scenes are the same bare floor -- the
+    # only difference is whether the pelvis is welded (pin_pelvis:=false loads the unpinned one
+    # and the robot topples on spawn, since nothing else balances it; see the README's "Pelvis
+    # pin" section).
     overlay_name = "g1_pinned_scene.xml" if pin_pelvis else "g1_flat_scene.xml"
     staged_path  = os.path.join(G1_MODEL_DIR, STAGED_SCENE_NAME)
     overlay_src  = os.path.join(
@@ -238,8 +233,8 @@ def generate_launch_description():
                 description="Weld the pelvis to the world (SIM-ONLY scaffolding). Nothing in this "
                 "stack balances the robot -- the vendor's onboard controller does that on real "
                 "hardware and is not emulated by unitree_mujoco -- so an unpinned launch topples "
-                "on spawn. Both settings load a bare floor; see the README's locomotion-in-sim "
-                "section.",
+                "on spawn. Both settings load a bare floor (mjcf/g1_pinned_scene.xml or "
+                "mjcf/g1_flat_scene.xml); see the README's 'Pelvis pin' section.",
             ),
             DeclareLaunchArgument(
                 "sim_start_delay_s",

@@ -5,6 +5,7 @@
 #include "g1_locomotion/g1_loco_bridge_node.hpp"
 
 #include <algorithm>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -23,6 +24,22 @@ const char* const kSportResponseTopic = "/api/sport/response";
 
 constexpr std::chrono::milliseconds kSweepPeriod{ 50 };
 constexpr std::chrono::seconds      kHeartbeatPeriod{ 1 };
+
+/// Names the two SET_FSM_ID rejection codes this bridge's action clients actually need to
+/// distinguish; anything else (a sweep() timeout, an unrecognised wire error) is reported as its
+/// raw code rather than invented text.
+std::string describeFsmRejection(std::int32_t error_code)
+{
+    if (error_code == kCodeLocoStateNotAvailable)
+    {
+        return "loco state not available";
+    }
+    if (error_code == kCodeInvalidFsmId)
+    {
+        return "invalid fsm id";
+    }
+    return "code " + std::to_string(error_code);
+}
 }  // namespace
 
 G1LocoBridge::G1LocoBridge(const rclcpp::NodeOptions& options)
@@ -50,10 +67,10 @@ G1LocoBridge::G1LocoBridge(const rclcpp::NodeOptions& options)
 
 bool G1LocoBridge::readParameters()
 {
-    request_timeout_s_      = get_parameter("request_timeout_s").as_double();
-    max_pending_            = static_cast<std::size_t>(get_parameter("max_pending").as_int());
-    velocity_reissue_hz_    = get_parameter("velocity_reissue_hz").as_double();
-    cmd_vel_timeout_s_      = get_parameter("cmd_vel_timeout_ms").as_double() / 1000.0;
+    request_timeout_s_             = get_parameter("request_timeout_s").as_double();
+    const std::int64_t max_pending = get_parameter("max_pending").as_int();
+    velocity_reissue_hz_           = get_parameter("velocity_reissue_hz").as_double();
+    cmd_vel_timeout_s_             = get_parameter("cmd_vel_timeout_ms").as_double() / 1000.0;
     failure_streak_limit_   = static_cast<int>(get_parameter("failure_streak_limit").as_int());
     const auto max_velocity = get_parameter("max_velocity").as_double_array();
     const auto axis_sign    = get_parameter("axis_sign").as_double_array();
@@ -77,7 +94,7 @@ bool G1LocoBridge::readParameters()
             velocity_reissue_hz_);
         return false;
     }
-    if (request_timeout_s_ <= 0.0 || max_pending_ == 0 || cmd_vel_timeout_s_ <= 0.0 ||
+    if (request_timeout_s_ <= 0.0 || max_pending <= 0 || cmd_vel_timeout_s_ <= 0.0 ||
         failure_streak_limit_ <= 0)
     {
         RCLCPP_ERROR(
@@ -86,6 +103,7 @@ bool G1LocoBridge::readParameters()
             "strictly positive");
         return false;
     }
+    max_pending_ = static_cast<std::size_t>(max_pending);
     return true;
 }
 
@@ -297,9 +315,12 @@ rclcpp_action::GoalResponse G1LocoBridge::handleGoal(
 {
     /*
      * Self-gated, not framework-gated: create_server()'s raw interface-pointer overload has no
-     * lifecycle awareness of its own (unlike create_publisher/create_subscription, whose
-     * LifecyclePublisher/-Subscription wrappers the base class silences automatically while
-     * inactive) -- so goals would otherwise be accepted even before this node is ever activated.
+     * lifecycle awareness of its own, so goals would otherwise be accepted even before this node
+     * is ever activated. This is not just belt-and-braces on top of create_publisher's own
+     * activation check: Humble ships no LifecycleSubscription at all (create_subscription on a
+     * LifecycleNode forwards straight to the plain rclcpp version), and even status_pub_/
+     * request_pub_'s LifecyclePublisher guarantee only holds because each is declared with that
+     * type -- it is not a property every create_publisher() call gets for free.
      */
     if (get_current_state().id() != lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE)
     {
@@ -429,7 +450,7 @@ void G1LocoBridge::onSetLocoModeResult(
     result->success    = success;
     result->error_code = error_code;
     result->message    = success ? "fsm transition accepted" :
-                                   ("fsm transition rejected: code " + std::to_string(error_code));
+                                   ("fsm transition rejected: " + describeFsmRejection(error_code));
     if (success)
     {
         goal_handle->succeed(result);

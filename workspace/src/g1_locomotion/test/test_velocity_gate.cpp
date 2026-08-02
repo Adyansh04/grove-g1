@@ -5,6 +5,7 @@
  */
 #include <gmock/gmock.h>
 
+#include "g1_locomotion/loco_api_ids.hpp"
 #include "g1_locomotion/velocity_gate.hpp"
 
 namespace g1_locomotion
@@ -124,8 +125,8 @@ TEST(VelocityGate, NeverReceivedAnyCommandStillProducesExactlyOneStop)
 TEST(VelocityGate, FailureStreakBelowLimitStaysHeld)
 {
     auto gate = makeHeldGate();
-    gate.onVelocityResult(7301);
-    gate.onVelocityResult(7301);
+    gate.onVelocityResult(kCodeLocoStateNotAvailable);
+    gate.onVelocityResult(kCodeLocoStateNotAvailable);
     EXPECT_EQ(gate.authority(), LocoAuthority::kHeld);
     EXPECT_EQ(gate.failureStreak(), 2);
 }
@@ -133,21 +134,21 @@ TEST(VelocityGate, FailureStreakBelowLimitStaysHeld)
 TEST(VelocityGate, FailureStreakAtLimitReleasesAuthorityAndRecordsLastErrorCode)
 {
     auto gate = makeHeldGate();
-    gate.onVelocityResult(7301);
-    gate.onVelocityResult(7301);
-    gate.onVelocityResult(7301);
+    gate.onVelocityResult(kCodeLocoStateNotAvailable);
+    gate.onVelocityResult(kCodeLocoStateNotAvailable);
+    gate.onVelocityResult(kCodeLocoStateNotAvailable);
     EXPECT_EQ(gate.authority(), LocoAuthority::kReleased);
-    EXPECT_EQ(gate.lastErrorCode(), 7301);
+    EXPECT_EQ(gate.lastErrorCode(), kCodeLocoStateNotAvailable);
 }
 
 TEST(VelocityGate, SuccessInBetweenResetsTheStreak)
 {
     auto gate = makeHeldGate();
-    gate.onVelocityResult(7301);
-    gate.onVelocityResult(7301);
+    gate.onVelocityResult(kCodeLocoStateNotAvailable);
+    gate.onVelocityResult(kCodeLocoStateNotAvailable);
     gate.onVelocityResult(0);
-    gate.onVelocityResult(7301);
-    gate.onVelocityResult(7301);
+    gate.onVelocityResult(kCodeLocoStateNotAvailable);
+    gate.onVelocityResult(kCodeLocoStateNotAvailable);
     EXPECT_EQ(gate.authority(), LocoAuthority::kHeld) << "streak should have reset on the success";
     EXPECT_EQ(gate.failureStreak(), 2);
 }

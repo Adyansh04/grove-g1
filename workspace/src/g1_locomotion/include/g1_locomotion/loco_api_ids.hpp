@@ -35,8 +35,14 @@ inline constexpr std::int32_t kCodeSuccess = 0;
 /// LocoState not available -- the onboard controller isn't in a state that can service the call.
 inline constexpr std::int32_t kCodeLocoStateNotAvailable = 7301;
 /// Invalid fsm id (e.g. rejected by the onboard controller's own transition table).
-inline constexpr std::int32_t kCodeInvalidFsmId  = 7302;
-inline constexpr std::int32_t kCodeInvalidTaskId = 7303;
+inline constexpr std::int32_t kCodeInvalidFsmId = 7302;
+
+/*
+ * 7303 (invalid task id) deliberately has no constant here, for the same reason 7106 SET_ARM_TASK
+ * has none in loco_payloads.hpp: this bridge never sends a task-id-bearing request, so it can
+ * never receive that specific rejection, and nothing here needs to name an error it can't produce.
+ */
+
 /// UT_ROBOT_TASK_TIMEOUT -- sweep()'s own timeout code, matching the vendored BaseClient's value.
 inline constexpr std::int32_t kCodeTaskTimeout = -1;
 /// UT_ROBOT_TASK_UNKNOWN_ERROR.

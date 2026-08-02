@@ -149,12 +149,18 @@ FSM state or velocity requests. Walking-in-sim is out of scope this milestone (t
 walking policy this stack briefly evaluated couldn't balance the full 29-DoF hand-equipped robot);
 see `g1_locomotion`'s README for the bridge this responder talks to.
 
-- Subscribes `/api/sport/request` (`unitree_api/msg/Request`) and publishes `/api/sport/response`
-  (`unitree_api/msg/Response`), both `rclcpp::QoS(1)` reliable, volatile -- **vendor-matched, do
-  not deviate**, the same rule `g1_locomotion`'s bridge documents for its own side of this exchange.
+- Subscribes `/api/sport/request` (`unitree_api/msg/Request`, `rclcpp::QoS(10)` reliable, volatile)
+  and publishes `/api/sport/response` (`unitree_api/msg/Response`, `rclcpp::QoS(1)` reliable,
+  volatile) -- **RELIABILITY/DURABILITY are vendor-matched, do not deviate**, the same rule
+  `g1_locomotion`'s bridge documents for its own side of this exchange. HISTORY depth is not an
+  RxO-matched policy, so it's picked per side: this request reader goes deeper than the response
+  publisher, so two requests landing in the same DDS write batch can't overwrite each other in a
+  depth-1 KEEP_LAST cache before this callback drains them.
 - **Echoes `header.identity` (both `id` and `api_id`) back on every response**, regardless of
-  outcome -- that full identity, not just `id`, is the correlation contract `g1_locomotion`'s
-  `LocoRequestCorrelator` matches responses against.
+  outcome. `g1_locomotion`'s `LocoRequestCorrelator` matches responses purely on
+  `header.identity.id`, though -- the wire contract carries `api_id` alongside it in the same
+  struct, but nothing on either side filters or validates it today, so a colliding `id` from
+  another client on the same DDS domain would not be caught.
 - FSM state starts at `Damp(1)` (matching the real robot's own boot state) and only changes on a
   successful `SET_FSM_ID`.
 

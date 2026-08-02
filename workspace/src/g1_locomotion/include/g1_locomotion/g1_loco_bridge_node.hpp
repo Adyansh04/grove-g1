@@ -34,22 +34,29 @@ namespace g1_locomotion
  * a DDS round trip (see the package README for why the vendored BaseClient can't be reused).
  *
  * @par Thread-ownership contract -- read before touching this class
- * Exactly one thread ever touches this node's state. `main()` spins ONE
- * `rclcpp::executors::SingleThreadedExecutor` over ONE explicitly created and named
- * `MutuallyExclusive` callback group (`callback_group_`, built in the constructor) that every
- * callback source below is placed in without exception: the `/api/sport/response` subscription,
- * the ~50 ms sweep timer, the velocity re-issue timer, the ~1 Hz heartbeat/FSM-poll/rogue-guard
- * timer, `~/cmd_vel`, and the `~/set_mode` action server. No locks, no atomics, anywhere in this
- * class, LocoRequestCorrelator, or VelocityGate -- correctness rests entirely on every one of
- * those callbacks being mutually exclusive *by construction*, so a future switch to a
- * `MultiThreadedExecutor` cannot silently reintroduce concurrent access: moving any one callback
- * to a different group would need a deliberate, visible edit right here in on_configure(), not a
- * change one line away in `main()`. Contrast this with g1_hardware_interface's G1ArmSdkSystem,
- * which genuinely needs `std::atomic`: its RT read()/write() thread (controller_manager's) and
- * its own hidden executor thread are two real, independently-scheduled threads by construction,
- * so shared state there truly is concurrent. Nothing here blocks: correlator sends are
- * fire-and-forget publishes, and every outcome -- success, failure, or timeout -- arrives later
- * through this same executor as another ordinary callback.
+ * Exactly one thread ever touches this node's state, but that guarantee is two-part, not one:
+ * every callback source *this class itself creates* is placed without exception in ONE explicitly
+ * created and named `MutuallyExclusive` callback group (`callback_group_`, built in the
+ * constructor) -- the `/api/sport/response` subscription, the ~50 ms sweep timer, the velocity
+ * re-issue timer, the ~1 Hz heartbeat/FSM-poll/rogue-guard timer, `~/cmd_vel`, and the
+ * `~/set_mode` action server -- AND `main()` spins that group on a single
+ * `rclcpp::executors::SingleThreadedExecutor` (see `g1_loco_bridge_main.cpp`). The group alone
+ * does not cover everything: `rclcpp_lifecycle::LifecycleNode`'s own transition/parameter services
+ * (`~/change_state`, `~/get_state`, `~/set_parameters`, ...) are created by the *base class*, land
+ * in Humble's default callback group, and cannot be redirected -- so `on_configure`/`on_cleanup`/
+ * `on_deactivate` (which reset `request_pub_`, `status_pub_`, and every timer) are only kept out
+ * from under a concurrently running `onHeartbeatTick()`/etc. by `main()`'s executor being
+ * single-threaded, not by `callback_group_` on its own. No locks, no atomics, anywhere in this
+ * class, `LocoRequestCorrelator`, or `VelocityGate` -- moving one of *this class's own* callbacks
+ * to a different group would need a deliberate, visible edit right here in `on_configure()`; a
+ * genuine `MultiThreadedExecutor` migration would additionally need the base class's lifecycle
+ * services serialised against `callback_group_` by some other means, since the group can't do that
+ * part. Contrast this with g1_hardware_interface's G1ArmSdkSystem, which genuinely needs
+ * `std::atomic`: its RT read()/write() thread (controller_manager's) and its own hidden executor
+ * thread are two real, independently-scheduled threads by construction, so shared state there
+ * truly is concurrent. Nothing here blocks: correlator sends are fire-and-forget publishes, and
+ * every outcome -- success, failure, or timeout -- arrives later through this same executor as
+ * another ordinary callback.
  */
 class G1LocoBridge : public rclcpp_lifecycle::LifecycleNode
 {
@@ -133,14 +140,18 @@ private:
 
     rclcpp::CallbackGroup::SharedPtr callback_group_;
 
-    rclcpp_lifecycle::LifecyclePublisher<g1_msgs::msg::LocoStatus>::SharedPtr status_pub_;
-    rclcpp::Publisher<unitree_api::msg::Request>::SharedPtr                   request_pub_;
-    rclcpp::Subscription<unitree_api::msg::Response>::SharedPtr               response_sub_;
-    rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr                cmd_vel_sub_;
-    rclcpp_action::Server<SetLocoMode>::SharedPtr                             action_server_;
-    rclcpp::TimerBase::SharedPtr                                              sweep_timer_;
-    rclcpp::TimerBase::SharedPtr                                              reissue_timer_;
-    rclcpp::TimerBase::SharedPtr                                              heartbeat_timer_;
+    // Both LifecyclePublisher, not rclcpp::Publisher: publish() is non-virtual in Humble, so a
+    // base-typed handle would bypass the activation check entirely and let this node command the
+    // wire while merely configured, never activated (see onHeartbeatTick()'s own guard, which
+    // exists because count_publishers()/the FSM poll intentionally aren't gated the same way).
+    rclcpp_lifecycle::LifecyclePublisher<g1_msgs::msg::LocoStatus>::SharedPtr  status_pub_;
+    rclcpp_lifecycle::LifecyclePublisher<unitree_api::msg::Request>::SharedPtr request_pub_;
+    rclcpp::Subscription<unitree_api::msg::Response>::SharedPtr                response_sub_;
+    rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr                 cmd_vel_sub_;
+    rclcpp_action::Server<SetLocoMode>::SharedPtr                              action_server_;
+    rclcpp::TimerBase::SharedPtr                                               sweep_timer_;
+    rclcpp::TimerBase::SharedPtr                                               reissue_timer_;
+    rclcpp::TimerBase::SharedPtr                                               heartbeat_timer_;
     /// One-shot; fires once to phase-offset heartbeat_timer_'s first tick away from
     /// reissue_timer_'s, then cancels itself (see on_configure()). Tracked so resetEntities() can
     /// reset it too.

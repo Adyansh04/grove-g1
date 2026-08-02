@@ -84,9 +84,9 @@ TEST(LocoRequestCorrelator, TwoOverlappingRequestsBothCompleteCorrectly)
     EXPECT_EQ(first.call_count, 0) << "the first request's callback fired early";
     EXPECT_EQ(correlator.pendingCount(), 1U);
 
-    correlator.onResponse(makeResponse(request_one->header.identity.id, 7302, ""));
+    correlator.onResponse(makeResponse(request_one->header.identity.id, kCodeInvalidFsmId, ""));
     EXPECT_EQ(first.call_count, 1);
-    EXPECT_EQ(first.error_code, 7302);
+    EXPECT_EQ(first.error_code, kCodeInvalidFsmId);
     EXPECT_EQ(correlator.pendingCount(), 0U);
 
     // Each callback fired exactly once, for its own request, never swapped.
@@ -114,6 +114,43 @@ TEST(LocoRequestCorrelator, NeverArrivingResponseTimesOutViaSweep)
     EXPECT_EQ(outcome.call_count, 1);
     EXPECT_EQ(outcome.error_code, kCodeTaskTimeout);
     EXPECT_EQ(correlator.pendingCount(), 0U);
+}
+
+// -------------------------------------------------------------------------
+// sweep() -- reentrancy: a timeout callback may itself call send()
+// -------------------------------------------------------------------------
+
+TEST(LocoRequestCorrelator, SweepTimeoutCallbackMaySendANewRequestWithoutCorruptingIteration)
+{
+    // Enough entries expiring in one sweep() call to comfortably clear libstdc++'s default rehash
+    // threshold (13 elements at max_load_factor 1.0) -- the shape that turns a reentrant insert
+    // into iterator invalidation under a single-phase erase-and-invoke loop.
+    constexpr int kCount  = 20;
+    auto       correlator = makeCorrelator(/*request_timeout_s=*/1.0, /*max_pending=*/kCount * 2);
+    const auto now        = std::chrono::steady_clock::now();
+
+    int reissued = 0;
+    for (int i = 0; i < kCount; ++i)
+    {
+        const auto request = correlator.send(
+            kApiIdSetVelocity,
+            "{}",
+            now,
+            [&correlator, &now, &reissued](std::int32_t, const std::string&) {
+                ++reissued;
+                // Reentrant insert from inside sweep()'s own callback loop -- exactly the
+                // precondition documented as safe on the class's sweep() declaration.
+                correlator.send(kApiIdSetVelocity, "{}", now, [](std::int32_t, const std::string&) {
+                });
+            });
+        ASSERT_TRUE(request.has_value());
+    }
+    ASSERT_EQ(correlator.pendingCount(), static_cast<std::size_t>(kCount));
+
+    EXPECT_NO_THROW(correlator.sweep(now + std::chrono::seconds(2)));
+    EXPECT_EQ(reissued, kCount) << "not every expired entry's callback ran";
+    // Each of the kCount original callbacks reissued exactly one fresh (unexpired) request.
+    EXPECT_EQ(correlator.pendingCount(), static_cast<std::size_t>(kCount));
 }
 
 // -------------------------------------------------------------------------

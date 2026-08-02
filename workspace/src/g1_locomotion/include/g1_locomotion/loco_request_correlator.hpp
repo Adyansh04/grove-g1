@@ -90,6 +90,10 @@ public:
     /**
      * @brief Expires every pending entry older than request_timeout_s as of `now`, invoking its
      * callback with (kCodeTaskTimeout, "").
+     *
+     * Every expired callback is invoked only after every expired entry has already been erased
+     * (two-phase, unlike onResponse()) -- so it is safe for a callback to call send() and insert
+     * a new entry into this same instance, even though that can rehash the pending map.
      * @param now  Current time.
      */
     void sweep(std::chrono::steady_clock::time_point now);

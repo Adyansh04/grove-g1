@@ -1,25 +1,23 @@
 <mujoco model="g1_flat_scene">
   <!--
-    SIM-ONLY scene for locomotion work: the same bare floor as the pinned
-    variant, but with no pelvis weld, so the walking policy has a free base.
+    SIM-ONLY scene: a bare floor with NO pelvis weld, selected by
+    sim.launch.py's pin_pelvis:=false.
 
     Its whole reason to exist is that unitree_mujoco's own default scene.xml is
     an obstacle course (boxes, cylinders, ramps, stairs, height fields). Loading
     that for locomotion work means the robot spawns among obstacles and is
     knocked over by them, which reads as a balance failure and is not one. Every
-    sim run stages one of these two overlays so the floor is always bare and the
-    only difference is whether the pelvis is welded.
+    sim run stages this file or its sibling g1_pinned_scene.xml, so the floor is
+    always bare and the only difference between the two is the pelvis weld.
 
     unitree_mujoco emulates only the low-level device (rt/lowcmd in, rt/lowstate
     out); it does NOT run the vendor's onboard balance/locomotion controller
-    (LocoClient) that keeps the real G1 upright. With no balance loop, a
-    joint-space stiff-hold cannot keep the floating-base biped standing (it is an
-    inverted pendulum with no centre-of-mass feedback), so the model topples on
-    spawn. This overlay pins the pelvis to the world with a `weld` equality
-    constraint purely so the arm bridge can be validated in isolation. It fixes
-    the pelvis in BOTH position and orientation; it does not simulate balance and
-    is expected to be removed or replaced when the LocoClient milestone adds
-    genuine standing/locomotion. See g1_bringup/README.md ("Pelvis pin").
+    (LocoClient) that keeps the real G1 upright. With no balance loop and no
+    pelvis weld, a floating-base biped is an inverted pendulum with no
+    centre-of-mass feedback, so with this scene loaded the robot topples on
+    spawn: nothing here or elsewhere in this stack holds it up. See
+    g1_bringup/README.md ("Pelvis pin") and this file's sibling,
+    g1_pinned_scene.xml, for the overlay that does weld the pelvis.
 
     Composition note: this file is staged next to the vendored g1_29dof.xml at
     launch (by sim.launch.py) so the relative <include> below and the model's own

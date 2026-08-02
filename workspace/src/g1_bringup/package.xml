@@ -17,9 +17,10 @@
   <depend>rclcpp</depend>
   <depend>unitree_hg</depend>
   <depend>unitree_api</depend>
-  <depend>geometry_msgs</depend>
   <depend>g1_hardware_interface</depend>
-  <depend>nlohmann_json</depend>
+  <!-- nlohmann_json is the CMake config-package name (find_package(nlohmann_json REQUIRED) in
+       CMakeLists.txt); nlohmann-json-dev is the actual rosdep/apt key that resolves to. -->
+  <depend>nlohmann-json-dev</depend>
 
   <depend>g1_description</depend>
   <depend>robot_state_publisher</depend>
@@ -67,6 +68,9 @@
   <!-- test_loco.launch.py drives g1_locomotion's SetLocoMode action/LocoStatus directly and
        publishes raw unitree_api Requests: both are only imported from Python in this package. -->
   <test_depend>g1_msgs</test_depend>
+  <!-- geometry_msgs is imported only by test/test_loco.launch.py (Twist): nothing under src/,
+       include/, or launch/ references it, and no C++ target links against it. -->
+  <test_depend>geometry_msgs</test_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

@@ -91,11 +91,6 @@ class TestLoco(unittest.TestCase):
         cls.node.destroy_node()
         rclpy.shutdown()
 
-    def _spin_for(self, duration_s):
-        deadline = time.monotonic() + duration_s
-        while time.monotonic() < deadline:
-            rclpy.spin_once(self.node, timeout_sec=0.05)
-
     def _latest_status(self, timeout_s=5.0):
         result = {}
         sub = self.node.create_subscription(
@@ -208,22 +203,42 @@ class TestLoco(unittest.TestCase):
                 "a SET_VELOCITY request did not carry the fixed 1.0 s duration",
             )
 
-        # 4. A zero Twist stops it: publish it repeatedly (a single publish could race
-        # subscription discovery), let the single stop-then-idle intent fire and settle, then a
-        # fresh observation window must stay silent.
+        # 4. A zero Twist stops it. Keep publishing the zero Twist throughout both windows below
+        # -- staying fresh-and-zero is what actually discriminates this from the stale-command
+        # branch (VelocityGate.tick() takes the same single-stop-then-idle path for both, so a
+        # window that lets the command go stale "passes" even with the zero check deleted
+        # entirely). First confirm the stop itself carried a zero velocity, then confirm traffic
+        # ceases even though a fresh zero command keeps arriving.
         velocity_requests.clear()
-        zero_deadline = time.monotonic() + 0.3
-        while time.monotonic() < zero_deadline:
-            cmd_vel_pub.publish(Twist())
+        zero_twist    = Twist()
+        stop_deadline = time.monotonic() + 1.0
+        while time.monotonic() < stop_deadline:
+            cmd_vel_pub.publish(zero_twist)
             rclpy.spin_once(self.node, timeout_sec=0.05)
-        self._spin_for(1.0)
 
-        velocity_requests.clear()  # discard the single stop request itself
-        self._spin_for(1.0)
+        # >=1, not ==1: a re-issue tick can land between clear() and the first zero Twist and
+        # still be mid-flight when the loop above starts, adding one more non-stop sample first.
+        self.assertGreaterEqual(
+            len(velocity_requests), 1, "no SET_VELOCITY request observed after a zero Twist"
+        )
+        self.assertEqual(
+            json.loads(velocity_requests[-1].parameter).get("velocity"),
+            [0.0, 0.0, 0.0],
+            "the request following a zero Twist did not carry a zero velocity",
+        )
+
+        velocity_requests.clear()
+        silence_deadline = time.monotonic() + 1.0
+        while time.monotonic() < silence_deadline:
+            cmd_vel_pub.publish(zero_twist)
+            rclpy.spin_once(self.node, timeout_sec=0.05)
         self.node.destroy_subscription(request_sub)
         self.node.destroy_publisher(cmd_vel_pub)
         self.assertEqual(
-            len(velocity_requests), 0, "SET_VELOCITY traffic did not cease after a zero Twist"
+            len(velocity_requests),
+            0,
+            "SET_VELOCITY traffic did not cease after the single stop-then-idle intent, despite "
+            "cmd_vel staying fresh and zero the whole time",
         )
 
         # 5. DAMP releases authority.

@@ -38,17 +38,23 @@ number of requests genuinely in flight at once.
 
 ## Thread-ownership contract
 
-Exactly one thread ever touches this node: `main()` spins a single
-`rclcpp::executors::SingleThreadedExecutor` over one explicitly created and named
-`MutuallyExclusive` callback group that *every* callback source is placed in -- the
-`/api/sport/response` subscription, the ~50 ms sweep timer, the velocity re-issue timer, the 1 Hz
-heartbeat/FSM-poll/rogue-guard timer, `~/cmd_vel`, and the `~/set_mode` action server. No locks, no
-atomics, anywhere in `G1LocoBridge`, `LocoRequestCorrelator`, or `VelocityGate`. This is
-deliberate, not incidental: naming and populating the group explicitly (rather than relying on
-every entity's implicit default group, which happens to coincide today) means a future
-`MultiThreadedExecutor` swap can't silently start running two of these callbacks concurrently --
-moving any one of them to a different group requires a visible edit inside `on_configure()`, not a
-one-line change somewhere else entirely.
+Exactly one thread ever touches this node, but that guarantee is two-part, not one: every
+callback source *this class itself creates* is placed without exception in one explicitly created
+and named `MutuallyExclusive` callback group -- the `/api/sport/response` subscription, the ~50 ms
+sweep timer, the velocity re-issue timer, the ~1 Hz heartbeat/FSM-poll/rogue-guard timer,
+`~/cmd_vel`, and the `~/set_mode` action server -- **and** `main()` spins that group on a single
+`rclcpp::executors::SingleThreadedExecutor` (load-bearing, not a default left alone -- see
+`g1_loco_bridge_main.cpp`'s own comment). The group alone does not cover everything:
+`rclcpp_lifecycle::LifecycleNode`'s own transition/parameter services (`~/change_state`,
+`~/get_state`, `~/set_parameters`, ...) are created by the *base class*, land in Humble's default
+callback group, and cannot be redirected -- so `on_configure`/`on_cleanup`/`on_deactivate` (which
+reset every publisher, subscription, and timer) are only kept out from under a concurrently
+running callback by the executor being single-threaded, not by the named group by itself. No
+locks, no atomics, anywhere in `G1LocoBridge`, `LocoRequestCorrelator`, or `VelocityGate` --
+moving one of this class's own callbacks to a different group would still need a deliberate,
+visible edit inside `on_configure()`; a genuine `MultiThreadedExecutor` migration would
+additionally need the base class's lifecycle services serialised against the named group by some
+other means, since the group can't do that part on its own.
 
 Contrast this with `g1_hardware_interface`'s `G1ArmSdkSystem`, which genuinely needs
 `std::atomic`: its RT `read()`/`write()` thread (`controller_manager`'s own) and its hidden
@@ -102,10 +108,20 @@ on `header.identity.id`:
 - `sweep(now)` -- expires entries older than `request_timeout_s` (5.0, the vendor's own
   `BaseClient` timeout), invoking their callback with `(-1, "")` (`UT_ROBOT_TASK_TIMEOUT`). Run
   from a ~50 ms timer -- frequent relative to the 5 s timeout so an expiry is noticed promptly.
+  Two-phase (collect every expired callback, erase all of them, *then* invoke) so a callback that
+  itself calls `send()` -- inserting into, and potentially rehashing, this same pending map --
+  can't invalidate the iteration it's running inside of.
 - `supersede(id)` -- drops a pending entry with no callback invocation, for exactly the case where
   a fresher command has already replaced it (the velocity re-issue timer supersedes its own
   previous in-flight request every tick, and the FSM-poll timer does the same for its own poll) --
-  only the newest outcome for that *kind* of request ever matters.
+  only the newest outcome for that *kind* of request ever matters. `onReissueTick()` also feeds a
+  synthetic `(kCodeTaskTimeout, "")` into `VelocityGate::onVelocityResult()` immediately before
+  superseding a velocity request that's still pending, so a round trip slower than the re-issue
+  period still counts against the failure streak instead of vanishing silently.
+- `clear()` -- drops every pending entry with no callback invocation, all at once. Used only by
+  `resetEntities()` when the node itself is tearing down (see "Teardown never wedges a goal"
+  below) -- nothing left standing afterward could service a response or a `sweep()` timeout
+  anyway, so leaving entries pending would just strand their captured callbacks.
 
 ### `velocity_gate.*` -- `VelocityGate` and `LocoAuthority`
 
@@ -158,8 +174,8 @@ on `get_current_state()` explicitly, the same "self-gated, not framework-gated" 
 | `~/cmd_vel` | in | `geometry_msgs/Twist` | reliable, keep-last(1), volatile | Node-relative, **not** bare `/cmd_vel` -- arbitrating multiple command sources (Nav2, teleop, a future behavior tree) is that future orchestration layer's job, not this milestone's. |
 | `~/status` | out | `g1_msgs/LocoStatus` | reliable, **transient-local**, keep-last(1) | On change + 1 Hz heartbeat. Transient-local so a monitor that attaches after activation sees the current state immediately rather than waiting for the next heartbeat. |
 | `~/set_mode` | action | `g1_msgs/SetLocoMode` | n/a | See `g1_msgs`'s README for why an action rather than a service. |
-| `/api/sport/request` | out | `unitree_api/Request` | `rclcpp::QoS(1)`, reliable, volatile | **Vendor-matched -- do not deviate.** The exact QoS `BaseClient`'s own publisher uses; hardware endpoint compatibility depends on matching it exactly. |
-| `/api/sport/response` | in | `unitree_api/Response` | `rclcpp::QoS(1)`, reliable, volatile | Same as above. |
+| `/api/sport/request` | out | `unitree_api/Request` | `rclcpp::QoS(1)`, reliable, volatile | **RELIABILITY/DURABILITY vendor-matched -- do not deviate.** The exact QoS `BaseClient`'s own publisher uses; hardware endpoint compatibility depends on matching those two policies. |
+| `/api/sport/response` | in | `unitree_api/Response` | `rclcpp::QoS(10)`, reliable, volatile | Reliability/durability match `BaseClient` the same way; HISTORY depth is *not* an RxO-matched policy, so this reader goes deeper than the depth-1 vendor default -- a response landing in the same DDS write batch as another read must not overwrite an unread result in a depth-1 cache (measured ~20% `SET_VELOCITY` loss before this and the heartbeat-timer phase-offset fix below). |
 
 `~/cmd_vel` is mapped `linear.x -> vx`, `linear.y -> vy`, `angular.z -> vyaw`, each clamped to
 `max_velocity` (default `[0.3, 0.2, 0.5]` -- deliberately conservative so a first hardware run is
@@ -176,13 +192,33 @@ time -- a second one is rejected outright rather than needing to unwind the firs
 
 A `START` goal calls `VelocityGate::beginAcquire()` before publishing its `SET_FSM_ID(500)`
 request (only once `LocoRequestCorrelator::send()` confirms a request is actually in flight, so
-every `kAcquiring` is guaranteed a future callback); a `DAMP` goal from `kHeld` calls
-`beginRelease()` the same way. `STAND_UP` never touches `VelocityGate` -- it's a prerequisite FSM
-hop on the way to `Start`, not a change in who holds velocity-command authority.
+every `kAcquiring` is guaranteed a future callback). Any *other* accepted goal -- `DAMP` or
+`STAND_UP` alike -- calls `beginRelease()` the same way, but only while authority is currently
+`kHeld`: release is keyed on leaving `Start`, not on the literal `DAMP` id, because `Start ->
+StandUp` is itself a legal FSM edge (see `g1_bringup`'s legality table) and a `STAND_UP` goal
+accepted from `kHeld` means the robot is about to leave the state velocity authority depends on,
+exactly as much as a `DAMP` goal does. `onSetLocoModeResult()` mirrors the same split: a `START`
+result calls `onAcquireResult()`; every other result calls `onReleaseResult()` (a harmless no-op
+if `beginRelease()` was never called for that particular goal).
+
+The one authority-*promoting* callback -- a successful `START` result calling
+`onAcquireResult(true)` -- additionally self-gates on `PRIMARY_STATE_ACTIVE`, the same standard
+`cmdVelCallback()`/`onReissueTick()` already hold themselves to. The primary defence against a
+late reply reviving stale authority is `on_deactivate()` itself: it supersedes the correlator
+entry for any in-flight `SetLocoMode` goal and aborts that goal directly before returning, so a
+reply delivered after deactivation can never reach `onSetLocoModeResult()` at all; the
+`PRIMARY_STATE_ACTIVE` self-gate is the belt-and-braces backstop for that same property, not the
+primary fix.
 
 `fsm_id` in `~/status` is **not** solely inferred from goal outcomes: a `7001 GET_FSM_ID` poll
-rides along on the 1 Hz heartbeat timer (via `loco_payloads::parseFsmIdResponse`), keeping it
-confirmed by the robot rather than only assumed.
+rides along on the ~1 Hz heartbeat timer (via `loco_payloads::parseFsmIdResponse`), keeping it
+confirmed by the robot rather than only assumed. That timer's first tick is deliberately
+phase-offset half a re-issue period from the velocity re-issue timer's own ticks: two
+independently-created wall timers with harmonically related periods (the default 1000 ms
+heartbeat is an exact multiple of the default 200 ms re-issue period) would otherwise start
+counting from the same `on_configure()` instant and fire together once a second, publishing
+`SET_VELOCITY` and `GET_FSM_ID` back to back on a channel whose vendor contract assumes one call
+in flight.
 
 ### Single-writer advisory guard
 
@@ -200,6 +236,17 @@ actuates directly; it only ever asks the onboard controller to move. If re-issui
 robot back to a stop on its own. That emergent safety property is exactly why re-issuing with a
 short duration, rather than latching the vendor's 864000 s "continuous" value, is non-negotiable.
 
+### Teardown never wedges a goal
+
+`resetEntities()` -- called from `on_cleanup`, `on_shutdown`, `on_error`, and the top of
+`on_configure` -- aborts any `SetLocoMode` goal still in flight (a terminal result, `success:
+false`) and clears the correlator's pending map, both *before* destroying the action server and
+every timer/subscription. Ordering matters: once those entities are gone, nothing left standing
+could ever resolve that goal on its own (no sweep timer to time it out, no response subscription
+to match a reply), so skipping this would hang the goal's client forever -- most easily reached
+today via `shutdown()` from `PRIMARY_STATE_ACTIVE`, which Humble's lifecycle state machine allows
+directly, bypassing `on_deactivate()`'s own (separate) goal-termination entirely.
+
 ## Parameters (`config/g1_loco_bridge.yaml`)
 
 | Param | Default | Meaning |
@@ -214,18 +261,24 @@ short duration, rather than latching the vendor's 864000 s "continuous" value, i
 
 ## Running
 
-This package has no launch file of its own yet -- run the node directly and drive its lifecycle
-by hand:
+The normal way to bring this bridge up is as part of the whole sim stack, not standalone:
 
 ```bash
-ros2 run g1_locomotion g1_loco_bridge --ros-args \
-  --params-file install/g1_locomotion/share/g1_locomotion/config/g1_loco_bridge.yaml
+ros2 launch g1_bringup sim.launch.py
+```
 
-# In another shell: configure then activate.
-ros2 lifecycle set /g1_loco_bridge configure
-ros2 lifecycle set /g1_loco_bridge activate
+`sim.launch.py` includes this package's own `loco.launch.py`, which starts `g1_loco_bridge` and
+drives it `configure -> active` automatically, chained off the node's own lifecycle events (not a
+timing guess -- see `g1_bringup/README.md`'s launch-file table). `motion_service_sim` (also
+started by `sim.launch.py`) is this stack's `/api/sport/*` responder: it answers `7001`/`7101`/
+`7105` **protocol-only** -- FSM state tracking and the `SET_VELOCITY` `Start`-only gate, exactly
+per the wire contract -- but never actuates a leg; the robot stays pelvis-welded regardless of FSM
+state or velocity requests (see `g1_bringup/README.md`'s "LocoClient wire responder" section for
+the full dispatch table and why walking-in-sim is a separate, out-of-scope concern this
+milestone). Once the stack is up:
 
-# Query the current mode / drive the FSM to Start (StandUp is a required intermediate hop):
+```bash
+# Drive the FSM to Start (StandUp is a required intermediate hop):
 ros2 action send_goal /g1_loco_bridge/set_mode g1_msgs/action/SetLocoMode "{fsm_id: 4}"
 ros2 action send_goal /g1_loco_bridge/set_mode g1_msgs/action/SetLocoMode "{fsm_id: 500}"
 
@@ -240,16 +293,31 @@ ros2 topic pub -r 10 /g1_loco_bridge/cmd_vel geometry_msgs/msg/Twist "{linear: {
 ros2 action send_goal /g1_loco_bridge/set_mode g1_msgs/action/SetLocoMode "{fsm_id: 1}"
 ```
 
-**Nothing in `unitree_mujoco` serves `/api/sport/*` yet** -- it emulates only the low-level device
-(subscribes `rt/lowcmd`, publishes `rt/lowstate`); there is no onboard motion service in sim to
-answer a LocoClient request at all. So against the current sim every request above times out
-after `request_timeout_s` (5 s) rather than succeeding; `~/status.authority` will show `ACQUIRING`
-and then fall back to `RELEASED` with `last_error_code` set to the correlator's timeout code. That
-is expected, not a bug in this package: this milestone validates the request/response bridge
-itself (wire encoding, async correlation, the authority state machine) against unit tests with no
-live DDS, exactly like `g1_hardware_interface`'s `ArmRampEngine` and `g1_bringup`'s `blend_math` are
-validated. End-to-end validation against something that actually answers `/api/sport/request` --
-either a future sim-side responder or real hardware -- is deferred to a later milestone.
+This is exactly the sequence `g1_bringup/test/test_loco.launch.py` drives end to end against a
+real, live sim (see "Building and testing" below).
+
+### Standalone, without the sim stack
+
+`ros2 run g1_locomotion g1_loco_bridge` plus manual lifecycle transitions also works, for
+developing this package in isolation:
+
+```bash
+ros2 run g1_locomotion g1_loco_bridge --ros-args \
+  --params-file install/g1_locomotion/share/g1_locomotion/config/g1_loco_bridge.yaml
+
+# In another shell: configure then activate.
+ros2 lifecycle set /g1_loco_bridge configure
+ros2 lifecycle set /g1_loco_bridge activate
+```
+
+**Not while `sim.launch.py` is already running**, though: that would put two `g1_loco_bridge`
+processes (and, if driven manually, two publishers) on the same `~/cmd_vel`/`~/set_mode`/
+`/api/sport/*` names in the same domain, which trips the bridge's own single-writer advisory guard
+on `/api/sport/request` the moment it notices and force-releases velocity authority. With no
+`/api/sport/*` responder running at all (`motion_service_sim` or otherwise), every request above
+times out after `request_timeout_s` (5 s) instead of succeeding: `~/status.authority` will show
+`ACQUIRING` and then fall back to `RELEASED`, with `last_error_code` set to the correlator's own
+timeout code (`-1`). That is expected in that specific configuration, not a bug in this package.
 
 ## Building and testing
 
@@ -259,21 +327,35 @@ colcon test --packages-select g1_locomotion
 colcon test-result --verbose
 ```
 
-Three gmock binaries, no sim required:
+Four gmock binaries:
 
 - `test_loco_payloads` -- exact JSON for `7101`/`7105`, `duration` always `1.0` (and `864000`
   never appears anywhere in this package's source), and response `data` parsing including
-  malformed input.
+  malformed input. No sim or live DDS required.
 - `test_loco_correlator` -- overlapping in-flight requests, out-of-order responses, a
   never-arrives sweep timeout, an orphaned response arriving *after* its entry was already swept
-  (dropped safely, no crash, no double callback), `supersede()`, and the `max_pending` bound.
+  (dropped safely, no crash, no double callback), `supersede()`, a `sweep()` callback that itself
+  calls `send()` (reentrancy safety), and the `max_pending` bound. No sim or live DDS required.
 - `test_velocity_gate` -- re-issue faster than 1 Hz, the stale/zero single-stop-then-idle policy,
   the failure-streak release, `cmd_vel` ignored outside `kHeld`, and every terminal path landing
-  in a defined state.
+  in a defined state. No sim or live DDS required.
+- `test_loco_bridge_node` -- `G1LocoBridge` itself, in-process against a fake `/api/sport/*`
+  responder on an isolated `ROS_DOMAIN_ID` (real DDS loopback, no sim, no `launch_testing`): a
+  late `SetLocoMode` reply arriving after `on_deactivate` must not revive authority into the next
+  session, a `SetVelocity` round trip slower than the re-issue period must still advance the
+  failure streak, a `STAND_UP` goal from `kHeld` must release authority and stop velocity traffic,
+  and a goal still in flight when the node tears down must terminate instead of hanging forever.
 
-There is no sim/launch integration suite yet -- see "Running" above for why: nothing in
-`unitree_mujoco` currently answers `/api/sport/request`, so there is nothing live to integrate
-against until a sim-side responder or real hardware exists.
+Plus `g1_bringup/test/test_loco.launch.py` -- a headless `launch_testing` suite (run via `colcon
+test --packages-select g1_bringup`, since it needs the sim stack's own launch files) that drives
+this bridge end to end against a real, live `motion_service_sim` over real DDS: the responder's
+`Start`-only `SET_VELOCITY` gate, the `STAND_UP -> START` sequence, the re-issue loop's rate and
+fixed duration, the zero-Twist stop, and `DAMP` releasing authority. Between the gmock suites
+above (this package's own logic, no live DDS) and `test_loco_bridge_node` (this bridge's
+lifecycle/authority behavior, live DDS but no sim), `test_loco.launch.py` is what actually
+validates the wiring between this bridge and a real `/api/sport/*` responder. Leg dynamics (actual
+walking) are out of scope for all of them and deferred to hardware -- `motion_service_sim` is
+protocol-only by design (see `g1_bringup/README.md`).
 
 Plus `clang-format` (against the repo root's `.clang-format`), `ament_lint_cmake`, and `xmllint`
 on this package's own XML files.

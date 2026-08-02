@@ -5,7 +5,6 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(unitree_hg REQUIRED)
 find_package(unitree_api REQUIRED)
-find_package(geometry_msgs REQUIRED)
 find_package(g1_hardware_interface REQUIRED)
 find_package(nlohmann_json REQUIRED)
 

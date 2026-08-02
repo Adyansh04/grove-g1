@@ -5,6 +5,7 @@
 #include "g1_locomotion/loco_request_correlator.hpp"
 
 #include <utility>
+#include <vector>
 
 #include "g1_locomotion/loco_api_ids.hpp"
 
@@ -52,6 +53,16 @@ void LocoRequestCorrelator::onResponse(const unitree_api::msg::Response& msg)
 
 void LocoRequestCorrelator::sweep(std::chrono::steady_clock::time_point now)
 {
+    /*
+     * Two-phase, unlike onResponse(): collect every expired callback first, erase all of them,
+     * THEN invoke. A single-phase erase-as-we-go loop would still be dereferencing `it` on its
+     * next iteration while an arbitrary user callback runs -- and unlike onResponse() (which never
+     * touches `it` again after erasing it), a callback that calls send() from inside sweep() can
+     * insert into this same unordered_map and trigger a rehash, invalidating every iterator,
+     * `it` included. Collecting first means the map is never touched again until after every
+     * callback has already run.
+     */
+    std::vector<ResponseCallback> expired;
     for (auto it = pending_.begin(); it != pending_.end();)
     {
         if (now < it->second.deadline)
@@ -59,8 +70,11 @@ void LocoRequestCorrelator::sweep(std::chrono::steady_clock::time_point now)
             ++it;
             continue;
         }
-        const auto callback = std::move(it->second.on_done);
-        it                  = pending_.erase(it);
+        expired.push_back(std::move(it->second.on_done));
+        it = pending_.erase(it);
+    }
+    for (const auto& callback : expired)
+    {
         callback(kCodeTaskTimeout, "");
     }
 }
