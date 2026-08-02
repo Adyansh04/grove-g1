@@ -7,6 +7,18 @@ find_package(unitree_hg REQUIRED)
 find_package(unitree_api REQUIRED)
 find_package(g1_hardware_interface REQUIRED)
 find_package(nlohmann_json REQUIRED)
+find_package(ament_index_cpp REQUIRED)
+
+# ONNX Runtime ships no CMake config package in its prebuilt tarball, so find it by path. The
+# location is fixed by .devcontainer/Dockerfile; failing here rather than at link time keeps the
+# error actionable, matching sim.launch.py's own environment preconditions.
+find_path(ONNXRUNTIME_INCLUDE_DIR onnxruntime_cxx_api.h HINTS /opt/onnxruntime/include)
+find_library(ONNXRUNTIME_LIBRARY onnxruntime HINTS /opt/onnxruntime/lib)
+if(NOT ONNXRUNTIME_INCLUDE_DIR OR NOT ONNXRUNTIME_LIBRARY)
+  message(FATAL_ERROR
+    "ONNX Runtime not found under /opt/onnxruntime. It is installed by "
+    ".devcontainer/Dockerfile -- run './scripts/manage.sh recreate' from the host.")
+endif()
 
 add_library(blend_math src/blend_math.cpp)
 target_include_directories(blend_math PUBLIC
@@ -25,6 +37,17 @@ target_include_directories(walk_policy PUBLIC
 )
 target_compile_features(walk_policy PUBLIC cxx_std_17)
 ament_target_dependencies(walk_policy PUBLIC unitree_hg)
+
+# The ONNX Runtime session, kept separate from the math above so the observation/action contract
+# stays testable without loading a model.
+add_library(walk_policy_session src/walk_policy_session.cpp)
+target_include_directories(walk_policy_session PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+  ${ONNXRUNTIME_INCLUDE_DIR}
+)
+target_compile_features(walk_policy_session PUBLIC cxx_std_17)
+target_link_libraries(walk_policy_session walk_policy ${ONNXRUNTIME_LIBRARY})
 
 # Sim-only LocoClient FSM legality table behind motion_service_sim's /api/sport/request
 # responder -- pure C++, no ROS deps, same internal-build-artifact treatment as blend_math.
@@ -66,6 +89,10 @@ install(TARGETS motion_service_sim DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY config launch mjcf DESTINATION share/${PROJECT_NAME})
 
+# walker.onnx and walker.onnx.data must land in the SAME directory: the graph names its external
+# weight file by relative filename, and ONNX Runtime resolves it against the model's own path.
+install(DIRECTORY policy DESTINATION share/${PROJECT_NAME})
+
 install(
   PROGRAMS
     scripts/activate_arm
@@ -99,6 +126,12 @@ if(BUILD_TESTING)
   # action->target mapping, and the velocity dead-man -- no ONNX Runtime needed.
   ament_add_gmock(test_walk_policy test/test_walk_policy.cpp)
   target_link_libraries(test_walk_policy walk_policy)
+
+  # Loads the vendored policy through ONNX Runtime: the 99->29 shape contract, determinism,
+  # external-weight resolution, and that inference fits the 50 Hz timer's budget.
+  ament_add_gmock(test_walk_policy_session test/test_walk_policy_session.cpp)
+  target_link_libraries(test_walk_policy_session walk_policy_session)
+  ament_target_dependencies(test_walk_policy_session ament_index_cpp)
 
   # workspace/ruff.toml and .clang-format are the workspace-root configs
   # bind-mounted alongside src/ (see g1_description/CMakeLists.txt for why

@@ -21,6 +21,11 @@
   <!-- nlohmann_json is the CMake config-package name (find_package(nlohmann_json REQUIRED) in
        CMakeLists.txt); nlohmann-json-dev is the actual rosdep/apt key that resolves to. -->
   <depend>nlohmann-json-dev</depend>
+  <!-- ament_index_cpp resolves the installed walker.onnx under this package's share dir, so
+       the policy path needs no launch plumbing. ONNX Runtime itself has no rosdep key: it is a
+       pinned prebuilt tarball under /opt/onnxruntime (see .devcontainer/Dockerfile) found by
+       path in CMakeLists.txt. -->
+  <depend>ament_index_cpp</depend>
 
   <depend>g1_description</depend>
   <depend>robot_state_publisher</depend>
@@ -47,6 +52,10 @@
        executable and reads its config: a runtime-only dependency, since this package's C++
        never links against g1_locomotion. -->
   <exec_depend>g1_locomotion</exec_depend>
+
+  <!-- teleop_twist_keyboard drives ~/cmd_vel by hand for the manual walking demo; it is never
+       imported or linked, only launched by the operator (see README). -->
+  <exec_depend>teleop_twist_keyboard</exec_depend>
 
   <!-- ament_lint_common is intentionally not used (see g1_description's and
        g1_hardware_interface's package.xml for the rationale): it drags in
