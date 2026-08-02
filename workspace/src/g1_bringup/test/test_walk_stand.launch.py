@@ -46,7 +46,7 @@ HOLD_DURATION_S = 12.0
 # no way to stage the policy's crouched posture, so the first targets are a real step. Measured
 # peak is 12.5 rad/s over roughly 0.1 s, against a G1 knee limit near 32 rad/s. This is a
 # regression guard against that becoming violent, not a tight bound -- and NOT a target to
-# "fix" by ramping the policy in: SIM_SETUP.md records that easing into the posture made the
+# "fix" by ramping the policy in: easing the robot into the posture was tried and made the
 # previous walking attempt strictly worse, and the vendor's own sim entry point does no ramp.
 ENTRY_PEAK_DQ_MAX = 20.0
 
@@ -180,8 +180,8 @@ class WalkStandTest(unittest.TestCase):
         """The spawn->crouch settle must stay a settle, not a snap.
 
         There is deliberately no entry ramp: /lowcmd is not published before the first /lowstate,
-        so there is no prior setpoint to ramp from, and SIM_SETUP.md records that adding a posture
-        ramp made the previous walking attempt strictly worse. This bounds the transient instead.
+        so there is no prior setpoint to ramp from, and adding a posture
+        ramp was tried and made the previous walking attempt strictly worse. This bounds it instead.
         """
         self.assertGreater(self.entry_samples, 0, "no /lowstate received during entry")
         peak_dq = self.entry_peak_dq

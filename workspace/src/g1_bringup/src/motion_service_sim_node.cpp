@@ -542,7 +542,7 @@ std::int32_t MotionServiceSim::dispatchSportRequest(
         if (isBelowGaitThreshold(command, walk_policy_config_))
         {
             // Passed through unmodified regardless -- scaling a small command UP to force motion
-            // is exactly what CONTROL_MODES.md forbids. The operator gets told instead.
+            // is exactly the ramp-don't-snap rule this stack is built on. Operator gets told.
             RCLCPP_WARN_THROTTLE(
                 get_logger(),
                 *get_clock(),

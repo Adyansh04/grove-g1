@@ -178,8 +178,11 @@ on `get_current_state()` explicitly, the same "self-gated, not framework-gated" 
 | `/api/sport/response` | in | `unitree_api/Response` | `rclcpp::QoS(10)`, reliable, volatile | Reliability/durability match `BaseClient` the same way; HISTORY depth is *not* an RxO-matched policy, so this reader goes deeper than the depth-1 vendor default -- a response landing in the same DDS write batch as another read must not overwrite an unread result in a depth-1 cache (measured ~20% `SET_VELOCITY` loss before this and the heartbeat-timer phase-offset fix below). |
 
 `~/cmd_vel` is mapped `linear.x -> vx`, `linear.y -> vy`, `angular.z -> vyaw`, each clamped to
-`max_velocity` (default `[0.3, 0.2, 0.5]` -- deliberately conservative so a first hardware run is
-slow by default) after being multiplied by `axis_sign` (default `[1, 1, 1]` -- the vendor's frame
+`max_velocity` (default `[0.8, 0.5, 1.57]` -- a **sim bring-up value**, chosen to clear the sim
+walking policy's measured gait-initiation thresholds `[0.40, 0.50, 1.50]` with headroom; the earlier
+`[0.3, 0.2, 0.5]` clamped every axis *below* its own threshold, so the robot could never step. The
+conservative slow-by-default ceiling hardware wants is a separate decision to be made at hardware
+bring-up against the real controller's limits, not back-derived from these numbers) after being multiplied by `axis_sign` (default `[1, 1, 1]` -- the vendor's frame
 convention relative to `Twist` is undocumented, so this is the calibration knob hardware bring-up
 will need, not something derivable in sim).
 
@@ -256,7 +259,7 @@ directly, bypassing `on_deactivate()`'s own (separate) goal-termination entirely
 | `velocity_reissue_hz` | 5.0 | `SetVelocity` re-issue rate; must be `> 1.0`. |
 | `cmd_vel_timeout_ms` | 500.0 | `~/cmd_vel` age beyond this is "stale". |
 | `failure_streak_limit` | 3 | Consecutive non-zero `SetVelocity` codes before releasing authority. |
-| `max_velocity` | `[0.3, 0.2, 0.5]` | `[vx, vy, vyaw]` clamp, m/s / m/s / rad/s. |
+| `max_velocity` | `[0.8, 0.5, 1.57]` | `[vx, vy, vyaw]` clamp, m/s / m/s / rad/s. **Sim bring-up value** -- see above. |
 | `axis_sign` | `[1.0, 1.0, 1.0]` | `[vx, vy, vyaw]` sign flip applied before clamping. |
 
 ## Running

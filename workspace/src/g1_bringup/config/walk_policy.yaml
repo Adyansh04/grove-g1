@@ -118,6 +118,6 @@
       # thresholds for this policy: below these it stands perfectly still rather
       # than stepping, with no hysteresis. Commands below them are passed
       # through unchanged and logged, never scaled up: turning a small command
-      # into a large motion is precisely what CONTROL_MODES.md forbids.
+      # into a large motion is precisely the ramp-don't-snap rule this stack is built on.
       # Measured [vx, vy, vyaw] -- see README for the full table.
       gait_initiation_threshold: [0.40, 0.50, 1.50]

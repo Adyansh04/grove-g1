@@ -162,7 +162,7 @@ std::array<double, 3> clampVelocity(double vx, double vy, double vyaw, const Pol
  *
  * Advisory only -- the caller logs and passes the command through unchanged.
  * Scaling a below-threshold command UP to make the robot move would turn a small
- * command into a large motion, which CONTROL_MODES.md forbids outright.
+ * command into a large motion, which this stack's ramp-don't-snap rule forbids outright.
  *
  * @param command  Clamped (vx, vy, vyaw).
  * @param config   Supplies gait_initiation_threshold.

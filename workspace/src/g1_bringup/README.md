@@ -188,7 +188,114 @@ listed above -- is rejected `7302`. The vendor wire contract has no status code 
 `7302` here is this responder's own approximation, not a verified vendor behavior, and stays a
 hardware re-validation item.
 
-## Pelvis pin -- SIM-ONLY standing scaffolding, not a balance controller
+## Walking policy -- SIM-ONLY, and the reason the pelvis weld is gone
+
+`motion_service_sim` runs an RL walking policy that owns **motors 0-14** (legs 0-11 + waist 12-14)
+and balances the robot without any weld. `/arm_sdk` keeps **motors 15-28**, so arms and legs never
+contend: they are disjoint slices of the one `/lowcmd` message this node already published. The
+policy's own arm outputs are discarded.
+
+### Provenance
+
+`policy/walker.onnx` (+ `walker.onnx.data`, the external weights) is taken from
+**[luckyrobots/g1-manipulation-challenge](https://github.com/luckyrobots/g1-manipulation-challenge)**,
+which describes it as trained via RL in Isaac Lab. That repository publishes **no licence file and
+no attribution for the policy's own origin**, so its redistribution terms are undeclared -- recorded
+here rather than left implicit. The MJCF, meshes and scene from that repository are **not** vendored
+and are not needed (see below).
+
+### Why it works when the previous attempt did not
+
+The earlier attempt used `unitree_rl_gym`'s checkpoint, which was trained and sim-validated on a
+**legs-only 12-DoF** model and cannot carry a 29-DoF upper body. This policy is trained for the full
+29-DoF robot. Note what did **not** turn out to matter: **armature matching**. Ablating armature,
+frictionloss and damping against `unitree_mujoco`'s own `g1_29dof.xml` showed the model *as shipped*
+(uniform `armature=0.01`) performs identically to per-joint values across standing, walking, turning
+and a 500 N perturbation. **No MJCF edits and no mesh vendoring were required.**
+
+### Contract
+
+- **Observation, 99 elements, fed RAW**: `base_lin_vel(3)` + `base_ang_vel(3)` +
+  `projected_gravity(3)` + `joint_pos(29, relative to the default posture)` + `joint_vel(29)` +
+  `last_action(29)` + `command(3)`. The exported graph starts with `Sub(mean)` then `Div(std)`, so
+  normalisation is **already inside the model** -- applying the `obs_mean`/`obs_std` arrays that ship
+  alongside it would apply it twice.
+- **Action**: `target = default_joint_pos + action * action_scales`, per joint.
+- **Joint order**: identical to the Unitree DDS motor order (0-28), so `motor_state[i]` and
+  `motor_cmd[i]` map straight through. Asserted at startup and in `test_walk_policy`, never assumed.
+- **Base linear velocity comes from `/sportmodestate`**, not `/lowstate` (which carries no such
+  field). That is why this policy is **structurally sim-only**: on the real robot that topic is
+  served by the onboard motion service, which is off whenever this stack owns the low-level channel.
+- Inference runs at 50 Hz on its own timer, decimated from the 500 Hz `/lowcmd` publish, ~0.02 ms per
+  call.
+
+### Measured behaviour -- read this before commanding velocities
+
+**There is a hard gait-initiation deadband with no hysteresis.** Below it the robot stands perfectly
+still rather than stepping, and kicking above it then dropping back stops the gait outright:
+
+| axis | no motion at or below | steps from | measured output |
+|---|---|---|---|
+| `vx` | 0.35 m/s | **0.40 m/s** | 0.5 -> 0.35, 0.6 -> 0.47, 1.0 -> 0.93 m/s |
+| `vy` | 0.30 m/s | **0.50 m/s** | 0.5 -> 0.44, 1.0 -> 0.93 m/s |
+| `vyaw` (in place) | 0.60 rad/s | **1.50 rad/s** | 1.0 -> 0.21, 1.5 -> 1.08 rad/s |
+
+Commands below threshold are passed through **unchanged** and logged, never scaled up -- turning a
+small command into a large motion is exactly the habit this stack's control-mode rules exist to
+prevent, and it would be dangerous on hardware.
+
+Also measured, and relevant to any future Nav2 work:
+
+- **~0.22-0.25 m/s uncommanded lateral drift** while walking forward, so straight-line walking curves.
+- **Turning collapses forward speed**: `vx=0.6` with yaw commanded measures ~-0.11 m/s.
+- Balance itself is solid: survives a 500 N / 50 ms lateral impulse standing, ~2.6 deg peak tilt.
+
+Together these make this a **teleop-grade** locomotion source, not a planner-grade one.
+
+### Manual driving with `teleop_twist_keyboard`
+
+Drives the same `~/cmd_vel` seam Nav2 will use, so this exercises the production interface:
+
+```bash
+ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args \
+  -r /cmd_vel:=/g1_loco_bridge/cmd_vel -p speed:=0.6 -p turn:=1.57
+```
+
+**Both overrides are load-bearing.** The package defaults are `speed=0.5` (only just clears the
+0.40 m/s threshold, and measures 0.35 m/s) and `turn=1.0` -- and **1.0 rad/s does not clear the
+1.50 rad/s in-place yaw threshold at all**, measuring 0.21 rad/s, so with the default the robot
+simply will not turn on the spot. `1.57` is the bridge's own `max_velocity` yaw ceiling. Note also
+that `q`/`z` scale both speeds by +/-10 %, so a few `z` presses drop you back under threshold and
+the gait stops.
+
+You must reach `Start` before any of this moves the robot:
+
+```bash
+ros2 action send_goal /g1_loco_bridge/set_mode g1_msgs/action/SetLocoMode "{fsm_id: 4}"
+ros2 action send_goal /g1_loco_bridge/set_mode g1_msgs/action/SetLocoMode "{fsm_id: 500}"
+```
+
+### Authority
+
+No new authority mechanism was built. The Milestone-2 FSM legality table in `loco_fsm.cpp` **is**
+the gate: `SET_VELOCITY` is latched only when `checkVelocityAllowed()` already accepted it, so
+outside `Start` it is rejected with `7301` and nothing reaches the policy. A successful transition
+away from `Start` clears the latch, and the latch carries the request's own `duration` as its
+dead-man, so a silent or dead bridge stops the robot within a second.
+
+The policy itself runs **continuously from startup regardless of FSM state** -- leg authority is
+gated on policy *freshness*, not on the FSM -- so releasing locomotion authority stops the walking
+without dropping the robot. If inference ever goes stale the lower-body target **freezes at the last
+policy output** rather than reverting to the captured spawn pose, which would be a large step away
+from the stance the robot is actually in.
+
+## Pelvis pin -- SIM-ONLY, now a debugging aid only
+
+> **Superseded by the walking policy above.** `pin_pelvis` now defaults **false** and, when set
+> true, also **disables the walking policy** -- the weld and the policy are the two possible owners
+> of the legs and are never both active. Keep it for exercising the arm bridge with nothing else
+> driving the legs. The rest of this section explains why the weld existed and why a stiff-hold
+> could never replace it.
 
 The real G1 stays upright because the **vendor's onboard controller owns balance and
 locomotion** -- this stack only ever commands the arms (weight-blended via `rt/arm_sdk`, through
