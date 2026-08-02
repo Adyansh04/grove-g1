@@ -13,7 +13,7 @@
   (g1_description/urdf/g1_29dof_with_hand_rev_1_0.urdf, joints mid360_joint and
   d435_joint), with torso_link's own offset from pelvis folded in. base_link stands in
   for the pelvis and sits at its 0.793 m spawn height, so the sensors end up at
-  realistic heights. Keep these in sync with config/sensor_mounts.yaml --
+  realistic heights. Keep these in sync with config/sensor_mounts.yaml 
   test_sensor_mount_consistency asserts they match.
 
   Room geometry is deliberate and known: every sensor assertion in the integration tests
@@ -102,7 +102,7 @@
       <!--
         Mid360. rpy roll is exactly pi: the sensor is mounted UPSIDE DOWN on the real G1
         (mid360_joint in the vendored URDF; corroborated by the FAST_LIO humanoid work,
-        which sets roll 180 for the reversed Mid360). Replicating it matters -- miss it
+        which sets roll 180 for the reversed Mid360). Replicating it matters, miss it
         and every point cloud is inverted relative to hardware.
         quat below is rpy (3.14159265, 0.05112069, 0) as w x y z.
       -->

@@ -1,0 +1,44 @@
+# Sensor mount poses for the perception-track body.
+#
+# THESE ARE NOT INVENTED. Every value below is derived from Unitree's own vendored URDF
+# (g1_description/urdf/g1_29dof_with_hand_rev_1_0.urdf), joints `mid360_joint` and
+# `d435_joint`, which are children of `torso_link`. Our `base_link` stands in for
+# `pelvis`, so `torso_link`'s own offset from `pelvis` -- xyz (-0.0039635, 0, 0.044) via
+# the waist chain at zero pose -- is folded into the numbers here.
+#
+# Source values, for anyone re-deriving them:
+#   mid360_joint: xyz "0.0002835 0.00003 0.428434"  rpy "3.141592653589793 0.05112069379091391 0"
+#   d435_joint:   xyz "0.0576235  0.01753 0.42987"  rpy "0 0.8307767239493009 0"
+#
+# HARDWARE RE-VALIDATION: the vendored URDF is a design model. Confirm against the
+# physical robot at bring-up before trusting these for extrinsics.
+#
+# mjcf/g1_perception_base.xml carries the same numbers in MuJoCo's own quaternion form.
+# test_sensor_mount_consistency asserts the two agree, so edit both or neither.
+
+livox_frame:
+  parent: base_link
+  # Roll is exactly pi: the Mid360 is mounted UPSIDE DOWN on the G1. Missing this
+  # inverts every point cloud relative to hardware.
+  xyz: [-0.00368, 0.00003, 0.472434]
+  rpy: [3.141592653589793, 0.05112069379091391, 0.0]
+
+camera_link:
+  parent: base_link
+  # Pitched 0.8308 rad = 47.6 degrees DOWNWARD. A manipulation / near-ground camera,
+  # not a forward-looking navigation one.
+  xyz: [0.05366, 0.01753, 0.473870]
+  rpy: [0.0, 0.8307767239493009, 0.0]
+
+# REP-103/145 optical frames: z forward, x right, y down. Get this wrong and every
+# projected point cloud is rotated 90 degrees.
+camera_color_optical_frame:
+  parent: camera_link
+  xyz: [0.0, 0.0, 0.0]
+  rpy: [-1.5707963267948966, 0.0, -1.5707963267948966]
+
+camera_depth_optical_frame:
+  parent: camera_link
+  # 15 mm baseline offset from the colour frame, matching the D435i's physical layout.
+  xyz: [0.0, 0.015, 0.0]
+  rpy: [-1.5707963267948966, 0.0, -1.5707963267948966]

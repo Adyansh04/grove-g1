@@ -1,0 +1,71 @@
+<?xml version="1.0"?>
+<!--
+  SIM-ONLY perception-track body. See g1_sim/README.md.
+
+  The three planar joints (base_x/base_y/base_yaw) appear ONLY in the <ros2_control>
+  block, never in the kinematic tree. Putting them in the tree would make
+  robot_state_publisher a second writer on the base_link parent edge, competing with the
+  odometry publisher's odom -> base_link transform. One writer per transform, same rule
+  this stack applies to control channels.
+
+  Mount poses come from config/sensor_mounts.yaml, which derives them from Unitree's own
+  vendored URDF. Same xacro.load_yaml pattern g1_description uses for arm_sdk_params.yaml.
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="g1_perception_base">
+
+  <xacro:property name="mounts" value="${xacro.load_yaml('$(find g1_sim)/config/sensor_mounts.yaml')}"/>
+
+  <xacro:macro name="mounted_frame" params="name">
+    <xacro:property name="m" value="${mounts[name]}"/>
+    <link name="${name}"/>
+    <joint name="${name}_joint" type="fixed">
+      <parent link="${m['parent']}"/>
+      <child link="${name}"/>
+      <origin xyz="${m['xyz'][0]} ${m['xyz'][1]} ${m['xyz'][2]}"
+              rpy="${m['rpy'][0]} ${m['rpy'][1]} ${m['rpy'][2]}"/>
+    </joint>
+  </xacro:macro>
+
+  <!-- Root. The odometry publisher owns odom -> base_link; nothing here parents it. -->
+  <link name="base_link">
+    <inertial>
+      <mass value="30.0"/>
+      <origin xyz="0 0 0"/>
+      <inertia ixx="2.0" ixy="0" ixz="0" iyy="2.0" iyz="0" izz="1.0"/>
+    </inertial>
+    <visual>
+      <geometry><cylinder radius="0.15" length="0.70"/></geometry>
+    </visual>
+    <collision>
+      <geometry><cylinder radius="0.15" length="0.70"/></geometry>
+    </collision>
+  </link>
+
+  <!-- Named livox_frame, not lidar_link: livox_ros_driver2's own default frame id, so a
+       hardware swap is a driver launch rather than a remap. -->
+  <xacro:mounted_frame name="livox_frame"/>
+  <xacro:mounted_frame name="camera_link"/>
+  <xacro:mounted_frame name="camera_color_optical_frame"/>
+  <xacro:mounted_frame name="camera_depth_optical_frame"/>
+
+  <ros2_control name="G1PerceptionSim" type="system">
+    <hardware>
+      <plugin>mujoco_ros2_control/MujocoSystem</plugin>
+    </hardware>
+    <joint name="base_x_joint">
+      <command_interface name="velocity"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="base_y_joint">
+      <command_interface name="velocity"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="base_yaw_joint">
+      <command_interface name="velocity"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+  </ros2_control>
+</robot>
