@@ -1,0 +1,20 @@
+# Controllers for the perception-track body. SIM-ONLY.
+controller_manager:
+  ros__parameters:
+    update_rate: 200
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+    # Velocity control of the three planar joints. A stock controller commanded with
+    # Float64MultiArray [vx, vy, wz], so moving the robot in a test is one publish and
+    # needs no code of our own. A Twist adapter belongs with the deferred Nav2 work.
+    base_velocity_controller:
+      type: velocity_controllers/JointGroupVelocityController
+
+base_velocity_controller:
+  ros__parameters:
+    joints:
+      - base_x_joint
+      - base_y_joint
+      - base_yaw_joint

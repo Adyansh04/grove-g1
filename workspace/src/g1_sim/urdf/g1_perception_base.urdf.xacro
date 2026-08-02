@@ -50,7 +50,9 @@
 
   <ros2_control name="G1PerceptionSim" type="system">
     <hardware>
-      <plugin>mujoco_ros2_control/MujocoSystem</plugin>
+      <plugin>mujoco_ros2_control/MujocoSystemInterface</plugin>
+      <!-- The node loads the scene named here; there is no separate launch parameter. -->
+      <param name="mujoco_model">$(find g1_sim)/mjcf/g1_perception_base.xml</param>
     </hardware>
     <joint name="base_x_joint">
       <command_interface name="velocity"/>
