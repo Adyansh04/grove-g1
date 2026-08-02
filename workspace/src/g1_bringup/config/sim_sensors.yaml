@@ -1,10 +1,18 @@
-# Sensor thread inside unitree_mujoco. Read via GROVE_G1_SENSOR_CONFIG; if that variable
-# is unset the patched binary behaves exactly like the stock one, which is why the
+# Sensor sampling inside unitree_mujoco. Read via GROVE_G1_SENSOR_CONFIG; with that
+# variable unset the patched binary behaves exactly like the stock one, which is why the
 # locomotion suites are unaffected until they opt in.
+#
+# The simulator loads no ROS and no DDS: unitree_sdk2 already owns the CycloneDDS domain in
+# that process. Frames go over the socket below to g1_sensor_relay, which publishes them.
 enabled: true
 
-# A full 360x32 sweep costs ~32 ms against the G1 scene (74 geoms, 36 meshes), so this
-# runs on its own thread and the rate is a real budget, not a formality.
+# A full 360x32 sweep costs ~32 ms against the G1 scene (74 geoms, 36 meshes), so this is a
+# real budget. It runs on its own thread and never blocks physics or the 1 kHz control path,
+# but it still costs a core; the timing gate decides what ships.
 rate_hz: 10.0
+azimuth_steps: 360
+elevation_steps: 32
+range_max: 40.0
 
-node_name: "g1_sim_sensors"
+# Also passed to g1_sensor_relay by the launch, so there is one source of truth.
+socket_path: "/tmp/g1_sensors.sock"

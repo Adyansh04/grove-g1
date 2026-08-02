@@ -99,9 +99,8 @@ RUN git init -q /opt/unitree_robotics/unitree_mujoco && \
     rm -rf simulate/mujoco && \
     mv /opt/unitree_robotics/mujoco-${MUJOCO_VERSION} simulate/mujoco && \
     mkdir simulate/build && cd simulate/build && \
-    . /opt/ros/humble/setup.sh && \
     cmake .. -DCMAKE_BUILD_TYPE=Release \
-             -DCMAKE_PREFIX_PATH="/opt/unitree_robotics/lib/cmake;/opt/ros/humble" && \
+             -DCMAKE_PREFIX_PATH=/opt/unitree_robotics/lib/cmake && \
     cmake --build . --target unitree_mujoco --parallel "$(nproc)" && \
     rm -rf CMakeFiles && \
     rm -rf ../mujoco/sample ../mujoco/bin ../mujoco/doc ../mujoco/model

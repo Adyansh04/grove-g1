@@ -7,6 +7,7 @@ the domain/DDS story, and the sim-bridge safety banner.
 
 import os
 import shutil
+import yaml
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
@@ -126,9 +127,27 @@ def _launch_setup(context, *args, **kwargs):
 
     # The patched unitree_mujoco starts its sensor thread only when this names a config,
     # so the stock code path is what runs unless sensors are asked for explicitly.
+    sensor_config = os.path.join(
+        get_package_share_directory("g1_bringup"), "config", "sim_sensors.yaml"
+    )
     if sensors:
-        sim_env["GROVE_G1_SENSOR_CONFIG"] = os.path.join(
-            get_package_share_directory("g1_bringup"), "config", "sim_sensors.yaml"
+        # The patched binary starts its sensor thread only when this names a config, so the
+        # stock code path is what runs unless sensors are asked for explicitly.
+        sim_env["GROVE_G1_SENSOR_CONFIG"] = sensor_config
+
+        # The relay owns the ROS side. Start order does not matter: it listens whenever it
+        # comes up and the simulator retries connecting every cycle, so either process can
+        # start, die or restart independently.
+        with open(sensor_config) as sensor_file:
+            socket_path = yaml.safe_load(sensor_file)["socket_path"]
+        actions.append(
+            Node(
+                package="g1_sensor_relay",
+                executable="g1_sensor_relay",
+                name="g1_sensor_relay",
+                output="both",
+                parameters=[{"socket_path": socket_path, "frame_id": "mid360_link"}],
+            )
         )
 
     def _remove_staged_scene(context, *a, **k):
