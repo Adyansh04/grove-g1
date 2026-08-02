@@ -1,0 +1,36 @@
+# odom -> base_link publisher. See g1_state_estimation/README.md.
+#
+# odometry_source is the one that matters. It defaults to `hardware`, which REFUSES to
+# configure, because the real G1 publishes no odometry at all. Simulation opts in to
+# ground truth explicitly rather than inheriting it by accident.
+g1_odometry_publisher:
+  ros__parameters:
+    odometry_source: "sim_ground_truth"
+
+    odom_frame_id: "odom"
+    base_frame_id: "base_link"
+
+    # The perception track's planar joints, carrying MuJoCo's generalized coordinates.
+    # Looked up by name, so this order is documentation rather than an index.
+    base_joint_names: ["base_x_joint", "base_y_joint", "base_yaw_joint"]
+
+    # base_height_m is deliberately NOT here. It is a property of the body being
+    # simulated, so it comes from g1_sim/config/sensor_mounts.yaml via the launch;
+    # a copy in this file is the two-sources-of-truth bug it was added to fix.
+
+    publish_rate_hz: 50.0
+    publish_odom_msg: true
+
+    # Past this, stop publishing rather than re-stamp a stale pose: a frozen transform with
+    # a fresh timestamp looks exactly like a stationary robot.
+    source_timeout_ms: 200.0
+
+    # How long the simulator may stall in WALL time before its data counts as dead.
+    # Separate from source_timeout_ms: a headless render hitch is routine and must
+    # not drop the transform, while a wedged sim must not go unnoticed.
+    wall_timeout_ms: 2000.0
+
+    # Ground truth has no meaningful uncertainty, but an all-zero covariance is a known
+    # Nav2 footgun, so a small non-zero diagonal goes out instead.
+    pose_covariance: 1.0e-6
+    twist_covariance: 1.0e-6

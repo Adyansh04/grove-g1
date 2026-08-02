@@ -178,8 +178,14 @@ vendored and are not needed.
 - **Joint order:** identical to the Unitree DDS motor order (0-28), so `motor_state[i]` and
   `motor_cmd[i]` map straight through. Asserted at startup and in `test_walk_policy`.
 - **Base linear velocity comes from `/sportmodestate`,** not `/lowstate`, which carries no such
-  field. This is why the policy is structurally sim-only: on the real robot that topic is served by
-  the onboard motion service, which is off whenever this stack owns the low-level channel.
+  field. This is why the policy is structurally sim-only, and the reason is stronger than "that
+  service is switched off": **the field does not exist on hardware at all.** `unitree_mujoco`
+  publishes the **go2** `SportModeState` (16 fields, with `position` and `velocity` filled from
+  MuJoCo `framepos`/`framelinvel` on the pelvis `imu` site) regardless of which robot is simulated.
+  The real G1 publishes `unitree_hg::SportModeState_` on the same topic name, and that type carries
+  only `fsm_id`, `fsm_mode`, `task_id` and `task_time`. No pose, no velocity. `rt/odommodestate` does
+  not exist anywhere in Unitree's code. Supplying this observation on hardware needs real state
+  estimation, which is a future milestone (see `g1_state_estimation`).
 - Inference runs at 50 Hz on its own timer, about 0.02 ms per call.
 
 Armature matching turned out not to matter. Ablating armature, frictionloss and damping against
