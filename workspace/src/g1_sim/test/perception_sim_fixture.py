@@ -10,6 +10,7 @@ import os
 import time
 
 import launch_testing
+import numpy as np
 import rclpy
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
@@ -19,6 +20,7 @@ from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Float64MultiArray
+from tf2_ros import Buffer, TransformListener
 
 # Loading MuJoCo, registering the engine plugin, spawning controllers and starting the
 # render loop. Generous so a loaded machine cannot flake it.
@@ -29,13 +31,13 @@ BRINGUP_TIMEOUT_S = 45.0
 # is checking passes no matter what the value becomes. test_perception_sim_bringup is what
 # proves TF actually carries these.
 LIVOX_XYZ = (-0.00368, 0.00003, 0.472434)
-LIVOX_RPY = (math.pi, 0.05112069, 0.0)
 CAMERA_XYZ = (0.05366, 0.01753, 0.473870)
 CAMERA_PITCH = 0.83077672
 
-# base_link spawn height in the MJCF. Turns base_link coordinates into world ones, which
-# is where the scene geometry (floor at 0, walls at +/-4) is stated.
-BASE_SPAWN_Z = 0.793
+# There is deliberately no base-height constant here. `odom` is the ground plane (the
+# odometry publisher puts base_link's height into odom -> base_link, from the canonical
+# spawn_z in config/sensor_mounts.yaml), so world coordinates come from a TF lookup
+# against odom. Carrying the height in test code is what let it drift in the first place.
 
 # Sensor streams are best-effort: matching the publisher matters more than it looks, a
 # reliable subscriber simply receives nothing here.
@@ -61,17 +63,14 @@ def perception_sim_description():
     )
 
 
-def rpy_to_matrix(rpy):
-    """Extrinsic XYZ (URDF rpy) to a rotation matrix."""
-    r, p, y = rpy
-    cr, sr = math.cos(r), math.sin(r)
-    cp, sp = math.cos(p), math.sin(p)
-    cy, sy = math.cos(y), math.sin(y)
-    return (
-        (cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr),
-        (sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr),
-        (-sp, cp * sr, cp * cr),
-    )
+def quaternion_to_matrix(q):
+    """geometry_msgs Quaternion to a 3x3 rotation matrix."""
+    x, y, z, w = q.x, q.y, q.z, q.w
+    return np.array([
+        [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+        [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+        [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+    ])
 
 
 class PerceptionSimTestNode(Node):
@@ -84,6 +83,8 @@ class PerceptionSimTestNode(Node):
             [rclpy.parameter.Parameter("use_sim_time", rclpy.Parameter.Type.BOOL, True)]
         )
         self._joint_state = None
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
         self.create_subscription(JointState, "/base_joint_states", self._on_joints, 10)
         self._cmd = self.create_publisher(
             Float64MultiArray, "/base_velocity_controller/commands", 10
@@ -104,6 +105,29 @@ class PerceptionSimTestNode(Node):
             if predicate():
                 return True
         return False
+
+    def odom_from(self, frame):
+        """(R, t) taking a point in `frame` to odom, which is the ground plane.
+
+        Goes through the live TF chain rather than reconstructing it from constants, so
+        the scene geometry the stream tests assert against (floor at z=0, walls at +/-4)
+        is measured the way a real consumer would measure it.
+        """
+        if not self.wait_until(
+            lambda: self.tf_buffer.can_transform("odom", frame, rclpy.time.Time())
+        ):
+            raise AssertionError(
+                f"odom -> {frame} never appeared. The odometry publisher defaults to "
+                "odometry_source='hardware', which refuses to configure by design; the "
+                "launch has to set sim_ground_truth."
+            )
+        tf = self.tf_buffer.lookup_transform("odom", frame, rclpy.time.Time())
+        translation = np.array([
+            tf.transform.translation.x,
+            tf.transform.translation.y,
+            tf.transform.translation.z,
+        ])
+        return quaternion_to_matrix(tf.transform.rotation), translation
 
     def joint(self, name):
         js = self._joint_state

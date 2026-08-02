@@ -24,6 +24,7 @@
   <exec_depend>xacro</exec_depend>
   <exec_depend>g1_state_estimation</exec_depend>
   <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>rclpy</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>xvfb</exec_depend>

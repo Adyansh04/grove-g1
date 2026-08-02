@@ -17,6 +17,7 @@
 #include "lifecycle_msgs/msg/state.hpp"
 #include "nav_msgs/msg/odometry.hpp"
 #include "rclcpp/rclcpp.hpp"
+#include "rosgraph_msgs/msg/clock.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
 #include "tf2_msgs/msg/tf_message.hpp"
 
@@ -26,13 +27,15 @@ using namespace std::chrono_literals;
 namespace
 {
 
-rclcpp::NodeOptions optionsWithSource(const std::string& source)
+rclcpp::NodeOptions optionsWithSource(const std::string& source, bool use_sim_time = false)
 {
     rclcpp::NodeOptions options;
     options.parameter_overrides({
         rclcpp::Parameter("odometry_source", source),
         rclcpp::Parameter("publish_rate_hz", 100.0),
         rclcpp::Parameter("source_timeout_ms", 200.0),
+        rclcpp::Parameter("base_height_m", 0.793),
+        rclcpp::Parameter("use_sim_time", use_sim_time),
     });
     return options;
 }
@@ -222,6 +225,110 @@ TEST_F(OdometryPublisherTest, StopsPublishingWhenTheSourceGoesSilent)
     EXPECT_EQ(transform_count, after_timeout)
         << "kept publishing " << (transform_count - after_timeout)
         << " transforms from a source that had gone silent";
+}
+
+TEST(OdometryPublisherSimTime, StopsPublishingWhenSimTimeItselfFreezes)
+{
+    // The failure the wall-clock test cannot see. /clock is published by the SAME process
+    // as the base state on this track, so when that process wedges, sim time stops with
+    // it: `now() - last_sample_stamp_` stays pinned near zero and a sim-time-only
+    // staleness check never fires, leaving a frozen pose broadcast as if it were live.
+    auto node = std::make_shared<G1OdometryPublisher>(optionsWithSource("sim_ground_truth", true));
+    ASSERT_EQ(node->configure().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
+    ASSERT_EQ(node->activate().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE);
+
+    auto helper = std::make_shared<rclcpp::Node>("odom_test_helper_simtime");
+    auto clock_pub =
+        helper->create_publisher<rosgraph_msgs::msg::Clock>("/clock", rclcpp::ClockQoS());
+    auto state_pub = helper->create_publisher<sensor_msgs::msg::JointState>(
+        "/g1_odometry_publisher/base_state",
+        rclcpp::QoS(rclcpp::KeepLast(1)).best_effort().durability_volatile());
+
+    std::size_t transform_count = 0;
+    auto        tf_sub          = helper->create_subscription<tf2_msgs::msg::TFMessage>(
+        "/tf",
+        rclcpp::QoS(100),
+        [&transform_count](tf2_msgs::msg::TFMessage::SharedPtr msg) {
+            transform_count += msg->transforms.size();
+        });
+
+    const std::vector<rclcpp::node_interfaces::NodeBaseInterface::SharedPtr> nodes = {
+        node->get_node_base_interface(),
+        helper->get_node_base_interface()
+    };
+
+    // Drive sim time forward by hand and feed samples stamped with it.
+    rclcpp::Time sim_now(0, 0, RCL_ROS_TIME);
+    const auto   tick = rclcpp::Duration::from_seconds(0.02);
+    for (int i = 0; i < 25; ++i)
+    {
+        sim_now = sim_now + tick;
+        rosgraph_msgs::msg::Clock clock_msg;
+        clock_msg.clock = sim_now;
+        clock_pub->publish(clock_msg);
+        state_pub->publish(makeBaseState(sim_now, 1.0, 2.0, 0.0));
+        spinFor(nodes, 20ms);
+    }
+    ASSERT_GT(transform_count, 0u) << "never published while sim time was advancing";
+
+    // Now the simulator wedges: /clock stops AND the stamp stops advancing, but samples
+    // keep arriving, so the node still has fresh-looking data on a frozen clock. Wall time
+    // is the only thing left that can notice.
+    const std::size_t before_freeze = transform_count;
+    for (int i = 0; i < 15; ++i)
+    {
+        state_pub->publish(makeBaseState(sim_now, 1.0, 2.0, 0.0));
+        spinFor(nodes, 40ms);
+    }
+    const std::size_t after_timeout = transform_count;
+    for (int i = 0; i < 10; ++i)
+    {
+        state_pub->publish(makeBaseState(sim_now, 1.0, 2.0, 0.0));
+        spinFor(nodes, 40ms);
+    }
+
+    EXPECT_GT(after_timeout, before_freeze)
+        << "sanity: the node should keep publishing for at least the timeout after the freeze";
+    EXPECT_EQ(transform_count, after_timeout)
+        << "published " << (transform_count - after_timeout)
+        << " more transforms after sim time froze. With /clock stopped, elapsed sim time "
+           "stays at zero forever, so only a wall-clock budget can catch this.";
+}
+
+TEST(OdometryPublisherGroundPlane, PublishesTheBaseHeightSoOdomIsTheGroundPlane)
+{
+    auto node = std::make_shared<G1OdometryPublisher>(optionsWithSource("sim_ground_truth"));
+    ASSERT_EQ(node->configure().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
+    ASSERT_EQ(node->activate().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE);
+
+    auto helper    = std::make_shared<rclcpp::Node>("odom_test_helper_height");
+    auto state_pub = helper->create_publisher<sensor_msgs::msg::JointState>(
+        "/g1_odometry_publisher/base_state",
+        rclcpp::QoS(rclcpp::KeepLast(1)).best_effort().durability_volatile());
+
+    std::vector<geometry_msgs::msg::TransformStamped> transforms;
+    auto tf_sub = helper->create_subscription<tf2_msgs::msg::TFMessage>(
+        "/tf",
+        rclcpp::QoS(100),
+        [&transforms](tf2_msgs::msg::TFMessage::SharedPtr msg) {
+            transforms.insert(transforms.end(), msg->transforms.begin(), msg->transforms.end());
+        });
+
+    const std::vector<rclcpp::node_interfaces::NodeBaseInterface::SharedPtr> nodes = {
+        node->get_node_base_interface(),
+        helper->get_node_base_interface()
+    };
+    spinFor(nodes, 300ms);
+    for (int i = 0; i < 20; ++i)
+    {
+        state_pub->publish(makeBaseState(helper->now(), 0.0, 0.0, 0.0));
+        spinFor(nodes, 20ms);
+    }
+
+    ASSERT_FALSE(transforms.empty());
+    // Without this, a floor return transformed into odom lands at -0.793 and every Nav2
+    // obstacle height band is off by the spawn height.
+    EXPECT_NEAR(transforms.back().transform.translation.z, 0.793, 1e-9);
 }
 
 int main(int argc, char** argv)

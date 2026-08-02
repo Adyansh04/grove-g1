@@ -10,6 +10,22 @@ if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
   ament_lint_auto_find_test_dependencies()
 
+  # Lint checks use workspace-root configs (see g1_description/CMakeLists.txt). This
+  # package is the most Python-heavy in the repo, so its absence here was hiding real
+  # errors behind a green suite.
+  find_program(RUFF_EXECUTABLE ruff)
+  set(_ruff_config "${CMAKE_CURRENT_SOURCE_DIR}/../../ruff.toml")
+  if(RUFF_EXECUTABLE AND EXISTS "${_ruff_config}")
+    add_test(
+      NAME ruff_check_g1_sim
+      COMMAND ${RUFF_EXECUTABLE} check --config ${_ruff_config}
+        ${CMAKE_CURRENT_SOURCE_DIR}/launch
+        ${CMAKE_CURRENT_SOURCE_DIR}/test
+    )
+  else()
+    message(WARNING "ruff and/or workspace ruff.toml not found; skipping ruff_check_g1_sim test")
+  endif()
+
   find_package(ament_cmake_pytest REQUIRED)
 
   # The MJCF and URDF necessarily carry the same mount numbers; this guards the drift.

@@ -139,7 +139,7 @@ class PerceptionSimBringupTest(unittest.TestCase):
                 tf.transform.translation.y,
                 tf.transform.translation.z,
             )
-            for g, w, axis in zip(got, want, "xyz"):
+            for g, w, axis in zip(got, want, "xyz", strict=True):
                 self.assertAlmostEqual(
                     g, w, delta=MOUNT_TOL, msg=f"{child} {axis}: TF {g} != mount config {w}"
                 )

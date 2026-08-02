@@ -11,6 +11,7 @@ See g1_sim/README.md for what this body is and is not.
 import os
 import time
 
+import yaml
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (
@@ -209,13 +210,18 @@ def _launch_setup(context, *args, **kwargs):
     odometry_params = os.path.join(
         get_package_share_directory("g1_state_estimation"), "config", "g1_odometry_publisher.yaml"
     )
+    # base_height_m comes from the same file the MJCF spawn height is checked against, so
+    # `odom` is the ground plane and nothing downstream has to subtract a magic number.
+    with open(os.path.join(pkg_share, "config", "sensor_mounts.yaml")) as mounts_file:
+        base_height = yaml.safe_load(mounts_file)["base_link"]["spawn_z"]
+
     odometry_node = LifecycleNode(
         package="g1_state_estimation",
         executable="g1_odometry_publisher",
         name="g1_odometry_publisher",
         namespace="",
         output="both",
-        parameters=[odometry_params, use_sim_time],
+        parameters=[odometry_params, use_sim_time, {"base_height_m": base_height}],
         remappings=[("~/base_state", "/base_joint_states")],
     )
     actions.append(odometry_node)

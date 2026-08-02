@@ -11,6 +11,7 @@ import os
 import sys
 import time
 import unittest
+from collections import deque
 
 import numpy as np
 import pytest
@@ -19,7 +20,6 @@ from sensor_msgs.msg import CameraInfo, Image
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from perception_sim_fixture import (  # noqa: E402
-    BASE_SPAWN_Z,
     CAMERA_PITCH,
     CAMERA_XYZ,
     SENSOR_QOS,
@@ -36,18 +36,23 @@ EXPECTED_WIDTH = 848
 EXPECTED_HEIGHT = 480
 FOVY_RAD = math.radians(58.0)
 
-CAMERA_WORLD_Z = BASE_SPAWN_Z + CAMERA_XYZ[2]
 WALL_PX_X = 4.0
 PATCH_HALF = 16
 
+# Only the newest frame is read; the rest serve the rate check. Bounded because these are
+# 1.2 MB colour and 1.6 MB depth frames at 15 Hz, and unbounded buffers starved the sim in
+# milestone 3.
+FRAME_HISTORY = 8
 
-def expected_axis_range(base_x):
+
+def expected_axis_range(base_x, camera_world_z):
     """Range along the optical axis: the floor while far from the wall, the wall once near.
 
     Both are exact for the centre pixel, where the optical-frame z the depth image stores
-    and the euclidean range are the same number.
+    and the euclidean range are the same number. camera_world_z comes from TF rather than
+    a constant, so a wrong odom height fails here instead of cancelling out.
     """
-    to_floor = CAMERA_WORLD_Z / math.sin(CAMERA_PITCH)
+    to_floor = camera_world_z / math.sin(CAMERA_PITCH)
     to_wall = (WALL_PX_X - (base_x + CAMERA_XYZ[0])) / math.cos(CAMERA_PITCH)
     return min(to_floor, to_wall)
 
@@ -77,10 +82,10 @@ class CameraStreamTest(unittest.TestCase):
     def setUpClass(cls):
         rclpy.init()
         cls.node = PerceptionSimTestNode("test_camera_stream")
-        cls.color = []
-        cls.depth = []
-        cls.info = []
-        cls.color_stamps = []
+        cls.color = deque(maxlen=FRAME_HISTORY)
+        cls.depth = deque(maxlen=FRAME_HISTORY)
+        cls.info = deque(maxlen=FRAME_HISTORY)
+        cls.color_stamps = deque(maxlen=512)
         cls.node.create_subscription(Image, COLOR_TOPIC, cls._on_color, SENSOR_QOS)
         cls.node.create_subscription(Image, DEPTH_TOPIC, cls.depth.append, SENSOR_QOS)
         cls.node.create_subscription(CameraInfo, INFO_TOPIC, cls.info.append, SENSOR_QOS)
@@ -96,6 +101,10 @@ class CameraStreamTest(unittest.TestCase):
         cls.node.destroy_node()
         rclpy.shutdown()
 
+    def camera_world_z(self):
+        """Camera height above the floor, straight off TF."""
+        return float(self.node.odom_from("camera_link")[1][2])
+
     def centre_median(self):
         """Median of the central patch, in metres. Median so a stray pixel cannot move it."""
         self.assertTrue(self.depth, f"nothing published on {DEPTH_TOPIC}")
@@ -107,6 +116,8 @@ class CameraStreamTest(unittest.TestCase):
         return float(np.median(finite))
 
     def test_01_all_three_streams_publish(self):
+        # Drop the discovery backlog; it drains as a burst and inflates the rate.
+        self.color_stamps.clear()
         self.node.spin(3.0)
         for name, buf in (("colour", self.color), ("depth", self.depth), ("info", self.info)):
             self.assertGreaterEqual(len(buf), 5, f"only {len(buf)} {name} messages in 3 s")
@@ -157,28 +168,30 @@ class CameraStreamTest(unittest.TestCase):
 
     def test_05_depth_reads_the_floor_where_the_mount_geometry_says(self):
         """Height and pitch together: get either wrong and this number moves."""
-        expected = expected_axis_range(0.0)
+        camera_z = self.camera_world_z()
+        expected = expected_axis_range(0.0, camera_z)
         measured = self.centre_median()
         self.assertAlmostEqual(
             measured,
             expected,
             delta=0.05,
-            msg=f"central depth {measured:.4f} m, but a camera {CAMERA_WORLD_Z:.4f} m up "
+            msg=f"central depth {measured:.4f} m, but a camera {camera_z:.4f} m up "
             f"pitched {math.degrees(CAMERA_PITCH):.1f} deg down meets the floor at "
             f"{expected:.4f} m",
         )
 
     def test_06_depth_tracks_the_wall_as_the_base_approaches(self):
         """At x=3.0 the optical axis clears the floor and lands on the +x wall."""
+        camera_z = self.camera_world_z()
         far = self.centre_median()
         stopped_at = self.node.drive_to_x(3.0)
         self.node.spin(0.5)
         near = self.centre_median()
 
-        expected = expected_axis_range(stopped_at)
+        expected = expected_axis_range(stopped_at, camera_z)
         self.assertLess(
             expected,
-            CAMERA_WORLD_Z / math.sin(CAMERA_PITCH) - 0.1,
+            camera_z / math.sin(CAMERA_PITCH) - 0.1,
             f"base stopped at x={stopped_at:.3f}, not close enough for the axis to leave "
             "the floor; this test would not be measuring the wall",
         )

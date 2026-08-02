@@ -6,6 +6,7 @@
  * @brief LifecycleNode publishing odom -> base_link, from a source it names explicitly.
  */
 
+#include <chrono>
 #include <memory>
 #include <string>
 #include <vector>
@@ -58,6 +59,7 @@ private:
     std::string              odom_frame_id_;
     std::string              base_frame_id_;
     std::vector<std::string> base_joint_names_;
+    double                   base_height_m_    = 0.0;
     double                   publish_rate_hz_  = 50.0;
     bool                     publish_odom_msg_ = true;
     double                   source_timeout_s_ = 0.2;
@@ -68,6 +70,9 @@ private:
     PlanarTwist  world_twist_;
     bool         have_sample_ = false;
     rclcpp::Time last_sample_stamp_;
+    /// Wall time at which the sample stamp last changed. See onTimer for why sim time
+    /// alone cannot detect a stalled source on this track.
+    std::chrono::steady_clock::time_point last_advance_wall_{};
 };
 
 }  // namespace g1_state_estimation

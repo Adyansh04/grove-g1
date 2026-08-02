@@ -11,19 +11,19 @@ import unittest
 
 import pytest
 import rclpy
+import yaml
+from ament_index_python.packages import get_package_share_directory
 from geometry_msgs.msg import PointStamped
 from nav_msgs.msg import Odometry
 from tf2_ros import Buffer, TransformListener
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import tf2_geometry_msgs  # noqa: E402,F401  registers the PointStamped transform
 from perception_sim_fixture import (  # noqa: E402
-    BASE_SPAWN_Z,
     LIVOX_XYZ,
     PerceptionSimTestNode,
     perception_sim_description,
 )
-
-import tf2_geometry_msgs  # noqa: E402,F401  registers the PointStamped transform
 
 
 @pytest.mark.launch_test
@@ -49,6 +49,19 @@ class OdomGroundTruthTest(unittest.TestCase):
         cls.node.destroy_node()
         rclpy.shutdown()
 
+    def base_height(self):
+        """The canonical base height, from the file the MJCF is checked against.
+
+        Reading it here rather than hardcoding is deliberate: test_sensor_mount_consistency
+        pins this value to the MJCF spawn height, so there is exactly one number and one
+        place that asserts it.
+        """
+        mounts_path = os.path.join(
+            get_package_share_directory("g1_sim"), "config", "sensor_mounts.yaml"
+        )
+        with open(mounts_path) as f:
+            return float(yaml.safe_load(f)["base_link"]["spawn_z"])
+
     def base_in_odom(self):
         self.assertTrue(
             self.tf_buffer.can_transform("odom", "base_link", rclpy.time.Time()),
@@ -56,12 +69,29 @@ class OdomGroundTruthTest(unittest.TestCase):
             "'hardware', which refuses to configure; the launch must set sim_ground_truth.",
         )
         tf = self.tf_buffer.lookup_transform("odom", "base_link", rclpy.time.Time())
-        return tf.transform.translation.x, tf.transform.translation.y
+        return (
+            tf.transform.translation.x,
+            tf.transform.translation.y,
+            tf.transform.translation.z,
+        )
 
-    def test_01_odom_to_base_link_is_published(self):
-        x, y = self.base_in_odom()
+    def test_01_odom_is_the_ground_plane(self):
+        """odom sits on the floor, not at the base's spawn height.
+
+        The z is the whole point: it is what lets a consumer transform a point cloud into
+        odom and have the floor come out at 0, which is what Nav2's obstacle height bands
+        assume. Publishing 0 here would put every floor return at minus the spawn height.
+        """
+        x, y, z = self.base_in_odom()
         self.assertLess(abs(x), 0.05, f"base starts at the origin, transform says x={x:.4f}")
         self.assertLess(abs(y), 0.05, f"base starts at the origin, transform says y={y:.4f}")
+        self.assertAlmostEqual(
+            z,
+            self.base_height(),
+            delta=1e-6,
+            msg=f"odom -> base_link z is {z:.6f}, expected the canonical spawn height "
+            f"{self.base_height():.6f} from g1_sim/config/sensor_mounts.yaml",
+        )
 
     def test_02_odometry_message_agrees_with_the_transform(self):
         """Nav2 reads velocity from Odometry, not from TF, so both have to be right."""
@@ -70,41 +100,46 @@ class OdomGroundTruthTest(unittest.TestCase):
         odom = self.odoms[-1]
         self.assertEqual(odom.header.frame_id, "odom")
         self.assertEqual(odom.child_frame_id, "base_link")
-        x, y = self.base_in_odom()
+        x, y, z = self.base_in_odom()
         self.assertAlmostEqual(odom.pose.pose.position.x, x, delta=0.02)
         self.assertAlmostEqual(odom.pose.pose.position.y, y, delta=0.02)
+        self.assertAlmostEqual(odom.pose.pose.position.z, z, delta=1e-6)
         self.assertGreater(
             odom.pose.covariance[0], 0.0, "all-zero covariance is a known Nav2 footgun"
         )
 
-    def test_03_a_lidar_point_transforms_into_odom(self):
+    def test_03_a_lidar_point_lands_at_its_real_height_above_the_floor(self):
         """The whole chain in one assertion: odom -> base_link -> livox_frame.
 
-        A point at the sensor origin must land at the sensor's known height above the
-        floor. This is what every downstream consumer, costmap or SLAM, actually does.
+        `odom` is the ground plane, so a point at the sensor origin must come out at the
+        sensor's physical height above the floor: the base spawn height plus the mount.
+        Drop the odom z and this reads 0.472 instead of 1.265, which is exactly the bug
+        that made every other test subtract the spawn height by hand.
         """
+        base_z = self.base_height()
+        expected = base_z + LIVOX_XYZ[2]
+
         point = PointStamped()
         point.header.frame_id = "livox_frame"
         point.header.stamp = rclpy.time.Time().to_msg()
-
-        transformed = self.tf_buffer.transform(point, "odom", timeout=rclpy.duration.Duration(seconds=5.0))
+        transformed = self.tf_buffer.transform(
+            point, "odom", timeout=rclpy.duration.Duration(seconds=5.0)
+        )
         self.assertAlmostEqual(
             transformed.point.z,
-            LIVOX_XYZ[2],
+            expected,
             delta=0.01,
-            msg=f"livox origin lands at z={transformed.point.z:.4f} in odom, expected "
-            f"{LIVOX_XYZ[2]:.4f} above base_link",
-        )
-        # odom is at the base's spawn pose, so this is height above base_link, not the floor.
-        self.assertLess(
-            transformed.point.z + BASE_SPAWN_Z, 2.0, "sensor height is implausible in odom"
+            msg=f"livox origin lands at z={transformed.point.z:.4f} in odom; the sensor "
+            f"sits {LIVOX_XYZ[2]:.4f} above a base_link that is {base_z:.4f} above the "
+            f"floor, so it should be {expected:.4f}. If this reads {LIVOX_XYZ[2]:.4f}, "
+            "odom -> base_link is missing its z and odom is not the ground plane.",
         )
 
     def test_04_the_transform_tracks_commanded_motion_exactly(self):
-        start_x, _ = self.base_in_odom()
+        start_x, _, _ = self.base_in_odom()
         travelled = self.node.drive_to_x(1.0)
         self.node.spin(0.5)
-        end_x, end_y = self.base_in_odom()
+        end_x, end_y, _ = self.base_in_odom()
 
         self.assertAlmostEqual(
             end_x - start_x,

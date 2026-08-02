@@ -37,8 +37,8 @@ def rpy_to_quat(roll, pitch, yaw):
 
 def quats_equal(a, b, tol=TOL):
     """q and -q are the same rotation, so compare both signs."""
-    same = all(abs(x - y) < tol for x, y in zip(a, b))
-    flipped = all(abs(x + y) < tol for x, y in zip(a, b))
+    same = all(abs(x - y) < tol for x, y in zip(a, b, strict=True))
+    flipped = all(abs(x + y) < tol for x, y in zip(a, b, strict=True))
     return same or flipped
 
 
@@ -60,12 +60,27 @@ def _find(root, tag, name):
     raise AssertionError(f"<{tag} name='{name}'> not found in {MJCF}")
 
 
+def test_base_spawn_height_matches_mount_config(mounts, mjcf):
+    """The one place base_link's height above the floor is written.
+
+    g1_odometry_publisher publishes this as the z of odom -> base_link, which is what puts
+    `odom` on the ground plane. If the MJCF spawn height and the yaml drift apart, every
+    point transformed into odom is silently offset and Nav2's height bands stop meaning
+    what they say.
+    """
+    body = _find(mjcf, "body", "base_link")
+    spawn_z = float(body.get("pos").split()[2])
+    assert abs(spawn_z - mounts["base_link"]["spawn_z"]) < TOL, (
+        f"base_link spawn height: MJCF {spawn_z} != yaml {mounts['base_link']['spawn_z']}"
+    )
+
+
 def test_livox_site_matches_mount_config(mounts, mjcf):
     site = _find(mjcf, "site", "livox_frame")
     cfg = mounts["livox_frame"]
 
     pos = [float(v) for v in site.get("pos").split()]
-    for got, want, axis in zip(pos, cfg["xyz"], "xyz"):
+    for got, want, axis in zip(pos, cfg["xyz"], "xyz", strict=True):
         assert abs(got - want) < TOL, f"livox_frame {axis}: MJCF {got} != yaml {want}"
 
     quat = [float(v) for v in site.get("quat").split()]
@@ -82,7 +97,7 @@ def test_camera_body_matches_mount_config(mounts, mjcf):
     cfg = mounts["camera_link"]
 
     pos = [float(v) for v in body.get("pos").split()]
-    for got, want, axis in zip(pos, cfg["xyz"], "xyz"):
+    for got, want, axis in zip(pos, cfg["xyz"], "xyz", strict=True):
         assert abs(got - want) < TOL, f"camera_link {axis}: MJCF {got} != yaml {want}"
 
     quat = [float(v) for v in body.get("quat").split()]
@@ -121,12 +136,12 @@ def test_mount_poses_match_the_vendored_g1_urdf(mounts):
         xyz, rpy = joint_origin(joint_name)
         want_xyz = [xyz[i] + torso_xyz[i] for i in range(3)]
         cfg = mounts[mount_name]
-        for got, want, axis in zip(cfg["xyz"], want_xyz, "xyz"):
+        for got, want, axis in zip(cfg["xyz"], want_xyz, "xyz", strict=True):
             assert abs(got - want) < 1e-5, (
                 f"{mount_name} {axis}: yaml {got} != vendored URDF {joint_name} "
                 f"+ torso offset = {want}"
             )
-        for got, want, axis in zip(cfg["rpy"], rpy, ("roll", "pitch", "yaw")):
+        for got, want, axis in zip(cfg["rpy"], rpy, ("roll", "pitch", "yaw"), strict=True):
             assert abs(got - want) < 1e-9, (
                 f"{mount_name} {axis}: yaml {got} != vendored URDF {joint_name} {want}"
             )

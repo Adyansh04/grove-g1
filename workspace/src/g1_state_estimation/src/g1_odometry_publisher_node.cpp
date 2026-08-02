@@ -28,6 +28,11 @@ G1OdometryPublisher::G1OdometryPublisher(const rclcpp::NodeOptions& options)
     declare_parameter<std::vector<std::string>>(
         "base_joint_names",
         { "base_x_joint", "base_y_joint", "base_yaw_joint" });
+    // Height of base_link above the floor, making odom the ground plane. Defaults to 0,
+    // which is correct for a real floating-base estimator (it measures z itself). The
+    // perception sim's base is a planar body with no z DoF, so its launch supplies the
+    // spawn height from g1_sim's sensor_mounts.yaml.
+    declare_parameter<double>("base_height_m", 0.0);
     declare_parameter<double>("publish_rate_hz", 50.0);
     declare_parameter<bool>("publish_odom_msg", true);
     declare_parameter<double>("source_timeout_ms", 200.0);
@@ -63,6 +68,7 @@ bool G1OdometryPublisher::readParameters()
         return false;
     }
 
+    base_height_m_    = get_parameter("base_height_m").as_double();
     odom_frame_id_    = get_parameter("odom_frame_id").as_string();
     base_frame_id_    = get_parameter("base_frame_id").as_string();
     base_joint_names_ = get_parameter("base_joint_names").as_string_array();
@@ -189,12 +195,23 @@ void G1OdometryPublisher::onBaseState(const sensor_msgs::msg::JointState::Shared
     pose_.y      = values[1];
     pose_.yaw    = values[2];
     world_twist_ = PlanarTwist{ velocities[0], velocities[1], velocities[2] };
-    have_sample_ = true;
+
     // The broadcaster stamps from this, so take the source's own time rather than now():
     // on simulated time the two can differ by more than the whole TF cache.
-    const bool unstamped = msg->header.stamp.sec == 0 && msg->header.stamp.nanosec == 0;
-    last_sample_stamp_ =
+    const bool         unstamped = msg->header.stamp.sec == 0 && msg->header.stamp.nanosec == 0;
+    const rclcpp::Time stamp =
         unstamped ? now() : rclcpp::Time(msg->header.stamp, get_clock()->get_clock_type());
+
+    // Wall time of the last stamp CHANGE, not of the last message. A simulator whose
+    // physics thread has wedged can keep republishing the same sample at the same stamp
+    // forever; that is not fresh data, and treating message arrival as freshness would
+    // hold the staleness guard open for exactly that failure.
+    if (!have_sample_ || stamp != last_sample_stamp_)
+    {
+        last_advance_wall_ = std::chrono::steady_clock::now();
+    }
+    last_sample_stamp_ = stamp;
+    have_sample_       = true;
 }
 
 void G1OdometryPublisher::onTimer()
@@ -210,8 +227,16 @@ void G1OdometryPublisher::onTimer()
         return;
     }
 
+    // Two budgets, because on this track they can fail independently. /clock is published
+    // by the SAME process as the base state, so if that process wedges, sim time freezes
+    // with it, `elapsed` stays pinned near zero and a sim-time-only check never fires --
+    // the exact "confidently wrong map" this guard exists to prevent. The wall budget
+    // measures time since the sample stamp last ADVANCED, so it catches both a silent
+    // source and one still emitting a frozen sample.
     const double elapsed = (now() - last_sample_stamp_).seconds();
-    if (isStale(elapsed, source_timeout_s_))
+    const double wall_elapsed =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - last_advance_wall_).count();
+    if (isStale(elapsed, source_timeout_s_) || isStale(wall_elapsed, source_timeout_s_))
     {
         // Stop publishing rather than re-stamping the last pose. A frozen transform with a
         // fresh timestamp is indistinguishable from a stationary robot, which is how a dead
@@ -238,6 +263,7 @@ void G1OdometryPublisher::onTimer()
     tf.child_frame_id          = base_frame_id_;
     tf.transform.translation.x = pose_.x;
     tf.transform.translation.y = pose_.y;
+    tf.transform.translation.z = base_height_m_;
     tf.transform.rotation.x    = orientation.x;
     tf.transform.rotation.y    = orientation.y;
     tf.transform.rotation.z    = orientation.z;
@@ -256,6 +282,7 @@ void G1OdometryPublisher::onTimer()
     odom.child_frame_id        = base_frame_id_;
     odom.pose.pose.position.x  = pose_.x;
     odom.pose.pose.position.y  = pose_.y;
+    odom.pose.pose.position.z  = base_height_m_;
     odom.pose.pose.orientation = tf.transform.rotation;
     odom.twist.twist.linear.x  = body_twist.vx;
     odom.twist.twist.linear.y  = body_twist.vy;

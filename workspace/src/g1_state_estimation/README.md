@@ -39,8 +39,25 @@ quiet would be indistinguishable from a healthy node with a stalled source.
 Parameters are in `config/g1_odometry_publisher.yaml`. Joints are looked up **by name**, since
 `joint_state_broadcaster` makes no promise about ordering.
 
-Past `source_timeout_ms` without a sample it stops publishing rather than re-stamping the last pose:
-a frozen transform with a fresh timestamp looks exactly like a stationary robot.
+### `odom` is the ground plane
+
+`base_height_m` is published as the z of `odom -> base_link`, so a point cloud transformed into
+`odom` puts the floor at z = 0 and Nav2's obstacle height bands mean what they say. It defaults to
+**0**, which is right for a real floating-base estimator that measures its own height; the
+perception sim's base is a planar body with no z DoF, so `perception_sim.launch.py` supplies the
+value from `g1_sim/config/sensor_mounts.yaml`, which is where the number canonically lives and which
+`test_sensor_mount_consistency` pins to the MJCF spawn height.
+
+### Staleness has two budgets, and the wall one is the load-bearing half
+
+Past `source_timeout_ms` it stops publishing rather than re-stamping the last pose: a frozen
+transform with a fresh timestamp looks exactly like a stationary robot.
+
+Measuring that on the source clock alone is not enough here. `/clock` is published by the **same
+process** as the base state, so when the simulator wedges, sim time freezes with it, the measured
+age stays pinned near zero, and a sim-time-only check never fires. The second budget runs on
+`steady_clock` and measures time since the sample stamp last **advanced** rather than since a message
+last arrived, which also catches a simulator still republishing a frozen sample.
 
 ## `odom_math`
 

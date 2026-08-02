@@ -1,14 +1,16 @@
 """The simulated Mid360 produces a point cloud that matches the room it is in.
 
 Geometry, not plumbing: test_perception_sim_bringup already proves the topic exists. Here
-the cloud is transformed into base_link and checked against facts of the MJCF, so a wrong
-mount, a wrong roll, a wrong scale or a dead stream all fail rather than pass quietly.
+the cloud is transformed into odom through the live TF chain and checked against facts of
+the MJCF, so a wrong mount, a wrong roll, a wrong scale, a wrong odom height or a dead
+stream all fail rather than pass quietly.
 """
 
 import os
 import sys
 import time
 import unittest
+from collections import deque
 
 import numpy as np
 import pytest
@@ -17,13 +19,9 @@ from sensor_msgs.msg import PointCloud2
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from perception_sim_fixture import (  # noqa: E402
-    BASE_SPAWN_Z,
-    LIVOX_RPY,
-    LIVOX_XYZ,
     SENSOR_QOS,
     PerceptionSimTestNode,
     perception_sim_description,
-    rpy_to_matrix,
 )
 
 TOPIC = "/livox/lidar"
@@ -40,8 +38,9 @@ MAX_RANGE = 40.0
 WALL_PX_X = 4.0
 ROOM_HALF = 4.0
 
-R_LIVOX = np.array(rpy_to_matrix(LIVOX_RPY))
-T_LIVOX = np.array(LIVOX_XYZ)
+# Only the newest cloud is ever read; the rest are kept for the rate check. Unbounded
+# lists here starved the sim in milestone 3 (~68,000 messages), so they stay bounded.
+CLOUD_HISTORY = 32
 
 
 @pytest.mark.launch_test
@@ -54,8 +53,8 @@ class LidarStreamTest(unittest.TestCase):
     def setUpClass(cls):
         rclpy.init()
         cls.node = PerceptionSimTestNode("test_lidar_stream")
-        cls.clouds = []
-        cls.stamps = []
+        cls.clouds = deque(maxlen=CLOUD_HISTORY)
+        cls.stamps = deque(maxlen=512)
         cls.node.create_subscription(PointCloud2, TOPIC, cls._on_cloud, SENSOR_QOS)
         cls.node.wait_until(lambda: len(cls.clouds) > 0)
 
@@ -83,29 +82,36 @@ class LidarStreamTest(unittest.TestCase):
             .astype(np.float64)
         )
 
-    def points_world(self, msg):
-        """Sensor frame to world, valid because the base sits at the origin at rest."""
+    def points_odom(self, msg):
+        """Sensor frame to odom, which the odometry publisher puts on the ground plane.
+
+        Via the live TF chain, so the floor really does land at z=0 rather than at minus
+        the spawn height, and a wrong odom z fails here instead of being subtracted out.
+        """
+        rotation, translation = self.node.odom_from("livox_frame")
         pts = self.points_sensor(msg)
         finite = np.isfinite(pts).all(axis=1)
-        base = (R_LIVOX @ pts[finite].T).T + T_LIVOX
-        return base + np.array([0.0, 0.0, BASE_SPAWN_Z])
+        return (rotation @ pts[finite].T).T + translation
 
     def wall_px_distance(self, msg):
-        """Distance from base_link to the +x wall, from near-horizontal forward returns."""
-        pts = self.points_sensor(msg)
-        finite = np.isfinite(pts).all(axis=1)
-        base = (R_LIVOX @ pts[finite].T).T + T_LIVOX
+        """Distance from the base to the +x wall, from near-horizontal forward returns."""
+        world = self.points_odom(msg)
+        sensor_z = self.node.odom_from("livox_frame")[1][2]
+        base_x = self.node.joint("base_x_joint")
         forward = (
-            (np.abs(base[:, 1]) < 0.3)
-            & (base[:, 0] > 0.5)
-            & (np.abs(base[:, 2] - T_LIVOX[2]) < 0.2)
+            (np.abs(world[:, 1]) < 0.3)
+            & (world[:, 0] > base_x + 0.5)
+            & (np.abs(world[:, 2] - sensor_z) < 0.2)
         )
         self.assertGreater(
             forward.sum(), 5, "no near-horizontal forward returns to measure the wall with"
         )
-        return float(np.median(base[forward][:, 0]))
+        return float(np.median(world[forward][:, 0])) - base_x
 
     def test_01_publishes_at_the_configured_rate(self):
+        # Drop whatever queued during discovery: it drains as a burst and would
+        # read as a rate well above the configured one.
+        self.stamps.clear()
         self.node.spin(3.0)
         self.assertGreater(len(self.stamps), 2, f"{TOPIC} is not streaming")
         elapsed = self.stamps[-1] - self.stamps[0]
@@ -141,7 +147,7 @@ class LidarStreamTest(unittest.TestCase):
 
     def test_04_the_floor_is_visible_below_the_robot(self):
         """The pi roll points the Mid360 down; lose it and the floor lands overhead."""
-        world = self.points_world(self.latest())
+        world = self.points_odom(self.latest())
         floor = np.abs(world[:, 2]) < 0.05
         self.assertGreater(
             int(floor.sum()),
@@ -172,7 +178,7 @@ class LidarStreamTest(unittest.TestCase):
         solid at the same heights, so this is the plugin's raycast, not the scene. See
         g1_sim/README.md.
         """
-        world = self.points_world(self.latest())
+        world = self.points_odom(self.latest())
         inside = (np.abs(world[:, 0]) <= ROOM_HALF + 0.01) & (
             np.abs(world[:, 1]) <= ROOM_HALF + 0.01
         )

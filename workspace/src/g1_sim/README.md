@@ -28,6 +28,14 @@ poses. The geometry is deliberate: every sensor assertion in the integration tes
 fact of `mjcf/g1_perception_base.xml`, so the tests measure something real rather than checking that
 data merely arrives.
 
+## Frames
+
+`base_link` spawns at **0.793 m**, the G1's pelvis height, so the sensors sit at realistic heights.
+That number lives in `config/sensor_mounts.yaml` as `base_link.spawn_z` and nowhere else:
+`test_sensor_mount_consistency` pins it to the MJCF, and `perception_sim.launch.py` hands it to
+`g1_odometry_publisher` as `base_height_m`. That makes **`odom` the ground plane** rather than a
+frame floating at the spawn height, so a cloud transformed into `odom` has its floor at z = 0.
+
 ## Sensors
 
 | | Mount vs `base_link` | Notes |
