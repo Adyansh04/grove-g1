@@ -46,6 +46,15 @@ dependence, and no motion distortion. Anything whose correctness depends on the 
 such as Livox-tuned LIO feature extraction or de-skewing, is **not** validated here. The real
 driver's `CustomMsg` format is not produced either; this publishes `PointCloud2`.
 
+**Known plugin artifact: rays leak through walls.** Roughly 4% of returns (about 440 of 11,520) pass
+straight through a wall and land on the floor plane outside the room. It is a contiguous band of
+downward rays, grid rows 9 to 13, about 10 to 18 degrees below horizontal, which would strike the
+wall below z ~= 0.55 m. Rays crossing the same wall higher up are blocked correctly, and the camera
+renders those same walls as solid at those same heights, so this is the plugin's raycast rather than
+the scene geometry. Consequence for downstream work: **a costmap fed directly from this cloud will
+see phantom obstacles outside the room.** `test_lidar_stream` asserts only that the great majority of
+returns land inside the room, so a real regression still fails while this artifact does not.
+
 The camera is `848x480 @ fovy 58`, about 87 degrees horizontal, matching the real D435i **depth**
 stream. One MuJoCo camera cannot carry two intrinsics, so the colour stream is wider than a real
 D435i colour stream. Matched to depth, which is what this track is for. No depth noise, no stereo
@@ -63,3 +72,9 @@ symmetric field of view, is why the asymmetric Mid360 band needs no compensating
 
 The plugin registers itself under the ament resource index key `mujoco_plugins`, which the node
 scans at startup. No `MUJOCO_PLUGIN_DIR` is needed, and setting it does not work.
+
+`config/mujoco_plugins.yaml` must be keyed to **`mujoco_ros2_control_node`**, a second node living
+inside the same process as `controller_manager`. Key it to `controller_manager` and the parameters
+reach the wrong node: the log says `No 'mujoco_plugins' parameter found!`, the LiDAR never publishes
+at all, and the camera quietly auto-registers on default topics at the default rate. Key it to `/**`
+and it also matches every controller, shadowing their own sections.

@@ -21,9 +21,15 @@ if(BUILD_TESTING)
   # Note ctest parallelises across packages, so a full-workspace sweep still needs
   # `colcon test --parallel-workers 1`.
   find_package(launch_testing_ament_cmake REQUIRED)
+  # Each of these starts its own MuJoCo, so they share the lock rather than overlap.
   add_launch_test(test/test_perception_sim_bringup.launch.py
     TARGET test_perception_sim_bringup TIMEOUT 240)
-  set_tests_properties(test_perception_sim_bringup PROPERTIES RESOURCE_LOCK g1_sim)
+  add_launch_test(test/test_lidar_stream.launch.py
+    TARGET test_lidar_stream TIMEOUT 300)
+  add_launch_test(test/test_camera_stream.launch.py
+    TARGET test_camera_stream TIMEOUT 300)
+  set_tests_properties(test_perception_sim_bringup test_lidar_stream test_camera_stream
+    PROPERTIES RESOURCE_LOCK g1_sim)
 endif()
 
 ament_package()
