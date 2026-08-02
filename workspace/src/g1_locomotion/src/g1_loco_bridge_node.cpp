@@ -435,12 +435,21 @@ void G1LocoBridge::onReissueTick()
     /*
      * Only the newest velocity intent ever matters (duration is a 1 s dead-man; a stale in-flight
      * request from a previous tick is noise once a fresher one is issued) -- supersede rather
-     * than let stale ones pile up in the correlator.
+     * than let stale ones pile up in the correlator. But supersede() drops the outcome with no
+     * callback, so a round trip slower than the re-issue period would otherwise vanish silently
+     * every tick, and the failure-streak safety net -- which only advances through
+     * onVelocityResult() -- would never trip on a channel that's simply too slow, only on one that
+     * answers with an error. Feed it a synthetic timeout first, exactly the outcome sweep() would
+     * eventually report anyway, so a slow or dead channel counts against the streak like any other
+     * missed response.
      */
     if (pending_velocity_request_id_)
     {
+        velocity_gate_.onVelocityResult(kCodeTaskTimeout);
+        last_error_code_ = kCodeTaskTimeout;
         correlator_.supersede(*pending_velocity_request_id_);
         pending_velocity_request_id_.reset();
+        publishStatus();
     }
 
     auto request = correlator_.send(

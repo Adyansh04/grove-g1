@@ -306,5 +306,44 @@ TEST_F(LocoBridgeNodeTest, LateSetLocoModeReplyAfterDeactivateDoesNotReviveAutho
            "session";
 }
 
+// -------------------------------------------------------------------------
+// Blocker: a round trip slower than the re-issue period must still advance the failure streak
+// -------------------------------------------------------------------------
+
+TEST_F(LocoBridgeNodeTest, UnansweredVelocityRequestsStillReleaseAuthority)
+{
+    configureAndActivate();
+
+    auto goal_handle = sendSetLocoModeGoal(SetLocoMode::Goal::START);
+    ASSERT_TRUE(goal_handle) << "START goal was not accepted";
+    const auto start_result = waitForResult(goal_handle, 2s);
+    ASSERT_TRUE(start_result.has_value()) << "START result never arrived";
+    ASSERT_EQ(start_result->code, rclcpp_action::ResultCode::SUCCEEDED);
+    ASSERT_TRUE(spinUntil(
+        [this] {
+            return latest_status_ && latest_status_->authority == g1_msgs::msg::LocoStatus::HELD;
+        },
+        1s))
+        << "authority never reached HELD";
+
+    /*
+     * The fake responder never answers SET_VELOCITY (see the fixture's class comment) -- standing
+     * in for a round trip slower than the re-issue period, the condition the review's own repro
+     * measured at 400 ms against the 200 ms default re-issue period. A live, non-zero cmd_vel has
+     * to keep flowing throughout: VelocityGate only re-issues continuously for a fresh non-zero
+     * command, and continuous re-issuing against a channel that never answers is exactly what used
+     * to make the failure streak unreachable (supersede() alone drops the outcome with no
+     * callback).
+     */
+    publishCmdVelFor(0.1, 2s);
+
+    ASSERT_TRUE(latest_status_.has_value());
+    EXPECT_EQ(latest_status_->authority, g1_msgs::msg::LocoStatus::RELEASED)
+        << "an unanswered SET_VELOCITY channel never released locomotion authority -- the "
+           "failure-streak safety net stayed disabled the whole window";
+    EXPECT_EQ(latest_status_->last_error_code, kCodeTaskTimeout)
+        << "the released status did not record the synthetic timeout that should have caused it";
+}
+
 }  // namespace
 }  // namespace g1_locomotion
