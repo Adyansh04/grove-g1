@@ -27,9 +27,17 @@
     failure_streak_limit: 3
 
     # [vx, vy, vyaw] clamp applied to every ~/cmd_vel sample, in the bridge's own
-    # (post axis_sign) frame -- m/s, m/s, rad/s. Deliberately conservative so a
-    # first hardware run is slow by default; loosen once locomotion is validated.
-    max_velocity: [0.3, 0.2, 0.5]
+    # (post axis_sign) frame -- m/s, m/s, rad/s.
+    #
+    # These sit just above the sim walking policy's measured gait-initiation
+    # thresholds ([0.40, 0.50, 1.50]); below those it stands still instead of
+    # stepping. The previous [0.3, 0.2, 0.5] clamped every axis BELOW its own
+    # threshold, so the robot could never take a step no matter what was
+    # commanded -- a clamp that conservative is not cautious, it is broken.
+    # HARDWARE RE-VALIDATION: these thresholds are a property of the sim policy,
+    # not of the onboard controller. Re-lower this (or override it from launch)
+    # before a first hardware run, where slow-by-default is the right posture.
+    max_velocity: [0.8, 0.6, 1.5]
 
     # [vx, vy, vyaw] sign flip applied before max_velocity clamping. The vendor's
     # own frame convention relative to geometry_msgs/Twist is undocumented -- this
