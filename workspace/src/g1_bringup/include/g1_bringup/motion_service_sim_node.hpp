@@ -150,7 +150,14 @@ private:
     double                             walk_policy_staleness_timeout_s_{ 0.1 };
     PolicyConfig                       walk_policy_config_{};
     std::unique_ptr<WalkPolicySession> walk_policy_session_;
-    rclcpp::TimerBase::SharedPtr       walk_policy_timer_;
+
+    /// Wall timer, deliberately. The policy was trained at a fixed decimation of the simulator's
+    /// own step, so pacing it off SIM time would be the more faithful choice -- but LowState.tick
+    /// does not carry the millisecond units that would make that decimation correct, and a wrong
+    /// guess at its scale runs the policy at the wrong rate and topples the robot (measured).
+    /// unitree_mujoco tracks real time closely when the machine keeps up, so a wall timer is
+    /// accurate in practice; see the README's known-limitations note on behaviour under load.
+    rclcpp::TimerBase::SharedPtr walk_policy_timer_;
 
     std::array<float, kActionDim>         walk_last_action_{};
     std::array<double, kNumLowerMotors>   walk_target_q_{};

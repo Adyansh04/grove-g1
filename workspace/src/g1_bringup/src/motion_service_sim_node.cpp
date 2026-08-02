@@ -7,6 +7,7 @@
 
 #include "g1_bringup/motion_service_sim_node.hpp"
 
+#include <cmath>
 #include <nlohmann/json.hpp>
 #include <optional>
 #include <stdexcept>
@@ -338,15 +339,14 @@ void MotionServiceSim::lowstateCallback(const unitree_hg::msg::LowState::ConstSh
         walk_inputs_.base_ang_vel_body[i] = msg->imu_state.gyroscope[i];
     }
 
-    if (hold_pose_captured_)
+    if (!hold_pose_captured_)
     {
-        return;
+        for (int i = 0; i < kNumBodyMotors; ++i)
+        {
+            hold_q_[static_cast<std::size_t>(i)] = msg->motor_state[static_cast<std::size_t>(i)].q;
+        }
+        hold_pose_captured_ = true;
     }
-    for (int i = 0; i < kNumBodyMotors; ++i)
-    {
-        hold_q_[static_cast<std::size_t>(i)] = msg->motor_state[static_cast<std::size_t>(i)].q;
-    }
-    hold_pose_captured_ = true;
 }
 
 void MotionServiceSim::sportModeStateCallback(

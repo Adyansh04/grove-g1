@@ -197,6 +197,11 @@ if(BUILD_TESTING)
   # The walking policy holding the robot up with no pelvis weld -- the milestone's core claim.
   add_launch_test(test/test_walk_stand.launch.py TARGET test_walk_stand TIMEOUT 240)
   set_tests_properties(test_walk_stand PROPERTIES RESOURCE_LOCK g1_sim)
+
+  # Driving the robot through the real LocoClient authority path, including the rejection case
+  # and the randomized/whiplash command sequences.
+  add_launch_test(test/test_walk_teleop.launch.py TARGET test_walk_teleop TIMEOUT 400)
+  set_tests_properties(test_walk_teleop PROPERTIES RESOURCE_LOCK g1_sim)
 endif()
 
 ament_package()
