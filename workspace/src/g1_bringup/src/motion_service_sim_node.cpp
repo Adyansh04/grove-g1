@@ -155,17 +155,24 @@ MotionServiceSim::MotionServiceSim(const rclcpp::NodeOptions& options)
         });
 
     /*
-     * Vendor-matched -- do not deviate (see g1_locomotion's README for the identical rule on the
-     * bridge side of this same exchange). This is the exact QoS BaseClient's own publisher/
-     * subscription use.
+     * Vendor-matched -- do not deviate on RELIABILITY/DURABILITY (see g1_locomotion's README for
+     * the identical rule on the bridge side of this same exchange): this is the exact QoS
+     * BaseClient's own publisher/subscription use, and those two policies are what hardware
+     * endpoint compatibility depends on. HISTORY depth is not an RxO-matched policy, so it's ours
+     * to pick per side -- the response publisher stays at depth 1 (only the newest reply ever
+     * needs to be retained), but this request reader goes deeper: two requests landing in the same
+     * DDS write batch (e.g. the bridge's SET_VELOCITY re-issue and its GET_FSM_ID heartbeat poll,
+     * before the matching bridge-side phase fix) must not overwrite each other in a depth-1
+     * KEEP_LAST history cache before this callback drains them.
      */
-    const auto sport_qos = rclcpp::QoS(1).reliable().durability_volatile();
-    sport_request_sub_   = create_subscription<unitree_api::msg::Request>(
+    const auto sport_request_qos  = rclcpp::QoS(10).reliable().durability_volatile();
+    const auto sport_response_qos = rclcpp::QoS(1).reliable().durability_volatile();
+    sport_request_sub_            = create_subscription<unitree_api::msg::Request>(
         "/api/sport/request",
-        sport_qos,
+        sport_request_qos,
         [this](const unitree_api::msg::Request::ConstSharedPtr& msg) { sportRequestCallback(msg); });
     sport_response_pub_ =
-        create_publisher<unitree_api::msg::Response>("/api/sport/response", sport_qos);
+        create_publisher<unitree_api::msg::Response>("/api/sport/response", sport_response_qos);
 
     RCLCPP_WARN(
         get_logger(),

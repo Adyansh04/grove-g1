@@ -112,16 +112,26 @@ G1LocoBridge::on_configure(const rclcpp_lifecycle::State& /*previous_state*/)
     pub_options.callback_group = callback_group_;
 
     /*
-     * Vendor-matched -- do not deviate. This is the exact QoS BaseClient's own publisher/
-     * subscription use (rclcpp::QoS(1), reliable, volatile); hardware endpoint compatibility
-     * depends on matching it exactly, not just "something reliable".
+     * Vendor-matched -- do not deviate on RELIABILITY/DURABILITY: this is the exact QoS
+     * BaseClient's own publisher/subscription use, and hardware endpoint compatibility depends on
+     * those two policies matching exactly. HISTORY depth is not one of the RxO-matched policies
+     * DDS uses for endpoint compatibility, so it's ours to pick per side: the publisher stays at
+     * depth 1 (only the newest outgoing request ever needs to be retained), but the response
+     * reader goes deeper than the vendor-matched depth-1 responder can afford on its own -- a
+     * response landing in the same DDS write batch as another read (e.g. onHeartbeatTick's own
+     * GET_FSM_ID poll) must not overwrite an unread SET_VELOCITY/stop result still sitting in a
+     * depth-1 KEEP_LAST history cache. Measured ~20% SET_VELOCITY loss against motion_service_sim's
+     * old depth-1 request reader before this and the matching onReissueTick() phase fix.
      */
-    const auto sport_qos = rclcpp::QoS(1).reliable().durability_volatile();
-    request_pub_ =
-        create_publisher<unitree_api::msg::Request>(kSportRequestTopic, sport_qos, pub_options);
+    const auto sport_request_qos  = rclcpp::QoS(1).reliable().durability_volatile();
+    const auto sport_response_qos = rclcpp::QoS(10).reliable().durability_volatile();
+    request_pub_                  = create_publisher<unitree_api::msg::Request>(
+        kSportRequestTopic,
+        sport_request_qos,
+        pub_options);
     response_sub_ = create_subscription<unitree_api::msg::Response>(
         kSportResponseTopic,
-        sport_qos,
+        sport_response_qos,
         [this](const unitree_api::msg::Response::ConstSharedPtr& msg) { onSportResponse(*msg); },
         sub_options);
 
@@ -171,9 +181,30 @@ G1LocoBridge::on_configure(const rclcpp_lifecycle::State& /*previous_state*/)
         reissue_period,
         [this] { onReissueTick(); },
         callback_group_);
-    heartbeat_timer_ = create_wall_timer(
-        kHeartbeatPeriod,
-        [this] { onHeartbeatTick(); },
+
+    /*
+     * heartbeat_timer_'s first tick is deliberately phase-offset from reissue_timer_'s, not just
+     * created right after it: two independently-created wall timers with harmonically related
+     * periods (the default 1000 ms heartbeat is an exact multiple of the default 200 ms reissue
+     * period) start counting within microseconds of each other here and so fire together once a
+     * second, publishing SET_VELOCITY and GET_FSM_ID back-to-back on a channel whose vendor
+     * contract assumes one call in flight -- measured ~20% SET_VELOCITY loss against
+     * motion_service_sim's own request reader. A one-shot bootstrap fires the first heartbeat tick
+     * half a reissue period late and creates the real recurring heartbeat_timer_ from there, so
+     * every later tick inherits that same offset.
+     */
+    const auto heartbeat_phase_offset =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(reissue_period) / 2;
+    heartbeat_phase_timer_ = create_wall_timer(
+        kHeartbeatPeriod + heartbeat_phase_offset,
+        [this] {
+            heartbeat_phase_timer_->cancel();
+            heartbeat_timer_ = create_wall_timer(
+                kHeartbeatPeriod,
+                [this] { onHeartbeatTick(); },
+                callback_group_);
+            onHeartbeatTick();
+        },
         callback_group_);
 
     return CallbackReturn::SUCCESS;
@@ -560,6 +591,7 @@ void G1LocoBridge::resetEntities()
     sweep_timer_.reset();
     reissue_timer_.reset();
     heartbeat_timer_.reset();
+    heartbeat_phase_timer_.reset();
     action_server_.reset();
     cmd_vel_sub_.reset();
     response_sub_.reset();

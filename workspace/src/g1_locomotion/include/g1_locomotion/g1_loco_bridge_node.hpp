@@ -137,6 +137,10 @@ private:
     rclcpp::TimerBase::SharedPtr                                              sweep_timer_;
     rclcpp::TimerBase::SharedPtr                                              reissue_timer_;
     rclcpp::TimerBase::SharedPtr                                              heartbeat_timer_;
+    /// One-shot; fires once to phase-offset heartbeat_timer_'s first tick away from
+    /// reissue_timer_'s, then cancels itself (see on_configure()). Tracked so resetEntities() can
+    /// reset it too.
+    rclcpp::TimerBase::SharedPtr heartbeat_phase_timer_;
 };
 
 }  // namespace g1_locomotion
