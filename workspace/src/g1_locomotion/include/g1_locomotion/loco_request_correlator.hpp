@@ -102,6 +102,14 @@ public:
      */
     void supersede(std::int64_t id);
 
+    /**
+     * @brief Drops every pending entry with no callback invocation -- e.g. the owning node
+     * tearing down, where nothing left standing (no sweep timer, no response subscription) could
+     * ever service a response or a timeout anyway, so leaving entries pending would just strand
+     * their captured callbacks. Same no-callback contract as supersede(), for all entries at once.
+     */
+    void clear() noexcept { pending_.clear(); }
+
     /// @return The number of requests currently awaiting a response or sweep() timeout.
     std::size_t pendingCount() const noexcept { return pending_.size(); }
 

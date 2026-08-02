@@ -93,8 +93,12 @@ private:
     /// last publish -- the "on change + 1 Hz heartbeat" policy from the README's QoS table.
     void publishStatus(bool force = false);
 
-    /// Idempotent teardown, safe to call from on_cleanup/on_shutdown/on_error and from the top
-    /// of on_configure (which rebuilds everything from scratch every time it runs).
+    /// Idempotent teardown, safe to call from on_cleanup/on_shutdown/on_error and from the top of
+    /// on_configure (which rebuilds everything from scratch every time it runs). "Safe" includes
+    /// never wedging a caller: any SetLocoMode goal still in flight is aborted with a terminal
+    /// result and the correlator's pending map is cleared before anything else is torn down (see
+    /// the .cpp for why both are necessary), so no goal is ever left with nothing standing that
+    /// could resolve it.
     void resetEntities();
 
     // Parameters (config/g1_loco_bridge.yaml).

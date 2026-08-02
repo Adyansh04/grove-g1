@@ -164,15 +164,24 @@ protected:
         requests_.push_back(msg);
         if (auto_accept_fsm_ && msg.header.identity.api_id == kApiIdSetFsmId)
         {
-            publishSetFsmIdResult(msg.header.identity.id, kCodeSuccess);
+            publishSportResult(msg.header.identity.id, kApiIdSetFsmId, kCodeSuccess);
+        }
+        else if (auto_accept_velocity_ && msg.header.identity.api_id == kApiIdSetVelocity)
+        {
+            publishSportResult(msg.header.identity.id, kApiIdSetVelocity, kCodeSuccess);
         }
     }
 
     void publishSetFsmIdResult(std::int64_t id, std::int32_t code)
     {
+        publishSportResult(id, kApiIdSetFsmId, code);
+    }
+
+    void publishSportResult(std::int64_t id, std::int64_t api_id, std::int32_t code)
+    {
         unitree_api::msg::Response response;
         response.header.identity.id     = id;
-        response.header.identity.api_id = kApiIdSetFsmId;
+        response.header.identity.api_id = api_id;
         response.header.status.code     = code;
         response_pub_->publish(response);
     }
@@ -255,6 +264,12 @@ protected:
     std::vector<unitree_api::msg::Request>  requests_;
     std::optional<g1_msgs::msg::LocoStatus> latest_status_;
     bool                                    auto_accept_fsm_{ true };
+    /// Off by default: most tests here (see the fixture's class comment) deliberately leave
+    /// SET_VELOCITY unanswered. A test isolating a *different* release path -- e.g. STAND_UP's
+    /// own authority release -- needs this on, or Commit 2's failure-streak safety net would
+    /// independently release authority for an unrelated reason and mask what's actually under
+    /// test.
+    bool auto_accept_velocity_{ false };
 };
 
 // -------------------------------------------------------------------------
@@ -343,6 +358,111 @@ TEST_F(LocoBridgeNodeTest, UnansweredVelocityRequestsStillReleaseAuthority)
            "failure-streak safety net stayed disabled the whole window";
     EXPECT_EQ(latest_status_->last_error_code, kCodeTaskTimeout)
         << "the released status did not record the synthetic timeout that should have caused it";
+}
+
+// -------------------------------------------------------------------------
+// Major: STAND_UP from kHeld must release velocity authority, not just DAMP
+// -------------------------------------------------------------------------
+
+TEST_F(LocoBridgeNodeTest, StandUpFromHeldReleasesAuthorityAndStopsVelocityIntents)
+{
+    // Answer SET_VELOCITY successfully throughout -- isolates STAND_UP's own release path from
+    // Commit 2's unrelated failure-streak release (an unanswered channel would release authority
+    // on its own regardless of whether STAND_UP's fix is even present, masking this test).
+    auto_accept_velocity_ = true;
+    configureAndActivate();
+
+    auto start_handle = sendSetLocoModeGoal(SetLocoMode::Goal::START);
+    ASSERT_TRUE(start_handle) << "START goal was not accepted";
+    const auto start_result = waitForResult(start_handle, 2s);
+    ASSERT_TRUE(start_result.has_value()) << "START result never arrived";
+    ASSERT_EQ(start_result->code, rclcpp_action::ResultCode::SUCCEEDED);
+    ASSERT_TRUE(spinUntil(
+        [this] {
+            return latest_status_ && latest_status_->authority == g1_msgs::msg::LocoStatus::HELD;
+        },
+        1s))
+        << "authority never reached HELD";
+
+    // Sanity check first: confirm velocity traffic is actually flowing while HELD, so the later
+    // "traffic stopped" assertion means something rather than being vacuously true.
+    requests_.clear();
+    publishCmdVelFor(0.1, 300ms);
+    ASSERT_GT(countRequests(kApiIdSetVelocity), 0U)
+        << "no SET_VELOCITY traffic observed while HELD";
+
+    auto stand_up_handle = sendSetLocoModeGoal(SetLocoMode::Goal::STAND_UP);
+    ASSERT_TRUE(stand_up_handle) << "STAND_UP goal was not accepted";
+    const auto stand_up_result = waitForResult(stand_up_handle, 2s);
+    ASSERT_TRUE(stand_up_result.has_value()) << "STAND_UP result never arrived";
+    EXPECT_EQ(stand_up_result->code, rclcpp_action::ResultCode::SUCCEEDED);
+    ASSERT_TRUE(spinUntil(
+        [this] {
+            return latest_status_ &&
+                   latest_status_->authority == g1_msgs::msg::LocoStatus::RELEASED;
+        },
+        1s))
+        << "STAND_UP accepted from kHeld did not release locomotion authority";
+
+    requests_.clear();
+    publishCmdVelFor(0.1, 500ms);
+    EXPECT_EQ(countRequests(kApiIdSetVelocity), 0U)
+        << "cmd_vel kept producing SET_VELOCITY intents after STAND_UP left kHeld -- the gate "
+           "still believed it held velocity authority after the robot left Start";
+}
+
+// -------------------------------------------------------------------------
+// Major: a goal in flight when the node tears down must terminate, not wedge
+// -------------------------------------------------------------------------
+
+TEST_F(LocoBridgeNodeTest, ShutdownWhileGoalInFlightTerminatesItInsteadOfWedging)
+{
+    auto_accept_fsm_ = false;  // keep the goal genuinely in flight -- no reply ever arrives
+    configureAndActivate();
+
+    bool                            result_received = false;
+    ClientGoalHandle::WrappedResult result;
+    SetLocoMode::Goal               goal;
+    goal.fsm_id = SetLocoMode::Goal::START;
+    rclcpp_action::Client<SetLocoMode>::SendGoalOptions options;
+    options.result_callback = [&result_received,
+                               &result](const ClientGoalHandle::WrappedResult& wrapped) {
+        result_received = true;
+        result          = wrapped;
+    };
+    auto goal_future = action_client_->async_send_goal(goal, options);
+    ASSERT_TRUE(spinUntil(
+        [&goal_future] {
+            return goal_future.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
+        },
+        3s));
+    ASSERT_TRUE(goal_future.get()) << "START goal was not accepted";
+    ASSERT_TRUE(spinUntil([this] { return countRequests(kApiIdSetFsmId) > 0; }, 2s))
+        << "bridge never published the SET_FSM_ID request -- goal isn't genuinely in flight yet";
+    // Extra, unconditional spinning: countRequests() only proves handleAccepted() ran, not that
+    // the server side has also finished registering this client's get-result service request
+    // (a separate round trip make_result_aware() kicked off above) -- give it room to land before
+    // pulling the rug out from under it.
+    spinFor(200ms);
+
+    /*
+     * shutdown() reaches on_shutdown() directly from ACTIVE, bypassing on_deactivate() entirely --
+     * Humble's lifecycle state machine allows a direct shutdown transition from any primary state.
+     * This is the one path that still reached resetEntities() with a goal in flight even after
+     * Commit 1's on_deactivate() fix, mirroring the review's own repro (a dead
+     * /api/sport/request target left the goal hanging past the sweep timer resetEntities() itself
+     * destroys).
+     */
+    bridge_->shutdown();
+    ASSERT_EQ(
+        bridge_->get_current_state().id(),
+        lifecycle_msgs::msg::State::PRIMARY_STATE_FINALIZED);
+
+    ASSERT_TRUE(spinUntil([&result_received] { return result_received; }, 1s))
+        << "SetLocoMode goal was left hanging instead of being terminated by shutdown";
+    EXPECT_EQ(result.code, rclcpp_action::ResultCode::ABORTED);
+    ASSERT_TRUE(result.result);
+    EXPECT_FALSE(result.result->success);
 }
 
 }  // namespace

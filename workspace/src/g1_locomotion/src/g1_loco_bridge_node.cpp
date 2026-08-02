@@ -328,12 +328,14 @@ rclcpp_action::CancelResponse
 G1LocoBridge::handleCancel(const std::shared_ptr<GoalHandleSetLocoMode>& /*goal_handle*/)
 {
     /*
-     * Goals are short-lived (bounded by request_timeout_s) and every terminal path already lands
-     * cleanly (see VelocityGate's authority machine). Supporting mid-flight cancellation would
-     * need to unwind a request already in flight on the wire -- the correlator's supersede() can
-     * do that, but nothing in this milestone needs it, and rejecting keeps the authority
-     * transition atomic instead of leaving a "cancel requested but the wire request is still out
-     * there" window.
+     * Goals are short-lived and every terminal path lands cleanly (see VelocityGate's authority
+     * machine): bounded by request_timeout_s during normal operation (a response or a sweep()
+     * timeout resolves it), and immediately if the node tears down mid-goal (resetEntities()
+     * aborts any in-flight goal directly -- see its own comment -- rather than relying on the
+     * sweep timer it's about to destroy). Supporting mid-flight cancellation would need to unwind
+     * a request already in flight on the wire -- the correlator's supersede() can do that, but
+     * nothing in this milestone needs it, and rejecting keeps the authority transition atomic
+     * instead of leaving a "cancel requested but the wire request is still out there" window.
      */
     return rclcpp_action::CancelResponse::REJECT;
 }
@@ -364,8 +366,16 @@ void G1LocoBridge::handleAccepted(const std::shared_ptr<GoalHandleSetLocoMode>& 
     {
         velocity_gate_.beginAcquire();
     }
-    else if (fsm_id == SetLocoMode::Goal::DAMP && velocity_gate_.authority() == LocoAuthority::kHeld)
+    else if (velocity_gate_.authority() == LocoAuthority::kHeld)
     {
+        /*
+         * Any accepted transition away from Start -- DAMP or STAND_UP alike -- means the robot is
+         * about to leave the FSM state velocity authority depends on. Key release on that, not on
+         * the literal DAMP id: a STAND_UP goal accepted from kHeld (Start -> StandUp is a legal
+         * edge, see loco_fsm's table) otherwise leaves this gate believing it still holds velocity
+         * authority after the robot has left Start, with the re-issue timer still publishing
+         * SET_VELOCITY onto a channel the transition is racing on.
+         */
         velocity_gate_.beginRelease();
     }
     publishStatus();
@@ -396,8 +406,16 @@ void G1LocoBridge::onSetLocoModeResult(
     {
         velocity_gate_.onAcquireResult(success);
     }
-    else if (fsm_id == SetLocoMode::Goal::DAMP)
+    else
     {
+        /*
+         * Mirrors handleAccepted()'s beginRelease() call: any non-START result (DAMP or STAND_UP)
+         * resolves whatever release beginRelease() may have started. onReleaseResult() lands
+         * unconditionally at kReleased, so this is a harmless no-op when authority was never
+         * kReleasing in the first place (e.g. a STAND_UP accepted from kReleased/kAcquiring never
+         * called beginRelease()) -- otherwise a STAND_UP result would strand the gate in
+         * kReleasing, with ~/status showing RELEASING indefinitely (fails safe, but wrong).
+         */
         velocity_gate_.onReleaseResult();
     }
 
@@ -588,6 +606,27 @@ void G1LocoBridge::publishStatus(bool force)
 
 void G1LocoBridge::resetEntities()
 {
+    /*
+     * Terminate any in-flight SetLocoMode goal before tearing anything else down. handleAccepted()
+     * captures the goal handle by value into the correlator's pending entry, which is the only
+     * code path left that can call succeed()/abort() on it -- once this function returns, nothing
+     * stands that could ever fire that callback (no sweep timer, no response subscription), so an
+     * un-terminated goal here would simply hang forever. Ordering matters: abort while
+     * action_server_ still exists, so the terminal result actually reaches the client, and only
+     * then clear the correlator so its now-pointless pending entries (including this same goal's
+     * own) don't outlive the entities their callbacks captured.
+     */
+    if (active_goal_handle_)
+    {
+        auto result        = std::make_shared<SetLocoMode::Result>();
+        result->success    = false;
+        result->error_code = kCodeTaskUnknownError;
+        result->message =
+            "bridge is tearing down (cleanup/shutdown/error) while this goal was in flight";
+        active_goal_handle_->abort(result);
+    }
+    correlator_.clear();
+
     sweep_timer_.reset();
     reissue_timer_.reset();
     heartbeat_timer_.reset();
