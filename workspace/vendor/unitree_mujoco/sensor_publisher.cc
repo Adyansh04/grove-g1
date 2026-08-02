@@ -32,6 +32,10 @@ struct Config
 
     // Mid360 envelope. Resolution is a real budget, not a formality: 360x32 costs ~32 ms per
     // sweep against the G1 scene, so it is configurable and the timing gate decides what ships.
+    // Which MuJoCo geom group the sweep sees. The scene puts walls, floor and obstacles in
+    // group 3; the robot's own geoms are not in it. Without this every ray returns the
+    // torso shell ~6 cm from the mount and the world is invisible.
+    int    scene_geom_group = 3;
     int    azimuth_steps   = 360;
     int    elevation_steps = 32;
     double azimuth_min     = -M_PI;
@@ -94,6 +98,9 @@ Config loadConfig()
         }
         if (root["elevation_steps"]) {
             cfg.elevation_steps = root["elevation_steps"].as<int>();
+        }
+        if (root["scene_geom_group"]) {
+            cfg.scene_geom_group = root["scene_geom_group"].as<int>();
         }
         if (root["range_max"]) {
             cfg.range_max = root["range_max"].as<double>();
@@ -266,6 +273,11 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
     double R_mount[9];
     rpyToMatrix(cfg.mount_rpy, R_mount);
 
+    mjtByte geomgroup[mjNGROUP] = {0};
+    if (cfg.scene_geom_group >= 0 && cfg.scene_geom_group < mjNGROUP) {
+        geomgroup[cfg.scene_geom_group] = 1;
+    }
+
     const int n_rays = cfg.azimuth_steps * cfg.elevation_steps;
     std::fprintf(
         stderr, "[grove_g1] sensor thread up: %dx%d rays at %.1f Hz -> %s\n", cfg.azimuth_steps,
@@ -315,6 +327,16 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
             std::memcpy(torso_mat, snapshot->xmat + 9 * torso_id, sizeof(torso_mat));
         }
 
+        // A snapshot taken before MuJoCo has run kinematics has an all-zero xmat, and
+        // mj_ray aborts the whole process on a zero-length direction ("vector length is too
+        // small"). Skip the cycle rather than hand it one.
+        const double row0 = torso_mat[0] * torso_mat[0] + torso_mat[1] * torso_mat[1] +
+                            torso_mat[2] * torso_mat[2];
+        if (row0 < 0.5) {
+            std::this_thread::sleep_until(next);
+            continue;
+        }
+
         // Sensor pose = torso pose composed with the fixed mount, taken live rather than
         // hardcoded: torso_link's height depends on the waist chain and the current stance,
         // so any baked-in constant is wrong the moment the robot walks.
@@ -342,9 +364,9 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
                 world_dir[r] = R_sensor[3 * r + 0] * d[0] + R_sensor[3 * r + 1] * d[1] +
                                R_sensor[3 * r + 2] * d[2];
             }
-            // flg_static=1 so walls and floor are hit at all; the robot's own geoms are
-            // legitimate returns, same as a real LiDAR seeing its own body.
-            double dist = mj_ray(m, snapshot, origin, world_dir, nullptr, 1, -1, &geomid[i]);
+            // flg_static=1 so the world-body walls and floor are hit at all. geomgroup
+            // restricts returns to the scene, keeping the robot from occluding itself.
+            double dist = mj_ray(m, snapshot, origin, world_dir, geomgroup, 1, -1, &geomid[i]);
             if (dist < cfg.range_min || dist > cfg.range_max) {
                 dist = 0.0;  // no return
             }
