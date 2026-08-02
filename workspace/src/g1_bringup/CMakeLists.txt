@@ -8,6 +8,7 @@ find_package(unitree_api REQUIRED)
 find_package(g1_hardware_interface REQUIRED)
 find_package(nlohmann_json REQUIRED)
 find_package(ament_index_cpp REQUIRED)
+find_package(unitree_go REQUIRED)
 
 # ONNX Runtime ships no CMake config package in its prebuilt tarball, so find it by path. The
 # location is fixed by .devcontainer/Dockerfile; failing here rather than at link time keeps the
@@ -70,10 +71,11 @@ target_compile_features(motion_service_sim PUBLIC cxx_std_17)
 target_link_libraries(motion_service_sim
   blend_math
   loco_fsm
+  walk_policy_session
   g1_hardware_interface::g1_arm_sdk_system
   nlohmann_json::nlohmann_json
 )
-ament_target_dependencies(motion_service_sim rclcpp unitree_hg unitree_api)
+ament_target_dependencies(motion_service_sim rclcpp unitree_hg unitree_api unitree_go ament_index_cpp)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   target_compile_options(motion_service_sim PRIVATE -Wall -Wextra)

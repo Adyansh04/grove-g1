@@ -11,13 +11,18 @@
 #include <array>
 #include <chrono>
 #include <cstdint>
+#include <memory>
+#include <optional>
 #include <string>
 
 #include "g1_bringup/blend_math.hpp"
 #include "g1_bringup/loco_fsm.hpp"
+#include "g1_bringup/walk_policy.hpp"
+#include "g1_bringup/walk_policy_session.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "unitree_api/msg/request.hpp"
 #include "unitree_api/msg/response.hpp"
+#include "unitree_go/msg/sport_mode_state.hpp"
 #include "unitree_hg/msg/low_cmd.hpp"
 #include "unitree_hg/msg/low_state.hpp"
 
@@ -35,12 +40,13 @@ namespace g1_bringup
  * scope (one service, not two): it subscribes /arm_sdk (what g1_hardware_interface's
  * G1ArmSdkSystem publishes) and /lowstate (what unitree_mujoco publishes), and is the ONLY thing
  * in this stack allowed to publish /lowcmd, and only when launched by sim.launch.py. Its
- * LocoClient responder half is **protocol-only**: it tracks an FSM state and applies the same
- * SET_FSM_ID/SET_VELOCITY acceptance rules a real onboard controller would (see loco_fsm.hpp),
- * but never actuates a leg -- nothing in dispatchSportRequest() touches /lowcmd, hold_q_, or any
- * arm-blend state, and the robot stays pelvis-welded regardless of FSM state or velocity
- * requests (see the README's "LocoClient wire responder" section for why walking-in-sim is out
- * of scope this milestone).
+ * LocoClient responder half applies the same SET_FSM_ID/SET_VELOCITY acceptance rules a real
+ * onboard controller would (see loco_fsm.hpp). An accepted SET_VELOCITY latches a command for the
+ * walking policy, which owns the lower body (legs 0-11 + waist 12-14); the acceptance test is
+ * unchanged, so the existing FSM legality table IS the authority gate rather than a second one
+ * bolted alongside it. The policy itself runs continuously from startup regardless of FSM state,
+ * holding the robot upright at zero velocity -- leg authority is gated on policy FRESHNESS, not
+ * on the FSM, so losing inference falls back to the stiff hold rather than to a stale target.
  *
  * Plain node, not lifecycle-managed: this is sim test scaffolding emulating an always-on
  * vendor service that has no activate/deactivate concept of its own on the real robot either
@@ -58,7 +64,17 @@ public:
 private:
     void lowstateCallback(const unitree_hg::msg::LowState::ConstSharedPtr& msg);
     void armSdkCallback(const unitree_hg::msg::LowCmd::ConstSharedPtr& msg);
+    void sportModeStateCallback(const unitree_go::msg::SportModeState::ConstSharedPtr& msg);
     void publishTick();
+
+    /// Reads config/walk_policy.yaml and loads the ONNX session. Returns false (with the policy
+    /// left disabled) if the joint order or model path is wrong, so a misconfigured policy
+    /// degrades to the stiff hold rather than driving the legs from a bad mapping.
+    bool setUpWalkPolicy();
+
+    /// One decimated inference: assembles the observation from the latest state, runs the policy,
+    /// and stores the lower-body targets publishTick() consumes.
+    void walkPolicyTick();
 
     void sportRequestCallback(const unitree_api::msg::Request::ConstSharedPtr& msg);
 
@@ -91,6 +107,12 @@ private:
     rclcpp::Publisher<unitree_hg::msg::LowCmd>::SharedPtr      lowcmd_pub_;
     rclcpp::TimerBase::SharedPtr                               publish_timer_;
 
+    /// Base linear velocity for the policy observation. /lowstate carries no such field -- the
+    /// sim's own bridge publishes it here from the pelvis `frame_vel` sensor. This is precisely
+    /// why the walking policy is structurally sim-only: on the real robot this topic is served by
+    /// the onboard motion service, which is off whenever this stack owns the low-level channel.
+    rclcpp::Subscription<unitree_go::msg::SportModeState>::SharedPtr sportmodestate_sub_;
+
     rclcpp::Subscription<unitree_api::msg::Request>::SharedPtr sport_request_sub_;
     rclcpp::Publisher<unitree_api::msg::Response>::SharedPtr   sport_response_pub_;
     /// LocoClient FSM state this responder tracks -- starts at Damp, matching the real robot's
@@ -120,6 +142,30 @@ private:
     /// node runs off a wall timer rather than a control-loop period.
     double                                effective_weight_{ 0.0 };
     std::chrono::steady_clock::time_point last_tick_{};
+
+    /// Walking policy state. The 50 Hz policy timer and the 500 Hz publish timer both run on this
+    /// node's single-threaded executor, so these need no synchronisation -- the same contract the
+    /// arm-blend members above rely on.
+    bool                               walk_policy_enabled_{ false };
+    double                             walk_policy_staleness_timeout_s_{ 0.1 };
+    PolicyConfig                       walk_policy_config_{};
+    std::unique_ptr<WalkPolicySession> walk_policy_session_;
+    rclcpp::TimerBase::SharedPtr       walk_policy_timer_;
+
+    std::array<float, kActionDim>         walk_last_action_{};
+    std::array<double, kNumLowerMotors>   walk_target_q_{};
+    bool                                  walk_target_valid_{ false };
+    std::chrono::steady_clock::time_point walk_target_stamp_{};
+
+    /// Latest base state feeding the observation, refreshed by the /lowstate and
+    /// /sportmodestate callbacks.
+    PolicyInputs walk_inputs_{};
+    bool         sportmodestate_received_{ false };
+
+    /// Velocity latched by an ACCEPTED SET_VELOCITY, carrying the request's own duration as its
+    /// dead-man. Cleared whenever a successful SET_FSM_ID leaves Start, so releasing locomotion
+    /// authority stops the robot instead of leaving the last command in force.
+    std::optional<VelocityCommand> walk_velocity_{};
 };
 
 }  // namespace g1_bringup
