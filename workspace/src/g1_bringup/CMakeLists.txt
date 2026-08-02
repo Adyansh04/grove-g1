@@ -16,6 +16,16 @@ target_include_directories(blend_math PUBLIC
 target_compile_features(blend_math PUBLIC cxx_std_17)
 ament_target_dependencies(blend_math PUBLIC unitree_hg)
 
+# Observation/action math for the sim walking policy -- pure C++, no ROS and no ONNX Runtime, so
+# the wire contract (joint order, 99-element layout, dead-man) is testable on its own.
+add_library(walk_policy src/walk_policy.cpp)
+target_include_directories(walk_policy PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+target_compile_features(walk_policy PUBLIC cxx_std_17)
+ament_target_dependencies(walk_policy PUBLIC unitree_hg)
+
 # Sim-only LocoClient FSM legality table behind motion_service_sim's /api/sport/request
 # responder -- pure C++, no ROS deps, same internal-build-artifact treatment as blend_math.
 add_library(loco_fsm src/loco_fsm.cpp)
@@ -84,6 +94,11 @@ if(BUILD_TESTING)
   # SET_VELOCITY's Start-only gate, directly testable without a live node or DDS.
   ament_add_gmock(test_loco_fsm test/test_loco_fsm.cpp)
   target_link_libraries(test_loco_fsm loco_fsm)
+
+  # The walking policy's wire contract: DDS joint order, the 99-element observation layout,
+  # action->target mapping, and the velocity dead-man -- no ONNX Runtime needed.
+  ament_add_gmock(test_walk_policy test/test_walk_policy.cpp)
+  target_link_libraries(test_walk_policy walk_policy)
 
   # workspace/ruff.toml and .clang-format are the workspace-root configs
   # bind-mounted alongside src/ (see g1_description/CMakeLists.txt for why
