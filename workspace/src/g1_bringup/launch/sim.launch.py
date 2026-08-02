@@ -66,12 +66,12 @@ XVFB_DISPLAY = ":133"
 
 # Delay the sim's start (only the sim, not the rest of the stack) so Xvfb is
 # accepting connections and the bridge/controller_manager have DDS-matched
-# /lowstate before the first physics tick. This is startup-ordering hygiene,
-# NOT what keeps the robot upright: standing is handled by the pelvis weld pin
-# (pin_pelvis), because unitree_mujoco has no balance controller and a
-# joint-space hold cannot balance a floating-base biped on its own (see the
-# mjcf/g1_pinned_scene.xml overlay and the README). A too-short delay was
-# observed to crash headless startup (Xvfb/GLFW not ready), which is the real
+# /lowstate before the first physics tick. This matters more now than it did
+# under the weld: the walking policy is what keeps the robot upright, and it
+# cannot produce a target until /lowstate and /sportmodestate are both flowing,
+# so a sim that starts before the bridge is listening spends its first ticks
+# with the legs stiff-holding a pose nothing chose. A too-short delay was also
+# observed to crash headless startup (Xvfb/GLFW not ready), which is the other
 # reason not to set this to 0.
 SIM_START_DELAY_S = 2.0
 
@@ -138,9 +138,8 @@ def _launch_setup(context, *args, **kwargs):
     # course (103 geoms: boxes, cylinders, ramps, stairs, height fields); loading it for
     # locomotion work spawns the robot among obstacles that knock it over, which looks exactly
     # like a balance failure and is not one. Both of our scenes are the same bare floor -- the
-    # only difference is whether the pelvis is welded (pin_pelvis:=false loads the unpinned one
-    # and the robot topples on spawn, since nothing else balances it; see the README's "Pelvis
-    # pin" section).
+    # only difference is the pelvis weld, and the default (unwelded) relies on the walking policy
+    # to keep the robot upright; see the README's "Pelvis pin" section.
     overlay_name = "g1_pinned_scene.xml" if pin_pelvis else "g1_flat_scene.xml"
     staged_path  = os.path.join(G1_MODEL_DIR, STAGED_SCENE_NAME)
     overlay_src  = os.path.join(
@@ -175,6 +174,8 @@ def _launch_setup(context, *args, **kwargs):
     sim_start_delay_s = float(LaunchConfiguration("sim_start_delay_s").perform(context))
     actions.append(TimerAction(period=sim_start_delay_s, actions=[sim_process]))
 
+    # The pelvis weld and the walking policy are the two possible owners of the legs, so they are
+    # mutually exclusive by construction rather than by convention: pin_pelvis picks one.
     motion_service_sim_node = Node(
         package="g1_bringup",
         executable="motion_service_sim",
@@ -183,7 +184,9 @@ def _launch_setup(context, *args, **kwargs):
         parameters=[
             os.path.join(
                 get_package_share_directory("g1_bringup"), "config", "motion_service_sim.yaml"
-            )
+            ),
+            os.path.join(get_package_share_directory("g1_bringup"), "config", "walk_policy.yaml"),
+            {"walk_policy.enabled": not pin_pelvis},
         ],
     )
 
@@ -229,12 +232,14 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "pin_pelvis",
-                default_value="true",
-                description="Weld the pelvis to the world (SIM-ONLY scaffolding). Nothing in this "
-                "stack balances the robot -- the vendor's onboard controller does that on real "
-                "hardware and is not emulated by unitree_mujoco -- so an unpinned launch topples "
-                "on spawn. Both settings load a bare floor (mjcf/g1_pinned_scene.xml or "
-                "mjcf/g1_flat_scene.xml); see the README's 'Pelvis pin' section.",
+                default_value="false",
+                description="SIM-ONLY debugging aid: weld the pelvis to the world AND disable the "
+                "walking policy, so the arm bridge can be exercised with nothing else driving the "
+                "legs. The weld and the policy are the two possible owners of the legs and are "
+                "never both active. Default false -- the policy balances the robot itself, which "
+                "is what replaced the weld. Both settings load a bare floor "
+                "(mjcf/g1_pinned_scene.xml or mjcf/g1_flat_scene.xml); see the README's "
+                "'Pelvis pin' section.",
             ),
             DeclareLaunchArgument(
                 "sim_start_delay_s",

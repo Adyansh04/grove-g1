@@ -51,7 +51,12 @@ def generate_test_description():
     sim_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(get_package_share_directory("g1_bringup"), "launch", "sim.launch.py")
-        )
+        ),
+        # pin_pelvis:=true is explicit now that sim.launch.py defaults it false: this suite
+        # predates the walking policy and asserts against a welded, stiff-held robot, so
+        # pinning keeps it deterministic and independent of policy regressions. The
+        # unwelded, policy-driven path has its own suites (test_walk_*).
+        launch_arguments={"pin_pelvis": "true"}.items(),
     )
     return LaunchDescription(
         [

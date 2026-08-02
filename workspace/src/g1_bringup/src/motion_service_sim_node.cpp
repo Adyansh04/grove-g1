@@ -364,7 +364,10 @@ void MotionServiceSim::walkPolicyTick()
 {
     // Both inputs must be live before the first inference: /lowstate for joints and orientation,
     // /sportmodestate for base linear velocity. Running on a half-populated observation would feed
-    // the policy a zero base velocity while the robot is actually moving.
+    // the policy an assumed-zero base velocity, which is only true while the robot is at rest.
+    // Starting earlier was tried and is measurably worse, not better: entering the policy at the
+    // straight-legged spawn pose is a bigger step to the crouch than entering it after a brief
+    // stiff hold (peak lower-body 14.6 rad/s vs 12.5).
     if (!walk_policy_session_ || !hold_pose_captured_ || !sportmodestate_received_)
     {
         return;
