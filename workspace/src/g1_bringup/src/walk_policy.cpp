@@ -143,4 +143,22 @@ std::array<double, 3> activeCommand(
     return { latched->vx, latched->vy, latched->vyaw };
 }
 
+LowerBodyCommand selectLowerBodyCommand(
+    bool policy_fresh, bool policy_has_run, const std::array<double, kNumLowerMotors>& policy_q,
+    const std::array<double, kNumBodyMotors>&  hold_q,
+    const std::array<double, kNumLowerMotors>& policy_kp,
+    const std::array<double, kNumLowerMotors>& policy_kd, double leg_kp, double leg_kd,
+    double waist_kp, double waist_kd)
+{
+    LowerBodyCommand out;
+    for (std::size_t i = 0; i < kNumLowerMotors; ++i)
+    {
+        const bool is_waist = static_cast<int>(i) >= kNumLegMotors;
+        out.q[i]            = policy_has_run ? policy_q[i] : hold_q[i];
+        out.kp[i]           = policy_fresh ? policy_kp[i] : (is_waist ? waist_kp : leg_kp);
+        out.kd[i]           = policy_fresh ? policy_kd[i] : (is_waist ? waist_kd : leg_kd);
+    }
+    return out;
+}
+
 }  // namespace g1_bringup

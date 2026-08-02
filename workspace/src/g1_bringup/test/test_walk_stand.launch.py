@@ -5,6 +5,17 @@ separate from test_walk_teleop.launch.py (which drives it). Launches the default
 unwelded stack -- pin_pelvis defaults false, so nothing but the policy keeps the
 robot upright.
 
+LOAD SENSITIVITY: this suite launches a real unitree_mujoco, whose clock syncs to CPU time and
+re-syncs when it falls behind, while the walking policy is paced on a wall timer. On a loaded
+machine the two drift apart and the robot can topple. It passes reliably run on its own -- if it
+fails inside a full `colcon test` sweep, re-run it isolated before treating that as a real
+regression:
+
+    colcon test --packages-select g1_bringup --ctest-args -R test_walk_stand
+
+CMakeLists.txt orders this suite last (lowest COST) with a settle gap before it, so it runs on the
+quietest machine. Properly isolating it belongs with the deferred CI work.
+
 The robot spawns at the MJCF's own qpos0: pelvis at 0.793 m with the legs
 straight. unitree_mujoco never calls mj_resetDataKeyframe and owns its MjData in
 its own process, so there is no way to stage the policy's crouched default

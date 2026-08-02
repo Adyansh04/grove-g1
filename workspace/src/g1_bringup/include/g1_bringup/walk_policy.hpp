@@ -196,6 +196,76 @@ VelocityCommand latchVelocity(
 std::array<double, 3> activeCommand(
     const std::optional<VelocityCommand>& latched, std::chrono::steady_clock::time_point now);
 
+/**
+ * @brief Which source owns the lower body this tick, and at what gains.
+ *
+ * Extracted from publishTick() so the leg-authority decision is testable without a live node,
+ * DDS, or the simulator -- the same treatment assembleSimLowCmd() gets. Two blocking review
+ * findings lived on this path, so it is pinned by tests rather than inspection.
+ */
+struct LowerBodyCommand
+{
+    std::array<double, kNumLowerMotors> q{};
+    std::array<double, kNumLowerMotors> kp{};
+    std::array<double, kNumLowerMotors> kd{};
+};
+
+/**
+ * @brief Resolves the lower-body target and gains from policy freshness.
+ *
+ * Position and gains deliberately switch on DIFFERENT conditions:
+ * - Position follows the policy's last output as soon as one exists (`policy_has_run`), even when
+ *   stale. Reverting a stale tick to `hold_q` would step the legs from the stance the robot is
+ *   actually in back to the spawn pose captured before the policy started -- a large snap at stiff
+ *   gains. Freezing is the no-snap option.
+ * - Gains revert to the stiff hold the moment the policy goes stale, so the frozen pose is held
+ *   firmly rather than tracked softly by a controller nothing is driving.
+ * Before the policy has ever produced a target, `hold_q` IS the live pose, so it is correct there.
+ *
+ * @param policy_fresh    Whether a policy target arrived within the staleness window.
+ * @param policy_has_run  Whether the policy has ever produced a target.
+ * @param policy_q        The policy's most recent lower-body targets.
+ * @param hold_q          The captured hold pose (spawn pose), indexed by body motor.
+ * @param policy_kp       Per-joint policy position gains.
+ * @param policy_kd       Per-joint policy velocity gains.
+ * @param leg_kp          Stiff-hold position gain for the legs.
+ * @param leg_kd          Stiff-hold velocity gain for the legs.
+ * @param waist_kp        Stiff-hold position gain for the waist.
+ * @param waist_kd        Stiff-hold velocity gain for the waist.
+ * @return The resolved lower-body command.
+ */
+LowerBodyCommand selectLowerBodyCommand(
+    bool policy_fresh, bool policy_has_run, const std::array<double, kNumLowerMotors>& policy_q,
+    const std::array<double, kNumBodyMotors>&  hold_q,
+    const std::array<double, kNumLowerMotors>& policy_kp,
+    const std::array<double, kNumLowerMotors>& policy_kd, double leg_kp, double leg_kd,
+    double waist_kp, double waist_kd);
+
+/**
+ * @brief Runs `infer`, converting any exception into an empty result.
+ *
+ * Inference happens on a timer under a bare rclcpp::spin(), where an escaping exception would
+ * terminate the process and stop /lowcmd entirely -- the robot would collapse rather than fall
+ * back to the stiff hold. Returning nullopt lets the caller leave its freshness stamp untouched so
+ * the staleness path engages exactly as it would for any other stall. Templated, not std::function,
+ * so the 50 Hz path keeps zero indirection.
+ *
+ * @param infer  Callable performing one inference.
+ * @return The action, or nullopt if `infer` threw.
+ */
+template <typename Infer>
+std::optional<std::array<float, kActionDim>> runPolicyGuarded(Infer&& infer) noexcept
+{
+    try
+    {
+        return infer();
+    }
+    catch (...)
+    {
+        return std::nullopt;
+    }
+}
+
 }  // namespace g1_bringup
 
 #endif  // G1_BRINGUP__WALK_POLICY_HPP_

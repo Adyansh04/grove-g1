@@ -283,5 +283,154 @@ TEST(WalkPolicyVelocity, NoLatchMeansZeroCommand)
     EXPECT_DOUBLE_EQ(zero[2], 0.0);
 }
 
+// --- leg-authority fallback (B1) and guarded inference (B2) -------------------------------------
+//
+// Both blocking review findings lived on this path, and both were fixed by inspection alone. These
+// force the path rather than assuming the fix.
+
+std::array<double, kNumLowerMotors> makePolicyQ()
+{
+    std::array<double, kNumLowerMotors> q{};
+    for (std::size_t i = 0; i < q.size(); ++i)
+    {
+        q[i] = 0.5 + 0.01 * static_cast<double>(i);  // a plausible mid-gait crouch
+    }
+    return q;
+}
+
+std::array<double, kNumBodyMotors> makeHoldQ()
+{
+    // The spawn pose: legs straight, i.e. far from any stance the policy holds.
+    return std::array<double, kNumBodyMotors>{};
+}
+
+TEST(WalkPolicyFallback, FreshPolicyOwnsBothTargetAndGains)
+{
+    std::array<double, kNumLowerMotors> pkp{}, pkd{};
+    pkp.fill(40.0);
+    pkd.fill(2.5);
+    const auto out = selectLowerBodyCommand(
+        /*policy_fresh=*/true,
+        /*policy_has_run=*/true,
+        makePolicyQ(),
+        makeHoldQ(),
+        pkp,
+        pkd,
+        /*leg_kp=*/100.0,
+        /*leg_kd=*/1.0,
+        /*waist_kp=*/50.0,
+        /*waist_kd=*/1.0);
+
+    EXPECT_DOUBLE_EQ(out.q[3], makePolicyQ()[3]);
+    EXPECT_DOUBLE_EQ(out.kp[3], 40.0);
+    EXPECT_DOUBLE_EQ(out.kd[3], 2.5);
+}
+
+TEST(WalkPolicyFallback, StalePolicyFreezesTargetInsteadOfSnappingToTheSpawnPose)
+{
+    // THE B1 REGRESSION. A stale tick must NOT revert the legs to hold_q_: that pose is the
+    // straight-legged spawn capture, so reverting mid-stance steps both knees ~0.5 rad at stiff
+    // gains and topples the robot. This exact line was silently reverted once already.
+    std::array<double, kNumLowerMotors> pkp{}, pkd{};
+    pkp.fill(40.0);
+    pkd.fill(2.5);
+    const auto policy_q = makePolicyQ();
+    const auto out      = selectLowerBodyCommand(
+        /*policy_fresh=*/false,
+        /*policy_has_run=*/true,
+        policy_q,
+        makeHoldQ(),
+        pkp,
+        pkd,
+        /*leg_kp=*/100.0,
+        /*leg_kd=*/1.0,
+        /*waist_kp=*/50.0,
+        /*waist_kd=*/1.0);
+
+    for (std::size_t i = 0; i < kNumLowerMotors; ++i)
+    {
+        EXPECT_DOUBLE_EQ(out.q[i], policy_q[i])
+            << "motor " << i << " reverted to the spawn pose on a stale tick";
+    }
+    // Gains DO revert, so the frozen pose is held firmly rather than tracked softly.
+    EXPECT_DOUBLE_EQ(out.kp[0], 100.0);
+    EXPECT_DOUBLE_EQ(out.kp[13], 50.0)
+        << "waist must take the waist stiff-hold gain, not the leg one";
+}
+
+TEST(WalkPolicyFallback, BeforeTheFirstTargetTheHoldPoseIsUsed)
+{
+    // hold_q_ IS the live pose at this point, so it is the correct target -- the freeze rule only
+    // applies once the policy has actually produced something.
+    std::array<double, kNumLowerMotors> pkp{}, pkd{};
+    auto                                hold = makeHoldQ();
+    hold[2]                                  = 0.123;
+    const auto out                           = selectLowerBodyCommand(
+        /*policy_fresh=*/false,
+        /*policy_has_run=*/false,
+        makePolicyQ(),
+        hold,
+        pkp,
+        pkd,
+        100.0,
+        1.0,
+        50.0,
+        1.0);
+
+    EXPECT_DOUBLE_EQ(out.q[2], 0.123);
+    EXPECT_DOUBLE_EQ(out.kp[2], 100.0);
+}
+
+TEST(WalkPolicyFallback, GuardedInferenceReturnsTheActionWhenItSucceeds)
+{
+    std::array<float, kActionDim> expected{};
+    expected[7]    = 0.25F;
+    const auto out = runPolicyGuarded([&expected] { return expected; });
+    ASSERT_TRUE(out.has_value());
+    EXPECT_EQ(*out, expected);
+}
+
+TEST(WalkPolicyFallback, GuardedInferenceSwallowsAThrowInsteadOfKillingTheProcess)
+{
+    // THE B2 REGRESSION. Inference runs from a timer under a bare rclcpp::spin(), so an escaping
+    // Ort::Exception terminates the process and stops /lowcmd entirely -- the robot collapses
+    // rather than falling back to the stiff hold.
+    const auto out = runPolicyGuarded(
+        []() -> std::array<float, kActionDim> { throw std::runtime_error("inference blew up"); });
+    EXPECT_FALSE(out.has_value());
+}
+
+TEST(WalkPolicyFallback, GuardedInferenceSwallowsNonStandardExceptionsToo)
+{
+    // ORT can surface things that are not std::exception; catch(...) is deliberate.
+    const auto out = runPolicyGuarded([]() -> std::array<float, kActionDim> { throw 42; });
+    EXPECT_FALSE(out.has_value());
+}
+
+TEST(WalkPolicyFallback, AFailedInferenceLeavesTheCallerAbleToGoStale)
+{
+    // The two halves compose: a throw yields no action, the caller leaves its freshness stamp
+    // untouched, and the next publish tick therefore freezes at the LAST GOOD target -- not the
+    // spawn pose, and not a half-written one.
+    const auto last_good = makePolicyQ();
+    const auto failed    = runPolicyGuarded(
+        []() -> std::array<float, kActionDim> { throw std::runtime_error("boom"); });
+    ASSERT_FALSE(failed.has_value());
+
+    std::array<double, kNumLowerMotors> pkp{}, pkd{};
+    const auto                          out = selectLowerBodyCommand(
+        /*policy_fresh=*/false,
+        /*policy_has_run=*/true,
+        last_good,
+        makeHoldQ(),
+        pkp,
+        pkd,
+        100.0,
+        1.0,
+        50.0,
+        1.0);
+    EXPECT_DOUBLE_EQ(out.q[5], last_good[5]);
+}
+
 }  // namespace
 }  // namespace g1_bringup

@@ -447,31 +447,25 @@ void MotionServiceSim::publishTick()
                               std::chrono::duration<double>(now - walk_target_stamp_).count() <=
                                   walk_policy_staleness_timeout_s_;
 
-    std::array<double, kFirstArmMotor> lower_q{};
-    std::array<double, kFirstArmMotor> lower_kp{};
-    std::array<double, kFirstArmMotor> lower_kd{};
-    for (std::size_t i = 0; i < kFirstArmMotor; ++i)
-    {
-        const bool is_waist = static_cast<int>(i) >= kNumLegMotors;
-        // Freezes at the last policy output once the policy has ever run, rather than reverting
-        // to hold_q_. hold_q_ is the spawn pose -- straight-legged, captured before the policy
-        // started -- so falling back to it mid-stance would step both knees ~0.67 rad at stiff
-        // gains and topple the robot. Before the first target hold_q_ IS the live pose, so it
-        // stays correct there.
-        lower_q[i] = walk_target_valid_ ? walk_target_q_[i] : hold_q_[i];
-        lower_kp[i] =
-            policy_fresh ? walk_policy_config_.lower_kp[i] : (is_waist ? waist_kp_ : leg_kp_);
-        lower_kd[i] =
-            policy_fresh ? walk_policy_config_.lower_kd[i] : (is_waist ? waist_kd_ : leg_kd_);
-    }
+    const auto lower = selectLowerBodyCommand(
+        policy_fresh,
+        walk_target_valid_,
+        walk_target_q_,
+        hold_q_,
+        walk_policy_config_.lower_kp,
+        walk_policy_config_.lower_kd,
+        leg_kp_,
+        leg_kd_,
+        waist_kp_,
+        waist_kd_);
     if (walk_policy_enabled_ && walk_target_valid_ && !policy_fresh)
     {
         RCLCPP_WARN_THROTTLE(
             get_logger(),
             *get_clock(),
             1000,
-            "walking policy targets are stale -- legs and waist are stiff-holding the captured "
-            "pose instead");
+            "walking policy targets are stale -- legs and waist are frozen at the last policy "
+            "output and held at stiff-hold gains");
     }
 
     // assembleSimLowCmd() (blend_math) does the lower-body assignment, arm blend, and weight-slot
@@ -479,9 +473,9 @@ void MotionServiceSim::publishTick()
     // DDS.
     unitree_hg::msg::LowCmd cmd = assembleSimLowCmd(
         hold_q_,
-        lower_q,
-        lower_kp,
-        lower_kd,
+        lower.q,
+        lower.kp,
+        lower.kd,
         arm_cmd_q_,
         arm_cmd_kp_,
         arm_cmd_kd_,

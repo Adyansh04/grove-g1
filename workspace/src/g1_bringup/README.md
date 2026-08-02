@@ -149,6 +149,9 @@ path does drive motors 0-14. It still never touches the arm slots, never publish
 and outside FSM `Start` nothing is latched at all -- the legality table is the authority gate. See
 `g1_locomotion`'s README for the bridge this responder talks to.
 
+- Subscribes `/sportmodestate` (`unitree_go/msg/SportModeState`, best-effort, volatile) purely for
+  the base linear velocity the walking policy observes -- `/lowstate` carries no such field, which
+  is why the policy is structurally sim-only.
 - Subscribes `/api/sport/request` (`unitree_api/msg/Request`, `rclcpp::QoS(10)` reliable, volatile)
   and publishes `/api/sport/response` (`unitree_api/msg/Response`, `rclcpp::QoS(1)` reliable,
   volatile) -- **RELIABILITY/DURABILITY are vendor-matched, do not deviate**, the same rule
@@ -378,6 +381,39 @@ hardware dynamics when that milestone arrives.
 they get no `ros2_control` interfaces, and `unitree_mujoco`'s G1 MJCF has no hand joints or
 feedback at all (see `g1_description/README.md`). Nothing in this package's launch/config touches
 hand joints; their TF frames simply don't resolve to a live pose until the hand-control milestone.
+
+## Test inventory
+
+| Test | Kind | What it pins |
+|---|---|---|
+| `test_blend_math` | gmock | Blend-weight decay/resume and the q/kp/kd blend. |
+| `test_assemble_sim_low_cmd` | gmock | `/lowcmd` assembly: lower-body slots+gains, arm blend, weight-slot echo. |
+| `test_loco_fsm` | gmock | LocoClient FSM legality: every legal/illegal edge, `SET_VELOCITY`'s Start-only gate. |
+| `test_walk_policy` | gmock | Policy wire contract (DDS joint order, 99-element observation, raw/un-normalised, action->target, velocity dead-man) **and the leg-authority fallback**: stale ticks freeze at the last policy output, and an inference that throws yields no action instead of killing the process. |
+| `test_walk_policy_session` | gmock | ONNX Runtime: 99->29 shape contract, external-weight resolution, determinism, inference inside the 50 Hz budget. |
+| `test_sim_bringup` | launch | Bring-up: topics, rates, controller/component states (welded). |
+| `test_arm_command` | launch | Ordered activation, weight ramp, closed-loop trajectory, slew clamp, rogue-publisher guard (welded). |
+| `test_loco` | launch | LocoClient protocol end to end over real DDS (welded). |
+| `test_walk_stand` | launch | The policy stands the robot up **unwelded** and holds it; entry transient bounded; single `/lowcmd` writer. |
+| `test_walk_teleop` | launch | Driving through the real LocoClient authority path: `7301` before `Start`, dead-man, Damp release, randomized and whiplash command sequences. |
+| `test_walk_and_arm` | launch | The acceptance bar: walking under `cmd_vel` while an arm trajectory converges, in one session. |
+
+### Sim-suite load sensitivity -- read before trusting a red full-suite run
+
+Every `launch` suite above starts a real `unitree_mujoco`. The sim syncs its clock to CPU time and
+re-syncs when it falls behind, while the walking policy is paced on a wall timer -- so on a loaded
+machine the two drift apart and the robot can topple. **This is a harness limitation, not a policy
+defect.** Current evidence of correctness: each suite passes run in isolation, and walking, teleop
+and arm motion are hand-verified in the GUI.
+
+Mitigations here are deliberately lightweight -- `RESOURCE_LOCK` serialises the suites, a settle gap
+lets each DDS graph drain, and `COST` ordering puts `test_walk_stand` last so the milestone's core
+balance claim runs on the quietest machine. Real isolation belongs with the deferred CI work. If a
+sim suite fails inside a full sweep, re-run it alone before treating it as a regression:
+
+```bash
+colcon test --packages-select g1_bringup --ctest-args -R test_walk_stand
+```
 
 ## Building, testing, and a fresh clone
 
