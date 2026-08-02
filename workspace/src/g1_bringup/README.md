@@ -396,15 +396,24 @@ hand joints; their TF frames simply don't resolve to a live pose until the hand-
 | `test_loco` | launch | LocoClient protocol end to end over real DDS (welded). |
 | `test_walk_stand` | launch | The policy stands the robot up **unwelded** and holds it; entry transient bounded; single `/lowcmd` writer. |
 | `test_walk_teleop` | launch | Driving through the real LocoClient authority path: `7301` before `Start`, dead-man, Damp release, randomized and whiplash command sequences. |
+| `sim_settle_gap` | ctest | A 5 s sleep holding the sim resource lock, so each DDS graph drains before the next launch. |
+| `clang_format_check_g1_bringup` | ctest | C++ formatting against the workspace `.clang-format`. |
+| `ruff_check_g1_bringup` | ctest | Python lint/import-order for `launch/`, `test/`, and the arm scripts. |
 | `test_walk_and_arm` | launch | The acceptance bar: walking under `cmd_vel` while an arm trajectory converges, in one session. |
 
 ### Sim-suite load sensitivity -- read before trusting a red full-suite run
 
 Every `launch` suite above starts a real `unitree_mujoco`. The sim syncs its clock to CPU time and
 re-syncs when it falls behind, while the walking policy is paced on a wall timer -- so on a loaded
-machine the two drift apart and the robot can topple. **This is a harness limitation, not a policy
-defect.** Current evidence of correctness: each suite passes run in isolation, and walking, teleop
+machine the two drift apart and the robot can topple. The leading hypothesis is a harness limitation rather than a policy defect --
+stated as a hypothesis deliberately, since inspection on this path has already produced two real
+defects. Current evidence of correctness: each suite passes run in isolation, and walking, teleop
 and arm motion are hand-verified in the GUI.
+
+**As of this milestone the mitigation does not make a full sweep pass**: `test_walk_stand` still
+fails inside `colcon test --packages-select g1_bringup` while passing every time it is run alone.
+The isolated pass is the current evidence of correctness; do not read a green full sweep as a
+precondition for trusting this package.
 
 Mitigations here are deliberately lightweight -- `RESOURCE_LOCK` serialises the suites, a settle gap
 lets each DDS graph drain, and `COST` ordering puts `test_walk_stand` last so the milestone's core

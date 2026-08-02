@@ -307,8 +307,11 @@ std::array<double, kNumBodyMotors> makeHoldQ()
 TEST(WalkPolicyFallback, FreshPolicyOwnsBothTargetAndGains)
 {
     std::array<double, kNumLowerMotors> pkp{}, pkd{};
-    pkp.fill(40.0);
-    pkd.fill(2.5);
+    for (std::size_t i = 0; i < pkp.size(); ++i)
+    {  // distinct per index, so an off-by-one shows as a wrong number (see makeConfig())
+        pkp[i] = 40.0 + static_cast<double>(i);
+        pkd[i] = 2.5 + 0.1 * static_cast<double>(i);
+    }
     const auto out = selectLowerBodyCommand(
         /*policy_fresh=*/true,
         /*policy_has_run=*/true,
@@ -322,8 +325,9 @@ TEST(WalkPolicyFallback, FreshPolicyOwnsBothTargetAndGains)
         /*waist_kd=*/1.0);
 
     EXPECT_DOUBLE_EQ(out.q[3], makePolicyQ()[3]);
-    EXPECT_DOUBLE_EQ(out.kp[3], 40.0);
-    EXPECT_DOUBLE_EQ(out.kd[3], 2.5);
+    EXPECT_DOUBLE_EQ(out.kp[3], 43.0);
+    EXPECT_DOUBLE_EQ(out.kd[3], 2.8);
+    EXPECT_DOUBLE_EQ(out.kp[13], 53.0) << "the waist takes policy gains too while fresh";
 }
 
 TEST(WalkPolicyFallback, StalePolicyFreezesTargetInsteadOfSnappingToTheSpawnPose)

@@ -200,8 +200,7 @@ std::array<double, 3> activeCommand(
  * @brief Which source owns the lower body this tick, and at what gains.
  *
  * Extracted from publishTick() so the leg-authority decision is testable without a live node,
- * DDS, or the simulator -- the same treatment assembleSimLowCmd() gets. Two blocking review
- * findings lived on this path, so it is pinned by tests rather than inspection.
+ * DDS, or the simulator -- the same treatment assembleSimLowCmd() gets.
  */
 struct LowerBodyCommand
 {

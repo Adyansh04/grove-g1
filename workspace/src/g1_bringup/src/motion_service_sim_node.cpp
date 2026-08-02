@@ -381,20 +381,19 @@ void MotionServiceSim::walkPolicyTick()
     // Ort::Exception would terminate the process and stop /lowcmd entirely -- the robot would
     // collapse instead of falling back to the stiff hold. Leaving walk_target_stamp_ untouched
     // lets the freshness gate engage exactly as it would for any other stall.
-    try
-    {
-        walk_last_action_ = walk_policy_session_->run(observation);
-    }
-    catch (const std::exception& e)
+    const auto action =
+        runPolicyGuarded([this, &observation] { return walk_policy_session_->run(observation); });
+    if (!action)
     {
         RCLCPP_ERROR_THROTTLE(
             get_logger(),
             *get_clock(),
             1000,
-            "walking policy inference failed: %s",
-            e.what());
+            "walking policy inference threw -- skipping this tick; leaving the freshness stamp "
+            "untouched so the stiff-hold fallback engages if it keeps failing");
         return;
     }
+    walk_last_action_  = *action;
     const auto targets = actionToJointTargets(walk_last_action_, walk_policy_config_);
     std::copy(targets.begin(), targets.begin() + kNumLowerMotors, walk_target_q_.begin());
     walk_target_valid_ = true;

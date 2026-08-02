@@ -21,6 +21,8 @@ import unittest
 import launch_testing.actions
 import rclpy
 from ament_index_python.packages import get_package_share_directory
+from g1_msgs.action import SetLocoMode
+from g1_msgs.msg import LocoStatus
 from geometry_msgs.msg import Twist
 from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription, TimerAction
@@ -29,9 +31,6 @@ from rclpy.action import ActionClient
 from rclpy.node import Node
 from rclpy.qos import QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile, QoSReliabilityPolicy
 from unitree_api.msg import Request, Response
-
-from g1_msgs.action import SetLocoMode
-from g1_msgs.msg import LocoStatus
 
 # See test_sim_bringup.launch.py's comment on this constant: kept below launch_testing's own
 # hardcoded 15 s process-startup deadline. sim.launch.py now also configures+activates

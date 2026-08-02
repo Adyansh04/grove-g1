@@ -189,8 +189,6 @@ if(BUILD_TESTING)
   # ctest runs COST-ordered descending, so the explicit costs below put the heavy driving suites
   # first and leave test_walk_stand -- the milestone's core "it balances at all" claim -- last, on
   # the quietest machine. Properly isolating this belongs with the deferred CI work.
-  set(_SIM_SETTLE_S 5)
-
   # Headless sim integration suites -- both exercise the real unitree_mujoco
   # sim end to end (see each file's own docstring for what it asserts).
   # Generous timeouts: sim.launch.py's own settle window plus the test
@@ -222,9 +220,10 @@ if(BUILD_TESTING)
   add_launch_test(test/test_walk_and_arm.launch.py TARGET test_walk_and_arm TIMEOUT 400)
   set_tests_properties(test_walk_and_arm PROPERTIES RESOURCE_LOCK g1_sim)
 
-  # A DDS graph takes a moment to drain after each sim tears down; without a gap the next launch
-  # can discover the previous run's dying participants. Cheap insurance, one lightweight step
-  # rather than a real isolation mechanism.
+  # Buys ONE gap, immediately before test_walk_stand (the lowest-COST suite, so it runs last): a
+  # DDS graph takes a moment to drain, and this is the suite whose result we most need to trust.
+  # It is not a per-boundary drain and not real isolation -- that is deferred with the CI work.
+  set(_SIM_SETTLE_S 5)
   add_test(NAME sim_settle_gap COMMAND ${CMAKE_COMMAND} -E sleep ${_SIM_SETTLE_S})
   set_tests_properties(sim_settle_gap PROPERTIES RESOURCE_LOCK g1_sim COST 50)
 
