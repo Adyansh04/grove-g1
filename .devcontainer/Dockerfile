@@ -81,6 +81,7 @@ RUN mkdir -p /opt/unitree_robotics/mujoco-${MUJOCO_VERSION} && \
 # Pinned 2026-07-17 — current tip of unitree_mujoco at authoring time,
 # resolved together with UNITREE_SDK2_SHA above.
 COPY workspace/patches/unitree_mujoco/ /tmp/unitree_mujoco_patches/
+COPY workspace/vendor/unitree_mujoco/ /tmp/unitree_mujoco_src/
 ARG UNITREE_MUJOCO_SHA=ae6a8403e272733e9996ef59990880330496177f
 RUN git init -q /opt/unitree_robotics/unitree_mujoco && \
     cd /opt/unitree_robotics/unitree_mujoco && \
@@ -93,12 +94,14 @@ RUN git init -q /opt/unitree_robotics/unitree_mujoco && \
         git apply --check "$p" || { echo "PATCH DOES NOT APPLY: $p"; exit 1; }; \
         git apply "$p"; \
     done && \
+    cp /tmp/unitree_mujoco_src/*.h /tmp/unitree_mujoco_src/*.cc simulate/src/ && \
     rm -rf .git && \
     rm -rf simulate/mujoco && \
     mv /opt/unitree_robotics/mujoco-${MUJOCO_VERSION} simulate/mujoco && \
     mkdir simulate/build && cd simulate/build && \
+    . /opt/ros/humble/setup.sh && \
     cmake .. -DCMAKE_BUILD_TYPE=Release \
-             -DCMAKE_PREFIX_PATH=/opt/unitree_robotics/lib/cmake && \
+             -DCMAKE_PREFIX_PATH="/opt/unitree_robotics/lib/cmake;/opt/ros/humble" && \
     cmake --build . --target unitree_mujoco --parallel "$(nproc)" && \
     rm -rf CMakeFiles && \
     rm -rf ../mujoco/sample ../mujoco/bin ../mujoco/doc ../mujoco/model
@@ -199,12 +202,6 @@ RUN mkdir -p /opt/mujoco_ros2_control_ws/src && \
     git remote add origin https://github.com/ros-controls/mujoco_ros2_control.git && \
     git fetch --depth 1 origin ${MUJOCO_ROS2_CONTROL_SHA} && \
     git checkout -q FETCH_HEAD && \
-    for p in /tmp/unitree_mujoco_patches/*.patch; do \
-        [ -e "$p" ] || continue; \
-        echo "Applying $(basename "$p")"; \
-        git apply --check "$p" || { echo "PATCH DOES NOT APPLY: $p"; exit 1; }; \
-        git apply "$p"; \
-    done && \
     rm -rf .git && \
     cd /opt/mujoco_ros2_control_ws && \
     . /opt/ros/humble/setup.sh && \

@@ -1,0 +1,10 @@
+# Sensor thread inside unitree_mujoco. Read via GROVE_G1_SENSOR_CONFIG; if that variable
+# is unset the patched binary behaves exactly like the stock one, which is why the
+# locomotion suites are unaffected until they opt in.
+enabled: true
+
+# A full 360x32 sweep costs ~32 ms against the G1 scene (74 geoms, 36 meshes), so this
+# runs on its own thread and the rate is a real budget, not a formality.
+rate_hz: 10.0
+
+node_name: "g1_sim_sensors"

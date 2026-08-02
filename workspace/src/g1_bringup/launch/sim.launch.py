@@ -124,6 +124,13 @@ def _launch_setup(context, *args, **kwargs):
     shutil.copyfile(overlay_src, staged_path)
     sim_cmd = [UNITREE_MUJOCO_BIN, "-r", "g1", "-s", STAGED_SCENE_NAME]
 
+    # The patched unitree_mujoco starts its sensor thread only when this names a config,
+    # so the stock code path is what runs unless sensors are asked for explicitly.
+    if sensors:
+        sim_env["GROVE_G1_SENSOR_CONFIG"] = os.path.join(
+            get_package_share_directory("g1_bringup"), "config", "sim_sensors.yaml"
+        )
+
     def _remove_staged_scene(context, *a, **k):
         try:
             os.remove(staged_path)
