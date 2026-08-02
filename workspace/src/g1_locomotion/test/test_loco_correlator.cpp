@@ -122,9 +122,7 @@ TEST(LocoRequestCorrelator, NeverArrivingResponseTimesOutViaSweep)
 
 TEST(LocoRequestCorrelator, SweepTimeoutCallbackMaySendANewRequestWithoutCorruptingIteration)
 {
-    // Enough entries expiring in one sweep() call to comfortably clear libstdc++'s default rehash
-    // threshold (13 elements at max_load_factor 1.0) -- the shape that turns a reentrant insert
-    // into iterator invalidation under a single-phase erase-and-invoke loop.
+    // Enough entries to trigger rehash during reentrant insert.
     constexpr int kCount  = 20;
     auto       correlator = makeCorrelator(/*request_timeout_s=*/1.0, /*max_pending=*/kCount * 2);
     const auto now        = std::chrono::steady_clock::now();

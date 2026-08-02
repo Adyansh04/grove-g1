@@ -36,11 +36,7 @@ using namespace std::chrono_literals;
 using SetLocoMode      = g1_msgs::action::SetLocoMode;
 using ClientGoalHandle = rclcpp_action::ClientGoalHandle<SetLocoMode>;
 
-/// History depth is not an RxO-matched QoS policy (only reliability/durability are) -- this
-/// driver's own readers go deeper than the depth-1 vendor-matched wire QoS deliberately, so a
-/// burst landing in one DDS write batch can never look like a drop that's actually just this test
-/// under-provisioning its own subscription (see the Commit-3 fix a couple of these tests exercise
-/// indirectly by counting requests).
+/// Deep reader QoS so bursts in one DDS batch don't look like drops.
 rclcpp::QoS sportReaderQos() { return rclcpp::QoS(10).reliable().durability_volatile(); }
 rclcpp::QoS sportWriterQos() { return rclcpp::QoS(1).reliable().durability_volatile(); }
 rclcpp::QoS statusReaderQos()
@@ -55,29 +51,18 @@ rclcpp::QoS cmdVelWriterQos()
 /**
  * @brief Drives a G1LocoBridge in-process against a fake /api/sport/* responder: no sim, no
  * launch_testing, just DDS loopback on an isolated domain.
- *
- * The fake responder (this fixture's own driver_ node) answers SET_FSM_ID immediately with
- * success by default -- enough to reach kHeld without needing motion_service_sim's own FSM
- * legality table, which is exercised separately by g1_bringup's test_loco_fsm/test_loco -- and
- * never answers SET_VELOCITY at all, since every test here cares about request traffic/authority
- * state rather than a velocity round trip actually completing.
+ * The fake responder answers SET_FSM_ID immediately and never answers SET_VELOCITY.
  */
 class LocoBridgeNodeTest : public ::testing::Test
 {
 protected:
     void SetUp() override
     {
-        // Isolated domain: this driver_ node publishes/subscribes the exact topic names
-        // (/api/sport/request, ~/cmd_vel, ...) a live sim or a concurrently-running colcon-test
-        // package could also be using, so this process must not share a domain with either.
-        // CycloneDDS's container config pins the `lo` interface, not a specific domain id, so any
-        // id is fine here.
+        // Isolated domain to avoid collision with a live sim or concurrent tests.
         setenv("ROS_DOMAIN_ID", "67", 1);
         rclcpp::init(0, nullptr);
 
-        // Constructed here, not as a default-initialized member: gtest builds the fixture object
-        // (default-initializing every member, including this one) before SetUp() ever runs, and
-        // SingleThreadedExecutor's constructor needs rclcpp::init() to have already happened.
+        // Constructed here because rclcpp::init() must run first.
         executor_ = std::make_unique<rclcpp::executors::SingleThreadedExecutor>();
 
         bridge_ = std::make_shared<G1LocoBridge>(rclcpp::NodeOptions());
@@ -262,11 +247,8 @@ protected:
     std::vector<unitree_api::msg::Request>  requests_;
     std::optional<g1_msgs::msg::LocoStatus> latest_status_;
     bool                                    auto_accept_fsm_{ true };
-    /// Off by default: most tests here (see the fixture's class comment) deliberately leave
-    /// SET_VELOCITY unanswered. A test isolating a *different* release path -- e.g. STAND_UP's
-    /// own authority release -- needs this on, or Commit 2's failure-streak safety net would
-    /// independently release authority for an unrelated reason and mask what's actually under
-    /// test.
+    /// Off by default: most tests leave SET_VELOCITY unanswered. Tests isolating
+    /// a specific release path enable this to prevent unrelated failure-streak releases.
     bool auto_accept_velocity_{ false };
 };
 
@@ -295,10 +277,7 @@ TEST_F(LocoBridgeNodeTest, LateSetLocoModeReplyAfterDeactivateDoesNotReviveAutho
     bridge_->deactivate();
     ASSERT_EQ(bridge_->get_current_state().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
 
-    // The reply that would have promoted authority to HELD is delivered only now -- after
-    // deactivate already ran. Whether it ever arrives at all must not matter: on_deactivate()
-    // must make this unreachable regardless of timing, not merely lose a race against this
-    // test's own spinning.
+    // Reply delivered after deactivate — must not revive authority.
     publishSetFsmIdResult(request_id, kCodeSuccess);
     spinFor(200ms);
 
@@ -337,12 +316,8 @@ TEST_F(LocoBridgeNodeTest, UnansweredVelocityRequestsStillReleaseAuthority)
         1s))
         << "authority never reached HELD";
 
-    // The fake responder never answers SET_VELOCITY (see the fixture's class comment) -- standing
-    // in for a round trip slower than the re-issue period (observed at ~400 ms against the
-    // 200 ms default). A live, non-zero cmd_vel must keep flowing throughout: VelocityGate only
-    // re-issues continuously for a fresh non-zero command, and continuous re-issuing against a
-    // channel that never answers is exactly what used to make the failure streak unreachable
-    // (supersede() alone drops the outcome with no callback).
+    // Fake responder never answers SET_VELOCITY, simulating a slow channel.
+    // Live cmd_vel must keep flowing to exercise the failure-streak path.
     publishCmdVelFor(0.1, 2s);
 
     ASSERT_TRUE(latest_status_.has_value());
@@ -359,9 +334,7 @@ TEST_F(LocoBridgeNodeTest, UnansweredVelocityRequestsStillReleaseAuthority)
 
 TEST_F(LocoBridgeNodeTest, StandUpFromHeldReleasesAuthorityAndStopsVelocityIntents)
 {
-    // Answer SET_VELOCITY successfully throughout -- isolates STAND_UP's own release path from
-    // Commit 2's unrelated failure-streak release (an unanswered channel would release authority
-    // on its own regardless of whether STAND_UP's fix is even present, masking this test).
+    // Answer SET_VELOCITY to isolate STAND_UP's release path from failure-streak release.
     auto_accept_velocity_ = true;
     configureAndActivate();
 
@@ -432,17 +405,11 @@ TEST_F(LocoBridgeNodeTest, ShutdownWhileGoalInFlightTerminatesItInsteadOfWedging
     ASSERT_TRUE(goal_future.get()) << "START goal was not accepted";
     ASSERT_TRUE(spinUntil([this] { return countRequests(kApiIdSetFsmId) > 0; }, 2s))
         << "bridge never published the SET_FSM_ID request -- goal isn't genuinely in flight yet";
-    // Extra, unconditional spinning: countRequests() only proves handleAccepted() ran, not that
-    // the server side has also finished registering this client's get-result service request
-    // (a separate round trip make_result_aware() kicked off above) -- give it room to land before
-    // pulling the rug out from under it.
+    // Extra spinning so the action server registers the result request.
     spinFor(200ms);
 
-    // shutdown() reaches on_shutdown() directly from ACTIVE, bypassing on_deactivate() entirely
-    // -- Humble's lifecycle state machine allows a direct shutdown transition from any primary
-    // state. This is the one path that can still reach resetEntities() with a goal in flight (a
-    // dead /api/sport/request target would otherwise leave the goal hanging past the sweep timer
-    // resetEntities() itself destroys).
+    // shutdown() bypasses on_deactivate entirely — this is the one path that
+    // can reach resetEntities() with a goal still in flight.
     bridge_->shutdown();
     ASSERT_EQ(
         bridge_->get_current_state().id(),

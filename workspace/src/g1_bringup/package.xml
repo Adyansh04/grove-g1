@@ -18,16 +18,8 @@
   <depend>unitree_hg</depend>
   <depend>unitree_api</depend>
   <depend>g1_hardware_interface</depend>
-  <!-- nlohmann_json is the CMake config-package name (find_package(nlohmann_json REQUIRED) in
-       CMakeLists.txt); nlohmann-json-dev is the actual rosdep/apt key that resolves to. -->
   <depend>nlohmann-json-dev</depend>
-  <!-- ament_index_cpp resolves the installed walker.onnx under this package's share dir, so
-       the policy path needs no launch plumbing. ONNX Runtime itself has no rosdep key: it is a
-       pinned prebuilt tarball under /opt/onnxruntime (see .devcontainer/Dockerfile) found by
-       path in CMakeLists.txt. -->
   <depend>ament_index_cpp</depend>
-  <!-- SportModeState carries the base linear velocity the walking policy observes;
-       /lowstate has no such field. Linked into motion_service_sim, not test-only. -->
   <depend>unitree_go</depend>
 
   <depend>g1_description</depend>
@@ -42,30 +34,16 @@
   <depend>launch</depend>
   <depend>launch_ros</depend>
 
-  <!-- ament_index_python is imported directly by sim.launch.py,
-       control.launch.py, and both test launch files; today it's only
-       pulled in transitively through launch_ros, so it's declared
-       explicitly here to reflect the real dependency. xvfb (the rosdep
-       key for the Xvfb binary) is exec'd directly by sim.launch.py's
-       default headless path. -->
   <exec_depend>ament_index_python</exec_depend>
   <exec_depend>xvfb</exec_depend>
 
-  <!-- loco.launch.py (included from sim.launch.py) launches g1_locomotion's g1_loco_bridge
-       executable and reads its config: a runtime-only dependency, since this package's C++
-       never links against g1_locomotion. -->
+  <!-- Runtime dependency for loco.launch.py. -->
   <exec_depend>g1_locomotion</exec_depend>
 
-  <!-- teleop_twist_keyboard drives ~/cmd_vel by hand for the manual walking demo; it is never
-       imported or linked, only launched by the operator (see README). -->
+  <!-- Manual teleop demo dependency (see README). -->
   <exec_depend>teleop_twist_keyboard</exec_depend>
 
-  <!-- ament_lint_common is intentionally not used (see g1_description's and
-       g1_hardware_interface's package.xml for the rationale): it drags in
-       ament_uncrustify/ament_flake8/ament_copyright, which conflict with
-       this repo's root .clang-format/ruff.toml and no-header-comment
-       convention. clang-format/ruff run as plain CTests instead (see
-       CMakeLists.txt). -->
+  <!-- Lint checks run via workspace-root CTests (see CMakeLists.txt). -->
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_cmake_lint_cmake</test_depend>
   <test_depend>ament_cmake_xmllint</test_depend>
@@ -76,11 +54,9 @@
   <test_depend>control_msgs</test_depend>
   <test_depend>trajectory_msgs</test_depend>
   <test_depend>builtin_interfaces</test_depend>
-  <!-- test_loco.launch.py drives g1_locomotion's SetLocoMode action/LocoStatus directly and
-       publishes raw unitree_api Requests: both are only imported from Python in this package. -->
+  <!-- g1_msgs Python dependency for test_loco.launch.py. -->
   <test_depend>g1_msgs</test_depend>
-  <!-- geometry_msgs is imported only by test/test_loco.launch.py (Twist): nothing under src/,
-       include/, or launch/ references it, and no C++ target links against it. -->
+  <!-- geometry_msgs dependency for test_loco.launch.py. -->
   <test_depend>geometry_msgs</test_depend>
 
   <export>

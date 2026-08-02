@@ -1,14 +1,5 @@
 """Headless sim integration test: driving the robot through the real LocoClient authority path.
-
-Everything here moves the robot, so it is separate from test_walk_stand.launch.py.
-The point is that NO new authority mechanism was built for the walking policy: the
-Milestone-2 FSM legality table is the gate, and the policy simply consumes what it
-lets through. So these tests drive the real SetLocoMode action on g1_loco_bridge
-rather than poking the policy directly.
-
-Commands here are deliberately ABOVE the policy's measured gait-initiation
-thresholds ([0.40, 0.50, 1.50]). A test written at 0.2 m/s would pass while
-asserting nothing at all, because the robot correctly stands still below threshold.
+Commands here are deliberately above the policy's measured gait-initiation thresholds.
 """
 
 import os
@@ -84,12 +75,7 @@ class WalkTeleopTest(unittest.TestCase):
     def setUpClass(cls):
         rclpy.init()
         cls.node = Node("test_walk_teleop")
-        # Bounded: /lowstate publishes at ~900 Hz, so unbounded lists accumulate tens of
-        # thousands of messages over a multi-minute suite. That is not just memory -- the
-        # Python callback runs per message and the growth starves the simulator, which then
-        # falls behind real time and the policy (paced on a wall timer) destabilises. Observed
-        # directly: the same command sequences that topple the robot under the full suite run
-        # cleanly against a hand-driven sim.
+        # Bounded buffers to avoid memory growth and starving the simulator.
         cls.sport_states = deque(maxlen=400)
         cls.low_states = deque(maxlen=1500)
         cls.responses = deque(maxlen=200)
@@ -102,10 +88,7 @@ class WalkTeleopTest(unittest.TestCase):
         cls.node.create_subscription(
             Response, "/api/sport/response", cls.responses.append, _sport_qos()
         )
-        # NO raw /api/sport/request publisher here on purpose: existing merely as a second
-        # publisher on that channel trips g1_loco_bridge's single-writer guard, which force-releases
-        # locomotion authority for the rest of the session. test_01 creates one for the few
-        # milliseconds it needs and destroys it again (see there).
+        # NO raw /api/sport/request publisher here to avoid dual-writer guard trips.
         cls.cmd_vel_pub = cls.node.create_publisher(
             Twist,
             "/g1_loco_bridge/cmd_vel",
@@ -195,16 +178,11 @@ class WalkTeleopTest(unittest.TestCase):
     # --- tests -----------------------------------------------------------------------------
 
     def test_01_velocity_before_start_is_rejected_and_moves_nothing(self):
-        """SET_VELOCITY outside Start must still return 7301 -- now with a physical consequence.
+        """SET_VELOCITY outside Start must return 7301 and not move the robot.
 
-        Published as a RAW request because the bridge's own VelocityGate would never emit one
-        outside kHeld; going around it is the only way to exercise the responder's legality gate.
-
-        The publisher is created and destroyed inside this test: simply existing as a second
-        publisher on /api/sport/request trips g1_loco_bridge's single-writer guard, which
-        force-releases locomotion authority. That guard is correct -- it is Milestone 2's
-        dual-writer protection doing its job -- but a session-lifetime publisher would leave
-        authority released for every test after this one.
+        Published as a RAW request because the bridge's VelocityGate would never emit
+        one outside kHeld. Publisher is created/destroyed inside this test to avoid
+        tripping the single-writer guard for the rest of the session.
         """
         # Settle first: the measurement below is about whether a REJECTED command moved the
         # robot, so the spawn transient must not be inside the window.
@@ -232,11 +210,7 @@ class WalkTeleopTest(unittest.TestCase):
         finally:
             self.node.destroy_publisher(raw_pub)
 
-        # Bound derived from the measured standing behaviour, not from zero: this policy drifts
-        # underfoot even at a zero command (a documented characteristic, see the README), so a
-        # standing robot still creeps over this window. A robot that actually accepted vx=0.7
-        # would cover roughly two metres in the same time, so this cleanly separates "drifting
-        # while standing" from "walked because the gate leaked".
+        # Drift bound: reject command movement must be < accumulated idle-drift.
         drift = self._planar_distance(self._position(), before)
         self.assertLess(
             drift,
@@ -255,9 +229,7 @@ class WalkTeleopTest(unittest.TestCase):
         self._drive(DRIVE_VX, 8.0)
         travelled = self._planar_distance(self._position(), before)
 
-        # 2.0 m, not 0.5: this suite budgets ~0.1 m/s of zero-command drift elsewhere, which is
-        # 0.8 m over this window -- a robot that never stepped would clear a 0.5 m bound. Measured
-        # walking at this command is ~0.5-0.6 m/s, i.e. ~4 m here, so 2.0 m separates the two.
+        # ~4 m total expected; 2 m bound is conservative against the ~0.8 m cumulative drift.
         self.assertGreater(
             travelled,
             2.0,

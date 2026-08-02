@@ -70,12 +70,7 @@ struct RampConfig
 inline constexpr double kMaxDtNominalPeriodMultiple = 3.0;
 
 /**
- * @brief Pure, ROS-free ramp/slew logic for the arm_sdk blend weight and per-joint command
- * targets -- the safety-critical unit-testable surface.
- *
- * Not thread-safe by design: exactly one thread drives it at a time (see
- * G1ArmSdkSystem's writer-token contract for how that's enforced across the
- * RT and lifecycle threads).
+ * @brief Ramp and velocity slew calculation engine for arm blend weights and joint targets.
  */
 class ArmRampEngine
 {

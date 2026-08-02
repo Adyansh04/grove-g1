@@ -1,11 +1,7 @@
-"""Explicit activation entry point (see README.md's operating procedure).
+"""Activate the arm hardware component and controller (see README).
 
-Runs scripts/activate_arm, which waits for /lowstate to be flowing and then
-activates G1ArmSdkSystem *before* arm_trajectory_controller -- the mandatory
-order (Humble ties command-interface availability to hardware component
-state; the reverse order can fail the controller switch). Run only after
-sim.launch.py is up.
-"""
+Must run after sim.launch.py is up. Activates G1ArmSdkSystem before
+arm_trajectory_controller (mandatory order in Humble)."""
 
 from launch import LaunchDescription
 from launch.actions import ExecuteProcess

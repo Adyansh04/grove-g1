@@ -5,22 +5,8 @@ separate from test_walk_teleop.launch.py (which drives it). Launches the default
 unwelded stack -- pin_pelvis defaults false, so nothing but the policy keeps the
 robot upright.
 
-LOAD SENSITIVITY: this suite launches a real unitree_mujoco, whose clock syncs to CPU time and
-re-syncs when it falls behind, while the walking policy is paced on a wall timer. On a loaded
-machine the two drift apart and the robot can topple. It passes reliably run on its own -- if it
-fails inside a full `colcon test` sweep, re-run it isolated before treating that as a real
-regression:
-
-    colcon test --packages-select g1_bringup --ctest-args -R test_walk_stand
-
-CMakeLists.txt orders this suite last (lowest COST) with a settle gap before it, so it runs on the
-quietest machine. Properly isolating it belongs with the deferred CI work.
-
-The robot spawns at the MJCF's own qpos0: pelvis at 0.793 m with the legs
-straight. unitree_mujoco never calls mj_resetDataKeyframe and owns its MjData in
-its own process, so there is no way to stage the policy's crouched default
-posture -- the policy settles into it, dropping ~3 cm, within a fraction of a
-second. That settle is the thing this suite pins.
+# LOAD SENSITIVITY: Policy wall-timer vs sim CPU-time clock drift can cause failures.
+# Run this test isolated (`colcon test ... -R test_walk_stand`) if flaky.
 """
 
 import os
@@ -52,13 +38,8 @@ STAND_HEIGHT_MAX = 0.79
 # How long the robot must hold that height once settled.
 HOLD_DURATION_S = 12.0
 
-# Max |dq| over the lower body during the first second. The spawn->crouch settle is an inherent
-# transient: unitree_mujoco spawns the robot at qpos0 (pelvis 0.793 m, legs straight) and there is
-# no way to stage the policy's crouched posture, so the first targets are a real step. Measured
-# peak is 12.5 rad/s over roughly 0.1 s, against a G1 knee limit near 32 rad/s. This is a
-# regression guard against that becoming violent, not a tight bound -- and NOT a target to
-# "fix" by ramping the policy in: easing the robot into the posture was tried and made the
-# previous walking attempt strictly worse, and the vendor's own sim entry point does no ramp.
+# Max lower-body |dq| during the spawn->crouch settle. Regression guard against
+# the entry transient becoming violent (measured peak ~12.5 rad/s).
 ENTRY_PEAK_DQ_MAX = 20.0
 
 LOWER_MOTORS = 15
@@ -188,12 +169,7 @@ class WalkStandTest(unittest.TestCase):
         )
 
     def test_04_entry_transient_is_not_violent(self):
-        """The spawn->crouch settle must stay a settle, not a snap.
-
-        There is deliberately no entry ramp: /lowcmd is not published before the first /lowstate,
-        so there is no prior setpoint to ramp from, and adding a posture
-        ramp was tried and made the previous walking attempt strictly worse. This bounds it instead.
-        """
+        """The spawn->crouch settle must stay a settle, not a snap."""
         self.assertGreater(self.entry_samples, 0, "no /lowstate received during entry")
         peak_dq = self.entry_peak_dq
         self.assertLess(

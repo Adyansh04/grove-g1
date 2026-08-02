@@ -27,52 +27,24 @@ from launch_ros.actions import Node
 
 UNITREE_MUJOCO_BIN = "/opt/unitree_robotics/unitree_mujoco/simulate/build/unitree_mujoco"
 
-# The vendored G1 model directory (holds g1_29dof.xml, meshes/, scene.xml). The
-# sim resolves a relative -s scene against <sim>/../unitree_robots/<robot>/, i.e.
-# this directory. Derived from the binary location so it tracks the Dockerfile.
+# Vendored G1 model directory. Derived from the binary location.
 G1_MODEL_DIR = os.path.normpath(
     os.path.join(os.path.dirname(UNITREE_MUJOCO_BIN), "..", "..", "unitree_robots", "g1")
 )
 
-# Name of the pelvis-pin scene overlay once staged into G1_MODEL_DIR. The source
-# lives in g1_bringup (mjcf/g1_pinned_scene.xml); it is copied here at launch so
-# its relative <include> and the model's own meshdir resolve against the vendored
-# directory (see the overlay's header comment for why staging is required).
+# Scene overlay staged into G1_MODEL_DIR at launch (relative includes require it).
 STAGED_SCENE_NAME = "g1_grove_scene.staged.xml"
 
-# unitree_mujoco is a native unitree_sdk2 DDS app, not a ROS node, and links
-# its own build of CycloneDDS from here. Sourcing a ROS environment (as any
-# shell launching `ros2 launch` already has) prepends /opt/ros/humble/lib*
-# to LD_LIBRARY_PATH ahead of this directory; since the binary's own rpath
-# is a RUNPATH (checked *after* LD_LIBRARY_PATH), that shadows this build
-# with ROS's separately-built libddsc.so.0 and crashes on the first DDS
-# write with a heap-corruption/assertion abort -- confirmed directly
-# (gdb backtrace landed inside /opt/ros/humble/lib/.../libddsc.so.0, an
-# ABI-incompatible copy). Prepending this path here, rather than replacing
-# LD_LIBRARY_PATH outright, keeps everything else (X11/GL, etc.) intact.
+# Prepend unitree_robotics/lib so the sim loads its own CycloneDDS build
+# instead of ROS's ABI-incompatible /opt/ros/humble/lib/libddsc.so.0.
 UNITREE_ROBOTICS_LIB = "/opt/unitree_robotics/lib"
 
-# Headless mode runs its own Xvfb as a directly-tracked launch action rather
-# than wrapping the sim in the `xvfb-run` script. `xvfb-run` spawns Xvfb and
-# the wrapped binary as untracked grandchildren that never receive launch's
-# SIGTERM: confirmed directly that both `unitree_mujoco` and `Xvfb` were
-# still running -- still holding the DDS graph -- well after `ros2 launch`
-# itself had exited cleanly, which risks a second sim instance colliding
-# with the next launch (the same dual-writer hazard as two publishers on
-# one low-level channel). Managing Xvfb ourselves means launch's normal shutdown handling
-# (which does correctly signal every process it started directly) tears it
-# down too.
+# Manage Xvfb directly as a launch action — xvfb-run orphans its children,
+# leaving the sim running after launch exits.
 XVFB_DISPLAY = ":133"
 
-# Delay the sim's start (only the sim, not the rest of the stack) so Xvfb is
-# accepting connections and the bridge/controller_manager have DDS-matched
-# /lowstate before the first physics tick. This matters more now than it did
-# under the weld: the walking policy is what keeps the robot upright, and it
-# cannot produce a target until /lowstate and /sportmodestate are both flowing,
-# so a sim that starts before the bridge is listening spends its first ticks
-# with the legs stiff-holding a pose nothing chose. A too-short delay was also
-# observed to crash headless startup (Xvfb/GLFW not ready), which is the other
-# reason not to set this to 0.
+# Delay the sim start so the bridge and controller_manager are DDS-ready
+# before the first physics tick. Too short can also crash headless GLFW startup.
 SIM_START_DELAY_S = 2.0
 
 
@@ -132,14 +104,8 @@ def _launch_setup(context, *args, **kwargs):
         actions.append(xvfb_process)
         sim_env["DISPLAY"] = XVFB_DISPLAY
 
-    # Always stage one of our own scenes -- never fall through to the sim's default. Staging
-    # (rather than an absolute -s path) is required for MuJoCo's relative asset resolution -- see
-    # mjcf/g1_pinned_scene.xml's header comment. unitree_mujoco's own g1 scene.xml is an obstacle
-    # course (103 geoms: boxes, cylinders, ramps, stairs, height fields); loading it for
-    # locomotion work spawns the robot among obstacles that knock it over, which looks exactly
-    # like a balance failure and is not one. Both of our scenes are the same bare floor -- the
-    # only difference is the pelvis weld, and the default (unwelded) relies on the walking policy
-    # to keep the robot upright; see the README's "Pelvis pin" section.
+    # Stage one of our scenes (bare floor). The vendored obstacle course spawns the robot
+    # among obstacles that look like balance failures.
     overlay_name = "g1_pinned_scene.xml" if pin_pelvis else "g1_flat_scene.xml"
     staged_path  = os.path.join(G1_MODEL_DIR, STAGED_SCENE_NAME)
     overlay_src  = os.path.join(
@@ -167,15 +133,11 @@ def _launch_setup(context, *args, **kwargs):
         output="screen",
         env=sim_env,
     )
-    # Delay only the sim's start, not the rest of the stack -- Xvfb (headless
-    # only), the bridge, and control.launch.py can all start immediately and
-    # use the head start to get their /lowstate subscription DDS-matched
-    # before the sim's first physics tick (see SIM_START_DELAY_S above).
+    # Delay only the sim; everything else starts immediately.
     sim_start_delay_s = float(LaunchConfiguration("sim_start_delay_s").perform(context))
     actions.append(TimerAction(period=sim_start_delay_s, actions=[sim_process]))
 
-    # The pelvis weld and the walking policy are the two possible owners of the legs, so they are
-    # mutually exclusive by construction rather than by convention: pin_pelvis picks one.
+    # Pelvis weld and walking policy are mutually exclusive.
     motion_service_sim_node = Node(
         package="g1_bringup",
         executable="motion_service_sim",
@@ -196,20 +158,14 @@ def _launch_setup(context, *args, **kwargs):
         )
     )
 
-    # g1_locomotion's LocoClient bridge, lifecycle-configured and activated automatically -- see
-    # loco.launch.py's own docstring. It only needs motion_service_sim's /api/sport/* responder
-    # (already wired above), not the sim's physics or /lowstate, so it starts immediately rather
-    # than waiting on sim_start_delay_s.
+    # LocoClient bridge — talks to motion_service_sim's /api/sport/* responder.
     loco_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(get_package_share_directory("g1_bringup"), "launch", "loco.launch.py")
         )
     )
 
-    # A dead sim leaves the controllers commanding nothing and the bridge
-    # holding onto a stale world -- tear down the whole launch rather than
-    # limp on -- the same "no dangling control authority" rule that governs
-    # a live sim applies here too).
+    # Tear down the whole launch if the sim dies.
     shutdown_on_sim_exit = RegisterEventHandler(
         OnProcessExit(
             target_action=sim_process,
@@ -235,11 +191,7 @@ def generate_launch_description():
                 default_value="false",
                 description="SIM-ONLY debugging aid: weld the pelvis to the world AND disable the "
                 "walking policy, so the arm bridge can be exercised with nothing else driving the "
-                "legs. The weld and the policy are the two possible owners of the legs and are "
-                "never both active. Default false -- the policy balances the robot itself, which "
-                "is what replaced the weld. Both settings load a bare floor "
-                "(mjcf/g1_pinned_scene.xml or mjcf/g1_flat_scene.xml); see the README's "
-                "'Pelvis pin' section.",
+                "legs. Default false -- the policy balances the robot itself.",
             ),
             DeclareLaunchArgument(
                 "sim_start_delay_s",

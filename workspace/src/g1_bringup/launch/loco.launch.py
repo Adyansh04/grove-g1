@@ -1,12 +1,6 @@
-"""Brings up g1_locomotion's g1_loco_bridge and drives it straight to `active`.
+"""Brings up g1_loco_bridge and drives it to `active`.
 
-Configure and activate are chained off the node's own lifecycle events
-(RegisterEventHandler/OnStateTransition) rather than a fixed delay -- a TimerAction guessing "the
-executable has started by now" would race the process's actual startup time exactly like the
-sim/bridge DDS-match race sim.launch.py's own SIM_START_DELAY_S comment describes. Included by
-sim.launch.py so a normal sim launch brings up the whole LocoClient loop (this bridge talking to
-motion_service_sim's protocol-only responder); see each package's README for the topic/parameter/
-authority-model documentation.
+Lifecycle transitions are event-chained (not delayed). Included by sim.launch.py.
 """
 
 import os
@@ -65,11 +59,7 @@ def generate_launch_description():
         )
     )
 
-    # No OnProcessExit->Shutdown handler here (unlike sim.launch.py's/control.launch.py's for the
-    # sim process/ros2_control_node): this bridge never actuates /lowcmd itself, so its death just
-    # means velocity requests stop being sent -- the same safe outcome its own on_shutdown relies
-    # on (see g1_locomotion's README), not a dangling control authority worth tearing the whole
-    # launch down over.
+    # No shutdown handler — this bridge doesn't actuate /lowcmd directly.
     return LaunchDescription(
         [
             loco_bridge_node,

@@ -1,26 +1,8 @@
 <mujoco model="g1_pinned_scene">
-  <!--
-    SIM-ONLY testing scaffolding for the arm-bridge milestone. NOT a balance
-    controller.
-
-    unitree_mujoco emulates only the low-level device (rt/lowcmd in, rt/lowstate
-    out); it does NOT run the vendor's onboard balance/locomotion controller
-    (LocoClient) that keeps the real G1 upright. With no balance loop, a
-    joint-space stiff-hold cannot keep the floating-base biped standing (it is an
-    inverted pendulum with no centre-of-mass feedback), so the model topples on
-    spawn. This overlay pins the pelvis to the world with a `weld` equality
-    constraint purely so the arm bridge can be validated in isolation. It fixes
-    the pelvis in BOTH position and orientation; it does not simulate balance and
-    is expected to be removed or replaced when the LocoClient milestone adds
-    genuine standing/locomotion. See g1_bringup/README.md ("Pelvis pin").
-
-    Composition note: this file is staged next to the vendored g1_29dof.xml at
-    launch (by sim.launch.py) so the relative <include> below and the model's own
-    meshdir="meshes" resolve against the vendored directory, exactly as the
-    vendored scene.xml does. MuJoCo 3.3.6 does not reliably honour a compiler
-    meshdir across an <include> boundary from a foreign directory, which is why
-    the overlay is staged rather than referenced by absolute path.
-  -->
+  <!-- SIM-ONLY testing scaffolding for the arm-bridge milestone. Pins the pelvis
+       to the world purely so the arm bridge can be validated in isolation.
+       Staged into the vendored model directory at launch time so MuJoCo's
+       relative meshdir and include paths resolve correctly. -->
   <include file="g1_29dof.xml"/>
 
   <statistic center="0 0 0.5" extent="2.0"/>
@@ -46,15 +28,8 @@
   </worldbody>
 
   <equality>
-    <!--
-      weld, NOT connect: connect fixes only a point (the pelvis could still
-      topple by rotating about it); weld fixes position AND orientation. body2
-      defaults to the world; relpose defaults to the initial (qpos0) relative
-      pose, i.e. the pelvis is pinned at its spawn pose (0 0 0.793, upright).
-      Scoped to the pelvis body only. The 14 arm joints and every other joint
-      remain freely actuated via /lowcmd; a weld on the floating base adds no
-      constraint to any actuated joint.
-    -->
+    <!-- weld fixes position AND orientation. Scoped to the pelvis body only,
+         leaving all 14 arm joints and legs freely actuated via /lowcmd. -->
     <weld name="pelvis_world_pin" body1="pelvis"/>
   </equality>
 </mujoco>

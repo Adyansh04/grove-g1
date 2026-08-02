@@ -1,14 +1,10 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="g1_29dof_with_hand_rev_1_0">
 
-  <!-- Verbatim upstream description (see README for provenance). Only its
-       children are spliced in here: xacro:include discards the included
-       file's own <robot> wrapper, so the vendored file needs no edits. -->
+  <!-- Verbatim upstream description; xacro:include discards <robot> wrapper. -->
   <xacro:include filename="g1_29dof_with_hand_rev_1_0.urdf"/>
 
-  <!-- Humble hardware plugins only see params parsed from this URDF's
-       <ros2_control> block, never controller_manager's own YAML, so this
-       load is the one place the tunable YAML meets the exported XML. -->
+  <!-- Load tunable YAML for ROS 2 control parameters. -->
   <xacro:property name="arm_sdk_params" value="${xacro.load_yaml('../config/arm_sdk_params.yaml')}"/>
 
   <xacro:macro name="g1_arm_joint" params="name">
@@ -23,9 +19,7 @@
     </joint>
   </xacro:macro>
 
-  <!-- Arms only: waist/legs/hands stay with the onboard controller for
-       balance safety, so this system exports command/state interfaces for
-       exactly the 14 arm joints and nothing else. -->
+  <!-- Arms only; waist/legs/hands stay with the onboard controller. -->
   <ros2_control name="G1ArmSdkSystem" type="system">
     <hardware>
       <plugin>g1_hardware_interface/G1ArmSdkSystem</plugin>

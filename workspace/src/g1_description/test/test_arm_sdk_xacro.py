@@ -1,8 +1,4 @@
-# Validates the vendored URDF + xacro wrapper without needing a running sim:
-# expands the xacro, runs it through urdfdom's own parser (check_urdf), and
-# checks the <ros2_control> block against the arm joint list from the sim
-# spike (see g1_description/README.md) -- the one thing a schema-valid URDF
-# can't guarantee on its own.
+# Validates vendored URDF and xacro wrapper against expected arm joints.
 import os
 import subprocess
 import tempfile
@@ -10,9 +6,7 @@ import xml.etree.ElementTree as ET
 
 import pytest
 
-# Arms only, in the order the spike observed on rt/arm_sdk's LowCmd motor
-# array (G1Arm7JointIndex: left 15-21, right 22-28). Order matters here
-# because it doubles as the motor_index sanity check below.
+# Arms only, in order (G1Arm7JointIndex: left 15-21, right 22-28).
 EXPECTED_ARM_JOINTS = [
     "left_shoulder_pitch_joint",
     "left_shoulder_roll_joint",

@@ -22,10 +22,7 @@ namespace g1_bringup
 
 namespace
 {
-// LocoClient wire API ids this responder answers, duplicated from g1_locomotion's own
-// loco_api_ids.hpp rather than depending on that package: those headers are an unexported
-// internal build artifact (see g1_locomotion/CMakeLists.txt), and these are stable wire-protocol
-// integers, not logic worth sharing a build target over.
+// Duplicated from g1_locomotion's loco_api_ids.hpp (unexported internal header).
 constexpr std::int64_t kApiIdGetFsmId    = 7001;
 constexpr std::int64_t kApiIdSetFsmId    = 7101;
 constexpr std::int64_t kApiIdSetVelocity = 7105;
@@ -116,13 +113,7 @@ MotionServiceSim::MotionServiceSim(const rclcpp::NodeOptions& options)
     arm_sdk_timeout_s_              = arm_sdk_timeout_ms / 1000.0;
     timeout_ramp_down_s_            = declare_parameter("timeout_ramp_down_s", 1.0);
 
-    // Fail fast on a nonsensical rate or duration, mirroring G1ArmSdkSystem::on_init's
-    // strictly-positive gate: publish_rate_hz <= 0 makes the wall-timer period's duration_cast
-    // undefined, and a non-positive arm_sdk_timeout_s/timeout_ramp_down_s turns the no-snap
-    // staleness decay into a snap (or an upward ramp) via stepEffectiveWeight's max_step.
-    //
-    // Gains are left unchecked, same as on_init -- only the rate and duration tunables can cause
-    // UB or a snap when misconfigured.
+    // Fail fast on non-positive rate/duration (same gate as G1ArmSdkSystem::on_init).
     if (publish_rate_hz_ <= 0.0 || arm_sdk_timeout_s_ <= 0.0 || timeout_ramp_down_s_ <= 0.0)
     {
         RCLCPP_FATAL(
@@ -137,26 +128,21 @@ MotionServiceSim::MotionServiceSim(const rclcpp::NodeOptions& options)
             "strictly positive");
     }
 
-    // Best-effort: matches unitree_mujoco's rt/lowstate publisher QoS family (verified RELIABLE
-    // in the milestone-1 spike, which a best-effort reader is still compatible with); only the
-    // newest of the ~900 Hz stream ever matters.
+    // Best-effort, depth 1 — matches unitree_mujoco's /lowstate publisher.
     const auto lowstate_qos = rclcpp::QoS(rclcpp::KeepLast(1)).best_effort().durability_volatile();
     lowstate_sub_           = create_subscription<unitree_hg::msg::LowState>(
         "/lowstate",
         lowstate_qos,
         [this](const unitree_hg::msg::LowState::ConstSharedPtr& msg) { lowstateCallback(msg); });
 
-    // Reliable: matches g1_hardware_interface's G1ArmSdkSystem, the sole /arm_sdk publisher in
-    // this stack.
+    // Reliable, depth 1 — matches G1ArmSdkSystem's /arm_sdk publisher.
     const auto arm_sdk_qos = rclcpp::QoS(rclcpp::KeepLast(1)).reliable().durability_volatile();
     arm_sdk_sub_           = create_subscription<unitree_hg::msg::LowCmd>(
         "/arm_sdk",
         arm_sdk_qos,
         [this](const unitree_hg::msg::LowCmd::ConstSharedPtr& msg) { armSdkCallback(msg); });
 
-    // Best-effort: matches unitree_mujoco's rt/lowcmd subscription exactly (verified in the
-    // milestone-1 spike). This bridge is the sim's only /lowcmd publisher, so there's no
-    // reliability contention to protect against, and only the newest tick matters.
+    // Best-effort, depth 1 — matches unitree_mujoco's /lowcmd subscription.
     const auto lowcmd_qos = rclcpp::QoS(rclcpp::KeepLast(1)).best_effort().durability_volatile();
     lowcmd_pub_           = create_publisher<unitree_hg::msg::LowCmd>("/lowcmd", lowcmd_qos);
 
@@ -166,13 +152,8 @@ MotionServiceSim::MotionServiceSim(const rclcpp::NodeOptions& options)
             publishTick();
         });
 
-    // Vendor-matched RELIABILITY/DURABILITY -- must not deviate, that's what hardware endpoint
-    // compatibility depends on (see g1_locomotion's README for the identical rule on the bridge
-    // side). HISTORY depth isn't RxO-matched, so it's ours to pick per side: the response
-    // publisher stays at depth 1 (only the newest reply matters), but this request reader goes
-    // deeper -- two requests landing in the same DDS batch (e.g. a SET_VELOCITY re-issue and a
-    // GET_FSM_ID heartbeat poll) must not overwrite each other in a depth-1 KEEP_LAST cache
-    // before this callback drains them.
+    // Vendor-matched reliability/durability. Request reader depth 10 to avoid
+    // overwrites when multiple requests land in one DDS batch.
     const auto sport_request_qos  = rclcpp::QoS(10).reliable().durability_volatile();
     const auto sport_response_qos = rclcpp::QoS(1).reliable().durability_volatile();
     sport_request_sub_            = create_subscription<unitree_api::msg::Request>(
@@ -182,9 +163,7 @@ MotionServiceSim::MotionServiceSim(const rclcpp::NodeOptions& options)
     sport_response_pub_ =
         create_publisher<unitree_api::msg::Response>("/api/sport/response", sport_response_qos);
 
-    // Base linear velocity for the policy observation, which /lowstate does not carry. Same
-    // best-effort family as /lowstate: it comes from the same 1 kHz sim bridge and only the newest
-    // sample matters.
+    // Best-effort — base linear velocity for the policy observation.
     const auto sportmodestate_qos =
         rclcpp::QoS(rclcpp::KeepLast(1)).best_effort().durability_volatile();
     sportmodestate_sub_ = create_subscription<unitree_go::msg::SportModeState>(
@@ -362,12 +341,8 @@ void MotionServiceSim::sportModeStateCallback(
 
 void MotionServiceSim::walkPolicyTick()
 {
-    // Both inputs must be live before the first inference: /lowstate for joints and orientation,
-    // /sportmodestate for base linear velocity. Running on a half-populated observation would feed
-    // the policy an assumed-zero base velocity, which is only true while the robot is at rest.
-    // Starting earlier was tried and is measurably worse, not better: entering the policy at the
-    // straight-legged spawn pose is a bigger step to the crouch than entering it after a brief
-    // stiff hold (peak lower-body 14.6 rad/s vs 12.5).
+    // Wait for both /lowstate and /sportmodestate before first inference.
+    // Running earlier with zeros is measurably worse.
     if (!walk_policy_session_ || !hold_pose_captured_ || !sportmodestate_received_)
     {
         return;
@@ -377,10 +352,7 @@ void MotionServiceSim::walkPolicyTick()
     const auto observation =
         assembleObservation(walk_inputs_, walk_policy_config_, walk_last_action_, command);
 
-    // A throw here must not escape: this runs from a timer under a bare rclcpp::spin(), so an
-    // Ort::Exception would terminate the process and stop /lowcmd entirely -- the robot would
-    // collapse instead of falling back to the stiff hold. Leaving walk_target_stamp_ untouched
-    // lets the freshness gate engage exactly as it would for any other stall.
+    // Catch exceptions — a throw here would kill the process and collapse the robot.
     const auto action =
         runPolicyGuarded([this, &observation] { return walk_policy_session_->run(observation); });
     if (!action)
@@ -427,8 +399,7 @@ void MotionServiceSim::publishTick()
                            std::chrono::duration<double>(now - last_tick_).count();
     last_tick_       = now;
 
-    // No /arm_sdk received yet is treated the same as stale: the effective weight target is 0
-    // either way, so arms simply hold at hold_q_ until the first real command shows up.
+    // No /arm_sdk received yet is treated as stale (weight target = 0).
     bool stale = true;
     if (arm_sdk_received_)
     {
@@ -438,10 +409,7 @@ void MotionServiceSim::publishTick()
     effective_weight_ =
         stepEffectiveWeight(effective_weight_, arm_cmd_weight_, stale, timeout_ramp_down_s_, dt);
 
-    // The leg-authority decision, in one place: the walking policy owns motors 0-14 only while
-    // its targets are FRESH. A stalled inference falls back to the stiff hold rather than
-    // re-publishing a stale target, which is the same "never keep commanding from a dead source"
-    // rule the arm side's staleness ramp enforces.
+    // Walking policy owns motors 0-14 only while its targets are fresh.
     const bool policy_fresh = walk_policy_enabled_ && walk_target_valid_ &&
                               std::chrono::duration<double>(now - walk_target_stamp_).count() <=
                                   walk_policy_staleness_timeout_s_;
@@ -470,9 +438,7 @@ void MotionServiceSim::publishTick()
             "output and held at stiff-hold gains");
     }
 
-    // assembleSimLowCmd() (blend_math) does the lower-body assignment, arm blend, and weight-slot
-    // echo -- unit-tested directly (test/test_assemble_sim_low_cmd.cpp) without a live node or
-    // DDS.
+    // assembleSimLowCmd() does the lower-body assignment, arm blend, and weight-slot echo.
     unitree_hg::msg::LowCmd cmd = assembleSimLowCmd(
         hold_q_,
         lower.q,
@@ -485,12 +451,8 @@ void MotionServiceSim::publishTick()
         arm_hold_kp_,
         arm_hold_kd_);
 
-    // mode/mode_pr/mode_machine are deliberately left unset: unitree_mujoco computes actuator
-    // torque as tau_ff + kp * (q_des - q_meas) + kd * (dq_des - dq_meas) per motor slot and never
-    // reads the mode fields (simulate/src/unitree_sdk2_bridge.h, RobotBridge::run()).
-    //
-    // That's a sim-specific finding -- what the real motion service does with these fields is
-    // unverified and stays a hardware re-validation item.
+    // mode/mode_pr/mode_machine left unset — unitree_mujoco never reads them
+    // (computes torque from q/kp/kd/dq directly). Real hardware may differ.
     g1_hardware_interface::vendored::computeLowCmdCrc(cmd);
     lowcmd_pub_->publish(cmd);
 }
@@ -498,10 +460,7 @@ void MotionServiceSim::publishTick()
 void MotionServiceSim::sportRequestCallback(const unitree_api::msg::Request::ConstSharedPtr& msg)
 {
     unitree_api::msg::Response response;
-    // Correlation contract: g1_locomotion's LocoRequestCorrelator matches purely on
-    // header.identity.id, but the wire contract carries api_id alongside it in the same struct --
-    // echo the whole identity back verbatim regardless of what this handler does with the
-    // request.
+    // Echo the full identity back for correlation.
     response.header.identity = msg->header.identity;
     response.header.status.code =
         dispatchSportRequest(msg->header.identity.api_id, msg->parameter, response.data);
@@ -527,10 +486,7 @@ std::int32_t MotionServiceSim::dispatchSportRequest(
         }
         const auto result = applySetFsmId(loco_fsm_state_, *requested);
         loco_fsm_state_   = result.new_state;
-        // Leaving Start gives up locomotion authority, so the last velocity must not stay in
-        // force: without this a Start -> Damp transition would leave the robot walking on a
-        // command whose owner has already released. Releasing cleanly on the transition itself is
-        // the responder-side half of the same rule the bridge's authority machine follows.
+        // Leaving Start releases locomotion authority — clear any latched velocity.
         if (loco_fsm_state_ != kFsmStart)
         {
             walk_velocity_.reset();
@@ -544,10 +500,7 @@ std::int32_t MotionServiceSim::dispatchSportRequest(
         {
             return kCodeTaskUnknownError;
         }
-        // The EXISTING legality table decides, and it decides first: this is the authority gate,
-        // not a second one alongside it. Outside Start the command is rejected with 7301 and
-        // nothing is latched, so no velocity can reach the policy without the real
-        // Damp -> StandUp -> Start sequence having been driven through the bridge.
+        // Velocity only allowed in Start state.
         const std::int32_t code = checkVelocityAllowed(loco_fsm_state_);
         if (code != kLocoFsmCodeSuccess)
         {
@@ -558,8 +511,7 @@ std::int32_t MotionServiceSim::dispatchSportRequest(
             clampVelocity(payload->vx, payload->vy, payload->vyaw, walk_policy_config_);
         if (isBelowGaitThreshold(command, walk_policy_config_))
         {
-            // Passed through unmodified regardless -- scaling a small command UP to force motion
-            // is exactly the ramp-don't-snap rule this stack is built on. Operator gets told.
+            // Passed through unmodified regardless. Operator gets told.
             RCLCPP_WARN_THROTTLE(
                 get_logger(),
                 *get_clock(),
@@ -583,10 +535,8 @@ std::int32_t MotionServiceSim::dispatchSportRequest(
     }
     if (api_id == kApiIdSetArmTask)
     {
-        // Deliberately unsupported: SET_ARM_TASK (WaveHand/ShakeHand-style moves) hands arm
-        // authority to the onboard controller, fighting this stack's rt/arm_sdk blend weight
-        // (see g1_locomotion's README -- the api id isn't even defined there, same reason).
-        // Rejecting it here, not a silent no-op, makes the omission a tested fact.
+        // Deliberately unsupported — SET_ARM_TASK conflicts with this stack's
+        // rt/arm_sdk blend weight authority.
         return kCodeTaskUnknownError;
     }
     return kCodeTaskUnknownError;

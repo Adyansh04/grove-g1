@@ -30,31 +30,12 @@ namespace g1_bringup
 {
 
 /**
- * @brief SIM-ONLY stand-in for the onboard motion service -- see the package README's safety
- * banner.
+ * @brief Sim-only stand-in for the onboard motion service.
  *
- * unitree_mujoco emulates only the low-level device (subscribes rt/lowcmd, publishes
- * rt/lowstate); nothing in the sim services rt/arm_sdk or the LocoClient wire protocol
- * (/api/sport/request, /api/sport/response), and with nothing commanding the legs the sim robot
- * collapses. This node closes both gaps in one place, mirroring the real motion service's own
- * scope (one service, not two): it subscribes /arm_sdk (what g1_hardware_interface's
- * G1ArmSdkSystem publishes) and /lowstate (what unitree_mujoco publishes), and is the ONLY thing
- * in this stack allowed to publish /lowcmd, and only when launched by sim.launch.py. Its
- * LocoClient responder half applies the same SET_FSM_ID/SET_VELOCITY acceptance rules a real
- * onboard controller would (see loco_fsm.hpp). An accepted SET_VELOCITY latches a command for the
- * walking policy, which owns the lower body (legs 0-11 + waist 12-14); the acceptance test is
- * unchanged, so the existing FSM legality table IS the authority gate rather than a second one
- * bolted alongside it. The policy itself runs continuously from startup regardless of FSM state,
- * holding the robot upright at zero velocity -- leg authority is gated on policy FRESHNESS, not
- * on the FSM, so losing inference falls back to the stiff hold rather than to a stale target.
+ * Synthesizes /lowcmd from /arm_sdk and /lowstate for MuJoCo simulation,
+ * and handles the LocoClient wire protocol (/api/sport/request, /api/sport/response).
  *
- * Plain node, not lifecycle-managed: this is sim test scaffolding emulating an always-on
- * vendor service that has no activate/deactivate concept of its own on the real robot either
- * -- there is no meaningful inactive state for it to sit in.
- *
- * @warning Never run this near real hardware -- on the real robot the onboard motion service
- * already owns /lowcmd entirely, and two publishers on that channel is exactly the dual-writer
- * hazard that must never occur on a shared control channel.
+ * @warning Never run this near real hardware — the onboard motion service already owns /lowcmd.
  */
 class MotionServiceSim : public rclcpp::Node
 {
@@ -152,16 +133,7 @@ private:
     PolicyConfig                       walk_policy_config_{};
     std::unique_ptr<WalkPolicySession> walk_policy_session_;
 
-    /// Wall timer, established empirically.
-    ///
-    /// Pacing inference on SIM time instead (LowState.tick is sim milliseconds -- the bridge sets
-    /// it to round(mj_data_->time / 1e-3)) is the more faithful choice on paper, since the policy
-    /// was trained at a fixed decimation of the simulator's step. It was tried twice, gated both
-    /// off the /lowstate callback and off a faster wall timer, and BOTH destabilised the robot
-    /// where the plain wall timer holds it stable. Not re-litigated without new evidence.
-    /// Decimating off the /lowstate message count is the same thing as a wall timer, not a third
-    /// option: that topic is published by a 1 kHz wall-clock RecurrentThread in unitree_mujoco's
-    /// bridge, not from its sim loop.
+    /// Wall timer for policy evaluation.
     rclcpp::TimerBase::SharedPtr walk_policy_timer_;
 
     std::array<float, kActionDim>         walk_last_action_{};

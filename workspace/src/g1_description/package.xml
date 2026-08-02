@@ -14,10 +14,7 @@
 
   <exec_depend>xacro</exec_depend>
 
-  <!-- ament_lint_common is intentionally not used: it drags in
-       ament_flake8/ament_copyright, which conflict with the repo's root
-       ruff.toml (quote style) and no-header convention. Ruff itself lints
-       test/ (wired as a plain CTest, see CMakeLists.txt). -->
+  <!-- ament_lint_common intentionally not used to avoid ruff conflicts. -->
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_cmake_lint_cmake</test_depend>
   <test_depend>ament_cmake_xmllint</test_depend>

@@ -167,47 +167,19 @@ private:
     std::chrono::steady_clock::duration lowstateTimeoutDuration() const;
 
     /**
-     * @brief The ~1 Hz advisory publisher-count timer, off the RT thread.
+     * @brief Advisory publisher-count timer callback (~1 Hz).
      *
-     * Escalates mode_ from kActive to kEmergencyRampDown via a
-     * compare-exchange -- exactly the same shared-atomic escalation
-     * write() performs on its own for stale feedback -- rather than
-     * driving a ramp itself, so the still-ticking write() on the RT
-     * thread is the sole thing that ever touches
-     * ramp_engine_/arm_sdk_rt_pub_.
-     *
-     * @note Never publishes anything directly, and never de-escalates: a
-     *       compare-exchange from kActive is a no-op if mode_ has already
-     *       moved on for any other reason.
+     * Escalate mode_ to kEmergencyRampDown if a second publisher is detected on /arm_sdk.
      */
     void checkPublisherCount();
+
     /**
-     * @brief Off-RT-thread only, and reachable *only* from a lifecycle
-     * transition (on_deactivate/on_error/on_shutdown) -- never from
-     * checkPublisherCount() or anywhere else.
-     *
-     * Publishes directly via arm_sdk_rt_pub_ using a blocking lock(),
-     * which is only safe because resource_manager serializes a hardware
-     * component's lifecycle transitions against its own read()/write()
-     * calls (confirmed directly during manual sim validation -- write()
-     * provably never ticks while a transition callback is running): the
-     * transition callback and write() can never run concurrently, so
-     * whichever one currently holds the floor is unambiguously the sole
-     * writer for that window.
-     *
-     * @note A transition that instead *asked* write() to ramp down and
-     *       waited for it would deadlock (write() never gets to run while
-     *       the transition callback is executing) -- that was tried and
-     *       is why this runs the ramp itself.
-     *
-     * @param target_mode  Blend mode to ramp the arm-sdk weight down toward.
+     * @brief Synchronously ramps down the arm weight during lifecycle transitions.
+     * @param target_mode Target blend mode for the ramp.
      */
     void rampDownSynchronously(BlendMode target_mode);
 
-    /// Hidden node + single-threaded executor for DDS I/O, torn down in
-    /// on_cleanup. Never added to the controller_manager's own executor: its
-    /// only job is servicing /lowstate, running the /arm_sdk publisher's own
-    /// background thread, and the ~1 Hz advisory publisher-count timer.
+    /// Internal node and single-threaded executor for DDS I/O.
     rclcpp::Node::SharedPtr                                             node_;
     rclcpp::executors::SingleThreadedExecutor::SharedPtr                executor_;
     std::thread                                                         executor_thread_;
@@ -216,17 +188,7 @@ private:
     realtime_tools::RealtimePublisherSharedPtr<unitree_hg::msg::LowCmd> arm_sdk_rt_pub_;
     rclcpp::TimerBase::SharedPtr                                        publisher_count_timer_;
 
-    /// The single writer-authority state machine (see the package README).
-    /// ACTIVE/RAMP_DOWN/EMERGENCY_RAMP_DOWN all imply active publication;
-    /// INACTIVE means write() self-gates -- Humble still calls write() on an
-    /// inactive component, so "commands only flow while active" is enforced
-    /// here, not assumed from the framework. The only writers of this atomic
-    /// are: on_activate (kActive), write() itself (autonomous stale-feedback
-    /// escalation and the terminal kInactive transition),
-    /// checkPublisherCount() (autonomous rogue-publisher escalation, mirroring
-    /// write()'s own), and rampDownSynchronously() (lifecycle-driven
-    /// transitions). All four only ever move it toward kInactive or escalate
-    /// toward a faster ramp -- never de-escalate.
+    /// Single writer-authority state machine.
     std::atomic<BlendMode> mode_{ BlendMode::kInactive };
 
     /// RT-thread-only (never touched off write()): accumulates elapsed time

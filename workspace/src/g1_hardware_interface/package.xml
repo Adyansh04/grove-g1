@@ -20,11 +20,7 @@
   <depend>realtime_tools</depend>
   <depend>unitree_hg</depend>
 
-  <!-- ament_lint_common is intentionally not used (see g1_description's
-       package.xml for the rationale): it drags in ament_uncrustify/
-       ament_copyright, which conflict with this repo's root .clang-format
-       and no-header-comment convention. clang-format itself runs as a plain
-       CTest against that same config (see CMakeLists.txt). -->
+  <!-- Lint checks run via workspace-root CTests (see CMakeLists.txt). -->
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_cmake_lint_cmake</test_depend>
   <test_depend>ament_cmake_xmllint</test_depend>
