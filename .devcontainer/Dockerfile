@@ -178,6 +178,29 @@ RUN python3 -m pip uninstall -y em
 RUN apt-get update && apt-get install -y nlohmann-json3-dev \
     && rm -rf /var/lib/apt/lists/*
 
+# --- Milestone 3: walking-policy deps ---------------------------------------
+
+# ONNX Runtime, prebuilt CPU tarball. The walking policy is a plain MLP exported
+# at opset 17, which needs >= 1.13; these x64 builds target glibc 2.17 against
+# this image's 2.35. No config package ships in the archive, so g1_bringup's
+# CMakeLists finds the header/lib by path.
+#
+# ldconfig rather than an RPATH: sourcing a ROS environment prepends
+# /opt/ros/humble/lib to LD_LIBRARY_PATH, which is exactly how unitree_mujoco
+# ended up loading ROS's ABI-incompatible libddsc (see sim.launch.py). ROS ships
+# no libonnxruntime, so a system-wide loader entry cannot be shadowed that way.
+ARG ONNXRUNTIME_VERSION=1.20.1
+RUN mkdir -p /opt/onnxruntime && \
+    curl -fsSL "https://github.com/microsoft/onnxruntime/releases/download/v${ONNXRUNTIME_VERSION}/onnxruntime-linux-x64-${ONNXRUNTIME_VERSION}.tgz" \
+      | tar -xz --strip-components=1 -C /opt/onnxruntime && \
+    echo /opt/onnxruntime/lib > /etc/ld.so.conf.d/onnxruntime.conf && \
+    ldconfig
+
+# teleop_twist_keyboard drives the bridge's ~/cmd_vel seam by hand -- the same
+# seam Nav2 will use, so manual driving exercises the production interface.
+RUN apt-get update && apt-get install -y ros-humble-teleop-twist-keyboard \
+    && rm -rf /var/lib/apt/lists/*
+
 # Ensure default workspace exists (mounted from host: ./workspace -> /root/workspace)
 RUN mkdir -p /root/workspace/src
 RUN mkdir -p /root/data/
