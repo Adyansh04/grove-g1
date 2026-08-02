@@ -17,9 +17,14 @@ namespace
 
 struct Config
 {
-    bool        enabled       = false;
-    double      rate_hz       = 10.0;
-    std::string node_name     = "g1_sim_sensors";
+    bool        enabled          = false;
+    double      rate_hz          = 10.0;
+    std::string node_name        = "g1_sim_sensors";
+    // Delay after mjData appears before rclcpp::init(). The Unitree SDK calls
+    // dds_create_domain EXPLICITLY and that fails if the domain already exists, so ROS must
+    // not get there first. Its bridge thread polls for mjData every 500 ms and initialises
+    // immediately after, so waiting past that hands the SDK the domain.
+    double      sdk_settle_s     = 2.0;
 };
 
 struct State
@@ -53,6 +58,9 @@ Config loadConfig()
         if (root["node_name"]) {
             cfg.node_name = root["node_name"].as<std::string>();
         }
+        if (root["sdk_settle_s"]) {
+            cfg.sdk_settle_s = root["sdk_settle_s"].as<double>();
+        }
     } catch (const std::exception& e) {
         // Loud, and still off: a malformed config must not look like a working sensor.
         std::fprintf(
@@ -67,7 +75,7 @@ Config loadConfig()
     return cfg;
 }
 
-void sensorLoop(const Config cfg, rclcpp::Node::SharedPtr node, mjModel** model, mjData** data)
+void sensorLoop(const Config cfg, int argc, char** argv, mjModel** model, mjData** data)
 {
     // The model is loaded by the physics thread after this one starts, same as the SDK
     // bridge's own wait.
@@ -77,6 +85,20 @@ void sensorLoop(const Config cfg, rclcpp::Node::SharedPtr node, mjModel** model,
     if (!state().running.load(std::memory_order_relaxed)) {
         return;
     }
+
+    // Let the SDK claim the DDS domain before ROS touches it. See Config::sdk_settle_s.
+    std::this_thread::sleep_for(
+        std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+            std::chrono::duration<double>(cfg.sdk_settle_s)));
+    if (!state().running.load(std::memory_order_relaxed)) {
+        return;
+    }
+
+    if (!rclcpp::ok()) {
+        rclcpp::init(argc, argv);
+        state().owns_rclcpp = true;
+    }
+    auto node = std::make_shared<rclcpp::Node>(cfg.node_name);
 
     RCLCPP_INFO(
         node->get_logger(), "Sensor thread up at %.1f Hz on a model with %d geoms.", cfg.rate_hz,
@@ -106,14 +128,8 @@ void StartSensorPublisher(
         return;
     }
 
-    if (!rclcpp::ok()) {
-        rclcpp::init(argc, argv);
-        state().owns_rclcpp = true;
-    }
-    auto node = std::make_shared<rclcpp::Node>(cfg.node_name);
-
     state().running.store(true);
-    state().thread = std::thread(sensorLoop, cfg, node, model, data);
+    state().thread = std::thread(sensorLoop, cfg, argc, argv, model, data);
 }
 
 void StopSensorPublisher()
