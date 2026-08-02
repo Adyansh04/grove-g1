@@ -142,6 +142,17 @@ RUN mkdir -p /etc/cyclonedds && \
         <NetworkInterface name="lo" priority="default" multicast="default" />
       </Interfaces>
     </General>
+    <Discovery>
+      <!-- Cyclone's default cap is 9 participants per domain, and on `lo` multicast is
+           disabled so each one takes a unicast port from that bounded range. One participant
+           per ROS node: sim.launch.py alone brings up motion_service_sim, robot_state_publisher,
+           ros2_control_node and g1_loco_bridge alongside unitree_mujoco's own, which leaves
+           almost nothing for the `ros2 topic echo` / `ros2 run activate_arm` shells an operator
+           actually drives the sim from. Hitting the cap fails with "Failed to find a free
+           participant index for domain 1" -- which reads like a node bug rather than a config
+           limit, so it is worth not rediscovering. -->
+      <MaxAutoParticipantIndex>60</MaxAutoParticipantIndex>
+    </Discovery>
   </Domain>
 </CycloneDDS>
 EOF
