@@ -1,0 +1,47 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>g1_sim</name>
+  <version>0.1.0</version>
+  <description>
+    SIM-ONLY perception simulation track: a simplified mobile body carrying a 3D LiDAR
+    and an RGB-D camera in MuJoCo, run through mujoco_ros2_control. Separate from the
+    unitree_mujoco track, which remains the source of truth for arm and locomotion
+    fidelity. See README for the operating procedure.
+  </description>
+  <maintainer email="gupta.adyansh@gmail.com">Adyansh</maintainer>
+  <license>BSD-3-Clause</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>mujoco_ros2_control</exec_depend>
+  <exec_depend>mujoco_ros2_control_plugins</exec_depend>
+  <exec_depend>mujoco_3d_lidar</exec_depend>
+  <exec_depend>controller_manager</exec_depend>
+  <exec_depend>joint_state_broadcaster</exec_depend>
+  <exec_depend>velocity_controllers</exec_depend>
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>xacro</exec_depend>
+  <exec_depend>g1_state_estimation</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>xvfb</exec_depend>
+
+  <!-- ament_lint_common is intentionally not used (see g1_bringup's package.xml for the
+       rationale): clang-format/ruff run as plain CTests instead. -->
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_cmake_lint_cmake</test_depend>
+  <test_depend>ament_cmake_xmllint</test_depend>
+  <test_depend>launch_testing</test_depend>
+  <test_depend>launch_testing_ament_cmake</test_depend>
+  <test_depend>python3-pytest</test_depend>
+  <test_depend>sensor_msgs</test_depend>
+  <test_depend>std_msgs</test_depend>
+  <test_depend>geometry_msgs</test_depend>
+  <test_depend>tf2_ros</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
