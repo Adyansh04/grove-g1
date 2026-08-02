@@ -156,6 +156,49 @@ RUN mkdir -p /opt/onnxruntime && \
 RUN apt-get update && apt-get install -y ros-humble-teleop-twist-keyboard \
     && rm -rf /var/lib/apt/lists/*
 
+# --- Milestone 4: perception sim track ---------------------------------------
+
+# ros-controls/mujoco_ros2_control, built from source into its own overlay. This is the
+# SECOND simulation track (sensors + a simplified mobility body); unitree_mujoco is
+# untouched and stays the source of truth for arm/locomotion fidelity.
+#
+# Pinned 2026-08-02 to main, NOT to a release tag. Release 0.0.3 is apt-installable but
+# ships no 3D lidar -- only a 2D LaserScan -- which does not match the robot's Mid360.
+# The 3D PointCloud2 lidar exists only on main. Risk accepted deliberately: main is
+# unreleased and was recently restructured, so this SHA is a snapshot, not a moving target.
+# Verified to build on Humble at this SHA before pinning.
+ARG MUJOCO_ROS2_CONTROL_SHA=ae0b235affe8792cf8584cb7074e10038f26f57b
+RUN apt-get update && apt-get install -y \
+        ros-humble-mujoco-vendor \
+        ros-humble-ros2-control-cmake \
+        ros-humble-backward-ros \
+        ros-humble-control-toolbox \
+        ros-humble-transmission-interface \
+        ros-humble-tinyxml2-vendor \
+        ros-humble-velocity-controllers \
+    && rm -rf /var/lib/apt/lists/*
+
+# mujoco_ros2_control_demos/_tests are skipped: they pull extra deps and ship example
+# robots we don't use. The mujoco_3d_lidar extension registers itself under the
+# ament resource index key "mujoco_plugins", which the node scans at startup via
+# ament_index_cpp -- so no MUJOCO_PLUGIN_DIR is needed (and it does not work anyway).
+RUN mkdir -p /opt/mujoco_ros2_control_ws/src && \
+    git init -q /opt/mujoco_ros2_control_ws/src/mujoco_ros2_control && \
+    cd /opt/mujoco_ros2_control_ws/src/mujoco_ros2_control && \
+    git remote add origin https://github.com/ros-controls/mujoco_ros2_control.git && \
+    git fetch --depth 1 origin ${MUJOCO_ROS2_CONTROL_SHA} && \
+    git checkout -q FETCH_HEAD && \
+    rm -rf .git && \
+    cd /opt/mujoco_ros2_control_ws && \
+    . /opt/ros/humble/setup.sh && \
+    colcon build --merge-install --cmake-args -DCMAKE_BUILD_TYPE=Release \
+        --packages-skip mujoco_ros2_control_demos mujoco_ros2_control_tests && \
+    rm -rf build log src
+
+# Overlay it for every shell. 99- already sorts after the base image's 10-ros-env.sh.
+RUN printf '. /opt/mujoco_ros2_control_ws/install/setup.sh\n' \
+      >> /etc/profile.d/99-grove-g1-env.sh
+
 # Ensure default workspace exists (mounted from host: ./workspace -> /root/workspace)
 RUN mkdir -p /root/workspace/src
 RUN mkdir -p /root/data/
