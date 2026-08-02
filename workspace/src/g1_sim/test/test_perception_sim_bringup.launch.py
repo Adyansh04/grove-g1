@@ -9,6 +9,7 @@ time is running, and commanding the base actually moves it.
 import os
 import time
 import unittest
+from collections import deque
 
 import launch_testing
 import pytest
@@ -62,8 +63,9 @@ class PerceptionSimBringupTest(unittest.TestCase):
         )
         cls.tf_buffer = Buffer()
         cls.tf_listener = TransformListener(cls.tf_buffer, cls.node)
-        cls.joint_states = []
-        cls.clock_msgs = []
+        # Bounded: 200 Hz joint states and sim-rate clock over a 240 s budget.
+        cls.joint_states = deque(maxlen=64)
+        cls.clock_msgs = deque(maxlen=256)
         cls.node.create_subscription(JointState, "/base_joint_states", cls.joint_states.append, 10)
         cls.node.create_subscription(Clock, "/clock", cls.clock_msgs.append, 10)
         cls.cmd_pub = cls.node.create_publisher(

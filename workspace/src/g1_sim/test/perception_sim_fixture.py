@@ -34,10 +34,8 @@ LIVOX_XYZ = (-0.00368, 0.00003, 0.472434)
 CAMERA_XYZ = (0.05366, 0.01753, 0.473870)
 CAMERA_PITCH = 0.83077672
 
-# There is deliberately no base-height constant here. `odom` is the ground plane (the
-# odometry publisher puts base_link's height into odom -> base_link, from the canonical
-# spawn_z in config/sensor_mounts.yaml), so world coordinates come from a TF lookup
-# against odom. Carrying the height in test code is what let it drift in the first place.
+# No base-height constant here on purpose: `odom` is the ground plane, so world
+# coordinates come from a TF lookup against odom rather than a hand-carried offset.
 
 # Sensor streams are best-effort: matching the publisher matters more than it looks, a
 # reliable subscriber simply receives nothing here.
@@ -107,12 +105,7 @@ class PerceptionSimTestNode(Node):
         return False
 
     def odom_from(self, frame):
-        """(R, t) taking a point in `frame` to odom, which is the ground plane.
-
-        Goes through the live TF chain rather than reconstructing it from constants, so
-        the scene geometry the stream tests assert against (floor at z=0, walls at +/-4)
-        is measured the way a real consumer would measure it.
-        """
+        """(R, t) taking a point in `frame` to odom, via the live TF chain."""
         if not self.wait_until(
             lambda: self.tf_buffer.can_transform("odom", frame, rclpy.time.Time())
         ):

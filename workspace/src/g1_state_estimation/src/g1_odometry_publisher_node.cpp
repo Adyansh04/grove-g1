@@ -36,6 +36,7 @@ G1OdometryPublisher::G1OdometryPublisher(const rclcpp::NodeOptions& options)
     declare_parameter<double>("publish_rate_hz", 50.0);
     declare_parameter<bool>("publish_odom_msg", true);
     declare_parameter<double>("source_timeout_ms", 200.0);
+    declare_parameter<double>("wall_timeout_ms", 2000.0);
     declare_parameter<double>("pose_covariance", 1.0e-6);
     declare_parameter<double>("twist_covariance", 1.0e-6);
 }
@@ -75,6 +76,7 @@ bool G1OdometryPublisher::readParameters()
     publish_rate_hz_  = get_parameter("publish_rate_hz").as_double();
     publish_odom_msg_ = get_parameter("publish_odom_msg").as_bool();
     source_timeout_s_ = get_parameter("source_timeout_ms").as_double() / 1000.0;
+    wall_timeout_s_   = get_parameter("wall_timeout_ms").as_double() / 1000.0;
 
     if (base_joint_names_.size() != 3)
     {
@@ -202,10 +204,9 @@ void G1OdometryPublisher::onBaseState(const sensor_msgs::msg::JointState::Shared
     const rclcpp::Time stamp =
         unstamped ? now() : rclcpp::Time(msg->header.stamp, get_clock()->get_clock_type());
 
-    // Wall time of the last stamp CHANGE, not of the last message. A simulator whose
-    // physics thread has wedged can keep republishing the same sample at the same stamp
-    // forever; that is not fresh data, and treating message arrival as freshness would
-    // hold the staleness guard open for exactly that failure.
+    // Time of the last stamp CHANGE, not of the last message: a wedged simulator can keep
+    // republishing the same sample forever. Order matters, rclcpp::Time::operator!= throws
+    // on mismatched clock types and last_sample_stamp_ starts out RCL_SYSTEM_TIME.
     if (!have_sample_ || stamp != last_sample_stamp_)
     {
         last_advance_wall_ = std::chrono::steady_clock::now();
@@ -220,34 +221,33 @@ void G1OdometryPublisher::onTimer()
     {
         RCLCPP_WARN_THROTTLE(
             get_logger(),
-            *get_clock(),
+            steady_clock_,
             5000,
             "No base state received yet on %s; publishing nothing.",
             base_state_sub_->get_topic_name());
         return;
     }
 
-    // Two budgets, because on this track they can fail independently. /clock is published
-    // by the SAME process as the base state, so if that process wedges, sim time freezes
-    // with it, `elapsed` stays pinned near zero and a sim-time-only check never fires --
-    // the exact "confidently wrong map" this guard exists to prevent. The wall budget
-    // measures time since the sample stamp last ADVANCED, so it catches both a silent
-    // source and one still emitting a frozen sample.
+    // Sim time alone cannot see a wedged simulator: /clock comes from the same process as
+    // the base state, so it freezes too and `elapsed` stays at zero. Hence the wall budget.
     const double elapsed = (now() - last_sample_stamp_).seconds();
     const double wall_elapsed =
         std::chrono::duration<double>(std::chrono::steady_clock::now() - last_advance_wall_).count();
-    if (isStale(elapsed, source_timeout_s_) || isStale(wall_elapsed, source_timeout_s_))
+    if (isStale(elapsed, source_timeout_s_) || isStale(wall_elapsed, wall_timeout_s_))
     {
         // Stop publishing rather than re-stamping the last pose. A frozen transform with a
         // fresh timestamp is indistinguishable from a stationary robot, which is how a dead
         // source turns into a confidently wrong map.
         RCLCPP_WARN_THROTTLE(
             get_logger(),
-            *get_clock(),
+            steady_clock_,
             2000,
-            "Base state is %.3f s old (timeout %.3f s); stopped publishing %s -> %s.",
+            "Base state has not advanced for %.3f s on the source clock (limit %.3f) or "
+            "%.3f s on wall time (limit %.3f); stopped publishing %s -> %s.",
             elapsed,
             source_timeout_s_,
+            wall_elapsed,
+            wall_timeout_s_,
             odom_frame_id_.c_str(),
             base_frame_id_.c_str());
         return;

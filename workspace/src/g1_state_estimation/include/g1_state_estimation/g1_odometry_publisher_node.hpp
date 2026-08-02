@@ -63,6 +63,7 @@ private:
     double                   publish_rate_hz_  = 50.0;
     bool                     publish_odom_msg_ = true;
     double                   source_timeout_s_ = 0.2;
+    double                   wall_timeout_s_   = 2.0;
     std::array<double, 36>   pose_covariance_{};
     std::array<double, 36>   twist_covariance_{};
 
@@ -70,9 +71,10 @@ private:
     PlanarTwist  world_twist_;
     bool         have_sample_ = false;
     rclcpp::Time last_sample_stamp_;
-    /// Wall time at which the sample stamp last changed. See onTimer for why sim time
-    /// alone cannot detect a stalled source on this track.
+    /// Wall time at which the sample stamp last changed.
     std::chrono::steady_clock::time_point last_advance_wall_{};
+    /// Throttling clock for the staleness warnings; the ROS clock freezes with the sim.
+    rclcpp::Clock steady_clock_{ RCL_STEADY_TIME };
 };
 
 }  // namespace g1_state_estimation

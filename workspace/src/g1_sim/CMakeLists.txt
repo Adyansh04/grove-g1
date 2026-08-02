@@ -10,9 +10,7 @@ if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
   ament_lint_auto_find_test_dependencies()
 
-  # Lint checks use workspace-root configs (see g1_description/CMakeLists.txt). This
-  # package is the most Python-heavy in the repo, so its absence here was hiding real
-  # errors behind a green suite.
+  # Lint checks use workspace-root configs (see g1_description/CMakeLists.txt).
   find_program(RUFF_EXECUTABLE ruff)
   set(_ruff_config "${CMAKE_CURRENT_SOURCE_DIR}/../../ruff.toml")
   if(RUFF_EXECUTABLE AND EXISTS "${_ruff_config}")

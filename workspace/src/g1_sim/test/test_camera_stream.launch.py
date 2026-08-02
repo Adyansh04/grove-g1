@@ -39,9 +39,8 @@ FOVY_RAD = math.radians(58.0)
 WALL_PX_X = 4.0
 PATCH_HALF = 16
 
-# Only the newest frame is read; the rest serve the rate check. Bounded because these are
-# 1.2 MB colour and 1.6 MB depth frames at 15 Hz, and unbounded buffers starved the sim in
-# milestone 3.
+# Only the newest frame is read; the rest just satisfy the liveness count in test_01.
+# These are 1.2 MB colour and 1.6 MB depth frames at 15 Hz, so the buffer stays small.
 FRAME_HISTORY = 8
 
 
@@ -49,8 +48,7 @@ def expected_axis_range(base_x, camera_world_z):
     """Range along the optical axis: the floor while far from the wall, the wall once near.
 
     Both are exact for the centre pixel, where the optical-frame z the depth image stores
-    and the euclidean range are the same number. camera_world_z comes from TF rather than
-    a constant, so a wrong odom height fails here instead of cancelling out.
+    and the euclidean range are the same number.
     """
     to_floor = camera_world_z / math.sin(CAMERA_PITCH)
     to_wall = (WALL_PX_X - (base_x + CAMERA_XYZ[0])) / math.cos(CAMERA_PITCH)

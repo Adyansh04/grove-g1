@@ -16,17 +16,9 @@
 # mjcf/g1_perception_base.xml carries the same numbers in MuJoCo's own quaternion form.
 # test_sensor_mount_consistency asserts the two agree, so edit both or neither.
 
-# CANONICAL height of base_link above the floor. This is the one place it is written.
-#
-# It is what makes `odom` the GROUND PLANE rather than a frame floating at the spawn
-# height: g1_odometry_publisher publishes it as the z of odom -> base_link, so a floor
-# return transformed into odom lands at z = 0 and Nav2's obstacle height bands mean what
-# they say. Leave it out and every consumer has to subtract it by hand, which is exactly
-# how it went wrong the first time.
-#
-# The MJCF spawns the base body at this height; test_sensor_mount_consistency asserts the
-# two agree. perception_sim.launch.py reads it from here and passes it to the node, so
-# nothing downstream carries its own copy.
+# Canonical height of base_link above the floor, and the only place it is written.
+# g1_odometry_publisher publishes it as the z of odom -> base_link, which is what puts
+# `odom` on the ground plane. Checked against the MJCF by test_sensor_mount_consistency.
 base_link:
   spawn_z: 0.793
 

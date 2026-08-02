@@ -38,8 +38,8 @@ MAX_RANGE = 40.0
 WALL_PX_X = 4.0
 ROOM_HALF = 4.0
 
-# Only the newest cloud is ever read; the rest are kept for the rate check. Unbounded
-# lists here starved the sim in milestone 3 (~68,000 messages), so they stay bounded.
+# Only the newest cloud is read; the rest just satisfy the liveness count in test_01.
+# Bounded because unbounded buffers starved the sim in milestone 3.
 CLOUD_HISTORY = 32
 
 
@@ -83,11 +83,7 @@ class LidarStreamTest(unittest.TestCase):
         )
 
     def points_odom(self, msg):
-        """Sensor frame to odom, which the odometry publisher puts on the ground plane.
-
-        Via the live TF chain, so the floor really does land at z=0 rather than at minus
-        the spawn height, and a wrong odom z fails here instead of being subtracted out.
-        """
+        """Sensor frame to odom, where the floor is at z=0."""
         rotation, translation = self.node.odom_from("livox_frame")
         pts = self.points_sensor(msg)
         finite = np.isfinite(pts).all(axis=1)

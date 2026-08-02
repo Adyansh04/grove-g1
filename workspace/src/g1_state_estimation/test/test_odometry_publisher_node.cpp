@@ -34,6 +34,7 @@ rclcpp::NodeOptions optionsWithSource(const std::string& source, bool use_sim_ti
         rclcpp::Parameter("odometry_source", source),
         rclcpp::Parameter("publish_rate_hz", 100.0),
         rclcpp::Parameter("source_timeout_ms", 200.0),
+        rclcpp::Parameter("wall_timeout_ms", 300.0),
         rclcpp::Parameter("base_height_m", 0.793),
         rclcpp::Parameter("use_sim_time", use_sim_time),
     });

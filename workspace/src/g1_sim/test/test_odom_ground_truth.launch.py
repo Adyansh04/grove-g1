@@ -8,6 +8,7 @@ has no drift budget to hide in: if commanding 1 m of travel does not move the tr
 import os
 import sys
 import unittest
+from collections import deque
 
 import pytest
 import rclpy
@@ -15,7 +16,6 @@ import yaml
 from ament_index_python.packages import get_package_share_directory
 from geometry_msgs.msg import PointStamped
 from nav_msgs.msg import Odometry
-from tf2_ros import Buffer, TransformListener
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import tf2_geometry_msgs  # noqa: E402,F401  registers the PointStamped transform
@@ -36,9 +36,10 @@ class OdomGroundTruthTest(unittest.TestCase):
     def setUpClass(cls):
         rclpy.init()
         cls.node = PerceptionSimTestNode("test_odom_ground_truth")
-        cls.tf_buffer = Buffer()
-        cls.tf_listener = TransformListener(cls.tf_buffer, cls.node)
-        cls.odoms = []
+        # The fixture node already runs a TF listener; a second one on the same node
+        # doubles /tf processing per spin.
+        cls.tf_buffer = cls.node.tf_buffer
+        cls.odoms = deque(maxlen=64)
         cls.node.create_subscription(Odometry, "/g1_odometry_publisher/odom", cls.odoms.append, 10)
         cls.node.wait_until(
             lambda: cls.tf_buffer.can_transform("odom", "base_link", rclpy.time.Time())
@@ -50,12 +51,7 @@ class OdomGroundTruthTest(unittest.TestCase):
         rclpy.shutdown()
 
     def base_height(self):
-        """The canonical base height, from the file the MJCF is checked against.
-
-        Reading it here rather than hardcoding is deliberate: test_sensor_mount_consistency
-        pins this value to the MJCF spawn height, so there is exactly one number and one
-        place that asserts it.
-        """
+        """The canonical base height. test_sensor_mount_consistency pins it to the MJCF."""
         mounts_path = os.path.join(
             get_package_share_directory("g1_sim"), "config", "sensor_mounts.yaml"
         )
@@ -78,9 +74,7 @@ class OdomGroundTruthTest(unittest.TestCase):
     def test_01_odom_is_the_ground_plane(self):
         """odom sits on the floor, not at the base's spawn height.
 
-        The z is the whole point: it is what lets a consumer transform a point cloud into
-        odom and have the floor come out at 0, which is what Nav2's obstacle height bands
-        assume. Publishing 0 here would put every floor return at minus the spawn height.
+        Publishing z=0 here would put every floor return at minus the spawn height.
         """
         x, y, z = self.base_in_odom()
         self.assertLess(abs(x), 0.05, f"base starts at the origin, transform says x={x:.4f}")
@@ -111,10 +105,8 @@ class OdomGroundTruthTest(unittest.TestCase):
     def test_03_a_lidar_point_lands_at_its_real_height_above_the_floor(self):
         """The whole chain in one assertion: odom -> base_link -> livox_frame.
 
-        `odom` is the ground plane, so a point at the sensor origin must come out at the
-        sensor's physical height above the floor: the base spawn height plus the mount.
-        Drop the odom z and this reads 0.472 instead of 1.265, which is exactly the bug
-        that made every other test subtract the spawn height by hand.
+        A point at the sensor origin must come out at its physical height above the floor,
+        the spawn height plus the mount. Drop the odom z and it reads 0.472, not 1.265.
         """
         base_z = self.base_height()
         expected = base_z + LIVOX_XYZ[2]

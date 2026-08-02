@@ -51,8 +51,10 @@ if(BUILD_TESTING)
   target_link_libraries(test_odom_math odom_math)
 
   # Runs a real node on an isolated ROS_DOMAIN_ID, so it must not share the sim's.
+  find_package(rosgraph_msgs REQUIRED)
   ament_add_gmock(test_odometry_publisher_node test/test_odometry_publisher_node.cpp)
   target_link_libraries(test_odometry_publisher_node g1_odometry_publisher_node)
+  ament_target_dependencies(test_odometry_publisher_node rosgraph_msgs)
 
   # Lint checks use workspace-root configs (see g1_description/CMakeLists.txt).
   find_program(CLANG_FORMAT_EXECUTABLE clang-format)
