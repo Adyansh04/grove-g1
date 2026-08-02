@@ -72,11 +72,15 @@
 
     <geom name="floor" type="plane" size="20 20 0.05" material="groundplane"/>
 
-    <!-- 8 x 8 m room. Inner wall faces sit at +/-4.0 m; the tests assert against that. -->
+    <!-- 8 x 8 m room. Inner wall faces sit at +/-4.0 m; the tests assert against that.
+         The y walls run to +/-4.1 in x so they cover the x walls' full thickness: at 4.0
+         the four boxes met along an edge and left an open square in each corner. Sealing
+         it did not change the stray points the lidar plugin returns outside the room;
+         that is a plugin artifact rather than this gap, see g1_sim/README.md. -->
     <geom name="wall_px" type="box" size="0.05 4.0 1.25" pos="4.05 0 1.25" material="wall"/>
     <geom name="wall_nx" type="box" size="0.05 4.0 1.25" pos="-4.05 0 1.25" material="wall"/>
-    <geom name="wall_py" type="box" size="4.0 0.05 1.25" pos="0 4.05 1.25" material="wall"/>
-    <geom name="wall_ny" type="box" size="4.0 0.05 1.25" pos="0 -4.05 1.25" material="wall"/>
+    <geom name="wall_py" type="box" size="4.1 0.05 1.25" pos="0 4.05 1.25" material="wall"/>
+    <geom name="wall_ny" type="box" size="4.1 0.05 1.25" pos="0 -4.05 1.25" material="wall"/>
 
     <!-- Obstacles at known poses: give the point cloud and depth image structure to see. -->
     <geom name="obstacle_box" type="box" size="0.3 0.3 0.5" pos="2.0 1.0 0.5"
