@@ -18,7 +18,8 @@ range_max: 40.0
 socket_path: "/tmp/g1_sensors.sock"
 
 # Depth camera. Rendered offscreen on the sensor thread against its own snapshot, then
-# linearised to metres before it leaves the simulator. S3 measured ~3.9 ms/frame with only
-# ~0.01 ms holding the sim lock.
+# linearised to metres before it leaves the simulator. Measured 7.9 ms/frame depth-only and
+# 11.5 ms with colour, of which only ~0.04 ms holds the sim lock; the rest is the render and
+# the socket write, both off-lock.
 camera_enabled: true
 camera_color: true

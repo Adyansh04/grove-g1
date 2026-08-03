@@ -9,7 +9,7 @@
        Group 2 specifically: the robot occupies groups 0 and 1, and MuJoCo's viewer
        renders only 0-2, so anything in group 3 is physically present but invisible.
 
-       No sensor site or camera element here on purpose. The sweep takes torso_link's live
+       No sensor site here on purpose. The sweep takes torso_link's live
        pose from mjData and applies the mount offset from config, so the robot model needs
        no modification and g1_29dof.xml stays vendored-verbatim.
 
