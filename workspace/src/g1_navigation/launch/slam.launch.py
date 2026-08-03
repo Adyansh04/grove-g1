@@ -52,7 +52,9 @@ def generate_launch_description():
             default_value="{}",
             description="JSON object merged over config/slam_mapping.yaml, e.g. "
             "'{\"minimum_travel_distance\": 0.0}'. For the handful of values a test or a "
-            "tuning run needs to change without copying the whole file.",
+            "tuning run needs to change without copying the whole file. Match the shipped "
+            "type exactly -- JSON has no int/float distinction, so 0 becomes an integer "
+            "parameter and slam_toolbox rejects it against a double at startup.",
         ),
         OpaqueFunction(function=_setup),
     ])

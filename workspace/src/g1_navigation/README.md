@@ -32,8 +32,8 @@ crashing and you need to see which.
 This shares a process and gives each component its own executor. It is **not** zero-copy — nothing
 sets `use_intra_process_comms`, and neither does `nav2_bringup`, because `/map` is transient-local
 and Humble's intra-process path does not support that durability. With `mode:=mapping` the
-container currently hosts a single component; it earns its keep in PR B, when the costmaps,
-planner and controller join it.
+container currently hosts a single component — one process for one node. It exists for the
+navigation servers that will join it, not for what is in it today.
 
 Structure follows `nav2_bringup`'s own launch files, including which nodes stay out:
 **slam_toolbox runs as a separate process** even though it ships a component. That is what
