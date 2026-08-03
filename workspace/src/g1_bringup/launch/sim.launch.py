@@ -205,10 +205,14 @@ def _launch_setup(context, *args, **kwargs):
                 )
             )
 
-        # odom -> pelvis for the converged track. The source is /sportmodestate, which
-        # unitree_mujoco fills from framepos/framelinvel on the pelvis imu site, so it is
-        # exact MuJoCo state. base_height_m stays 0: unlike the planar sandbox, a walking
-        # robot's height is measured, not assumed.
+        # odom -> base_footprint -> pelvis for the converged track. The source is
+        # /sportmodestate, which unitree_mujoco fills from framepos/framelinvel on the pelvis
+        # imu site, so it is exact MuJoCo state. base_height_m stays 0: unlike the planar
+        # sandbox, a walking robot's height is measured, not assumed.
+        #
+        # The chain is split because the pelvis pitches roughly 5 degrees with the gait, and
+        # both Nav2 and slam_toolbox want a gravity-aligned base frame. base_footprint is that
+        # frame; pelvis keeps the real attitude so the sensor mounts hanging off it stay honest.
         odometry_node = LifecycleNode(
             package="g1_state_estimation",
             executable="g1_odometry_publisher",
@@ -217,7 +221,8 @@ def _launch_setup(context, *args, **kwargs):
             output="both",
             parameters=[{
                 "odometry_source": "sim_sportmodestate",
-                "base_frame_id": "pelvis",
+                "base_frame_id": "base_footprint",
+                "pelvis_frame_id": "pelvis",
             }],
             remappings=[
                 ("~/sport_state", "/sportmodestate"),

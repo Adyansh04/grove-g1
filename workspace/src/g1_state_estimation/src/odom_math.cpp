@@ -1,5 +1,6 @@
 #include "g1_state_estimation/odom_math.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <string>
 
@@ -34,12 +35,44 @@ Quaternion yawToQuaternion(double yaw)
     return q;
 }
 
-double quaternionToYaw(const Quaternion& q) { return wrapAngle(2.0 * std::atan2(q.z, q.w)); }
+double quaternionToYaw(const Quaternion& q)
+{
+    return wrapAngle(std::atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z)));
+}
+
+double tiltFromVertical(const Quaternion& q)
+{
+    // R22 of the rotation matrix is the body +z projected onto the world +z.
+    const double cos_tilt = 1.0 - 2.0 * (q.x * q.x + q.y * q.y);
+    return std::acos(std::max(-1.0, std::min(1.0, cos_tilt)));
+}
+
+GroundSplit splitGroundProjection(double x, double y, double z, const Quaternion& q, double yaw)
+{
+    GroundSplit out;
+    out.footprint.x   = x;
+    out.footprint.y   = y;
+    out.footprint.yaw = yaw;
+    // Not a rotated offset: the footprint sits directly beneath the body by
+    // construction, so inverting the footprint transform leaves exactly (0, 0,
+    // z). Asserted in test because it reads like a missing term.
+    out.child_z = z;
+
+    // Rz(-yaw) * q. The left operand is a pure -z quaternion, which collapses the
+    // Hamilton product to these four terms.
+    const double s = std::sin(-yaw * 0.5);
+    const double c = std::cos(-yaw * 0.5);
+    out.tilt.w     = c * q.w - s * q.z;
+    out.tilt.x     = c * q.x - s * q.y;
+    out.tilt.y     = c * q.y + s * q.x;
+    out.tilt.z     = c * q.z + s * q.w;
+    return out;
+}
 
 double wrapAngle(double angle)
 {
-    // remainder() lands in [-pi, pi]; the shift moves the -pi endpoint up so the interval
-    // is half-open and a given rotation has exactly one representation.
+    // remainder() lands in [-pi, pi]; the shift moves the -pi endpoint up so the
+    // interval is half-open and a given rotation has exactly one representation.
     const double wrapped = std::remainder(angle, 2.0 * M_PI);
     return (wrapped <= -M_PI) ? wrapped + 2.0 * M_PI : wrapped;
 }

@@ -36,6 +36,10 @@ rclcpp::NodeOptions optionsWithSource(const std::string& source, bool use_sim_ti
         rclcpp::Parameter("source_timeout_ms", 200.0),
         rclcpp::Parameter("wall_timeout_ms", 300.0),
         rclcpp::Parameter("base_height_m", 0.793),
+        // The planar sandbox's own configuration, not the node default. Its base cannot tilt,
+        // so it wants one edge carrying the whole pose; pelvis_frame_id stays empty and the
+        // frame keeps the name g1_sim's launch and RViz config already use.
+        rclcpp::Parameter("base_frame_id", "base_link"),
         rclcpp::Parameter("use_sim_time", use_sim_time),
     });
     return options;

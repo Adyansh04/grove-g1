@@ -5,12 +5,15 @@
 #include "g1_state_estimation/odom_math.hpp"
 
 using g1_state_estimation::diagonalCovariance;
+using g1_state_estimation::GroundSplit;
 using g1_state_estimation::isStale;
 using g1_state_estimation::OdometrySource;
 using g1_state_estimation::parseOdometrySource;
 using g1_state_estimation::PlanarTwist;
 using g1_state_estimation::Quaternion;
 using g1_state_estimation::quaternionToYaw;
+using g1_state_estimation::splitGroundProjection;
+using g1_state_estimation::tiltFromVertical;
 using g1_state_estimation::toBodyTwist;
 using g1_state_estimation::wrapAngle;
 using g1_state_estimation::yawToQuaternion;
@@ -39,7 +42,8 @@ TEST(ParseOdometrySource, AcceptsTheConvergedTrackSource)
 
 TEST(ParseOdometrySource, RejectsAnythingElseAndLeavesTheOutputAlone)
 {
-    // A typo must not silently become sim ground truth, which would fabricate transforms.
+    // A typo must not silently become sim ground truth, which would fabricate
+    // transforms.
     OdometrySource source = OdometrySource::SimGroundTruth;
     for (const char* name : { "",
                               "sim",
@@ -72,8 +76,8 @@ TEST(YawQuaternion, MatchesKnownValues)
     EXPECT_NEAR(quarter.z, std::sqrt(0.5), 1e-12);
     EXPECT_NEAR(quarter.w, std::sqrt(0.5), 1e-12);
 
-    // x and y stay zero: this is a planar body, and a stray tilt here would tip every
-    // sensor frame hanging off base_link.
+    // x and y stay zero: this is a planar body, and a stray tilt here would tip
+    // every sensor frame hanging off base_link.
     for (double yaw : { 0.0, 1.0, -2.5, M_PI })
     {
         const Quaternion q = yawToQuaternion(yaw);
@@ -142,6 +146,112 @@ TEST(IsStale, NonPositiveTimeoutDisablesTheCheck)
 {
     EXPECT_FALSE(isStale(1e6, 0.0));
     EXPECT_FALSE(isStale(1e6, -1.0));
+}
+
+namespace
+{
+/// Roll-pitch-yaw to quaternion, ZYX order -- the convention quaternionToYaw()
+/// inverts.
+Quaternion rpyToQuaternion(double roll, double pitch, double yaw)
+{
+    const double cr = std::cos(roll * 0.5);
+    const double sr = std::sin(roll * 0.5);
+    const double cp = std::cos(pitch * 0.5);
+    const double sp = std::sin(pitch * 0.5);
+    const double cy = std::cos(yaw * 0.5);
+    const double sy = std::sin(yaw * 0.5);
+    Quaternion   q;
+    q.w = cr * cp * cy + sr * sp * sy;
+    q.x = sr * cp * cy - cr * sp * sy;
+    q.y = cr * sp * cy + sr * cp * sy;
+    q.z = cr * cp * sy - sr * sp * cy;
+    return q;
+}
+
+/// Hamilton product, for recomposing a split chain.
+Quaternion multiply(const Quaternion& a, const Quaternion& b)
+{
+    Quaternion out;
+    out.w = a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z;
+    out.x = a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y;
+    out.y = a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x;
+    out.z = a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w;
+    return out;
+}
+}  // namespace
+
+TEST(QuaternionToYaw, IgnoresRollAndPitch)
+{
+    // The measured standing attitude on the converged track: a few degrees of
+    // pitch under a real heading. The old 2*atan2(z, w) form was exact only at
+    // zero tilt.
+    for (double yaw = -3.0; yaw < 3.0; yaw += 0.41)
+    {
+        const Quaternion q = rpyToQuaternion(0.0, 0.0794, yaw);
+        EXPECT_NEAR(quaternionToYaw(q), wrapAngle(yaw), 1e-9) << "yaw " << yaw;
+    }
+}
+
+TEST(TiltFromVertical, MeasuresRollAndPitchTogether)
+{
+    EXPECT_NEAR(tiltFromVertical(yawToQuaternion(2.0)), 0.0, kTol) << "pure yaw is upright";
+    EXPECT_NEAR(tiltFromVertical(rpyToQuaternion(0.0, 0.3, 1.1)), 0.3, 1e-9);
+    EXPECT_NEAR(tiltFromVertical(rpyToQuaternion(0.3, 0.0, -2.0)), 0.3, 1e-9);
+    // Combined roll and pitch tilt further than either alone.
+    EXPECT_GT(tiltFromVertical(rpyToQuaternion(0.3, 0.3, 0.0)), 0.3);
+}
+
+TEST(SplitGroundProjection, FootprintIsGravityAlignedAndTheOffsetIsPurelyVertical)
+{
+    const Quaternion  q     = rpyToQuaternion(-0.05, 0.0847, 1.2);
+    const GroundSplit split = splitGroundProjection(3.0, -4.0, 0.747, q, quaternionToYaw(q));
+
+    EXPECT_DOUBLE_EQ(split.footprint.x, 3.0);
+    EXPECT_DOUBLE_EQ(split.footprint.y, -4.0);
+    // The body sits directly above the footprint, so inverting the footprint
+    // transform leaves the height untouched and contributes nothing to x or y.
+    EXPECT_DOUBLE_EQ(split.child_z, 0.747);
+    EXPECT_NEAR(tiltFromVertical(yawToQuaternion(split.footprint.yaw)), 0.0, kTol);
+    // The residual carries the tilt and none of the heading.
+    EXPECT_NEAR(tiltFromVertical(split.tilt), tiltFromVertical(q), 1e-9);
+    EXPECT_NEAR(quaternionToYaw(split.tilt), 0.0, 1e-9);
+}
+
+TEST(SplitGroundProjection, RecomposesToTheOriginalPose)
+{
+    for (double roll = -0.4; roll <= 0.4; roll += 0.19)
+    {
+        for (double pitch = -0.4; pitch <= 0.4; pitch += 0.19)
+        {
+            for (double yaw = -3.0; yaw < 3.0; yaw += 0.91)
+            {
+                const Quaternion  q = rpyToQuaternion(roll, pitch, yaw);
+                const GroundSplit split =
+                    splitGroundProjection(1.5, 2.5, 0.75, q, quaternionToYaw(q));
+                const Quaternion recomposed =
+                    multiply(yawToQuaternion(split.footprint.yaw), split.tilt);
+
+                // Sign is not observable: q and -q are the same rotation.
+                const double sign = (recomposed.w * q.w < 0.0) ? -1.0 : 1.0;
+                EXPECT_NEAR(sign * recomposed.w, q.w, 1e-9) << roll << "," << pitch << "," << yaw;
+                EXPECT_NEAR(sign * recomposed.x, q.x, 1e-9) << roll << "," << pitch << "," << yaw;
+                EXPECT_NEAR(sign * recomposed.y, q.y, 1e-9) << roll << "," << pitch << "," << yaw;
+                EXPECT_NEAR(sign * recomposed.z, q.z, 1e-9) << roll << "," << pitch << "," << yaw;
+            }
+        }
+    }
+}
+
+TEST(SplitGroundProjection, HonoursAHeldHeading)
+{
+    // Mid-fall the node keeps the last well-conditioned yaw rather than the
+    // current one, so the split has to project about what it is given, not about
+    // the quaternion.
+    const Quaternion  q     = rpyToQuaternion(0.0, 0.2, 1.0);
+    const GroundSplit split = splitGroundProjection(0.0, 0.0, 0.5, q, 0.25);
+    EXPECT_DOUBLE_EQ(split.footprint.yaw, 0.25);
+    EXPECT_NEAR(quaternionToYaw(split.tilt), wrapAngle(1.0 - 0.25), 1e-9)
+        << "the heading the footprint did not take stays in the residual";
 }
 
 TEST(DiagonalCovariance, FillsOnlyTheDiagonal)

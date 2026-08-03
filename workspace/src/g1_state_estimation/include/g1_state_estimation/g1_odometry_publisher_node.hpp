@@ -3,7 +3,8 @@
 
 /**
  * @file g1_odometry_publisher_node.hpp
- * @brief LifecycleNode publishing odom -> base_link, from a source it names explicitly.
+ * @brief LifecycleNode publishing odom -> base frame, from a source it names
+ * explicitly.
  */
 
 #include <chrono>
@@ -24,12 +25,14 @@ namespace g1_state_estimation
 {
 
 /**
- * @brief Publishes odom -> base_link and nav_msgs/Odometry from the configured source.
+ * @brief Publishes the odom -> base chain and nav_msgs/Odometry from the
+ * configured source.
  *
- * Lifecycle rather than a plain node because the fail-loud requirement needs to be
- * externally observable: with `odometry_source=hardware` this returns FAILURE from
- * on_configure and sits in `unconfigured` having created no publisher and no broadcaster,
- * which a test can assert. "Logged an error and carried on" cannot be.
+ * Lifecycle rather than a plain node because the fail-loud requirement needs to
+ * be externally observable: with `odometry_source=hardware` this returns
+ * FAILURE from on_configure and sits in `unconfigured` having created no
+ * publisher and no broadcaster, which a test can assert. "Logged an error and
+ * carried on" cannot be.
  */
 class G1OdometryPublisher : public rclcpp_lifecycle::LifecycleNode
 {
@@ -64,40 +67,49 @@ private:
     rclcpp::TimerBase::SharedPtr                                             timer_;
 
     OdometrySource source_ = OdometrySource::Hardware;
-    /// Topic the configured source actually reads. Held as a string because only one
-    /// of the two subscriptions exists, and the other is null.
-    std::string              source_topic_;
-    std::string              odom_frame_id_;
-    std::string              base_frame_id_;
+    /// Topic the configured source actually reads. Held as a string because only
+    /// one of the two subscriptions exists, and the other is null.
+    std::string source_topic_;
+    std::string odom_frame_id_;
+    std::string base_frame_id_;
+    /// Body link hung under base_frame_id_, carrying the height and tilt the
+    /// footprint drops. Empty publishes a single odom -> base_frame_id_ edge with
+    /// the full pose, which is what the planar sandbox wants: its base has no z
+    /// DoF and cannot tilt, so the split is a no-op that would only add a frame.
+    std::string              pelvis_frame_id_;
     std::vector<std::string> base_joint_names_;
-    double                   base_height_m_    = 0.0;
-    double                   publish_rate_hz_  = 50.0;
-    bool                     publish_odom_msg_ = true;
-    double                   source_timeout_s_ = 0.2;
-    double                   wall_timeout_s_   = 2.0;
-    std::array<double, 36>   pose_covariance_{};
-    std::array<double, 36>   twist_covariance_{};
+    /// Beyond this the heading is ill-conditioned and the last good one is held
+    /// instead.
+    double                 max_tilt_rad_     = 0.0;
+    double                 base_height_m_    = 0.0;
+    double                 publish_rate_hz_  = 50.0;
+    bool                   publish_odom_msg_ = true;
+    double                 source_timeout_s_ = 0.2;
+    double                 wall_timeout_s_   = 2.0;
+    std::array<double, 36> pose_covariance_{};
+    std::array<double, 36> twist_covariance_{};
 
     PlanarPose pose_;
-    /// Height and full orientation. The planar track has neither (its body has no z
-    /// DoF and cannot tilt); a walking G1 has both, so they are carried separately
-    /// rather than forced through PlanarPose.
+    /// Height and full orientation. The planar track has neither (its body has no
+    /// z DoF and cannot tilt); a walking G1 has both, so they are carried
+    /// separately rather than forced through PlanarPose.
     double     pose_z_ = 0.0;
     Quaternion orientation_;
-    /// Set once a usable orientation has arrived. Until then nothing is published:
-    /// an unusable quaternion must not reach TF (see onLowState).
+    /// Set once a usable orientation has arrived. Until then nothing is
+    /// published: an unusable quaternion must not reach TF (see onLowState).
     bool have_orientation_ = false;
-    /// Wall time the orientation last changed. Position and orientation come from separate
-    /// topics, so one can die while the other keeps flowing; without this the node would
-    /// publish a frozen orientation under a fresh stamp, which is the exact failure this
-    /// publisher exists to refuse.
+    /// Wall time the orientation last changed. Position and orientation come from
+    /// separate topics, so one can die while the other keeps flowing; without
+    /// this the node would publish a frozen orientation under a fresh stamp,
+    /// which is the exact failure this publisher exists to refuse.
     std::chrono::steady_clock::time_point last_orientation_wall_{};
     PlanarTwist                           world_twist_;
     bool                                  have_sample_ = false;
     rclcpp::Time                          last_sample_stamp_;
     /// Wall time at which the sample stamp last changed.
     std::chrono::steady_clock::time_point last_advance_wall_{};
-    /// Throttling clock for the staleness warnings; the ROS clock freezes with the sim.
+    /// Throttling clock for the staleness warnings; the ROS clock freezes with
+    /// the sim.
     rclcpp::Clock steady_clock_{ RCL_STEADY_TIME };
 };
 
