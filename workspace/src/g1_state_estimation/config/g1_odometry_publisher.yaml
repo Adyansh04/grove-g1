@@ -1,4 +1,7 @@
-# odom -> base_link publisher. See g1_state_estimation/README.md.
+# odom -> base_link publisher for the g1_sim PLANAR SANDBOX. The converged unitree_mujoco
+# track does not read this file -- g1_bringup/launch/sim.launch.py configures that one
+# inline, with a split odom -> base_footprint -> pelvis chain. See
+# g1_state_estimation/README.md.
 #
 # odometry_source is the one that matters. It defaults to `hardware`, which REFUSES to
 # configure, because the real G1 publishes no odometry at all. Simulation opts in to
@@ -8,7 +11,10 @@ g1_odometry_publisher:
     odometry_source: "sim_ground_truth"
 
     odom_frame_id: "odom"
+    # Not the node's base_footprint default: this base is planar and cannot tilt, so the
+    # ground projection would be an identity edge and an extra frame for nothing.
     base_frame_id: "base_link"
+    pelvis_frame_id: ""
 
     # The perception track's planar joints, carrying MuJoCo's generalized coordinates.
     # Looked up by name, so this order is documentation rather than an index.
