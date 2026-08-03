@@ -12,9 +12,8 @@ namespace g1_state_estimation
 
 namespace
 {
-// Sensor-style: the base state is a stream of samples where only the newest
-// matters, and a reliable subscriber against a best-effort publisher simply
-// receives nothing.
+// Sensor-style: the base state is a stream of samples where only the newest matters, and
+// a reliable subscriber against a best-effort publisher simply receives nothing.
 rclcpp::QoS baseStateQos()
 {
     return rclcpp::QoS(rclcpp::KeepLast(1)).best_effort().durability_volatile();
@@ -26,24 +25,20 @@ G1OdometryPublisher::G1OdometryPublisher(const rclcpp::NodeOptions& options)
 {
     declare_parameter<std::string>("odometry_source", "hardware");
     declare_parameter<std::string>("odom_frame_id", "odom");
-    // REP-105: gravity-aligned and on the ground. Nav2's robot_base_frame and
-    // slam_toolbox's base_frame both default to a frame like this, and a 2D
-    // costmap has nowhere to put the tilt anyway.
+    // REP-105: gravity-aligned and on the ground. Nav2's robot_base_frame and slam_toolbox's
+    // base_frame both default to a frame like this, and a 2D costmap has nowhere to put tilt.
     declare_parameter<std::string>("base_frame_id", "base_footprint");
-    // Empty means one edge carrying the full pose; naming a link splits it in
-    // two. See the member's comment for why the planar sandbox leaves it empty.
+    // Empty means one edge carrying the full pose; naming a link splits it in two. See the
+    // member's comment for why the planar sandbox leaves it empty.
     declare_parameter<std::string>("pelvis_frame_id", "");
-    // Past this tilt the heading extraction is ill-conditioned. 80 rather than 90
-    // because the conditioning degrades before it fails outright, and a robot at
-    // 80 degrees is falling, not navigating.
     declare_parameter<double>("max_tilt_deg", 80.0);
     declare_parameter<std::vector<std::string>>(
         "base_joint_names",
         { "base_x_joint", "base_y_joint", "base_yaw_joint" });
-    // Height of base_link above the floor, making odom the ground plane. Defaults
-    // to 0, which is correct for a real floating-base estimator (it measures z
-    // itself). The perception sim's base is a planar body with no z DoF, so its
-    // launch supplies the spawn height from g1_sim's sensor_mounts.yaml.
+    // Height of base_link above the floor, making odom the ground plane. Defaults to 0,
+    // which is correct for a real floating-base estimator (it measures z itself). The
+    // perception sim's base is a planar body with no z DoF, so its launch supplies the
+    // spawn height from g1_sim's sensor_mounts.yaml.
     declare_parameter<double>("base_height_m", 0.0);
     declare_parameter<double>("publish_rate_hz", 50.0);
     declare_parameter<bool>("publish_odom_msg", true);
@@ -60,8 +55,7 @@ bool G1OdometryPublisher::readParameters()
     {
         RCLCPP_ERROR(
             get_logger(),
-            "odometry_source='%s' is not a known source. Use 'sim_ground_truth' "
-            "(planar "
+            "odometry_source='%s' is not a known source. Use 'sim_ground_truth' (planar "
             "sandbox), 'sim_sportmodestate' (converged track) or 'hardware'.",
             source_name.c_str());
         return false;
@@ -69,19 +63,15 @@ bool G1OdometryPublisher::readParameters()
 
     if (source_ == OdometrySource::Hardware)
     {
-        // Deliberately long. Anyone hitting this needs to know the topic they are
-        // about to go looking for does not carry what they think it does.
+        // Deliberately long. Anyone hitting this needs to know the topic they are about to
+        // go looking for does not carry what they think it does.
         RCLCPP_ERROR(
             get_logger(),
-            "odometry_source='hardware' is not implemented: the real G1 publishes "
-            "no odometry. "
-            "On hardware /sportmodestate carries unitree_hg::SportModeState_, "
-            "which has only "
+            "odometry_source='hardware' is not implemented: the real G1 publishes no odometry. "
+            "On hardware /sportmodestate carries unitree_hg::SportModeState_, which has only "
             "fsm_id, fsm_mode, task_id and task_time -- no pose and no velocity. "
-            "rt/odommodestate does not exist. A real source (leg odometry + IMU "
-            "EKF, or "
-            "LiDAR-inertial odometry) is a future state-estimation milestone. "
-            "Refusing to "
+            "rt/odommodestate does not exist. A real source (leg odometry + IMU EKF, or "
+            "LiDAR-inertial odometry) is a future state-estimation milestone. Refusing to "
             "configure rather than publish a fabricated transform.");
         return false;
     }
@@ -110,14 +100,15 @@ bool G1OdometryPublisher::readParameters()
         RCLCPP_ERROR(get_logger(), "publish_rate_hz must be positive, got %f", publish_rate_hz_);
         return false;
     }
-    if (pelvis_frame_id_ == base_frame_id_)
+    // Empty or self-referential frame ids reach tf2 as an error naming tf2, not this node.
+    if (base_frame_id_.empty() || pelvis_frame_id_ == base_frame_id_)
     {
         RCLCPP_ERROR(
             get_logger(),
-            "pelvis_frame_id and base_frame_id are both '%s'; that edge "
-            "would be a self-loop. "
+            "base_frame_id ('%s') must be non-empty and different from pelvis_frame_id ('%s'). "
             "Leave pelvis_frame_id empty for a single transform.",
-            base_frame_id_.c_str());
+            base_frame_id_.c_str(),
+            pelvis_frame_id_.c_str());
         return false;
     }
     if (max_tilt_rad_ <= 0.0 || max_tilt_rad_ >= M_PI)
@@ -137,9 +128,9 @@ bool G1OdometryPublisher::readParameters()
 rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
 G1OdometryPublisher::on_configure(const rclcpp_lifecycle::State&)
 {
-    // Nothing is created before this returns true. An unimplemented source must
-    // leave no publisher and no broadcaster behind: advertising /tf and then
-    // going quiet is exactly the silent failure this node exists to avoid.
+    // Nothing is created before this returns true. An unimplemented source must leave no
+    // publisher and no broadcaster behind: advertising /tf and then going quiet is exactly
+    // the silent failure this node exists to avoid.
     if (!readParameters())
     {
         return CallbackReturn::FAILURE;
@@ -156,9 +147,9 @@ G1OdometryPublisher::on_configure(const rclcpp_lifecycle::State&)
             "~/sport_state",
             baseStateQos(),
             std::bind(&G1OdometryPublisher::onSportModeState, this, std::placeholders::_1));
-        // Orientation comes from /lowstate, not /sportmodestate: unitree_mujoco
-        // leaves the latter's imu_state at all zeros, and tf2 normalises a zero
-        // quaternion straight to NaN, which it then silently drops.
+        // Orientation comes from /lowstate, not /sportmodestate: unitree_mujoco leaves the
+        // latter's imu_state at all zeros, and tf2 normalises a zero quaternion straight to
+        // NaN, which it then silently drops.
         low_state_sub_ = create_subscription<unitree_hg::msg::LowState>(
             "~/imu_state",
             baseStateQos(),
@@ -179,8 +170,7 @@ G1OdometryPublisher::on_configure(const rclcpp_lifecycle::State&)
                                                              " -> " + pelvis_frame_id_;
     RCLCPP_INFO(
         get_logger(),
-        "Configured on sim ground truth: %s from %s. This is exact "
-        "MuJoCo state, not an "
+        "Configured on sim ground truth: %s from %s. This is exact MuJoCo state, not an "
         "estimate; it has no drift, noise or latency.",
         chain.c_str(),
         source_topic_.c_str());
@@ -234,9 +224,9 @@ G1OdometryPublisher::on_shutdown(const rclcpp_lifecycle::State&)
 
 void G1OdometryPublisher::onBaseState(const sensor_msgs::msg::JointState::SharedPtr msg)
 {
-    // Look joints up by name every message: joint_state_broadcaster does not
-    // promise a stable ordering, and indexing by position would silently swap x
-    // and yaw the day it changes.
+    // Look joints up by name every message: joint_state_broadcaster does not promise a
+    // stable ordering, and indexing by position would silently swap x and yaw the day it
+    // changes.
     double     values[3]     = { 0.0, 0.0, 0.0 };
     double     velocities[3] = { 0.0, 0.0, 0.0 };
     const bool have_velocity = msg->velocity.size() == msg->name.size();
@@ -262,9 +252,8 @@ void G1OdometryPublisher::onBaseState(const sensor_msgs::msg::JointState::Shared
     pose_.yaw    = values[2];
     world_twist_ = PlanarTwist{ velocities[0], velocities[1], velocities[2] };
 
-    // The broadcaster stamps from this, so take the source's own time rather than
-    // now(): on simulated time the two can differ by more than the whole TF
-    // cache.
+    // The broadcaster stamps from this, so take the source's own time rather than now():
+    // on simulated time the two can differ by more than the whole TF cache.
     const bool         unstamped = msg->header.stamp.sec == 0 && msg->header.stamp.nanosec == 0;
     const rclcpp::Time stamp =
         unstamped ? now() : rclcpp::Time(msg->header.stamp, get_clock()->get_clock_type());
@@ -275,16 +264,15 @@ void G1OdometryPublisher::onBaseState(const sensor_msgs::msg::JointState::Shared
 
 void G1OdometryPublisher::onSportModeState(const unitree_go::msg::SportModeState::SharedPtr msg)
 {
-    // The converged track's ground truth. unitree_mujoco fills position and
-    // velocity from framepos/framelinvel on the pelvis imu site, so this is exact
-    // MuJoCo state, not an estimate. It is also why the hardware branch still
-    // refuses: the real G1 publishes the hg variant of this message, which has
-    // none of these fields.
+    // The converged track's ground truth. unitree_mujoco fills position and velocity from
+    // framepos/framelinvel on the pelvis imu site, so this is exact MuJoCo state, not an
+    // estimate. It is also why the hardware branch still refuses: the real G1 publishes the
+    // hg variant of this message, which has none of these fields.
     if (!std::isfinite(msg->position[0]) || !std::isfinite(msg->position[1]) ||
         !std::isfinite(msg->position[2]))
     {
-        // A diverged MuJoCo publishes NaN here, and tf2 drops NaN transforms
-        // silently, so the symptom would be a frame that simply stops existing.
+        // A diverged MuJoCo publishes NaN here, and tf2 drops NaN transforms silently, so
+        // the symptom would be a frame that simply stops existing.
         RCLCPP_WARN_THROTTLE(
             get_logger(),
             steady_clock_,
@@ -299,24 +287,21 @@ void G1OdometryPublisher::onSportModeState(const unitree_go::msg::SportModeState
     world_twist_ =
         PlanarTwist{ msg->velocity[0], msg->velocity[1], static_cast<double>(msg->yaw_speed) };
 
-    // This message carries no header stamp, so the arrival time is the only stamp
-    // available.
+    // This message carries no header stamp, so the arrival time is the only stamp available.
     noteSample(now());
 }
 
 void G1OdometryPublisher::onLowState(const unitree_hg::msg::LowState::SharedPtr msg)
 {
-    // Full orientation, unlike the planar track: a walking robot rolls and
-    // pitches, and flattening that to yaw would tilt every sensor frame hanging
-    // off the base.
+    // Full orientation, unlike the planar track: a walking robot rolls and pitches, and
+    // flattening that to yaw would tilt every sensor frame hanging off the base.
     const Quaternion q{ msg->imu_state.quaternion[1],
                         msg->imu_state.quaternion[2],
                         msg->imu_state.quaternion[3],
                         msg->imu_state.quaternion[0] };
 
-    // Validate before it can reach TF. tf2 normalises, so a zero-norm quaternion
-    // becomes NaN and the transform is dropped with a message that points at tf2
-    // rather than here.
+    // Validate before it can reach TF. tf2 normalises, so a zero-norm quaternion becomes
+    // NaN and the transform is dropped with a message that points at tf2 rather than here.
     const double norm2 = q.w * q.w + q.x * q.x + q.y * q.y + q.z * q.z;
     if (!std::isfinite(norm2) || norm2 < 0.5)
     {
@@ -324,27 +309,24 @@ void G1OdometryPublisher::onLowState(const unitree_hg::msg::LowState::SharedPtr 
             get_logger(),
             steady_clock_,
             5000,
-            "IMU quaternion is unusable (norm^2 %.3f); not "
-            "publishing an orientation.",
+            "IMU quaternion is unusable (norm^2 %.3f); not publishing an orientation.",
             norm2);
         return;
     }
 
-    // Normalise: norm^2 >= 0.5 admits 4.0 just as happily as 1.0, and an
-    // unnormalised quaternion on /tf is a scale error nothing downstream reports.
+    // Normalise: norm^2 >= 0.5 admits 4.0 just as happily as 1.0, and an unnormalised
+    // quaternion on /tf is a scale error nothing downstream reports.
     const double inv = 1.0 / std::sqrt(norm2);
     orientation_.w   = q.w * inv;
     orientation_.x   = q.x * inv;
     orientation_.y   = q.y * inv;
     orientation_.z   = q.z * inv;
 
-    // Keep publishing the attitude either way -- a fallen robot really is tilted,
-    // and hiding that would be its own lie. Only the heading is held: near
-    // vertical-axis singularity the yaw swings wildly for tiny attitude changes,
-    // and that noise would propagate into the ground projection and the body
-    // twist.
-    const double tilt = tiltFromVertical(orientation_);
-    if (tilt <= max_tilt_rad_ || !have_orientation_)
+    // The attitude keeps going out either way -- a fallen robot really is tilted. Only the
+    // heading is held: near the vertical-axis singularity yaw swings wildly for tiny attitude
+    // changes, and that noise would reach both the ground projection and the body twist. The
+    // first sample always latches, even mid-fall, because there is nothing to hold instead.
+    if (tiltFromVertical(orientation_) <= max_tilt_rad_ || !have_orientation_)
     {
         pose_.yaw = quaternionToYaw(orientation_);
     }
@@ -354,10 +336,9 @@ void G1OdometryPublisher::onLowState(const unitree_hg::msg::LowState::SharedPtr 
             get_logger(),
             steady_clock_,
             2000,
-            "Tilted %.1f degrees from vertical (limit %.1f); "
-            "holding the last heading. The "
-            "robot is falling, not turning.",
-            tilt * 180.0 / M_PI,
+            "Tilted %.1f degrees from vertical (limit %.1f); holding the last heading. The robot "
+            "is falling, not turning.",
+            tiltFromVertical(orientation_) * 180.0 / M_PI,
             max_tilt_rad_ * 180.0 / M_PI);
     }
     have_orientation_      = true;
@@ -366,10 +347,9 @@ void G1OdometryPublisher::onLowState(const unitree_hg::msg::LowState::SharedPtr 
 
 void G1OdometryPublisher::noteSample(const rclcpp::Time& stamp)
 {
-    // Time of the last stamp CHANGE, not of the last message: a wedged simulator
-    // can keep republishing the same sample forever. Order matters,
-    // rclcpp::Time::operator!= throws on mismatched clock types and
-    // last_sample_stamp_ starts out RCL_SYSTEM_TIME.
+    // Time of the last stamp CHANGE, not of the last message: a wedged simulator can keep
+    // republishing the same sample forever. Order matters, rclcpp::Time::operator!= throws
+    // on mismatched clock types and last_sample_stamp_ starts out RCL_SYSTEM_TIME.
     if (!have_sample_ || stamp != last_sample_stamp_)
     {
         last_advance_wall_ = std::chrono::steady_clock::now();
@@ -400,9 +380,8 @@ void G1OdometryPublisher::onTimer()
         return;
     }
 
-    // Sim time alone cannot see a wedged simulator: /clock comes from the same
-    // process as the base state, so it freezes too and `elapsed` stays at zero.
-    // Hence the wall budget.
+    // Sim time alone cannot see a wedged simulator: /clock comes from the same process as
+    // the base state, so it freezes too and `elapsed` stays at zero. Hence the wall budget.
     const double elapsed = (now() - last_sample_stamp_).seconds();
     if (source_ == OdometrySource::SimSportModeState)
     {
@@ -415,10 +394,8 @@ void G1OdometryPublisher::onTimer()
                 get_logger(),
                 steady_clock_,
                 2000,
-                "Orientation has not advanced for %.3f s (limit "
-                "%.3f); stopped publishing "
-                "%s -> %s. Position alone would be a frozen "
-                "attitude under a fresh stamp.",
+                "Orientation has not advanced for %.3f s (limit %.3f); stopped publishing "
+                "%s -> %s. Position alone would be a frozen attitude under a fresh stamp.",
                 orientation_age,
                 wall_timeout_s_,
                 odom_frame_id_.c_str(),
@@ -431,15 +408,14 @@ void G1OdometryPublisher::onTimer()
         std::chrono::duration<double>(std::chrono::steady_clock::now() - last_advance_wall_).count();
     if (isStale(elapsed, source_timeout_s_) || isStale(wall_elapsed, wall_timeout_s_))
     {
-        // Stop publishing rather than re-stamping the last pose. A frozen transform
-        // with a fresh timestamp is indistinguishable from a stationary robot,
-        // which is how a dead source turns into a confidently wrong map.
+        // Stop publishing rather than re-stamping the last pose. A frozen transform with a
+        // fresh timestamp is indistinguishable from a stationary robot, which is how a dead
+        // source turns into a confidently wrong map.
         RCLCPP_WARN_THROTTLE(
             get_logger(),
             steady_clock_,
             2000,
-            "Base state has not advanced for %.3f s on the source clock (limit "
-            "%.3f) or "
+            "Base state has not advanced for %.3f s on the source clock (limit %.3f) or "
             "%.3f s on wall time (limit %.3f); stopped publishing %s -> %s.",
             elapsed,
             source_timeout_s_,
@@ -494,8 +470,7 @@ void G1OdometryPublisher::onTimer()
         body_tf.transform.rotation.z    = split.tilt.z;
         body_tf.transform.rotation.w    = split.tilt.w;
 
-        // One call: both edges share a stamp and a consumer should never see the
-        // chain half-updated.
+        // One call: both edges share a stamp, and no consumer should see the chain half-updated.
         tf_broadcaster_->sendTransform({ tf, body_tf });
     }
 
@@ -504,18 +479,15 @@ void G1OdometryPublisher::onTimer()
         return;
     }
 
-    // Nav2's costmap and controller server read velocity from Odometry, not from
-    // TF.
-    //
-    // Pose and child_frame_id are taken from the transform published just above
-    // rather than rebuilt from pose_, so the two can never disagree: with a split
-    // chain that means the footprint, not the body. Dropping z and the tilt is
-    // correct, not lossy -- child_frame_id says base_footprint, and toBodyTwist()
-    // is already yaw-only, which is exactly that frame.
+    // Nav2's costmap and controller server read velocity from Odometry, not from TF.
     nav_msgs::msg::Odometry odom;
-    odom.header.stamp          = stamp;
-    odom.header.frame_id       = odom_frame_id_;
-    odom.child_frame_id        = base_frame_id_;
+    odom.header.stamp    = stamp;
+    odom.header.frame_id = odom_frame_id_;
+    odom.child_frame_id  = base_frame_id_;
+    // Pose taken from the transform published just above rather than rebuilt from pose_, so the
+    // two cannot disagree: with a split chain that means the footprint, not the body. Dropping z
+    // and the tilt is correct, not lossy -- child_frame_id names the footprint, and toBodyTwist()
+    // is already yaw-only, which is exactly that frame.
     odom.pose.pose.position.x  = tf.transform.translation.x;
     odom.pose.pose.position.y  = tf.transform.translation.y;
     odom.pose.pose.position.z  = tf.transform.translation.z;

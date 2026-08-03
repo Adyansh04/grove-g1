@@ -1,6 +1,6 @@
 /**
  * @file g1_odometry_publisher_main.cpp
- * @brief Entry point for the odom -> base_link publisher.
+ * @brief Entry point for the odom -> base publisher.
  */
 #include <memory>
 #include <rclcpp/rclcpp.hpp>

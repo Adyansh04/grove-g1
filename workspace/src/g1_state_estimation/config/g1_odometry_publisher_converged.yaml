@@ -1,0 +1,38 @@
+# odom -> base_footprint -> pelvis publisher for the CONVERGED unitree_mujoco track, loaded by
+# g1_bringup/launch/sim.launch.py. The planar g1_sim sandbox uses g1_odometry_publisher.yaml
+# instead, which publishes a single odom -> base_link edge. See g1_state_estimation/README.md.
+g1_odometry_publisher:
+  ros__parameters:
+    # /sportmodestate for position (exact MuJoCo state from the pelvis imu site) and /lowstate
+    # for full orientation. Not sim_ground_truth: that reads the planar sandbox's joints, which
+    # this track does not have.
+    odometry_source: "sim_sportmodestate"
+
+    odom_frame_id: "odom"
+    # Split, because the pelvis pitches a few degrees with the gait and both Nav2 and
+    # slam_toolbox want a gravity-aligned base. pelvis keeps the real attitude, so the sensor
+    # mounts hanging off it stay honest.
+    base_frame_id: "base_footprint"
+    pelvis_frame_id: "pelvis"
+
+    # Tilt past which the ZYX heading is ill-conditioned and the last good one is held instead.
+    #
+    # A GUESS, not a measurement. Chosen below 90 because conditioning degrades before it fails
+    # outright, and because a robot at 80 degrees is falling rather than navigating. It has been
+    # seen to fire correctly on a real spawn topple (113 degrees), which says it triggers, not
+    # that 80 is the right number. Lower it if a hard gait ever holds the heading spuriously.
+    max_tilt_deg: 80.0
+
+    # base_height_m is deliberately absent: unlike the planar sandbox, whose base has no z DoF,
+    # a walking robot's height is measured from /sportmodestate.
+
+    publish_rate_hz: 50.0
+    publish_odom_msg: true
+
+    source_timeout_ms: 200.0
+    wall_timeout_ms: 2000.0
+
+    # Ground truth has no meaningful uncertainty, but an all-zero covariance is a known Nav2
+    # footgun, so a small non-zero diagonal goes out instead.
+    pose_covariance: 1.0e-6
+    twist_covariance: 1.0e-6
