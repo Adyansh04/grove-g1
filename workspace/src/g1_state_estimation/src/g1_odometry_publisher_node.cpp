@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <memory>
 #include <string>
 #include <vector>
@@ -119,6 +120,13 @@ G1OdometryPublisher::on_configure(const rclcpp_lifecycle::State&)
             "~/sport_state",
             baseStateQos(),
             std::bind(&G1OdometryPublisher::onSportModeState, this, std::placeholders::_1));
+        // Orientation comes from /lowstate, not /sportmodestate: unitree_mujoco leaves the
+        // latter's imu_state at all zeros, and tf2 normalises a zero quaternion straight to
+        // NaN, which it then silently drops.
+        low_state_sub_ = create_subscription<unitree_hg::msg::LowState>(
+            "~/imu_state",
+            baseStateQos(),
+            std::bind(&G1OdometryPublisher::onLowState, this, std::placeholders::_1));
     }
     else
     {
@@ -144,6 +152,7 @@ G1OdometryPublisher::on_cleanup(const rclcpp_lifecycle::State&)
     timer_.reset();
     base_state_sub_.reset();
     sport_state_sub_.reset();
+    low_state_sub_.reset();
     odom_pub_.reset();
     tf_broadcaster_.reset();
     have_sample_ = false;
@@ -175,6 +184,7 @@ G1OdometryPublisher::on_shutdown(const rclcpp_lifecycle::State&)
     timer_.reset();
     base_state_sub_.reset();
     sport_state_sub_.reset();
+    low_state_sub_.reset();
     odom_pub_.reset();
     tf_broadcaster_.reset();
     return CallbackReturn::SUCCESS;
@@ -230,19 +240,39 @@ void G1OdometryPublisher::onSportModeState(const unitree_go::msg::SportModeState
     pose_.y = msg->position[1];
     pose_z_ = msg->position[2];
 
-    // Full orientation, unlike the planar track: a walking robot rolls and pitches, and
-    // flattening that to yaw would tilt every sensor frame hanging off base_link.
-    orientation_.w = msg->imu_state.quaternion[0];
-    orientation_.x = msg->imu_state.quaternion[1];
-    orientation_.y = msg->imu_state.quaternion[2];
-    orientation_.z = msg->imu_state.quaternion[3];
-    pose_.yaw      = quaternionToYaw(orientation_);
-
     world_twist_ =
         PlanarTwist{ msg->velocity[0], msg->velocity[1], static_cast<double>(msg->yaw_speed) };
 
     // This message carries no header stamp, so the arrival time is the only stamp available.
     noteSample(now());
+}
+
+void G1OdometryPublisher::onLowState(const unitree_hg::msg::LowState::SharedPtr msg)
+{
+    // Full orientation, unlike the planar track: a walking robot rolls and pitches, and
+    // flattening that to yaw would tilt every sensor frame hanging off the base.
+    const Quaternion q{ msg->imu_state.quaternion[1],
+                        msg->imu_state.quaternion[2],
+                        msg->imu_state.quaternion[3],
+                        msg->imu_state.quaternion[0] };
+
+    // Validate before it can reach TF. tf2 normalises, so a zero-norm quaternion becomes
+    // NaN and the transform is dropped with a message that points at tf2 rather than here.
+    const double norm2 = q.w * q.w + q.x * q.x + q.y * q.y + q.z * q.z;
+    if (!std::isfinite(norm2) || norm2 < 0.5)
+    {
+        RCLCPP_WARN_THROTTLE(
+            get_logger(),
+            steady_clock_,
+            5000,
+            "IMU quaternion is unusable (norm^2 %.3f); not publishing an orientation.",
+            norm2);
+        return;
+    }
+
+    orientation_      = q;
+    pose_.yaw         = quaternionToYaw(orientation_);
+    have_orientation_ = true;
 }
 
 void G1OdometryPublisher::noteSample(const rclcpp::Time& stamp)
@@ -260,6 +290,15 @@ void G1OdometryPublisher::noteSample(const rclcpp::Time& stamp)
 
 void G1OdometryPublisher::onTimer()
 {
+    if (source_ == OdometrySource::SimSportModeState && !have_orientation_)
+    {
+        RCLCPP_WARN_THROTTLE(
+            get_logger(),
+            steady_clock_,
+            5000,
+            "Waiting for a usable IMU orientation.");
+        return;
+    }
     if (!have_sample_)
     {
         RCLCPP_WARN_THROTTLE(

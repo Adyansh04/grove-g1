@@ -22,6 +22,7 @@
   <depend>tf2_ros</depend>
   <depend>tf2_msgs</depend>
   <depend>unitree_go</depend>
+  <depend>unitree_hg</depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_cmake_lint_cmake</test_depend>

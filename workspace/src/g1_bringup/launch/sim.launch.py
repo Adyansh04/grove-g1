@@ -169,7 +169,10 @@ def _launch_setup(context, *args, **kwargs):
                 "odometry_source": "sim_sportmodestate",
                 "base_frame_id": "pelvis",
             }],
-            remappings=[("~/sport_state", "/sportmodestate")],
+            remappings=[
+                ("~/sport_state", "/sportmodestate"),
+                ("~/imu_state", "/lowstate"),
+            ],
         )
         actions.append(odometry_node)
         actions.append(

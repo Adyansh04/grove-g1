@@ -184,9 +184,12 @@ private:
     void publish(const CloudFrame& frame)
     {
         sensor_msgs::msg::PointCloud2 msg;
-        // Stamped from the simulator's own clock so downstream TF lookups line up with
-        // /clock rather than with wall time.
-        msg.header.stamp = rclcpp::Time(static_cast<int64_t>(frame.sim_time_s * 1e9), RCL_ROS_TIME);
+        // now(), not the simulator's internal time. unitree_mujoco publishes no /clock, so
+        // everything else on this track (TF included) is stamped with wall time; stamping
+        // clouds with sim-seconds-since-start put them decades in the past and no consumer
+        // could transform them. now() also stays correct if a /clock ever appears, because
+        // it follows this node's use_sim_time.
+        msg.header.stamp    = now();
         msg.header.frame_id = frame_id_;
 
         const std::size_t points = frame.points.size() / 3;

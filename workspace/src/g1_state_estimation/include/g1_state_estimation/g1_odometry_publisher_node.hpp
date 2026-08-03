@@ -18,6 +18,7 @@
 #include "sensor_msgs/msg/joint_state.hpp"
 #include "tf2_ros/transform_broadcaster.h"
 #include "unitree_go/msg/sport_mode_state.hpp"
+#include "unitree_hg/msg/low_state.hpp"
 
 namespace g1_state_estimation
 {
@@ -50,12 +51,14 @@ private:
 
     void onBaseState(const sensor_msgs::msg::JointState::SharedPtr msg);
     void onSportModeState(const unitree_go::msg::SportModeState::SharedPtr msg);
+    void onLowState(const unitree_hg::msg::LowState::SharedPtr msg);
     /// Shared tail of both callbacks: staleness bookkeeping against a new stamp.
     void noteSample(const rclcpp::Time& stamp);
     void onTimer();
 
     rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr            base_state_sub_;
     rclcpp::Subscription<unitree_go::msg::SportModeState>::SharedPtr         sport_state_sub_;
+    rclcpp::Subscription<unitree_hg::msg::LowState>::SharedPtr               low_state_sub_;
     rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub_;
     std::unique_ptr<tf2_ros::TransformBroadcaster>                           tf_broadcaster_;
     rclcpp::TimerBase::SharedPtr                                             timer_;
@@ -79,8 +82,11 @@ private:
     /// Height and full orientation. The planar track has neither (its body has no z
     /// DoF and cannot tilt); a walking G1 has both, so they are carried separately
     /// rather than forced through PlanarPose.
-    double       pose_z_ = 0.0;
-    Quaternion   orientation_;
+    double     pose_z_ = 0.0;
+    Quaternion orientation_;
+    /// Set once a usable orientation has arrived. Until then nothing is published:
+    /// an unusable quaternion must not reach TF (see onLowState).
+    bool         have_orientation_ = false;
     PlanarTwist  world_twist_;
     bool         have_sample_ = false;
     rclcpp::Time last_sample_stamp_;
