@@ -112,12 +112,14 @@ def _launch_setup(context, *args, **kwargs):
     # the sensor assertions measure against. Selected separately from pin_pelvis because a
     # pinned pelvis and a walking robot both want sensors eventually.
     sensors = LaunchConfiguration("sensors").perform(context).lower() == "true"
-    if pin_pelvis:
-        overlay_name = "g1_pinned_scene.xml"
-    elif sensors:
-        overlay_name = "g1_perception_scene.xml"
+    # The two options compose: pinning is orthogonal to whether sensors run, and the
+    # geometry tests want both at once (a known robot pose in a known room).
+    if sensors:
+        overlay_name = (
+            "g1_perception_pinned_scene.xml" if pin_pelvis else "g1_perception_scene.xml"
+        )
     else:
-        overlay_name = "g1_flat_scene.xml"
+        overlay_name = "g1_pinned_scene.xml" if pin_pelvis else "g1_flat_scene.xml"
     staged_path  = os.path.join(G1_MODEL_DIR, STAGED_SCENE_NAME)
     overlay_src  = os.path.join(
         get_package_share_directory("g1_bringup"), "mjcf", overlay_name
