@@ -1,0 +1,84 @@
+# Localization against the committed map: nav2_map_server serves it, AMCL owns map -> odom.
+#
+# Not slam_toolbox's localization mode, which would reuse the same scan matcher that built the
+# map. That mode loads a serialized pose graph, and for this map that is 33 MB against 130 KB
+# for the occupancy grid -- see maps/README.md.
+#
+# The honest caveat, repeated here because the numbers below look more meaningful than they
+# are: AMCL's motion model is parameterised on odometry noise, and this track's odometry is
+# exact MuJoCo ground truth. The model is degenerate, map -> odom converges to identity
+# immediately, and none of the alpha values can be tuned to anything that transfers to
+# hardware. This exercises the real pipeline; it does not validate localization.
+map_server:
+  ros__parameters:
+    use_sim_time: false
+    # Set by the launch, which resolves it against the package share.
+    yaml_filename: ""
+
+amcl:
+  ros__parameters:
+    use_sim_time: false
+
+    global_frame_id: "map"
+    odom_frame_id: "odom"
+    # Gravity-aligned and on the ground. Nav2's default of base_footprint happens to be right
+    # here, but only because g1_state_estimation publishes one -- the URDF root is pelvis.
+    base_frame_id: "base_footprint"
+    scan_topic: /scan
+
+    # The robot cannot strafe on command, so this is the closest of the shipped models. It is
+    # a poor description of a gait that produces 0.3 m/s of uncommanded lateral motion, which
+    # is another reason not to read anything into the alphas.
+    robot_model_type: "nav2_amcl::DifferentialMotionModel"
+    alpha1: 0.2
+    alpha2: 0.2
+    alpha3: 0.2
+    alpha4: 0.2
+    alpha5: 0.2
+
+    # Matches the scan's own limits, so AMCL weighs exactly the beams that exist.
+    laser_max_range: 25.0
+    laser_min_range: 0.1
+    laser_model_type: "likelihood_field"
+    laser_likelihood_max_dist: 2.0
+    max_beams: 60
+
+    max_particles: 2000
+    min_particles: 500
+    pf_err: 0.05
+    pf_z: 0.99
+    resample_interval: 1
+    recovery_alpha_fast: 0.0
+    recovery_alpha_slow: 0.0
+
+    # The robot walks in ~0.5 m bursts between gait initiations, so a tighter update threshold
+    # would resample on noise rather than on motion.
+    update_min_d: 0.25
+    update_min_a: 0.2
+
+    sigma_hit: 0.2
+    z_hit: 0.5
+    z_max: 0.05
+    z_rand: 0.5
+    z_short: 0.05
+    lambda_short: 0.1
+    do_beamskip: false
+    beam_skip_distance: 0.5
+    beam_skip_error_threshold: 0.9
+    beam_skip_threshold: 0.3
+
+    save_pose_rate: 0.5
+    tf_broadcast: true
+    # Generous relative to the 50 Hz odometry and 10 Hz scan. TF timing, not localization
+    # quality, is the recurring failure on this stack.
+    transform_tolerance: 1.0
+
+    # The simulator always spawns the robot at the origin, and the map was built from there,
+    # so the initial pose is known rather than guessed. Without this AMCL waits for a manual
+    # 2D Pose Estimate in RViz, which a launch test cannot give it.
+    set_initial_pose: true
+    initial_pose:
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      yaw: 0.0
