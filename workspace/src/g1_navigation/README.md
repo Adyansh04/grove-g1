@@ -54,15 +54,30 @@ that chose it.
 **The depth camera is not a navigation input.** The D435i is pitched 47.6 degrees down and looks at
 the floor about 1.2 m ahead. It is a manipulation and near-field sensor.
 
+## What is covered, and how
+
+| | Coverage |
+|---|---|
+| The `odom -> base_footprint -> pelvis` chain and the scan | `test_scan_pipeline`, against a live headless sim |
+| slam_toolbox owning `map -> odom`, and the map's geometry | `test_slam_map`, against a live headless sim |
+| The frame split, the tilt guard, parameter validation | `g1_state_estimation`'s node and math suites |
+| No shipped config enables `use_sim_time` | `test_no_sim_time` |
+| **`localization.launch.py` and `config/localization.yaml`** | **None. One manual run only.** |
+
+**Localization is not automatically tested.** `map_server` + AMCL, the composed and non-composed
+branches, and every AMCL parameter in `config/localization.yaml` have been exercised exactly once,
+by hand: both nodes reached `active` and AMCL published `map -> odom` against the committed map.
+That is the whole of the evidence. Automated coverage arrives with the navigation acceptance test,
+which needs a planner and a controller to send a goal to and therefore belongs with them, not here.
+Treat any change to that launch file or config as unverified until then.
+
 ## What sim validates, and what it does not
 
 Odometry on this track is **exact MuJoCo ground truth** — zero drift, zero noise, zero latency. That
 makes SLAM trivially easy here.
 
-Validated: frame topology, QoS wiring, scan geometry and flatten quality, that slam_toolbox and
-AMCL come up and own `map -> odom`, and that the map matches the room. Whether the robot's
-achievable motion is enough to reach a navigation goal is **not** tested here — nothing in this
-package drives it yet.
+Whether the robot's achievable motion is enough to reach a navigation goal is **not** tested —
+nothing in this package drives the robot at all; both launch tests pin the pelvis.
 
 **Not** validated: loop closure under drift, scan-matching robustness, relocalization from a wrong
 initial pose, or any real odometry error model. Anything tuned against this is unvalidated on
