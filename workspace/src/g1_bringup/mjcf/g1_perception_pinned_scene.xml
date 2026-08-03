@@ -38,6 +38,10 @@
       reflectance="0.2"/>
     <material name="wall" rgba="0.75 0.75 0.72 1"/>
     <material name="obstacle" rgba="0.8 0.4 0.3 1"/>
+    <!-- Saturated green appears nowhere else here: the floor is blue-grey, walls grey,
+         obstacles red. That makes "is the colour stream showing the right thing at the
+         right place" a threshold on one channel rather than a judgement call. -->
+    <material name="color_target" rgba="0 0.9 0.1 1"/>
   </asset>
 
   <worldbody>
@@ -55,6 +59,13 @@
          so adding them cannot change a locomotion result. -->
     <geom name="obstacle_box" group="2" type="box" size="0.3 0.3 0.5" pos="2.0 1.6 0.5"
           material="obstacle"/>
+    <!-- Colour-check target. The camera is pitched 47.6 deg down, so its centre ray meets
+         the floor about 1.21 m ahead; this sits at that range but 0.35 m to the robot's
+         left, which puts it well inside the frame while leaving the centre pixel on bare
+         floor for the depth check to keep using. -->
+    <geom name="color_target" group="2" type="box" size="0.05 0.05 0.05" pos="1.21 0.35 0.05"
+      material="color_target"/>
+
     <geom name="obstacle_cyl" group="2" type="cylinder" size="0.25 0.75" pos="-1.5 -2.0 0.75"
           material="obstacle"/>
 
