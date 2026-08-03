@@ -8,6 +8,7 @@
 
 #include <gmock/gmock.h>
 
+#include <cassert>
 #include <chrono>
 #include <cmath>
 #include <cstdarg>
@@ -83,6 +84,11 @@ sensor_msgs::msg::JointState makeBaseState(
 }
 
 /// The converged unitree_mujoco track: split chain, both source topics.
+///
+/// The frames and the source mirror config/g1_odometry_publisher_converged.yaml deliberately;
+/// that the shipped file really loads is covered end to end by g1_navigation's
+/// test_scan_pipeline, which asserts the same chain against a live sim. The rates and timeouts
+/// are faster than the shipped ones on purpose, so these suites do not wait on real budgets.
 rclcpp::NodeOptions optionsForConverged(double max_tilt_deg = 80.0)
 {
     rclcpp::NodeOptions options;
@@ -162,7 +168,8 @@ public:
         spinFor(nodes_, 200ms);
     }
 
-    /// Publishes the pose `count` times, spinning between each so the node's timer fires.
+    /// Publishes the pose `count` times, then settles so the 100 Hz timer has ticked on the
+    /// last sample even when count is 1.
     void feed(double x, double y, double z, double roll, double pitch, double yaw, int count = 15)
     {
         for (int i = 0; i < count; ++i)
@@ -171,6 +178,7 @@ public:
             low_pub_->publish(makeLowState(roll, pitch, yaw));
             spinFor(nodes_, 20ms);
         }
+        spinFor(nodes_, 100ms);
     }
 
     /// The most recent transform with this parent/child, or nullopt.
@@ -210,6 +218,8 @@ class LogCapture
 public:
     explicit LogCapture(std::string needle)
     {
+        // Nesting would capture this class's own handler as previous_ and recurse forever.
+        assert(instance_ == nullptr);
         needle_   = std::move(needle);
         instance_ = this;
         previous_ = rcutils_logging_get_output_handler();
@@ -519,17 +529,6 @@ TEST(OdometryPublisherGroundPlane, PublishesTheBaseHeightSoOdomIsTheGroundPlane)
     EXPECT_NEAR(transforms.back().transform.translation.z, 0.793, 1e-9);
 }
 
-int main(int argc, char** argv)
-{
-    // Isolated domain: a running sim on the default domain must not be able to feed this.
-    setenv("ROS_DOMAIN_ID", "77", 1);
-    ::testing::InitGoogleMock(&argc, argv);
-    rclcpp::init(argc, argv);
-    const int result = RUN_ALL_TESTS();
-    rclcpp::shutdown();
-    return result;
-}
-
 // --- Converged track: the split chain and the tilt guard ------------------------------------
 //
 // The planar suites above never reach this code. sim_sportmodestate is the only source that
@@ -647,7 +646,13 @@ TEST(OdometryPublisherConverged, TiltGuardHoldsTheLastGoodHeadingAndWarnsOnce)
     ASSERT_TRUE(body.has_value());
     EXPECT_GT(tiltOf(body->transform.rotation), 0.5) << "the real tilt must still reach TF";
 
-    // Throttled at 2 s. Roughly 15 samples arrive inside that window, so one line, not fifteen.
+    // Throttled at 2 s, so 15 samples inside that window give one line rather than fifteen.
+    //
+    // RCLCPP_WARN_THROTTLE keeps its last-logged timestamp in a static local at the CALL SITE,
+    // not per node, so every test in this binary shares one 2 s window. Any other test that
+    // drives this branch would silently zero this count. TiltGuardLatchesTheFirstSampleEvenMidFall
+    // is the only other tilted test and it deliberately stops at one sample, which never reaches
+    // the warn. Keep it that way, or this assertion becomes order-dependent.
     EXPECT_EQ(warns, 1) << "expected exactly one throttled warning, got " << warns;
 }
 
@@ -662,7 +667,9 @@ TEST(OdometryPublisherConverged, TiltGuardLatchesTheFirstSampleEvenMidFall)
 
     ConvergedHarness harness(node, "converged_first_sample_helper");
     const double     yaw = -0.9;
-    harness.feed(0.0, 0.0, 0.5, 0.0, 0.7, yaw);
+    // Exactly one sample. A second would take the hold branch and trip the warning throttle
+    // that TiltGuardHoldsTheLastGoodHeadingAndWarnsOnce counts -- see the note there.
+    harness.feed(0.0, 0.0, 0.5, 0.0, 0.7, yaw, /*count=*/1);
 
     const auto foot = harness.latest("odom", "base_footprint");
     ASSERT_TRUE(foot.has_value()) << "nothing published at all";
@@ -693,4 +700,15 @@ TEST(OdometryPublisherConverged, RejectsAFrameChainThatCannotExist)
     EXPECT_EQ(
         std::make_shared<G1OdometryPublisher>(empty)->configure().id(),
         lifecycle_msgs::msg::State::PRIMARY_STATE_UNCONFIGURED);
+}
+
+int main(int argc, char** argv)
+{
+    // Isolated domain: a running sim on the default domain must not be able to feed this.
+    setenv("ROS_DOMAIN_ID", "77", 1);
+    ::testing::InitGoogleMock(&argc, argv);
+    rclcpp::init(argc, argv);
+    const int result = RUN_ALL_TESTS();
+    rclcpp::shutdown();
+    return result;
 }
