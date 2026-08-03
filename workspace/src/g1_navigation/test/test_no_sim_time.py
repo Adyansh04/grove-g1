@@ -20,13 +20,15 @@ SIM_TIME_TRUE = re.compile(r"^\s*use_sim_time\s*:\s*(true|True|TRUE)\s*(#.*)?$")
 CONFIG_DIR = pathlib.Path(
     os.environ.get("G1_NAVIGATION_CONFIG_DIR", pathlib.Path(__file__).parent.parent / "config")
 )
+# Test-only overrides are copies of the shipped configs and inherit the same trap.
+YAMLS = sorted(CONFIG_DIR.glob("*.yaml")) + sorted(pathlib.Path(__file__).parent.glob("*.yaml"))
 
 
 def test_config_dir_exists():
     assert CONFIG_DIR.is_dir(), f"{CONFIG_DIR} is missing; this test would silently pass"
 
 
-@pytest.mark.parametrize("path", sorted(CONFIG_DIR.glob("*.yaml")), ids=lambda p: p.name)
+@pytest.mark.parametrize("path", YAMLS, ids=lambda p: p.name)
 def test_use_sim_time_is_never_true(path):
     offenders = [
         f"{path.name}:{n}: {line.rstrip()}"

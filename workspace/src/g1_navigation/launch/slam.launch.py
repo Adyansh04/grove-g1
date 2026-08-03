@@ -25,8 +25,12 @@ def _setup(context, *args, **kwargs):
         raise RuntimeError(
             f"mode:={mode!r} is not available. Known modes: {sorted(MODES)}."
         )
-    executable, params_file = MODES[mode]
+    executable, default_params = MODES[mode]
     share = get_package_share_directory("g1_navigation")
+
+    params_file = LaunchConfiguration("params_file").perform(context)
+    if not params_file:
+        params_file = os.path.join(share, "config", default_params)
 
     return [
         Node(
@@ -34,7 +38,7 @@ def _setup(context, *args, **kwargs):
             executable=executable,
             name="slam_toolbox",
             output="both",
-            parameters=[os.path.join(share, "config", params_file)],
+            parameters=[params_file],
         ),
     ]
 
@@ -45,6 +49,12 @@ def generate_launch_description():
             "mode",
             default_value="mapping",
             description="'mapping' builds a new map of the facility.",
+        ),
+        DeclareLaunchArgument(
+            "params_file",
+            default_value="",
+            description="Override the config for the chosen mode. Empty uses the shipped one. "
+            "Same escape hatch slam_toolbox's own launch files offer.",
         ),
         OpaqueFunction(function=_setup),
     ])

@@ -25,6 +25,18 @@ if(BUILD_TESTING)
     ENV "G1_NAVIGATION_CONFIG_DIR=${CMAKE_CURRENT_SOURCE_DIR}/config"
   )
 
+  # Headless sim integration suites. RESOURCE_LOCK matches g1_bringup's: two of these sharing
+  # a DDS graph and a simulator is what makes them flaky, so they serialise against the same
+  # lock g1_bringup uses rather than a separate one.
+  find_package(launch_testing_ament_cmake REQUIRED)
+  add_launch_test(test/test_scan_pipeline.launch.py TARGET test_scan_pipeline TIMEOUT 200)
+  add_launch_test(test/test_slam_map.launch.py TARGET test_slam_map TIMEOUT 240)
+  set_tests_properties(test_scan_pipeline PROPERTIES RESOURCE_LOCK g1_sim)
+  set_tests_properties(test_slam_map PROPERTIES RESOURCE_LOCK g1_sim)
+  # COST descending = execution order; the heavier suite goes first.
+  set_tests_properties(test_slam_map PROPERTIES COST 60)
+  set_tests_properties(test_scan_pipeline PROPERTIES COST 50)
+
   # Use workspace-root ruff.toml if available.
   find_program(RUFF_EXECUTABLE ruff)
   set(_ruff_config "${CMAKE_CURRENT_SOURCE_DIR}/../../ruff.toml")
