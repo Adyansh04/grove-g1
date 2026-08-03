@@ -69,9 +69,10 @@ silently drops the transform.
 cannot disagree. On a split chain that means the footprint: z and tilt are absent because
 `child_frame_id` says `base_footprint`, and `toBodyTwist()` is yaw-only, which is exactly that frame.
 
-Parameters are in `config/g1_odometry_publisher.yaml`, which configures the **planar sandbox**; the
-converged track is configured inline by `g1_bringup/launch/sim.launch.py`. Joints are looked up **by
-name**, since `joint_state_broadcaster` makes no promise about ordering.
+Each track has its own file: `config/g1_odometry_publisher.yaml` for the **planar sandbox**, and
+`config/g1_odometry_publisher_converged.yaml` for the **converged track**, which
+`g1_bringup/launch/sim.launch.py` loads. Joints are looked up **by name**, since
+`joint_state_broadcaster` makes no promise about ordering.
 
 `base_height_m` applies to the planar track only: its base has no z DoF, so the spawn height comes
 from `g1_sim/config/sensor_mounts.yaml` via the launch. The converged track measures z and leaves

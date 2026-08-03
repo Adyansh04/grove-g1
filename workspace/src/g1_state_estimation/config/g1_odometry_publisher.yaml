@@ -1,7 +1,6 @@
 # odom -> base_link publisher for the g1_sim PLANAR SANDBOX. The converged unitree_mujoco
-# track does not read this file -- g1_bringup/launch/sim.launch.py configures that one
-# inline, with a split odom -> base_footprint -> pelvis chain. See
-# g1_state_estimation/README.md.
+# track has its own file, g1_odometry_publisher_converged.yaml, with a split
+# odom -> base_footprint -> pelvis chain. See g1_state_estimation/README.md.
 #
 # odometry_source is the one that matters. It defaults to `hardware`, which REFUSES to
 # configure, because the real G1 publishes no odometry at all. Simulation opts in to
