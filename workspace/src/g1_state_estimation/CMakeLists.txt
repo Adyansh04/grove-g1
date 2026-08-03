@@ -10,6 +10,8 @@ find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2_msgs REQUIRED)
+find_package(unitree_go REQUIRED)
+find_package(unitree_hg REQUIRED)
 
 # Frame and staleness math, deliberately free of ROS so it tests without a node or DDS.
 add_library(odom_math src/odom_math.cpp)
@@ -27,7 +29,8 @@ target_include_directories(g1_odometry_publisher_node PUBLIC
 target_compile_features(g1_odometry_publisher_node PUBLIC cxx_std_17)
 target_link_libraries(g1_odometry_publisher_node PUBLIC odom_math)
 ament_target_dependencies(g1_odometry_publisher_node PUBLIC
-  rclcpp rclcpp_lifecycle lifecycle_msgs nav_msgs sensor_msgs geometry_msgs tf2_ros tf2_msgs)
+  rclcpp rclcpp_lifecycle lifecycle_msgs nav_msgs sensor_msgs geometry_msgs tf2_ros tf2_msgs
+  unitree_go unitree_hg)
 
 add_executable(g1_odometry_publisher src/g1_odometry_publisher_main.cpp)
 target_link_libraries(g1_odometry_publisher PUBLIC g1_odometry_publisher_node)

@@ -1,0 +1,73 @@
+Registers grove-g1's sensor sampler in the vendored unitree_mujoco.
+
+Generated against unitree_mujoco ae6a8403e272733e9996ef59990880330496177f.
+The sampler's own source is COPYed in by the Dockerfile and is NOT part of this
+patch, so this stays a registration hook: an include, a thread start, and one
+source file added to the target. No new find_package: the sampler links nothing
+the app did not already link. simulate/src/unitree_sdk2_bridge.h is untouched.
+
+Also stops the sampler from both model-replacement paths (the viewer's Reload button and
+drag-and-drop), with a blocking join, before mj_deleteModel. The sampler reads the model
+outside sim.mtx by design -- a render or sweep under the lock would stall physics -- so no
+lock-based check can make freeing the model safe while it runs. It is not restarted
+afterwards; see g1_bringup's README for the limitation that remains.
+
+diff --git a/simulate/CMakeLists.txt b/simulate/CMakeLists.txt
+index 8870289..d8e59de 100644
+--- a/simulate/CMakeLists.txt
++++ b/simulate/CMakeLists.txt
+@@ -42,6 +42,6 @@ link_libraries(
+   fmt
+ )
+ 
+-add_executable(unitree_mujoco ${SIM_SRC} src/main.cc)
++add_executable(unitree_mujoco ${SIM_SRC} src/main.cc src/sensor_publisher.cc)
+ 
+ add_executable(jstest src/joystick/jstest.cc src/joystick/joystick.cc)
+\ No newline at end of file
+diff --git a/simulate/src/main.cc b/simulate/src/main.cc
+index 3368d91..dc8b854 100755
+--- a/simulate/src/main.cc
++++ b/simulate/src/main.cc
+@@ -33,6 +33,7 @@
+ #include "simulate.h"
+ #include "array_safety.h"
+ #include "unitree_sdk2_bridge.h"
++#include "sensor_publisher.h"
+ #include "param.h"
+ 
+ #define MUJOCO_PLUGIN_DIR "mujoco_plugin"
+@@ -350,6 +351,10 @@ namespace
+         {
+           sim.Load(mnew, dnew, sim.dropfilename);
+ 
++          // Blocking join before the model is freed. The sampler touches the model
++          // outside sim.mtx by design, so nothing lock-based can make this safe.
++          grove_g1::StopSensorPublisher();
++
+           mj_deleteData(d);
+           mj_deleteModel(m);
+ 
+@@ -380,6 +385,10 @@ namespace
+         {
+           sim.Load(mnew, dnew, sim.filename);
+ 
++          // Blocking join before the model is freed. The sampler touches the model
++          // outside sim.mtx by design, so nothing lock-based can make this safe.
++          grove_g1::StopSensorPublisher();
++
+           mj_deleteData(d);
+           mj_deleteModel(m);
+ 
+@@ -685,6 +694,11 @@ int main(int argc, char **argv)
+ 
+   std::thread unitree_thread(UnitreeSdk2BridgeThread, nullptr);
+ 
++  // grove-g1: sensor thread for the converged perception track. A no-op unless
++  // GROVE_G1_SENSOR_CONFIG is set. Loads no ROS and no DDS: unitree_sdk2 already
++  // owns the CycloneDDS domain in this process. Frames go to g1_sensor_relay.
++  grove_g1::StartSensorPublisher(&m, &d, &sim->mtx);
++
+   // start physics thread
+   std::thread physicsthreadhandle(&PhysicsThread, sim.get(), param::config.robot_scene.c_str());
+   // start simulation UI loop (blocking call)

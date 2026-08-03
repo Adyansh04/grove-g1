@@ -80,12 +80,21 @@ RUN mkdir -p /opt/unitree_robotics/mujoco-${MUJOCO_VERSION} && \
 # (jstest fails against current unitree_sdk2 tip — unrelated upstream rename).
 # Pinned 2026-07-17 — current tip of unitree_mujoco at authoring time,
 # resolved together with UNITREE_SDK2_SHA above.
+COPY workspace/patches/unitree_mujoco/ /tmp/unitree_mujoco_patches/
+COPY workspace/vendor/unitree_mujoco/ /tmp/unitree_mujoco_src/
 ARG UNITREE_MUJOCO_SHA=ae6a8403e272733e9996ef59990880330496177f
 RUN git init -q /opt/unitree_robotics/unitree_mujoco && \
     cd /opt/unitree_robotics/unitree_mujoco && \
     git remote add origin https://github.com/unitreerobotics/unitree_mujoco.git && \
     git fetch --depth 1 origin ${UNITREE_MUJOCO_SHA} && \
     git checkout -q FETCH_HEAD && \
+    for p in /tmp/unitree_mujoco_patches/*.patch; do \
+        [ -e "$p" ] || continue; \
+        echo "Applying $(basename "$p")"; \
+        git apply --check "$p" || { echo "PATCH DOES NOT APPLY: $p"; exit 1; }; \
+        git apply "$p"; \
+    done && \
+    cp /tmp/unitree_mujoco_src/*.h /tmp/unitree_mujoco_src/*.cc simulate/src/ && \
     rm -rf .git && \
     rm -rf simulate/mujoco && \
     mv /opt/unitree_robotics/mujoco-${MUJOCO_VERSION} simulate/mujoco && \
@@ -94,8 +103,12 @@ RUN git init -q /opt/unitree_robotics/unitree_mujoco && \
              -DCMAKE_PREFIX_PATH=/opt/unitree_robotics/lib/cmake && \
     cmake --build . --target unitree_mujoco --parallel "$(nproc)" && \
     rm -rf CMakeFiles && \
-    rm -rf ../mujoco/include ../mujoco/simulate ../mujoco/sample \
-           ../mujoco/bin ../mujoco/doc ../mujoco/model
+    rm -rf ../mujoco/sample ../mujoco/bin ../mujoco/doc ../mujoco/model
+# include/ and simulate/ are deliberately kept (they used to be stripped here). Milestone 5
+# compiles our own sensor source into this app, and keeping them is what makes an
+# in-container rebuild possible -- CMakeLists globs mujoco/simulate/*.cc, so without them
+# every one-line change costs a full image rebuild. They are small; the bulk was
+# model/bin/doc/sample, still removed.
 # Binary at simulate/build/unitree_mujoco; g1_bringup overrides config via CLI flags.
 
 # --- CycloneDDS / ROS domain (unconditional -- required by Unitree SDK) -----

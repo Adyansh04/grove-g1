@@ -4,6 +4,26 @@
   <!-- Verbatim upstream description; xacro:include discards <robot> wrapper. -->
   <xacro:include filename="g1_29dof_with_hand_rev_1_0.urdf"/>
 
+  <!-- REP-145 optical frames. The vendored URDF stops at d435_link, which is a body frame
+       (x forward, y left, z up); every ROS depth consumer, rviz's DepthCloud included,
+       assumes the optical convention (z forward, x right, y down). Publishing a depth
+       image in the body frame projects it rotated 90 degrees, which looks like a broken
+       sensor rather than a wrong frame. Added here rather than in the vendored file so
+       that stays verbatim. -->
+  <link name="camera_depth_optical_frame"/>
+  <joint name="camera_depth_optical_joint" type="fixed">
+    <parent link="d435_link"/>
+    <child link="camera_depth_optical_frame"/>
+    <origin xyz="0 0 0" rpy="-1.5707963267948966 0 -1.5707963267948966"/>
+  </joint>
+
+  <link name="camera_color_optical_frame"/>
+  <joint name="camera_color_optical_joint" type="fixed">
+    <parent link="d435_link"/>
+    <child link="camera_color_optical_frame"/>
+    <origin xyz="0 0 0" rpy="-1.5707963267948966 0 -1.5707963267948966"/>
+  </joint>
+
   <!-- Load tunable YAML for ROS 2 control parameters. -->
   <xacro:property name="arm_sdk_params" value="${xacro.load_yaml('../config/arm_sdk_params.yaml')}"/>
 

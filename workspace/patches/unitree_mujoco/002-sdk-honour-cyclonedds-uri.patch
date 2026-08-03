@@ -1,0 +1,44 @@
+Let the SDK honour CYCLONEDDS_URI instead of building its own config
+
+With a non-empty `interface`, unitree_sdk2's ChannelFactory::Init builds an inline
+CycloneDDS config for that interface and creates the domain with it. That inline config
+replaces CYCLONEDDS_URI wholesale, so the container's /etc/cyclonedds/cyclonedds.xml never
+applies to the simulator -- including its MaxAutoParticipantIndex of 60. The simulator
+therefore fell back to Cyclone's default of 9.
+
+The simulator starts last in g1_bringup's sim.launch.py, after the relay, odometry,
+motion_service, robot_state_publisher, ros2_control_node and its controller spawners. When
+enough of those are still alive it finds indices 0-9 taken, and dies on startup with:
+
+    Failed to find a free participant index for domain 1
+    terminate called after throwing an instance of 'unitree::common::DdsException'
+
+It is a race, so it looks intermittent: the spawners are short-lived and usually gone
+before the simulator reaches DDS init.
+
+Leaving `interface` empty makes the SDK create the domain with the default config, which
+reads CYCLONEDDS_URI. The container's file pins the same `lo` interface, so the network
+behaviour is unchanged and only the index ceiling moves.
+
+What guarantees CYCLONEDDS_URI is present is `ENV CYCLONEDDS_URI` in .devcontainer/
+Dockerfile, set at image level, so it also covers running the simulator by hand outside
+sim.launch.py -- which is how the DDS failure was isolated in the first place. The launch
+file additionally checks that the URI names a file that exists, because CycloneDDS treats
+an unreadable URI as a stderr warning and falls back to defaults; with the compose file's
+network_mode: host that would bind the real NIC instead of lo and put rt/lowcmd on the
+LAN. Removing the code-level `interface: "lo"` fence is only safe with that check in
+place.
+
+diff --git a/simulate/config.yaml b/simulate/config.yaml
+index 468a66b..a2db543 100644
+--- a/simulate/config.yaml
++++ b/simulate/config.yaml
+@@ -2,7 +2,7 @@ robot: "go2"  # Robot name, "go2", "b2", "b2w", "h1", "go2w", "g1", "h2"
+ robot_scene: "scene.xml" # Robot scene, /unitree_robots/[robot]/scene.xml 
+ 
+ domain_id: 1  # Domain id
+-interface: "lo" # Interface 
++interface: "" # Empty: use CYCLONEDDS_URI, which pins lo and raises MaxAutoParticipantIndex
+ 
+ use_joystick: 0 # Simulate Unitree WirelessController using a gamepad
+ joystick_type: "xbox" # support "xbox" and "switch" gamepad layout

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <memory>
 #include <string>
 #include <vector>
@@ -48,8 +49,8 @@ bool G1OdometryPublisher::readParameters()
     {
         RCLCPP_ERROR(
             get_logger(),
-            "odometry_source='%s' is not a known source. Use 'sim_ground_truth' or "
-            "'hardware'.",
+            "odometry_source='%s' is not a known source. Use 'sim_ground_truth' (planar "
+            "sandbox), 'sim_sportmodestate' (converged track) or 'hardware'.",
             source_name.c_str());
         return false;
     }
@@ -113,18 +114,37 @@ G1OdometryPublisher::on_configure(const rclcpp_lifecycle::State&)
     {
         odom_pub_ = create_publisher<nav_msgs::msg::Odometry>("~/odom", rclcpp::QoS(10));
     }
-    base_state_sub_ = create_subscription<sensor_msgs::msg::JointState>(
-        "~/base_state",
-        baseStateQos(),
-        std::bind(&G1OdometryPublisher::onBaseState, this, std::placeholders::_1));
+    if (source_ == OdometrySource::SimSportModeState)
+    {
+        sport_state_sub_ = create_subscription<unitree_go::msg::SportModeState>(
+            "~/sport_state",
+            baseStateQos(),
+            std::bind(&G1OdometryPublisher::onSportModeState, this, std::placeholders::_1));
+        // Orientation comes from /lowstate, not /sportmodestate: unitree_mujoco leaves the
+        // latter's imu_state at all zeros, and tf2 normalises a zero quaternion straight to
+        // NaN, which it then silently drops.
+        low_state_sub_ = create_subscription<unitree_hg::msg::LowState>(
+            "~/imu_state",
+            baseStateQos(),
+            std::bind(&G1OdometryPublisher::onLowState, this, std::placeholders::_1));
+    }
+    else
+    {
+        base_state_sub_ = create_subscription<sensor_msgs::msg::JointState>(
+            "~/base_state",
+            baseStateQos(),
+            std::bind(&G1OdometryPublisher::onBaseState, this, std::placeholders::_1));
+    }
 
+    source_topic_ =
+        sport_state_sub_ ? sport_state_sub_->get_topic_name() : base_state_sub_->get_topic_name();
     RCLCPP_INFO(
         get_logger(),
         "Configured on sim ground truth: %s -> %s from %s. This is exact MuJoCo state, not an "
         "estimate; it has no drift, noise or latency.",
         odom_frame_id_.c_str(),
         base_frame_id_.c_str(),
-        base_state_sub_->get_topic_name());
+        sport_state_sub_ ? sport_state_sub_->get_topic_name() : base_state_sub_->get_topic_name());
     return CallbackReturn::SUCCESS;
 }
 
@@ -133,9 +153,12 @@ G1OdometryPublisher::on_cleanup(const rclcpp_lifecycle::State&)
 {
     timer_.reset();
     base_state_sub_.reset();
+    sport_state_sub_.reset();
+    low_state_sub_.reset();
     odom_pub_.reset();
     tf_broadcaster_.reset();
-    have_sample_ = false;
+    have_sample_      = false;
+    have_orientation_ = false;
     return CallbackReturn::SUCCESS;
 }
 
@@ -163,6 +186,8 @@ G1OdometryPublisher::on_shutdown(const rclcpp_lifecycle::State&)
 {
     timer_.reset();
     base_state_sub_.reset();
+    sport_state_sub_.reset();
+    low_state_sub_.reset();
     odom_pub_.reset();
     tf_broadcaster_.reset();
     return CallbackReturn::SUCCESS;
@@ -203,7 +228,78 @@ void G1OdometryPublisher::onBaseState(const sensor_msgs::msg::JointState::Shared
     const bool         unstamped = msg->header.stamp.sec == 0 && msg->header.stamp.nanosec == 0;
     const rclcpp::Time stamp =
         unstamped ? now() : rclcpp::Time(msg->header.stamp, get_clock()->get_clock_type());
+    orientation_ = yawToQuaternion(pose_.yaw);
+    pose_z_      = base_height_m_;
+    noteSample(stamp);
+}
 
+void G1OdometryPublisher::onSportModeState(const unitree_go::msg::SportModeState::SharedPtr msg)
+{
+    // The converged track's ground truth. unitree_mujoco fills position and velocity from
+    // framepos/framelinvel on the pelvis imu site, so this is exact MuJoCo state, not an
+    // estimate. It is also why the hardware branch still refuses: the real G1 publishes the
+    // hg variant of this message, which has none of these fields.
+    if (!std::isfinite(msg->position[0]) || !std::isfinite(msg->position[1]) ||
+        !std::isfinite(msg->position[2]))
+    {
+        // A diverged MuJoCo publishes NaN here, and tf2 drops NaN transforms silently, so
+        // the symptom would be a frame that simply stops existing.
+        RCLCPP_WARN_THROTTLE(
+            get_logger(),
+            steady_clock_,
+            5000,
+            "Discarding a non-finite position sample.");
+        return;
+    }
+    pose_.x = msg->position[0];
+    pose_.y = msg->position[1];
+    pose_z_ = msg->position[2];
+
+    world_twist_ =
+        PlanarTwist{ msg->velocity[0], msg->velocity[1], static_cast<double>(msg->yaw_speed) };
+
+    // This message carries no header stamp, so the arrival time is the only stamp available.
+    noteSample(now());
+}
+
+void G1OdometryPublisher::onLowState(const unitree_hg::msg::LowState::SharedPtr msg)
+{
+    // Full orientation, unlike the planar track: a walking robot rolls and pitches, and
+    // flattening that to yaw would tilt every sensor frame hanging off the base.
+    const Quaternion q{ msg->imu_state.quaternion[1],
+                        msg->imu_state.quaternion[2],
+                        msg->imu_state.quaternion[3],
+                        msg->imu_state.quaternion[0] };
+
+    // Validate before it can reach TF. tf2 normalises, so a zero-norm quaternion becomes
+    // NaN and the transform is dropped with a message that points at tf2 rather than here.
+    const double norm2 = q.w * q.w + q.x * q.x + q.y * q.y + q.z * q.z;
+    if (!std::isfinite(norm2) || norm2 < 0.5)
+    {
+        RCLCPP_WARN_THROTTLE(
+            get_logger(),
+            steady_clock_,
+            5000,
+            "IMU quaternion is unusable (norm^2 %.3f); not publishing an orientation.",
+            norm2);
+        return;
+    }
+
+    // Normalise: norm^2 >= 0.5 admits 4.0 just as happily as 1.0, and an unnormalised
+    // quaternion on /tf is a scale error nothing downstream reports.
+    const double inv = 1.0 / std::sqrt(norm2);
+    orientation_.w   = q.w * inv;
+    orientation_.x   = q.x * inv;
+    orientation_.y   = q.y * inv;
+    orientation_.z   = q.z * inv;
+
+    pose_.yaw              = quaternionToYaw(orientation_);
+    have_orientation_      = true;
+    last_orientation_wall_ = std::chrono::steady_clock::now();
+}
+
+void G1OdometryPublisher::noteSample(const rclcpp::Time& stamp)
+{
     // Time of the last stamp CHANGE, not of the last message: a wedged simulator can keep
     // republishing the same sample forever. Order matters, rclcpp::Time::operator!= throws
     // on mismatched clock types and last_sample_stamp_ starts out RCL_SYSTEM_TIME.
@@ -217,6 +313,15 @@ void G1OdometryPublisher::onBaseState(const sensor_msgs::msg::JointState::Shared
 
 void G1OdometryPublisher::onTimer()
 {
+    if (source_ == OdometrySource::SimSportModeState && !have_orientation_)
+    {
+        RCLCPP_WARN_THROTTLE(
+            get_logger(),
+            steady_clock_,
+            5000,
+            "Waiting for a usable IMU orientation.");
+        return;
+    }
     if (!have_sample_)
     {
         RCLCPP_WARN_THROTTLE(
@@ -224,13 +329,34 @@ void G1OdometryPublisher::onTimer()
             steady_clock_,
             5000,
             "No base state received yet on %s; publishing nothing.",
-            base_state_sub_->get_topic_name());
+            source_topic_.c_str());
         return;
     }
 
     // Sim time alone cannot see a wedged simulator: /clock comes from the same process as
     // the base state, so it freezes too and `elapsed` stays at zero. Hence the wall budget.
     const double elapsed = (now() - last_sample_stamp_).seconds();
+    if (source_ == OdometrySource::SimSportModeState)
+    {
+        const double orientation_age =
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - last_orientation_wall_)
+                .count();
+        if (isStale(orientation_age, wall_timeout_s_))
+        {
+            RCLCPP_WARN_THROTTLE(
+                get_logger(),
+                steady_clock_,
+                2000,
+                "Orientation has not advanced for %.3f s (limit %.3f); stopped publishing "
+                "%s -> %s. Position alone would be a frozen attitude under a fresh stamp.",
+                orientation_age,
+                wall_timeout_s_,
+                odom_frame_id_.c_str(),
+                base_frame_id_.c_str());
+            return;
+        }
+    }
+
     const double wall_elapsed =
         std::chrono::duration<double>(std::chrono::steady_clock::now() - last_advance_wall_).count();
     if (isStale(elapsed, source_timeout_s_) || isStale(wall_elapsed, wall_timeout_s_))
@@ -253,7 +379,7 @@ void G1OdometryPublisher::onTimer()
         return;
     }
 
-    const Quaternion   orientation = yawToQuaternion(pose_.yaw);
+    const Quaternion   orientation = orientation_;
     const PlanarTwist  body_twist  = toBodyTwist(world_twist_, pose_.yaw);
     const rclcpp::Time stamp       = last_sample_stamp_;
 
@@ -263,7 +389,7 @@ void G1OdometryPublisher::onTimer()
     tf.child_frame_id          = base_frame_id_;
     tf.transform.translation.x = pose_.x;
     tf.transform.translation.y = pose_.y;
-    tf.transform.translation.z = base_height_m_;
+    tf.transform.translation.z = pose_z_;
     tf.transform.rotation.x    = orientation.x;
     tf.transform.rotation.y    = orientation.y;
     tf.transform.rotation.z    = orientation.z;
@@ -282,7 +408,7 @@ void G1OdometryPublisher::onTimer()
     odom.child_frame_id        = base_frame_id_;
     odom.pose.pose.position.x  = pose_.x;
     odom.pose.pose.position.y  = pose_.y;
-    odom.pose.pose.position.z  = base_height_m_;
+    odom.pose.pose.position.z  = pose_z_;
     odom.pose.pose.orientation = tf.transform.rotation;
     odom.twist.twist.linear.x  = body_twist.vx;
     odom.twist.twist.linear.y  = body_twist.vy;

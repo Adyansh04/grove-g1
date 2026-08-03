@@ -7,6 +7,7 @@ the domain/DDS story, and the sim-bridge safety banner.
 
 import os
 import shutil
+import yaml
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
@@ -19,11 +20,14 @@ from launch.actions import (
     RegisterEventHandler,
     TimerAction,
 )
-from launch.event_handlers import OnProcessExit, OnShutdown
-from launch.events import Shutdown
+from launch.event_handlers import OnProcessExit, OnProcessStart, OnShutdown
+from launch.events import Shutdown, matches_action
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import Node
+from lifecycle_msgs.msg import Transition
+from launch_ros.actions import LifecycleNode, Node
+from launch_ros.event_handlers import OnStateTransition
+from launch_ros.events.lifecycle import ChangeState
 
 UNITREE_MUJOCO_BIN = "/opt/unitree_robotics/unitree_mujoco/simulate/build/unitree_mujoco"
 
@@ -63,11 +67,26 @@ def _check_environment(context, *args, **kwargs):
             "the Unitree SDK/sim only speak CycloneDDS."
         )
 
-    if not os.environ.get("CYCLONEDDS_URI"):
+    cyclone_uri = os.environ.get("CYCLONEDDS_URI")
+    if not cyclone_uri:
         problems.append(
             "CYCLONEDDS_URI is unset -- expected the container-baked cyclonedds.xml "
             "pinning the 'lo' interface (see .devcontainer/Dockerfile)."
         )
+    elif cyclone_uri.startswith("file://"):
+        # Existence, not just non-emptiness. CycloneDDS treats an unreadable URI as a
+        # warning on stderr and falls back to its defaults, which with the compose file's
+        # network_mode: host means binding the real NIC instead of lo. The sim's
+        # rt/lowcmd and rt/arm_sdk would then be on the LAN on domain 1, within reach of a
+        # real G1. The simulator relies on this file too: its own config sets an empty
+        # interface so the SDK reads CYCLONEDDS_URI (see patches/unitree_mujoco/002).
+        cyclone_path = cyclone_uri[len("file://") :]
+        if not os.path.isfile(cyclone_path):
+            problems.append(
+                f"CYCLONEDDS_URI points at {cyclone_path!r}, which does not exist -- "
+                "CycloneDDS would silently fall back to defaults and bind the host NIC "
+                "instead of 'lo'."
+            )
 
     domain_id = os.environ.get("ROS_DOMAIN_ID")
     if domain_id != "1":
@@ -106,13 +125,129 @@ def _launch_setup(context, *args, **kwargs):
 
     # Stage one of our scenes (bare floor). The vendored obstacle course spawns the robot
     # among obstacles that look like balance failures.
-    overlay_name = "g1_pinned_scene.xml" if pin_pelvis else "g1_flat_scene.xml"
+    #
+    # The perception scene is the same floor plus a room with known geometry, which is what
+    # the sensor assertions measure against. Selected separately from pin_pelvis because a
+    # pinned pelvis and a walking robot both want sensors eventually.
+    sensors = LaunchConfiguration("sensors").perform(context).lower() == "true"
+    # World and pinning compose: pinning is orthogonal to which room the robot is in, and
+    # the geometry test wants both at once (a known robot pose in a known room).
+    world = LaunchConfiguration("world").perform(context)
+    if world not in ("navigation", "perception"):
+        raise RuntimeError(
+            f"world:={world!r} is not a scene. Use 'navigation' (the multi-room facility) "
+            "or 'perception' (the small room the geometry test measures against)."
+        )
+    if sensors:
+        suffix       = "_pinned" if pin_pelvis else ""
+        overlay_name = f"g1_{world}{suffix}_scene.xml"
+    else:
+        overlay_name = "g1_pinned_scene.xml" if pin_pelvis else "g1_flat_scene.xml"
     staged_path  = os.path.join(G1_MODEL_DIR, STAGED_SCENE_NAME)
     overlay_src  = os.path.join(
         get_package_share_directory("g1_bringup"), "mjcf", overlay_name
     )
     shutil.copyfile(overlay_src, staged_path)
     sim_cmd = [UNITREE_MUJOCO_BIN, "-r", "g1", "-s", STAGED_SCENE_NAME]
+
+    # The patched unitree_mujoco starts its sensor thread only when this names a config,
+    # so the stock code path is what runs unless sensors are asked for explicitly.
+    sensor_config = os.path.join(
+        get_package_share_directory("g1_bringup"), "config", "sim_sensors.yaml"
+    )
+    if sensors:
+        sim_env["GROVE_G1_SENSOR_CONFIG"] = sensor_config
+
+        # The relay owns the ROS side. Start order does not matter: it listens whenever it
+        # comes up and the simulator retries connecting every cycle, so either process can
+        # start, die or restart independently.
+        with open(sensor_config) as sensor_file:
+            socket_path = yaml.safe_load(sensor_file)["socket_path"]
+        actions.append(
+            Node(
+                package="g1_sensor_relay",
+                executable="g1_sensor_relay",
+                name="g1_sensor_relay",
+                output="both",
+                parameters=[{
+                    "socket_path": socket_path,
+                    "frame_id": "mid360_link",
+                    "depth_frame_id": "camera_depth_optical_frame",
+                    "color_frame_id": "camera_color_optical_frame",
+                    "world_frame_id": "odom",
+                }],
+            )
+        )
+
+        # rviz only makes sense with sensors up, which is why it lives inside this branch:
+        # the shipped config's displays are all sensor topics.
+        if LaunchConfiguration("rviz").perform(context).lower() == "true":
+            actions.append(
+                Node(
+                    package="rviz2",
+                    executable="rviz2",
+                    name="rviz2",
+                    output="log",
+                    arguments=[
+                        "-d",
+                        os.path.join(
+                            get_package_share_directory("g1_bringup"), "config", "g1_sensors.rviz"
+                        ),
+                    ],
+                )
+            )
+
+        # odom -> pelvis for the converged track. The source is /sportmodestate, which
+        # unitree_mujoco fills from framepos/framelinvel on the pelvis imu site, so it is
+        # exact MuJoCo state. base_height_m stays 0: unlike the planar sandbox, a walking
+        # robot's height is measured, not assumed.
+        odometry_node = LifecycleNode(
+            package="g1_state_estimation",
+            executable="g1_odometry_publisher",
+            name="g1_odometry_publisher",
+            namespace="",
+            output="both",
+            parameters=[{
+                "odometry_source": "sim_sportmodestate",
+                "base_frame_id": "pelvis",
+            }],
+            remappings=[
+                ("~/sport_state", "/sportmodestate"),
+                ("~/imu_state", "/lowstate"),
+            ],
+        )
+        actions.append(odometry_node)
+        actions.append(
+            RegisterEventHandler(
+                OnProcessStart(
+                    target_action=odometry_node,
+                    on_start=[
+                        EmitEvent(
+                            event=ChangeState(
+                                lifecycle_node_matcher=matches_action(odometry_node),
+                                transition_id=Transition.TRANSITION_CONFIGURE,
+                            )
+                        )
+                    ],
+                )
+            )
+        )
+        actions.append(
+            RegisterEventHandler(
+                OnStateTransition(
+                    target_lifecycle_node=odometry_node,
+                    goal_state="inactive",
+                    entities=[
+                        EmitEvent(
+                            event=ChangeState(
+                                lifecycle_node_matcher=matches_action(odometry_node),
+                                transition_id=Transition.TRANSITION_ACTIVATE,
+                            )
+                        )
+                    ],
+                )
+            )
+        )
 
     def _remove_staged_scene(context, *a, **k):
         try:
@@ -148,6 +283,9 @@ def _launch_setup(context, *args, **kwargs):
                 get_package_share_directory("g1_bringup"), "config", "motion_service_sim.yaml"
             ),
             os.path.join(get_package_share_directory("g1_bringup"), "config", "walk_policy.yaml"),
+            # Completes pelvis -> torso_link so the sensor frames are not stranded in their
+            # own TF tree. Only when sensors run: it costs work on the 1 kHz /lowstate path.
+            {"publish_lower_joint_states": sensors},
             {"walk_policy.enabled": not pin_pelvis},
         ],
     )
@@ -185,6 +323,33 @@ def generate_launch_description():
                 "headless",
                 default_value="true",
                 description="Run unitree_mujoco against our own managed Xvfb (no GUI window).",
+            ),
+            DeclareLaunchArgument(
+                "world",
+                default_value="navigation",
+                description="Which room to stage, when sensors are on. 'navigation' is the "
+                "multi-room facility with furniture, shelving, pillars and a ramp. "
+                "'perception' is the small bare room whose wall positions test_lidar_geometry "
+                "asserts against; use it for tests, not for looking at things.",
+            ),
+            DeclareLaunchArgument(
+                "rviz",
+                default_value="false",
+                description="Open RViz on config/g1_sensors.rviz with the cloud, TF, robot "
+                "model and odometry already set up.",
+            ),
+            DeclareLaunchArgument(
+                "sensors",
+                default_value="false",
+                description="Stage the perception scene (a room with known geometry), run "
+                "the LiDAR sweep inside the simulator, and start g1_sensor_relay to publish "
+                "it.\n"
+                "OFF by default, provisionally. test_arm_command missed its slew-limited "
+                "convergence window with sensors on, but that was measured on a CPU pinned "
+                "at ~14% of its peak clock, and the test is timing-sensitive. Treat the "
+                "result as unproven, not as a property of the sensor stack. Opt-in until it "
+                "is re-measured on an unthrottled machine. test_lidar_geometry, which is "
+                "pure geometry, turns sensors on explicitly and passes.",
             ),
             DeclareLaunchArgument(
                 "pin_pelvis",

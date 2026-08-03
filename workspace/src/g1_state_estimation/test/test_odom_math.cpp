@@ -30,11 +30,24 @@ TEST(ParseOdometrySource, AcceptsTheTwoKnownNames)
     EXPECT_EQ(source, OdometrySource::Hardware);
 }
 
+TEST(ParseOdometrySource, AcceptsTheConvergedTrackSource)
+{
+    OdometrySource source = OdometrySource::Hardware;
+    ASSERT_TRUE(parseOdometrySource("sim_sportmodestate", source));
+    EXPECT_EQ(source, OdometrySource::SimSportModeState);
+}
+
 TEST(ParseOdometrySource, RejectsAnythingElseAndLeavesTheOutputAlone)
 {
     // A typo must not silently become sim ground truth, which would fabricate transforms.
     OdometrySource source = OdometrySource::SimGroundTruth;
-    for (const char* name : { "", "sim", "SIM_GROUND_TRUTH", "ground_truth", "hardware " })
+    for (const char* name : { "",
+                              "sim",
+                              "SIM_GROUND_TRUTH",
+                              "ground_truth",
+                              "hardware ",
+                              "sportmodestate",
+                              "sim_sportmode" })
     {
         EXPECT_FALSE(parseOdometrySource(name, source)) << "accepted " << name;
         EXPECT_EQ(source, OdometrySource::SimGroundTruth);

@@ -1,0 +1,25 @@
+# Sensor sampling inside unitree_mujoco. Read via GROVE_G1_SENSOR_CONFIG; with that
+# variable unset the patched binary behaves exactly like the stock one, which is why the
+# locomotion suites are unaffected until they opt in.
+#
+# The simulator loads no ROS and no DDS: unitree_sdk2 already owns the CycloneDDS domain in
+# that process. Frames go over the socket below to g1_sensor_relay, which publishes them.
+enabled: true
+
+# A full 360x32 sweep costs ~32 ms against the G1 scene (74 geoms, 36 meshes), so this is a
+# real budget. It runs on its own thread and never blocks physics or the 1 kHz control path,
+# but it still costs a core; the timing gate decides what ships.
+rate_hz: 10.0
+azimuth_steps: 360
+elevation_steps: 32
+range_max: 40.0
+
+# Also passed to g1_sensor_relay by the launch, so there is one source of truth.
+socket_path: "/tmp/g1_sensors.sock"
+
+# Depth camera. Rendered offscreen on the sensor thread against its own snapshot, then
+# linearised to metres before it leaves the simulator. Measured 7.9 ms/frame depth-only and
+# 11.5 ms with colour, of which only ~0.04 ms holds the sim lock; the rest is the render and
+# the socket write, both off-lock.
+camera_enabled: true
+camera_color: true

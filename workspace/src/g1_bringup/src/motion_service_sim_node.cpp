@@ -130,7 +130,25 @@ MotionServiceSim::MotionServiceSim(const rclcpp::NodeOptions& options)
 
     // Best-effort, depth 1 — matches unitree_mujoco's /lowstate publisher.
     const auto lowstate_qos = rclcpp::QoS(rclcpp::KeepLast(1)).best_effort().durability_volatile();
-    lowstate_sub_           = create_subscription<unitree_hg::msg::LowState>(
+    // Off unless asked for. This work lands on the ~1 kHz /lowstate callback, which is the
+    // walking policy's own path, so only the sensor track pays for it. sim.launch.py turns
+    // it on together with sensors, because that is what needs pelvis -> torso_link.
+    publish_lower_joints_ = declare_parameter<bool>("publish_lower_joint_states", false);
+
+    // Latest-only: robot_state_publisher merges by joint name, so this coexists with
+    // joint_state_broadcaster's arm-only publication rather than competing with it.
+    lower_joint_pub_ = create_publisher<sensor_msgs::msg::JointState>(
+        "/joint_states",
+        rclcpp::QoS(rclcpp::KeepLast(1)));
+    lower_joint_msg_.name.reserve(kNumLowerMotors);
+    lower_joint_msg_.position.resize(kNumLowerMotors);
+    lower_joint_msg_.velocity.resize(kNumLowerMotors);
+    for (int i = 0; i < kNumLowerMotors; ++i)
+    {
+        lower_joint_msg_.name.emplace_back(kDdsMotorOrder[i]);
+    }
+
+    lowstate_sub_ = create_subscription<unitree_hg::msg::LowState>(
         "/lowstate",
         lowstate_qos,
         [this](const unitree_hg::msg::LowState::ConstSharedPtr& msg) { lowstateCallback(msg); });
@@ -303,6 +321,21 @@ bool MotionServiceSim::setUpWalkPolicy()
 
 void MotionServiceSim::lowstateCallback(const unitree_hg::msg::LowState::ConstSharedPtr& msg)
 {
+    // Legs and waist, which nothing else publishes. Motor index equals kDdsMotorOrder
+    // index, asserted by test_walk_policy's joint-order check. Decimated to ~100 Hz:
+    // /lowstate is ~1 kHz and robot_state_publisher has no use for that.
+    if (publish_lower_joints_ && ++lower_joint_decimate_ >= 10)
+    {
+        lower_joint_decimate_         = 0;
+        lower_joint_msg_.header.stamp = now();
+        for (int i = 0; i < kNumLowerMotors; ++i)
+        {
+            lower_joint_msg_.position[i] = msg->motor_state[i].q;
+            lower_joint_msg_.velocity[i] = msg->motor_state[i].dq;
+        }
+        lower_joint_pub_->publish(lower_joint_msg_);
+    }
+
     // Refreshed every sample, unlike hold_q_ below: the policy observes live joint state.
     for (std::size_t i = 0; i < kNumBodyMotors; ++i)
     {

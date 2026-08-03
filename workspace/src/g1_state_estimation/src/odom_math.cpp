@@ -13,6 +13,11 @@ bool parseOdometrySource(const std::string& name, OdometrySource& out)
         out = OdometrySource::SimGroundTruth;
         return true;
     }
+    if (name == "sim_sportmodestate")
+    {
+        out = OdometrySource::SimSportModeState;
+        return true;
+    }
     if (name == "hardware")
     {
         out = OdometrySource::Hardware;

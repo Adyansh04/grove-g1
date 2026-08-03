@@ -1,12 +1,14 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>g1_state_estimation</name>
+  <name>g1_sensor_relay</name>
   <version>0.1.0</version>
   <description>
-    odom to base_link state estimation for the G1. In simulation this is MuJoCo
-    ground truth, published as such; on hardware it refuses to run, because the
-    real G1 exposes no odometry topic. See README.
+    Publishes sensor data sampled inside the patched unitree_mujoco. The simulator
+    computes the sweep against its own mjData and hands finished frames over a local
+    socket; this node turns them into ROS 2 messages. The split exists because
+    unitree_sdk2 already owns the CycloneDDS domain in that process and rmw_cyclonedds
+    cannot share it. See README.
   </description>
   <maintainer email="gupta.adyansh@gmail.com">Adyansh</maintainer>
   <license>BSD-3-Clause</license>
@@ -14,21 +16,14 @@
   <buildtool_depend>ament_cmake</buildtool_depend>
 
   <depend>rclcpp</depend>
-  <depend>rclcpp_lifecycle</depend>
-  <depend>lifecycle_msgs</depend>
-  <depend>nav_msgs</depend>
   <depend>sensor_msgs</depend>
   <depend>geometry_msgs</depend>
-  <depend>tf2_ros</depend>
-  <depend>tf2_msgs</depend>
-  <depend>unitree_go</depend>
-  <depend>unitree_hg</depend>
+  <depend>std_msgs</depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_cmake_lint_cmake</test_depend>
   <test_depend>ament_cmake_xmllint</test_depend>
   <test_depend>ament_cmake_gmock</test_depend>
-  <test_depend>rosgraph_msgs</test_depend>
 
   <export>
     <build_type>ament_cmake</build_type>
