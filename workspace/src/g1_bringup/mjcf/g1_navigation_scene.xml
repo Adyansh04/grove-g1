@@ -1,0 +1,231 @@
+<mujoco model="g1_navigation_scene">
+  <!--
+    Adapted from the user's scene_navigation.xml for the converged sensor track. Two
+    changes only:
+      * includes the vendored g1_29dof.xml rather than g1_rl.xml, since unitree_mujoco
+        stages scenes against its own model directory;
+      * every geom carries group="3", because the LiDAR sweep masks to that group so the
+        robot's own collision shell cannot occlude the world.
+    Staged into the vendored model directory at launch, so relative includes resolve.
+
+    Original header follows.
+  --><!--
+    Unitree G1 Enhanced Multi-Room Facility World Environment
+    Features:
+      1. 4-Room Partitioned Facility (18m x 18m) with central corridor doorways.
+      2. Pick-and-Place Manipulation Lab: Workbench with target objects
+         (Red Cube, Green Cylinder, Blue Sphere, Yellow Box, Sorting Tray).
+      3. Storage Bay: Multi-tier shelving units & stacked cargo crates.
+      4. Navigation Zone: Structural pillars, slalom hurdles, and low ramp.
+      5. Control Hub: Desks, equipment, and resting area.
+      6. Offscreen Cameras: facility_overview, manipulation_lab, storage_bay, robot_cam.
+  -->
+
+  <include file="g1_29dof.xml"/>
+
+  <statistic center="0 0 0.8" extent="8"/>
+
+  <visual>
+    <headlight diffuse="0.5 0.5 0.5" ambient="0.3 0.3 0.3" specular="0.2 0.2 0.2"/>
+    <rgba haze="0.15 0.2 0.25 1"/>
+    <global azimuth="120" elevation="-20" offwidth="1920" offheight="1080"/>
+  </visual>
+
+  <asset>
+    <!-- Skybox -->
+    <texture type="skybox" builtin="gradient" rgb1="0.2 0.3 0.42" rgb2="0.05 0.05 0.1"
+             width="512" height="3072"/>
+    <!-- Floor Tile Texture -->
+    <texture type="2d" name="floor_tile" builtin="checker"
+             rgb1="0.78 0.80 0.84" rgb2="0.62 0.65 0.70"
+             width="512" height="512"/>
+    <material name="floor_mat" texture="floor_tile" texuniform="true"
+              texrepeat="12 12" reflectance="0.18"/>
+
+    <!-- Room Wall Materials -->
+    <material name="wall_outer" rgba="0.85 0.85 0.82 1" specular="0.1" shininess="0.2"/>
+    <material name="wall_inner" rgba="0.72 0.75 0.80 1" specular="0.15" shininess="0.3"/>
+
+    <!-- Furniture & Equipment Materials -->
+    <material name="wood_desk" rgba="0.55 0.35 0.2 1" specular="0.4" shininess="0.5"/>
+    <material name="metal_gray" rgba="0.35 0.38 0.42 1" specular="0.6" shininess="0.7"/>
+    <material name="shelf_blue" rgba="0.2 0.35 0.6 1" specular="0.5" shininess="0.6"/>
+    <material name="crate_orange" rgba="0.85 0.42 0.1 1" specular="0.3" shininess="0.4"/>
+    <material name="crate_darkblue" rgba="0.15 0.32 0.6 1" specular="0.3" shininess="0.4"/>
+    <material name="pillar_mat" rgba="0.3 0.32 0.35 1" specular="0.4" shininess="0.5"/>
+    <material name="ramp_mat" rgba="0.25 0.55 0.35 1" specular="0.2" shininess="0.3"/>
+
+    <!-- Pick & Place Object Materials -->
+    <material name="mat_red_obj" rgba="0.9 0.15 0.15 1" specular="0.6" shininess="0.8"/>
+    <material name="mat_green_obj" rgba="0.15 0.8 0.2 1" specular="0.6" shininess="0.8"/>
+    <material name="mat_blue_obj" rgba="0.15 0.3 0.9 1" specular="0.6" shininess="0.8"/>
+    <material name="mat_yellow_obj" rgba="0.95 0.8 0.1 1" specular="0.6" shininess="0.8"/>
+    <material name="mat_tray" rgba="0.3 0.3 0.35 1" specular="0.4" shininess="0.5"/>
+  </asset>
+
+  <worldbody>
+    <!-- Ground Plane -->
+    <geom group="3" name="ground" type="plane" size="30 30 0.01" material="floor_mat"
+          contype="1" conaffinity="1"/>
+
+    <!-- Ceiling Lights for all 4 rooms -->
+    <light name="light_center" pos="0 0 5.0" dir="0 0 -1" diffuse="0.7 0.7 0.7" specular="0.3 0.3 0.3" castshadow="true"/>
+    <light name="light_manip_lab" pos="4.5 -4.5 4.5" dir="0 0 -1" diffuse="0.6 0.6 0.6" specular="0.3 0.3 0.3" castshadow="true"/>
+    <light name="light_storage_bay" pos="4.5 4.5 4.5" dir="0 0 -1" diffuse="0.6 0.6 0.6" specular="0.3 0.3 0.3" castshadow="true"/>
+    <light name="light_nav_zone" pos="-4.5 4.5 4.5" dir="0 0 -1" diffuse="0.6 0.6 0.6" specular="0.3 0.3 0.3" castshadow="true"/>
+    <light name="light_control_hub" pos="-4.5 -4.5 4.5" dir="0 0 -1" diffuse="0.6 0.6 0.6" specular="0.3 0.3 0.3" castshadow="true"/>
+
+    <!-- Outer Facility Enclosure Walls (18m x 18m) -->
+    <geom group="3" name="wall_north" type="box" size="9.2 0.2 1.6" pos="0 9.1 1.6" material="wall_outer" contype="1" conaffinity="1"/>
+    <geom group="3" name="wall_south" type="box" size="9.2 0.2 1.6" pos="0 -9.1 1.6" material="wall_outer" contype="1" conaffinity="1"/>
+    <geom group="3" name="wall_east" type="box" size="0.2 9.2 1.6" pos="9.1 0 1.6" material="wall_outer" contype="1" conaffinity="1"/>
+    <geom group="3" name="wall_west" type="box" size="0.2 9.2 1.6" pos="-9.1 0 1.6" material="wall_outer" contype="1" conaffinity="1"/>
+
+    <!-- Interior Partition Walls with Central Doorways -->
+    <!-- North-South Partition Wall (West-East Divider) -->
+    <geom group="3" name="part_ns_north" type="box" size="0.15 3.5 1.3" pos="0 5.5 1.3" material="wall_inner" contype="1" conaffinity="1"/>
+    <geom group="3" name="part_ns_south" type="box" size="0.15 3.5 1.3" pos="0 -5.5 1.3" material="wall_inner" contype="1" conaffinity="1"/>
+
+    <!-- West-East Partition Wall (North-South Divider) -->
+    <geom group="3" name="part_we_west" type="box" size="3.5 0.15 1.3" pos="-5.5 0 1.3" material="wall_inner" contype="1" conaffinity="1"/>
+    <geom group="3" name="part_we_east" type="box" size="3.5 0.15 1.3" pos="5.5 0 1.3" material="wall_inner" contype="1" conaffinity="1"/>
+
+
+    <!-- ==================================================================== -->
+    <!-- ZONE 1: Pick-and-Place Manipulation Testing Lab (East-South Room)   -->
+    <!-- ==================================================================== -->
+    <body name="manipulation_workbench" pos="4.5 -4.5 0">
+      <!-- Desk Top & Legs -->
+      <geom group="3" name="desk_top" type="box" size="0.9 0.55 0.03" pos="0 0 0.72" material="wood_desk" contype="1" conaffinity="1"/>
+      <geom group="3" name="desk_leg_1" type="box" size="0.04 0.04 0.35" pos="0.8 0.45 0.35" material="metal_gray" contype="1" conaffinity="1"/>
+      <geom group="3" name="desk_leg_2" type="box" size="0.04 0.04 0.35" pos="-0.8 0.45 0.35" material="metal_gray" contype="1" conaffinity="1"/>
+      <geom group="3" name="desk_leg_3" type="box" size="0.04 0.04 0.35" pos="0.8 -0.45 0.35" material="metal_gray" contype="1" conaffinity="1"/>
+      <geom group="3" name="desk_leg_4" type="box" size="0.04 0.04 0.35" pos="-0.8 -0.45 0.35" material="metal_gray" contype="1" conaffinity="1"/>
+
+    </body>
+
+    <!-- Pick and Place Target Objects on Workbench (Worldbody Top Level) -->
+    <body name="red_cube" pos="4.1 -4.65 0.78">
+      <freejoint name="red_cube_joint"/>
+      <geom group="3" type="box" size="0.03 0.03 0.03" material="mat_red_obj" mass="0.15" contype="1" conaffinity="1" friction="1 0.005 0.0001"/>
+    </body>
+
+    <body name="green_cylinder" pos="4.35 -4.35 0.79">
+      <freejoint name="green_cyl_joint"/>
+      <geom group="3" type="cylinder" size="0.03 0.04" material="mat_green_obj" mass="0.15" contype="1" conaffinity="1" friction="1 0.005 0.0001"/>
+    </body>
+
+    <body name="blue_sphere" pos="4.6 -4.65 0.787">
+      <freejoint name="blue_sphere_joint"/>
+      <geom group="3" type="sphere" size="0.037" material="mat_blue_obj" mass="0.1" contype="1" conaffinity="1" friction="0.8 0.005 0.0001"/>
+    </body>
+
+    <body name="yellow_box" pos="4.1 -4.35 0.775">
+      <freejoint name="yellow_box_joint"/>
+      <geom group="3" type="box" size="0.04 0.025 0.025" material="mat_yellow_obj" mass="0.12" contype="1" conaffinity="1"/>
+    </body>
+
+    <!-- Target Sorting Tray / Bin on Desk -->
+    <body name="sorting_tray" pos="4.95 -4.5 0.75">
+      <geom group="3" name="tray_base" type="box" size="0.18 0.18 0.01" material="mat_tray" contype="1" conaffinity="1"/>
+      <geom group="3" name="tray_wall_1" type="box" size="0.18 0.01 0.03" pos="0 0.17 0.03" material="mat_tray" contype="1" conaffinity="1"/>
+      <geom group="3" name="tray_wall_2" type="box" size="0.18 0.01 0.03" pos="0 -0.17 0.03" material="mat_tray" contype="1" conaffinity="1"/>
+      <geom group="3" name="tray_wall_3" type="box" size="0.01 0.18 0.03" pos="0.17 0 0.03" material="mat_tray" contype="1" conaffinity="1"/>
+      <geom group="3" name="tray_wall_4" type="box" size="0.01 0.18 0.03" pos="-0.17 0 0.03" material="mat_tray" contype="1" conaffinity="1"/>
+    </body>
+
+    <!-- Manipulation Room Storage Shelving Unit along East Wall -->
+    <body name="lab_shelf_unit" pos="8.2 -4.5 0" euler="0 0 -90">
+      <geom group="3" name="lab_shelf_frame" type="box" size="0.3 1.2 0.02" pos="0 0 0.02" material="metal_gray" contype="1" conaffinity="1"/>
+      <geom group="3" name="lab_shelf_1" type="box" size="0.3 1.2 0.015" pos="0 0 0.5" material="shelf_blue" contype="1" conaffinity="1"/>
+      <geom group="3" name="lab_shelf_2" type="box" size="0.3 1.2 0.015" pos="0 0 1.0" material="shelf_blue" contype="1" conaffinity="1"/>
+      <geom group="3" name="lab_shelf_post1" type="box" size="0.025 0.025 0.6" pos="0.28 1.15 0.6" material="metal_gray" contype="1" conaffinity="1"/>
+      <geom group="3" name="lab_shelf_post2" type="box" size="0.025 0.025 0.6" pos="-0.28 1.15 0.6" material="metal_gray" contype="1" conaffinity="1"/>
+      <geom group="3" name="lab_shelf_post3" type="box" size="0.025 0.025 0.6" pos="0.28 -1.15 0.6" material="metal_gray" contype="1" conaffinity="1"/>
+      <geom group="3" name="lab_shelf_post4" type="box" size="0.025 0.025 0.6" pos="-0.28 -1.15 0.6" material="metal_gray" contype="1" conaffinity="1"/>
+
+      <!-- Spare Containers on Shelf -->
+      <geom group="3" name="container_1" type="box" size="0.18 0.22 0.12" pos="0 0.4 0.64" material="crate_orange" contype="1" conaffinity="1"/>
+      <geom group="3" name="container_2" type="box" size="0.18 0.22 0.12" pos="0 -0.4 0.64" material="crate_darkblue" contype="1" conaffinity="1"/>
+    </body>
+
+
+    <!-- ==================================================================== -->
+    <!-- ZONE 2: Cargo & Industrial Storage Bay (East-North Room)            -->
+    <!-- ==================================================================== -->
+    <!-- Multi-Tier Heavy Storage Shelving Unit 1 -->
+    <body name="storage_shelf_1" pos="4.5 7.8 0">
+      <geom group="3" name="shelf_1_tier0" type="box" size="0.4 1.5 0.02" pos="0 0 0.02" material="metal_gray" contype="1" conaffinity="1"/>
+      <geom group="3" name="shelf_1_tier1" type="box" size="0.4 1.5 0.02" pos="0 0 0.6" material="shelf_blue" contype="1" conaffinity="1"/>
+      <geom group="3" name="shelf_1_tier2" type="box" size="0.4 1.5 0.02" pos="0 0 1.2" material="shelf_blue" contype="1" conaffinity="1"/>
+      <geom group="3" name="shelf_1_post1" type="box" size="0.03 0.03 0.7" pos="0.37 1.45 0.7" material="metal_gray" contype="1" conaffinity="1"/>
+      <geom group="3" name="shelf_1_post2" type="box" size="0.03 0.03 0.7" pos="-0.37 1.45 0.7" material="metal_gray" contype="1" conaffinity="1"/>
+      <geom group="3" name="shelf_1_post3" type="box" size="0.03 0.03 0.7" pos="0.37 -1.45 0.7" material="metal_gray" contype="1" conaffinity="1"/>
+      <geom group="3" name="shelf_1_post4" type="box" size="0.03 0.03 0.7" pos="-0.37 -1.45 0.7" material="metal_gray" contype="1" conaffinity="1"/>
+
+      <!-- Cargo Boxes on Shelf Tier 1 -->
+      <geom group="3" name="box_on_shelf_1" type="box" size="0.25 0.3 0.18" pos="0 0.6 0.8" material="crate_orange" contype="1" conaffinity="1"/>
+      <geom group="3" name="box_on_shelf_2" type="box" size="0.25 0.3 0.18" pos="0 -0.6 0.8" material="crate_darkblue" contype="1" conaffinity="1"/>
+    </body>
+
+    <!-- Stacked Cargo Crates -->
+    <body name="crate_stack_1" pos="7.0 4.0 0">
+      <geom group="3" name="crate_1a" type="box" size="0.5 0.5 0.3" pos="0 0 0.3" material="crate_orange" contype="1" conaffinity="1" mass="20"/>
+      <geom group="3" name="crate_1b" type="box" size="0.4 0.4 0.25" pos="0 0 0.85" material="crate_darkblue" contype="1" conaffinity="1" mass="15"/>
+    </body>
+
+    <body name="crate_stack_2" pos="3.0 3.5 0">
+      <geom group="3" name="crate_2a" type="box" size="0.45 0.6 0.35" pos="0 0 0.35" material="crate_darkblue" contype="1" conaffinity="1" mass="25"/>
+    </body>
+
+
+    <!-- ==================================================================== -->
+    <!-- ZONE 3: Navigation & Obstacle Traversal Zone (West-North Room)       -->
+    <!-- ==================================================================== -->
+    <!-- Structural Cylindrical Columns / Pillars -->
+    <geom group="3" name="pillar_1" type="cylinder" size="0.25 1.6" pos="-3.5 3.5 1.6" material="pillar_mat" contype="1" conaffinity="1"/>
+    <geom group="3" name="pillar_2" type="cylinder" size="0.25 1.6" pos="-6.5 6.5 1.6" material="pillar_mat" contype="1" conaffinity="1"/>
+
+    <!-- Slalom Navigation Crates -->
+    <body name="slalom_crate_1" pos="-3.0 6.5 0">
+      <geom group="3" name="slalom_1" type="box" size="0.4 0.4 0.3" pos="0 0 0.3" material="crate_orange" contype="1" conaffinity="1" mass="15"/>
+    </body>
+    <body name="slalom_crate_2" pos="-6.5 3.5 0">
+      <geom group="3" name="slalom_2" type="box" size="0.4 0.4 0.3" pos="0 0 0.3" material="crate_darkblue" contype="1" conaffinity="1" mass="15"/>
+    </body>
+
+    <!-- Low Slope Ramp (Slope & elevation traversal test) -->
+    <body name="slope_ramp" pos="-5.5 1.8 0.08" euler="0 -5 0">
+      <geom group="3" name="ramp_surface" type="box" size="1.2 0.75 0.08" material="ramp_mat" contype="1" conaffinity="1" friction="1 0.01 0.001"/>
+    </body>
+
+
+    <!-- ==================================================================== -->
+    <!-- ZONE 4: Control Station & Rest Hub (West-South Room)                -->
+    <!-- ==================================================================== -->
+    <body name="control_station_desk" pos="-5.5 -5.5 0">
+      <geom group="3" name="ctrl_top" type="box" size="1.1 0.5 0.03" pos="0 0 0.72" material="wood_desk" contype="1" conaffinity="1"/>
+      <geom group="3" name="ctrl_leg1" type="box" size="0.04 0.04 0.35" pos="1.0 0.4 0.35" material="metal_gray" contype="1" conaffinity="1"/>
+      <geom group="3" name="ctrl_leg2" type="box" size="0.04 0.04 0.35" pos="-1.0 0.4 0.35" material="metal_gray" contype="1" conaffinity="1"/>
+      <geom group="3" name="ctrl_leg3" type="box" size="0.04 0.04 0.35" pos="1.0 -0.4 0.35" material="metal_gray" contype="1" conaffinity="1"/>
+      <geom group="3" name="ctrl_leg4" type="box" size="0.04 0.04 0.35" pos="-1.0 -0.4 0.35" material="metal_gray" contype="1" conaffinity="1"/>
+
+      <geom group="3" name="trash_bin" type="cylinder" size="0.12 0.2" pos="-1.3 0 0.2" material="metal_gray" contype="1" conaffinity="1"/>
+    </body>
+
+
+    <!-- ==================================================================== -->
+    <!-- CAMERA PRESETS                                                       -->
+    <!-- ==================================================================== -->
+    <!-- Overview Top-Isometric View of Facility -->
+    <camera name="facility_overview" pos="11.0 -11.0 10.0" xyaxes="0.707 0.707 0 -0.4 0.4 0.82" fovy="55"/>
+    <!-- Close-up View of Pick-and-Place Manipulation Lab -->
+    <camera name="manipulation_lab" pos="4.5 -7.2 2.4" xyaxes="1 0 0 0 0.5 0.866" fovy="50"/>
+    <!-- View of Storage Bay -->
+    <camera name="storage_bay" pos="4.5 1.5 2.5" xyaxes="1 0 0 0 0.35 0.93" fovy="55"/>
+    <!-- View down Central Corridor Doorway Intersection -->
+    <camera name="corridor_hub" pos="-3.5 0 2.2" xyaxes="0 1 0 -0.25 0 0.96" fovy="60"/>
+    <!-- Tracking Camera Following Unitree G1 -->
+    <camera name="robot_cam" pos="2.5 -2.5 2.2" xyaxes="0.707 0.707 0 -0.3 0.3 0.9" fovy="55"/>
+  </worldbody>
+</mujoco>

@@ -115,12 +115,17 @@ def _launch_setup(context, *args, **kwargs):
     # the sensor assertions measure against. Selected separately from pin_pelvis because a
     # pinned pelvis and a walking robot both want sensors eventually.
     sensors = LaunchConfiguration("sensors").perform(context).lower() == "true"
-    # The two options compose: pinning is orthogonal to whether sensors run, and the
-    # geometry tests want both at once (a known robot pose in a known room).
-    if sensors:
-        overlay_name = (
-            "g1_perception_pinned_scene.xml" if pin_pelvis else "g1_perception_scene.xml"
+    # World and pinning compose: pinning is orthogonal to which room the robot is in, and
+    # the geometry test wants both at once (a known robot pose in a known room).
+    world = LaunchConfiguration("world").perform(context)
+    if world not in ("navigation", "perception"):
+        raise RuntimeError(
+            f"world:={world!r} is not a scene. Use 'navigation' (the multi-room facility) "
+            "or 'perception' (the small room the geometry test measures against)."
         )
+    if sensors:
+        suffix       = "_pinned" if pin_pelvis else ""
+        overlay_name = f"g1_{world}{suffix}_scene.xml"
     else:
         overlay_name = "g1_pinned_scene.xml" if pin_pelvis else "g1_flat_scene.xml"
     staged_path  = os.path.join(G1_MODEL_DIR, STAGED_SCENE_NAME)
@@ -159,6 +164,22 @@ def _launch_setup(context, *args, **kwargs):
         # unitree_mujoco fills from framepos/framelinvel on the pelvis imu site, so it is
         # exact MuJoCo state. base_height_m stays 0: unlike the planar sandbox, a walking
         # robot's height is measured, not assumed.
+        if LaunchConfiguration("rviz").perform(context).lower() == "true":
+            actions.append(
+                Node(
+                    package="rviz2",
+                    executable="rviz2",
+                    name="rviz2",
+                    output="log",
+                    arguments=[
+                        "-d",
+                        os.path.join(
+                            get_package_share_directory("g1_bringup"), "config", "g1_sensors.rviz"
+                        ),
+                    ],
+                )
+            )
+
         odometry_node = LifecycleNode(
             package="g1_state_estimation",
             executable="g1_odometry_publisher",
@@ -241,6 +262,9 @@ def _launch_setup(context, *args, **kwargs):
                 get_package_share_directory("g1_bringup"), "config", "motion_service_sim.yaml"
             ),
             os.path.join(get_package_share_directory("g1_bringup"), "config", "walk_policy.yaml"),
+            # Completes pelvis -> torso_link so the sensor frames are not stranded in their
+            # own TF tree. Only when sensors run: it costs work on the 1 kHz /lowstate path.
+            {"publish_lower_joint_states": sensors},
             {"walk_policy.enabled": not pin_pelvis},
         ],
     )
@@ -278,6 +302,20 @@ def generate_launch_description():
                 "headless",
                 default_value="true",
                 description="Run unitree_mujoco against our own managed Xvfb (no GUI window).",
+            ),
+            DeclareLaunchArgument(
+                "world",
+                default_value="navigation",
+                description="Which room to stage, when sensors are on. 'navigation' is the "
+                "multi-room facility with furniture, shelving, pillars and a ramp. "
+                "'perception' is the small bare room whose wall positions test_lidar_geometry "
+                "asserts against; use it for tests, not for looking at things.",
+            ),
+            DeclareLaunchArgument(
+                "rviz",
+                default_value="false",
+                description="Open RViz on config/g1_sensors.rviz with the cloud, TF, robot "
+                "model and odometry already set up.",
             ),
             DeclareLaunchArgument(
                 "sensors",

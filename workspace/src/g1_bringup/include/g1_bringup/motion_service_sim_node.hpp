@@ -20,6 +20,7 @@
 #include "g1_bringup/walk_policy.hpp"
 #include "g1_bringup/walk_policy_session.hpp"
 #include "rclcpp/rclcpp.hpp"
+#include "sensor_msgs/msg/joint_state.hpp"
 #include "unitree_api/msg/request.hpp"
 #include "unitree_api/msg/response.hpp"
 #include "unitree_go/msg/sport_mode_state.hpp"
@@ -87,7 +88,19 @@ private:
     rclcpp::Subscription<unitree_hg::msg::LowState>::SharedPtr lowstate_sub_;
     rclcpp::Subscription<unitree_hg::msg::LowCmd>::SharedPtr   arm_sdk_sub_;
     rclcpp::Publisher<unitree_hg::msg::LowCmd>::SharedPtr      lowcmd_pub_;
-    rclcpp::TimerBase::SharedPtr                               publish_timer_;
+    /// Lower-body joint states. joint_state_broadcaster only publishes the arms,
+    /// because the hardware interface is arm-only; without these
+    /// robot_state_publisher cannot connect pelvis to torso_link and every frame
+    /// above the waist, sensors included, is stranded in its own TF tree.
+    rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr lower_joint_pub_;
+    /// Names filled once; only the numbers change per sample.
+    sensor_msgs::msg::JointState lower_joint_msg_;
+    /// /lowstate arrives at ~1 kHz. Publishing joint states that fast is pure
+    /// waste next to joint_state_broadcaster's ~200 Hz, and it measurably
+    /// disturbed bring-up, so it is decimated.
+    int                          lower_joint_decimate_ = 0;
+    bool                         publish_lower_joints_ = false;
+    rclcpp::TimerBase::SharedPtr publish_timer_;
 
     /// Base linear velocity for the policy observation. /lowstate carries no such field -- the
     /// sim's own bridge publishes it here from the pelvis `frame_vel` sensor. This is precisely

@@ -51,7 +51,12 @@ def generate_test_description():
         PythonLaunchDescriptionSource(
             os.path.join(get_package_share_directory("g1_bringup"), "launch", "sim.launch.py")
         ),
-        launch_arguments={"sensors": "true", "pin_pelvis": "true"}.items(),
+        launch_arguments={
+            "sensors": "true",
+            "pin_pelvis": "true",
+            # The small bare room this test's numbers come from, not the facility.
+            "world": "perception",
+        }.items(),
     )
     return (
         LaunchDescription(

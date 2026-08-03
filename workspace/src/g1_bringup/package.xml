@@ -38,6 +38,7 @@
 
   <exec_depend>ament_index_python</exec_depend>
   <exec_depend>xvfb</exec_depend>
+  <exec_depend>rviz2</exec_depend>
 
   <!-- Runtime dependency for loco.launch.py. -->
   <exec_depend>g1_locomotion</exec_depend>
