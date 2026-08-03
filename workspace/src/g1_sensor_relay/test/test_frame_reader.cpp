@@ -35,6 +35,39 @@ std::vector<std::uint8_t> makeFrame(std::uint32_t point_count, double sim_time =
     return bytes;
 }
 
+// Depth frames carry `width * height` floats and, when colour is on, `width * height * 3`
+// rgb bytes behind them in the same payload.
+std::vector<std::uint8_t> makeDepthFrame(std::uint32_t w, std::uint32_t h, bool with_color)
+{
+    const std::uint32_t pixels = w * h;
+    const std::uint32_t rgb    = with_color ? pixels * 3u : 0u;
+
+    SensorFrameHeader header{};
+    header.magic          = grove_g1::kSensorFrameMagic;
+    header.version        = grove_g1::kSensorFrameVersion;
+    header.kind           = static_cast<std::uint32_t>(grove_g1::SensorFrameKind::Depth);
+    header.width          = w;
+    header.height         = h;
+    header.fovy_deg       = 58.0f;
+    header.rgb_bytes      = rgb;
+    header.payload_bytes  = pixels * sizeof(float) + rgb;
+    header.sim_time_s     = 2.5;
+    header.sensor_quat[0] = 1.0;
+
+    std::vector<std::uint8_t> bytes(sizeof(header) + header.payload_bytes);
+    std::memcpy(bytes.data(), &header, sizeof(header));
+    for (std::uint32_t i = 0; i < pixels; ++i)
+    {
+        const float d = 1.0f + static_cast<float>(i);
+        std::memcpy(bytes.data() + sizeof(header) + i * sizeof(float), &d, sizeof(float));
+    }
+    for (std::uint32_t i = 0; i < rgb; ++i)
+    {
+        bytes[sizeof(header) + pixels * sizeof(float) + i] = static_cast<std::uint8_t>(i & 0xFF);
+    }
+    return bytes;
+}
+
 }  // namespace
 
 TEST(FrameReader, ReadsAWholeFrameAndConsumesExactlyIt)
@@ -150,4 +183,62 @@ TEST(WireFormat, TheTwoCopiesOfSensorFrameAreIdentical)
     sb << b.rdbuf();
     EXPECT_EQ(sa.str(), sb.str())
         << "workspace/vendor/unitree_mujoco/sensor_frame.h and the relay's copy have drifted";
+}
+
+TEST(FrameReader, ReadsADepthFrameWithColour)
+{
+    auto       bytes = makeDepthFrame(4, 3, /*with_color=*/true);
+    CloudFrame frame;
+    ASSERT_EQ(tryReadFrame(bytes, frame), FrameStatus::Ok);
+    EXPECT_TRUE(bytes.empty());
+    EXPECT_EQ(frame.kind, FrameKind::Depth);
+    EXPECT_EQ(frame.width, 4u);
+    EXPECT_EQ(frame.height, 3u);
+    EXPECT_EQ(frame.depth.size(), 12u);
+    EXPECT_EQ(frame.rgb.size(), 36u);
+    EXPECT_FLOAT_EQ(frame.depth.front(), 1.0f);
+    EXPECT_FLOAT_EQ(frame.depth.back(), 12.0f);
+    // The colour bytes must come from behind the depth floats, not overlap them.
+    EXPECT_EQ(frame.rgb.front(), 0u);
+    EXPECT_EQ(frame.rgb.back(), 35u);
+}
+
+TEST(FrameReader, ReadsADepthFrameWithoutColour)
+{
+    auto       bytes = makeDepthFrame(4, 3, /*with_color=*/false);
+    CloudFrame frame;
+    ASSERT_EQ(tryReadFrame(bytes, frame), FrameStatus::Ok);
+    EXPECT_EQ(frame.depth.size(), 12u);
+    EXPECT_TRUE(frame.rgb.empty());
+}
+
+TEST(FrameReader, RefusesAnRgbLengthThatDoesNotMatchThePixelCount)
+{
+    // The payload length still adds up, so only the rgb_bytes == pixels*3 rule catches
+    // this. Without it the relay would publish an rgb8 image of the wrong size.
+    auto              bytes = makeDepthFrame(4, 3, /*with_color=*/true);
+    SensorFrameHeader header{};
+    std::memcpy(&header, bytes.data(), sizeof(header));
+    header.rgb_bytes -= 1;
+    header.payload_bytes -= 1;
+    bytes.resize(bytes.size() - 1);
+    std::memcpy(bytes.data(), &header, sizeof(header));
+
+    CloudFrame frame;
+    EXPECT_EQ(tryReadFrame(bytes, frame), FrameStatus::BadLength);
+}
+
+TEST(FrameReader, RefusesAnAbsurdImageSizeBeforeAllocating)
+{
+    // 60000 x 60000 would be 14 GB of depth. The pixel cap has to reject it from the
+    // header alone, before any resize.
+    auto              bytes = makeDepthFrame(2, 2, /*with_color=*/false);
+    SensorFrameHeader header{};
+    std::memcpy(&header, bytes.data(), sizeof(header));
+    header.width  = 60000;
+    header.height = 60000;
+    std::memcpy(bytes.data(), &header, sizeof(header));
+
+    CloudFrame frame;
+    EXPECT_EQ(tryReadFrame(bytes, frame), FrameStatus::BadLength);
 }
