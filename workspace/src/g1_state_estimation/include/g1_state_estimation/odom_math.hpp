@@ -19,8 +19,9 @@ namespace g1_state_estimation
 /// Where the base pose comes from. Anything else is a configuration error.
 enum class OdometrySource
 {
-    SimGroundTruth,  ///< MuJoCo generalized coordinates. Exact, and sim-only.
-    Hardware,        ///< Not implemented: the real G1 publishes no odometry at all.
+    SimGroundTruth,     ///< MuJoCo generalized coordinates via planar joints. Sim-only.
+    SimSportModeState,  ///< The converged track: pelvis pose from /sportmodestate. Sim-only.
+    Hardware,           ///< Not implemented: the real G1 publishes no odometry at all.
 };
 
 /**

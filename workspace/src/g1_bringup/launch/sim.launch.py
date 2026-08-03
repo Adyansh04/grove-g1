@@ -20,11 +20,14 @@ from launch.actions import (
     RegisterEventHandler,
     TimerAction,
 )
-from launch.event_handlers import OnProcessExit, OnShutdown
-from launch.events import Shutdown
+from launch.event_handlers import OnProcessExit, OnProcessStart, OnShutdown
+from launch.events import Shutdown, matches_action
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import Node
+from lifecycle_msgs.msg import Transition
+from launch_ros.actions import LifecycleNode, Node
+from launch_ros.event_handlers import OnStateTransition
+from launch_ros.events.lifecycle import ChangeState
 
 UNITREE_MUJOCO_BIN = "/opt/unitree_robotics/unitree_mujoco/simulate/build/unitree_mujoco"
 
@@ -149,6 +152,55 @@ def _launch_setup(context, *args, **kwargs):
                 name="g1_sensor_relay",
                 output="both",
                 parameters=[{"socket_path": socket_path, "frame_id": "mid360_link"}],
+            )
+        )
+
+        # odom -> pelvis for the converged track. The source is /sportmodestate, which
+        # unitree_mujoco fills from framepos/framelinvel on the pelvis imu site, so it is
+        # exact MuJoCo state. base_height_m stays 0: unlike the planar sandbox, a walking
+        # robot's height is measured, not assumed.
+        odometry_node = LifecycleNode(
+            package="g1_state_estimation",
+            executable="g1_odometry_publisher",
+            name="g1_odometry_publisher",
+            namespace="",
+            output="both",
+            parameters=[{
+                "odometry_source": "sim_sportmodestate",
+                "base_frame_id": "pelvis",
+            }],
+            remappings=[("~/sport_state", "/sportmodestate")],
+        )
+        actions.append(odometry_node)
+        actions.append(
+            RegisterEventHandler(
+                OnProcessStart(
+                    target_action=odometry_node,
+                    on_start=[
+                        EmitEvent(
+                            event=ChangeState(
+                                lifecycle_node_matcher=matches_action(odometry_node),
+                                transition_id=Transition.TRANSITION_CONFIGURE,
+                            )
+                        )
+                    ],
+                )
+            )
+        )
+        actions.append(
+            RegisterEventHandler(
+                OnStateTransition(
+                    target_lifecycle_node=odometry_node,
+                    goal_state="inactive",
+                    entities=[
+                        EmitEvent(
+                            event=ChangeState(
+                                lifecycle_node_matcher=matches_action(odometry_node),
+                                transition_id=Transition.TRANSITION_ACTIVATE,
+                            )
+                        )
+                    ],
+                )
             )
         )
 

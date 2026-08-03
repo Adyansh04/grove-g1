@@ -17,6 +17,7 @@
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
 #include "tf2_ros/transform_broadcaster.h"
+#include "unitree_go/msg/sport_mode_state.hpp"
 
 namespace g1_state_estimation
 {
@@ -48,14 +49,21 @@ private:
     bool readParameters();
 
     void onBaseState(const sensor_msgs::msg::JointState::SharedPtr msg);
+    void onSportModeState(const unitree_go::msg::SportModeState::SharedPtr msg);
+    /// Shared tail of both callbacks: staleness bookkeeping against a new stamp.
+    void noteSample(const rclcpp::Time& stamp);
     void onTimer();
 
     rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr            base_state_sub_;
+    rclcpp::Subscription<unitree_go::msg::SportModeState>::SharedPtr         sport_state_sub_;
     rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub_;
     std::unique_ptr<tf2_ros::TransformBroadcaster>                           tf_broadcaster_;
     rclcpp::TimerBase::SharedPtr                                             timer_;
 
-    OdometrySource           source_ = OdometrySource::Hardware;
+    OdometrySource source_ = OdometrySource::Hardware;
+    /// Topic the configured source actually reads. Held as a string because only one
+    /// of the two subscriptions exists, and the other is null.
+    std::string              source_topic_;
     std::string              odom_frame_id_;
     std::string              base_frame_id_;
     std::vector<std::string> base_joint_names_;
@@ -67,7 +75,12 @@ private:
     std::array<double, 36>   pose_covariance_{};
     std::array<double, 36>   twist_covariance_{};
 
-    PlanarPose   pose_;
+    PlanarPose pose_;
+    /// Height and full orientation. The planar track has neither (its body has no z
+    /// DoF and cannot tilt); a walking G1 has both, so they are carried separately
+    /// rather than forced through PlanarPose.
+    double       pose_z_ = 0.0;
+    Quaternion   orientation_;
     PlanarTwist  world_twist_;
     bool         have_sample_ = false;
     rclcpp::Time last_sample_stamp_;

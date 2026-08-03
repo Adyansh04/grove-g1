@@ -23,6 +23,8 @@
   <depend>unitree_go</depend>
 
   <depend>g1_description</depend>
+  <depend>g1_state_estimation</depend>
+  <depend>g1_sensor_relay</depend>
   <depend>robot_state_publisher</depend>
   <depend>controller_manager</depend>
   <depend>joint_state_broadcaster</depend>
