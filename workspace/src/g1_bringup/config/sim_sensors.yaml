@@ -21,3 +21,4 @@ socket_path: "/tmp/g1_sensors.sock"
 # linearised to metres before it leaves the simulator. S3 measured ~3.9 ms/frame with only
 # ~0.01 ms holding the sim lock.
 camera_enabled: true
+camera_color: true

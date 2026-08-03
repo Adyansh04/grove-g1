@@ -45,6 +45,7 @@ struct Config
     int    scene_geom_group = 2;
 
     bool camera_enabled = false;
+    bool camera_color   = true;
     int  camera_width   = 848;
     int  camera_height  = 480;
     // d435_joint in the vendored URDF, relative to torso_link. Same provenance as the
@@ -113,6 +114,9 @@ Config loadConfig()
         }
         if (root["elevation_steps"]) {
             cfg.elevation_steps = root["elevation_steps"].as<int>();
+        }
+        if (root["camera_color"]) {
+            cfg.camera_color = root["camera_color"].as<bool>();
         }
         if (root["camera_enabled"]) {
             cfg.camera_enabled = root["camera_enabled"].as<bool>();
@@ -239,7 +243,12 @@ private:
     {
         const char* p        = static_cast<const char*>(buf);
         std::size_t sent     = 0;
-        const auto  deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(20);
+        // 20 ms covered a 1.6 MB depth frame but not the 2.9 MB depth+colour one: the
+        // receiver drains roughly a socket buffer per wakeup, so the budget has to cover
+        // enough of its wakeups to move the whole payload. Still well inside the 100 ms
+        // frame period, and this waits off the sim lock, so overrunning it costs nothing
+        // on the physics side.
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(80);
         while (sent < bytes) {
             // MSG_NOSIGNAL is load-bearing: without it a vanished relay raises SIGPIPE and
             // kills the simulator.
@@ -352,6 +361,7 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
     mjvCamera   cam_cam;
     GLFWwindow* cam_win = nullptr;
     std::vector<unsigned char> cam_rgb;
+    std::vector<unsigned char> cam_payload;
     std::vector<float>         cam_depth;
     if (cfg.camera_enabled) {
         if (glfwInit() && (glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE), true) &&
@@ -599,7 +609,8 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
                 mjv_updateScene(m, snapshot, &cam_opt, nullptr, &cam_cam, mjCAT_ALL, &cam_scn);
                 mjrRect vp{0, 0, cfg.camera_width, cfg.camera_height};
                 mjr_render(vp, &cam_scn, &cam_con);
-                mjr_readPixels(nullptr, cam_depth.data(), vp, &cam_con);
+                mjr_readPixels(cfg.camera_color ? cam_rgb.data() : nullptr, cam_depth.data(),
+                               vp, &cam_con);
 
                 // mjr_readPixels hands back the raw OpenGL depth buffer: non-linear, in
                 // [0,1]. Publishing it as metres would look plausible at every distance and
@@ -627,19 +638,38 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
                                      cam_depth.begin() + static_cast<std::size_t>(y + 1) * w,
                                      cam_depth.begin() + static_cast<std::size_t>(h - 1 - y) * w);
                 }
+                if (cfg.camera_color) {
+                    const std::size_t stride = static_cast<std::size_t>(w) * 3;
+                    for (int y = 0; y < h / 2; ++y) {
+                        std::swap_ranges(cam_rgb.begin() + static_cast<std::size_t>(y) * stride,
+                                         cam_rgb.begin() + static_cast<std::size_t>(y + 1) * stride,
+                                         cam_rgb.begin() +
+                                             static_cast<std::size_t>(h - 1 - y) * stride);
+                    }
+                }
 
                 SensorFrameHeader dh{};
                 dh.magic         = kSensorFrameMagic;
                 dh.version       = kSensorFrameVersion;
                 dh.kind          = static_cast<uint32_t>(SensorFrameKind::Depth);
-                dh.payload_bytes = static_cast<uint32_t>(cam_depth.size() * sizeof(float));
+                const std::size_t depth_bytes = cam_depth.size() * sizeof(float);
+                const std::size_t rgb_bytes    = cfg.camera_color ? cam_rgb.size() : 0;
+                dh.payload_bytes = static_cast<uint32_t>(depth_bytes + rgb_bytes);
+                dh.rgb_bytes     = static_cast<uint32_t>(rgb_bytes);
                 dh.sim_time_s    = sim_time;
                 std::memcpy(dh.sensor_pos, cam_pos, sizeof(cam_pos));
                 matrixToQuat(R_body, dh.sensor_quat);
                 dh.width    = static_cast<uint32_t>(w);
                 dh.height   = static_cast<uint32_t>(h);
                 dh.fovy_deg = static_cast<float>(m->cam_fovy[cam_id]);
-                relay.send(dh, cam_depth.data(), cam_depth.size() * sizeof(float));
+                // Colour rides in the same frame rather than a second one: it came from the
+                // same render, so pairing it up downstream could only lose that guarantee.
+                cam_payload.resize(depth_bytes + rgb_bytes);
+                std::memcpy(cam_payload.data(), cam_depth.data(), depth_bytes);
+                if (rgb_bytes != 0) {
+                    std::memcpy(cam_payload.data() + depth_bytes, cam_rgb.data(), rgb_bytes);
+                }
+                relay.send(dh, cam_payload.data(), cam_payload.size());
             }
             const auto cam_t2 = std::chrono::steady_clock::now();
 
