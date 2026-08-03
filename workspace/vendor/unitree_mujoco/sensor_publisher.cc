@@ -45,13 +45,8 @@ struct Config
     int    scene_geom_group = 2;
 
     bool camera_enabled = false;
-    bool camera_color   = true;
     int  camera_width   = 848;
     int  camera_height  = 480;
-    // d435_joint in the vendored URDF, relative to torso_link. Same provenance as the
-    // LiDAR mount, and equally not to be confused with g1_sim's torso-folded values.
-    double cam_xyz[3] = {0.0576235, 0.01753, 0.42987};
-    double cam_rpy[3] = {0.0, 0.8307767239493009, 0.0};
     int    azimuth_steps   = 360;
     int    elevation_steps = 32;
     double azimuth_min     = -M_PI;
@@ -61,11 +56,18 @@ struct Config
     double range_min       = 0.1;
     double range_max       = 40.0;
 
-    // mid360_joint in Unitree's vendored URDF, relative to torso_link. NOT the torso-folded
-    // values g1_sim uses: that fold exists only because the sandbox body has no torso.
-    double mount_xyz[3] = {0.0002835, 0.00003, 0.428434};
-    double mount_rpy[3] = {M_PI, 0.05112069379091391, 0.0};
 };
+
+// Mount poses relative to torso_link, mirroring mid360_joint and d435_joint in Unitree's
+// vendored URDF. Constants, not Config: nothing sets them and nothing should. They are
+// already a second copy of numbers the URDF owns, and making them settable would add a
+// third that can disagree with both. If the URDF moves, these move with it.
+// NOT g1_sim's torso-folded values -- that fold exists only because the sandbox body has
+// no torso.
+constexpr double kMountXyz[3] = {0.0002835, 0.00003, 0.428434};
+constexpr double kMountRpy[3] = {M_PI, 0.05112069379091391, 0.0};
+constexpr double kCamXyz[3]   = {0.0576235, 0.01753, 0.42987};
+constexpr double kCamRpy[3]   = {0.0, 0.8307767239493009, 0.0};
 
 struct State
 {
@@ -115,14 +117,8 @@ Config loadConfig()
         if (root["elevation_steps"]) {
             cfg.elevation_steps = root["elevation_steps"].as<int>();
         }
-        if (root["camera_color"]) {
-            cfg.camera_color = root["camera_color"].as<bool>();
-        }
         if (root["camera_enabled"]) {
             cfg.camera_enabled = root["camera_enabled"].as<bool>();
-        }
-        if (root["scene_geom_group"]) {
-            cfg.scene_geom_group = root["scene_geom_group"].as<int>();
         }
         if (root["range_max"]) {
             cfg.range_max = root["range_max"].as<double>();
@@ -325,9 +321,9 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
     }
 
     double R_mount[9];
-    rpyToMatrix(cfg.mount_rpy, R_mount);
+    rpyToMatrix(kMountRpy, R_mount);
     double R_cam_mount[9];
-    rpyToMatrix(cfg.cam_rpy, R_cam_mount);
+    rpyToMatrix(kCamRpy, R_cam_mount);
     int cam_id = mj_name2id(m, mjOBJ_CAMERA, "d435i");
 
     mjtByte geomgroup[mjNGROUP] = {0};
@@ -499,9 +495,9 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
         // so any baked-in constant is wrong the moment the robot walks.
         double origin[3];
         for (int r = 0; r < 3; ++r) {
-            origin[r] = torso_pos[r] + torso_mat[3 * r + 0] * cfg.mount_xyz[0] +
-                        torso_mat[3 * r + 1] * cfg.mount_xyz[1] +
-                        torso_mat[3 * r + 2] * cfg.mount_xyz[2];
+            origin[r] = torso_pos[r] + torso_mat[3 * r + 0] * kMountXyz[0] +
+                        torso_mat[3 * r + 1] * kMountXyz[1] +
+                        torso_mat[3 * r + 2] * kMountXyz[2];
         }
         double R_sensor[9];
         for (int r = 0; r < 3; ++r) {
@@ -609,9 +605,9 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
                 double cam_pos[3];
                 for (int r = 0; r < 3; ++r) {
                     cam_pos[r] = cam_torso_pos[r] +
-                                 cam_torso_mat[3 * r + 0] * cfg.cam_xyz[0] +
-                                 cam_torso_mat[3 * r + 1] * cfg.cam_xyz[1] +
-                                 cam_torso_mat[3 * r + 2] * cfg.cam_xyz[2];
+                                 cam_torso_mat[3 * r + 0] * kCamXyz[0] +
+                                 cam_torso_mat[3 * r + 1] * kCamXyz[1] +
+                                 cam_torso_mat[3 * r + 2] * kCamXyz[2];
                 }
                 double R_body[9];
                 for (int r = 0; r < 3; ++r) {
@@ -638,7 +634,7 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
                 mjv_updateScene(m, snapshot, &cam_opt, nullptr, &cam_cam, mjCAT_ALL, &cam_scn);
                 mjrRect vp{0, 0, cfg.camera_width, cfg.camera_height};
                 mjr_render(vp, &cam_scn, &cam_con);
-                mjr_readPixels(cfg.camera_color ? cam_rgb.data() : nullptr, cam_depth.data(),
+                mjr_readPixels(cam_rgb.data(), cam_depth.data(),
                                vp, &cam_con);
 
                 // mjr_readPixels hands back the raw OpenGL depth buffer: non-linear, in
@@ -667,7 +663,7 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
                                      cam_depth.begin() + static_cast<std::size_t>(y + 1) * w,
                                      cam_depth.begin() + static_cast<std::size_t>(h - 1 - y) * w);
                 }
-                if (cfg.camera_color) {
+                {
                     const std::size_t stride = static_cast<std::size_t>(w) * 3;
                     for (int y = 0; y < h / 2; ++y) {
                         std::swap_ranges(cam_rgb.begin() + static_cast<std::size_t>(y) * stride,
@@ -682,7 +678,7 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
                 dh.version       = kSensorFrameVersion;
                 dh.kind          = static_cast<uint32_t>(SensorFrameKind::Depth);
                 const std::size_t depth_bytes = cam_depth.size() * sizeof(float);
-                const std::size_t rgb_bytes    = cfg.camera_color ? cam_rgb.size() : 0;
+                const std::size_t rgb_bytes    = cam_rgb.size();
                 dh.payload_bytes = static_cast<uint32_t>(depth_bytes + rgb_bytes);
                 dh.rgb_bytes     = static_cast<uint32_t>(rgb_bytes);
                 dh.sim_time_s    = sim_time;
