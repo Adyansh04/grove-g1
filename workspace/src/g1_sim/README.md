@@ -1,6 +1,20 @@
 # g1_sim
 
-**SIM-ONLY.** The perception simulation track: a simplified mobile body carrying a 3D LiDAR and an
+**SIM-ONLY, and now a SANDBOX rather than the perception track.** The LiDAR and depth camera moved
+onto the real G1 in `g1_bringup` (`sensors:=true`), where perception, arms and locomotion share one
+simulation. This package survives because it starts in seconds and needs no walking policy, balance
+or DDS bridge, so a sensor question can be answered without touching the timing-critical track.
+
+Three conditions keep it from becoming a second stack: it gains **no new capability** (no Nav2, no
+MoveIt, no manipulation), new work targets the converged track, and if it goes two milestones unused
+it should be deleted.
+
+**It also keeps a defect the converged track does not have.** The sandbox uses the vendor
+`mujoco_3d_lidar` plugin, whose raycast lets ~4% of returns through walls (see below). The converged
+track hand-rolls its sweep with `mj_ray` and does not carry that bug forward, so a leak seen here
+says nothing about the real track, and a sandbox result must never be used to characterise it.
+
+The perception simulation track: a simplified mobile body carrying a 3D LiDAR and an
 RGB-D camera in MuJoCo, run through `mujoco_ros2_control`.
 
 This is a **second, independent simulation track**. `unitree_mujoco` (driven by `g1_bringup`) is

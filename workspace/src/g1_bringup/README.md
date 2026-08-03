@@ -10,7 +10,7 @@ that stands in for the robot's onboard motion service.
 
 | File | Purpose |
 |---|---|
-| `launch/sim.launch.py` | Main entry point. Checks the DDS environment, then starts `unitree_mujoco`, `motion_service_sim`, `control.launch.py` and `loco.launch.py`. Args: `headless` (default `true`), `pin_pelvis` (default `false`), `sim_start_delay_s` (default `2.0`). |
+| `launch/sim.launch.py` | Main entry point. Checks the DDS environment, then starts `unitree_mujoco`, `motion_service_sim`, `control.launch.py` and `loco.launch.py`. Args: `headless` (default `true`), `sensors` (default `true`), `pin_pelvis` (default `false`), `sim_start_delay_s` (default `2.0`). |
 | `launch/control.launch.py` | `robot_state_publisher`, `ros2_control_node` and spawners. No sim, no bridge, so it carries over to hardware unchanged. |
 | `launch/loco.launch.py` | Starts `g1_loco_bridge` and drives it configure to active off its own lifecycle events. |
 | `launch/activate_arm.launch.py` | Runs `scripts/activate_arm`, the ordered acquire step. |
@@ -29,6 +29,9 @@ that stands in for the robot's onboard motion service.
 | `/api/sport/response` | out | `unitree_api/msg/Response` | `QoS(1)` reliable, volatile |
 | `/joint_states` | out | `sensor_msgs/msg/JointState` | default, ~200 Hz |
 | `/robot_description` | out | `std_msgs/msg/String` | transient-local |
+| `/livox/lidar` | out | `sensor_msgs/msg/PointCloud2` | sensor data, `sensors:=true` only |
+| `/g1_sensor_relay/sensor_pose` | out | `geometry_msgs/msg/PoseStamped` | sensor data, diagnostics |
+| `/tf` (`odom` -> `pelvis`) | out | `tf2_msgs/msg/TFMessage` | `sensors:=true` only |
 
 ## Running
 
@@ -230,6 +233,37 @@ freshness, not on the FSM, so releasing locomotion authority stops the walking w
 robot. If inference goes stale the lower-body target freezes at the last policy output rather than
 reverting to the captured spawn pose, which would be a large step away from the stance the robot is
 actually in.
+
+## Sensors on the converged track: SIM-ONLY
+
+`sensors:=true` (the default) stages a room with known geometry, runs a LiDAR sweep **inside** the
+patched `unitree_mujoco`, and starts `g1_sensor_relay` to publish it as `PointCloud2` on
+`/livox/lidar`. `odom -> pelvis` comes from `g1_state_estimation` reading `/sportmodestate`.
+
+**Why the sweep lives inside the simulator.** It needs the scene: geometry, meshes and current pose,
+all of which live in `mjData` inside that process. No DDS topic carries it, so no companion process
+can compute it. The finished cloud is what crosses the boundary, over a local socket.
+
+**Why a separate node publishes it.** `unitree_sdk2` and `rmw_cyclonedds` both call
+`dds_create_domain` unconditionally, and CycloneDDS allows exactly one explicit domain creation per
+domain id per process. They cannot coexist, in either order. So the simulator links no ROS at all and
+the relay owns the ROS side.
+
+**Frame is `mid360_link`, not `livox_frame`.** `g1_sim`, the planar sandbox, publishes in
+`livox_frame` because that is `livox_ros_driver2`'s own default, so swapping sim for hardware is a
+driver launch rather than a pile of remaps. The converged track cannot do the same: the frame is not
+ours to name. It comes from Unitree's vendored URDF, which calls the link `mid360_link`, and
+renaming it means patching a description we otherwise consume verbatim. Adding a second link as an
+alias would put two frames on one physical sensor, which is worse.
+
+So the portability principle moves **one layer up**. The real driver's frame id is a launch
+parameter, so hardware bring-up sets `livox_ros_driver2`'s `frame_id` to `mid360_link` (or remaps at
+launch) instead of the sim contorting to match a default. Same guarantee at the swap, enforced at
+launch rather than in the model.
+
+**What is not validated here:** the Mid360's non-repetitive scan pattern (this is a uniform
+azimuth/elevation grid), intensity, per-point timestamps, noise, dropout and motion distortion. The
+depth camera is **not** on this track yet, see the milestone notes.
 
 ## Pelvis pin: debugging aid
 
