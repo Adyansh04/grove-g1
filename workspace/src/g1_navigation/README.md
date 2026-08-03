@@ -16,6 +16,21 @@ Everything here needs `sensors:=true` on `g1_bringup`, which gates the LiDAR, th
 ros2 launch g1_navigation nav_sim.launch.py mode:=mapping rviz:=true
 ```
 
+`mode:=mapping` builds a new map with slam_toolbox. `mode:=localization` runs `map_server` + AMCL
+against `maps/facility` — use that when a goal pose has to mean the same thing twice.
+
+## Composition
+
+The navigation nodes load into one `component_container_isolated` named `nav2_container`, so they
+talk intra-process. `nav_sim.launch.py` creates the container; the leaf launches load into it. Set
+`use_composition:=false` for one process per node, which is what you want when a single node is
+crashing and you need to see which.
+
+Structure follows `nav2_bringup`'s own launch files, including which nodes stay out:
+**slam_toolbox runs as a separate process** even though it ships a component. That is what
+`nav2_bringup/launch/slam_launch.py` does, and its 40 MB stack requirement for map serialization is
+not something to hand a shared process.
+
 ## Sensor inputs
 
 | Consumer | Input | Why |

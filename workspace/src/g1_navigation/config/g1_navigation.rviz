@@ -1,0 +1,145 @@
+# RViz for the navigation track.
+#   ros2 launch g1_navigation nav_sim.launch.py rviz:=true
+#
+# Fixed frame is map, so in mapping mode nothing renders until slam_toolbox has published
+# map -> odom. That is a second or two after launch, not a fault.
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+    Property Tree Widget:
+      Expanded:
+        - /Map1
+        - /Scan1
+      Splitter Ratio: 0.5
+    Tree Height: 700
+  - Class: rviz_common/Views
+    Name: Views
+Visualization Manager:
+  Class: ""
+  Name: root
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: Grid
+      Enabled: true
+      Cell Size: 1
+      Plane Cell Count: 20
+      Color: 160; 160; 164
+      Alpha: 0.3
+      Reference Frame: <Fixed Frame>
+
+    - Class: rviz_default_plugins/Map
+      Name: Map
+      Enabled: true
+      Topic:
+        Value: /map
+        Depth: 1
+        Durability Policy: Transient Local
+        Reliability Policy: Reliable
+      Alpha: 0.7
+      Color Scheme: map
+      Draw Behind: true
+
+    # What slam_toolbox and AMCL actually consume. If this looks right and the map does not,
+    # the problem is the matcher or the pose, not the flatten.
+    - Class: rviz_default_plugins/LaserScan
+      Name: Scan
+      Enabled: true
+      Topic:
+        Value: /scan
+        Depth: 5
+        Durability Policy: Volatile
+        Reliability Policy: Best Effort
+      Size (m): 0.04
+      Style: Points
+      Color: 255; 85; 0
+      Color Transformer: FlatColor
+
+    # The raw sweep, which is what the Nav2 costmaps eat. Shown alongside the scan so the
+    # 0.30 m floor cut the flatten applies is visible as the gap the cloud fills in.
+    - Class: rviz_default_plugins/PointCloud2
+      Name: LiDAR
+      Enabled: false
+      Topic:
+        Value: /livox/lidar
+        Depth: 5
+        Durability Policy: Volatile
+        Reliability Policy: Best Effort
+      Size (m): 0.02
+      Style: Points
+      Color Transformer: AxisColor
+      Axis: Z
+
+    # Needs pelvis -> torso_link, which motion_service_sim supplies from /lowstate;
+    # joint_state_broadcaster only covers the arms.
+    - Class: rviz_default_plugins/RobotModel
+      Name: Robot
+      Enabled: true
+      Description Topic:
+        Value: /robot_description
+        Depth: 1
+        Durability Policy: Transient Local
+        Reliability Policy: Reliable
+      Alpha: 0.8
+
+    - Class: rviz_default_plugins/TF
+      Name: TF
+      Enabled: false
+      Show Names: true
+      Show Axes: true
+      Show Arrows: false
+      Marker Scale: 0.4
+
+    - Class: rviz_default_plugins/Odometry
+      Name: Odometry
+      Enabled: false
+      Topic:
+        Value: /g1_odometry_publisher/odom
+        Depth: 100
+        Durability Policy: Volatile
+        Reliability Policy: Reliable
+      Keep: 100
+      Position Tolerance: 0.2
+      Angle Tolerance: 0.2
+      Shape:
+        Alpha: 0.6
+        Color: 0; 170; 255
+        Shaft Length: 0.3
+        Shaft Radius: 0.03
+        Head Length: 0.1
+        Head Radius: 0.06
+
+  Global Options:
+    Background Color: 48; 48; 48
+    Fixed Frame: map
+    Frame Rate: 30
+  Tools:
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/FocusCamera
+    - Class: rviz_default_plugins/Measure
+    # Present for PR B: nothing consumes a goal pose until Nav2's bt_navigator exists.
+    - Class: rviz_default_plugins/SetGoal
+      Topic:
+        Value: /goal_pose
+    # AMCL takes an initial pose here when the shipped one is wrong -- e.g. after driving the
+    # robot somewhere before starting localization.
+    - Class: rviz_default_plugins/SetInitialPose
+      Topic:
+        Value: /initialpose
+  Value: true
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Name: Current View
+      Distance: 22
+      Focal Point:
+        X: 0
+        Y: 0
+        Z: 0
+      Pitch: 1.0
+      Yaw: 0.8
+      Target Frame: <Fixed Frame>
+Window Geometry:
+  Height: 900
+  Width: 1500
+  Displays:
+    collapsed: false
