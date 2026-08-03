@@ -48,9 +48,9 @@ struct CloudFrame
     /// rgb8, row-major, top-down, same dimensions as `depth`. Empty when colour is off.
     std::vector<std::uint8_t> rgb;
     double                    sim_time_s = 0.0;
-    double             sensor_pos[3]{};
-    double             sensor_quat[4]{};
-    std::vector<float> points;
+    double                    sensor_pos[3]{};
+    double                    sensor_quat[4]{};
+    std::vector<float>        points;
 };
 
 /**

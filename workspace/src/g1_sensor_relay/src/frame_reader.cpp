@@ -81,15 +81,17 @@ FrameStatus tryReadFrame(std::vector<std::uint8_t>& buffer, CloudFrame& out)
     {
         out.kind = FrameKind::Depth;
         out.points.clear();
-        const std::size_t px = static_cast<std::size_t>(header.width) * header.height;
+        const std::size_t px          = static_cast<std::size_t>(header.width) * header.height;
         const std::size_t depth_bytes = px * sizeof(float);
         out.depth.resize(px);
         std::memcpy(out.depth.data(), buffer.data() + sizeof(header), depth_bytes);
         out.rgb.resize(header.rgb_bytes);
         if (header.rgb_bytes != 0)
         {
-            std::memcpy(out.rgb.data(), buffer.data() + sizeof(header) + depth_bytes,
-                        header.rgb_bytes);
+            std::memcpy(
+                out.rgb.data(),
+                buffer.data() + sizeof(header) + depth_bytes,
+                header.rgb_bytes);
         }
     }
 

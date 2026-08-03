@@ -40,10 +40,12 @@ public:
         frame_id_       = declare_parameter<std::string>("frame_id", "mid360_link");
         world_frame_id_ = declare_parameter<std::string>("world_frame_id", "world");
         const std::string topic = declare_parameter<std::string>("topic", "/livox/lidar");
-        // 500 Hz, not 200: a depth+colour frame is ~2.9 MB and the socket hands over about
-        // one receive buffer per wakeup, so the poll rate sets how fast a frame can land.
-        // At 200 Hz the sender hit its retry deadline mid-frame and reset the connection.
-        poll_hz_                = declare_parameter<double>("poll_hz", 500.0);
+        // 500 Hz rather than 200 as margin for the simulator's fallback path: when it cannot
+        // force a large send buffer, a ~2.9 MB depth+colour frame arrives about one receive
+        // buffer per wakeup, and at 200 Hz the sender hit its retry deadline mid-frame and
+        // reset the connection. With the buffer forced the frame lands in one go and the
+        // rate does not matter; polling this often costs only a recv that returns EAGAIN.
+        poll_hz_ = declare_parameter<double>("poll_hz", 500.0);
 
         // Sensor QoS: only the newest cloud matters, and a reliable publisher against a
         // best-effort subscriber is the usual reason nothing shows up in rviz.
@@ -88,7 +90,7 @@ public:
         }
 
         // Polled rather than event-driven on purpose: one node, one thread, no executor
-        // surprises, and the cost is a nonblocking accept plus a read at 200 Hz.
+        // surprises, and the cost is a nonblocking accept plus a read at 500 Hz.
         timer_ =
             create_wall_timer(std::chrono::duration<double>(1.0 / poll_hz_), [this]() { poll(); });
 
@@ -164,7 +166,7 @@ private:
         }
 
         // Drain whatever is available, then publish every complete frame in it. Draining
-        // fully matters: at 200 Hz polling against 10 Hz frames the socket is usually
+        // fully matters: at 500 Hz polling against 10 Hz frames the socket is usually
         // empty, but after any hiccup several frames can be queued.
         std::uint8_t chunk[65536];
         for (;;)
@@ -322,7 +324,7 @@ private:
     std::string world_frame_id_;
     std::string depth_frame_id_;
     std::string color_frame_id_;
-    double      poll_hz_ = 200.0;
+    double      poll_hz_ = 500.0;
 
     int                       listen_fd_ = -1;
     int                       client_fd_ = -1;
