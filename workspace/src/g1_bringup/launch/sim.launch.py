@@ -159,9 +159,8 @@ def _launch_setup(context, *args, **kwargs):
                 parameters=[{
                     "socket_path": socket_path,
                     "frame_id": "mid360_link",
-                    # The URDF has d435_link but no optical frame, so the depth image is
-                    # published in the link itself until g1_description grows one.
-                    "depth_frame_id": "d435_link",
+                    "depth_frame_id": "camera_depth_optical_frame",
+                    "color_frame_id": "camera_color_optical_frame",
                     "world_frame_id": "odom",
                 }],
             )

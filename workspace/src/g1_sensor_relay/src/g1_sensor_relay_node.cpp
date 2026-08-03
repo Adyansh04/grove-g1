@@ -40,7 +40,10 @@ public:
         frame_id_       = declare_parameter<std::string>("frame_id", "mid360_link");
         world_frame_id_ = declare_parameter<std::string>("world_frame_id", "world");
         const std::string topic = declare_parameter<std::string>("topic", "/livox/lidar");
-        poll_hz_                = declare_parameter<double>("poll_hz", 200.0);
+        // 500 Hz, not 200: a depth+colour frame is ~2.9 MB and the socket hands over about
+        // one receive buffer per wakeup, so the poll rate sets how fast a frame can land.
+        // At 200 Hz the sender hit its retry deadline mid-frame and reset the connection.
+        poll_hz_                = declare_parameter<double>("poll_hz", 500.0);
 
         // Sensor QoS: only the newest cloud matters, and a reliable publisher against a
         // best-effort subscriber is the usual reason nothing shows up in rviz.
@@ -52,8 +55,12 @@ public:
         // already has a parent through robot_state_publisher, and a second one would make
         // the tree ambiguous. It is what lets a test check cloud geometry against the room
         // before odom -> pelvis exists.
+        // REP-145 optical frames, not d435_link. Depth consumers assume z forward / x right
+        // / y down; handed the body frame they project the cloud rotated 90 degrees.
         depth_frame_id_ =
             declare_parameter<std::string>("depth_frame_id", "camera_depth_optical_frame");
+        color_frame_id_ =
+            declare_parameter<std::string>("color_frame_id", "camera_color_optical_frame");
         depth_pub_ = create_publisher<sensor_msgs::msg::Image>(
             declare_parameter<std::string>("depth_topic", "/camera/aligned_depth_to_color/image_raw"),
             rclcpp::SensorDataQoS());
@@ -63,6 +70,9 @@ public:
             declare_parameter<std::string>(
                 "depth_info_topic",
                 "/camera/aligned_depth_to_color/camera_info"),
+            rclcpp::SensorDataQoS());
+        color_pub_ = create_publisher<sensor_msgs::msg::Image>(
+            declare_parameter<std::string>("color_topic", "/camera/color/image_raw"),
             rclcpp::SensorDataQoS());
         info_pub_ = create_publisher<sensor_msgs::msg::CameraInfo>(
             declare_parameter<std::string>("info_topic", "/camera/color/camera_info"),
@@ -238,8 +248,26 @@ private:
         info.p          = { f, 0, cx, 0, 0, f, cy, 0, 0, 0, 1, 0 };
 
         depth_pub_->publish(std::move(img));
-        info_pub_->publish(info);
         depth_info_pub_->publish(info);
+
+        // Same render, so the colour stream shares the depth intrinsics exactly; a real
+        // D435i only gets that from its align_depth_to_color step.
+        info.header.frame_id = color_frame_id_;
+        info_pub_->publish(info);
+
+        if (!frame.rgb.empty())
+        {
+            sensor_msgs::msg::Image color;
+            color.header.stamp    = img.header.stamp;
+            color.header.frame_id = color_frame_id_;
+            color.height          = frame.height;
+            color.width           = frame.width;
+            color.encoding        = "rgb8";
+            color.is_bigendian    = 0;
+            color.step            = frame.width * 3;
+            color.data.assign(frame.rgb.begin(), frame.rgb.end());
+            color_pub_->publish(std::move(color));
+        }
     }
 
     void publish(const CloudFrame& frame)
@@ -293,6 +321,7 @@ private:
     std::string frame_id_;
     std::string world_frame_id_;
     std::string depth_frame_id_;
+    std::string color_frame_id_;
     double      poll_hz_ = 200.0;
 
     int                       listen_fd_ = -1;
@@ -302,6 +331,7 @@ private:
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr   cloud_pub_;
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pose_pub_;
     rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr         depth_pub_;
+    rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr         color_pub_;
     rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr    info_pub_;
     rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr    depth_info_pub_;
     rclcpp::TimerBase::SharedPtr                                  timer_;
