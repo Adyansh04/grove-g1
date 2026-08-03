@@ -32,6 +32,19 @@ namespace grove_g1
 // holding the lock for that would stall physics exactly as badly as running inline.
 void StartSensorPublisher(mjModel** model, mjData** data, std::recursive_mutex* sim_mtx);
 
+// Stops the sensor thread and BLOCKS until it has terminated. Safe to call when nothing is
+// running.
+//
+// One-way for now: nothing restarts the sampler after a reload. Restarting it against the
+// new model was tried and still faulted intermittently, so reload deliberately ends with
+// sensors off rather than with an intermittent crash. See g1_bringup's README.
+//
+// Must be called before mj_deleteModel on any path that replaces the model -- the viewer's
+// Reload button and drag-and-drop both do. The sampler reads the model outside sim_mtx on
+// purpose (a ~4.5 ms render or ~32 ms sweep under the lock would stall physics), so no
+// lock-based check can make freeing the model safe while it still runs. It has to be gone.
+void StopSensorPublisher();
+
 
 }  // namespace grove_g1
 

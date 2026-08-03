@@ -719,6 +719,12 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
     }
 
     mj_deleteData(snapshot);
+
+    // The GL window, scene and context are deliberately NOT freed here. glfwDestroyWindow
+    // must run on the main thread, and calling it from this one segfaulted the simulator on
+    // reload. Leaking them is safe for the one case that reaches here: a model reload stops
+    // the sampler for good, so nothing touches these again, and the process frees them at
+    // exit. There is no restart path to reclaim them for.
 }
 
 }  // namespace
@@ -731,6 +737,27 @@ void StartSensorPublisher(mjModel** model, mjData** data, std::recursive_mutex* 
     }
     state().running.store(true);
     state().thread = std::thread(sensorLoop, cfg, model, data, sim_mtx);
+}
+
+void StopSensorPublisher()
+{
+    State& s = state();
+    if (!s.running.exchange(false)) {
+        return;
+    }
+    // Blocking join, not a signal-and-hope. The sampler dereferences the model outside the
+    // sim lock -- mjv_updateScene, mjr_render and mj_ray all do, deliberately, so a render
+    // does not stall physics -- so the only safe point to free the model is after the
+    // thread has actually stopped. Signalling without joining leaves exactly the
+    // use-after-free this exists to close: a viewer Reload segfaulted the simulator.
+    // Costs up to one sample period (~100 ms) plus one sweep, on a debugging-only action.
+    if (s.thread.joinable()) {
+        s.thread.join();
+    }
+    std::fprintf(stderr,
+                 "[grove_g1] SENSORS DISABLED: the model was replaced and the sampler was "
+                 "stopped to avoid reading a freed model. Relaunch the sim to restore "
+                 "them; nothing will publish on /livox/lidar or /camera/* until then.\n");
 }
 
 
