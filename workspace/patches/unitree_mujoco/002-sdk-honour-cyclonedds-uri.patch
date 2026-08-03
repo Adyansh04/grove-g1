@@ -18,8 +18,16 @@ before the simulator reaches DDS init.
 
 Leaving `interface` empty makes the SDK create the domain with the default config, which
 reads CYCLONEDDS_URI. The container's file pins the same `lo` interface, so the network
-behaviour is unchanged and only the index ceiling moves. sim.launch.py already refuses to
-start unless CYCLONEDDS_URI is set, so the fallback path cannot be silently missing.
+behaviour is unchanged and only the index ceiling moves.
+
+What guarantees CYCLONEDDS_URI is present is `ENV CYCLONEDDS_URI` in .devcontainer/
+Dockerfile, set at image level, so it also covers running the simulator by hand outside
+sim.launch.py -- which is how the DDS failure was isolated in the first place. The launch
+file additionally checks that the URI names a file that exists, because CycloneDDS treats
+an unreadable URI as a stderr warning and falls back to defaults; with the compose file's
+network_mode: host that would bind the real NIC instead of lo and put rt/lowcmd on the
+LAN. Removing the code-level `interface: "lo"` fence is only safe with that check in
+place.
 
 diff --git a/simulate/config.yaml b/simulate/config.yaml
 index 468a66b..a2db543 100644

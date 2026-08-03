@@ -67,11 +67,26 @@ def _check_environment(context, *args, **kwargs):
             "the Unitree SDK/sim only speak CycloneDDS."
         )
 
-    if not os.environ.get("CYCLONEDDS_URI"):
+    cyclone_uri = os.environ.get("CYCLONEDDS_URI")
+    if not cyclone_uri:
         problems.append(
             "CYCLONEDDS_URI is unset -- expected the container-baked cyclonedds.xml "
             "pinning the 'lo' interface (see .devcontainer/Dockerfile)."
         )
+    elif cyclone_uri.startswith("file://"):
+        # Existence, not just non-emptiness. CycloneDDS treats an unreadable URI as a
+        # warning on stderr and falls back to its defaults, which with the compose file's
+        # network_mode: host means binding the real NIC instead of lo. The sim's
+        # rt/lowcmd and rt/arm_sdk would then be on the LAN on domain 1, within reach of a
+        # real G1. The simulator relies on this file too: its own config sets an empty
+        # interface so the SDK reads CYCLONEDDS_URI (see patches/unitree_mujoco/002).
+        cyclone_path = cyclone_uri[len("file://") :]
+        if not os.path.isfile(cyclone_path):
+            problems.append(
+                f"CYCLONEDDS_URI points at {cyclone_path!r}, which does not exist -- "
+                "CycloneDDS would silently fall back to defaults and bind the host NIC "
+                "instead of 'lo'."
+            )
 
     domain_id = os.environ.get("ROS_DOMAIN_ID")
     if domain_id != "1":
@@ -141,8 +156,6 @@ def _launch_setup(context, *args, **kwargs):
         get_package_share_directory("g1_bringup"), "config", "sim_sensors.yaml"
     )
     if sensors:
-        # The patched binary starts its sensor thread only when this names a config, so the
-        # stock code path is what runs unless sensors are asked for explicitly.
         sim_env["GROVE_G1_SENSOR_CONFIG"] = sensor_config
 
         # The relay owns the ROS side. Start order does not matter: it listens whenever it
@@ -166,10 +179,8 @@ def _launch_setup(context, *args, **kwargs):
             )
         )
 
-        # odom -> pelvis for the converged track. The source is /sportmodestate, which
-        # unitree_mujoco fills from framepos/framelinvel on the pelvis imu site, so it is
-        # exact MuJoCo state. base_height_m stays 0: unlike the planar sandbox, a walking
-        # robot's height is measured, not assumed.
+        # rviz only makes sense with sensors up, which is why it lives inside this branch:
+        # the shipped config's displays are all sensor topics.
         if LaunchConfiguration("rviz").perform(context).lower() == "true":
             actions.append(
                 Node(
@@ -186,6 +197,10 @@ def _launch_setup(context, *args, **kwargs):
                 )
             )
 
+        # odom -> pelvis for the converged track. The source is /sportmodestate, which
+        # unitree_mujoco fills from framepos/framelinvel on the pelvis imu site, so it is
+        # exact MuJoCo state. base_height_m stays 0: unlike the planar sandbox, a walking
+        # robot's height is measured, not assumed.
         odometry_node = LifecycleNode(
             package="g1_state_estimation",
             executable="g1_odometry_publisher",
