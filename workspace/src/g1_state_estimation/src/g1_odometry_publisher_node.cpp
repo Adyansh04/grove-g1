@@ -157,7 +157,8 @@ G1OdometryPublisher::on_cleanup(const rclcpp_lifecycle::State&)
     low_state_sub_.reset();
     odom_pub_.reset();
     tf_broadcaster_.reset();
-    have_sample_ = false;
+    have_sample_      = false;
+    have_orientation_ = false;
     return CallbackReturn::SUCCESS;
 }
 
@@ -238,6 +239,18 @@ void G1OdometryPublisher::onSportModeState(const unitree_go::msg::SportModeState
     // framepos/framelinvel on the pelvis imu site, so this is exact MuJoCo state, not an
     // estimate. It is also why the hardware branch still refuses: the real G1 publishes the
     // hg variant of this message, which has none of these fields.
+    if (!std::isfinite(msg->position[0]) || !std::isfinite(msg->position[1]) ||
+        !std::isfinite(msg->position[2]))
+    {
+        // A diverged MuJoCo publishes NaN here, and tf2 drops NaN transforms silently, so
+        // the symptom would be a frame that simply stops existing.
+        RCLCPP_WARN_THROTTLE(
+            get_logger(),
+            steady_clock_,
+            5000,
+            "Discarding a non-finite position sample.");
+        return;
+    }
     pose_.x = msg->position[0];
     pose_.y = msg->position[1];
     pose_z_ = msg->position[2];
@@ -272,9 +285,17 @@ void G1OdometryPublisher::onLowState(const unitree_hg::msg::LowState::SharedPtr 
         return;
     }
 
-    orientation_      = q;
-    pose_.yaw         = quaternionToYaw(orientation_);
-    have_orientation_ = true;
+    // Normalise: norm^2 >= 0.5 admits 4.0 just as happily as 1.0, and an unnormalised
+    // quaternion on /tf is a scale error nothing downstream reports.
+    const double inv = 1.0 / std::sqrt(norm2);
+    orientation_.w   = q.w * inv;
+    orientation_.x   = q.x * inv;
+    orientation_.y   = q.y * inv;
+    orientation_.z   = q.z * inv;
+
+    pose_.yaw              = quaternionToYaw(orientation_);
+    have_orientation_      = true;
+    last_orientation_wall_ = std::chrono::steady_clock::now();
 }
 
 void G1OdometryPublisher::noteSample(const rclcpp::Time& stamp)
@@ -315,6 +336,27 @@ void G1OdometryPublisher::onTimer()
     // Sim time alone cannot see a wedged simulator: /clock comes from the same process as
     // the base state, so it freezes too and `elapsed` stays at zero. Hence the wall budget.
     const double elapsed = (now() - last_sample_stamp_).seconds();
+    if (source_ == OdometrySource::SimSportModeState)
+    {
+        const double orientation_age =
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - last_orientation_wall_)
+                .count();
+        if (isStale(orientation_age, wall_timeout_s_))
+        {
+            RCLCPP_WARN_THROTTLE(
+                get_logger(),
+                steady_clock_,
+                2000,
+                "Orientation has not advanced for %.3f s (limit %.3f); stopped publishing "
+                "%s -> %s. Position alone would be a frozen attitude under a fresh stamp.",
+                orientation_age,
+                wall_timeout_s_,
+                odom_frame_id_.c_str(),
+                base_frame_id_.c_str());
+            return;
+        }
+    }
+
     const double wall_elapsed =
         std::chrono::duration<double>(std::chrono::steady_clock::now() - last_advance_wall_).count();
     if (isStale(elapsed, source_timeout_s_) || isStale(wall_elapsed, wall_timeout_s_))

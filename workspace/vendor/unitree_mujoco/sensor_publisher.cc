@@ -272,8 +272,8 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
         return;
     }
 
-    mjModel*  m        = *model;
-    const int torso_id = mj_name2id(m, mjOBJ_BODY, "torso_link");
+    mjModel* m        = *model;
+    int      torso_id = mj_name2id(m, mjOBJ_BODY, "torso_link");
     if (torso_id < 0) {
         std::fprintf(stderr, "[grove_g1] no torso_link in the model; sensors DISABLED\n");
         return;
@@ -320,8 +320,13 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
     const auto period = std::chrono::duration<double>(1.0 / cfg.rate_hz);
     auto       next   = std::chrono::steady_clock::now();
 
+    bool reload_pending = false;
     while (state().running.load(std::memory_order_relaxed)) {
         next += std::chrono::duration_cast<std::chrono::steady_clock::duration>(period);
+        // If a sweep overruns its period, sleep_until returns immediately forever and the
+        // loop free-runs, taking sim_mtx as fast as it can. Resolution is configurable, so
+        // that is reachable rather than theoretical.
+        next = std::max(next, std::chrono::steady_clock::now());
 
         // Snapshot under the lock, raycast outside it. Holding the lock across a ~32 ms
         // sweep would stall physics exactly as badly as running inline.
@@ -339,12 +344,39 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
             // mj_ray only reads geom poses, and everything this sweep can hit is a
             // primitive (the scene's boxes and plane), so no mesh BVH is involved. Two
             // arrays is both correct and far cheaper than a full mjData.
-            const mjData* live = *data;
-            std::memcpy(snapshot->geom_xpos, live->geom_xpos, sizeof(mjtNum) * 3 * m->ngeom);
-            std::memcpy(snapshot->geom_xmat, live->geom_xmat, sizeof(mjtNum) * 9 * m->ngeom);
-            sim_time = live->time;
-            std::memcpy(torso_pos, live->xpos + 3 * torso_id, sizeof(torso_pos));
-            std::memcpy(torso_mat, live->xmat + 9 * torso_id, sizeof(torso_mat));
+            // The viewer's Reload button and drag-and-drop both replace the model and
+            // free the old one (main.cc reassigns m/d). A latched pointer would dangle,
+            // and the memcpy below would size itself from a freed model's ngeom.
+            if (*model != m) {
+                reload_pending = true;
+            } else {
+                const mjData* live = *data;
+                std::memcpy(
+                    snapshot->geom_xpos, live->geom_xpos, sizeof(mjtNum) * 3 * m->ngeom);
+                std::memcpy(
+                    snapshot->geom_xmat, live->geom_xmat, sizeof(mjtNum) * 9 * m->ngeom);
+                sim_time = live->time;
+                std::memcpy(torso_pos, live->xpos + 3 * torso_id, sizeof(torso_pos));
+                std::memcpy(torso_mat, live->xmat + 9 * torso_id, sizeof(torso_mat));
+            }
+        }
+
+        // Rebuilt outside the lock: mj_makeData allocates, and physics must not wait on it.
+        if (reload_pending) {
+            reload_pending = false;
+            mj_deleteData(snapshot);
+            m        = *model;
+            snapshot = mj_makeData(m);
+            torso_id = mj_name2id(m, mjOBJ_BODY, "torso_link");
+            std::fprintf(stderr, "[grove_g1] model reloaded; sensor snapshot rebuilt\n");
+            if (torso_id < 0) {
+                std::fprintf(
+                    stderr, "[grove_g1] reloaded model has no torso_link; sensors DISABLED\n");
+                mj_deleteData(snapshot);
+                return;
+            }
+            std::this_thread::sleep_until(next);
+            continue;
         }
         const double lock_ms =
             std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - lock_start)

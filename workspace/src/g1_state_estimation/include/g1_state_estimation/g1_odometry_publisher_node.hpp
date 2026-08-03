@@ -86,10 +86,15 @@ private:
     Quaternion orientation_;
     /// Set once a usable orientation has arrived. Until then nothing is published:
     /// an unusable quaternion must not reach TF (see onLowState).
-    bool         have_orientation_ = false;
-    PlanarTwist  world_twist_;
-    bool         have_sample_ = false;
-    rclcpp::Time last_sample_stamp_;
+    bool have_orientation_ = false;
+    /// Wall time the orientation last changed. Position and orientation come from separate
+    /// topics, so one can die while the other keeps flowing; without this the node would
+    /// publish a frozen orientation under a fresh stamp, which is the exact failure this
+    /// publisher exists to refuse.
+    std::chrono::steady_clock::time_point last_orientation_wall_{};
+    PlanarTwist                           world_twist_;
+    bool                                  have_sample_ = false;
+    rclcpp::Time                          last_sample_stamp_;
     /// Wall time at which the sample stamp last changed.
     std::chrono::steady_clock::time_point last_advance_wall_{};
     /// Throttling clock for the staleness warnings; the ROS clock freezes with the sim.
