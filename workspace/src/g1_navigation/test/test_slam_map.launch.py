@@ -8,6 +8,7 @@ about it. What this checks is the SLAM wiring and the resulting geometry, not ex
 Pinned pelvis for the same reason as test_lidar_geometry.
 """
 
+import json
 import os
 import time
 import unittest
@@ -57,12 +58,16 @@ def generate_test_description():
     )
     slam = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(nav_share, "launch", "slam.launch.py")),
+        # The shipped config keyframes on travel and a pinned robot never travels, so
+        # slam_toolbox would integrate one scan and stop. min_pass_through: 2 then marks nothing
+        # occupied, giving a map with the right extents and no walls in it. Overridden rather
+        # than copied so every other value still comes from the config that ships.
         launch_arguments={
-            # The shipped config gates on travel, and a pinned robot never travels. See the
-            # header of the override for what that does to the map.
-            "params_file": os.path.join(
-                os.path.dirname(__file__), "slam_mapping_stationary.yaml"
-            ),
+            "params_overrides": json.dumps({
+                "minimum_travel_distance": 0.0,
+                "minimum_travel_heading": 0.0,
+                "map_update_interval": 1.0,
+            })
         }.items(),
     )
     return (

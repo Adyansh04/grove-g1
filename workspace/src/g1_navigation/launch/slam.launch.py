@@ -7,6 +7,7 @@ against 130 KB for the grid -- see maps/README.md.
 Does not include the scan pipeline; scan.launch.py does, and both modes need it.
 """
 
+import json
 import os
 
 from ament_index_python.packages import get_package_share_directory
@@ -17,18 +18,29 @@ from launch_ros.actions import Node
 
 
 def _setup(context, *args, **kwargs):
-    params_file = LaunchConfiguration("params_file").perform(context)
-    if not params_file:
-        params_file = os.path.join(
-            get_package_share_directory("g1_navigation"), "config", "slam_mapping.yaml"
-        )
+    raw = LaunchConfiguration("params_overrides").perform(context)
+    try:
+        overrides = json.loads(raw)
+    except json.JSONDecodeError as error:
+        raise RuntimeError(f"params_overrides is not valid JSON: {raw!r}") from error
+    if not isinstance(overrides, dict):
+        raise RuntimeError(f"params_overrides must be a JSON object, got {type(overrides).__name__}")
+
+    # Later entries win, so the shipped config stays the single source of every value the
+    # caller did not name -- which is the point. A whole replacement file would drift.
+    parameters = [
+        os.path.join(get_package_share_directory("g1_navigation"), "config", "slam_mapping.yaml")
+    ]
+    if overrides:
+        parameters.append(overrides)
+
     return [
         Node(
             package="slam_toolbox",
             executable="async_slam_toolbox_node",
             name="slam_toolbox",
             output="both",
-            parameters=[params_file],
+            parameters=parameters,
         ),
     ]
 
@@ -36,10 +48,11 @@ def _setup(context, *args, **kwargs):
 def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument(
-            "params_file",
-            default_value="",
-            description="Override config/slam_mapping.yaml. Empty uses the shipped one. "
-            "Same escape hatch slam_toolbox's own launch files offer.",
+            "params_overrides",
+            default_value="{}",
+            description="JSON object merged over config/slam_mapping.yaml, e.g. "
+            "'{\"minimum_travel_distance\": 0.0}'. For the handful of values a test or a "
+            "tuning run needs to change without copying the whole file.",
         ),
         OpaqueFunction(function=_setup),
     ])
