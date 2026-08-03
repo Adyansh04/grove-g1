@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <algorithm>
 #include <cstring>
 #include <string>
 #include <thread>
@@ -316,9 +317,10 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
 
         // Snapshot under the lock, raycast outside it. Holding the lock across a ~32 ms
         // sweep would stall physics exactly as badly as running inline.
-        double sim_time = 0.0;
-        double torso_pos[3];
-        double torso_mat[9];
+        double     sim_time = 0.0;
+        double     torso_pos[3];
+        double     torso_mat[9];
+        const auto lock_start = std::chrono::steady_clock::now();
         {
             std::lock_guard<std::recursive_mutex> lock(*sim_mtx);
             mj_copyData(snapshot, m, *data);
@@ -326,6 +328,9 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
             std::memcpy(torso_pos, snapshot->xpos + 3 * torso_id, sizeof(torso_pos));
             std::memcpy(torso_mat, snapshot->xmat + 9 * torso_id, sizeof(torso_mat));
         }
+        const double lock_ms =
+            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - lock_start)
+                .count();
 
         // A snapshot taken before MuJoCo has run kinematics has an all-zero xmat, and
         // mj_ray aborts the whole process on a zero-length direction ("vector length is too
@@ -385,6 +390,21 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
         std::memcpy(header.sensor_pos, origin, sizeof(origin));
         matrixToQuat(R_sensor, header.sensor_quat);
         header.point_count = static_cast<uint32_t>(n_rays);
+
+        // The snapshot is the only thing that contends with physics, so its cost is the
+        // number that matters; the ~32 ms sweep below it runs off-lock. Reported rarely
+        // rather than never: if mj_copyData ever grows, this is where it shows up.
+        {
+            static int    cycles     = 0;
+            static double lock_worst = 0.0;
+            lock_worst               = std::max(lock_worst, lock_ms);
+            if (++cycles % 300 == 0) {
+                std::fprintf(
+                    stderr, "[grove_g1] snapshot lock: worst %.3f ms over %d cycles\n", lock_worst,
+                    cycles);
+                lock_worst = 0.0;
+            }
+        }
 
         relay.send(header, points.data(), points.size() * sizeof(float));
 
