@@ -57,6 +57,13 @@ public:
         depth_pub_ = create_publisher<sensor_msgs::msg::Image>(
             declare_parameter<std::string>("depth_topic", "/camera/aligned_depth_to_color/image_raw"),
             rclcpp::SensorDataQoS());
+        // Same intrinsics, second namespace: rviz's DepthCloud looks for camera_info
+        // beside the depth image, and a real D435i with align_depth publishes both.
+        depth_info_pub_ = create_publisher<sensor_msgs::msg::CameraInfo>(
+            declare_parameter<std::string>(
+                "depth_info_topic",
+                "/camera/aligned_depth_to_color/camera_info"),
+            rclcpp::SensorDataQoS());
         info_pub_ = create_publisher<sensor_msgs::msg::CameraInfo>(
             declare_parameter<std::string>("info_topic", "/camera/color/camera_info"),
             rclcpp::SensorDataQoS());
@@ -232,6 +239,7 @@ private:
 
         depth_pub_->publish(std::move(img));
         info_pub_->publish(info);
+        depth_info_pub_->publish(info);
     }
 
     void publish(const CloudFrame& frame)
@@ -295,6 +303,7 @@ private:
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pose_pub_;
     rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr         depth_pub_;
     rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr    info_pub_;
+    rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr    depth_info_pub_;
     rclcpp::TimerBase::SharedPtr                                  timer_;
 };
 

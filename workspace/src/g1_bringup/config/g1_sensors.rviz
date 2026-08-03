@@ -6,6 +6,7 @@ Panels:
     Property Tree Widget:
       Expanded:
         - /LiDAR1
+        - /Depth cloud1
       Splitter Ratio: 0.5
     Tree Height: 700
   - Class: rviz_common/Views
@@ -64,6 +65,42 @@ Visualization Manager:
       Axis: Z
       Autocompute Intensity Bounds: true
       Invert Rainbow: false
+
+    # Depth as a 3D cloud, projected through camera_info. This is the camera's own view
+    # of the world, so it should overlap the LiDAR returns where the two see the same
+    # surfaces; if it floats away from them, the mount or the depth scale is wrong.
+    - Class: rviz_default_plugins/DepthCloud
+      Name: Depth cloud
+      Enabled: true
+      Topic Filter: false
+      Depth Map Topic: /camera/aligned_depth_to_color/image_raw
+      Depth Map Transport Hint: raw
+      Color Transport Hint: raw
+      Queue Size: 5
+      Style: Points
+      Size (Pixels): 3
+      Alpha: 1
+      Decay Time: 0
+      Color Transformer: AxisColor
+      Axis: Z
+      Occlusion Compensation:
+        Occlusion Time-Out: 30
+        Enabled: false
+
+    # The same data as a 2D panel, which is the quickest way to see that the camera is
+    # pointed where you think and is not returning a blank frame.
+    - Class: rviz_default_plugins/Image
+      Name: Depth image
+      Enabled: true
+      Topic:
+        Value: /camera/aligned_depth_to_color/image_raw
+        Depth: 5
+        Durability Policy: Volatile
+        Reliability Policy: Best Effort
+      Max Value: 4
+      Min Value: 0.5
+      Median window: 5
+      Normalize Range: false
 
     - Class: rviz_default_plugins/Odometry
       Name: Odometry
