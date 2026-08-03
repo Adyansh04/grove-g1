@@ -1,86 +1,9 @@
 <mujoco model="g1_perception_pinned_scene">
-  <!-- Perception scene with the pelvis welded. The sensor geometry tests need the robot
-       at a known pose: a free-standing G1 that has drifted or fallen still produces a valid
-       cloud, just not one whose numbers can be asserted against the room.
-
-       Walking scene with known geometry for the sensor track. Same bare floor as
-       g1_flat_scene, plus a room the LiDAR can measure against: every sensor assertion is
-       a geometric fact of this file rather than a check that data arrived.
-
-       Every geom here is group 2. The LiDAR sweep masks to that group, because the Mid360's
-       mount point sits inside the torso's own collision geom: without the mask every ray
-       returns the robot's own shell at 6 cm and nothing else is ever visible.
-       Group 2 specifically: the robot occupies groups 0 and 1, and MuJoCo's viewer
-       renders only 0-2, so anything in group 3 is physically present but invisible.
-
-       No sensor site here on purpose. The sweep takes torso_link's live
-       pose from mjData and applies the mount offset from config, so the robot model needs
-       no modification and g1_29dof.xml stays vendored-verbatim.
-
-       Staged into the vendored model directory at launch time so MuJoCo's relative meshdir
-       and include paths resolve. -->
-  <include file="g1_29dof.xml"/>
-
-  <statistic center="0 0 0.5" extent="2.0"/>
-
-  <visual>
-    <headlight diffuse="0.6 0.6 0.6" ambient="0.3 0.3 0.3" specular="0 0 0"/>
-    <rgba haze="0.15 0.25 0.35 1"/>
-    <global azimuth="-130" elevation="-20" offwidth="1280" offheight="720"/>
-  </visual>
-
-  <asset>
-    <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512"
-      height="3072"/>
-    <texture type="2d" name="groundplane" builtin="checker" mark="edge" rgb1="0.2 0.3 0.4"
-      rgb2="0.1 0.2 0.3" markrgb="0.8 0.8 0.8" width="300" height="300"/>
-    <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5"
-      reflectance="0.2"/>
-    <material name="wall" rgba="0.75 0.75 0.72 1"/>
-    <material name="obstacle" rgba="0.8 0.4 0.3 1"/>
-    <!-- Saturated green appears nowhere else here: the floor is blue-grey, walls grey,
-         obstacles red. That makes "is the colour stream showing the right thing at the
-         right place" a threshold on one channel rather than a judgement call. -->
-    <material name="color_target" rgba="0 0.9 0.1 1"/>
-  </asset>
-
-  <worldbody>
-    <light pos="0 0 1.5" dir="0 0 -1" directional="true"/>
-    <geom name="floor" group="2" size="0 0 0.05" type="plane" material="groundplane"/>
-
-    <!-- 8 x 8 m room, inner wall faces at +/-4.0 m. The y walls run to +/-4.1 in x so the
-         corners are closed; at 4.0 the four boxes meet along an edge and leave a gap. -->
-    <geom name="wall_px" group="2" type="box" size="0.05 4.0 1.25" pos="4.05 0 1.25" material="wall"/>
-    <geom name="wall_nx" group="2" type="box" size="0.05 4.0 1.25" pos="-4.05 0 1.25" material="wall"/>
-    <geom name="wall_py" group="2" type="box" size="4.1 0.05 1.25" pos="0 4.05 1.25" material="wall"/>
-    <geom name="wall_ny" group="2" type="box" size="4.1 0.05 1.25" pos="0 -4.05 1.25" material="wall"/>
-
-    <!-- Kept clear of the robot's spawn and of the +x teleop path the walking tests drive,
-         so adding them cannot change a locomotion result. -->
-    <geom name="obstacle_box" group="2" type="box" size="0.3 0.3 0.5" pos="2.0 1.6 0.5"
-          material="obstacle"/>
-    <!-- Colour-check target. The camera is pitched 47.6 deg down, so its centre ray meets
-         the floor about 1.21 m ahead; this sits at that range but 0.35 m to the robot's
-         left, which puts it well inside the frame while leaving the centre pixel on bare
-         floor for the depth check to keep using. -->
-    <geom name="color_target" group="2" type="box" size="0.05 0.05 0.05" pos="1.21 0.35 0.05"
-      material="color_target"/>
-
-    <geom name="obstacle_cyl" group="2" type="cylinder" size="0.25 0.75" pos="-1.5 -2.0 0.75"
-          material="obstacle"/>
-
-    <!-- D435i intrinsics only. Its pose here is a placeholder: the sensor thread writes
-         cam_xpos/cam_xmat into its own snapshot every frame from torso_link's live pose,
-         because the mount belongs to the vendored robot and cannot host a camera element. -->
-    <camera name="d435i" mode="fixed" fovy="58" resolution="848 480" pos="0 0 1"/>
-  </worldbody>
+  <!-- torso_link and not pelvis: the waist stays free and pitches the torso ~34 degrees,
+       which moves the sensor mounts the geometry checks measure against. -->
+  <include file="g1_perception_scene.staged.xml"/>
 
   <equality>
-    <!-- torso_link, not pelvis. Pinning the pelvis still leaves the waist free, and the
-         walking policy drives it: the torso pitches tens of degrees, which swings the
-         Mid360 with it and points the whole sweep at the floor. Welding the torso fixes
-         the sensor pose outright, which is the entire point of a geometry fixture. -->
     <weld name="torso_world_pin" body1="torso_link"/>
   </equality>
-
 </mujoco>

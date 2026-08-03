@@ -18,7 +18,6 @@
   <depend>unitree_hg</depend>
   <depend>unitree_api</depend>
   <depend>g1_hardware_interface</depend>
-  <depend>nlohmann-json-dev</depend>
   <depend>ament_index_cpp</depend>
   <depend>unitree_go</depend>
 

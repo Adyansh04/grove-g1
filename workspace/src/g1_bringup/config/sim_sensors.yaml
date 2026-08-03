@@ -22,4 +22,3 @@ socket_path: "/tmp/g1_sensors.sock"
 # 11.5 ms with colour, of which only ~0.04 ms holds the sim lock; the rest is the render and
 # the socket write, both off-lock.
 camera_enabled: true
-camera_color: true
