@@ -271,8 +271,28 @@ launch) instead of the sim contorting to match a default. Same guarantee at the 
 launch rather than in the model.
 
 **What is not validated here:** the Mid360's non-repetitive scan pattern (this is a uniform
-azimuth/elevation grid), intensity, per-point timestamps, noise, dropout and motion distortion. The
-depth camera is **not** on this track yet, see the milestone notes.
+azimuth/elevation grid), intensity, per-point timestamps, noise, dropout and motion distortion.
+
+### D435i
+
+Depth and colour come from **one** `mjr_render` of the `d435i` fixed camera, so they share a pose,
+a timestamp and intrinsics by construction. A real D435i only gets that alignment from its
+`align_depth_to_color` step, which is why the depth topic is named as if it had run.
+
+| Topic | Type | Notes |
+|---|---|---|
+| `/camera/aligned_depth_to_color/image_raw` | `Image` `32FC1` | metres; misses are NaN, not 0 |
+| `/camera/color/image_raw` | `Image` `rgb8` | |
+| `/camera/aligned_depth_to_color/camera_info`, `/camera/color/camera_info` | `CameraInfo` | same intrinsics; `fovy` is carried in the frame so they cannot drift from the MJCF |
+
+Published in `camera_depth_optical_frame` / `camera_color_optical_frame`, the REP-145 optical frames
+added by `g1_description`. **Not `d435_link`:** that is a body frame (x forward, y left, z up) and
+every depth consumer assumes the optical convention (z forward, x right, y down), so publishing in
+the link projects the cloud rotated 90 degrees.
+
+**What is not validated here:** depth noise, stereo dropout on textureless surfaces, IR projector
+behaviour, auto-exposure and colour response. One MuJoCo camera carries one set of intrinsics, so
+the colour stream matches the *depth* FOV rather than a real D435i's wider colour FOV.
 
 ## Pelvis pin: debugging aid
 
