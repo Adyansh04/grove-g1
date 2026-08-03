@@ -273,6 +273,26 @@ launch rather than in the model.
 **What is not validated here:** the Mid360's non-repetitive scan pattern (this is a uniform
 azimuth/elevation grid), intensity, per-point timestamps, noise, dropout and motion distortion.
 
+### Known limitation: the viewer's Reload button is fatal with `sensors:=true`
+
+**Clicking Reload (or dragging a model onto the window) while sensors are running kills the
+simulator with SIGSEGV. Relaunch instead.** Drag-and-drop takes the same code path and is
+equally unsafe.
+
+The sampler reads the model outside `sim.mtx` on purpose: a ~4.5 ms render or ~32 ms sweep
+under the lock would stall physics. The reload path frees the model on the main thread, so
+no lock-based check can make it safe. The reload hook therefore stops the sampler with a
+blocking join before `mj_deleteModel` and never restarts it, logging `SENSORS DISABLED`.
+That much is verified: the first reload after launch is survivable and stops sensors
+cleanly.
+
+**A second reload still crashes**, after the sampler is already stopped and none of this
+code runs. The cause was not identified. Restarting the sampler against the new model was
+tried and also faulted intermittently, so it was removed rather than shipped.
+
+Accepted rather than fixed: Reload is a debugging-only button, the workaround is to
+relaunch, and sensors do not survive a reload either way.
+
 ### D435i
 
 Depth and colour come from **one** `mjr_render` of the `d435i` fixed camera, so they share a pose,
