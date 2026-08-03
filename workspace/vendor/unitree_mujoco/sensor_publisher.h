@@ -32,8 +32,6 @@ namespace grove_g1
 // holding the lock for that would stall physics exactly as badly as running inline.
 void StartSensorPublisher(mjModel** model, mjData** data, std::recursive_mutex* sim_mtx);
 
-// Signals the sensor thread to finish and joins it. Safe if never started.
-void StopSensorPublisher();
 
 }  // namespace grove_g1
 

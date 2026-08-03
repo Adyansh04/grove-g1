@@ -136,6 +136,8 @@ G1OdometryPublisher::on_configure(const rclcpp_lifecycle::State&)
             std::bind(&G1OdometryPublisher::onBaseState, this, std::placeholders::_1));
     }
 
+    source_topic_ =
+        sport_state_sub_ ? sport_state_sub_->get_topic_name() : base_state_sub_->get_topic_name();
     RCLCPP_INFO(
         get_logger(),
         "Configured on sim ground truth: %s -> %s from %s. This is exact MuJoCo state, not an "

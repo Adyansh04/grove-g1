@@ -12,6 +12,7 @@
 #include <cstdlib>
 #include <algorithm>
 #include <cstring>
+#include <limits>
 #include <string>
 #include <thread>
 #include <vector>
@@ -185,10 +186,13 @@ public:
             logThrottled("relay not connected; dropping frame", connect_log_);
             return;
         }
-        if (!sendAll(&header, sizeof(header))) {
+        if (!sendAll(&header, sizeof(header), /*frame_started=*/false)) {
             return;
         }
-        sendAll(payload, payload_bytes);
+        // Mid-frame now: dropping the body would leave a header with no payload, and the
+        // relay would read the next frame's bytes as this one's points, validate them, and
+        // publish a self-consistent cloud of garbage.
+        sendAll(payload, payload_bytes, /*frame_started=*/true);
     }
 
 private:
@@ -214,7 +218,7 @@ private:
 
     // All-or-nothing by policy. A partial write desynchronises the length-prefixed stream,
     // and resynchronising is not worth the code, so the connection is dropped and remade.
-    bool sendAll(const void* buf, std::size_t bytes)
+    bool sendAll(const void* buf, std::size_t bytes, bool frame_started)
     {
         const char* p    = static_cast<const char*>(buf);
         std::size_t sent = 0;
@@ -227,7 +231,8 @@ private:
                 continue;
             }
             if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
-                if (sent == 0) {
+                if (sent == 0 && !frame_started) {
+                    // None of this frame is on the wire yet, so dropping it is clean.
                     logThrottled("relay slow; dropping frame", slow_log_);
                     return false;
                 }
@@ -350,7 +355,11 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
         // small"). Skip the cycle rather than hand it one.
         const double row0 = torso_mat[0] * torso_mat[0] + torso_mat[1] * torso_mat[1] +
                             torso_mat[2] * torso_mat[2];
-        if (row0 < 0.5) {
+        // !isfinite first: NaN fails every comparison, so `row0 < 0.5` alone lets a diverged
+        // pose through and mj_ray answers a zero-length direction with mju_error, which
+        // aborts the simulator rather than returning.
+        if (!std::isfinite(row0) || row0 < 0.5 || !std::isfinite(torso_pos[0]) ||
+            !std::isfinite(torso_pos[1]) || !std::isfinite(torso_pos[2])) {
             std::this_thread::sleep_until(next);
             continue;
         }
@@ -385,13 +394,18 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
             // flg_static=1 so the world-body walls and floor are hit at all. geomgroup
             // restricts returns to the scene, keeping the robot from occluding itself.
             double dist = mj_ray(m, snapshot, origin, world_dir, geomgroup, 1, -1, &geomid[i]);
-            if (dist < cfg.range_min || dist > cfg.range_max) {
-                dist = 0.0;  // no return
-            }
             const std::size_t o = static_cast<std::size_t>(i) * 3;
-            points[o + 0]       = static_cast<float>(d[0] * dist);
-            points[o + 1]       = static_cast<float>(d[1] * dist);
-            points[o + 2]       = static_cast<float>(d[2] * dist);
+            if (dist < cfg.range_min || dist > cfg.range_max) {
+                // NaN, not (0,0,0). Zero is a valid point AT the sensor, and every filter
+                // that honours is_dense=false keeps it: thousands of phantom returns
+                // stacked on the robot, straight into a costmap.
+                points[o + 0] = points[o + 1] = points[o + 2] =
+                    std::numeric_limits<float>::quiet_NaN();
+                continue;
+            }
+            points[o + 0] = static_cast<float>(d[0] * dist);
+            points[o + 1] = static_cast<float>(d[1] * dist);
+            points[o + 2] = static_cast<float>(d[2] * dist);
         }
 
         SensorFrameHeader header{};
@@ -439,14 +453,5 @@ void StartSensorPublisher(mjModel** model, mjData** data, std::recursive_mutex* 
     state().thread = std::thread(sensorLoop, cfg, model, data, sim_mtx);
 }
 
-void StopSensorPublisher()
-{
-    if (!state().running.exchange(false)) {
-        return;
-    }
-    if (state().thread.joinable()) {
-        state().thread.join();
-    }
-}
 
 }  // namespace grove_g1
