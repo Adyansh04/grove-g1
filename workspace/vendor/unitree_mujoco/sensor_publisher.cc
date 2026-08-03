@@ -228,9 +228,16 @@ private:
             ::close(fd);
             return false;
         }
-        // Depth frames are ~1.6 MB; the default buffer would force a retry on every one.
+        // A depth+colour frame is ~2.9 MB, which the default buffer cannot hold, so every
+        // frame would otherwise dribble out across the relay's poll wakeups.
+        // SO_SNDBUFFORCE first: plain SO_SNDBUF is silently clamped to 2*net.core.wmem_max
+        // (~416 KB here), which is not enough and gives no error to notice. FORCE needs
+        // CAP_NET_ADMIN, which the dev container has; the plain call is the fallback for
+        // anywhere it does not, and the retry loop below still covers that case.
         const int snd = 4 * 1024 * 1024;
-        ::setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &snd, sizeof(snd));
+        if (::setsockopt(fd, SOL_SOCKET, SO_SNDBUFFORCE, &snd, sizeof(snd)) != 0) {
+            ::setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &snd, sizeof(snd));
+        }
 
         fd_ = fd;
         std::fprintf(stderr, "[grove_g1] connected to relay at %s\n", path_.c_str());
@@ -243,11 +250,13 @@ private:
     {
         const char* p        = static_cast<const char*>(buf);
         std::size_t sent     = 0;
-        // 20 ms covered a 1.6 MB depth frame but not the 2.9 MB depth+colour one: the
-        // receiver drains roughly a socket buffer per wakeup, so the budget has to cover
-        // enough of its wakeups to move the whole payload. Still well inside the 100 ms
-        // frame period, and this waits off the sim lock, so overrunning it costs nothing
-        // on the physics side.
+        // Per send, not per frame: a frame is a header plus a body, and a cycle sends both
+        // a depth and a LiDAR frame, so a fully stalled relay can hold this thread for four
+        // times this budget. That is survivable because it waits off the sim lock (every
+        // relay.send call is outside the lock_guard scopes) and the loop re-anchors its
+        // schedule afterwards -- physics is never delayed, only the sensor rate drops.
+        // With SO_SNDBUFFORCE above this should not trigger at all; it is the fallback for
+        // an unprivileged container where the buffer stays clamped.
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(80);
         while (sent < bytes) {
             // MSG_NOSIGNAL is load-bearing: without it a vanished relay raises SIGPIPE and
@@ -263,7 +272,7 @@ private:
                     logThrottled("relay slow; dropping frame", slow_log_);
                     return false;
                 }
-                // A depth frame is ~1.6 MB and will not fit the socket buffer in one go, so
+                // A depth+colour frame is ~2.9 MB and may not fit the socket buffer in one go, so
                 // EAGAIN mid-frame is normal rather than a fault. Wait briefly for the relay
                 // to drain. This is off the sim lock, so it delays only this thread, never
                 // physics; past the deadline the frame is abandoned and the connection reset
@@ -319,7 +328,7 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
     rpyToMatrix(cfg.mount_rpy, R_mount);
     double R_cam_mount[9];
     rpyToMatrix(cfg.cam_rpy, R_cam_mount);
-    const int cam_id = mj_name2id(m, mjOBJ_CAMERA, "d435i");
+    int cam_id = mj_name2id(m, mjOBJ_CAMERA, "d435i");
 
     mjtByte geomgroup[mjNGROUP] = {0};
     if (cfg.scene_geom_group >= 0 && cfg.scene_geom_group < mjNGROUP) {
@@ -353,7 +362,7 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
     mjData*     snapshot = mj_makeData(m);
     RelaySocket relay(cfg.socket_path);
 
-    // S3 spike scaffolding. Its own GL context on this thread: measured safe alongside the
+    // offscreen render state. Its own GL context on this thread: measured safe alongside the
     // viewer's, and glfwCreateWindow off the main thread works here despite the docs.
     mjvScene    cam_scn;
     mjrContext  cam_con;
@@ -446,6 +455,18 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
             snapshot = mj_makeData(m);
             torso_id = mj_name2id(m, mjOBJ_BODY, "torso_link");
             std::fprintf(stderr, "[grove_g1] model reloaded; sensor snapshot rebuilt\n");
+            // cam_scn and cam_con were built against the old model: their mesh and texture
+            // ids index freed arrays, and cam_id indexes the old model's camera list, so
+            // the memcpy into snapshot->cam_xpos would run off the new (possibly smaller)
+            // one. Rebuilding both is more code than a debugging-only Reload deserves, so
+            // the camera stops and the LiDAR carries on.
+            if (cam_win != nullptr) {
+                cam_win = nullptr;
+                cam_id  = -1;
+                std::fprintf(
+                    stderr,
+                    "[grove_g1] camera DISABLED after model reload; restart the sim for it\n");
+            }
             if (torso_id < 0) {
                 std::fprintf(
                     stderr, "[grove_g1] reloaded model has no torso_link; sensors DISABLED\n");
@@ -542,7 +563,7 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
             }
         }
 
-        if (cam_win != nullptr && cam_id >= 0) {
+        if (cam_win != nullptr && cam_id >= 0 && !reload_pending) {
             // Transform arrays only, never mj_copyData: the copy is what MuJoCo refuses
             // when the live stack is in use, and refusing aborts the process (S3, test A).
             const auto cam_t0 = std::chrono::steady_clock::now();
@@ -550,7 +571,14 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
             double     cam_torso_mat[9];
             {
                 std::lock_guard<std::recursive_mutex> lock(*sim_mtx);
-                const mjData* live = *data;
+                // Re-checked here, not inherited from the sweep above: that lock was
+                // released in between, and a reload landing in the gap would size these
+                // copies from the old model against the new mjData.
+                if (*model != m) {
+                    reload_pending = true;
+                }
+                const mjData* live = reload_pending ? nullptr : *data;
+                if (live != nullptr) {
                 std::memcpy(snapshot->xpos, live->xpos, sizeof(mjtNum) * 3 * m->nbody);
                 std::memcpy(snapshot->xquat, live->xquat, sizeof(mjtNum) * 4 * m->nbody);
                 std::memcpy(snapshot->xmat, live->xmat, sizeof(mjtNum) * 9 * m->nbody);
@@ -568,6 +596,7 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
                 }
                 std::memcpy(cam_torso_pos, live->xpos + 3 * torso_id, sizeof(cam_torso_pos));
                 std::memcpy(cam_torso_mat, live->xmat + 9 * torso_id, sizeof(cam_torso_mat));
+                }
             }
             const auto cam_t1 = std::chrono::steady_clock::now();
 
