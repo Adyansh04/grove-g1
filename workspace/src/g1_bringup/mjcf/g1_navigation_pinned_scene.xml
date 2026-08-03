@@ -1,9 +1,6 @@
 <mujoco model="g1_navigation_pinned_scene">
-  <!-- The navigation scene with torso_link welded to the world. Overlay rather than a copy:
-       the two used to be near-identical files that drifted independently, and the pinned
-       one is only ever "the base scene, held still" for the geometry checks.
-       torso_link and not pelvis: the waist stays free and pitches the torso ~34 degrees,
-       which moves the sensor mounts the checks measure against. -->
+  <!-- torso_link and not pelvis: the waist stays free and pitches the torso ~34 degrees,
+       which moves the sensor mounts the geometry checks measure against. -->
   <include file="g1_navigation_scene.staged.xml"/>
 
   <equality>
