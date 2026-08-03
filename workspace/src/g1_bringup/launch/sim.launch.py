@@ -143,11 +143,19 @@ def _launch_setup(context, *args, **kwargs):
         overlay_name = f"g1_{world}{suffix}_scene.xml"
     else:
         overlay_name = "g1_pinned_scene.xml" if pin_pelvis else "g1_flat_scene.xml"
+    mjcf_dir     = os.path.join(get_package_share_directory("g1_bringup"), "mjcf")
     staged_path  = os.path.join(G1_MODEL_DIR, STAGED_SCENE_NAME)
-    overlay_src  = os.path.join(
-        get_package_share_directory("g1_bringup"), "mjcf", overlay_name
-    )
-    shutil.copyfile(overlay_src, staged_path)
+    shutil.copyfile(os.path.join(mjcf_dir, overlay_name), staged_path)
+
+    # The pinned scenes are overlays that <include> their base, so the base has to be staged
+    # beside them under the name the overlay asks for. MuJoCo resolves includes relative to
+    # the staged file, not to the package share.
+    staged_bases = []
+    if sensors and pin_pelvis:
+        base_name   = f"g1_{world}_scene.staged.xml"
+        base_staged = os.path.join(G1_MODEL_DIR, base_name)
+        shutil.copyfile(os.path.join(mjcf_dir, f"g1_{world}_scene.xml"), base_staged)
+        staged_bases.append(base_staged)
     sim_cmd = [UNITREE_MUJOCO_BIN, "-r", "g1", "-s", STAGED_SCENE_NAME]
 
     # The patched unitree_mujoco starts its sensor thread only when this names a config,
@@ -252,6 +260,9 @@ def _launch_setup(context, *args, **kwargs):
     def _remove_staged_scene(context, *a, **k):
         try:
             os.remove(staged_path)
+            for base in staged_bases:
+                if os.path.exists(base):
+                    os.remove(base)
         except OSError:
             pass
         return []
