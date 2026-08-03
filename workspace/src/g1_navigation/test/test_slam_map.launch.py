@@ -58,7 +58,6 @@ def generate_test_description():
     slam = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(nav_share, "launch", "slam.launch.py")),
         launch_arguments={
-            "mode": "mapping",
             # The shipped config gates on travel, and a pinned robot never travels. See the
             # header of the override for what that does to the map.
             "params_file": os.path.join(

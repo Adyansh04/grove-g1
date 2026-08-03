@@ -3,9 +3,10 @@
 Shared by mapping and localization, which is why it is its own file rather than part of
 either. See config/scan.yaml for what every parameter is protecting against.
 
-Composed by default. AMCL is in the same container, so the 10 Hz scan reaches it
-intra-process; slam_toolbox is not (nav2_bringup leaves it out of the container too), so in
-mapping mode this buys nothing and costs nothing.
+Composed by default, into the same container as AMCL. That shares a process and gives each
+component its own executor; it is not zero-copy, because nothing here sets
+use_intra_process_comms and nav2_bringup does not either -- /map is transient-local, which
+Humble's intra-process path does not support.
 """
 
 import os

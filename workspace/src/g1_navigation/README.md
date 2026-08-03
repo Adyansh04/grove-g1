@@ -2,10 +2,13 @@
 
 SLAM Toolbox mapping and Nav2 navigation for the G1, on the converged `unitree_mujoco` track.
 
-Configuration, launch and maps only. Every node here is upstream — `pointcloud_to_laserscan`,
-`slam_toolbox`, Nav2 — and the two G1-specific nodes the stack needs (`g1_loco_authority` and
-`g1_gait_shaper`) live in `g1_locomotion`, so nothing Nav2-shaped leaks into the package that has
-to survive to hardware.
+Configuration, launch and maps only — every node here is upstream.
+
+**Mapping and localization only so far.** Nav2's planner and controller are not configured yet, and
+nothing here drives the robot: both launch tests pin the pelvis. Driving a navigation goal needs a
+node to acquire locomotion authority and one to shape Nav2's output onto the gait's usable velocity
+set, and both belong in `g1_locomotion` so nothing Nav2-shaped leaks into the package that has to
+survive to hardware.
 
 ## Running
 
@@ -21,10 +24,16 @@ against `maps/facility` — use that when a goal pose has to mean the same thing
 
 ## Composition
 
-The navigation nodes load into one `component_container_isolated` named `nav2_container`, so they
-talk intra-process. `nav_sim.launch.py` creates the container; the leaf launches load into it. Set
+The navigation nodes load into one `component_container_isolated` named `nav2_container`.
+`nav_sim.launch.py` creates the container; the leaf launches load into it. Set
 `use_composition:=false` for one process per node, which is what you want when a single node is
 crashing and you need to see which.
+
+This shares a process and gives each component its own executor. It is **not** zero-copy — nothing
+sets `use_intra_process_comms`, and neither does `nav2_bringup`, because `/map` is transient-local
+and Humble's intra-process path does not support that durability. With `mode:=mapping` the
+container currently hosts a single component; it earns its keep in PR B, when the costmaps,
+planner and controller join it.
 
 Structure follows `nav2_bringup`'s own launch files, including which nodes stay out:
 **slam_toolbox runs as a separate process** even though it ships a component. That is what
@@ -50,8 +59,10 @@ the floor about 1.2 m ahead. It is a manipulation and near-field sensor.
 Odometry on this track is **exact MuJoCo ground truth** — zero drift, zero noise, zero latency. That
 makes SLAM trivially easy here.
 
-Validated: frame topology, QoS wiring, scan geometry and flatten quality, that the plugins load and
-are configured coherently, and that the robot's achievable motion is enough to reach a goal.
+Validated: frame topology, QoS wiring, scan geometry and flatten quality, that slam_toolbox and
+AMCL come up and own `map -> odom`, and that the map matches the room. Whether the robot's
+achievable motion is enough to reach a navigation goal is **not** tested here — nothing in this
+package drives it yet.
 
 **Not** validated: loop closure under drift, scan-matching robustness, relocalization from a wrong
 initial pose, or any real odometry error model. Anything tuned against this is unvalidated on
@@ -62,8 +73,9 @@ hardware.
 **There is no `/clock`** — the simulator links no ROS. `use_sim_time` is false everywhere, and a
 ctest fails the build if any shipped config sets it true.
 
-**The ramp is mapped as an obstacle.** `slope_ramp`'s surface sits between 0.08 and 0.24 m, above the
-costmap's floor cut. That is the right answer for this gait, but it looks like a bug in RViz.
+**The ramp will map as an obstacle** once the costmaps exist: `slope_ramp`'s surface sits between
+0.08 and 0.24 m, above the floor cut a costmap needs to avoid painting the whole floor. That is the
+right answer for this gait, but it looks like a bug in RViz.
 
 **Mapped free space shows radial spokes at long range.** At 15 m adjacent 1-degree beams are 26 cm
 apart, so raytraced clearing fans out. Cosmetic; shortening the scan's `range_max` would trade real

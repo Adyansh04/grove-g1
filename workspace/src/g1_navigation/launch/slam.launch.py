@@ -1,7 +1,10 @@
-"""slam_toolbox, in whichever mode the caller asked for.
+"""slam_toolbox building a map, owning map -> odom while it does.
 
-Mapping builds a new map and owns map -> odom. Does not include the scan pipeline;
-scan.launch.py does, and every mode needs it.
+Mapping only. Localization went to map_server + AMCL (localization.launch.py) because
+slam_toolbox's own localization mode loads a serialized pose graph, which for this map is 33 MB
+against 130 KB for the grid -- see maps/README.md.
+
+Does not include the scan pipeline; scan.launch.py does, and both modes need it.
 """
 
 import os
@@ -12,30 +15,17 @@ from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
-# slam_toolbox ships a separate executable per mode rather than one node with a flag, so the
-# mode argument has to pick both the binary and the parameter file.
-MODES = {
-    "mapping": ("async_slam_toolbox_node", "slam_mapping.yaml"),
-}
-
 
 def _setup(context, *args, **kwargs):
-    mode = LaunchConfiguration("mode").perform(context)
-    if mode not in MODES:
-        raise RuntimeError(
-            f"mode:={mode!r} is not available. Known modes: {sorted(MODES)}."
-        )
-    executable, default_params = MODES[mode]
-    share = get_package_share_directory("g1_navigation")
-
     params_file = LaunchConfiguration("params_file").perform(context)
     if not params_file:
-        params_file = os.path.join(share, "config", default_params)
-
+        params_file = os.path.join(
+            get_package_share_directory("g1_navigation"), "config", "slam_mapping.yaml"
+        )
     return [
         Node(
             package="slam_toolbox",
-            executable=executable,
+            executable="async_slam_toolbox_node",
             name="slam_toolbox",
             output="both",
             parameters=[params_file],
@@ -46,14 +36,9 @@ def _setup(context, *args, **kwargs):
 def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument(
-            "mode",
-            default_value="mapping",
-            description="'mapping' builds a new map of the facility.",
-        ),
-        DeclareLaunchArgument(
             "params_file",
             default_value="",
-            description="Override the config for the chosen mode. Empty uses the shipped one. "
+            description="Override config/slam_mapping.yaml. Empty uses the shipped one. "
             "Same escape hatch slam_toolbox's own launch files offer.",
         ),
         OpaqueFunction(function=_setup),
