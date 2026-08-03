@@ -212,6 +212,24 @@ RUN mkdir -p /opt/mujoco_ros2_control_ws/src && \
 RUN printf '. /opt/mujoco_ros2_control_ws/install/setup.sh\n' \
       >> /etc/profile.d/99-grove-g1-env.sh
 
+# --- Milestone 6: SLAM + Nav2 -------------------------------------------------
+
+# navigation2, nav2-bringup and slam-toolbox already ship in the base image, so three of
+# these four are no-ops today. They are listed anyway: an undocumented base-image inclusion
+# is a dependency we neither declare nor control, and BASE_IMAGE_TAG_SUFFIX floats, so a
+# future base rebuild could drop them and the failure would surface as a missing launch file
+# rather than a missing package.
+#
+# pointcloud-to-laserscan is the one that is genuinely absent. slam_toolbox is a 2D scan
+# matcher and consumes LaserScan only, so flattening /livox/lidar is mandatory for mapping --
+# the Nav2 costmaps take the PointCloud2 directly and do not go through it.
+RUN apt-get update && apt-get install -y \
+        ros-humble-navigation2 \
+        ros-humble-nav2-bringup \
+        ros-humble-slam-toolbox \
+        ros-humble-pointcloud-to-laserscan \
+    && rm -rf /var/lib/apt/lists/*
+
 # Ensure default workspace exists (mounted from host: ./workspace -> /root/workspace)
 RUN mkdir -p /root/workspace/src
 RUN mkdir -p /root/data/

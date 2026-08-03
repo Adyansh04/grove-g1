@@ -3,7 +3,7 @@
 
 /**
  * @file g1_odometry_publisher_node.hpp
- * @brief LifecycleNode publishing odom -> base_link, from a source it names explicitly.
+ * @brief LifecycleNode publishing the odom -> base chain, from a source it names explicitly.
  */
 
 #include <chrono>
@@ -24,7 +24,7 @@ namespace g1_state_estimation
 {
 
 /**
- * @brief Publishes odom -> base_link and nav_msgs/Odometry from the configured source.
+ * @brief Publishes the odom -> base chain and nav_msgs/Odometry from the configured source.
  *
  * Lifecycle rather than a plain node because the fail-loud requirement needs to be
  * externally observable: with `odometry_source=hardware` this returns FAILURE from
@@ -66,17 +66,24 @@ private:
     OdometrySource source_ = OdometrySource::Hardware;
     /// Topic the configured source actually reads. Held as a string because only one
     /// of the two subscriptions exists, and the other is null.
-    std::string              source_topic_;
-    std::string              odom_frame_id_;
-    std::string              base_frame_id_;
+    std::string source_topic_;
+    std::string odom_frame_id_;
+    std::string base_frame_id_;
+    /// Body link hung under base_frame_id_, carrying the height and tilt the footprint drops.
+    /// Empty publishes a single odom -> base_frame_id_ edge with the full pose, which is what the
+    /// planar sandbox wants: its base has no z DoF and cannot tilt, so the split would be an
+    /// identity edge and an extra frame for nothing.
+    std::string              pelvis_frame_id_;
     std::vector<std::string> base_joint_names_;
-    double                   base_height_m_    = 0.0;
-    double                   publish_rate_hz_  = 50.0;
-    bool                     publish_odom_msg_ = true;
-    double                   source_timeout_s_ = 0.2;
-    double                   wall_timeout_s_   = 2.0;
-    std::array<double, 36>   pose_covariance_{};
-    std::array<double, 36>   twist_covariance_{};
+    /// Beyond this the heading is ill-conditioned and the last good one is held instead.
+    double                 max_tilt_rad_     = 0.0;
+    double                 base_height_m_    = 0.0;
+    double                 publish_rate_hz_  = 50.0;
+    bool                   publish_odom_msg_ = true;
+    double                 source_timeout_s_ = 0.2;
+    double                 wall_timeout_s_   = 2.0;
+    std::array<double, 36> pose_covariance_{};
+    std::array<double, 36> twist_covariance_{};
 
     PlanarPose pose_;
     /// Height and full orientation. The planar track has neither (its body has no z

@@ -3,7 +3,7 @@
 
 /**
  * @file odom_math.hpp
- * @brief Frame and staleness math for the odom -> base_link publisher.
+ * @brief Frame and staleness math for the odom -> base publisher.
  *
  * ROS-free so it is testable without a node, DDS or a running sim, same split as
  * g1_bringup's blend_math and g1_hardware_interface's arm_ramp_engine.
@@ -34,7 +34,7 @@ enum class OdometrySource
  */
 bool parseOdometrySource(const std::string& name, OdometrySource& out);
 
-/// Planar pose of base_link in the odom frame.
+/// Planar pose of the base frame in the odom frame.
 struct PlanarPose
 {
     double x   = 0.0;
@@ -67,11 +67,51 @@ struct Quaternion
 Quaternion yawToQuaternion(double yaw);
 
 /**
- * @brief Recovers yaw from a quaternion assumed to be a pure +z rotation.
+ * @brief Heading about +z -- the ZYX yaw, valid under roll and pitch.
  *
  * Round-trip inverse of yawToQuaternion(); result is wrapped to (-pi, pi].
+ *
+ * The general form matters on the converged track. The short `2*atan2(z, w)` is exact only for
+ * a pure +z rotation, which the planar sandbox's base always is and a walking G1 never is.
  */
 double quaternionToYaw(const Quaternion& q);
+
+/**
+ * @brief Angle between the body's +z and the world's +z, in radians.
+ *
+ * Roll and pitch together, without picking an Euler convention. Used to refuse a ground
+ * projection whose heading has gone ill-conditioned: approaching 90 degrees of pitch the yaw
+ * swings wildly for tiny attitude changes, and that is a fall rather than a navigation state.
+ * Deliberately conservative -- it also trips on pure roll, where the yaw is still fine.
+ */
+double tiltFromVertical(const Quaternion& q);
+
+/**
+ * @brief A 6-DoF pose split into its REP-105 ground projection and the residual tilt.
+ *
+ * Nav2 and slam_toolbox both want a gravity-aligned, ground-projected base frame; the robot's
+ * own root link pitches with the gait. Splitting here yields both as one chain
+ * (odom -> footprint -> body) rather than two independent edges off odom that could disagree.
+ */
+struct GroundSplit
+{
+    /// odom -> footprint. Gravity-aligned by construction, so z is always 0.
+    PlanarPose footprint;
+    /// footprint -> body translation. Purely vertical: the yaw rotation cancels the x/y.
+    double child_z = 0.0;
+    /// footprint -> body rotation, Rz(-yaw) * q. Carries roll and pitch, no heading.
+    Quaternion tilt;
+};
+
+/**
+ * @brief Splits a pose about a given heading.
+ *
+ * @param x,y,z  Body origin in the parent frame.
+ * @param q      Body orientation in the parent frame.
+ * @param yaw    Heading to project about. Normally quaternionToYaw(q); passed separately so a
+ *               caller mid-fall can hold the last well-conditioned heading instead.
+ */
+GroundSplit splitGroundProjection(double x, double y, double z, const Quaternion& q, double yaw);
 
 /**
  * @brief Wraps an angle to (-pi, pi].
@@ -83,7 +123,7 @@ double quaternionToYaw(const Quaternion& q);
 double wrapAngle(double angle);
 
 /**
- * @brief Rotates a world-frame planar twist into base_link.
+ * @brief Rotates a world-frame planar twist into the base frame.
  *
  * nav_msgs/Odometry defines `twist` in the child frame, not the header frame, which is a
  * standing trap: the planar joints report velocity in the world frame, so handing it

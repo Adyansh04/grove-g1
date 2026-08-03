@@ -25,7 +25,13 @@ G1OdometryPublisher::G1OdometryPublisher(const rclcpp::NodeOptions& options)
 {
     declare_parameter<std::string>("odometry_source", "hardware");
     declare_parameter<std::string>("odom_frame_id", "odom");
-    declare_parameter<std::string>("base_frame_id", "base_link");
+    // REP-105: gravity-aligned and on the ground. Nav2's robot_base_frame and slam_toolbox's
+    // base_frame both default to a frame like this, and a 2D costmap has nowhere to put tilt.
+    declare_parameter<std::string>("base_frame_id", "base_footprint");
+    // Empty means one edge carrying the full pose; naming a link splits it in two. See the
+    // member's comment for why the planar sandbox leaves it empty.
+    declare_parameter<std::string>("pelvis_frame_id", "");
+    declare_parameter<double>("max_tilt_deg", 80.0);
     declare_parameter<std::vector<std::string>>(
         "base_joint_names",
         { "base_x_joint", "base_y_joint", "base_yaw_joint" });
@@ -73,6 +79,8 @@ bool G1OdometryPublisher::readParameters()
     base_height_m_    = get_parameter("base_height_m").as_double();
     odom_frame_id_    = get_parameter("odom_frame_id").as_string();
     base_frame_id_    = get_parameter("base_frame_id").as_string();
+    pelvis_frame_id_  = get_parameter("pelvis_frame_id").as_string();
+    max_tilt_rad_     = get_parameter("max_tilt_deg").as_double() * M_PI / 180.0;
     base_joint_names_ = get_parameter("base_joint_names").as_string_array();
     publish_rate_hz_  = get_parameter("publish_rate_hz").as_double();
     publish_odom_msg_ = get_parameter("publish_odom_msg").as_bool();
@@ -90,6 +98,25 @@ bool G1OdometryPublisher::readParameters()
     if (publish_rate_hz_ <= 0.0)
     {
         RCLCPP_ERROR(get_logger(), "publish_rate_hz must be positive, got %f", publish_rate_hz_);
+        return false;
+    }
+    // Empty or self-referential frame ids reach tf2 as an error naming tf2, not this node.
+    if (base_frame_id_.empty() || pelvis_frame_id_ == base_frame_id_)
+    {
+        RCLCPP_ERROR(
+            get_logger(),
+            "base_frame_id ('%s') must be non-empty and different from pelvis_frame_id ('%s'). "
+            "Leave pelvis_frame_id empty for a single transform.",
+            base_frame_id_.c_str(),
+            pelvis_frame_id_.c_str());
+        return false;
+    }
+    if (max_tilt_rad_ <= 0.0 || max_tilt_rad_ >= M_PI)
+    {
+        RCLCPP_ERROR(
+            get_logger(),
+            "max_tilt_deg must be in (0, 180), got %f",
+            get_parameter("max_tilt_deg").as_double());
         return false;
     }
 
@@ -138,13 +165,15 @@ G1OdometryPublisher::on_configure(const rclcpp_lifecycle::State&)
 
     source_topic_ =
         sport_state_sub_ ? sport_state_sub_->get_topic_name() : base_state_sub_->get_topic_name();
+    const std::string chain = pelvis_frame_id_.empty() ? odom_frame_id_ + " -> " + base_frame_id_ :
+                                                         odom_frame_id_ + " -> " + base_frame_id_ +
+                                                             " -> " + pelvis_frame_id_;
     RCLCPP_INFO(
         get_logger(),
-        "Configured on sim ground truth: %s -> %s from %s. This is exact MuJoCo state, not an "
+        "Configured on sim ground truth: %s from %s. This is exact MuJoCo state, not an "
         "estimate; it has no drift, noise or latency.",
-        odom_frame_id_.c_str(),
-        base_frame_id_.c_str(),
-        sport_state_sub_ ? sport_state_sub_->get_topic_name() : base_state_sub_->get_topic_name());
+        chain.c_str(),
+        source_topic_.c_str());
     return CallbackReturn::SUCCESS;
 }
 
@@ -293,7 +322,25 @@ void G1OdometryPublisher::onLowState(const unitree_hg::msg::LowState::SharedPtr 
     orientation_.y   = q.y * inv;
     orientation_.z   = q.z * inv;
 
-    pose_.yaw              = quaternionToYaw(orientation_);
+    // The attitude keeps going out either way -- a fallen robot really is tilted. Only the
+    // heading is held: near the vertical-axis singularity yaw swings wildly for tiny attitude
+    // changes, and that noise would reach both the ground projection and the body twist. The
+    // first sample always latches, even mid-fall, because there is nothing to hold instead.
+    if (tiltFromVertical(orientation_) <= max_tilt_rad_ || !have_orientation_)
+    {
+        pose_.yaw = quaternionToYaw(orientation_);
+    }
+    else
+    {
+        RCLCPP_WARN_THROTTLE(
+            get_logger(),
+            steady_clock_,
+            2000,
+            "Tilted %.1f degrees from vertical (limit %.1f); holding the last heading. The robot "
+            "is falling, not turning.",
+            tiltFromVertical(orientation_) * 180.0 / M_PI,
+            max_tilt_rad_ * 180.0 / M_PI);
+    }
     have_orientation_      = true;
     last_orientation_wall_ = std::chrono::steady_clock::now();
 }
@@ -384,17 +431,48 @@ void G1OdometryPublisher::onTimer()
     const rclcpp::Time stamp       = last_sample_stamp_;
 
     geometry_msgs::msg::TransformStamped tf;
-    tf.header.stamp            = stamp;
-    tf.header.frame_id         = odom_frame_id_;
-    tf.child_frame_id          = base_frame_id_;
-    tf.transform.translation.x = pose_.x;
-    tf.transform.translation.y = pose_.y;
-    tf.transform.translation.z = pose_z_;
-    tf.transform.rotation.x    = orientation.x;
-    tf.transform.rotation.y    = orientation.y;
-    tf.transform.rotation.z    = orientation.z;
-    tf.transform.rotation.w    = orientation.w;
-    tf_broadcaster_->sendTransform(tf);
+    tf.header.stamp    = stamp;
+    tf.header.frame_id = odom_frame_id_;
+    tf.child_frame_id  = base_frame_id_;
+
+    if (pelvis_frame_id_.empty())
+    {
+        tf.transform.translation.x = pose_.x;
+        tf.transform.translation.y = pose_.y;
+        tf.transform.translation.z = pose_z_;
+        tf.transform.rotation.x    = orientation.x;
+        tf.transform.rotation.y    = orientation.y;
+        tf.transform.rotation.z    = orientation.z;
+        tf.transform.rotation.w    = orientation.w;
+        tf_broadcaster_->sendTransform(tf);
+    }
+    else
+    {
+        const GroundSplit split =
+            splitGroundProjection(pose_.x, pose_.y, pose_z_, orientation, pose_.yaw);
+        const Quaternion heading = yawToQuaternion(split.footprint.yaw);
+
+        tf.transform.translation.x = split.footprint.x;
+        tf.transform.translation.y = split.footprint.y;
+        tf.transform.translation.z = 0.0;
+        tf.transform.rotation.x    = heading.x;
+        tf.transform.rotation.y    = heading.y;
+        tf.transform.rotation.z    = heading.z;
+        tf.transform.rotation.w    = heading.w;
+
+        geometry_msgs::msg::TransformStamped body_tf;
+        body_tf.header.stamp            = stamp;
+        body_tf.header.frame_id         = base_frame_id_;
+        body_tf.child_frame_id          = pelvis_frame_id_;
+        body_tf.transform.translation.z = split.child_z;
+        body_tf.transform.rotation.x    = split.tilt.x;
+        body_tf.transform.rotation.y    = split.tilt.y;
+        body_tf.transform.rotation.z    = split.tilt.z;
+        body_tf.transform.rotation.w    = split.tilt.w;
+
+        // One call: both edges share a stamp, and no consumer should see the chain half-updated.
+        tf_broadcaster_->sendTransform({ tf, body_tf });
+    }
 
     if (!odom_pub_ || !odom_pub_->is_activated())
     {
@@ -403,12 +481,16 @@ void G1OdometryPublisher::onTimer()
 
     // Nav2's costmap and controller server read velocity from Odometry, not from TF.
     nav_msgs::msg::Odometry odom;
-    odom.header.stamp          = stamp;
-    odom.header.frame_id       = odom_frame_id_;
-    odom.child_frame_id        = base_frame_id_;
-    odom.pose.pose.position.x  = pose_.x;
-    odom.pose.pose.position.y  = pose_.y;
-    odom.pose.pose.position.z  = pose_z_;
+    odom.header.stamp    = stamp;
+    odom.header.frame_id = odom_frame_id_;
+    odom.child_frame_id  = base_frame_id_;
+    // Pose taken from the transform published just above rather than rebuilt from pose_, so the
+    // two cannot disagree: with a split chain that means the footprint, not the body. Dropping z
+    // and the tilt is correct, not lossy -- child_frame_id names the footprint, and toBodyTwist()
+    // is already yaw-only, which is exactly that frame.
+    odom.pose.pose.position.x  = tf.transform.translation.x;
+    odom.pose.pose.position.y  = tf.transform.translation.y;
+    odom.pose.pose.position.z  = tf.transform.translation.z;
     odom.pose.pose.orientation = tf.transform.rotation;
     odom.twist.twist.linear.x  = body_twist.vx;
     odom.twist.twist.linear.y  = body_twist.vy;
