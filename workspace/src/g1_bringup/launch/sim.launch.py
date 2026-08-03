@@ -156,7 +156,14 @@ def _launch_setup(context, *args, **kwargs):
                 executable="g1_sensor_relay",
                 name="g1_sensor_relay",
                 output="both",
-                parameters=[{"socket_path": socket_path, "frame_id": "mid360_link"}],
+                parameters=[{
+                    "socket_path": socket_path,
+                    "frame_id": "mid360_link",
+                    # The URDF has d435_link but no optical frame, so the depth image is
+                    # published in the link itself until g1_description grows one.
+                    "depth_frame_id": "d435_link",
+                    "world_frame_id": "odom",
+                }],
             )
         )
 

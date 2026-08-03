@@ -227,6 +227,11 @@
     <camera name="corridor_hub" pos="-3.5 0 2.2" xyaxes="0 1 0 -0.25 0 0.96" fovy="60"/>
     <!-- Tracking Camera Following Unitree G1 -->
     <camera name="robot_cam" pos="2.5 -2.5 2.2" xyaxes="0.707 0.707 0 -0.3 0.3 0.9" fovy="55"/>
+
+    <!-- D435i intrinsics only. Its pose here is a placeholder: the sensor thread writes
+         cam_xpos/cam_xmat into its own snapshot every frame from torso_link's live pose,
+         because the mount belongs to the vendored robot and cannot host a camera element. -->
+    <camera name="d435i" mode="fixed" fovy="58" resolution="848 480" pos="0 0 1"/>
   </worldbody>
 
   <equality>

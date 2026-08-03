@@ -14,10 +14,13 @@
 #include <unistd.h>
 
 #include <cerrno>
+#include <cmath>
 #include <cstring>
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <memory>
 #include <rclcpp/rclcpp.hpp>
+#include <sensor_msgs/msg/camera_info.hpp>
+#include <sensor_msgs/msg/image.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <string>
 #include <vector>
@@ -49,6 +52,15 @@ public:
         // already has a parent through robot_state_publisher, and a second one would make
         // the tree ambiguous. It is what lets a test check cloud geometry against the room
         // before odom -> pelvis exists.
+        depth_frame_id_ =
+            declare_parameter<std::string>("depth_frame_id", "camera_depth_optical_frame");
+        depth_pub_ = create_publisher<sensor_msgs::msg::Image>(
+            declare_parameter<std::string>("depth_topic", "/camera/aligned_depth_to_color/image_raw"),
+            rclcpp::SensorDataQoS());
+        info_pub_ = create_publisher<sensor_msgs::msg::CameraInfo>(
+            declare_parameter<std::string>("info_topic", "/camera/color/camera_info"),
+            rclcpp::SensorDataQoS());
+
         pose_pub_ = create_publisher<geometry_msgs::msg::PoseStamped>(
             "~/sensor_pose",
             rclcpp::SensorDataQoS());
@@ -177,8 +189,49 @@ private:
                 closeClient();
                 return;
             }
-            publish(frame);
+            if (frame.kind == FrameKind::Depth)
+            {
+                publishDepth(frame);
+            }
+            else
+            {
+                publish(frame);
+            }
         }
+    }
+
+    void publishDepth(const CloudFrame& frame)
+    {
+        sensor_msgs::msg::Image img;
+        img.header.stamp    = now();
+        img.header.frame_id = depth_frame_id_;
+        img.height          = frame.height;
+        img.width           = frame.width;
+        // 32FC1 metres. The simulator linearises MuJoCo's non-linear depth buffer before
+        // sending, so nothing downstream has to know about znear/zfar.
+        img.encoding     = "32FC1";
+        img.is_bigendian = 0;
+        img.step         = frame.width * sizeof(float);
+        img.data.resize(frame.depth.size() * sizeof(float));
+        std::memcpy(img.data.data(), frame.depth.data(), img.data.size());
+
+        sensor_msgs::msg::CameraInfo info;
+        info.header           = img.header;
+        info.height           = frame.height;
+        info.width            = frame.width;
+        info.distortion_model = "plumb_bob";
+        info.d.assign(5, 0.0);
+        // fovy is vertical in MuJoCo, and is carried in the frame rather than assumed so
+        // camera_info cannot drift from what the render actually used.
+        const double f  = frame.height / (2.0 * std::tan(frame.fovy_deg * M_PI / 180.0 / 2.0));
+        const double cx = frame.width / 2.0;
+        const double cy = frame.height / 2.0;
+        info.k          = { f, 0, cx, 0, f, cy, 0, 0, 1 };
+        info.r          = { 1, 0, 0, 0, 1, 0, 0, 0, 1 };
+        info.p          = { f, 0, cx, 0, 0, f, cy, 0, 0, 0, 1, 0 };
+
+        depth_pub_->publish(std::move(img));
+        info_pub_->publish(info);
     }
 
     void publish(const CloudFrame& frame)
@@ -231,6 +284,7 @@ private:
     std::string socket_path_;
     std::string frame_id_;
     std::string world_frame_id_;
+    std::string depth_frame_id_;
     double      poll_hz_ = 200.0;
 
     int                       listen_fd_ = -1;
@@ -239,6 +293,8 @@ private:
 
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr   cloud_pub_;
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pose_pub_;
+    rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr         depth_pub_;
+    rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr    info_pub_;
     rclcpp::TimerBase::SharedPtr                                  timer_;
 };
 

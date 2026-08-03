@@ -26,19 +26,30 @@ FrameStatus tryReadFrame(std::vector<std::uint8_t>& buffer, CloudFrame& out)
     {
         return FrameStatus::BadVersion;
     }
-    if (header.kind != static_cast<std::uint32_t>(SensorFrameKind::PointCloud))
+    const bool is_cloud = header.kind == static_cast<std::uint32_t>(SensorFrameKind::PointCloud);
+    const bool is_depth = header.kind == static_cast<std::uint32_t>(SensorFrameKind::Depth);
+    if (!is_cloud && !is_depth)
     {
         return FrameStatus::BadKind;
     }
-    if (header.point_count > kMaxPoints)
+    // Every length is checked before it is trusted for anything: a desynchronised stream
+    // otherwise reserves whatever garbage it read.
+    if (is_cloud)
     {
-        return FrameStatus::BadLength;
+        if (header.point_count > kMaxPoints ||
+            header.payload_bytes != header.point_count * 3u * sizeof(float))
+        {
+            return FrameStatus::BadLength;
+        }
     }
-    // Checked before the length is trusted for anything: a desynchronised stream otherwise
-    // reserves whatever garbage it read.
-    if (header.payload_bytes != header.point_count * 3u * sizeof(float))
+    else
     {
-        return FrameStatus::BadLength;
+        const std::uint64_t pixels =
+            static_cast<std::uint64_t>(header.width) * static_cast<std::uint64_t>(header.height);
+        if (pixels == 0 || pixels > kMaxPoints || header.payload_bytes != pixels * sizeof(float))
+        {
+            return FrameStatus::BadLength;
+        }
     }
 
     const std::size_t total = sizeof(header) + header.payload_bytes;
@@ -50,10 +61,25 @@ FrameStatus tryReadFrame(std::vector<std::uint8_t>& buffer, CloudFrame& out)
     out.sim_time_s = header.sim_time_s;
     std::memcpy(out.sensor_pos, header.sensor_pos, sizeof(out.sensor_pos));
     std::memcpy(out.sensor_quat, header.sensor_quat, sizeof(out.sensor_quat));
-    out.points.resize(static_cast<std::size_t>(header.point_count) * 3u);
-    if (header.payload_bytes > 0)
+    out.width    = header.width;
+    out.height   = header.height;
+    out.fovy_deg = header.fovy_deg;
+    if (is_cloud)
     {
-        std::memcpy(out.points.data(), buffer.data() + sizeof(header), header.payload_bytes);
+        out.kind = FrameKind::PointCloud;
+        out.depth.clear();
+        out.points.resize(static_cast<std::size_t>(header.point_count) * 3u);
+        if (header.payload_bytes > 0)
+        {
+            std::memcpy(out.points.data(), buffer.data() + sizeof(header), header.payload_bytes);
+        }
+    }
+    else
+    {
+        out.kind = FrameKind::Depth;
+        out.points.clear();
+        out.depth.resize(static_cast<std::size_t>(header.width) * header.height);
+        std::memcpy(out.depth.data(), buffer.data() + sizeof(header), header.payload_bytes);
     }
 
     buffer.erase(buffer.begin(), buffer.begin() + static_cast<std::ptrdiff_t>(total));

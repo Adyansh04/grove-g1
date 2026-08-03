@@ -13,14 +13,15 @@ namespace grove_g1
 {
 
 // Bumped whenever the layout below changes. The relay refuses a frame it does not know
-// rather than reinterpreting bytes.
-inline constexpr uint32_t kSensorFrameVersion = 1;
+// rather than reinterpreting bytes. v2 added the depth-image fields.
+inline constexpr uint32_t kSensorFrameVersion = 2;
 
 inline constexpr uint32_t kSensorFrameMagic = 0x47314C44;  // "G1LD"
 
 enum class SensorFrameKind : uint32_t
 {
     PointCloud = 1,
+    Depth      = 2,
 };
 
 // Fixed-size header, then `payload_bytes` of body. Length-prefixed so the stream can be
@@ -33,22 +34,27 @@ struct SensorFrameHeader
     uint32_t kind;           // SensorFrameKind
     uint32_t payload_bytes;  // body length that follows this header
 
-    // Sim time of the snapshot the frame was computed from, not wall time: the relay stamps
-    // messages with this so downstream TF lookups line up with /clock.
+    // Sim time of the snapshot the frame was computed from. Carried for provenance; the
+    // relay stamps messages with its own clock, because this track publishes no /clock.
     double sim_time_s;
 
-    // Sensor pose in the world at snapshot time, as position + wxyz quaternion. The relay
-    // publishes the cloud in the sensor frame, so this is carried for provenance and for
-    // the relay's own sanity checks rather than to transform the points.
+    // Sensor pose in the world at snapshot time, as position + wxyz quaternion.
     double sensor_pos[3];
     double sensor_quat[4];
 
-    // PointCloud: number of points that follow, each 3 floats (x, y, z) in the sensor frame.
+    // PointCloud: number of points, each 3 floats (x, y, z) in the sensor frame.
     uint32_t point_count;
+
+    // Depth: image dimensions and the vertical field of view the render used. fovy is
+    // carried rather than assumed so the relay's camera_info cannot drift from the MJCF.
+    uint32_t width;
+    uint32_t height;
+    float    fovy_deg;
+
     uint32_t reserved;
 };
 
-static_assert(sizeof(SensorFrameHeader) == 88, "wire layout changed; bump kSensorFrameVersion");
+static_assert(sizeof(SensorFrameHeader) == 104, "wire layout changed; bump kSensorFrameVersion");
 
 }  // namespace grove_g1
 

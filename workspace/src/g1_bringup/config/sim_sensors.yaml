@@ -16,3 +16,8 @@ range_max: 40.0
 
 # Also passed to g1_sensor_relay by the launch, so there is one source of truth.
 socket_path: "/tmp/g1_sensors.sock"
+
+# Depth camera. Rendered offscreen on the sensor thread against its own snapshot, then
+# linearised to metres before it leaves the simulator. S3 measured ~3.9 ms/frame with only
+# ~0.01 ms holding the sim lock.
+camera_enabled: true

@@ -29,9 +29,22 @@ enum class FrameStatus
     BadLength,   ///< payload_bytes disagrees with point_count, or exceeds the sane cap.
 };
 
-/// A validated point cloud frame. Points are xyz triples in the sensor frame.
+/// What a validated frame turned out to be.
+enum class FrameKind
+{
+    PointCloud,
+    Depth,
+};
+
+/// A validated frame. `kind` says which payload interpretation applies: `points` is xyz
+/// triples in the sensor frame, `depth` is metres, row-major, top-down.
 struct CloudFrame
 {
+    FrameKind          kind     = FrameKind::PointCloud;
+    std::uint32_t      width    = 0;
+    std::uint32_t      height   = 0;
+    float              fovy_deg = 0.0f;
+    std::vector<float> depth;
     double             sim_time_s = 0.0;
     double             sensor_pos[3]{};
     double             sensor_quat[4]{};
