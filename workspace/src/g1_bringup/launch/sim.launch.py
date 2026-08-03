@@ -226,10 +226,12 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "sensors",
-                default_value="false",
-                description="Stage the perception scene (a room with known geometry) and "
-                "run the sensor thread. Off by default so the locomotion suites keep their "
-                "existing bare-floor conditions until the timing gate says otherwise.",
+                default_value="true",
+                description="Stage the perception scene (a room with known geometry), run "
+                "the LiDAR sweep inside the simulator, and start g1_sensor_relay to publish "
+                "it. On by default: the walking suites pass with it, alone and under "
+                "combined load, which is what convergence was for. Set false to get the "
+                "bare-floor stack back.",
             ),
             DeclareLaunchArgument(
                 "pin_pelvis",

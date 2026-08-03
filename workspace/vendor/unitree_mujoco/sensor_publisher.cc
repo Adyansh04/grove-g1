@@ -323,10 +323,20 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
         const auto lock_start = std::chrono::steady_clock::now();
         {
             std::lock_guard<std::recursive_mutex> lock(*sim_mtx);
-            mj_copyData(snapshot, m, *data);
-            sim_time = snapshot->time;
-            std::memcpy(torso_pos, snapshot->xpos + 3 * torso_id, sizeof(torso_pos));
-            std::memcpy(torso_mat, snapshot->xmat + 9 * torso_id, sizeof(torso_mat));
+            // NOT mj_copyData. That copies the arena as well, and MuJoCo rejects it
+            // outright while another thread has the stack in use ("attempting to copy
+            // mjData while stack is in use") -- which killed the simulator, because
+            // sim.mtx does not cover the render thread's use of mjData.
+            //
+            // mj_ray only reads geom poses, and everything this sweep can hit is a
+            // primitive (the scene's boxes and plane), so no mesh BVH is involved. Two
+            // arrays is both correct and far cheaper than a full mjData.
+            const mjData* live = *data;
+            std::memcpy(snapshot->geom_xpos, live->geom_xpos, sizeof(mjtNum) * 3 * m->ngeom);
+            std::memcpy(snapshot->geom_xmat, live->geom_xmat, sizeof(mjtNum) * 9 * m->ngeom);
+            sim_time = live->time;
+            std::memcpy(torso_pos, live->xpos + 3 * torso_id, sizeof(torso_pos));
+            std::memcpy(torso_mat, live->xmat + 9 * torso_id, sizeof(torso_mat));
         }
         const double lock_ms =
             std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - lock_start)
@@ -393,7 +403,7 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
 
         // The snapshot is the only thing that contends with physics, so its cost is the
         // number that matters; the ~32 ms sweep below it runs off-lock. Reported rarely
-        // rather than never: if mj_copyData ever grows, this is where it shows up.
+        // rather than never: if the copy ever grows, this is where it shows up.
         {
             static int    cycles     = 0;
             static double lock_worst = 0.0;
