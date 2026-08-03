@@ -10,7 +10,7 @@ that stands in for the robot's onboard motion service.
 
 | File | Purpose |
 |---|---|
-| `launch/sim.launch.py` | Main entry point. Checks the DDS environment, then starts `unitree_mujoco`, `motion_service_sim`, `control.launch.py` and `loco.launch.py`. Args: `headless` (default `true`), `sensors` (default `true`), `pin_pelvis` (default `false`), `sim_start_delay_s` (default `2.0`). |
+| `launch/sim.launch.py` | Main entry point. Checks the DDS environment, then starts `unitree_mujoco`, `motion_service_sim`, `control.launch.py` and `loco.launch.py`. Args: `headless` (default `true`), `sensors` (default `false`), `pin_pelvis` (default `false`), `sim_start_delay_s` (default `2.0`). |
 | `launch/control.launch.py` | `robot_state_publisher`, `ros2_control_node` and spawners. No sim, no bridge, so it carries over to hardware unchanged. |
 | `launch/loco.launch.py` | Starts `g1_loco_bridge` and drives it configure to active off its own lifecycle events. |
 | `launch/activate_arm.launch.py` | Runs `scripts/activate_arm`, the ordered acquire step. |
@@ -236,9 +236,18 @@ actually in.
 
 ## Sensors on the converged track: SIM-ONLY
 
-`sensors:=true` (the default) stages a room with known geometry, runs a LiDAR sweep **inside** the
-patched `unitree_mujoco`, and starts `g1_sensor_relay` to publish it as `PointCloud2` on
-`/livox/lidar`. `odom -> pelvis` comes from `g1_state_estimation` reading `/sportmodestate`.
+`sensors:=true` stages a room with known geometry, runs a LiDAR sweep **inside** the patched
+`unitree_mujoco`, and starts `g1_sensor_relay` to publish it as `PointCloud2` on `/livox/lidar`.
+`odom -> pelvis` comes from `g1_state_estimation` reading `/sportmodestate`.
+
+**It is off by default, provisionally.** With sensors on the walking suites pass, alone and under
+combined load, but `test_arm_command` misses its slew-limited convergence window. That was measured
+on a machine whose CPU was pinned at roughly 14% of peak clock (`powersave` governor, `quiet`
+platform profile), and the test is timing-sensitive, so the result is **unproven rather than a
+property of the sensor stack**. Re-measure on an unthrottled machine before drawing a conclusion.
+
+Keeping the default off in the meantime costs nothing: `test_lidar_geometry` enables sensors
+explicitly and passes, so the sensor path stays covered either way.
 
 **Why the sweep lives inside the simulator.** It needs the scene: geometry, meshes and current pose,
 all of which live in `mjData` inside that process. No DDS topic carries it, so no companion process

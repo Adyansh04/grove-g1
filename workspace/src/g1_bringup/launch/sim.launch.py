@@ -278,12 +278,16 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "sensors",
-                default_value="true",
+                default_value="false",
                 description="Stage the perception scene (a room with known geometry), run "
                 "the LiDAR sweep inside the simulator, and start g1_sensor_relay to publish "
-                "it. On by default: the walking suites pass with it, alone and under "
-                "combined load, which is what convergence was for. Set false to get the "
-                "bare-floor stack back.",
+                "it.\n"
+                "OFF by default, provisionally. test_arm_command missed its slew-limited "
+                "convergence window with sensors on, but that was measured on a CPU pinned "
+                "at ~14% of its peak clock, and the test is timing-sensitive. Treat the "
+                "result as unproven, not as a property of the sensor stack. Opt-in until it "
+                "is re-measured on an unthrottled machine. test_lidar_geometry, which is "
+                "pure geometry, turns sensors on explicitly and passes.",
             ),
             DeclareLaunchArgument(
                 "pin_pelvis",
