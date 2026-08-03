@@ -13,8 +13,9 @@ namespace grove_g1
 {
 
 // Bumped whenever the layout below changes. The relay refuses a frame it does not know
-// rather than reinterpreting bytes. v2 added the depth-image fields.
-inline constexpr uint32_t kSensorFrameVersion = 2;
+// rather than reinterpreting bytes. v2 added the depth-image fields; v3 appends colour
+// to the depth payload.
+inline constexpr uint32_t kSensorFrameVersion = 3;
 
 inline constexpr uint32_t kSensorFrameMagic = 0x47314C44;  // "G1LD"
 
@@ -51,7 +52,10 @@ struct SensorFrameHeader
     uint32_t height;
     float    fovy_deg;
 
-    uint32_t reserved;
+    // Depth: bytes of rgb8 colour appended after the depth floats, or 0 when colour is
+    // off. Both come from one mjr_readPixels of one render, so they share a pose, a
+    // timestamp and a frustum by construction rather than by the relay pairing them up.
+    uint32_t rgb_bytes;
 };
 
 static_assert(sizeof(SensorFrameHeader) == 104, "wire layout changed; bump kSensorFrameVersion");

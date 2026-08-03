@@ -46,7 +46,10 @@ FrameStatus tryReadFrame(std::vector<std::uint8_t>& buffer, CloudFrame& out)
     {
         const std::uint64_t pixels =
             static_cast<std::uint64_t>(header.width) * static_cast<std::uint64_t>(header.height);
-        if (pixels == 0 || pixels > kMaxPoints || header.payload_bytes != pixels * sizeof(float))
+        const std::uint64_t expect =
+            pixels * sizeof(float) + static_cast<std::uint64_t>(header.rgb_bytes);
+        if (pixels == 0 || pixels > kMaxPoints || header.payload_bytes != expect ||
+            (header.rgb_bytes != 0 && header.rgb_bytes != pixels * 3u))
         {
             return FrameStatus::BadLength;
         }
@@ -78,8 +81,16 @@ FrameStatus tryReadFrame(std::vector<std::uint8_t>& buffer, CloudFrame& out)
     {
         out.kind = FrameKind::Depth;
         out.points.clear();
-        out.depth.resize(static_cast<std::size_t>(header.width) * header.height);
-        std::memcpy(out.depth.data(), buffer.data() + sizeof(header), header.payload_bytes);
+        const std::size_t px = static_cast<std::size_t>(header.width) * header.height;
+        const std::size_t depth_bytes = px * sizeof(float);
+        out.depth.resize(px);
+        std::memcpy(out.depth.data(), buffer.data() + sizeof(header), depth_bytes);
+        out.rgb.resize(header.rgb_bytes);
+        if (header.rgb_bytes != 0)
+        {
+            std::memcpy(out.rgb.data(), buffer.data() + sizeof(header) + depth_bytes,
+                        header.rgb_bytes);
+        }
     }
 
     buffer.erase(buffer.begin(), buffer.begin() + static_cast<std::ptrdiff_t>(total));
