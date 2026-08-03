@@ -20,8 +20,6 @@
   <depend>geometry_msgs</depend>
   <depend>unitree_api</depend>
   <depend>g1_msgs</depend>
-  <!-- nlohmann_json is the CMake target name; nlohmann-json-dev is the rosdep key. -->
-  <depend>nlohmann-json-dev</depend>
 
   <!-- Lint checks run via workspace-root CTests (see CMakeLists.txt). -->
   <test_depend>ament_lint_auto</test_depend>
