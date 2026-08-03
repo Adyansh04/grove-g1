@@ -7,6 +7,7 @@ Panels:
       Expanded:
         - /LiDAR1
         - /Depth cloud1
+        - /Colour image1
       Splitter Ratio: 0.5
     Tree Height: 700
   - Class: rviz_common/Views
@@ -81,8 +82,8 @@ Visualization Manager:
       Size (Pixels): 3
       Alpha: 1
       Decay Time: 0
-      Color Transformer: AxisColor
-      Axis: Z
+      Color Image Topic: /camera/color/image_raw
+      Color Transformer: RGB8
       Occlusion Compensation:
         Occlusion Time-Out: 30
         Enabled: false
@@ -101,6 +102,17 @@ Visualization Manager:
       Min Value: 0.5
       Median window: 5
       Normalize Range: false
+
+    # Colour from the same render as the depth above, so the two line up pixel for pixel.
+    - Class: rviz_default_plugins/Image
+      Name: Colour image
+      Enabled: true
+      Topic:
+        Value: /camera/color/image_raw
+        Depth: 5
+        Durability Policy: Volatile
+        Reliability Policy: Best Effort
+      Normalize Range: true
 
     - Class: rviz_default_plugins/Odometry
       Name: Odometry
