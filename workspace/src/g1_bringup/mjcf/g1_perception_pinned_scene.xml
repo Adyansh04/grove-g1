@@ -7,9 +7,11 @@
        g1_flat_scene, plus a room the LiDAR can measure against: every sensor assertion is
        a geometric fact of this file rather than a check that data arrived.
 
-       Every geom here is group 3. The LiDAR sweep masks to that group, because the Mid360's
+       Every geom here is group 2. The LiDAR sweep masks to that group, because the Mid360's
        mount point sits inside the torso's own collision geom: without the mask every ray
        returns the robot's own shell at 6 cm and nothing else is ever visible.
+       Group 2 specifically: the robot occupies groups 0 and 1, and MuJoCo's viewer
+       renders only 0-2, so anything in group 3 is physically present but invisible.
 
        No sensor site or camera element here on purpose. The sweep takes torso_link's live
        pose from mjData and applies the mount offset from config, so the robot model needs
@@ -40,20 +42,20 @@
 
   <worldbody>
     <light pos="0 0 1.5" dir="0 0 -1" directional="true"/>
-    <geom name="floor" group="3" size="0 0 0.05" type="plane" material="groundplane"/>
+    <geom name="floor" group="2" size="0 0 0.05" type="plane" material="groundplane"/>
 
     <!-- 8 x 8 m room, inner wall faces at +/-4.0 m. The y walls run to +/-4.1 in x so the
          corners are closed; at 4.0 the four boxes meet along an edge and leave a gap. -->
-    <geom name="wall_px" group="3" type="box" size="0.05 4.0 1.25" pos="4.05 0 1.25" material="wall"/>
-    <geom name="wall_nx" group="3" type="box" size="0.05 4.0 1.25" pos="-4.05 0 1.25" material="wall"/>
-    <geom name="wall_py" group="3" type="box" size="4.1 0.05 1.25" pos="0 4.05 1.25" material="wall"/>
-    <geom name="wall_ny" group="3" type="box" size="4.1 0.05 1.25" pos="0 -4.05 1.25" material="wall"/>
+    <geom name="wall_px" group="2" type="box" size="0.05 4.0 1.25" pos="4.05 0 1.25" material="wall"/>
+    <geom name="wall_nx" group="2" type="box" size="0.05 4.0 1.25" pos="-4.05 0 1.25" material="wall"/>
+    <geom name="wall_py" group="2" type="box" size="4.1 0.05 1.25" pos="0 4.05 1.25" material="wall"/>
+    <geom name="wall_ny" group="2" type="box" size="4.1 0.05 1.25" pos="0 -4.05 1.25" material="wall"/>
 
     <!-- Kept clear of the robot's spawn and of the +x teleop path the walking tests drive,
          so adding them cannot change a locomotion result. -->
-    <geom name="obstacle_box" group="3" type="box" size="0.3 0.3 0.5" pos="2.0 1.6 0.5"
+    <geom name="obstacle_box" group="2" type="box" size="0.3 0.3 0.5" pos="2.0 1.6 0.5"
           material="obstacle"/>
-    <geom name="obstacle_cyl" group="3" type="cylinder" size="0.25 0.75" pos="-1.5 -2.0 0.75"
+    <geom name="obstacle_cyl" group="2" type="cylinder" size="0.25 0.75" pos="-1.5 -2.0 0.75"
           material="obstacle"/>
   </worldbody>
 

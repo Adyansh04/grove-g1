@@ -130,6 +130,11 @@ MotionServiceSim::MotionServiceSim(const rclcpp::NodeOptions& options)
 
     // Best-effort, depth 1 — matches unitree_mujoco's /lowstate publisher.
     const auto lowstate_qos = rclcpp::QoS(rclcpp::KeepLast(1)).best_effort().durability_volatile();
+    // Off unless asked for. This work lands on the ~1 kHz /lowstate callback, which is the
+    // walking policy's own path, so only the sensor track pays for it. sim.launch.py turns
+    // it on together with sensors, because that is what needs pelvis -> torso_link.
+    publish_lower_joints_ = declare_parameter<bool>("publish_lower_joint_states", false);
+
     // Latest-only: robot_state_publisher merges by joint name, so this coexists with
     // joint_state_broadcaster's arm-only publication rather than competing with it.
     lower_joint_pub_ = create_publisher<sensor_msgs::msg::JointState>(

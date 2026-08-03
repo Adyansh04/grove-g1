@@ -33,10 +33,13 @@ struct Config
 
     // Mid360 envelope. Resolution is a real budget, not a formality: 360x32 costs ~32 ms per
     // sweep against the G1 scene, so it is configurable and the timing gate decides what ships.
-    // Which MuJoCo geom group the sweep sees. The scene puts walls, floor and obstacles in
-    // group 3; the robot's own geoms are not in it. Without this every ray returns the
-    // torso shell ~6 cm from the mount and the world is invisible.
-    int    scene_geom_group = 3;
+    // Which MuJoCo geom group the sweep sees. Scene geometry is group 2; the robot uses
+    // groups 0 (collision) and 1 (visual). Without the mask every ray returns the torso
+    // shell ~6 cm from the mount and the world is never reached.
+    //
+    // Group 2 and not 3, because MuJoCo's viewer renders only groups 0-2: scene geometry in
+    // group 3 is physically present, hit by rays, and completely invisible on screen.
+    int    scene_geom_group = 2;
     int    azimuth_steps   = 360;
     int    elevation_steps = 32;
     double azimuth_min     = -M_PI;
