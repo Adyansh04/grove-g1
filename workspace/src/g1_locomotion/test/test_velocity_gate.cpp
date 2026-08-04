@@ -220,5 +220,83 @@ TEST(VelocityGate, ForceReleaseLandsAtReleasedFromHeld)
     EXPECT_EQ(gate.authority(), LocoAuthority::kReleased);
 }
 
+// -------------------------------------------------------------------------
+// ignoredCommandCount: the only externally visible sign that a publisher is
+// talking to a gate holding no authority
+// -------------------------------------------------------------------------
+
+TEST(VelocityGate, CountsNonZeroCommandsInEveryStateThatIsNotHeld)
+{
+    const auto now = std::chrono::steady_clock::now();
+
+    VelocityGate released(VelocityGate::Config{ kCmdVelTimeoutS, kFailureStreakLimit });
+    ASSERT_EQ(released.authority(), LocoAuthority::kReleased);
+    released.setCommand(0.6, 0.0, 0.0, now);
+    EXPECT_EQ(released.ignoredCommandCount(), 1u);
+
+    VelocityGate acquiring(VelocityGate::Config{ kCmdVelTimeoutS, kFailureStreakLimit });
+    acquiring.beginAcquire();
+    ASSERT_EQ(acquiring.authority(), LocoAuthority::kAcquiring);
+    acquiring.setCommand(0.6, 0.0, 0.0, now);
+    EXPECT_EQ(acquiring.ignoredCommandCount(), 1u) << "mid-acquire the command is still dropped";
+
+    auto releasing = makeHeldGate();
+    releasing.beginRelease();
+    ASSERT_EQ(releasing.authority(), LocoAuthority::kReleasing);
+    releasing.setCommand(0.6, 0.0, 0.0, now);
+    EXPECT_EQ(releasing.ignoredCommandCount(), 1u);
+}
+
+TEST(VelocityGate, NeverCountsWhileHeld)
+{
+    auto       gate = makeHeldGate();
+    const auto now  = std::chrono::steady_clock::now();
+    for (int i = 0; i < 10; ++i)
+    {
+        gate.setCommand(0.6, 0.1, 0.3, now);
+    }
+    EXPECT_EQ(gate.ignoredCommandCount(), 0u)
+        << "a held gate acts on commands, it does not drop them";
+}
+
+TEST(VelocityGate, NeverCountsAZeroCommand)
+{
+    // Nav2 and teleop both idle at zero. Counting those would make the number climb whenever
+    // anything is merely idle without authority, which tells a reader nothing.
+    VelocityGate gate(VelocityGate::Config{ kCmdVelTimeoutS, kFailureStreakLimit });
+    const auto   now = std::chrono::steady_clock::now();
+    for (int i = 0; i < 10; ++i)
+    {
+        gate.setCommand(0.0, 0.0, 0.0, now);
+    }
+    EXPECT_EQ(gate.ignoredCommandCount(), 0u);
+
+    // One non-zero axis is enough to count.
+    gate.setCommand(0.0, 0.0, 0.2, now);
+    EXPECT_EQ(gate.ignoredCommandCount(), 1u);
+}
+
+TEST(VelocityGate, IsMonotonicAcrossAnAcquire)
+{
+    // A reader asserts "stopped increasing" once authority is held. Resetting on acquire would
+    // make that assertion impossible to write.
+    VelocityGate gate(VelocityGate::Config{ kCmdVelTimeoutS, kFailureStreakLimit });
+    const auto   now = std::chrono::steady_clock::now();
+    gate.setCommand(0.6, 0.0, 0.0, now);
+    gate.setCommand(0.6, 0.0, 0.0, now);
+    ASSERT_EQ(gate.ignoredCommandCount(), 2u);
+
+    gate.beginAcquire();
+    gate.onAcquireResult(/*success=*/true);
+    EXPECT_EQ(gate.ignoredCommandCount(), 2u) << "acquiring must not reset the tally";
+
+    gate.setCommand(0.6, 0.0, 0.0, now);
+    EXPECT_EQ(gate.ignoredCommandCount(), 2u) << "and held commands do not add to it";
+
+    gate.forceRelease();
+    gate.setCommand(0.6, 0.0, 0.0, now);
+    EXPECT_EQ(gate.ignoredCommandCount(), 3u) << "but dropping resumes after a release";
+}
+
 }  // namespace
 }  // namespace g1_locomotion

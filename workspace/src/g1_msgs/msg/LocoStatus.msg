@@ -9,3 +9,4 @@ builtin_interfaces/Time stamp
 int32 fsm_id            # -1 = unknown: no SetLocoMode goal has completed successfully yet
 uint8 authority
 int32 last_error_code
+uint32 ignored_cmd_vel  # cumulative non-zero ~/cmd_vel samples discarded for lack of authority

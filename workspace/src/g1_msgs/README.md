@@ -26,6 +26,7 @@ meaningful to report mid-flight.
 | `fsm_id` | Last FSM id the bridge knows to be true. `-1` before it has any information. |
 | `authority` | `RELEASED`, `ACQUIRING`, `HELD` or `RELEASING`: whether the bridge holds velocity-command authority. See `g1_locomotion`'s README for the state machine. |
 | `last_error_code` | Most recent wire status code observed, from `SetLocoMode` or velocity requests alike. |
+| `ignored_cmd_vel` | How many **non-zero** `~/cmd_vel` samples the bridge has discarded because it held no authority. Monotonic, never reset on acquire, so a reader can assert "stopped increasing". Zero commands are not counted: publishers idle at zero routinely, and an idle publisher is not a dropped intent. The counter exists because "the planner is running and the robot is stationary" is otherwise silent. |
 
 ## Why an action rather than a service
 

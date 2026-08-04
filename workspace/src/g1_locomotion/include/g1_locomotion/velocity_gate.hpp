@@ -105,6 +105,14 @@ public:
      */
     void onVelocityResult(std::int32_t error_code);
 
+    /**
+     * @brief Non-zero commands discarded for lack of authority, cumulative.
+     *
+     * Monotonic for the life of the gate -- deliberately not reset by beginAcquire(), so a
+     * caller can assert that it stopped increasing rather than having to catch a reset.
+     */
+    std::uint32_t ignoredCommandCount() const noexcept { return ignored_command_count_; }
+
     LocoAuthority authority() const noexcept { return authority_; }
     int           failureStreak() const noexcept { return failure_streak_; }
     std::int32_t  lastErrorCode() const noexcept { return last_error_code_; }
@@ -121,8 +129,9 @@ private:
     };
     bool stopped_once_{ false };
 
-    int          failure_streak_{ 0 };
-    std::int32_t last_error_code_{ 0 };
+    int           failure_streak_{ 0 };
+    std::int32_t  last_error_code_{ 0 };
+    std::uint32_t ignored_command_count_{ 0 };
 };
 
 }  // namespace g1_locomotion
