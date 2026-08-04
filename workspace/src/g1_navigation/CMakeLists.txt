@@ -32,9 +32,13 @@ if(BUILD_TESTING)
   add_launch_test(test/test_scan_pipeline.launch.py TARGET test_scan_pipeline TIMEOUT 200)
   add_launch_test(test/test_nav_authority.launch.py TARGET test_nav_authority TIMEOUT 320)
   add_launch_test(test/test_slam_map.launch.py TARGET test_slam_map TIMEOUT 240)
+  # The acceptance gate, and the only suite here that drives the robot. Longest timeout and
+  # highest COST so it runs first, while the machine is quietest.
+  add_launch_test(test/test_navigate_to_pose.launch.py TARGET test_navigate_to_pose TIMEOUT 500)
   set_tests_properties(test_scan_pipeline PROPERTIES RESOURCE_LOCK g1_sim)
   set_tests_properties(test_nav_authority PROPERTIES RESOURCE_LOCK g1_sim COST 70)
   set_tests_properties(test_slam_map PROPERTIES RESOURCE_LOCK g1_sim)
+  set_tests_properties(test_navigate_to_pose PROPERTIES RESOURCE_LOCK g1_sim COST 100)
   # COST descending = execution order; the heavier suite goes first.
   set_tests_properties(test_slam_map PROPERTIES COST 60)
   set_tests_properties(test_scan_pipeline PROPERTIES COST 50)
