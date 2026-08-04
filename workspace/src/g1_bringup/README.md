@@ -11,7 +11,9 @@ with Python launch files and integration tests.
 
 | File | Purpose |
 |---|---|
-| `launch/sim.launch.py` | Main entry point. Checks the DDS environment, then starts `unitree_mujoco`, `motion_service_sim`, `control.launch.py` and `loco.launch.py`. Args: `headless` (default `true`), `sensors` (default `false`), `pin_pelvis` (default `false`), `sim_start_delay_s` (default `2.0`). |
+| `launch/bringup.launch.py` | **The operator entry point.** Routes to bare sim or, via `mode:`, to the navigation stack. Args: `mode` (`none`/`mapping`/`localization`), `nav`, `rviz`, `sensors`, `world`, `headless`, `pin_pelvis`, `sim_start_delay_s`. |
+| `launch/sim.launch.py` | Checks the DDS environment, then starts `unitree_mujoco`, `motion_service_sim`, `control.launch.py` and `loco.launch.py`. Still works standalone. Args: `headless` (default `true`), `sensors` (default `false`), `pin_pelvis` (default `false`), `sim_start_delay_s` (default `2.0`). |
+| `launch/rviz.launch.py` | Starts RViz on a caller-supplied `rviz_config` path. Knows nothing about navigation. |
 | `launch/control.launch.py` | `robot_state_publisher`, `ros2_control_node` and spawners. No sim, no bridge, so it carries over to hardware unchanged. |
 | `launch/loco.launch.py` | Starts `g1_loco_bridge` and drives it configure to active off its own lifecycle events. |
 | `launch/activate_arm.launch.py` | Runs `scripts/activate_arm`, the ordered acquire step. |
@@ -34,7 +36,51 @@ What this package's own launch graph adds on top:
 | `/g1_sensor_relay/sensor_pose` | out | `geometry_msgs/msg/PoseStamped` | sensor data, diagnostics |
 | `/tf` (`odom` -> `pelvis`) | out | `tf2_msgs/msg/TFMessage` | `sensors:=true` only |
 
+## `g1_navigation` is referenced but deliberately not depended on
+
+`bringup.launch.py` includes launch files and an RViz config from `g1_navigation`, and
+`package.xml` says nothing about it. That is not an oversight.
+
+`g1_navigation` already declares `<exec_depend>g1_bringup</exec_depend>`, because navigation
+composes bring-up and not the reverse. Adding the reciprocal dependency here does not merely
+look untidy, it **does not build** — colcon refuses to order the workspace at all:
+
+```
+ERROR:colcon:colcon list: Unable to order packages topologically:
+g1_bringup: ['g1_navigation']
+g1_navigation: ['g1_bringup']
+```
+
+So the reference is a launch-time path lookup and nothing more. What follows from that:
+
+- This package builds, installs and runs with `g1_navigation` absent. Only `mode:=mapping`
+  and `mode:=localization` name it, and their absence is reported as an actionable message
+  rather than a raw ament search-path dump.
+- **colcon and rosdep cannot see this edge.** Nothing warns you if `g1_navigation` renames a
+  launch file; `mode:=mapping` fails at runtime instead. `test_launch_threading` in
+  `g1_navigation` is the compensating check — it lives there because a `test_depend` pointing
+  the other way would re-create the same cycle.
+- Do not "fix" this by adding the dependency. Its absence is load-bearing.
+
+The composition direction is unchanged: on the navigation branch this package includes
+`g1_navigation`'s `nav_sim.launch.py`, which includes `sim.launch.py` itself.
+`bringup.launch.py` routes; it does not orchestrate navigation.
+
 ## Running
+
+```bash
+# Bare simulator.
+ros2 launch g1_bringup bringup.launch.py
+
+# Build a map, with RViz.
+ros2 launch g1_bringup bringup.launch.py mode:=mapping rviz:=true
+
+# Localize against the committed map and navigate.
+ros2 launch g1_bringup bringup.launch.py mode:=localization nav:=true rviz:=true
+```
+
+`mode:=none` is the default and never touches `g1_navigation`. The arm procedure below uses
+`sim.launch.py` directly, which is equivalent to `bringup.launch.py` with the default mode:
 
 ```bash
 # 1. Bring up sim + bridge + control stack (headless by default).

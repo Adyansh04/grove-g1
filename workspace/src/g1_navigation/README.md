@@ -14,8 +14,10 @@ Nav2-shaped leaks into the package that has to survive to hardware.
 Everything here needs `sensors:=true` on `g1_bringup`, which gates the LiDAR, the relay, the
 `odom -> base_footprint -> pelvis` chain and the waist joint states. The top-level launch passes it.
 
+**The operator entry point is `g1_bringup`'s**, matching `nav2_bringup`:
+
 ```bash
-ros2 launch g1_navigation nav_sim.launch.py mode:=mapping rviz:=true
+ros2 launch g1_bringup bringup.launch.py mode:=mapping rviz:=true
 ```
 
 `mode:=mapping` builds a new map with slam_toolbox. `mode:=localization` runs `map_server` + AMCL
@@ -24,8 +26,15 @@ against `maps/facility` — use that when a goal pose has to mean the same thing
 To actually navigate, add `nav:=true` (which requires `mode:=localization`):
 
 ```bash
-ros2 launch g1_navigation nav_sim.launch.py mode:=localization nav:=true rviz:=true
+ros2 launch g1_bringup bringup.launch.py mode:=localization nav:=true rviz:=true
 ```
+
+`nav_sim.launch.py` is still this package's orchestrator and still runs directly
+(`ros2 launch g1_navigation nav_sim.launch.py mode:=mapping`); `bringup.launch.py` routes to it.
+The composition direction is unchanged — navigation composes bring-up, and `g1_bringup` declares
+no dependency on this package, because the two would form a colcon cycle. See `g1_bringup`'s
+README for why that reference is deliberately undeclared, and `test_launch_threading` for the
+check that compensates.
 
 ```bash
 ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose \
@@ -51,6 +60,29 @@ is bang-bang — drive straight until the heading error is large, then rotate in
 This deadband is a property of the **sim walking policy**, not of the real G1's onboard MPC, which
 has no such dead zone. That is why it lives in `g1_locomotion`'s config and not in Nav2 tuning:
 hardware bring-up simply does not launch the shaper.
+
+## RViz
+
+`config/g1_navigation.rviz` carries every display in two toggleable groups: **Nav2** (map, scan,
+AMCL particle swarm, global/local plan, both costmaps, footprints, the local voxel grid) and
+**Sensors** (LiDAR, depth cloud, depth and colour images, sensor pose), which starts folded away.
+Fixed frame is `map`. `g1_bringup`'s `config/g1_sensors.rviz` is the counterpart for
+`mode:=none`: same Sensors group, no Nav2 group, fixed frame `odom` — there is no `map` frame
+without SLAM or AMCL, which is why one merged file could not serve both.
+
+Two static files rather than one rewritten at launch: they differ in fixed frame as well as in
+which groups exist, and rewriting config at launch has already cost this stack a debugging session
+(`nav2.launch.py`'s docstring). The price is drift, and `test_rviz_configs` is what stops it.
+
+This file lives here rather than in `g1_bringup` because the particle swarm is a
+`nav2_rviz_plugins` display. Shipping it from the bring-up package would give that package a Nav2
+dependency, which is the one thing the layering forbids.
+
+Displays from upstream's `nav2_default_view.rviz` that are deliberately **not** here: `Bumper Hit`
+(turtlebot hardware), `MarkerArray` on `/waypoints` (no `waypoint_follower` in `nav2_params.yaml`),
+`Trajectories` on `/marker` (DWB-only; we run RPP), `Downsampled Costmap` (Smac-only; we run
+NavFn), and the global `VoxelGrid` (the global costmap runs `obstacle_layer`, not `voxel_layer`,
+so `/global_costmap/voxel_marked_cloud` is never published). Each would be a permanently dead row.
 
 ## Composition
 
@@ -104,6 +136,8 @@ the floor about 1.2 m ahead. It is a manipulation and near-field sensor.
 | `localization.launch.py`, `config/localization.yaml`, `map_server` + AMCL | now covered: `test_navigate_to_pose` runs the whole stack in localization mode |
 | `g1_gait_shaper`'s contract, including never amplifying | `g1_locomotion`'s `test_gait_shaper` |
 | Authority released when the acquire *fails* | `g1_locomotion`'s `test_authority_release`, against a stub, no sim |
+| Arguments surviving `bringup.launch.py` -> `nav_sim.launch.py` -> `sim.launch.py` | `test_launch_threading`, no sim |
+| The sensor display group not drifting between the two RViz configs | `test_rviz_configs`, no sim |
 
 PR A shipped with localization deliberately untested; `test_navigate_to_pose` closes that, because
 it runs `map_server` + AMCL exactly as shipped.
