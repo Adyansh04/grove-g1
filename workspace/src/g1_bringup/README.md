@@ -1,10 +1,11 @@
 # g1_bringup
 
 Sim bring-up for the G1 stack. Launches `unitree_mujoco` alongside the `ros2_control` stack
-(`g1_description` + `g1_hardware_interface`) and `g1_locomotion`'s bridge, plus a sim-only node
-that stands in for the robot's onboard motion service.
+(`g1_description` + `g1_hardware_interface`), `g1_locomotion`'s bridge, and
+`g1_motion_service_sim`'s sim-only stand-in for the robot's onboard motion service.
 
-`ament_cmake`, C++17 node with Python launch files and integration tests.
+Launch files, config, scenes and scripts only -- no compiled code of its own. `ament_cmake`,
+with Python launch files and integration tests.
 
 ## Launch files and nodes
 
@@ -15,19 +16,19 @@ that stands in for the robot's onboard motion service.
 | `launch/loco.launch.py` | Starts `g1_loco_bridge` and drives it configure to active off its own lifecycle events. |
 | `launch/activate_arm.launch.py` | Runs `scripts/activate_arm`, the ordered acquire step. |
 | `launch/deactivate_arm.launch.py` | Runs `scripts/deactivate_arm`, the ordered release step. |
-| `motion_service_sim` | SIM-ONLY node. See below. |
+
+This package starts nodes it does not own. `motion_service_sim` is
+`g1_motion_service_sim`'s, `g1_loco_bridge` is `g1_locomotion`'s, and the sensor and odometry
+nodes belong to `g1_sensor_relay` and `g1_state_estimation`.
 
 ### Topics
 
-`g1_hardware_interface`'s README covers `/lowstate` and `/arm_sdk`. This package adds:
+`g1_hardware_interface`'s README covers `/lowstate` and `/arm_sdk`;
+`g1_motion_service_sim`'s covers `/lowcmd`, `/api/sport/*` and the lower-body `/joint_states`.
+What this package's own launch graph adds on top:
 
 | Topic | Direction | Type | QoS |
 |---|---|---|---|
-| `/lowcmd` | out | `unitree_hg/msg/LowCmd` | best-effort, keep-last(1), volatile |
-| `/sportmodestate` | in | `unitree_go/msg/SportModeState` | best-effort, volatile |
-| `/api/sport/request` | in | `unitree_api/msg/Request` | `QoS(10)` reliable, volatile |
-| `/api/sport/response` | out | `unitree_api/msg/Response` | `QoS(1)` reliable, volatile |
-| `/joint_states` | out | `sensor_msgs/msg/JointState` | default, ~200 Hz |
 | `/robot_description` | out | `std_msgs/msg/String` | transient-local |
 | `/livox/lidar` | out | `sensor_msgs/msg/PointCloud2` | sensor data, `sensors:=true` only |
 | `/g1_sensor_relay/sensor_pose` | out | `geometry_msgs/msg/PoseStamped` | sensor data, diagnostics |
@@ -91,148 +92,16 @@ message rather than leaving you to debug an empty graph.
 ABI-incompatible `libddsc.so.0` wins and the sim aborts on its first DDS write. `sim.launch.py`
 prepends the correct directory back for the sim process only.
 
-## motion_service_sim: SIM-ONLY
+## The sim-only motion service
 
-**Never launch this near real hardware.** On the real G1 the onboard motion service owns `/lowcmd`
-exclusively and provides the weight-blended `/arm_sdk` interface. `unitree_mujoco` emulates only the
-low-level device, so nothing services `/arm_sdk` and nothing commands the legs. This node fills both
-gaps, sim-side only, and is launched exclusively by `sim.launch.py`.
+`motion_service_sim` fills the three gaps `unitree_mujoco` leaves: it serves the weight-blended
+`/arm_sdk` interface, answers the `/api/sport/*` LocoClient protocol, and runs the walking policy
+that balances the robot. **Never launch it near real hardware.** `sim.launch.py` is the only thing
+that starts it.
 
-It is a plain node rather than lifecycle-managed: it emulates an always-on vendor service that has
-no activate/deactivate concept of its own.
-
-### Arm path
-
-- Captures a frozen hold pose from the first `/lowstate` sample.
-- Subscribes `/arm_sdk`, matching `G1ArmSdkSystem`'s publisher QoS exactly.
-- Publishes `/lowcmd` at `publish_rate_hz`, blending arms (motors 15-28) between the hold pose and
-  the commanded values on `q`, `kp` and `kd` alike: `published = hold * (1 - w) + commanded * w`.
-  The weight slot (`motor_cmd[29].q`) echoes the effective weight, and the CRC uses
-  `g1_hardware_interface`'s vendored `computeLowCmdCrc()`.
-
-`mode`, `mode_pr` and `mode_machine` are deliberately never set. `unitree_mujoco` computes actuator
-torque purely as `tau_ff + kp * (q_des - q_meas) + kd * (dq_des - dq_meas)` and never reads them.
-That is a sim-specific finding; what the real motion service does with these fields is unverified
-and stays a hardware re-validation item.
-
-**Staleness policy (bridge policy, not vendor semantics):** if the newest `/arm_sdk` message is
-older than `arm_sdk_timeout_ms`, the effective blend weight decays toward zero at
-`1 / timeout_ramp_down_s` per second, so a silent publisher eases the arms back to the hold pose
-instead of freezing them. A fresh message resumes from wherever the weight sits, never snapping.
-What the real controller does when its publisher goes silent at weight 1 is unverified.
-
-### LocoClient wire responder
-
-The same node answers `/api/sport/request`, mirroring the single-service reality on hardware. It
-tracks an FSM state and applies the acceptance rules in `include/g1_bringup/loco_fsm.hpp`. Those
-rules are load-bearing: an accepted `SET_VELOCITY` latches the command the walking policy consumes,
-so this path drives motors 0-14. It never touches the arm slots and never publishes `/lowcmd`
-itself.
-
-**Reliability and durability on `/api/sport/*` are vendor-matched. Do not deviate.** History depth
-is not RxO-matched, so it is picked per side: the request reader is deeper than the response
-publisher so two requests in one DDS batch cannot overwrite each other in a depth-1 cache.
-
-Every response echoes `header.identity` (both `id` and `api_id`). The correlator matches on `id`
-only, and nothing on either side validates `api_id`, so a colliding `id` from another client on the
-same domain would not be caught.
-
-| API id | Name | Behaviour |
-|---|---|---|
-| `7001` | `GET_FSM_ID` | Returns `{"data": <fsm_id>}`, code `0`. |
-| `7101` | `SET_FSM_ID` | Applies the legality table below. Code `0` or `7302`. |
-| `7105` | `SET_VELOCITY` | Code `7301` unless the FSM is `Start`, else `0` and the command is latched. |
-| `7106` | `SET_ARM_TASK` | Always rejected with `-2`. `WaveHand`/`ShakeHand` moves hand arm authority to the onboard controller, which would fight this stack's `rt/arm_sdk` blend weight. |
-| anything else, or malformed JSON | | `-2` (`UT_ROBOT_TASK_UNKNOWN_ERROR`). |
-
-FSM state starts at `Damp(1)`, matching the robot's boot state. Legal transitions:
-
-```
-Damp(1)    -> StandUp(4)
-StandUp(4) -> Start(500), Damp(1)
-Start(500) -> StandUp(4), Damp(1)
-```
-
-Every other edge is rejected `7302`. The vendor contract has no code specific to "illegal
-transition", so reusing `7302` is this responder's approximation and stays a hardware
-re-validation item.
-
-## Walking policy: SIM-ONLY
-
-`motion_service_sim` runs an RL walking policy that owns motors 0-14 (legs and waist) and balances
-the robot with no pelvis weld. `/arm_sdk` keeps motors 15-28, so the two never contend: they are
-disjoint slices of one `/lowcmd` message. The policy's own arm outputs are discarded.
-
-**Provenance:** `policy/walker.onnx` and its external weights `walker.onnx.data` come from
-[luckyrobots/g1-manipulation-challenge](https://github.com/luckyrobots/g1-manipulation-challenge),
-which describes the policy as trained with RL in Isaac Lab. That repository publishes no licence
-file and no attribution for the policy's own origin, so its redistribution terms are undeclared.
-Recorded here rather than left implicit. The MJCF, meshes and scene from that repository are not
-vendored and are not needed.
-
-### Contract
-
-- **Observation, 99 elements, fed raw:** `base_lin_vel(3)`, `base_ang_vel(3)`,
-  `projected_gravity(3)`, `joint_pos(29, relative to the default posture)`, `joint_vel(29)`,
-  `last_action(29)`, `command(3)`. The exported graph starts with `Sub(mean)` then `Div(std)`, so
-  normalisation is already inside the model. Applying the `obs_mean`/`obs_std` arrays that ship
-  alongside it would apply it twice.
-- **Action:** `target = default_joint_pos + action * action_scales`, per joint.
-- **Joint order:** identical to the Unitree DDS motor order (0-28), so `motor_state[i]` and
-  `motor_cmd[i]` map straight through. Asserted at startup and in `test_walk_policy`.
-- **Base linear velocity comes from `/sportmodestate`,** not `/lowstate`, which carries no such
-  field. This is why the policy is structurally sim-only, and the reason is stronger than "that
-  service is switched off": **the field does not exist on hardware at all.** `unitree_mujoco`
-  publishes the **go2** `SportModeState` (16 fields, with `position` and `velocity` filled from
-  MuJoCo `framepos`/`framelinvel` on the pelvis `imu` site) regardless of which robot is simulated.
-  The real G1 publishes `unitree_hg::SportModeState_` on the same topic name, and that type carries
-  only `fsm_id`, `fsm_mode`, `task_id` and `task_time`. No pose, no velocity. `rt/odommodestate` does
-  not exist anywhere in Unitree's code. Supplying this observation on hardware needs real state
-  estimation, which is a future milestone (see `g1_state_estimation`).
-- Inference runs at 50 Hz on its own timer, about 0.02 ms per call.
-
-Armature matching turned out not to matter. Ablating armature, frictionloss and damping against
-`unitree_mujoco`'s `g1_29dof.xml` showed the model as shipped (uniform `armature=0.01`) performs
-identically to per-joint values across standing, walking, turning and a 500 N perturbation. No MJCF
-edits and no mesh vendoring are required.
-
-### Measured behaviour: read before commanding velocities
-
-There is a hard gait-initiation deadband with no hysteresis. Below it the robot stands still rather
-than stepping, and kicking above it then dropping back stops the gait outright.
-
-| Axis | No motion at or below | Steps from | Measured output |
-|---|---|---|---|
-| `vx` | 0.35 m/s | **0.40 m/s** | 0.5 to 0.35, 0.6 to 0.47, 1.0 to 0.93 m/s |
-| `vy` | 0.30 m/s | **0.50 m/s** | 0.5 to 0.44, 1.0 to 0.93 m/s |
-| `vyaw` (in place) | 0.60 rad/s | **1.50 rad/s** | 1.0 to 0.21, 1.5 to 1.08 rad/s |
-
-Commands below threshold pass through unchanged and are logged, never scaled up. Turning a small
-command into a large motion is exactly what this stack's control-mode rules exist to prevent.
-
-Also measured, and relevant to future Nav2 work:
-
-- About 0.22 to 0.25 m/s of uncommanded lateral drift while walking forward, so straight-line
-  walking curves.
-- Turning collapses forward speed: `vx=0.6` with yaw commanded measures about -0.11 m/s.
-- Balance is solid. The robot survives a 500 N, 50 ms lateral impulse while standing with about
-  2.6 degrees of peak tilt.
-
-Together these make it a teleop-grade locomotion source, not a planner-grade one.
-
-### Authority
-
-No new authority mechanism exists for the policy. The FSM legality table is the gate:
-`SET_VELOCITY` is latched only when `checkVelocityAllowed()` accepted it, so outside `Start` it is
-rejected `7301` and nothing reaches the policy. A successful transition away from `Start` clears
-the latch, and the latch carries the request's own `duration` as a dead-man, so a silent bridge
-stops the robot within a second.
-
-The policy runs continuously from startup regardless of FSM state. Leg authority is gated on policy
-freshness, not on the FSM, so releasing locomotion authority stops the walking without dropping the
-robot. If inference goes stale the lower-body target freezes at the last policy output rather than
-reverting to the captured spawn pose, which would be a large step away from the stance the robot is
-actually in.
+It lives in **`g1_motion_service_sim`**, whose README carries the arm blend and staleness policy,
+the FSM legality table and API dispatch, the walking policy's contract and provenance, and the
+measured gait deadband to read before commanding any velocity.
 
 ## Sensors on the converged track: SIM-ONLY
 
@@ -329,24 +198,9 @@ including file lives elsewhere.
 
 ## Configuration
 
-`config/motion_service_sim.yaml`:
-
-| Param | Default | Meaning |
-|---|---|---|
-| `publish_rate_hz` | `500.0` | `/lowcmd` publish rate. |
-| `leg_kp` / `leg_kd` | `100.0` / `1.0` | Stiff-hold gains, motors 0-11. |
-| `waist_kp` / `waist_kd` | `50.0` / `1.0` | Stiff-hold gains, motors 12-14. |
-| `arm_hold_kp` / `arm_hold_kd` | `40.0` / `1.0` | Arm gains at blend weight 0. |
-| `arm_sdk_timeout_ms` | `500.0` | `/arm_sdk` age beyond this is stale. |
-| `timeout_ramp_down_s` | `1.0` | Weight decay and resume rate. |
-
-Gain provenance: Unitree's `g1_low_level_example.cpp` holds a captured posture with
-`motor_cmd[i].kp = (i < 13) ? 100.0 : 50.0` and `kd = 1.0`. This bridge holds the whole waist group
-at the gentler value, the more conservative choice for locking a static pose. The arm gains match
-`g1_description/config/arm_sdk_params.yaml`.
-
-`config/walk_policy.yaml` holds the policy's joint names, default posture, action scales, per-joint
-gains, rates and limits. The file itself is commented; see it directly.
+`motion_service_sim.yaml` and `walk_policy.yaml` moved to `g1_motion_service_sim` with the node
+that reads them; `sim.launch.py` still passes both. The three files here are the ones this
+package's own launch graph owns.
 
 `config/controllers.yaml`: `controller_manager` at 200 Hz. `G1ArmSdkSystem` starts inactive.
 `joint_state_broadcaster` is spawned active, `arm_trajectory_controller` inactive, covering the 14
@@ -359,11 +213,6 @@ but they get no `ros2_control` interfaces and `unitree_mujoco`'s MJCF has no han
 
 | Test | Kind | Covers |
 |---|---|---|
-| `test_blend_math` | gmock | Blend-weight decay and resume, q/kp/kd blend. |
-| `test_assemble_sim_low_cmd` | gmock | `/lowcmd` assembly: lower-body slots and gains, arm blend, weight-slot echo. |
-| `test_loco_fsm` | gmock | FSM legality: every legal and illegal edge, `SET_VELOCITY`'s Start-only gate. |
-| `test_walk_policy` | gmock | Policy contract (joint order, observation layout, un-normalised input, action mapping, dead-man) and the leg-authority fallback. |
-| `test_walk_policy_session` | gmock | ONNX Runtime: shape contract, external-weight resolution, determinism, inference budget. |
 | `test_sim_bringup` | launch | Bring-up topics, rates, controller and component states (welded). |
 | `test_arm_command` | launch | Ordered activation, weight ramp, closed-loop trajectory, slew clamp, rogue-publisher guard (welded). |
 | `test_loco` | launch | LocoClient protocol end to end over DDS (welded). |
@@ -371,8 +220,13 @@ but they get no `ros2_control` interfaces and `unitree_mujoco`'s MJCF has no han
 | `test_walk_teleop` | launch | The real authority path: `7301` before `Start`, dead-man, Damp release, randomized and whiplash sequences. |
 | `test_walk_and_arm` | launch | Acceptance: walking under `cmd_vel` while an arm trajectory converges, one session. |
 | `sim_settle_gap` | ctest | A 5 s sleep holding the sim resource lock so each DDS graph drains. |
-| `clang_format_check_g1_bringup` | ctest | C++ formatting. |
 | `ruff_check_g1_bringup` | ctest | Python lint and import order. |
+
+Every suite here launches `sim.launch.py`, which is why they stay in this package rather than
+following `motion_service_sim`'s source: `g1_bringup` depends on `g1_motion_service_sim`, so
+hosting them there would be a dependency cycle. They also share one `RESOURCE_LOCK`, and ctest
+only honours that within a single invocation. The pure unit tests that need no simulator went
+with their source.
 
 ```bash
 colcon build --symlink-install --packages-select g1_bringup
@@ -404,6 +258,7 @@ colcon test --packages-select g1_bringup --ctest-args -R test_walk_stand
 
 ## Language
 
-The bridge node is C++17, a control-rate loop. Launch files, `launch_testing` suites, and the
-`activate_arm`/`deactivate_arm` scripts are Python because ROS 2 provides no C++ path for launch or
-`launch_testing`, and the scripts are one-shot sequencing tools rather than control loops.
+All Python, and no C++ at all since `motion_service_sim` moved out. ROS 2 provides no C++ path for
+launch or `launch_testing`, and the `activate_arm`/`deactivate_arm` scripts are one-shot sequencing
+tools rather than control loops. Nothing here runs at control rate; the packages this one launches
+carry that.
