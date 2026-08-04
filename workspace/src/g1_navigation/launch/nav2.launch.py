@@ -318,7 +318,6 @@ def generate_launch_description():
 
     return LaunchDescription([
         SetEnvironmentVariable("RCUTILS_LOGGING_BUFFERED_STREAM", "1"),
-        OpaqueFunction(function=_reject_composition),
         DeclareLaunchArgument(
             "use_sim_time",
             default_value="false",
@@ -340,6 +339,10 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument("container_name", default_value="nav2_container"),
         DeclareLaunchArgument("log_level", default_value="info"),
+        # After the declarations, not before: entities run in order, and evaluating
+        # use_composition ahead of its DeclareLaunchArgument fails with "does not exist" on a
+        # plain `ros2 launch` of this file.
+        OpaqueFunction(function=_reject_composition),
         load_nodes,
         load_composable_nodes,
         gait_shaper,
