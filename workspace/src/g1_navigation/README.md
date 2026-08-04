@@ -172,6 +172,24 @@ LiDAR, the relay, the odometry publisher and the waist joint states, none of whi
 walking policy. Quote the figure for the navigation configuration only, and record the `sensors`
 value if you ever reproduce a frozen robot.
 
+**Unconfirmed, and it may well be higher.** Late in the PR B work, 3 of 4 consecutive
+`sensors:=true world:=navigation` launches came up unable to walk — one confirmed by publishing
+`vyaw` straight to `/g1_loco_bridge/cmd_vel`, bypassing Nav2 and the shaper, for zero motion at
+`authority: 2`, `fsm_id: 500`, `last_error_code: 0`. At a 12% rate, 3 or more in 4 is unlikely
+(~0.7%).
+
+Treat that as an observation, not a measurement. It is 4 samples, gathered incidentally while
+debugging something unrelated rather than from fresh isolated launches, and one of the four was
+degraded (the robot moved, but `Spin` never returned a result) rather than a clean freeze — which
+is a judgement call, not a threshold. It is not evidence the 12% figure is wrong, only that it has
+not been re-checked since it was taken.
+
+**The figure above is deliberately left as measured.** Re-measuring properly is a fast-follow: run
+Step 0's protocol from `docs/notes/milestone6-authority-timing.md` — N ≥ 8 fresh, isolated
+launches, each scored on displacement from the START-result pose rather than on velocity, with
+every non-moving run logged individually. Change the number only from that, never from a tally
+picked up in passing.
+
 Separately, the robot sometimes **falls over** rather than freezing — seen once during acceptance
 testing, at 117 degrees of tilt. The odometry publisher's tilt guard holds the last heading and
 says so, and the progress checker aborts the goal the same way. Three consecutive acceptance runs
