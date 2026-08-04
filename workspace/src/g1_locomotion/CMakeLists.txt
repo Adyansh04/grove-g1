@@ -58,6 +58,16 @@ target_include_directories(g1_gait_shaper PRIVATE
 target_compile_features(g1_gait_shaper PUBLIC cxx_std_17)
 ament_target_dependencies(g1_gait_shaper rclcpp geometry_msgs)
 
+# Client of this package's own action, so no new dependency. Its own executable rather than a
+# library: nothing links it, and it has no ROS-free logic worth extracting -- the acquire
+# sequence is irreducibly async.
+add_executable(g1_loco_authority src/g1_loco_authority_node.cpp)
+target_include_directories(g1_loco_authority PRIVATE
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+)
+target_compile_features(g1_loco_authority PUBLIC cxx_std_17)
+ament_target_dependencies(g1_loco_authority rclcpp rclcpp_action rclcpp_lifecycle g1_msgs)
+
 add_executable(g1_loco_bridge src/g1_loco_bridge_main.cpp)
 target_compile_features(g1_loco_bridge PUBLIC cxx_std_17)
 target_link_libraries(g1_loco_bridge g1_loco_bridge_node_lib)
@@ -68,9 +78,10 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   target_compile_options(g1_loco_bridge_node_lib PRIVATE -Wall -Wextra)
   target_compile_options(g1_loco_bridge PRIVATE -Wall -Wextra)
   target_compile_options(g1_gait_shaper PRIVATE -Wall -Wextra)
+  target_compile_options(g1_loco_authority PRIVATE -Wall -Wextra)
 endif()
 
-install(TARGETS g1_loco_bridge g1_gait_shaper DESTINATION lib/${PROJECT_NAME})
+install(TARGETS g1_loco_bridge g1_gait_shaper g1_loco_authority DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY config DESTINATION share/${PROJECT_NAME})
 
 if(BUILD_TESTING)

@@ -1,0 +1,377 @@
+/**
+ * @file g1_loco_authority_node.cpp
+ * @brief Lifecycle bracket that acquires and releases LocoClient velocity authority.
+ *
+ * A planner publishes cmd_vel and nothing else -- it has no way to send the SetLocoMode goals
+ * the bridge needs before it will act on anything. This node is that missing step, expressed
+ * as a lifecycle transition so a lifecycle manager can bracket a whole navigation session:
+ * active means the robot is walk-capable, inactive means authority has been handed back.
+ *
+ * Deliberately NOT auto-acquiring on the first cmd_vel. That is implicit acquisition, and a
+ * stray publisher would stand the robot up and walk it (CONTROL_MODES.md rule 4).
+ */
+#include <atomic>
+#include <chrono>
+#include <memory>
+#include <string>
+#include <thread>
+
+#include "g1_locomotion/loco_api_ids.hpp"
+#include "g1_msgs/action/set_loco_mode.hpp"
+#include "g1_msgs/msg/loco_status.hpp"
+#include "rclcpp/rclcpp.hpp"
+#include "rclcpp_action/rclcpp_action.hpp"
+#include "rclcpp_lifecycle/lifecycle_node.hpp"
+
+namespace g1_locomotion
+{
+
+class G1LocoAuthority : public rclcpp_lifecycle::LifecycleNode
+{
+public:
+    using CallbackReturn =
+        rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
+    using SetLocoMode = g1_msgs::action::SetLocoMode;
+
+    explicit G1LocoAuthority(const rclcpp::NodeOptions& options)
+      : rclcpp_lifecycle::LifecycleNode("g1_loco_authority", options)
+    {
+        declare_parameter("acquire_timeout_s", acquire_timeout_s_);
+        declare_parameter("settle_after_start_s", settle_after_start_s_);
+        // A parameter rather than a remap. Remapping an action name does not reach the client
+        // created through rclcpp_action::create_client's node-interfaces overload -- verified
+        // on Humble: the subscription below remaps correctly while the client kept resolving to
+        // /set_mode either way, and the acquire then times out claiming the bridge is down.
+        // A parameter cannot half-apply, and ros2 param get shows what it actually resolved to.
+        declare_parameter("set_mode_action", action_name_);
+    }
+
+    CallbackReturn on_configure(const rclcpp_lifecycle::State&) override
+    {
+        acquire_timeout_s_    = get_parameter("acquire_timeout_s").as_double();
+        settle_after_start_s_ = get_parameter("settle_after_start_s").as_double();
+        action_name_          = get_parameter("set_mode_action").as_string();
+        if (action_name_.empty())
+        {
+            RCLCPP_ERROR(get_logger(), "set_mode_action must name the bridge's action");
+            return CallbackReturn::FAILURE;
+        }
+        if (acquire_timeout_s_ <= 0.0 || settle_after_start_s_ < 0.0)
+        {
+            RCLCPP_ERROR(
+                get_logger(),
+                "acquire_timeout_s must be positive and settle_after_start_s non-negative; got "
+                "%.3f and %.3f",
+                acquire_timeout_s_,
+                settle_after_start_s_);
+            return CallbackReturn::FAILURE;
+        }
+
+        // Reentrant, because on_activate blocks on an action result that this same node has to
+        // service. See the executor note in the package README.
+        callback_group_ =
+            create_callback_group(rclcpp::CallbackGroupType::Reentrant, /*automatically_add=*/true);
+
+        client_ = rclcpp_action::create_client<SetLocoMode>(
+            get_node_base_interface(),
+            get_node_graph_interface(),
+            get_node_logging_interface(),
+            get_node_waitables_interface(),
+            action_name_,
+            callback_group_);
+
+        // Transient-local and reliable, matched to the bridge's ~/status publisher. A mismatch
+        // here is silent: no samples ever arrive and the acquire hangs to its timeout with
+        // nothing in the log to say why.
+        rclcpp::SubscriptionOptions sub_options;
+        sub_options.callback_group = callback_group_;
+        status_sub_                = create_subscription<g1_msgs::msg::LocoStatus>(
+            "status",
+            rclcpp::QoS(rclcpp::KeepLast(1)).reliable().transient_local(),
+            [this](const g1_msgs::msg::LocoStatus::ConstSharedPtr& msg) {
+                latest_authority_.store(msg->authority, std::memory_order_relaxed);
+            },
+            sub_options);
+        return CallbackReturn::SUCCESS;
+    }
+
+    CallbackReturn on_activate(const rclcpp_lifecycle::State& previous_state) override
+    {
+        LifecycleNode::on_activate(previous_state);
+
+        if (!client_->wait_for_action_server(timeout()))
+        {
+            RCLCPP_ERROR(
+                get_logger(),
+                "no SetLocoMode action server on '%s' within %.1f s; g1_loco_bridge is not up, "
+                "or is not active",
+                action_name_.c_str(),
+                acquire_timeout_s_);
+            return releaseAndFail();
+        }
+        if (!sendMode(SetLocoMode::Goal::STAND_UP, "STAND_UP"))
+        {
+            return releaseAndFail();
+        }
+        if (!sendMode(SetLocoMode::Goal::START, "START"))
+        {
+            return releaseAndFail();
+        }
+        // From here the bridge believes it holds authority, so every exit path owes a release.
+        acquired_ = true;
+
+        if (!waitForHeld())
+        {
+            RCLCPP_ERROR(
+                get_logger(),
+                "START succeeded but ~/status never reported HELD within %.1f s",
+                acquire_timeout_s_);
+            return releaseAndFail();
+        }
+
+        // The gait is not responsive the instant START returns. Measured across 8 fresh
+        // launches: 1.83-1.92 s for six of seven that moved. See
+        // docs/notes/milestone6-authority-timing.md for why this is not the p90.
+        std::this_thread::sleep_for(std::chrono::duration<double>(settle_after_start_s_));
+
+        RCLCPP_INFO(
+            get_logger(),
+            "locomotion authority held; the robot is walk-capable. Releasing on deactivate.");
+        return CallbackReturn::SUCCESS;
+    }
+
+    CallbackReturn on_deactivate(const rclcpp_lifecycle::State& previous_state) override
+    {
+        release();
+        return LifecycleNode::on_deactivate(previous_state);
+    }
+
+    /// Humble permits shutdown() straight from ACTIVE, bypassing on_deactivate entirely -- the
+    /// same trap the bridge's README documents. Without this, that path leaks authority.
+    CallbackReturn on_shutdown(const rclcpp_lifecycle::State&) override
+    {
+        release();
+        resetEntities();
+        return CallbackReturn::SUCCESS;
+    }
+
+    CallbackReturn on_error(const rclcpp_lifecycle::State&) override
+    {
+        release();
+        resetEntities();
+        return CallbackReturn::SUCCESS;
+    }
+
+    CallbackReturn on_cleanup(const rclcpp_lifecycle::State&) override
+    {
+        resetEntities();
+        return CallbackReturn::SUCCESS;
+    }
+
+private:
+    std::chrono::nanoseconds timeout() const
+    {
+        return std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::duration<double>(acquire_timeout_s_));
+    }
+
+    /// Whether a failed attempt is worth repeating.
+    enum class Attempt
+    {
+        kOk,
+        kNotReadyYet,  ///< the stack is still coming up; the same call later should work
+        kFatal,        ///< a real rejection; repeating it would just fail again
+    };
+
+    /**
+     * @brief Sends one SetLocoMode goal and blocks on its result, retrying while the stack is
+     * still coming up.
+     *
+     * Needed because everything launches at once: the bridge can be up and answering before the
+     * simulator has stepped any physics, and the onboard controller then refuses the transition.
+     * Waiting a fixed amount instead would be a guess about startup that this retry does not
+     * have to make.
+     *
+     * Bounded by acquire_timeout_s overall, not per attempt. A rejection comes back in about a
+     * millisecond, so the budget is spent almost entirely on the sleeps between tries.
+     */
+    bool sendMode(int fsm_id, const char* label)
+    {
+        const auto deadline = std::chrono::steady_clock::now() + timeout();
+        Attempt    outcome  = Attempt::kNotReadyYet;
+        int        attempts = 0;
+        while (std::chrono::steady_clock::now() < deadline)
+        {
+            ++attempts;
+            outcome = trySendMode(fsm_id, label);
+            if (outcome == Attempt::kOk)
+            {
+                if (attempts > 1)
+                {
+                    RCLCPP_INFO(get_logger(), "%s accepted on attempt %d", label, attempts);
+                }
+                return true;
+            }
+            if (outcome == Attempt::kFatal)
+            {
+                return false;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(250));
+        }
+        RCLCPP_ERROR(
+            get_logger(),
+            "%s never became possible within %.1f s (%d attempts); the stack came up but the "
+            "robot never reached a state that would accept it",
+            label,
+            acquire_timeout_s_,
+            attempts);
+        return false;
+    }
+
+    Attempt trySendMode(int fsm_id, const char* label)
+    {
+        auto goal    = SetLocoMode::Goal();
+        goal.fsm_id  = fsm_id;
+        auto pending = client_->async_send_goal(goal);
+        if (pending.wait_for(timeout()) != std::future_status::ready)
+        {
+            RCLCPP_ERROR(get_logger(), "%s goal was never acknowledged", label);
+            return Attempt::kFatal;
+        }
+        auto handle = pending.get();
+        if (!handle)
+        {
+            // A goal rejection carries no code, so this cannot be classified from the wire. Of
+            // the bridge's three reject reasons, two are transient (not yet active, a previous
+            // goal still in flight) and the third -- an fsm_id outside DAMP/STAND_UP/START --
+            // is unreachable from here, because those are the only two ids this node sends.
+            RCLCPP_WARN_THROTTLE(
+                get_logger(),
+                *get_clock(),
+                1000,
+                "%s not accepted yet; the bridge is up but not ready. Retrying.",
+                label);
+            return Attempt::kNotReadyYet;
+        }
+        auto result = client_->async_get_result(handle);
+        if (result.wait_for(timeout()) != std::future_status::ready)
+        {
+            RCLCPP_ERROR(get_logger(), "%s goal produced no result", label);
+            return Attempt::kFatal;
+        }
+        const auto wrapped = result.get();
+        if (wrapped.code == rclcpp_action::ResultCode::SUCCEEDED && wrapped.result->success)
+        {
+            return Attempt::kOk;
+        }
+
+        // Here the code IS meaningful, so retry only what is actually worth repeating.
+        // 7301 says the onboard controller is not in a state that can service the call, which is
+        // exactly "still coming up"; a sweep timeout is the same kind of transient. 7302 is the
+        // controller's own transition table refusing the move, and no amount of waiting changes
+        // that -- retrying it would just hide a real fault behind a timeout.
+        const std::int32_t code = wrapped.result->error_code;
+        const bool transient    = code == kCodeLocoStateNotAvailable || code == kCodeTaskTimeout;
+        if (transient)
+        {
+            RCLCPP_WARN_THROTTLE(
+                get_logger(),
+                *get_clock(),
+                1000,
+                "%s refused with code %d (%s); retrying.",
+                label,
+                code,
+                wrapped.result->message.c_str());
+            return Attempt::kNotReadyYet;
+        }
+        RCLCPP_ERROR(
+            get_logger(),
+            "%s rejected with code %d (%s). Not retried: this is the controller's own transition "
+            "table refusing, not a startup race.",
+            label,
+            code,
+            wrapped.result->message.c_str());
+        return Attempt::kFatal;
+    }
+
+    bool waitForHeld()
+    {
+        // Belt and braces: a successful START already implies the bridge moved to HELD. This
+        // confirms it on the topic a test or an operator can actually observe, and closes the
+        // window where the goal succeeded and the bridge then deactivated underneath us.
+        const auto deadline = std::chrono::steady_clock::now() + timeout();
+        while (std::chrono::steady_clock::now() < deadline)
+        {
+            if (latest_authority_.load(std::memory_order_relaxed) == g1_msgs::msg::LocoStatus::HELD)
+            {
+                return true;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        }
+        return false;
+    }
+
+    /// StandUp, never Damp: StandUp leaves the robot balanced and upright, Damp drops it.
+    void release()
+    {
+        if (!acquired_)
+        {
+            return;
+        }
+        acquired_ = false;
+        if (!sendMode(SetLocoMode::Goal::STAND_UP, "release to STAND_UP"))
+        {
+            // Logged, not propagated. The bridge's own beginRelease/onReleaseResult lands in
+            // kReleased either way, and refusing to deactivate would strand this node active
+            // while still holding authority -- the exact opposite of what rule 4 asks for.
+            RCLCPP_ERROR(
+                get_logger(),
+                "release did not confirm on the wire; the bridge releases authority regardless");
+        }
+    }
+
+    /// on_activate returning FAILURE leaves the node inactive, which means on_deactivate never
+    /// runs. Without releasing here, a failure after START would leave the bridge holding
+    /// authority with nobody supervising it.
+    CallbackReturn releaseAndFail()
+    {
+        release();
+        return CallbackReturn::FAILURE;
+    }
+
+    void resetEntities()
+    {
+        status_sub_.reset();
+        client_.reset();
+    }
+
+    std::string action_name_{ "/g1_loco_bridge/set_mode" };
+    double      acquire_timeout_s_{ 5.0 };
+    double      settle_after_start_s_{ 2.5 };
+    /// Whether the bridge believes it holds authority because of us. Touched only from the
+    /// transition thread.
+    bool acquired_{ false };
+    /// The one piece of state shared across threads: written by the status callback on the
+    /// reentrant group, read by the transition thread in waitForHeld().
+    std::atomic<std::uint8_t> latest_authority_{ g1_msgs::msg::LocoStatus::RELEASED };
+
+    rclcpp::CallbackGroup::SharedPtr                          callback_group_;
+    rclcpp_action::Client<SetLocoMode>::SharedPtr             client_;
+    rclcpp::Subscription<g1_msgs::msg::LocoStatus>::SharedPtr status_sub_;
+};
+
+}  // namespace g1_locomotion
+
+int main(int argc, char** argv)
+{
+    rclcpp::init(argc, argv);
+    // Two threads, not the hardware default: on_activate blocks on an action result that this
+    // same node must service, so the result callback needs a thread the transition is not
+    // holding. Two is exactly enough and bounds the deviation. See the package README.
+    rclcpp::executors::MultiThreadedExecutor executor(rclcpp::ExecutorOptions(), 2);
+    auto node = std::make_shared<g1_locomotion::G1LocoAuthority>(rclcpp::NodeOptions());
+    executor.add_node(node->get_node_base_interface());
+    executor.spin();
+    rclcpp::shutdown();
+    return 0;
+}

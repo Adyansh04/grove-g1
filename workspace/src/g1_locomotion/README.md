@@ -142,6 +142,25 @@ an ordinary callback.
 A `MultiThreadedExecutor` migration would need the base class's lifecycle services serialised
 against the named group by some other means.
 
+#### `g1_loco_authority` deviates, and only it
+
+**`g1_loco_authority` runs a `MultiThreadedExecutor` with two threads.** It has to: its
+`on_activate` blocks on a `SetLocoMode` result, and that result arrives as a callback on the same
+node, so a single-threaded executor would deadlock on the transition that is waiting for it. Its
+action client and status subscription sit in one `Reentrant` group; the base class's lifecycle
+services stay in the default `MutuallyExclusive` one.
+
+The deviation is bounded to **one atomic**, `latest_authority_` — written by the status callback,
+read by the transition thread. There is no other shared state and no lock anywhere in the node.
+
+**`G1LocoBridge`, `LocoRequestCorrelator` and `VelocityGate` are unaffected.** They keep the
+single-threaded guarantee above, and the no-locks-no-atomics property with it. Nothing in this
+paragraph loosens anything about the bridge.
+
+The alternative — a non-blocking `on_activate` driven off a timer — avoids the executor entirely,
+but then the lifecycle manager reports the node active while the robot is not yet walk-capable,
+which destroys the only thing the bracket is for.
+
 ### Pure, ROS-free classes
 
 The safety-bearing logic lives in plain classes with no node, executor or timer, so it is unit
