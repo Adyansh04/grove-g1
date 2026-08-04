@@ -48,13 +48,12 @@ from launch.actions import (
     SetEnvironmentVariable,
     TimerAction,
 )
-from launch.conditions import IfCondition, UnlessCondition
 from launch.event_handlers import OnProcessExit, OnProcessStart
 from launch.events import matches_action
 from launch.events.process import ShutdownProcess
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import LifecycleNode, LoadComposableNodes, Node
-from launch_ros.descriptions import ComposableNode, ParameterFile
+from launch_ros.actions import LifecycleNode, Node
+from launch_ros.descriptions import ParameterFile
 from launch_ros.event_handlers import OnStateTransition
 from launch_ros.events.lifecycle import ChangeState
 from lifecycle_msgs.msg import Transition
@@ -93,8 +92,6 @@ def generate_launch_description():
     use_sim_time = LaunchConfiguration("use_sim_time")
     autostart = LaunchConfiguration("autostart")
     params_file = LaunchConfiguration("params_file")
-    use_composition = LaunchConfiguration("use_composition")
-    container_name = LaunchConfiguration("container_name")
     log_level = LaunchConfiguration("log_level")
 
     remappings = [("/tf", "tf"), ("/tf_static", "tf_static")]
@@ -121,11 +118,9 @@ def generate_launch_description():
         ),
     }
 
+    # Unconditional: _reject_composition aborts before this is reached if composition was asked
+    # for, so there is no second branch to select between.
     load_nodes = GroupAction(
-        # UnlessCondition, not upstream's IfCondition(PythonExpression(["not ", ...])). That form
-        # literally evals Python, so it needs a Python-cased 'False' and dies with
-        # "name 'true' is not defined" on the ROS-style "true" this package uses everywhere else.
-        condition=UnlessCondition(use_composition),
         actions=[
             Node(
                 package="nav2_controller",
@@ -169,53 +164,6 @@ def generate_launch_description():
                 name="lifecycle_manager_navigation",
                 output="screen",
                 arguments=["--ros-args", "--log-level", log_level],
-                parameters=[{
-                    "use_sim_time": use_sim_time,
-                    "autostart": autostart,
-                    "node_names": LIFECYCLE_NODES,
-                }],
-            ),
-        ],
-    )
-
-    load_composable_nodes = LoadComposableNodes(
-        condition=IfCondition(use_composition),
-        target_container=container_name,
-        composable_node_descriptions=[
-            ComposableNode(
-                package="nav2_controller",
-                plugin="nav2_controller::ControllerServer",
-                name="controller_server",
-                parameters=[configured_params],
-                remappings=controller_remappings,
-            ),
-            ComposableNode(
-                package="nav2_planner",
-                plugin="nav2_planner::PlannerServer",
-                name="planner_server",
-                parameters=[configured_params],
-                remappings=remappings,
-            ),
-            ComposableNode(
-                # Upstream's plugin name really is behavior_server::BehaviorServer, not
-                # nav2_behaviors::something. Verified against ros2 component types.
-                package="nav2_behaviors",
-                plugin="behavior_server::BehaviorServer",
-                name="behavior_server",
-                parameters=[configured_params],
-                remappings=remappings,
-            ),
-            ComposableNode(
-                package="nav2_bt_navigator",
-                plugin="nav2_bt_navigator::BtNavigator",
-                name="bt_navigator",
-                parameters=[configured_params, bt_xml],
-                remappings=remappings,
-            ),
-            ComposableNode(
-                package="nav2_lifecycle_manager",
-                plugin="nav2_lifecycle_manager::LifecycleManager",
-                name="lifecycle_manager_navigation",
                 parameters=[{
                     "use_sim_time": use_sim_time,
                     "autostart": autostart,
@@ -337,14 +285,12 @@ def generate_launch_description():
             "the rest of this package -- composition does not deliver the nested costmap "
             "parameters. See the module docstring.",
         ),
-        DeclareLaunchArgument("container_name", default_value="nav2_container"),
         DeclareLaunchArgument("log_level", default_value="info"),
         # After the declarations, not before: entities run in order, and evaluating
         # use_composition ahead of its DeclareLaunchArgument fails with "does not exist" on a
         # plain `ros2 launch` of this file.
         OpaqueFunction(function=_reject_composition),
         load_nodes,
-        load_composable_nodes,
         gait_shaper,
         loco_authority,
         configure_authority,
