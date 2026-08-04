@@ -48,35 +48,16 @@ private:
     /// initialisers above cannot depend on declaration order.
     GaitShaper::Config declareConfig()
     {
+        // Validation belongs to GaitShaper's constructor, not here: shape() is what depends on
+        // the bounds, and a check in this one caller left every other construction path free to
+        // hand the class a config its body cannot handle. The throw still surfaces the same
+        // way, from shaper_'s initialiser, and main() catches it.
         const GaitShaper::Config defaults;
-        const GaitShaper::Config config{
+        return GaitShaper::Config{
             declare_parameter("fwd_engage", defaults.fwd_engage),
             declare_parameter("yaw_engage", defaults.yaw_engage),
             declare_parameter("yaw_clamp", defaults.yaw_clamp),
         };
-        // The never-amplifies invariant is a property of the class AND its configuration, not
-        // of the class alone. A negative yaw_clamp turns the clamp into a multiplier, and a
-        // negative fwd_engage lets reverse through -- removing the backstop the navigation
-        // trees rely on. Neither is reachable from the shipped YAML, and neither should be
-        // reachable from any YAML.
-        if (config.fwd_engage < 0.0 || config.yaw_engage <= 0.0 || config.yaw_clamp < 0.0)
-        {
-            throw std::invalid_argument(
-                "g1_gait_shaper: fwd_engage and yaw_clamp must be >= 0 and yaw_engage > 0; "
-                "negative thresholds would let this node amplify a command instead of "
-                "reducing it");
-        }
-        // yaw_clamp below yaw_engage clamps every accepted turn back under the threshold that
-        // accepted it, so the robot never rotates. Exactly the failure Nav2's max_rotational_vel
-        // had at 1.0 against yaw_engage 1.20, which shipped and was only caught in review.
-        if (config.yaw_clamp < config.yaw_engage)
-        {
-            throw std::invalid_argument(
-                "g1_gait_shaper: yaw_clamp must be >= yaw_engage, or every turn this node "
-                "accepts is clamped back below the threshold that accepted it and the robot "
-                "never rotates");
-        }
-        return config;
     }
 
     void onCommand(const geometry_msgs::msg::Twist& msg)

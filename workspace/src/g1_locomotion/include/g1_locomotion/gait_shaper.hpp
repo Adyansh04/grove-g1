@@ -51,6 +51,16 @@ public:
         double vyaw{ 0.0 };
     };
 
+    /**
+     * @brief Constructs a shaper, rejecting a config it could not honour.
+     *
+     * @throws std::invalid_argument if `fwd_engage < 0`, `yaw_engage <= 0`, `yaw_clamp < 0`, or
+     *         `yaw_clamp < yaw_engage`.
+     *
+     * The class owns this rather than whoever reads the YAML. `shape()` clamps against
+     * `yaw_clamp`, which is undefined for inverted bounds, and the subtractive-only invariant
+     * above is a property of the class *and* its configuration.
+     */
     explicit GaitShaper(const Config& config);
 
     /**

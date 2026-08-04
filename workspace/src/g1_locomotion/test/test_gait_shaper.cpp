@@ -7,6 +7,7 @@
 
 #include <cmath>
 #include <limits>
+#include <stdexcept>
 
 #include "g1_locomotion/gait_shaper.hpp"
 
@@ -170,6 +171,54 @@ TEST(GaitShaper, NeverFlipsASign)
             EXPECT_GT(out.vyaw * vyaw, 0.0) << "vyaw " << vyaw;
         }
     }
+}
+
+// The constructor's own contract. These matter because shape() relies on it: std::clamp is
+// undefined when its bounds are inverted, which a negative yaw_clamp produces. Validating in
+// the node that reads the YAML was not enough -- it left every other caller, this test file
+// included, free to hand the class a config its body cannot handle.
+
+TEST(GaitShaperConfig, RejectsANegativeYawClamp)
+{
+    EXPECT_THROW(
+        GaitShaper(GaitShaper::Config{ kFwdEngage, kYawEngage, -1.0 }),
+        std::invalid_argument);
+}
+
+TEST(GaitShaperConfig, RejectsANegativeForwardEngage)
+{
+    // A negative fwd_engage makes `in.vx >= fwd_engage` true for reverse commands, which is the
+    // one thing the signed comparison exists to prevent.
+    EXPECT_THROW(
+        GaitShaper(GaitShaper::Config{ -0.1, kYawEngage, kYawClamp }),
+        std::invalid_argument);
+}
+
+TEST(GaitShaperConfig, RejectsANonPositiveYawEngage)
+{
+    EXPECT_THROW(
+        GaitShaper(GaitShaper::Config{ kFwdEngage, 0.0, kYawClamp }),
+        std::invalid_argument);
+    EXPECT_THROW(
+        GaitShaper(GaitShaper::Config{ kFwdEngage, -1.0, kYawClamp }),
+        std::invalid_argument);
+}
+
+TEST(GaitShaperConfig, RejectsAYawClampBelowYawEngage)
+{
+    // Structurally invalid, not merely badly tuned: every turn that clears yaw_engage is then
+    // clamped back under it, so the turn-in-place motion becomes unreachable while the shaper
+    // still reports it as a turn.
+    EXPECT_THROW(GaitShaper(GaitShaper::Config{ kFwdEngage, 1.20, 0.5 }), std::invalid_argument);
+}
+
+TEST(GaitShaperConfig, AcceptsTheShippedConfigAndTheBoundaryCase)
+{
+    EXPECT_NO_THROW(GaitShaper(GaitShaper::Config{ kFwdEngage, kYawEngage, kYawClamp }));
+    // yaw_clamp == yaw_engage is the tightest legal config, and zero forward engage is legal:
+    // it means every non-negative vx passes through, which is a deadband of nothing, not an
+    // inverted bound.
+    EXPECT_NO_THROW(GaitShaper(GaitShaper::Config{ 0.0, kYawEngage, kYawEngage }));
 }
 
 }  // namespace
