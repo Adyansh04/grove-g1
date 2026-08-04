@@ -66,6 +66,16 @@ private:
                 "negative thresholds would let this node amplify a command instead of "
                 "reducing it");
         }
+        // yaw_clamp below yaw_engage clamps every accepted turn back under the threshold that
+        // accepted it, so the robot never rotates. Exactly the failure Nav2's max_rotational_vel
+        // had at 1.0 against yaw_engage 1.20, which shipped and was only caught in review.
+        if (config.yaw_clamp < config.yaw_engage)
+        {
+            throw std::invalid_argument(
+                "g1_gait_shaper: yaw_clamp must be >= yaw_engage, or every turn this node "
+                "accepts is clamped back below the threshold that accepted it and the robot "
+                "never rotates");
+        }
         return config;
     }
 
@@ -110,7 +120,19 @@ private:
 int main(int argc, char** argv)
 {
     rclcpp::init(argc, argv);
-    rclcpp::spin(std::make_shared<g1_locomotion::G1GaitShaperNode>(rclcpp::NodeOptions()));
+    try
+    {
+        rclcpp::spin(std::make_shared<g1_locomotion::G1GaitShaperNode>(rclcpp::NodeOptions()));
+    }
+    catch (const std::invalid_argument& e)
+    {
+        // Failing closed is right -- no shaper means no cmd_vel reaches the bridge -- but an
+        // uncaught throw exits -6 through std::terminate, which reads as a crash rather than a
+        // rejected parameter.
+        RCLCPP_FATAL(rclcpp::get_logger("g1_gait_shaper"), "%s", e.what());
+        rclcpp::shutdown();
+        return 1;
+    }
     rclcpp::shutdown();
     return 0;
 }
