@@ -17,7 +17,9 @@ install(
 # repo when the image already carries it. If the directory is absent (a machine without the sim
 # installed), nothing is installed and RViz degrades to exactly the no-robot behaviour it had
 # before -- the build does not fail over a visualisation asset.
-set(_g1_vendor_meshes "/opt/unitree_robotics/unitree_mujoco/unitree_robots/g1/meshes")
+set(G1_VENDOR_MESHES "/opt/unitree_robotics/unitree_mujoco/unitree_robots/g1/meshes"
+    CACHE PATH "Directory holding the vendored G1 visual meshes")
+set(_g1_vendor_meshes "${G1_VENDOR_MESHES}")
 if(EXISTS "${_g1_vendor_meshes}")
   file(GLOB _g1_stls CONFIGURE_DEPENDS "${_g1_vendor_meshes}/*.STL")
   file(COPY ${_g1_stls} DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/meshes")
