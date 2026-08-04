@@ -327,11 +327,13 @@ private:
     /// StandUp, never Damp: StandUp leaves the robot balanced and upright, Damp drops it.
     void release()
     {
-        if (!acquired_)
+        // exchange, not a read-then-write: since the exit path releases on its own thread while
+        // the executor still services a deactivate, two releases can arrive at once, and both
+        // passing the guard would put two SetLocoMode goals in flight.
+        if (!acquired_.exchange(false))
         {
             return;
         }
-        acquired_ = false;
         if (!sendMode(SetLocoMode::Goal::STAND_UP, "release to STAND_UP"))
         {
             // Logged, not propagated. The bridge's own beginRelease/onReleaseResult lands in
@@ -361,9 +363,9 @@ private:
     std::string action_name_{ "/g1_loco_bridge/set_mode" };
     double      acquire_timeout_s_{ 5.0 };
     double      settle_after_start_s_{ 2.5 };
-    /// Whether the bridge believes it holds authority because of us. Touched only from the
-    /// transition thread.
-    bool acquired_{ false };
+    /// Whether the bridge believes it holds authority because of us. Written from the transition
+    /// thread and from the exit path's releaser thread, which can overlap.
+    std::atomic<bool> acquired_{ false };
     /// The one piece of state shared across threads: written by the status callback on the
     /// reentrant group, read by the transition thread in waitForHeld().
     std::atomic<std::uint8_t> latest_authority_{ g1_msgs::msg::LocoStatus::RELEASED };
@@ -389,14 +391,13 @@ rclcpp::executors::MultiThreadedExecutor* g_executor = nullptr;
 ///
 /// Note that on_shutdown() does NOT cover this. It only runs for an explicit
 /// TRANSITION_ACTIVE_SHUTDOWN, which neither launch_ros nor a signal ever issues.
-void onSignal(int)
-{
-    g_stopping.store(true);
-    if (g_executor != nullptr)
-    {
-        g_executor->cancel();
-    }
-}
+///
+/// The handler itself only stores a flag. executor->cancel() takes an rmw mutex and can throw,
+/// neither of which is async-signal-safe: a signal delivered to a thread already inside the RMW
+/// holding that mutex would deadlock in the handler, and the process would then survive SIGTERM
+/// too and die to launch's SIGKILL still holding authority -- the exact leak this closes. A
+/// watcher thread does the cancel instead, which is the same split rclcpp's own handler uses.
+void onSignal(int) { g_stopping.store(true); }
 }  // namespace
 
 int main(int argc, char** argv)
@@ -416,7 +417,17 @@ int main(int argc, char** argv)
     std::signal(SIGINT, onSignal);
     std::signal(SIGTERM, onSignal);
 
+    std::thread watcher([&executor] {
+        while (!g_stopping.load())
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        }
+        executor.cancel();
+    });
+
     executor.spin();
+    g_stopping.store(true);  // covers spin() returning for any other reason, so watcher joins
+    watcher.join();
 
     // The context is still valid here, so the release can actually reach the bridge. It runs on
     // its own thread because sendMode blocks on futures that only the executor can resolve.
@@ -425,7 +436,11 @@ int main(int argc, char** argv)
         node->releaseOnExit();
         released.store(true);
     });
-    const auto        deadline = std::chrono::steady_clock::now() + std::chrono::seconds(8);
+    // The loop stops pumping after 8 s; the join after it is deliberately unbounded. Detaching
+    // instead would let the releaser touch the node while shutdown() tears the context down.
+    // Without the executor pumping, the futures inside can only run out their own timeouts, so
+    // this terminates -- at worst 2 x acquire_timeout_s.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(8);
     while (!released.load() && std::chrono::steady_clock::now() < deadline)
     {
         executor.spin_some(std::chrono::milliseconds(50));
