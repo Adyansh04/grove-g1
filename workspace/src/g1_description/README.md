@@ -138,3 +138,27 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
 This package's own files (xacro wrapper, YAML, build files) are BSD-3-Clause to match.
+
+## Meshes
+
+The URDF names its visual meshes `package://g1_description/meshes/...`, but the STLs are **not
+vendored in this repo**. They ship with `unitree_mujoco`, which the container image installs, and
+`CMakeLists.txt` copies them into the package share at configure time.
+
+Copied rather than committed: 32 MB of binary STL does not belong here when the image already
+carries it. If that directory is absent — a machine without the simulator installed — nothing is
+installed, the build still succeeds, and RViz simply draws no robot.
+
+Three links (`torso_link`, `waist_roll_link`, `waist_yaw_link`) are named `*_rev_1_0` in this
+revision of the description but ship unsuffixed in the vendored set, so they are aliased. Same
+links, adjacent revision; for a visualisation mesh that is fine.
+
+Before this, the URDF used relative paths (`filename="meshes/pelvis.STL"`), which RViz resolves as
+a **URL host**: about 174 lines of `Could not resolve host: meshes` per session and no robot drawn
+at all, even with the display disabled, because the display still fetches the description.
+
+**The fingers still do not render, and cannot.** The palms do, by fixed joints off the wrists, but
+the finger links need joint states and nothing publishes them: the simulated model has 30 joints
+and zero finger DoF. The URDF describes a robot with hands; the sim simulates one without.
+Publishing zeroed finger joints would put fabricated state on `/tf`, which is exactly what
+`g1_state_estimation` refuses to do with odometry.

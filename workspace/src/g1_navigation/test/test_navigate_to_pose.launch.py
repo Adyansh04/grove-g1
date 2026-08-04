@@ -26,6 +26,7 @@ from geometry_msgs.msg import PoseStamped
 from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription, TimerAction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
+from nav_msgs.msg import OccupancyGrid
 from nav2_msgs.action import NavigateToPose
 from rclpy.action import ActionClient
 from rclpy.node import Node
@@ -90,6 +91,17 @@ class NavigateToPoseTest(unittest.TestCase):
             ),
         )
         cls.client = ActionClient(cls.node, NavigateToPose, "navigate_to_pose")
+        cls.costmaps = []
+        cls.node.create_subscription(
+            OccupancyGrid,
+            "/global_costmap/costmap",
+            cls.costmaps.append,
+            QoSProfile(
+                depth=1,
+                reliability=QoSReliabilityPolicy.RELIABLE,
+                durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+            ),
+        )
 
         # The whole stack has to be up: the sim, the scan pipeline, AMCL, and the acquire, which
         # by itself is two FSM goals plus a settle.
@@ -130,6 +142,24 @@ class NavigateToPoseTest(unittest.TestCase):
             "locomotion authority was not acquired before the goal",
         )
         ignored_before = self.status[-1].ignored_cmd_vel
+
+        # Wait for the GLOBAL costmap to carry the static map before asking for a plan. The
+        # action server accepts goals as soon as bt_navigator is active, which is well before
+        # the map has been rasterised into the costmap, and a goal planned against an empty
+        # global costmap makes the BT loop without ever returning a result.
+        #
+        # Global, not local: the local one is a 3 m rolling window and at spawn the nearest wall
+        # is further away than that, so it is legitimately empty and asserting on it fails a
+        # perfectly healthy stack.
+        deadline = time.time() + 60.0
+        populated = False
+        while time.time() < deadline and not populated:
+            rclpy.spin_once(self.node, timeout_sec=0.1)
+            if self.costmaps:
+                # OccupancyGrid is int8 on the 0-100 scale, NOT the costmap's internal 0-255.
+                # Thresholding at 253 reports an empty costmap on a perfectly healthy one.
+                populated = any(v > 0 for v in self.costmaps[-1].data)
+        self.assertTrue(populated, "the global costmap never loaded the static map")
 
         goal = NavigateToPose.Goal()
         goal.pose.header.frame_id = "map"
