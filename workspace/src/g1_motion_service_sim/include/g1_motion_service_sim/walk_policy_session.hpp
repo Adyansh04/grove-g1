@@ -11,9 +11,9 @@
 #include <memory>
 #include <string>
 
-#include "g1_bringup/walk_policy.hpp"
+#include "g1_motion_service_sim/walk_policy.hpp"
 
-namespace g1_bringup
+namespace g1_motion_service_sim
 {
 
 /**
@@ -66,6 +66,6 @@ private:
     double                        warmup_s_{ 0.0 };
 };
 
-}  // namespace g1_bringup
+}  // namespace g1_motion_service_sim
 
 #endif  // G1_BRINGUP__WALK_POLICY_SESSION_HPP_

@@ -15,10 +15,10 @@
 #include <optional>
 #include <string>
 
-#include "g1_bringup/blend_math.hpp"
-#include "g1_bringup/loco_fsm.hpp"
-#include "g1_bringup/walk_policy.hpp"
-#include "g1_bringup/walk_policy_session.hpp"
+#include "g1_motion_service_sim/blend_math.hpp"
+#include "g1_motion_service_sim/loco_fsm.hpp"
+#include "g1_motion_service_sim/walk_policy.hpp"
+#include "g1_motion_service_sim/walk_policy_session.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
 #include "unitree_api/msg/request.hpp"
@@ -27,7 +27,7 @@
 #include "unitree_hg/msg/low_cmd.hpp"
 #include "unitree_hg/msg/low_state.hpp"
 
-namespace g1_bringup
+namespace g1_motion_service_sim
 {
 
 /**
@@ -165,6 +165,6 @@ private:
     std::optional<VelocityCommand> walk_velocity_{};
 };
 
-}  // namespace g1_bringup
+}  // namespace g1_motion_service_sim
 
 #endif  // G1_BRINGUP__MOTION_SERVICE_SIM_NODE_HPP_

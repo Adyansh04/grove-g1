@@ -12,7 +12,7 @@
 
 #include "unitree_hg/msg/low_cmd.hpp"
 
-namespace g1_bringup
+namespace g1_motion_service_sim
 {
 
 /**
@@ -109,6 +109,6 @@ unitree_hg::msg::LowCmd assembleSimLowCmd(
     const std::array<double, kNumArmMotors>& arm_cmd_kd, double weight, double arm_hold_kp,
     double arm_hold_kd);
 
-}  // namespace g1_bringup
+}  // namespace g1_motion_service_sim
 
 #endif  // G1_BRINGUP__BLEND_MATH_HPP_

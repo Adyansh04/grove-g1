@@ -4,22 +4,15 @@
   <name>g1_bringup</name>
   <version>0.1.0</version>
   <description>
-    Sim bring-up for the G1 arm bridge: launches unitree_mujoco alongside the
-    ros2_control stack, plus the sim-only motion_service_sim node that stands
-    in for the onboard motion service in simulation. See README for the full
-    operating procedure.
+    Sim bring-up for the G1 stack: launches unitree_mujoco alongside the ros2_control
+    stack, g1_locomotion's bridge, and g1_motion_service_sim's sim-only stand-in for the
+    onboard motion service. Launch files, config, scenes and scripts only -- no compiled
+    code of its own. See README for the full operating procedure.
   </description>
   <maintainer email="gupta.adyansh@gmail.com">Adyansh</maintainer>
   <license>BSD-3-Clause</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
-
-  <depend>rclcpp</depend>
-  <depend>unitree_hg</depend>
-  <depend>unitree_api</depend>
-  <depend>g1_hardware_interface</depend>
-  <depend>ament_index_cpp</depend>
-  <depend>unitree_go</depend>
 
   <depend>g1_description</depend>
   <depend>g1_state_estimation</depend>
@@ -39,6 +32,13 @@
   <exec_depend>xvfb</exec_depend>
   <exec_depend>rviz2</exec_depend>
 
+  <!-- Loaded at runtime by control.launch.py as a ros2_control plugin; nothing here
+       compiles against it. -->
+  <exec_depend>g1_hardware_interface</exec_depend>
+
+  <!-- The sim-only motion service sim.launch.py starts. -->
+  <exec_depend>g1_motion_service_sim</exec_depend>
+
   <!-- Runtime dependency for loco.launch.py. -->
   <exec_depend>g1_locomotion</exec_depend>
 
@@ -49,9 +49,12 @@
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_cmake_lint_cmake</test_depend>
   <test_depend>ament_cmake_xmllint</test_depend>
-  <test_depend>ament_cmake_gmock</test_depend>
   <test_depend>launch_testing</test_depend>
   <test_depend>launch_testing_ament_cmake</test_depend>
+  <!-- The launch suites are Python and import these directly. -->
+  <test_depend>unitree_hg</test_depend>
+  <test_depend>unitree_api</test_depend>
+  <test_depend>unitree_go</test_depend>
   <test_depend>sensor_msgs</test_depend>
   <test_depend>control_msgs</test_depend>
   <test_depend>trajectory_msgs</test_depend>

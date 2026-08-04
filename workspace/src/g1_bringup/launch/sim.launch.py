@@ -285,16 +285,15 @@ def _launch_setup(context, *args, **kwargs):
     actions.append(TimerAction(period=sim_start_delay_s, actions=[sim_process]))
 
     # Pelvis weld and walking policy are mutually exclusive.
-    motion_service_sim_node = Node(
-        package="g1_bringup",
+    motion_service_sim_share = get_package_share_directory("g1_motion_service_sim")
+    motion_service_sim_node  = Node(
+        package="g1_motion_service_sim",
         executable="motion_service_sim",
         name="motion_service_sim",
         output="screen",
         parameters=[
-            os.path.join(
-                get_package_share_directory("g1_bringup"), "config", "motion_service_sim.yaml"
-            ),
-            os.path.join(get_package_share_directory("g1_bringup"), "config", "walk_policy.yaml"),
+            os.path.join(motion_service_sim_share, "config", "motion_service_sim.yaml"),
+            os.path.join(motion_service_sim_share, "config", "walk_policy.yaml"),
             # Completes pelvis -> torso_link so the sensor frames are not stranded in their
             # own TF tree. Only when sensors run: it costs work on the 1 kHz /lowstate path.
             {"publish_lower_joint_states": sensors},

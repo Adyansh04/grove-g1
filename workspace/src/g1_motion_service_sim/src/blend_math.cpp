@@ -2,11 +2,11 @@
  * @file blend_math.cpp
  * @brief Implements the arm_sdk blend-weight ramp and the sim bridge's full-body /lowcmd assembly.
  */
-#include "g1_bringup/blend_math.hpp"
+#include "g1_motion_service_sim/blend_math.hpp"
 
 #include <algorithm>
 
-namespace g1_bringup
+namespace g1_motion_service_sim
 {
 
 double stepEffectiveWeight(
@@ -71,4 +71,4 @@ unitree_hg::msg::LowCmd assembleSimLowCmd(
     return cmd;
 }
 
-}  // namespace g1_bringup
+}  // namespace g1_motion_service_sim

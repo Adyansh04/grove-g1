@@ -2,12 +2,12 @@
  * @file walk_policy.cpp
  * @brief Observation assembly, action mapping, and velocity latching for the sim walking policy.
  */
-#include "g1_bringup/walk_policy.hpp"
+#include "g1_motion_service_sim/walk_policy.hpp"
 
 #include <algorithm>
 #include <cmath>
 
-namespace g1_bringup
+namespace g1_motion_service_sim
 {
 
 const std::array<const char*, kNumBodyMotors> kDdsMotorOrder = {
@@ -164,4 +164,4 @@ LowerBodyCommand selectLowerBodyCommand(
     return out;
 }
 
-}  // namespace g1_bringup
+}  // namespace g1_motion_service_sim

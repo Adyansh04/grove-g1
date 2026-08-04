@@ -2,13 +2,13 @@
  * @file walk_policy_session.cpp
  * @brief ONNX Runtime session wrapper for the sim walking policy.
  */
-#include "g1_bringup/walk_policy_session.hpp"
+#include "g1_motion_service_sim/walk_policy_session.hpp"
 
 #include <chrono>
 #include <stdexcept>
 #include <vector>
 
-namespace g1_bringup
+namespace g1_motion_service_sim
 {
 
 namespace
@@ -89,4 +89,4 @@ std::array<float, kActionDim> WalkPolicySession::run(const std::array<float, kOb
     return action;
 }
 
-}  // namespace g1_bringup
+}  // namespace g1_motion_service_sim

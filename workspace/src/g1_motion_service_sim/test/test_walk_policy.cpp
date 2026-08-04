@@ -9,9 +9,9 @@
 #include <string>
 #include <vector>
 
-#include "g1_bringup/walk_policy.hpp"
+#include "g1_motion_service_sim/walk_policy.hpp"
 
-namespace g1_bringup
+namespace g1_motion_service_sim
 {
 namespace
 {
@@ -458,4 +458,4 @@ TEST(WalkPolicyFallback, AStaleTickAfterAFailureStillFreezesAtTheLastGoodTarget)
 }
 
 }  // namespace
-}  // namespace g1_bringup
+}  // namespace g1_motion_service_sim

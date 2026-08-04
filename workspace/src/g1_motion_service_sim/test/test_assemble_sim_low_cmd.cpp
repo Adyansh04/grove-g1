@@ -6,9 +6,9 @@
 
 #include <array>
 
-#include "g1_bringup/blend_math.hpp"
+#include "g1_motion_service_sim/blend_math.hpp"
 
-namespace g1_bringup
+namespace g1_motion_service_sim
 {
 namespace
 {
@@ -186,4 +186,4 @@ TEST(AssembleSimLowCmd, WeightSlotEchoesEffectiveWeight)
 }
 
 }  // namespace
-}  // namespace g1_bringup
+}  // namespace g1_motion_service_sim

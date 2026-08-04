@@ -1,4 +1,4 @@
-# Parameters for the walking policy inside g1_bringup's motion_service_sim node
+# Parameters for the walking policy inside the motion_service_sim node
 # (SIM-ONLY -- see README.md's safety banner). Wildcard node match so this file
 # works regardless of the node's name/namespace at launch time.
 #
@@ -11,7 +11,7 @@
       # are the two possible owners of the legs and must never both be active.
       enabled: true
 
-      # Empty -> share/g1_bringup/policy/walker.onnx. The weights live in a
+      # Empty -> share/g1_motion_service_sim/policy/walker.onnx. The weights live in a
       # separate walker.onnx.data that ONNX Runtime resolves relative to this
       # path, so a custom path must have both files side by side.
       onnx_model_path: ""

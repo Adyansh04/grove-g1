@@ -9,16 +9,16 @@
 #include <string>
 
 #include "ament_index_cpp/get_package_share_directory.hpp"
-#include "g1_bringup/walk_policy_session.hpp"
+#include "g1_motion_service_sim/walk_policy_session.hpp"
 
-namespace g1_bringup
+namespace g1_motion_service_sim
 {
 namespace
 {
 
 std::string modelPath()
 {
-    return ament_index_cpp::get_package_share_directory("g1_bringup") + "/policy/walker.onnx";
+    return ament_index_cpp::get_package_share_directory("g1_motion_service_sim") + "/policy/walker.onnx";
 }
 
 TEST(WalkPolicySessionTest, LoadsTheVendoredPolicyAndItsExternalWeights)
@@ -97,4 +97,4 @@ TEST(WalkPolicySessionTest, WarmInferenceFitsTheFiftyHertzBudget)
 }
 
 }  // namespace
-}  // namespace g1_bringup
+}  // namespace g1_motion_service_sim
