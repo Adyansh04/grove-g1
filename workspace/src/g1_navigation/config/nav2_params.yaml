@@ -1,0 +1,311 @@
+# Nav2 for the G1 on the converged unitree_mujoco track.
+#
+# ADAPTED FROM nav2_bringup's own params/nav2_params.yaml (Humble 1.1.20), trimmed to the four
+# servers this stack launches and then changed only where this robot differs from a TurtleBot.
+# Upstream ordering and structure are kept so the two can be diffed.
+#
+# The three servers whose blocks are absent -- smoother_server, waypoint_follower,
+# velocity_smoother -- are not launched. See launch/nav2.launch.py for why each is out.
+#
+# Every comment below marks a value as MEASURED or GUESS. A green test_navigate_to_pose does
+# not validate the guesses.
+bt_navigator:
+  ros__parameters:
+    use_sim_time: false
+    global_frame: map
+    robot_base_frame: base_footprint
+    # bt_navigator DOES declare odom_topic (verified). controller_server does not, and is
+    # remapped in the launch instead.
+    odom_topic: /g1_odometry_publisher/odom
+    # default_nav_to_pose_bt_xml is set by nav2.launch.py, not here: a params file cannot name
+    # its own package share. Do NOT write a find-pkg-share substitution into this file, not even
+    # inside a comment -- ParameterFile(allow_substs=True) expands substitutions in comments too,
+    # and an illustrative one with a placeholder package name takes the whole launch down with
+    # "'...' is not a valid package name".
+    bt_loop_duration: 10
+    default_server_timeout: 20
+    wait_for_service_timeout: 1000
+    # 'default_nav_through_poses_bt_xml' and 'default_nav_to_pose_bt_xml' are use defaults:
+    # nav2_bt_navigator/navigate_to_pose_w_replanning_and_recovery.xml
+    # nav2_bt_navigator/navigate_through_poses_w_replanning_and_recovery.xml
+    # They can be set here or via a RewrittenYaml remap from a parent launch file to Nav2.
+    plugin_lib_names:
+      - nav2_compute_path_to_pose_action_bt_node
+      - nav2_compute_path_through_poses_action_bt_node
+      - nav2_smooth_path_action_bt_node
+      - nav2_follow_path_action_bt_node
+      - nav2_spin_action_bt_node
+      - nav2_wait_action_bt_node
+      - nav2_assisted_teleop_action_bt_node
+      - nav2_back_up_action_bt_node
+      - nav2_drive_on_heading_bt_node
+      - nav2_clear_costmap_service_bt_node
+      - nav2_is_stuck_condition_bt_node
+      - nav2_goal_reached_condition_bt_node
+      - nav2_goal_updated_condition_bt_node
+      - nav2_globally_updated_goal_condition_bt_node
+      - nav2_is_path_valid_condition_bt_node
+      - nav2_initial_pose_received_condition_bt_node
+      - nav2_reinitialize_global_localization_service_bt_node
+      - nav2_rate_controller_bt_node
+      - nav2_distance_controller_bt_node
+      - nav2_speed_controller_bt_node
+      - nav2_truncate_path_action_bt_node
+      - nav2_truncate_path_local_action_bt_node
+      - nav2_goal_updater_node_bt_node
+      - nav2_recovery_node_bt_node
+      - nav2_pipeline_sequence_bt_node
+      - nav2_round_robin_node_bt_node
+      - nav2_transform_available_condition_bt_node
+      - nav2_time_expired_condition_bt_node
+      - nav2_path_expiring_timer_condition
+      - nav2_distance_traveled_condition_bt_node
+      - nav2_single_trigger_bt_node
+      - nav2_goal_updated_controller_bt_node
+      - nav2_is_battery_low_condition_bt_node
+      - nav2_navigate_through_poses_action_bt_node
+      - nav2_navigate_to_pose_action_bt_node
+      - nav2_remove_passed_goals_action_bt_node
+      - nav2_planner_selector_bt_node
+      - nav2_controller_selector_bt_node
+      - nav2_goal_checker_selector_bt_node
+      - nav2_controller_cancel_bt_node
+      - nav2_path_longer_on_approach_bt_node
+      - nav2_wait_cancel_bt_node
+      - nav2_spin_cancel_bt_node
+      - nav2_back_up_cancel_bt_node
+      - nav2_assisted_teleop_cancel_bt_node
+      - nav2_drive_on_heading_cancel_bt_node
+      - nav2_is_battery_charging_condition_bt_node
+
+bt_navigator_navigate_through_poses_rclcpp_node:
+  ros__parameters:
+    use_sim_time: false
+
+bt_navigator_navigate_to_pose_rclcpp_node:
+  ros__parameters:
+    use_sim_time: false
+
+controller_server:
+  ros__parameters:
+    use_sim_time: false
+    # Matched to g1_loco_bridge's validated velocity_reissue_hz of 5.0. Upstream's 20 Hz into
+    # a 5 Hz wire discards three commands in four and hides the real control latency.
+    controller_frequency: 5.0
+    min_x_velocity_threshold: 0.001
+    min_y_velocity_threshold: 0.5
+    min_theta_velocity_threshold: 0.001
+    failure_tolerance: 0.3
+    progress_checker_plugin: "progress_checker"
+    goal_checker_plugins: ["general_goal_checker"] # "precise_goal_checker"
+    controller_plugins: ["FollowPath"]
+
+    # Progress checker parameters
+    progress_checker:
+      plugin: "nav2_controller::SimpleProgressChecker"
+      # Gait initiation takes seconds and the shaper's deadband-to-zero makes genuinely
+      # stationary intervals normal, so upstream's 10 s aborts healthy goals. 20 s still trips
+      # on the measured frozen-gait case, which moved 0.09 m in 30 s.
+      required_movement_radius: 0.5
+      movement_time_allowance: 20.0
+    # Goal checker parameters
+    #precise_goal_checker:
+    #  plugin: "nav2_controller::SimpleGoalChecker"
+    #  xy_goal_tolerance: 0.25
+    #  yaw_goal_tolerance: 0.25
+    #  stateful: True
+    general_goal_checker:
+      stateful: True
+      plugin: "nav2_controller::SimpleGoalChecker"
+      # No approach deceleration (see FollowPath), so the robot runs at 0.6 m/s until the
+      # checker fires. One 0.2 s tick is 0.12 m before gait settling is counted; tighter
+      # tolerances produce goals that never converge. GUESSES.
+      xy_goal_tolerance: 0.5
+      yaw_goal_tolerance: 0.5
+    # RotationShim wrapping RegulatedPurePursuit, replacing upstream's DWB.
+    #
+    # DWB's value is picking a good point in a continuous velocity window. This robot's window
+    # has three usable points (stop, ~0.6 m/s forward, ~1.57 rad/s turn) and a large dead zone,
+    # so the sampling is mostly over commands it ignores. MPPI is a worse fit still: it is a
+    # sampling MPC that assumes the robot roughly executes what it is told, and a commanded
+    # (0.50, 0, 0.50) here measured (0.337, 0.299, 0.390).
+    #
+    # The shim rotates in place on a large heading error, then hands to RPP for the straight
+    # run, which is exactly the two-primitive decomposition the measurements demand.
+    #
+    # Worth knowing when tuning: g1_gait_shaper zeroes any yaw below 1.20, and RPP's curvature
+    # steering (vyaw = vx * kappa) is usually well under that, so it rarely reaches the robot.
+    # The effective behaviour is bang-bang, which makes angular_dist_threshold the dominant
+    # knob here, NOT lookahead_dist.
+    FollowPath:
+      plugin: "nav2_rotation_shim_controller::RotationShimController"
+      primary_controller: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
+      angular_dist_threshold: 0.35        # ~20 deg. GUESS, and the first knob to tune.
+      forward_sampling_distance: 0.6      # GUESS
+      rotate_to_heading_angular_vel: 1.57 # measured operating point; == the bridge's yaw clamp
+      # Deliberately large. At 5 Hz, 6.0 allows only 1.2 rad/s per tick, landing exactly on the
+      # shaper's 1.20 engage threshold and reaching 1.57 on tick two. 10.0 crosses the dead zone
+      # in one tick. This is not a CONTROL_MODES rule-3 violation: rule 3 governs joint setpoints
+      # and blend weights, where a large error becomes high-speed motion. Here a velocity
+      # reference goes to a balance controller doing its own footstep planning, and a slow ramp
+      # produces NO motion rather than gentle motion.
+      max_angular_accel: 10.0
+      simulate_ahead_time: 1.0
+
+      desired_linear_vel: 0.6             # measured operating point
+      # Every regulation feature below is OFF on purpose. Each exists to slow the robot down
+      # smoothly; here slowing down means dropping into the dead zone and stopping dead.
+      min_approach_linear_velocity: 0.6
+      approach_velocity_scaling_dist: 0.0
+      use_regulated_linear_velocity_scaling: false
+      use_cost_regulated_linear_velocity_scaling: false
+      use_rotate_to_heading: true
+      # RPP rejects use_rotate_to_heading and allow_reversing both true. Reversing stays off,
+      # consistent with the BT dropping BackUp.
+      allow_reversing: false
+      rotate_to_heading_min_angle: 0.6    # GUESS
+      rotate_to_heading_angular_accel: 10.0
+      lookahead_dist: 0.9                 # GUESS, and mostly inert -- see the note above
+      use_velocity_scaled_lookahead_dist: false
+      transform_tolerance: 1.0
+
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      update_frequency: 5.0
+      publish_frequency: 2.0
+      global_frame: odom
+      robot_base_frame: base_footprint
+      use_sim_time: false
+      rolling_window: true
+      width: 3
+      height: 3
+      resolution: 0.05
+      # The standing footprint is smaller, but the gait drifts 0.22-0.30 m/s laterally while
+      # walking forward, so the swept corridor is wider than the body. Circular rather than a
+      # polygon: it cannot hold a heading, so a precise polygon would be false precision. GUESS.
+      robot_radius: 0.45
+      plugins: ["voxel_layer", "inflation_layer"]
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 2.5
+        inflation_radius: 0.85
+      voxel_layer:
+        plugin: "nav2_costmap_2d::VoxelLayer"
+        enabled: True
+        publish_voxel_map: True
+        origin_z: 0.0
+        z_resolution: 0.05
+        z_voxels: 16
+        max_obstacle_height: 2.0
+        mark_threshold: 0
+        # The raw 3D sweep, NOT /scan. The flatten's 0.30 m floor cut is right for a 2D scan
+        # matcher but discards exactly what a walking robot must not hit: crates, the ramp, a
+        # pallet, a step. nav2_costmap_2d takes PointCloud2 natively, and ObservationBuffer
+        # transforms into the costmap's global frame BEFORE applying the height thresholds, so
+        # the cut below is gravity-aligned.
+        observation_sources: lidar
+        lidar:
+          topic: /livox/lidar
+          data_type: "PointCloud2"
+          clearing: True
+          marking: True
+          # 70% of every cloud is floor, measured at z < 0.05 m. Upstream's implicit 0.0 would
+          # paint the entire facility as an obstacle and no plan would ever be found.
+          min_obstacle_height: 0.08
+          # Ceiling and light fixtures. Walls are 3.2 m; the robot is ~1.3 m.
+          max_obstacle_height: 1.80
+          # At 15 m adjacent 1-degree beams are 26 cm apart, so long-range raytracing leaves
+          # radial spoke gaps in cleared space. GUESSES.
+          raytrace_max_range: 12.0
+          raytrace_min_range: 0.0
+          obstacle_max_range: 10.0
+          obstacle_min_range: 0.0
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_subscribe_transient_local: True
+      always_send_full_costmap: True
+
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      update_frequency: 1.0
+      publish_frequency: 1.0
+      global_frame: map
+      robot_base_frame: base_footprint
+      use_sim_time: false
+      # The standing footprint is smaller, but the gait drifts 0.22-0.30 m/s laterally while
+      # walking forward, so the swept corridor is wider than the body. Circular rather than a
+      # polygon: it cannot hold a heading, so a precise polygon would be false precision. GUESS.
+      robot_radius: 0.45
+      resolution: 0.05
+      track_unknown_space: true
+      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: True
+        # The raw 3D sweep, NOT /scan. The flatten's 0.30 m floor cut is right for a 2D scan
+        # matcher but discards exactly what a walking robot must not hit: crates, the ramp, a
+        # pallet, a step. nav2_costmap_2d takes PointCloud2 natively, and ObservationBuffer
+        # transforms into the costmap's global frame BEFORE applying the height thresholds, so
+        # the cut below is gravity-aligned.
+        observation_sources: lidar
+        lidar:
+          topic: /livox/lidar
+          data_type: "PointCloud2"
+          clearing: True
+          marking: True
+          # 70% of every cloud is floor, measured at z < 0.05 m. Upstream's implicit 0.0 would
+          # paint the entire facility as an obstacle and no plan would ever be found.
+          min_obstacle_height: 0.08
+          # Ceiling and light fixtures. Walls are 3.2 m; the robot is ~1.3 m.
+          max_obstacle_height: 1.80
+          # At 15 m adjacent 1-degree beams are 26 cm apart, so long-range raytracing leaves
+          # radial spoke gaps in cleared space. GUESSES.
+          raytrace_max_range: 12.0
+          raytrace_min_range: 0.0
+          obstacle_max_range: 10.0
+          obstacle_min_range: 0.0
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_subscribe_transient_local: True
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 2.5
+        inflation_radius: 0.85
+      always_send_full_costmap: True
+
+planner_server:
+  ros__parameters:
+    expected_planner_frequency: 20.0
+    use_sim_time: false
+    planner_plugins: ["GridBased"]
+    GridBased:
+      plugin: "nav2_navfn_planner/NavfnPlanner"
+      tolerance: 0.5
+      use_astar: false
+      allow_unknown: true
+
+behavior_server:
+  ros__parameters:
+    costmap_topic: local_costmap/costmap_raw
+    footprint_topic: local_costmap/published_footprint
+    cycle_frequency: 10.0
+    behavior_plugins: ["spin", "backup", "drive_on_heading", "assisted_teleop", "wait"]
+    spin:
+      plugin: "nav2_behaviors/Spin"
+    backup:
+      plugin: "nav2_behaviors/BackUp"
+    drive_on_heading:
+      plugin: "nav2_behaviors/DriveOnHeading"
+    wait:
+      plugin: "nav2_behaviors/Wait"
+    global_frame: odom
+    robot_base_frame: base_footprint
+    transform_tolerance: 0.1
+    use_sim_time: false
+    simulate_ahead_time: 2.0
+    max_rotational_vel: 1.0
+    min_rotational_vel: 0.4
+    rotational_acc_lim: 3.2
+

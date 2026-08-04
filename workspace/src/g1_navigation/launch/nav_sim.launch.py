@@ -18,7 +18,7 @@ from launch_ros.actions import Node
 MODES = ("mapping", "localization")
 
 # Isolated rather than the plain container: each component keeps its own single-threaded
-# executor, so one blocking callback cannot stall the others. Same choice nav2_bringup makes.
+# executor, so one blocking callback cannot stall the others.
 CONTAINER_EXECUTABLE = "component_container_isolated"
 
 
@@ -91,6 +91,22 @@ def _setup(context, *args, **kwargs):
             )
         )
 
+    # Nav2 itself. Off by default so PR A's documented commands behave identically and the
+    # navigation invocation is explicit.
+    if LaunchConfiguration("nav").perform(context).lower() == "true":
+        if mode != "localization":
+            raise RuntimeError(
+                "nav:=true needs mode:=localization. Navigating against a map slam_toolbox is "
+                "still building means the goal pose moves under the planner."
+            )
+        # Passed explicitly as false, and it has to be explicit: an included launch file
+        # INHERITS the parent's launch configurations, so nav2.launch.py's own
+        # DeclareLaunchArgument default never applies against this file's use_composition.
+        # Nav2 must run uncomposed because composition does not deliver the nested costmap
+        # parameters; see nav2.launch.py's docstring. The scan and localization nodes above
+        # still compose, and still get theirs.
+        actions.append(include("nav2.launch.py", use_composition="false"))
+
     actions.append(
         Node(
             condition=IfCondition(LaunchConfiguration("rviz")),
@@ -133,6 +149,12 @@ def generate_launch_description():
             "a single node is crashing and you need to see which.",
         ),
         DeclareLaunchArgument("container_name", default_value="nav2_container"),
+        DeclareLaunchArgument(
+            "nav",
+            default_value="false",
+            description="Start Nav2, the gait shaper and the locomotion authority bracket. "
+            "Requires mode:=localization. Off by default: mapping runs need none of it.",
+        ),
         DeclareLaunchArgument(
             "headless",
             default_value="true",
