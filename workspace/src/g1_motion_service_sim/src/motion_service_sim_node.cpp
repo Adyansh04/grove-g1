@@ -14,8 +14,8 @@
 #include <vector>
 
 #include "ament_index_cpp/get_package_share_directory.hpp"
-#include "g1_motion_service_sim/blend_math.hpp"
 #include "g1_hardware_interface/motor_crc_hg.hpp"
+#include "g1_motion_service_sim/blend_math.hpp"
 
 namespace g1_motion_service_sim
 {
@@ -286,7 +286,8 @@ bool MotionServiceSim::setUpWalkPolicy()
     // default points at the installed share directory where both were installed together.
     const std::string model_path =
         model_path_param.empty() ?
-            ament_index_cpp::get_package_share_directory("g1_motion_service_sim") + "/policy/walker.onnx" :
+            ament_index_cpp::get_package_share_directory("g1_motion_service_sim") +
+                "/policy/walker.onnx" :
             model_path_param;
     try
     {

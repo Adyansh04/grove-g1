@@ -18,7 +18,8 @@ namespace
 
 std::string modelPath()
 {
-    return ament_index_cpp::get_package_share_directory("g1_motion_service_sim") + "/policy/walker.onnx";
+    return ament_index_cpp::get_package_share_directory("g1_motion_service_sim") +
+           "/policy/walker.onnx";
 }
 
 TEST(WalkPolicySessionTest, LoadsTheVendoredPolicyAndItsExternalWeights)
