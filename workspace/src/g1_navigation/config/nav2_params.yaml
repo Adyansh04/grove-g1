@@ -17,6 +17,12 @@ bt_navigator:
     # bt_navigator DOES declare odom_topic (verified). controller_server does not, and is
     # remapped in the launch instead.
     odom_topic: /g1_odometry_publisher/odom
+    # NavigateToPose only. bt_navigator loads a tree per navigator, and upstream's
+    # navigate_through_poses tree also calls BackUp -- with backup dropped from
+    # behavior_plugins that tree fails to load and takes bt_navigator down with it. Nothing in
+    # this milestone sends NavigateThroughPoses, so the navigator is simply not offered rather
+    # than shipping a second edited tree nobody uses.
+    navigators: ["navigate_to_pose"]
     # default_nav_to_pose_bt_xml is set by nav2.launch.py, not here: a params file cannot name
     # its own package share. Do NOT write a find-pkg-share substitution into this file, not even
     # inside a comment -- ParameterFile(allow_substs=True) expands substitutions in comments too,
@@ -291,13 +297,12 @@ behavior_server:
     costmap_topic: local_costmap/costmap_raw
     footprint_topic: local_costmap/published_footprint
     cycle_frequency: 10.0
-    behavior_plugins: ["spin", "backup", "drive_on_heading", "assisted_teleop", "wait"]
+    # backup and drive_on_heading are gone: both command reverse, which is measured at 0.000
+    # for anything a recovery would ask for. assisted_teleop has no caller here. Without the
+    # plugins there is no action server to invoke even outside the tree.
+    behavior_plugins: ["spin", "wait"]
     spin:
       plugin: "nav2_behaviors/Spin"
-    backup:
-      plugin: "nav2_behaviors/BackUp"
-    drive_on_heading:
-      plugin: "nav2_behaviors/DriveOnHeading"
     wait:
       plugin: "nav2_behaviors/Wait"
     global_frame: odom
