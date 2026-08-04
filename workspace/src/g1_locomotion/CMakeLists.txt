@@ -48,6 +48,16 @@ ament_target_dependencies(g1_loco_bridge_node_lib PUBLIC
   g1_msgs
 )
 
+# Compiled straight into the executable and the test rather than behind a library: nothing
+# else links GaitShaper, and putting it in g1_loco_bridge_core would drag nlohmann_json and
+# unitree_api onto a node that needs neither.
+add_executable(g1_gait_shaper src/g1_gait_shaper_node.cpp src/gait_shaper.cpp)
+target_include_directories(g1_gait_shaper PRIVATE
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+)
+target_compile_features(g1_gait_shaper PUBLIC cxx_std_17)
+ament_target_dependencies(g1_gait_shaper rclcpp geometry_msgs)
+
 add_executable(g1_loco_bridge src/g1_loco_bridge_main.cpp)
 target_compile_features(g1_loco_bridge PUBLIC cxx_std_17)
 target_link_libraries(g1_loco_bridge g1_loco_bridge_node_lib)
@@ -57,9 +67,10 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   target_compile_options(g1_loco_bridge_core PRIVATE -Wall -Wextra)
   target_compile_options(g1_loco_bridge_node_lib PRIVATE -Wall -Wextra)
   target_compile_options(g1_loco_bridge PRIVATE -Wall -Wextra)
+  target_compile_options(g1_gait_shaper PRIVATE -Wall -Wextra)
 endif()
 
-install(TARGETS g1_loco_bridge DESTINATION lib/${PROJECT_NAME})
+install(TARGETS g1_loco_bridge g1_gait_shaper DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY config DESTINATION share/${PROJECT_NAME})
 
 if(BUILD_TESTING)
@@ -81,6 +92,13 @@ if(BUILD_TESTING)
   # kAcquiring/kReleasing/kHeld/kReleased authority machine.
   ament_add_gmock(test_velocity_gate test/test_velocity_gate.cpp)
   target_link_libraries(test_velocity_gate g1_loco_bridge_core)
+
+  # The deadband, primitive exclusivity, the signed-forward asymmetry that blocks reverse, and
+  # the never-amplifies invariant that is the whole safety claim.
+  ament_add_gmock(test_gait_shaper test/test_gait_shaper.cpp src/gait_shaper.cpp)
+  target_include_directories(test_gait_shaper PRIVATE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  )
 
   # G1LocoBridge itself, in-process against a fake /api/sport/* responder on an isolated
   # ROS_DOMAIN_ID (no sim, no launch_testing) -- lifecycle-transition/authority races the pure
