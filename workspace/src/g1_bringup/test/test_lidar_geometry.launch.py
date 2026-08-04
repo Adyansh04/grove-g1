@@ -10,7 +10,6 @@ leans (the torso pitches tens of degrees), so the numbers would move under the t
 without anything being wrong.
 """
 
-import math
 import os
 import time
 import unittest
