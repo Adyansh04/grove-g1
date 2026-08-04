@@ -19,15 +19,18 @@ install(
 # before -- the build does not fail over a visualisation asset.
 set(_g1_vendor_meshes "/opt/unitree_robotics/unitree_mujoco/unitree_robots/g1/meshes")
 if(EXISTS "${_g1_vendor_meshes}")
-  file(GLOB _g1_stls "${_g1_vendor_meshes}/*.STL")
+  file(GLOB _g1_stls CONFIGURE_DEPENDS "${_g1_vendor_meshes}/*.STL")
   file(COPY ${_g1_stls} DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/meshes")
   # Three links are named *_rev_1_0 in this revision of the description but ship unsuffixed in
   # the vendored set. Same links, adjacent revision; for a visualisation mesh that is fine.
   foreach(_pair "torso_link" "waist_roll_link" "waist_yaw_link")
-    if(EXISTS "${CMAKE_CURRENT_BINARY_DIR}/meshes/${_pair}.STL")
-      configure_file(
-        "${CMAKE_CURRENT_BINARY_DIR}/meshes/${_pair}.STL"
-        "${CMAKE_CURRENT_BINARY_DIR}/meshes/${_pair}_rev_1_0.STL" COPYONLY)
+    # Only alias when the suffixed mesh is genuinely absent. If a later vendored set ships
+    # a real *_rev_1_0.STL, copying the unsuffixed one over it would silently substitute the
+    # wrong geometry.
+    set(_src "${CMAKE_CURRENT_BINARY_DIR}/meshes/${_pair}.STL")
+    set(_alias "${CMAKE_CURRENT_BINARY_DIR}/meshes/${_pair}_rev_1_0.STL")
+    if(EXISTS "${_src}" AND NOT EXISTS "${_alias}")
+      configure_file("${_src}" "${_alias}" COPYONLY)
     endif()
   endforeach()
   install(DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/meshes" DESTINATION share/${PROJECT_NAME})

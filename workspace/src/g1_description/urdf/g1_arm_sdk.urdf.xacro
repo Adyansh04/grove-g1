@@ -1,15 +1,18 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="g1_29dof_with_hand_rev_1_0">
 
-  <!-- Verbatim upstream description; xacro:include discards <robot> wrapper. -->
+  <!-- Upstream description, with one mechanical edit: mesh paths were changed from relative
+       ("meshes/x.STL") to package:// so RViz can resolve them. See g1_description/README.md.
+       Everything else is byte-for-byte upstream, CRLF included, so it stays diffable against
+       Unitree's file. xacro:include discards the <robot> wrapper. -->
   <xacro:include filename="g1_29dof_with_hand_rev_1_0.urdf"/>
 
   <!-- REP-145 optical frames. The vendored URDF stops at d435_link, which is a body frame
        (x forward, y left, z up); every ROS depth consumer, rviz's DepthCloud included,
        assumes the optical convention (z forward, x right, y down). Publishing a depth
        image in the body frame projects it rotated 90 degrees, which looks like a broken
-       sensor rather than a wrong frame. Added here rather than in the vendored file so
-       that stays verbatim. -->
+       sensor rather than a wrong frame. Added here rather than in the vendored file, which
+       is kept as close to upstream as possible. -->
   <link name="camera_depth_optical_frame"/>
   <joint name="camera_depth_optical_joint" type="fixed">
     <parent link="d435_link"/>
