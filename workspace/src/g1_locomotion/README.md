@@ -37,7 +37,8 @@ ros2 topic pub -r 10 /g1_loco_bridge/cmd_vel geometry_msgs/msg/Twist "{linear: {
 ros2 action send_goal /g1_loco_bridge/set_mode g1_msgs/action/SetLocoMode "{fsm_id: 1}"
 ```
 
-In sim the responder is `g1_bringup`'s `motion_service_sim`, and an accepted `SET_VELOCITY` feeds
+In sim the responder is `g1_motion_service_sim`'s `motion_service_sim`, and an accepted
+`SET_VELOCITY` feeds
 the walking policy that drives motors 0-14. See `g1_bringup`'s README for the dispatch table and
 for the policy's measured velocity thresholds, which matter when choosing a `cmd_vel` value.
 

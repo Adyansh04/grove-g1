@@ -12,9 +12,9 @@ find_package(g1_msgs REQUIRED)
 find_package(nlohmann_json REQUIRED)
 
 # Pure, ROS-free wire-contract logic -- unit-tested directly with no rclcpp node needed (mirrors
-# g1_hardware_interface's arm_ramp_engine and g1_bringup's blend_math). Internal build artifact
-# only, like blend_math: statically linked into g1_loco_bridge and the unit tests below, no
-# install/export rule of its own.
+# g1_hardware_interface's arm_ramp_engine and g1_motion_service_sim's blend_math).
+# Internal build artifact only, like blend_math: statically linked into g1_loco_bridge and
+# the unit tests below, no install/export rule of its own.
 add_library(g1_loco_bridge_core
   src/loco_payloads.cpp
   src/loco_request_correlator.cpp

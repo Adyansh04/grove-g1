@@ -53,7 +53,7 @@ retried rather than swallowed. Depth 1 because only the newest ramp tick matters
 
 Nothing in sim subscribes `/arm_sdk`: `unitree_mujoco` emulates only the low-level device. Testing
 against the sim proves this plugin's own output (ramp shape, hold accuracy, rate, CRC, safety
-behaviour); `g1_bringup`'s `motion_service_sim` closes the loop kinematically for end-to-end tests.
+behaviour); `g1_motion_service_sim`'s node closes the loop kinematically for end-to-end tests.
 
 ## Parameters
 

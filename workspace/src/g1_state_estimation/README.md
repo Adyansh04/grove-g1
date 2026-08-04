@@ -88,7 +88,8 @@ different topics and one can die while the other keeps flowing.
 ## `odom_math`
 
 Frame and staleness math, kept free of ROS so it tests without a node, DDS or a running sim (same
-split as `g1_bringup`'s `blend_math`). Covers the ground projection and its recomposition, the
+split as `g1_motion_service_sim`'s `blend_math`). Covers the ground projection and its
+recomposition, the
 world-to-body twist rotation, yaw/quaternion conversion, tilt from vertical, angle wrapping, the
 staleness boundary, and covariance fill.
 
