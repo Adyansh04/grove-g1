@@ -1,17 +1,24 @@
-# RViz for the navigation track.
-#   ros2 launch g1_navigation nav_sim.launch.py rviz:=true
+# RViz for the navigation track: Nav2 displays plus the sensor group, both toggleable.
+#   ros2 launch g1_bringup bringup.launch.py nav:=true mode:=localization rviz:=true
 #
 # Fixed frame is map, so in mapping mode nothing renders until slam_toolbox has published
 # map -> odom. That is a second or two after launch, not a fault.
+#
+# The sensor group here must stay byte-identical to g1_bringup/config/g1_sensors.rviz's,
+# apart from the group's own Enabled flag. test_rviz_configs enforces that -- the two live
+# in different packages and neither package's own tests can see the pair.
+#
+# This file lives in g1_navigation, not g1_bringup, because "Amcl Particle Swarm" is a
+# nav2_rviz_plugins class. Shipping it from g1_bringup would give the bring-up package a
+# Nav2 dependency, which is the one thing M6's layering decision forbids.
 Panels:
   - Class: rviz_common/Displays
     Name: Displays
     Property Tree Widget:
       Expanded:
-        - /Map1
-        - /Scan1
-        - /Local costmap1
-        - /Global plan1
+        - /Nav21
+        - /Nav21/Map1
+        - /Nav21/Scan1
       Splitter Ratio: 0.5
     Tree Height: 700
   - Class: rviz_common/Views
@@ -20,6 +27,7 @@ Visualization Manager:
   Class: ""
   Name: root
   Displays:
+    # Always relevant, in either mode, so outside both groups.
     - Class: rviz_default_plugins/Grid
       Name: Grid
       Enabled: true
@@ -29,49 +37,7 @@ Visualization Manager:
       Alpha: 0.3
       Reference Frame: <Fixed Frame>
 
-    - Class: rviz_default_plugins/Map
-      Name: Map
-      Enabled: true
-      Topic:
-        Value: /map
-        Depth: 1
-        Durability Policy: Transient Local
-        Reliability Policy: Reliable
-      Alpha: 0.7
-      Color Scheme: map
-      Draw Behind: true
-
-    # What slam_toolbox and AMCL actually consume. If this looks right and the map does not,
-    # the problem is the matcher or the pose, not the flatten.
-    - Class: rviz_default_plugins/LaserScan
-      Name: Scan
-      Enabled: true
-      Topic:
-        Value: /scan
-        Depth: 5
-        Durability Policy: Volatile
-        Reliability Policy: Best Effort
-      Size (m): 0.04
-      Style: Points
-      Color: 255; 85; 0
-      Color Transformer: FlatColor
-
-    # The raw sweep, which is what the Nav2 costmaps eat. Shown alongside the scan so the
-    # 0.30 m floor cut the flatten applies is visible as the gap the cloud fills in.
-    - Class: rviz_default_plugins/PointCloud2
-      Name: LiDAR
-      Enabled: false
-      Topic:
-        Value: /livox/lidar
-        Depth: 5
-        Durability Policy: Volatile
-        Reliability Policy: Best Effort
-      Size (m): 0.02
-      Style: Points
-      Color Transformer: AxisColor
-      Axis: Z
-
-    # Renders because g1_description now installs the meshes from unitree_mujoco's vendored set
+    # Renders because g1_description installs the meshes from unitree_mujoco's vendored set
     # and the URDF names them package://. Before that it drew nothing and emitted ~174
     # "Could not resolve host: meshes" lines a session.
     #
@@ -87,8 +53,8 @@ Visualization Manager:
         Reliability Policy: Reliable
       Alpha: 0.8
 
-    # On, because the robot model cannot render. base_footprint and pelvis are the two worth
-    # watching: the first should stay flat on the floor, the second carries the gait's tilt.
+    # base_footprint and pelvis are the two worth watching: the first should stay flat on the
+    # floor, the second carries the gait's tilt.
     - Class: rviz_default_plugins/TF
       Name: TF
       Enabled: true
@@ -96,66 +62,6 @@ Visualization Manager:
       Show Axes: true
       Show Arrows: false
       Marker Scale: 0.4
-
-    # What the planner produced, and what the controller is actually following. If the robot
-    # is stationary with a plan on screen, the gap is the gait's dead zone, not the planner.
-    - Class: rviz_default_plugins/Path
-      Name: Global plan
-      Enabled: true
-      Topic:
-        Value: /plan
-        Depth: 1
-        Durability Policy: Volatile
-        Reliability Policy: Reliable
-      Color: 0; 200; 120
-      Line Style: Lines
-
-    - Class: rviz_default_plugins/Path
-      Name: Local plan
-      Enabled: true
-      Topic:
-        Value: /local_plan
-        Depth: 1
-        Durability Policy: Volatile
-        Reliability Policy: Reliable
-      Color: 255; 200; 0
-      Line Style: Lines
-
-    # Costmaps, not the raw map. The local one is where the 0.08 m floor cut and the 0.45 m
-    # footprint show up; if the whole floor is lethal, that cut is wrong.
-    - Class: rviz_default_plugins/Map
-      Name: Global costmap
-      Enabled: false
-      Topic:
-        Value: /global_costmap/costmap
-        Depth: 1
-        Durability Policy: Transient Local
-        Reliability Policy: Reliable
-      Alpha: 0.5
-      Color Scheme: costmap
-
-    - Class: rviz_default_plugins/Map
-      Name: Local costmap
-      Enabled: true
-      Topic:
-        Value: /local_costmap/costmap
-        Depth: 1
-        Durability Policy: Transient Local
-        Reliability Policy: Reliable
-      Alpha: 0.6
-      Color Scheme: costmap
-
-    # The ramp appears here as an obstacle. That is correct for this gait, and looks like a bug
-    # if you do not know it: slope_ramp's surface sits above the costmap's floor cut.
-    - Class: rviz_default_plugins/Polygon
-      Name: Footprint
-      Enabled: true
-      Topic:
-        Value: /local_costmap/published_footprint
-        Depth: 1
-        Durability Policy: Volatile
-        Reliability Policy: Reliable
-      Color: 0; 170; 255
 
     - Class: rviz_default_plugins/Odometry
       Name: Odometry
@@ -176,6 +82,228 @@ Visualization Manager:
         Head Length: 0.1
         Head Radius: 0.06
 
+    - Class: rviz_common/Group
+      Name: Nav2
+      Enabled: true
+      Displays:
+        - Class: rviz_default_plugins/Map
+          Name: Map
+          Enabled: true
+          Topic:
+            Value: /map
+            Depth: 1
+            Durability Policy: Transient Local
+            Reliability Policy: Reliable
+          Alpha: 0.7
+          Color Scheme: map
+          Draw Behind: true
+
+        # What slam_toolbox and AMCL actually consume. If this looks right and the map does
+        # not, the problem is the matcher or the pose, not the flatten.
+        - Class: rviz_default_plugins/LaserScan
+          Name: Scan
+          Enabled: true
+          Topic:
+            Value: /scan
+            Depth: 5
+            Durability Policy: Volatile
+            Reliability Policy: Best Effort
+          Size (m): 0.04
+          Style: Points
+          Color: 255; 85; 0
+          Color Transformer: FlatColor
+
+        # AMCL's hypothesis spread. localization.yaml runs 500-2000 particles, so a swarm
+        # that has not collapsed after a few metres of driving means the scan match is not
+        # constraining the pose.
+        - Class: nav2_rviz_plugins/ParticleCloud
+          Name: Amcl Particle Swarm
+          Enabled: true
+          Topic:
+            Value: /particle_cloud
+            Depth: 5
+            Durability Policy: Volatile
+            Reliability Policy: Best Effort
+          Shape: Arrow (Flat)
+
+        # What the planner produced, and what the controller is actually following. If the
+        # robot is stationary with a plan on screen, the gap is the gait's dead zone, not the
+        # planner.
+        - Class: rviz_default_plugins/Path
+          Name: Global plan
+          Enabled: true
+          Topic:
+            Value: /plan
+            Depth: 1
+            Durability Policy: Volatile
+            Reliability Policy: Reliable
+          Color: 0; 200; 120
+          Line Style: Lines
+
+        - Class: rviz_default_plugins/Path
+          Name: Local plan
+          Enabled: true
+          Topic:
+            Value: /local_plan
+            Depth: 1
+            Durability Policy: Volatile
+            Reliability Policy: Reliable
+          Color: 255; 200; 0
+          Line Style: Lines
+
+        # Costmaps, not the raw map. The local one is where the 0.08 m floor cut and the
+        # 0.45 m footprint show up; if the whole floor is lethal, that cut is wrong.
+        - Class: rviz_default_plugins/Map
+          Name: Global costmap
+          Enabled: false
+          Topic:
+            Value: /global_costmap/costmap
+            Depth: 1
+            Durability Policy: Transient Local
+            Reliability Policy: Reliable
+          Alpha: 0.5
+          Color Scheme: costmap
+
+        - Class: rviz_default_plugins/Map
+          Name: Local costmap
+          Enabled: true
+          Topic:
+            Value: /local_costmap/costmap
+            Depth: 1
+            Durability Policy: Transient Local
+            Reliability Policy: Reliable
+          Alpha: 0.6
+          Color Scheme: costmap
+
+        # The voxel layer's marked cells, which is the only view that shows the z band the
+        # 40-voxel column actually covers. Local only: the global costmap runs obstacle_layer,
+        # not voxel_layer, so /global_costmap/voxel_marked_cloud is never published.
+        - Class: rviz_default_plugins/PointCloud2
+          Name: Local voxel grid
+          Enabled: false
+          Topic:
+            Value: /local_costmap/voxel_marked_cloud
+            Depth: 5
+            Durability Policy: Volatile
+            Reliability Policy: Reliable
+          Style: Boxes
+          Size (m): 0.05
+          Alpha: 1
+          Color: 125; 125; 125
+          Color Transformer: FlatColor
+          Decay Time: 0
+          Position Transformer: XYZ
+          Use Fixed Frame: true
+
+        # The ramp appears here as an obstacle. That is correct for this gait, and looks like
+        # a bug if you do not know it: slope_ramp's surface sits above the costmap's floor cut.
+        - Class: rviz_default_plugins/Polygon
+          Name: Footprint
+          Enabled: true
+          Topic:
+            Value: /local_costmap/published_footprint
+            Depth: 1
+            Durability Policy: Volatile
+            Reliability Policy: Reliable
+          Color: 0; 170; 255
+
+        - Class: rviz_default_plugins/Polygon
+          Name: Global footprint
+          Enabled: false
+          Topic:
+            Value: /global_costmap/published_footprint
+            Depth: 5
+            Durability Policy: Volatile
+            Reliability Policy: Reliable
+          Color: 25; 255; 0
+
+    # BEGIN SENSOR GROUP -- kept identical to g1_bringup/config/g1_sensors.rviz
+    - Class: rviz_common/Group
+      Name: Sensors
+      Enabled: false
+      Displays:
+        # Sampled inside unitree_mujoco, published by g1_sensor_relay. Best-effort to match
+        # the publisher: a Reliable subscriber here shows nothing at all.
+        - Class: rviz_default_plugins/PointCloud2
+          Name: LiDAR
+          Enabled: true
+          Topic:
+            Value: /livox/lidar
+            Depth: 5
+            Durability Policy: Volatile
+            Reliability Policy: Best Effort
+          Style: Points
+          Size (Pixels): 2
+          Alpha: 1
+          Decay Time: 0
+          Position Transformer: XYZ
+          Color Transformer: AxisColor
+          Axis: Z
+          Autocompute Intensity Bounds: true
+          Invert Rainbow: false
+
+        # Depth as a 3D cloud, projected through camera_info. This is the camera's own view
+        # of the world, so it should overlap the LiDAR returns where the two see the same
+        # surfaces; if it floats away from them, the mount or the depth scale is wrong.
+        - Class: rviz_default_plugins/DepthCloud
+          Name: Depth cloud
+          Enabled: true
+          Topic Filter: false
+          Depth Map Topic: /camera/aligned_depth_to_color/image_raw
+          Depth Map Transport Hint: raw
+          Color Transport Hint: raw
+          Queue Size: 5
+          Style: Points
+          Size (Pixels): 3
+          Alpha: 1
+          Decay Time: 0
+          Color Image Topic: /camera/color/image_raw
+          Color Transformer: RGB8
+          Occlusion Compensation:
+            Occlusion Time-Out: 30
+            Enabled: false
+
+        # The same data as a 2D panel, which is the quickest way to see that the camera is
+        # pointed where you think and is not returning a blank frame.
+        - Class: rviz_default_plugins/Image
+          Name: Depth image
+          Enabled: true
+          Topic:
+            Value: /camera/aligned_depth_to_color/image_raw
+            Depth: 5
+            Durability Policy: Volatile
+            Reliability Policy: Best Effort
+          Max Value: 4
+          Min Value: 0.5
+          Median window: 5
+          Normalize Range: false
+
+        # Colour from the same render as the depth above, so the two line up pixel for pixel.
+        - Class: rviz_default_plugins/Image
+          Name: Colour image
+          Enabled: true
+          Topic:
+            Value: /camera/color/image_raw
+            Depth: 5
+            Durability Policy: Volatile
+            Reliability Policy: Best Effort
+          Normalize Range: true
+
+        # Where the simulator says the sensor is. Diagnostic: it is the ground truth the
+        # cloud was swept from, so it should sit exactly on the robot's Mid360.
+        - Class: rviz_default_plugins/Pose
+          Name: Sensor pose
+          Enabled: false
+          Topic:
+            Value: /g1_sensor_relay/sensor_pose
+            Depth: 5
+            Durability Policy: Volatile
+            Reliability Policy: Best Effort
+          Shape: Axes
+          Axes Length: 0.3
+          Axes Radius: 0.02
+    # END SENSOR GROUP
+
   Global Options:
     Background Color: 48; 48; 48
     Fixed Frame: map
@@ -184,7 +312,6 @@ Visualization Manager:
     - Class: rviz_default_plugins/MoveCamera
     - Class: rviz_default_plugins/FocusCamera
     - Class: rviz_default_plugins/Measure
-    # Present for PR B: nothing consumes a goal pose until Nav2's bt_navigator exists.
     - Class: rviz_default_plugins/SetGoal
       Topic:
         Value: /goal_pose
