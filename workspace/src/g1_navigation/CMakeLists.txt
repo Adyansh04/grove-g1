@@ -25,6 +25,14 @@ if(BUILD_TESTING)
     ENV "G1_NAVIGATION_CONFIG_DIR=${CMAKE_CURRENT_SOURCE_DIR}/config"
   )
 
+  # Spin's rotational limits against g1_gait_shaper's engage threshold. The two numbers live in
+  # different packages, so neither package's own tests can see the pair -- and the pair has
+  # already been wrong once, silently.
+  ament_add_pytest_test(test_gait_coupling test/test_gait_coupling.py
+    ENV "G1_NAVIGATION_CONFIG_DIR=${CMAKE_CURRENT_SOURCE_DIR}/config"
+        "G1_LOCOMOTION_CONFIG_DIR=${CMAKE_CURRENT_SOURCE_DIR}/../g1_locomotion/config"
+  )
+
   # Headless sim integration suites. RESOURCE_LOCK matches g1_bringup's: two of these sharing
   # a DDS graph and a simulator is what makes them flaky, so they serialise against the same
   # lock g1_bringup uses rather than a separate one.
