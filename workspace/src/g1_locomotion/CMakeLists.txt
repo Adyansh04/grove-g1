@@ -118,6 +118,13 @@ if(BUILD_TESTING)
   ament_add_gmock(test_loco_bridge_node test/test_loco_bridge_node.cpp)
   target_link_libraries(test_loco_bridge_node g1_loco_bridge_node_lib)
 
+  # The one path safety rule 4 cares about that no sim suite can reach: an acquire that fails
+  # after the bridge already believes authority is held. Driven against a stub, so no simulator
+  # and no flake -- see the file's docstring.
+  find_package(launch_testing_ament_cmake REQUIRED)
+  add_launch_test(test/test_authority_release.launch.py
+    TARGET test_authority_release TIMEOUT 120)
+
   # workspace/ruff.toml's sibling root config; see g1_hardware_interface/CMakeLists.txt for why
   # this is a plain CTest instead of ament_lint_common's uncrustify.
   find_program(CLANG_FORMAT_EXECUTABLE clang-format)
