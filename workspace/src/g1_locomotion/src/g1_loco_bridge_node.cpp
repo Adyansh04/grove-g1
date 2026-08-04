@@ -399,7 +399,24 @@ void G1LocoBridge::cmdVelCallback(const geometry_msgs::msg::Twist::ConstSharedPt
         std::clamp(msg->linear.y * axis_sign_[1], -max_velocity_[1], max_velocity_[1]);
     const double vyaw =
         std::clamp(msg->angular.z * axis_sign_[2], -max_velocity_[2], max_velocity_[2]);
+
+    const auto ignored_before = velocity_gate_.ignoredCommandCount();
     velocity_gate_.setCommand(vx, vy, vyaw, std::chrono::steady_clock::now());
+    if (velocity_gate_.ignoredCommandCount() != ignored_before)
+    {
+        // A planner publishing into a gate that holds no authority is otherwise completely
+        // silent: nothing moves, nothing errors. Name the remedy, because the two-goal
+        // sequence is not guessable from the symptom.
+        RCLCPP_WARN_THROTTLE(
+            get_logger(),
+            *get_clock(),
+            2000,
+            "Discarding cmd_vel: locomotion authority is %d, not HELD. Acquire it with "
+            "'ros2 action send_goal /g1_loco_bridge/set_mode g1_msgs/action/SetLocoMode "
+            "\"{fsm_id: 4}\"' then the same with '{fsm_id: 500}'. Ignored %u so far.",
+            static_cast<int>(velocity_gate_.authority()),
+            velocity_gate_.ignoredCommandCount());
+    }
 }
 
 void G1LocoBridge::onSportResponse(const unitree_api::msg::Response& msg)
@@ -523,7 +540,11 @@ void G1LocoBridge::publishStatus(bool force)
     msg.fsm_id          = last_known_fsm_id_;
     msg.authority       = static_cast<std::uint8_t>(velocity_gate_.authority());
     msg.last_error_code = last_error_code_;
+    msg.ignored_cmd_vel = velocity_gate_.ignoredCommandCount();
 
+    // ignored_cmd_vel is deliberately absent from this comparison. It changes on every dropped
+    // sample, so including it would publish at the publisher's rate on a transient-local topic
+    // for as long as the drop lasts. The 1 Hz forced heartbeat surfaces it within a second.
     const bool changed = (msg.fsm_id != last_published_status_.fsm_id) ||
                          (msg.authority != last_published_status_.authority) ||
                          (msg.last_error_code != last_published_status_.last_error_code);

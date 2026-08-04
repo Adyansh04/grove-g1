@@ -142,6 +142,25 @@ an ordinary callback.
 A `MultiThreadedExecutor` migration would need the base class's lifecycle services serialised
 against the named group by some other means.
 
+#### `g1_loco_authority` deviates, and only it
+
+**`g1_loco_authority` runs a `MultiThreadedExecutor` with two threads.** It has to: its
+`on_activate` blocks on a `SetLocoMode` result, and that result arrives as a callback on the same
+node, so a single-threaded executor would deadlock on the transition that is waiting for it. Its
+action client and status subscription sit in one `Reentrant` group; the base class's lifecycle
+services stay in the default `MutuallyExclusive` one.
+
+The deviation is bounded to **one atomic**, `latest_authority_` — written by the status callback,
+read by the transition thread. There is no other shared state and no lock anywhere in the node.
+
+**`G1LocoBridge`, `LocoRequestCorrelator` and `VelocityGate` are unaffected.** They keep the
+single-threaded guarantee above, and the no-locks-no-atomics property with it. Nothing in this
+paragraph loosens anything about the bridge.
+
+The alternative — a non-blocking `on_activate` driven off a timer — avoids the executor entirely,
+but then the lifecycle manager reports the node active while the robot is not yet walk-capable,
+which destroys the only thing the bracket is for.
+
 ### Pure, ROS-free classes
 
 The safety-bearing logic lives in plain classes with no node, executor or timer, so it is unit
@@ -238,3 +257,40 @@ Plus `clang-format`, `ament_lint_cmake` and `xmllint`.
 `g1_bringup/test/test_loco.launch.py` validates the wiring between this bridge and a real
 `/api/sport/*` responder end to end over DDS. It lives there because it needs the sim stack's
 launch files; run it with `colcon test --packages-select g1_bringup`.
+
+## `g1_gait_shaper`
+
+Reduces a planner's `Twist` onto the three motions this gait can actually produce: stop, drive
+straight, turn in place. Subtractive only — every output is the input unchanged, clamped smaller,
+or zero, never larger. That invariant is the safety claim, and it is asserted as a swept property
+rather than spot-checked.
+
+Yaw is tested first, so a command carrying both axes becomes a pure turn: the measured combined
+response is the worst case (a commanded (0.50, 0, 0.50) produced 0.30 m/s of uncommanded lateral).
+Forward compares **signed**, so any negative velocity becomes zero at any magnitude — which is
+independently why a reverse recovery behaviour cannot lurch the robot backwards.
+
+Thresholds live in `config/g1_gait_shaper.yaml` and carry the same sim-only banner
+`max_velocity` does: the deadband is a property of the sim walking policy, not the real G1's
+onboard MPC. Hardware bring-up does not launch this node.
+
+## `g1_loco_authority`
+
+The lifecycle bracket around LocoClient velocity authority: active means the robot is
+walk-capable, inactive means authority has been handed back. Exists because a planner publishes
+`cmd_vel` and nothing else — it has no way to send the `SetLocoMode` goals the bridge requires.
+
+Acquisition is deliberately **not** automatic on first `cmd_vel`. That would be implicit
+acquisition, and a stray publisher would stand the robot up and walk it.
+
+`on_activate` retries while the stack is still coming up, because everything launches at once and
+the bridge can be answering before the simulator has stepped any physics. The retry is selective,
+not blanket: `7301` (controller not in a state that can service the call) and a sweep timeout are
+retried; `7302` (the controller's own transition table refusing) and an unknown error are not,
+because repeating those would hide a real fault behind a timeout. Bounded by `acquire_timeout_s`
+overall.
+
+Release uses `StandUp`, never `Damp` — `Damp` drops the robot. It fires on deactivate, on
+shutdown (Humble allows `shutdown()` straight from active, bypassing `on_deactivate`), and from
+`on_activate`'s own failure path, since returning FAILURE leaves the node inactive and
+`on_deactivate` never runs.

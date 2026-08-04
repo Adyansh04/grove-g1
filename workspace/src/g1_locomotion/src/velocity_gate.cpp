@@ -14,6 +14,15 @@ VelocityGate::VelocityGate(const Config& config)
 void VelocityGate::setCommand(
     double vx, double vy, double vyaw, std::chrono::steady_clock::time_point now)
 {
+    // Latched regardless; tick() is what decides whether it is ever acted on. Counting the
+    // ones that will be thrown away is the only externally visible sign that a publisher is
+    // talking to a gate that holds no authority. Zero commands do not count -- Nav2 and teleop
+    // both idle at zero, and an idle publisher has not had an intent dropped.
+    if (authority_ != LocoAuthority::kHeld && (vx != 0.0 || vy != 0.0 || vyaw != 0.0))
+    {
+        ++ignored_command_count_;
+    }
+
     vx_               = vx;
     vy_               = vy;
     vyaw_             = vyaw;

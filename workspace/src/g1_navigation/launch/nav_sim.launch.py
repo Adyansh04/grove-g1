@@ -18,7 +18,7 @@ from launch_ros.actions import Node
 MODES = ("mapping", "localization")
 
 # Isolated rather than the plain container: each component keeps its own single-threaded
-# executor, so one blocking callback cannot stall the others. Same choice nav2_bringup makes.
+# executor, so one blocking callback cannot stall the others.
 CONTAINER_EXECUTABLE = "component_container_isolated"
 
 
@@ -32,6 +32,10 @@ def _setup(context, *args, **kwargs):
         )
     share = get_package_share_directory("g1_navigation")
     launch_dir = os.path.join(share, "launch")
+    # Resolved BEFORE the sim include below, which sets rviz=false for its own scope and leaks
+    # that back here -- without capturing it first, asking for rviz:=true silently gets you no
+    # RViz at all. Same launch-configuration inheritance that bites use_composition.
+    want_rviz = LaunchConfiguration("rviz").perform(context).lower() == "true"
 
     def include(name, **launch_args):
         return IncludeLaunchDescription(
@@ -58,6 +62,11 @@ def _setup(context, *args, **kwargs):
                 "world": LaunchConfiguration("world"),
                 "headless": LaunchConfiguration("headless"),
                 "sim_start_delay_s": LaunchConfiguration("sim_start_delay_s"),
+                # Explicitly false, and it has to be. An included launch file inherits the
+                # parent's configurations, so without this sim.launch.py sees this file's
+                # rviz:=true and opens a SECOND RViz on the sensor config -- two windows, and
+                # the sensor one carries a RobotModel display that cannot render.
+                "rviz": "false",
             }.items(),
         ),
         # The container has to exist before anything tries to load into it. Created here
@@ -91,16 +100,32 @@ def _setup(context, *args, **kwargs):
             )
         )
 
-    actions.append(
-        Node(
-            condition=IfCondition(LaunchConfiguration("rviz")),
-            package="rviz2",
-            executable="rviz2",
-            name="rviz2",
-            output="log",
-            arguments=["-d", os.path.join(share, "config", "g1_navigation.rviz")],
+    # Nav2 itself. Off by default so PR A's documented commands behave identically and the
+    # navigation invocation is explicit.
+    if LaunchConfiguration("nav").perform(context).lower() == "true":
+        if mode != "localization":
+            raise RuntimeError(
+                "nav:=true needs mode:=localization. Navigating against a map slam_toolbox is "
+                "still building means the goal pose moves under the planner."
+            )
+        # Passed explicitly as false, and it has to be explicit: an included launch file
+        # INHERITS the parent's launch configurations, so nav2.launch.py's own
+        # DeclareLaunchArgument default never applies against this file's use_composition.
+        # Nav2 must run uncomposed because composition does not deliver the nested costmap
+        # parameters; see nav2.launch.py's docstring. The scan and localization nodes above
+        # still compose, and still get theirs.
+        actions.append(include("nav2.launch.py", use_composition="false"))
+
+    if want_rviz:
+        actions.append(
+            Node(
+                package="rviz2",
+                executable="rviz2",
+                name="rviz2",
+                output="log",
+                arguments=["-d", os.path.join(share, "config", "g1_navigation.rviz")],
+            )
         )
-    )
     return actions
 
 
@@ -133,6 +158,12 @@ def generate_launch_description():
             "a single node is crashing and you need to see which.",
         ),
         DeclareLaunchArgument("container_name", default_value="nav2_container"),
+        DeclareLaunchArgument(
+            "nav",
+            default_value="false",
+            description="Start Nav2, the gait shaper and the locomotion authority bracket. "
+            "Requires mode:=localization. Off by default: mapping runs need none of it.",
+        ),
         DeclareLaunchArgument(
             "headless",
             default_value="true",

@@ -25,14 +25,28 @@ if(BUILD_TESTING)
     ENV "G1_NAVIGATION_CONFIG_DIR=${CMAKE_CURRENT_SOURCE_DIR}/config"
   )
 
+  # Spin's rotational limits against g1_gait_shaper's engage threshold. The two numbers live in
+  # different packages, so neither package's own tests can see the pair -- and the pair has
+  # already been wrong once, silently.
+  ament_add_pytest_test(test_gait_coupling test/test_gait_coupling.py
+    ENV "G1_NAVIGATION_CONFIG_DIR=${CMAKE_CURRENT_SOURCE_DIR}/config"
+        "G1_LOCOMOTION_CONFIG_DIR=${CMAKE_CURRENT_SOURCE_DIR}/../g1_locomotion/config"
+  )
+
   # Headless sim integration suites. RESOURCE_LOCK matches g1_bringup's: two of these sharing
   # a DDS graph and a simulator is what makes them flaky, so they serialise against the same
   # lock g1_bringup uses rather than a separate one.
   find_package(launch_testing_ament_cmake REQUIRED)
   add_launch_test(test/test_scan_pipeline.launch.py TARGET test_scan_pipeline TIMEOUT 200)
+  add_launch_test(test/test_nav_authority.launch.py TARGET test_nav_authority TIMEOUT 320)
   add_launch_test(test/test_slam_map.launch.py TARGET test_slam_map TIMEOUT 240)
+  # The acceptance gate, and the only suite here that drives the robot. Longest timeout and
+  # highest COST so it runs first, while the machine is quietest.
+  add_launch_test(test/test_navigate_to_pose.launch.py TARGET test_navigate_to_pose TIMEOUT 500)
   set_tests_properties(test_scan_pipeline PROPERTIES RESOURCE_LOCK g1_sim)
+  set_tests_properties(test_nav_authority PROPERTIES RESOURCE_LOCK g1_sim COST 70)
   set_tests_properties(test_slam_map PROPERTIES RESOURCE_LOCK g1_sim)
+  set_tests_properties(test_navigate_to_pose PROPERTIES RESOURCE_LOCK g1_sim COST 100)
   # COST descending = execution order; the heavier suite goes first.
   set_tests_properties(test_slam_map PROPERTIES COST 60)
   set_tests_properties(test_scan_pipeline PROPERTIES COST 50)

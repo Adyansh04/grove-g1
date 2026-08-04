@@ -10,6 +10,8 @@ Panels:
       Expanded:
         - /Map1
         - /Scan1
+        - /Local costmap1
+        - /Global plan1
       Splitter Ratio: 0.5
     Tree Height: 700
   - Class: rviz_common/Views
@@ -69,6 +71,10 @@ Visualization Manager:
       Color Transformer: AxisColor
       Axis: Z
 
+    # Renders because g1_description now installs the meshes from unitree_mujoco's vendored set
+    # and the URDF names them package://. Before that it drew nothing and emitted ~174
+    # "Could not resolve host: meshes" lines a session.
+    #
     # Needs pelvis -> torso_link, which motion_service_sim supplies from /lowstate;
     # joint_state_broadcaster only covers the arms.
     - Class: rviz_default_plugins/RobotModel
@@ -81,13 +87,75 @@ Visualization Manager:
         Reliability Policy: Reliable
       Alpha: 0.8
 
+    # On, because the robot model cannot render. base_footprint and pelvis are the two worth
+    # watching: the first should stay flat on the floor, the second carries the gait's tilt.
     - Class: rviz_default_plugins/TF
       Name: TF
-      Enabled: false
+      Enabled: true
       Show Names: true
       Show Axes: true
       Show Arrows: false
       Marker Scale: 0.4
+
+    # What the planner produced, and what the controller is actually following. If the robot
+    # is stationary with a plan on screen, the gap is the gait's dead zone, not the planner.
+    - Class: rviz_default_plugins/Path
+      Name: Global plan
+      Enabled: true
+      Topic:
+        Value: /plan
+        Depth: 1
+        Durability Policy: Volatile
+        Reliability Policy: Reliable
+      Color: 0; 200; 120
+      Line Style: Lines
+
+    - Class: rviz_default_plugins/Path
+      Name: Local plan
+      Enabled: true
+      Topic:
+        Value: /local_plan
+        Depth: 1
+        Durability Policy: Volatile
+        Reliability Policy: Reliable
+      Color: 255; 200; 0
+      Line Style: Lines
+
+    # Costmaps, not the raw map. The local one is where the 0.08 m floor cut and the 0.45 m
+    # footprint show up; if the whole floor is lethal, that cut is wrong.
+    - Class: rviz_default_plugins/Map
+      Name: Global costmap
+      Enabled: false
+      Topic:
+        Value: /global_costmap/costmap
+        Depth: 1
+        Durability Policy: Transient Local
+        Reliability Policy: Reliable
+      Alpha: 0.5
+      Color Scheme: costmap
+
+    - Class: rviz_default_plugins/Map
+      Name: Local costmap
+      Enabled: true
+      Topic:
+        Value: /local_costmap/costmap
+        Depth: 1
+        Durability Policy: Transient Local
+        Reliability Policy: Reliable
+      Alpha: 0.6
+      Color Scheme: costmap
+
+    # The ramp appears here as an obstacle. That is correct for this gait, and looks like a bug
+    # if you do not know it: slope_ramp's surface sits above the costmap's floor cut.
+    - Class: rviz_default_plugins/Polygon
+      Name: Footprint
+      Enabled: true
+      Topic:
+        Value: /local_costmap/published_footprint
+        Depth: 1
+        Durability Policy: Volatile
+        Reliability Policy: Reliable
+      Color: 0; 170; 255
 
     - Class: rviz_default_plugins/Odometry
       Name: Odometry
