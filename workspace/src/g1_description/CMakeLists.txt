@@ -8,6 +8,34 @@ install(
   DESTINATION share/${PROJECT_NAME}
 )
 
+# The URDF names its meshes package://g1_description/meshes/..., but the STLs are not ours to
+# vendor -- they ship with unitree_mujoco, which the container image installs. Without them RViz
+# resolves "meshes/x.STL" as a URL host and emits ~174 "Could not resolve host: meshes" lines per
+# session while drawing no robot at all.
+#
+# Copied at configure time rather than committed: 32 MB of binary STL does not belong in this
+# repo when the image already carries it. If the directory is absent (a machine without the sim
+# installed), nothing is installed and RViz degrades to exactly the no-robot behaviour it had
+# before -- the build does not fail over a visualisation asset.
+set(_g1_vendor_meshes "/opt/unitree_robotics/unitree_mujoco/unitree_robots/g1/meshes")
+if(EXISTS "${_g1_vendor_meshes}")
+  file(GLOB _g1_stls "${_g1_vendor_meshes}/*.STL")
+  file(COPY ${_g1_stls} DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/meshes")
+  # Three links are named *_rev_1_0 in this revision of the description but ship unsuffixed in
+  # the vendored set. Same links, adjacent revision; for a visualisation mesh that is fine.
+  foreach(_pair "torso_link" "waist_roll_link" "waist_yaw_link")
+    if(EXISTS "${CMAKE_CURRENT_BINARY_DIR}/meshes/${_pair}.STL")
+      configure_file(
+        "${CMAKE_CURRENT_BINARY_DIR}/meshes/${_pair}.STL"
+        "${CMAKE_CURRENT_BINARY_DIR}/meshes/${_pair}_rev_1_0.STL" COPYONLY)
+    endif()
+  endforeach()
+  install(DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/meshes" DESTINATION share/${PROJECT_NAME})
+else()
+  message(WARNING
+    "${_g1_vendor_meshes} not found; installing no meshes. RViz will show no robot model.")
+endif()
+
 if(BUILD_TESTING)
   # Linters that don't conflict with ruff.
   find_package(ament_lint_auto REQUIRED)
