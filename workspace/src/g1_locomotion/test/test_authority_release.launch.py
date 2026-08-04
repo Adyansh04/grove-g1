@@ -24,7 +24,7 @@ import pytest
 import rclpy
 from g1_msgs.action import SetLocoMode
 from launch import LaunchDescription
-from launch.actions import ExecuteProcess, TimerAction
+from launch.actions import ExecuteProcess, SetEnvironmentVariable, TimerAction
 from launch_ros.actions import Node as LaunchNode
 from lifecycle_msgs.msg import Transition
 from lifecycle_msgs.srv import ChangeState
@@ -63,6 +63,14 @@ def generate_test_description():
     )
     return (
         LaunchDescription([
+            # An isolated domain, FIRST, before anything is launched. This test deliberately
+            # launches a node called g1_loco_authority and drives its change_state, so on the
+            # shared domain it would answer -- or be answered by -- the real one attached to a
+            # running robot, and a test would acquire locomotion authority for real. Same
+            # reason test_loco_bridge_node.cpp pins 67 and test_odometry_publisher_node.cpp
+            # pins 77. launch's environment is os.environ, so this covers the stub, the node
+            # and this pytest process's own rclpy.init().
+            SetEnvironmentVariable("ROS_DOMAIN_ID", "68"),
             stub,
             authority,
             TimerAction(period=3.0, actions=[launch_testing.actions.ReadyToTest()]),
