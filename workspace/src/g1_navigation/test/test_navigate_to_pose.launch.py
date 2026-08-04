@@ -22,18 +22,16 @@ import pytest
 import rclpy
 from action_msgs.msg import GoalStatus
 from ament_index_python.packages import get_package_share_directory
-from geometry_msgs.msg import PoseStamped
+from g1_msgs.msg import LocoStatus
 from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription, TimerAction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from nav_msgs.msg import OccupancyGrid
 from nav2_msgs.action import NavigateToPose
+from nav_msgs.msg import OccupancyGrid
 from rclpy.action import ActionClient
 from rclpy.node import Node
 from rclpy.qos import QoSDurabilityPolicy, QoSProfile, QoSReliabilityPolicy
 from tf2_ros import Buffer, TransformListener
-
-from g1_msgs.msg import LocoStatus
 
 # Derived from maps/facility.pgm, not guessed. The robot spawns at the origin, in the middle of
 # the facility's 4x4 m crossroads. Every axis-aligned 4 m ray from there hits a partition at 2 m,
@@ -106,11 +104,12 @@ class NavigateToPoseTest(unittest.TestCase):
         # The whole stack has to be up: the sim, the scan pipeline, AMCL, and the acquire, which
         # by itself is two FSM goals plus a settle.
         cls.ready = cls.client.wait_for_server(timeout_sec=BRINGUP_TIMEOUT_S)
+        cls.tf_ready = False
         deadline = time.time() + 60.0
-        while time.time() < deadline:
+        while time.time() < deadline and not cls.tf_ready:
             try:
                 cls.buffer.lookup_transform("map", "base_footprint", rclpy.time.Time())
-                break
+                cls.tf_ready = True
             except Exception:
                 rclpy.spin_once(cls.node, timeout_sec=0.1)
 
@@ -130,6 +129,9 @@ class NavigateToPoseTest(unittest.TestCase):
 
     def test_reaches_the_goal(self):
         self.assertTrue(self.ready, "navigate_to_pose action server never appeared")
+        # Without this the run still proceeds and fails later at pose_in_map(), reported as a
+        # navigation failure rather than as the localization problem it actually is.
+        self.assertTrue(self.tf_ready, "map -> base_footprint never became available")
 
         # Authority must already be held: the launch's lifecycle handlers acquire it, and if they
         # did not, Nav2 would publish into a bridge that discards everything and the goal would
@@ -201,7 +203,10 @@ class NavigateToPoseTest(unittest.TestCase):
 
         # Nothing was discarded for lack of authority across the whole run. Nav2's own zero
         # Twists never count, so this staying flat is a real statement that the bracket held.
-        self.spin(1.0)
+        # 3 s, not 1: the counter only moves when the shaper publishes, and after the goal
+        # succeeds it publishes zeros, which the bridge does not count. One second is inside the
+        # window where a late discard has not been reported yet.
+        self.spin(3.0)
         self.assertEqual(
             self.status[-1].ignored_cmd_vel,
             ignored_before,

@@ -43,6 +43,7 @@ from launch.actions import (
     DeclareLaunchArgument,
     EmitEvent,
     GroupAction,
+    OpaqueFunction,
     RegisterEventHandler,
     SetEnvironmentVariable,
     TimerAction,
@@ -66,6 +67,23 @@ LIFECYCLE_NODES = [
     "behavior_server",
     "bt_navigator",
 ]
+
+
+def _reject_composition(context, *args, **kwargs):
+    """Composition is known broken here, so say so instead of hanging.
+
+    The branch below is kept because it is the shape upstream uses and the shape this will take
+    again once the nested-parameter problem is understood. But left merely available it fails as
+    a bringup that never finishes, which is a much worse thing to debug than a refusal.
+    """
+    if LaunchConfiguration("use_composition").perform(context).lower() == "true":
+        raise RuntimeError(
+            "use_composition:=true does not work for the Nav2 servers on Humble 1.1.20: the "
+            "nested costmap sections never reach /local_costmap/local_costmap, so it comes up "
+            "on Costmap2DROS defaults (base_link, map) and controller_server hangs forever in "
+            "Activating. See this file's docstring. Run uncomposed."
+        )
+    return []
 
 
 def generate_launch_description():
@@ -300,6 +318,7 @@ def generate_launch_description():
 
     return LaunchDescription([
         SetEnvironmentVariable("RCUTILS_LOGGING_BUFFERED_STREAM", "1"),
+        OpaqueFunction(function=_reject_composition),
         DeclareLaunchArgument(
             "use_sim_time",
             default_value="false",

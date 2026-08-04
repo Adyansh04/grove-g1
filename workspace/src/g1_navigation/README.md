@@ -103,6 +103,7 @@ the floor about 1.2 m ahead. It is a manipulation and near-field sensor.
 | **The robot reaching a navigation goal on its own** | `test_navigate_to_pose` — the acceptance gate |
 | `localization.launch.py`, `config/localization.yaml`, `map_server` + AMCL | now covered: `test_navigate_to_pose` runs the whole stack in localization mode |
 | `g1_gait_shaper`'s contract, including never amplifying | `g1_locomotion`'s `test_gait_shaper` |
+| Authority released when the acquire *fails* | `g1_locomotion`'s `test_authority_release`, against a stub, no sim |
 
 PR A shipped with localization deliberately untested; `test_navigate_to_pose` closes that, because
 it runs `map_server` + AMCL exactly as shipped.
