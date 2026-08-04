@@ -32,6 +32,10 @@ def _setup(context, *args, **kwargs):
         )
     share = get_package_share_directory("g1_navigation")
     launch_dir = os.path.join(share, "launch")
+    # Resolved BEFORE the sim include below, which sets rviz=false for its own scope and leaks
+    # that back here -- without capturing it first, asking for rviz:=true silently gets you no
+    # RViz at all. Same launch-configuration inheritance that bites use_composition.
+    want_rviz = LaunchConfiguration("rviz").perform(context).lower() == "true"
 
     def include(name, **launch_args):
         return IncludeLaunchDescription(
@@ -58,6 +62,11 @@ def _setup(context, *args, **kwargs):
                 "world": LaunchConfiguration("world"),
                 "headless": LaunchConfiguration("headless"),
                 "sim_start_delay_s": LaunchConfiguration("sim_start_delay_s"),
+                # Explicitly false, and it has to be. An included launch file inherits the
+                # parent's configurations, so without this sim.launch.py sees this file's
+                # rviz:=true and opens a SECOND RViz on the sensor config -- two windows, and
+                # the sensor one carries a RobotModel display that cannot render.
+                "rviz": "false",
             }.items(),
         ),
         # The container has to exist before anything tries to load into it. Created here
@@ -107,16 +116,16 @@ def _setup(context, *args, **kwargs):
         # still compose, and still get theirs.
         actions.append(include("nav2.launch.py", use_composition="false"))
 
-    actions.append(
-        Node(
-            condition=IfCondition(LaunchConfiguration("rviz")),
-            package="rviz2",
-            executable="rviz2",
-            name="rviz2",
-            output="log",
-            arguments=["-d", os.path.join(share, "config", "g1_navigation.rviz")],
+    if want_rviz:
+        actions.append(
+            Node(
+                package="rviz2",
+                executable="rviz2",
+                name="rviz2",
+                output="log",
+                arguments=["-d", os.path.join(share, "config", "g1_navigation.rviz")],
+            )
         )
-    )
     return actions
 
 
