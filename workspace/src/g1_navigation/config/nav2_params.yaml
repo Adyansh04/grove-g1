@@ -14,14 +14,17 @@ bt_navigator:
     use_sim_time: false
     global_frame: map
     robot_base_frame: base_footprint
+    # 1.0 everywhere that declares it, matching AMCL's. TF timing is this stack's recurring
+    # failure, and a 0.1 default here against a 1.0 there is the kind of mismatch that surfaces
+    # as an unexplained flake rather than an error.
+    transform_tolerance: 1.0
     # bt_navigator DOES declare odom_topic (verified). controller_server does not, and is
     # remapped in the launch instead.
     odom_topic: /g1_odometry_publisher/odom
-    # NavigateToPose only. bt_navigator loads a tree per navigator, and upstream's
-    # navigate_through_poses tree also calls BackUp -- with backup dropped from
-    # behavior_plugins that tree fails to load and takes bt_navigator down with it. Nothing in
-    # this milestone sends NavigateThroughPoses, so the navigator is simply not offered rather
-    # than shipping a second edited tree nobody uses.
+    # Declared, but do NOT rely on it: Humble 1.1.20 accepts this parameter and ignores it.
+    # bt_navigator still loads every navigator's tree on activate, which is why BOTH trees are
+    # shipped edited (config/navigate_through_poses.xml as well). Deleting that second tree on
+    # the strength of this line will break bt_navigator's activation.
     navigators: ["navigate_to_pose"]
     # default_nav_to_pose_bt_xml is set by nav2.launch.py, not here: a params file cannot name
     # its own package share. Do NOT write a find-pkg-share substitution into this file, not even
@@ -31,10 +34,6 @@ bt_navigator:
     bt_loop_duration: 10
     default_server_timeout: 20
     wait_for_service_timeout: 1000
-    # 'default_nav_through_poses_bt_xml' and 'default_nav_to_pose_bt_xml' are use defaults:
-    # nav2_bt_navigator/navigate_to_pose_w_replanning_and_recovery.xml
-    # nav2_bt_navigator/navigate_through_poses_w_replanning_and_recovery.xml
-    # They can be set here or via a RewrittenYaml remap from a parent launch file to Nav2.
     plugin_lib_names:
       - nav2_compute_path_to_pose_action_bt_node
       - nav2_compute_path_through_poses_action_bt_node
@@ -182,6 +181,7 @@ local_costmap:
       publish_frequency: 2.0
       global_frame: odom
       robot_base_frame: base_footprint
+      transform_tolerance: 1.0
       use_sim_time: false
       rolling_window: true
       width: 3
@@ -232,9 +232,6 @@ local_costmap:
           raytrace_min_range: 0.0
           obstacle_max_range: 10.0
           obstacle_min_range: 0.0
-      static_layer:
-        plugin: "nav2_costmap_2d::StaticLayer"
-        map_subscribe_transient_local: True
       always_send_full_costmap: True
 
 global_costmap:
@@ -244,6 +241,7 @@ global_costmap:
       publish_frequency: 1.0
       global_frame: map
       robot_base_frame: base_footprint
+      transform_tolerance: 1.0
       use_sim_time: false
       # The standing footprint is smaller, but the gait drifts 0.22-0.30 m/s laterally while
       # walking forward, so the swept corridor is wider than the body. Circular rather than a
@@ -288,7 +286,9 @@ global_costmap:
 
 planner_server:
   ros__parameters:
-    expected_planner_frequency: 20.0
+    # The BT's RateController replans at 1 Hz, so upstream's 20.0 logs "missed its desired
+    # rate" on essentially every cycle -- noise on the acceptance gate's own output.
+    expected_planner_frequency: 1.0
     use_sim_time: false
     planner_plugins: ["GridBased"]
     GridBased:
@@ -302,9 +302,10 @@ behavior_server:
     costmap_topic: local_costmap/costmap_raw
     footprint_topic: local_costmap/published_footprint
     cycle_frequency: 10.0
-    # backup and drive_on_heading are gone: both command reverse, which is measured at 0.000
-    # for anything a recovery would ask for. assisted_teleop has no caller here. Without the
-    # plugins there is no action server to invoke even outside the tree.
+    # backup and drive_on_heading are gone -- both command reverse, which this gait does not
+    # produce; see config/navigate_to_pose.xml. Dropping the plugins as well as the tree nodes
+    # means no action server exists to invoke even from a hand-edited tree. assisted_teleop has
+    # no caller here.
     behavior_plugins: ["spin", "wait"]
     spin:
       plugin: "nav2_behaviors/Spin"
@@ -312,10 +313,17 @@ behavior_server:
       plugin: "nav2_behaviors/Wait"
     global_frame: odom
     robot_base_frame: base_footprint
-    transform_tolerance: 0.1
+    transform_tolerance: 1.0
     use_sim_time: false
     simulate_ahead_time: 2.0
-    max_rotational_vel: 1.0
-    min_rotational_vel: 0.4
+    # COUPLED TO g1_gait_shaper.yaml, and nothing enforces it. Spin clamps its command to
+    # max_rotational_vel, and the shaper zeroes anything below its yaw_engage (1.20) -- so
+    # upstream's 1.0 made every Spin command a guaranteed no-op before it reached the bridge.
+    # That is the same argument that deleted BackUp, and it applied to Spin as shipped.
+    #
+    # 1.57 matches the shaper's yaw_clamp. The floor is at yaw_engage rather than upstream's
+    # 0.4 so the deceleration tail near spin_dist does not drop back into the dead zone.
+    max_rotational_vel: 1.57
+    min_rotational_vel: 1.2
     rotational_acc_lim: 3.2
 

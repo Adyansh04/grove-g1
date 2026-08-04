@@ -29,22 +29,12 @@
           <Spin spin_dist="1.57"/>
           <Wait wait_duration="5"/>
           <!--
-            Upstream also has <BackUp backup_dist="0.30" backup_speed="0.05"/> here. Removed,
-            for two independent reasons.
-
-            Measured: this gait reverses at -0.247 m/s for a commanded -0.60 and at exactly
-            0.000 for -0.40. Upstream's 0.05 m/s is far inside that dead zone, so BackUp would
-            command motion the robot cannot produce, never reach backup_dist, and burn its whole
-            time_allowance before failing. Worse than absent, because it consumes the
-            round-robin slot Spin could have used.
-
-            And g1_gait_shaper compares vx signed, so any negative command becomes zero at any
-            magnitude. Even a hand-edited tree cannot produce a reverse lurch.
-
-            Raising backup_speed to 0.6 is the only setting that would move the robot. That is
-            an uncontrolled ~0.25 m/s reverse lurch, from a gait that also produces 0.22-0.30
-            m/s of uncommanded lateral drift, in exactly the situation where the robot is
-            already stuck near an obstacle. Rejected, not overlooked.
+            Upstream also has <BackUp backup_dist="0.30" backup_speed="0.05"/> here. Removed:
+            this gait produces exactly 0.000 m/s for a commanded -0.40, so BackUp would burn its
+            whole time_allowance producing no motion and consume the round-robin slot Spin could
+            have used. Putting it back needs backup_speed near 0.6, which is an uncontrolled
+            reverse lurch next to an obstacle. Rejected, not overlooked; full numbers and the
+            second, independent reason are in g1_navigation/README.md.
 
             Spin stays: in-place rotation at 1.5 rad/s is a proven primitive here.
           -->
