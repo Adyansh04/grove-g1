@@ -12,6 +12,7 @@
  */
 #include <atomic>
 #include <chrono>
+#include <csignal>
 #include <memory>
 #include <string>
 #include <thread>
@@ -98,6 +99,14 @@ public:
     CallbackReturn on_activate(const rclcpp_lifecycle::State& previous_state) override
     {
         LifecycleNode::on_activate(previous_state);
+        RCLCPP_INFO(
+            get_logger(),
+            "acquiring locomotion authority (from %s)",
+            previous_state.label().c_str());
+
+        // Reactivation has to wait for a FRESH HELD. Left at whatever the previous cycle ended
+        // on, waitForHeld() below can return on a stale value and skip the wait entirely.
+        latest_authority_.store(g1_msgs::msg::LocoStatus::RELEASED, std::memory_order_relaxed);
 
         if (!client_->wait_for_action_server(timeout()))
         {
@@ -167,6 +176,10 @@ public:
         resetEntities();
         return CallbackReturn::SUCCESS;
     }
+
+    /// Release from outside the lifecycle machinery, for the process-exit path. No-op unless
+    /// authority is actually held, so calling it after a normal deactivate costs nothing.
+    void releaseOnExit() { release(); }
 
 private:
     std::chrono::nanoseconds timeout() const
@@ -362,16 +375,64 @@ private:
 
 }  // namespace g1_locomotion
 
+namespace
+{
+std::atomic<bool>                         g_stopping{ false };
+rclcpp::executors::MultiThreadedExecutor* g_executor = nullptr;
+
+/// Ctrl-C is the ordinary way a navigation session ends, and it must not leak authority.
+///
+/// rclcpp's own signal handler invalidates the context before spin() returns, which leaves
+/// nothing able to send the release goal -- the node would exit from ACTIVE with the bridge
+/// still in kHeld. Verified on this stack before this handler existed: SIGINT left
+/// ~/status reporting authority 2, fsm_id 500, with nobody supervising it.
+///
+/// Note that on_shutdown() does NOT cover this. It only runs for an explicit
+/// TRANSITION_ACTIVE_SHUTDOWN, which neither launch_ros nor a signal ever issues.
+void onSignal(int)
+{
+    g_stopping.store(true);
+    if (g_executor != nullptr)
+    {
+        g_executor->cancel();
+    }
+}
+}  // namespace
+
 int main(int argc, char** argv)
 {
-    rclcpp::init(argc, argv);
+    rclcpp::InitOptions init_options;
+    init_options.shutdown_on_signal = false;
+    rclcpp::init(argc, argv, init_options);
+
     // Two threads, not the hardware default: on_activate blocks on an action result that this
     // same node must service, so the result callback needs a thread the transition is not
     // holding. Two is exactly enough and bounds the deviation. See the package README.
     rclcpp::executors::MultiThreadedExecutor executor(rclcpp::ExecutorOptions(), 2);
     auto node = std::make_shared<g1_locomotion::G1LocoAuthority>(rclcpp::NodeOptions());
     executor.add_node(node->get_node_base_interface());
+
+    g_executor = &executor;
+    std::signal(SIGINT, onSignal);
+    std::signal(SIGTERM, onSignal);
+
     executor.spin();
+
+    // The context is still valid here, so the release can actually reach the bridge. It runs on
+    // its own thread because sendMode blocks on futures that only the executor can resolve.
+    std::atomic<bool> released{ false };
+    std::thread       releaser([&node, &released] {
+        node->releaseOnExit();
+        released.store(true);
+    });
+    const auto        deadline = std::chrono::steady_clock::now() + std::chrono::seconds(8);
+    while (!released.load() && std::chrono::steady_clock::now() < deadline)
+    {
+        executor.spin_some(std::chrono::milliseconds(50));
+    }
+    releaser.join();
+
+    g_executor = nullptr;
     rclcpp::shutdown();
     return 0;
 }
