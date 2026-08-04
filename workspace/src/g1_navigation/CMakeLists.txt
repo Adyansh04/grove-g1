@@ -30,8 +30,10 @@ if(BUILD_TESTING)
   # lock g1_bringup uses rather than a separate one.
   find_package(launch_testing_ament_cmake REQUIRED)
   add_launch_test(test/test_scan_pipeline.launch.py TARGET test_scan_pipeline TIMEOUT 200)
+  add_launch_test(test/test_nav_authority.launch.py TARGET test_nav_authority TIMEOUT 320)
   add_launch_test(test/test_slam_map.launch.py TARGET test_slam_map TIMEOUT 240)
   set_tests_properties(test_scan_pipeline PROPERTIES RESOURCE_LOCK g1_sim)
+  set_tests_properties(test_nav_authority PROPERTIES RESOURCE_LOCK g1_sim COST 70)
   set_tests_properties(test_slam_map PROPERTIES RESOURCE_LOCK g1_sim)
   # COST descending = execution order; the heavier suite goes first.
   set_tests_properties(test_slam_map PROPERTIES COST 60)
