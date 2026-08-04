@@ -6,6 +6,7 @@
  * nothing to activate. All the logic worth testing is in GaitShaper, which needs no ROS.
  */
 #include <memory>
+#include <stdexcept>
 
 #include "g1_locomotion/gait_shaper.hpp"
 #include "geometry_msgs/msg/twist.hpp"
@@ -48,11 +49,24 @@ private:
     GaitShaper::Config declareConfig()
     {
         const GaitShaper::Config defaults;
-        return GaitShaper::Config{
+        const GaitShaper::Config config{
             declare_parameter("fwd_engage", defaults.fwd_engage),
             declare_parameter("yaw_engage", defaults.yaw_engage),
             declare_parameter("yaw_clamp", defaults.yaw_clamp),
         };
+        // The never-amplifies invariant is a property of the class AND its configuration, not
+        // of the class alone. A negative yaw_clamp turns the clamp into a multiplier, and a
+        // negative fwd_engage lets reverse through -- removing the backstop the navigation
+        // trees rely on. Neither is reachable from the shipped YAML, and neither should be
+        // reachable from any YAML.
+        if (config.fwd_engage < 0.0 || config.yaw_engage <= 0.0 || config.yaw_clamp < 0.0)
+        {
+            throw std::invalid_argument(
+                "g1_gait_shaper: fwd_engage and yaw_clamp must be >= 0 and yaw_engage > 0; "
+                "negative thresholds would let this node amplify a command instead of "
+                "reducing it");
+        }
+        return config;
     }
 
     void onCommand(const geometry_msgs::msg::Twist& msg)
