@@ -33,6 +33,21 @@ if(BUILD_TESTING)
         "G1_LOCOMOTION_CONFIG_DIR=${CMAKE_CURRENT_SOURCE_DIR}/../g1_locomotion/config"
   )
 
+  # Arguments crossing bringup.launch.py -> nav_sim.launch.py -> sim.launch.py. Lives here
+  # rather than in g1_bringup because it reads both packages' launch files, and g1_bringup
+  # cannot depend on g1_navigation without a colcon cycle. Needs no simulator.
+  ament_add_pytest_test(test_launch_threading test/test_launch_threading.py
+    ENV "G1_NAVIGATION_LAUNCH_DIR=${CMAKE_CURRENT_SOURCE_DIR}/launch"
+        "G1_BRINGUP_LAUNCH_DIR=${CMAKE_CURRENT_SOURCE_DIR}/../g1_bringup/launch"
+  )
+
+  # The sensor display group is duplicated across two RViz configs in two packages; same
+  # cross-package blind spot as test_gait_coupling.
+  ament_add_pytest_test(test_rviz_configs test/test_rviz_configs.py
+    ENV "G1_NAVIGATION_CONFIG_DIR=${CMAKE_CURRENT_SOURCE_DIR}/config"
+        "G1_BRINGUP_CONFIG_DIR=${CMAKE_CURRENT_SOURCE_DIR}/../g1_bringup/config"
+  )
+
   # Headless sim integration suites. RESOURCE_LOCK matches g1_bringup's: two of these sharing
   # a DDS graph and a simulator is what makes them flaky, so they serialise against the same
   # lock g1_bringup uses rather than a separate one.
