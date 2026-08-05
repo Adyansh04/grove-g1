@@ -98,7 +98,11 @@ public:
 
     CallbackReturn on_activate(const rclcpp_lifecycle::State& previous_state) override
     {
-        LifecycleNode::on_activate(previous_state);
+        const auto base_result = LifecycleNode::on_activate(previous_state);
+        if (base_result != CallbackReturn::SUCCESS)
+        {
+            return base_result;
+        }
         RCLCPP_INFO(
             get_logger(),
             "acquiring locomotion authority (from %s)",
