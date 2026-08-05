@@ -53,6 +53,12 @@ if(BUILD_TESTING)
     ament_target_dependencies(test_robot_model moveit_core urdf srdfdom)
   endif()
 
+  # Headless sim suite. Shares g1_bringup's RESOURCE_LOCK: two suites on one DDS graph and one
+  # simulator is what makes them flaky.
+  find_package(launch_testing_ament_cmake REQUIRED)
+  add_launch_test(test/test_moveit_plan_execute.launch.py
+    TARGET test_moveit_plan_execute TIMEOUT 400)
+  set_tests_properties(test_moveit_plan_execute PROPERTIES RESOURCE_LOCK g1_sim COST 90)
 
   # Use workspace-root ruff.toml if available.
   find_program(RUFF_EXECUTABLE ruff)
