@@ -1,0 +1,104 @@
+# RViz for interactive arm planning.
+#   ros2 launch g1_moveit_config moveit_rviz.launch.py
+#
+# Fixed Frame is pelvis, not odom: moveit_sim.launch.py runs without the sensor track, so
+# g1_state_estimation is not publishing odom -> base_footprint and odom does not exist. pelvis
+# is also MoveIt's planning frame here (g1.srdf declares no virtual joint), so what the
+# MotionPlanning panel reports and what this view shows are the same frame.
+#
+# Planning Group starts on both_arms. The single-arm groups are one dropdown away, and starting
+# on the coordinated group is the reminder that it exists.
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+    Property Tree Widget:
+      Expanded:
+        - /MotionPlanning1
+      Splitter Ratio: 0.5
+    Tree Height: 700
+  - Class: rviz_common/Views
+    Name: Views
+  - Class: moveit_rviz_plugin/MotionPlanning - Trajectory Slider
+    Name: Trajectory Slider
+Visualization Manager:
+  Class: ""
+  Name: root
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: Grid
+      Enabled: true
+      Cell Size: 1
+      Plane Cell Count: 10
+      Color: 160; 160; 164
+    - Class: rviz_default_plugins/TF
+      Name: TF
+      Enabled: false
+      Marker Scale: 0.3
+      Show Arrows: false
+      Show Axes: true
+      Show Names: true
+    - Class: moveit_rviz_plugin/MotionPlanning
+      Name: MotionPlanning
+      Enabled: true
+      Move Group Namespace: ""
+      Robot Description: robot_description
+      Planning Scene Topic: /monitored_planning_scene
+      Planning Request:
+        Planning Group: both_arms
+        Colliding Link Color: 255; 0; 0
+        Goal State Alpha: 1
+        Goal State Color: 250; 128; 0
+        Interactive Marker Size: 0.15
+        Query Goal State: true
+        Query Start State: false
+        Show Workspace: false
+        Start State Alpha: 1
+        Start State Color: 0; 255; 0
+      Planned Path:
+        Trajectory Topic: /display_planned_path
+        Loop Animation: false
+        Show Robot Collision: false
+        Show Robot Visual: true
+        Show Trail: false
+        State Display Time: 0.05 s
+        Interrupt Display: false
+      Scene Geometry:
+        Scene Alpha: 0.9
+        Show Scene Geometry: true
+        Voxel Rendering: Occupied Voxels
+      Scene Robot:
+        Attached Body Color: 150; 50; 150
+        Robot Alpha: 0.5
+        Show Robot Collision: false
+        Show Robot Visual: true
+  Global Options:
+    Background Color: 48; 48; 48
+    Fixed Frame: pelvis
+    Frame Rate: 30
+  Tools:
+    - Class: rviz_default_plugins/Interact
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/FocusCamera
+    - Class: rviz_default_plugins/Measure
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Name: Current View
+      Distance: 2.5
+      Focal Point:
+        X: 0.2
+        Y: 0
+        Z: 0.3
+      Pitch: 0.35
+      Yaw: 3.6
+      Target Frame: <Fixed Frame>
+      Near Clip Distance: 0.01
+Window Geometry:
+  Height: 900
+  Width: 1400
+  Displays:
+    collapsed: false
+  Views:
+    collapsed: false
+  Trajectory Slider:
+    collapsed: false
