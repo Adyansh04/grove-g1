@@ -1,7 +1,8 @@
 <?xml version="1.0"?>
 <robot name="g1_29dof_with_hand_rev_1_0">
   <!-- Hand-authored, against urdf/g1_arm_sdk.urdf.xacro in g1_description. Only the
-       disable_collisions block at the bottom is generated; see README.md for the command.
+       disable_collisions block at the bottom is generated; that block carries its own note
+       on how, and README.md has the command.
 
        Note for editors: XML forbids a double hyphen inside a comment, so the prose here uses
        commas and colons where the rest of this repo would use a dash. A stray double hyphen
@@ -63,4 +64,77 @@
        passive_joint. It would document that the legs, waist and hands are not ours, but it
        reads as if it does more: MoveIt's CurrentStateMonitor counts every active joint, and
        the flag does not exempt one. This comment carries the same information honestly. -->
+
+  <!-- Generated, 2026-08-05. Everything above is hand-written; this block is not.
+
+       Two categories, both safe to disable and nothing beyond them: links joined by a joint
+       (reason Adjacent), and links found touching in the robot's own rest pose (reason
+       Default), read from move_group's /check_state_validity contacts. Without these, MoveIt
+       reports the robot as colliding with itself before it has moved, and RRTConnect refuses
+       to seed its tree: "Skipping invalid start state".
+
+       Deliberately NOT generated: the "never in collision" pairs the Setup Assistant's
+       collisions_updater finds by random sampling. Those are a planning-speed optimisation,
+       not a correctness requirement, and on this model the sampling does not finish in a
+       usable time: the URDF's collision geometry is its full visual meshes, about 525k
+       triangles, and runs at 10000, 1000 and 1 trials all failed to complete in over an hour.
+       Simplifying the collision geometry is the fix, and it is its own change. README.md has
+       the regeneration command for when that lands.
+
+       No cross-arm pair appears here, and none should: both_arms exists to collision-check one
+       arm against the other, and test_robot_model asserts the reaching links stay checked. -->
+  <disable_collisions link1="d435_link" link2="camera_color_optical_frame" reason="Adjacent"/>
+  <disable_collisions link1="d435_link" link2="camera_depth_optical_frame" reason="Adjacent"/>
+  <disable_collisions link1="head_link" link2="torso_link" reason="Default"/>
+  <disable_collisions link1="left_ankle_pitch_link" link2="left_ankle_roll_link" reason="Adjacent"/>
+  <disable_collisions link1="left_ankle_pitch_link" link2="left_knee_link" reason="Default"/>
+  <disable_collisions link1="left_elbow_link" link2="left_shoulder_yaw_link" reason="Default"/>
+  <disable_collisions link1="left_elbow_link" link2="left_wrist_roll_link" reason="Adjacent"/>
+  <disable_collisions link1="left_hand_index_0_link" link2="left_hand_index_1_link" reason="Adjacent"/>
+  <disable_collisions link1="left_hand_index_0_link" link2="left_hand_palm_link" reason="Default"/>
+  <disable_collisions link1="left_hand_middle_0_link" link2="left_hand_middle_1_link" reason="Adjacent"/>
+  <disable_collisions link1="left_hand_middle_0_link" link2="left_hand_palm_link" reason="Default"/>
+  <disable_collisions link1="left_hand_palm_link" link2="left_hand_thumb_0_link" reason="Adjacent"/>
+  <disable_collisions link1="left_hand_palm_link" link2="left_wrist_yaw_link" reason="Default"/>
+  <disable_collisions link1="left_hand_thumb_0_link" link2="left_hand_thumb_1_link" reason="Adjacent"/>
+  <disable_collisions link1="left_hand_thumb_1_link" link2="left_hand_thumb_2_link" reason="Adjacent"/>
+  <disable_collisions link1="left_hip_pitch_link" link2="left_hip_roll_link" reason="Adjacent"/>
+  <disable_collisions link1="left_hip_roll_link" link2="left_hip_yaw_link" reason="Adjacent"/>
+  <disable_collisions link1="left_hip_yaw_link" link2="left_knee_link" reason="Adjacent"/>
+  <disable_collisions link1="left_shoulder_pitch_link" link2="left_shoulder_roll_link" reason="Adjacent"/>
+  <disable_collisions link1="left_shoulder_roll_link" link2="left_shoulder_yaw_link" reason="Adjacent"/>
+  <disable_collisions link1="left_wrist_pitch_link" link2="left_wrist_yaw_link" reason="Adjacent"/>
+  <disable_collisions link1="left_wrist_roll_link" link2="left_wrist_pitch_link" reason="Adjacent"/>
+  <disable_collisions link1="logo_link" link2="torso_link" reason="Default"/>
+  <disable_collisions link1="pelvis" link2="imu_in_pelvis" reason="Adjacent"/>
+  <disable_collisions link1="pelvis" link2="left_hip_pitch_link" reason="Adjacent"/>
+  <disable_collisions link1="pelvis" link2="pelvis_contour_link" reason="Adjacent"/>
+  <disable_collisions link1="pelvis" link2="right_hip_pitch_link" reason="Adjacent"/>
+  <disable_collisions link1="pelvis" link2="waist_yaw_link" reason="Adjacent"/>
+  <disable_collisions link1="right_ankle_pitch_link" link2="right_ankle_roll_link" reason="Adjacent"/>
+  <disable_collisions link1="right_ankle_pitch_link" link2="right_knee_link" reason="Default"/>
+  <disable_collisions link1="right_elbow_link" link2="right_shoulder_yaw_link" reason="Default"/>
+  <disable_collisions link1="right_elbow_link" link2="right_wrist_roll_link" reason="Adjacent"/>
+  <disable_collisions link1="right_hand_index_0_link" link2="right_hand_index_1_link" reason="Adjacent"/>
+  <disable_collisions link1="right_hand_index_0_link" link2="right_hand_palm_link" reason="Default"/>
+  <disable_collisions link1="right_hand_middle_0_link" link2="right_hand_middle_1_link" reason="Adjacent"/>
+  <disable_collisions link1="right_hand_middle_0_link" link2="right_hand_palm_link" reason="Default"/>
+  <disable_collisions link1="right_hand_palm_link" link2="right_hand_thumb_0_link" reason="Adjacent"/>
+  <disable_collisions link1="right_hand_palm_link" link2="right_wrist_yaw_link" reason="Default"/>
+  <disable_collisions link1="right_hand_thumb_0_link" link2="right_hand_thumb_1_link" reason="Adjacent"/>
+  <disable_collisions link1="right_hand_thumb_1_link" link2="right_hand_thumb_2_link" reason="Adjacent"/>
+  <disable_collisions link1="right_hip_pitch_link" link2="right_hip_roll_link" reason="Adjacent"/>
+  <disable_collisions link1="right_hip_roll_link" link2="right_hip_yaw_link" reason="Adjacent"/>
+  <disable_collisions link1="right_hip_yaw_link" link2="right_knee_link" reason="Adjacent"/>
+  <disable_collisions link1="right_shoulder_pitch_link" link2="right_shoulder_roll_link" reason="Adjacent"/>
+  <disable_collisions link1="right_shoulder_roll_link" link2="right_shoulder_yaw_link" reason="Adjacent"/>
+  <disable_collisions link1="right_wrist_pitch_link" link2="right_wrist_yaw_link" reason="Adjacent"/>
+  <disable_collisions link1="right_wrist_roll_link" link2="right_wrist_pitch_link" reason="Adjacent"/>
+  <disable_collisions link1="torso_link" link2="d435_link" reason="Adjacent"/>
+  <disable_collisions link1="torso_link" link2="imu_in_torso" reason="Adjacent"/>
+  <disable_collisions link1="torso_link" link2="left_shoulder_pitch_link" reason="Adjacent"/>
+  <disable_collisions link1="torso_link" link2="mid360_link" reason="Adjacent"/>
+  <disable_collisions link1="torso_link" link2="right_shoulder_pitch_link" reason="Adjacent"/>
+  <disable_collisions link1="waist_roll_link" link2="torso_link" reason="Adjacent"/>
+  <disable_collisions link1="waist_yaw_link" link2="waist_roll_link" reason="Adjacent"/>
 </robot>
