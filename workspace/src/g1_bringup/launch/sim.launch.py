@@ -284,6 +284,31 @@ def _launch_setup(context, *args, **kwargs):
     sim_start_delay_s = float(LaunchConfiguration("sim_start_delay_s").perform(context))
     actions.append(TimerAction(period=sim_start_delay_s, actions=[sim_process]))
 
+    # Empty unless asked for, and only the stiff-hold path reads it -- see the argument's
+    # own description for why that means pin_pelvis.
+    waist_hold = LaunchConfiguration("waist_hold_rad").perform(context).strip()
+    waist_params = {}
+    if waist_hold:
+        if not pin_pelvis:
+            raise RuntimeError(
+                "waist_hold_rad needs pin_pelvis:=true. With the walking policy running it "
+                "owns the waist and overwrites the hold pose every tick, so the setting would "
+                "look like it applied and then quietly do nothing."
+            )
+        try:
+            waist_values = [float(v) for v in waist_hold.split(",")]
+        except ValueError as exc:
+            raise RuntimeError(
+                f"waist_hold_rad:={waist_hold!r} is not numbers. Expected three comma-separated "
+                "radians, yaw,roll,pitch."
+            ) from exc
+        if len(waist_values) != 3:
+            raise RuntimeError(
+                f"waist_hold_rad:={waist_hold!r} has {len(waist_values)} values; the waist has "
+                "three joints (yaw, roll, pitch)."
+            )
+        waist_params = {"waist_hold_rad": waist_values}
+
     # Pelvis weld and walking policy are mutually exclusive.
     motion_service_sim_share = get_package_share_directory("g1_motion_service_sim")
     motion_service_sim_node  = Node(
@@ -299,6 +324,7 @@ def _launch_setup(context, *args, **kwargs):
             # sensors run: it costs work on the 1 kHz /lowstate path.
             {"publish_non_arm_joint_states": sensors},
             {"walk_policy.enabled": not pin_pelvis},
+            waist_params,
         ],
     )
 
@@ -369,6 +395,15 @@ def generate_launch_description():
                 description="SIM-ONLY debugging aid: weld the pelvis to the world AND disable the "
                 "walking policy, so the arm bridge can be exercised with nothing else driving the "
                 "legs. Default false -- the policy balances the robot itself.",
+            ),
+            DeclareLaunchArgument(
+                "waist_hold_rad",
+                default_value="",
+                description="SIM-ONLY: three comma-separated radians (yaw,roll,pitch) to stand "
+                "the waist at instead of the pose it spawned in. Needs pin_pelvis:=true, "
+                "because a running walking policy owns the waist and overwrites this. Exists "
+                "so manipulation can be exercised with a torso that is not square to the "
+                "pelvis, which is the case a zero waist hides.",
             ),
             DeclareLaunchArgument(
                 "sim_start_delay_s",

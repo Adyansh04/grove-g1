@@ -14,6 +14,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "g1_motion_service_sim/blend_math.hpp"
 #include "g1_motion_service_sim/loco_fsm.hpp"
@@ -84,6 +85,9 @@ private:
     double arm_hold_kd_{};
     double arm_sdk_timeout_s_{};
     double timeout_ramp_down_s_{};
+    /// Waist targets that replace the captured ones, or empty to hold whatever was captured.
+    /// Only meaningful while the legs are stiff-holding; a live walking policy owns the waist.
+    std::vector<double> waist_hold_rad_;
 
     rclcpp::Subscription<unitree_hg::msg::LowState>::SharedPtr lowstate_sub_;
     rclcpp::Subscription<unitree_hg::msg::LowCmd>::SharedPtr   arm_sdk_sub_;

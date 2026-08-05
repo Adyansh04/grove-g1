@@ -127,6 +127,23 @@ MotionServiceSim::MotionServiceSim(const rclcpp::NodeOptions& options)
     arm_sdk_timeout_s_              = arm_sdk_timeout_ms / 1000.0;
     timeout_ramp_down_s_            = declare_parameter("timeout_ramp_down_s", 1.0);
 
+    // The waist belongs to the onboard controller, so nothing in this stack can command it and
+    // the sim model always spawns it at zero. Overriding the captured hold target is the only
+    // way to stand the torso anywhere else, which manipulation needs: a waist locked at zero
+    // hides every error in the pelvis-to-torso transform that arm planning depends on.
+    waist_hold_rad_ = declare_parameter("waist_hold_rad", std::vector<double>{});
+    if (!waist_hold_rad_.empty() &&
+        waist_hold_rad_.size() != static_cast<std::size_t>(kFirstArmMotor - kNumLegMotors))
+    {
+        RCLCPP_ERROR(
+            get_logger(),
+            "waist_hold_rad needs %d values (yaw, roll, pitch) but got %zu -- ignoring it and "
+            "holding the captured waist pose",
+            kFirstArmMotor - kNumLegMotors,
+            waist_hold_rad_.size());
+        waist_hold_rad_.clear();
+    }
+
     // Fail fast on non-positive rate/duration (same gate as G1ArmSdkSystem::on_init).
     if (publish_rate_hz_ <= 0.0 || arm_sdk_timeout_s_ <= 0.0 || timeout_ramp_down_s_ <= 0.0)
     {
@@ -378,6 +395,13 @@ void MotionServiceSim::lowstateCallback(const unitree_hg::msg::LowState::ConstSh
         for (int i = 0; i < kNumBodyMotors; ++i)
         {
             hold_q_[static_cast<std::size_t>(i)] = msg->motor_state[static_cast<std::size_t>(i)].q;
+        }
+        // Applied to the captured pose rather than to every command, so the waist ramps to the
+        // target through the same stiff-hold PD as any other hold -- no snap, and /lowstate
+        // still reports whatever the joint actually reached.
+        for (std::size_t i = 0; i < waist_hold_rad_.size(); ++i)
+        {
+            hold_q_[static_cast<std::size_t>(kNumLegMotors) + i] = waist_hold_rad_[i];
         }
         hold_pose_captured_ = true;
     }
