@@ -27,7 +27,7 @@ target_include_directories(blend_math PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
-target_compile_features(blend_math PUBLIC cxx_std_17)
+target_compile_features(blend_math PUBLIC cxx_std_20)
 ament_target_dependencies(blend_math PUBLIC unitree_hg)
 
 # Walking policy observation/action math — pure C++, no ROS or ONNX.
@@ -36,7 +36,7 @@ target_include_directories(walk_policy PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
-target_compile_features(walk_policy PUBLIC cxx_std_17)
+target_compile_features(walk_policy PUBLIC cxx_std_20)
 ament_target_dependencies(walk_policy PUBLIC unitree_hg)
 
 # ONNX Runtime session wrapper, separate from math for testability.
@@ -46,7 +46,7 @@ target_include_directories(walk_policy_session PUBLIC
   $<INSTALL_INTERFACE:include>
   ${ONNXRUNTIME_INCLUDE_DIR}
 )
-target_compile_features(walk_policy_session PUBLIC cxx_std_17)
+target_compile_features(walk_policy_session PUBLIC cxx_std_20)
 target_link_libraries(walk_policy_session walk_policy ${ONNXRUNTIME_LIBRARY})
 
 # Sim-only FSM legality table for /api/sport/request.
@@ -55,7 +55,7 @@ target_include_directories(loco_fsm PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
-target_compile_features(loco_fsm PUBLIC cxx_std_17)
+target_compile_features(loco_fsm PUBLIC cxx_std_20)
 
 add_executable(motion_service_sim
   src/motion_service_sim_node.cpp
@@ -65,7 +65,7 @@ target_include_directories(motion_service_sim PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
-target_compile_features(motion_service_sim PUBLIC cxx_std_17)
+target_compile_features(motion_service_sim PUBLIC cxx_std_20)
 target_link_libraries(motion_service_sim
   blend_math
   loco_fsm

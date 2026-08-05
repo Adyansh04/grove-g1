@@ -13,7 +13,7 @@ target_include_directories(frame_reader PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
-target_compile_features(frame_reader PUBLIC cxx_std_17)
+target_compile_features(frame_reader PUBLIC cxx_std_20)
 
 add_executable(g1_sensor_relay src/g1_sensor_relay_node.cpp)
 target_link_libraries(g1_sensor_relay PUBLIC frame_reader)

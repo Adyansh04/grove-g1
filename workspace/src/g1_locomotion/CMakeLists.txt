@@ -24,7 +24,7 @@ target_include_directories(g1_loco_bridge_core PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
-target_compile_features(g1_loco_bridge_core PUBLIC cxx_std_17)
+target_compile_features(g1_loco_bridge_core PUBLIC cxx_std_20)
 target_link_libraries(g1_loco_bridge_core PUBLIC nlohmann_json::nlohmann_json)
 ament_target_dependencies(g1_loco_bridge_core PUBLIC unitree_api)
 
@@ -36,7 +36,7 @@ target_include_directories(g1_loco_bridge_node_lib PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
-target_compile_features(g1_loco_bridge_node_lib PUBLIC cxx_std_17)
+target_compile_features(g1_loco_bridge_node_lib PUBLIC cxx_std_20)
 target_link_libraries(g1_loco_bridge_node_lib PUBLIC g1_loco_bridge_core)
 ament_target_dependencies(g1_loco_bridge_node_lib PUBLIC
   rclcpp
@@ -55,7 +55,7 @@ add_executable(g1_gait_shaper src/g1_gait_shaper_node.cpp src/gait_shaper.cpp)
 target_include_directories(g1_gait_shaper PRIVATE
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
-target_compile_features(g1_gait_shaper PUBLIC cxx_std_17)
+target_compile_features(g1_gait_shaper PUBLIC cxx_std_20)
 ament_target_dependencies(g1_gait_shaper rclcpp geometry_msgs)
 
 # Client of this package's own action, so no new dependency. Its own executable rather than a
@@ -65,11 +65,11 @@ add_executable(g1_loco_authority src/g1_loco_authority_node.cpp)
 target_include_directories(g1_loco_authority PRIVATE
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
-target_compile_features(g1_loco_authority PUBLIC cxx_std_17)
+target_compile_features(g1_loco_authority PUBLIC cxx_std_20)
 ament_target_dependencies(g1_loco_authority rclcpp rclcpp_action rclcpp_lifecycle g1_msgs)
 
 add_executable(g1_loco_bridge src/g1_loco_bridge_main.cpp)
-target_compile_features(g1_loco_bridge PUBLIC cxx_std_17)
+target_compile_features(g1_loco_bridge PUBLIC cxx_std_20)
 target_link_libraries(g1_loco_bridge g1_loco_bridge_node_lib)
 ament_target_dependencies(g1_loco_bridge rclcpp)
 
@@ -110,6 +110,10 @@ if(BUILD_TESTING)
   target_include_directories(test_gait_shaper PRIVATE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   )
+  # Stated explicitly because this target compiles gait_shaper.cpp itself and links no library
+  # carrying PUBLIC cxx_std_20, so it would otherwise inherit nothing and build at the compiler
+  # default -- testing GaitShaper under a different dialect than g1_gait_shaper ships it under.
+  target_compile_features(test_gait_shaper PRIVATE cxx_std_20)
 
   # G1LocoBridge itself, in-process against a fake /api/sport/* responder on an isolated
   # ROS_DOMAIN_ID (no sim, no launch_testing) -- lifecycle-transition/authority races the pure

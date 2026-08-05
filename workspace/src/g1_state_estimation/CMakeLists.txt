@@ -19,14 +19,14 @@ target_include_directories(odom_math PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
-target_compile_features(odom_math PUBLIC cxx_std_17)
+target_compile_features(odom_math PUBLIC cxx_std_20)
 
 add_library(g1_odometry_publisher_node src/g1_odometry_publisher_node.cpp)
 target_include_directories(g1_odometry_publisher_node PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
-target_compile_features(g1_odometry_publisher_node PUBLIC cxx_std_17)
+target_compile_features(g1_odometry_publisher_node PUBLIC cxx_std_20)
 target_link_libraries(g1_odometry_publisher_node PUBLIC odom_math)
 ament_target_dependencies(g1_odometry_publisher_node PUBLIC
   rclcpp rclcpp_lifecycle lifecycle_msgs nav_msgs sensor_msgs geometry_msgs tf2_ros tf2_msgs
