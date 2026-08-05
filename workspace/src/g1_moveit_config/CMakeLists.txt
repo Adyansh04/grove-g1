@@ -24,6 +24,36 @@ if(BUILD_TESTING)
         "G1_DESCRIPTION_CONFIG_DIR=${CMAKE_CURRENT_SOURCE_DIR}/../g1_description/config"
   )
 
+  # move_group plans against the expanded xacro, not a checked-in URDF, so the model test has
+  # to expand it too -- otherwise it validates a robot nobody runs. Regenerated whenever the
+  # xacro or the gains it loads change.
+  find_package(moveit_core REQUIRED)
+  find_package(urdf REQUIRED)
+  find_package(srdfdom REQUIRED)
+
+  set(_expanded_urdf "${CMAKE_CURRENT_BINARY_DIR}/g1_expanded.urdf")
+  set(_description_dir "${CMAKE_CURRENT_SOURCE_DIR}/../g1_description")
+  add_custom_command(
+    OUTPUT ${_expanded_urdf}
+    COMMAND xacro ${_description_dir}/urdf/g1_arm_sdk.urdf.xacro -o ${_expanded_urdf}
+    DEPENDS ${_description_dir}/urdf/g1_arm_sdk.urdf.xacro
+            ${_description_dir}/urdf/g1_29dof_with_hand_rev_1_0.urdf
+            ${_description_dir}/config/arm_sdk_params.yaml
+    COMMENT "Expanding g1_arm_sdk.urdf.xacro for test_robot_model"
+    VERBATIM
+  )
+  add_custom_target(g1_moveit_config_expanded_urdf ALL DEPENDS ${_expanded_urdf})
+
+  ament_add_gmock(test_robot_model test/test_robot_model.cpp)
+  if(TARGET test_robot_model)
+    add_dependencies(test_robot_model g1_moveit_config_expanded_urdf)
+    target_compile_definitions(test_robot_model PRIVATE
+      G1_TEST_URDF_PATH="${_expanded_urdf}"
+      G1_TEST_SRDF_PATH="${CMAKE_CURRENT_SOURCE_DIR}/config/g1.srdf")
+    ament_target_dependencies(test_robot_model moveit_core urdf srdfdom)
+  endif()
+
+
   # Use workspace-root ruff.toml if available.
   find_program(RUFF_EXECUTABLE ruff)
   set(_ruff_config "${CMAKE_CURRENT_SOURCE_DIR}/../../ruff.toml")
