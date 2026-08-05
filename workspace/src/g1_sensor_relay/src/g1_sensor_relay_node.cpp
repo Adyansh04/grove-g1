@@ -192,9 +192,12 @@ private:
             return;
         }
 
+        // Hoisted out of the loop deliberately: tryReadFrame fills via resize(), so reusing
+        // one frame reuses its capacity while draining a burst. A cloud can reach tens of MB
+        // and, as above, several can be queued behind one poll().
+        CloudFrame frame;
         for (;;)
         {
-            CloudFrame        frame;
             const FrameStatus status = tryReadFrame(buffer_, frame);
             if (status == FrameStatus::Incomplete)
             {
