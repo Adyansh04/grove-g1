@@ -49,7 +49,7 @@ at all.
 | `/sportmodestate` | in | `unitree_go/msg/SportModeState` |
 | `/api/sport/request` | in | `unitree_api/msg/Request` |
 | `/api/sport/response` | out | `unitree_api/msg/Response` |
-| `/joint_states` | out | `sensor_msgs/msg/JointState`, lower body only |
+| `/joint_states` | out | `sensor_msgs/msg/JointState`, legs, waist and hands |
 
 Reliability and durability on `/api/sport/*` are matched to the vendor's. Do not deviate.
 
@@ -132,7 +132,7 @@ that makes it a teleop-grade locomotion source, not a planner-grade one. `g1_loc
 gains and limits. The file is commented; read it directly.
 
 `sim.launch.py` supplies two more, because both are launch decisions rather than tuning:
-`publish_lower_joint_states` and `walk_policy.enabled`.
+`publish_non_arm_joint_states` and `walk_policy.enabled`.
 
 ## Tests
 

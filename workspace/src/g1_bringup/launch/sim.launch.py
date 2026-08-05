@@ -295,8 +295,9 @@ def _launch_setup(context, *args, **kwargs):
             os.path.join(motion_service_sim_share, "config", "motion_service_sim.yaml"),
             os.path.join(motion_service_sim_share, "config", "walk_policy.yaml"),
             # Completes pelvis -> torso_link so the sensor frames are not stranded in their
-            # own TF tree. Only when sensors run: it costs work on the 1 kHz /lowstate path.
-            {"publish_lower_joint_states": sensors},
+            # own TF tree, and fills in the hands, which no controller owns. Only when
+            # sensors run: it costs work on the 1 kHz /lowstate path.
+            {"publish_non_arm_joint_states": sensors},
             {"walk_policy.enabled": not pin_pelvis},
         ],
     )

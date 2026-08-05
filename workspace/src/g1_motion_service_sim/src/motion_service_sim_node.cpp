@@ -7,6 +7,7 @@
 
 #include "g1_motion_service_sim/motion_service_sim_node.hpp"
 
+#include <array>
 #include <cmath>
 #include <nlohmann/json.hpp>
 #include <optional>
@@ -30,6 +31,19 @@ constexpr std::int64_t kApiIdSetArmTask  = 7106;
 
 /// UT_ROBOT_TASK_UNKNOWN_ERROR -- matches g1_locomotion::kCodeTaskUnknownError.
 constexpr std::int32_t kCodeTaskUnknownError = -2;
+
+/// The hand's finger joints. They exist in the URDF but not in the 29-motor model
+/// unitree_mujoco runs, so nothing actuates or measures them; zero is where they sit.
+/// Published anyway because a consumer that reads the URDF expects them: MoveIt's
+/// CurrentStateMonitor waits for every active joint before it will plan, and an SRDF
+/// passive_joint declaration does not exempt one from that count.
+constexpr std::array<const char*, 14> kHandJointNames = {
+    "left_hand_thumb_0_joint",  "left_hand_thumb_1_joint",   "left_hand_thumb_2_joint",
+    "left_hand_middle_0_joint", "left_hand_middle_1_joint",  "left_hand_index_0_joint",
+    "left_hand_index_1_joint",  "right_hand_thumb_0_joint",  "right_hand_thumb_1_joint",
+    "right_hand_thumb_2_joint", "right_hand_middle_0_joint", "right_hand_middle_1_joint",
+    "right_hand_index_0_joint", "right_hand_index_1_joint",
+};
 
 /// Parses `{"data": <int>}` -- the shape both 7101's request parameter and 7001's response data
 /// share. Malformed JSON or a non-integer `data` field are both reported as nullopt, never as an
@@ -133,19 +147,25 @@ MotionServiceSim::MotionServiceSim(const rclcpp::NodeOptions& options)
     // Off unless asked for. This work lands on the ~1 kHz /lowstate callback, which is the
     // walking policy's own path, so only the sensor track pays for it. sim.launch.py turns
     // it on together with sensors, because that is what needs pelvis -> torso_link.
-    publish_lower_joints_ = declare_parameter<bool>("publish_lower_joint_states", false);
+    publish_non_arm_joints_ = declare_parameter<bool>("publish_non_arm_joint_states", false);
 
     // Latest-only: robot_state_publisher merges by joint name, so this coexists with
     // joint_state_broadcaster's arm-only publication rather than competing with it.
-    lower_joint_pub_ = create_publisher<sensor_msgs::msg::JointState>(
+    non_arm_joint_pub_ = create_publisher<sensor_msgs::msg::JointState>(
         "/joint_states",
         rclcpp::QoS(rclcpp::KeepLast(1)));
-    lower_joint_msg_.name.reserve(kNumLowerMotors);
-    lower_joint_msg_.position.resize(kNumLowerMotors);
-    lower_joint_msg_.velocity.resize(kNumLowerMotors);
+    const std::size_t non_arm_count = kNumLowerMotors + kHandJointNames.size();
+    non_arm_joint_msg_.name.reserve(non_arm_count);
+    // Hand entries are left at zero here and never written again.
+    non_arm_joint_msg_.position.resize(non_arm_count);
+    non_arm_joint_msg_.velocity.resize(non_arm_count);
     for (int i = 0; i < kNumLowerMotors; ++i)
     {
-        lower_joint_msg_.name.emplace_back(kDdsMotorOrder[i]);
+        non_arm_joint_msg_.name.emplace_back(kDdsMotorOrder[i]);
+    }
+    for (const auto* hand_joint : kHandJointNames)
+    {
+        non_arm_joint_msg_.name.emplace_back(hand_joint);
     }
 
     lowstate_sub_ = create_subscription<unitree_hg::msg::LowState>(
@@ -324,17 +344,18 @@ void MotionServiceSim::lowstateCallback(const unitree_hg::msg::LowState::ConstSh
 {
     // Legs and waist, which nothing else publishes. Motor index equals kDdsMotorOrder
     // index, asserted by test_walk_policy's joint-order check. Decimated to ~100 Hz:
-    // /lowstate is ~1 kHz and robot_state_publisher has no use for that.
-    if (publish_lower_joints_ && ++lower_joint_decimate_ >= 10)
+    // /lowstate is ~1 kHz and robot_state_publisher has no use for that. The hand
+    // entries past kNumLowerMotors have no motor to read and stay at their initial zero.
+    if (publish_non_arm_joints_ && ++non_arm_joint_decimate_ >= 10)
     {
-        lower_joint_decimate_         = 0;
-        lower_joint_msg_.header.stamp = now();
+        non_arm_joint_decimate_         = 0;
+        non_arm_joint_msg_.header.stamp = now();
         for (int i = 0; i < kNumLowerMotors; ++i)
         {
-            lower_joint_msg_.position[i] = msg->motor_state[i].q;
-            lower_joint_msg_.velocity[i] = msg->motor_state[i].dq;
+            non_arm_joint_msg_.position[i] = msg->motor_state[i].q;
+            non_arm_joint_msg_.velocity[i] = msg->motor_state[i].dq;
         }
-        lower_joint_pub_->publish(lower_joint_msg_);
+        non_arm_joint_pub_->publish(non_arm_joint_msg_);
     }
 
     // Refreshed every sample, unlike hold_q_ below: the policy observes live joint state.
