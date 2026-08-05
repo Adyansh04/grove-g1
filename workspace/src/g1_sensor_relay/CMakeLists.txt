@@ -19,6 +19,13 @@ add_executable(g1_sensor_relay src/g1_sensor_relay_node.cpp)
 target_link_libraries(g1_sensor_relay PUBLIC frame_reader)
 ament_target_dependencies(g1_sensor_relay PUBLIC rclcpp sensor_msgs geometry_msgs)
 
+# This package parses length-prefixed binary frames off a socket, so -Wsign-compare and the
+# unused-result warnings earn their keep here more than anywhere else in the workspace.
+if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  target_compile_options(frame_reader PRIVATE -Wall -Wextra)
+  target_compile_options(g1_sensor_relay PRIVATE -Wall -Wextra)
+endif()
+
 install(DIRECTORY include/ DESTINATION include)
 install(TARGETS frame_reader EXPORT export_${PROJECT_NAME} DESTINATION lib)
 install(TARGETS g1_sensor_relay DESTINATION lib/${PROJECT_NAME})

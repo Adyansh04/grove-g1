@@ -80,6 +80,8 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   target_compile_options(motion_service_sim PRIVATE -Wall -Wextra)
   target_compile_options(blend_math PRIVATE -Wall -Wextra)
   target_compile_options(loco_fsm PRIVATE -Wall -Wextra)
+  target_compile_options(walk_policy PRIVATE -Wall -Wextra)
+  target_compile_options(walk_policy_session PRIVATE -Wall -Wextra)
 endif()
 
 # blend_math is internal (statically linked) — no install rule.

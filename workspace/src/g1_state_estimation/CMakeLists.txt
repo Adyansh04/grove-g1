@@ -35,6 +35,12 @@ ament_target_dependencies(g1_odometry_publisher_node PUBLIC
 add_executable(g1_odometry_publisher src/g1_odometry_publisher_main.cpp)
 target_link_libraries(g1_odometry_publisher PUBLIC g1_odometry_publisher_node)
 
+if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  target_compile_options(odom_math PRIVATE -Wall -Wextra)
+  target_compile_options(g1_odometry_publisher_node PRIVATE -Wall -Wextra)
+  target_compile_options(g1_odometry_publisher PRIVATE -Wall -Wextra)
+endif()
+
 install(DIRECTORY include/ DESTINATION include)
 install(DIRECTORY config DESTINATION share/${PROJECT_NAME})
 install(TARGETS odom_math g1_odometry_publisher_node
