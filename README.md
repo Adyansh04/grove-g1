@@ -15,6 +15,10 @@ a goal pose under Nav2. Arm trajectories run through `ros2_control` onto Unitree
 
 Manipulation is the next milestone and is not built yet.
 
+## Nav2 Demo
+
+![Nav2 Demo](docs/media/grove_nav2_demo.gif)
+
 ## Architecture
 
 ```mermaid
