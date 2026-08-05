@@ -130,6 +130,41 @@ Nav2 dependency.
 colcon test --packages-select g1_navigation
 ```
 
+## Soak test
+
+`nav_soak` brings the stack up, drives a list of goals across the facility one at a time,
+records health, and tears everything down.
+
+```bash
+ros2 run g1_navigation nav_soak                        # default goal list
+ros2 run g1_navigation nav_soak --rviz
+ros2 run g1_navigation nav_soak --goals "3.0 -3.0,-2.5 2.0"
+```
+
+It reports distance driven, how much of Nav2's output falls inside the gait shaper's dead
+band, `map` to `odom` correction sizes, pelvis pitch through the gait, and local costmap
+lethal-cell counts. `nav_diag.py` is the recorder and also runs on its own against a stack
+that is already up:
+
+```bash
+ros2 run g1_navigation nav_diag.py 200
+```
+
+Three details in `nav_soak` are load-bearing, and doing any of them the obvious way produces
+results that look like stack defects. It sends one goal at a time and lets each finish, since
+killing the action client mid-goal lets the next goal preempt the running one and the robot
+falls. It tears down by process group and sweeps `/proc/PID/cmdline` rather than executable
+paths, because anything running as `python3` or the `ros2` CLI otherwise survives as an orphan
+into the next run. And it reads readiness from the launch log, because action and TF discovery
+can exceed any reasonable timeout and AMCL only publishes `/amcl_pose` after a motion-gated
+update, so a stationary robot never emits one.
+
+Verify by hand that nothing survived:
+
+```bash
+ros2 node list --no-daemon | sort | uniq -d    # any output means an orphan is still running
+```
+
 `test_navigate_to_pose` will fail occasionally without anything being wrong. It drives the real
 gait, which sometimes comes up unresponsive, and the suites are timing-sensitive. Re-run it alone
 before believing a red run:

@@ -1,0 +1,161 @@
+#!/bin/bash
+#
+# Navigation soak test. Brings the stack up, drives a list of goals across the facility one at
+# a time, records health, and tears everything down.
+#
+# Run inside the container:
+#   ros2 run g1_navigation nav_soak
+#   ros2 run g1_navigation nav_soak --rviz
+#   ros2 run g1_navigation nav_soak --goals "3.0 -3.0,-2.5 2.0"
+#
+# Default goals are ones an operator drove interactively in a session that completed all of
+# them with no falls and no recoveries. They cross the facility rather than nudging around the
+# origin, which is where costmap and localization problems actually show up.
+#
+# Three things this gets right, each of which produced a false "stack defect" when done the
+# obvious way. See docs/notes for the measurements.
+#
+#   1. One goal at a time, allowed to finish. Wrapping the action client in a hard timeout
+#      kills it mid-goal and lets the next goal preempt the running one; abrupt replanning
+#      through a bang-bang gait topples the robot.
+#   2. Teardown by process group, then a sweep on /proc/PID/cmdline. Sweeping executable paths
+#      misses everything running as python3 or the ros2 CLI, which survives as an
+#      init-reparented orphan into the next run and puts a second writer on the velocity path.
+#   3. Readiness read from the launch log. Live queries are unreliable here: action and TF
+#      discovery can exceed any sane timeout, and AMCL publishes /amcl_pose only after a
+#      motion-gated update, so a stationary robot never emits one.
+
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+DIAG="$SCRIPT_DIR/nav_diag.py"
+LOG=/tmp/nav_soak_launch.log
+DIAG_OUT=/tmp/nav_soak_diag.txt
+PGID_FILE=/tmp/nav_soak.pgid
+
+RVIZ=false
+GOALS_RAW="4.15 -6.96,-2.79 -6.69,5.21 1.93,5.37 2.08,-4.67 4.97,-4.46 7.58,6.31 -2.10,6.53 -7.00,-2.51 -6.42,4.13 1.76,2.80 6.92,-7.49 5.23,-2.44 -6.90"
+
+# Above the 4.0 navigation default. The simulator's first physics tick can land before the
+# bridge and controller_manager finish DDS discovery, and the robot topples at spawn when it
+# does. sim.launch.py's own argument documentation says to raise this.
+DELAY="${SIM_START_DELAY_S:-8.0}"
+SETTLE="${SETTLE_S:-100}"
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --rviz)  RVIZ=true; shift ;;
+        --goals) GOALS_RAW="$2"; shift 2 ;;
+        -h|--help) sed -n '3,27p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        *) echo "unknown argument: $1" >&2; exit 2 ;;
+    esac
+done
+
+IFS=',' read -r -a GOALS <<< "$GOALS_RAW"
+
+teardown() {
+    if [ -f "$PGID_FILE" ]; then
+        PGID=$(cat "$PGID_FILE")
+        kill -TERM -"$PGID" 2>/dev/null
+        for _ in $(seq 1 15); do pgrep -g "$PGID" >/dev/null 2>&1 || break; sleep 1; done
+        kill -KILL -"$PGID" 2>/dev/null
+        rm -f "$PGID_FILE"
+    fi
+    sleep 3
+    for p in $(ls /proc 2>/dev/null | grep -E '^[0-9]+$'); do
+        [ "$p" = "$$" ] && continue
+        cmd=$(tr '\0' ' ' < "/proc/$p/cmdline" 2>/dev/null) || continue
+        exe=$(readlink "/proc/$p/exe" 2>/dev/null)
+        case "$cmd$exe" in
+            *nav_diag.py*|*"ros2 launch"*|*"ros2 action"*|*/root/workspace/install/*|*unitree_mujoco*|\
+            *rviz2*|*ros2_control_node*|*robot_state_publisher*|*component_container*|*nav2_*|\
+            *controller_server*|*planner_server*|*bt_navigator*|*amcl*|*map_server*|*lifecycle_manager*)
+                kill -KILL "$p" 2>/dev/null ;;
+        esac
+    done
+    rm -f /opt/unitree_robotics/unitree_robots/g1/*.staged.xml 2>/dev/null
+    ros2 daemon stop >/dev/null 2>&1
+}
+
+verify_clean() {
+    n=0
+    for p in $(ls /proc 2>/dev/null | grep -E '^[0-9]+$'); do
+        [ "$p" = "$$" ] && continue
+        cmd=$(tr '\0' ' ' < "/proc/$p/cmdline" 2>/dev/null) || continue
+        case "$cmd" in
+            *nav_diag.py*|*/root/workspace/install/*|*unitree_mujoco*|*"ros2 launch"*) n=$((n + 1)) ;;
+        esac
+    done
+    echo "  workspace processes still alive: $n"
+    # --no-daemon deliberately: the daemon caches the graph and will list nodes that died
+    # minutes ago. A duplicate name means an orphan is still running.
+    dup=$(timeout 25 ros2 node list --no-daemon 2>/dev/null | sort | uniq -d)
+    if [ -n "$dup" ]; then
+        echo "  DUPLICATE NODES (orphans alive):"; echo "$dup" | sed 's|^|    |'
+    else
+        echo "  duplicate node names: none"
+    fi
+}
+
+trap 'echo; echo "interrupted, tearing down"; teardown; exit 130' INT TERM
+
+echo "########## teardown before starting ##########"
+teardown
+verify_clean
+
+echo
+echo "########## launch ##########"
+setsid ros2 launch g1_bringup bringup.launch.py mode:=localization nav:=true \
+    rviz:="$RVIZ" sim_start_delay_s:="$DELAY" > "$LOG" 2>&1 &
+LEADER=$!
+sleep 2
+ps -o pgid= -p "$LEADER" 2>/dev/null | tr -d ' ' > "$PGID_FILE"
+sleep "$SETTLE"
+
+FELL=$(grep -ac "is falling, not turning" "$LOG")
+READY=NOTREADY
+for _ in $(seq 1 12); do
+    if [ "$(grep -ac 'Managed nodes are active' "$LOG")" -ge 2 ]; then READY=READY; break; fi
+    sleep 5
+done
+
+echo "  fall warnings: ${FELL:-?}   nav2: $READY"
+if [ "${FELL:-1}" != "0" ] || [ "$READY" != "READY" ]; then
+    echo "  NOT HEALTHY. Aborting before any goal is sent."
+    teardown
+    exit 3
+fi
+
+echo
+echo "########## ${#GOALS[@]} goals, one at a time ##########"
+python3 "$DIAG" 100000 > "$DIAG_OUT" 2>&1 &
+DIAG_PID=$!
+sleep 4
+
+i=0
+for g in "${GOALS[@]}"; do
+    i=$((i + 1))
+    read -r gx gy <<< "$g"
+    printf "  goal %2d/%d  (%s, %s)  " "$i" "${#GOALS[@]}" "$gx" "$gy"
+    ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose \
+        "{pose: {header: {frame_id: map}, pose: {position: {x: $gx, y: $gy}, orientation: {w: 1.0}}}}" 2>&1 \
+        | grep -oE 'SUCCEEDED|ABORTED|CANCELED|REJECTED' | tail -1 | grep . \
+        || echo "NO RESULT (client saw no action server)"
+done
+
+echo
+echo "########## recorded ##########"
+kill -INT "$DIAG_PID" 2>/dev/null
+wait "$DIAG_PID" 2>/dev/null
+grep -vE '^\[snap\]' "$DIAG_OUT" | tail -22
+
+echo
+echo "########## health ##########"
+echo "  falls:              $(grep -ac 'is falling, not turning' "$LOG")"
+echo "  progress failures:  $(grep -ac 'Failed to make progress' "$LOG")"
+echo "  recoveries fired:   $(grep -acE 'Running Spin|Running BackUp|Clearing costmap' "$LOG")"
+
+echo
+echo "########## teardown after ##########"
+teardown
+verify_clean

@@ -8,6 +8,15 @@ install(
   DESTINATION share/${PROJECT_NAME}
 )
 
+# Soak test and its recorder. Same arrangement as g1_bringup's activate_arm: run in-container
+# via `ros2 run g1_navigation nav_soak`, not from the host.
+install(
+  PROGRAMS
+    scripts/nav_soak
+    scripts/nav_diag.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 if(BUILD_TESTING)
   # Linters that don't conflict with ruff. No pep257, matching g1_bringup and g1_sim, the two
   # other launch-heavy packages: its D213 wants the docstring summary on the second line and
@@ -74,6 +83,7 @@ if(BUILD_TESTING)
       NAME ruff_check_g1_navigation
       COMMAND ${RUFF_EXECUTABLE} check --config ${_ruff_config}
               ${CMAKE_CURRENT_SOURCE_DIR}/launch ${CMAKE_CURRENT_SOURCE_DIR}/test
+              ${CMAKE_CURRENT_SOURCE_DIR}/scripts
     )
   else()
     message(WARNING "ruff and/or workspace ruff.toml not found; skipping ruff_check_g1_navigation test")
