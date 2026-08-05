@@ -51,7 +51,12 @@ arm_trajectory_controller:
       - velocity
     state_publish_rate: 100.0   # Hz; default
     action_monitor_rate: 20.0   # Hz; default
-    allow_partial_joints_goal: false
+    # MoveIt plans one arm at a time -- its left_arm and right_arm groups are 7 joints each,
+    # and with this false the JTC rejects any goal that does not name all 14. Humble fills the
+    # unnamed joints with their last commanded position (measured, if nothing was commanded
+    # yet) at zero velocity, so the idle arm holds station rather than being left undefined.
+    # g1_moveit_config's drift test pins this, because turning it back breaks every plan.
+    allow_partial_joints_goal: true
 
     # Sim-tuning: unitree_mujoco's PD tracking plus the motion_service_sim's
     # own weight/slew ramping add latency the JTC's tight built-in defaults
