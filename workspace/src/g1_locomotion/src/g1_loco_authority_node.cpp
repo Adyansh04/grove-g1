@@ -255,7 +255,7 @@ private:
             RCLCPP_ERROR(get_logger(), "%s goal was never acknowledged", label);
             return Attempt::kFatal;
         }
-        auto handle = pending.get();
+        const auto& handle = pending.get();
         if (!handle)
         {
             // A goal rejection carries no code, so this cannot be classified from the wire. Of
@@ -276,7 +276,7 @@ private:
             RCLCPP_ERROR(get_logger(), "%s goal produced no result", label);
             return Attempt::kFatal;
         }
-        const auto wrapped = result.get();
+        const auto& wrapped = result.get();
         if (wrapped.code == rclcpp_action::ResultCode::SUCCEEDED && wrapped.result->success)
         {
             return Attempt::kOk;
