@@ -3,15 +3,19 @@
   <!-- Hand-authored, against urdf/g1_arm_sdk.urdf.xacro in g1_description. Only the
        disable_collisions block at the bottom is generated; see README.md for the command.
 
+       Note for editors: XML forbids a double hyphen inside a comment, so the prose here uses
+       commas and colons where the rest of this repo would use a dash. A stray double hyphen
+       makes the whole file unparseable and move_group fails at launch, not at lint.
+
        No virtual joint. The vendored URDF's floating_base_joint is commented out upstream, so
        the model root is `pelvis` and MoveIt plans in that frame. Correct while the robot stands
        still to manipulate. Scene objects fixed in `odom`, or reaching while walking, need a
-       floating joint to `odom` instead -- 6 more DoF and a TF dependency, so it is a decision
-       to make when there is something to fix it against. -->
+       floating joint to `odom` instead: 6 more DoF and a TF dependency, so it is a decision to
+       make when there is something to fix it against. -->
 
   <!-- base_link is torso_link, not pelvis: the three waist joints belong to the onboard
        controller (docs/CONTROL_MODES.md), and a group that spans them would plan motion we
-       cannot command. Their state still matters -- it is what places torso_link under pelvis --
+       cannot command. Their state still matters, it is what places torso_link under pelvis,
        which is why motion_service_sim has to publish it.
 
        tip_link is the palm rather than wrist_yaw_link. The palm joint is fixed, so both give
@@ -25,9 +29,9 @@
   </group>
 
   <!-- Both arms as one 14-joint group, which is what makes coordinated two-handed motion a
-       plan rather than two plans run side by side. Only this group can collision-check the
-       left arm against the right one, and only this group can time a motion so the two hands
-       arrive together; sequencing the per-arm groups can do neither.
+       plan rather than two plans run side by side. Only this group collision-checks the left
+       arm against the right one, and only this group can time a motion so the two hands arrive
+       together; sequencing the per-arm groups does neither.
 
        Composed from the two subgroups rather than restating the joints, so there is one
        definition of what an arm is. That is also what every published dual-arm config does
@@ -39,7 +43,7 @@
        is a two-branch tree. MoveIt's answer is the subgroup solver map: it is built only for
        groups that have no solver of their own, and it routes a pose goal per hand to that
        arm's own pick_ik. Naming this group in kinematics.yaml suppresses that map and leaves
-       nothing to solve with -- the single most-copied mistake in dual-arm configs. -->
+       nothing to solve with, which is the single most-copied mistake in dual-arm configs. -->
   <group name="both_arms">
     <group name="left_arm"/>
     <group name="right_arm"/>
@@ -47,15 +51,16 @@
 
   <!-- Deliberately absent, so the next reader does not think they were forgotten:
 
-       Hand groups and <end_effector>. The hand is a separate controllable group with its own
-       API (docs/CONTROL_MODES.md), and today it has no controller, no state source and no
-       actuator in the sim model. attachObject takes explicit touch links, so nothing here
-       needs an end-effector definition yet.
+       Hand groups and end_effector definitions. The hand is a separate controllable group with
+       its own API (docs/CONTROL_MODES.md), and today it has no controller, no state source and
+       no actuator in the sim model. attachObject takes explicit touch links, so nothing here
+       needs an end effector yet. SRDF has no notion of a two-tip end effector in any case, so
+       both_arms could not have one.
 
-       <group_state> named poses. Zero is a guess, and an arms-down posture may well self
+       group_state named poses. Zero is a guess, and an arms-down posture may well self
        collide. Derive them from a posture observed in sim when a skill needs one.
 
-       <passive_joint>. It would document that the legs, waist and hands are not ours, but it
+       passive_joint. It would document that the legs, waist and hands are not ours, but it
        reads as if it does more: MoveIt's CurrentStateMonitor counts every active joint, and
        the flag does not exempt one. This comment carries the same information honestly. -->
 </robot>
