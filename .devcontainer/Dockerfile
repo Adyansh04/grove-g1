@@ -74,42 +74,6 @@ RUN mkdir -p /opt/unitree_robotics/mujoco-${MUJOCO_VERSION} && \
     curl -fsSL "https://github.com/google-deepmind/mujoco/releases/download/${MUJOCO_VERSION}/mujoco-${MUJOCO_VERSION}-linux-x86_64.tar.gz" \
       | tar -xz --strip-components=1 -C /opt/unitree_robotics/mujoco-${MUJOCO_VERSION}
 
-# --- unitree_mujoco (the `simulate` app) ------------------------------------
-# unitree_mujoco — DDS-based sim binary. Source tree stays in image (binary resolves
-# assets relative to its own location). Only the `unitree_mujoco` target is built
-# (jstest fails against current unitree_sdk2 tip — unrelated upstream rename).
-# Pinned 2026-07-17 — current tip of unitree_mujoco at authoring time,
-# resolved together with UNITREE_SDK2_SHA above.
-COPY workspace/patches/unitree_mujoco/ /tmp/unitree_mujoco_patches/
-COPY workspace/vendor/unitree_mujoco/ /tmp/unitree_mujoco_src/
-ARG UNITREE_MUJOCO_SHA=ae6a8403e272733e9996ef59990880330496177f
-RUN git init -q /opt/unitree_robotics/unitree_mujoco && \
-    cd /opt/unitree_robotics/unitree_mujoco && \
-    git remote add origin https://github.com/unitreerobotics/unitree_mujoco.git && \
-    git fetch --depth 1 origin ${UNITREE_MUJOCO_SHA} && \
-    git checkout -q FETCH_HEAD && \
-    for p in /tmp/unitree_mujoco_patches/*.patch; do \
-        [ -e "$p" ] || continue; \
-        echo "Applying $(basename "$p")"; \
-        git apply --check "$p" || { echo "PATCH DOES NOT APPLY: $p"; exit 1; }; \
-        git apply "$p"; \
-    done && \
-    cp /tmp/unitree_mujoco_src/*.h /tmp/unitree_mujoco_src/*.cc simulate/src/ && \
-    rm -rf .git && \
-    rm -rf simulate/mujoco && \
-    mv /opt/unitree_robotics/mujoco-${MUJOCO_VERSION} simulate/mujoco && \
-    mkdir simulate/build && cd simulate/build && \
-    cmake .. -DCMAKE_BUILD_TYPE=Release \
-             -DCMAKE_PREFIX_PATH=/opt/unitree_robotics/lib/cmake && \
-    cmake --build . --target unitree_mujoco --parallel "$(nproc)" && \
-    rm -rf CMakeFiles && \
-    rm -rf ../mujoco/sample ../mujoco/bin ../mujoco/doc ../mujoco/model
-# include/ and simulate/ are deliberately kept (they used to be stripped here). Milestone 5
-# compiles our own sensor source into this app, and keeping them is what makes an
-# in-container rebuild possible -- CMakeLists globs mujoco/simulate/*.cc, so without them
-# every one-line change costs a full image rebuild. They are small; the bulk was
-# model/bin/doc/sample, still removed.
-# Binary at simulate/build/unitree_mujoco; g1_bringup overrides config via CLI flags.
 
 # --- CycloneDDS / ROS domain (unconditional -- required by Unitree SDK) -----
 # Pin DDS discovery to loopback so ROS and unitree_mujoco find each other.
@@ -229,6 +193,69 @@ RUN apt-get update && apt-get install -y \
         ros-humble-slam-toolbox \
         ros-humble-pointcloud-to-laserscan \
     && rm -rf /var/lib/apt/lists/*
+
+# Placed last on purpose. This is the only block that consumes COPYed host files
+# (workspace/patches, workspace/vendor), and cache invalidation flows forward: sitting
+# earlier, a one-line patch or sensor-source edit re-ran every apt block, the ONNX
+# Runtime download and the mujoco_ros2_control colcon build below it. Its own two
+# prerequisites -- unitree_sdk2 (CMAKE_PREFIX_PATH) and the MuJoCo tarball (moved into
+# simulate/mujoco) -- stay above. Trade-off: bumping MUJOCO_ROS2_CONTROL_SHA or the nav2
+# apt list now rebuilds this layer too, which is the rarer edit.
+# --- unitree_mujoco (the `simulate` app) ------------------------------------
+# unitree_mujoco — DDS-based sim binary. Source tree stays in image (binary resolves
+# assets relative to its own location). Only the `unitree_mujoco` target is built
+# (jstest fails against current unitree_sdk2 tip — unrelated upstream rename).
+# Pinned 2026-07-17 — current tip of unitree_mujoco at authoring time,
+# resolved together with UNITREE_SDK2_SHA above.
+COPY workspace/patches/unitree_mujoco/ /tmp/unitree_mujoco_patches/
+COPY workspace/vendor/unitree_mujoco/ /tmp/unitree_mujoco_src/
+ARG UNITREE_MUJOCO_SHA=ae6a8403e272733e9996ef59990880330496177f
+RUN git init -q /opt/unitree_robotics/unitree_mujoco && \
+    cd /opt/unitree_robotics/unitree_mujoco && \
+    git remote add origin https://github.com/unitreerobotics/unitree_mujoco.git && \
+    git fetch --depth 1 origin ${UNITREE_MUJOCO_SHA} && \
+    git checkout -q FETCH_HEAD && \
+    for p in /tmp/unitree_mujoco_patches/*.patch; do \
+        [ -e "$p" ] || continue; \
+        echo "Applying $(basename "$p")"; \
+        git apply --check "$p" || { echo "PATCH DOES NOT APPLY: $p"; exit 1; }; \
+        git apply "$p"; \
+    done && \
+    cp /tmp/unitree_mujoco_src/*.h /tmp/unitree_mujoco_src/*.cc simulate/src/ && \
+    rm -rf .git && \
+    rm -rf simulate/mujoco && \
+    mv /opt/unitree_robotics/mujoco-${MUJOCO_VERSION} simulate/mujoco && \
+    mkdir simulate/build && cd simulate/build && \
+    cmake .. -DCMAKE_BUILD_TYPE=Release \
+             -DCMAKE_PREFIX_PATH=/opt/unitree_robotics/lib/cmake && \
+    cmake --build . --target unitree_mujoco --parallel "$(nproc)" && \
+    rm -rf CMakeFiles && \
+    rm -rf ../mujoco/sample ../mujoco/bin ../mujoco/doc ../mujoco/model
+# include/ and simulate/ are deliberately kept (they used to be stripped here). Milestone 5
+# compiles our own sensor source into this app, and keeping them is what makes an
+# in-container rebuild possible -- CMakeLists globs mujoco/simulate/*.cc, so without them
+# every one-line change costs a full image rebuild. They are small; the bulk was
+# model/bin/doc/sample, still removed.
+# Binary at simulate/build/unitree_mujoco; g1_bringup overrides config via CLI flags.
+
+# --- editor configs -----------------------------------------------------------
+# These live at /root, NOT /root/workspace: the ./workspace bind mount replaces that
+# directory wholesale at runtime, so anything baked inside it is invisible (same reason
+# the two mkdirs below are no-ops under compose). clangd, clang-format, clang-tidy and
+# ruff all search ANCESTOR directories, so a tool run anywhere under /root/workspace
+# walks up to /root and finds these.
+#
+# They replace four single-file bind mounts that targeted paths inside /root/workspace.
+# Those pinned the host inode, so an editor's write-temp-then-rename left the container
+# reading a detached file until a recreate; and because the targets were nested inside
+# another mount, Docker materialised empty root-owned placeholders on the host inside
+# ./workspace/, which then shadowed the real configs for host-side tools.
+#
+# Dangling at build time is expected -- /root/.host-repo is the runtime repo-root mount.
+RUN ln -sf /root/.host-repo/.clangd       /root/.clangd && \
+    ln -sf /root/.host-repo/.clang-format /root/.clang-format && \
+    ln -sf /root/.host-repo/.clang-tidy   /root/.clang-tidy && \
+    ln -sf /root/.host-repo/ruff.toml     /root/ruff.toml
 
 # Ensure default workspace exists (mounted from host: ./workspace -> /root/workspace)
 RUN mkdir -p /root/workspace/src
