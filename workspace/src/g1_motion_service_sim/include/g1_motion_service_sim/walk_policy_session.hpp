@@ -64,6 +64,11 @@ private:
     std::string                   input_name_;
     std::string                   output_name_;
     double                        warmup_s_{ 0.0 };
+
+    /// Output storage bound once at construction. The Run() overload that returns its outputs
+    /// allocates a std::vector every call, which this path cannot afford at 50 Hz.
+    std::array<float, kActionDim> output_buffer_{};
+    Ort::Value                    output_tensor_{ nullptr };
 };
 
 }  // namespace g1_motion_service_sim
