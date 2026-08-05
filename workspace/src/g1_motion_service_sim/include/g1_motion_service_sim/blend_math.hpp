@@ -45,7 +45,7 @@ inline constexpr std::size_t kWeightMotorIndex = 29;
  * @param weight           Blend weight, clamped to [0, 1].
  * @return The blended value.
  */
-inline double blend(double hold_value, double commanded_value, double weight)
+inline double blend(double hold_value, double commanded_value, double weight) noexcept
 {
     weight = std::clamp(weight, 0.0, 1.0);
     return hold_value * (1.0 - weight) + commanded_value * weight;
@@ -69,9 +69,9 @@ inline double blend(double hold_value, double commanded_value, double weight)
  * @param dt_s                       Elapsed time since the previous tick, in seconds.
  * @return The new effective weight for this tick.
  */
-double stepEffectiveWeight(
+[[nodiscard]] double stepEffectiveWeight(
     double previous_effective_weight, double raw_weight, bool arm_sdk_stale,
-    double timeout_ramp_down_s, double dt_s);
+    double timeout_ramp_down_s, double dt_s) noexcept;
 
 /**
  * @brief Assembles a full-body /lowcmd from the frozen hold pose and the latest /arm_sdk command.
@@ -107,7 +107,7 @@ unitree_hg::msg::LowCmd assembleSimLowCmd(
     const std::array<double, kNumArmMotors>&  arm_cmd_q,
     const std::array<double, kNumArmMotors>&  arm_cmd_kp,
     const std::array<double, kNumArmMotors>& arm_cmd_kd, double weight, double arm_hold_kp,
-    double arm_hold_kd);
+    double arm_hold_kd) noexcept;
 
 }  // namespace g1_motion_service_sim
 

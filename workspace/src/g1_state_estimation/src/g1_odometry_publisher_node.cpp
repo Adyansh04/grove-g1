@@ -1,6 +1,7 @@
 #include "g1_state_estimation/g1_odometry_publisher_node.hpp"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <memory>
@@ -232,9 +233,9 @@ void G1OdometryPublisher::onBaseState(const sensor_msgs::msg::JointState::Shared
     // Look joints up by name every message: joint_state_broadcaster does not promise a
     // stable ordering, and indexing by position would silently swap x and yaw the day it
     // changes.
-    double     values[3]     = { 0.0, 0.0, 0.0 };
-    double     velocities[3] = { 0.0, 0.0, 0.0 };
-    const bool have_velocity = msg->velocity.size() == msg->name.size();
+    std::array<double, 3> values{};
+    std::array<double, 3> velocities{};
+    const bool            have_velocity = msg->velocity.size() == msg->name.size();
 
     for (std::size_t axis = 0; axis < base_joint_names_.size(); ++axis)
     {

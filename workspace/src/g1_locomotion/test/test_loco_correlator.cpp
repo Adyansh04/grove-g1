@@ -137,9 +137,13 @@ TEST(LocoRequestCorrelator, SweepTimeoutCallbackMaySendANewRequestWithoutCorrupt
             [&correlator, &now, &reissued](std::int32_t, const std::string&) {
                 ++reissued;
                 // Reentrant insert from inside sweep()'s own callback loop -- exactly the
-                // precondition documented as safe on the class's sweep() declaration.
-                correlator.send(kApiIdSetVelocity, "{}", now, [](std::int32_t, const std::string&) {
-                });
+                // precondition documented as safe on the class's sweep() declaration. The
+                // request itself is not the subject here, so the discard is explicit.
+                static_cast<void>(correlator.send(
+                    kApiIdSetVelocity,
+                    "{}",
+                    now,
+                    [](std::int32_t, const std::string&) {}));
             });
         ASSERT_TRUE(request.has_value());
     }

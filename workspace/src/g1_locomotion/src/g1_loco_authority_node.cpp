@@ -383,8 +383,13 @@ private:
 
 namespace
 {
-std::atomic<bool>                         g_stopping{ false };
-rclcpp::executors::MultiThreadedExecutor* g_executor = nullptr;
+std::atomic<bool> g_stopping{ false };
+// The handler below only stores to this. That is async-signal-safe if and only if the store
+// is lock-free; if it were not, the "just a flag" argument would smuggle a lock into the
+// handler, which is the exact hazard the comment below is defending against.
+static_assert(
+    std::atomic<bool>::is_always_lock_free,
+    "the signal handler stores to g_stopping and needs it lock-free");
 
 /// Ctrl-C is the ordinary way a navigation session ends, and it must not leak authority.
 ///
@@ -417,7 +422,6 @@ int main(int argc, char** argv)
     auto node = std::make_shared<g1_locomotion::G1LocoAuthority>(rclcpp::NodeOptions());
     executor.add_node(node->get_node_base_interface());
 
-    g_executor = &executor;
     std::signal(SIGINT, onSignal);
     std::signal(SIGTERM, onSignal);
 
@@ -451,7 +455,6 @@ int main(int argc, char** argv)
     }
     releaser.join();
 
-    g_executor = nullptr;
     rclcpp::shutdown();
     return 0;
 }

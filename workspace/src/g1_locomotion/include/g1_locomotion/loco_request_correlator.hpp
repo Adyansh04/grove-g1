@@ -61,7 +61,7 @@ public:
      * @return The Request to publish, or nullopt if max_pending is already reached -- nothing is
      *   tracked in that case, and the caller sends nothing this call.
      */
-    std::optional<unitree_api::msg::Request> send(
+    [[nodiscard]] std::optional<unitree_api::msg::Request> send(
         std::int64_t api_id, const std::string& parameter,
         std::chrono::steady_clock::time_point now, ResponseCallback on_done);
 
