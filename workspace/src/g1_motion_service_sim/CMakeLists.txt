@@ -114,6 +114,11 @@ if(BUILD_TESTING)
   ament_add_gmock(test_walk_policy test/test_walk_policy.cpp)
   target_link_libraries(test_walk_policy walk_policy)
 
+  # The wire constants this package duplicates from g1_hardware_interface. Only the test
+  # links that package, so blend_math keeps its lean dependency footprint.
+  ament_add_gmock(test_wire_constants test/test_wire_constants.cpp)
+  target_link_libraries(test_wire_constants blend_math g1_hardware_interface::g1_arm_sdk_system)
+
   # ONNX Runtime session tests.
   ament_add_gmock(test_walk_policy_session test/test_walk_policy_session.cpp)
   target_link_libraries(test_walk_policy_session walk_policy_session)
