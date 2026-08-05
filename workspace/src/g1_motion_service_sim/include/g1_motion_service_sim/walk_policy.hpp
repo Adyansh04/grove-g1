@@ -14,9 +14,9 @@
 #include <string>
 #include <vector>
 
-#include "g1_bringup/blend_math.hpp"
+#include "g1_motion_service_sim/blend_math.hpp"
 
-namespace g1_bringup
+namespace g1_motion_service_sim
 {
 
 /// Motors the policy owns: legs 0-11 plus waist 12-14. Arms (kFirstArmMotor..) stay with /arm_sdk.
@@ -278,6 +278,6 @@ std::optional<std::array<float, kActionDim>> runPolicyGuarded(Infer&& infer) noe
     }
 }
 
-}  // namespace g1_bringup
+}  // namespace g1_motion_service_sim
 
 #endif  // G1_BRINGUP__WALK_POLICY_HPP_

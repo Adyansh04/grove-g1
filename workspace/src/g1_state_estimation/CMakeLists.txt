@@ -19,14 +19,14 @@ target_include_directories(odom_math PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
-target_compile_features(odom_math PUBLIC cxx_std_17)
+target_compile_features(odom_math PUBLIC cxx_std_20)
 
 add_library(g1_odometry_publisher_node src/g1_odometry_publisher_node.cpp)
 target_include_directories(g1_odometry_publisher_node PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
-target_compile_features(g1_odometry_publisher_node PUBLIC cxx_std_17)
+target_compile_features(g1_odometry_publisher_node PUBLIC cxx_std_20)
 target_link_libraries(g1_odometry_publisher_node PUBLIC odom_math)
 ament_target_dependencies(g1_odometry_publisher_node PUBLIC
   rclcpp rclcpp_lifecycle lifecycle_msgs nav_msgs sensor_msgs geometry_msgs tf2_ros tf2_msgs
@@ -34,6 +34,12 @@ ament_target_dependencies(g1_odometry_publisher_node PUBLIC
 
 add_executable(g1_odometry_publisher src/g1_odometry_publisher_main.cpp)
 target_link_libraries(g1_odometry_publisher PUBLIC g1_odometry_publisher_node)
+
+if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  target_compile_options(odom_math PRIVATE -Wall -Wextra)
+  target_compile_options(g1_odometry_publisher_node PRIVATE -Wall -Wextra)
+  target_compile_options(g1_odometry_publisher PRIVATE -Wall -Wextra)
+endif()
 
 install(DIRECTORY include/ DESTINATION include)
 install(DIRECTORY config DESTINATION share/${PROJECT_NAME})

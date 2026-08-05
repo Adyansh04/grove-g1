@@ -98,7 +98,11 @@ public:
 
     CallbackReturn on_activate(const rclcpp_lifecycle::State& previous_state) override
     {
-        LifecycleNode::on_activate(previous_state);
+        const auto base_result = LifecycleNode::on_activate(previous_state);
+        if (base_result != CallbackReturn::SUCCESS)
+        {
+            return base_result;
+        }
         RCLCPP_INFO(
             get_logger(),
             "acquiring locomotion authority (from %s)",
@@ -251,7 +255,7 @@ private:
             RCLCPP_ERROR(get_logger(), "%s goal was never acknowledged", label);
             return Attempt::kFatal;
         }
-        auto handle = pending.get();
+        const auto& handle = pending.get();
         if (!handle)
         {
             // A goal rejection carries no code, so this cannot be classified from the wire. Of
@@ -272,7 +276,7 @@ private:
             RCLCPP_ERROR(get_logger(), "%s goal produced no result", label);
             return Attempt::kFatal;
         }
-        const auto wrapped = result.get();
+        const auto& wrapped = result.get();
         if (wrapped.code == rclcpp_action::ResultCode::SUCCEEDED && wrapped.result->success)
         {
             return Attempt::kOk;
@@ -379,8 +383,13 @@ private:
 
 namespace
 {
-std::atomic<bool>                         g_stopping{ false };
-rclcpp::executors::MultiThreadedExecutor* g_executor = nullptr;
+std::atomic<bool> g_stopping{ false };
+// The handler below only stores to this. That is async-signal-safe if and only if the store
+// is lock-free; if it were not, the "just a flag" argument would smuggle a lock into the
+// handler, which is the exact hazard the comment below is defending against.
+static_assert(
+    std::atomic<bool>::is_always_lock_free,
+    "the signal handler stores to g_stopping and needs it lock-free");
 
 /// Ctrl-C is the ordinary way a navigation session ends, and it must not leak authority.
 ///
@@ -413,7 +422,6 @@ int main(int argc, char** argv)
     auto node = std::make_shared<g1_locomotion::G1LocoAuthority>(rclcpp::NodeOptions());
     executor.add_node(node->get_node_base_interface());
 
-    g_executor = &executor;
     std::signal(SIGINT, onSignal);
     std::signal(SIGTERM, onSignal);
 
@@ -447,7 +455,6 @@ int main(int argc, char** argv)
     }
     releaser.join();
 
-    g_executor = nullptr;
     rclcpp::shutdown();
     return 0;
 }

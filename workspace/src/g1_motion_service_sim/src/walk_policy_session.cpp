@@ -2,13 +2,13 @@
  * @file walk_policy_session.cpp
  * @brief ONNX Runtime session wrapper for the sim walking policy.
  */
-#include "g1_bringup/walk_policy_session.hpp"
+#include "g1_motion_service_sim/walk_policy_session.hpp"
 
 #include <chrono>
 #include <stdexcept>
 #include <vector>
 
-namespace g1_bringup
+namespace g1_motion_service_sim
 {
 
 namespace
@@ -56,6 +56,17 @@ WalkPolicySession::WalkPolicySession(const std::string& model_path)
         kActionDim,
         "output");
 
+    // Bind the output tensor over our own buffer once, so run() allocates nothing.
+    static constexpr std::array<std::int64_t, 2> kOutputShape{ 1,
+                                                               static_cast<std::int64_t>(
+                                                                   kActionDim) };
+    output_tensor_ = Ort::Value::CreateTensor<float>(
+        memory_info_,
+        output_buffer_.data(),
+        output_buffer_.size(),
+        kOutputShape.data(),
+        kOutputShape.size());
+
     // The first inference builds ORT's execution plan and is far slower than steady state; do it
     // here so the 50 Hz timer's first real tick isn't the one that pays for it.
     const auto start = std::chrono::steady_clock::now();
@@ -80,13 +91,19 @@ std::array<float, kActionDim> WalkPolicySession::run(const std::array<float, kOb
     const char* input_names[]  = { input_name_.c_str() };
     const char* output_names[] = { output_name_.c_str() };
 
-    auto outputs =
-        session_->Run(Ort::RunOptions{ nullptr }, input_names, &input_tensor, 1, output_names, 1);
+    // In-place overload: fills output_buffer_ through the tensor bound at construction. The
+    // returning overload allocates a std::vector<Ort::Value> per call, which this path runs
+    // 50 times a second alongside a 500 Hz publish loop.
+    session_->Run(
+        Ort::RunOptions{ nullptr },
+        input_names,
+        &input_tensor,
+        1,
+        output_names,
+        &output_tensor_,
+        1);
 
-    std::array<float, kActionDim> action{};
-    const float*                  data = outputs.front().GetTensorData<float>();
-    std::copy(data, data + kActionDim, action.begin());
-    return action;
+    return output_buffer_;
 }
 
-}  // namespace g1_bringup
+}  // namespace g1_motion_service_sim

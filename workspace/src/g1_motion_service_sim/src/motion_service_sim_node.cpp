@@ -5,7 +5,7 @@
  * /api/sport/response).
  */
 
-#include "g1_bringup/motion_service_sim_node.hpp"
+#include "g1_motion_service_sim/motion_service_sim_node.hpp"
 
 #include <cmath>
 #include <nlohmann/json.hpp>
@@ -14,10 +14,10 @@
 #include <vector>
 
 #include "ament_index_cpp/get_package_share_directory.hpp"
-#include "g1_bringup/blend_math.hpp"
 #include "g1_hardware_interface/motor_crc_hg.hpp"
+#include "g1_motion_service_sim/blend_math.hpp"
 
-namespace g1_bringup
+namespace g1_motion_service_sim
 {
 
 namespace
@@ -286,7 +286,8 @@ bool MotionServiceSim::setUpWalkPolicy()
     // default points at the installed share directory where both were installed together.
     const std::string model_path =
         model_path_param.empty() ?
-            ament_index_cpp::get_package_share_directory("g1_bringup") + "/policy/walker.onnx" :
+            ament_index_cpp::get_package_share_directory("g1_motion_service_sim") +
+                "/policy/walker.onnx" :
             model_path_param;
     try
     {
@@ -575,4 +576,4 @@ std::int32_t MotionServiceSim::dispatchSportRequest(
     return kCodeTaskUnknownError;
 }
 
-}  // namespace g1_bringup
+}  // namespace g1_motion_service_sim

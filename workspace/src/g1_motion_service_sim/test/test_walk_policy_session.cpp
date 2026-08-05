@@ -9,16 +9,17 @@
 #include <string>
 
 #include "ament_index_cpp/get_package_share_directory.hpp"
-#include "g1_bringup/walk_policy_session.hpp"
+#include "g1_motion_service_sim/walk_policy_session.hpp"
 
-namespace g1_bringup
+namespace g1_motion_service_sim
 {
 namespace
 {
 
 std::string modelPath()
 {
-    return ament_index_cpp::get_package_share_directory("g1_bringup") + "/policy/walker.onnx";
+    return ament_index_cpp::get_package_share_directory("g1_motion_service_sim") +
+           "/policy/walker.onnx";
 }
 
 TEST(WalkPolicySessionTest, LoadsTheVendoredPolicyAndItsExternalWeights)
@@ -55,6 +56,39 @@ TEST(WalkPolicySessionTest, IsDeterministicForAFixedObservation)
     const auto first  = session.run(obs);
     const auto second = session.run(obs);
     EXPECT_EQ(first, second);
+}
+
+TEST(WalkPolicySessionTest, MatchesTheGoldenActionForAZeroObservation)
+{
+    // IsDeterministicForAFixedObservation above compares two runs of the SAME build, so it
+    // cannot see a change introduced by an edit to run(). These literals were captured from
+    // the implementation before run() was switched to ORT's in-place Run() overload, and pin
+    // the output across any future change to how inference is invoked.
+    //
+    // Hex float literals, and compared exactly: the point is bit-identity, and a tolerance
+    // would let a real numerical change through. walker.onnx is vendored and pinned, so the
+    // expected values only move if the model does.
+    static constexpr std::array<float, kActionDim> kGoldenForZeros{
+        0x1.36d39ep-3F,  0x1.4d967cp-2F,  -0x1.a9e434p-3F, -0x1.9bcb1ep-6F, 0x1.cebfdep-2F,
+        -0x1.16305p-3F,  -0x1.e3930cp-3F, -0x1.57ba5ap-2F, 0x1.daa4a6p-5F,  -0x1.87a886p-2F,
+        0x1.2936fcp-2F,  -0x1.00117cp-3F, -0x1.bdfe04p-5F, -0x1.368c24p-3F, -0x1.242b52p-5F,
+        -0x1.b55166p-2F, 0x1.43c3ccp-2F,  0x1.95b334p-3F,  -0x1.83b4dcp-3F, 0x1.ab0618p-3F,
+        0x1.1b57fcp-3F,  0x1.417ep-1F,    0x1.e8fb6p-8F,   -0x1.b82274p-2F, -0x1.211434p-3F,
+        -0x1.268fa4p-2F, 0x1.f47108p-3F,  0x1.3149acp-1F,  0x1.b249b6p-2F
+    };
+
+    WalkPolicySession session(modelPath());
+    const auto        action = session.run({});
+    ASSERT_EQ(action.size(), kGoldenForZeros.size());
+    for (std::size_t i = 0; i < action.size(); ++i)
+    {
+        EXPECT_EQ(action[i], kGoldenForZeros[i]) << "action[" << i << "] moved";
+    }
+
+    // The buffer the in-place overload writes into is reused across calls, so a second run
+    // must not see the first one's values leak through.
+    const auto again = session.run({});
+    EXPECT_EQ(action, again);
 }
 
 TEST(WalkPolicySessionTest, NormalisationIsBakedIntoTheGraph)
@@ -97,4 +131,4 @@ TEST(WalkPolicySessionTest, WarmInferenceFitsTheFiftyHertzBudget)
 }
 
 }  // namespace
-}  // namespace g1_bringup
+}  // namespace g1_motion_service_sim

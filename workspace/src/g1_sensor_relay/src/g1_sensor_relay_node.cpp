@@ -192,9 +192,12 @@ private:
             return;
         }
 
+        // Hoisted out of the loop deliberately: tryReadFrame fills via resize(), so reusing
+        // one frame reuses its capacity while draining a burst. A cloud can reach tens of MB
+        // and, as above, several can be queued behind one poll().
+        CloudFrame frame;
         for (;;)
         {
-            CloudFrame        frame;
             const FrameStatus status = tryReadFrame(buffer_, frame);
             if (status == FrameStatus::Incomplete)
             {
@@ -249,6 +252,11 @@ private:
         info.r          = { 1, 0, 0, 0, 1, 0, 0, 0, 1 };
         info.p          = { f, 0, cx, 0, 0, f, cy, 0, 0, 0, 1, 0 };
 
+        // Captured before the move: the colour image below is stamped from it, and reading it
+        // back off a moved-from message would put the shared-timestamp guarantee at the mercy
+        // of how Image happens to move its header.
+        const auto render_stamp = img.header.stamp;
+
         depth_pub_->publish(std::move(img));
         depth_info_pub_->publish(info);
 
@@ -260,7 +268,7 @@ private:
         if (!frame.rgb.empty())
         {
             sensor_msgs::msg::Image color;
-            color.header.stamp    = img.header.stamp;
+            color.header.stamp    = render_stamp;
             color.header.frame_id = color_frame_id_;
             color.height          = frame.height;
             color.width           = frame.width;

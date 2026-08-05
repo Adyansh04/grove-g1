@@ -9,9 +9,9 @@
 #include <array>
 #include <utility>
 
-#include "g1_bringup/loco_fsm.hpp"
+#include "g1_motion_service_sim/loco_fsm.hpp"
 
-namespace g1_bringup
+namespace g1_motion_service_sim
 {
 namespace
 {
@@ -120,4 +120,4 @@ TEST(CheckVelocityAllowed, RejectedOutsideStart)
 }
 
 }  // namespace
-}  // namespace g1_bringup
+}  // namespace g1_motion_service_sim

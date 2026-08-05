@@ -1,6 +1,7 @@
 #include "g1_state_estimation/g1_odometry_publisher_node.hpp"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <memory>
@@ -194,7 +195,13 @@ G1OdometryPublisher::on_cleanup(const rclcpp_lifecycle::State&)
 rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
 G1OdometryPublisher::on_activate(const rclcpp_lifecycle::State& previous_state)
 {
-    LifecycleNode::on_activate(previous_state);
+    // Checked, not discarded: this is what activates odom_pub_. Ignoring it starts the timer
+    // and reports SUCCESS against a publisher that never came up, and TF still goes out.
+    const auto base_result = LifecycleNode::on_activate(previous_state);
+    if (base_result != CallbackReturn::SUCCESS)
+    {
+        return base_result;
+    }
     const auto period = std::chrono::duration<double>(1.0 / publish_rate_hz_);
     timer_            = create_wall_timer(
         std::chrono::duration_cast<std::chrono::nanoseconds>(period),
@@ -206,8 +213,7 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
 G1OdometryPublisher::on_deactivate(const rclcpp_lifecycle::State& previous_state)
 {
     timer_.reset();
-    LifecycleNode::on_deactivate(previous_state);
-    return CallbackReturn::SUCCESS;
+    return LifecycleNode::on_deactivate(previous_state);
 }
 
 rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
@@ -227,9 +233,9 @@ void G1OdometryPublisher::onBaseState(const sensor_msgs::msg::JointState::Shared
     // Look joints up by name every message: joint_state_broadcaster does not promise a
     // stable ordering, and indexing by position would silently swap x and yaw the day it
     // changes.
-    double     values[3]     = { 0.0, 0.0, 0.0 };
-    double     velocities[3] = { 0.0, 0.0, 0.0 };
-    const bool have_velocity = msg->velocity.size() == msg->name.size();
+    std::array<double, 3> values{};
+    std::array<double, 3> velocities{};
+    const bool            have_velocity = msg->velocity.size() == msg->name.size();
 
     for (std::size_t axis = 0; axis < base_joint_names_.size(); ++axis)
     {

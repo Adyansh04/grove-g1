@@ -2,9 +2,9 @@
  * @file loco_fsm.cpp
  * @brief Sim-only LocoClient FSM legality table.
  */
-#include "g1_bringup/loco_fsm.hpp"
+#include "g1_motion_service_sim/loco_fsm.hpp"
 
-namespace g1_bringup
+namespace g1_motion_service_sim
 {
 
 namespace
@@ -42,4 +42,4 @@ std::int32_t checkVelocityAllowed(int current)
     return current == kFsmStart ? kLocoFsmCodeSuccess : kLocoFsmCodeLocoStateNotAvailable;
 }
 
-}  // namespace g1_bringup
+}  // namespace g1_motion_service_sim

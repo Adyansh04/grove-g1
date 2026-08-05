@@ -2,7 +2,7 @@
 #
 # Unified script for managing the ROS development Docker container lifecycle.
 #
-# Usage: ROS_DISTRO=jazzy ./scripts/manage.sh [start|stop|restart|recreate|logs|exec]
+# Usage: ROS_DISTRO=jazzy ./scripts/manage.sh [start|stop|restart|recreate|logs|exec|exec-as-me]
 #
 
 set -euo pipefail
@@ -23,14 +23,15 @@ fi
 
 # --- Helper Functions ---
 function print_usage() {
-    echo "Usage: ROS_DISTRO=<humble|jazzy|...> $0 [start|stop|restart|recreate|logs|exec]"
+    echo "Usage: ROS_DISTRO=<humble|jazzy|...> $0 [start|stop|restart|recreate|logs|exec|exec-as-me]"
     echo "Note: .env is loaded first when present; otherwise shell environment and Compose defaults are used."
     echo "  start     - Build and start the container in detached mode."
     echo "  stop      - Stop the running container."
     echo "  restart   - Restart the container."
     echo "  recreate  - Stop, remove, and rebuild the container from scratch."
     echo "  logs      - Follow the container's log output."
-    echo "  exec      - Attach a bash shell to the running container."
+    echo "  exec      - Attach a bash shell to the running container (root)."
+    echo "  exec-as-me - Same, as your host UID/GID. Use for clang-tidy --fix / clang-format -i."
 }
 
 # --- Main Logic ---
@@ -77,6 +78,15 @@ case "$ACTION" in
     exec)
         echo "Attaching bash to Compose service '${SERVICE_NAME}'..."
         docker compose exec "${SERVICE_NAME}" bash
+        ;;
+    exec-as-me)
+        # Same shell, but as the host's UID/GID instead of root. Use this for anything that
+        # REWRITES sources in place -- clang-tidy --fix, clang-format -i -- because a
+        # root-run tool flips the file's owner on the host and blocks the next host edit.
+        # Everything else should keep using `exec`: root is what makes /root/workspace,
+        # /root/.ssh and unrestricted /dev work as documented.
+        echo "Attaching bash as $(id -u):$(id -g) to '${SERVICE_NAME}'..."
+        docker compose exec --user "$(id -u):$(id -g)" "${SERVICE_NAME}" bash
         ;;
     *)
         print_usage

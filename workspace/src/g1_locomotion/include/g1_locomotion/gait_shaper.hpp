@@ -82,7 +82,7 @@ public:
      * Non-finite inputs need no special case: NaN fails both comparisons and falls through to
      * a stop, and an infinite yaw clamps.
      */
-    Command shape(const Command& in) const;
+    [[nodiscard]] Command shape(const Command& in) const;
 
 private:
     Config config_;

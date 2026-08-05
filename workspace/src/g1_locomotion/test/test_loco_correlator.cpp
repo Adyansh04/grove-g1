@@ -123,9 +123,11 @@ TEST(LocoRequestCorrelator, NeverArrivingResponseTimesOutViaSweep)
 TEST(LocoRequestCorrelator, SweepTimeoutCallbackMaySendANewRequestWithoutCorruptingIteration)
 {
     // Enough entries to trigger rehash during reentrant insert.
-    constexpr int kCount  = 20;
-    auto       correlator = makeCorrelator(/*request_timeout_s=*/1.0, /*max_pending=*/kCount * 2);
-    const auto now        = std::chrono::steady_clock::now();
+    constexpr int kCount     = 20;
+    auto          correlator = makeCorrelator(
+        /*request_timeout_s=*/1.0,
+        /*max_pending=*/static_cast<std::size_t>(kCount) * 2);
+    const auto now = std::chrono::steady_clock::now();
 
     int reissued = 0;
     for (int i = 0; i < kCount; ++i)
@@ -137,9 +139,13 @@ TEST(LocoRequestCorrelator, SweepTimeoutCallbackMaySendANewRequestWithoutCorrupt
             [&correlator, &now, &reissued](std::int32_t, const std::string&) {
                 ++reissued;
                 // Reentrant insert from inside sweep()'s own callback loop -- exactly the
-                // precondition documented as safe on the class's sweep() declaration.
-                correlator.send(kApiIdSetVelocity, "{}", now, [](std::int32_t, const std::string&) {
-                });
+                // precondition documented as safe on the class's sweep() declaration. The
+                // request itself is not the subject here, so the discard is explicit.
+                static_cast<void>(correlator.send(
+                    kApiIdSetVelocity,
+                    "{}",
+                    now,
+                    [](std::int32_t, const std::string&) {}));
             });
         ASSERT_TRUE(request.has_value());
     }

@@ -9,7 +9,7 @@
 
 #include <cstdint>
 
-namespace g1_bringup
+namespace g1_motion_service_sim
 {
 
 /**
@@ -70,6 +70,6 @@ SetFsmIdResult applySetFsmId(int current, int requested);
  */
 std::int32_t checkVelocityAllowed(int current);
 
-}  // namespace g1_bringup
+}  // namespace g1_motion_service_sim
 
 #endif  // G1_BRINGUP__LOCO_FSM_HPP_

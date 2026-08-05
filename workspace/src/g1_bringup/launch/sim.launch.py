@@ -7,8 +7,8 @@ the domain/DDS story, and the sim-bridge safety banner.
 
 import os
 import shutil
-import yaml
 
+import yaml
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (
@@ -24,10 +24,10 @@ from launch.event_handlers import OnProcessExit, OnProcessStart, OnShutdown
 from launch.events import Shutdown, matches_action
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
-from lifecycle_msgs.msg import Transition
 from launch_ros.actions import LifecycleNode, Node
 from launch_ros.event_handlers import OnStateTransition
 from launch_ros.events.lifecycle import ChangeState
+from lifecycle_msgs.msg import Transition
 
 UNITREE_MUJOCO_BIN = "/opt/unitree_robotics/unitree_mujoco/simulate/build/unitree_mujoco"
 
@@ -285,16 +285,15 @@ def _launch_setup(context, *args, **kwargs):
     actions.append(TimerAction(period=sim_start_delay_s, actions=[sim_process]))
 
     # Pelvis weld and walking policy are mutually exclusive.
-    motion_service_sim_node = Node(
-        package="g1_bringup",
+    motion_service_sim_share = get_package_share_directory("g1_motion_service_sim")
+    motion_service_sim_node  = Node(
+        package="g1_motion_service_sim",
         executable="motion_service_sim",
         name="motion_service_sim",
         output="screen",
         parameters=[
-            os.path.join(
-                get_package_share_directory("g1_bringup"), "config", "motion_service_sim.yaml"
-            ),
-            os.path.join(get_package_share_directory("g1_bringup"), "config", "walk_policy.yaml"),
+            os.path.join(motion_service_sim_share, "config", "motion_service_sim.yaml"),
+            os.path.join(motion_service_sim_share, "config", "walk_policy.yaml"),
             # Completes pelvis -> torso_link so the sensor frames are not stranded in their
             # own TF tree. Only when sensors run: it costs work on the 1 kHz /lowstate path.
             {"publish_lower_joint_states": sensors},

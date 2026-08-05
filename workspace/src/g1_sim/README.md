@@ -1,102 +1,96 @@
 # g1_sim
 
-**SIM-ONLY, and now a SANDBOX rather than the perception track.** The LiDAR and depth camera moved
-onto the real G1 in `g1_bringup` (`sensors:=true`), where perception, arms and locomotion share one
-simulation. This package survives because it starts in seconds and needs no walking policy, balance
-or DDS bridge, so a sensor question can be answered without touching the timing-critical track.
+**Simulation only, and a sandbox rather than the main track.**
 
-Three conditions keep it from becoming a second stack: it gains **no new capability** (no Nav2, no
-MoveIt, no manipulation), new work targets the converged track, and if it goes two milestones unused
-it should be deleted.
+A simplified mobile body carrying a 3D LiDAR and an RGB-D camera in MuJoCo, driven through
+`mujoco_ros2_control`. The LiDAR and depth camera moved onto the real G1 model in `g1_bringup`
+(`sensors:=true`), where perception, arms and locomotion share one simulation.
 
-**It also keeps a defect the converged track does not have.** The sandbox uses the vendor
-`mujoco_3d_lidar` plugin, whose raycast lets ~4% of returns through walls (see below). The converged
-track hand-rolls its sweep with `mj_ray` and does not carry that bug forward, so a leak seen here
+This package survives because it starts in seconds and needs no walking policy, balance or DDS
+bridge, so a sensor question can be answered without touching the timing-critical track.
+
+`ament_cmake`, no compiled code.
+
+```mermaid
+flowchart LR
+    MJCF["g1_perception_base.xml<br/>cylinder on 3 planar joints"] --> MRC["mujoco_ros2_control"]
+    MRC --> LID["/livox/lidar"]
+    MRC --> CAM["/camera/*"]
+    MRC --> JS["/joint_states"]
+    JS --> ODOM["g1_odometry_publisher<br/>sim_ground_truth"]
+```
+
+## Three conditions keep it from becoming a second stack
+
+It gains no new capability: no Nav2, no MoveIt, no manipulation. New work targets the converged
+track. If it goes two milestones unused, it should be deleted.
+
+It also keeps a defect the converged track does not have. The sandbox uses the vendor
+`mujoco_3d_lidar` plugin, whose raycast lets a few percent of returns pass through walls. The
+converged track hand-rolls its sweep with `mj_ray` and does not carry that bug, so a leak seen here
 says nothing about the real track, and a sandbox result must never be used to characterise it.
 
-The perception simulation track: a simplified mobile body carrying a 3D LiDAR and an
-RGB-D camera in MuJoCo, run through `mujoco_ros2_control`.
-
-This is a **second, independent simulation track**. `unitree_mujoco` (driven by `g1_bringup`) is
-untouched and remains the source of truth for arm and locomotion fidelity. The two are never run at
-the same time.
+The two tracks share a ROS domain and must never run at the same time.
 
 ## This is not the G1
 
-The body here is a deliberately non-physical mobility stand-in: a cylinder on three planar joints
-(slide-x, slide-y, hinge-z). It cannot topple and is commanded directly through `ros2_control`.
+The body is a deliberately non-physical stand-in: a cylinder on three planar joints, slide-x,
+slide-y and hinge-z. It cannot topple and is commanded directly through `ros2_control`. Early
+perception work does not need bipedal dynamics, and a 29-DoF humanoid with no balance controller
+would only topple or need a weld. Nothing here commands a motor on the G1 model, so no new writer
+appears on any low-level channel.
 
-Early perception work does not need bipedal dynamics to be correct, and a 29-DoF humanoid with no
-balance controller would only topple or need a weld. Nothing here commands a motor on the G1 model,
-so no new writer appears on any low-level control channel.
+What is real is the sensor mount poses. They come from Unitree's own vendored URDF, with
+`torso_link`'s offset from `pelvis` folded in.
 
-**What is real:** the sensor mount poses. They are taken from Unitree's own vendored URDF
-(`g1_description`, joints `mid360_joint` and `d435_joint`), with `torso_link`'s offset from `pelvis`
-folded in, and `base_link` sits at the pelvis spawn height of 0.793 m. So the sensors sit where they
-sit on the robot.
+| Frame | Mount, relative to `base_link` | Note |
+|---|---|---|
+| `livox_frame` | xyz `-0.00368 0.00003 0.472434`, rpy `pi 0.05112069 0` | Roll is exactly pi. The Mid360 is mounted upside down on the real G1, and missing that inverts every cloud relative to hardware. |
+| `camera_link` | xyz `0.05366 0.01753 0.473870`, rpy `0 0.83077672 0` | Pitched 47.6 degrees down, making it a near-ground manipulation camera rather than a forward-looking navigation one. |
+
+`base_link` spawns at 0.793 m, the G1's pelvis height. That number lives in
+`config/sensor_mounts.yaml` and nowhere else, so `odom` is the ground plane rather than a frame
+floating at spawn height.
 
 ## Scene
 
-An 8 x 8 m room, walls with inner faces at +/-4.0 m, floor at z = 0, and three obstacles at known
-poses. The geometry is deliberate: every sensor assertion in the integration tests is a geometric
-fact of `mjcf/g1_perception_base.xml`, so the tests measure something real rather than checking that
-data merely arrives.
+An 8 by 8 m room, walls with inner faces at plus or minus 4.0 m, floor at z = 0, and three
+obstacles at known poses. Every sensor assertion in the tests is a geometric fact of
+`mjcf/g1_perception_base.xml`, so the tests measure something real rather than checking that data
+merely arrives.
 
-## Frames
+## Running
 
-`base_link` spawns at **0.793 m**, the G1's pelvis height, so the sensors sit at realistic heights.
-That number lives in `config/sensor_mounts.yaml` as `base_link.spawn_z` and nowhere else:
-`test_sensor_mount_consistency` pins it to the MJCF, and `perception_sim.launch.py` hands it to
-`g1_odometry_publisher` as `base_height_m`. That makes **`odom` the ground plane** rather than a
-frame floating at the spawn height, so a cloud transformed into `odom` has its floor at z = 0.
+```bash
+ros2 launch g1_sim perception_sim.launch.py
+```
 
-## Sensors
+Do not run this while the `unitree_mujoco` track is up.
 
-| | Mount vs `base_link` | Notes |
+## Contents
+
+| Path | Purpose |
+|---|---|
+| `mjcf/g1_perception_base.xml` | The scene and the body. |
+| `urdf/g1_perception_base.urdf.xacro` | The matching description with the `ros2_control` block. |
+| `config/sensor_mounts.yaml` | Mount poses and the spawn height, in one place. |
+| `config/controllers.yaml` | The planar velocity controller. |
+| `config/mujoco_plugins.yaml` | LiDAR and camera plugin configuration. |
+| `launch/perception_sim.launch.py` | Brings up the simulator, controllers and odometry. |
+
+## Tests
+
+| Test | Needs a simulator | Covers |
 |---|---|---|
-| `livox_frame` | xyz `-0.00368 0.00003 0.472434`, rpy `pi 0.05112069 0` | **Roll is exactly pi: the Mid360 is mounted upside down on the real G1.** Replicated here, because missing it inverts every point cloud relative to hardware. |
-| `camera_link` | xyz `0.05366 0.01753 0.473870`, rpy `0 0.83077672 0` | **Pitched 47.6 degrees downward.** That makes it a manipulation / near-ground camera, not a forward-looking navigation one. |
+| `test_perception_sim_bringup` | yes | The graph comes up and the controllers activate. |
+| `test_lidar_stream` | yes | The scan measures the room's known walls. |
+| `test_camera_stream` | yes | Depth and colour streams, and camera info against the MJCF. |
+| `test_odom_ground_truth` | yes | The odometry chain against MuJoCo ground truth. |
+| `test_sensor_mount_consistency` | no | The mount config against the MJCF, so the two cannot drift. |
 
-LiDAR is configured to the real Mid360 envelope: 360 degrees azimuth, -7 to +52 degrees elevation,
-40 m range, 10 Hz, at 360 x 32 resolution (11,520 rays, about 115k pts/s against the real sensor's
-~200k).
+```bash
+colcon test --packages-select g1_sim
+```
 
-**What this LiDAR is not.** It is a uniform azimuth/elevation grid raycast, not the Mid360's
-non-repetitive rosette scan. Point density is uniform where the real sensor's is time-varying. There
-is no intensity, no per-point timestamps, no ring field, no noise, no dropout, no reflectivity
-dependence, and no motion distortion. Anything whose correctness depends on the real scan pattern,
-such as Livox-tuned LIO feature extraction or de-skewing, is **not** validated here. The real
-driver's `CustomMsg` format is not produced either; this publishes `PointCloud2`.
-
-**Known plugin artifact: rays leak through walls.** Roughly 4% of returns (about 440 of 11,520) pass
-straight through a wall and land on the floor plane outside the room. It is a contiguous band of
-downward rays, grid rows 9 to 13, about 10 to 18 degrees below horizontal, which would strike the
-wall below z ~= 0.55 m. Rays crossing the same wall higher up are blocked correctly, and the camera
-renders those same walls as solid at those same heights, so this is the plugin's raycast rather than
-the scene geometry. Consequence for downstream work: **a costmap fed directly from this cloud will
-see phantom obstacles outside the room.** `test_lidar_stream` asserts only that the great majority of
-returns land inside the room, so a real regression still fails while this artifact does not.
-
-The camera is `848x480 @ fovy 58`, about 87 degrees horizontal, matching the real D435i **depth**
-stream. One MuJoCo camera cannot carry two intrinsics, so the colour stream is wider than a real
-D435i colour stream. Matched to depth, which is what this track is for. No depth noise, no stereo
-dropout on textureless surfaces, no IR projector behaviour.
-
-## MJCF plugin API
-
-The 3D LiDAR is a MuJoCo **engine plugin**, configured in `<extension><instance>` and referenced
-from `<sensor>`. Config keys are `resolution`, `azimuth_range`, `elevation_range`, `max_range`,
-`min_range`, `update_rate`, `async`.
-
-The upstream README documents an older API (`mujoco.sensor.lidar` with `size` and `fov`) that does
-**not** work at the pinned commit. `elevation_range` being an explicit min/max, rather than a
-symmetric field of view, is why the asymmetric Mid360 band needs no compensating sensor pitch.
-
-The plugin registers itself under the ament resource index key `mujoco_plugins`, which the node
-scans at startup. No `MUJOCO_PLUGIN_DIR` is needed, and setting it does not work.
-
-`config/mujoco_plugins.yaml` must be keyed to **`mujoco_ros2_control_node`**, a second node living
-inside the same process as `controller_manager`. Key it to `controller_manager` and the parameters
-reach the wrong node: the log says `No 'mujoco_plugins' parameter found!`, the LiDAR never publishes
-at all, and the camera quietly auto-registers on default topics at the default rate. Key it to `/**`
-and it also matches every controller, shadowing their own sections.
+These share the same ctest resource lock as `g1_bringup`'s suites, because two simulators on one
+DDS graph is what makes them flaky.

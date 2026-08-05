@@ -27,13 +27,14 @@ ArmRampEngine::ArmRampEngine(const RampConfig& config)
   : config_(config)
 {}
 
-void ArmRampEngine::seedFromMeasured(const std::array<double, kNumArmJoints>& measured_positions)
+void ArmRampEngine::seedFromMeasured(
+    const std::array<double, kNumArmJoints>& measured_positions) noexcept
 {
     published_positions_ = measured_positions;
     weight_              = 0.0;
 }
 
-double ArmRampEngine::rampDurationFor(BlendMode mode) const
+double ArmRampEngine::rampDurationFor(BlendMode mode) const noexcept
 {
     /* Exhaustive switch — no default, so new BlendMode values trigger -Wswitch. */
     switch (mode)
@@ -53,7 +54,8 @@ double ArmRampEngine::rampDurationFor(BlendMode mode) const
 }
 
 double ArmRampEngine::step(
-    BlendMode mode, const std::array<double, kNumArmJoints>& commanded_positions, double dt_s)
+    BlendMode mode, const std::array<double, kNumArmJoints>& commanded_positions,
+    double dt_s) noexcept
 {
     if (dt_s <= 0.0)
     {

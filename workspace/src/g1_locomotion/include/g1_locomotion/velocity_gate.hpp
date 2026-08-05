@@ -93,7 +93,7 @@ public:
      * @param now  Current time.
      * @return The velocity to send this tick, or nullopt if nothing should be sent.
      */
-    std::optional<Intent> tick(std::chrono::steady_clock::time_point now);
+    [[nodiscard]] std::optional<Intent> tick(std::chrono::steady_clock::time_point now);
 
     /**
      * @brief Feeds back the outcome of the SetVelocity request tick() most recently produced.

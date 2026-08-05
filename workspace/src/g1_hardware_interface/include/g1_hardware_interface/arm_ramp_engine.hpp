@@ -89,7 +89,7 @@ public:
      * anything until the ramp-up has actually started.
      * @param measured_positions  Just-measured joint positions to seed the published targets with.
      */
-    void seedFromMeasured(const std::array<double, kNumArmJoints>& measured_positions);
+    void seedFromMeasured(const std::array<double, kNumArmJoints>& measured_positions) noexcept;
 
     /**
      * @brief One control-loop tick: advances the blend weight and slews the published targets.
@@ -119,8 +119,9 @@ public:
      *   pathologically large values.
      * @return The resulting blend weight.
      */
-    double
-    step(BlendMode mode, const std::array<double, kNumArmJoints>& commanded_positions, double dt_s);
+    double step(
+        BlendMode mode, const std::array<double, kNumArmJoints>& commanded_positions,
+        double dt_s) noexcept;
 
     /**
      * @brief Current blend weight in [0, 1]; set by seedFromMeasured(), advanced by step().
@@ -137,7 +138,7 @@ public:
     }
 
 private:
-    double rampDurationFor(BlendMode mode) const;
+    double rampDurationFor(BlendMode mode) const noexcept;
 
     RampConfig                        config_;
     double                            weight_{ 0.0 };

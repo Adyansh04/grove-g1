@@ -1,227 +1,176 @@
 # g1_navigation
 
-SLAM Toolbox mapping and Nav2 navigation for the G1, on the converged `unitree_mujoco` track.
+SLAM Toolbox mapping, AMCL localization and Nav2 for the G1 on the `unitree_mujoco` track.
+Configuration, launch files and two G1-specific nodes' worth of glue. Nav2 itself is upstream.
 
-Configuration, launch and maps only — every node here is upstream.
+`ament_cmake`, Python launch files.
 
-Nav2's planner, controller, behaviors and BT navigator are configured here; the two G1-specific
-nodes they need — `g1_loco_authority` to acquire locomotion authority and `g1_gait_shaper` to
-reduce Nav2's output onto the gait's three usable motions — live in `g1_locomotion`, so nothing
-Nav2-shaped leaks into the package that has to survive to hardware.
+```mermaid
+flowchart TB
+    RELAY["g1_sensor_relay"] -- "/livox/lidar" --> SCAN["pointcloud_to_laserscan"]
+    SCAN -- "/scan" --> SLAM["slam_toolbox"]
+    SCAN -- "/scan" --> AMCL["map_server + AMCL"]
+    SLAM -- "map to odom" --> NAV2
+    AMCL -- "map to odom" --> NAV2
+    ODOM["g1_odometry_publisher"] -- "odom to base_footprint" --> NAV2
+    NAV2["Nav2"] -- "/cmd_vel" --> SHAPE["g1_gait_shaper"]
+    SHAPE --> BRIDGE["g1_loco_bridge"]
+    AUTH["g1_loco_authority"] -.-> BRIDGE
+```
+
+## Launch files
+
+| File | Purpose |
+|---|---|
+| `nav_sim.launch.py` | This package's orchestrator. Composes the simulator, the scan pipeline, and either SLAM or localization. |
+| `scan.launch.py` | `pointcloud_to_laserscan`, flattening the LiDAR into the 2D scan SLAM and AMCL consume. |
+| `slam.launch.py` | `slam_toolbox` in online async mapping mode. |
+| `localization.launch.py` | `map_server` and AMCL against the committed map. |
+| `nav2.launch.py` | Nav2 itself: planner, controller, behaviours, BT navigator, lifecycle manager. |
+
+The operator entry point is `g1_bringup`'s, matching `nav2_bringup`. `nav_sim.launch.py` still runs
+directly if you want it.
 
 ## Running
 
-Everything here needs `sensors:=true` on `g1_bringup`, which gates the LiDAR, the relay, the
-`odom -> base_footprint -> pelvis` chain and the waist joint states. The top-level launch passes it.
-
 ```bash
-ros2 launch g1_navigation nav_sim.launch.py mode:=mapping rviz:=true
+ros2 launch g1_bringup bringup.launch.py mode:=mapping rviz:=true
 ```
 
-`mode:=mapping` builds a new map with slam_toolbox. `mode:=localization` runs `map_server` + AMCL
-against `maps/facility` — use that when a goal pose has to mean the same thing twice.
-
-To actually navigate, add `nav:=true` (which requires `mode:=localization`):
+Drive it around with teleop and watch the map fill in. When it looks right:
 
 ```bash
-ros2 launch g1_navigation nav_sim.launch.py mode:=localization nav:=true rviz:=true
+ros2 run nav2_map_server map_saver_cli -f ~/facility
 ```
 
+`maps/facility` is already committed, so that is only for a new scene. To navigate:
+
 ```bash
+ros2 launch g1_bringup bringup.launch.py mode:=localization nav:=true rviz:=true
+
 ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose \
   "{pose: {header: {frame_id: map}, pose: {position: {x: 2.5, y: -2.5}, orientation: {w: 1.0}}}}"
 ```
 
-## What the robot can actually do
+Everything here needs `sensors:=true`, which gates the LiDAR, the relay and the
+`odom` to `base_footprint` chain. The navigation modes pass it for you.
 
-Measured, and it shapes every controller decision here. The gait has a hard initiation deadband
-with no hysteresis: nothing at or below 0.35 m/s forward, steps from 0.40; nothing at or below
-0.60 rad/s yaw, steps from 1.50. Combined commands come out badly — a commanded (0.50, 0, 0.50)
-measured (0.337, **0.299**, 0.390), a third of a metre per second of lateral nobody asked for.
+## What the gait forces
 
-So the usable action set is three elements: **stop, drive straight at ~0.6 m/s, turn in place at
-~1.57 rad/s.** `g1_gait_shaper` collapses Nav2's continuous output onto exactly those, subtractive
-only — it clamps and zeroes, never amplifies.
+The simulated gait has a hard initiation dead zone, so the usable action set is stop, drive
+straight, turn in place. `g1_locomotion`'s `g1_gait_shaper` collapses Nav2's continuous output onto
+those three, subtractively. Full numbers are in `g1_motion_service_sim`'s README.
 
-The consequence worth knowing before tuning: the shaper zeroes any yaw below 1.20, and RPP's
-curvature steering is usually well under that, so it rarely reaches the robot. Effective behaviour
-is bang-bang — drive straight until the heading error is large, then rotate in place. That makes
-**`angular_dist_threshold` the dominant knob, not `lookahead_dist`.**
+Two consequences worth knowing before tuning:
 
-This deadband is a property of the **sim walking policy**, not of the real G1's onboard MPC, which
-has no such dead zone. That is why it lives in `g1_locomotion`'s config and not in Nav2 tuning:
-hardware bring-up simply does not launch the shaper.
+The shaper zeroes any yaw below 1.20 rad/s, and the pure pursuit controller's curvature steering is
+usually well under that. Effective behaviour is bang-bang: drive straight until the heading error
+is large, then rotate in place. That makes `angular_dist_threshold` the dominant knob, not
+`lookahead_dist`.
 
-## Composition
+`behavior_server`'s `max_rotational_vel` is 1.57 rather than upstream's 1.0. At 1.0 it sat below
+the shaper's engage threshold, so every `Spin` was zeroed before reaching the bridge while still
+reporting success. `test_gait_coupling` now fails if that pairing regresses.
 
-The navigation nodes load into one `component_container_isolated` named `nav2_container`.
-`nav_sim.launch.py` creates the container; the leaf launches load into it. Set
-`use_composition:=false` for one process per node, which is what you want when a single node is
-crashing and you need to see which.
+## Decisions that look odd without the reason
 
-This shares a process and gives each component its own executor. It is **not** zero-copy — nothing
-sets `use_intra_process_comms`, and neither does `nav2_bringup`, because `/map` is transient-local
-and Humble's intra-process path does not support that durability.
+Nav2 runs uncomposed while the scan and localization nodes compose. Composed, the costmaps came up
+on `Costmap2DROS` defaults instead of the params file, and `controller_server` then hung forever
+activating against a frame that does not exist. `use_composition:=true` raises with that
+explanation rather than hanging.
 
-**Nav2 itself runs uncomposed, and that is measured rather than preference.** Composed, the
-costmaps silently come up on `Costmap2DROS`'s built-in defaults —
-`/local_costmap/local_costmap` reported `base_link`, `map` and `robot_radius 0.1` while
-`config/nav2_params.yaml` plainly says `base_footprint`, `odom` and `0.45` — and
-`controller_server` then hangs forever activating against a frame that does not exist. A bare
-path, `RewrittenYaml` and `ParameterFile` all behaved the same. The scan and localization nodes
-still compose and do get their parameters; their sections are flat and named for the node itself,
-which is consistent with the nested sections being the problem.
+Reverse recovery is removed from both behaviour trees and from `behavior_plugins`, so no action
+server exists to invoke. This gait barely reverses at all, and upstream's backup speed sits inside
+the dead zone, so `BackUp` would burn its whole time allowance producing no motion while consuming
+the round-robin slot `Spin` could have used.
 
-Structure follows `nav2_bringup`'s own launch files, including which nodes stay out:
-**slam_toolbox runs as a separate process** even though it ships a component. That is what
-`nav2_bringup/launch/slam_launch.py` does, and its 40 MB stack requirement for map serialization is
-not something to hand a shared process.
+`z_voxels` is 40, not upstream's 16. The sensor sits at 1.22 m, outside a 0.8 m voxel column.
 
-## Sensor inputs
+## Configuration
 
-| Consumer | Input | Why |
-|---|---|---|
-| slam_toolbox | `/scan` (`LaserScan`, `base_footprint`) | It is a 2D scan matcher and takes nothing else. |
-| Nav2 costmaps | `/livox/lidar` (`PointCloud2`, `mid360_link`) raw | The layer accepts it natively and it keeps the low obstacles `/scan` discards. |
-
-The flatten is `pointcloud_to_laserscan` against a gravity-aligned target frame, banded to
-[0.30, 1.50] m above the floor. See `config/scan.yaml` — every value there carries the measurement
-that chose it.
-
-**The depth camera is not a navigation input.** The D435i is pitched 47.6 degrees down and looks at
-the floor about 1.2 m ahead. It is a manipulation and near-field sensor.
-
-## What is covered, and how
-
-| | Coverage |
+| File | Contents |
 |---|---|
-| The `odom -> base_footprint -> pelvis` chain and the scan | `test_scan_pipeline`, against a live headless sim |
-| slam_toolbox owning `map -> odom`, and the map's geometry | `test_slam_map`, against a live headless sim |
-| The frame split, the tilt guard, parameter validation | `g1_state_estimation`'s node and math suites |
-| No shipped config enables `use_sim_time` | `test_no_sim_time` |
-| Authority acquired on activate, released on deactivate, and `cmd_vel` discarded before it | `test_nav_authority`, live sim |
-| **The robot reaching a navigation goal on its own** | `test_navigate_to_pose` — the acceptance gate |
-| `localization.launch.py`, `config/localization.yaml`, `map_server` + AMCL | now covered: `test_navigate_to_pose` runs the whole stack in localization mode |
-| `g1_gait_shaper`'s contract, including never amplifying | `g1_locomotion`'s `test_gait_shaper` |
-| Authority released when the acquire *fails* | `g1_locomotion`'s `test_authority_release`, against a stub, no sim |
+| `config/nav2_params.yaml` | Planner, controller, costmaps, behaviours, BT navigator. |
+| `config/localization.yaml` | `map_server` and AMCL. |
+| `config/scan.yaml` | The point cloud to laser scan flatten, including the height band. |
+| `config/slam_mapping.yaml` | `slam_toolbox` online async. |
+| `config/g1_navigation.rviz` | RViz for the navigation modes. Fixed frame `map`. |
+| `navigate_to_pose.xml`, `navigate_through_poses.xml` | Behaviour trees, with reverse recovery removed. |
+| `maps/facility.{yaml,pgm}` | The committed map of the navigation scene. |
 
-PR A shipped with localization deliberately untested; `test_navigate_to_pose` closes that, because
-it runs `map_server` + AMCL exactly as shipped.
+### RViz
 
-**`test_navigate_to_pose` will fail occasionally, for reasons outside this package.** See the two
-failure modes below. Re-run it alone before treating a red run as a regression — that is the same
-policy `g1_bringup`'s `test_walk_stand` carries, and there is deliberately no retry wrapper,
-because a retry would hide the very number that matters.
+`config/g1_navigation.rviz` holds everything in two toggleable groups: Nav2 (map, scan, AMCL
+particle swarm, plans, both costmaps, footprints, the local voxel grid) and Sensors, which starts
+folded away. `g1_bringup`'s `config/g1_sensors.rviz` is the counterpart for `mode:=none`: the same
+Sensors group, no Nav2 group, fixed frame `odom`, because there is no `map` frame without SLAM or
+AMCL.
 
-## What sim validates, and what it does not
+Two static files rather than one rewritten at launch, since they differ in fixed frame as well as
+in which groups exist. The price is drift, which `test_rviz_configs` catches.
 
-Odometry on this track is **exact MuJoCo ground truth** — zero drift, zero noise, zero latency. That
-makes SLAM trivially easy here.
+This file lives here rather than in `g1_bringup` because the particle swarm is a
+`nav2_rviz_plugins` display, and shipping it from the bring-up package would give that package a
+Nav2 dependency.
 
-Whether the robot's achievable motion is enough to reach a navigation goal **is** now tested, by
-`test_navigate_to_pose`. `test_scan_pipeline` and `test_slam_map` still pin the pelvis, because
-they are measuring geometry and a wandering robot would move the numbers.
+## Tests
 
-**Not** validated: loop closure under drift, scan-matching robustness, relocalization from a wrong
-initial pose, or any real odometry error model. Anything tuned against this is unvalidated on
-hardware.
+| Test | Needs a simulator | Covers |
+|---|---|---|
+| `test_navigate_to_pose` | yes | The acceptance gate: the robot reaches a goal on its own. |
+| `test_nav_authority` | yes | Authority acquired on activate, released on deactivate, `cmd_vel` discarded before it. |
+| `test_scan_pipeline` | yes | The frame chain and the scan. |
+| `test_slam_map` | yes | slam_toolbox owning `map` to `odom`, and the map's geometry. |
+| `test_gait_coupling` | no | Spin's rotational limits against the shaper's engage threshold. |
+| `test_launch_threading` | no | Arguments surviving `bringup` to `nav_sim` to `sim`. |
+| `test_rviz_configs` | no | The sensor display group not drifting between the two configs. |
+| `test_no_sim_time` | no | No shipped config enables `use_sim_time`. There is no `/clock` on this track. |
 
-## Two failure modes, two separate mitigations
+```bash
+colcon test --packages-select g1_navigation
+```
 
-These are unrelated, and only one of them has a mitigation that fires. Do not read the
-`OnProcessExit` handler as covering both — it covers exactly one.
+## Soak test
 
-### A — `g1_loco_authority` dies while holding authority
+`nav_soak` brings the stack up, drives a list of goals across the facility one at a time,
+records health, and tears everything down.
 
-Nav2 and the shaper keep publishing, the bridge keeps re-issuing `SET_VELOCITY`, its 1 s dead-man
-never expires, and **the robot walks on to its goal with nobody supervising authority.**
+```bash
+ros2 run g1_navigation nav_soak                        # default goal list
+ros2 run g1_navigation nav_soak --rviz
+ros2 run g1_navigation nav_soak --goals "3.0 -3.0,-2.5 2.0"
+```
 
-*Mitigation:* `nav2.launch.py` registers an `OnProcessExit` handler on the authority node that
-stops `g1_gait_shaper`. `cmd_vel` ceases, the bridge's staleness path emits one
-`SetVelocity(0,0,0)`, and the robot stands balanced.
+It reports distance driven, how much of Nav2's output falls inside the gait shaper's dead
+band, `map` to `odom` correction sizes, pelvis pitch through the gait, and local costmap
+lethal-cell counts. `nav_diag.py` is the recorder and also runs on its own against a stack
+that is already up:
 
-### B — the robot is fully healthy and will not walk
+```bash
+ros2 run g1_navigation nav_diag.py 200
+```
 
-`authority` HELD, `fsm_id` 500, no errors anywhere, and the gait simply does not respond.
-**Measured at 1 of 8 fresh launches.**
+Three details in `nav_soak` are load-bearing, and doing any of them the obvious way produces
+results that look like stack defects. It sends one goal at a time and lets each finish, since
+killing the action client mid-goal lets the next goal preempt the running one and the robot
+falls. It tears down by process group and sweeps `/proc/PID/cmdline` rather than executable
+paths, because anything running as `python3` or the `ros2` CLI otherwise survives as an orphan
+into the next run. And it reads readiness from the launch log, because action and TF discovery
+can exceed any reasonable timeout and AMCL only publishes `/amcl_pose` after a motion-gated
+update, so a stationary robot never emits one.
 
-**`OnProcessExit` does nothing here.** `g1_loco_authority` is alive and correct; there is no
-process exiting for anything to notice.
+Verify by hand that nothing survived:
 
-*Mitigation:* Nav2's progress checker aborts the goal — and this is confirmed against the measured
-case, not assumed. `SimpleProgressChecker::check()` returns false when the robot has not moved
-more than `required_movement_radius` from its baseline within `movement_time_allowance`, and the
-baseline resets **only** when it does move enough. The recorded frozen case travelled 0.09 m in
-30 s, never within 0.5 m of resetting the baseline, so at `movement_time_allowance: 20.0` the
-checker trips and `controller_server` fails the goal. Observed live as
-`[controller_server]: Failed to make progress`.
+```bash
+ros2 node list --no-daemon | sort | uniq -d    # any output means an orphan is still running
+```
 
-What that mitigation does **not** do is recover. It aborts. The robot stays frozen and only
-relaunching the simulator clears it. Nav2's recoveries cannot help either: `Spin` commands motion
-the robot ignores, `Wait` waits, and `ClearCostmap` clears a costmap that was never the problem.
+`test_navigate_to_pose` will fail occasionally without anything being wrong. It drives the real
+gait, which sometimes comes up unresponsive, and the suites are timing-sensitive. Re-run it alone
+before believing a red run:
 
-### A caveat on the 1-in-8 figure
+```bash
+ctest --test-dir build/g1_navigation -R '^test_navigate_to_pose$'
+```
 
-That number was measured with **`sensors:=true world:=navigation`**, which is what navigation
-runs. It is 8 samples, so treat it as order-of-magnitude.
-
-It may not transfer to other launch configurations. Three consecutive `sensors:=false` launches
-were frozen while the next `sensors:=true` launch walked immediately — 3 against 1, which at a
-12% base rate is unlikely (~0.2%) but not absurd, and no mechanism is known: `sensors` gates the
-LiDAR, the relay, the odometry publisher and the waist joint states, none of which touch the
-walking policy. Quote the figure for the navigation configuration only, and record the `sensors`
-value if you ever reproduce a frozen robot.
-
-**Unconfirmed, and it may well be higher.** Late in the PR B work, 3 of 4 consecutive
-`sensors:=true world:=navigation` launches came up unable to walk — one confirmed by publishing
-`vyaw` straight to `/g1_loco_bridge/cmd_vel`, bypassing Nav2 and the shaper, for zero motion at
-`authority: 2`, `fsm_id: 500`, `last_error_code: 0`. At a 12% rate, 3 or more in 4 is unlikely
-(~0.7%).
-
-Treat that as an observation, not a measurement. It is 4 samples, gathered incidentally while
-debugging something unrelated rather than from fresh isolated launches, and one of the four was
-degraded (the robot moved, but `Spin` never returned a result) rather than a clean freeze — which
-is a judgement call, not a threshold. It is not evidence the 12% figure is wrong, only that it has
-not been re-checked since it was taken.
-
-**The figure above is deliberately left as measured.** Re-measuring properly is a fast-follow: run
-Step 0's protocol from `docs/notes/milestone6-authority-timing.md` — N ≥ 8 fresh, isolated
-launches, each scored on displacement from the START-result pose rather than on velocity, with
-every non-moving run logged individually. Change the number only from that, never from a tally
-picked up in passing.
-
-Separately, the robot sometimes **falls over** rather than freezing — seen once during acceptance
-testing, at 117 degrees of tilt. The odometry publisher's tilt guard holds the last heading and
-says so, and the progress checker aborts the goal the same way. Three consecutive acceptance runs
-passed afterwards.
-
-## Known limitations
-
-**There is no `/clock`** — the simulator links no ROS. `use_sim_time` is false everywhere, and a
-ctest fails the build if any shipped config sets it true.
-
-**The ramp will map as an obstacle** once the costmaps exist: `slope_ramp`'s surface sits between
-0.08 and 0.24 m, above the floor cut a costmap needs to avoid painting the whole floor. That is the
-right answer for this gait, but it looks like a bug in RViz.
-
-**Mapped free space shows radial spokes at long range.** At 15 m adjacent 1-degree beams are 26 cm
-apart, so raytraced clearing fans out. Cosmetic; shortening the scan's `range_max` would trade real
-far-wall coverage for it.
-
-**The robot's fingers do not render in RViz, and cannot.** The palms do — they hang off the wrists
-by fixed joints — but the finger links need joint states, and nothing publishes them: the
-simulated model has 30 joints and **zero** finger DoF, so there is no hand state to publish. The
-URDF describes a robot with hands; the sim simulates one without. Publishing zeroed finger joints
-would put fabricated state on `/tf`, which is the thing `g1_state_estimation` refuses to do with
-odometry, so it is not done here either.
-
-**Reverse recovery behaviours are removed from both behavior trees.** `BackUp` and
-`DriveOnHeading` command reverse, and this gait reverses at −0.247 m/s for a commanded −0.60 and
-at exactly 0.000 for −0.40. Upstream's `backup_speed` is **0.05 m/s** — squarely inside that dead
-zone — so `BackUp` would command motion the robot cannot produce and burn its full
-`time_allowance` before failing, consuming the round-robin slot `Spin` could have used. Both are
-also dropped from `behavior_plugins`, so no action server exists to invoke. And independently of
-all that, `g1_gait_shaper` compares forward velocity **signed**, so any negative command becomes
-zero at any magnitude: even a hand-edited tree cannot produce a reverse lurch. Raising
-`backup_speed` to 0.6 is the only setting that would make them move the robot; that is an
-uncontrolled reverse lurch as a *recovery*, and it is rejected rather than overlooked.
+There is deliberately no retry wrapper, because a retry would hide the rate.

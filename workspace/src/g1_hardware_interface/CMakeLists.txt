@@ -18,7 +18,7 @@ target_include_directories(g1_arm_sdk_system PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
-target_compile_features(g1_arm_sdk_system PUBLIC cxx_std_17)
+target_compile_features(g1_arm_sdk_system PUBLIC cxx_std_20)
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   target_compile_options(g1_arm_sdk_system PRIVATE -Wall -Wextra)
 endif()

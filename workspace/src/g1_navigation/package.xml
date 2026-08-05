@@ -27,6 +27,9 @@
   <exec_depend>nav2_planner</exec_depend>
   <exec_depend>nav2_regulated_pure_pursuit_controller</exec_depend>
   <exec_depend>nav2_rotation_shim_controller</exec_depend>
+  <!-- ParticleCloud, the one non-default RViz display in g1_navigation.rviz. Declaring it
+       here is why that config cannot live in g1_bringup. -->
+  <exec_depend>nav2_rviz_plugins</exec_depend>
   <exec_depend>pointcloud_to_laserscan</exec_depend>
   <exec_depend>rclcpp_components</exec_depend>
   <exec_depend>rviz2</exec_depend>
@@ -45,6 +48,7 @@
   <test_depend>nav2_msgs</test_depend>
   <test_depend>nav_msgs</test_depend>
   <test_depend>python3-numpy</test_depend>
+  <test_depend>python3-yaml</test_depend>
   <test_depend>python3-pytest</test_depend>
   <test_depend>rclpy</test_depend>
   <test_depend>sensor_msgs</test_depend>

@@ -1,13 +1,21 @@
-# RViz for the converged sensor track.
-#   ros2 launch g1_bringup sim.launch.py sensors:=true rviz:=true
+# RViz for the converged sensor track, without navigation.
+#   ros2 launch g1_bringup bringup.launch.py sensors:=true rviz:=true
+#
+# The nav-enabled counterpart is g1_navigation/config/g1_navigation.rviz. Two static files
+# rather than one generated at launch: they differ in Fixed Frame as well as in which groups
+# exist, and this stack has already been burned once by rewriting config at launch time (see
+# g1_navigation/launch/nav2.launch.py's docstring).
+#
+# The sensor group below must stay byte-identical to that file's, apart from the group's own
+# Enabled flag. test_rviz_configs in g1_navigation enforces it.
 Panels:
   - Class: rviz_common/Displays
     Name: Displays
     Property Tree Widget:
       Expanded:
-        - /LiDAR1
-        - /Depth cloud1
-        - /Colour image1
+        - /Sensors1
+        - /Sensors1/LiDAR1
+        - /Sensors1/Depth cloud1
       Splitter Ratio: 0.5
     Tree Height: 700
   - Class: rviz_common/Views
@@ -28,16 +36,14 @@ Visualization Manager:
     # The robot. Needs pelvis -> torso_link, which motion_service_sim supplies from
     # /lowstate; joint_state_broadcaster only covers the arms.
     - Class: rviz_default_plugins/RobotModel
-      Name: RobotModel
+      Name: Robot
       Enabled: true
       Description Topic:
         Value: /robot_description
-        Depth: 5
+        Depth: 1
         Durability Policy: Transient Local
         Reliability Policy: Reliable
-      Alpha: 1
-      Visual Enabled: true
-      Collision Enabled: false
+      Alpha: 0.8
 
     - Class: rviz_default_plugins/TF
       Name: TF
@@ -47,79 +53,12 @@ Visualization Manager:
       Show Arrows: false
       Marker Scale: 0.3
 
-    # Sampled inside unitree_mujoco, published by g1_sensor_relay. Best-effort to match
-    # the publisher: a Reliable subscriber here shows nothing at all.
-    - Class: rviz_default_plugins/PointCloud2
-      Name: LiDAR
-      Enabled: true
-      Topic:
-        Value: /livox/lidar
-        Depth: 5
-        Durability Policy: Volatile
-        Reliability Policy: Best Effort
-      Style: Points
-      Size (Pixels): 2
-      Alpha: 1
-      Decay Time: 0
-      Position Transformer: XYZ
-      Color Transformer: AxisColor
-      Axis: Z
-      Autocompute Intensity Bounds: true
-      Invert Rainbow: false
-
-    # Depth as a 3D cloud, projected through camera_info. This is the camera's own view
-    # of the world, so it should overlap the LiDAR returns where the two see the same
-    # surfaces; if it floats away from them, the mount or the depth scale is wrong.
-    - Class: rviz_default_plugins/DepthCloud
-      Name: Depth cloud
-      Enabled: true
-      Topic Filter: false
-      Depth Map Topic: /camera/aligned_depth_to_color/image_raw
-      Depth Map Transport Hint: raw
-      Color Transport Hint: raw
-      Queue Size: 5
-      Style: Points
-      Size (Pixels): 3
-      Alpha: 1
-      Decay Time: 0
-      Color Image Topic: /camera/color/image_raw
-      Color Transformer: RGB8
-      Occlusion Compensation:
-        Occlusion Time-Out: 30
-        Enabled: false
-
-    # The same data as a 2D panel, which is the quickest way to see that the camera is
-    # pointed where you think and is not returning a blank frame.
-    - Class: rviz_default_plugins/Image
-      Name: Depth image
-      Enabled: true
-      Topic:
-        Value: /camera/aligned_depth_to_color/image_raw
-        Depth: 5
-        Durability Policy: Volatile
-        Reliability Policy: Best Effort
-      Max Value: 4
-      Min Value: 0.5
-      Median window: 5
-      Normalize Range: false
-
-    # Colour from the same render as the depth above, so the two line up pixel for pixel.
-    - Class: rviz_default_plugins/Image
-      Name: Colour image
-      Enabled: true
-      Topic:
-        Value: /camera/color/image_raw
-        Depth: 5
-        Durability Policy: Volatile
-        Reliability Policy: Best Effort
-      Normalize Range: true
-
     - Class: rviz_default_plugins/Odometry
       Name: Odometry
       Enabled: true
       Topic:
         Value: /g1_odometry_publisher/odom
-        Depth: 10
+        Depth: 100
         Durability Policy: Volatile
         Reliability Policy: Reliable
       Keep: 100
@@ -134,24 +73,97 @@ Visualization Manager:
         Head Length: 0.1
         Head Radius: 0.06
 
-    # Where the simulator says the sensor is. Diagnostic: it is the ground truth the
-    # cloud was swept from, so it should sit exactly on the robot's Mid360.
-    - Class: rviz_default_plugins/Pose
-      Name: Sensor pose
-      Enabled: false
-      Topic:
-        Value: /g1_sensor_relay/sensor_pose
-        Depth: 5
-        Durability Policy: Volatile
-        Reliability Policy: Best Effort
-      Shape: Axes
-      Axes Length: 0.3
-      Axes Radius: 0.02
+    # BEGIN SENSOR GROUP -- kept identical to g1_navigation/config/g1_navigation.rviz
+    - Class: rviz_common/Group
+      Name: Sensors
+      Enabled: true
+      Displays:
+        # Sampled inside unitree_mujoco, published by g1_sensor_relay. Best-effort to match
+        # the publisher: a Reliable subscriber here shows nothing at all.
+        - Class: rviz_default_plugins/PointCloud2
+          Name: LiDAR
+          Enabled: true
+          Topic:
+            Value: /livox/lidar
+            Depth: 5
+            Durability Policy: Volatile
+            Reliability Policy: Best Effort
+          Style: Points
+          Size (Pixels): 2
+          Alpha: 1
+          Decay Time: 0
+          Position Transformer: XYZ
+          Color Transformer: AxisColor
+          Axis: Z
+          Autocompute Intensity Bounds: true
+          Invert Rainbow: false
+
+        # Depth as a 3D cloud, projected through camera_info. This is the camera's own view
+        # of the world, so it should overlap the LiDAR returns where the two see the same
+        # surfaces; if it floats away from them, the mount or the depth scale is wrong.
+        - Class: rviz_default_plugins/DepthCloud
+          Name: Depth cloud
+          Enabled: true
+          Topic Filter: false
+          Depth Map Topic: /camera/aligned_depth_to_color/image_raw
+          Depth Map Transport Hint: raw
+          Color Transport Hint: raw
+          Queue Size: 5
+          Style: Points
+          Size (Pixels): 3
+          Alpha: 1
+          Decay Time: 0
+          Color Image Topic: /camera/color/image_raw
+          Color Transformer: RGB8
+          Occlusion Compensation:
+            Occlusion Time-Out: 30
+            Enabled: false
+
+        # The same data as a 2D panel, which is the quickest way to see that the camera is
+        # pointed where you think and is not returning a blank frame.
+        - Class: rviz_default_plugins/Image
+          Name: Depth image
+          Enabled: true
+          Topic:
+            Value: /camera/aligned_depth_to_color/image_raw
+            Depth: 5
+            Durability Policy: Volatile
+            Reliability Policy: Best Effort
+          Max Value: 4
+          Min Value: 0.5
+          Median window: 5
+          Normalize Range: false
+
+        # Colour from the same render as the depth above, so the two line up pixel for pixel.
+        - Class: rviz_default_plugins/Image
+          Name: Colour image
+          Enabled: true
+          Topic:
+            Value: /camera/color/image_raw
+            Depth: 5
+            Durability Policy: Volatile
+            Reliability Policy: Best Effort
+          Normalize Range: true
+
+        # Where the simulator says the sensor is. Diagnostic: it is the ground truth the
+        # cloud was swept from, so it should sit exactly on the robot's Mid360.
+        - Class: rviz_default_plugins/Pose
+          Name: Sensor pose
+          Enabled: false
+          Topic:
+            Value: /g1_sensor_relay/sensor_pose
+            Depth: 5
+            Durability Policy: Volatile
+            Reliability Policy: Best Effort
+          Shape: Axes
+          Axes Length: 0.3
+          Axes Radius: 0.02
+    # END SENSOR GROUP
 
   Global Options:
     # odom, not mid360_link: the cloud is published in the sensor frame and RViz transforms
     # it here, which only works because odom -> pelvis -> torso_link -> mid360_link is now
-    # complete.
+    # complete. The nav config uses map, which does not exist without SLAM or AMCL.
     Fixed Frame: odom
     Background Color: 48; 48; 48
     Frame Rate: 30
