@@ -194,6 +194,26 @@ RUN apt-get update && apt-get install -y \
         ros-humble-pointcloud-to-laserscan \
     && rm -rf /var/lib/apt/lists/*
 
+# --- Milestone 7: MoveIt 2 (structured manipulation) --------------------------
+
+# Humble's stable line, 2.5.9. The metapackage already covers core, OMPL, the simple
+# controller manager and the RViz MotionPlanning display; the two extras below are named
+# for specific reasons rather than habit. moveit-configs-utils otherwise arrives only as a
+# transitive dependency of moveit-ros-benchmarks, which is not a chain to hang every launch
+# file off. moveit-setup-assistant is the sole way to regenerate g1_moveit_config's
+# self-collision matrix on Humble -- there is no headless collisions_updater -- and upstream
+# has been reshuffling that package across releases.
+#
+# pick-ik replaces the default KDL solver because the arms are 7-DoF against a 6-DoF pose;
+# see g1_moveit_config/config/kinematics.yaml. moveit-servo is deliberately absent: later
+# milestone, and nothing streams to it yet.
+RUN apt-get update && apt-get install -y \
+        ros-humble-moveit \
+        ros-humble-moveit-configs-utils \
+        ros-humble-moveit-setup-assistant \
+        ros-humble-pick-ik \
+    && rm -rf /var/lib/apt/lists/*
+
 # Placed last on purpose. This is the only block that consumes COPYed host files
 # (workspace/patches, workspace/vendor), and cache invalidation flows forward: sitting
 # earlier, a one-line patch or sensor-source edit re-ran every apt block, the ONNX
