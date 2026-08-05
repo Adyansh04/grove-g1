@@ -1,0 +1,59 @@
+# How move_group hands a planned trajectory to the controller that already exists.
+#
+# arm_trajectory_controller is the JointTrajectoryController g1_bringup has run since the arm
+# bridge landed; MoveIt becomes another client of its action, not a second command path. The
+# ownership chain is unchanged: JTC -> G1ArmSdkSystem -> /arm_sdk, still the only writer.
+#
+# One controller covering all 14 joints, rather than the two per-arm controllers most published
+# dual-arm configs use. Those robots have two independent arm controllers in hardware; we have
+# one. It is also the better fit for coordinated motion: MoveIt looks for the smallest set of
+# controllers covering the trajectory's joints and finds this one on the first try, so a
+# both_arms plan executes as a single trajectory. Two controllers would mean splitting it and
+# leaving the two halves to stay in step on their own.
+
+moveit_controller_manager: moveit_simple_controller_manager/MoveItSimpleControllerManager
+
+# MoveIt must never activate or switch controllers. Acquiring the arm is an ordered,
+# safety-critical step -- the hardware component first, then the controller -- and it lives in
+# g1_bringup/scripts/activate_arm. Planning works whether or not the arm is active; execution
+# is refused by the JTC until it is, which is the intended failure.
+moveit_manage_controllers: false
+
+moveit_simple_controller_manager:
+  controller_names:
+    - arm_trajectory_controller
+
+  arm_trajectory_controller:
+    type: FollowJointTrajectory
+    action_ns: follow_joint_trajectory
+    default: true
+    # Same list, same order as g1_bringup/config/controllers.yaml. The drift test compares them;
+    # the JTC itself remaps by name, so order is for readers rather than for correctness.
+    joints:
+      - left_shoulder_pitch_joint
+      - left_shoulder_roll_joint
+      - left_shoulder_yaw_joint
+      - left_elbow_joint
+      - left_wrist_roll_joint
+      - left_wrist_pitch_joint
+      - left_wrist_yaw_joint
+      - right_shoulder_pitch_joint
+      - right_shoulder_roll_joint
+      - right_shoulder_yaw_joint
+      - right_elbow_joint
+      - right_wrist_roll_joint
+      - right_wrist_pitch_joint
+      - right_wrist_yaw_joint
+
+trajectory_execution:
+  # The arm_sdk gains are soft (kp 25-40), so the measured pose trails the commanded one by a
+  # few hundredths of a radian even at rest. MoveIt's 0.01 default reads that as "the robot is
+  # not where the plan starts" and refuses to execute. Never set this to 0, which disables the
+  # check rather than relaxing it.
+  allowed_start_tolerance: 0.05
+
+  execution_duration_monitoring: true
+  allowed_execution_duration_scaling: 2.0
+  # Matches the JTC's own goal_time: 5.0, so the two layers agree on how late is too late.
+  allowed_goal_duration_margin: 5.0
+  wait_for_trajectory_completion: true
