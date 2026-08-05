@@ -172,6 +172,8 @@ controller_server:
       rotate_to_heading_angular_accel: 10.0
       lookahead_dist: 0.9                 # GUESS, and mostly inert -- see the note above
       use_velocity_scaled_lookahead_dist: false
+      # Left at 1.0. This is the controller's own pose-transform tolerance, not a costmap's,
+      # and tightening it is a separate question from the sensor-staleness one below.
       transform_tolerance: 1.0
 
 local_costmap:
@@ -181,7 +183,12 @@ local_costmap:
       publish_frequency: 2.0
       global_frame: odom
       robot_base_frame: base_footprint
-      transform_tolerance: 1.0
+      # 0.3, upstream's default, not 1.0. One second is longer than a gait cycle, so a
+      # cloud could be transformed with a pelvis attitude from the opposite phase of the
+      # step. The pelvis swings 9.31 deg peak to peak while walking (measured), and at
+      # obstacle_max_range even a fraction of that lifts floor returns above the 0.08 m
+      # cut. If this starts dropping clouds, that is the finding: TF genuinely lags.
+      transform_tolerance: 0.3
       use_sim_time: false
       rolling_window: true
       width: 3
@@ -228,9 +235,18 @@ local_costmap:
           max_obstacle_height: 1.80
           # At 15 m adjacent 1-degree beams are 26 cm apart, so long-range raytracing leaves
           # radial spoke gaps in cleared space. GUESSES.
-          raytrace_max_range: 12.0
+          # Pulled in from 12.0/10.0. Attitude error scales with range: at 10 m, 0.5 deg of
+          # unaccounted pelvis pitch lifts a floor return 8.7 cm, clearing the 0.08 m cut on
+          # its own, and the gait swings 9.31 deg. Beyond about 5 m the sweep cannot be
+          # trusted to stay below the cut while walking. raytrace stays above obstacle so
+          # anything markable is also clearable.
+          #
+          # Inert for the local costmap, which is 3 x 3 m rolling and can only hold returns
+          # within 1.5 m. These matter for the global costmap, where a long-range floor strike
+          # is what persists.
+          raytrace_max_range: 6.0
           raytrace_min_range: 0.0
-          obstacle_max_range: 10.0
+          obstacle_max_range: 5.0
           obstacle_min_range: 0.0
       always_send_full_costmap: True
 
@@ -241,7 +257,12 @@ global_costmap:
       publish_frequency: 1.0
       global_frame: map
       robot_base_frame: base_footprint
-      transform_tolerance: 1.0
+      # 0.3, upstream's default, not 1.0. One second is longer than a gait cycle, so a
+      # cloud could be transformed with a pelvis attitude from the opposite phase of the
+      # step. The pelvis swings 9.31 deg peak to peak while walking (measured), and at
+      # obstacle_max_range even a fraction of that lifts floor returns above the 0.08 m
+      # cut. If this starts dropping clouds, that is the finding: TF genuinely lags.
+      transform_tolerance: 0.3
       use_sim_time: false
       # The standing footprint is smaller, but the gait drifts 0.22-0.30 m/s laterally while
       # walking forward, so the swept corridor is wider than the body. Circular rather than a
@@ -271,9 +292,18 @@ global_costmap:
           max_obstacle_height: 1.80
           # At 15 m adjacent 1-degree beams are 26 cm apart, so long-range raytracing leaves
           # radial spoke gaps in cleared space. GUESSES.
-          raytrace_max_range: 12.0
+          # Pulled in from 12.0/10.0. Attitude error scales with range: at 10 m, 0.5 deg of
+          # unaccounted pelvis pitch lifts a floor return 8.7 cm, clearing the 0.08 m cut on
+          # its own, and the gait swings 9.31 deg. Beyond about 5 m the sweep cannot be
+          # trusted to stay below the cut while walking. raytrace stays above obstacle so
+          # anything markable is also clearable.
+          #
+          # Inert for the local costmap, which is 3 x 3 m rolling and can only hold returns
+          # within 1.5 m. These matter for the global costmap, where a long-range floor strike
+          # is what persists.
+          raytrace_max_range: 6.0
           raytrace_min_range: 0.0
-          obstacle_max_range: 10.0
+          obstacle_max_range: 5.0
           obstacle_min_range: 0.0
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
