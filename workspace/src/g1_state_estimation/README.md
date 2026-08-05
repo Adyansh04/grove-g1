@@ -1,107 +1,101 @@
 # g1_state_estimation
 
-`odom -> base` state estimation for the G1.
+Publishes `odom` to the robot's base frame, and the TF chain Nav2 and slam_toolbox need.
+
+`ament_cmake`, C++20. One lifecycle node, `g1_odometry_publisher`.
+
+```mermaid
+flowchart LR
+    SM["/sportmodestate<br/>pelvis position"] --> N
+    LS["/lowstate<br/>IMU orientation"] --> N
+    N["g1_odometry_publisher"] --> TF["/tf<br/>odom to base_footprint to pelvis"]
+    N --> OD["~/odom"]
+```
 
 ## Odometry source
 
-The real G1 **publishes no odometry**. On hardware `/sportmodestate` carries
-`unitree_hg::SportModeState_`, which holds only `fsm_id`, `fsm_mode`, `task_id` and `task_time`. There
-is no pose and no velocity, and `rt/odommodestate` does not exist. So this package has three sources
-and only two of them are implemented:
+The real G1 publishes no odometry. On hardware `/sportmodestate` carries a type holding only
+`fsm_id`, `fsm_mode`, `task_id` and `task_time`. No pose, no velocity, and `rt/odommodestate` does
+not exist anywhere in Unitree's code.
 
 | `odometry_source` | Behaviour |
 |---|---|
-| `sim_sportmodestate` | The converged `unitree_mujoco` track. Pelvis position from `/sportmodestate` (which the simulator fills from `framepos`/`framelinvel` on the pelvis imu site) and full orientation from `/lowstate`'s IMU. |
-| `sim_ground_truth` | The `g1_sim` planar sandbox. MuJoCo generalized coordinates read from that track's planar joints. |
-| `hardware` (default) | **Refuses to run.** A real source (leg odometry + IMU EKF, or LiDAR-inertial odometry) is a future milestone. |
+| `sim_sportmodestate` | The `unitree_mujoco` track. Pelvis position from `/sportmodestate`, full orientation from `/lowstate`'s IMU. |
+| `sim_ground_truth` | The `g1_sim` planar sandbox. MuJoCo generalized coordinates from that track's planar joints. |
+| `hardware` (default) | Refuses to configure. A real source, leg odometry with an IMU EKF or LiDAR-inertial odometry, is a future milestone. |
 
 `hardware` is the default deliberately. A misconfigured hardware bring-up must never silently emit
-fabricated odometry, so simulation is the case that opts in.
+fabricated odometry, so simulation is the case that has to opt in.
 
-**Both sim sources are ground truth, not estimates.** Zero drift, zero noise, zero latency. Nothing
-here validates how a real estimator behaves under drift, foot slip, or the suspend/freeze handling
-that goes with it. Treat any tuning done against this as unvalidated on hardware.
+Both simulation sources are ground truth, not estimates: no drift, no noise, no latency. Nothing
+here validates how a real estimator behaves under drift or foot slip, so treat tuning done against
+it as unvalidated on hardware.
 
-No `map -> odom` is published. That is SLAM's, and it comes from `g1_navigation`.
+No `map` to `odom` transform is published. That belongs to SLAM, in `g1_navigation`.
 
 ## Frames
 
-Which chain gets published depends on `pelvis_frame_id`:
+Which chain is published depends on `pelvis_frame_id`:
 
 ```
-pelvis_frame_id: "pelvis"   ->   odom -> base_footprint -> pelvis     (converged track)
-pelvis_frame_id: ""         ->   odom -> base_link                    (planar sandbox)
+pelvis_frame_id: "pelvis"   ->   odom -> base_footprint -> pelvis    (unitree_mujoco track)
+pelvis_frame_id: ""         ->   odom -> base_link                   (planar sandbox)
 ```
 
-The split exists because Nav2 and slam_toolbox both want a gravity-aligned base frame, and a walking
-G1 does not have one: the pelvis rolls and pitches several degrees with the gait, and every sensor
-frame hangs off it. `base_footprint` is the REP-105 ground projection — x, y and heading only, z
-pinned to 0 — and `base_footprint -> pelvis` carries the height and the tilt the projection drops.
+Nav2 and slam_toolbox both want a gravity-aligned base frame, and a walking G1 does not have one:
+the pelvis rolls and pitches several degrees with the gait, and every sensor frame hangs off it.
+`base_footprint` is the REP-105 ground projection, carrying x, y and heading with z pinned to zero,
+and `base_footprint` to `pelvis` carries the height and tilt the projection drops.
 
-Inserted rather than published as a second edge off `odom`. Two sibling edges would make every
-`mid360_link -> base_footprint` lookup compose two independently-published dynamic transforms, which
-agree only if they always carry the identical stamp; one chain cannot be inconsistent even in
-principle. Both edges go out in a single `sendTransform` call for the same reason.
+The pelvis edge is inserted into the chain rather than published as a second edge off `odom`. Two
+sibling edges would make every sensor lookup compose two independently published dynamic
+transforms, which agree only if they always carry an identical stamp. One chain cannot be
+inconsistent even in principle. Both edges go out in a single `sendTransform` call for the same
+reason.
 
 Past `max_tilt_deg` the heading extraction is ill-conditioned, so the last well-conditioned heading
-is held. The attitude keeps being published unchanged — a fallen robot really is tilted.
+is held. Attitude keeps being published unchanged, because a fallen robot really is tilted.
 
-## `g1_odometry_publisher`
+## Parameters
 
-Lifecycle node. Configuration is where the source decision is enforced, so a refusal is externally
-observable: with `odometry_source=hardware` it returns FAILURE from `on_configure` and stays in
-`unconfigured` having created **no publisher and no broadcaster**. Advertising `/tf` and then going
-quiet would be indistinguishable from a healthy node with a stalled source.
+| Parameter | Default | Meaning |
+|---|---|---|
+| `odometry_source` | `hardware` | See the table above. |
+| `odom_frame_id` | `odom` | |
+| `base_frame_id` | `base_footprint` | |
+| `pelvis_frame_id` | `""` | Empty publishes one edge; naming a link splits it in two. |
+| `base_height_m` | `0.0` | Height of the base above the floor, making `odom` the ground plane. |
+| `max_tilt_deg` | `80.0` | Beyond this the heading is held. |
+| `publish_rate_hz` | `50.0` | |
+| `publish_odom_msg` | `true` | |
+| `source_timeout_ms` | `200.0` | Source age beyond this stops publishing. |
 
-| Interface | Dir | Type | Source |
-|---|---|---|---|
-| `~/sport_state` (remap to `/sportmodestate`) | in | `unitree_go/SportModeState` | `sim_sportmodestate` |
-| `~/imu_state` (remap to `/lowstate`) | in | `unitree_hg/LowState` | `sim_sportmodestate` |
-| `~/base_state` (remap to `/base_joint_states`) | in | `sensor_msgs/JointState` | `sim_ground_truth` |
-| `/tf` | out | `tf2_msgs/TFMessage` | both |
-| `~/odom` | out | `nav_msgs/Odometry` | both |
+Shipped configs: `g1_odometry_publisher_converged.yaml` for the `unitree_mujoco` track,
+`g1_odometry_publisher.yaml` for the planar sandbox.
 
-Orientation comes from `/lowstate` rather than `/sportmodestate` because `unitree_mujoco` leaves the
-latter's `imu_state` at all zeros, and tf2 normalises a zero quaternion straight to NaN and then
-silently drops the transform.
+## Running
 
-`~/odom` describes `base_frame_id`, taken from the transform that was just published so the two
-cannot disagree. On a split chain that means the footprint: z and tilt are absent because
-`child_frame_id` says `base_footprint`, and `toBodyTwist()` is yaw-only, which is exactly that frame.
+The node comes up with `sensors:=true`:
 
-Each track has its own file: `config/g1_odometry_publisher.yaml` for the **planar sandbox**, and
-`config/g1_odometry_publisher_converged.yaml` for the **converged track**, which
-`g1_bringup/launch/sim.launch.py` loads. Joints are looked up **by name**, since
-`joint_state_broadcaster` makes no promise about ordering.
+```bash
+ros2 launch g1_bringup bringup.launch.py sensors:=true
+ros2 run tf2_ros tf2_echo odom base_footprint
+```
 
-`base_height_m` applies to the planar track only: its base has no z DoF, so the spawn height comes
-from `g1_sim/config/sensor_mounts.yaml` via the launch. The converged track measures z and leaves
-this at 0.
+It is a lifecycle node, and configuration is where the source decision is enforced, so a refusal is
+visible as a failed transition rather than a silent absence of transforms.
 
-Staleness has two budgets. `source_timeout_ms` bounds the data's age on the source clock;
-`wall_timeout_ms` bounds it on `steady_clock`, measured from the last stamp **change**. The second
-is not redundant: a wedged simulator freezes its own clock too, so a source-clock-only check would
-never fire. Either budget tripping stops the transform rather than re-stamping the last pose. On the
-converged track the orientation gets its own wall budget, because position and attitude arrive on
-different topics and one can die while the other keeps flowing.
+## Tests
 
-## `odom_math`
+None need a simulator.
 
-Frame and staleness math, kept free of ROS so it tests without a node, DDS or a running sim (same
-split as `g1_motion_service_sim`'s `blend_math`). Covers the ground projection and its
-recomposition, the
-world-to-body twist rotation, yaw/quaternion conversion, tilt from vertical, angle wrapping, the
-staleness boundary, and covariance fill.
-
-Two parts worth knowing about:
-
-- `nav_msgs/Odometry` defines `twist` in the **child** frame, while both sources report velocity in
-  the world frame. They agree only at yaw zero.
-- `quaternionToYaw()` is the full ZYX yaw, not `2*atan2(z, w)`. The short form is exact only for a
-  pure +z rotation, which the planar base always is and a walking G1 never is.
-
-## Testing
+| Test | Covers |
+|---|---|
+| `test_odom_math` | Ground projection and its recomposition, heading extraction, the tilt guard. |
+| `test_odometry_publisher_node` | The node itself: source selection, the hardware refusal, frame chains, timeouts. |
 
 ```bash
 colcon test --packages-select g1_state_estimation
 ```
+
+`g1_navigation`'s `test_scan_pipeline` exercises the frame chain against a live simulator.
