@@ -24,6 +24,14 @@ if(BUILD_TESTING)
         "G1_DESCRIPTION_CONFIG_DIR=${CMAKE_CURRENT_SOURCE_DIR}/../g1_description/config"
   )
 
+  # bringup's moveit branch names this package's share, so its threading assertions cannot
+  # live in g1_navigation alongside the navigation ones. Source directories rather than
+  # installed shares, same as above: these read launch files, not built artifacts.
+  ament_add_pytest_test(test_launch_threading test/test_launch_threading.py
+    ENV "G1_MOVEIT_LAUNCH_DIR=${CMAKE_CURRENT_SOURCE_DIR}/launch"
+        "G1_BRINGUP_LAUNCH_DIR=${CMAKE_CURRENT_SOURCE_DIR}/../g1_bringup/launch"
+  )
+
   # move_group plans against the expanded xacro, not a checked-in URDF, so the model test has
   # to expand it too -- otherwise it validates a robot nobody runs. Regenerated whenever the
   # xacro or the gains it loads change.
