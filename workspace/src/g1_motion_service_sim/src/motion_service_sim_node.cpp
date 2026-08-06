@@ -32,19 +32,6 @@ constexpr std::int64_t kApiIdSetArmTask  = 7106;
 /// UT_ROBOT_TASK_UNKNOWN_ERROR -- matches g1_locomotion::kCodeTaskUnknownError.
 constexpr std::int32_t kCodeTaskUnknownError = -2;
 
-/// The hand's finger joints. They exist in the URDF but not in the 29-motor model
-/// unitree_mujoco runs, so nothing actuates or measures them; zero is where they sit.
-/// Published anyway because a consumer that reads the URDF expects them: MoveIt's
-/// CurrentStateMonitor waits for every active joint before it will plan, and an SRDF
-/// passive_joint declaration does not exempt one from that count.
-constexpr std::array<const char*, 14> kHandJointNames = {
-    "left_hand_thumb_0_joint",  "left_hand_thumb_1_joint",   "left_hand_thumb_2_joint",
-    "left_hand_middle_0_joint", "left_hand_middle_1_joint",  "left_hand_index_0_joint",
-    "left_hand_index_1_joint",  "right_hand_thumb_0_joint",  "right_hand_thumb_1_joint",
-    "right_hand_thumb_2_joint", "right_hand_middle_0_joint", "right_hand_middle_1_joint",
-    "right_hand_index_0_joint", "right_hand_index_1_joint",
-};
-
 /// Parses `{"data": <int>}` -- the shape both 7101's request parameter and 7001's response data
 /// share. Malformed JSON or a non-integer `data` field are both reported as nullopt, never as an
 /// exception escaping to the caller.
@@ -173,18 +160,12 @@ MotionServiceSim::MotionServiceSim(const rclcpp::NodeOptions& options)
     non_arm_joint_pub_ = create_publisher<sensor_msgs::msg::JointState>(
         "/joint_states",
         rclcpp::QoS(rclcpp::KeepLast(1)));
-    const std::size_t non_arm_count = kNumLowerMotors + kHandJointNames.size();
-    non_arm_joint_msg_.name.reserve(non_arm_count);
-    // Hand entries are left at zero here and never written again.
-    non_arm_joint_msg_.position.resize(non_arm_count);
-    non_arm_joint_msg_.velocity.resize(non_arm_count);
+    non_arm_joint_msg_.name.reserve(kNumLowerMotors);
+    non_arm_joint_msg_.position.resize(kNumLowerMotors);
+    non_arm_joint_msg_.velocity.resize(kNumLowerMotors);
     for (int i = 0; i < kNumLowerMotors; ++i)
     {
         non_arm_joint_msg_.name.emplace_back(kDdsMotorOrder[i]);
-    }
-    for (const auto* hand_joint : kHandJointNames)
-    {
-        non_arm_joint_msg_.name.emplace_back(hand_joint);
     }
 
     lowstate_sub_ = create_subscription<unitree_hg::msg::LowState>(
@@ -363,8 +344,7 @@ void MotionServiceSim::lowstateCallback(const unitree_hg::msg::LowState::ConstSh
 {
     // Legs and waist, which nothing else publishes. Motor index equals kDdsMotorOrder
     // index, asserted by test_walk_policy's joint-order check. Decimated to ~100 Hz:
-    // /lowstate is ~1 kHz and robot_state_publisher has no use for that. The hand
-    // entries past kNumLowerMotors have no motor to read and stay at their initial zero.
+    // /lowstate is ~1 kHz and robot_state_publisher has no use for that.
     if (publish_non_arm_joints_ && ++non_arm_joint_decimate_ >= 10)
     {
         non_arm_joint_decimate_         = 0;

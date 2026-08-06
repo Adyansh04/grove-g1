@@ -92,13 +92,11 @@ private:
     rclcpp::Subscription<unitree_hg::msg::LowState>::SharedPtr lowstate_sub_;
     rclcpp::Subscription<unitree_hg::msg::LowCmd>::SharedPtr   arm_sdk_sub_;
     rclcpp::Publisher<unitree_hg::msg::LowCmd>::SharedPtr      lowcmd_pub_;
-    /// Every joint joint_state_broadcaster does not own: legs, waist and hands. The
-    /// hardware interface is arm-only, so without these robot_state_publisher cannot
-    /// connect pelvis to torso_link and every frame above the waist, sensors included,
-    /// is stranded in its own TF tree.
+    /// The legs and waist, which the onboard controller owns and no hardware interface of
+    /// ours reads. Without them robot_state_publisher cannot connect pelvis to torso_link,
+    /// and every frame above the waist, sensors included, is stranded in its own TF tree.
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr non_arm_joint_pub_;
-    /// Names filled once; only the numbers change per sample, and the hand entries
-    /// not even then.
+    /// Names filled once; only the numbers change per sample.
     sensor_msgs::msg::JointState non_arm_joint_msg_;
     /// /lowstate arrives at ~1 kHz. Publishing joint states that fast is pure
     /// waste next to joint_state_broadcaster's ~200 Hz, and it measurably

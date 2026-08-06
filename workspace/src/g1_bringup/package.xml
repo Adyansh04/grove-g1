@@ -35,6 +35,7 @@
   <!-- Loaded at runtime by control.launch.py as a ros2_control plugin; nothing here
        compiles against it. -->
   <exec_depend>g1_hardware_interface</exec_depend>
+  <exec_depend>g1_hand_interface</exec_depend>
 
   <!-- The sim-only motion service sim.launch.py starts. -->
   <exec_depend>g1_motion_service_sim</exec_depend>

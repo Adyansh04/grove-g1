@@ -115,4 +115,50 @@
     <xacro:g1_arm_joint name="right_wrist_yaw_joint"/>
   </ros2_control>
 
+  <xacro:property name="dex3_params" value="${xacro.load_yaml('../config/dex3_params.yaml')}"/>
+
+  <xacro:macro name="g1_hand_joint" params="name">
+    <joint name="${name}">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+      <state_interface name="effort"/>
+      <param name="min">${dex3_params.joints[name].min}</param>
+      <param name="max">${dex3_params.joints[name].max}</param>
+    </joint>
+  </xacro:macro>
+
+  <!-- One component per hand. The Dex3 is a separate device on its own DDS topics with its
+       own authority (docs/CONTROL_MODES.md), so it is neither folded into G1ArmSdkSystem nor
+       shared between the two hands: a fault on one hand must not take the arms or the other
+       hand down with it.
+
+       Joint order is the Dex3 wire order and G1Dex3System refuses to init if it is disturbed,
+       because HandCmd.motor_cmd is a positional array and a reordered list would close the
+       wrong fingers. -->
+  <xacro:macro name="g1_dex3_hand" params="side">
+    <ros2_control name="G1Dex3System${'Left' if side == 'left' else 'Right'}" type="system">
+      <hardware>
+        <plugin>g1_hand_interface/G1Dex3System</plugin>
+        <param name="side">${side}</param>
+        <param name="kp">${dex3_params.system.kp}</param>
+        <param name="kd">${dex3_params.system.kd}</param>
+        <param name="command_publish_rate">${dex3_params.system.command_publish_rate}</param>
+        <param name="max_joint_velocity_rad_s">${dex3_params.system.max_joint_velocity_rad_s}</param>
+        <param name="state_timeout_ms">${dex3_params.system.state_timeout_ms}</param>
+      </hardware>
+
+      <xacro:g1_hand_joint name="${side}_hand_thumb_0_joint"/>
+      <xacro:g1_hand_joint name="${side}_hand_thumb_1_joint"/>
+      <xacro:g1_hand_joint name="${side}_hand_thumb_2_joint"/>
+      <xacro:g1_hand_joint name="${side}_hand_middle_0_joint"/>
+      <xacro:g1_hand_joint name="${side}_hand_middle_1_joint"/>
+      <xacro:g1_hand_joint name="${side}_hand_index_0_joint"/>
+      <xacro:g1_hand_joint name="${side}_hand_index_1_joint"/>
+    </ros2_control>
+  </xacro:macro>
+
+  <xacro:g1_dex3_hand side="left"/>
+  <xacro:g1_dex3_hand side="right"/>
+
 </robot>

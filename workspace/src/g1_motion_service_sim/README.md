@@ -49,7 +49,7 @@ at all.
 | `/sportmodestate` | in | `unitree_go/msg/SportModeState` |
 | `/api/sport/request` | in | `unitree_api/msg/Request` |
 | `/api/sport/response` | out | `unitree_api/msg/Response` |
-| `/joint_states` | out | `sensor_msgs/msg/JointState`, legs, waist and hands |
+| `/joint_states` | out | `sensor_msgs/msg/JointState`, legs and waist |
 
 Reliability and durability on `/api/sport/*` are matched to the vendor's. Do not deviate.
 

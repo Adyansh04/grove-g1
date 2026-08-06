@@ -169,8 +169,9 @@ class TestMoveItPlanExecute(unittest.TestCase):
         for name in BOTH_ARMS:
             self.assertIn(name, self.joint_state)
         self.assertIn("waist_yaw_joint", self.joint_state)
-        # The hands have no motor and no controller; they are published at zero precisely so
-        # MoveIt's state monitor sees a complete robot.
+        # Finger state comes from the hand components via joint_state_broadcaster, which
+        # publishes them while they are merely configured. MoveIt will not plan until every
+        # active joint has a state, so this is a precondition, not a detail.
         self.assertIn("left_hand_index_0_joint", self.joint_state)
 
     # 2. The precondition for every waist assertion below. Without it the waist tests would

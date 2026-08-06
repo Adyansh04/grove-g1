@@ -85,6 +85,23 @@ def generate_launch_description():
         output="screen",
     )
 
+    # Same story as the arm: loaded inactive, activated once the hand component is.
+    hand_controller_spawners = [
+        ExecuteProcess(
+            cmd=[
+                "ros2",
+                "run",
+                "controller_manager",
+                "spawner",
+                f"{side}_hand_controller",
+                "--inactive",
+            ],
+            name=f"{side}_hand_controller_spawner",
+            output="screen",
+        )
+        for side in ("left", "right")
+    ]
+
     # Tear down the whole launch if controller_manager dies.
     shutdown_on_control_node_exit = RegisterEventHandler(
         OnProcessExit(
@@ -99,6 +116,7 @@ def generate_launch_description():
             control_node,
             joint_state_broadcaster_spawner,
             arm_trajectory_controller_spawner,
+            *hand_controller_spawners,
             shutdown_on_control_node_exit,
         ]
     )

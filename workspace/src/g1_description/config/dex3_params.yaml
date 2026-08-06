@@ -1,0 +1,41 @@
+# Hardware parameters for g1_hand_interface/G1Dex3System, one component per hand.
+#
+# Consumed by urdf/g1_arm_sdk.urdf.xacro via xacro.load_yaml, for the same reason
+# arm_sdk_params.yaml is: Humble ros2_control plugins only see parameters that arrive
+# as <ros2_control><param> tags, never controller_manager's own YAML.
+
+# Common to both hands. Gains are the hand's own -- roughly 300x smaller than the arm's,
+# because these are finger motors. From Unitree's maintained teleop path; their SDK example
+# sweeps at 0.5/0.1 and grips at 1.5/0.1.
+system:
+  kp: 1.5
+  kd: 0.2
+  command_publish_rate: 100.0    # Hz; what Unitree's own teleop publishes at
+  max_joint_velocity_rad_s: 3.0  # rad/s; slew clamp. There is no blend weight on this
+                                 # interface, so this is the only thing between a large
+                                 # trajectory step and a finger moving at motor speed.
+  state_timeout_ms: 200.0        # ms; HandState older than this blocks activation
+
+# Position limits, straight from g1_29dof_with_hand_rev_1_0.urdf. Duplicated here because
+# HardwareInfo does not carry the URDF's own <limit> tags, and the component clamps to these
+# as a backstop against a bad command. The two hands mirror: left closes negative, right
+# positive. Unitree's SDK example disagrees on thumb_1 (0.724, and 0.742 on the right, which
+# looks like a transposed digit); the URDF matches the published spec and is the conservative
+# pair, so it wins.
+#
+# Order is the Dex3 WIRE order and the component refuses to init if the xacro reorders it.
+joints:
+  left_hand_thumb_0_joint:   { min: -1.04719755, max:  1.04719755 }
+  left_hand_thumb_1_joint:   { min: -0.61086523, max:  1.04719755 }
+  left_hand_thumb_2_joint:   { min:  0.0,        max:  1.74532925 }
+  left_hand_middle_0_joint:  { min: -1.57079632, max:  0.0        }
+  left_hand_middle_1_joint:  { min: -1.74532925, max:  0.0        }
+  left_hand_index_0_joint:   { min: -1.57079632, max:  0.0        }
+  left_hand_index_1_joint:   { min: -1.74532925, max:  0.0        }
+  right_hand_thumb_0_joint:  { min: -1.04719755, max:  1.04719755 }
+  right_hand_thumb_1_joint:  { min: -1.04719755, max:  0.61086523 }
+  right_hand_thumb_2_joint:  { min: -1.74532925, max:  0.0        }
+  right_hand_middle_0_joint: { min:  0.0,        max:  1.57079632 }
+  right_hand_middle_1_joint: { min:  0.0,        max:  1.74532925 }
+  right_hand_index_0_joint:  { min:  0.0,        max:  1.57079632 }
+  right_hand_index_1_joint:  { min:  0.0,        max:  1.74532925 }
