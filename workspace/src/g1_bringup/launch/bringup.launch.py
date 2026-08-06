@@ -71,7 +71,13 @@ import os
 
 from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
+from launch.actions import (
+    DeclareLaunchArgument,
+    ExecuteProcess,
+    IncludeLaunchDescription,
+    OpaqueFunction,
+    TimerAction,
+)
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 
@@ -232,6 +238,34 @@ def _setup(context, *args, **kwargs):
             )
         )
 
+    if want_moveit and LaunchConfiguration("activate_arm").perform(context).lower() == "true":
+        # Off by default, and it stays off by default. Acquiring the arm is a deliberate act:
+        # on hardware this is the moment /arm_sdk starts driving real joints, and a stack that
+        # goes live on `ros2 launch` is a stack that goes live when someone launches it to look
+        # at something else. This argument is a sim convenience, nothing more.
+        #
+        # Delayed rather than sequenced on an event: the component only accepts activation once
+        # controller_manager has loaded it and /lowstate is flowing, and neither emits anything
+        # this file can wait on. scripts/activate_arm still enforces the component-then-
+        # controller order, and still fails loudly if it runs too early.
+        #
+        # The principled version of this is a lifecycle authority bracket like g1_locomotion's
+        # g1_loco_authority, which acquires on activate and releases on the way out even on
+        # failure -- what CONTROL_MODES.md rule 4 actually asks for. That is a node, not a
+        # launch argument, and it belongs with the behaviour-tree work that will need it.
+        actions.append(
+            TimerAction(
+                period=float(LaunchConfiguration("activate_arm_delay_s").perform(context)),
+                actions=[
+                    ExecuteProcess(
+                        cmd=["ros2", "run", "g1_bringup", "activate_arm"],
+                        name="activate_arm",
+                        output="screen",
+                    )
+                ],
+            )
+        )
+
     if want_rviz:
         actions.append(_rviz(navigating, want_moveit))
 
@@ -246,25 +280,17 @@ def _rviz(navigating, want_moveit):
     robot_description_semantic and robot_description_kinematics as node parameters, and without
     them it loads with no planning groups, which reads as a broken install.
 
-    On mode:=localization moveit:=true the navigation config is NOT substituted in, though it
-    would type-check and the launch would look healthy. Measured 2026-08-06: running that
-    combination gives an RViz with the MoveIt parameters loaded and nothing that consumes them,
-    because the MotionPlanning panel comes from the config's display list and
-    g1_navigation.rviz has none. `ros2 node info` on the resulting RViz shows no
-    monitored_planning_scene subscription at all -- the panel is simply not there.
-
-    So a navigation mode plus MoveIt shows the MoveIt config: the arms are what the panel is
-    for, and Nav2's displays are recoverable by running RViz on the nav config separately. A
-    genuine combined view needs its own .rviz carrying both the Nav2 display group and a
-    MotionPlanning display on one fixed frame. That is a file to author and review, not an
-    argument to re-point, and it belongs with the milestone that needs both at once.
+    On a navigation mode with moveit:=true this still shows the MoveIt config, and a combined
+    single-window view is NOT available. Three merges were built and every one segfaulted rviz2
+    on load (exit -11) once the navigation stack was up. Run a second RViz on
+    g1_navigation.rviz for the map and costmaps. docs/notes has what was tried.
     """
     bringup_share = get_package_share_directory("g1_bringup")
 
     if want_moveit:
         launch_file = os.path.join(_moveit_share(), "launch", "moveit_rviz.launch.py")
-        # rviz_config deliberately unset: this file never declares that name, so there is
-        # nothing for the child's default to inherit from and the MoveIt config is what
+        # Bare MoveIt leaves rviz_config unset on purpose: this file never declares that name,
+        # so there is nothing for the child's default to inherit from and g1_moveit.rviz is what
         # applies. The one case where relying on a child default is safe.
         rviz_args = {}
     else:
@@ -310,6 +336,20 @@ def generate_launch_description():
             default_value="false",
             description="Start move_group for arm planning. Works with any mode. Planning is "
             "available immediately; executing a plan still needs activate_arm.launch.py.",
+        ),
+        DeclareLaunchArgument(
+            "activate_arm",
+            default_value="false",
+            description="SIM CONVENIENCE: run scripts/activate_arm automatically once the stack "
+            "is up, instead of as a separate command. Needs moveit:=true. Off by default -- "
+            "acquiring the arm is deliberate, and on hardware it is the moment /arm_sdk starts "
+            "driving real joints.",
+        ),
+        DeclareLaunchArgument(
+            "activate_arm_delay_s",
+            default_value="25.0",
+            description="Seconds to wait before the automatic activation. The component has to "
+            "be loaded and /lowstate flowing first; too early and activate_arm fails loudly.",
         ),
         DeclareLaunchArgument(
             "waist_hold_rad",
