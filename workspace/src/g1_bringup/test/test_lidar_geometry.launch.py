@@ -213,8 +213,11 @@ class LidarGeometryTest(unittest.TestCase):
             int(floor.sum()), 200, f"only {floor.sum()} returns on the floor plane"
         )
 
-        # Every wall, so a sweep that lost a sector fails rather than averaging out.
-        for axis, sign, name in ((0, 1, "+x"), (0, -1, "-x"), (1, 1, "+y"), (1, -1, "-y")):
+        # Three walls, so a sweep that lost a sector fails rather than averaging out. The +x
+        # wall is deliberately absent: reach_obstacle sits 0.18 m in front of the sensor at its
+        # own height and occludes that whole direction, which is exactly what makes
+        # g1_moveit_config's octomap test work. Measured, the cloud stops at x = 1.60.
+        for axis, sign, name in ((0, -1, "-x"), (1, 1, "+y"), (1, -1, "-y")):
             on_wall = np.abs(world[:, axis] - sign * ROOM_HALF) < 0.05
             self.assertGreater(
                 int(on_wall.sum()), 20, f"only {on_wall.sum()} returns on the {name} wall"

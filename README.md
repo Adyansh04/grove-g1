@@ -145,6 +145,10 @@ ros2 launch g1_bringup bringup.launch.py mode:=localization nav:=true rviz:=true
 
 # Plan for the arms and hands, with the LiDAR octomap in the planning scene
 ros2 launch g1_bringup bringup.launch.py moveit:=true sensors:=true rviz:=true
+
+# Everything at once: localized, navigating, planning, arms acquired, RViz up
+ros2 launch g1_bringup bringup.launch.py \
+  mode:=localization nav:=true moveit:=true rviz:=true activate_arm:=true headless:=false
 ```
 
 Send it somewhere:
@@ -209,8 +213,6 @@ Run them **one package at a time**, and check nothing is left over from a previo
 for a batch of failures that all pass on a clean rerun. Each package README says which of its
 tests need a simulator.
 
-Known failure, unrelated to anything above: `g1_bringup`'s `test_lidar_geometry` test_06 reports
-no returns on one wall. It reproduces on older models too and is not understood yet.
 
 ## Repository layout
 
