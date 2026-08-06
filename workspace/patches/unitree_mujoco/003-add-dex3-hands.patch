@@ -1,0 +1,205 @@
+Gives the simulated G1 the Dex3-1 hands the real robot has.
+
+Generated against unitree_mujoco ae6a8403e272733e9996ef59990880330496177f.
+
+The stock g1_29dof.xml ends each arm in a fixed rubber-hand geom with no joints, so the
+URDF (7 finger joints per side) and the simulator disagreed about what is on the end of
+the wrist. This replaces both geoms with the real 8-body subtree, generated from
+g1_description/urdf/g1_29dof_with_hand_rev_1_0.urdf so the two cannot drift. The meshes
+were already vendored and unused.
+
+NO ACTUATORS AND NO SENSORS, which is not an oversight. RobotBridge sets
+num_motor_ = mj_model_->nu and then indexes lowcmd->msg_.motor_cmd()[i], a fixed
+std::array<MotorCmd_, 35>; it also reads motor state as three contiguous nu-sized blocks
+of sensordata. Adding 14 actuators would take nu to 43 and run both loops off the end of
+those arrays. Keeping nu at 29 leaves the vendored bridge byte-identical and correct, and
+the hand is a separate device on its own DDS topics anyway (docs/CONTROL_MODES.md), so it
+is driven through qfrc_applied by dex3_handler instead.
+
+Each wrist_yaw_link inertial goes back to the URDF's own value. The stock model lumps a
+0.170 kg rubber hand into it, which would double-count against the new palm body. Net
+effect on the model is +1.053 kg, all of it at the ends of the arms: 2 x 0.697 kg of Dex3
+in, 2 x 0.170 kg of rubber hand out. That is the mass the real robot carries, but it is a
+real change to what the walking policy balances.
+
+--- a/unitree_robots/g1/g1_29dof.xml
++++ b/unitree_robots/g1/g1_29dof.xml
+@@ -18,6 +18,24 @@
+       <joint damping="0.05" armature="0.01" frictionloss="0.1"/>
+     </default>
+     
++    <!-- Dex3-1 fingers. No <actuator> and no <sensor> entries on purpose: the SDK bridge
++         sizes itself from nu and indexes a fixed 35-slot LowCmd, so 29 + 14 would run it
++         off the end of the array. The hand is a separate device on its own topics and is
++         driven through qfrc_applied instead. armature deliberately dominates the physical
++         finger inertia (~1e-5 kg m^2): it puts the hardware's own kp=1.5 / kd=0.2 at
++         ~39 rad/s and overdamped at the 2 ms timestep, so the real gains drive the sim
++         unchanged rather than being retuned for it. -->
++    <default class="dex3_motor">
++      <joint damping="0.01" armature="0.001" frictionloss="0.01"/>
++    </default>
++    <!-- Visual only, exactly like the rubber hand these replace. Grasping is modelled by
++         attaching the object to the arm in MoveIt's planning scene, so finger contact
++         would cost solver time every step and buy nothing until grasp physics itself is
++         under test. -->
++    <default class="dex3_visual">
++      <geom type="mesh" contype="0" conaffinity="0" group="1" density="0"
++        rgba="0.7 0.7 0.7 1"/>
++    </default>
+   </default>
+ 
+   <asset>
+@@ -48,7 +66,14 @@
+     <mesh name="left_wrist_roll_link" file="left_wrist_roll_link.STL" />
+     <mesh name="left_wrist_pitch_link" file="left_wrist_pitch_link.STL" />
+     <mesh name="left_wrist_yaw_link" file="left_wrist_yaw_link.STL" />
+-    <mesh name="left_rubber_hand" file="left_rubber_hand.STL" />
++    <mesh name="left_hand_palm_link" file="left_hand_palm_link.STL" />
++    <mesh name="left_hand_thumb_0_link" file="left_hand_thumb_0_link.STL" />
++    <mesh name="left_hand_thumb_1_link" file="left_hand_thumb_1_link.STL" />
++    <mesh name="left_hand_thumb_2_link" file="left_hand_thumb_2_link.STL" />
++    <mesh name="left_hand_middle_0_link" file="left_hand_middle_0_link.STL" />
++    <mesh name="left_hand_middle_1_link" file="left_hand_middle_1_link.STL" />
++    <mesh name="left_hand_index_0_link" file="left_hand_index_0_link.STL" />
++    <mesh name="left_hand_index_1_link" file="left_hand_index_1_link.STL" />
+     <mesh name="right_shoulder_pitch_link" file="right_shoulder_pitch_link.STL" />
+     <mesh name="right_shoulder_roll_link" file="right_shoulder_roll_link.STL" />
+     <mesh name="right_shoulder_yaw_link" file="right_shoulder_yaw_link.STL" />
+@@ -56,7 +81,14 @@
+     <mesh name="right_wrist_roll_link" file="right_wrist_roll_link.STL" />
+     <mesh name="right_wrist_pitch_link" file="right_wrist_pitch_link.STL" />
+     <mesh name="right_wrist_yaw_link" file="right_wrist_yaw_link.STL" />
+-    <mesh name="right_rubber_hand" file="right_rubber_hand.STL" />
++    <mesh name="right_hand_palm_link" file="right_hand_palm_link.STL" />
++    <mesh name="right_hand_thumb_0_link" file="right_hand_thumb_0_link.STL" />
++    <mesh name="right_hand_thumb_1_link" file="right_hand_thumb_1_link.STL" />
++    <mesh name="right_hand_thumb_2_link" file="right_hand_thumb_2_link.STL" />
++    <mesh name="right_hand_middle_0_link" file="right_hand_middle_0_link.STL" />
++    <mesh name="right_hand_middle_1_link" file="right_hand_middle_1_link.STL" />
++    <mesh name="right_hand_index_0_link" file="right_hand_index_0_link.STL" />
++    <mesh name="right_hand_index_1_link" file="right_hand_index_1_link.STL" />
+   </asset>
+ 
+   <worldbody>
+@@ -284,17 +316,54 @@
+                           rgba="0.7 0.7 0.7 1" mesh="left_wrist_pitch_link" />
+                         <geom type="mesh" rgba="0.7 0.7 0.7 1" mesh="left_wrist_pitch_link" />
+                         <body name="left_wrist_yaw_link" pos="0.046 0 0">
+-                          <inertial pos="0.0708244 0.000191745 0.00161742"
+-                            quat="0.510571 0.526295 0.468078 0.493188" mass="0.254576"
+-                            diaginertia="0.000646113 0.000559993 0.000147566" />
++                          <inertial pos="0.0220038157 0.00049485096 0.00053861123" mass="0.08457647" fullinertia="4.92912883e-05 5.97333813e-05 3.92808383e-05 -4.5735494e-07 4.45867591e-06 4.3217198e-07" />
+                           <joint name="left_wrist_yaw_joint" pos="0 0 0" axis="0 0 1"
+                             range="-1.61443 1.61443" actuatorfrcrange="-5 5" class="wrist_motor" />
+                           <geom type="mesh" contype="0" conaffinity="0" group="1" density="0"
+                             rgba="0.7 0.7 0.7 1" mesh="left_wrist_yaw_link" />
+                           <geom type="mesh" rgba="0.7 0.7 0.7 1" mesh="left_wrist_yaw_link" />
+-                          <geom pos="0.0415 0.003 0" quat="1 0 0 0" type="mesh" contype="0"
+-                            conaffinity="0" group="1" density="0" rgba="0.7 0.7 0.7 1"
+-                            mesh="left_rubber_hand" />
++                          <!-- Dex3-1, generated from g1_29dof_with_hand_rev_1_0.urdf so the sim and the
++                               model MoveIt plans against cannot drift. The wrist inertial above is the
++                               URDF's own again: the stock model folded a 0.170 kg rubber hand into it. -->
++                          <body name="left_hand_palm_link" pos="0.0415 0.003 0">
++                            <inertial pos="0.0621463484 -0.00050869656 -0.00058171093" mass="0.37283854" fullinertia="0.00027535181 0.000539518272 0.000396233909 -1.59551946e-05 -2.4216189e-06 -4.2279435e-07" />
++                            <geom class="dex3_visual" mesh="left_hand_palm_link" />
++                            <body name="left_hand_thumb_0_link" pos="0.0255 0 0">
++                              <inertial pos="-0.0008842458 -0.00863407079 0.00094429336" mass="0.08623657" fullinertia="1.60291924e-05 1.45179501e-05 1.63787766e-05 1.0683177e-07 1.6728875e-07 -5.1094752e-07" />
++                              <joint name="left_hand_thumb_0_joint" axis="0 1 0" range="-1.04719755 1.04719755" class="dex3_motor" />
++                              <geom class="dex3_visual" mesh="left_hand_thumb_0_link" />
++                              <body name="left_hand_thumb_1_link" pos="-0.0025 -0.0193 0">
++                                <inertial pos="-0.00082788768 -0.0354743577 -0.0003808996" mass="0.0588507" fullinertia="1.27469994e-05 6.01573947e-06 1.23454358e-05 -5.0770784e-07 1.608885e-07 -2.7839003e-07" />
++                                <joint name="left_hand_thumb_1_joint" axis="0 0 1" range="-0.61086523 1.04719755" class="dex3_motor" />
++                                <geom class="dex3_visual" mesh="left_hand_thumb_1_link" />
++                                <body name="left_hand_thumb_2_link" pos="0 -0.0458 0">
++                                  <inertial pos="-0.00171735242 -0.0262819294 0.00010778879" mass="0.02030626" fullinertia="4.61267817e-06 1.53561368e-06 3.86625776e-06 -3.42213e-08 -8.23881e-09 -2.549885e-08" />
++                                  <joint name="left_hand_thumb_2_joint" axis="0 0 1" range="0 1.74532925" class="dex3_motor" />
++                                  <geom class="dex3_visual" mesh="left_hand_thumb_2_link" />
++                                </body>
++                              </body>
++                            </body>
++                            <body name="left_hand_middle_0_link" pos="0.0777 0.0016 -0.0285">
++                              <inertial pos="0.0354743577 0.00082788768 0.0003808996" mass="0.0588507" fullinertia="6.01573947e-06 1.27469994e-05 1.23454358e-05 -5.0770784e-07 -2.7839003e-07 1.608885e-07" />
++                              <joint name="left_hand_middle_0_joint" axis="0 0 1" range="-1.57079632 0" class="dex3_motor" />
++                              <geom class="dex3_visual" mesh="left_hand_middle_0_link" />
++                              <body name="left_hand_middle_1_link" pos="0.0458 0 0">
++                                <inertial pos="0.0262819294 0.00171735242 -0.00010778879" mass="0.02030626" fullinertia="1.53561368e-06 4.61267817e-06 3.86625776e-06 -3.42213e-08 -2.549885e-08 -8.23881e-09" />
++                                <joint name="left_hand_middle_1_joint" axis="0 0 1" range="-1.74532925 0" class="dex3_motor" />
++                                <geom class="dex3_visual" mesh="left_hand_middle_1_link" />
++                              </body>
++                            </body>
++                            <body name="left_hand_index_0_link" pos="0.0777 0.0016 0.0285">
++                              <inertial pos="0.0354743577 0.00082788768 0.0003808996" mass="0.0588507" fullinertia="6.01573947e-06 1.27469994e-05 1.23454358e-05 -5.0770784e-07 -2.7839003e-07 1.608885e-07" />
++                              <joint name="left_hand_index_0_joint" axis="0 0 1" range="-1.57079632 0" class="dex3_motor" />
++                              <geom class="dex3_visual" mesh="left_hand_index_0_link" />
++                              <body name="left_hand_index_1_link" pos="0.0458 0 0">
++                                <inertial pos="0.0262819294 0.00171735242 -0.00010778879" mass="0.02030626" fullinertia="1.53561368e-06 4.61267817e-06 3.86625776e-06 -3.42213e-08 -2.549885e-08 -8.23881e-09" />
++                                <joint name="left_hand_index_1_joint" axis="0 0 1" range="-1.74532925 0" class="dex3_motor" />
++                                <geom class="dex3_visual" mesh="left_hand_index_1_link" />
++                              </body>
++                            </body>
++                          </body>
+                         </body>
+                       </body>
+                     </body>
+@@ -360,17 +429,54 @@
+                           rgba="0.7 0.7 0.7 1" mesh="right_wrist_pitch_link" />
+                         <geom type="mesh" rgba="0.7 0.7 0.7 1" mesh="right_wrist_pitch_link" />
+                         <body name="right_wrist_yaw_link" pos="0.046 0 0">
+-                          <inertial pos="0.0708244 -0.000191745 0.00161742"
+-                            quat="0.493188 0.468078 0.526295 0.510571" mass="0.254576"
+-                            diaginertia="0.000646113 0.000559993 0.000147566" />
++                          <inertial pos="0.0220038157 -0.00049485096 0.00053861123" mass="0.08457647" fullinertia="4.92912883e-05 5.97333813e-05 3.92808383e-05 4.5735494e-07 4.45867591e-06 -4.3217198e-07" />
+                           <joint name="right_wrist_yaw_joint" pos="0 0 0" axis="0 0 1"
+                             range="-1.61443 1.61443" actuatorfrcrange="-5 5" class="wrist_motor" />
+                           <geom type="mesh" contype="0" conaffinity="0" group="1" density="0"
+                             rgba="0.7 0.7 0.7 1" mesh="right_wrist_yaw_link" />
+                           <geom type="mesh" rgba="0.7 0.7 0.7 1" mesh="right_wrist_yaw_link" />
+-                          <geom pos="0.0415 -0.003 0" quat="1 0 0 0" type="mesh" contype="0"
+-                            conaffinity="0" group="1" density="0" rgba="0.7 0.7 0.7 1"
+-                            mesh="right_rubber_hand" />
++                          <!-- Dex3-1, generated from g1_29dof_with_hand_rev_1_0.urdf so the sim and the
++                               model MoveIt plans against cannot drift. The wrist inertial above is the
++                               URDF's own again: the stock model folded a 0.170 kg rubber hand into it. -->
++                          <body name="right_hand_palm_link" pos="0.0415 -0.003 0">
++                            <inertial pos="0.0621463484 0.00050869656 -0.00058171093" mass="0.37283854" fullinertia="0.00027535181 0.000539518272 0.000396233909 1.59551946e-05 -2.4216189e-06 4.2279435e-07" />
++                            <geom class="dex3_visual" mesh="right_hand_palm_link" />
++                            <body name="right_hand_thumb_0_link" pos="0.0255 0 0">
++                              <inertial pos="-0.0008842458 0.00863407079 0.00094429336" mass="0.08623657" fullinertia="1.60291924e-05 1.45179501e-05 1.63787766e-05 -1.0683177e-07 1.6728875e-07 5.1094752e-07" />
++                              <joint name="right_hand_thumb_0_joint" axis="0 1 0" range="-1.04719755 1.04719755" class="dex3_motor" />
++                              <geom class="dex3_visual" mesh="right_hand_thumb_0_link" />
++                              <body name="right_hand_thumb_1_link" pos="-0.0025 0.0193 0">
++                                <inertial pos="-0.00082788768 0.0354743577 -0.0003808996" mass="0.0588507" fullinertia="1.27469994e-05 6.01573947e-06 1.23454358e-05 5.0770784e-07 1.608885e-07 2.7839003e-07" />
++                                <joint name="right_hand_thumb_1_joint" axis="0 0 1" range="-1.04719755 0.61086523" class="dex3_motor" />
++                                <geom class="dex3_visual" mesh="right_hand_thumb_1_link" />
++                                <body name="right_hand_thumb_2_link" pos="0 0.0458 0">
++                                  <inertial pos="-0.00171735242 0.0262819294 0.00010778879" mass="0.02030626" fullinertia="4.61267817e-06 1.53561368e-06 3.86625776e-06 3.42213e-08 -8.23881e-09 2.549885e-08" />
++                                  <joint name="right_hand_thumb_2_joint" axis="0 0 1" range="-1.74532925 0" class="dex3_motor" />
++                                  <geom class="dex3_visual" mesh="right_hand_thumb_2_link" />
++                                </body>
++                              </body>
++                            </body>
++                            <body name="right_hand_middle_0_link" pos="0.0777 -0.0016 -0.0285">
++                              <inertial pos="0.0354743577 -0.00082788768 0.0003808996" mass="0.0588507" fullinertia="6.01573947e-06 1.27469994e-05 1.23454358e-05 5.0770784e-07 -2.7839003e-07 -1.608885e-07" />
++                              <joint name="right_hand_middle_0_joint" axis="0 0 1" range="0 1.57079632" class="dex3_motor" />
++                              <geom class="dex3_visual" mesh="right_hand_middle_0_link" />
++                              <body name="right_hand_middle_1_link" pos="0.0458 0 0">
++                                <inertial pos="0.0262819294 -0.00171735242 -0.00010778879" mass="0.02030626" fullinertia="1.53561368e-06 4.61267817e-06 3.86625776e-06 3.42213e-08 -2.549885e-08 8.23881e-09" />
++                                <joint name="right_hand_middle_1_joint" axis="0 0 1" range="0 1.74532925" class="dex3_motor" />
++                                <geom class="dex3_visual" mesh="right_hand_middle_1_link" />
++                              </body>
++                            </body>
++                            <body name="right_hand_index_0_link" pos="0.0777 -0.0016 0.0285">
++                              <inertial pos="0.0354743577 -0.00082788768 0.0003808996" mass="0.0588507" fullinertia="6.01573947e-06 1.27469994e-05 1.23454358e-05 5.0770784e-07 -2.7839003e-07 -1.608885e-07" />
++                              <joint name="right_hand_index_0_joint" axis="0 0 1" range="0 1.57079632" class="dex3_motor" />
++                              <geom class="dex3_visual" mesh="right_hand_index_0_link" />
++                              <body name="right_hand_index_1_link" pos="0.0458 0 0">
++                                <inertial pos="0.0262819294 -0.00171735242 -0.00010778879" mass="0.02030626" fullinertia="1.53561368e-06 4.61267817e-06 3.86625776e-06 3.42213e-08 -2.549885e-08 8.23881e-09" />
++                                <joint name="right_hand_index_1_joint" axis="0 0 1" range="0 1.74532925" class="dex3_motor" />
++                                <geom class="dex3_visual" mesh="right_hand_index_1_link" />
++                              </body>
++                            </body>
++                          </body>
+                         </body>
+                       </body>
+                     </body>
