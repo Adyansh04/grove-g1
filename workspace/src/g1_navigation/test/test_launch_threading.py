@@ -6,9 +6,13 @@ anything the parent declared. Both previous instances -- a second RViz window on
 config, and use_composition silently ignoring its default -- looked like successful
 launches. Nothing crashed; the wrong value simply arrived.
 
-So this walks the chain rather than launching it: bringup.launch.py -> nav_sim.launch.py ->
-sim.launch.py, resolving what each layer actually forwards to the next. It needs no
-simulator and no DDS.
+So this walks the includes rather than launching them, resolving what each file actually
+forwards. It needs no simulator and no DDS.
+
+Two callers compose the same two pieces and both are checked here: bringup.launch.py stages a
+simulator and includes nav_stack.launch.py, and nav_sim.launch.py does the same for a nav-only
+session. nav_stack.launch.py itself is checked for staging no simulator at all, which is what
+makes including it next to one safe.
 
 Lives in g1_navigation because it reads both packages' launch files, and g1_bringup cannot
 depend on g1_navigation (colcon dependency cycle -- see bringup.launch.py's docstring).
@@ -175,7 +179,18 @@ def test_nav_stack_refuses_bad_input(nav_stack):
 # --- boundary 1: bringup.launch.py -> the stack below it ------------------------------
 
 
-def test_bare_mode_routes_to_sim_and_never_names_g1_navigation(bringup):
+def _sim_args(setup_result):
+    """The arguments bringup hands its one simulator, looked up by name.
+
+    By name rather than by index: bringup now emits several includes and their order is not
+    what any of these tests are about.
+    """
+    sims = [args for name, args in _includes(setup_result) if name == "sim.launch.py"]
+    assert len(sims) == 1, f"expected exactly one simulator, got {len(sims)}"
+    return sims[0]
+
+
+def test_bare_mode_stages_only_a_simulator_and_names_no_optional_package(bringup):
     result = _run_setup(bringup, mode="none")
     assert [name for name, _ in _includes(result)] == ["sim.launch.py"]
     # The whole point of the undeclared reference: this path must not touch the package.
@@ -185,39 +200,71 @@ def test_bare_mode_routes_to_sim_and_never_names_g1_navigation(bringup):
             assert "g1_navigation" not in _included_path(context, action)
 
 
-def test_navigation_modes_route_to_nav_sim(bringup):
+def test_navigation_modes_stage_the_simulator_then_the_stack(bringup):
     for mode in ("mapping", "localization"):
         includes = _includes(_run_setup(bringup, mode=mode))
-        assert [name for name, _ in includes] == ["nav_sim.launch.py"], mode
-        assert includes[0][1]["mode"] == mode
+        assert [name for name, _ in includes] == ["sim.launch.py", "nav_stack.launch.py"], mode
+        assert dict(includes)["nav_stack.launch.py"]["mode"] == mode
 
 
-@pytest.mark.parametrize("mode,expected", [("none", "2.0"), ("mapping", "4.0")])
+@pytest.mark.parametrize("mode", ["mapping", "localization"])
+def test_the_navigation_branch_forces_sensors_on(bringup, mode):
+    """Navigation needs the LiDAR, the relay and the odom chain, so an operator asking for
+    sensors:=false on a navigation mode gets them anyway rather than a stack that cannot see."""
+    args = _sim_args(_run_setup(bringup, mode=mode, sensors="false"))
+    assert args["sensors"] == "true"
+
+
+def test_the_bare_branch_leaves_sensors_to_the_operator(bringup):
+    assert _sim_args(_run_setup(bringup, mode="none", sensors="false"))["sensors"] == "false"
+    assert _sim_args(_run_setup(bringup, mode="none", sensors="true"))["sensors"] == "true"
+
+
+def test_the_nav_flag_reaches_the_stack(bringup):
+    includes = dict(_includes(_run_setup(bringup, mode="localization", nav="true")))
+    assert includes["nav_stack.launch.py"]["nav"] == "true"
+    includes = dict(_includes(_run_setup(bringup, mode="localization")))
+    assert includes["nav_stack.launch.py"]["nav"] == "false"
+
+
+def test_the_container_arguments_are_left_to_the_stacks_own_defaults(bringup):
+    # Not forwarded and not declared here, which is the safe case: inheritance only leaks
+    # through a name the parent also declares.
+    forwarded = dict(_includes(_run_setup(bringup, mode="localization")))["nav_stack.launch.py"]
+    assert "use_composition" not in forwarded
+    assert "container_name" not in forwarded
+
+
+@pytest.mark.parametrize(
+    "mode,expected", [("none", "2.0"), ("mapping", "4.0"), ("localization", "4.0")]
+)
 def test_each_branch_supplies_its_own_start_delay(bringup, mode, expected):
     # The child's own default can never fire, so the branch has to pick a concrete value.
     # Getting this wrong hands sim.launch.py an empty string and float() raises.
-    args = _includes(_run_setup(bringup, mode=mode))[0][1]
-    assert args["sim_start_delay_s"] == expected
+    assert _sim_args(_run_setup(bringup, mode=mode))["sim_start_delay_s"] == expected
 
 
 @pytest.mark.parametrize("mode", ["none", "mapping", "localization"])
 def test_an_explicit_start_delay_beats_the_branch_default(bringup, mode):
-    args = _includes(_run_setup(bringup, mode=mode, sim_start_delay_s="9.5"))[0][1]
+    args = _sim_args(_run_setup(bringup, mode=mode, sim_start_delay_s="9.5"))
     assert args["sim_start_delay_s"] == "9.5"
 
 
 @pytest.mark.parametrize("mode", ["none", "mapping", "localization"])
 def test_world_threads_through_unchanged(bringup, mode):
-    args = _includes(_run_setup(bringup, mode=mode, world="perception"))[0][1]
-    assert args["world"] == "perception"
+    assert _sim_args(_run_setup(bringup, mode=mode, world="perception"))["world"] == "perception"
 
 
 @pytest.mark.parametrize("mode", ["none", "mapping", "localization"])
-def test_rviz_is_always_suppressed_in_the_child(bringup, mode):
+def test_rviz_is_always_suppressed_in_the_simulator(bringup, mode):
     # The exact shape of the shipped bug: without an explicit false the child inherits
     # rviz:=true and opens a second window on the wrong config.
-    args = _includes(_run_setup(bringup, mode=mode, rviz="true"))[0][1]
-    assert args["rviz"] == "false"
+    assert _sim_args(_run_setup(bringup, mode=mode, rviz="true"))["rviz"] == "false"
+
+
+def test_pin_pelvis_threads_to_the_simulator(bringup):
+    assert _sim_args(_run_setup(bringup, mode="none", pin_pelvis="true"))["pin_pelvis"] == "true"
+    assert _sim_args(_run_setup(bringup, mode="none"))["pin_pelvis"] == "false"
 
 
 def test_rviz_config_is_chosen_per_mode(bringup):
@@ -239,22 +286,43 @@ def test_no_rviz_include_when_not_asked(bringup):
 # --- boundary 2: the value keeps its meaning all the way down to sim.launch.py --------
 
 
-def test_world_and_delay_survive_the_second_boundary(bringup, nav_sim):
-    """The end-to-end claim: what an operator types reaches the simulator."""
-    forwarded = _includes(
-        _run_setup(bringup, mode="localization", world="perception", sim_start_delay_s="9.5")
-    )[0][1]
+def test_nav_sim_composes_one_simulator_and_one_stack(nav_sim):
+    """nav_sim is no longer in bringup's path, so its own contract needs asserting directly."""
+    names = [name for name, _ in _includes(_run_setup(nav_sim, mode="localization"))]
+    assert names == ["sim.launch.py", "nav_stack.launch.py"]
 
-    # nav_sim.launch.py starts from exactly what bringup handed it, plus its own defaults.
-    downstream = _includes(_run_setup(nav_sim, **forwarded))
-    sim = [a for name, a in downstream if name == "sim.launch.py"]
-    assert len(sim) == 1, f"expected one sim.launch.py include, got {downstream}"
 
-    assert sim[0]["world"] == "perception"
-    assert sim[0]["sim_start_delay_s"] == "9.5"
-    assert sim[0]["rviz"] == "false"
-    # nav_sim forces this on regardless of what came from above, and must keep doing so.
-    assert sim[0]["sensors"] == "true"
+def test_nav_sim_forces_sensors_and_suppresses_rviz(nav_sim):
+    """The other half of the one fact stated in two files. bringup asserts its copy above; if
+    these two ever disagree, navigation silently loses its scan or gains a second RViz."""
+    sim = dict(_includes(_run_setup(nav_sim, mode="mapping")))["sim.launch.py"]
+    assert sim["sensors"] == "true"
+    assert sim["rviz"] == "false"
+
+
+def test_nav_sim_forwards_world_and_delay_to_the_simulator(nav_sim):
+    sim = dict(
+        _includes(_run_setup(nav_sim, mode="mapping", world="perception", sim_start_delay_s="9.5"))
+    )["sim.launch.py"]
+    assert sim["world"] == "perception"
+    assert sim["sim_start_delay_s"] == "9.5"
+
+
+def test_nav_sim_forwards_the_container_arguments_it_exposes(nav_sim):
+    # Unlike bringup, nav_sim declares these, so it must forward them explicitly or its own
+    # values would be the ones that never arrive.
+    stack = dict(_includes(_run_setup(nav_sim, mode="localization", use_composition="false")))[
+        "nav_stack.launch.py"
+    ]
+    assert stack["use_composition"] == "false"
+    assert stack["container_name"] == "nav2_container"
+
+
+def test_nav_sim_opens_rviz_only_when_asked(nav_sim):
+    """Pins the resolve-before-include ordering: the sim include sets rviz=false in this scope,
+    so reading rviz after it would find false and silently open no window at all."""
+    assert len(_nodes(_run_setup(nav_sim, mode="mapping", rviz="true"))) == 1
+    assert _nodes(_run_setup(nav_sim, mode="mapping", rviz="false")) == []
 
 
 # --- the guards ----------------------------------------------------------------------

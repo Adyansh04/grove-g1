@@ -29,9 +29,21 @@ knowing before touching it:
     file names change; the launch fails at runtime instead.
   * Do not "fix" this by adding the dependency. It is load-bearing that it stays absent.
 
-The direction of composition is still navigation-over-bringup: on the nav branch this file
-includes g1_navigation's nav_sim.launch.py, which includes sim.launch.py itself. This file
-routes, it does not orchestrate navigation.
+This file composes independent pieces; it does not delegate to one bundled entry point per
+package. It stages exactly one simulator itself -- `_simulator()`, the only place the simulator
+is named anywhere in this file -- and the navigation modes add g1_navigation's
+nav_stack.launch.py, which stages none of its own. Exactly one simulator per launch, always:
+two would put two motion_service_sim processes on /lowcmd, and CONTROL_MODES.md puts that
+failure first for a reason.
+
+The direction of composition is unchanged and still navigation-over-bringup. What changed is
+the granularity: bring-up reaches a genuinely sim-independent piece of g1_navigation directly,
+rather than a wrapper that bundles a simulator in with it.
+
+nav_sim.launch.py still exists and still runs standalone, composing the same two pieces for a
+nav-only session, and it is what the g1_navigation integration suites launch. That leaves
+exactly one fact stated in two files -- sensors:=true on the simulator -- because each stages
+its own and there is nowhere shared to put it. test_launch_threading asserts it on both.
 """
 
 import os
@@ -42,14 +54,15 @@ from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, Opaq
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 
-# 'none' keeps g1_navigation entirely out of the picture; the other two route through it.
+# 'none' keeps g1_navigation entirely out of the picture; the other two bring it in.
 MODES = ("none", "mapping", "localization")
 
-# sim.launch.py wants 2.0, nav_sim.launch.py wants 4.0 (more nodes start before the first
-# physics tick). Declaring either as this file's default would silently override whichever
-# child was right, because an included launch file inherits the parent's configurations.
+# A bare simulator wants 2.0; anything that starts a stack alongside it wants 4.0, because more
+# nodes come up before the first physics tick and the robot topples at spawn if discovery is
+# still in progress. Declaring either as this file's default would silently override whichever
+# branch was right, because an included launch file inherits the parent's configurations.
 # The empty sentinel means "let the branch decide", and a concrete value is always forwarded.
-DEFAULT_SIM_START_DELAY_S = {"bare": "2.0", "navigation": "4.0"}
+DEFAULT_SIM_START_DELAY_S = {"bare": "2.0", "loaded": "4.0"}
 
 
 def _navigation_share():
@@ -67,6 +80,22 @@ def _navigation_share():
             "builds it for you.\n"
             "mode:=none needs none of this and runs the simulator on its own."
         ) from exc
+
+
+def _simulator(sim_args):
+    """The one simulator this file stages, and the only place it is named.
+
+    Isolated deliberately. Everything above composes around it, so swapping in a hardware
+    bring-up later replaces this function's body and nothing else: the branches only decide
+    what goes in sim_args. There is no platform:= argument because there is no second
+    implementation yet, and one would be a knob with a single position.
+    """
+    return IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(get_package_share_directory("g1_bringup"), "launch", "sim.launch.py")
+        ),
+        launch_arguments=sim_args.items(),
+    )
 
 
 def _setup(context, *args, **kwargs):
@@ -97,43 +126,51 @@ def _setup(context, *args, **kwargs):
 
     delay = LaunchConfiguration("sim_start_delay_s").perform(context)
     if not delay:
-        delay = DEFAULT_SIM_START_DELAY_S["navigation" if navigating else "bare"]
+        delay = DEFAULT_SIM_START_DELAY_S["loaded" if navigating else "bare"]
 
     # Every argument below is forwarded EXPLICITLY, including the ones whose values match
     # this file's own defaults. Included launch files inherit the parent's configurations,
     # so a child's DeclareLaunchArgument default never fires for anything declared here --
     # relying on it is how this stack has already shipped two silent bugs (a second RViz
     # window, and use_composition ignoring its own default).
-    if navigating:
-        launch_file = os.path.join(_navigation_share(), "launch", "nav_sim.launch.py")
-        forwarded = {
-            "mode": mode,
-            "nav": "true" if want_nav else "false",
-            "world": LaunchConfiguration("world"),
-            "headless": LaunchConfiguration("headless"),
-            "sim_start_delay_s": delay,
-            # We own RViz, below. Without this the child opens its own on the wrong config.
-            "rviz": "false",
-        }
-    else:
-        launch_file = os.path.join(
-            get_package_share_directory("g1_bringup"), "launch", "sim.launch.py"
-        )
-        forwarded = {
-            "sensors": LaunchConfiguration("sensors"),
-            "world": LaunchConfiguration("world"),
-            "headless": LaunchConfiguration("headless"),
-            "pin_pelvis": "true" if pin_pelvis else "false",
-            "sim_start_delay_s": delay,
-            "rviz": "false",
-        }
+    sim_args = {
+        # Not optional on the navigation modes, whatever the operator asked for: sensors gates
+        # the LiDAR sweep, the relay, the odom -> base_footprint -> pelvis chain and the waist
+        # joint states, and navigation is dead without all four. Forced here rather than by
+        # flipping sim.launch.py's default, which is still provisional on an unthrottled
+        # re-measurement of test_arm_command.
+        "sensors": "true" if navigating else LaunchConfiguration("sensors"),
+        "world": LaunchConfiguration("world"),
+        "headless": LaunchConfiguration("headless"),
+        "pin_pelvis": "true" if pin_pelvis else "false",
+        "sim_start_delay_s": delay,
+        # We own RViz, below. Without this the simulator opens its own on the wrong config.
+        "rviz": "false",
+    }
 
-    actions = [
-        IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(launch_file),
-            launch_arguments=forwarded.items(),
+    actions = [_simulator(sim_args)]
+
+    if navigating:
+        # nav_stack.launch.py stages no simulator of its own, which is what makes including it
+        # next to _simulator() safe; two would be two writers on /lowcmd.
+        #
+        # use_composition and container_name are deliberately NOT declared by this file and
+        # NOT forwarded, so nav_stack's own defaults are the ones that apply. That is safe for
+        # the same reason the explicit forwarding above is necessary: inheritance only leaks
+        # through a name the parent also declares. No name here, nothing to leak, and an
+        # operator who wants to decompose the container runs nav_sim.launch.py, which exposes
+        # both.
+        actions.append(
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(
+                    os.path.join(_navigation_share(), "launch", "nav_stack.launch.py")
+                ),
+                launch_arguments={
+                    "mode": mode,
+                    "nav": "true" if want_nav else "false",
+                }.items(),
+            )
         )
-    ]
 
     if want_rviz:
         # The nav config carries a nav2_rviz_plugins display, so it ships from g1_navigation.
