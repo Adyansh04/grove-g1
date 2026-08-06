@@ -81,6 +81,28 @@ The CRC is vendored to match Unitree's implementation bit for bit, pinned by a `
 the message size. It computes exactly what the robot validates against, so it is not a place to
 tidy up.
 
+## Known gap: the waist is not commanded
+
+`assembleLowCmd` writes the 14 arm motors and the weight slot, and nothing else. Motors 12-14,
+the waist, go out as the zero-initialised message: `q=0`, **`kp=0`, `kd=0`**.
+
+On hardware that is very likely a defect. `rt/arm_sdk` is documented as owning the arms *and*
+the waist -- Unitree's own `g1_arm5`/`arm7` examples put motors 12-14 in the commanded set with
+real gains, and so do g1pilot and Amazon FAR's holosoma. If the blend weight applies across
+12-28, then at `weight = 1` our limp zero-gain waist command displaces whatever the onboard
+controller was holding. Four users on real G1s report the robot "bending forward at the waist"
+when arms move under `arm_sdk` (unitree_sdk2_python issues #146 and #173), and #173 found that
+adding a small waist-pitch command fixed it.
+
+**Simulation cannot show this.** There the walking policy owns motors 0-14 and holds the waist
+every tick, so the slots we leave empty are never the ones that matter. A green sim proves
+nothing about this particular failure.
+
+Deliberately not fixed yet: it changes which joints this component asserts authority over, so
+it wants its own change with the sim-side blend updated to match (otherwise the simulator
+ignores a command hardware honours, and the two diverge the other way). **Fix it before any
+hardware bring-up.** Full reasoning and sources in `docs/notes/arm-motion-and-balance.md`.
+
 ## Threading
 
 | Thread | Does |
