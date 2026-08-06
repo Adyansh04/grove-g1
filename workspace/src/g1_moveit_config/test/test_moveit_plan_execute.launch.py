@@ -46,6 +46,14 @@ LEFT_ARM = [
 RIGHT_ARM = [name.replace("left_", "right_") for name in LEFT_ARM]
 BOTH_ARMS = LEFT_ARM + RIGHT_ARM
 
+LEFT_HAND = [
+    f"left_hand_{suffix}_joint"
+    for suffix in ("thumb_0", "thumb_1", "thumb_2", "middle_0", "middle_1", "index_0", "index_1")
+]
+# The `closed` group state from g1.srdf, restated rather than read out of it: a test that took
+# its expectation from the file under test would pass no matter what that file said.
+LEFT_HAND_CLOSED = dict(zip(LEFT_HAND, [-0.30, -0.50, 1.20, -1.20, -1.40, -1.20, -1.40]))
+
 # g1_description/config/arm_sdk_params.yaml. joint_limits.yaml plans under this; the test proves
 # the cap actually binds rather than trusting the two files agree.
 MAX_JOINT_VELOCITY_RAD_S = 1.0
@@ -146,6 +154,13 @@ class TestMoveItPlanExecute(unittest.TestCase):
             constraint.weight = 1.0
             constraints.joint_constraints.append(constraint)
         goal.request.goal_constraints = [constraints]
+        return goal
+
+    def _absolute_joint_goal(self, group, targets):
+        """Same goal, but to a named posture rather than a nudge away from where we are."""
+        goal = self._joint_goal(group, list(targets), 0.0)
+        for constraint in goal.request.goal_constraints[0].joint_constraints:
+            constraint.position = targets[constraint.joint_name]
         return goal
 
     def _send_move_goal(self, goal, timeout_s=90.0):
@@ -287,7 +302,40 @@ class TestMoveItPlanExecute(unittest.TestCase):
                 "torso_link and the model at pelvis; this is the waist transform disagreeing.",
             )
 
-    # 7. Release, so the suite leaves the channel as it found it.
-    def test_08_the_arm_releases_cleanly(self):
+    # 7. The gripper, through the same plan-and-execute path the arm uses.
+    def test_08_the_hand_closes_and_opens_through_moveit(self):
+        """A Dex3 is seven joints, so MoveIt drives it as a group, not as a GripperCommand.
+
+        The whole chain is under test here and only the last hop differs on hardware:
+        move_group plans, left_hand_controller executes, G1Dex3System publishes HandCmd, and
+        the fingers that come back on /joint_states are the ones the simulator actually moved.
+        """
+        before = {name: self.joint_state[name] for name in LEFT_HAND}
+
+        result = self._send_move_goal(self._absolute_joint_goal("left_hand", LEFT_HAND_CLOSED))
+        self.assertIsNotNone(result, "left_hand closed goal was rejected")
+        self.assertEqual(
+            result.error_code.val, 1,
+            f"closing the left hand failed with error_code {result.error_code.val}",
+        )
+        self._spin(2.0)
+
+        for name, target in LEFT_HAND_CLOSED.items():
+            self.assertAlmostEqual(
+                self.joint_state[name], target, delta=0.05,
+                msg=f"{name} is at {self.joint_state[name]:.3f}, commanded {target:.3f}",
+            )
+        moved = max(abs(self.joint_state[n] - before[n]) for n in LEFT_HAND)
+        self.assertGreater(moved, 0.1, "no finger moved; the grasp was a no-op")
+
+        # Back to open, so the hand is left where the rest of the suite found it.
+        result = self._send_move_goal(
+            self._absolute_joint_goal("left_hand", dict.fromkeys(LEFT_HAND, 0.0))
+        )
+        self.assertIsNotNone(result, "left_hand open goal was rejected")
+        self.assertEqual(result.error_code.val, 1, "opening the left hand failed")
+
+    # 8. Release, so the suite leaves the channel as it found it.
+    def test_09_the_arm_releases_cleanly(self):
         self._run_ros2_run("deactivate_arm")
         self._spin(3.0)
