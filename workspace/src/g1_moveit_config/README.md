@@ -8,14 +8,17 @@ already drives `rt/arm_sdk`.
 ```mermaid
 flowchart LR
     MG["move_group<br/>plan + collision check"] -- "FollowJointTrajectory" --> JTC["arm_trajectory_controller"]
+    MG -- "FollowJointTrajectory" --> HC["left/right_hand_controller"]
     JTC --> HW["G1ArmSdkSystem"]
+    HC --> HH["G1Dex3System (one per hand)"]
     HW -- "/arm_sdk" --> MS["motion_service_sim<br/>(onboard controller on hardware)"]
+    HH -- "/dex3/side/cmd" --> SIM["unitree_mujoco<br/>(the hand itself on hardware)"]
     MS -- "/lowstate" --> HW
-    JS["/joint_states<br/>arms + legs + waist + hands"] --> MG
+    JS["/joint_states<br/>arms + legs + waist + fingers"] --> MG
 ```
 
-MoveIt adds no command path. It is another client of the action the controller already serves,
-so `rt/arm_sdk` keeps exactly one writer.
+MoveIt adds no command path. It is another client of actions the controllers already serve, so
+`rt/arm_sdk` and each hand's topic keep exactly one writer.
 
 ## Planning groups
 
@@ -24,10 +27,17 @@ so `rt/arm_sdk` keeps exactly one writer.
 | `left_arm` | 7 | `torso_link` to `left_hand_palm_link` |
 | `right_arm` | 7 | `torso_link` to `right_hand_palm_link` |
 | `both_arms` | 14 | the two above, composed |
+| `left_hand` | 7 | the Dex3 fingers, a tree rather than a chain |
+| `right_hand` | 7 | as above |
 
 `both_arms` is what makes two-handed motion a single plan: it is the only group that
 collision-checks one arm against the other, and the only one that times a motion so both hands
 arrive together. The per-arm groups remain because a 7-DoF search is far cheaper.
+
+The hands are separate groups, never joints on an arm group, because they are a separate device
+reached over separate topics with separate authority (`docs/CONTROL_MODES.md`). `test_robot_model`
+pins that: no arm group may contain a finger joint. Each is listed as its arm's `end_effector`,
+which is what lets `attachObject` work out its own touch links.
 
 Groups are rooted at `torso_link`, not `pelvis`. The three waist joints belong to the onboard
 controller, so a group spanning them would plan motion this stack cannot command. Their *state*
@@ -55,6 +65,17 @@ Every value was collision-checked against a running `move_group` before being wr
 SRDF, and `test_robot_model` pins them: the three per-group copies must agree, and all must sit
 inside the joint limits. Poses are a convenience, not a safety mechanism, and MoveIt still plans
 and collision-checks the path to one.
+
+The hands have two postures each, on `left_hand` and `right_hand`:
+
+| Pose | What it is |
+|---|---|
+| `open` | Every finger joint at 0. Fingers straight, thumb mid-range. |
+| `closed` | A power grasp, curled short of the end stops so the fingers can press into an object. |
+
+That is the whole vocabulary a pick and place needs: reach open, close, `attachObject`, move,
+place, open, `detachObject`. Contact physics is not simulated, so in sim the object is held by
+the attachment rather than by friction. On hardware it is held by both.
 
 `tucked` is worth knowing about beyond convenience. Arm pose measurably disturbs a walking
 humanoid, and the standing recommendation is to manipulate stationary and navigate with the arms

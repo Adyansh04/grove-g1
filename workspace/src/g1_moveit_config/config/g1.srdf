@@ -50,17 +50,47 @@
     <group name="right_arm"/>
   </group>
 
-  <!-- Deliberately absent, so the next reader does not think they were forgotten:
+  <!-- The Dex3 hands, one group each. Joints and not a chain, because the three fingers branch
+       off the palm and a chain cannot express that. Order is the Dex3 wire order, which is what
+       g1_bringup's controllers and the hardware component both use.
 
-       Hand groups and end_effector definitions. The hand is a separate controllable group with
-       its own API (docs/CONTROL_MODES.md), and today it has no controller, no state source and
-       no actuator in the sim model. attachObject takes explicit touch links, so nothing here
-       needs an end effector yet. SRDF has no notion of a two-tip end effector in any case, so
-       both_arms could not have one.
+       Kept out of every arm group on purpose, and test_robot_model pins that: an arm plan must
+       never command the fingers, because the arm and the hand are separate devices with
+       separate authority (docs/CONTROL_MODES.md) reached over separate topics. -->
+  <group name="left_hand">
+    <joint name="left_hand_thumb_0_joint"/>
+    <joint name="left_hand_thumb_1_joint"/>
+    <joint name="left_hand_thumb_2_joint"/>
+    <joint name="left_hand_middle_0_joint"/>
+    <joint name="left_hand_middle_1_joint"/>
+    <joint name="left_hand_index_0_joint"/>
+    <joint name="left_hand_index_1_joint"/>
+  </group>
+  <group name="right_hand">
+    <joint name="right_hand_thumb_0_joint"/>
+    <joint name="right_hand_thumb_1_joint"/>
+    <joint name="right_hand_thumb_2_joint"/>
+    <joint name="right_hand_middle_0_joint"/>
+    <joint name="right_hand_middle_1_joint"/>
+    <joint name="right_hand_index_0_joint"/>
+    <joint name="right_hand_index_1_joint"/>
+  </group>
 
-       passive_joint. It would document that the legs, waist and hands are not ours, but it
-       reads as if it does more: MoveIt's CurrentStateMonitor counts every active joint, and
-       the flag does not exempt one. This comment carries the same information honestly. -->
+  <!-- What makes attachObject/detachObject work without naming touch links by hand, and what
+       lets RViz offer the hand as the arm's end effector rather than as an unrelated group.
+
+       both_arms still has none: SRDF has no notion of a two-tip end effector. A two-handed
+       grasp attaches to one arm and lists the other hand's links as touch links. -->
+  <end_effector name="left_gripper" parent_link="left_hand_palm_link"
+                group="left_hand" parent_group="left_arm"/>
+  <end_effector name="right_gripper" parent_link="right_hand_palm_link"
+                group="right_hand" parent_group="right_arm"/>
+
+  <!-- Deliberately absent, so the next reader does not think it was forgotten:
+
+       passive_joint. It would document that the legs and waist are not ours, but it reads as
+       if it does more: MoveIt's CurrentStateMonitor counts every active joint, and the flag
+       does not exempt one. This comment carries the same information honestly. -->
 
 
   <!-- Named postures. Every value below was collision-checked against a running move_group
@@ -251,6 +281,53 @@
     <joint name="right_wrist_roll_joint" value="0.00"/>
     <joint name="right_wrist_pitch_joint" value="0.00"/>
     <joint name="right_wrist_yaw_joint" value="0.00"/>
+  </group_state>
+
+  <!-- Hand postures. Two per hand is the whole vocabulary a pick and place needs: reach with
+       the hand open, close on the object, attach it, move, place, open, detach.
+
+       `open` is the URDF zero, which puts the fingers straight and the thumb mid-range. Not an
+       arbitrary choice: every finger joint's range ends at zero on the extended side.
+
+       `closed` is a power grasp, curled short of the joint limits so the fingers can still
+       press into an object rather than resting against their own end stops. The two hands
+       mirror by sign, as the URDF's own limits do on all seven joints. Collision-checked
+       against a running move_group before being written here, same as the arm poses. -->
+  <group_state name="open" group="left_hand">
+    <joint name="left_hand_thumb_0_joint" value="0.00"/>
+    <joint name="left_hand_thumb_1_joint" value="0.00"/>
+    <joint name="left_hand_thumb_2_joint" value="0.00"/>
+    <joint name="left_hand_middle_0_joint" value="0.00"/>
+    <joint name="left_hand_middle_1_joint" value="0.00"/>
+    <joint name="left_hand_index_0_joint" value="0.00"/>
+    <joint name="left_hand_index_1_joint" value="0.00"/>
+  </group_state>
+  <group_state name="closed" group="left_hand">
+    <joint name="left_hand_thumb_0_joint" value="-0.30"/>
+    <joint name="left_hand_thumb_1_joint" value="-0.50"/>
+    <joint name="left_hand_thumb_2_joint" value="1.20"/>
+    <joint name="left_hand_middle_0_joint" value="-1.20"/>
+    <joint name="left_hand_middle_1_joint" value="-1.40"/>
+    <joint name="left_hand_index_0_joint" value="-1.20"/>
+    <joint name="left_hand_index_1_joint" value="-1.40"/>
+  </group_state>
+  <group_state name="open" group="right_hand">
+    <joint name="right_hand_thumb_0_joint" value="0.00"/>
+    <joint name="right_hand_thumb_1_joint" value="0.00"/>
+    <joint name="right_hand_thumb_2_joint" value="0.00"/>
+    <joint name="right_hand_middle_0_joint" value="0.00"/>
+    <joint name="right_hand_middle_1_joint" value="0.00"/>
+    <joint name="right_hand_index_0_joint" value="0.00"/>
+    <joint name="right_hand_index_1_joint" value="0.00"/>
+  </group_state>
+  <group_state name="closed" group="right_hand">
+    <joint name="right_hand_thumb_0_joint" value="0.30"/>
+    <joint name="right_hand_thumb_1_joint" value="0.50"/>
+    <joint name="right_hand_thumb_2_joint" value="-1.20"/>
+    <joint name="right_hand_middle_0_joint" value="1.20"/>
+    <joint name="right_hand_middle_1_joint" value="1.40"/>
+    <joint name="right_hand_index_0_joint" value="1.20"/>
+    <joint name="right_hand_index_1_joint" value="1.40"/>
   </group_state>
 
   <!-- Generated, 2026-08-05. Everything above is hand-written; this block is not.

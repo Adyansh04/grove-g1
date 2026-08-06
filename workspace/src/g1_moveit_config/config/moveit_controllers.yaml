@@ -22,6 +22,8 @@ moveit_manage_controllers: false
 moveit_simple_controller_manager:
   controller_names:
     - arm_trajectory_controller
+    - left_hand_controller
+    - right_hand_controller
 
   arm_trajectory_controller:
     type: FollowJointTrajectory
@@ -44,6 +46,38 @@ moveit_simple_controller_manager:
       - right_wrist_roll_joint
       - right_wrist_pitch_joint
       - right_wrist_yaw_joint
+
+  # FollowJointTrajectory and not GripperCommand. MoveIt's GripperCommand path carries a single
+  # scalar and expects ros2_control's GripperActionController, which drives one joint plus a
+  # URDF mimic: a parallel-jaw gripper. A Dex3 has seven independent finger joints, so it is
+  # driven the way every multi-finger hand in MoveIt is, as a planning group with named
+  # postures. `default: false` because these are not the arm groups' fallback; MoveIt picks
+  # them by joint coverage when the plan is for left_hand or right_hand.
+  left_hand_controller:
+    type: FollowJointTrajectory
+    action_ns: follow_joint_trajectory
+    default: false
+    joints:
+      - left_hand_thumb_0_joint
+      - left_hand_thumb_1_joint
+      - left_hand_thumb_2_joint
+      - left_hand_middle_0_joint
+      - left_hand_middle_1_joint
+      - left_hand_index_0_joint
+      - left_hand_index_1_joint
+
+  right_hand_controller:
+    type: FollowJointTrajectory
+    action_ns: follow_joint_trajectory
+    default: false
+    joints:
+      - right_hand_thumb_0_joint
+      - right_hand_thumb_1_joint
+      - right_hand_thumb_2_joint
+      - right_hand_middle_0_joint
+      - right_hand_middle_1_joint
+      - right_hand_index_0_joint
+      - right_hand_index_1_joint
 
 trajectory_execution:
   # The arm_sdk gains are soft (kp 25-40), so the measured pose trails the commanded one by a

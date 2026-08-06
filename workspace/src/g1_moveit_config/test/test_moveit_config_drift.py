@@ -26,6 +26,17 @@ ARM_JOINTS = [
     )
 ]
 
+# Dex3 wire order. HandCmd.motor_cmd is a positional array, so this order is the contract and
+# not a convention: the SRDF group, the controller and the hardware component must all agree.
+HAND_JOINTS = {
+    side: [
+        f"{side}_hand_{joint}_joint"
+        for joint in ("thumb_0", "thumb_1", "thumb_2", "middle_0", "middle_1",
+                      "index_0", "index_1")
+    ]
+    for side in ("left", "right")
+}
+
 
 def _load(directory, name):
     with open(os.path.join(directory, name)) as handle:
@@ -91,15 +102,23 @@ def test_partial_joint_goals_stay_enabled(controllers):
     assert params["allow_partial_joints_goal"] is True
 
 
-def test_planned_speed_stays_under_the_bridge_clamp(joint_limits):
+@pytest.mark.parametrize(
+    ("params_file", "joints"),
+    [
+        ("arm_sdk_params.yaml", ARM_JOINTS),
+        ("dex3_params.yaml", HAND_JOINTS["left"] + HAND_JOINTS["right"]),
+    ],
+)
+def test_planned_speed_stays_under_the_bridge_clamp(joint_limits, params_file, joints):
     """The clamp is a backstop, not a controller in the loop.
 
-    g1_hardware_interface slew-clamps every joint; plan faster than that and the motion is
-    silently stretched until the controller aborts on a goal-time tolerance instead.
+    Both hardware components slew-clamp every joint they own; plan faster than that and the
+    motion is silently stretched until the controller aborts on a goal-time tolerance instead.
+    The arm and the hands clamp at different speeds, so each is checked against its own.
     """
-    arm_sdk = _load(DESCRIPTION_CONFIG_DIR, "arm_sdk_params.yaml")
-    clamp = arm_sdk["system"]["max_joint_velocity_rad_s"]
-    for joint, limits in joint_limits.items():
+    clamp = _load(DESCRIPTION_CONFIG_DIR, params_file)["system"]["max_joint_velocity_rad_s"]
+    for joint in joints:
+        limits = joint_limits[joint]
         assert limits["has_velocity_limits"] is True, joint
         assert limits["max_velocity"] < clamp, (
             f"{joint} plans at {limits['max_velocity']} rad/s against a {clamp} rad/s clamp"
@@ -116,8 +135,61 @@ def test_every_arm_joint_has_an_acceleration_limit(joint_limits):
         assert limits["max_acceleration"] > 0.0, joint
 
 
-def test_joint_limits_cover_exactly_the_arm(joint_limits):
-    assert sorted(joint_limits) == sorted(ARM_JOINTS)
+def test_joint_limits_cover_exactly_what_we_command(joint_limits):
+    """Everything we own and nothing we do not: the arms plus both hands.
+
+    A joint missing here is timed against no limit at all; a leg or waist joint appearing here
+    would claim a limit on something the onboard controller owns.
+    """
+    expected = ARM_JOINTS + HAND_JOINTS["left"] + HAND_JOINTS["right"]
+    assert sorted(joint_limits) == sorted(expected)
+
+
+@pytest.mark.parametrize("side", ["left", "right"])
+def test_the_hand_agrees_across_srdf_controller_and_moveit(
+    side, srdf, controllers, moveit_controllers
+):
+    """Four files have to name the same seven joints in the same order.
+
+    The JTC itself remaps by name, but G1Dex3System does not: it writes HandCmd.motor_cmd
+    positionally and refuses to init on a mismatch, so a reordering here would either fail
+    loudly at startup or, if the guard were ever relaxed, close the wrong fingers.
+    """
+    group = next(g for g in srdf.findall("group") if g.get("name") == f"{side}_hand")
+    controller = f"{side}_hand_controller"
+
+    assert [j.get("name") for j in group.findall("joint")] == HAND_JOINTS[side]
+    assert controllers[controller]["ros__parameters"]["joints"] == HAND_JOINTS[side]
+    assert (
+        moveit_controllers["moveit_simple_controller_manager"][controller]["joints"]
+        == HAND_JOINTS[side]
+    )
+
+
+@pytest.mark.parametrize("side", ["left", "right"])
+def test_the_hand_is_driven_as_a_trajectory_not_a_gripper_command(side, moveit_controllers):
+    """GripperCommand carries one scalar and expects a one-joint controller.
+
+    A Dex3 has seven independent finger joints, so it is driven as a planning group with named
+    postures. Switching this to GripperCommand would leave six of them uncommanded.
+    """
+    entry = moveit_controllers["moveit_simple_controller_manager"][f"{side}_hand_controller"]
+    assert entry["type"] == "FollowJointTrajectory"
+    assert entry["default"] is False
+
+
+@pytest.mark.parametrize("side", ["left", "right"])
+def test_each_hand_has_an_open_and_a_closed_posture(side, srdf):
+    """The whole vocabulary a pick and place needs, and both must name all seven joints."""
+    states = {
+        s.get("name"): s
+        for s in srdf.findall("group_state")
+        if s.get("group") == f"{side}_hand"
+    }
+    assert set(states) == {"open", "closed"}
+    for name, state in states.items():
+        named = {j.get("name") for j in state.findall("joint")}
+        assert named == set(HAND_JOINTS[side]), f"{side} {name} does not cover the hand"
 
 
 def test_chain_groups_have_a_solver_and_the_composite_one_does_not(srdf, kinematics):
