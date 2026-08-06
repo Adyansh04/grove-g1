@@ -1,0 +1,7 @@
+<library path="g1_dex3_system">
+  <class name="g1_hand_interface/G1Dex3System"
+         type="g1_hand_interface::G1Dex3System"
+         base_class_type="hardware_interface::SystemInterface">
+    <description>One Unitree Dex3-1 hand on /dex3/&lt;side&gt;/{cmd,state}.</description>
+  </class>
+</library>
