@@ -98,3 +98,9 @@ Window Geometry:
     collapsed: false
   Views:
     collapsed: false
+  # Not a plugin, which is why it cannot appear under Panels: the MotionPlanning display
+  # constructs this pane itself and registers it through addPane(), naming it after the
+  # display. So the key has to track the display's Name above, and the pane only exists while
+  # that display does. Every upstream config does it this way (turtlebot3, tiago).
+  MotionPlanning - Trajectory Slider:
+    collapsed: false
