@@ -40,21 +40,13 @@
     # Where the arms are held when nothing is driving them, motors 15 to 28: left shoulder
     # pitch/roll/yaw, elbow, wrist roll/pitch/yaw, then the right arm.
     #
-    # These are g1_moveit_config's `home` group state, and g1_moveit_config's drift test pins
-    # the two together. That is deliberate rather than convenient: `home` documents itself as
-    # the posture the simulator holds the arms at, so setting it here is what makes that true.
+    # g1_moveit_config's `home` group state, pinned to it by that package's drift test, so the
+    # pose MoveIt calls home is the one the simulator actually rests at.
     #
-    # Holding at the walking policy's own arm defaults instead was tried, on the theory that
-    # mask_arm_observations already tells the policy the arms are there. It made no measurable
-    # difference to standing or walking, and it has not been collision-checked, so the pose that
-    # has been wins.
-    #
-    # SIM-ONLY, and it removes a simulator artifact rather than adding one. Without it the hold
-    # target is the first /lowstate sample, by which point the arms have been swinging freely
-    # under gravity since the simulator started, so the resting posture depended on startup
-    # timing and on how heavy the hands were. With real Dex3 hands they fell far enough to put
-    # the palm against the thigh. The real robot's onboard controller holds the arms; none of
-    # this code runs there. docs/notes/hand-mass-rest-pose.md has the measurements.
+    # SIM-ONLY, and it removes an artifact rather than adding one: without it the hold target is
+    # the first /lowstate sample, by which point the arms have been falling freely since the
+    # simulator started. The real robot's onboard controller holds the arms and none of this
+    # code runs there. Measurements in docs/notes/hand-mass-rest-pose.md.
     arm_hold_rad: [-0.70,  0.15, 0.0, 1.50, 0.0, 0.0, 0.0,
                    -0.70, -0.15, 0.0, 1.50, 0.0, 0.0, 0.0]
 

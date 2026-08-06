@@ -143,8 +143,8 @@ void openChannels(Hand& hand)
     // as "nothing is touching the fingers", which is a different and wrong claim.
 }
 
-// One control tick for one hand. Applies the PD the real finger motor runs, into the
-// generalized-force channel.
+// Runs the PD the real finger motor runs, into the generalized-force channel rather than an
+// actuator, since the fingers deliberately have none.
 void driveHand(const mjModel* model, mjData* data, Hand& hand)
 {
     std::array<unitree_hg::msg::dds_::MotorCmd_, kNumJoints> command{};
