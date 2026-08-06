@@ -119,14 +119,29 @@ private:
     /// own boot state (see loco_fsm.hpp's legality table for why SET_VELOCITY is illegal here).
     int loco_fsm_state_{ kFsmDamp };
 
-    /// Set once, from the first /lowstate sample, and never touched again --
-    /// the frozen reference every subsequent tick holds legs/waist against
-    /// and blends arms toward at weight 0. All callbacks and the publish
-    /// timer run on the same single-threaded executor (this node's main()
-    /// does a plain rclcpp::spin), so there is no cross-thread contention to
-    /// guard here beyond this one publish-once latch.
+    /// Set once, from the first /lowstate sample -- the frozen reference every
+    /// subsequent tick holds legs/waist against. The ARM slots are the one
+    /// exception: they follow the measured arm while /arm_sdk owns the arms,
+    /// so releasing blends toward where the arms actually are (see
+    /// arm_hold_tracking_weight_). All callbacks and the publish timer run on
+    /// the same single-threaded executor (this node's main() does a plain
+    /// rclcpp::spin), so there is no cross-thread contention to guard here.
     bool                               hold_pose_captured_{ false };
     std::array<double, kNumBodyMotors> hold_q_{};
+
+    /// Above this effective weight the arm hold target tracks the measured arm;
+    /// at or below it the target freezes and becomes a real restoring
+    /// reference. Tracking on the wrong side of this would make the hold
+    /// command chase the measurement, leaving zero position error and letting
+    /// the arms sag under gravity on damping alone.
+    double arm_hold_tracking_weight_{ 0.05 };
+
+    /// Show the walking policy the default arm posture instead of the real one,
+    /// and zero the arm half of last_action. /arm_sdk owns those joints here, so
+    /// the policy's arm actions are discarded anyway; what it sees otherwise is
+    /// an input it never trained on. False restores the raw observation, which
+    /// is only useful for reproducing the instability on purpose.
+    bool mask_arm_observations_{ true };
 
     /// Latest /arm_sdk command (arm slots + the weight slot) and its arrival
     /// time.

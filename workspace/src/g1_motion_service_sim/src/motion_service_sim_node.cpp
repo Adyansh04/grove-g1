@@ -123,6 +123,8 @@ MotionServiceSim::MotionServiceSim(const rclcpp::NodeOptions& options)
     waist_kd_                       = declare_parameter("waist_kd", 1.0);
     arm_hold_kp_                    = declare_parameter("arm_hold_kp", 40.0);
     arm_hold_kd_                    = declare_parameter("arm_hold_kd", 1.0);
+    mask_arm_observations_          = declare_parameter("mask_arm_observations", true);
+    arm_hold_tracking_weight_       = declare_parameter("arm_hold_tracking_weight", 0.05);
     const double arm_sdk_timeout_ms = declare_parameter("arm_sdk_timeout_ms", 500.0);
     arm_sdk_timeout_s_              = arm_sdk_timeout_ms / 1000.0;
     timeout_ramp_down_s_            = declare_parameter("timeout_ramp_down_s", 1.0);
@@ -381,6 +383,50 @@ void MotionServiceSim::lowstateCallback(const unitree_hg::msg::LowState::ConstSh
         walk_inputs_.joint_pos[i] = msg->motor_state[i].q;
         walk_inputs_.joint_vel[i] = msg->motor_state[i].dq;
     }
+
+    // The arms are hidden from the policy, and this is the single change that makes this
+    // simulator behave like the real robot rather than worse than it.
+    //
+    // The policy owns all 29 joints on paper, but /arm_sdk owns 15-28 here, so its arm actions
+    // are thrown away (walk_policy.yaml). It still SEES those joints: 42 of the 99 observation
+    // dimensions are arm position, arm velocity and arm last-action. During training the arms
+    // only ever sat within the policy's own action distribution around the default posture --
+    // about one action-scale unit, and the arm scales are 0.438577, which is exactly the
+    // plus/minus 0.4 rad envelope M3 measured as stable. A MoveIt goal of "arms straight ahead"
+    // is roughly four units out, so the policy is extrapolating on a third of its input.
+    //
+    // The real G1 has no equivalent failure: its onboard controller is not this policy, and per
+    // CMU's G1 notes it "is not aware of how the arms are being controlled" -- it rejects arm
+    // motion reactively, through the IMU, as an unmodelled disturbance. Showing our policy the
+    // default posture reproduces exactly that: the physical disturbance still reaches it through
+    // the base state, but the out-of-distribution input that hardware never suffers does not.
+    // So this makes sim MORE faithful, not less -- today sim fails in a way hardware will not.
+    //
+    // Same approach HuggingFace ship in LeRobot's production G1 integration
+    // (robots/unitree_g1/holosoma_locomotion.py) against a near-identical 100-obs/29-action
+    // policy, for the same reason: "prevents policy from reacting to teleop arm movements".
+    if (mask_arm_observations_)
+    {
+        for (std::size_t i = 0; i < kNumArmMotors; ++i)
+        {
+            const std::size_t motor       = static_cast<std::size_t>(kFirstArmMotor) + i;
+            walk_inputs_.joint_pos[motor] = walk_policy_config_.default_joint_pos[motor];
+            walk_inputs_.joint_vel[motor] = 0.0;
+        }
+    }
+
+    // While /arm_sdk owns the arms, the hold target follows them, so a release blends toward
+    // where the arms actually are instead of dragging them back to the spawn pose. Below the
+    // threshold it freezes: a target that keeps chasing the measurement has no position error
+    // to hold against, and the arms would sag on damping alone.
+    if (hold_pose_captured_ && effective_weight_ > arm_hold_tracking_weight_)
+    {
+        for (std::size_t i = 0; i < kNumArmMotors; ++i)
+        {
+            const std::size_t motor = static_cast<std::size_t>(kFirstArmMotor) + i;
+            hold_q_[motor]          = msg->motor_state[motor].q;
+        }
+    }
     for (std::size_t i = 0; i < 4; ++i)
     {
         walk_inputs_.base_quat[i] = msg->imu_state.quaternion[i];
@@ -444,7 +490,21 @@ void MotionServiceSim::walkPolicyTick()
             "untouched so the stiff-hold fallback engages if it keeps failing");
         return;
     }
-    walk_last_action_  = *action;
+    walk_last_action_ = *action;
+    if (mask_arm_observations_)
+    {
+        // The other half of hiding the arms, and the half that is easy to miss. last_action is
+        // fed straight back into the next observation, but only the lower 15 actions are ever
+        // executed -- the arm actions are discarded and /arm_sdk drives those joints instead.
+        // Left alone, the policy reads back arm commands that never happened, next to arm
+        // positions produced by something else entirely, so the action-to-state relationship it
+        // learned is broken on 14 joints every tick. Zero is the action that means "default
+        // posture", which is what the masked position and velocity above already claim.
+        //
+        // FALCON's deployment code slices its feedback to executed joints for the same reason
+        // (sim2real/rl_policy/dec_loco/dec_loco.py), arrived at independently.
+        std::fill(walk_last_action_.begin() + kFirstArmMotor, walk_last_action_.end(), 0.0F);
+    }
     const auto targets = actionToJointTargets(walk_last_action_, walk_policy_config_);
     std::copy(targets.begin(), targets.begin() + kNumLowerMotors, walk_target_q_.begin());
     walk_target_valid_ = true;
