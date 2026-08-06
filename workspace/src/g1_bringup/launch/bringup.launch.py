@@ -1,55 +1,95 @@
-"""The operator entry point: one command for bare sim, mapping, localization or full Nav2.
+"""The operator entry point: bare sim, mapping, localization, Nav2, MoveIt, or a combination.
 
     ros2 launch g1_bringup bringup.launch.py                                  # bare sim
     ros2 launch g1_bringup bringup.launch.py mode:=mapping rviz:=true         # + SLAM
     ros2 launch g1_bringup bringup.launch.py mode:=localization nav:=true rviz:=true
+    ros2 launch g1_bringup bringup.launch.py moveit:=true pin_pelvis:=true rviz:=true
+    ros2 launch g1_bringup bringup.launch.py mode:=localization nav:=true moveit:=true
 
 sim.launch.py and control.launch.py are unchanged and still work standalone; this file sits
-above them and adds nothing of its own except the routing.
+above them and adds nothing of its own except the composition.
 
 ================================================================================
-g1_navigation is referenced WITHOUT being declared as a dependency. On purpose.
+g1_navigation and g1_moveit_config are referenced WITHOUT being declared as
+dependencies. On purpose.
 ================================================================================
 
-g1_navigation already declares <exec_depend>g1_bringup</exec_depend>, because navigation
-composes bring-up and not the other way round (docs/notes, M6). Adding the reciprocal
-dependency here is not merely untidy, it does not build -- colcon refuses outright:
+Both already declare <exec_depend>g1_bringup</exec_depend>, because each composes bring-up and
+not the other way round (docs/notes, M6 and M7). Adding a reciprocal dependency here is not
+merely untidy, it does not build -- colcon refuses outright:
 
     ERROR:colcon:colcon list: Unable to order packages topologically:
     g1_bringup: ['g1_navigation']
     g1_navigation: ['g1_bringup']
 
-So the reference below is a launch-time path lookup and nothing else. Consequences worth
-knowing before touching it:
+So both references below are launch-time path lookups and nothing else. Consequences worth
+knowing before touching them:
 
-  * g1_bringup builds, installs and runs with g1_navigation absent from the workspace. Only
-    the mode:=mapping / mode:=localization branches ever name it, and _navigation_share()
-    turns its absence into an actionable message rather than a raw ament search-path dump.
-  * colcon and rosdep cannot see this edge. Nothing will warn you if g1_navigation's launch
-    file names change; the launch fails at runtime instead.
+  * g1_bringup builds, installs and runs with either package absent from the workspace. Only
+    mode:=mapping / mode:=localization name g1_navigation, and only moveit:=true names
+    g1_moveit_config; _navigation_share() and _moveit_share() turn an absence into an
+    actionable message rather than a raw ament search-path dump.
+  * colcon and rosdep cannot see these edges. Nothing will warn you if either package renames
+    a launch file; the launch fails at runtime instead. test_launch_threading in each of those
+    packages is the compensating check, and neither can live here for the same reason the
+    dependency cannot.
   * Do not "fix" this by adding the dependency. It is load-bearing that it stays absent.
 
-The direction of composition is still navigation-over-bringup: on the nav branch this file
-includes g1_navigation's nav_sim.launch.py, which includes sim.launch.py itself. This file
-routes, it does not orchestrate navigation.
+This file composes independent pieces; it does not delegate to one bundled entry point per
+package. Three pieces, each conditional and each unaware of the others:
+
+  * the simulator -- `_simulator()`, the only place it is named anywhere in this file, and
+    exactly once per launch. Two would put two motion_service_sim processes on /lowcmd, and
+    CONTROL_MODES.md puts that failure first for a reason. Swapping in a hardware bring-up
+    later means replacing that function's body; the branches only decide what goes in its
+    arguments.
+  * navigation -- g1_navigation's nav_stack.launch.py, which stages no simulator of its own.
+  * manipulation -- g1_moveit_config's move_group.launch.py, sim-free by the same design.
+
+The direction of composition is unchanged and still navigation-over-bringup. What changed is
+the granularity: bring-up reaches genuinely sim-independent pieces of those packages directly,
+rather than wrappers that bundle a simulator in with them. A package may expose several such
+pieces, and bring-up may reach whichever it needs.
+
+nav_sim.launch.py and moveit_sim.launch.py still exist and still run standalone, each composing
+the same pieces for a single-package session, and they are what those packages' integration
+suites launch. That leaves two facts stated in two files each -- sensors:=true and
+non_arm_joint_states:=true on the simulator -- because every one of these files stages its own
+simulator and there is nowhere shared to put them. test_launch_threading asserts both copies.
+
+A note on what is NOT forwarded, since the reflex here is to forward everything. The hazard is
+inheritance: a child's DeclareLaunchArgument default never fires for a name the PARENT also
+declares, so a name declared in both places must be forwarded explicitly or the parent's value
+silently wins. That requires the same name on both sides. Names this file never declares --
+nav_stack's use_composition and container_name, moveit_rviz's rviz_config on the bare MoveIt
+branch -- have nothing to inherit from and resolve to the child's own default, which is the
+intended value. So they are deliberately left alone, and an operator who needs to set them runs
+the standalone wrapper, which does declare them.
 """
 
 import os
 
 from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
+from launch.actions import (
+    DeclareLaunchArgument,
+    ExecuteProcess,
+    IncludeLaunchDescription,
+    OpaqueFunction,
+    TimerAction,
+)
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 
-# 'none' keeps g1_navigation entirely out of the picture; the other two route through it.
+# 'none' keeps g1_navigation entirely out of the picture; the other two bring it in.
 MODES = ("none", "mapping", "localization")
 
-# sim.launch.py wants 2.0, nav_sim.launch.py wants 4.0 (more nodes start before the first
-# physics tick). Declaring either as this file's default would silently override whichever
-# child was right, because an included launch file inherits the parent's configurations.
+# A bare simulator wants 2.0; anything that starts a stack alongside it wants 4.0, because more
+# nodes come up before the first physics tick and the robot topples at spawn if discovery is
+# still in progress. Declaring either as this file's default would silently override whichever
+# branch was right, because an included launch file inherits the parent's configurations.
 # The empty sentinel means "let the branch decide", and a concrete value is always forwarded.
-DEFAULT_SIM_START_DELAY_S = {"bare": "2.0", "navigation": "4.0"}
+DEFAULT_SIM_START_DELAY_S = {"bare": "2.0", "loaded": "4.0"}
 
 
 def _navigation_share():
@@ -69,6 +109,39 @@ def _navigation_share():
         ) from exc
 
 
+def _moveit_share():
+    """g1_moveit_config's share directory, or a message an operator can act on."""
+    try:
+        return get_package_share_directory("g1_moveit_config")
+    except PackageNotFoundError as exc:
+        raise RuntimeError(
+            "bringup.launch.py: moveit:=true needs the g1_moveit_config package, which is not "
+            "on the ament prefix path.\n"
+            "  - Build it:  colcon build --packages-select g1_moveit_config\n"
+            "  - Then source install/setup.bash again in this shell.\n"
+            "g1_bringup deliberately does not declare g1_moveit_config as a dependency (the "
+            "two would form a colcon dependency cycle -- see this file's docstring), so "
+            "nothing builds it for you.\n"
+            "moveit:=false, the default, needs none of this."
+        ) from exc
+
+
+def _simulator(sim_args):
+    """The one simulator this file stages, and the only place it is named.
+
+    Isolated deliberately. Everything above composes around it, so swapping in a hardware
+    bring-up later replaces this function's body and nothing else: the branches only decide
+    what goes in sim_args. There is no platform:= argument because there is no second
+    implementation yet, and one would be a knob with a single position.
+    """
+    return IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(get_package_share_directory("g1_bringup"), "launch", "sim.launch.py")
+        ),
+        launch_arguments=sim_args.items(),
+    )
+
+
 def _setup(context, *args, **kwargs):
     mode = LaunchConfiguration("mode").perform(context)
     if mode not in MODES:
@@ -81,6 +154,7 @@ def _setup(context, *args, **kwargs):
     navigating = mode != "none"
     want_nav = LaunchConfiguration("nav").perform(context).lower() == "true"
     want_rviz = LaunchConfiguration("rviz").perform(context).lower() == "true"
+    want_moveit = LaunchConfiguration("moveit").perform(context).lower() == "true"
     pin_pelvis = LaunchConfiguration("pin_pelvis").perform(context).lower() == "true"
 
     if want_nav and mode != "localization":
@@ -97,66 +171,142 @@ def _setup(context, *args, **kwargs):
 
     delay = LaunchConfiguration("sim_start_delay_s").perform(context)
     if not delay:
-        delay = DEFAULT_SIM_START_DELAY_S["navigation" if navigating else "bare"]
+        delay = DEFAULT_SIM_START_DELAY_S["loaded" if navigating or want_moveit else "bare"]
 
     # Every argument below is forwarded EXPLICITLY, including the ones whose values match
     # this file's own defaults. Included launch files inherit the parent's configurations,
     # so a child's DeclareLaunchArgument default never fires for anything declared here --
     # relying on it is how this stack has already shipped two silent bugs (a second RViz
     # window, and use_composition ignoring its own default).
+    sim_args = {
+        # Not optional on the navigation modes, whatever the operator asked for: sensors gates
+        # the LiDAR sweep, the relay, the odom -> base_footprint -> pelvis chain and the waist
+        # joint states, and navigation is dead without all four. Forced here rather than by
+        # flipping sim.launch.py's default, which is still provisional on an unthrottled
+        # re-measurement of test_arm_command.
+        "sensors": "true" if navigating else LaunchConfiguration("sensors"),
+        "world": LaunchConfiguration("world"),
+        "headless": LaunchConfiguration("headless"),
+        "pin_pelvis": "true" if pin_pelvis else "false",
+        "waist_hold_rad": LaunchConfiguration("waist_hold_rad"),
+        "sim_start_delay_s": delay,
+        # We own RViz, below. Without this the simulator opens its own on the wrong config.
+        "rviz": "false",
+    }
+
+    if want_moveit:
+        # MoveIt refuses to plan until every active joint has a state, and the arms hang off
+        # three waist joints joint_state_broadcaster does not own. Not exposed as an operator
+        # argument: moveit:=true with this off is a move_group that comes up healthy and then
+        # silently never plans, which is a worse failure than not having the knob.
+        sim_args["non_arm_joint_states"] = "true"
+
+    actions = [_simulator(sim_args)]
+
     if navigating:
-        launch_file = os.path.join(_navigation_share(), "launch", "nav_sim.launch.py")
-        forwarded = {
-            "mode": mode,
-            "nav": "true" if want_nav else "false",
-            "world": LaunchConfiguration("world"),
-            "headless": LaunchConfiguration("headless"),
-            "sim_start_delay_s": delay,
-            # We own RViz, below. Without this the child opens its own on the wrong config.
-            "rviz": "false",
-        }
-    else:
-        launch_file = os.path.join(
-            get_package_share_directory("g1_bringup"), "launch", "sim.launch.py"
-        )
-        forwarded = {
-            "sensors": LaunchConfiguration("sensors"),
-            "world": LaunchConfiguration("world"),
-            "headless": LaunchConfiguration("headless"),
-            "pin_pelvis": "true" if pin_pelvis else "false",
-            "sim_start_delay_s": delay,
-            "rviz": "false",
-        }
-
-    actions = [
-        IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(launch_file),
-            launch_arguments=forwarded.items(),
-        )
-    ]
-
-    if want_rviz:
-        # The nav config carries a nav2_rviz_plugins display, so it ships from g1_navigation.
-        # On the bare branch this resolves g1_bringup's own share and g1_navigation is never
-        # named -- same rule as the launch include above.
-        if navigating:
-            rviz_config = os.path.join(_navigation_share(), "config", "g1_navigation.rviz")
-        else:
-            rviz_config = os.path.join(
-                get_package_share_directory("g1_bringup"), "config", "g1_sensors.rviz"
-            )
+        # nav_stack.launch.py stages no simulator of its own, which is what makes including it
+        # next to _simulator() safe; two would be two writers on /lowcmd.
+        #
+        # use_composition and container_name are deliberately NOT declared by this file and
+        # NOT forwarded, so nav_stack's own defaults are the ones that apply. That is safe for
+        # the same reason the explicit forwarding above is necessary: inheritance only leaks
+        # through a name the parent also declares. No name here, nothing to leak, and an
+        # operator who wants to decompose the container runs nav_sim.launch.py, which exposes
+        # both.
         actions.append(
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
-                    os.path.join(
-                        get_package_share_directory("g1_bringup"), "launch", "rviz.launch.py"
-                    )
+                    os.path.join(_navigation_share(), "launch", "nav_stack.launch.py")
                 ),
-                launch_arguments={"rviz_config": rviz_config}.items(),
+                launch_arguments={
+                    "mode": mode,
+                    "nav": "true" if want_nav else "false",
+                }.items(),
             )
         )
 
+    if want_moveit:
+        # move_group.launch.py declares no arguments, so there is nothing to forward. It is
+        # sim-free by design -- planning needs joint states, which bring-up publishes from the
+        # moment it runs -- and it activates nothing: executing a plan still needs the ordered
+        # acquire in scripts/activate_arm.
+        actions.append(
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(
+                    os.path.join(_moveit_share(), "launch", "move_group.launch.py")
+                )
+            )
+        )
+
+    if want_moveit and LaunchConfiguration("activate_arm").perform(context).lower() == "true":
+        # Off by default, and it stays off by default. Acquiring the arm is a deliberate act:
+        # on hardware this is the moment /arm_sdk starts driving real joints, and a stack that
+        # goes live on `ros2 launch` is a stack that goes live when someone launches it to look
+        # at something else. This argument is a sim convenience, nothing more.
+        #
+        # Delayed rather than sequenced on an event: the component only accepts activation once
+        # controller_manager has loaded it and /lowstate is flowing, and neither emits anything
+        # this file can wait on. scripts/activate_arm still enforces the component-then-
+        # controller order, and still fails loudly if it runs too early.
+        #
+        # The principled version of this is a lifecycle authority bracket like g1_locomotion's
+        # g1_loco_authority, which acquires on activate and releases on the way out even on
+        # failure -- what CONTROL_MODES.md rule 4 actually asks for. That is a node, not a
+        # launch argument, and it belongs with the behaviour-tree work that will need it.
+        actions.append(
+            TimerAction(
+                period=float(LaunchConfiguration("activate_arm_delay_s").perform(context)),
+                actions=[
+                    ExecuteProcess(
+                        cmd=["ros2", "run", "g1_bringup", "activate_arm"],
+                        name="activate_arm",
+                        output="screen",
+                    )
+                ],
+            )
+        )
+
+    if want_rviz:
+        actions.append(_rviz(navigating, want_moveit))
+
     return actions
+
+
+def _rviz(navigating, want_moveit):
+    """One RViz, on the config that matches what is running. MoveIt wins when both are on.
+
+    MoveIt's own launcher rather than this package's generic rviz.launch.py, which takes only
+    an rviz_config and passes no parameters: the MotionPlanning panel needs
+    robot_description_semantic and robot_description_kinematics as node parameters, and without
+    them it loads with no planning groups, which reads as a broken install.
+
+    On a navigation mode with moveit:=true this still shows the MoveIt config, and a combined
+    single-window view is NOT available. Three merges were built and every one segfaulted rviz2
+    on load (exit -11) once the navigation stack was up. Run a second RViz on
+    g1_navigation.rviz for the map and costmaps. docs/notes has what was tried.
+    """
+    bringup_share = get_package_share_directory("g1_bringup")
+
+    if want_moveit:
+        launch_file = os.path.join(_moveit_share(), "launch", "moveit_rviz.launch.py")
+        # Bare MoveIt leaves rviz_config unset on purpose: this file never declares that name,
+        # so there is nothing for the child's default to inherit from and g1_moveit.rviz is what
+        # applies. The one case where relying on a child default is safe.
+        rviz_args = {}
+    else:
+        launch_file = os.path.join(bringup_share, "launch", "rviz.launch.py")
+        # The nav config carries a nav2_rviz_plugins display, so it ships from g1_navigation.
+        # On the bare branch this resolves g1_bringup's own share and g1_navigation is never
+        # named -- same rule as the launch includes above.
+        if navigating:
+            rviz_config = os.path.join(_navigation_share(), "config", "g1_navigation.rviz")
+        else:
+            rviz_config = os.path.join(bringup_share, "config", "g1_sensors.rviz")
+        rviz_args = {"rviz_config": rviz_config}
+
+    return IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(launch_file), launch_arguments=rviz_args.items()
+    )
 
 
 def generate_launch_description():
@@ -180,6 +330,33 @@ def generate_launch_description():
             description="Open RViz. mode:=none uses g1_bringup's sensor config (fixed frame "
             "odom); the navigation modes use g1_navigation's, which adds the Nav2 display "
             "group and is fixed on map.",
+        ),
+        DeclareLaunchArgument(
+            "moveit",
+            default_value="false",
+            description="Start move_group for arm planning. Works with any mode. Planning is "
+            "available immediately; executing a plan still needs activate_arm.launch.py.",
+        ),
+        DeclareLaunchArgument(
+            "activate_arm",
+            default_value="false",
+            description="SIM CONVENIENCE: run scripts/activate_arm automatically once the stack "
+            "is up, instead of as a separate command. Needs moveit:=true. Off by default -- "
+            "acquiring the arm is deliberate, and on hardware it is the moment /arm_sdk starts "
+            "driving real joints.",
+        ),
+        DeclareLaunchArgument(
+            "activate_arm_delay_s",
+            default_value="25.0",
+            description="Seconds to wait before the automatic activation. The component has to "
+            "be loaded and /lowstate flowing first; too early and activate_arm fails loudly.",
+        ),
+        DeclareLaunchArgument(
+            "waist_hold_rad",
+            default_value="",
+            description="SIM-ONLY: three comma-separated radians (yaw,roll,pitch) to stand the "
+            "waist at. Requires pin_pelvis:=true, which sim.launch.py enforces. Use it to "
+            "check arm planning against a torso that is not square to the pelvis.",
         ),
         DeclareLaunchArgument(
             "sensors",

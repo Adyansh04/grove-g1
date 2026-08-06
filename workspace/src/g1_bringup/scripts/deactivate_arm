@@ -24,6 +24,13 @@ COMPONENT_NAME = "G1ArmSdkSystem"
 CONTROLLER_NAME = "arm_trajectory_controller"
 SERVICE_CALL_TIMEOUT_S = 5.0
 
+# Released before the arm and best-effort, mirroring activate_arm: a hand that never came up
+# must not stand between the arm and its ramp-down, which is the release that matters.
+HANDS = (
+    ("G1Dex3SystemLeft", "left_hand_controller"),
+    ("G1Dex3SystemRight", "right_hand_controller"),
+)
+
 # Must comfortably exceed blend_ramp_down_s (2.0 s default): on_deactivate
 # blocks the whole service call for the ramp's duration by design (see
 # g1_hardware_interface's README -- resource_manager serializes lifecycle
@@ -50,13 +57,13 @@ def switch_controller(node, client, activate, deactivate, timeout_s):
     return result is not None and result.ok
 
 
-def set_component_state(node, client, target_state_id, target_label, timeout_s):
+def set_component_state(node, client, name, target_state_id, target_label, timeout_s):
     if not client.wait_for_service(timeout_sec=5.0):
         node.get_logger().error("set_hardware_component_state service not available")
         return False
 
     request = SetHardwareComponentState.Request()
-    request.name = COMPONENT_NAME
+    request.name = name
     request.target_state.id = target_state_id
     request.target_state.label = target_label
 
@@ -77,6 +84,18 @@ def main():
             SetHardwareComponentState, "/controller_manager/set_hardware_component_state"
         )
 
+        for component, controller in HANDS:
+            node.get_logger().info(f"releasing hand {component}...")
+            switch_controller(node, controller_client, [], [controller], SERVICE_CALL_TIMEOUT_S)
+            set_component_state(
+                node,
+                component_client,
+                component,
+                State.PRIMARY_STATE_INACTIVE,
+                "inactive",
+                SERVICE_CALL_TIMEOUT_S,
+            )
+
         # Controller-then-component: see this script's module docstring.
         node.get_logger().info(f"deactivating controller {CONTROLLER_NAME}...")
         if not switch_controller(
@@ -92,6 +111,7 @@ def main():
         if not set_component_state(
             node,
             component_client,
+            COMPONENT_NAME,
             State.PRIMARY_STATE_INACTIVE,
             "inactive",
             COMPONENT_DEACTIVATE_TIMEOUT_S,

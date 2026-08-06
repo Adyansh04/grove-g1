@@ -65,6 +65,23 @@
     <geom name="obstacle_cyl" group="2" type="cylinder" size="0.25 0.75" pos="-1.5 -2.0 0.75"
           material="obstacle"/>
 
+    <!-- Inside the arms' reach, which nothing else in this scene is: the other obstacles sit
+         1.5 m or further out and the colour target is on the floor. MoveIt's octomap only
+         demonstrates anything if there is something to plan around, so this is the obstacle
+         g1_moveit_config's test_octomap_blocks_a_plan drives a hand into.
+
+         A slab rather than a small block, so the test does not depend on guessing joint angles
+         precisely. Placed by measurement: /compute_fk puts the right palm at x 0.213, z 0.518
+         in the pelvis frame for that test pose, which is 1.273 in world with the pelvis pinned.
+         An arm raised forward on this robot goes up as well as out, so a slab at chest height
+         and 0.42 m out (the obvious guess) is missed entirely.
+
+         Spans x 0.18 to 0.38 and z 1.00 to 1.50. The torso front and the resting hands sit
+         inside 0.18, which is what keeps the sensors-off control assertion meaningful.
+         Comfortably inside the MID360's field of view. -->
+    <geom name="reach_obstacle" group="2" type="box" size="0.10 0.45 0.25" pos="0.28 0.0 1.25"
+          material="obstacle"/>
+
     <!-- D435i intrinsics only. Its pose here is a placeholder: the sensor thread writes
          cam_xpos/cam_xmat into its own snapshot every frame from torso_link's live pose,
          because the mount belongs to the vendored robot and cannot host a camera element. -->

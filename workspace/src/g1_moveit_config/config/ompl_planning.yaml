@@ -1,0 +1,40 @@
+# OMPL planning pipeline. Hand-authored and short, rather than the ~200-line dump the Setup
+# Assistant emits listing every planner OMPL ships.
+
+planning_plugin: ompl_interface/OMPLPlanner
+
+request_adapters: >-
+  default_planner_request_adapters/AddTimeOptimalParameterization
+  default_planner_request_adapters/ResolveConstraintFrames
+  default_planner_request_adapters/FixWorkspaceBounds
+  default_planner_request_adapters/FixStartStateBounds
+  default_planner_request_adapters/FixStartStateCollision
+  default_planner_request_adapters/FixStartStatePathConstraints
+
+start_state_max_bounds_error: 0.1
+
+planner_configs:
+  RRTConnect:
+    type: geometric::RRTConnect
+    range: 0.0   # 0 lets OMPL pick from the state space extent
+
+left_arm:
+  planner_configs:
+    - RRTConnect
+  # Tighter than the 0.01 default: motion is validated by sampling along each segment, and the
+  # things these arms reach around are thin enough to pass between two validated states.
+  longest_valid_segment_fraction: 0.005
+
+right_arm:
+  planner_configs:
+    - RRTConnect
+  longest_valid_segment_fraction: 0.005
+
+both_arms:
+  planner_configs:
+    - RRTConnect
+  longest_valid_segment_fraction: 0.005
+  # One joint from each arm. RRTConnect does not use the projection, but OMPL warns and
+  # substitutes a random one when it is missing, and every published dual-arm config that
+  # skipped this ended up with a projection naming only one of the two arms.
+  projection_evaluator: joints(left_shoulder_pitch_joint,right_shoulder_pitch_joint)

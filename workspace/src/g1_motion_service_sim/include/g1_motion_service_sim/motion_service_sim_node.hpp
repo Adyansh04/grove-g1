@@ -14,6 +14,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "g1_motion_service_sim/blend_math.hpp"
 #include "g1_motion_service_sim/loco_fsm.hpp"
@@ -84,22 +85,36 @@ private:
     double arm_hold_kd_{};
     double arm_sdk_timeout_s_{};
     double timeout_ramp_down_s_{};
+    /// Waist targets that replace the captured ones, or empty to hold whatever was captured.
+    /// Only meaningful while the legs are stiff-holding; a live walking policy owns the waist.
+    std::vector<double> waist_hold_rad_;
+
+    /// Arm targets that replace the captured ones, or empty to hold whatever was captured.
+    ///
+    /// Not optional in practice. The capture takes the first /lowstate sample, and by then the
+    /// arms have been swinging under gravity with nothing driving them since the simulator
+    /// started, so "captured" means "wherever they happened to fall". That was survivable while
+    /// the model's hands were massless stubs; with real 0.7 kg Dex3 hands they fall further and
+    /// the palm ends up against the thigh, which is a self-collision MoveIt refuses to plan out
+    /// of. Nothing here runs on the robot -- the onboard controller holds the arms there -- so
+    /// this is a simulator artifact being removed, not hardware behaviour being papered over.
+    /// See docs/notes/hand-mass-rest-pose.md.
+    std::vector<double> arm_hold_rad_;
 
     rclcpp::Subscription<unitree_hg::msg::LowState>::SharedPtr lowstate_sub_;
     rclcpp::Subscription<unitree_hg::msg::LowCmd>::SharedPtr   arm_sdk_sub_;
     rclcpp::Publisher<unitree_hg::msg::LowCmd>::SharedPtr      lowcmd_pub_;
-    /// Lower-body joint states. joint_state_broadcaster only publishes the arms,
-    /// because the hardware interface is arm-only; without these
-    /// robot_state_publisher cannot connect pelvis to torso_link and every frame
-    /// above the waist, sensors included, is stranded in its own TF tree.
-    rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr lower_joint_pub_;
+    /// The legs and waist, which the onboard controller owns and no hardware interface of
+    /// ours reads. Without them robot_state_publisher cannot connect pelvis to torso_link,
+    /// and every frame above the waist, sensors included, is stranded in its own TF tree.
+    rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr non_arm_joint_pub_;
     /// Names filled once; only the numbers change per sample.
-    sensor_msgs::msg::JointState lower_joint_msg_;
+    sensor_msgs::msg::JointState non_arm_joint_msg_;
     /// /lowstate arrives at ~1 kHz. Publishing joint states that fast is pure
     /// waste next to joint_state_broadcaster's ~200 Hz, and it measurably
     /// disturbed bring-up, so it is decimated.
-    int                          lower_joint_decimate_ = 0;
-    bool                         publish_lower_joints_ = false;
+    int                          non_arm_joint_decimate_ = 0;
+    bool                         publish_non_arm_joints_ = false;
     rclcpp::TimerBase::SharedPtr publish_timer_;
 
     /// Base linear velocity for the policy observation. /lowstate carries no such field -- the
@@ -114,14 +129,29 @@ private:
     /// own boot state (see loco_fsm.hpp's legality table for why SET_VELOCITY is illegal here).
     int loco_fsm_state_{ kFsmDamp };
 
-    /// Set once, from the first /lowstate sample, and never touched again --
-    /// the frozen reference every subsequent tick holds legs/waist against
-    /// and blends arms toward at weight 0. All callbacks and the publish
-    /// timer run on the same single-threaded executor (this node's main()
-    /// does a plain rclcpp::spin), so there is no cross-thread contention to
-    /// guard here beyond this one publish-once latch.
+    /// Set once, from the first /lowstate sample -- the frozen reference every
+    /// subsequent tick holds legs/waist against. The ARM slots are the one
+    /// exception: they follow the measured arm while /arm_sdk owns the arms,
+    /// so releasing blends toward where the arms actually are (see
+    /// arm_hold_tracking_weight_). All callbacks and the publish timer run on
+    /// the same single-threaded executor (this node's main() does a plain
+    /// rclcpp::spin), so there is no cross-thread contention to guard here.
     bool                               hold_pose_captured_{ false };
     std::array<double, kNumBodyMotors> hold_q_{};
+
+    /// Above this effective weight the arm hold target tracks the measured arm;
+    /// at or below it the target freezes and becomes a real restoring
+    /// reference. Tracking on the wrong side of this would make the hold
+    /// command chase the measurement, leaving zero position error and letting
+    /// the arms sag under gravity on damping alone.
+    double arm_hold_tracking_weight_{ 0.05 };
+
+    /// Show the walking policy the default arm posture instead of the real one,
+    /// and zero the arm half of last_action. /arm_sdk owns those joints here, so
+    /// the policy's arm actions are discarded anyway; what it sees otherwise is
+    /// an input it never trained on. False restores the raw observation, which
+    /// is only useful for reproducing the instability on purpose.
+    bool mask_arm_observations_{ true };
 
     /// Latest /arm_sdk command (arm slots + the weight slot) and its arrival
     /// time.

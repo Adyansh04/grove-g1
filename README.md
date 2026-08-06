@@ -13,11 +13,20 @@ The robot maps a facility with SLAM Toolbox, localizes against the saved map, an
 a goal pose under Nav2. Arm trajectories run through `ros2_control` onto Unitree's weight-blended
 `rt/arm_sdk` interface, so the vendor's onboard controller keeps the legs balanced throughout.
 
-Manipulation is the next milestone and is not built yet.
+MoveIt plans for either arm or both together, collision-checked against a live octomap built from
+the LiDAR, and each Dex3-1 hand is its own planning group with `open` and `closed` postures. That
+covers pick and place: reach, close, attach the object to the arm in the planning scene, move,
+place, open.
+
+Learned manipulation for unstructured scenes is the next milestone and is not built yet.
 
 ## Nav2 Demo
 
 ![Nav2 Demo](docs/media/grove_nav2_demo.gif)
+
+## MoveIt Demo
+
+![MoveIt Demo](docs/media/grove_moveit_demo.gif)
 
 ## Architecture
 
@@ -37,9 +46,14 @@ flowchart TB
         ODOM["g1_odometry_publisher"]
     end
 
+    subgraph MANIP["Manipulation"]
+        MG["move_group<br/>plan + collision check"]
+    end
+
     subgraph CTRL["Bridging and control"]
         BRIDGE["g1_loco_bridge"]
         ARMSYS["G1ArmSdkSystem<br/>ros2_control plugin"]
+        HANDSYS["G1Dex3System<br/>one per hand"]
     end
 
     subgraph SIMONLY["Simulation only"]
@@ -49,10 +63,15 @@ flowchart TB
     end
 
     OP --> NAVL
+    OP --> MANIP
     OP --> CTRL
     OP --> SIMONLY
 
+    MG -- "FollowJointTrajectory" --> ARMSYS
+    MG -- "FollowJointTrajectory" --> HANDSYS
+    HANDSYS -- "/dex3/side/cmd" --> MSS
     RELAY -- "/livox/lidar" --> SCAN
+    RELAY -- "/livox/lidar" --> MG
     SCAN -- "/scan" --> SLAM
     SLAM -- "map to odom" --> NAV2
     ODOM -- "odom to base_footprint" --> NAV2
@@ -82,9 +101,11 @@ Two rules shape most of the design, and both apply in simulation so the habits t
 |---|---|
 | [`g1_bringup`](workspace/src/g1_bringup) | The entry point. Launch files, scenes and config that compose everything below. |
 | [`g1_description`](workspace/src/g1_description) | Vendored G1 URDF plus the `ros2_control` xacro wrapper. |
+| [`g1_hand_interface`](workspace/src/g1_hand_interface) | `ros2_control` plugin for one Dex3-1 hand, over the hand's own DDS topics. |
 | [`g1_hardware_interface`](workspace/src/g1_hardware_interface) | `ros2_control` plugin bridging the 14 arm joints onto `rt/arm_sdk`. |
 | [`g1_locomotion`](workspace/src/g1_locomotion) | LocoClient bridge, gait shaper and the locomotion-authority bracket. |
 | [`g1_motion_service_sim`](workspace/src/g1_motion_service_sim) | Simulation stand-in for the robot's onboard motion service. |
+| [`g1_moveit_config`](workspace/src/g1_moveit_config) | MoveIt config: arm and hand planning groups, kinematics, the octomap. |
 | [`g1_msgs`](workspace/src/g1_msgs) | The `SetLocoMode` action and `LocoStatus` message. |
 | [`g1_navigation`](workspace/src/g1_navigation) | SLAM Toolbox mapping, AMCL localization and Nav2. |
 | [`g1_sensor_relay`](workspace/src/g1_sensor_relay) | Publishes LiDAR and depth frames sampled inside the simulator. |
@@ -121,6 +142,13 @@ ros2 launch g1_bringup bringup.launch.py mode:=mapping rviz:=true
 
 # Localize against the committed map and navigate
 ros2 launch g1_bringup bringup.launch.py mode:=localization nav:=true rviz:=true
+
+# Plan for the arms and hands, with the LiDAR octomap in the planning scene
+ros2 launch g1_bringup bringup.launch.py moveit:=true sensors:=true rviz:=true
+
+# Everything at once: localized, navigating, planning, arms acquired, RViz up
+ros2 launch g1_bringup bringup.launch.py \
+  mode:=localization nav:=true moveit:=true rviz:=true activate_arm:=true headless:=false
 ```
 
 Send it somewhere:
@@ -128,6 +156,17 @@ Send it somewhere:
 ```bash
 ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose \
   "{pose: {header: {frame_id: map}, pose: {position: {x: 2.5, y: -2.5}, orientation: {w: 1.0}}}}"
+```
+
+Moving the arms or hands needs an explicit acquire step first, and a matching release. It takes
+the arm and both hands together; a hand that is absent or unpowered logs and leaves the arm
+usable.
+
+```bash
+ros2 launch g1_bringup activate_arm.launch.py
+# plan from RViz's MotionPlanning panel, or send FollowJointTrajectory goals to
+# arm_trajectory_controller, left_hand_controller or right_hand_controller
+ros2 launch g1_bringup deactivate_arm.launch.py
 ```
 
 ## Development environment
@@ -169,9 +208,11 @@ colcon test-result --all
 ```
 
 Suites that launch a simulator are timing-sensitive and serialize on a shared ctest resource lock.
-On a loaded machine the walking suites can fail without anything being wrong, so re-run a failing
-suite alone before treating it as a regression. Each package README says which of its tests need a
-simulator.
+Run them **one package at a time**, and check nothing is left over from a previous run
+(`pgrep -x unitree_mujoco`) before trusting a result: a stray simulator is the usual explanation
+for a batch of failures that all pass on a clean rerun. Each package README says which of its
+tests need a simulator.
+
 
 ## Repository layout
 

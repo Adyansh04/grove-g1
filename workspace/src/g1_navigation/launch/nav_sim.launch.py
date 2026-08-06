@@ -1,8 +1,17 @@
-"""Top level: the simulator, the scan pipeline, and either SLAM or localization.
+"""Standalone wrapper: the simulator, the navigation stack, and optionally RViz.
+
+One command for running navigation on its own, which is what the integration suites launch and
+what a nav-only debugging session wants. The stack itself lives in nav_stack.launch.py; this
+file only stages a simulator under it and attaches a window.
 
 Includes g1_bringup rather than the other way round. Navigation sits above bring-up, so the
 higher layer composes the lower one; a nav:=true argument on sim.launch.py would give
 g1_bringup a dependency on Nav2 and slam_toolbox.
+
+g1_bringup's bringup.launch.py composes the same two pieces for the operator entry point. That
+leaves exactly one fact stated twice -- sensors:=true on the simulator -- because each file
+stages its own simulator and there is nowhere shared to put it. test_launch_threading asserts
+it on both.
 """
 
 import os
@@ -10,41 +19,18 @@ import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
-from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
-MODES = ("mapping", "localization")
-
-# Isolated rather than the plain container: each component keeps its own single-threaded
-# executor, so one blocking callback cannot stall the others.
-CONTAINER_EXECUTABLE = "component_container_isolated"
-
 
 def _setup(context, *args, **kwargs):
-    mode = LaunchConfiguration("mode").perform(context)
-    if mode not in MODES:
-        raise RuntimeError(
-            f"mode:={mode!r} is not a mode. 'mapping' builds a new map of the facility; "
-            f"'localization' runs against the committed one, which is what a repeatable "
-            f"goal pose needs."
-        )
     share = get_package_share_directory("g1_navigation")
     launch_dir = os.path.join(share, "launch")
     # Resolved BEFORE the sim include below, which sets rviz=false for its own scope and leaks
     # that back here -- without capturing it first, asking for rviz:=true silently gets you no
     # RViz at all. Same launch-configuration inheritance that bites use_composition.
     want_rviz = LaunchConfiguration("rviz").perform(context).lower() == "true"
-
-    def include(name, **launch_args):
-        return IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(os.path.join(launch_dir, name)),
-            launch_arguments=launch_args.items(),
-        )
-
-    use_composition = LaunchConfiguration("use_composition")
-    container_name = LaunchConfiguration("container_name")
 
     actions = [
         # sensors:=true is not optional: it gates the LiDAR sweep, the relay, the
@@ -69,52 +55,19 @@ def _setup(context, *args, **kwargs):
                 "rviz": "false",
             }.items(),
         ),
-        # The container has to exist before anything tries to load into it. Created here
-        # rather than in the leaf launches so one container serves all of them -- which is
-        # the point, and is what PR B's costmaps and controller will join.
-        Node(
-            condition=IfCondition(use_composition),
-            name=container_name,
-            package="rclcpp_components",
-            executable=CONTAINER_EXECUTABLE,
-            output="both",
-        ),
-        include(
-            "scan.launch.py",
-            use_composition=use_composition,
-            container_name=container_name,
+        # Every argument forwarded explicitly, including the ones whose values match this
+        # file's own defaults: the child's DeclareLaunchArgument default never fires for a name
+        # this file also declares.
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(os.path.join(launch_dir, "nav_stack.launch.py")),
+            launch_arguments={
+                "mode": LaunchConfiguration("mode"),
+                "nav": LaunchConfiguration("nav"),
+                "use_composition": LaunchConfiguration("use_composition"),
+                "container_name": LaunchConfiguration("container_name"),
+            }.items(),
         ),
     ]
-
-    if mode == "mapping":
-        # slam_toolbox stays out of the container even though it ships a component:
-        # nav2_bringup's own slam_launch.py runs it as a plain node, and its 40 MB stack
-        # requirement for map serialization is not something to hand a shared process.
-        actions.append(include("slam.launch.py"))
-    else:
-        actions.append(
-            include(
-                "localization.launch.py",
-                use_composition=use_composition,
-                container_name=container_name,
-            )
-        )
-
-    # Nav2 itself. Off by default so PR A's documented commands behave identically and the
-    # navigation invocation is explicit.
-    if LaunchConfiguration("nav").perform(context).lower() == "true":
-        if mode != "localization":
-            raise RuntimeError(
-                "nav:=true needs mode:=localization. Navigating against a map slam_toolbox is "
-                "still building means the goal pose moves under the planner."
-            )
-        # Passed explicitly as false, and it has to be explicit: an included launch file
-        # INHERITS the parent's launch configurations, so nav2.launch.py's own
-        # DeclareLaunchArgument default never applies against this file's use_composition.
-        # Nav2 must run uncomposed because composition does not deliver the nested costmap
-        # parameters; see nav2.launch.py's docstring. The scan and localization nodes above
-        # still compose, and still get theirs.
-        actions.append(include("nav2.launch.py", use_composition="false"))
 
     if want_rviz:
         actions.append(

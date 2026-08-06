@@ -7,6 +7,7 @@
 
 #include "g1_motion_service_sim/motion_service_sim_node.hpp"
 
+#include <array>
 #include <cmath>
 #include <nlohmann/json.hpp>
 #include <optional>
@@ -109,9 +110,40 @@ MotionServiceSim::MotionServiceSim(const rclcpp::NodeOptions& options)
     waist_kd_                       = declare_parameter("waist_kd", 1.0);
     arm_hold_kp_                    = declare_parameter("arm_hold_kp", 40.0);
     arm_hold_kd_                    = declare_parameter("arm_hold_kd", 1.0);
+    mask_arm_observations_          = declare_parameter("mask_arm_observations", true);
+    arm_hold_tracking_weight_       = declare_parameter("arm_hold_tracking_weight", 0.05);
     const double arm_sdk_timeout_ms = declare_parameter("arm_sdk_timeout_ms", 500.0);
     arm_sdk_timeout_s_              = arm_sdk_timeout_ms / 1000.0;
     timeout_ramp_down_s_            = declare_parameter("timeout_ramp_down_s", 1.0);
+
+    // The waist belongs to the onboard controller, so nothing in this stack can command it and
+    // the sim model always spawns it at zero. Overriding the captured hold target is the only
+    // way to stand the torso anywhere else, which manipulation needs: a waist locked at zero
+    // hides every error in the pelvis-to-torso transform that arm planning depends on.
+    waist_hold_rad_ = declare_parameter("waist_hold_rad", std::vector<double>{});
+    if (!waist_hold_rad_.empty() &&
+        waist_hold_rad_.size() != static_cast<std::size_t>(kFirstArmMotor - kNumLegMotors))
+    {
+        RCLCPP_ERROR(
+            get_logger(),
+            "waist_hold_rad needs %d values (yaw, roll, pitch) but got %zu -- ignoring it and "
+            "holding the captured waist pose",
+            kFirstArmMotor - kNumLegMotors,
+            waist_hold_rad_.size());
+        waist_hold_rad_.clear();
+    }
+
+    arm_hold_rad_ = declare_parameter("arm_hold_rad", std::vector<double>{});
+    if (!arm_hold_rad_.empty() && arm_hold_rad_.size() != kNumArmMotors)
+    {
+        RCLCPP_ERROR(
+            get_logger(),
+            "arm_hold_rad needs %zu values (left arm then right, motors 15 to 28) but got %zu -- "
+            "ignoring it and holding whatever the arms fell into at startup",
+            kNumArmMotors,
+            arm_hold_rad_.size());
+        arm_hold_rad_.clear();
+    }
 
     // Fail fast on non-positive rate/duration (same gate as G1ArmSdkSystem::on_init).
     if (publish_rate_hz_ <= 0.0 || arm_sdk_timeout_s_ <= 0.0 || timeout_ramp_down_s_ <= 0.0)
@@ -133,19 +165,19 @@ MotionServiceSim::MotionServiceSim(const rclcpp::NodeOptions& options)
     // Off unless asked for. This work lands on the ~1 kHz /lowstate callback, which is the
     // walking policy's own path, so only the sensor track pays for it. sim.launch.py turns
     // it on together with sensors, because that is what needs pelvis -> torso_link.
-    publish_lower_joints_ = declare_parameter<bool>("publish_lower_joint_states", false);
+    publish_non_arm_joints_ = declare_parameter<bool>("publish_non_arm_joint_states", false);
 
     // Latest-only: robot_state_publisher merges by joint name, so this coexists with
     // joint_state_broadcaster's arm-only publication rather than competing with it.
-    lower_joint_pub_ = create_publisher<sensor_msgs::msg::JointState>(
+    non_arm_joint_pub_ = create_publisher<sensor_msgs::msg::JointState>(
         "/joint_states",
         rclcpp::QoS(rclcpp::KeepLast(1)));
-    lower_joint_msg_.name.reserve(kNumLowerMotors);
-    lower_joint_msg_.position.resize(kNumLowerMotors);
-    lower_joint_msg_.velocity.resize(kNumLowerMotors);
+    non_arm_joint_msg_.name.reserve(kNumLowerMotors);
+    non_arm_joint_msg_.position.resize(kNumLowerMotors);
+    non_arm_joint_msg_.velocity.resize(kNumLowerMotors);
     for (int i = 0; i < kNumLowerMotors; ++i)
     {
-        lower_joint_msg_.name.emplace_back(kDdsMotorOrder[i]);
+        non_arm_joint_msg_.name.emplace_back(kDdsMotorOrder[i]);
     }
 
     lowstate_sub_ = create_subscription<unitree_hg::msg::LowState>(
@@ -325,16 +357,16 @@ void MotionServiceSim::lowstateCallback(const unitree_hg::msg::LowState::ConstSh
     // Legs and waist, which nothing else publishes. Motor index equals kDdsMotorOrder
     // index, asserted by test_walk_policy's joint-order check. Decimated to ~100 Hz:
     // /lowstate is ~1 kHz and robot_state_publisher has no use for that.
-    if (publish_lower_joints_ && ++lower_joint_decimate_ >= 10)
+    if (publish_non_arm_joints_ && ++non_arm_joint_decimate_ >= 10)
     {
-        lower_joint_decimate_         = 0;
-        lower_joint_msg_.header.stamp = now();
+        non_arm_joint_decimate_         = 0;
+        non_arm_joint_msg_.header.stamp = now();
         for (int i = 0; i < kNumLowerMotors; ++i)
         {
-            lower_joint_msg_.position[i] = msg->motor_state[i].q;
-            lower_joint_msg_.velocity[i] = msg->motor_state[i].dq;
+            non_arm_joint_msg_.position[i] = msg->motor_state[i].q;
+            non_arm_joint_msg_.velocity[i] = msg->motor_state[i].dq;
         }
-        lower_joint_pub_->publish(lower_joint_msg_);
+        non_arm_joint_pub_->publish(non_arm_joint_msg_);
     }
 
     // Refreshed every sample, unlike hold_q_ below: the policy observes live joint state.
@@ -342,6 +374,50 @@ void MotionServiceSim::lowstateCallback(const unitree_hg::msg::LowState::ConstSh
     {
         walk_inputs_.joint_pos[i] = msg->motor_state[i].q;
         walk_inputs_.joint_vel[i] = msg->motor_state[i].dq;
+    }
+
+    // The arms are hidden from the policy, and this is the single change that makes this
+    // simulator behave like the real robot rather than worse than it.
+    //
+    // The policy owns all 29 joints on paper, but /arm_sdk owns 15-28 here, so its arm actions
+    // are thrown away (walk_policy.yaml). It still SEES those joints: 42 of the 99 observation
+    // dimensions are arm position, arm velocity and arm last-action. During training the arms
+    // only ever sat within the policy's own action distribution around the default posture --
+    // about one action-scale unit, and the arm scales are 0.438577, which is exactly the
+    // plus/minus 0.4 rad envelope M3 measured as stable. A MoveIt goal of "arms straight ahead"
+    // is roughly four units out, so the policy is extrapolating on a third of its input.
+    //
+    // The real G1 has no equivalent failure: its onboard controller is not this policy, and per
+    // CMU's G1 notes it "is not aware of how the arms are being controlled" -- it rejects arm
+    // motion reactively, through the IMU, as an unmodelled disturbance. Showing our policy the
+    // default posture reproduces exactly that: the physical disturbance still reaches it through
+    // the base state, but the out-of-distribution input that hardware never suffers does not.
+    // So this makes sim MORE faithful, not less -- today sim fails in a way hardware will not.
+    //
+    // Same approach HuggingFace ship in LeRobot's production G1 integration
+    // (robots/unitree_g1/holosoma_locomotion.py) against a near-identical 100-obs/29-action
+    // policy, for the same reason: "prevents policy from reacting to teleop arm movements".
+    if (mask_arm_observations_)
+    {
+        for (std::size_t i = 0; i < kNumArmMotors; ++i)
+        {
+            const std::size_t motor       = static_cast<std::size_t>(kFirstArmMotor) + i;
+            walk_inputs_.joint_pos[motor] = walk_policy_config_.default_joint_pos[motor];
+            walk_inputs_.joint_vel[motor] = 0.0;
+        }
+    }
+
+    // While /arm_sdk owns the arms, the hold target follows them, so a release blends toward
+    // where the arms actually are instead of dragging them back to the spawn pose. Below the
+    // threshold it freezes: a target that keeps chasing the measurement has no position error
+    // to hold against, and the arms would sag on damping alone.
+    if (hold_pose_captured_ && effective_weight_ > arm_hold_tracking_weight_)
+    {
+        for (std::size_t i = 0; i < kNumArmMotors; ++i)
+        {
+            const std::size_t motor = static_cast<std::size_t>(kFirstArmMotor) + i;
+            hold_q_[motor]          = msg->motor_state[motor].q;
+        }
     }
     for (std::size_t i = 0; i < 4; ++i)
     {
@@ -357,6 +433,20 @@ void MotionServiceSim::lowstateCallback(const unitree_hg::msg::LowState::ConstSh
         for (int i = 0; i < kNumBodyMotors; ++i)
         {
             hold_q_[static_cast<std::size_t>(i)] = msg->motor_state[static_cast<std::size_t>(i)].q;
+        }
+        // Applied to the captured pose rather than to every command, so the waist ramps to the
+        // target through the same stiff-hold PD as any other hold -- no snap, and /lowstate
+        // still reports whatever the joint actually reached.
+        for (std::size_t i = 0; i < waist_hold_rad_.size(); ++i)
+        {
+            hold_q_[static_cast<std::size_t>(kNumLegMotors) + i] = waist_hold_rad_[i];
+        }
+        // Same treatment, and for a stronger reason: the arms have been falling freely since
+        // the simulator started, so what the capture reads is a startup transient rather than a
+        // posture. See the member's comment.
+        for (std::size_t i = 0; i < arm_hold_rad_.size(); ++i)
+        {
+            hold_q_[static_cast<std::size_t>(kFirstArmMotor) + i] = arm_hold_rad_[i];
         }
         hold_pose_captured_ = true;
     }
@@ -399,7 +489,21 @@ void MotionServiceSim::walkPolicyTick()
             "untouched so the stiff-hold fallback engages if it keeps failing");
         return;
     }
-    walk_last_action_  = *action;
+    walk_last_action_ = *action;
+    if (mask_arm_observations_)
+    {
+        // The other half of hiding the arms, and the half that is easy to miss. last_action is
+        // fed straight back into the next observation, but only the lower 15 actions are ever
+        // executed -- the arm actions are discarded and /arm_sdk drives those joints instead.
+        // Left alone, the policy reads back arm commands that never happened, next to arm
+        // positions produced by something else entirely, so the action-to-state relationship it
+        // learned is broken on 14 joints every tick. Zero is the action that means "default
+        // posture", which is what the masked position and velocity above already claim.
+        //
+        // FALCON's deployment code slices its feedback to executed joints for the same reason
+        // (sim2real/rl_policy/dec_loco/dec_loco.py), arrived at independently.
+        std::fill(walk_last_action_.begin() + kFirstArmMotor, walk_last_action_.end(), 0.0F);
+    }
     const auto targets = actionToJointTargets(walk_last_action_, walk_policy_config_);
     std::copy(targets.begin(), targets.begin() + kNumLowerMotors, walk_target_q_.begin());
     walk_target_valid_ = true;

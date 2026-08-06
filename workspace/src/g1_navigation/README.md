@@ -22,14 +22,22 @@ flowchart TB
 
 | File | Purpose |
 |---|---|
-| `nav_sim.launch.py` | This package's orchestrator. Composes the simulator, the scan pipeline, and either SLAM or localization. |
+| `nav_stack.launch.py` | The stack itself, with no simulator: the shared container, the scan pipeline, SLAM or localization, and Nav2 when asked. What `g1_bringup` includes. |
+| `nav_sim.launch.py` | Standalone wrapper: a simulator, `nav_stack.launch.py`, and RViz. What the integration suites launch. |
 | `scan.launch.py` | `pointcloud_to_laserscan`, flattening the LiDAR into the 2D scan SLAM and AMCL consume. |
 | `slam.launch.py` | `slam_toolbox` in online async mapping mode. |
 | `localization.launch.py` | `map_server` and AMCL against the committed map. |
-| `nav2.launch.py` | Nav2 itself: planner, controller, behaviours, BT navigator, lifecycle manager. |
+| `nav2.launch.py` | Nav2 itself: planner, controller, behaviours, BT navigator, lifecycle manager. One of the pieces `nav_stack.launch.py` composes, and only when `nav:=true`. |
 
-The operator entry point is `g1_bringup`'s, matching `nav2_bringup`. `nav_sim.launch.py` still runs
-directly if you want it.
+The operator entry point is `g1_bringup`'s, matching `nav2_bringup`. It stages the simulator itself
+and includes `nav_stack.launch.py` directly, so nothing here has to bundle a simulator on its
+behalf. `nav_sim.launch.py` is that same stack with a simulator and RViz attached, for running
+navigation on its own; it exposes `use_composition`, `container_name` and `map`, which the bring-up
+entry point does not.
+
+`nav_stack.launch.py` deliberately stages no simulator. Both callers stage exactly one, and a
+second would put two writers on `/lowcmd`; `test_launch_threading` asserts the absence rather than
+trusting it.
 
 ## Running
 
@@ -122,7 +130,7 @@ Nav2 dependency.
 | `test_scan_pipeline` | yes | The frame chain and the scan. |
 | `test_slam_map` | yes | slam_toolbox owning `map` to `odom`, and the map's geometry. |
 | `test_gait_coupling` | no | Spin's rotational limits against the shaper's engage threshold. |
-| `test_launch_threading` | no | Arguments surviving `bringup` to `nav_sim` to `sim`. |
+| `test_launch_threading` | no | Arguments surviving every include boundary, for both callers; `nav_stack.launch.py`'s include set, its single container, the uncomposed Nav2 pin, and that it stages no simulator. |
 | `test_rviz_configs` | no | The sensor display group not drifting between the two configs. |
 | `test_no_sim_time` | no | No shipped config enables `use_sim_time`. There is no `/clock` on this track. |
 

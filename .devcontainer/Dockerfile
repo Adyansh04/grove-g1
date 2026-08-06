@@ -194,6 +194,39 @@ RUN apt-get update && apt-get install -y \
         ros-humble-pointcloud-to-laserscan \
     && rm -rf /var/lib/apt/lists/*
 
+# --- Milestone 7: MoveIt 2 (structured manipulation) --------------------------
+
+# Humble's stable line, 2.5.9. The metapackage already covers core, OMPL, the simple
+# controller manager and the RViz MotionPlanning display; the two extras below are named
+# for specific reasons rather than habit. moveit-configs-utils otherwise arrives only as a
+# transitive dependency of moveit-ros-benchmarks, which is not a chain to hang every launch
+# file off. moveit-setup-assistant ships the collisions_updater binary, kept for
+# regenerating g1_moveit_config's self-collision matrix -- though note that tool does not
+# finish on this model at any trial count (g1_moveit_config/README.md), so the shipped matrix
+# came from a different route. Upstream has also been reshuffling that package across releases.
+#
+# pick-ik replaces the default KDL solver because the arms are 7-DoF against a 6-DoF pose;
+# see g1_moveit_config/config/kinematics.yaml. moveit-servo is deliberately absent: later
+# milestone, and nothing streams to it yet.
+#
+# moveit-ros-perception carries BOTH octomap updater plugins, and the moveit metapackage does
+# NOT pull it in -- only the occupancy-map-monitor framework arrives, which is why move_group
+# warns about octomap resolution while having no plugin to load. Without this the sensor config
+# fails as a pluginlib load error rather than anything that names the missing package.
+#
+# realsense2-description is Intel's own D435 model. The vendored G1 URDF leaves d435_link and
+# mid360_link as empty links, so both sensors are invisible; this supplies the camera's real
+# geometry instead of a guessed box. Visual only -- see g1_arm_sdk.urdf.xacro for why nothing
+# here gets collision geometry.
+RUN apt-get update && apt-get install -y \
+        ros-humble-moveit \
+        ros-humble-moveit-configs-utils \
+        ros-humble-moveit-setup-assistant \
+        ros-humble-pick-ik \
+        ros-humble-moveit-ros-perception \
+        ros-humble-realsense2-description \
+    && rm -rf /var/lib/apt/lists/*
+
 # Placed last on purpose. This is the only block that consumes COPYed host files
 # (workspace/patches, workspace/vendor), and cache invalidation flows forward: sitting
 # earlier, a one-line patch or sensor-source edit re-ran every apt block, the ONNX

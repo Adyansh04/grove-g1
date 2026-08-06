@@ -1,0 +1,170 @@
+# Velocity and acceleration limits MoveIt times its trajectories against.
+#
+# These are NOT the URDF's limits, and the difference is the point. The URDF says 22 to 37 rad/s,
+# which is the motor; the arm reaches the robot through g1_hardware_interface, which slew-clamps
+# every joint at max_joint_velocity_rad_s = 1.0 rad/s (g1_description/config/arm_sdk_params.yaml).
+# Time a trajectory against the motor and the bridge stretches it by a factor of thirty-odd,
+# which surfaces as the controller aborting on a goal-time tolerance that looks unrelated to
+# speed. 0.8 leaves the clamp as a backstop rather than a controller in the loop: JTC
+# interpolation and the 200 Hz controller_manager against a 100 Hz publish rate can push
+# instantaneous command deltas above the nominal.
+#
+# g1_moveit_config's drift test asserts every value here stays under that clamp.
+#
+# Acceleration has no URDF equivalent at all -- the vendored file declares none -- and
+# time-optimal parameterization needs one. Without it a plan comes back "successful" carrying
+# zero timestamps and only fails at execution. 2.0 rad/s^2 reaches full speed in 0.4 s; arm
+# acceleration shifts the centre of mass on a robot that is balancing itself, so it starts
+# conservative and moves when there is a measurement to move it against.
+#
+# Uniform across all 14 rather than per-joint: every URDF limit is far above the clamp, so the
+# clamp is what binds on every joint and per-joint tuning would encode a distinction that does
+# not exist yet.
+
+joint_limits:
+  left_shoulder_pitch_joint:
+    has_velocity_limits: true
+    max_velocity: 0.8
+    has_acceleration_limits: true
+    max_acceleration: 2.0
+  left_shoulder_roll_joint:
+    has_velocity_limits: true
+    max_velocity: 0.8
+    has_acceleration_limits: true
+    max_acceleration: 2.0
+  left_shoulder_yaw_joint:
+    has_velocity_limits: true
+    max_velocity: 0.8
+    has_acceleration_limits: true
+    max_acceleration: 2.0
+  left_elbow_joint:
+    has_velocity_limits: true
+    max_velocity: 0.8
+    has_acceleration_limits: true
+    max_acceleration: 2.0
+  left_wrist_roll_joint:
+    has_velocity_limits: true
+    max_velocity: 0.8
+    has_acceleration_limits: true
+    max_acceleration: 2.0
+  left_wrist_pitch_joint:
+    has_velocity_limits: true
+    max_velocity: 0.8
+    has_acceleration_limits: true
+    max_acceleration: 2.0
+  left_wrist_yaw_joint:
+    has_velocity_limits: true
+    max_velocity: 0.8
+    has_acceleration_limits: true
+    max_acceleration: 2.0
+  right_shoulder_pitch_joint:
+    has_velocity_limits: true
+    max_velocity: 0.8
+    has_acceleration_limits: true
+    max_acceleration: 2.0
+  right_shoulder_roll_joint:
+    has_velocity_limits: true
+    max_velocity: 0.8
+    has_acceleration_limits: true
+    max_acceleration: 2.0
+  right_shoulder_yaw_joint:
+    has_velocity_limits: true
+    max_velocity: 0.8
+    has_acceleration_limits: true
+    max_acceleration: 2.0
+  right_elbow_joint:
+    has_velocity_limits: true
+    max_velocity: 0.8
+    has_acceleration_limits: true
+    max_acceleration: 2.0
+  right_wrist_roll_joint:
+    has_velocity_limits: true
+    max_velocity: 0.8
+    has_acceleration_limits: true
+    max_acceleration: 2.0
+  right_wrist_pitch_joint:
+    has_velocity_limits: true
+    max_velocity: 0.8
+    has_acceleration_limits: true
+    max_acceleration: 2.0
+  right_wrist_yaw_joint:
+    has_velocity_limits: true
+    max_velocity: 0.8
+    has_acceleration_limits: true
+    max_acceleration: 2.0
+
+  # The hands run against a different clamp: g1_hand_interface slews at 3.0 rad/s
+  # (g1_description/config/dex3_params.yaml), so 2.0 leaves the same backstop margin 0.8 leaves
+  # the arm's 1.0. Acceleration is higher than the arm's because a finger is a few grams on a
+  # short lever and moving one does not shift the centre of mass of a balancing robot; 2.0 here
+  # would make every grasp take a second for no reason.
+  left_hand_thumb_0_joint:
+    has_velocity_limits: true
+    max_velocity: 2.0
+    has_acceleration_limits: true
+    max_acceleration: 5.0
+  left_hand_thumb_1_joint:
+    has_velocity_limits: true
+    max_velocity: 2.0
+    has_acceleration_limits: true
+    max_acceleration: 5.0
+  left_hand_thumb_2_joint:
+    has_velocity_limits: true
+    max_velocity: 2.0
+    has_acceleration_limits: true
+    max_acceleration: 5.0
+  left_hand_middle_0_joint:
+    has_velocity_limits: true
+    max_velocity: 2.0
+    has_acceleration_limits: true
+    max_acceleration: 5.0
+  left_hand_middle_1_joint:
+    has_velocity_limits: true
+    max_velocity: 2.0
+    has_acceleration_limits: true
+    max_acceleration: 5.0
+  left_hand_index_0_joint:
+    has_velocity_limits: true
+    max_velocity: 2.0
+    has_acceleration_limits: true
+    max_acceleration: 5.0
+  left_hand_index_1_joint:
+    has_velocity_limits: true
+    max_velocity: 2.0
+    has_acceleration_limits: true
+    max_acceleration: 5.0
+  right_hand_thumb_0_joint:
+    has_velocity_limits: true
+    max_velocity: 2.0
+    has_acceleration_limits: true
+    max_acceleration: 5.0
+  right_hand_thumb_1_joint:
+    has_velocity_limits: true
+    max_velocity: 2.0
+    has_acceleration_limits: true
+    max_acceleration: 5.0
+  right_hand_thumb_2_joint:
+    has_velocity_limits: true
+    max_velocity: 2.0
+    has_acceleration_limits: true
+    max_acceleration: 5.0
+  right_hand_middle_0_joint:
+    has_velocity_limits: true
+    max_velocity: 2.0
+    has_acceleration_limits: true
+    max_acceleration: 5.0
+  right_hand_middle_1_joint:
+    has_velocity_limits: true
+    max_velocity: 2.0
+    has_acceleration_limits: true
+    max_acceleration: 5.0
+  right_hand_index_0_joint:
+    has_velocity_limits: true
+    max_velocity: 2.0
+    has_acceleration_limits: true
+    max_acceleration: 5.0
+  right_hand_index_1_joint:
+    has_velocity_limits: true
+    max_velocity: 2.0
+    has_acceleration_limits: true
+    max_acceleration: 5.0

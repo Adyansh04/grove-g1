@@ -23,6 +23,9 @@
   <test_depend>liburdfdom-tools</test_depend>
   <test_depend>python3-pytest</test_depend>
 
+  <!-- The d435 mesh the sensor visual points at. -->
+  <exec_depend>realsense2_description</exec_depend>
+
   <export>
     <build_type>ament_cmake</build_type>
   </export>

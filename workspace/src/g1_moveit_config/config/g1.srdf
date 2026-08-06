@@ -1,0 +1,411 @@
+<?xml version="1.0"?>
+<robot name="g1_29dof_with_hand_rev_1_0">
+  <!-- Hand-authored, against urdf/g1_arm_sdk.urdf.xacro in g1_description. Only the
+       disable_collisions block at the bottom is generated; that block carries its own note
+       on how, and README.md has the command.
+
+       Note for editors: XML forbids a double hyphen inside a comment, so the prose here uses
+       commas and colons where the rest of this repo would use a dash. A stray double hyphen
+       makes the whole file unparseable and move_group fails at launch, not at lint.
+
+       No virtual joint. The vendored URDF's floating_base_joint is commented out upstream, so
+       the model root is `pelvis` and MoveIt plans in that frame. Correct while the robot stands
+       still to manipulate. Scene objects fixed in `odom`, or reaching while walking, need a
+       floating joint to `odom` instead: 6 more DoF and a TF dependency, so it is a decision to
+       make when there is something to fix it against. -->
+
+  <!-- base_link is torso_link, not pelvis: the three waist joints belong to the onboard
+       controller (docs/CONTROL_MODES.md), and a group that spans them would plan motion we
+       cannot command. Their state still matters, it is what places torso_link under pelvis,
+       which is why motion_service_sim has to publish it.
+
+       tip_link is the palm rather than wrist_yaw_link. The palm joint is fixed, so both give
+       the same 7 joints and differ only in where a pose goal is measured; the palm is where a
+       grasp is naturally expressed, and it keeps the finger joints outside the group. -->
+  <group name="left_arm">
+    <chain base_link="torso_link" tip_link="left_hand_palm_link"/>
+  </group>
+  <group name="right_arm">
+    <chain base_link="torso_link" tip_link="right_hand_palm_link"/>
+  </group>
+
+  <!-- Both arms as one 14-joint group, which is what makes coordinated two-handed motion a
+       plan rather than two plans run side by side. Only this group collision-checks the left
+       arm against the right one, and only this group can time a motion so the two hands arrive
+       together; sequencing the per-arm groups does neither.
+
+       Composed from the two subgroups rather than restating the joints, so there is one
+       definition of what an arm is. That is also what every published dual-arm config does
+       (PR2, Baxter, Talos, TIAGo++). The per-arm groups stay because single-arm motion is
+       still the common case and a 7-DoF search is much cheaper than a 14-DoF one.
+
+       This group deliberately has NO kinematics.yaml entry, and adding one breaks it. pick_ik,
+       like KDL and TRAC-IK, rejects any group that is not a chain, and two arms off one torso
+       is a two-branch tree. MoveIt's answer is the subgroup solver map: it is built only for
+       groups that have no solver of their own, and it routes a pose goal per hand to that
+       arm's own pick_ik. Naming this group in kinematics.yaml suppresses that map and leaves
+       nothing to solve with, which is the single most-copied mistake in dual-arm configs. -->
+  <group name="both_arms">
+    <group name="left_arm"/>
+    <group name="right_arm"/>
+  </group>
+
+  <!-- The Dex3 hands, one group each. Joints and not a chain, because the three fingers branch
+       off the palm and a chain cannot express that. Order is the Dex3 wire order, which is what
+       g1_bringup's controllers and the hardware component both use.
+
+       Kept out of every arm group on purpose, and test_robot_model pins that: an arm plan must
+       never command the fingers, because the arm and the hand are separate devices with
+       separate authority (docs/CONTROL_MODES.md) reached over separate topics. -->
+  <group name="left_hand">
+    <joint name="left_hand_thumb_0_joint"/>
+    <joint name="left_hand_thumb_1_joint"/>
+    <joint name="left_hand_thumb_2_joint"/>
+    <joint name="left_hand_middle_0_joint"/>
+    <joint name="left_hand_middle_1_joint"/>
+    <joint name="left_hand_index_0_joint"/>
+    <joint name="left_hand_index_1_joint"/>
+  </group>
+  <group name="right_hand">
+    <joint name="right_hand_thumb_0_joint"/>
+    <joint name="right_hand_thumb_1_joint"/>
+    <joint name="right_hand_thumb_2_joint"/>
+    <joint name="right_hand_middle_0_joint"/>
+    <joint name="right_hand_middle_1_joint"/>
+    <joint name="right_hand_index_0_joint"/>
+    <joint name="right_hand_index_1_joint"/>
+  </group>
+
+  <!-- What makes attachObject/detachObject work without naming touch links by hand, and what
+       lets RViz offer the hand as the arm's end effector rather than as an unrelated group.
+
+       both_arms still has none: SRDF has no notion of a two-tip end effector. A two-handed
+       grasp attaches to one arm and lists the other hand's links as touch links. -->
+  <end_effector name="left_gripper" parent_link="left_hand_palm_link"
+                group="left_hand" parent_group="left_arm"/>
+  <end_effector name="right_gripper" parent_link="right_hand_palm_link"
+                group="right_hand" parent_group="right_arm"/>
+
+  <!-- Deliberately absent, so the next reader does not think it was forgotten:
+
+       passive_joint. It would document that the legs and waist are not ours, but it reads as
+       if it does more: MoveIt's CurrentStateMonitor counts every active joint, and the flag
+       does not exempt one. This comment carries the same information honestly. -->
+
+
+  <!-- Named postures. Every value below was collision-checked against a running move_group
+       (/check_state_validity, both_arms) before being written here, not chosen on a diagram.
+       `home` is the posture the simulator holds the arms at, and the arrow points this way
+       round: g1_motion_service_sim's `arm_hold_rad` is set from these values, and the drift
+       test pins the pair. It used to be the other way, a measurement of wherever the arms
+       happened to fall at startup, which is how it ended up a few hundredths from putting the
+       palm against the thigh once the hands had their real mass.
+
+       The small shoulder roll is what buys that margin: it swings each arm off the torso so
+       neither the sag nor a heavier hand closes the gap. See docs/notes/hand-mass-rest-pose.md.
+
+       An earlier version of this file said zero "may well self collide" and left these out on
+       that suspicion. It does not: checked, valid. The suspicion was wrong.
+
+       roll and yaw mirror between the arms so a positive value swings each arm away from the
+       torso on its own side; pitch and elbow do not mirror.
+
+       Each pose is declared three times because SRDF group states belong to one group, and a
+       skill may drive either arm alone or both together. test_robot_model asserts the three
+       copies agree, so they cannot drift apart. -->
+
+  <group_state name="home" group="left_arm">
+    <joint name="left_shoulder_pitch_joint" value="-0.70"/>
+    <joint name="left_shoulder_roll_joint" value="0.15"/>
+    <joint name="left_shoulder_yaw_joint" value="0.00"/>
+    <joint name="left_elbow_joint" value="1.50"/>
+    <joint name="left_wrist_roll_joint" value="0.00"/>
+    <joint name="left_wrist_pitch_joint" value="0.00"/>
+    <joint name="left_wrist_yaw_joint" value="0.00"/>
+  </group_state>
+  <group_state name="home" group="right_arm">
+    <joint name="right_shoulder_pitch_joint" value="-0.70"/>
+    <joint name="right_shoulder_roll_joint" value="-0.15"/>
+    <joint name="right_shoulder_yaw_joint" value="0.00"/>
+    <joint name="right_elbow_joint" value="1.50"/>
+    <joint name="right_wrist_roll_joint" value="0.00"/>
+    <joint name="right_wrist_pitch_joint" value="0.00"/>
+    <joint name="right_wrist_yaw_joint" value="0.00"/>
+  </group_state>
+  <group_state name="home" group="both_arms">
+    <joint name="left_shoulder_pitch_joint" value="-0.70"/>
+    <joint name="left_shoulder_roll_joint" value="0.15"/>
+    <joint name="left_shoulder_yaw_joint" value="0.00"/>
+    <joint name="left_elbow_joint" value="1.50"/>
+    <joint name="left_wrist_roll_joint" value="0.00"/>
+    <joint name="left_wrist_pitch_joint" value="0.00"/>
+    <joint name="left_wrist_yaw_joint" value="0.00"/>
+    <joint name="right_shoulder_pitch_joint" value="-0.70"/>
+    <joint name="right_shoulder_roll_joint" value="-0.15"/>
+    <joint name="right_shoulder_yaw_joint" value="0.00"/>
+    <joint name="right_elbow_joint" value="1.50"/>
+    <joint name="right_wrist_roll_joint" value="0.00"/>
+    <joint name="right_wrist_pitch_joint" value="0.00"/>
+    <joint name="right_wrist_yaw_joint" value="0.00"/>
+  </group_state>
+
+  <group_state name="zero" group="left_arm">
+    <joint name="left_shoulder_pitch_joint" value="0.00"/>
+    <joint name="left_shoulder_roll_joint" value="0.00"/>
+    <joint name="left_shoulder_yaw_joint" value="0.00"/>
+    <joint name="left_elbow_joint" value="0.00"/>
+    <joint name="left_wrist_roll_joint" value="0.00"/>
+    <joint name="left_wrist_pitch_joint" value="0.00"/>
+    <joint name="left_wrist_yaw_joint" value="0.00"/>
+  </group_state>
+  <group_state name="zero" group="right_arm">
+    <joint name="right_shoulder_pitch_joint" value="0.00"/>
+    <joint name="right_shoulder_roll_joint" value="0.00"/>
+    <joint name="right_shoulder_yaw_joint" value="0.00"/>
+    <joint name="right_elbow_joint" value="0.00"/>
+    <joint name="right_wrist_roll_joint" value="0.00"/>
+    <joint name="right_wrist_pitch_joint" value="0.00"/>
+    <joint name="right_wrist_yaw_joint" value="0.00"/>
+  </group_state>
+  <group_state name="zero" group="both_arms">
+    <joint name="left_shoulder_pitch_joint" value="0.00"/>
+    <joint name="left_shoulder_roll_joint" value="0.00"/>
+    <joint name="left_shoulder_yaw_joint" value="0.00"/>
+    <joint name="left_elbow_joint" value="0.00"/>
+    <joint name="left_wrist_roll_joint" value="0.00"/>
+    <joint name="left_wrist_pitch_joint" value="0.00"/>
+    <joint name="left_wrist_yaw_joint" value="0.00"/>
+    <joint name="right_shoulder_pitch_joint" value="0.00"/>
+    <joint name="right_shoulder_roll_joint" value="0.00"/>
+    <joint name="right_shoulder_yaw_joint" value="0.00"/>
+    <joint name="right_elbow_joint" value="0.00"/>
+    <joint name="right_wrist_roll_joint" value="0.00"/>
+    <joint name="right_wrist_pitch_joint" value="0.00"/>
+    <joint name="right_wrist_yaw_joint" value="0.00"/>
+  </group_state>
+
+  <group_state name="tucked" group="left_arm">
+    <joint name="left_shoulder_pitch_joint" value="0.25"/>
+    <joint name="left_shoulder_roll_joint" value="0.20"/>
+    <joint name="left_shoulder_yaw_joint" value="0.00"/>
+    <joint name="left_elbow_joint" value="1.30"/>
+    <joint name="left_wrist_roll_joint" value="0.00"/>
+    <joint name="left_wrist_pitch_joint" value="0.00"/>
+    <joint name="left_wrist_yaw_joint" value="0.00"/>
+  </group_state>
+  <group_state name="tucked" group="right_arm">
+    <joint name="right_shoulder_pitch_joint" value="0.25"/>
+    <joint name="right_shoulder_roll_joint" value="-0.20"/>
+    <joint name="right_shoulder_yaw_joint" value="0.00"/>
+    <joint name="right_elbow_joint" value="1.30"/>
+    <joint name="right_wrist_roll_joint" value="0.00"/>
+    <joint name="right_wrist_pitch_joint" value="0.00"/>
+    <joint name="right_wrist_yaw_joint" value="0.00"/>
+  </group_state>
+  <group_state name="tucked" group="both_arms">
+    <joint name="left_shoulder_pitch_joint" value="0.25"/>
+    <joint name="left_shoulder_roll_joint" value="0.20"/>
+    <joint name="left_shoulder_yaw_joint" value="0.00"/>
+    <joint name="left_elbow_joint" value="1.30"/>
+    <joint name="left_wrist_roll_joint" value="0.00"/>
+    <joint name="left_wrist_pitch_joint" value="0.00"/>
+    <joint name="left_wrist_yaw_joint" value="0.00"/>
+    <joint name="right_shoulder_pitch_joint" value="0.25"/>
+    <joint name="right_shoulder_roll_joint" value="-0.20"/>
+    <joint name="right_shoulder_yaw_joint" value="0.00"/>
+    <joint name="right_elbow_joint" value="1.30"/>
+    <joint name="right_wrist_roll_joint" value="0.00"/>
+    <joint name="right_wrist_pitch_joint" value="0.00"/>
+    <joint name="right_wrist_yaw_joint" value="0.00"/>
+  </group_state>
+
+  <group_state name="ready" group="left_arm">
+    <joint name="left_shoulder_pitch_joint" value="-0.35"/>
+    <joint name="left_shoulder_roll_joint" value="0.25"/>
+    <joint name="left_shoulder_yaw_joint" value="0.00"/>
+    <joint name="left_elbow_joint" value="1.00"/>
+    <joint name="left_wrist_roll_joint" value="0.00"/>
+    <joint name="left_wrist_pitch_joint" value="0.00"/>
+    <joint name="left_wrist_yaw_joint" value="0.00"/>
+  </group_state>
+  <group_state name="ready" group="right_arm">
+    <joint name="right_shoulder_pitch_joint" value="-0.35"/>
+    <joint name="right_shoulder_roll_joint" value="-0.25"/>
+    <joint name="right_shoulder_yaw_joint" value="0.00"/>
+    <joint name="right_elbow_joint" value="1.00"/>
+    <joint name="right_wrist_roll_joint" value="0.00"/>
+    <joint name="right_wrist_pitch_joint" value="0.00"/>
+    <joint name="right_wrist_yaw_joint" value="0.00"/>
+  </group_state>
+  <group_state name="ready" group="both_arms">
+    <joint name="left_shoulder_pitch_joint" value="-0.35"/>
+    <joint name="left_shoulder_roll_joint" value="0.25"/>
+    <joint name="left_shoulder_yaw_joint" value="0.00"/>
+    <joint name="left_elbow_joint" value="1.00"/>
+    <joint name="left_wrist_roll_joint" value="0.00"/>
+    <joint name="left_wrist_pitch_joint" value="0.00"/>
+    <joint name="left_wrist_yaw_joint" value="0.00"/>
+    <joint name="right_shoulder_pitch_joint" value="-0.35"/>
+    <joint name="right_shoulder_roll_joint" value="-0.25"/>
+    <joint name="right_shoulder_yaw_joint" value="0.00"/>
+    <joint name="right_elbow_joint" value="1.00"/>
+    <joint name="right_wrist_roll_joint" value="0.00"/>
+    <joint name="right_wrist_pitch_joint" value="0.00"/>
+    <joint name="right_wrist_yaw_joint" value="0.00"/>
+  </group_state>
+
+  <group_state name="reach_front" group="left_arm">
+    <joint name="left_shoulder_pitch_joint" value="-0.90"/>
+    <joint name="left_shoulder_roll_joint" value="0.20"/>
+    <joint name="left_shoulder_yaw_joint" value="0.00"/>
+    <joint name="left_elbow_joint" value="0.70"/>
+    <joint name="left_wrist_roll_joint" value="0.00"/>
+    <joint name="left_wrist_pitch_joint" value="0.00"/>
+    <joint name="left_wrist_yaw_joint" value="0.00"/>
+  </group_state>
+  <group_state name="reach_front" group="right_arm">
+    <joint name="right_shoulder_pitch_joint" value="-0.90"/>
+    <joint name="right_shoulder_roll_joint" value="-0.20"/>
+    <joint name="right_shoulder_yaw_joint" value="0.00"/>
+    <joint name="right_elbow_joint" value="0.70"/>
+    <joint name="right_wrist_roll_joint" value="0.00"/>
+    <joint name="right_wrist_pitch_joint" value="0.00"/>
+    <joint name="right_wrist_yaw_joint" value="0.00"/>
+  </group_state>
+  <group_state name="reach_front" group="both_arms">
+    <joint name="left_shoulder_pitch_joint" value="-0.90"/>
+    <joint name="left_shoulder_roll_joint" value="0.20"/>
+    <joint name="left_shoulder_yaw_joint" value="0.00"/>
+    <joint name="left_elbow_joint" value="0.70"/>
+    <joint name="left_wrist_roll_joint" value="0.00"/>
+    <joint name="left_wrist_pitch_joint" value="0.00"/>
+    <joint name="left_wrist_yaw_joint" value="0.00"/>
+    <joint name="right_shoulder_pitch_joint" value="-0.90"/>
+    <joint name="right_shoulder_roll_joint" value="-0.20"/>
+    <joint name="right_shoulder_yaw_joint" value="0.00"/>
+    <joint name="right_elbow_joint" value="0.70"/>
+    <joint name="right_wrist_roll_joint" value="0.00"/>
+    <joint name="right_wrist_pitch_joint" value="0.00"/>
+    <joint name="right_wrist_yaw_joint" value="0.00"/>
+  </group_state>
+
+  <!-- Hand postures. Two per hand is the whole vocabulary a pick and place needs: reach with
+       the hand open, close on the object, attach it, move, place, open, detach.
+
+       `open` is the URDF zero, which puts the fingers straight and the thumb mid-range. Not an
+       arbitrary choice: every finger joint's range ends at zero on the extended side.
+
+       `closed` is a power grasp, curled short of the joint limits so the fingers can still
+       press into an object rather than resting against their own end stops. The two hands
+       mirror by sign, as the URDF's own limits do on all seven joints. Collision-checked
+       against a running move_group before being written here, same as the arm poses. -->
+  <group_state name="open" group="left_hand">
+    <joint name="left_hand_thumb_0_joint" value="0.00"/>
+    <joint name="left_hand_thumb_1_joint" value="0.00"/>
+    <joint name="left_hand_thumb_2_joint" value="0.00"/>
+    <joint name="left_hand_middle_0_joint" value="0.00"/>
+    <joint name="left_hand_middle_1_joint" value="0.00"/>
+    <joint name="left_hand_index_0_joint" value="0.00"/>
+    <joint name="left_hand_index_1_joint" value="0.00"/>
+  </group_state>
+  <group_state name="closed" group="left_hand">
+    <joint name="left_hand_thumb_0_joint" value="-0.30"/>
+    <joint name="left_hand_thumb_1_joint" value="-0.50"/>
+    <joint name="left_hand_thumb_2_joint" value="1.20"/>
+    <joint name="left_hand_middle_0_joint" value="-1.20"/>
+    <joint name="left_hand_middle_1_joint" value="-1.40"/>
+    <joint name="left_hand_index_0_joint" value="-1.20"/>
+    <joint name="left_hand_index_1_joint" value="-1.40"/>
+  </group_state>
+  <group_state name="open" group="right_hand">
+    <joint name="right_hand_thumb_0_joint" value="0.00"/>
+    <joint name="right_hand_thumb_1_joint" value="0.00"/>
+    <joint name="right_hand_thumb_2_joint" value="0.00"/>
+    <joint name="right_hand_middle_0_joint" value="0.00"/>
+    <joint name="right_hand_middle_1_joint" value="0.00"/>
+    <joint name="right_hand_index_0_joint" value="0.00"/>
+    <joint name="right_hand_index_1_joint" value="0.00"/>
+  </group_state>
+  <group_state name="closed" group="right_hand">
+    <joint name="right_hand_thumb_0_joint" value="0.30"/>
+    <joint name="right_hand_thumb_1_joint" value="0.50"/>
+    <joint name="right_hand_thumb_2_joint" value="-1.20"/>
+    <joint name="right_hand_middle_0_joint" value="1.20"/>
+    <joint name="right_hand_middle_1_joint" value="1.40"/>
+    <joint name="right_hand_index_0_joint" value="1.20"/>
+    <joint name="right_hand_index_1_joint" value="1.40"/>
+  </group_state>
+
+  <!-- Generated, 2026-08-05. Everything above is hand-written; this block is not.
+
+       Two categories, both safe to disable and nothing beyond them: links joined by a joint
+       (reason Adjacent), and links found touching in the robot's own rest pose (reason
+       Default), read from move_group's /check_state_validity contacts. Without these, MoveIt
+       reports the robot as colliding with itself before it has moved, and RRTConnect refuses
+       to seed its tree: "Skipping invalid start state".
+
+       Deliberately NOT generated: the "never in collision" pairs the Setup Assistant's
+       collisions_updater finds by random sampling. Those are a planning-speed optimisation,
+       not a correctness requirement, and on this model the sampling does not finish in a
+       usable time: the URDF's collision geometry is its full visual meshes, about 525k
+       triangles, and runs at 10000, 1000 and 1 trials all failed to complete in over an hour.
+       Simplifying the collision geometry is the fix, and it is its own change. README.md has
+       the regeneration command for when that lands.
+
+       No cross-arm pair appears here, and none should: both_arms exists to collision-check one
+       arm against the other, and test_robot_model asserts the reaching links stay checked. -->
+  <disable_collisions link1="d435_link" link2="camera_color_optical_frame" reason="Adjacent"/>
+  <disable_collisions link1="d435_link" link2="camera_depth_optical_frame" reason="Adjacent"/>
+  <disable_collisions link1="head_link" link2="torso_link" reason="Default"/>
+  <disable_collisions link1="left_ankle_pitch_link" link2="left_ankle_roll_link" reason="Adjacent"/>
+  <disable_collisions link1="left_ankle_pitch_link" link2="left_knee_link" reason="Default"/>
+  <disable_collisions link1="left_elbow_link" link2="left_shoulder_yaw_link" reason="Default"/>
+  <disable_collisions link1="left_elbow_link" link2="left_wrist_roll_link" reason="Adjacent"/>
+  <disable_collisions link1="left_hand_index_0_link" link2="left_hand_index_1_link" reason="Adjacent"/>
+  <disable_collisions link1="left_hand_index_0_link" link2="left_hand_palm_link" reason="Default"/>
+  <disable_collisions link1="left_hand_middle_0_link" link2="left_hand_middle_1_link" reason="Adjacent"/>
+  <disable_collisions link1="left_hand_middle_0_link" link2="left_hand_palm_link" reason="Default"/>
+  <disable_collisions link1="left_hand_palm_link" link2="left_hand_thumb_0_link" reason="Adjacent"/>
+  <disable_collisions link1="left_hand_palm_link" link2="left_wrist_yaw_link" reason="Default"/>
+  <disable_collisions link1="left_hand_thumb_0_link" link2="left_hand_thumb_1_link" reason="Adjacent"/>
+  <disable_collisions link1="left_hand_thumb_1_link" link2="left_hand_thumb_2_link" reason="Adjacent"/>
+  <disable_collisions link1="left_hip_pitch_link" link2="left_hip_roll_link" reason="Adjacent"/>
+  <disable_collisions link1="left_hip_roll_link" link2="left_hip_yaw_link" reason="Adjacent"/>
+  <disable_collisions link1="left_hip_yaw_link" link2="left_knee_link" reason="Adjacent"/>
+  <disable_collisions link1="left_shoulder_pitch_link" link2="left_shoulder_roll_link" reason="Adjacent"/>
+  <disable_collisions link1="left_shoulder_roll_link" link2="left_shoulder_yaw_link" reason="Adjacent"/>
+  <disable_collisions link1="left_wrist_pitch_link" link2="left_wrist_yaw_link" reason="Adjacent"/>
+  <disable_collisions link1="left_wrist_roll_link" link2="left_wrist_pitch_link" reason="Adjacent"/>
+  <disable_collisions link1="logo_link" link2="torso_link" reason="Default"/>
+  <disable_collisions link1="pelvis" link2="imu_in_pelvis" reason="Adjacent"/>
+  <disable_collisions link1="pelvis" link2="left_hip_pitch_link" reason="Adjacent"/>
+  <disable_collisions link1="pelvis" link2="pelvis_contour_link" reason="Adjacent"/>
+  <disable_collisions link1="pelvis" link2="right_hip_pitch_link" reason="Adjacent"/>
+  <disable_collisions link1="pelvis" link2="waist_yaw_link" reason="Adjacent"/>
+  <disable_collisions link1="right_ankle_pitch_link" link2="right_ankle_roll_link" reason="Adjacent"/>
+  <disable_collisions link1="right_ankle_pitch_link" link2="right_knee_link" reason="Default"/>
+  <disable_collisions link1="right_elbow_link" link2="right_shoulder_yaw_link" reason="Default"/>
+  <disable_collisions link1="right_elbow_link" link2="right_wrist_roll_link" reason="Adjacent"/>
+  <disable_collisions link1="right_hand_index_0_link" link2="right_hand_index_1_link" reason="Adjacent"/>
+  <disable_collisions link1="right_hand_index_0_link" link2="right_hand_palm_link" reason="Default"/>
+  <disable_collisions link1="right_hand_middle_0_link" link2="right_hand_middle_1_link" reason="Adjacent"/>
+  <disable_collisions link1="right_hand_middle_0_link" link2="right_hand_palm_link" reason="Default"/>
+  <disable_collisions link1="right_hand_palm_link" link2="right_hand_thumb_0_link" reason="Adjacent"/>
+  <disable_collisions link1="right_hand_palm_link" link2="right_wrist_yaw_link" reason="Default"/>
+  <disable_collisions link1="right_hand_thumb_0_link" link2="right_hand_thumb_1_link" reason="Adjacent"/>
+  <disable_collisions link1="right_hand_thumb_1_link" link2="right_hand_thumb_2_link" reason="Adjacent"/>
+  <disable_collisions link1="right_hip_pitch_link" link2="right_hip_roll_link" reason="Adjacent"/>
+  <disable_collisions link1="right_hip_roll_link" link2="right_hip_yaw_link" reason="Adjacent"/>
+  <disable_collisions link1="right_hip_yaw_link" link2="right_knee_link" reason="Adjacent"/>
+  <disable_collisions link1="right_shoulder_pitch_link" link2="right_shoulder_roll_link" reason="Adjacent"/>
+  <disable_collisions link1="right_shoulder_roll_link" link2="right_shoulder_yaw_link" reason="Adjacent"/>
+  <disable_collisions link1="right_wrist_pitch_link" link2="right_wrist_yaw_link" reason="Adjacent"/>
+  <disable_collisions link1="right_wrist_roll_link" link2="right_wrist_pitch_link" reason="Adjacent"/>
+  <disable_collisions link1="torso_link" link2="d435_link" reason="Adjacent"/>
+  <disable_collisions link1="torso_link" link2="imu_in_torso" reason="Adjacent"/>
+  <disable_collisions link1="torso_link" link2="left_shoulder_pitch_link" reason="Adjacent"/>
+  <disable_collisions link1="torso_link" link2="mid360_link" reason="Adjacent"/>
+  <disable_collisions link1="torso_link" link2="right_shoulder_pitch_link" reason="Adjacent"/>
+  <disable_collisions link1="waist_roll_link" link2="torso_link" reason="Adjacent"/>
+  <disable_collisions link1="waist_yaw_link" link2="waist_roll_link" reason="Adjacent"/>
+</robot>

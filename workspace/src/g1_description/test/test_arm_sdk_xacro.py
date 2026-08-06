@@ -89,3 +89,30 @@ def test_no_non_arm_joints_leak_into_ros2_control(expanded_urdf_path):
     root = ET.parse(expanded_urdf_path).getroot()
     joints = root.find("ros2_control").findall("joint")
     assert len(joints) == 14
+
+
+@pytest.mark.parametrize("side", ["left", "right"])
+def test_each_hand_is_its_own_component_in_wire_order(expanded_urdf_path, side):
+    # The Dex3 is a separate device with its own authority, so it gets its own component
+    # rather than extra joints on the arm's. Order is load-bearing here and not merely
+    # tidy: HandCmd.motor_cmd is positional, and G1Dex3System refuses to init on a
+    # mismatch precisely so a reordered list cannot silently close the wrong fingers.
+    name = f"G1Dex3System{side.capitalize()}"
+    root = ET.parse(expanded_urdf_path).getroot()
+    component = next(c for c in root.findall("ros2_control") if c.get("name") == name)
+
+    assert component.find("hardware/plugin").text == "g1_hand_interface/G1Dex3System"
+    params = {p.get("name"): p.text for p in component.findall("hardware/param")}
+    assert params["side"] == side
+    assert {"kp", "kd", "command_publish_rate", "max_joint_velocity_rad_s"} <= params.keys()
+
+    joints = component.findall("joint")
+    assert [j.get("name") for j in joints] == [
+        f"{side}_hand_{suffix}_joint"
+        for suffix in ("thumb_0", "thumb_1", "thumb_2", "middle_0", "middle_1",
+                       "index_0", "index_1")
+    ]
+    for joint in joints:
+        assert [c.get("name") for c in joint.findall("command_interface")] == ["position"]
+        limits = {p.get("name"): float(p.text) for p in joint.findall("param")}
+        assert limits["min"] < limits["max"]

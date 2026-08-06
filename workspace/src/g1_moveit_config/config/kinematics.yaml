@@ -1,0 +1,46 @@
+# Inverse kinematics for the two arm chains.
+#
+# pick_ik rather than the default KDL. Each arm is 7 joints against a 6-DoF pose, so there is a
+# null space of solutions and the solver's choice within it is the whole question. KDL is a
+# pseudo-inverse Jacobian with random restarts: it wanders that null space, clamps at joint
+# limits instead of avoiding them, and gives no continuity between nearby targets, which shows
+# up as the elbow flipping between two poses a few centimetres apart. pick_ik optimises against
+# a cost function, so the redundancy is spent on something chosen rather than incidental.
+#
+# TRAC-IK was the other candidate and is not packaged for Humble; building it from source to get
+# what pick_ik already provides is not worth the pin. Swapping back to KDL is one line:
+#   kinematics_solver: kdl_kinematics_plugin/KDLKinematicsPlugin
+#
+# both_arms has no entry here ON PURPOSE, and adding one breaks dual-arm IK. See g1.srdf.
+
+left_arm:
+  kinematics_solver: pick_ik/PickIkPlugin
+  kinematics_solver_timeout: 0.05
+
+  # global runs the memetic search, which finds a solution from a seed far from the goal --
+  # the plan-to-pose case. local is gradient descent from the seed and is the right choice for
+  # servoing or a Cartesian path, where the seed is already close.
+  mode: global
+
+  # Stop at the first solution that satisfies the thresholds rather than polishing it. Planning
+  # calls IK many times per motion, so solve time matters more than solution quality here.
+  stop_optimization_on_valid_solution: true
+
+  # 1 mm and ~0.6 deg. Tighter than the arm can actually track under the arm_sdk gains, so the
+  # solver is not the limiting factor in where the hand ends up.
+  position_threshold: 0.001
+  orientation_threshold: 0.01
+
+  # Left at zero until there is a measurement to tune against: the cost terms are additive, so
+  # raising this also moves what cost_threshold means. This is the knob for elbow-flip
+  # continuity between nearby targets if that shows up.
+  minimal_displacement_weight: 0.0
+
+right_arm:
+  kinematics_solver: pick_ik/PickIkPlugin
+  kinematics_solver_timeout: 0.05
+  mode: global
+  stop_optimization_on_valid_solution: true
+  position_threshold: 0.001
+  orientation_threshold: 0.01
+  minimal_displacement_weight: 0.0

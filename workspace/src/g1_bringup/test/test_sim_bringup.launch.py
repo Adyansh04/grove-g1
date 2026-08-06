@@ -129,7 +129,10 @@ class TestSimBringup(unittest.TestCase):
 
         self.assertGreater(len(samples), 0)
         last = samples[-1]
-        self.assertEqual(len(last.name), 14)
+        # 14 arm joints plus 7 fingers per hand: joint_state_broadcaster covers every
+        # configured component, and the two Dex3 components are configured from startup even
+        # though they are not activated until the acquire step.
+        self.assertEqual(len(last.name), 28)
         for value in list(last.position) + list(last.velocity):
             self.assertTrue(math.isfinite(value), f"non-finite joint_states value: {value}")
 
