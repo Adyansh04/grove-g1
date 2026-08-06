@@ -161,3 +161,81 @@ def test_no_config_here_claims_simulated_time():
                 if "use_sim_time" in line and "true" in line.lower():
                     offenders.append(f"{name}:{number}")
     assert not offenders, f"use_sim_time enabled in {offenders}"
+
+
+# --- sensors_3d.yaml -------------------------------------------------------------------
+#
+# The octomap updater fails quietly in more ways than most MoveIt config. setParams() ANDs its
+# seven required keys and skips the sensor with only an error log if one is missing; a wrong
+# type throws out of the monitor constructor; and MoveItConfigsBuilder guards the whole file
+# with `if sensors_path.exists()`, so a rename is a silent no-op. None of that shows up as a
+# failed launch -- you get a stack that comes up healthy and never builds a map.
+
+POINTCLOUD_PLUGIN = "occupancy_map_monitor/PointCloudOctomapUpdater"
+DEPTH_IMAGE_PLUGIN = "occupancy_map_monitor/DepthImageOctomapUpdater"
+
+# Every one is mandatory: setParams() returns false without it and the sensor is dropped.
+REQUIRED_POINTCLOUD_KEYS = {
+    "sensor_plugin", "point_cloud_topic", "max_range", "point_subsample",
+    "padding_offset", "padding_scale", "max_update_rate", "filtered_cloud_topic",
+}
+# Written as YAML floats. An int here throws InvalidParameterTypeException out of the
+# OccupancyMapMonitor constructor, which reads as a launch crash with no mention of this file.
+MUST_BE_FLOAT = ("max_range", "padding_offset", "padding_scale", "max_update_rate")
+
+
+@pytest.fixture(scope="module")
+def sensors_3d():
+    return _load(MOVEIT_CONFIG_DIR, "sensors_3d.yaml")
+
+
+def test_the_octomap_resolution_is_set_at_the_top_level(sensors_3d):
+    """move_group reads it as a node parameter, which only works because to_dict() flat-merges
+    this file. Unset, it silently assumes 0.1 m and logs a warning most people scroll past."""
+    assert isinstance(sensors_3d.get("octomap_resolution"), float)
+    assert 0.0 < sensors_3d["octomap_resolution"] < 0.5
+
+
+def test_octomap_frame_is_not_set(sensors_3d):
+    """It would be inert and therefore misleading. startWorldGeometryMonitor() constructs the
+    monitor with the planning frame, which is never empty, so the branch reading octomap_frame
+    is unreachable. Anyone setting it would think they had moved the map."""
+    assert "octomap_frame" not in sensors_3d
+
+
+def test_sensors_is_a_flat_list_of_names(sensors_3d):
+    """Not a list of dicts. ROS 2 parameters cannot represent that, which is what makes the
+    Humble perception tutorial (an unmigrated ROS 1 page) impossible to copy."""
+    names = sensors_3d.get("sensors")
+    assert isinstance(names, list) and names
+    for name in names:
+        assert isinstance(name, str) and name, f"{name!r} is not a sensor name"
+        assert isinstance(sensors_3d.get(name), dict), f"no top-level block for sensor {name!r}"
+
+
+def test_every_sensor_block_is_fully_specified(sensors_3d):
+    for name in sensors_3d["sensors"]:
+        block = sensors_3d[name]
+        plugin = block.get("sensor_plugin")
+        assert plugin in (POINTCLOUD_PLUGIN, DEPTH_IMAGE_PLUGIN), f"{name}: {plugin!r}"
+        assert plugin != DEPTH_IMAGE_PLUGIN, (
+            f"{name} uses the depth-image updater. On 2.5.9 its initialize() runs before "
+            "setParams(), so the clipping planes, shadow threshold and padding never reach the "
+            "mesh filter -- and padding is the self-filter."
+        )
+        missing = REQUIRED_POINTCLOUD_KEYS - set(block)
+        assert not missing, f"{name} is missing {sorted(missing)}; the sensor is skipped silently"
+        for key in MUST_BE_FLOAT:
+            assert isinstance(block[key], float), (
+                f"{name}.{key} is {type(block[key]).__name__}, not float -- write it with a "
+                "decimal point or the monitor constructor throws"
+            )
+        assert block["point_cloud_topic"].startswith("/"), f"{name}: topic must be absolute"
+
+
+def test_the_self_filter_padding_is_not_disabled(sensors_3d):
+    """Padding IS the self-filter margin. At zero the robot's own arms get mapped as obstacles
+    the moment a link's TF is a little late."""
+    for name in sensors_3d["sensors"]:
+        assert sensors_3d[name]["padding_scale"] >= 1.0, f"{name} shrinks the robot's own shapes"
+        assert sensors_3d[name]["padding_offset"] >= 0.0

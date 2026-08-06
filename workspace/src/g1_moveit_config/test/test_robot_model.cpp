@@ -231,6 +231,17 @@ TEST_F(RobotModelTest, AdjacentLinksAreDisabled)
         {
             continue;
         }
+        // Only pairs that can actually collide need disabling. The sensor bodies added in
+        // g1_arm_sdk.urdf.xacro are visual-only on purpose, so they carry no collision shapes
+        // and MoveIt never checks them; requiring them here would pad the matrix with entries
+        // that mean nothing.
+        const auto* parent_link = model_->getLinkModel(parent);
+        const auto* child_link  = model_->getLinkModel(child);
+        if (parent_link == nullptr || child_link == nullptr || parent_link->getShapes().empty() ||
+            child_link->getShapes().empty())
+        {
+            continue;
+        }
         // Links joined by a joint touch by construction. This is the category a careless hand
         // edit drops, and dropping it makes every plan start in collision.
         EXPECT_TRUE(disabled.count({ parent, child }) > 0)

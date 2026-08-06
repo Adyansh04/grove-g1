@@ -65,6 +65,15 @@
     <geom name="obstacle_cyl" group="2" type="cylinder" size="0.25 0.75" pos="-1.5 -2.0 0.75"
           material="obstacle"/>
 
+    <!-- Inside the arms' reach, which nothing else in this scene is: the other obstacles sit
+         1.5 m or further out and the colour target is on the floor. MoveIt's octomap only
+         demonstrates anything if there is something to plan around, so this is the obstacle
+         g1_moveit_config's test_octomap_blocks_a_plan drives a hand into. 0.42 m ahead at
+         0.95 m puts it in front of the chest, well within the ~0.7 m reach and comfortably
+         inside the MID360's field of view. -->
+    <geom name="reach_obstacle" group="2" type="box" size="0.12 0.25 0.12" pos="0.42 0.0 0.95"
+          material="obstacle"/>
+
     <!-- D435i intrinsics only. Its pose here is a placeholder: the sensor thread writes
          cam_xpos/cam_xmat into its own snapshot every frame from torso_link's live pose,
          because the mount belongs to the vendored robot and cannot host a camera element. -->
