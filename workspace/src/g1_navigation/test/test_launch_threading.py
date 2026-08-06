@@ -21,6 +21,7 @@ import pytest
 from launch import LaunchContext
 from launch.actions import IncludeLaunchDescription
 from launch.utilities import normalize_to_list_of_substitutions, perform_substitutions
+from launch_ros.actions import Node
 
 BRINGUP_LAUNCH_DIR = os.environ["G1_BRINGUP_LAUNCH_DIR"]
 NAVIGATION_LAUNCH_DIR = os.environ["G1_NAVIGATION_LAUNCH_DIR"]
@@ -95,6 +96,80 @@ def bringup():
 @pytest.fixture(scope="module")
 def nav_sim():
     return _load(NAVIGATION_LAUNCH_DIR, "nav_sim.launch.py")
+
+
+@pytest.fixture(scope="module")
+def nav_stack():
+    return _load(NAVIGATION_LAUNCH_DIR, "nav_stack.launch.py")
+
+
+def _nodes(setup_result):
+    """Every Node action, which is how the component container shows up."""
+    actions, _ = setup_result
+    return [a for a in actions if isinstance(a, Node)]
+
+
+# --- nav_stack.launch.py: the stack itself, with no simulator under it ----------------
+
+
+@pytest.mark.parametrize("mode", ["mapping", "localization"])
+def test_nav_stack_never_stages_a_simulator(nav_stack, mode):
+    """The safety pin.
+
+    Both callers stage their own simulator. A second one here would mean two
+    motion_service_sim processes publishing /lowcmd at once, which is the failure mode
+    CONTROL_MODES.md puts first: the robot collapses and nothing in the logs says why.
+    """
+    nav = "false" if mode == "mapping" else "true"
+    actions, context = _run_setup(nav_stack, mode=mode, nav=nav)
+    for action in actions:
+        if isinstance(action, IncludeLaunchDescription):
+            path = _included_path(context, action)
+            assert "sim.launch.py" not in path, path
+            assert "g1_bringup" not in path, path
+
+
+def test_nav_stack_includes_the_pipeline_for_each_mode(nav_stack):
+    mapping = [name for name, _ in _includes(_run_setup(nav_stack, mode="mapping"))]
+    assert mapping == ["scan.launch.py", "slam.launch.py"]
+
+    localization = [name for name, _ in _includes(_run_setup(nav_stack, mode="localization"))]
+    assert localization == ["scan.launch.py", "localization.launch.py"]
+
+    with_nav = [
+        name for name, _ in _includes(_run_setup(nav_stack, mode="localization", nav="true"))
+    ]
+    assert with_nav == ["scan.launch.py", "localization.launch.py", "nav2.launch.py"]
+
+
+def test_only_the_composable_pieces_are_told_about_the_container(nav_stack):
+    # slam_toolbox is deliberately left out of the container (40 MB serialization stack), so
+    # handing it a container name would be the visible half of a wrong decision.
+    includes = dict(_includes(_run_setup(nav_stack, mode="mapping")))
+    assert includes["scan.launch.py"]["container_name"] == "nav2_container"
+    assert includes["slam.launch.py"] == {}
+
+    localization = dict(_includes(_run_setup(nav_stack, mode="localization")))
+    assert localization["localization.launch.py"]["container_name"] == "nav2_container"
+
+
+def test_nav2_is_never_composed(nav_stack):
+    """Measured, not stylistic: composed, the costmaps silently fall back to Costmap2DROS's
+    built-in defaults and controller_server hangs in Activating forever."""
+    includes = dict(_includes(_run_setup(nav_stack, mode="localization", nav="true")))
+    assert includes["nav2.launch.py"]["use_composition"] == "false"
+
+
+@pytest.mark.parametrize("mode", ["mapping", "localization"])
+def test_exactly_one_container_is_created(nav_stack, mode):
+    assert len(_nodes(_run_setup(nav_stack, mode=mode))) == 1
+
+
+def test_nav_stack_refuses_bad_input(nav_stack):
+    with pytest.raises(RuntimeError, match="needs mode:=localization"):
+        _run_setup(nav_stack, mode="mapping", nav="true")
+    with pytest.raises(RuntimeError, match="is not a mode"):
+        _run_setup(nav_stack, mode="slam")
 
 
 # --- boundary 1: bringup.launch.py -> the stack below it ------------------------------
