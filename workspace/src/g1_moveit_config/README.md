@@ -121,6 +121,25 @@ Until then the controller refuses the goal, which is the intended failure rather
 `waist_hold_rad:=0.35,0.0,0.0` stands the torso off-square, which is worth doing when changing
 anything about frames.
 
+## Seeing the world
+
+`config/sensors_3d.yaml` feeds `/livox/lidar` into an octomap, so plans route around real
+obstacles rather than only the robot itself. It comes up with `sensors:=true`:
+
+```bash
+ros2 launch g1_moveit_config moveit_sim.launch.py sensors:=true pin_pelvis:=true world:=perception
+```
+
+The octomap is built in the **planning frame**, `pelvis` -- `octomap_frame` exists but is never
+read, because move_group constructs the monitor with the planning frame directly. That is fine
+while the pelvis is pinned or the robot stands still; a walking pelvis drags the voxel grid with
+it and the map smears. `/clear_octomap` (`std_srvs/Empty`) resets it; there is no time decay, so
+a voxel the sensor cannot currently see is never forgotten.
+
+The **LiDAR, not the depth camera**, and not by preference: the camera publishes a depth image,
+and `depth_image_proc`'s converter cannot receive from our best-effort relay. See
+`docs/notes/moveit-depth-octomap-plan.md` for what was tried.
+
 ## Regenerating the collision matrix
 
 `config/g1.srdf` is hand-written except for its `disable_collisions` block. That block is
@@ -150,6 +169,7 @@ a correctness requirement. Getting them needs the collision geometry simplified 
 | `test_moveit_config_drift` | no | This package against `g1_bringup`'s controller and `g1_description`'s speed clamp; the composite-group solver rule; SRDF well-formedness. |
 | `test_robot_model` | no | Group composition and order, planning frame, no hand or waist joints in an arm group, the collision matrix's adjacent pairs and its cross-arm pairs, and the named poses (per-group copies agree, all within joint limits). |
 | `test_launch_threading` | no | The arguments `g1_bringup`'s `moveit:=true` branch threads into the simulator, the RViz choice, and that `moveit_sim.launch.py` still composes what it did. |
+| `test_octomap_blocks_a_plan` | yes | That the octomap fills from the LiDAR **and** that MoveIt collision-checks against it: a reach into a mapped obstacle is rejected, with `<octomap>` named in the contact. |
 | `test_moveit_plan_execute` | yes | Execution refused before acquire, a coordinated `both_arms` plan, planned speed under the clamp, and hand placement with the waist turned. |
 
 ```bash

@@ -68,6 +68,13 @@ if(BUILD_TESTING)
     TARGET test_moveit_plan_execute TIMEOUT 400)
   set_tests_properties(test_moveit_plan_execute PROPERTIES RESOURCE_LOCK g1_sim COST 90)
 
+  # Runs the sensor track on the perception scene: the octomap has to fill from the LiDAR
+  # before anything can be asserted. Note SIM_SETTLE_S inside that file cannot be raised to
+  # cover the fill -- launch_testing's own startup timeout fires first.
+  add_launch_test(test/test_octomap_blocks_a_plan.launch.py
+    TARGET test_octomap_blocks_a_plan TIMEOUT 500)
+  set_tests_properties(test_octomap_blocks_a_plan PROPERTIES RESOURCE_LOCK g1_sim COST 95)
+
   # Use workspace-root ruff.toml if available.
   find_program(RUFF_EXECUTABLE ruff)
   set(_ruff_config "${CMAKE_CURRENT_SOURCE_DIR}/../../ruff.toml")
