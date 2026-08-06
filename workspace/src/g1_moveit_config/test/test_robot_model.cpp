@@ -7,16 +7,17 @@
  */
 
 #include <gmock/gmock.h>
+#include <moveit/robot_model/robot_model.h>
+#include <moveit/robot_state/robot_state.h>
+#include <srdfdom/model.h>
+#include <urdf_parser/urdf_parser.h>
 
 #include <fstream>
+#include <map>
 #include <memory>
 #include <set>
 #include <string>
 #include <vector>
-
-#include <moveit/robot_model/robot_model.h>
-#include <srdfdom/model.h>
-#include <urdf_parser/urdf_parser.h>
 
 using ::testing::ElementsAreArray;
 
@@ -58,8 +59,8 @@ protected:
         ASSERT_TRUE(model_);
     }
 
-    std::shared_ptr<srdf::Model>                  srdf_;
-    std::shared_ptr<moveit::core::RobotModel>     model_;
+    std::shared_ptr<srdf::Model>              srdf_;
+    std::shared_ptr<moveit::core::RobotModel> model_;
 };
 
 TEST_F(RobotModelTest, PlansInThePelvisFrame)
@@ -72,7 +73,7 @@ TEST_F(RobotModelTest, PlansInThePelvisFrame)
 
 TEST_F(RobotModelTest, EachArmIsSevenJointsInOrder)
 {
-    const auto* left = model_->getJointModelGroup("left_arm");
+    const auto* left  = model_->getJointModelGroup("left_arm");
     const auto* right = model_->getJointModelGroup("right_arm");
     ASSERT_NE(left, nullptr);
     ASSERT_NE(right, nullptr);
@@ -148,6 +149,61 @@ TEST_F(RobotModelTest, ArmsAreRootedAtTheTorsoNotThePelvis)
     }
 }
 
+TEST_F(RobotModelTest, TheNamedPosesAgreeAcrossTheThreeGroups)
+{
+    // SRDF group states belong to one group, so each pose is written three times. A skill that
+    // sends left_arm to "ready" and one that sends both_arms there must reach the same place.
+    const auto& states = srdf_->getGroupStates();
+    ASSERT_FALSE(states.empty()) << "no named poses in g1.srdf";
+
+    std::map<std::string, std::map<std::string, double>> by_pose;
+    std::map<std::string, int>                           group_count;
+    for (const auto& state : states)
+    {
+        group_count[state.name_]++;
+        for (const auto& [joint, values] : state.joint_values_)
+        {
+            ASSERT_EQ(values.size(), 1u) << joint << " in " << state.name_;
+            auto [it, fresh] = by_pose[state.name_].emplace(joint, values.front());
+            if (!fresh)
+            {
+                EXPECT_DOUBLE_EQ(it->second, values.front())
+                    << "pose '" << state.name_ << "' sets " << joint << " differently in group '"
+                    << state.group_ << "' than in another group -- the copies have drifted";
+            }
+        }
+    }
+    for (const auto& [pose, count] : group_count)
+    {
+        EXPECT_EQ(count, 3) << "pose '" << pose << "' should exist for left_arm, right_arm and "
+                            << "both_arms";
+        EXPECT_EQ(by_pose[pose].size(), 14u) << "pose '" << pose << "' should name all 14 joints";
+    }
+}
+
+TEST_F(RobotModelTest, TheNamedPosesAreWithinJointLimits)
+{
+    // Collision-freedom was checked live against move_group before these were written down;
+    // limits are checkable here, and a pose outside them is a plan that fails at request time.
+    const auto* both = model_->getJointModelGroup("both_arms");
+    ASSERT_NE(both, nullptr);
+    moveit::core::RobotState state(model_);
+    for (const auto& srdf_state : srdf_->getGroupStates())
+    {
+        if (srdf_state.group_ != "both_arms")
+        {
+            continue;
+        }
+        state.setToDefaultValues();
+        for (const auto& [joint, values] : srdf_state.joint_values_)
+        {
+            state.setJointPositions(joint, values);
+        }
+        EXPECT_TRUE(state.satisfiesBounds(both))
+            << "named pose '" << srdf_state.name_ << "' is outside the joint limits";
+    }
+}
+
 TEST_F(RobotModelTest, TheCollisionMatrixExists)
 {
     // Deliberately a conservative matrix: adjacent pairs plus what touches at rest, and nothing
@@ -170,7 +226,7 @@ TEST_F(RobotModelTest, AdjacentLinksAreDisabled)
     {
         (void)name;
         const auto& parent = joint->parent_link_name;
-        const auto& child = joint->child_link_name;
+        const auto& child  = joint->child_link_name;
         if (parent.empty() || child.empty())
         {
             continue;
@@ -203,8 +259,8 @@ TEST_F(RobotModelTest, TheArmsCanStillCollideWithEachOther)
             const bool one = pair.link1_.find(reaching) != std::string::npos;
             const bool two = pair.link2_.find(reaching) != std::string::npos;
             EXPECT_FALSE(one && two)
-                << "cross-arm collision disabled between " << pair.link1_ << " and "
-                << pair.link2_ << ", which dual-arm planning depends on";
+                << "cross-arm collision disabled between " << pair.link1_ << " and " << pair.link2_
+                << ", which dual-arm planning depends on";
         }
     }
 }

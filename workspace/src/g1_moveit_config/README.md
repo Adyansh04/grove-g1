@@ -38,6 +38,28 @@ The planning frame is `pelvis` — the vendored URDF's floating base is commente
 the SRDF declares no virtual joint. Fine while the robot stands still to manipulate; scene
 objects fixed in `odom` would need a virtual joint instead.
 
+## Named poses
+
+Set from the MotionPlanning panel's goal-state dropdown, or with
+`move_group.setNamedTarget("tucked")`. Each exists for `left_arm`, `right_arm` and `both_arms`.
+
+| Pose | What it is |
+|---|---|
+| `home` | Where the simulator actually holds the arms: shoulders back, elbows bent. Measured, not chosen. |
+| `zero` | Every arm joint at 0. Arms straight down at the sides. |
+| `tucked` | Arms in close, elbows well bent. The posture to navigate in: smallest swept volume and least COM offset. |
+| `ready` | Forearms up and forward, clear of the torso, without being extended. |
+| `reach_front` | Reaching a surface in front. The pick-and-place working posture. |
+
+Every value was collision-checked against a running `move_group` before being written into the
+SRDF, and `test_robot_model` pins them: the three per-group copies must agree, and all must sit
+inside the joint limits. Poses are a convenience, not a safety mechanism, and MoveIt still plans
+and collision-checks the path to one.
+
+`tucked` is worth knowing about beyond convenience. Arm pose measurably disturbs a walking
+humanoid, and the standing recommendation is to manipulate stationary and navigate with the arms
+in (`docs/notes/arm-motion-and-balance.md`).
+
 ## Kinematics
 
 `pick_ik` on each arm. Each arm is 7 joints against a 6-DoF pose, so the solver's choice within
@@ -80,10 +102,10 @@ joint it models has a state, and the arms hang off three waist joints `joint_sta
 does not own.
 
 With a navigation mode as well (`mode:=localization nav:=true moveit:=true rviz:=true`), the one
-RViz that opens is this package's. Substituting `g1_navigation.rviz` in was measured and does not
-work: the MotionPlanning panel comes from the config's display list, not from node parameters, so
-that combination launches cleanly and simply has no panel. A view carrying both needs its own
-`.rviz` with both display sets on one fixed frame.
+RViz that opens is this package's — run a second `rviz2 -d` on `g1_navigation.rviz` for the map
+and costmaps. A single combined window was attempted and abandoned: every merge segfaulted rviz2
+once Nav2 was actually running. `docs/notes/combined-nav-moveit-rviz.md` has the four runs and
+where to resume.
 
 Planning works immediately. **Executing does not**, until the arm is acquired — the component
 first, then the controller:
@@ -126,7 +148,7 @@ a correctness requirement. Getting them needs the collision geometry simplified 
 | Test | Needs a simulator | Covers |
 |---|---|---|
 | `test_moveit_config_drift` | no | This package against `g1_bringup`'s controller and `g1_description`'s speed clamp; the composite-group solver rule; SRDF well-formedness. |
-| `test_robot_model` | no | Group composition and order, planning frame, no hand or waist joints in an arm group, the collision matrix's adjacent pairs and its cross-arm pairs. |
+| `test_robot_model` | no | Group composition and order, planning frame, no hand or waist joints in an arm group, the collision matrix's adjacent pairs and its cross-arm pairs, and the named poses (per-group copies agree, all within joint limits). |
 | `test_launch_threading` | no | The arguments `g1_bringup`'s `moveit:=true` branch threads into the simulator, the RViz choice, and that `moveit_sim.launch.py` still composes what it did. |
 | `test_moveit_plan_execute` | yes | Execution refused before acquire, a coordinated `both_arms` plan, planned speed under the clamp, and hand placement with the waist turned. |
 

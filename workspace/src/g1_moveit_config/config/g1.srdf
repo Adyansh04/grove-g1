@@ -58,12 +58,200 @@
        needs an end effector yet. SRDF has no notion of a two-tip end effector in any case, so
        both_arms could not have one.
 
-       group_state named poses. Zero is a guess, and an arms-down posture may well self
-       collide. Derive them from a posture observed in sim when a skill needs one.
-
        passive_joint. It would document that the legs, waist and hands are not ours, but it
        reads as if it does more: MoveIt's CurrentStateMonitor counts every active joint, and
        the flag does not exempt one. This comment carries the same information honestly. -->
+
+
+  <!-- Named postures. Every value below was collision-checked against a running move_group
+       (/check_state_validity, both_arms) before being written here, not chosen on a diagram.
+       `home` is the posture the simulator actually holds the arms at, measured, with the few
+       hundredths of measurement noise zeroed.
+
+       An earlier version of this file said zero "may well self collide" and left these out on
+       that suspicion. It does not: checked, valid. The suspicion was wrong.
+
+       roll and yaw mirror between the arms so a positive value swings each arm away from the
+       torso on its own side; pitch and elbow do not mirror.
+
+       Each pose is declared three times because SRDF group states belong to one group, and a
+       skill may drive either arm alone or both together. test_robot_model asserts the three
+       copies agree, so they cannot drift apart. -->
+
+  <group_state name="home" group="left_arm">
+    <joint name="left_shoulder_pitch_joint" value="-0.70"/>
+    <joint name="left_shoulder_roll_joint" value="0.00"/>
+    <joint name="left_shoulder_yaw_joint" value="0.00"/>
+    <joint name="left_elbow_joint" value="1.50"/>
+    <joint name="left_wrist_roll_joint" value="0.00"/>
+    <joint name="left_wrist_pitch_joint" value="0.00"/>
+    <joint name="left_wrist_yaw_joint" value="0.00"/>
+  </group_state>
+  <group_state name="home" group="right_arm">
+    <joint name="right_shoulder_pitch_joint" value="-0.70"/>
+    <joint name="right_shoulder_roll_joint" value="0.00"/>
+    <joint name="right_shoulder_yaw_joint" value="0.00"/>
+    <joint name="right_elbow_joint" value="1.50"/>
+    <joint name="right_wrist_roll_joint" value="0.00"/>
+    <joint name="right_wrist_pitch_joint" value="0.00"/>
+    <joint name="right_wrist_yaw_joint" value="0.00"/>
+  </group_state>
+  <group_state name="home" group="both_arms">
+    <joint name="left_shoulder_pitch_joint" value="-0.70"/>
+    <joint name="left_shoulder_roll_joint" value="0.00"/>
+    <joint name="left_shoulder_yaw_joint" value="0.00"/>
+    <joint name="left_elbow_joint" value="1.50"/>
+    <joint name="left_wrist_roll_joint" value="0.00"/>
+    <joint name="left_wrist_pitch_joint" value="0.00"/>
+    <joint name="left_wrist_yaw_joint" value="0.00"/>
+    <joint name="right_shoulder_pitch_joint" value="-0.70"/>
+    <joint name="right_shoulder_roll_joint" value="0.00"/>
+    <joint name="right_shoulder_yaw_joint" value="0.00"/>
+    <joint name="right_elbow_joint" value="1.50"/>
+    <joint name="right_wrist_roll_joint" value="0.00"/>
+    <joint name="right_wrist_pitch_joint" value="0.00"/>
+    <joint name="right_wrist_yaw_joint" value="0.00"/>
+  </group_state>
+
+  <group_state name="zero" group="left_arm">
+    <joint name="left_shoulder_pitch_joint" value="0.00"/>
+    <joint name="left_shoulder_roll_joint" value="0.00"/>
+    <joint name="left_shoulder_yaw_joint" value="0.00"/>
+    <joint name="left_elbow_joint" value="0.00"/>
+    <joint name="left_wrist_roll_joint" value="0.00"/>
+    <joint name="left_wrist_pitch_joint" value="0.00"/>
+    <joint name="left_wrist_yaw_joint" value="0.00"/>
+  </group_state>
+  <group_state name="zero" group="right_arm">
+    <joint name="right_shoulder_pitch_joint" value="0.00"/>
+    <joint name="right_shoulder_roll_joint" value="0.00"/>
+    <joint name="right_shoulder_yaw_joint" value="0.00"/>
+    <joint name="right_elbow_joint" value="0.00"/>
+    <joint name="right_wrist_roll_joint" value="0.00"/>
+    <joint name="right_wrist_pitch_joint" value="0.00"/>
+    <joint name="right_wrist_yaw_joint" value="0.00"/>
+  </group_state>
+  <group_state name="zero" group="both_arms">
+    <joint name="left_shoulder_pitch_joint" value="0.00"/>
+    <joint name="left_shoulder_roll_joint" value="0.00"/>
+    <joint name="left_shoulder_yaw_joint" value="0.00"/>
+    <joint name="left_elbow_joint" value="0.00"/>
+    <joint name="left_wrist_roll_joint" value="0.00"/>
+    <joint name="left_wrist_pitch_joint" value="0.00"/>
+    <joint name="left_wrist_yaw_joint" value="0.00"/>
+    <joint name="right_shoulder_pitch_joint" value="0.00"/>
+    <joint name="right_shoulder_roll_joint" value="0.00"/>
+    <joint name="right_shoulder_yaw_joint" value="0.00"/>
+    <joint name="right_elbow_joint" value="0.00"/>
+    <joint name="right_wrist_roll_joint" value="0.00"/>
+    <joint name="right_wrist_pitch_joint" value="0.00"/>
+    <joint name="right_wrist_yaw_joint" value="0.00"/>
+  </group_state>
+
+  <group_state name="tucked" group="left_arm">
+    <joint name="left_shoulder_pitch_joint" value="0.25"/>
+    <joint name="left_shoulder_roll_joint" value="0.20"/>
+    <joint name="left_shoulder_yaw_joint" value="0.00"/>
+    <joint name="left_elbow_joint" value="1.30"/>
+    <joint name="left_wrist_roll_joint" value="0.00"/>
+    <joint name="left_wrist_pitch_joint" value="0.00"/>
+    <joint name="left_wrist_yaw_joint" value="0.00"/>
+  </group_state>
+  <group_state name="tucked" group="right_arm">
+    <joint name="right_shoulder_pitch_joint" value="0.25"/>
+    <joint name="right_shoulder_roll_joint" value="-0.20"/>
+    <joint name="right_shoulder_yaw_joint" value="0.00"/>
+    <joint name="right_elbow_joint" value="1.30"/>
+    <joint name="right_wrist_roll_joint" value="0.00"/>
+    <joint name="right_wrist_pitch_joint" value="0.00"/>
+    <joint name="right_wrist_yaw_joint" value="0.00"/>
+  </group_state>
+  <group_state name="tucked" group="both_arms">
+    <joint name="left_shoulder_pitch_joint" value="0.25"/>
+    <joint name="left_shoulder_roll_joint" value="0.20"/>
+    <joint name="left_shoulder_yaw_joint" value="0.00"/>
+    <joint name="left_elbow_joint" value="1.30"/>
+    <joint name="left_wrist_roll_joint" value="0.00"/>
+    <joint name="left_wrist_pitch_joint" value="0.00"/>
+    <joint name="left_wrist_yaw_joint" value="0.00"/>
+    <joint name="right_shoulder_pitch_joint" value="0.25"/>
+    <joint name="right_shoulder_roll_joint" value="-0.20"/>
+    <joint name="right_shoulder_yaw_joint" value="0.00"/>
+    <joint name="right_elbow_joint" value="1.30"/>
+    <joint name="right_wrist_roll_joint" value="0.00"/>
+    <joint name="right_wrist_pitch_joint" value="0.00"/>
+    <joint name="right_wrist_yaw_joint" value="0.00"/>
+  </group_state>
+
+  <group_state name="ready" group="left_arm">
+    <joint name="left_shoulder_pitch_joint" value="-0.35"/>
+    <joint name="left_shoulder_roll_joint" value="0.25"/>
+    <joint name="left_shoulder_yaw_joint" value="0.00"/>
+    <joint name="left_elbow_joint" value="1.00"/>
+    <joint name="left_wrist_roll_joint" value="0.00"/>
+    <joint name="left_wrist_pitch_joint" value="0.00"/>
+    <joint name="left_wrist_yaw_joint" value="0.00"/>
+  </group_state>
+  <group_state name="ready" group="right_arm">
+    <joint name="right_shoulder_pitch_joint" value="-0.35"/>
+    <joint name="right_shoulder_roll_joint" value="-0.25"/>
+    <joint name="right_shoulder_yaw_joint" value="0.00"/>
+    <joint name="right_elbow_joint" value="1.00"/>
+    <joint name="right_wrist_roll_joint" value="0.00"/>
+    <joint name="right_wrist_pitch_joint" value="0.00"/>
+    <joint name="right_wrist_yaw_joint" value="0.00"/>
+  </group_state>
+  <group_state name="ready" group="both_arms">
+    <joint name="left_shoulder_pitch_joint" value="-0.35"/>
+    <joint name="left_shoulder_roll_joint" value="0.25"/>
+    <joint name="left_shoulder_yaw_joint" value="0.00"/>
+    <joint name="left_elbow_joint" value="1.00"/>
+    <joint name="left_wrist_roll_joint" value="0.00"/>
+    <joint name="left_wrist_pitch_joint" value="0.00"/>
+    <joint name="left_wrist_yaw_joint" value="0.00"/>
+    <joint name="right_shoulder_pitch_joint" value="-0.35"/>
+    <joint name="right_shoulder_roll_joint" value="-0.25"/>
+    <joint name="right_shoulder_yaw_joint" value="0.00"/>
+    <joint name="right_elbow_joint" value="1.00"/>
+    <joint name="right_wrist_roll_joint" value="0.00"/>
+    <joint name="right_wrist_pitch_joint" value="0.00"/>
+    <joint name="right_wrist_yaw_joint" value="0.00"/>
+  </group_state>
+
+  <group_state name="reach_front" group="left_arm">
+    <joint name="left_shoulder_pitch_joint" value="-0.90"/>
+    <joint name="left_shoulder_roll_joint" value="0.20"/>
+    <joint name="left_shoulder_yaw_joint" value="0.00"/>
+    <joint name="left_elbow_joint" value="0.70"/>
+    <joint name="left_wrist_roll_joint" value="0.00"/>
+    <joint name="left_wrist_pitch_joint" value="0.00"/>
+    <joint name="left_wrist_yaw_joint" value="0.00"/>
+  </group_state>
+  <group_state name="reach_front" group="right_arm">
+    <joint name="right_shoulder_pitch_joint" value="-0.90"/>
+    <joint name="right_shoulder_roll_joint" value="-0.20"/>
+    <joint name="right_shoulder_yaw_joint" value="0.00"/>
+    <joint name="right_elbow_joint" value="0.70"/>
+    <joint name="right_wrist_roll_joint" value="0.00"/>
+    <joint name="right_wrist_pitch_joint" value="0.00"/>
+    <joint name="right_wrist_yaw_joint" value="0.00"/>
+  </group_state>
+  <group_state name="reach_front" group="both_arms">
+    <joint name="left_shoulder_pitch_joint" value="-0.90"/>
+    <joint name="left_shoulder_roll_joint" value="0.20"/>
+    <joint name="left_shoulder_yaw_joint" value="0.00"/>
+    <joint name="left_elbow_joint" value="0.70"/>
+    <joint name="left_wrist_roll_joint" value="0.00"/>
+    <joint name="left_wrist_pitch_joint" value="0.00"/>
+    <joint name="left_wrist_yaw_joint" value="0.00"/>
+    <joint name="right_shoulder_pitch_joint" value="-0.90"/>
+    <joint name="right_shoulder_roll_joint" value="-0.20"/>
+    <joint name="right_shoulder_yaw_joint" value="0.00"/>
+    <joint name="right_elbow_joint" value="0.70"/>
+    <joint name="right_wrist_roll_joint" value="0.00"/>
+    <joint name="right_wrist_pitch_joint" value="0.00"/>
+    <joint name="right_wrist_yaw_joint" value="0.00"/>
+  </group_state>
 
   <!-- Generated, 2026-08-05. Everything above is hand-written; this block is not.
 
