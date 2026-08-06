@@ -62,10 +62,28 @@ files.
 
 ## Running
 
+One command, from the operator entry point:
+
+```bash
+ros2 launch g1_bringup bringup.launch.py moveit:=true pin_pelvis:=true rviz:=true
+```
+
+Or this package on its own, which is what the integration test launches:
+
 ```bash
 ros2 launch g1_moveit_config moveit_sim.launch.py pin_pelvis:=true
 ros2 launch g1_moveit_config moveit_rviz.launch.py
 ```
+
+Either route turns on the non-arm joint states for you. `move_group` will not plan until every
+joint it models has a state, and the arms hang off three waist joints `joint_state_broadcaster`
+does not own.
+
+With a navigation mode as well (`mode:=localization nav:=true moveit:=true rviz:=true`), the one
+RViz that opens is this package's. Substituting `g1_navigation.rviz` in was measured and does not
+work: the MotionPlanning panel comes from the config's display list, not from node parameters, so
+that combination launches cleanly and simply has no panel. A view carrying both needs its own
+`.rviz` with both display sets on one fixed frame.
 
 Planning works immediately. **Executing does not**, until the arm is acquired — the component
 first, then the controller:
@@ -84,19 +102,24 @@ anything about frames.
 ## Regenerating the collision matrix
 
 `config/g1.srdf` is hand-written except for its `disable_collisions` block. That block is
-generated, and the header inside the file records the arguments and date. Humble ships a headless
-generator, so this needs no GUI:
+generated, and the header inside the file records how and when.
 
-```bash
-xacro $(ros2 pkg prefix g1_description)/share/g1_description/urdf/g1_arm_sdk.urdf.xacro > /tmp/g1.urdf
-/opt/ros/humble/lib/moveit_setup_assistant/collisions_updater \
-  --urdf /tmp/g1.urdf --srdf config/g1.srdf --output config/g1.srdf \
-  --default --always --trials 10000 --min-collision-fraction 0.95
-```
+**`collisions_updater` does not finish on this model.** Measured 2026-08-06: it was left running
+for 1 h 22 m at `--trials 10000` and produced nothing, and 1000 trials, 1 trial and
+`--default --trials 0` all failed to complete either — the expensive phase runs whatever the flags
+say. The cause is the collision geometry: 38 of the URDF's 52 collision elements are the full
+visual STL meshes, about 525k triangles.
 
-Expect it to take roughly half an hour: the G1's collision geometry is its full visual meshes.
-Review the diff before committing, and check that cross-arm pairs from the elbows out are still
-enabled — `both_arms` is pointless without them, and `test_robot_model` asserts it.
+What the shipped matrix was generated from instead is the robot's own rest pose, which is all the
+"invalid start state" failure needs: link pairs joined by a joint, plus pairs found touching by
+`move_group`'s `/check_state_validity` contacts. 54 pairs, generated in seconds, and deliberately
+conservative — it disables what genuinely touches and nothing speculative. It contains no cross-arm
+pair, which matters: `both_arms` exists to collision-check one arm against the other, and
+`test_robot_model` asserts those stay enabled.
+
+The "never in collision" pairs a full sampling run would add are a planning-speed optimisation, not
+a correctness requirement. Getting them needs the collision geometry simplified first — see
+`docs/notes` — after which the upstream generator becomes usable again.
 
 ## Tests
 
@@ -104,6 +127,7 @@ enabled — `both_arms` is pointless without them, and `test_robot_model` assert
 |---|---|---|
 | `test_moveit_config_drift` | no | This package against `g1_bringup`'s controller and `g1_description`'s speed clamp; the composite-group solver rule; SRDF well-formedness. |
 | `test_robot_model` | no | Group composition and order, planning frame, no hand or waist joints in an arm group, the collision matrix's adjacent pairs and its cross-arm pairs. |
+| `test_launch_threading` | no | The arguments `g1_bringup`'s `moveit:=true` branch threads into the simulator, the RViz choice, and that `moveit_sim.launch.py` still composes what it did. |
 | `test_moveit_plan_execute` | yes | Execution refused before acquire, a coordinated `both_arms` plan, planned speed under the clamp, and hand placement with the waist turned. |
 
 ```bash
