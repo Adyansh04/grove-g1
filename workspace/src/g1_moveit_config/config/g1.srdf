@@ -95,8 +95,14 @@
 
   <!-- Named postures. Every value below was collision-checked against a running move_group
        (/check_state_validity, both_arms) before being written here, not chosen on a diagram.
-       `home` is the posture the simulator actually holds the arms at, measured, with the few
-       hundredths of measurement noise zeroed.
+       `home` is the posture the simulator holds the arms at, and the arrow points this way
+       round: g1_motion_service_sim's `arm_hold_rad` is set from these values, and the drift
+       test pins the pair. It used to be the other way, a measurement of wherever the arms
+       happened to fall at startup, which is how it ended up a few hundredths from putting the
+       palm against the thigh once the hands had their real mass.
+
+       The small shoulder roll is what buys that margin: it swings each arm off the torso so
+       neither the sag nor a heavier hand closes the gap. See docs/notes/hand-mass-rest-pose.md.
 
        An earlier version of this file said zero "may well self collide" and left these out on
        that suspicion. It does not: checked, valid. The suspicion was wrong.
@@ -110,7 +116,7 @@
 
   <group_state name="home" group="left_arm">
     <joint name="left_shoulder_pitch_joint" value="-0.70"/>
-    <joint name="left_shoulder_roll_joint" value="0.00"/>
+    <joint name="left_shoulder_roll_joint" value="0.15"/>
     <joint name="left_shoulder_yaw_joint" value="0.00"/>
     <joint name="left_elbow_joint" value="1.50"/>
     <joint name="left_wrist_roll_joint" value="0.00"/>
@@ -119,7 +125,7 @@
   </group_state>
   <group_state name="home" group="right_arm">
     <joint name="right_shoulder_pitch_joint" value="-0.70"/>
-    <joint name="right_shoulder_roll_joint" value="0.00"/>
+    <joint name="right_shoulder_roll_joint" value="-0.15"/>
     <joint name="right_shoulder_yaw_joint" value="0.00"/>
     <joint name="right_elbow_joint" value="1.50"/>
     <joint name="right_wrist_roll_joint" value="0.00"/>
@@ -128,14 +134,14 @@
   </group_state>
   <group_state name="home" group="both_arms">
     <joint name="left_shoulder_pitch_joint" value="-0.70"/>
-    <joint name="left_shoulder_roll_joint" value="0.00"/>
+    <joint name="left_shoulder_roll_joint" value="0.15"/>
     <joint name="left_shoulder_yaw_joint" value="0.00"/>
     <joint name="left_elbow_joint" value="1.50"/>
     <joint name="left_wrist_roll_joint" value="0.00"/>
     <joint name="left_wrist_pitch_joint" value="0.00"/>
     <joint name="left_wrist_yaw_joint" value="0.00"/>
     <joint name="right_shoulder_pitch_joint" value="-0.70"/>
-    <joint name="right_shoulder_roll_joint" value="0.00"/>
+    <joint name="right_shoulder_roll_joint" value="-0.15"/>
     <joint name="right_shoulder_yaw_joint" value="0.00"/>
     <joint name="right_elbow_joint" value="1.50"/>
     <joint name="right_wrist_roll_joint" value="0.00"/>

@@ -133,6 +133,18 @@ MotionServiceSim::MotionServiceSim(const rclcpp::NodeOptions& options)
         waist_hold_rad_.clear();
     }
 
+    arm_hold_rad_ = declare_parameter("arm_hold_rad", std::vector<double>{});
+    if (!arm_hold_rad_.empty() && arm_hold_rad_.size() != kNumArmMotors)
+    {
+        RCLCPP_ERROR(
+            get_logger(),
+            "arm_hold_rad needs %zu values (left arm then right, motors 15 to 28) but got %zu -- "
+            "ignoring it and holding whatever the arms fell into at startup",
+            kNumArmMotors,
+            arm_hold_rad_.size());
+        arm_hold_rad_.clear();
+    }
+
     // Fail fast on non-positive rate/duration (same gate as G1ArmSdkSystem::on_init).
     if (publish_rate_hz_ <= 0.0 || arm_sdk_timeout_s_ <= 0.0 || timeout_ramp_down_s_ <= 0.0)
     {
@@ -428,6 +440,13 @@ void MotionServiceSim::lowstateCallback(const unitree_hg::msg::LowState::ConstSh
         for (std::size_t i = 0; i < waist_hold_rad_.size(); ++i)
         {
             hold_q_[static_cast<std::size_t>(kNumLegMotors) + i] = waist_hold_rad_[i];
+        }
+        // Same treatment, and for a stronger reason: the arms have been falling freely since
+        // the simulator started, so what the capture reads is a startup transient rather than a
+        // posture. See the member's comment.
+        for (std::size_t i = 0; i < arm_hold_rad_.size(); ++i)
+        {
+            hold_q_[static_cast<std::size_t>(kFirstArmMotor) + i] = arm_hold_rad_[i];
         }
         hold_pose_captured_ = true;
     }

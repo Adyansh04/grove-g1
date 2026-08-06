@@ -89,6 +89,18 @@ private:
     /// Only meaningful while the legs are stiff-holding; a live walking policy owns the waist.
     std::vector<double> waist_hold_rad_;
 
+    /// Arm targets that replace the captured ones, or empty to hold whatever was captured.
+    ///
+    /// Not optional in practice. The capture takes the first /lowstate sample, and by then the
+    /// arms have been swinging under gravity with nothing driving them since the simulator
+    /// started, so "captured" means "wherever they happened to fall". That was survivable while
+    /// the model's hands were massless stubs; with real 0.7 kg Dex3 hands they fall further and
+    /// the palm ends up against the thigh, which is a self-collision MoveIt refuses to plan out
+    /// of. Nothing here runs on the robot -- the onboard controller holds the arms there -- so
+    /// this is a simulator artifact being removed, not hardware behaviour being papered over.
+    /// See docs/notes/hand-mass-rest-pose.md.
+    std::vector<double> arm_hold_rad_;
+
     rclcpp::Subscription<unitree_hg::msg::LowState>::SharedPtr lowstate_sub_;
     rclcpp::Subscription<unitree_hg::msg::LowCmd>::SharedPtr   arm_sdk_sub_;
     rclcpp::Publisher<unitree_hg::msg::LowCmd>::SharedPtr      lowcmd_pub_;

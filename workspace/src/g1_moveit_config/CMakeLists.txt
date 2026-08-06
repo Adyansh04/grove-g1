@@ -22,6 +22,7 @@ if(BUILD_TESTING)
     ENV "G1_MOVEIT_CONFIG_DIR=${CMAKE_CURRENT_SOURCE_DIR}/config"
         "G1_BRINGUP_CONFIG_DIR=${CMAKE_CURRENT_SOURCE_DIR}/../g1_bringup/config"
         "G1_DESCRIPTION_CONFIG_DIR=${CMAKE_CURRENT_SOURCE_DIR}/../g1_description/config"
+        "G1_SIM_CONFIG_DIR=${CMAKE_CURRENT_SOURCE_DIR}/../g1_motion_service_sim/config"
   )
 
   # bringup's moveit branch names this package's share, so its threading assertions cannot

@@ -16,6 +16,7 @@ import yaml
 MOVEIT_CONFIG_DIR = os.environ["G1_MOVEIT_CONFIG_DIR"]
 BRINGUP_CONFIG_DIR = os.environ["G1_BRINGUP_CONFIG_DIR"]
 DESCRIPTION_CONFIG_DIR = os.environ["G1_DESCRIPTION_CONFIG_DIR"]
+SIM_CONFIG_DIR = os.environ["G1_SIM_CONFIG_DIR"]
 
 ARM_JOINTS = [
     f"{side}_{joint}_joint"
@@ -194,6 +195,30 @@ def test_each_hand_has_an_open_and_a_closed_posture(side, srdf):
     for name, state in states.items():
         named = {j.get("name") for j in state.findall("joint")}
         assert named == set(HAND_JOINTS[side]), f"{side} {name} does not cover the hand"
+
+
+def test_the_simulator_holds_the_arms_at_home(srdf):
+    """`home` claims to be where the simulator holds the arms. This is what makes it true.
+
+    The claim used to run the other way, `home` being a measurement of wherever the arms fell
+    at startup, and that is how it drifted to within hundredths of putting the palm against the
+    thigh once the hands had their real mass. Now motion_service_sim is told the posture and
+    this pins the pair. See docs/notes/hand-mass-rest-pose.md.
+    """
+    sim = _load(SIM_CONFIG_DIR, "motion_service_sim.yaml")["/**"]["ros__parameters"]
+    home = next(
+        s for s in srdf.findall("group_state")
+        if s.get("name") == "home" and s.get("group") == "both_arms"
+    )
+    expected = [float(j.get("value")) for j in home.findall("joint")]
+    assert [j.get("name") for j in home.findall("joint")] == ARM_JOINTS, (
+        "the both_arms `home` state no longer lists the joints in motor order, so comparing it "
+        "positionally against arm_hold_rad would compare the wrong pairs"
+    )
+    assert sim["arm_hold_rad"] == pytest.approx(expected), (
+        "motion_service_sim holds the arms somewhere other than `home`; the simulator's resting "
+        "posture and the pose MoveIt calls home have drifted apart"
+    )
 
 
 def test_chain_groups_have_a_solver_and_the_composite_one_does_not(srdf, kinematics):
