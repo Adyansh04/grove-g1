@@ -64,14 +64,19 @@ ros2 launch g1_bringup bringup.launch.py mode:=localization nav:=true moveit:=tr
 hang off three waist joints `joint_state_broadcaster` does not own, and `move_group` will not plan
 until every joint it models has a state.
 
-Arms, in order. The order is mandatory: Humble ties command-interface availability to hardware
-component state, so activating the controller before the component can fail the switch.
+Arms and hands, in order. The order is mandatory: Humble ties command-interface availability to
+hardware component state, so activating the controller before the component can fail the switch.
 
 ```bash
 ros2 launch g1_bringup activate_arm.launch.py
-# send a FollowJointTrajectory goal to arm_trajectory_controller
+# send a FollowJointTrajectory goal to arm_trajectory_controller,
+# left_hand_controller or right_hand_controller
 ros2 launch g1_bringup deactivate_arm.launch.py
 ```
+
+The same step acquires both Dex3 hands, but only best-effort: a hand that is absent, unpowered or
+not publishing state logs a warning and leaves the arm usable. The arm is the part that fails the
+whole acquire.
 
 `deactivate_arm.launch.py` blocks for about two seconds while the blend weight ramps to zero. That
 is the ramp, not a hang. Ctrl-C is also safe.

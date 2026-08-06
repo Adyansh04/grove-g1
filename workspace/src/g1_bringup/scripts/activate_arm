@@ -28,6 +28,17 @@ COMPONENT_NAME = "G1ArmSdkSystem"
 CONTROLLER_NAME = "arm_trajectory_controller"
 LOWSTATE_TOPIC = "/lowstate"
 
+# The hands, acquired in the same order and by the same rules. Best-effort on purpose: a
+# Dex3 that is absent, unpowered or simply not publishing state must not stop the arm from
+# being usable, and G1Dex3System refuses to activate without fresh feedback precisely so
+# that shows up here rather than as fingers driven from a stale measurement.
+HANDS = (
+    ("G1Dex3SystemLeft", "left_hand_controller"),
+    ("G1Dex3SystemRight", "right_hand_controller"),
+)
+# Shorter than the arm's: an absent hand should be reported quickly, not waited out twice.
+HAND_ACTIVATE_TIMEOUT_S = 5.0
+
 # Generous versus the component's own lowstate_timeout_ms (100 ms default):
 # this check only proves /lowstate is flowing at all before we even attempt
 # activation, not the component's own freshness gate.
@@ -67,7 +78,7 @@ def wait_for_fresh_lowstate(node, timeout_s):
         node.destroy_subscription(sub)
 
 
-def set_component_state(node, client, target_state_id, target_label, retry_timeout_s):
+def set_component_state(node, client, name, target_state_id, target_label, retry_timeout_s):
     """Bounded retry: the component/controller_manager may not be discovered
     yet, or activation may be legitimately refused if /lowstate just barely
     missed the freshness window (see g1_hardware_interface's on_activate).
@@ -81,7 +92,7 @@ def set_component_state(node, client, target_state_id, target_label, retry_timeo
             continue
 
         request = SetHardwareComponentState.Request()
-        request.name = COMPONENT_NAME
+        request.name = name
         request.target_state.id = target_state_id
         request.target_state.label = target_label
 
@@ -93,7 +104,7 @@ def set_component_state(node, client, target_state_id, target_label, retry_timeo
         last_error = f"rejected (result={result})"
         time.sleep(COMPONENT_RETRY_PERIOD_S)
 
-    node.get_logger().error(f"timed out setting {COMPONENT_NAME} to {target_label!r}: {last_error}")
+    node.get_logger().error(f"timed out setting {name} to {target_label!r}: {last_error}")
     return False
 
 
@@ -137,6 +148,7 @@ def main():
         if not set_component_state(
             node,
             component_client,
+            COMPONENT_NAME,
             State.PRIMARY_STATE_ACTIVE,
             "active",
             COMPONENT_ACTIVATE_TIMEOUT_S,
@@ -150,6 +162,23 @@ def main():
         ):
             node.get_logger().error(f"failed to activate {CONTROLLER_NAME}")
             return 1
+
+        for component, controller in HANDS:
+            node.get_logger().info(f"activating hand {component}...")
+            if not set_component_state(
+                node,
+                component_client,
+                component,
+                State.PRIMARY_STATE_ACTIVE,
+                "active",
+                HAND_ACTIVATE_TIMEOUT_S,
+            ) or not switch_controller(
+                node, controller_client, [controller], [], SERVICE_CALL_TIMEOUT_S
+            ):
+                node.get_logger().warning(
+                    f"{component} did not come up; the arm is still usable but this hand "
+                    "will not move. Check that it is powered and publishing state."
+                )
 
         node.get_logger().info("activation complete: component and controller both active.")
         return 0
