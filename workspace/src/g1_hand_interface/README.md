@@ -56,6 +56,25 @@ and arming it would stop the fingers a second after any hiccup in the control lo
 disagrees on `thumb_1` (0.724 vs 0.611 rad) and its right hand says 0.742, which looks like a
 transposed digit.
 
+## In simulation
+
+`unitree_mujoco` answers the same two topics, so this component is not swapped out for sim. The
+responder is `workspace/vendor/unitree_mujoco/dex3_handler.cc`, registered by patch 004; the
+finger joints themselves come from patch 003.
+
+It runs the PD the hardware runs, from the `kp`/`kd` in the command, and clamps to the URDF's
+effort limits. Two behaviours worth knowing:
+
+- The fingers are driven through `qfrc_applied`, not through MuJoCo actuators. The vendored SDK
+  bridge sizes itself from the actuator count and indexes a fixed 35-slot `LowCmd`, so 29 body
+  motors plus 14 fingers would run it off the end of that array.
+- `status = Lock` holds the finger where it is rather than going limp, which is what the
+  hardware's own status byte means. The same applies before any command arrives and one second
+  after the last one.
+
+Finger contact is not simulated: the geometry is visual only, and grasping is modelled by
+attaching the object in MoveIt's planning scene.
+
 ## Not yet verified on hardware
 
 The real state publish rate, the press-sensor index-to-pad map, and the `thumb_1` upper limit.
