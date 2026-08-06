@@ -149,11 +149,15 @@ def test_joint_limits_cover_exactly_what_we_command(joint_limits):
 def test_the_hand_agrees_across_srdf_controller_and_moveit(
     side, srdf, controllers, moveit_controllers
 ):
-    """Four files have to name the same seven joints in the same order.
+    """Three files have to name the same seven joints in the same order.
 
     The JTC itself remaps by name, but G1Dex3System does not: it writes HandCmd.motor_cmd
     positionally and refuses to init on a mismatch, so a reordering here would either fail
     loudly at startup or, if the guard were ever relaxed, close the wrong fingers.
+
+    MoveIt's own RobotModel sorts a joint-list group alphabetically and will not report this
+    order back; see test_robot_model. That is what makes reading it from the files the only
+    way to pin it.
     """
     group = next(g for g in srdf.findall("group") if g.get("name") == f"{side}_hand")
     controller = f"{side}_hand_controller"

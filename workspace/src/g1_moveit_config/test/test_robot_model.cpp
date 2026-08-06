@@ -119,9 +119,10 @@ TEST_F(RobotModelTest, TheDualArmGroupIsNotAChainAndHasBothArmsAsSubgroups)
 
 TEST_F(RobotModelTest, NoArmGroupCommandsTheHand)
 {
-    // The hand is a separate controllable group with its own API (docs/CONTROL_MODES.md), and
-    // nothing in this stack can command a finger. A group that reached into one would plan
-    // motion that silently never executes.
+    // The hand is a separate device on its own topics with its own authority
+    // (docs/CONTROL_MODES.md), and it has its own group and its own controller. An arm group
+    // that reached into one would plan a trajectory no single controller can execute, so
+    // MoveIt would either split it or refuse it.
     for (const auto* name : { "left_arm", "right_arm", "both_arms" })
     {
         const auto* group = model_->getJointModelGroup(name);
@@ -156,10 +157,16 @@ TEST_F(RobotModelTest, TheNamedPosesAgreeAcrossTheThreeGroups)
     const auto& states = srdf_->getGroupStates();
     ASSERT_FALSE(states.empty()) << "no named poses in g1.srdf";
 
+    const std::set<std::string> arm_groups = { "left_arm", "right_arm", "both_arms" };
+
     std::map<std::string, std::map<std::string, double>> by_pose;
     std::map<std::string, int>                           group_count;
     for (const auto& state : states)
     {
+        if (arm_groups.count(state.group_) == 0)
+        {
+            continue;  // the hand postures are two groups, not three; see below
+        }
         group_count[state.name_]++;
         for (const auto& [joint, values] : state.joint_values_)
         {
@@ -178,6 +185,73 @@ TEST_F(RobotModelTest, TheNamedPosesAgreeAcrossTheThreeGroups)
         EXPECT_EQ(count, 3) << "pose '" << pose << "' should exist for left_arm, right_arm and "
                             << "both_arms";
         EXPECT_EQ(by_pose[pose].size(), 14u) << "pose '" << pose << "' should name all 14 joints";
+    }
+}
+
+TEST_F(RobotModelTest, EachHandIsExactlyItsSevenFingerJoints)
+{
+    // A SET, not a sequence, and that is the point worth recording: a group declared as a joint
+    // list comes back SORTED, not in document order, where a chain group keeps chain order. So
+    // left_hand reads index, middle, thumb here while the wire, the URDF component and the
+    // controller all say thumb, middle, index.
+    //
+    // Harmless as long as nothing lines a MoveIt trajectory up against HandCmd positionally:
+    // the JTC remaps by name, and G1Dex3System takes its order from the URDF. The wire order
+    // itself is pinned in g1_description's xacro test and in test_moveit_config_drift.
+    for (const auto* side : { "left", "right" })
+    {
+        const auto* hand = model_->getJointModelGroup(std::string(side) + "_hand");
+        ASSERT_NE(hand, nullptr) << side;
+
+        std::set<std::string> expected;
+        for (const auto* suffix :
+             { "thumb_0", "thumb_1", "thumb_2", "middle_0", "middle_1", "index_0", "index_1" })
+        {
+            expected.insert(std::string(side) + "_hand_" + suffix + "_joint");
+        }
+        const auto& actual = hand->getActiveJointModelNames();
+        EXPECT_EQ(std::set<std::string>(actual.begin(), actual.end()), expected);
+    }
+}
+
+TEST_F(RobotModelTest, EachHandIsItsArmsEndEffector)
+{
+    // What lets attachObject work out its own touch links, and what makes RViz offer the hand
+    // as the arm's gripper rather than as an unrelated group.
+    std::map<std::string, srdf::Model::EndEffector> by_group;
+    for (const auto& effector : srdf_->getEndEffectors())
+    {
+        by_group.emplace(effector.component_group_, effector);
+    }
+    ASSERT_EQ(by_group.size(), 2u) << "expected one end effector per hand";
+
+    for (const auto* side : { "left", "right" })
+    {
+        const auto it = by_group.find(std::string(side) + "_hand");
+        ASSERT_NE(it, by_group.end()) << side;
+        EXPECT_EQ(it->second.parent_link_, std::string(side) + "_hand_palm_link");
+        EXPECT_EQ(it->second.parent_group_, std::string(side) + "_arm");
+    }
+}
+
+TEST_F(RobotModelTest, EachHandHasAnOpenAndAClosedPosture)
+{
+    // Two per hand, and each must name all seven joints: a posture that leaves a finger out
+    // moves the rest and leaves that one wherever it happened to be.
+    std::map<std::string, std::set<std::string>> poses_by_group;
+    for (const auto& state : srdf_->getGroupStates())
+    {
+        if (state.group_ == "left_hand" || state.group_ == "right_hand")
+        {
+            poses_by_group[state.group_].insert(state.name_);
+            EXPECT_EQ(state.joint_values_.size(), 7u)
+                << state.group_ << " posture '" << state.name_ << "' does not cover the hand";
+        }
+    }
+    for (const auto* side : { "left", "right" })
+    {
+        EXPECT_EQ(poses_by_group[std::string(side) + "_hand"],
+                  (std::set<std::string>{ "open", "closed" }));
     }
 }
 
