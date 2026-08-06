@@ -18,8 +18,6 @@ Panels:
     Tree Height: 700
   - Class: rviz_common/Views
     Name: Views
-  - Class: moveit_rviz_plugin/MotionPlanning - Trajectory Slider
-    Name: Trajectory Slider
 Visualization Manager:
   Class: ""
   Name: root
@@ -99,6 +97,4 @@ Window Geometry:
   Displays:
     collapsed: false
   Views:
-    collapsed: false
-  Trajectory Slider:
     collapsed: false
