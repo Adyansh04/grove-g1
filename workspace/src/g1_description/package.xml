@@ -26,4 +26,5 @@
   <export>
     <build_type>ament_cmake</build_type>
   </export>
+  <exec_depend>realsense2_description</exec_depend>
 </package>

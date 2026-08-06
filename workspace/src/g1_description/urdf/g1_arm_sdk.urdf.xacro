@@ -27,6 +27,51 @@
     <origin xyz="0 0 0" rpy="-1.5707963267948966 0 -1.5707963267948966"/>
   </joint>
 
+  <!-- Sensor bodies. The vendored URDF leaves d435_link and mid360_link as EMPTY links, so both
+       sensors are invisible in RViz and it is impossible to see where either is pointing.
+       Attached as child links rather than by editing those links, for the same reason the
+       optical frames above are: the vendored file stays byte-for-byte diffable against
+       Unitree's.
+
+       VISUAL ONLY, deliberately. Collision geometry here would be swept into MoveIt's
+       self-filter and its planning scene, so a mis-sized box would silently either carve a hole
+       in the octomap or block plans near the head. These exist to be looked at, nothing more.
+       See g1_moveit_config/config/sensors_3d.yaml for what the sensors actually feed. -->
+  <link name="d435_visual">
+    <visual>
+      <!-- Intel's own placement from realsense2_description's _d435.urdf.xacro: the mesh origin
+           sits at the front plate between the two infrared cameras, so it needs this offset and
+           rotation to line up with the link. Values are
+           d435_zero_depth_to_glass + d435_glass_to_front, and -d435_cam_depth_py. -->
+      <origin xyz="0.0043 -0.0175 0" rpy="1.5707963267948966 0 1.5707963267948966"/>
+      <geometry>
+        <mesh filename="package://realsense2_description/meshes/d435.dae"/>
+      </geometry>
+    </visual>
+  </link>
+  <joint name="d435_visual_joint" type="fixed">
+    <parent link="d435_link"/>
+    <child link="d435_visual"/>
+  </joint>
+
+  <link name="mid360_visual">
+    <visual>
+      <!-- Livox ship no ROS description package, so this is a primitive from the published
+           MID360 dimensions (65 x 65 x 60 mm) rather than a mesh. It marks where the LiDAR is
+           and roughly how big; do not read anything finer off it. -->
+      <geometry>
+        <cylinder radius="0.0325" length="0.060"/>
+      </geometry>
+      <material name="dark_grey">
+        <color rgba="0.15 0.15 0.15 1.0"/>
+      </material>
+    </visual>
+  </link>
+  <joint name="mid360_visual_joint" type="fixed">
+    <parent link="mid360_link"/>
+    <child link="mid360_visual"/>
+  </joint>
+
   <!-- Load tunable YAML for ROS 2 control parameters. -->
   <xacro:property name="arm_sdk_params" value="${xacro.load_yaml('../config/arm_sdk_params.yaml')}"/>
 
