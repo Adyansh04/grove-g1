@@ -35,10 +35,11 @@ def _setup(context, *args, **kwargs):
                 # and the arms hang off three waist joints joint_state_broadcaster does not
                 # own -- so without this the model has no idea where the torso is pointing.
                 "non_arm_joint_states": "true",
-                # The LiDAR is not needed to plan, and g1_bringup's README records that
-                # sensors:=true cost test_arm_command its slew-limited convergence window.
-                # Manipulation executes the same kind of trajectory.
-                "sensors": "false",
+                # Off by default for the same reason as ever: g1_bringup's README records that
+                # sensors:=true cost test_arm_command its slew-limited convergence window, and
+                # manipulation executes the same kind of trajectory. Turning it on is what feeds
+                # the octomap -- there is no depth image without it.
+                "sensors": LaunchConfiguration("sensors"),
                 "headless": LaunchConfiguration("headless"),
                 "world": LaunchConfiguration("world"),
                 "pin_pelvis": LaunchConfiguration("pin_pelvis"),
@@ -48,6 +49,10 @@ def _setup(context, *args, **kwargs):
             }.items(),
         ),
         IncludeLaunchDescription(PythonLaunchDescriptionSource(moveit_launch)),
+        # No depth-to-cloud converter here. The octomap consumes /livox/lidar directly, which
+        # is already a PointCloud2 with QoS the updater matches; the camera path needs
+        # depth_image_proc and that node cannot receive from our best-effort relay. See
+        # config/sensors_3d.yaml.
     ]
 
 
@@ -63,6 +68,13 @@ def generate_launch_description():
             default_value="navigation",
             description="Which scene to stage. Only matters for what the robot can bump into; "
             "nothing here reads the map.",
+        ),
+        DeclareLaunchArgument(
+            "sensors",
+            default_value="false",
+            description="LiDAR, camera and the odom chain. Required for the octomap: without a "
+            "depth image there is nothing to build a planning scene from. Off by default "
+            "because it costs sim performance and manipulation does not otherwise need it.",
         ),
         DeclareLaunchArgument(
             "pin_pelvis",

@@ -41,6 +41,10 @@ def generate_launch_description():
             file_path=os.path.join(config_share, "config", "moveit_controllers.yaml")
         )
         .planning_pipelines(pipelines=["ompl"], default_planning_pipeline="ompl")
+        # Explicit, though the builder would find config/sensors_3d.yaml on its own: it guards
+        # the load with `if sensors_path.exists()`, so a wrong path is a silent no-op with no
+        # warning and no octomap. Naming it means a rename fails visibly instead.
+        .sensors_3d(file_path=os.path.join(config_share, "config", "sensors_3d.yaml"))
         .to_moveit_configs()
     )
 
