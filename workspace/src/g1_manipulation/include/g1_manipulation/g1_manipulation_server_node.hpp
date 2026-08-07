@@ -27,6 +27,8 @@
 #include <geometry_msgs/msg/pose.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <memory>
+#include <moveit_msgs/msg/attached_collision_object.hpp>
+#include <moveit_msgs/msg/collision_object.hpp>
 #include <moveit_msgs/srv/apply_planning_scene.hpp>
 #include <moveit_msgs/srv/get_planning_scene.hpp>
 #include <mutex>
@@ -100,8 +102,9 @@ private:
     bool moveToNamed(MoveGroup& group, const std::string& named_target);
 
     /// Puts the object into the planning scene at its measured pose, already transformed into
-    /// the planning frame, so plans route around it and so attaching it means something.
-    void publishCollisionObject(
+    /// the planning frame, so plans route around it. Returns what it built: the world copy is
+    /// removed before the grasp, and the attached body then has to carry the same geometry.
+    moveit_msgs::msg::CollisionObject publishCollisionObject(
         const vision_msgs::msg::Detection3D& detection,
         const geometry_msgs::msg::Pose&      in_planning_frame);
 

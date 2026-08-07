@@ -15,13 +15,16 @@ g1_manipulation_server:
     # How far above the grasp the approach starts, and how far the object is lifted after the
     # hand closes. Both are along the planning frame's z, which is up while the robot stands.
     approach_height_m: 0.12
-    lift_height_m: 0.15
+    # Short on purpose. The lift is planned as free-space motion with the object attached, in a
+    # scene that still holds the octomap of the surface it came off, and a long one gives OMPL a
+    # much harder problem for no gain: it only has to clear the surface before the transfer.
+    lift_height_m: 0.08
 
     # Well under joint_limits.yaml's own 0.8 rad/s per-joint cap. Arm motion measurably
     # disturbs a standing humanoid (docs/notes/arm-motion-and-balance.md), and scaling the
     # whole trajectory is preferred to clamping joints, which bends the path itself.
     velocity_scaling: 0.3
-    planning_time_s: 5.0
+    planning_time_s: 10.0
 
     # The grasp geometry, for the RIGHT hand. The left mirrors automatically: its offset y and
     # z flip sign, and so does the roll, because the two hands are mirror images.

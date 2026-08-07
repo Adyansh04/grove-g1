@@ -332,7 +332,7 @@ G1ManipulationServer::lookUpObject(const std::string& object_id)
     return std::nullopt;
 }
 
-void G1ManipulationServer::publishCollisionObject(
+moveit_msgs::msg::CollisionObject G1ManipulationServer::publishCollisionObject(
     const vision_msgs::msg::Detection3D& detection,
     const geometry_msgs::msg::Pose&      in_planning_frame)
 {
@@ -355,6 +355,9 @@ void G1ManipulationServer::publishCollisionObject(
     // ADD on an id that already exists replaces it, so a re-plan against a moved object does
     // not need a remove first.
     planning_scene_.applyCollisionObjects({ object });
+    // Returned so the attach can rebuild the same geometry: by then the world copy has been
+    // removed, and an attached body has to carry its own shape.
+    return object;
 }
 
 geometry_msgs::msg::Pose G1ManipulationServer::palmPoseFor(
@@ -460,12 +463,6 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
         goal_handle->abort(result);
     };
 
-    // Grasping is contact, and the planner cannot tell intended contact from a collision. The
-    // octomap holds the support surface, and the object's own collision geometry exists
-    // precisely so plans route around it right up until the hand is meant to close on it.
-    // Restored by `fail` on every failure path and again just before success.
-    allowHandContact(arm, { "<octomap>", goal->object_id }, true);
-
     feedback->phase = Pick::Feedback::PHASE_LOCATING;
     goal_handle->publish_feedback(feedback);
     const auto detection = lookUpObject(goal->object_id);
@@ -484,7 +481,8 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
         fail(Pick::Feedback::PHASE_LOCATING, "could not transform the object pose");
         return;
     }
-    publishCollisionObject(*detection, *object_pose);
+    const moveit_msgs::msg::CollisionObject object =
+        publishCollisionObject(*detection, *object_pose);
 
     const geometry_msgs::msg::Pose grasp_palm    = palmPoseFor(*object_pose, arm);
     geometry_msgs::msg::Pose       pregrasp_palm = grasp_palm;
@@ -512,6 +510,23 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
 
     feedback->phase = Pick::Feedback::PHASE_APPROACH;
     goal_handle->publish_feedback(feedback);
+
+    // Only NOW is contact allowed, and only for the last few centimetres.
+    //
+    // Turning it on earlier is what let a plan route the arm straight through the table on the
+    // way to the pregrasp pose: with the hand exempt from the octomap for the whole skill, a
+    // path through the surface costs the planner nothing. The transit above therefore runs
+    // fully collision-checked, and the exemption covers only the short descent that has to end
+    // in contact.
+    //
+    // The object's own collision geometry is REMOVED rather than exempted. It was added so the
+    // pregrasp plan would route around it; from here it is in the way, and MoveIt's documented
+    // pick sequence is remove, close, attach. Attaching re-adds it as an attached body, which
+    // is also what gets PointCloudOctomapUpdater's ShapeMask to stop feeding it back into the
+    // octomap -- world collision objects get no such filtering, attached bodies do.
+    allowHandContact(arm, { "<octomap>" }, true);
+    planning_scene_.removeCollisionObjects({ goal->object_id });
+
     if (!moveTo(*arm_group, grasp_palm, "approach"))
     {
         fail(Pick::Feedback::PHASE_APPROACH, "could not reach the grasp pose");
@@ -526,9 +541,31 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
         return;
     }
     // Attached AFTER the hand closes, so the planner starts treating the object as part of the
-    // arm at the same moment the hand does. Touch links come from the arm's end_effector in
-    // the SRDF, which is why the two-argument form is enough.
-    arm_group->attachObject(goal->object_id, arm.palm_link);
+    // arm at the same moment the hand does.
+    //
+    // Built explicitly rather than via attachObject(id, link), which promotes an object that is
+    // still in the world -- and this one was removed before the approach, so there is nothing
+    // left to promote. An attached body carries its own geometry, so the shape and pose come
+    // from what publishCollisionObject built.
+    //
+    // touch_links is what tells the planner the fingers are SUPPOSED to be in contact with it.
+    // Without them the attach itself reads as a collision the moment it takes effect.
+    moveit_msgs::msg::AttachedCollisionObject attached;
+    attached.link_name        = arm.palm_link;
+    attached.object           = object;
+    attached.object.operation = moveit_msgs::msg::CollisionObject::ADD;
+    attached.touch_links =
+        hand_group->getRobotModel()->getJointModelGroup(arm.hand_group)->getLinkModelNames();
+    attached.touch_links.push_back(arm.palm_link);
+    planning_scene_.applyAttachedCollisionObject(attached);
+
+    // Extended to the object only now that it is attached and about to be lifted OUT of the
+    // surface it was resting on. Its own voxels, and the table's underneath it, are still in
+    // the octomap from before the grasp -- the ShapeMask stops new clouds re-adding it, but it
+    // does not erase what is already there. Without this the lift fails before it starts, with
+    // "start state appears to be in collision", which is the attached cube against the table
+    // it is still sitting on.
+    allowHandContact(arm, { "<octomap>", goal->object_id }, true);
 
     feedback->phase = Pick::Feedback::PHASE_LIFT;
     goal_handle->publish_feedback(feedback);
