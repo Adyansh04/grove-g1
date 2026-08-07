@@ -1,0 +1,25 @@
+# Back away from a surface, so the robot can turn and walk off without dragging an arm across it.
+#
+# "Back" is a lie the gait cannot honour. g1_gait_shaper compares forward speed SIGNED, so any
+# negative vx is zeroed at any magnitude, and the policy measures -0.247 m/s for a commanded
+# -0.60 anyway -- reverse is entirely inside the dead zone. So this turns around, walks forward,
+# and optionally faces back. See docs/notes/m9-base-approach.md.
+
+# How far to end up from where it started, in metres. Achieved to within about one gait pulse.
+float64 distance_m
+# Face the original heading again at the end. A mission that is about to navigate somewhere else
+# does not need it and pays two turns for nothing; a mission that wants to look at what it just
+# put down does.
+bool restore_heading
+# Give up after this many seconds. 0 uses the server's own default.
+float64 timeout_s
+---
+bool success
+string message
+float64 travelled_m
+---
+string PHASE_TURNING=turning
+string PHASE_WALKING=walking
+string PHASE_RESTORING=restoring
+string phase
+float64 travelled_m

@@ -1,0 +1,40 @@
+# Close the last gap to a measured object, after navigation has got the robot roughly there.
+#
+# Exists because navigation cannot hand manipulation a pose it can work with: Nav2's
+# xy_goal_tolerance is 0.5 m and the arm's whole reach envelope is about 0.13 m wide.
+#
+# This does NOT converge on a distance setpoint. The gait's smallest forward pulse measures
+# 0.3 to 0.6 m -- larger than the reach tolerance -- so no control law can hit a 5 cm target
+# head-on. It walks in pulses, re-reads the object between each one, and approaches obliquely
+# once the remaining distance is under one pulse, so the advance per pulse is what shrinks
+# rather than the step. See docs/notes/m9-base-approach.md.
+
+# Must match a class_id published on /objects. The pose is read fresh from there rather than
+# passed in, for the same reason Pick does it: a retry re-reads instead of replaying.
+string object_id
+# Which arm has to reach it. Only selects which side of the pelvis the object should end up on;
+# nothing here moves an arm.
+string ARM_LEFT=left
+string ARM_RIGHT=right
+string arm
+# Give up after this many seconds. 0 uses the server's own default.
+float64 timeout_s
+---
+bool success
+# On failure, names the phase that failed and why. Not meant to be parsed.
+string message
+# Where the object ended up relative to the base, so a caller can see how close it got rather
+# than only whether it succeeded.
+float64 final_range_m
+float64 final_bearing_rad
+---
+# Which phase is running. Also what the result message names on failure, so the constants live
+# here rather than as literals in the server and its tests.
+string PHASE_LOCATING=locating
+string PHASE_FACING=facing
+string PHASE_CLOSING=closing
+string PHASE_VERIFYING=verifying
+string phase
+float64 range_m
+float64 bearing_rad
+int32 pulses
