@@ -8,10 +8,10 @@
 # not different numbers -- and probably does not need to exist at all.
 g1_base_approach:
   ros__parameters:
-    # Arbitrated by twist_mux against Nav2's cmd_vel_nav, not published straight onto /cmd_vel.
-    # Two writers on the velocity channel is what CLAUDE.md section 7 forbids; sequencing in the
-    # behaviour tree makes them non-concurrent in practice, but that is a timing coincidence
-    # rather than declared ownership.
+    # Remapped to /cmd_vel_approach, which g1_gait_shaper takes as its HIGH-priority input and
+    # prefers over Nav2's /cmd_vel for override_timeout_s after each message. Two writers on the
+    # velocity channel is what CLAUDE.md section 7 forbids; sequencing in the behaviour tree makes
+    # them non-concurrent in practice, but that is a timing coincidence rather than ownership.
     cmd_vel_topic: "cmd_vel_approach"
     base_frame: "base_footprint"
 

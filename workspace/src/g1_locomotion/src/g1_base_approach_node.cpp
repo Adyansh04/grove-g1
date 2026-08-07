@@ -12,8 +12,9 @@
  * publishing into locomotion's channel is the shape of bug docs/CONTROL_MODES.md exists to
  * prevent, even when the topic itself is harmless.
  *
- * Publishes on its own topic and lets twist_mux arbitrate, rather than writing /cmd_vel
- * directly alongside Nav2. See the README.
+ * Publishes on its own topic rather than writing /cmd_vel alongside Nav2. g1_gait_shaper
+ * subscribes to both and gives this one priority while it is publishing, so ownership of the
+ * velocity channel is declared rather than left to the behaviour tree's sequencing.
  */
 
 #include <tf2/LinearMath/Quaternion.h>
@@ -155,8 +156,8 @@ public:
 private:
     /// Command a velocity for `duration_s`, then hold zero while the gait settles.
     ///
-    /// Zeros are published rather than merely stopping: an idle publisher lets twist_mux time
-    /// this source out and fall back to Nav2's, which would hand the channel away mid-skill.
+    /// Zeros are published rather than merely stopping: the shaper hands the channel back to
+    /// Nav2 when this source goes quiet, so an idle gap mid-skill would surrender priority.
     void pulse(double vx, double vyaw, double duration_s)
     {
         const auto period = std::chrono::duration<double>(1.0 / std::max(1.0, cmd_rate_hz_));

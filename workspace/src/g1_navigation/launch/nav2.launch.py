@@ -8,14 +8,15 @@ listed below, because each difference is a decision rather than drift.
     means decelerating into the gait's dead zone and stopping dead; smoother_server smooths
     paths for a robot with two motion primitives; waypoint_follower has no caller. All three
     are in upstream's list, so their absence is deliberate, not an oversight.
-  * controller_server's cmd_vel keeps upstream's cmd_vel_nav, but for a different reason than
-    upstream has: twist_mux arbitrates it against g1_base_approach's output, and g1_gait_shaper
-    sits downstream of the mux in place of velocity_smoother.
+  * controller_server's cmd_vel goes to /cmd_vel rather than upstream's cmd_vel_nav, because
+    g1_gait_shaper is what sits between Nav2 and the robot here, in place of velocity_smoother.
+    The shaper is also what arbitrates Nav2 against g1_base_approach's higher-priority
+    /cmd_vel_approach, so nothing else has to sit in that path.
   * controller_server also REMAPS odom. Its OdomSmoother is built with the C++ default topic
     and controller_server declares no odom_topic parameter on Humble -- setting one is silently
     ignored, and Nav2 then believes the robot is permanently stationary.
-  * g1_gait_shaper, g1_loco_authority, g1_base_approach and twist_mux are added; none of them
-    exists upstream.
+  * g1_gait_shaper, g1_loco_authority and g1_base_approach are added; none of them exists
+    upstream.
 
 use_composition defaults to FALSE here, unlike scan.launch.py and localization.launch.py.
 
@@ -97,11 +98,11 @@ def generate_launch_description():
     log_level = LaunchConfiguration("log_level")
 
     remappings = [("/tf", "tf"), ("/tf_static", "tf_static")]
-    # Nav2's controller publishes here. It used to publish straight onto /cmd_vel; since
-    # milestone 9 it is one of TWO velocity sources, so it goes through twist_mux and the mux
-    # feeds the shaper. Back to upstream's own name, as it happens.
+    # Nav2's controller publishes here; the shaper reduces it onto the gait's achievable
+    # motions and forwards to the bridge. Since milestone 9 it is the LOW-priority of two
+    # sources, and the shaper is what decides between them.
     controller_remappings = remappings + [
-        ("cmd_vel", "/cmd_vel_nav"),
+        ("cmd_vel", "/cmd_vel"),
         ("odom", "/g1_odometry_publisher/odom"),
     ]
 
@@ -176,27 +177,6 @@ def generate_launch_description():
         ],
     )
 
-    # Arbitrates the velocity channel. Nav2 is no longer its only writer: g1_base_approach
-    # drives the last half metre to a workbench, because Nav2's 0.5 m goal tolerance is four
-    # times the arm's whole reach window (docs/notes/m9-base-approach.md).
-    #
-    # The behaviour tree already sequences the two so they never overlap. That is exclusivity by
-    # timing rather than by declaration, and CLAUDE.md section 7 asks for the latter: Nav2
-    # publishes a terminal zero when a goal completes, its recoveries publish during one, and a
-    # goal sent by hand from a terminal would contend with a running skill.
-    #
-    # Launched here rather than in g1_bringup because remapping controller_server's output is
-    # what makes the mux load-bearing: the two have to arrive together or navigation publishes
-    # into a topic nothing reads.
-    twist_mux = Node(
-        package="twist_mux",
-        executable="twist_mux",
-        name="twist_mux",
-        output="both",
-        parameters=[os.path.join(loco_share, "config", "twist_mux.yaml")],
-        remappings=[("cmd_vel_out", "/cmd_vel")],
-    )
-
     # Reads /objects, so it does nothing useful without manipulation:=true. Launched
     # unconditionally anyway: it is the shaper's sibling on the velocity path, its goals simply
     # fail with "no fresh pose" when nothing publishes objects, and gating it on a navigation
@@ -219,7 +199,11 @@ def generate_launch_description():
         name="g1_gait_shaper",
         output="both",
         parameters=[os.path.join(loco_share, "config", "g1_gait_shaper.yaml")],
-        remappings=[("cmd_vel_in", "/cmd_vel"), ("cmd_vel_out", "/g1_loco_bridge/cmd_vel")],
+        remappings=[
+            ("cmd_vel_in", "/cmd_vel"),
+            ("cmd_vel_override", "/cmd_vel_approach"),
+            ("cmd_vel_out", "/g1_loco_bridge/cmd_vel"),
+        ],
     )
 
     # Its own lifecycle manager, not Nav2's: a plain rclcpp_lifecycle node creates no bond, and
@@ -329,7 +313,6 @@ def generate_launch_description():
         # plain `ros2 launch` of this file.
         OpaqueFunction(function=_reject_composition),
         load_nodes,
-        twist_mux,
         base_approach,
         gait_shaper,
         loco_authority,

@@ -245,14 +245,13 @@ RUN apt-get update && apt-get install -y \
 # vision-msgs carries Detection3DArray, the object-pose interface g1_manipulation publishes so
 # real perception can later stand behind it unchanged.
 #
-# twist-mux arbitrates /cmd_vel. The base-approach skill drives the robot the last half metre to
-# a workbench, which means Nav2 is no longer the only thing with an opinion about velocity.
-# Sequencing in the tree already keeps the two from overlapping, but CLAUDE.md section 7 asks for
-# ownership that is explicit rather than merely well-timed, and Nav2 does publish a terminal zero
-# on goal completion. The mux makes it a declared priority instead of a timing coincidence.
+# twist-mux is deliberately NOT here, though /cmd_vel does now have two writers and a mux is the
+# standard answer. ros-humble-twist-mux 4.3.0 links libdiagnostic_updater.so, and the only
+# ros-humble-diagnostic-updater this apt snapshot carries (4.0.6) is Python-only and ships no
+# such library, so the binary dies at load with exit 127 and there is no second version to pin.
+# g1_gait_shaper arbitrates its own two inputs instead; see its node docstring.
 RUN apt-get update && apt-get install -y \
         ros-humble-behaviortree-cpp \
-        ros-humble-twist-mux \
         ros-humble-vision-msgs \
     && rm -rf /var/lib/apt/lists/*
 
