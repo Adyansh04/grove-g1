@@ -71,6 +71,41 @@ G1ManipulationServer::G1ManipulationServer(const rclcpp::NodeOptions& options)
         "/objects",
         objectsQos(),
         std::bind(&G1ManipulationServer::onObjects, this, std::placeholders::_1));
+
+    tf_buffer_   = std::make_unique<tf2_ros::Buffer>(get_clock());
+    tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
+}
+
+std::optional<geometry_msgs::msg::Pose> G1ManipulationServer::toPlanningFrame(
+    const geometry_msgs::msg::Pose& pose, const std::string& frame_id)
+{
+    if (frame_id.empty() || frame_id == planning_frame_)
+    {
+        return pose;
+    }
+
+    geometry_msgs::msg::PoseStamped in;
+    in.header.frame_id = frame_id;
+    // Deliberately the latest available rather than a stamp: the source's own stamp can be a
+    // few sample periods old, and tf2 would then either extrapolate or refuse. The robot
+    // stands still to manipulate, so latest is the right reading.
+    in.header.stamp = rclcpp::Time(0);
+    in.pose         = pose;
+
+    try
+    {
+        return tf_buffer_->transform(in, planning_frame_, std::chrono::milliseconds(500)).pose;
+    }
+    catch (const tf2::TransformException& e)
+    {
+        RCLCPP_ERROR(
+            get_logger(),
+            "cannot transform '%s' into the planning frame '%s': %s",
+            frame_id.c_str(),
+            planning_frame_.c_str(),
+            e.what());
+        return std::nullopt;
+    }
 }
 
 void G1ManipulationServer::initialize()
@@ -180,7 +215,8 @@ G1ManipulationServer::lookUpObject(const std::string& object_id)
     return std::nullopt;
 }
 
-void G1ManipulationServer::publishCollisionObject(const vision_msgs::msg::Detection3D& detection)
+void G1ManipulationServer::publishCollisionObject(
+    const vision_msgs::msg::Detection3D& detection, const geometry_msgs::msg::Pose& in_planning_frame)
 {
     moveit_msgs::msg::CollisionObject object;
     object.id              = detection.results.front().hypothesis.class_id;
@@ -195,7 +231,7 @@ void G1ManipulationServer::publishCollisionObject(const vision_msgs::msg::Detect
                              std::max(detection.bbox.size.z, kMinPrimitiveExtent) };
 
     object.primitives.push_back(primitive);
-    object.primitive_poses.push_back(detection.results.front().pose.pose);
+    object.primitive_poses.push_back(in_planning_frame);
     object.operation = moveit_msgs::msg::CollisionObject::ADD;
 
     // ADD on an id that already exists replaces it, so a re-plan against a moved object does
@@ -309,9 +345,20 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
         fail(Pick::Feedback::PHASE_LOCATING, "no fresh pose for '" + goal->object_id + "'");
         return;
     }
-    publishCollisionObject(*detection);
+    // /objects is in odom and the planner works in pelvis; the two differ by wherever the
+    // robot is standing, so every measured pose goes through TF before it is planned against.
+    const std::string object_frame = detection->header.frame_id.empty()
+                                         ? objects_.header.frame_id
+                                         : detection->header.frame_id;
+    const auto object_pose = toPlanningFrame(detection->results.front().pose.pose, object_frame);
+    if (!object_pose)
+    {
+        fail(Pick::Feedback::PHASE_LOCATING, "could not transform the object pose");
+        return;
+    }
+    publishCollisionObject(*detection, *object_pose);
 
-    const geometry_msgs::msg::Pose grasp_palm = palmPoseFor(detection->results.front().pose.pose);
+    const geometry_msgs::msg::Pose grasp_palm    = palmPoseFor(*object_pose);
     geometry_msgs::msg::Pose       pregrasp_palm = grasp_palm;
     pregrasp_palm.position.z += approach_height_m_;
 
@@ -377,25 +424,23 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
     MoveGroup* arm_group  = groupFor(arm.arm_group);
     MoveGroup* hand_group = groupFor(arm.hand_group);
 
-    // The goal frame is checked rather than transformed. A goal in odom and a planning frame
-    // of pelvis differ by wherever the robot is standing, and silently treating one as the
-    // other would place the object metres away.
-    if (!goal->pose.header.frame_id.empty() && goal->pose.header.frame_id != planning_frame_)
-    {
-        result->success = false;
-        result->message = "pose is in frame '" + goal->pose.header.frame_id +
-                          "' but this node plans in '" + planning_frame_ + "'";
-        goal_handle->abort(result);
-        return;
-    }
-
     const auto fail = [&](const std::string& phase, const std::string& why) {
         result->success = false;
         result->message = phase + ": " + why;
         goal_handle->abort(result);
     };
 
-    const geometry_msgs::msg::Pose place_palm = palmPoseFor(goal->pose.pose);
+    // An empty frame means the goal is already in the planning frame. Anything else is
+    // transformed rather than assumed: a target in odom treated as pelvis lands metres away,
+    // and by the time that is visible the arm is already moving.
+    const auto target = toPlanningFrame(goal->pose.pose, goal->pose.header.frame_id);
+    if (!target)
+    {
+        fail(Place::Feedback::PHASE_PREPLACE, "could not transform the target pose");
+        return;
+    }
+
+    const geometry_msgs::msg::Pose place_palm = palmPoseFor(*target);
     geometry_msgs::msg::Pose       preplace   = place_palm;
     preplace.position.z += approach_height_m_;
 

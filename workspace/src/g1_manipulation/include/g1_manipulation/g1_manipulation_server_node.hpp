@@ -30,6 +30,8 @@
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
 #include <string>
+#include <tf2_ros/buffer.h>
+#include <tf2_ros/transform_listener.h>
 #include <vision_msgs/msg/detection3_d_array.hpp>
 
 namespace g1_manipulation
@@ -77,6 +79,12 @@ private:
     std::optional<vision_msgs::msg::Detection3D> lookUpObject(const std::string& object_id);
     void onObjects(const vision_msgs::msg::Detection3DArray::SharedPtr msg);
 
+    /// Into the planning frame, or nullopt with the reason logged. Everything a goal carries
+    /// goes through here: /objects is in odom, the planner works in pelvis, and the two differ
+    /// by wherever the robot is standing.
+    std::optional<geometry_msgs::msg::Pose> toPlanningFrame(
+        const geometry_msgs::msg::Pose& pose, const std::string& frame_id);
+
     /// Where the palm must be for the held object to end up at `object_pose`.
     geometry_msgs::msg::Pose palmPoseFor(const geometry_msgs::msg::Pose& object_pose) const;
 
@@ -84,9 +92,11 @@ private:
     bool moveTo(MoveGroup& group, const geometry_msgs::msg::Pose& pose, const std::string& what);
     bool moveToNamed(MoveGroup& group, const std::string& named_target);
 
-    /// Puts the object into the planning scene at its measured pose, so plans route around it
-    /// and so attaching it means something.
-    void publishCollisionObject(const vision_msgs::msg::Detection3D& detection);
+    /// Puts the object into the planning scene at its measured pose, already transformed into
+    /// the planning frame, so plans route around it and so attaching it means something.
+    void publishCollisionObject(
+        const vision_msgs::msg::Detection3D& detection,
+        const geometry_msgs::msg::Pose&      in_planning_frame);
 
     MoveGroup* groupFor(const std::string& name);
 
@@ -96,6 +106,9 @@ private:
     rclcpp::Subscription<vision_msgs::msg::Detection3DArray>::SharedPtr objects_sub_;
     std::mutex                                                          objects_mutex_;
     vision_msgs::msg::Detection3DArray                                  objects_;
+
+    std::unique_ptr<tf2_ros::Buffer>            tf_buffer_;
+    std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
 
     rclcpp_action::Server<Pick>::SharedPtr          pick_server_;
     rclcpp_action::Server<Place>::SharedPtr         place_server_;
