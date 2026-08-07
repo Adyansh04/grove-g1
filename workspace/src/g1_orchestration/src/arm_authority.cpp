@@ -77,7 +77,12 @@ bool switchController(
     auto request                    = std::make_shared<SwitchController::Request>();
     request->activate_controllers   = activate;
     request->deactivate_controllers = deactivate;
-    request->strictness             = SwitchController::Request::STRICT;
+    // BEST_EFFORT, not STRICT, and the difference matters here. This runs as a tree leaf, so
+    // it has to be idempotent: the arm is very often already acquired (activate_arm:=true does
+    // it at bring-up, and a retried or re-run mission re-enters this), and STRICT reports
+    // activating an already-active controller as a failure. The bring-up script uses STRICT
+    // because it IS the fresh acquire; a mission cannot assume it is first.
+    request->strictness             = SwitchController::Request::BEST_EFFORT;
     request->activate_asap          = true;
     request->timeout.sec            = static_cast<int>(timeout_s);
 
