@@ -14,8 +14,8 @@ namespace grove_g1
 
 // Bumped whenever the layout below changes. The relay refuses a frame it does not know
 // rather than reinterpreting bytes. v2 added the depth-image fields; v3 appends colour
-// to the depth payload.
-inline constexpr uint32_t kSensorFrameVersion = 3;
+// to the depth payload; v4 adds the ObjectPoses kind.
+inline constexpr uint32_t kSensorFrameVersion = 4;
 
 inline constexpr uint32_t kSensorFrameMagic = 0x47314C44;  // "G1LD"
 
@@ -23,7 +23,26 @@ enum class SensorFrameKind : uint32_t
 {
     PointCloud = 1,
     Depth      = 2,
+    // Ground-truth poses of scene bodies, for the sim-only object source. Not a sensor: it
+    // rides this socket because it is the only channel out of the simulator process, and it
+    // exists for the same reason (the poses live in mjData, which no DDS topic carries).
+    ObjectPoses = 3,
 };
+
+// One tracked body's ground-truth pose, in the MuJoCo world frame.
+//
+// Fixed-size so the payload stays a flat POD array the relay validates by length alone,
+// like the point and depth payloads. Names are short MuJoCo body names; the simulator
+// declines at startup to track one that does not fit, rather than silently truncating it
+// into a name no consumer will match.
+struct ObjectPoseRecord
+{
+    char   name[32];  // always NUL-terminated, so at most 31 characters
+    double pos[3];
+    double quat[4];  // wxyz, MuJoCo's own order
+};
+
+static_assert(sizeof(ObjectPoseRecord) == 88, "wire layout changed; bump kSensorFrameVersion");
 
 // Fixed-size header, then `payload_bytes` of body. Length-prefixed so the stream can be
 // framed without parsing the body, and so a short read is detectable rather than silently
@@ -39,11 +58,16 @@ struct SensorFrameHeader
     // relay stamps messages with its own clock, because this track publishes no /clock.
     double sim_time_s;
 
-    // Sensor pose in the world at snapshot time, as position + wxyz quaternion.
+    // Sensor pose in the world at snapshot time, as position + wxyz quaternion. Zero and
+    // identity on an ObjectPoses frame, which has no sensor: its records carry world poses
+    // directly.
     double sensor_pos[3];
     double sensor_quat[4];
 
     // PointCloud: number of points, each 3 floats (x, y, z) in the sensor frame.
+    //
+    // ObjectPoses does NOT use this: its count follows from payload_bytes over the record
+    // size, so there is no second number that can disagree with the first.
     uint32_t point_count;
 
     // Depth: image dimensions and the vertical field of view the render used. fovy is

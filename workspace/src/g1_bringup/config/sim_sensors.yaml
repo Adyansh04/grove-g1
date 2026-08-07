@@ -22,3 +22,16 @@ socket_path: "/tmp/g1_sensors.sock"
 # 11.5 ms with colour, of which only ~0.04 ms holds the sim lock; the rest is the render and
 # the socket write, both off-lock.
 camera_enabled: true
+
+# Ground-truth poses for the manipulable objects, sampled on the same cycle as the sweep and
+# sent ahead of it. SIMULATION ONLY: this is the stand-in for a perception pipeline, and
+# g1_object_pose_source refuses to run at all with object_source: hardware.
+#
+# An explicit list, never every body with a free joint -- the pelvis has one of those too.
+# Bodies absent from the staged scene are reported once and skipped, so the flat and
+# perception worlds cost nothing here.
+object_bodies:
+  - red_cube
+  - green_cylinder
+  - blue_sphere
+  - yellow_box

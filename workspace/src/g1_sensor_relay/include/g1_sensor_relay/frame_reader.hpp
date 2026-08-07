@@ -29,15 +29,21 @@ enum class FrameStatus
     BadLength,   ///< payload_bytes disagrees with point_count, or exceeds the sane cap.
 };
 
+/// Refuses an object frame with more records than this. Same reasoning as kMaxPoints, at a
+/// scale that suits a hand-listed set of scene bodies.
+inline constexpr std::uint32_t kMaxObjects = 1024;
+
 /// What a validated frame turned out to be.
 enum class FrameKind
 {
     PointCloud,
     Depth,
+    ObjectPoses,
 };
 
 /// A validated frame. `kind` says which payload interpretation applies: `points` is xyz
-/// triples in the sensor frame, `depth` is metres, row-major, top-down.
+/// triples in the sensor frame, `depth` is metres, row-major, top-down, and `objects` is
+/// ground-truth body poses in the simulator's world frame.
 struct CloudFrame
 {
     FrameKind          kind     = FrameKind::PointCloud;
@@ -46,11 +52,12 @@ struct CloudFrame
     float              fovy_deg = 0.0f;
     std::vector<float> depth;
     /// rgb8, row-major, top-down, same dimensions as `depth`. Empty when colour is off.
-    std::vector<std::uint8_t> rgb;
-    double                    sim_time_s = 0.0;
-    double                    sensor_pos[3]{};
-    double                    sensor_quat[4]{};
-    std::vector<float>        points;
+    std::vector<std::uint8_t>               rgb;
+    double                                  sim_time_s = 0.0;
+    double                                  sensor_pos[3]{};
+    double                                  sensor_quat[4]{};
+    std::vector<float>                      points;
+    std::vector<grove_g1::ObjectPoseRecord> objects;
 };
 
 /**

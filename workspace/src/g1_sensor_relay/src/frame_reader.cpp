@@ -26,9 +26,10 @@ FrameStatus tryReadFrame(std::vector<std::uint8_t>& buffer, CloudFrame& out)
     {
         return FrameStatus::BadVersion;
     }
-    const bool is_cloud = header.kind == static_cast<std::uint32_t>(SensorFrameKind::PointCloud);
-    const bool is_depth = header.kind == static_cast<std::uint32_t>(SensorFrameKind::Depth);
-    if (!is_cloud && !is_depth)
+    const bool is_cloud   = header.kind == static_cast<std::uint32_t>(SensorFrameKind::PointCloud);
+    const bool is_depth   = header.kind == static_cast<std::uint32_t>(SensorFrameKind::Depth);
+    const bool is_objects = header.kind == static_cast<std::uint32_t>(SensorFrameKind::ObjectPoses);
+    if (!is_cloud && !is_depth && !is_objects)
     {
         return FrameStatus::BadKind;
     }
@@ -38,6 +39,16 @@ FrameStatus tryReadFrame(std::vector<std::uint8_t>& buffer, CloudFrame& out)
     {
         if (header.point_count > kMaxPoints ||
             header.payload_bytes != header.point_count * 3u * sizeof(float))
+        {
+            return FrameStatus::BadLength;
+        }
+    }
+    else if (is_objects)
+    {
+        // The record count is derived rather than carried, so the only thing to check is
+        // that the payload is a whole number of records and not an absurd number of them.
+        if (header.payload_bytes % sizeof(grove_g1::ObjectPoseRecord) != 0 ||
+            header.payload_bytes / sizeof(grove_g1::ObjectPoseRecord) > kMaxObjects)
         {
             return FrameStatus::BadLength;
         }
@@ -71,16 +82,35 @@ FrameStatus tryReadFrame(std::vector<std::uint8_t>& buffer, CloudFrame& out)
     {
         out.kind = FrameKind::PointCloud;
         out.depth.clear();
+        out.objects.clear();
         out.points.resize(static_cast<std::size_t>(header.point_count) * 3u);
         if (header.payload_bytes > 0)
         {
             std::memcpy(out.points.data(), buffer.data() + sizeof(header), header.payload_bytes);
         }
     }
+    else if (is_objects)
+    {
+        out.kind = FrameKind::ObjectPoses;
+        out.depth.clear();
+        out.points.clear();
+        out.objects.resize(header.payload_bytes / sizeof(grove_g1::ObjectPoseRecord));
+        if (header.payload_bytes > 0)
+        {
+            std::memcpy(out.objects.data(), buffer.data() + sizeof(header), header.payload_bytes);
+        }
+        // The name is used to build a topic-visible id, so a producer that somehow sent an
+        // unterminated one must not run off the end of the record.
+        for (grove_g1::ObjectPoseRecord& record : out.objects)
+        {
+            record.name[sizeof(record.name) - 1] = '\0';
+        }
+    }
     else
     {
         out.kind = FrameKind::Depth;
         out.points.clear();
+        out.objects.clear();
         const std::size_t px          = static_cast<std::size_t>(header.width) * header.height;
         const std::size_t depth_bytes = px * sizeof(float);
         out.depth.resize(px);
