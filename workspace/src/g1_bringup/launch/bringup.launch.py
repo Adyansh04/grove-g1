@@ -126,6 +126,20 @@ def _moveit_share():
         ) from exc
 
 
+def _manipulation_share():
+    """g1_manipulation's share directory, or a message an operator can act on."""
+    try:
+        return get_package_share_directory("g1_manipulation")
+    except PackageNotFoundError as exc:
+        raise RuntimeError(
+            "bringup.launch.py: manipulation:=true needs the g1_manipulation package, which "
+            "is not on the ament prefix path.\n"
+            "  - Build it:  colcon build --packages-select g1_manipulation\n"
+            "  - Then source install/setup.bash again in this shell.\n"
+            "manipulation:=false, the default, needs none of this."
+        ) from exc
+
+
 def _simulator(sim_args):
     """The one simulator this file stages, and the only place it is named.
 
@@ -155,12 +169,19 @@ def _setup(context, *args, **kwargs):
     want_nav = LaunchConfiguration("nav").perform(context).lower() == "true"
     want_rviz = LaunchConfiguration("rviz").perform(context).lower() == "true"
     want_moveit = LaunchConfiguration("moveit").perform(context).lower() == "true"
+    want_manipulation = LaunchConfiguration("manipulation").perform(context).lower() == "true"
     pin_pelvis = LaunchConfiguration("pin_pelvis").perform(context).lower() == "true"
 
     if want_nav and mode != "localization":
         raise RuntimeError(
             f"nav:=true needs mode:=localization, not mode:={mode!r}. Navigating against a "
             "map slam_toolbox is still building means the goal pose moves under the planner."
+        )
+    if want_manipulation and not want_moveit:
+        raise RuntimeError(
+            "manipulation:=true needs moveit:=true. The skills plan and execute through "
+            "move_group, so without it every goal fails on a planning pipeline that is not "
+            "there."
         )
     if pin_pelvis and navigating:
         raise RuntimeError(
@@ -184,7 +205,13 @@ def _setup(context, *args, **kwargs):
         # joint states, and navigation is dead without all four. Forced here rather than by
         # flipping sim.launch.py's default, which is still provisional on an unthrottled
         # re-measurement of test_arm_command.
-        "sensors": "true" if navigating else LaunchConfiguration("sensors"),
+        #
+        # manipulation:=true forces it for a different reason: object ground truth leaves the
+        # simulator over the sensor relay's own socket, so without sensors the pose source
+        # comes up healthy, subscribes, and never receives anything.
+        "sensors": "true"
+        if navigating or want_manipulation
+        else LaunchConfiguration("sensors"),
         "world": LaunchConfiguration("world"),
         "headless": LaunchConfiguration("headless"),
         "pin_pelvis": "true" if pin_pelvis else "false",
@@ -238,6 +265,26 @@ def _setup(context, *args, **kwargs):
             )
         )
 
+    if want_manipulation:
+        # The pick/place skills and the object-pose source they read. Composed beside
+        # move_group rather than including it, for the same reason nav_stack.launch.py stages
+        # no simulator: both are already here, and a second copy of either would be a second
+        # writer.
+        #
+        # The object source is the simulation-specific half and says so itself -- its
+        # `hardware` default refuses to configure, so this argument is what opts into ground
+        # truth rather than something a hardware bring-up could inherit by accident.
+        actions.append(
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(
+                    os.path.join(_manipulation_share(), "launch", "manipulation.launch.py")
+                ),
+                launch_arguments={
+                    "object_source": LaunchConfiguration("object_source"),
+                }.items(),
+            )
+        )
+
     if want_moveit and LaunchConfiguration("activate_arm").perform(context).lower() == "true":
         # Off by default, and it stays off by default. Acquiring the arm is a deliberate act:
         # on hardware this is the moment /arm_sdk starts driving real joints, and a stack that
@@ -249,10 +296,10 @@ def _setup(context, *args, **kwargs):
         # this file can wait on. scripts/activate_arm still enforces the component-then-
         # controller order, and still fails loudly if it runs too early.
         #
-        # The principled version of this is a lifecycle authority bracket like g1_locomotion's
-        # g1_loco_authority, which acquires on activate and releases on the way out even on
-        # failure -- what CONTROL_MODES.md rule 4 actually asks for. That is a node, not a
-        # launch argument, and it belongs with the behaviour-tree work that will need it.
+        # The principled version of this now exists: g1_orchestration's executor brackets a
+        # whole mission, acquiring before the tree runs and releasing on success, failure and
+        # SIGINT alike -- what CONTROL_MODES.md rule 4 actually asks for. This argument stays
+        # for the case it was written for, which is driving the arm by hand from RViz.
         actions.append(
             TimerAction(
                 period=float(LaunchConfiguration("activate_arm_delay_s").perform(context)),
@@ -336,6 +383,19 @@ def generate_launch_description():
             default_value="false",
             description="Start move_group for arm planning. Works with any mode. Planning is "
             "available immediately; executing a plan still needs activate_arm.launch.py.",
+        ),
+        DeclareLaunchArgument(
+            "manipulation",
+            default_value="false",
+            description="Start the pick and place skills and the object-pose source. Needs "
+            "moveit:=true, since the skills plan through move_group.",
+        ),
+        DeclareLaunchArgument(
+            "object_source",
+            default_value="sim_ground_truth",
+            description="Where object poses come from with manipulation:=true. "
+            "'sim_ground_truth' reads MuJoCo bodies; 'hardware' refuses to configure, because "
+            "no object-detection pipeline exists yet.",
         ),
         DeclareLaunchArgument(
             "activate_arm",
