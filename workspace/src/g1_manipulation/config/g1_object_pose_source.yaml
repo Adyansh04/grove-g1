@@ -1,0 +1,17 @@
+# The object-pose source, loaded by g1_manipulation/launch/manipulation.launch.py.
+#
+# SIMULATION ONLY as configured. See g1_manipulation/README.md.
+g1_object_pose_source:
+  ros__parameters:
+    # MuJoCo body poses sampled inside the simulator and carried out by g1_sensor_relay.
+    #
+    # The node's own default is "hardware", which refuses to configure. That default lives in
+    # the source rather than here on purpose: a hardware bring-up that never loads this file
+    # gets the refusal, not a silent fallback to simulator ground truth.
+    object_source: "sim_ground_truth"
+
+    # What the poses are republished in. A relabel rather than a transform, and sound only
+    # because odom's origin IS the simulator's world origin on this track -- the node's
+    # onGroundTruth comment has the reasoning, and it is the first thing that stops holding
+    # once a real detector reports in a camera frame.
+    output_frame_id: "odom"
