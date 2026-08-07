@@ -227,6 +227,28 @@ RUN apt-get update && apt-get install -y \
         ros-humble-realsense2-description \
     && rm -rf /var/lib/apt/lists/*
 
+# --- Milestone 9: orchestration + manipulation skills -------------------------
+
+# behaviortree-cpp is v4 (4.9.0 on Humble). Nav2 depends on the SEPARATE
+# behaviortree-cpp-v3 package and keeps it: the two install side by side, with disjoint files
+# (bt4_* vs bt3_* binaries, libbehaviortree_cpp.so vs libbehaviortree_cpp_v3.so) and disjoint
+# include roots. Verified here rather than assumed, because v4's deb did once collide with v3's
+# over /opt/ros/humble/bin/bt3_log_cat (BehaviorTree.CPP issue #734) -- that is long fixed, and
+# the two now coexist by design.
+#
+# Nothing links both: bt_navigator links v3 inside its own process, g1_orchestration links v4
+# inside its own, and they only meet over the NavigateToPose action.
+#
+# btcpp-ros2 (BehaviorTree.ROS2) is NOT released for Humble, which is why g1_orchestration
+# hand-rolls its one action-client node base rather than vendoring that repo for four leaves.
+#
+# vision-msgs carries Detection3DArray, the object-pose interface g1_manipulation publishes so
+# real perception can later stand behind it unchanged.
+RUN apt-get update && apt-get install -y \
+        ros-humble-behaviortree-cpp \
+        ros-humble-vision-msgs \
+    && rm -rf /var/lib/apt/lists/*
+
 # Placed last on purpose. This is the only block that consumes COPYed host files
 # (workspace/patches, workspace/vendor), and cache invalidation flows forward: sitting
 # earlier, a one-line patch or sensor-source edit re-ran every apt block, the ONNX
