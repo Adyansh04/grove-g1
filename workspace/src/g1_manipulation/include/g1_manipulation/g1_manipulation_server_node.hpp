@@ -34,6 +34,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
 #include <string>
+#include <vector>
 #include <vision_msgs/msg/detection3_d_array.hpp>
 
 namespace g1_manipulation
@@ -105,18 +106,22 @@ private:
         const geometry_msgs::msg::Pose&      in_planning_frame);
 
     /**
-     * @brief Lets the grasping hand touch the octomap, or stops letting it.
+     * @brief Lets the grasping hand touch the named things, or stops letting it.
      *
-     * Reaching into a surface to pick something off it necessarily puts the hand where the
-     * sensor has already seen occupied space: the octomap contains both the support surface
-     * and the object itself, and the fingers have to enclose the latter. Without this every
-     * grasp pose is "reachable but collides", which is exactly what it measured as.
+     * Grasping is contact, and the planner does not distinguish intended contact from a
+     * collision. Two things are unavoidably in the way of a grasp and both have to be
+     * exempted: the octomap, because the sensor has already seen the support surface and the
+     * object as occupied space, and the target object's own collision geometry, which is
+     * added precisely so the planner routes around it right up until the moment the hand is
+     * supposed to close on it. Without this every grasp pose measures as "reachable but
+     * collides".
      *
      * Scoped as narrowly as the problem allows -- the hand and the wrist that carries it, one
-     * arm, for the duration of one skill -- and always restored, including on failure, so the
-     * arm is never planning against a permanently blinded octomap.
+     * arm, one skill -- and always restored, including on every failure path, so the arm is
+     * never left planning against a permanently blinded scene.
      */
-    bool allowOctomapContact(const ArmContext& arm, bool allowed);
+    bool allowHandContact(
+        const ArmContext& arm, const std::vector<std::string>& touchables, bool allowed);
 
     MoveGroup* groupFor(const std::string& name);
 

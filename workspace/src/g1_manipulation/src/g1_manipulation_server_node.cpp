@@ -83,7 +83,8 @@ G1ManipulationServer::G1ManipulationServer(const rclcpp::NodeOptions& options)
     apply_scene_ = create_client<moveit_msgs::srv::ApplyPlanningScene>("/apply_planning_scene");
 }
 
-bool G1ManipulationServer::allowOctomapContact(const ArmContext& arm, bool allowed)
+bool G1ManipulationServer::allowHandContact(
+    const ArmContext& arm, const std::vector<std::string>& touchables, bool allowed)
 {
     // The links that unavoidably enter occupied space during a grasp: the hand itself, and
     // the wrist that carries it. Taken from the robot model rather than listed, so a renamed
@@ -116,10 +117,15 @@ bool G1ManipulationServer::allowOctomapContact(const ArmContext& arm, bool allow
     }
 
     moveit_msgs::msg::AllowedCollisionMatrix acm = future.get()->scene.allowed_collision_matrix;
-    if (std::find(acm.entry_names.begin(), acm.entry_names.end(), "<octomap>") ==
-        acm.entry_names.end())
-    {
-        acm.entry_names.push_back("<octomap>");
+
+    // A name the matrix has never seen has to be added as a full row and column first,
+    // otherwise the indices below run off the end.
+    const auto ensure_entry = [&acm](const std::string& name) {
+        if (std::find(acm.entry_names.begin(), acm.entry_names.end(), name) != acm.entry_names.end())
+        {
+            return;
+        }
+        acm.entry_names.push_back(name);
         for (moveit_msgs::msg::AllowedCollisionEntry& row : acm.entry_values)
         {
             row.enabled.push_back(false);
@@ -127,21 +133,46 @@ bool G1ManipulationServer::allowOctomapContact(const ArmContext& arm, bool allow
         moveit_msgs::msg::AllowedCollisionEntry row;
         row.enabled.assign(acm.entry_names.size(), false);
         acm.entry_values.push_back(row);
-    }
+    };
+    const auto index_of = [&acm](const std::string& name) {
+        return static_cast<std::size_t>(
+            std::find(acm.entry_names.begin(), acm.entry_names.end(), name) -
+            acm.entry_names.begin());
+    };
 
-    const auto octomap_index = static_cast<std::size_t>(
-        std::find(acm.entry_names.begin(), acm.entry_names.end(), "<octomap>") -
-        acm.entry_names.begin());
-    for (const std::string& link : links)
+    for (const std::string& touchable : touchables)
     {
-        const auto it = std::find(acm.entry_names.begin(), acm.entry_names.end(), link);
-        if (it == acm.entry_names.end())
+        ensure_entry(touchable);
+    }
+    // The exempted things also have to be allowed to touch EACH OTHER, not just the hand.
+    // Once the object is attached it stops being a world object and starts moving with the
+    // arm, and lifting it out of a surface drags it through the octomap voxels of that
+    // surface -- which is a collision between two things the hand is already allowed to
+    // touch, and would otherwise fail the lift with the grasp already made.
+    for (std::size_t i = 0; i < touchables.size(); ++i)
+    {
+        for (std::size_t j = i + 1; j < touchables.size(); ++j)
         {
-            continue;
+            const std::size_t a            = index_of(touchables[i]);
+            const std::size_t b            = index_of(touchables[j]);
+            acm.entry_values[a].enabled[b] = allowed;
+            acm.entry_values[b].enabled[a] = allowed;
         }
-        const auto index = static_cast<std::size_t>(it - acm.entry_names.begin());
-        acm.entry_values[index].enabled[octomap_index] = allowed;
-        acm.entry_values[octomap_index].enabled[index] = allowed;
+    }
+    for (const std::string& touchable : touchables)
+    {
+        const std::size_t other = index_of(touchable);
+        for (const std::string& link : links)
+        {
+            const auto it = std::find(acm.entry_names.begin(), acm.entry_names.end(), link);
+            if (it == acm.entry_names.end())
+            {
+                continue;
+            }
+            const auto index = static_cast<std::size_t>(it - acm.entry_names.begin());
+            acm.entry_values[index].enabled[other] = allowed;
+            acm.entry_values[other].enabled[index] = allowed;
+        }
     }
 
     auto apply           = std::make_shared<moveit_msgs::srv::ApplyPlanningScene::Request>();
@@ -155,9 +186,10 @@ bool G1ManipulationServer::allowOctomapContact(const ArmContext& arm, bool allow
     }
     RCLCPP_INFO(
         get_logger(),
-        "%s octomap contact for the %s hand and wrist",
+        "%s contact between the %s hand and %zu object(s)",
         allowed ? "allowing" : "restoring",
-        side.c_str());
+        side.c_str(),
+        touchables.size());
     return applied.get()->success;
 }
 
@@ -422,10 +454,17 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     const auto fail = [&](const std::string& phase, const std::string& why) {
         moveToNamed(*hand_group, "open");
         arm_group->detachObject(goal->object_id);
+        allowHandContact(arm, { "<octomap>", goal->object_id }, false);
         result->success = false;
         result->message = phase + ": " + why;
         goal_handle->abort(result);
     };
+
+    // Grasping is contact, and the planner cannot tell intended contact from a collision. The
+    // octomap holds the support surface, and the object's own collision geometry exists
+    // precisely so plans route around it right up until the hand is meant to close on it.
+    // Restored by `fail` on every failure path and again just before success.
+    allowHandContact(arm, { "<octomap>", goal->object_id }, true);
 
     feedback->phase = Pick::Feedback::PHASE_LOCATING;
     goal_handle->publish_feedback(feedback);
@@ -501,7 +540,7 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
         return;
     }
 
-    allowOctomapContact(arm, false);
+    allowHandContact(arm, { "<octomap>", goal->object_id }, false);
     result->success = true;
     result->message = "picked " + goal->object_id + " with the " + goal->arm + " hand";
     goal_handle->succeed(result);
@@ -525,14 +564,16 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
     MoveGroup* hand_group = groupFor(arm.hand_group);
 
     const auto fail = [&](const std::string& phase, const std::string& why) {
-        allowOctomapContact(arm, false);
+        allowHandContact(arm, { "<octomap>" }, false);
         result->success = false;
         result->message = phase + ": " + why;
         goal_handle->abort(result);
     };
 
-    // Lowering onto a surface enters occupied space just as reaching into one does.
-    allowOctomapContact(arm, true);
+    // Lowering onto a surface enters occupied space just as reaching into one does. Only the
+    // octomap here: what is held is already attached, so MoveIt is treating it as part of the
+    // arm rather than as an obstacle.
+    allowHandContact(arm, { "<octomap>" }, true);
 
     // An empty frame means the goal is already in the planning frame. Anything else is
     // transformed rather than assumed: a target in odom treated as pelvis lands metres away,
@@ -592,7 +633,7 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
         return;
     }
 
-    allowOctomapContact(arm, false);
+    allowHandContact(arm, { "<octomap>" }, false);
     result->success = true;
     result->message = "placed with the " + goal->arm + " hand";
     goal_handle->succeed(result);
