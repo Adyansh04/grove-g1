@@ -1,0 +1,27 @@
+# Who is allowed to command a velocity, and who wins when two of them try.
+#
+# Until milestone 9 Nav2 was the only publisher on /cmd_vel and exclusivity was free.
+# g1_base_approach is the second, because navigation cannot park the robot accurately enough
+# for the arm to reach anything (docs/notes/m9-base-approach.md).
+#
+# The behaviour tree already sequences them so they never overlap. That is not enough on its
+# own: CLAUDE.md section 7 asks for ownership that is explicit, Nav2 publishes a terminal zero
+# when a goal completes, its recovery behaviours publish during one, and a goal sent by hand
+# from a terminal would contend with a running skill. This file makes the answer declared
+# instead of emergent.
+#
+# Output feeds g1_gait_shaper exactly as Nav2's raw output used to, so the dead-zone collapse
+# and the never-amplifies invariant still sit between all of this and the legs.
+twist_mux:
+  ros__parameters:
+    topics:
+      navigation:
+        topic: cmd_vel_nav
+        timeout: 0.5
+        priority: 10
+      approach:
+        # Outranks navigation: the approach runs when the robot is within half a metre of a
+        # workbench, which is where a stale nav command does the most damage.
+        topic: cmd_vel_approach
+        timeout: 0.5
+        priority: 100

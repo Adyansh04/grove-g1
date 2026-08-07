@@ -1,0 +1,77 @@
+# Walks the base into arm's reach of a measured object, and backs it out again.
+# See g1_locomotion/README.md and docs/notes/m9-base-approach.md.
+#
+# *** THESE ARE SIM BRING-UP VALUES, NOT HARDWARE-SAFE DEFAULTS. ***
+# The pulse velocities and durations encode the SIM WALKING POLICY's gait-initiation dead zone,
+# the same property g1_gait_shaper.yaml exists for. The real G1's onboard controller has no such
+# gap and can be commanded continuously, so on hardware this node needs a different control law,
+# not different numbers -- and probably does not need to exist at all.
+g1_base_approach:
+  ros__parameters:
+    # Arbitrated by twist_mux against Nav2's cmd_vel_nav, not published straight onto /cmd_vel.
+    # Two writers on the velocity channel is what CLAUDE.md section 7 forbids; sequencing in the
+    # behaviour tree makes them non-concurrent in practice, but that is a timing coincidence
+    # rather than declared ownership.
+    cmd_vel_topic: "cmd_vel_approach"
+    base_frame: "base_footprint"
+
+    # Both must clear g1_gait_shaper's engage thresholds (fwd 0.45, yaw 1.20) or the shaper
+    # zeroes them and this node walks nowhere while reporting that it is walking.
+    pulse_vx: 0.45
+    pulse_vyaw: 1.30
+
+    # Measured: a 0.30 s forward pulse carried the robot 0.303, 0.303 and 0.300 m on three
+    # consecutive trials, with 8.7 to 8.8 degrees of yaw each time. The gait is quantised, not
+    # noisy -- that is a fixed number of steps, not a controller tracking a setpoint.
+    step_pulse_s: 0.30
+
+    # Shorter than the step pulse. A yaw pulse measured anywhere from 0 to 18 degrees, which
+    # straddles bearing_tolerance_rad, so the node halves this after an overshoot rather than
+    # oscillating about the window forever. min_turn_pulse_s floors that halving.
+    turn_pulse_s: 0.22
+    min_turn_pulse_s: 0.12
+
+    # The gait keeps stepping after the command stops. Measuring before it settles reports the
+    # command's effect plus however much of the stride was still in flight, which is what made
+    # the first pulse measurements look random.
+    settle_s: 2.5
+    cmd_rate_hz: 20.0
+
+    # WHERE THE OBJECT HAS TO END UP, in the base frame, for the arm to reach it.
+    #
+    # Not derived from the IK sweep but from the configuration the grasp is PROVEN at: the
+    # manipulation scene welds the pelvis at the origin and puts the cube at (0.28, -0.20), and
+    # the pick succeeds there end to end. In polar form that is 0.344 m at -35.5 degrees.
+    # Calibrating from a working configuration beats calibrating from a coarse reachability
+    # sweep, which only sampled one y.
+    #
+    # The bearing mirrors for the left arm, exactly as the grasp offset does.
+    target_range_m: 0.344
+    target_bearing_rad: -0.620
+    range_tolerance_m: 0.055
+
+    # Wider than it looks it should be, deliberately. One yaw pulse turns about 9 degrees on
+    # average, so a tolerance tighter than the turn quantum cannot be held and the robot
+    # hunts. 0.20 rad is 11.5 degrees, which at 0.344 m is about 7 cm of lateral error -- inside
+    # what the arm sweeps, unlike range error.
+    bearing_tolerance_rad: 0.200
+
+    # Closer than this and the object is under the robot's own shell with nowhere for the arm to
+    # go. Terminal, not correctable: g1_gait_shaper compares forward speed signed, so reverse is
+    # zeroed at any magnitude and the robot cannot back off a mistake in place.
+    min_range_m: 0.215
+
+    # Starting estimate of how far one pulse carries the robot. Raised, never lowered, from what
+    # each pulse is measured to do -- see maxObservedAdvance() for why the asymmetry is the
+    # point. A run on disturbed ground measured 0.36 to 0.62 m for the same command.
+    pulse_advance_m: 0.35
+
+    # A pulse taken at theta off the target line advances quantum*cos(theta), which is how a
+    # gait with a 0.3 m minimum step lands inside a 0.11 m window at all. It also moves
+    # quantum*sin(theta) sideways, so this caps the excursion: 75 degrees leaves an advance of
+    # about a quarter of a pulse.
+    max_oblique_rad: 1.309
+
+    object_timeout_ms: 1500.0
+    max_pulses: 30
+    default_timeout_s: 180.0
