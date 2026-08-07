@@ -23,6 +23,15 @@
 <root BTCPP_format="4" main_tree_to_execute="PickAndPlace">
   <BehaviorTree ID="PickAndPlace">
     <Sequence name="mission">
+      <!-- FIRST, before any arm motion. It used to sit just before the pick, which left
+           tuck_to_travel depending on bringup's activate_arm:=true having already run: launch
+           the mission a moment early and the tree fails on its first leaf with "Controller is
+           not running". A tree that needs the arm should take the arm.
+
+           Idempotent by design, so acquiring here and finding it already acquired costs
+           nothing. -->
+      <AcquireArm name="take_the_arm"/>
+
       <!-- Arms in before walking. Arm pose measurably disturbs a walking humanoid, and tucked
            is the smallest swept volume and least COM offset of the named poses.
 
@@ -42,8 +51,6 @@
       <RetryUntilSuccessful name="approach_with_one_retry" num_attempts="2">
         <ApproachObject name="close_on_the_cube" object_id="red_cube" arm="right"/>
       </RetryUntilSuccessful>
-
-      <AcquireArm name="take_the_arm"/>
 
       <!-- Two attempts, not one, because each retry re-reads the object's pose from /objects
            and OMPL samples a different tree, and because Pick leaves the hand open and nothing
