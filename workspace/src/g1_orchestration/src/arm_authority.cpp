@@ -82,9 +82,9 @@ bool switchController(
     // it at bring-up, and a retried or re-run mission re-enters this), and STRICT reports
     // activating an already-active controller as a failure. The bring-up script uses STRICT
     // because it IS the fresh acquire; a mission cannot assume it is first.
-    request->strictness             = SwitchController::Request::BEST_EFFORT;
-    request->activate_asap          = true;
-    request->timeout.sec            = static_cast<int>(timeout_s);
+    request->strictness    = SwitchController::Request::BEST_EFFORT;
+    request->activate_asap = true;
+    request->timeout.sec   = static_cast<int>(timeout_s);
 
     const auto response = callService<SwitchController>(node, kSwitchService, request, timeout_s);
     return response != nullptr && response->ok;

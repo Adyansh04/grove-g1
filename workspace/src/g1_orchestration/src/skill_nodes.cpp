@@ -120,6 +120,74 @@ BT::NodeStatus NavigateToPose::judgeResult(const WrappedResult& result)
     return BT::NodeStatus::SUCCESS;
 }
 
+ApproachObject::ApproachObject(
+    const std::string& name, const BT::NodeConfig& config, RosContext context)
+  : RosActionNode(name, config, context, "/g1_base_approach/approach_object")
+{}
+
+BT::PortsList ApproachObject::providedPorts()
+{
+    return providedBasicPorts({
+        BT::InputPort<std::string>("object_id", "Must match a class_id published on /objects."),
+        BT::InputPort<std::string>("arm", "right", "'left' or 'right'."),
+        BT::InputPort<double>("timeout_s", 0.0, "0 uses the server's own default."),
+    });
+}
+
+bool ApproachObject::fillGoal(Goal& goal)
+{
+    const auto object_id = getInput<std::string>("object_id");
+    if (!object_id || object_id->empty())
+    {
+        RCLCPP_ERROR(node_->get_logger(), "[%s] needs an object_id", name().c_str());
+        return false;
+    }
+    goal.object_id = *object_id;
+    goal.arm       = getInput<std::string>("arm").value_or("right");
+    goal.timeout_s = getInput<double>("timeout_s").value_or(0.0);
+    return true;
+}
+
+BT::NodeStatus ApproachObject::judgeResult(const WrappedResult& result)
+{
+    return judgeSkillResult(node_->get_logger(), name(), result);
+}
+
+Retreat::Retreat(const std::string& name, const BT::NodeConfig& config, RosContext context)
+  : RosActionNode(name, config, context, "/g1_base_approach/retreat")
+{}
+
+BT::PortsList Retreat::providedPorts()
+{
+    return providedBasicPorts({
+        BT::InputPort<double>("distance", 0.6, "How far to back off, in metres."),
+        BT::InputPort<bool>(
+            "restore_heading",
+            false,
+            "Face the original heading again. A tree about to navigate elsewhere pays two turns "
+            "for nothing."),
+        BT::InputPort<double>("timeout_s", 0.0, "0 uses the server's own default."),
+    });
+}
+
+bool Retreat::fillGoal(Goal& goal)
+{
+    goal.distance_m      = getInput<double>("distance").value_or(0.6);
+    goal.restore_heading = getInput<bool>("restore_heading").value_or(false);
+    goal.timeout_s       = getInput<double>("timeout_s").value_or(0.0);
+    if (goal.distance_m <= 0.0)
+    {
+        RCLCPP_ERROR(node_->get_logger(), "[%s] distance must be positive", name().c_str());
+        return false;
+    }
+    return true;
+}
+
+BT::NodeStatus Retreat::judgeResult(const WrappedResult& result)
+{
+    return judgeSkillResult(node_->get_logger(), name(), result);
+}
+
 Pick::Pick(const std::string& name, const BT::NodeConfig& config, RosContext context)
   : RosActionNode(name, config, context, "/g1_manipulation_server/pick")
 {}
@@ -240,6 +308,8 @@ void registerLeaf(BT::BehaviorTreeFactory& factory, const std::string& id, const
 void registerSkillNodes(BT::BehaviorTreeFactory& factory, const RosContext& context)
 {
     registerLeaf<NavigateToPose>(factory, "NavigateToPose", context);
+    registerLeaf<ApproachObject>(factory, "ApproachObject", context);
+    registerLeaf<Retreat>(factory, "Retreat", context);
     registerLeaf<Pick>(factory, "Pick", context);
     registerLeaf<Place>(factory, "Place", context);
     registerLeaf<SetArmPosture>(factory, "SetArmPosture", context);

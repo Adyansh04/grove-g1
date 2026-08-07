@@ -1,11 +1,20 @@
 <?xml version="1.0"?>
 <!--
-  Navigate to the workbench, pick an object off it, carry it to the storage room, put it down.
+  Navigate to the workbench, walk the last half metre, pick an object off it, carry it to the
+  storage room, put it down.
 
   Coordinates are the g1_navigation_scene facility, in the `map` frame the committed map was
-  built in. The workbench is at (4.5, -4.5) with the objects on its top at z = 0.78; the place
-  target is crate_stack_1's flat top at (7.0, 4.0, 0.70), in the other room, so the carry leg
-  is a real navigation rather than a step sideways.
+  built in.
+
+  THE TWO STATIONS ARE STAGING POSES, NOT WORKING POSES. Nav2 cannot park the robot where the
+  arm can reach anything: its xy_goal_tolerance is 0.5 m and robot_radius is 0.45, against an
+  arm that reaches 0.28 to 0.33 m and a window about 0.11 m wide. So each station is a pose Nav2
+  can legally reach, roughly 0.7 m short, and ApproachObject closes the rest against the measured
+  object rather than against the map. See docs/notes/m9-base-approach.md.
+
+  Both stations face +y (yaw 1.5708) at the south edge of their surface, because the approach
+  ends with the object 0.28 m in front of the pelvis and 0.20 m to its right, the relative pose
+  the grasp is proven at in the manipulation scene.
 
   The arm bracket spans pick through place deliberately. On hardware a released Dex3 goes limp
   about a second later and drops what it is holding, so the hands stay powered for the whole
@@ -23,7 +32,16 @@
            anything here, so this costs the mission nothing. -->
       <SetArmPosture name="tuck_to_travel" group="right_arm" named_target="tucked"/>
 
-      <NavigateToPose name="go_to_workbench" goal="3.9;-4.5;0.0"/>
+      <NavigateToPose name="stage_at_workbench" goal="4.30;-5.95;1.5708"/>
+
+      <!-- Walks in pulses and re-reads the cube between each one. Retried once: an approach
+           that stops short is recoverable by running it again, and the commonest reason to stop
+           short is the pulse budget rather than anything about the geometry. An approach that
+           OVERSHOOTS is not retryable and fails the mission, which is correct, because this
+           gait has no reverse. -->
+      <RetryUntilSuccessful name="approach_with_one_retry" num_attempts="2">
+        <ApproachObject name="close_on_the_cube" object_id="red_cube" arm="right"/>
+      </RetryUntilSuccessful>
 
       <AcquireArm name="take_the_arm"/>
 
@@ -38,9 +56,22 @@
 
       <SetArmPosture name="hold_it_close" group="right_arm" named_target="carry"/>
 
-      <NavigateToPose name="go_to_storage" goal="6.2;4.0;0.0"/>
+      <!-- Back off before turning. The approach leaves the robot about 0.18 m from the desk
+           edge with its feet under the overhang, and a turn-in-place from there drags the
+           carried object across the desk. restore_heading is false: the next thing that happens
+           is a navigation goal, which will choose its own heading anyway. -->
+      <Retreat name="back_off_the_desk" distance="0.7" restore_heading="false"/>
 
-      <Place name="put_it_on_the_crate" target="7.0;4.0;0.78" arm="right"/>
+      <NavigateToPose name="stage_at_storage" goal="6.30;5.35;1.5708"/>
+
+      <ApproachObject name="close_on_the_pad" object_id="drop_pad" arm="right"/>
+
+      <!-- Onto the drop pad, whose top is at 0.824; a 6 cm cube resting on it centres at 0.855.
+           The pad is where the approach just put the robot, so this point is inside the same
+           window the grasp was. -->
+      <Place name="put_it_on_the_pad" target="6.50;6.25;0.855" arm="right"/>
+
+      <Retreat name="back_off_the_bench" distance="0.6" restore_heading="false"/>
 
       <SetArmPosture name="tuck_again" group="right_arm" named_target="tucked"/>
       <ReleaseArm name="hand_the_arm_back"/>

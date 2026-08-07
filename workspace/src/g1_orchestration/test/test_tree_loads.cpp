@@ -86,6 +86,11 @@ TEST(TreeLoads, TheMissionTreeUsesTheLeavesItIsSupposedTo)
     EXPECT_EQ(seen["Place"], 1);
     EXPECT_EQ(seen["AcquireArm"], 1);
     EXPECT_EQ(seen["ReleaseArm"], 1);
+    // Both stations are staging poses roughly 0.7 m short of the surface, so every arrival has
+    // to be followed by an approach. A tree that navigates straight to a working pose is one
+    // Nav2 cannot honour, and it would look correct here without this.
+    EXPECT_EQ(seen["ApproachObject"], 2) << "one per surface: the workbench and the drop pad";
+    EXPECT_EQ(seen["Retreat"], 2) << "turning in place beside a surface drags the arm across it";
 }
 
 TEST(TreeLoads, RejectsALeafNobodyRegistered)

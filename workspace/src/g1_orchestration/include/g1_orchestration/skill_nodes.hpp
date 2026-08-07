@@ -12,8 +12,10 @@
 
 #include <behaviortree_cpp/bt_factory.h>
 
+#include <g1_msgs/action/approach_object.hpp>
 #include <g1_msgs/action/pick.hpp>
 #include <g1_msgs/action/place.hpp>
+#include <g1_msgs/action/retreat.hpp>
 #include <g1_msgs/action/set_arm_posture.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <nav2_msgs/action/navigate_to_pose.hpp>
@@ -47,6 +49,34 @@ class NavigateToPose : public RosActionNode<nav2_msgs::action::NavigateToPose>
 {
 public:
     NavigateToPose(const std::string& name, const BT::NodeConfig& config, RosContext context);
+    static BT::PortsList providedPorts();
+
+protected:
+    bool           fillGoal(Goal& goal) override;
+    BT::NodeStatus judgeResult(const WrappedResult& result) override;
+};
+
+/// Walks the base the last half metre, until the object is somewhere the arm can reach it.
+///
+/// The step NavigateToPose cannot do: Nav2 arrives within 0.5 m of a pose it chose from a map,
+/// and the arm's whole usable window is about a quarter of that.
+class ApproachObject : public RosActionNode<g1_msgs::action::ApproachObject>
+{
+public:
+    ApproachObject(const std::string& name, const BT::NodeConfig& config, RosContext context);
+    static BT::PortsList providedPorts();
+
+protected:
+    bool           fillGoal(Goal& goal) override;
+    BT::NodeStatus judgeResult(const WrappedResult& result) override;
+};
+
+/// Backs the base away from a surface. Turns around and walks, because this gait has no
+/// reverse -- see the action definition.
+class Retreat : public RosActionNode<g1_msgs::action::Retreat>
+{
+public:
+    Retreat(const std::string& name, const BT::NodeConfig& config, RosContext context);
     static BT::PortsList providedPorts();
 
 protected:
