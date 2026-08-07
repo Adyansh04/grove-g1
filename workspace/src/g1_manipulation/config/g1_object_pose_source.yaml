@@ -10,8 +10,12 @@ g1_object_pose_source:
     # gets the refusal, not a silent fallback to simulator ground truth.
     object_source: "sim_ground_truth"
 
-    # What the poses are republished in. A relabel rather than a transform, and sound only
-    # because odom's origin IS the simulator's world origin on this track -- the node's
-    # onGroundTruth comment has the reasoning, and it is the first thing that stops holding
-    # once a real detector reports in a camera frame.
+    # The frame the source publishes in, and the frame /objects is published in. Both odom on
+    # this track: the simulator's world origin IS odom, and sim.launch.py already configures
+    # g1_sensor_relay to stamp its ground truth that way, so this node verifies the frame
+    # rather than transforming it.
+    #
+    # They are two parameters rather than one because a real detector reports in a camera
+    # frame, and this is where that transform belongs when there is one to do.
+    source_frame_id: "odom"
     output_frame_id: "odom"

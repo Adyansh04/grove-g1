@@ -38,6 +38,10 @@ def generate_launch_description():
             file_path=os.path.join(moveit_share, "config", "kinematics.yaml")
         )
         .joint_limits(file_path=os.path.join(moveit_share, "config", "joint_limits.yaml"))
+        # Named explicitly for the same reason move_group.launch.py names it: left to itself
+        # the builder assembles every pipeline it knows, and pilz wants a
+        # pilz_cartesian_limits.yaml this config does not ship, which fails the launch.
+        .planning_pipelines(pipelines=["ompl"], default_planning_pipeline="ompl")
         .to_moveit_configs()
     )
 

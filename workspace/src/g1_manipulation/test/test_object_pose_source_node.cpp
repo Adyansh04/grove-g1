@@ -157,7 +157,7 @@ TEST(ObjectPoseSource, RepublishesGroundTruthInTheOutputFrame)
     ASSERT_EQ(harness.configure(), lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
     ASSERT_EQ(harness.activate(), lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE);
 
-    harness.publishAndSpin(makeGroundTruth("world", "red_cube", 4.1, -4.65, 0.78));
+    harness.publishAndSpin(makeGroundTruth("odom", "red_cube", 4.1, -4.65, 0.78));
 
     ASSERT_TRUE(harness.last().has_value());
     const auto& out = *harness.last();
@@ -180,7 +180,7 @@ TEST(ObjectPoseSource, CarriesTheSourceStampRatherThanRestampingIt)
     ASSERT_EQ(harness.configure(), lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
     ASSERT_EQ(harness.activate(), lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE);
 
-    harness.publishAndSpin(makeGroundTruth("world", "red_cube", 1.0, 2.0, 0.75));
+    harness.publishAndSpin(makeGroundTruth("odom", "red_cube", 1.0, 2.0, 0.75));
 
     ASSERT_TRUE(harness.last().has_value());
     // Compared field by field rather than as rclcpp::Time: a stamp that has been through a
@@ -190,10 +190,10 @@ TEST(ObjectPoseSource, CarriesTheSourceStampRatherThanRestampingIt)
     EXPECT_EQ(harness.last()->header.stamp.nanosec, 456u);
 }
 
-TEST(ObjectPoseSource, DropsGroundTruthStampedWithAFrameItDoesNotOwn)
+TEST(ObjectPoseSource, DropsPosesStampedWithAFrameItWasNotConfiguredFor)
 {
-    // The relabel is only sound because odom IS the simulator's world origin. A sample from
-    // any other frame would need a real transform, so it is dropped rather than relabelled.
+    // This node verifies the frame rather than transforming it, so a sample from anywhere
+    // else is dropped. Accepting it would place objects wherever the robot is standing.
     Harness harness{ optionsWithSource("sim_ground_truth") };
     ASSERT_EQ(harness.configure(), lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
     ASSERT_EQ(harness.activate(), lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE);
@@ -208,7 +208,7 @@ TEST(ObjectPoseSource, StaysQuietUntilActivated)
     Harness harness{ optionsWithSource("sim_ground_truth") };
     ASSERT_EQ(harness.configure(), lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
 
-    harness.publishAndSpin(makeGroundTruth("world", "red_cube", 4.1, -4.65, 0.78));
+    harness.publishAndSpin(makeGroundTruth("odom", "red_cube", 4.1, -4.65, 0.78));
 
     EXPECT_FALSE(harness.last().has_value());
 }

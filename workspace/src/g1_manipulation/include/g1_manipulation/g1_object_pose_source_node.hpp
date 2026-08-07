@@ -53,6 +53,7 @@ private:
     void onGroundTruth(const vision_msgs::msg::Detection3DArray::SharedPtr msg);
 
     ObjectSource source_{ ObjectSource::Hardware };
+    std::string  source_frame_id_;
     std::string  output_frame_id_;
 
     rclcpp::Subscription<vision_msgs::msg::Detection3DArray>::SharedPtr                 source_sub_;

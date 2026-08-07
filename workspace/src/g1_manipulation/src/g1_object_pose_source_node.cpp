@@ -10,10 +10,6 @@ namespace g1_manipulation
 namespace
 {
 
-// The simulator's frames. `world` is what g1_sensor_relay stamps ground truth with; `odom`
-// is what the rest of the stack navigates and plans in.
-constexpr const char* kSimSourceFrame = "world";
-
 // Best-effort in, matching g1_sensor_relay's sensor QoS: a reliable subscriber against a
 // best-effort publisher simply receives nothing, which is the usual reason a topic looks dead.
 rclcpp::QoS sourceQos()
@@ -49,6 +45,7 @@ G1ObjectPoseSource::G1ObjectPoseSource(const rclcpp::NodeOptions& options)
   : rclcpp_lifecycle::LifecycleNode("g1_object_pose_source", options)
 {
     declare_parameter<std::string>("object_source", "hardware");
+    declare_parameter<std::string>("source_frame_id", "odom");
     declare_parameter<std::string>("output_frame_id", "odom");
 }
 
@@ -79,10 +76,11 @@ bool G1ObjectPoseSource::readParameters()
         return false;
     }
 
+    source_frame_id_ = get_parameter("source_frame_id").as_string();
     output_frame_id_ = get_parameter("output_frame_id").as_string();
-    if (output_frame_id_.empty())
+    if (source_frame_id_.empty() || output_frame_id_.empty())
     {
-        RCLCPP_ERROR(get_logger(), "output_frame_id must be non-empty");
+        RCLCPP_ERROR(get_logger(), "source_frame_id and output_frame_id must be non-empty");
         return false;
     }
     return true;
@@ -105,10 +103,11 @@ G1ObjectPoseSource::CallbackReturn G1ObjectPoseSource::on_configure(const rclcpp
 
     RCLCPP_INFO(
         get_logger(),
-        "Configured on simulator ground truth: %s -> %s in frame '%s'. These are exact MuJoCo "
-        "body poses, not measurements -- no noise, no occlusion, no misdetection, and every "
-        "listed object is always visible.",
+        "Configured on simulator ground truth: %s in '%s' -> %s in '%s'. These are exact "
+        "MuJoCo body poses, not measurements -- no noise, no occlusion, no misdetection, and "
+        "every listed object is always visible.",
         source_sub_->get_topic_name(),
+        source_frame_id_.c_str(),
         objects_pub_->get_topic_name(),
         output_frame_id_.c_str());
     return CallbackReturn::SUCCESS;
@@ -139,26 +138,26 @@ void G1ObjectPoseSource::onGroundTruth(const vision_msgs::msg::Detection3DArray:
     {
         return;
     }
-    if (msg->header.frame_id != kSimSourceFrame)
+    // Verified, not transformed. On this track the source already publishes in odom, because
+    // the simulator's world origin IS odom and sim.launch.py configures g1_sensor_relay to
+    // say so. Silently accepting some other frame would place objects wherever the robot
+    // happens to be standing.
+    //
+    // This is where a real transform belongs when there is one to do: a detector reports in a
+    // camera frame, and this node would do a TF lookup rather than a check. The frames are
+    // separate parameters for that reason, even though today they hold the same value.
+    if (msg->header.frame_id != source_frame_id_)
     {
         RCLCPP_WARN_THROTTLE(
             get_logger(),
             *get_clock(),
             5000,
-            "Dropping ground truth stamped '%s'; this source is defined in '%s'.",
+            "Dropping object poses stamped '%s'; this source is configured for '%s'.",
             msg->header.frame_id.c_str(),
-            kSimSourceFrame);
+            source_frame_id_.c_str());
         return;
     }
 
-    // A relabel, not a transform, and only because the two frames are the same one: the
-    // converged track's odom IS the simulator's world origin, since g1_odometry_publisher
-    // takes the pelvis position straight from MuJoCo with no offset. A TF lookup is not the
-    // alternative -- `world` is deliberately not in the tree, because nothing may localise
-    // against it.
-    //
-    // This is one of the things that stops being true with real perception: a detector
-    // reports in a camera frame, and that node transforms for real.
     vision_msgs::msg::Detection3DArray out = *msg;
     out.header.frame_id                    = output_frame_id_;
     for (vision_msgs::msg::Detection3D& detection : out.detections)
