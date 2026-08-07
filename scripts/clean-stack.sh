@@ -34,6 +34,11 @@ CONTAINER=${CONTAINER:-ros_dev_humble}
 
 # Re-enter the container when run from the host. The worker is piped in rather than mounted:
 # only ./workspace is bind-mounted, so this file is not visible inside.
+#
+# This is not cosmetic. The host may have its own ROS on PATH (a Jazzy install, for one), and a
+# version of this script that swept the host would find no stack to kill, ask that ROS for a
+# node list, get an empty one, and report "clean" while the container was still full. Verifying
+# the wrong graph is worse than not verifying at all.
 if [ ! -d /root/workspace ]; then
     if ! command -v docker >/dev/null 2>&1; then
         echo "not in the container and docker is not on PATH" >&2
@@ -96,7 +101,7 @@ set -u
 ros2 daemon stop >/dev/null 2>&1
 sleep 3
 
-echo "killed $total process(es) in total"
+echo "killed $total process(es) in total, inside the container"
 
 nodes=$(timeout 25 ros2 node list 2>/dev/null | grep -v '^$')
 topics=$(timeout 25 ros2 topic list 2>/dev/null | grep -vE '^/parameter_events$|^/rosout$')
