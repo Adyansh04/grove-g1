@@ -91,6 +91,7 @@ std::vector<std::uint8_t> makeObjectFrame(const std::vector<std::string>& names)
         record.pos[1]  = 2.0 + static_cast<double>(i);
         record.pos[2]  = 0.78;
         record.quat[0] = 1.0;
+        record.size[0] = record.size[1] = record.size[2] = 0.06;
         std::memcpy(bytes.data() + sizeof(header) + i * sizeof(record), &record, sizeof(record));
     }
     return bytes;
@@ -283,6 +284,7 @@ TEST(FrameReader, ReadsAnObjectPoseFrame)
     EXPECT_STREQ(frame.objects[1].name, "green_cylinder");
     EXPECT_DOUBLE_EQ(frame.objects[1].pos[0], 2.0);
     EXPECT_DOUBLE_EQ(frame.objects[0].quat[0], 1.0);
+    EXPECT_DOUBLE_EQ(frame.objects[0].size[2], 0.06);
     // The other payload interpretations must be cleared, not left over from a previous frame.
     EXPECT_TRUE(frame.points.empty());
     EXPECT_TRUE(frame.depth.empty());

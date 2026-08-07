@@ -145,6 +145,48 @@ Config loadConfig()
     return cfg;
 }
 
+// Axis-aligned extents of a body's own geometry, as full widths in the body frame.
+//
+// Every geom's bounding box is taken about the BODY origin rather than the geom's, so a body
+// whose geom sits off-centre reports a box that still contains it. All four scene objects are
+// single centred geoms, where this is simply the geom's own size.
+void bodyExtents(const mjModel* m, int body, double out[3])
+{
+    out[0] = out[1] = out[2] = 0.0;
+    for (int i = 0; i < m->body_geomnum[body]; ++i)
+    {
+        const int     geom = m->body_geomadr[body] + i;
+        const mjtNum* size = m->geom_size + 3 * geom;
+        // MuJoCo's geom_size means different things per type, and only these three appear in
+        // the scene's graspable bodies. An unrecognised type contributes nothing rather than
+        // a wrong number.
+        double half[3] = { 0.0, 0.0, 0.0 };
+        switch (m->geom_type[geom])
+        {
+            case mjGEOM_BOX:
+                half[0] = size[0];
+                half[1] = size[1];
+                half[2] = size[2];
+                break;
+            case mjGEOM_SPHERE:
+                half[0] = half[1] = half[2] = size[0];
+                break;
+            case mjGEOM_CYLINDER:
+            case mjGEOM_CAPSULE:
+                half[0] = half[1] = size[0];
+                half[2] = size[1];
+                break;
+            default:
+                continue;
+        }
+        const mjtNum* pos = m->geom_pos + 3 * geom;
+        for (int a = 0; a < 3; ++a)
+        {
+            out[a] = std::max(out[a], 2.0 * (std::abs(pos[a]) + half[a]));
+        }
+    }
+}
+
 // Resolves the tracked bodies against the current model, dropping any it does not have.
 // A scene without the pick-and-place objects (the flat and perception worlds) is a normal
 // configuration rather than an error, so a missing body says so once and is skipped --
@@ -171,6 +213,8 @@ void resolveObjectBodies(
         ids.push_back(id);
         ObjectPoseRecord record{};
         std::strncpy(record.name, name.c_str(), sizeof(record.name) - 1);
+        // Geometry is fixed for the run, so it is measured here rather than every cycle.
+        bodyExtents(m, id, record.size);
         records.push_back(record);
     }
     if (!ids.empty()) {

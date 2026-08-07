@@ -14,8 +14,8 @@ namespace grove_g1
 
 // Bumped whenever the layout below changes. The relay refuses a frame it does not know
 // rather than reinterpreting bytes. v2 added the depth-image fields; v3 appends colour
-// to the depth payload; v4 adds the ObjectPoses kind.
-inline constexpr uint32_t kSensorFrameVersion = 4;
+// to the depth payload; v4 adds the ObjectPoses kind; v5 gives its records a size.
+inline constexpr uint32_t kSensorFrameVersion = 5;
 
 inline constexpr uint32_t kSensorFrameMagic = 0x47314C44;  // "G1LD"
 
@@ -40,9 +40,18 @@ struct ObjectPoseRecord
     char   name[32];  // always NUL-terminated, so at most 31 characters
     double pos[3];
     double quat[4];  // wxyz, MuJoCo's own order
+
+    // Axis-aligned extents of the body's geometry in its own frame, FULL widths rather than
+    // MuJoCo's half-sizes, because that is what vision_msgs/BoundingBox3D means by size.
+    //
+    // Carried rather than configured downstream: a real 6D-pose detector reports a bounding
+    // box too, so a consumer that builds its collision geometry from this keeps working when
+    // one replaces this source. Without it every consumer needs its own table of object
+    // dimensions, which is a second place for the scene to be described and disagree.
+    double size[3];
 };
 
-static_assert(sizeof(ObjectPoseRecord) == 88, "wire layout changed; bump kSensorFrameVersion");
+static_assert(sizeof(ObjectPoseRecord) == 112, "wire layout changed; bump kSensorFrameVersion");
 
 // Fixed-size header, then `payload_bytes` of body. Length-prefixed so the stream can be
 // framed without parsing the body, and so a short read is detectable rather than silently

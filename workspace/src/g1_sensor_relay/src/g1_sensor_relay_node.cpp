@@ -265,6 +265,13 @@ private:
             hypothesis.pose.pose.orientation.z = record.quat[3];
 
             detection.bbox.center = hypothesis.pose.pose;
+            // Full widths, which is what BoundingBox3D means by size. A consumer builds its
+            // collision geometry from this rather than from its own table of object
+            // dimensions, so replacing this source with a real detector changes nothing
+            // downstream.
+            detection.bbox.size.x = record.size[0];
+            detection.bbox.size.y = record.size[1];
+            detection.bbox.size.z = record.size[2];
             detection.results.push_back(hypothesis);
             msg.detections.push_back(std::move(detection));
         }
