@@ -51,9 +51,16 @@ if [ ! -d /root/workspace ]; then
         'cat > /tmp/g1-clean-stack.sh && bash /tmp/g1-clean-stack.sh' < "$0"
 fi
 
-# Broad on purpose, matched against the whole command line. Everything this stack launches is
-# one of these binaries, a python script, or a `ros2 run` wrapper around one.
-PATTERNS='unitree_mujoco|ros2_control_node|move_group|g1_manipulation|g1_object_pose|g1_sensor_relay|motion_service|g1_loco|g1_gait|g1_odometry|robot_state_publisher|rviz2|controller_manager|spawner|Xvfb|bt_executor|slam_toolbox|amcl|map_server|planner_server|controller_server|behavior_server|bt_navigator|lifecycle_manager|pointcloud_to_laserscan|planning_scene|transform_listener|activate_arm|deactivate_arm|nav_soak'
+# Two rounds of matching, because a name list alone is not enough and that is not obvious.
+#
+# NAMED is the stack's own binaries. ANY_ROS is the safety net: it matches anything running out
+# of a ROS install or carrying --ros-args at all. That second one is what catches composed
+# nodes -- Nav2 runs amcl, map_server, pointcloud_to_laserscan and the lifecycle manager INSIDE
+# one `nav2_container` process, so none of their names appear anywhere in the process table and
+# a name-based sweep reports "killed 0" while `ros2 node list` still shows all of them. That
+# exact combination is what motivated this rewrite.
+NAMED='unitree_mujoco|ros2_control_node|move_group|g1_manipulation|g1_object_pose|g1_sensor_relay|motion_service|g1_loco|g1_gait|g1_odometry|robot_state_publisher|rviz2|controller_manager|spawner|Xvfb|bt_executor|slam_toolbox|amcl|map_server|planner_server|controller_server|behavior_server|bt_navigator|lifecycle_manager|pointcloud_to_laserscan|planning_scene|transform_listener|activate_arm|deactivate_arm|nav_soak'
+ANY_ROS='component_container|rclcpp_components|--ros-args|/opt/ros/[a-z]+/lib/|ros2 run |ros2 launch |ros2 daemon'
 
 protected=" $$ $PPID "
 walk=$PPID
@@ -63,25 +70,29 @@ while [ -n "$walk" ] && [ "$walk" -gt 1 ] 2>/dev/null; do
 done
 
 sweep() {
-    local killed=0 pid cmd
+    local pattern=$1 killed=0 pid cmd
     for proc in /proc/[0-9]*; do
         pid=${proc#/proc/}
         case "$protected" in *" $pid "*) continue ;; esac
         cmd=$(tr '\0' ' ' < "$proc/cmdline" 2>/dev/null) || continue
         [ -z "$cmd" ] && continue
-        if printf '%s' "$cmd" | grep -qE "$PATTERNS"; then
+        if printf '%s' "$cmd" | grep -qE "$pattern"; then
             kill -9 "$pid" 2>/dev/null && killed=$((killed + 1))
         fi
     done
     echo "$killed"
 }
 
+graph_nodes() { timeout 25 ros2 node list 2>/dev/null | grep -v '^$'; }
+
+# The named sweep first, so ordinary runs report something recognisable, then the broad one.
 total=0
-for pass in 1 2 3; do
-    n=$(sweep)
-    total=$((total + n))
-    echo "pass $pass: killed $n"
-    [ "$n" -eq 0 ] && [ "$pass" -gt 1 ] && break
+for pass in 1 2 3 4; do
+    n=$(sweep "$NAMED")
+    m=$(sweep "$ANY_ROS")
+    total=$((total + n + m))
+    echo "pass $pass: killed $n by name, $m by ROS signature"
+    [ "$((n + m))" -eq 0 ] && [ "$pass" -gt 1 ] && break
     sleep 4
 done
 
@@ -101,9 +112,20 @@ set -u
 ros2 daemon stop >/dev/null 2>&1
 sleep 3
 
+# One more look with the daemon restarted, and a last sweep if anything survived: a node that
+# is still on the graph after all of the above is a process the patterns did not reach, and
+# saying so is more useful than a clean-looking exit.
+if [ -n "$(graph_nodes)" ]; then
+    echo "graph not empty after the sweeps; trying once more"
+    total=$((total + $(sweep "$ANY_ROS")))
+    sleep 4
+    ros2 daemon stop >/dev/null 2>&1
+    sleep 3
+fi
+
 echo "killed $total process(es) in total, inside the container"
 
-nodes=$(timeout 25 ros2 node list 2>/dev/null | grep -v '^$')
+nodes=$(graph_nodes)
 topics=$(timeout 25 ros2 topic list 2>/dev/null | grep -vE '^/parameter_events$|^/rosout$')
 
 echo "--- ros2 node list (want: empty) ---"
