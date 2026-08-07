@@ -42,6 +42,21 @@ else()
 endif()
 
 if(BUILD_TESTING)
+  # The description as XML. ament_cmake_xmllint only covers package.xml, and both xacro and
+  # MuJoCo accept things xmllint rejects -- notably a "--" inside a comment, which is illegal
+  # XML but loads fine, so it survives until something else reads the file. That exact mistake
+  # has been made three times here now.
+  find_program(XMLLINT_EXECUTABLE xmllint)
+  if(XMLLINT_EXECUTABLE)
+    file(GLOB _description_xml
+      "${CMAKE_CURRENT_SOURCE_DIR}/urdf/*.xacro"
+      "${CMAKE_CURRENT_SOURCE_DIR}/urdf/*.urdf")
+    add_test(
+      NAME xmllint_description_g1_description
+      COMMAND ${XMLLINT_EXECUTABLE} --noout ${_description_xml}
+    )
+  endif()
+
   # Linters that don't conflict with ruff.
   find_package(ament_lint_auto REQUIRED)
   ament_lint_auto_find_test_dependencies()

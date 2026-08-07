@@ -161,4 +161,37 @@
   <xacro:g1_dex3_hand side="left"/>
   <xacro:g1_dex3_hand side="right"/>
 
+  <!-- Where the hand actually closes, as a frame rather than a number in a config file.
+
+       The palm link's origin is NOT the point the fingers grip at, and the difference is large
+       enough to matter: at the SRDF's `closed` posture the thumb tip lands at palm
+       (-0.030, +0.020, +0.017) and the middle and index tips at (+0.050, +0.068, -/+0.029), so
+       what the hand encloses sits well forward of the origin and mostly to one side of it.
+       Planning to the palm origin puts the object through the fingers.
+
+       A frame, not a parameter, for three reasons. It is visible in RViz, so being wrong is
+       something you can see rather than infer from a failed plan. MoveIt can be given a pose
+       goal for it directly, so no code does offset arithmetic. And it is a property of the
+       Dex3's own geometry, identical on the real hand, so it belongs in the description
+       alongside everything else the URDF says about the hand.
+
+       Orientation matches the palm, so a caller still chooses how to hold the hand; only the
+       position is corrected. The two hands mirror, which is why y and z flip.
+
+       The value is derived from the URDF's own finger chain and is the piece most worth
+       re-measuring against the real hand: the fingertip offset past the last joint is
+       estimated from link inertials rather than from the meshes. Being a frame, checking it
+       is a matter of looking at it in RViz. -->
+  <xacro:macro name="g1_grasp_frame" params="side mirror">
+    <link name="${side}_hand_grasp_frame"/>
+    <joint name="${side}_hand_grasp_frame_joint" type="fixed">
+      <parent link="${side}_hand_palm_link"/>
+      <child link="${side}_hand_grasp_frame"/>
+      <origin xyz="0.010 ${mirror * 0.044} ${mirror * 0.009}" rpy="0 0 0"/>
+    </joint>
+  </xacro:macro>
+
+  <xacro:g1_grasp_frame side="left" mirror="-1"/>
+  <xacro:g1_grasp_frame side="right" mirror="1"/>
+
 </robot>

@@ -48,7 +48,10 @@ struct ArmContext
     std::string arm_group;   ///< left_arm / right_arm
     std::string hand_group;  ///< left_hand / right_hand
     std::string palm_link;   ///< the arm group's tip, and what an object attaches to
-    /// The two hands mirror, so the grasp offset and the palm roll flip sign with this.
+    /// Where the hand actually closes. A frame in the URDF, so pose goals are given for it
+    /// directly and nothing here does offset arithmetic.
+    std::string grasp_frame;
+    /// The two hands mirror, so the palm roll flips sign with this.
     bool is_left{ false };
 };
 
@@ -92,13 +95,16 @@ private:
     std::optional<geometry_msgs::msg::Pose>
     toPlanningFrame(const geometry_msgs::msg::Pose& pose, const std::string& frame_id);
 
-    /// Where the palm must be for the held object to end up at `object_pose`. Handed: the
-    /// two hands are mirror images, so the same object pose wants a different palm pose.
+    /// The pose to give the arm's grasp frame so the object ends up at `object_pose`. Position
+    /// passes straight through -- the grasp frame IS where the object goes -- and only the
+    /// orientation is chosen here. Handed: the two hands hold at mirrored rolls.
     geometry_msgs::msg::Pose
-    palmPoseFor(const geometry_msgs::msg::Pose& object_pose, const ArmContext& arm) const;
+    graspFrameGoal(const geometry_msgs::msg::Pose& object_pose, const ArmContext& arm) const;
 
-    /// Plans and executes to a palm pose. False on either failure, with the reason logged.
-    bool moveTo(MoveGroup& group, const geometry_msgs::msg::Pose& pose, const std::string& what);
+    /// Plans and executes so that `link` reaches `pose`. False on either failure, logged.
+    bool moveTo(
+        MoveGroup& group, const geometry_msgs::msg::Pose& pose, const std::string& link,
+        const std::string& what);
     bool moveToNamed(MoveGroup& group, const std::string& named_target);
 
     /// Puts the object into the planning scene at its measured pose, already transformed into
@@ -151,9 +157,9 @@ private:
     double      lift_height_m_{ 0.15 };
     double      velocity_scaling_{ 0.3 };
     double      planning_time_s_{ 5.0 };
-    // Where the object sits in the palm's own frame at the moment of grasp, and how the palm
-    // is held to reach it. See the .cpp for why both are parameters rather than constants.
-    std::vector<double> grasp_offset_xyz_;
+    // How the hand is held at the grasp. The WHERE is the grasp frame in the URDF; only the
+    // orientation is a choice, and it is the one thing that depends on the surface rather than
+    // on the hand.
     std::vector<double> grasp_rpy_;
 };
 

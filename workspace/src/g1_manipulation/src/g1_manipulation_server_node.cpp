@@ -41,10 +41,11 @@ bool resolveArm(const std::string& arm, ArmContext& out)
     {
         return false;
     }
-    out.arm_group  = arm + "_arm";
-    out.hand_group = arm + "_hand";
-    out.palm_link  = arm + "_hand_palm_link";
-    out.is_left    = arm == "left";
+    out.arm_group   = arm + "_arm";
+    out.hand_group  = arm + "_hand";
+    out.palm_link   = arm + "_hand_palm_link";
+    out.grasp_frame = arm + "_hand_grasp_frame";
+    out.is_left     = arm == "left";
     return true;
 }
 
@@ -60,15 +61,14 @@ G1ManipulationServer::G1ManipulationServer(const rclcpp::NodeOptions& options)
     velocity_scaling_ = declare_parameter<double>("velocity_scaling", 0.3);
     planning_time_s_  = declare_parameter<double>("planning_time_s", 5.0);
 
-    // The grasp geometry, for the RIGHT hand; the left mirrors in palmPoseFor.
+    // How the hand is held at the grasp, for the RIGHT hand; the left mirrors its roll.
     //
-    // Computed from the URDF's finger chain at the SRDF's `closed` posture rather than
-    // guessed: the thumb tip lands at palm (-0.030, +0.020, +0.017) and the middle and index
-    // tips at (+0.050, +0.068, -/+0.029), so what the hand closes around sits at
-    // (+0.010, +0.044, +0.009). The fingers curl toward the palm's +y, which is why it is the
-    // ROLL and not the pitch that turns the grasp axis downward.
-    grasp_offset_xyz_ =
-        declare_parameter<std::vector<double>>("grasp_offset_xyz", { 0.010, 0.044, 0.009 });
+    // WHERE the hand grips is not here: it is the {side}_hand_grasp_frame link in the URDF,
+    // which is a property of the Dex3's geometry rather than of this task. Goals are given for
+    // that frame, so nothing in this file adds an offset to a palm pose.
+    //
+    // The fingers close toward the palm's +y, so it is the ROLL that turns the closing axis
+    // downward for a grasp off a table, and the pitch that would be wrong.
     grasp_rpy_ = declare_parameter<std::vector<double>>("grasp_rpy", { -M_PI_2, 0.0, 0.0 });
 
     objects_sub_ = create_subscription<vision_msgs::msg::Detection3DArray>(
@@ -227,9 +227,9 @@ std::optional<geometry_msgs::msg::Pose> G1ManipulationServer::toPlanningFrame(
 
 void G1ManipulationServer::initialize()
 {
-    if (grasp_offset_xyz_.size() != 3 || grasp_rpy_.size() != 3)
+    if (grasp_rpy_.size() != 3)
     {
-        throw std::runtime_error("grasp_offset_xyz and grasp_rpy each need exactly 3 entries");
+        throw std::runtime_error("grasp_rpy needs exactly 3 entries");
     }
 
     for (const std::string& name : { "left_arm", "right_arm", "left_hand", "right_hand" })
@@ -360,37 +360,31 @@ moveit_msgs::msg::CollisionObject G1ManipulationServer::publishCollisionObject(
     return object;
 }
 
-geometry_msgs::msg::Pose G1ManipulationServer::palmPoseFor(
+geometry_msgs::msg::Pose G1ManipulationServer::graspFrameGoal(
     const geometry_msgs::msg::Pose& object_pose, const ArmContext& arm) const
 {
-    // The hands are mirror images, so the same object wants a different palm pose from each:
-    // the offset's y and z flip, and so does the roll that turns the grasp axis downward.
-    const double mirror = arm.is_left ? -1.0 : 1.0;
+    // Position passes straight through. The grasp frame is defined as the point the hand
+    // closes on, so putting that frame at the object IS the grasp -- there is no offset to
+    // apply, and the arithmetic that used to live here was the source of two separate bugs.
+    geometry_msgs::msg::Pose goal;
+    goal.position = object_pose.position;
 
-    tf2::Quaternion palm_rotation;
-    palm_rotation.setRPY(mirror * grasp_rpy_[0], grasp_rpy_[1], grasp_rpy_[2]);
-
-    // The offset is expressed in the palm frame, so it has to be rotated into the planning
-    // frame before it can be subtracted from a position in it.
-    const tf2::Vector3 offset_in_palm(
-        grasp_offset_xyz_[0],
-        mirror * grasp_offset_xyz_[1],
-        mirror * grasp_offset_xyz_[2]);
-    const tf2::Vector3 offset = tf2::Matrix3x3(palm_rotation) * offset_in_palm;
-
-    geometry_msgs::msg::Pose palm;
-    palm.position.x  = object_pose.position.x - offset.x();
-    palm.position.y  = object_pose.position.y - offset.y();
-    palm.position.z  = object_pose.position.z - offset.z();
-    palm.orientation = tf2::toMsg(palm_rotation);
-    return palm;
+    // Only the orientation is a choice, and it mirrors: the two hands close in opposite
+    // directions, so the roll that points the closing axis at the floor flips sign.
+    tf2::Quaternion rotation;
+    rotation.setRPY((arm.is_left ? -1.0 : 1.0) * grasp_rpy_[0], grasp_rpy_[1], grasp_rpy_[2]);
+    goal.orientation = tf2::toMsg(rotation);
+    return goal;
 }
 
 bool G1ManipulationServer::moveTo(
-    MoveGroup& group, const geometry_msgs::msg::Pose& pose, const std::string& what)
+    MoveGroup& group, const geometry_msgs::msg::Pose& pose, const std::string& link,
+    const std::string& what)
 {
     group.setStartStateToCurrentState();
-    group.setPoseTarget(pose);
+    // Named explicitly rather than relying on the group's default tip: the goal is for the
+    // grasp frame, which hangs off the palm and is not what the group ends at.
+    group.setPoseTarget(pose, link);
 
     MoveGroup::Plan plan;
     const auto      planned = group.plan(plan);
@@ -484,9 +478,9 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     const moveit_msgs::msg::CollisionObject object =
         publishCollisionObject(*detection, *object_pose);
 
-    const geometry_msgs::msg::Pose grasp_palm    = palmPoseFor(*object_pose, arm);
-    geometry_msgs::msg::Pose       pregrasp_palm = grasp_palm;
-    pregrasp_palm.position.z += approach_height_m_;
+    const geometry_msgs::msg::Pose grasp_goal    = graspFrameGoal(*object_pose, arm);
+    geometry_msgs::msg::Pose       pregrasp_goal = grasp_goal;
+    pregrasp_goal.position.z += approach_height_m_;
 
     feedback->phase = Pick::Feedback::PHASE_PREGRASP;
     goal_handle->publish_feedback(feedback);
@@ -502,7 +496,7 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
         fail(Pick::Feedback::PHASE_PREGRASP, "the hand would not open");
         return;
     }
-    if (!moveTo(*arm_group, pregrasp_palm, "pregrasp"))
+    if (!moveTo(*arm_group, pregrasp_goal, arm.grasp_frame, "pregrasp"))
     {
         fail(Pick::Feedback::PHASE_PREGRASP, "could not reach the pregrasp pose");
         return;
@@ -527,7 +521,7 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     allowHandContact(arm, { "<octomap>" }, true);
     planning_scene_.removeCollisionObjects({ goal->object_id });
 
-    if (!moveTo(*arm_group, grasp_palm, "approach"))
+    if (!moveTo(*arm_group, grasp_goal, arm.grasp_frame, "approach"))
     {
         fail(Pick::Feedback::PHASE_APPROACH, "could not reach the grasp pose");
         return;
@@ -569,9 +563,9 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
 
     feedback->phase = Pick::Feedback::PHASE_LIFT;
     goal_handle->publish_feedback(feedback);
-    geometry_msgs::msg::Pose lifted = grasp_palm;
+    geometry_msgs::msg::Pose lifted = grasp_goal;
     lifted.position.z += lift_height_m_;
-    if (!moveTo(*arm_group, lifted, "lift"))
+    if (!moveTo(*arm_group, lifted, arm.grasp_frame, "lift"))
     {
         fail(Pick::Feedback::PHASE_LIFT, "could not lift clear of the surface");
         return;
@@ -622,13 +616,13 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
         return;
     }
 
-    const geometry_msgs::msg::Pose place_palm = palmPoseFor(*target, arm);
-    geometry_msgs::msg::Pose       preplace   = place_palm;
+    const geometry_msgs::msg::Pose place_goal = graspFrameGoal(*target, arm);
+    geometry_msgs::msg::Pose       preplace   = place_goal;
     preplace.position.z += approach_height_m_;
 
     feedback->phase = Place::Feedback::PHASE_PREPLACE;
     goal_handle->publish_feedback(feedback);
-    if (!moveTo(*arm_group, preplace, "preplace"))
+    if (!moveTo(*arm_group, preplace, arm.grasp_frame, "preplace"))
     {
         fail(Place::Feedback::PHASE_PREPLACE, "could not reach the pose above the target");
         return;
@@ -636,7 +630,7 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
 
     feedback->phase = Place::Feedback::PHASE_LOWER;
     goal_handle->publish_feedback(feedback);
-    if (!moveTo(*arm_group, place_palm, "lower"))
+    if (!moveTo(*arm_group, place_goal, arm.grasp_frame, "lower"))
     {
         fail(Place::Feedback::PHASE_LOWER, "could not lower onto the target");
         return;
@@ -664,7 +658,7 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
 
     feedback->phase = Place::Feedback::PHASE_RETREAT;
     goal_handle->publish_feedback(feedback);
-    if (!moveTo(*arm_group, preplace, "retreat"))
+    if (!moveTo(*arm_group, preplace, arm.grasp_frame, "retreat"))
     {
         fail(Place::Feedback::PHASE_RETREAT, "could not retreat clear of the object");
         return;

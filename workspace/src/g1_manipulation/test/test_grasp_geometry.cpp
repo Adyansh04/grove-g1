@@ -1,11 +1,11 @@
 /**
  * @file test_grasp_geometry.cpp
- * @brief The arm/group mapping and the palm-pose arithmetic, without a running MoveIt.
+ * @brief The arm/group mapping and the grasp-frame goal, without a running MoveIt.
  *
- * The rest of the server is MoveIt calls and needs a live move_group, which is what
- * test_pick_place covers. What is testable here is the part that would otherwise be wrong
- * silently: which groups an "arm" string resolves to, and where the palm has to be for the
- * object to end up somewhere.
+ * Where the hand grips is no longer arithmetic here at all: it is the {side}_hand_grasp_frame
+ * link in g1_description, and goals are given for that frame directly. What is left to pin is
+ * which groups and frames an "arm" string resolves to, and that the goal passes position
+ * through untouched while orienting the closing axis at the floor.
  */
 
 #include <gmock/gmock.h>
@@ -25,24 +25,17 @@ using g1_manipulation::resolveArm;
 namespace
 {
 
-/// The server's own palmPoseFor, which is a private member. Duplicated here rather than
-/// exposed, because what these tests pin is the RELATION -- palm plus rotated offset lands on
-/// the object -- and that is checked below against the result rather than against this code.
-geometry_msgs::msg::Pose palmPoseFor(
-    const geometry_msgs::msg::Pose& object, const std::vector<double>& offset_xyz,
-    const std::vector<double>& rpy)
+/// The server's own graspFrameGoal, which is a private member. Position passes through; only
+/// the orientation is computed, and it mirrors between hands.
+geometry_msgs::msg::Pose
+graspFrameGoal(const geometry_msgs::msg::Pose& object, const std::vector<double>& rpy, bool is_left)
 {
+    geometry_msgs::msg::Pose goal;
+    goal.position = object.position;
     tf2::Quaternion rotation;
-    rotation.setRPY(rpy[0], rpy[1], rpy[2]);
-    const tf2::Vector3 offset =
-        tf2::Matrix3x3(rotation) * tf2::Vector3(offset_xyz[0], offset_xyz[1], offset_xyz[2]);
-
-    geometry_msgs::msg::Pose palm;
-    palm.position.x  = object.position.x - offset.x();
-    palm.position.y  = object.position.y - offset.y();
-    palm.position.z  = object.position.z - offset.z();
-    palm.orientation = tf2::toMsg(rotation);
-    return palm;
+    rotation.setRPY((is_left ? -1.0 : 1.0) * rpy[0], rpy[1], rpy[2]);
+    goal.orientation = tf2::toMsg(rotation);
+    return goal;
 }
 
 geometry_msgs::msg::Pose objectAt(double x, double y, double z)
@@ -57,24 +50,26 @@ geometry_msgs::msg::Pose objectAt(double x, double y, double z)
 
 }  // namespace
 
-TEST(ResolveArm, MapsASideOntoItsGroupsAndPalm)
+TEST(ResolveArm, MapsASideOntoItsGroupsFramesAndHandedness)
 {
     ArmContext arm;
     ASSERT_TRUE(resolveArm("left", arm));
     EXPECT_EQ(arm.arm_group, "left_arm");
     EXPECT_EQ(arm.hand_group, "left_hand");
     EXPECT_EQ(arm.palm_link, "left_hand_palm_link");
+    EXPECT_EQ(arm.grasp_frame, "left_hand_grasp_frame");
+    EXPECT_TRUE(arm.is_left);
 
     ASSERT_TRUE(resolveArm("right", arm));
     EXPECT_EQ(arm.arm_group, "right_arm");
-    EXPECT_EQ(arm.hand_group, "right_hand");
-    EXPECT_EQ(arm.palm_link, "right_hand_palm_link");
+    EXPECT_EQ(arm.grasp_frame, "right_hand_grasp_frame");
+    EXPECT_FALSE(arm.is_left);
 }
 
 TEST(ResolveArm, RejectsAnythingElseWithoutAssigning)
 {
-    // The names have to match g1.srdf's groups exactly. A silent fallback to one side would
-    // move the wrong arm, which is the failure this refusal exists to prevent.
+    // The names have to match g1.srdf's groups and the URDF's frames exactly. A silent
+    // fallback to one side would move the wrong arm, which is what this refusal prevents.
     ArmContext arm;
     arm.arm_group = "sentinel";
     EXPECT_FALSE(resolveArm("Left", arm));
@@ -83,57 +78,54 @@ TEST(ResolveArm, RejectsAnythingElseWithoutAssigning)
     EXPECT_EQ(arm.arm_group, "sentinel");
 }
 
-TEST(PalmPoseFor, PutsTheObjectExactlyWhereItWasAsked)
+TEST(GraspFrameGoal, PutsTheGraspFrameExactlyOnTheObject)
 {
-    // The invariant that matters: rotate the configured offset by the palm's orientation, add
-    // it to the returned palm position, and the object lands back on its target. If this is
-    // wrong the arm reaches somewhere plausible and misses by the offset every time.
-    const std::vector<double> offset_xyz{ 0.010, 0.044, 0.009 };
+    // The whole point of moving the offset into the URDF: the goal position IS the object
+    // position, with no arithmetic left in this file to get wrong. Two separate bugs lived in
+    // the arithmetic this replaced.
     const std::vector<double> rpy{ -M_PI_2, 0.0, 0.0 };
-    const auto                target = objectAt(0.35, -0.20, 0.78);
+    const auto                target = objectAt(0.35, -0.20, 0.83);
 
-    const auto palm = palmPoseFor(target, offset_xyz, rpy);
+    const auto goal = graspFrameGoal(target, rpy, /*is_left=*/false);
 
-    tf2::Quaternion palm_rotation;
-    tf2::fromMsg(palm.orientation, palm_rotation);
-    const tf2::Vector3 offset =
-        tf2::Matrix3x3(palm_rotation) * tf2::Vector3(offset_xyz[0], offset_xyz[1], offset_xyz[2]);
-
-    EXPECT_NEAR(palm.position.x + offset.x(), target.position.x, 1e-9);
-    EXPECT_NEAR(palm.position.y + offset.y(), target.position.y, 1e-9);
-    EXPECT_NEAR(palm.position.z + offset.z(), target.position.z, 1e-9);
+    EXPECT_DOUBLE_EQ(goal.position.x, target.position.x);
+    EXPECT_DOUBLE_EQ(goal.position.y, target.position.y);
+    EXPECT_DOUBLE_EQ(goal.position.z, target.position.z);
 }
 
-TEST(PalmPoseFor, TheDefaultGraspPointsTheClosingAxisDown)
+TEST(GraspFrameGoal, PointsTheClosingAxisAtTheFloor)
 {
-    // The shipped grasp_rpy has to produce a top-down grasp, since every target surface here
-    // is a table. The Dex3's fingers curl toward the palm's +y, not along +x, so it is THAT
-    // axis that must come out pointing at the floor. Getting this wrong is what made the
-    // first version unplannable, so it is pinned rather than left to inspection.
-    const std::vector<double> rpy{ -M_PI_2, 0.0, 0.0 };
-    const auto                palm = palmPoseFor(objectAt(0.4, 0.0, 0.8), { 0.0, 0.0, 0.0 }, rpy);
+    // The Dex3's fingers curl toward the palm's +y, so it is THAT axis that has to end up
+    // pointing down for a grasp off a table -- and the palm's +x has to stay forward, so the
+    // arm reaches out rather than the wrist contorting. Getting this wrong made the first
+    // version unplannable anywhere useful, so it is pinned rather than left to inspection.
+    const auto palm = graspFrameGoal(objectAt(0.4, 0.0, 0.8), { -M_PI_2, 0.0, 0.0 }, false);
 
     tf2::Quaternion rotation;
     tf2::fromMsg(palm.orientation, rotation);
     const tf2::Matrix3x3 basis(rotation);
 
     EXPECT_NEAR((basis * tf2::Vector3(0.0, 1.0, 0.0)).z(), -1.0, 1e-9)
-        << "the palm's +y, which is where the fingers close, must point down";
+        << "the palm's +y, where the fingers close, must point down";
     EXPECT_NEAR((basis * tf2::Vector3(1.0, 0.0, 0.0)).x(), 1.0, 1e-9)
-        << "and the palm's +x stays forward, so the arm reaches out rather than twisting";
+        << "and the palm's +x stays forward";
 }
 
-TEST(PalmPoseFor, HoldsTheObjectAboveTheSurfaceForTheConfiguredOffset)
+TEST(GraspFrameGoal, TheTwoHandsMirror)
 {
-    // With the closing axis pointing down, the offset puts the object BELOW the palm. Getting
-    // this sign backwards would have the arm reach under the table.
-    const std::vector<double> offset_xyz{ 0.010, 0.044, 0.009 };
-    const std::vector<double> rpy{ -M_PI_2, 0.0, 0.0 };
-    const auto                target = objectAt(0.35, 0.0, 0.78);
+    // The hands are mirror images, so the roll that points one hand's closing axis down points
+    // the other's up. A shared orientation would have the left hand grasping upside down.
+    const auto right = graspFrameGoal(objectAt(0.35, 0.20, 0.83), { -M_PI_2, 0.0, 0.0 }, false);
+    const auto left  = graspFrameGoal(objectAt(0.35, 0.20, 0.83), { -M_PI_2, 0.0, 0.0 }, true);
 
-    const auto palm = palmPoseFor(target, offset_xyz, rpy);
+    tf2::Quaternion qr;
+    tf2::Quaternion ql;
+    tf2::fromMsg(right.orientation, qr);
+    tf2::fromMsg(left.orientation, ql);
 
-    EXPECT_GT(palm.position.z, target.position.z) << "the palm must sit above what it grasps";
+    EXPECT_NEAR((tf2::Matrix3x3(qr) * tf2::Vector3(0.0, 1.0, 0.0)).z(), -1.0, 1e-9);
+    EXPECT_NEAR((tf2::Matrix3x3(ql) * tf2::Vector3(0.0, -1.0, 0.0)).z(), -1.0, 1e-9)
+        << "the left hand closes toward its own -y, so its -y is what must point down";
 }
 
 int main(int argc, char** argv)
