@@ -1,0 +1,134 @@
+# g1_manipulation
+
+Pick and place, served as actions over MoveIt, plus the node that decides where object poses are
+allowed to come from.
+
+`ament_cmake`, C++20. Two nodes.
+
+```mermaid
+flowchart LR
+    REL["g1_sensor_relay<br/>(simulation only)"] -- "~/object_poses" --> SRC
+    SRC["g1_object_pose_source<br/>lifecycle"] -- "/objects" --> SRV
+    BT["g1_bt_executor"] -- "Pick, Place,<br/>SetArmPosture" --> SRV
+    SRV["g1_manipulation_server"] -- "plan + execute" --> MG["move_group"]
+    MG --> JTC["arm_trajectory_controller<br/>left/right_hand_controller"]
+```
+
+The server adds no command path. It is another client of `move_group`, which is another client
+of the controllers that already own `rt/arm_sdk` and the hand topics, so every low-level channel
+keeps exactly one writer.
+
+It also takes no control authority. The arm and hands must already be acquired before a goal
+will execute, and releasing them is the caller's job — for a mission that is
+`g1_orchestration`'s executor, which brackets the whole run. A skill that acquired per goal
+would hand the hands back between pick and place and drop what it was carrying.
+
+## Where object poses come from
+
+`g1_object_pose_source` is the boundary between manipulation and perception. Skills consume
+`/objects` and never learn which source filled it, so a real detector replaces this node without
+touching them.
+
+| `object_source` | Behaviour |
+|---|---|
+| `sim_ground_truth` | MuJoCo body poses, sampled inside the simulator and carried out by `g1_sensor_relay`. |
+| `hardware` (default) | **Refuses to configure.** There is no object-detection pipeline on this robot yet. |
+
+`hardware` is the default deliberately, matching `g1_state_estimation`'s odometry source: a
+bring-up that forgets to say what it has must fail visibly rather than feed a grasp planner
+simulator ground truth it cannot tell from a measurement.
+
+These poses are exact — no noise, no occlusion, no misdetection, and every listed object is
+always visible. Nothing here validates behaviour under a detector that is wrong.
+
+`/objects` is `vision_msgs/Detection3DArray` in `odom`, carrying a pose and a bounding box per
+object. The box is what the server builds its collision geometry from, so replacing the source
+with a real detector changes nothing downstream.
+
+## Actions
+
+| Action | Goal | Notes |
+|---|---|---|
+| `~/pick` | `object_id`, `arm` | No pose in the goal: it is read from `/objects` when the goal starts, so a retry re-reads rather than replaying. |
+| `~/place` | `pose`, `arm` | The pose is where the **object** ends up, not the hand. Transformed into the planning frame on arrival. |
+| `~/set_arm_posture` | `group`, `named_target` | Named SRDF poses only. |
+
+`Pick` and `Place` publish a phase as feedback and name that phase in the result on failure.
+Every `Pick` failure path leaves the hand open and nothing attached, so a retry starts from a
+defined state rather than part-way into a grasp — that is what makes the behavior tree's retry
+meaningful rather than a replay.
+
+## Where the hand grips
+
+Not a number in this package. `{side}_hand_grasp_frame` is a link in `g1_description`, and pose
+goals are given for that frame, so nothing here does offset arithmetic.
+
+The palm link's origin is not the point the fingers close on: at the SRDF's `closed` posture the
+Dex3's fingers curl toward the palm's **+y**, and the grip lands about 1 cm forward of the origin
+and 4.4 cm to the side. Planning to the palm puts the object through the fingers. Because it is a
+frame, checking it is a matter of looking at it in RViz:
+
+```bash
+ros2 run tf2_ros tf2_echo right_hand_palm_link right_hand_grasp_frame
+```
+
+That the fingers close toward +y is also why `grasp_rpy` is a **roll**: it is the roll that turns
+the closing axis toward the floor for a grasp off a table, and pitching the palm instead produces
+poses with no IK anywhere useful.
+
+## Grasping is contact
+
+The planner cannot tell intended contact from a collision, and two things are unavoidably in the
+way of a grasp: the octomap, which holds the support surface and the object, and the object's own
+collision geometry, added so plans route around it right up until the hand is meant to close on
+it. Both are handled, and how they are handled matters:
+
+- The object is **removed** before the final descent and re-added as an **attached body** after
+  the hand closes. Attached bodies are filtered out of the octomap by
+  `PointCloudOctomapUpdater`'s shape mask; plain world objects are not.
+- The hand and its wrist are exempted from octomap collision **only for the final approach**, not
+  for the whole skill. Exempting the transit lets a plan route the arm straight through the
+  table, which is visible in the viewer.
+
+The exemption is restored on every exit path, including failure.
+
+## Running
+
+Comes up with the operator entry point:
+
+```bash
+ros2 launch g1_bringup bringup.launch.py moveit:=true manipulation:=true pin_pelvis:=true world:=manipulation activate_arm:=true activate_arm_delay_s:=40.0
+```
+
+`manipulation:=true` requires `moveit:=true`, and turns on `sensors:=true` itself — object ground
+truth leaves the simulator over the sensor relay's socket, so without it the pose source comes up
+healthy and never receives anything.
+
+```bash
+ros2 action send_goal /g1_manipulation_server/pick g1_msgs/action/Pick \
+  "{object_id: red_cube, arm: right}" --feedback
+```
+
+`activate_arm_delay_s` is raised from its default because this world takes longer to come up than
+the delay assumes, and the acquire otherwise fires before `/lowstate` flows.
+
+## Configuration
+
+| File | Contents |
+|---|---|
+| `config/g1_object_pose_source.yaml` | The source, and the frames it verifies. Simulation only as shipped. |
+| `config/g1_manipulation_server.yaml` | Approach and lift clearances, speed, planning time, and how the hand is held at the grasp. |
+
+`grasp_rpy` is the only geometric tunable here. The *where* is the grasp frame in the URDF,
+because it is a property of the Dex3 rather than of a task.
+
+## Tests
+
+| Test | Needs a simulator | Covers |
+|---|---|---|
+| `test_object_pose_source_node` | no | Source selection, the **hardware refusal**, the default being the refusing one, frame verification, stamp passthrough, and staying quiet until activated. |
+| `test_grasp_geometry` | no | Arm-to-group-and-frame resolution and its refusals; that the grasp goal passes position through untouched and points the closing axis at the floor; that the two hands mirror. |
+
+```bash
+colcon test --packages-select g1_manipulation
+```
