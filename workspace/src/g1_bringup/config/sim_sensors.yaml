@@ -35,3 +35,29 @@ object_bodies:
   - green_cylinder
   - blue_sphere
   - yellow_box
+
+# SIMULATION ONLY, and a stand-in rather than a model of anything. The Dex3 fingers carry no
+# contact geometry (patch 003, deliberate), so a closed hand passes through an object and
+# nothing is ever picked up. This welds the object to the palm once the fingers have measurably
+# closed near it, and releases when they open.
+#
+# NONE OF THESE THREE NUMBERS TRANSFER TO HARDWARE. There the mechanism is friction between
+# real finger pads and a real object; these describe the weld, not the Dex3's grip, and a grasp
+# that holds here says nothing about whether the real hand holds it. They sit on the hardware
+# re-validation list with the gait deadband and the hand-mass scaling, in docs/SIM_SETUP.md.
+#
+# Which welds exist is declared in the scene, not here: g1_navigation_scene.xml's `grasp_*`
+# equality constraints are found by name.
+grasp_weld:
+  enabled: true
+
+  # Palm origin to object origin. Covers the palm-to-grasp-point offset plus half a small
+  # object, chosen rather than measured.
+  capture_radius_m: 0.12
+
+  # Mean fraction of available joint travel across the hand's seven joints. The SRDF's `closed`
+  # posture measures 0.70 by this metric and `open` measures 0, so 0.5 sits between them.
+  close_fraction: 0.5
+  # Deliberately below close_fraction: without the gap a hand resting at the threshold would
+  # drop and re-grab the object every few ticks.
+  release_fraction: 0.3

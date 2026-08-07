@@ -233,4 +233,34 @@
          because the mount belongs to the vendored robot and cannot host a camera element. -->
     <camera name="d435i" mode="fixed" fovy="58" resolution="848 480" pos="0 0 1"/>
   </worldbody>
+
+  <!-- SIMULATION ONLY. Inert as declared: every one of these starts inactive, and only
+       grove-g1's grasp_weld manager ever turns one on, when the hand it names has measurably
+       closed near the object it names. Nothing here moves on its own.
+
+       They exist because the Dex3 fingers carry no contact geometry (patch 003, deliberate:
+       grasping is modelled by attaching the object in MoveIt's planning scene, and tuned
+       multi-finger contact is its own project). Without them a closed hand passes straight
+       through the cube and the demo carries nothing.
+
+       Discovered by the `grasp_` name prefix rather than listed in config, so this file stays
+       the single source of truth for what is graspable. body1 is the palm, body2 the object.
+       On hardware friction does this job and none of it runs. -->
+  <equality>
+    <weld name="grasp_left_red_cube" body1="left_hand_palm_link" body2="red_cube" active="false"/>
+    <weld name="grasp_left_green_cylinder" body1="left_hand_palm_link" body2="green_cylinder"
+          active="false"/>
+    <weld name="grasp_left_blue_sphere" body1="left_hand_palm_link" body2="blue_sphere"
+          active="false"/>
+    <weld name="grasp_left_yellow_box" body1="left_hand_palm_link" body2="yellow_box"
+          active="false"/>
+    <weld name="grasp_right_red_cube" body1="right_hand_palm_link" body2="red_cube"
+          active="false"/>
+    <weld name="grasp_right_green_cylinder" body1="right_hand_palm_link" body2="green_cylinder"
+          active="false"/>
+    <weld name="grasp_right_blue_sphere" body1="right_hand_palm_link" body2="blue_sphere"
+          active="false"/>
+    <weld name="grasp_right_yellow_box" body1="right_hand_palm_link" body2="yellow_box"
+          active="false"/>
+  </equality>
 </mujoco>
