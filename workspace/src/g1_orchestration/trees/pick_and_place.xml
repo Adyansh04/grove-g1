@@ -1,0 +1,44 @@
+<?xml version="1.0"?>
+<!--
+  Navigate to the workbench, pick an object off it, carry it to the storage room, put it down.
+
+  Coordinates are the g1_navigation_scene facility, in the `map` frame the committed map was
+  built in. The workbench is at (4.5, -4.5) with the objects on its top at z = 0.78; the place
+  target is crate_stack_1's flat top at (7.0, 4.0, 0.70), in the other room, so the carry leg
+  is a real navigation rather than a step sideways.
+
+  The arm bracket spans pick through place deliberately. On hardware a released Dex3 goes limp
+  about a second later and drops what it is holding, so the hands stay powered for the whole
+  carry. The executor closes the bracket again on its way out, whatever happens in here.
+-->
+<root BTCPP_format="4" main_tree_to_execute="PickAndPlace">
+  <BehaviorTree ID="PickAndPlace">
+    <Sequence name="mission">
+      <!-- Arms in before walking. Arm pose measurably disturbs a walking humanoid, and tucked
+           is the smallest swept volume and least COM offset of the named poses. -->
+      <SetArmPosture name="tuck_to_travel" group="both_arms" named_target="tucked"/>
+
+      <NavigateToPose name="go_to_workbench" goal="3.9;-4.5;0.0"/>
+
+      <AcquireArm name="take_the_arm"/>
+
+      <!-- Two attempts, not one, because each retry re-reads the object's pose from /objects
+           and OMPL samples a different tree, and because Pick leaves the hand open and nothing
+           attached when it fails, so the second attempt starts from a defined state.
+           The count itself is a convention, not a measurement: nothing has yet established the
+           per-attempt success rate at this workbench. -->
+      <RetryUntilSuccessful name="pick_with_one_retry" num_attempts="2">
+        <Pick name="pick_the_cube" object_id="red_cube" arm="right"/>
+      </RetryUntilSuccessful>
+
+      <SetArmPosture name="hold_it_close" group="right_arm" named_target="carry"/>
+
+      <NavigateToPose name="go_to_storage" goal="6.2;4.0;0.0"/>
+
+      <Place name="put_it_on_the_crate" target="7.0;4.0;0.78" arm="right"/>
+
+      <SetArmPosture name="tuck_again" group="both_arms" named_target="tucked"/>
+      <ReleaseArm name="hand_the_arm_back"/>
+    </Sequence>
+  </BehaviorTree>
+</root>

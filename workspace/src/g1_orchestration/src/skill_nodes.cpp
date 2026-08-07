@@ -1,0 +1,248 @@
+#include "g1_orchestration/skill_nodes.hpp"
+
+#include <tf2/LinearMath/Quaternion.h>
+
+#include <cmath>
+#include <string>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
+#include <vector>
+
+namespace BT
+{
+template <>
+g1_orchestration::Station convertFromString(StringView text)
+{
+    const std::vector<StringView> parts = splitString(text, ';');
+    if (parts.size() != 3)
+    {
+        throw RuntimeError("a station is 'x;y;yaw', got: ", std::string(text));
+    }
+    g1_orchestration::Station station;
+    station.x   = convertFromString<double>(parts[0]);
+    station.y   = convertFromString<double>(parts[1]);
+    station.yaw = convertFromString<double>(parts[2]);
+    return station;
+}
+
+template <>
+g1_orchestration::Point3 convertFromString(StringView text)
+{
+    const std::vector<StringView> parts = splitString(text, ';');
+    if (parts.size() != 3)
+    {
+        throw RuntimeError("a point is 'x;y;z', got: ", std::string(text));
+    }
+    g1_orchestration::Point3 point;
+    point.x = convertFromString<double>(parts[0]);
+    point.y = convertFromString<double>(parts[1]);
+    point.z = convertFromString<double>(parts[2]);
+    return point;
+}
+}  // namespace BT
+
+namespace g1_orchestration
+{
+
+namespace
+{
+
+geometry_msgs::msg::PoseStamped toPose(const Station& station, const std::string& frame_id)
+{
+    geometry_msgs::msg::PoseStamped pose;
+    pose.header.frame_id = frame_id;
+    pose.pose.position.x = station.x;
+    pose.pose.position.y = station.y;
+
+    tf2::Quaternion heading;
+    heading.setRPY(0.0, 0.0, station.yaw);
+    pose.pose.orientation = tf2::toMsg(heading);
+    return pose;
+}
+
+/// Shared by every leaf whose result carries `success` and `message`.
+template <typename ResultT>
+BT::NodeStatus
+judgeSkillResult(const rclcpp::Logger& logger, const std::string& name, const ResultT& wrapped)
+{
+    if (wrapped.code != rclcpp_action::ResultCode::SUCCEEDED)
+    {
+        RCLCPP_ERROR(logger, "[%s] did not complete", name.c_str());
+        return BT::NodeStatus::FAILURE;
+    }
+    if (!wrapped.result->success)
+    {
+        // The skill's own message names the phase that failed, which is the part worth
+        // surfacing: "the pick failed" is not actionable, "grasp: the hand did not close" is.
+        RCLCPP_ERROR(logger, "[%s] %s", name.c_str(), wrapped.result->message.c_str());
+        return BT::NodeStatus::FAILURE;
+    }
+    RCLCPP_INFO(logger, "[%s] %s", name.c_str(), wrapped.result->message.c_str());
+    return BT::NodeStatus::SUCCESS;
+}
+
+}  // namespace
+
+NavigateToPose::NavigateToPose(
+    const std::string& name, const BT::NodeConfig& config, RosContext context)
+  : RosActionNode(name, config, context, "/navigate_to_pose")
+{}
+
+BT::PortsList NavigateToPose::providedPorts()
+{
+    return providedBasicPorts({
+        BT::InputPort<Station>("goal", "Where to drive to, as 'x;y;yaw'."),
+        BT::InputPort<std::string>("frame_id", "map", "Frame the goal is expressed in."),
+    });
+}
+
+bool NavigateToPose::fillGoal(Goal& goal)
+{
+    const auto station = getInput<Station>("goal");
+    if (!station)
+    {
+        RCLCPP_ERROR(node_->get_logger(), "[%s] %s", name().c_str(), station.error().c_str());
+        return false;
+    }
+    goal.pose = toPose(*station, getInput<std::string>("frame_id").value_or("map"));
+    return true;
+}
+
+BT::NodeStatus NavigateToPose::judgeResult(const WrappedResult& result)
+{
+    // NavigateToPose's result is empty: reaching the goal is reported by the result CODE and
+    // nothing else, unlike this stack's own skills.
+    if (result.code != rclcpp_action::ResultCode::SUCCEEDED)
+    {
+        RCLCPP_ERROR(node_->get_logger(), "[%s] did not reach the goal", name().c_str());
+        return BT::NodeStatus::FAILURE;
+    }
+    RCLCPP_INFO(node_->get_logger(), "[%s] arrived", name().c_str());
+    return BT::NodeStatus::SUCCESS;
+}
+
+Pick::Pick(const std::string& name, const BT::NodeConfig& config, RosContext context)
+  : RosActionNode(name, config, context, "/g1_manipulation_server/pick")
+{}
+
+BT::PortsList Pick::providedPorts()
+{
+    return providedBasicPorts({
+        BT::InputPort<std::string>("object_id", "Must match a class_id published on /objects."),
+        BT::InputPort<std::string>("arm", "right", "'left' or 'right'."),
+    });
+}
+
+bool Pick::fillGoal(Goal& goal)
+{
+    const auto object_id = getInput<std::string>("object_id");
+    if (!object_id || object_id->empty())
+    {
+        RCLCPP_ERROR(node_->get_logger(), "[%s] needs an object_id", name().c_str());
+        return false;
+    }
+    goal.object_id = *object_id;
+    goal.arm       = getInput<std::string>("arm").value_or("right");
+    return true;
+}
+
+BT::NodeStatus Pick::judgeResult(const WrappedResult& result)
+{
+    return judgeSkillResult(node_->get_logger(), name(), result);
+}
+
+Place::Place(const std::string& name, const BT::NodeConfig& config, RosContext context)
+  : RosActionNode(name, config, context, "/g1_manipulation_server/place")
+{}
+
+BT::PortsList Place::providedPorts()
+{
+    return providedBasicPorts({
+        BT::InputPort<Point3>("target", "Where the OBJECT should end up, as 'x;y;z'."),
+        BT::InputPort<std::string>("arm", "right", "'left' or 'right'."),
+        BT::InputPort<std::string>(
+            "frame_id",
+            "",
+            "Frame of the target. Empty means the server's planning frame."),
+    });
+}
+
+bool Place::fillGoal(Goal& goal)
+{
+    const auto target = getInput<Point3>("target");
+    if (!target)
+    {
+        RCLCPP_ERROR(node_->get_logger(), "[%s] %s", name().c_str(), target.error().c_str());
+        return false;
+    }
+    // Position only. How the object is oriented when it lands is the server's business: it
+    // knows how the object is held and this tree does not.
+    goal.pose.header.frame_id    = getInput<std::string>("frame_id").value_or("");
+    goal.pose.pose.position.x    = target->x;
+    goal.pose.pose.position.y    = target->y;
+    goal.pose.pose.position.z    = target->z;
+    goal.pose.pose.orientation.w = 1.0;
+    goal.arm                     = getInput<std::string>("arm").value_or("right");
+    return true;
+}
+
+BT::NodeStatus Place::judgeResult(const WrappedResult& result)
+{
+    return judgeSkillResult(node_->get_logger(), name(), result);
+}
+
+SetArmPosture::SetArmPosture(
+    const std::string& name, const BT::NodeConfig& config, RosContext context)
+  : RosActionNode(name, config, context, "/g1_manipulation_server/set_arm_posture")
+{}
+
+BT::PortsList SetArmPosture::providedPorts()
+{
+    return providedBasicPorts({
+        BT::InputPort<std::string>("group", "A group in g1.srdf, e.g. right_arm."),
+        BT::InputPort<std::string>("named_target", "A group_state of that group, e.g. tucked."),
+    });
+}
+
+bool SetArmPosture::fillGoal(Goal& goal)
+{
+    const auto group        = getInput<std::string>("group");
+    const auto named_target = getInput<std::string>("named_target");
+    if (!group || !named_target)
+    {
+        RCLCPP_ERROR(node_->get_logger(), "[%s] needs both group and named_target", name().c_str());
+        return false;
+    }
+    goal.group        = *group;
+    goal.named_target = *named_target;
+    return true;
+}
+
+BT::NodeStatus SetArmPosture::judgeResult(const WrappedResult& result)
+{
+    return judgeSkillResult(node_->get_logger(), name(), result);
+}
+
+namespace
+{
+// The builder form, not registerNodeType<T>(): every leaf needs the ROS node, and the plain
+// form can only construct from (name, config).
+template <typename LeafT>
+void registerLeaf(BT::BehaviorTreeFactory& factory, const std::string& id, const RosContext& context)
+{
+    factory.registerBuilder<LeafT>(
+        id,
+        [context](const std::string& name, const BT::NodeConfig& config) {
+            return std::make_unique<LeafT>(name, config, context);
+        });
+}
+}  // namespace
+
+void registerSkillNodes(BT::BehaviorTreeFactory& factory, const RosContext& context)
+{
+    registerLeaf<NavigateToPose>(factory, "NavigateToPose", context);
+    registerLeaf<Pick>(factory, "Pick", context);
+    registerLeaf<Place>(factory, "Place", context);
+    registerLeaf<SetArmPosture>(factory, "SetArmPosture", context);
+}
+
+}  // namespace g1_orchestration
