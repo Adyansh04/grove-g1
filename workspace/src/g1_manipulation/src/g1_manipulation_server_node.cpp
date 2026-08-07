@@ -232,7 +232,12 @@ void G1ManipulationServer::initialize()
         throw std::runtime_error("grasp_rpy needs exactly 3 entries");
     }
 
-    for (const std::string& name : { "left_arm", "right_arm", "left_hand", "right_hand" })
+    // both_arms included: the mission tree uses it to tuck both arms in one motion before
+    // walking, and a group this node does not build is a goal it rejects outright. It is only
+    // ever driven to named postures here -- pose goals for it would need the subgroup IK map,
+    // which is why g1.srdf deliberately gives it no kinematics entry.
+    for (const std::string& name :
+         { "left_arm", "right_arm", "both_arms", "left_hand", "right_hand" })
     {
         auto group = std::make_shared<MoveGroup>(shared_from_this(), name);
         group->setMaxVelocityScalingFactor(velocity_scaling_);

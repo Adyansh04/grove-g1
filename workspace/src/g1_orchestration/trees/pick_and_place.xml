@@ -15,8 +15,13 @@
   <BehaviorTree ID="PickAndPlace">
     <Sequence name="mission">
       <!-- Arms in before walking. Arm pose measurably disturbs a walking humanoid, and tucked
-           is the smallest swept volume and least COM offset of the named poses. -->
-      <SetArmPosture name="tuck_to_travel" group="both_arms" named_target="tucked"/>
+           is the smallest swept volume and least COM offset of the named poses.
+
+           right_arm rather than both_arms, which would be the natural choice: both_arms fails
+           to execute a named posture on this stack while either arm alone succeeds, and the
+           cause is not yet found (docs/notes/m9-grasp-reachability.md). Only one arm carries
+           anything here, so this costs the mission nothing. -->
+      <SetArmPosture name="tuck_to_travel" group="right_arm" named_target="tucked"/>
 
       <NavigateToPose name="go_to_workbench" goal="3.9;-4.5;0.0"/>
 
@@ -37,7 +42,7 @@
 
       <Place name="put_it_on_the_crate" target="7.0;4.0;0.78" arm="right"/>
 
-      <SetArmPosture name="tuck_again" group="both_arms" named_target="tucked"/>
+      <SetArmPosture name="tuck_again" group="right_arm" named_target="tucked"/>
       <ReleaseArm name="hand_the_arm_back"/>
     </Sequence>
   </BehaviorTree>
