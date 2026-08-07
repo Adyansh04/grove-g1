@@ -244,8 +244,15 @@ RUN apt-get update && apt-get install -y \
 #
 # vision-msgs carries Detection3DArray, the object-pose interface g1_manipulation publishes so
 # real perception can later stand behind it unchanged.
+#
+# twist-mux arbitrates /cmd_vel. The base-approach skill drives the robot the last half metre to
+# a workbench, which means Nav2 is no longer the only thing with an opinion about velocity.
+# Sequencing in the tree already keeps the two from overlapping, but CLAUDE.md section 7 asks for
+# ownership that is explicit rather than merely well-timed, and Nav2 does publish a terminal zero
+# on goal completion. The mux makes it a declared priority instead of a timing coincidence.
 RUN apt-get update && apt-get install -y \
         ros-humble-behaviortree-cpp \
+        ros-humble-twist-mux \
         ros-humble-vision-msgs \
     && rm -rf /var/lib/apt/lists/*
 
