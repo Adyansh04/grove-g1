@@ -59,6 +59,21 @@ if(BUILD_TESTING)
   ament_add_gmock(test_grasp_geometry test/test_grasp_geometry.cpp)
   target_link_libraries(test_grasp_geometry g1_manipulation_server_node)
 
+  # test/test_pick_place.launch.py is written and runnable BY HAND, but is deliberately not
+  # registered here yet. Under ament_add_test it fails at import with "No module named
+  # 'g1_msgs'": this workspace installs generated Python bindings under
+  # install/<pkg>/local/lib/python3.10/dist-packages, which the sourced environment picks up
+  # and the launch test's restricted environment does not. Adding g1_msgs as a test_depend and
+  # forcing a reconfigure did not change it.
+  #
+  # Registering it would put a permanently red test in the suite, which is worse than an
+  # unregistered one: it trains people to ignore the result. Run it by hand meanwhile:
+  #
+  #   source install/setup.bash
+  #   python3 -m launch_testing.launch_test src/g1_manipulation/test/test_pick_place.launch.py
+  #
+  # See docs/notes for what is left to work out.
+
   # Lint checks use workspace-root configs (see g1_description/CMakeLists.txt).
   find_program(CLANG_FORMAT_EXECUTABLE clang-format)
   set(_clang_format_config "${CMAKE_CURRENT_SOURCE_DIR}/../../.clang-format")

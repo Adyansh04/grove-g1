@@ -37,6 +37,11 @@
   <test_depend>ament_cmake_lint_cmake</test_depend>
   <test_depend>ament_cmake_xmllint</test_depend>
   <test_depend>ament_cmake_gmock</test_depend>
+  <!-- g1_msgs and vision_msgs Python bindings for test_pick_place.launch.py. A plain <depend>
+       does not put them on a launch test's PYTHONPATH; the test environment is built from test
+       dependencies. Same reason g1_bringup names g1_msgs twice. -->
+  <test_depend>g1_msgs</test_depend>
+  <test_depend>vision_msgs</test_depend>
   <test_depend>launch_testing</test_depend>
   <test_depend>launch_testing_ament_cmake</test_depend>
   <test_depend>launch_testing_ros</test_depend>
