@@ -44,6 +44,7 @@ bool resolveArm(const std::string& arm, ArmContext& out)
     out.arm_group  = arm + "_arm";
     out.hand_group = arm + "_hand";
     out.palm_link  = arm + "_hand_palm_link";
+    out.is_left    = arm == "left";
     return true;
 }
 
@@ -59,13 +60,16 @@ G1ManipulationServer::G1ManipulationServer(const rclcpp::NodeOptions& options)
     velocity_scaling_ = declare_parameter<double>("velocity_scaling", 0.3);
     planning_time_s_  = declare_parameter<double>("planning_time_s", 5.0);
 
-    // The grasp geometry, as parameters rather than constants because it is the one thing here
-    // that has to be tuned against the running model: the palm frame's origin is not the point
-    // the fingers close around, and the offset between them is a property of the Dex3's
-    // geometry that no file in this stack states.
+    // The grasp geometry, for the RIGHT hand; the left mirrors in palmPoseFor.
+    //
+    // Computed from the URDF's finger chain at the SRDF's `closed` posture rather than
+    // guessed: the thumb tip lands at palm (-0.030, +0.020, +0.017) and the middle and index
+    // tips at (+0.050, +0.068, -/+0.029), so what the hand closes around sits at
+    // (+0.010, +0.044, +0.009). The fingers curl toward the palm's +y, which is why it is the
+    // ROLL and not the pitch that turns the grasp axis downward.
     grasp_offset_xyz_ =
-        declare_parameter<std::vector<double>>("grasp_offset_xyz", { 0.09, 0.0, -0.02 });
-    grasp_rpy_ = declare_parameter<std::vector<double>>("grasp_rpy", { 0.0, M_PI_2, 0.0 });
+        declare_parameter<std::vector<double>>("grasp_offset_xyz", { 0.010, 0.044, 0.009 });
+    grasp_rpy_ = declare_parameter<std::vector<double>>("grasp_rpy", { -M_PI_2, 0.0, 0.0 });
 
     objects_sub_ = create_subscription<vision_msgs::msg::Detection3DArray>(
         "/objects",
@@ -240,18 +244,22 @@ void G1ManipulationServer::publishCollisionObject(
     planning_scene_.applyCollisionObjects({ object });
 }
 
-geometry_msgs::msg::Pose
-G1ManipulationServer::palmPoseFor(const geometry_msgs::msg::Pose& object_pose) const
+geometry_msgs::msg::Pose G1ManipulationServer::palmPoseFor(
+    const geometry_msgs::msg::Pose& object_pose, const ArmContext& arm) const
 {
+    // The hands are mirror images, so the same object wants a different palm pose from each:
+    // the offset's y and z flip, and so does the roll that turns the grasp axis downward.
+    const double mirror = arm.is_left ? -1.0 : 1.0;
+
     tf2::Quaternion palm_rotation;
-    palm_rotation.setRPY(grasp_rpy_[0], grasp_rpy_[1], grasp_rpy_[2]);
+    palm_rotation.setRPY(mirror * grasp_rpy_[0], grasp_rpy_[1], grasp_rpy_[2]);
 
     // The offset is expressed in the palm frame, so it has to be rotated into the planning
     // frame before it can be subtracted from a position in it.
     const tf2::Vector3 offset_in_palm(
         grasp_offset_xyz_[0],
-        grasp_offset_xyz_[1],
-        grasp_offset_xyz_[2]);
+        mirror * grasp_offset_xyz_[1],
+        mirror * grasp_offset_xyz_[2]);
     const tf2::Vector3 offset = tf2::Matrix3x3(palm_rotation) * offset_in_palm;
 
     geometry_msgs::msg::Pose palm;
@@ -358,7 +366,7 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     }
     publishCollisionObject(*detection, *object_pose);
 
-    const geometry_msgs::msg::Pose grasp_palm    = palmPoseFor(*object_pose);
+    const geometry_msgs::msg::Pose grasp_palm    = palmPoseFor(*object_pose, arm);
     geometry_msgs::msg::Pose       pregrasp_palm = grasp_palm;
     pregrasp_palm.position.z += approach_height_m_;
 
@@ -366,7 +374,17 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     goal_handle->publish_feedback(feedback);
     // Opened before the approach, not after: closing on the way in would knock the object off
     // the table before the hand is around it.
-    if (!moveToNamed(*hand_group, "open") || !moveTo(*arm_group, pregrasp_palm, "pregrasp"))
+    //
+    // Reported separately from the arm move rather than sharing one message. They fail for
+    // completely different reasons -- a hand that will not open is usually an unacquired or
+    // unpowered Dex3, an arm that will not reach is geometry -- and collapsing both into
+    // "could not reach the pregrasp pose" sends anyone debugging it to the wrong place.
+    if (!moveToNamed(*hand_group, "open"))
+    {
+        fail(Pick::Feedback::PHASE_PREGRASP, "the hand would not open");
+        return;
+    }
+    if (!moveTo(*arm_group, pregrasp_palm, "pregrasp"))
     {
         fail(Pick::Feedback::PHASE_PREGRASP, "could not reach the pregrasp pose");
         return;
@@ -440,7 +458,7 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
         return;
     }
 
-    const geometry_msgs::msg::Pose place_palm = palmPoseFor(*target);
+    const geometry_msgs::msg::Pose place_palm = palmPoseFor(*target, arm);
     geometry_msgs::msg::Pose       preplace   = place_palm;
     preplace.position.z += approach_height_m_;
 

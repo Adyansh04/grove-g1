@@ -40,29 +40,31 @@
     <light pos="0 0 1.5" dir="0 0 -1" directional="true"/>
     <geom name="floor" group="2" size="0 0 0.05" type="plane" material="groundplane"/>
 
-    <!-- Table height and object position are MEASURED, not chosen. /compute_ik over the right
-         arm says the furthest-forward top-down grasp that is both reachable and collision-free
-         puts the palm at pelvis (0.30, -0.20, +0.30); with the configured grasp offset that
-         wants the object at pelvis (0.28, -0.20, +0.21), which is odom (0.24, -0.20, 1.00)
-         with the pelvis at 0.792.
+    <!-- Table top at 0.82, object centre at 0.85. Both come from a measured IK band rather
+         than from taste: with the grasp axis pointing down, the right palm solves 3 attempts
+         out of 3 over pelvis z +0.03 to +0.30 at x 0.28, and the object sits 0.044 below the
+         palm. That puts grasp, pregrasp and lift all inside one solid band.
 
-         Reaching further out or lower simply has no IK: at pelvis x 0.35 and below chest
-         height, /compute_ik returns -31. That is a property of where the G1's shoulders are,
-         not of this scene, and it is why the top is at 0.97 rather than the facility
-         workbench's 0.75. See docs/notes for the measured envelope.
+         Two earlier heights were wrong in opposite directions and are worth remembering: 0.97
+         (measured against a grasp offset that had the hand's closing axis wrong, so the sweep
+         meant nothing) and 0.485, which is below the band entirely, since the arm cannot reach
+         that far down in front of itself. 0.82 is near the facility workbench's own 0.75,
+         which is the point: a grasp tuned here should carry over there.
 
-         A tabletop on legs rather than a column: the object has to sit close in, and a column
-         under it would pass through the robot's own legs. -->
-    <geom name="table_top" group="2" type="box" size="0.16 0.15 0.015" pos="0.34 -0.20 0.955"
+         A tabletop on legs rather than a column, because the object sits close enough in that
+         a column under it would pass through the robot's own legs. -->
+    <geom name="table_top" group="2" type="box" size="0.16 0.15 0.015" pos="0.30 -0.18 0.799"
       material="pedestal_mat" contype="1" conaffinity="1"/>
-    <geom name="table_leg_near" group="2" type="box" size="0.02 0.02 0.47" pos="0.46 -0.32 0.47"
-      material="pedestal_mat" contype="1" conaffinity="1"/>
-    <geom name="table_leg_far" group="2" type="box" size="0.02 0.02 0.47" pos="0.46 -0.08 0.47"
-      material="pedestal_mat" contype="1" conaffinity="1"/>
+    <geom name="table_leg_near" group="2" type="box" size="0.02 0.02 0.392"
+      pos="0.42 -0.30 0.392" material="pedestal_mat" contype="1" conaffinity="1"/>
+    <geom name="table_leg_far" group="2" type="box" size="0.02 0.02 0.392"
+      pos="0.42 -0.06 0.392" material="pedestal_mat" contype="1" conaffinity="1"/>
 
     <!-- Same size, mass and friction as the facility scene's, so the two are the same problem.
-         Sits on the table top: half-height 0.03 above 0.97. -->
-    <body name="red_cube" pos="0.24 -0.20 1.003">
+         Spawned exactly at rest height (half-height 0.03 above the 0.814 top) rather than a
+         few mm above it: dropping it made it bounce and slide 4 cm, which moved the grasp out
+         of the reachable band and cost a debugging round. -->
+    <body name="red_cube" pos="0.21 -0.18 0.844">
       <freejoint name="red_cube_joint"/>
       <geom group="2" type="box" size="0.03 0.03 0.03" material="mat_red_obj" mass="0.15"
         contype="1" conaffinity="1" friction="1 0.005 0.0001"/>

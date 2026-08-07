@@ -43,6 +43,8 @@ struct ArmContext
     std::string arm_group;   ///< left_arm / right_arm
     std::string hand_group;  ///< left_hand / right_hand
     std::string palm_link;   ///< the arm group's tip, and what an object attaches to
+    /// The two hands mirror, so the grasp offset and the palm roll flip sign with this.
+    bool is_left{ false };
 };
 
 /// False if `arm` is neither "left" nor "right", leaving `out` untouched.
@@ -85,8 +87,10 @@ private:
     std::optional<geometry_msgs::msg::Pose>
     toPlanningFrame(const geometry_msgs::msg::Pose& pose, const std::string& frame_id);
 
-    /// Where the palm must be for the held object to end up at `object_pose`.
-    geometry_msgs::msg::Pose palmPoseFor(const geometry_msgs::msg::Pose& object_pose) const;
+    /// Where the palm must be for the held object to end up at `object_pose`. Handed: the
+    /// two hands are mirror images, so the same object pose wants a different palm pose.
+    geometry_msgs::msg::Pose
+    palmPoseFor(const geometry_msgs::msg::Pose& object_pose, const ArmContext& arm) const;
 
     /// Plans and executes to a palm pose. False on either failure, with the reason logged.
     bool moveTo(MoveGroup& group, const geometry_msgs::msg::Pose& pose, const std::string& what);

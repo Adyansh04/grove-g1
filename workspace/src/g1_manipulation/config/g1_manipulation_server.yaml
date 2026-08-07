@@ -23,12 +23,19 @@ g1_manipulation_server:
     velocity_scaling: 0.3
     planning_time_s: 5.0
 
-    # The grasp geometry, and the only thing here that has to be tuned against the running
-    # model. The palm frame's origin is not the point the fingers close around: the Dex3's
-    # fingers extend along the palm's +x, so the object sits forward of and slightly below it.
+    # The grasp geometry, for the RIGHT hand. The left mirrors automatically: its offset y and
+    # z flip sign, and so does the roll, because the two hands are mirror images.
     #
-    # grasp_offset_xyz is where the object sits in the PALM frame at the moment of grasp.
-    # grasp_rpy is how the palm is held in the planning frame; pitch pi/2 turns the palm's +x
-    # (fingers-forward) to point down, which is the top-down grasp a table calls for.
-    grasp_offset_xyz: [0.09, 0.0, -0.02]
-    grasp_rpy: [0.0, 1.5707963, 0.0]
+    # COMPUTED from the URDF's finger chain at the SRDF's `closed` posture, not guessed. At
+    # that posture the thumb tip is at palm (-0.030, +0.020, +0.017) and the middle and index
+    # tips at (+0.050, +0.068, -/+0.029), so what the hand closes around sits at
+    # (+0.010, +0.044, +0.009) -- barely forward of the palm origin, and mostly to its +y.
+    #
+    # That is the correction that mattered: the fingers curl toward the palm's +y, so it is the
+    # ROLL that turns the grasp axis downward, not the pitch. The first version had the offset
+    # 9 cm out along +x and pitched the palm instead, which asked the wrist to contort into a
+    # pose that had no IK anywhere useful.
+    #
+    # docs/notes/m9-checks/ recomputes both numbers from the URDF.
+    grasp_offset_xyz: [0.010, 0.044, 0.009]
+    grasp_rpy: [-1.5707963, 0.0, 0.0]

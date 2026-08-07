@@ -16,6 +16,21 @@ if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
   ament_lint_auto_find_test_dependencies()
 
+  # The scene overlays, checked as XML. ament_cmake_xmllint only covers package.xml, and
+  # MuJoCo's own parser is lenient enough to accept files xmllint rejects -- a "--" inside a
+  # comment is illegal XML but loads fine in the simulator, so it survives until something
+  # else reads the file. Cheap to check, and it has caught that exact mistake twice.
+  find_program(XMLLINT_EXECUTABLE xmllint)
+  if(XMLLINT_EXECUTABLE)
+    file(GLOB _scene_files "${CMAKE_CURRENT_SOURCE_DIR}/mjcf/*.xml")
+    add_test(
+      NAME xmllint_scenes_g1_bringup
+      COMMAND ${XMLLINT_EXECUTABLE} --noout ${_scene_files}
+    )
+  else()
+    message(WARNING "xmllint not found; skipping xmllint_scenes_g1_bringup")
+  endif()
+
   # No clang-format check: this package builds no C++. motion_service_sim's sources, and
   # their formatting check, live in g1_motion_service_sim.
   find_program(RUFF_EXECUTABLE ruff)

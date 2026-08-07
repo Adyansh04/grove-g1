@@ -88,8 +88,8 @@ TEST(PalmPoseFor, PutsTheObjectExactlyWhereItWasAsked)
     // The invariant that matters: rotate the configured offset by the palm's orientation, add
     // it to the returned palm position, and the object lands back on its target. If this is
     // wrong the arm reaches somewhere plausible and misses by the offset every time.
-    const std::vector<double> offset_xyz{ 0.09, 0.0, -0.02 };
-    const std::vector<double> rpy{ 0.0, M_PI_2, 0.0 };
+    const std::vector<double> offset_xyz{ 0.010, 0.044, 0.009 };
+    const std::vector<double> rpy{ -M_PI_2, 0.0, 0.0 };
     const auto                target = objectAt(0.35, -0.20, 0.78);
 
     const auto palm = palmPoseFor(target, offset_xyz, rpy);
@@ -104,27 +104,31 @@ TEST(PalmPoseFor, PutsTheObjectExactlyWhereItWasAsked)
     EXPECT_NEAR(palm.position.z + offset.z(), target.position.z, 1e-9);
 }
 
-TEST(PalmPoseFor, TheDefaultGraspPointsTheFingersDown)
+TEST(PalmPoseFor, TheDefaultGraspPointsTheClosingAxisDown)
 {
     // The shipped grasp_rpy has to produce a top-down grasp, since every target surface here
-    // is a table. The Dex3's fingers extend along the palm's +x, so that axis must come out
-    // pointing at the floor.
-    const std::vector<double> rpy{ 0.0, M_PI_2, 0.0 };
+    // is a table. The Dex3's fingers curl toward the palm's +y, not along +x, so it is THAT
+    // axis that must come out pointing at the floor. Getting this wrong is what made the
+    // first version unplannable, so it is pinned rather than left to inspection.
+    const std::vector<double> rpy{ -M_PI_2, 0.0, 0.0 };
     const auto                palm = palmPoseFor(objectAt(0.4, 0.0, 0.8), { 0.0, 0.0, 0.0 }, rpy);
 
     tf2::Quaternion rotation;
     tf2::fromMsg(palm.orientation, rotation);
-    const tf2::Vector3 fingers = tf2::Matrix3x3(rotation) * tf2::Vector3(1.0, 0.0, 0.0);
+    const tf2::Matrix3x3 basis(rotation);
 
-    EXPECT_NEAR(fingers.z(), -1.0, 1e-9) << "the palm's +x must point down";
+    EXPECT_NEAR((basis * tf2::Vector3(0.0, 1.0, 0.0)).z(), -1.0, 1e-9)
+        << "the palm's +y, which is where the fingers close, must point down";
+    EXPECT_NEAR((basis * tf2::Vector3(1.0, 0.0, 0.0)).x(), 1.0, 1e-9)
+        << "and the palm's +x stays forward, so the arm reaches out rather than twisting";
 }
 
 TEST(PalmPoseFor, HoldsTheObjectAboveTheSurfaceForTheConfiguredOffset)
 {
-    // With the fingers pointing down, an offset forward along the palm's +x puts the object
-    // BELOW the palm. Getting this sign backwards would have the arm reach under the table.
-    const std::vector<double> offset_xyz{ 0.09, 0.0, -0.02 };
-    const std::vector<double> rpy{ 0.0, M_PI_2, 0.0 };
+    // With the closing axis pointing down, the offset puts the object BELOW the palm. Getting
+    // this sign backwards would have the arm reach under the table.
+    const std::vector<double> offset_xyz{ 0.010, 0.044, 0.009 };
+    const std::vector<double> rpy{ -M_PI_2, 0.0, 0.0 };
     const auto                target = objectAt(0.35, 0.0, 0.78);
 
     const auto palm = palmPoseFor(target, offset_xyz, rpy);
