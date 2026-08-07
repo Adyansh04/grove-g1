@@ -1,0 +1,19 @@
+# Put down whatever the given arm is holding.
+#
+# The pose is where the OBJECT should end up, not where the palm should go: the caller knows the
+# target surface, and only the server knows how the object is currently held. It is transformed
+# into the planning frame on arrival, so a goal in odom survives the robot having walked.
+
+geometry_msgs/PoseStamped pose
+string ARM_LEFT=left
+string ARM_RIGHT=right
+string arm
+---
+bool success
+string message
+---
+string PHASE_PREPLACE=preplace
+string PHASE_LOWER=lower
+string PHASE_RELEASE=release
+string PHASE_RETREAT=retreat
+string phase
