@@ -78,6 +78,87 @@ G1ManipulationServer::G1ManipulationServer(const rclcpp::NodeOptions& options)
 
     tf_buffer_   = std::make_unique<tf2_ros::Buffer>(get_clock());
     tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
+
+    get_scene_   = create_client<moveit_msgs::srv::GetPlanningScene>("/get_planning_scene");
+    apply_scene_ = create_client<moveit_msgs::srv::ApplyPlanningScene>("/apply_planning_scene");
+}
+
+bool G1ManipulationServer::allowOctomapContact(const ArmContext& arm, bool allowed)
+{
+    // The links that unavoidably enter occupied space during a grasp: the hand itself, and
+    // the wrist that carries it. Taken from the robot model rather than listed, so a renamed
+    // link is a build-time problem rather than a silently ineffective exemption.
+    MoveGroup* hand = groupFor(arm.hand_group);
+    if (hand == nullptr)
+    {
+        return false;
+    }
+    std::vector<std::string> links =
+        hand->getRobotModel()->getJointModelGroup(arm.hand_group)->getLinkModelNames();
+    const std::string side = arm.is_left ? "left" : "right";
+    links.push_back(arm.palm_link);
+    links.push_back(side + "_wrist_pitch_link");
+    links.push_back(side + "_wrist_yaw_link");
+
+    // The current matrix has to be read first: ApplyPlanningScene replaces the whole ACM
+    // rather than merging into it, so sending only our entries would drop every
+    // self-collision rule the SRDF set up.
+    auto request = std::make_shared<moveit_msgs::srv::GetPlanningScene::Request>();
+    request->components.components =
+        moveit_msgs::msg::PlanningSceneComponents::ALLOWED_COLLISION_MATRIX;
+    auto future = get_scene_->async_send_request(request);
+    // Waited on WITHOUT spinning: the executor already owns this node, and spinning it from
+    // here would re-enter the executor from inside its own callback.
+    if (future.wait_for(std::chrono::seconds(5)) != std::future_status::ready)
+    {
+        RCLCPP_ERROR(get_logger(), "/get_planning_scene did not answer");
+        return false;
+    }
+
+    moveit_msgs::msg::AllowedCollisionMatrix acm = future.get()->scene.allowed_collision_matrix;
+    if (std::find(acm.entry_names.begin(), acm.entry_names.end(), "<octomap>") ==
+        acm.entry_names.end())
+    {
+        acm.entry_names.push_back("<octomap>");
+        for (moveit_msgs::msg::AllowedCollisionEntry& row : acm.entry_values)
+        {
+            row.enabled.push_back(false);
+        }
+        moveit_msgs::msg::AllowedCollisionEntry row;
+        row.enabled.assign(acm.entry_names.size(), false);
+        acm.entry_values.push_back(row);
+    }
+
+    const auto octomap_index = static_cast<std::size_t>(
+        std::find(acm.entry_names.begin(), acm.entry_names.end(), "<octomap>") -
+        acm.entry_names.begin());
+    for (const std::string& link : links)
+    {
+        const auto it = std::find(acm.entry_names.begin(), acm.entry_names.end(), link);
+        if (it == acm.entry_names.end())
+        {
+            continue;
+        }
+        const auto index = static_cast<std::size_t>(it - acm.entry_names.begin());
+        acm.entry_values[index].enabled[octomap_index] = allowed;
+        acm.entry_values[octomap_index].enabled[index] = allowed;
+    }
+
+    auto apply           = std::make_shared<moveit_msgs::srv::ApplyPlanningScene::Request>();
+    apply->scene.is_diff = true;
+    apply->scene.allowed_collision_matrix = acm;
+    auto applied                          = apply_scene_->async_send_request(apply);
+    if (applied.wait_for(std::chrono::seconds(5)) != std::future_status::ready)
+    {
+        RCLCPP_ERROR(get_logger(), "/apply_planning_scene did not answer");
+        return false;
+    }
+    RCLCPP_INFO(
+        get_logger(),
+        "%s octomap contact for the %s hand and wrist",
+        allowed ? "allowing" : "restoring",
+        side.c_str());
+    return applied.get()->success;
 }
 
 std::optional<geometry_msgs::msg::Pose> G1ManipulationServer::toPlanningFrame(
@@ -420,6 +501,7 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
         return;
     }
 
+    allowOctomapContact(arm, false);
     result->success = true;
     result->message = "picked " + goal->object_id + " with the " + goal->arm + " hand";
     goal_handle->succeed(result);
@@ -443,10 +525,14 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
     MoveGroup* hand_group = groupFor(arm.hand_group);
 
     const auto fail = [&](const std::string& phase, const std::string& why) {
+        allowOctomapContact(arm, false);
         result->success = false;
         result->message = phase + ": " + why;
         goal_handle->abort(result);
     };
+
+    // Lowering onto a surface enters occupied space just as reaching into one does.
+    allowOctomapContact(arm, true);
 
     // An empty frame means the goal is already in the planning frame. Anything else is
     // transformed rather than assumed: a target in odom treated as pelvis lands metres away,
@@ -506,6 +592,7 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
         return;
     }
 
+    allowOctomapContact(arm, false);
     result->success = true;
     result->message = "placed with the " + goal->arm + " hand";
     goal_handle->succeed(result);

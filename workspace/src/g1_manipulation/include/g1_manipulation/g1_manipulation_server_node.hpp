@@ -27,6 +27,8 @@
 #include <geometry_msgs/msg/pose.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <memory>
+#include <moveit_msgs/srv/apply_planning_scene.hpp>
+#include <moveit_msgs/srv/get_planning_scene.hpp>
 #include <mutex>
 #include <optional>
 #include <rclcpp/rclcpp.hpp>
@@ -102,6 +104,20 @@ private:
         const vision_msgs::msg::Detection3D& detection,
         const geometry_msgs::msg::Pose&      in_planning_frame);
 
+    /**
+     * @brief Lets the grasping hand touch the octomap, or stops letting it.
+     *
+     * Reaching into a surface to pick something off it necessarily puts the hand where the
+     * sensor has already seen occupied space: the octomap contains both the support surface
+     * and the object itself, and the fingers have to enclose the latter. Without this every
+     * grasp pose is "reachable but collides", which is exactly what it measured as.
+     *
+     * Scoped as narrowly as the problem allows -- the hand and the wrist that carries it, one
+     * arm, for the duration of one skill -- and always restored, including on failure, so the
+     * arm is never planning against a permanently blinded octomap.
+     */
+    bool allowOctomapContact(const ArmContext& arm, bool allowed);
+
     MoveGroup* groupFor(const std::string& name);
 
     std::map<std::string, std::shared_ptr<MoveGroup>>  groups_;
@@ -113,6 +129,9 @@ private:
 
     std::unique_ptr<tf2_ros::Buffer>            tf_buffer_;
     std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
+
+    rclcpp::Client<moveit_msgs::srv::GetPlanningScene>::SharedPtr   get_scene_;
+    rclcpp::Client<moveit_msgs::srv::ApplyPlanningScene>::SharedPtr apply_scene_;
 
     rclcpp_action::Server<Pick>::SharedPtr          pick_server_;
     rclcpp_action::Server<Place>::SharedPtr         place_server_;
