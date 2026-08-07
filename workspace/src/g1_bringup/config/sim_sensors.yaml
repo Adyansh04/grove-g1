@@ -35,6 +35,10 @@ object_bodies:
   - green_cylinder
   - blue_sphere
   - yellow_box
+  # Not manipulable, and tracked anyway: g1_base_approach ranges to something on /objects to
+  # decide where to stand, and the place leg needs a landmark on the drop-off bench the way the
+  # pick leg has the cube itself. Static, so its pose never changes -- which is the point.
+  - drop_pad
 
 # SIMULATION ONLY, and a stand-in rather than a model of anything. The Dex3 fingers carry no
 # contact geometry (patch 003, deliberate), so a closed hand passes through an object and

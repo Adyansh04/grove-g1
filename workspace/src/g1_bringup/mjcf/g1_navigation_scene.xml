@@ -95,38 +95,50 @@
     <!-- ZONE 1: Pick-and-Place Manipulation Testing Lab (East-South Room)   -->
     <!-- ==================================================================== -->
     <body name="manipulation_workbench" pos="4.5 -4.5 0">
-      <!-- Desk Top & Legs -->
-      <geom group="2" name="desk_top" type="box" size="0.9 0.55 0.03" pos="0 0 0.72" material="wood_desk" contype="1" conaffinity="1"/>
-      <geom group="2" name="desk_leg_1" type="box" size="0.04 0.04 0.35" pos="0.8 0.45 0.35" material="metal_gray" contype="1" conaffinity="1"/>
-      <geom group="2" name="desk_leg_2" type="box" size="0.04 0.04 0.35" pos="-0.8 0.45 0.35" material="metal_gray" contype="1" conaffinity="1"/>
-      <geom group="2" name="desk_leg_3" type="box" size="0.04 0.04 0.35" pos="0.8 -0.45 0.35" material="metal_gray" contype="1" conaffinity="1"/>
-      <geom group="2" name="desk_leg_4" type="box" size="0.04 0.04 0.35" pos="-0.8 -0.45 0.35" material="metal_gray" contype="1" conaffinity="1"/>
+      <!-- Top at 0.80, matching g1_manipulation_scene's pedestal exactly rather than the 0.75
+           it used to be. Not cosmetic: the arm's reachable band at a useful forward reach
+           starts around pelvis z +0.03, which with the pelvis at 0.7925 puts the lowest
+           graspable object at about 0.82. At the old height the cube sat at 0.78, BELOW the
+           whole measured envelope, so the approach could have been perfect and the grasp would
+           still have had no IK. Matching the scene the pick is proven in means the demo depends
+           on a measured grasp instead of an assumed one. -->
+      <geom group="2" name="desk_top" type="box" size="0.9 0.55 0.03" pos="0 0 0.77" material="wood_desk" contype="1" conaffinity="1"/>
+      <geom group="2" name="desk_leg_1" type="box" size="0.04 0.04 0.385" pos="0.8 0.45 0.385" material="metal_gray" contype="1" conaffinity="1"/>
+      <geom group="2" name="desk_leg_2" type="box" size="0.04 0.04 0.385" pos="-0.8 0.45 0.385" material="metal_gray" contype="1" conaffinity="1"/>
+      <geom group="2" name="desk_leg_3" type="box" size="0.04 0.04 0.385" pos="0.8 -0.45 0.385" material="metal_gray" contype="1" conaffinity="1"/>
+      <geom group="2" name="desk_leg_4" type="box" size="0.04 0.04 0.385" pos="-0.8 -0.45 0.385" material="metal_gray" contype="1" conaffinity="1"/>
 
     </body>
 
     <!-- Pick and Place Target Objects on Workbench (Worldbody Top Level) -->
-    <body name="red_cube" pos="4.1 -4.65 0.78">
+
+    <!-- The mission's target, on the desk's SOUTH edge (y -5.05) rather than its middle. The
+         robot approaches from the south and has to end up with the cube 0.28 m in front of the
+         pelvis and 0.20 m to its right; an object in the middle of a 1.1 m deep desk cannot be
+         reached from any legal standing position, whatever the approach does. 0.10 m in from
+         the edge leaves the 0.06 m cube fully supported. -->
+    <body name="red_cube" pos="4.5 -4.95 0.83">
       <freejoint name="red_cube_joint"/>
       <geom group="2" type="box" size="0.03 0.03 0.03" material="mat_red_obj" mass="0.15" contype="1" conaffinity="1" friction="1 0.005 0.0001"/>
     </body>
 
-    <body name="green_cylinder" pos="4.35 -4.35 0.79">
+    <body name="green_cylinder" pos="4.35 -4.35 0.84">
       <freejoint name="green_cyl_joint"/>
       <geom group="2" type="cylinder" size="0.03 0.04" material="mat_green_obj" mass="0.15" contype="1" conaffinity="1" friction="1 0.005 0.0001"/>
     </body>
 
-    <body name="blue_sphere" pos="4.6 -4.65 0.787">
+    <body name="blue_sphere" pos="4.6 -4.65 0.837">
       <freejoint name="blue_sphere_joint"/>
       <geom group="2" type="sphere" size="0.037" material="mat_blue_obj" mass="0.1" contype="1" conaffinity="1" friction="0.8 0.005 0.0001"/>
     </body>
 
-    <body name="yellow_box" pos="4.1 -4.35 0.775">
+    <body name="yellow_box" pos="4.1 -4.35 0.825">
       <freejoint name="yellow_box_joint"/>
       <geom group="2" type="box" size="0.04 0.025 0.025" material="mat_yellow_obj" mass="0.12" contype="1" conaffinity="1"/>
     </body>
 
     <!-- Target Sorting Tray / Bin on Desk -->
-    <body name="sorting_tray" pos="4.95 -4.5 0.75">
+    <body name="sorting_tray" pos="4.95 -4.5 0.80">
       <geom group="2" name="tray_base" type="box" size="0.18 0.18 0.01" material="mat_tray" contype="1" conaffinity="1"/>
       <geom group="2" name="tray_wall_1" type="box" size="0.18 0.01 0.03" pos="0 0.17 0.03" material="mat_tray" contype="1" conaffinity="1"/>
       <geom group="2" name="tray_wall_2" type="box" size="0.18 0.01 0.03" pos="0 -0.17 0.03" material="mat_tray" contype="1" conaffinity="1"/>
@@ -169,6 +181,30 @@
     </body>
 
     <!-- Stacked Cargo Crates -->
+    <!-- Drop-off bench, the place leg's destination. Same 0.80 m top as the workbench, for the
+         same reason: that is the height the grasp and the release are measured at, and a
+         surface at any other height would need its own reachability answer.
+
+         The crate stacks are NOT usable for this. crate_stack_1's top sits at 1.10 m, above the
+         measured envelope, and its footprint is a metre across, so an approach that ranges to a
+         body origin would ask the robot to stand inside it. The mission tree used to name a
+         place target of 0.78 there, which is the SIDE of the upper crate. -->
+    <body name="storage_bench" pos="6.5 6.5 0">
+      <geom group="2" name="bench_top" type="box" size="0.35 0.35 0.03" pos="0 0 0.77" material="wood_desk" contype="1" conaffinity="1"/>
+      <geom group="2" name="bench_leg_1" type="box" size="0.04 0.04 0.385" pos="0.28 0.28 0.385" material="metal_gray" contype="1" conaffinity="1"/>
+      <geom group="2" name="bench_leg_2" type="box" size="0.04 0.04 0.385" pos="-0.28 0.28 0.385" material="metal_gray" contype="1" conaffinity="1"/>
+      <geom group="2" name="bench_leg_3" type="box" size="0.04 0.04 0.385" pos="0.28 -0.28 0.385" material="metal_gray" contype="1" conaffinity="1"/>
+      <geom group="2" name="bench_leg_4" type="box" size="0.04 0.04 0.385" pos="-0.28 -0.28 0.385" material="metal_gray" contype="1" conaffinity="1"/>
+    </body>
+
+    <!-- What the base approach aims at before placing. A place target is a fixed point in the
+         planning frame, so something has to put the robot within reach of it first, and the
+         approach skill ranges to a tracked object rather than to a coordinate. Static and
+         deliberately thin: the cube is released on top of it. -->
+    <body name="drop_pad" pos="6.5 6.25 0.812">
+      <geom group="2" type="box" size="0.08 0.08 0.012" material="mat_tray" contype="1" conaffinity="1"/>
+    </body>
+
     <body name="crate_stack_1" pos="7.0 4.0 0">
       <geom group="2" name="crate_1a" type="box" size="0.5 0.5 0.3" pos="0 0 0.3" material="crate_orange" contype="1" conaffinity="1" mass="20"/>
       <geom group="2" name="crate_1b" type="box" size="0.4 0.4 0.25" pos="0 0 0.85" material="crate_darkblue" contype="1" conaffinity="1" mass="15"/>
