@@ -1,0 +1,9 @@
+<mujoco model="g1_manipulation_pinned_scene">
+  <!-- torso_link and not pelvis, matching g1_navigation_pinned_scene: the waist stays free so
+       the torso pitches as it does when walking, which is what the arm has to reach from. -->
+  <include file="g1_manipulation_scene.staged.xml"/>
+
+  <equality>
+    <weld name="torso_world_pin" body1="torso_link"/>
+  </equality>
+</mujoco>

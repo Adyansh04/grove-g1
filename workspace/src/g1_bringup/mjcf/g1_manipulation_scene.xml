@@ -1,0 +1,87 @@
+<mujoco model="g1_manipulation_scene">
+  <!-- The fast skill scene: one object, on a pedestal, at arm's length in front of the robot.
+
+       Exists so a pick can be exercised without navigating to the facility workbench first,
+       and without waiting on the gait to hold still once it has. The pedestal top is at the
+       workbench's own 0.75 m and the object is the same 6 cm cube, so a grasp tuned here is
+       tuned for there.
+
+       Deliberately measured against by nothing else. g1_perception_scene is what the LiDAR
+       and octomap tests assert geometry from, and adding a pedestal to it would move numbers
+       those tests were written against, which is exactly how the +x wall assertion broke
+       once already.
+
+       Every geom is group 2, for the reason g1_perception_scene explains: the sweep masks to
+       that group, or every ray returns the robot's own shell.
+
+       Staged into the vendored model directory at launch, so relative includes resolve. -->
+  <include file="g1_29dof.xml"/>
+
+  <statistic center="0 0 0.5" extent="2.0"/>
+
+  <visual>
+    <headlight diffuse="0.6 0.6 0.6" ambient="0.3 0.3 0.3" specular="0 0 0"/>
+    <rgba haze="0.15 0.25 0.35 1"/>
+    <global azimuth="-130" elevation="-20" offwidth="1280" offheight="720"/>
+  </visual>
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512"
+      height="3072"/>
+    <texture type="2d" name="groundplane" builtin="checker" mark="edge" rgb1="0.2 0.3 0.4"
+      rgb2="0.1 0.2 0.3" markrgb="0.8 0.8 0.8" width="300" height="300"/>
+    <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5"
+      reflectance="0.2"/>
+    <material name="pedestal_mat" rgba="0.35 0.38 0.42 1"/>
+    <material name="mat_red_obj" rgba="0.9 0.15 0.15 1" specular="0.6" shininess="0.8"/>
+  </asset>
+
+  <worldbody>
+    <light pos="0 0 1.5" dir="0 0 -1" directional="true"/>
+    <geom name="floor" group="2" size="0 0 0.05" type="plane" material="groundplane"/>
+
+    <!-- Table height and object position are MEASURED, not chosen. /compute_ik over the right
+         arm says the furthest-forward top-down grasp that is both reachable and collision-free
+         puts the palm at pelvis (0.30, -0.20, +0.30); with the configured grasp offset that
+         wants the object at pelvis (0.28, -0.20, +0.21), which is odom (0.24, -0.20, 1.00)
+         with the pelvis at 0.792.
+
+         Reaching further out or lower simply has no IK: at pelvis x 0.35 and below chest
+         height, /compute_ik returns -31. That is a property of where the G1's shoulders are,
+         not of this scene, and it is why the top is at 0.97 rather than the facility
+         workbench's 0.75. See docs/notes for the measured envelope.
+
+         A tabletop on legs rather than a column: the object has to sit close in, and a column
+         under it would pass through the robot's own legs. -->
+    <geom name="table_top" group="2" type="box" size="0.16 0.15 0.015" pos="0.34 -0.20 0.955"
+      material="pedestal_mat" contype="1" conaffinity="1"/>
+    <geom name="table_leg_near" group="2" type="box" size="0.02 0.02 0.47" pos="0.46 -0.32 0.47"
+      material="pedestal_mat" contype="1" conaffinity="1"/>
+    <geom name="table_leg_far" group="2" type="box" size="0.02 0.02 0.47" pos="0.46 -0.08 0.47"
+      material="pedestal_mat" contype="1" conaffinity="1"/>
+
+    <!-- Same size, mass and friction as the facility scene's, so the two are the same problem.
+         Sits on the table top: half-height 0.03 above 0.97. -->
+    <body name="red_cube" pos="0.24 -0.20 1.003">
+      <freejoint name="red_cube_joint"/>
+      <geom group="2" type="box" size="0.03 0.03 0.03" material="mat_red_obj" mass="0.15"
+        contype="1" conaffinity="1" friction="1 0.005 0.0001"/>
+    </body>
+
+    <!-- The depth camera element the sensor sampler renders through, exactly as the other
+         scenes carry it: the mount belongs to the vendored robot and cannot host a camera, so
+         the sampler writes this one's pose from torso_link every frame. -->
+    <camera name="d435i" mode="fixed" fovy="58" resolution="848 480" pos="0 0 1"/>
+  </worldbody>
+
+  <equality>
+    <!-- Inactive, and only grove-g1's grasp_weld manager ever turns one on, when the hand it
+         names has measurably closed near the cube. SIMULATION ONLY: the Dex3 fingers carry no
+         contact geometry (patch 003, deliberate), so without these a closed hand passes
+         straight through. -->
+    <weld name="grasp_left_red_cube" body1="left_hand_palm_link" body2="red_cube"
+      active="false"/>
+    <weld name="grasp_right_red_cube" body1="right_hand_palm_link" body2="red_cube"
+      active="false"/>
+  </equality>
+</mujoco>

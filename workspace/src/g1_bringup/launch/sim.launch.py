@@ -133,10 +133,11 @@ def _launch_setup(context, *args, **kwargs):
     # World and pinning compose: pinning is orthogonal to which room the robot is in, and
     # the geometry test wants both at once (a known robot pose in a known room).
     world = LaunchConfiguration("world").perform(context)
-    if world not in ("navigation", "perception"):
+    if world not in ("navigation", "perception", "manipulation"):
         raise RuntimeError(
-            f"world:={world!r} is not a scene. Use 'navigation' (the multi-room facility) "
-            "or 'perception' (the small room the geometry test measures against)."
+            f"world:={world!r} is not a scene. Use 'navigation' (the multi-room facility), "
+            "'perception' (the small room the geometry test measures against) or "
+            "'manipulation' (one object on a pedestal at arm's length, for the skill tests)."
         )
     if sensors:
         suffix       = "_pinned" if pin_pelvis else ""

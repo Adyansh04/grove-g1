@@ -429,7 +429,9 @@ def generate_launch_description():
             "world",
             default_value="navigation",
             description="Which scene to stage. 'navigation' is the facility the committed map "
-            "was built from; localization against any other world will not converge.",
+            "was built from; localization against any other world will not converge. "
+            "'manipulation' is one object on a pedestal at arm's length, for exercising a "
+            "pick without navigating to the workbench first.",
         ),
         DeclareLaunchArgument(
             "headless",
