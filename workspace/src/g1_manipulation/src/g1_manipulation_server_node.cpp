@@ -1,0 +1,478 @@
+#include "g1_manipulation/g1_manipulation_server_node.hpp"
+
+#include <moveit/robot_state/attached_body.h>
+#include <tf2/LinearMath/Matrix3x3.h>
+#include <tf2/LinearMath/Quaternion.h>
+#include <tf2/LinearMath/Vector3.h>
+
+#include <algorithm>
+#include <chrono>
+#include <cmath>
+#include <memory>
+#include <moveit_msgs/msg/collision_object.hpp>
+#include <shape_msgs/msg/solid_primitive.hpp>
+#include <string>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
+#include <thread>
+#include <utility>
+#include <vector>
+
+namespace g1_manipulation
+{
+
+namespace
+{
+
+// A collision box never shrinks below this in any axis. MoveIt treats a zero-extent primitive
+// as degenerate and the attach silently does nothing, which then reads as a planner that
+// ignored the object.
+constexpr double kMinPrimitiveExtent = 0.005;
+
+rclcpp::QoS objectsQos()
+{
+    return rclcpp::QoS(rclcpp::KeepLast(1)).reliable().durability_volatile();
+}
+
+}  // namespace
+
+bool resolveArm(const std::string& arm, ArmContext& out)
+{
+    if (arm != "left" && arm != "right")
+    {
+        return false;
+    }
+    out.arm_group  = arm + "_arm";
+    out.hand_group = arm + "_hand";
+    out.palm_link  = arm + "_hand_palm_link";
+    return true;
+}
+
+G1ManipulationServer::G1ManipulationServer(const rclcpp::NodeOptions& options)
+  : rclcpp::Node("g1_manipulation_server", options)
+{
+    object_timeout_s_  = declare_parameter<double>("object_timeout_ms", 1000.0) / 1000.0;
+    approach_height_m_ = declare_parameter<double>("approach_height_m", 0.12);
+    lift_height_m_     = declare_parameter<double>("lift_height_m", 0.15);
+    // Well under the joint limits' own 0.8 rad/s cap. Arm motion disturbs a standing humanoid
+    // measurably (docs/notes/arm-motion-and-balance.md), and slowing the whole path is
+    // preferred over clamping joints, which would bend the path itself.
+    velocity_scaling_ = declare_parameter<double>("velocity_scaling", 0.3);
+    planning_time_s_  = declare_parameter<double>("planning_time_s", 5.0);
+
+    // The grasp geometry, as parameters rather than constants because it is the one thing here
+    // that has to be tuned against the running model: the palm frame's origin is not the point
+    // the fingers close around, and the offset between them is a property of the Dex3's
+    // geometry that no file in this stack states.
+    grasp_offset_xyz_ =
+        declare_parameter<std::vector<double>>("grasp_offset_xyz", { 0.09, 0.0, -0.02 });
+    grasp_rpy_ = declare_parameter<std::vector<double>>("grasp_rpy", { 0.0, M_PI_2, 0.0 });
+
+    objects_sub_ = create_subscription<vision_msgs::msg::Detection3DArray>(
+        "/objects",
+        objectsQos(),
+        std::bind(&G1ManipulationServer::onObjects, this, std::placeholders::_1));
+}
+
+void G1ManipulationServer::initialize()
+{
+    if (grasp_offset_xyz_.size() != 3 || grasp_rpy_.size() != 3)
+    {
+        throw std::runtime_error("grasp_offset_xyz and grasp_rpy each need exactly 3 entries");
+    }
+
+    for (const std::string& name : { "left_arm", "right_arm", "left_hand", "right_hand" })
+    {
+        auto group = std::make_shared<MoveGroup>(shared_from_this(), name);
+        group->setMaxVelocityScalingFactor(velocity_scaling_);
+        group->setMaxAccelerationScalingFactor(velocity_scaling_);
+        group->setPlanningTime(planning_time_s_);
+        groups_.emplace(name, group);
+    }
+    planning_frame_ = groups_.at("left_arm")->getPlanningFrame();
+
+    // Servers come up only once the groups are usable. Advertising first would accept a goal
+    // this node cannot yet act on, and the caller would see a timeout rather than a refusal.
+    pick_server_ = rclcpp_action::create_server<Pick>(
+        this,
+        "~/pick",
+        [](const rclcpp_action::GoalUUID&, std::shared_ptr<const Pick::Goal>) {
+            return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
+        },
+        [](const std::shared_ptr<GoalHandle<Pick>>) {
+            return rclcpp_action::CancelResponse::ACCEPT;
+        },
+        [this](const std::shared_ptr<GoalHandle<Pick>> handle) {
+            std::thread{ [this, handle] { executePick(handle); } }.detach();
+        });
+
+    place_server_ = rclcpp_action::create_server<Place>(
+        this,
+        "~/place",
+        [](const rclcpp_action::GoalUUID&, std::shared_ptr<const Place::Goal>) {
+            return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
+        },
+        [](const std::shared_ptr<GoalHandle<Place>>) {
+            return rclcpp_action::CancelResponse::ACCEPT;
+        },
+        [this](const std::shared_ptr<GoalHandle<Place>> handle) {
+            std::thread{ [this, handle] { executePlace(handle); } }.detach();
+        });
+
+    posture_server_ = rclcpp_action::create_server<SetArmPosture>(
+        this,
+        "~/set_arm_posture",
+        [](const rclcpp_action::GoalUUID&, std::shared_ptr<const SetArmPosture::Goal>) {
+            return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
+        },
+        [](const std::shared_ptr<GoalHandle<SetArmPosture>>) {
+            return rclcpp_action::CancelResponse::ACCEPT;
+        },
+        [this](const std::shared_ptr<GoalHandle<SetArmPosture>> handle) {
+            std::thread{ [this, handle] { executeSetArmPosture(handle); } }.detach();
+        });
+
+    RCLCPP_INFO(
+        get_logger(),
+        "Manipulation skills up, planning in '%s'. Executing needs the arm and hands already "
+        "acquired; this node never takes control authority itself.",
+        planning_frame_.c_str());
+}
+
+void G1ManipulationServer::onObjects(const vision_msgs::msg::Detection3DArray::SharedPtr msg)
+{
+    std::lock_guard<std::mutex> lock(objects_mutex_);
+    objects_ = *msg;
+}
+
+std::optional<vision_msgs::msg::Detection3D>
+G1ManipulationServer::lookUpObject(const std::string& object_id)
+{
+    vision_msgs::msg::Detection3DArray snapshot;
+    {
+        std::lock_guard<std::mutex> lock(objects_mutex_);
+        snapshot = objects_;
+    }
+
+    // Age is judged here rather than at the source, because only the thing about to commit an
+    // arm to a grasp knows how old a pose is too old. g1_object_pose_source deliberately
+    // forwards the sample's own stamp so this check means something.
+    const double age = (now() - rclcpp::Time(snapshot.header.stamp)).seconds();
+    if (snapshot.detections.empty() || age > object_timeout_s_)
+    {
+        RCLCPP_ERROR(
+            get_logger(),
+            "No usable object poses: %zu known, newest %.2f s old (limit %.2f). Is "
+            "g1_object_pose_source active?",
+            snapshot.detections.size(),
+            age,
+            object_timeout_s_);
+        return std::nullopt;
+    }
+
+    for (const vision_msgs::msg::Detection3D& detection : snapshot.detections)
+    {
+        if (!detection.results.empty() && detection.results.front().hypothesis.class_id == object_id)
+        {
+            return detection;
+        }
+    }
+    RCLCPP_ERROR(get_logger(), "No object called '%s' is being reported", object_id.c_str());
+    return std::nullopt;
+}
+
+void G1ManipulationServer::publishCollisionObject(const vision_msgs::msg::Detection3D& detection)
+{
+    moveit_msgs::msg::CollisionObject object;
+    object.id              = detection.results.front().hypothesis.class_id;
+    object.header.frame_id = planning_frame_;
+
+    shape_msgs::msg::SolidPrimitive primitive;
+    primitive.type = shape_msgs::msg::SolidPrimitive::BOX;
+    // A box for every object, whatever its real shape. The planner only needs a conservative
+    // volume to route around, and the bounding box the pose source reports is exactly that.
+    primitive.dimensions = { std::max(detection.bbox.size.x, kMinPrimitiveExtent),
+                             std::max(detection.bbox.size.y, kMinPrimitiveExtent),
+                             std::max(detection.bbox.size.z, kMinPrimitiveExtent) };
+
+    object.primitives.push_back(primitive);
+    object.primitive_poses.push_back(detection.results.front().pose.pose);
+    object.operation = moveit_msgs::msg::CollisionObject::ADD;
+
+    // ADD on an id that already exists replaces it, so a re-plan against a moved object does
+    // not need a remove first.
+    planning_scene_.applyCollisionObjects({ object });
+}
+
+geometry_msgs::msg::Pose
+G1ManipulationServer::palmPoseFor(const geometry_msgs::msg::Pose& object_pose) const
+{
+    tf2::Quaternion palm_rotation;
+    palm_rotation.setRPY(grasp_rpy_[0], grasp_rpy_[1], grasp_rpy_[2]);
+
+    // The offset is expressed in the palm frame, so it has to be rotated into the planning
+    // frame before it can be subtracted from a position in it.
+    const tf2::Vector3 offset_in_palm(
+        grasp_offset_xyz_[0],
+        grasp_offset_xyz_[1],
+        grasp_offset_xyz_[2]);
+    const tf2::Vector3 offset = tf2::Matrix3x3(palm_rotation) * offset_in_palm;
+
+    geometry_msgs::msg::Pose palm;
+    palm.position.x  = object_pose.position.x - offset.x();
+    palm.position.y  = object_pose.position.y - offset.y();
+    palm.position.z  = object_pose.position.z - offset.z();
+    palm.orientation = tf2::toMsg(palm_rotation);
+    return palm;
+}
+
+bool G1ManipulationServer::moveTo(
+    MoveGroup& group, const geometry_msgs::msg::Pose& pose, const std::string& what)
+{
+    group.setStartStateToCurrentState();
+    group.setPoseTarget(pose);
+
+    MoveGroup::Plan plan;
+    const auto      planned = group.plan(plan);
+    if (planned != moveit::core::MoveItErrorCode::SUCCESS)
+    {
+        RCLCPP_ERROR(get_logger(), "%s: planning failed (%d)", what.c_str(), planned.val);
+        return false;
+    }
+    const auto executed = group.execute(plan);
+    if (executed != moveit::core::MoveItErrorCode::SUCCESS)
+    {
+        RCLCPP_ERROR(
+            get_logger(),
+            "%s: execution failed (%d). The usual cause is the arm not being acquired -- run "
+            "g1_bringup's activate_arm first.",
+            what.c_str(),
+            executed.val);
+        return false;
+    }
+    return true;
+}
+
+bool G1ManipulationServer::moveToNamed(MoveGroup& group, const std::string& named_target)
+{
+    group.setStartStateToCurrentState();
+    if (!group.setNamedTarget(named_target))
+    {
+        RCLCPP_ERROR(
+            get_logger(),
+            "'%s' is not a named pose of group '%s'",
+            named_target.c_str(),
+            group.getName().c_str());
+        return false;
+    }
+    return group.move() == moveit::core::MoveItErrorCode::SUCCESS;
+}
+
+G1ManipulationServer::MoveGroup* G1ManipulationServer::groupFor(const std::string& name)
+{
+    const auto it = groups_.find(name);
+    return it == groups_.end() ? nullptr : it->second.get();
+}
+
+void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& goal_handle)
+{
+    const auto goal     = goal_handle->get_goal();
+    auto       result   = std::make_shared<Pick::Result>();
+    auto       feedback = std::make_shared<Pick::Feedback>();
+
+    ArmContext arm;
+    if (!resolveArm(goal->arm, arm))
+    {
+        result->success = false;
+        result->message = "arm must be 'left' or 'right', got '" + goal->arm + "'";
+        goal_handle->abort(result);
+        return;
+    }
+    MoveGroup* arm_group  = groupFor(arm.arm_group);
+    MoveGroup* hand_group = groupFor(arm.hand_group);
+
+    // Every failure below leaves the hand open and nothing attached, so a retry starts from a
+    // defined state rather than part-way into a grasp. That is what makes the behavior tree's
+    // retry meaningful rather than a replay.
+    const auto fail = [&](const std::string& phase, const std::string& why) {
+        moveToNamed(*hand_group, "open");
+        arm_group->detachObject(goal->object_id);
+        result->success = false;
+        result->message = phase + ": " + why;
+        goal_handle->abort(result);
+    };
+
+    feedback->phase = Pick::Feedback::PHASE_LOCATING;
+    goal_handle->publish_feedback(feedback);
+    const auto detection = lookUpObject(goal->object_id);
+    if (!detection)
+    {
+        fail(Pick::Feedback::PHASE_LOCATING, "no fresh pose for '" + goal->object_id + "'");
+        return;
+    }
+    publishCollisionObject(*detection);
+
+    const geometry_msgs::msg::Pose grasp_palm = palmPoseFor(detection->results.front().pose.pose);
+    geometry_msgs::msg::Pose       pregrasp_palm = grasp_palm;
+    pregrasp_palm.position.z += approach_height_m_;
+
+    feedback->phase = Pick::Feedback::PHASE_PREGRASP;
+    goal_handle->publish_feedback(feedback);
+    // Opened before the approach, not after: closing on the way in would knock the object off
+    // the table before the hand is around it.
+    if (!moveToNamed(*hand_group, "open") || !moveTo(*arm_group, pregrasp_palm, "pregrasp"))
+    {
+        fail(Pick::Feedback::PHASE_PREGRASP, "could not reach the pregrasp pose");
+        return;
+    }
+
+    feedback->phase = Pick::Feedback::PHASE_APPROACH;
+    goal_handle->publish_feedback(feedback);
+    if (!moveTo(*arm_group, grasp_palm, "approach"))
+    {
+        fail(Pick::Feedback::PHASE_APPROACH, "could not reach the grasp pose");
+        return;
+    }
+
+    feedback->phase = Pick::Feedback::PHASE_GRASP;
+    goal_handle->publish_feedback(feedback);
+    if (!moveToNamed(*hand_group, "closed"))
+    {
+        fail(Pick::Feedback::PHASE_GRASP, "the hand did not close");
+        return;
+    }
+    // Attached AFTER the hand closes, so the planner starts treating the object as part of the
+    // arm at the same moment the hand does. Touch links come from the arm's end_effector in
+    // the SRDF, which is why the two-argument form is enough.
+    arm_group->attachObject(goal->object_id, arm.palm_link);
+
+    feedback->phase = Pick::Feedback::PHASE_LIFT;
+    goal_handle->publish_feedback(feedback);
+    geometry_msgs::msg::Pose lifted = grasp_palm;
+    lifted.position.z += lift_height_m_;
+    if (!moveTo(*arm_group, lifted, "lift"))
+    {
+        fail(Pick::Feedback::PHASE_LIFT, "could not lift clear of the surface");
+        return;
+    }
+
+    result->success = true;
+    result->message = "picked " + goal->object_id + " with the " + goal->arm + " hand";
+    goal_handle->succeed(result);
+}
+
+void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>& goal_handle)
+{
+    const auto goal     = goal_handle->get_goal();
+    auto       result   = std::make_shared<Place::Result>();
+    auto       feedback = std::make_shared<Place::Feedback>();
+
+    ArmContext arm;
+    if (!resolveArm(goal->arm, arm))
+    {
+        result->success = false;
+        result->message = "arm must be 'left' or 'right', got '" + goal->arm + "'";
+        goal_handle->abort(result);
+        return;
+    }
+    MoveGroup* arm_group  = groupFor(arm.arm_group);
+    MoveGroup* hand_group = groupFor(arm.hand_group);
+
+    // The goal frame is checked rather than transformed. A goal in odom and a planning frame
+    // of pelvis differ by wherever the robot is standing, and silently treating one as the
+    // other would place the object metres away.
+    if (!goal->pose.header.frame_id.empty() && goal->pose.header.frame_id != planning_frame_)
+    {
+        result->success = false;
+        result->message = "pose is in frame '" + goal->pose.header.frame_id +
+                          "' but this node plans in '" + planning_frame_ + "'";
+        goal_handle->abort(result);
+        return;
+    }
+
+    const auto fail = [&](const std::string& phase, const std::string& why) {
+        result->success = false;
+        result->message = phase + ": " + why;
+        goal_handle->abort(result);
+    };
+
+    const geometry_msgs::msg::Pose place_palm = palmPoseFor(goal->pose.pose);
+    geometry_msgs::msg::Pose       preplace   = place_palm;
+    preplace.position.z += approach_height_m_;
+
+    feedback->phase = Place::Feedback::PHASE_PREPLACE;
+    goal_handle->publish_feedback(feedback);
+    if (!moveTo(*arm_group, preplace, "preplace"))
+    {
+        fail(Place::Feedback::PHASE_PREPLACE, "could not reach the pose above the target");
+        return;
+    }
+
+    feedback->phase = Place::Feedback::PHASE_LOWER;
+    goal_handle->publish_feedback(feedback);
+    if (!moveTo(*arm_group, place_palm, "lower"))
+    {
+        fail(Place::Feedback::PHASE_LOWER, "could not lower onto the target");
+        return;
+    }
+
+    feedback->phase = Place::Feedback::PHASE_RELEASE;
+    goal_handle->publish_feedback(feedback);
+    if (!moveToNamed(*hand_group, "open"))
+    {
+        fail(Place::Feedback::PHASE_RELEASE, "the hand did not open");
+        return;
+    }
+    // Detached only after the hand is open. Detaching first would let the planner route the
+    // arm through a volume the object is still occupying.
+    //
+    // What is held is read from the scene rather than remembered from the pick, so a place
+    // still works against a server that did not do the picking.
+    const moveit::core::RobotStatePtr              state = arm_group->getCurrentState();
+    std::vector<const moveit::core::AttachedBody*> attached;
+    state->getAttachedBodies(attached, state->getJointModelGroup(arm.arm_group));
+    for (const moveit::core::AttachedBody* body : attached)
+    {
+        arm_group->detachObject(body->getName());
+    }
+
+    feedback->phase = Place::Feedback::PHASE_RETREAT;
+    goal_handle->publish_feedback(feedback);
+    if (!moveTo(*arm_group, preplace, "retreat"))
+    {
+        fail(Place::Feedback::PHASE_RETREAT, "could not retreat clear of the object");
+        return;
+    }
+
+    result->success = true;
+    result->message = "placed with the " + goal->arm + " hand";
+    goal_handle->succeed(result);
+}
+
+void G1ManipulationServer::executeSetArmPosture(
+    const std::shared_ptr<GoalHandle<SetArmPosture>>& goal_handle)
+{
+    const auto goal   = goal_handle->get_goal();
+    auto       result = std::make_shared<SetArmPosture::Result>();
+
+    MoveGroup* group = groupFor(goal->group);
+    if (group == nullptr)
+    {
+        result->success = false;
+        result->message = "'" + goal->group + "' is not a group this node drives";
+        goal_handle->abort(result);
+        return;
+    }
+    if (!moveToNamed(*group, goal->named_target))
+    {
+        result->success = false;
+        result->message = "could not reach '" + goal->named_target + "'";
+        goal_handle->abort(result);
+        return;
+    }
+
+    result->success = true;
+    result->message = goal->group + " is at " + goal->named_target;
+    goal_handle->succeed(result);
+}
+
+}  // namespace g1_manipulation

@@ -1,0 +1,118 @@
+#ifndef G1_MANIPULATION__G1_MANIPULATION_SERVER_NODE_HPP_
+#define G1_MANIPULATION__G1_MANIPULATION_SERVER_NODE_HPP_
+
+/**
+ * @file g1_manipulation_server_node.hpp
+ * @brief Pick, place and named-posture skills, served as actions over MoveIt.
+ *
+ * Adds no command path: every motion goes out through the same `move_group` the RViz panel
+ * uses, onto the controllers that already own `rt/arm_sdk` and the hand topics. So the
+ * one-writer rule in docs/CONTROL_MODES.md is unaffected by this node existing.
+ *
+ * It also takes no control authority of its own. The arm and hands must already be acquired
+ * (g1_bringup's activate_arm) before a goal will execute, and releasing them is the caller's
+ * job -- for the mission that is g1_orchestration's executor, which brackets the whole run.
+ * A skill that acquired authority per goal would hand it back mid-mission and drop whatever
+ * the hand was holding.
+ */
+
+#include <moveit/move_group_interface/move_group_interface.h>
+#include <moveit/planning_scene_interface/planning_scene_interface.h>
+
+#include <g1_msgs/action/pick.hpp>
+#include <g1_msgs/action/place.hpp>
+#include <g1_msgs/action/set_arm_posture.hpp>
+#include <geometry_msgs/msg/pose.hpp>
+#include <geometry_msgs/msg/pose_stamped.hpp>
+#include <memory>
+#include <mutex>
+#include <optional>
+#include <rclcpp/rclcpp.hpp>
+#include <rclcpp_action/rclcpp_action.hpp>
+#include <string>
+#include <vision_msgs/msg/detection3_d_array.hpp>
+
+namespace g1_manipulation
+{
+
+/// The MoveIt groups and links one arm brings, resolved from the `arm` field of a goal.
+struct ArmContext
+{
+    std::string arm_group;   ///< left_arm / right_arm
+    std::string hand_group;  ///< left_hand / right_hand
+    std::string palm_link;   ///< the arm group's tip, and what an object attaches to
+};
+
+/// False if `arm` is neither "left" nor "right", leaving `out` untouched.
+bool resolveArm(const std::string& arm, ArmContext& out);
+
+class G1ManipulationServer : public rclcpp::Node
+{
+public:
+    explicit G1ManipulationServer(const rclcpp::NodeOptions& options);
+
+    /**
+     * @brief Builds the MoveGroupInterfaces.
+     *
+     * Separate from the constructor because MoveGroupInterface blocks until it has the robot
+     * description and the current state, which only arrive once something is spinning this
+     * node -- constructing one from inside the constructor deadlocks.
+     */
+    void initialize();
+
+private:
+    using Pick          = g1_msgs::action::Pick;
+    using Place         = g1_msgs::action::Place;
+    using SetArmPosture = g1_msgs::action::SetArmPosture;
+    using MoveGroup     = moveit::planning_interface::MoveGroupInterface;
+
+    template <typename ActionT>
+    using GoalHandle = rclcpp_action::ServerGoalHandle<ActionT>;
+
+    void executePick(const std::shared_ptr<GoalHandle<Pick>>& goal_handle);
+    void executePlace(const std::shared_ptr<GoalHandle<Place>>& goal_handle);
+    void executeSetArmPosture(const std::shared_ptr<GoalHandle<SetArmPosture>>& goal_handle);
+
+    /// Latest pose for `object_id`, or nullopt if it is unknown or older than the timeout.
+    std::optional<vision_msgs::msg::Detection3D> lookUpObject(const std::string& object_id);
+    void onObjects(const vision_msgs::msg::Detection3DArray::SharedPtr msg);
+
+    /// Where the palm must be for the held object to end up at `object_pose`.
+    geometry_msgs::msg::Pose palmPoseFor(const geometry_msgs::msg::Pose& object_pose) const;
+
+    /// Plans and executes to a palm pose. False on either failure, with the reason logged.
+    bool moveTo(MoveGroup& group, const geometry_msgs::msg::Pose& pose, const std::string& what);
+    bool moveToNamed(MoveGroup& group, const std::string& named_target);
+
+    /// Puts the object into the planning scene at its measured pose, so plans route around it
+    /// and so attaching it means something.
+    void publishCollisionObject(const vision_msgs::msg::Detection3D& detection);
+
+    MoveGroup* groupFor(const std::string& name);
+
+    std::map<std::string, std::shared_ptr<MoveGroup>>  groups_;
+    moveit::planning_interface::PlanningSceneInterface planning_scene_;
+
+    rclcpp::Subscription<vision_msgs::msg::Detection3DArray>::SharedPtr objects_sub_;
+    std::mutex                                                          objects_mutex_;
+    vision_msgs::msg::Detection3DArray                                  objects_;
+
+    rclcpp_action::Server<Pick>::SharedPtr          pick_server_;
+    rclcpp_action::Server<Place>::SharedPtr         place_server_;
+    rclcpp_action::Server<SetArmPosture>::SharedPtr posture_server_;
+
+    std::string planning_frame_;
+    double      object_timeout_s_{ 1.0 };
+    double      approach_height_m_{ 0.12 };
+    double      lift_height_m_{ 0.15 };
+    double      velocity_scaling_{ 0.3 };
+    double      planning_time_s_{ 5.0 };
+    // Where the object sits in the palm's own frame at the moment of grasp, and how the palm
+    // is held to reach it. See the .cpp for why both are parameters rather than constants.
+    std::vector<double> grasp_offset_xyz_;
+    std::vector<double> grasp_rpy_;
+};
+
+}  // namespace g1_manipulation
+
+#endif  // G1_MANIPULATION__G1_MANIPULATION_SERVER_NODE_HPP_

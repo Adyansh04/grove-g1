@@ -1,0 +1,34 @@
+# Pick and place skills, loaded by g1_manipulation/launch/manipulation.launch.py.
+#
+# Everything here is real-robot code: the skills plan through move_group onto the controllers
+# that own rt/arm_sdk and the hand topics, exactly as they will on hardware. What is
+# simulation-only is where the object POSES come from, and that lives in
+# g1_object_pose_source.yaml.
+g1_manipulation_server:
+  ros__parameters:
+    # How old a pose may be before a pick refuses to act on it. The source publishes at the
+    # sensor rate (10 Hz), so this tolerates several missed samples while still catching a
+    # dead pipeline -- which matters, because the alternative is grasping at where an object
+    # used to be.
+    object_timeout_ms: 1000.0
+
+    # How far above the grasp the approach starts, and how far the object is lifted after the
+    # hand closes. Both are along the planning frame's z, which is up while the robot stands.
+    approach_height_m: 0.12
+    lift_height_m: 0.15
+
+    # Well under joint_limits.yaml's own 0.8 rad/s per-joint cap. Arm motion measurably
+    # disturbs a standing humanoid (docs/notes/arm-motion-and-balance.md), and scaling the
+    # whole trajectory is preferred to clamping joints, which bends the path itself.
+    velocity_scaling: 0.3
+    planning_time_s: 5.0
+
+    # The grasp geometry, and the only thing here that has to be tuned against the running
+    # model. The palm frame's origin is not the point the fingers close around: the Dex3's
+    # fingers extend along the palm's +x, so the object sits forward of and slightly below it.
+    #
+    # grasp_offset_xyz is where the object sits in the PALM frame at the moment of grasp.
+    # grasp_rpy is how the palm is held in the planning frame; pitch pi/2 turns the palm's +x
+    # (fingers-forward) to point down, which is the top-down grasp a table calls for.
+    grasp_offset_xyz: [0.09, 0.0, -0.02]
+    grasp_rpy: [0.0, 1.5707963, 0.0]
