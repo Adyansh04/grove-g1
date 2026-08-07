@@ -18,6 +18,8 @@
 
 #include <moveit/move_group_interface/move_group_interface.h>
 #include <moveit/planning_scene_interface/planning_scene_interface.h>
+#include <tf2_ros/buffer.h>
+#include <tf2_ros/transform_listener.h>
 
 #include <g1_msgs/action/pick.hpp>
 #include <g1_msgs/action/place.hpp>
@@ -30,8 +32,6 @@
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
 #include <string>
-#include <tf2_ros/buffer.h>
-#include <tf2_ros/transform_listener.h>
 #include <vision_msgs/msg/detection3_d_array.hpp>
 
 namespace g1_manipulation
@@ -82,8 +82,8 @@ private:
     /// Into the planning frame, or nullopt with the reason logged. Everything a goal carries
     /// goes through here: /objects is in odom, the planner works in pelvis, and the two differ
     /// by wherever the robot is standing.
-    std::optional<geometry_msgs::msg::Pose> toPlanningFrame(
-        const geometry_msgs::msg::Pose& pose, const std::string& frame_id);
+    std::optional<geometry_msgs::msg::Pose>
+    toPlanningFrame(const geometry_msgs::msg::Pose& pose, const std::string& frame_id);
 
     /// Where the palm must be for the held object to end up at `object_pose`.
     geometry_msgs::msg::Pose palmPoseFor(const geometry_msgs::msg::Pose& object_pose) const;

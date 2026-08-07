@@ -216,7 +216,8 @@ G1ManipulationServer::lookUpObject(const std::string& object_id)
 }
 
 void G1ManipulationServer::publishCollisionObject(
-    const vision_msgs::msg::Detection3D& detection, const geometry_msgs::msg::Pose& in_planning_frame)
+    const vision_msgs::msg::Detection3D& detection,
+    const geometry_msgs::msg::Pose&      in_planning_frame)
 {
     moveit_msgs::msg::CollisionObject object;
     object.id              = detection.results.front().hypothesis.class_id;
@@ -347,9 +348,8 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     }
     // /objects is in odom and the planner works in pelvis; the two differ by wherever the
     // robot is standing, so every measured pose goes through TF before it is planned against.
-    const std::string object_frame = detection->header.frame_id.empty()
-                                         ? objects_.header.frame_id
-                                         : detection->header.frame_id;
+    const std::string object_frame =
+        detection->header.frame_id.empty() ? objects_.header.frame_id : detection->header.frame_id;
     const auto object_pose = toPlanningFrame(detection->results.front().pose.pose, object_frame);
     if (!object_pose)
     {
