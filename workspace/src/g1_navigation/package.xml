@@ -34,6 +34,8 @@
   <exec_depend>rclcpp_components</exec_depend>
   <exec_depend>rviz2</exec_depend>
   <exec_depend>slam_toolbox</exec_depend>
+  <!-- nav2.launch.py arbitrates /cmd_vel between Nav2 and g1_locomotion's g1_base_approach. -->
+  <exec_depend>twist_mux</exec_depend>
 
   <!-- ament_lint_common intentionally not used to avoid ruff conflicts. -->
   <test_depend>action_msgs</test_depend>
