@@ -81,13 +81,24 @@
         <Pick name="pick_the_cube" object_id="red_cube" arm="right"/>
       </RetryUntilSuccessful>
 
-      <SetArmPosture name="hold_it_close" group="right_arm" named_target="carry"/>
+      <!-- Back off BEFORE rearranging the arm, and reverse out for the first 0.35 m.
+           Two separate reasons, both measured.
 
-      <!-- Back off before turning, and back STRAIGHT off for the first 0.35 m. The approach
-           leaves the robot close enough that turning on the spot sweeps the carried cube across
-           the desk, which is what it did. restore_heading is false: the next thing that happens
-           is a navigation goal, which chooses its own heading anyway. -->
+           The reverse: the approach leaves the robot close enough that turning on the spot
+           sweeps the robot and the carried cube across the desk. The gait does reverse above
+           g1_gait_shaper's rev_engage, so it backs straight out and only then turns.
+
+           The ordering: moving the arm to `carry` while still at the desk failed with
+           `<octomap> <-> right_hand_index_1_link` 220 steps into a 248 step path. The carry
+           pose is fine; the room to swing into is not, with the table right there. Away from
+           the desk there is nothing to clip.
+
+           restore_heading is false: a navigation goal follows and chooses its own heading. -->
       <Retreat name="back_off_the_desk" distance="0.7" back_off="0.35" restore_heading="false"/>
+
+      <RetryUntilSuccessful name="carry_with_retries" num_attempts="3">
+        <SetArmPosture name="hold_it_close" group="right_arm" named_target="carry"/>
+      </RetryUntilSuccessful>
 
       <NavigateToPose name="stage_at_storage" goal="6.30;5.70;1.5708"/>
 
