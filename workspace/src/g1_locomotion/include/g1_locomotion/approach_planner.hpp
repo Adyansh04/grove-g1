@@ -61,13 +61,13 @@ struct ApproachLimits
     /// Where the object must sit in the base frame for the arm to reach it. MEASURED with
     /// /compute_ik at the workbench cube's height: x 0.16 to 0.36 all solve, 0.38 does not.
     double target_x_m = 0.280;
-    double target_y_m = -0.200;
+    double target_y_m = -0.220;
 
     /// How close each axis has to get. The forward window is the measured band with margin at
     /// its near end, NOT a guess about how precise the base can be -- the base is not precise,
     /// and the point of measuring the arm properly was to find out how much slack it grants.
-    double forward_tolerance_m = 0.080;
-    double lateral_tolerance_m = 0.070;
+    double forward_tolerance_m = 0.060;
+    double lateral_tolerance_m = 0.040;
     /// The yaw response is bimodal -- one 0.15 s pulse measured 3 to 14 degrees -- so a
     /// tolerance near a single quantum cannot be held. Residual heading error shows up as
     /// lateral error anyway, which is the cheap axis to correct.

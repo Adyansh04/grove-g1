@@ -14,11 +14,22 @@ g1_manipulation_server:
 
     # How far above the grasp the approach starts, and how far the object is lifted after the
     # hand closes. Both are along the planning frame's z, which is up while the robot stands.
-    approach_height_m: 0.12
-    # Short on purpose. The lift is planned as free-space motion with the object attached, in a
-    # scene that still holds the octomap of the surface it came off, and a long one gives OMPL a
-    # much harder problem for no gain: it only has to clear the surface before the transfer.
-    lift_height_m: 0.08
+    #
+    # MEASURED, not chosen: standing at the facility workbench, the hand only clears the table's
+    # octomap at pelvis z 0.22 and above (m9-checks/why_blocked.py sweeps it). The cube sits at
+    # pelvis z 0.0375, so anything under 0.185 of approach height puts the pregrasp inside the
+    # map. At the old 0.12 it failed every time with GOAL_STATE_INVALID and the contact pair
+    # <octomap> <-> right_hand_thumb_2_link -- the thumb, by a couple of centimetres.
+    #
+    # This cannot be fixed by exempting the octomap instead. The pregrasp transit is deliberately
+    # collision-checked so the planner cannot route the arm through the table on the way in; the
+    # exemption exists for the descent that follows and nothing else.
+    approach_height_m: 0.22
+    # Has to clear the same 0.185 the pregrasp does, and for a sharper reason: the collision
+    # exemption is restored at the end of the lift, so wherever the lift finishes becomes the
+    # START state of the next collision-checked plan. Finishing inside the octomap leaves the
+    # carry posture unplannable from a state that is already in collision.
+    lift_height_m: 0.20
 
     # Well under joint_limits.yaml's own 0.8 rad/s per-joint cap. Arm motion measurably
     # disturbs a standing humanoid (docs/notes/arm-motion-and-balance.md), and scaling the

@@ -92,7 +92,7 @@ g1_base_approach:
     #
     # target_y_m mirrors for the left arm, exactly as the grasp offset does.
     target_x_m: 0.280
-    target_y_m: -0.200
+    target_y_m: -0.220
 
     # Forward is the tight axis because it is the one the gait cannot resolve directly: the
     # oblique step buys about 1.8 cm of resolution near 60 degrees, so 0.045 is reachable.
@@ -105,10 +105,19 @@ g1_base_approach:
     # held. And heading precision matters less here than it seems: the grasp is computed in the
     # BASE frame, so what has to be right is where the object sits relative to the robot, and
     # residual heading error shows up as lateral error, which is the cheap axis to fix.
-    # +/-0.08 puts the window at x 0.20 to 0.36, entirely inside the band that solved 4/4, with
-    # 0.04 of margin at the near end for the base drifting after the last pulse.
-    forward_tolerance_m: 0.080
-    lateral_tolerance_m: 0.070
+    # From a 2D grid run at the workbench with the arms tucked, at the PREGRASP height, checking
+    # each IK solution against /check_state_validity (m9-checks/reach_grid.py). Only the pregrasp
+    # has to be collision-free: the grasp pose sits on the table and is inside its octomap by
+    # construction, which is what the descent's collision exemption exists for.
+    #
+    # The pregrasp band is solid across every x from 0.16 to 0.38 for y between -0.20 and -0.26,
+    # and gets patchy above -0.17. So the lateral window is the tight one and the forward window
+    # is not.
+    #
+    # The old +/-0.07 lateral is what let the approach stop with the cube at y -0.114, well into
+    # the patchy region, and the pick then died on the pregrasp with GOAL_STATE_INVALID.
+    forward_tolerance_m: 0.060
+    lateral_tolerance_m: 0.040
     heading_tolerance_rad: 0.140
 
     # Nearer than this and the object is under the robot's own shell. Set just below the measured
