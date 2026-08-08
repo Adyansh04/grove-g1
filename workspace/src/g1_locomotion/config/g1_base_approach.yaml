@@ -88,10 +88,14 @@ g1_base_approach:
     # zeroed at any magnitude and the robot cannot back off a mistake in place.
     min_forward_m: 0.180
 
-    # Starting estimate of how far one forward pulse carries the robot. Raised, never lowered,
-    # from what each pulse is measured to do -- see maxObservedAdvance() for why the asymmetry is
-    # the point.
-    pulse_advance_m: 0.293
+    # Starting estimate of how far one forward pulse carries the robot, and it has to be an UPPER
+    # bound rather than the typical value: the planner steps only while more than this is left,
+    # so a seed that is too small lets a step sail past the window.
+    #
+    # 0.293 is what an isolated pulse measures on a settled robot. Inside the approach loop, with
+    # a re-aim immediately before, the same pulse measured 0.369, 0.407, 0.495 and 0.507 -- the
+    # gait is already moving and takes a longer stride. 0.60 covers what has actually been seen.
+    pulse_advance_m: 0.60
 
     # How far off the working heading the FINE approach aims before strafing. A strafe there
     # advances strafe*sin(offset) and slides strafe*cos(offset): at 45 degrees that is 2.5 cm
@@ -110,9 +114,9 @@ g1_base_approach:
     # is three forward steps, a couple of yaw pulses to re-aim before each, an oblique final
     # step and a few strafes -- call it 25 pulses and 70 s. max_aim_pulses bounds ONE re-aim, so
     # a heading that will not settle fails fast instead of eating the whole budget.
-    max_pulses: 90
+    max_pulses: 150
     # A 45 degree creep turn is about 13 pulses counter-clockwise and 13 clockwise once the
     # settle is long enough for each to land. 30 leaves room for the gait having a bad round
     # without letting a stuck heading eat the whole goal.
     max_aim_pulses: 30
-    default_timeout_s: 420.0
+    default_timeout_s: 900.0

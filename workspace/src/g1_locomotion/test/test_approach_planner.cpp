@@ -128,17 +128,32 @@ TEST(ApproachPlanner, StrafeGoesTowardTheObject)
         0.0);
 }
 
-TEST(ApproachPlanner, TooCloseIsTerminalBecauseTheGaitCannotReverse)
+TEST(ApproachPlanner, OnlyTheObjectBeingUnderTheRobotIsTerminal)
 {
     const auto limits = defaults();
     EXPECT_EQ(
         moveFor(limits.min_forward_m - 0.01, limits.target_y_m, 0.0, limits),
         ApproachMove::kOvershot);
-    // Past the near edge of the window but not yet under the robot: still unrecoverable, since
-    // there is no command that moves the base backwards.
-    EXPECT_EQ(
-        moveFor(limits.target_x_m - limits.forward_tolerance_m - 0.01, limits.target_y_m, 0.0, limits),
-        ApproachMove::kOvershot);
+}
+
+TEST(ApproachPlanner, PastTheWindowIsRecoveredByCreepingBackwards)
+{
+    const auto limits = defaults();
+    // The gait has no reverse -- g1_gait_shaper zeroes any negative vx -- but a strafe taken on
+    // a turned heading has a negative forward component, so overshooting is recoverable. That
+    // matters because the primitives are bimodal: one creep was measured carrying the robot
+    // 0.34 m when 0.025 was asked for.
+    const double past    = limits.target_x_m - limits.forward_tolerance_m - 0.05;
+    const auto   command = planApproach(past, limits.target_y_m, 0.0, limits);
+    ASSERT_EQ(command.move, ApproachMove::kCreep);
+    EXPECT_LT(command.forward_error_m, 0.0);
+
+    // The offset flips against the approaching case, which is exactly what reverses the strafe's
+    // forward component.
+    const double ahead       = limits.target_x_m + 0.12;
+    const auto   approaching = planApproach(ahead, limits.target_y_m, 0.0, limits);
+    ASSERT_EQ(approaching.move, ApproachMove::kCreep);
+    EXPECT_LT(command.fine_offset_rad * approaching.fine_offset_rad, 0.0);
 }
 
 TEST(ApproachPlanner, TheQuantumEstimateOnlyEverGrows)
