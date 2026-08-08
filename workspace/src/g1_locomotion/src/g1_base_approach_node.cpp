@@ -81,32 +81,37 @@ public:
         // Both must clear g1_gait_shaper's engage thresholds (0.45 forward, 1.20 yaw) or the
         // shaper zeroes them and the robot stands still while this node reports it is walking.
         pulse_vx_   = declare_parameter<double>("pulse_vx", 0.45);
-        pulse_vyaw_ = declare_parameter<double>("pulse_vyaw", 1.30);
-        // 0.30 s is the pulse measured to be repeatable to a millimetre on a settled robot.
-        step_pulse_s_     = declare_parameter<double>("step_pulse_s", 0.30);
-        turn_pulse_s_     = declare_parameter<double>("turn_pulse_s", 0.22);
-        min_turn_pulse_s_ = declare_parameter<double>("min_turn_pulse_s", 0.12);
+        pulse_vyaw_ = declare_parameter<double>("pulse_vyaw", 1.50);
+        pulse_vy_   = declare_parameter<double>("pulse_vy", 0.50);
+        // Measured durations, one per primitive. They are not interchangeable: forward is
+        // irreducible at ~0.29 m however short the pulse, while yaw and lateral both have a
+        // small-response mode that only survives at short durations.
+        step_pulse_s_   = declare_parameter<double>("step_pulse_s", 0.30);
+        turn_pulse_s_   = declare_parameter<double>("turn_pulse_s", 0.15);
+        strafe_pulse_s_ = declare_parameter<double>("strafe_pulse_s", 0.15);
         // The gait keeps stepping after the command stops. Measuring before it settles reports
         // the command plus whatever of the stride was still in flight.
         settle_s_    = declare_parameter<double>("settle_s", 2.5);
         cmd_rate_hz_ = declare_parameter<double>("cmd_rate_hz", 20.0);
 
-        limits_.target_range_m        = declare_parameter<double>("target_range_m", 0.344);
-        limits_.target_bearing_rad    = declare_parameter<double>("target_bearing_rad", -0.620);
-        limits_.range_tolerance_m     = declare_parameter<double>("range_tolerance_m", 0.055);
-        limits_.bearing_tolerance_rad = declare_parameter<double>("bearing_tolerance_rad", 0.200);
-        limits_.min_range_m           = declare_parameter<double>("min_range_m", 0.215);
-        limits_.pulse_advance_m       = declare_parameter<double>("pulse_advance_m", 0.35);
+        limits_.target_x_m            = declare_parameter<double>("target_x_m", 0.280);
+        limits_.target_y_m            = declare_parameter<double>("target_y_m", -0.200);
+        limits_.forward_tolerance_m   = declare_parameter<double>("forward_tolerance_m", 0.045);
+        limits_.lateral_tolerance_m   = declare_parameter<double>("lateral_tolerance_m", 0.050);
+        limits_.heading_tolerance_rad = declare_parameter<double>("heading_tolerance_rad", 0.087);
+        limits_.min_forward_m         = declare_parameter<double>("min_forward_m", 0.180);
+        limits_.pulse_advance_m       = declare_parameter<double>("pulse_advance_m", 0.293);
         limits_.max_oblique_rad       = declare_parameter<double>("max_oblique_rad", 1.309);
 
-        max_pulses_        = declare_parameter<int>("max_pulses", 30);
-        default_timeout_s_ = declare_parameter<double>("default_timeout_s", 180.0);
+        max_pulses_        = declare_parameter<int>("max_pulses", 90);
+        max_aim_pulses_    = declare_parameter<int>("max_aim_pulses", 14);
+        default_timeout_s_ = declare_parameter<double>("default_timeout_s", 420.0);
 
         if (!limitsAreUsable(limits_))
         {
             throw std::runtime_error(
                 "g1_base_approach: the configured reach window is not one the planner can aim "
-                "at; check target_range_m against min_range_m and the tolerances");
+                "at; check target_x_m against min_forward_m and the tolerances");
         }
 
         cmd_pub_     = create_publisher<geometry_msgs::msg::Twist>(cmd_topic_, 1);
@@ -146,10 +151,13 @@ public:
 
         RCLCPP_INFO(
             get_logger(),
-            "base approach ready: target %.3f m at %.1f deg, window +/-%.3f m, publishing on %s",
-            limits_.target_range_m,
-            limits_.target_bearing_rad * 180.0 / M_PI,
-            limits_.range_tolerance_m,
+            "base approach ready: object wanted at (%.3f, %.3f) in %s, window +/-%.3f forward "
+            "and +/-%.3f lateral, publishing on %s",
+            limits_.target_x_m,
+            limits_.target_y_m,
+            base_frame_.c_str(),
+            limits_.forward_tolerance_m,
+            limits_.lateral_tolerance_m,
             cmd_topic_.c_str());
     }
 
@@ -158,12 +166,13 @@ private:
     ///
     /// Zeros are published rather than merely stopping: the shaper hands the channel back to
     /// Nav2 when this source goes quiet, so an idle gap mid-skill would surrender priority.
-    void pulse(double vx, double vyaw, double duration_s)
+    void pulse(double vx, double vy, double vyaw, double duration_s)
     {
         const auto period = std::chrono::duration<double>(1.0 / std::max(1.0, cmd_rate_hz_));
 
         geometry_msgs::msg::Twist moving;
         moving.linear.x       = vx;
+        moving.linear.y       = vy;
         moving.angular.z      = vyaw;
         const auto move_until = std::chrono::steady_clock::now() +
                                 std::chrono::duration<double>(std::max(0.0, duration_s));
@@ -279,16 +288,28 @@ private:
         ApproachLimits limits = limits_;
         if (goal->arm == ApproachObject::Goal::ARM_LEFT)
         {
-            limits.target_bearing_rad = -limits.target_bearing_rad;
+            limits.target_y_m = -limits.target_y_m;
         }
 
         const double timeout_s = goal->timeout_s > 0.0 ? goal->timeout_s : default_timeout_s_;
         const auto   deadline  = deadlineIn(timeout_s);
 
-        auto   feedback        = std::make_shared<ApproachObject::Feedback>();
-        double turn_pulse      = turn_pulse_s_;
-        double last_align_sign = 0.0;
-        int    pulses          = 0;
+        auto feedback = std::make_shared<ApproachObject::Feedback>();
+        int  pulses   = 0;
+
+        // The heading held for the whole approach. Fixed up front rather than recomputed from
+        // the object each iteration: the object moves in the base frame as the robot walks, and
+        // chasing it is what made the previous version arrive square to nothing.
+        const auto start_pose = basePose();
+        if (!start_pose)
+        {
+            result->message = "locating: no base pose";
+            handle->abort(result);
+            return;
+        }
+        const double working_yaw = goal->use_current_heading ?
+                                       tf2::getYaw(start_pose->pose.orientation) :
+                                       goal->working_yaw;
 
         while (rclcpp::ok())
         {
@@ -313,7 +334,8 @@ private:
             }
 
             const auto object = objectInBase(goal->object_id);
-            if (!object)
+            const auto here   = basePose();
+            if (!object || !here)
             {
                 result->message =
                     "locating: no fresh pose for '" + goal->object_id + "' on /objects";
@@ -321,16 +343,16 @@ private:
                 return;
             }
 
-            const double range   = std::hypot(object->point.x, object->point.y);
-            const double bearing = std::atan2(object->point.y, object->point.x);
-            const auto   command = planApproach(range, bearing, limits);
+            const double heading_error = wrap(working_yaw - tf2::getYaw(here->pose.orientation));
+            const auto   command =
+                planApproach(object->point.x, object->point.y, heading_error, limits);
 
-            result->final_range_m     = range;
-            result->final_bearing_rad = bearing;
+            result->final_x_m = object->point.x;
+            result->final_y_m = object->point.y;
 
-            feedback->range_m     = range;
-            feedback->bearing_rad = bearing;
-            feedback->pulses      = pulses;
+            feedback->forward_error_m = command.forward_error_m;
+            feedback->lateral_error_m = command.lateral_error_m;
+            feedback->pulses          = pulses;
 
             switch (command.move)
             {
@@ -338,17 +360,17 @@ private:
                     feedback->phase = ApproachObject::Feedback::PHASE_VERIFYING;
                     handle->publish_feedback(feedback);
                     result->success = true;
-                    result->message = "the object is at " + std::to_string(range) + " m, " +
-                                      std::to_string(bearing * 180.0 / M_PI) + " deg after " +
+                    result->message = "the object is at (" + std::to_string(object->point.x) +
+                                      ", " + std::to_string(object->point.y) + ") after " +
                                       std::to_string(pulses) + " pulses";
                     RCLCPP_INFO(get_logger(), "%s", result->message.c_str());
                     handle->succeed(result);
                     return;
 
                 case ApproachMove::kOvershot:
-                    result->message =
-                        "closing: the object is " + std::to_string(range) +
-                        " m away, inside the arm's working range, and this gait cannot reverse";
+                    result->message = "closing: the object is " + std::to_string(object->point.x) +
+                                      " m ahead, inside the arm's working range, and this gait "
+                                      "cannot reverse";
                     handle->abort(result);
                     return;
 
@@ -357,46 +379,30 @@ private:
                     handle->abort(result);
                     return;
 
-                case ApproachMove::kTurn:
-                {
-                    feedback->phase = ApproachObject::Feedback::PHASE_FACING;
-                    handle->publish_feedback(feedback);
-
-                    // A yaw pulse turns 0 to 18 degrees, which straddles the bearing tolerance,
-                    // so a fixed pulse can oscillate about the window forever. Halving after an
-                    // overshoot is what makes it converge.
-                    const double sign = command.turn_rad > 0.0 ? 1.0 : -1.0;
-                    if (last_align_sign != 0.0 && sign != last_align_sign)
-                    {
-                        turn_pulse = std::max(min_turn_pulse_s_, turn_pulse * 0.5);
-                    }
-                    last_align_sign = sign;
-
-                    RCLCPP_INFO(
-                        get_logger(),
-                        "turn %+.1f deg (oblique %.1f), range %.3f, remaining %.3f",
-                        command.turn_rad * 180.0 / M_PI,
-                        command.oblique_rad * 180.0 / M_PI,
-                        range,
-                        command.remaining_m);
-                    pulse(0.0, sign * pulse_vyaw_, turn_pulse);
-                    ++pulses;
-                    break;
-                }
-
                 case ApproachMove::kStep:
                 {
                     feedback->phase = ApproachObject::Feedback::PHASE_CLOSING;
                     handle->publish_feedback(feedback);
 
-                    const auto before = basePose();
+                    // Aim first, ALWAYS, even for a straight-in step. A forward pulse yaws the
+                    // robot 8 degrees every time, so without re-aiming before each one the
+                    // approach walks an arc; that is what the spiral in the first probe run was.
                     RCLCPP_INFO(
                         get_logger(),
-                        "step: range %.3f, remaining %.3f, quantum %.3f",
-                        range,
-                        command.remaining_m,
+                        "step: forward error %.3f, lateral %.3f, oblique %+.1f deg, quantum %.3f",
+                        command.forward_error_m,
+                        command.lateral_error_m,
+                        command.oblique_rad * 180.0 / M_PI,
                         limits.pulse_advance_m);
-                    pulse(pulse_vx_, 0.0, step_pulse_s_);
+                    if (!aimAt(handle, wrap(working_yaw + command.oblique_rad), deadline, pulses))
+                    {
+                        result->message = "facing: could not hold the working heading";
+                        handle->abort(result);
+                        return;
+                    }
+
+                    const auto before = basePose();
+                    pulse(pulse_vx_, 0.0, 0.0, step_pulse_s_);
                     ++pulses;
 
                     const auto after = basePose();
@@ -407,10 +413,37 @@ private:
                             after->pose.position.y - before->pose.position.y);
                         limits.pulse_advance_m = maxObservedAdvance(limits.pulse_advance_m, moved);
                     }
-                    // Turning resumes from a full pulse: the halving above is about settling
-                    // one heading, not a permanent property of the gait.
-                    turn_pulse      = turn_pulse_s_;
-                    last_align_sign = 0.0;
+                    break;
+                }
+
+                case ApproachMove::kTurn:
+                {
+                    feedback->phase = ApproachObject::Feedback::PHASE_FACING;
+                    handle->publish_feedback(feedback);
+                    RCLCPP_INFO(
+                        get_logger(),
+                        "restoring heading, off by %+.1f deg",
+                        command.turn_rad * 180.0 / M_PI);
+                    if (!aimAt(handle, working_yaw, deadline, pulses))
+                    {
+                        result->message = "facing: could not hold the working heading";
+                        handle->abort(result);
+                        return;
+                    }
+                    break;
+                }
+
+                case ApproachMove::kStrafe:
+                {
+                    feedback->phase = ApproachObject::Feedback::PHASE_SIDESTEPPING;
+                    handle->publish_feedback(feedback);
+                    RCLCPP_INFO(
+                        get_logger(),
+                        "strafe %s: lateral error %.3f",
+                        command.lateral_sign > 0.0 ? "left" : "right",
+                        command.lateral_error_m);
+                    pulse(0.0, command.lateral_sign * pulse_vy_, 0.0, strafe_pulse_s_);
+                    ++pulses;
                     break;
                 }
             }
@@ -418,6 +451,42 @@ private:
 
         result->message = "closing: shutting down";
         handle->abort(result);
+    }
+
+    /// Yaw-pulse until the base is within the heading tolerance of `target_yaw`.
+    ///
+    /// A closed loop rather than one pulse per planner tick, because a 3.8 degree pulse would
+    /// otherwise cost a whole re-plan and a fresh object lookup per degree of correction.
+    template <typename HandleT>
+    bool aimAt(
+        const std::shared_ptr<HandleT>& handle, double target_yaw,
+        std::chrono::steady_clock::time_point deadline, int& pulses)
+    {
+        for (int i = 0; i < max_aim_pulses_ && rclcpp::ok(); ++i)
+        {
+            if (handle->is_canceling() || std::chrono::steady_clock::now() > deadline)
+            {
+                return false;
+            }
+            const auto here = basePose();
+            if (!here)
+            {
+                return false;
+            }
+            const double error = wrap(target_yaw - tf2::getYaw(here->pose.orientation));
+            if (std::abs(error) <= limits_.heading_tolerance_rad)
+            {
+                return true;
+            }
+            pulse(0.0, 0.0, std::copysign(pulse_vyaw_, error), turn_pulse_s_);
+            ++pulses;
+        }
+        // Out of pulses rather than out of time. Report success anyway if the heading is close
+        // enough to work with: refusing here would fail an approach that is merely a degree or
+        // two off, which the lateral cleanup can absorb.
+        const auto here = basePose();
+        return here && std::abs(wrap(target_yaw - tf2::getYaw(here->pose.orientation))) <
+                           2.0 * limits_.heading_tolerance_rad;
     }
 
     void runRetreat(const std::shared_ptr<GoalHandleRetreat>& handle)
@@ -439,11 +508,14 @@ private:
         const double timeout_s = goal->timeout_s > 0.0 ? goal->timeout_s : default_timeout_s_;
         const auto   deadline  = deadlineIn(timeout_s);
 
+        int pulses = 0;
+
         // Turn to face away. Reverse is not available: g1_gait_shaper compares forward speed
-        // signed, so a negative command is zeroed at any magnitude.
+        // signed, so a negative command is zeroed at any magnitude. Half a turn costs about 24
+        // yaw pulses at 3.8 degrees each, which is why max_aim_pulses does not bound this one.
         feedback->phase = Retreat::Feedback::PHASE_TURNING;
         handle->publish_feedback(feedback);
-        if (!turnTo(handle, away_yaw, deadline))
+        if (!faceAway(handle, away_yaw, deadline, pulses))
         {
             result->message = "turning: could not face away";
             handle->abort(result);
@@ -452,7 +524,6 @@ private:
 
         feedback->phase  = Retreat::Feedback::PHASE_WALKING;
         double travelled = 0.0;
-        int    pulses    = 0;
         while (rclcpp::ok() && travelled < goal->distance_m && pulses < max_pulses_)
         {
             if (handle->is_canceling())
@@ -466,7 +537,7 @@ private:
             {
                 break;
             }
-            pulse(pulse_vx_, 0.0, step_pulse_s_);
+            pulse(pulse_vx_, 0.0, 0.0, step_pulse_s_);
             ++pulses;
 
             const auto here = basePose();
@@ -484,7 +555,7 @@ private:
         {
             feedback->phase = Retreat::Feedback::PHASE_RESTORING;
             handle->publish_feedback(feedback);
-            turnTo(handle, start_yaw, deadline);
+            faceAway(handle, start_yaw, deadline, pulses);
         }
 
         result->travelled_m = travelled;
@@ -503,14 +574,16 @@ private:
         }
     }
 
-    /// Yaw-pulse until the base faces `target_yaw`. Shares the halving the approach uses.
+    /// Yaw-pulse until the base faces `target_yaw`, however many pulses that takes.
+    ///
+    /// Separate from aimAt() only in its budget: a retreat turns roughly 180 degrees, which is
+    /// about 24 pulses, while aimAt() corrects the 8 degrees a forward step introduces and
+    /// wants a tight bound so a stuck heading fails fast instead of spinning.
     template <typename HandleT>
-    bool turnTo(
+    bool faceAway(
         const std::shared_ptr<HandleT>& handle, double target_yaw,
-        std::chrono::steady_clock::time_point deadline)
+        std::chrono::steady_clock::time_point deadline, int& pulses)
     {
-        double turn_pulse = turn_pulse_s_;
-        double last_sign  = 0.0;
         for (int i = 0; i < max_pulses_ && rclcpp::ok(); ++i)
         {
             if (handle->is_canceling() || std::chrono::steady_clock::now() > deadline)
@@ -523,17 +596,12 @@ private:
                 return false;
             }
             const double error = wrap(target_yaw - tf2::getYaw(here->pose.orientation));
-            if (std::abs(error) <= limits_.bearing_tolerance_rad)
+            if (std::abs(error) <= limits_.heading_tolerance_rad)
             {
                 return true;
             }
-            const double sign = error > 0.0 ? 1.0 : -1.0;
-            if (last_sign != 0.0 && sign != last_sign)
-            {
-                turn_pulse = std::max(min_turn_pulse_s_, turn_pulse * 0.5);
-            }
-            last_sign = sign;
-            pulse(0.0, sign * pulse_vyaw_, turn_pulse);
+            pulse(0.0, 0.0, std::copysign(pulse_vyaw_, error), turn_pulse_s_);
+            ++pulses;
         }
         return false;
     }
@@ -542,14 +610,16 @@ private:
     std::string base_frame_;
     double      object_timeout_ms_ = 1500.0;
     double      pulse_vx_          = 0.45;
-    double      pulse_vyaw_        = 1.30;
+    double      pulse_vyaw_        = 1.50;
+    double      pulse_vy_          = 0.50;
     double      step_pulse_s_      = 0.30;
-    double      turn_pulse_s_      = 0.22;
-    double      min_turn_pulse_s_  = 0.12;
+    double      turn_pulse_s_      = 0.15;
+    double      strafe_pulse_s_    = 0.15;
     double      settle_s_          = 2.5;
     double      cmd_rate_hz_       = 20.0;
-    int         max_pulses_        = 30;
-    double      default_timeout_s_ = 180.0;
+    int         max_pulses_        = 90;
+    int         max_aim_pulses_    = 14;
+    double      default_timeout_s_ = 420.0;
 
     ApproachLimits limits_;
 

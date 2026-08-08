@@ -17,24 +17,36 @@ string object_id
 string ARM_LEFT=left
 string ARM_RIGHT=right
 string arm
+# The heading to hold while approaching, in the odometry frame, radians.
+#
+# NOT derived from where the object is, deliberately. The standard mobile-manipulation pattern is
+# a stand-off pose on the surface normal, already facing the working direction, closed straight
+# in; Nav2 has GoalAngleCritic for exactly that. An approach that re-aims at the object from a
+# metre out walks in on a curve and arrives square to nothing. Pass the same yaw the staging
+# NavigateToPose goal used.
+float64 working_yaw
+# Hold whatever heading the robot arrived with, ignoring working_yaw. For a caller that trusts
+# navigation to have got the heading right and has no better number of its own.
+bool use_current_heading
 # Give up after this many seconds. 0 uses the server's own default.
 float64 timeout_s
 ---
 bool success
 # On failure, names the phase that failed and why. Not meant to be parsed.
 string message
-# Where the object ended up relative to the base, so a caller can see how close it got rather
-# than only whether it succeeded.
-float64 final_range_m
-float64 final_bearing_rad
+# Where the object ended up in the base frame, so a caller can see how close it got rather than
+# only whether it succeeded.
+float64 final_x_m
+float64 final_y_m
 ---
 # Which phase is running. Also what the result message names on failure, so the constants live
 # here rather than as literals in the server and its tests.
 string PHASE_LOCATING=locating
 string PHASE_FACING=facing
 string PHASE_CLOSING=closing
+string PHASE_SIDESTEPPING=sidestepping
 string PHASE_VERIFYING=verifying
 string phase
-float64 range_m
-float64 bearing_rad
+float64 forward_error_m
+float64 lateral_error_m
 int32 pulses

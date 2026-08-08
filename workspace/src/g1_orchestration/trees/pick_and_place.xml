@@ -12,9 +12,11 @@
   can legally reach, roughly 0.7 m short, and ApproachObject closes the rest against the measured
   object rather than against the map. See docs/notes/m9-base-approach.md.
 
-  Both stations face +y (yaw 1.5708) at the south edge of their surface, because the approach
-  ends with the object 0.28 m in front of the pelvis and 0.20 m to its right, the relative pose
-  the grasp is proven at in the manipulation scene.
+  Both stations face +y (yaw 1.5708) at the south edge of their surface, and each ApproachObject
+  is given that SAME yaw to hold. The approach does not aim itself at the object: it holds the
+  working heading and nulls the object's position error in the base frame, which is the standard
+  stand-off-on-the-surface-normal pattern. It ends with the object 0.28 m in front of the pelvis
+  and 0.20 m to its right, the relative pose the grasp is proven at in the manipulation scene.
 
   The arm bracket spans pick through place deliberately. On hardware a released Dex3 goes limp
   about a second later and drops what it is holding, so the hands stay powered for the whole
@@ -49,7 +51,8 @@
            OVERSHOOTS is not retryable and fails the mission, which is correct, because this
            gait has no reverse. -->
       <RetryUntilSuccessful name="approach_with_one_retry" num_attempts="2">
-        <ApproachObject name="close_on_the_cube" object_id="red_cube" arm="right"/>
+        <ApproachObject name="close_on_the_cube" object_id="red_cube" arm="right"
+                        working_yaw="1.5708"/>
       </RetryUntilSuccessful>
 
       <!-- Two attempts, not one, because each retry re-reads the object's pose from /objects
@@ -71,7 +74,8 @@
 
       <NavigateToPose name="stage_at_storage" goal="6.30;5.35;1.5708"/>
 
-      <ApproachObject name="close_on_the_pad" object_id="drop_pad" arm="right"/>
+      <ApproachObject name="close_on_the_pad" object_id="drop_pad" arm="right"
+                      working_yaw="1.5708"/>
 
       <!-- Onto the drop pad, whose top is at 0.824; a 6 cm cube resting on it centres at 0.855.
            The pad is where the approach just put the robot, so this point is inside the same

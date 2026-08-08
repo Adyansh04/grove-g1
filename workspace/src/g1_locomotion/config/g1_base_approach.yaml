@@ -15,21 +15,31 @@ g1_base_approach:
     cmd_vel_topic: "cmd_vel_approach"
     base_frame: "base_footprint"
 
-    # Both must clear g1_gait_shaper's engage thresholds (fwd 0.45, yaw 1.20) or the shaper
-    # zeroes them and this node walks nowhere while reporting that it is walking.
+    # Every one of these must clear g1_gait_shaper's engage thresholds (fwd 0.45, yaw 1.20,
+    # lat 0.50) or the shaper zeroes them and this node walks nowhere while reporting that it is
+    # walking. pulse_vyaw was 1.30 originally, which clears the SHAPER and not the POLICY -- the
+    # policy measures "no motion at or below 0.60, steps from 1.50" -- so the first live approach
+    # spent its whole budget asking for a turn that never happened.
     pulse_vx: 0.45
-    pulse_vyaw: 1.30
+    pulse_vyaw: 1.50
+    pulse_vy: 0.50
 
-    # Measured: a 0.30 s forward pulse carried the robot 0.303, 0.303 and 0.300 m on three
-    # consecutive trials, with 8.7 to 8.8 degrees of yaw each time. The gait is quantised, not
-    # noisy -- that is a fixed number of steps, not a controller tracking a setpoint.
+    # One duration per primitive, and they are NOT interchangeable. Measured, three repeats each,
+    # on a settled robot in open ground:
+    #
+    #   forward 0.30 s -> 0.293 m, sd 0.010, and +8.2 deg of yaw every time
+    #   yaw     0.15 s -> 3.8 deg, sd 0.6, and 3 mm of translation
+    #   lateral 0.15 s -> ~0.035 m, under a degree of yaw, under a centimetre of forward
+    #
+    # Forward is IRREDUCIBLE. A 0.10 s pulse still produced 0.42 and 0.46 m on the trials where
+    # it triggered: once the gait commits to a step sequence it takes the whole thing. That is
+    # why the last approach step is taken obliquely rather than made smaller.
+    #
+    # Yaw and lateral are bimodal at longer durations -- either a small settle or a committed
+    # step -- and 0.15 s is what keeps them in the small mode worth having.
     step_pulse_s: 0.30
-
-    # Shorter than the step pulse. A yaw pulse measured anywhere from 0 to 18 degrees, which
-    # straddles bearing_tolerance_rad, so the node halves this after an overshoot rather than
-    # oscillating about the window forever. min_turn_pulse_s floors that halving.
-    turn_pulse_s: 0.22
-    min_turn_pulse_s: 0.12
+    turn_pulse_s: 0.15
+    strafe_pulse_s: 0.15
 
     # The gait keeps stepping after the command stops. Measuring before it settles reports the
     # command's effect plus however much of the stride was still in flight, which is what made
@@ -40,38 +50,45 @@ g1_base_approach:
     # WHERE THE OBJECT HAS TO END UP, in the base frame, for the arm to reach it.
     #
     # Not derived from the IK sweep but from the configuration the grasp is PROVEN at: the
-    # manipulation scene welds the pelvis at the origin and puts the cube at (0.28, -0.20), and
-    # the pick succeeds there end to end. In polar form that is 0.344 m at -35.5 degrees.
-    # Calibrating from a working configuration beats calibrating from a coarse reachability
-    # sweep, which only sampled one y.
+    # manipulation scene welds the pelvis at the origin, puts the cube at (0.28, -0.20), and the
+    # pick succeeds there end to end. Calibrating from a working configuration beats calibrating
+    # from a coarse reachability sweep, which only sampled one y.
     #
-    # The bearing mirrors for the left arm, exactly as the grasp offset does.
-    target_range_m: 0.344
-    target_bearing_rad: -0.620
-    range_tolerance_m: 0.055
+    # target_y_m mirrors for the left arm, exactly as the grasp offset does.
+    target_x_m: 0.280
+    target_y_m: -0.200
 
-    # Wider than it looks it should be, deliberately. One yaw pulse turns about 9 degrees on
-    # average, so a tolerance tighter than the turn quantum cannot be held and the robot
-    # hunts. 0.20 rad is 11.5 degrees, which at 0.344 m is about 7 cm of lateral error -- inside
-    # what the arm sweeps, unlike range error.
-    bearing_tolerance_rad: 0.200
+    # Forward is the tight axis because it is the one the gait cannot resolve directly: the
+    # oblique step buys about 1.8 cm of resolution near 60 degrees, so 0.045 is reachable.
+    # Lateral is generous next to its own 0.035 m quantum, and heading is set just above the
+    # 3.8 deg turn quantum, since a tolerance under one pulse cannot be held.
+    forward_tolerance_m: 0.045
+    lateral_tolerance_m: 0.050
+    heading_tolerance_rad: 0.087
 
-    # Closer than this and the object is under the robot's own shell with nowhere for the arm to
+    # Forward of this and the object is under the robot's own shell with nowhere for the arm to
     # go. Terminal, not correctable: g1_gait_shaper compares forward speed signed, so reverse is
     # zeroed at any magnitude and the robot cannot back off a mistake in place.
-    min_range_m: 0.215
+    min_forward_m: 0.180
 
-    # Starting estimate of how far one pulse carries the robot. Raised, never lowered, from what
-    # each pulse is measured to do -- see maxObservedAdvance() for why the asymmetry is the
-    # point. A run on disturbed ground measured 0.36 to 0.62 m for the same command.
-    pulse_advance_m: 0.35
+    # Starting estimate of how far one forward pulse carries the robot. Raised, never lowered,
+    # from what each pulse is measured to do -- see maxObservedAdvance() for why the asymmetry is
+    # the point.
+    pulse_advance_m: 0.293
 
-    # A pulse taken at theta off the target line advances quantum*cos(theta), which is how a
-    # gait with a 0.3 m minimum step lands inside a 0.11 m window at all. It also moves
-    # quantum*sin(theta) sideways, so this caps the excursion: 75 degrees leaves an advance of
-    # about a quarter of a pulse.
+    # A step taken at theta off the working heading advances quantum*cos(theta), which is how a
+    # gait with a 0.29 m minimum step lands inside a 0.09 m window at all. It also moves
+    # quantum*sin(theta) sideways, and that has to be strafed out at 0.035 m a pulse, so this cap
+    # is about cost rather than correctness: 75 degrees leaves an advance of about a quarter of a
+    # step and seven strafes of cleanup.
     max_oblique_rad: 1.309
 
     object_timeout_ms: 1500.0
-    max_pulses: 30
-    default_timeout_s: 180.0
+
+    # Generous, because the pulses are small and each carries a 2.5 s settle. A typical approach
+    # is three forward steps, a couple of yaw pulses to re-aim before each, an oblique final
+    # step and a few strafes -- call it 25 pulses and 70 s. max_aim_pulses bounds ONE re-aim, so
+    # a heading that will not settle fails fast instead of eating the whole budget.
+    max_pulses: 90
+    max_aim_pulses: 14
+    default_timeout_s: 420.0
