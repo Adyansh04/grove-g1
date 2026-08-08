@@ -440,6 +440,7 @@ bool G1ManipulationServer::moveToNamed(MoveGroup& group, const std::string& name
             group.getName().c_str());
         return false;
     }
+
     // Plan then execute, NOT move(). They are not equivalent: move() runs through MoveIt's
     // PlanExecution, which re-checks the whole remaining path against every planning-scene
     // update and aborts the moment one invalidates it. Against a live octomap fed by a chest
@@ -662,10 +663,38 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
     // arm rather than as an obstacle.
     allowHandContact(arm, { "<octomap>" }, true);
 
-    // An empty frame means the goal is already in the planning frame. Anything else is
-    // transformed rather than assumed: a target in odom treated as pelvis lands metres away,
-    // and by the time that is visible the arm is already moving.
-    const auto target = toPlanningFrame(goal->pose.pose, goal->pose.header.frame_id);
+    // Prefer a surface read from /objects over the caller's coordinate.
+    //
+    // Not a convenience. A tree writes its drop point in the MAP frame, while the base approach
+    // that parked the robot drove against /objects, which is published in ODOM -- and those two
+    // frames are only as close as AMCL is right. Measured mid-mission at the storage bench:
+    // map->odom was (0.077, -0.214), so a target correct on the map landed 0.14 m outside the
+    // arm's 0.04 m lateral window and the preplace had no IK solution at all. Resolving the
+    // surface from the stream the approach used makes the two agree by construction, however
+    // far localization has drifted.
+    std::optional<geometry_msgs::msg::Pose>     target;
+    std::optional<vision_msgs::msg::Detection3D> surface;
+    if (!goal->surface_object_id.empty())
+    {
+        surface = lookUpObject(goal->surface_object_id);
+        if (!surface)
+        {
+            fail(
+                Place::Feedback::PHASE_PREPLACE,
+                "nothing called '" + goal->surface_object_id + "' on /objects");
+            return;
+        }
+        const std::string frame = surface->header.frame_id.empty() ? objects_.header.frame_id :
+                                                                     surface->header.frame_id;
+        target = toPlanningFrame(surface->results.front().pose.pose, frame);
+    }
+    else
+    {
+        // An empty frame means the goal is already in the planning frame. Anything else is
+        // transformed rather than assumed: a target in odom treated as pelvis lands metres away,
+        // and by the time that is visible the arm is already moving.
+        target = toPlanningFrame(goal->pose.pose, goal->pose.header.frame_id);
+    }
     if (!target)
     {
         fail(Place::Feedback::PHASE_PREPLACE, "could not transform the target pose");
@@ -686,6 +715,14 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
             held_height = attached.object.primitives.front().dimensions[2];
             break;
         }
+    }
+
+    // A detected surface reports its own centre, so the held object goes on TOP of it: half the
+    // surface's height to reach its face, half the object's to stand it there. A caller-supplied
+    // pose is where the object itself goes and needs neither.
+    if (surface)
+    {
+        target->position.z += 0.5 * (surface->bbox.size.z + held_height);
     }
 
     const geometry_msgs::msg::Pose place_goal = graspFrameGoal(*target, held_height, arm);

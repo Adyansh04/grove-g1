@@ -102,10 +102,14 @@
       <ApproachObject name="close_on_the_pad" object_id="drop_pad" arm="right"
                       working_yaw="1.5708"/>
 
-      <!-- Onto the drop pad, whose top is at 0.824; a 6 cm cube resting on it centres at 0.855.
-           The pad is where the approach just put the robot, so this point is inside the same
-           window the grasp was. -->
-      <Place name="put_it_on_the_pad" target="6.50;6.25;0.855" arm="right"/>
+      <!-- Named, not a coordinate, and that is the whole point. This used to read
+           target="6.50;6.25;0.855", which is exactly right ON THE MAP and still failed every
+           time with "preplace: planning failed (-27)": a coordinate here is in the map frame,
+           while the approach immediately above parks the base against /objects in odom. AMCL
+           was measured 0.23 m from odom at this bench, and the arm's lateral window is 0.04 m,
+           so the target landed 0.14 m outside anything the arm can reach. Naming the surface
+           makes the place and the approach read the same stream, so they cannot disagree. -->
+      <Place name="put_it_on_the_pad" surface="drop_pad" arm="right"/>
 
       <Retreat name="back_off_the_bench" distance="0.5"/>
 

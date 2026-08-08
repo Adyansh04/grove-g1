@@ -237,6 +237,10 @@ Place::Place(const std::string& name, const BT::NodeConfig& config, RosContext c
 BT::PortsList Place::providedPorts()
 {
     return providedBasicPorts({
+        BT::InputPort<std::string>(
+            "surface",
+            "",
+            "Detected surface to place ON TOP OF. Preferred over 'target'."),
         BT::InputPort<Point3>("target", "Where the OBJECT should end up, as 'x;y;z'."),
         BT::InputPort<std::string>("arm", "right", "'left' or 'right'."),
         BT::InputPort<std::string>(
@@ -248,6 +252,18 @@ BT::PortsList Place::providedPorts()
 
 bool Place::fillGoal(Goal& goal)
 {
+    goal.arm = getInput<std::string>("arm").value_or("right");
+
+    // A named surface beats a coordinate, and the reason is worth knowing before writing a tree
+    // the other way. A coordinate here is in the MAP frame, while ApproachObject parks the base
+    // against /objects, which is published in ODOM. Those agree only as well as AMCL does, and
+    // it was measured 0.23 m out mid-mission against an arm window of 0.04 m.
+    goal.surface_object_id = getInput<std::string>("surface").value_or("");
+    if (!goal.surface_object_id.empty())
+    {
+        return true;
+    }
+
     const auto target = getInput<Point3>("target");
     if (!target)
     {
@@ -261,7 +277,6 @@ bool Place::fillGoal(Goal& goal)
     goal.pose.pose.position.y    = target->y;
     goal.pose.pose.position.z    = target->z;
     goal.pose.pose.orientation.w = 1.0;
-    goal.arm                     = getInput<std::string>("arm").value_or("right");
     return true;
 }
 
