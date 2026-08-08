@@ -9,8 +9,10 @@
   THE TWO STATIONS ARE STAGING POSES, NOT WORKING POSES. Nav2 cannot park the robot where the
   arm can reach anything: its xy_goal_tolerance is 0.5 m and robot_radius is 0.45, against an
   arm that reaches 0.28 to 0.33 m and a window about 0.11 m wide. So each station is a pose Nav2
-  can legally reach, roughly 0.7 m short, and ApproachObject closes the rest against the measured
-  object rather than against the map. See docs/notes/m9-base-approach.md.
+  can legally reach, as close to the surface as robot_radius allows, and ApproachObject closes
+  the rest against the measured object rather than against the map. Closer is better: every
+  0.29 m of leftover gap is another forward step, and anything under one step has to be creeped
+  in at 2.5 cm a pulse. See docs/notes/m9-base-approach.md.
 
   Both stations face +y (yaw 1.5708) at the south edge of their surface, and each ApproachObject
   is given that SAME yaw to hold. The approach does not aim itself at the object: it holds the
@@ -43,7 +45,7 @@
            anything here, so this costs the mission nothing. -->
       <SetArmPosture name="tuck_to_travel" group="right_arm" named_target="tucked"/>
 
-      <NavigateToPose name="stage_at_workbench" goal="4.30;-5.95;1.5708"/>
+      <NavigateToPose name="stage_at_workbench" goal="4.30;-5.60;1.5708"/>
 
       <!-- Walks in pulses and re-reads the cube between each one. Retried once: an approach
            that stops short is recoverable by running it again, and the commonest reason to stop
@@ -72,7 +74,7 @@
            is a navigation goal, which will choose its own heading anyway. -->
       <Retreat name="back_off_the_desk" distance="0.7" restore_heading="false"/>
 
-      <NavigateToPose name="stage_at_storage" goal="6.30;5.35;1.5708"/>
+      <NavigateToPose name="stage_at_storage" goal="6.30;5.70;1.5708"/>
 
       <ApproachObject name="close_on_the_pad" object_id="drop_pad" arm="right"
                       working_yaw="1.5708"/>

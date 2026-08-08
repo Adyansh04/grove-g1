@@ -49,10 +49,13 @@ g1_base_approach:
     turn_pulse_cw_s: 0.60
     strafe_pulse_s: 0.15
 
-    # The gait keeps stepping after the command stops. Measuring before it settles reports the
-    # command's effect plus however much of the stride was still in flight, which is what made
-    # the first pulse measurements look random.
-    settle_s: 2.5
+    # The gait keeps stepping after the command stops, and it does so for LONGER than it first
+    # appears. At 2.5 s each pulse delivered about a third of what the same pulse produced in
+    # isolation -- a clockwise turn measured -3.5 deg standalone and -1.2 deg in the approach
+    # loop -- because the next pulse arrived before the previous one had finished. The probe that
+    # produced the numbers in this file left 4.0 s between pulses, so the loop has to as well or
+    # none of them apply.
+    settle_s: 3.5
     cmd_rate_hz: 20.0
 
     # WHERE THE OBJECT HAS TO END UP, in the base frame, for the arm to reach it.
@@ -108,5 +111,8 @@ g1_base_approach:
     # step and a few strafes -- call it 25 pulses and 70 s. max_aim_pulses bounds ONE re-aim, so
     # a heading that will not settle fails fast instead of eating the whole budget.
     max_pulses: 90
-    max_aim_pulses: 20
+    # A 45 degree creep turn is about 13 pulses counter-clockwise and 13 clockwise once the
+    # settle is long enough for each to land. 30 leaves room for the gait having a bad round
+    # without letting a stuck heading eat the whole goal.
+    max_aim_pulses: 30
     default_timeout_s: 420.0
