@@ -58,24 +58,25 @@ enum class ApproachMove : std::uint8_t
 /// horizontal plane of the base frame; the base cannot influence height.
 struct ApproachLimits
 {
-    /// Where the object must sit in the base frame for the arm to reach it. Defaults are the
-    /// position the grasp is PROVEN at: the manipulation scene welds the pelvis at the origin,
-    /// puts the cube at (0.28, -0.20), and the pick succeeds there end to end.
+    /// Where the object must sit in the base frame for the arm to reach it. MEASURED with
+    /// /compute_ik at the workbench cube's height: x 0.16 to 0.36 all solve, 0.38 does not.
     double target_x_m = 0.280;
     double target_y_m = -0.200;
 
-    /// How close each axis has to get. Forward is the tight one because it is the axis the gait
-    /// cannot resolve directly; lateral is generous relative to its own 0.035 m quantum.
-    double forward_tolerance_m = 0.045;
-    double lateral_tolerance_m = 0.050;
+    /// How close each axis has to get. The forward window is the measured band with margin at
+    /// its near end, NOT a guess about how precise the base can be -- the base is not precise,
+    /// and the point of measuring the arm properly was to find out how much slack it grants.
+    double forward_tolerance_m = 0.080;
+    double lateral_tolerance_m = 0.070;
     /// The yaw response is bimodal -- one 0.15 s pulse measured 3 to 14 degrees -- so a
     /// tolerance near a single quantum cannot be held. Residual heading error shows up as
     /// lateral error anyway, which is the cheap axis to correct.
     double heading_tolerance_rad = 0.140;
 
-    /// Forward of this and the object is under the robot's own shell. Terminal, not correctable:
-    /// the gait has no reverse.
-    double min_forward_m = 0.180;
+    /// Nearer than this and the object is under the robot's own shell. Sits just below the
+    /// measured reachable band, which starts at 0.16, so there is room between "past the window"
+    /// and "unrecoverable" for a backwards creep to work in.
+    double min_forward_m = 0.140;
 
     /// What one forward pulse actually carries the robot. Seeded from measurement and raised,
     /// never lowered, by the caller as pulses are observed. See maxObservedAdvance().

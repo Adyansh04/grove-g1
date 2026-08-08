@@ -60,10 +60,15 @@ g1_base_approach:
 
     # WHERE THE OBJECT HAS TO END UP, in the base frame, for the arm to reach it.
     #
-    # Not derived from the IK sweep but from the configuration the grasp is PROVEN at: the
-    # manipulation scene welds the pelvis at the origin, puts the cube at (0.28, -0.20), and the
-    # pick succeeds there end to end. Calibrating from a working configuration beats calibrating
-    # from a coarse reachability sweep, which only sampled one y.
+    # MEASURED, by asking /compute_ik for the grasp frame at the workbench cube's own height
+    # (pelvis z +0.0375) across a sweep of x, four attempts each: m9-checks/reach_sweep.py.
+    # Everything from x 0.16 to 0.36 solves 4/4; 0.38 and beyond solve none.
+    #
+    # This replaced 0.28 with a tolerance of 0.045, which came from the one configuration the
+    # pick is proven at in the manipulation scene. That was one sample mistaken for a range, and
+    # it cost twice: it put the target 8 cm nearer than the arm needs, which drives the robot's
+    # hips into the table edge, and it made the window a third of its real width, so the approach
+    # was creeping after precision the gait does not have.
     #
     # target_y_m mirrors for the left arm, exactly as the grasp offset does.
     target_x_m: 0.280
@@ -71,7 +76,8 @@ g1_base_approach:
 
     # Forward is the tight axis because it is the one the gait cannot resolve directly: the
     # oblique step buys about 1.8 cm of resolution near 60 degrees, so 0.045 is reachable.
-    # Lateral is generous next to its own 0.035 m quantum.
+    # Lateral is generous next to its own 0.035 m quantum, and residual heading error lands here
+    # too.
     #
     # Heading is 8 deg, wider than it first looks it should be, for two reasons. The yaw response
     # is bimodal -- a 0.15 s pulse measured anywhere from 3 to 14 degrees depending on whether
@@ -79,14 +85,16 @@ g1_base_approach:
     # held. And heading precision matters less here than it seems: the grasp is computed in the
     # BASE frame, so what has to be right is where the object sits relative to the robot, and
     # residual heading error shows up as lateral error, which is the cheap axis to fix.
-    forward_tolerance_m: 0.045
-    lateral_tolerance_m: 0.050
+    # +/-0.08 puts the window at x 0.20 to 0.36, entirely inside the band that solved 4/4, with
+    # 0.04 of margin at the near end for the base drifting after the last pulse.
+    forward_tolerance_m: 0.080
+    lateral_tolerance_m: 0.070
     heading_tolerance_rad: 0.140
 
-    # Forward of this and the object is under the robot's own shell with nowhere for the arm to
-    # go. Terminal, not correctable: g1_gait_shaper compares forward speed signed, so reverse is
-    # zeroed at any magnitude and the robot cannot back off a mistake in place.
-    min_forward_m: 0.180
+    # Nearer than this and the object is under the robot's own shell. Set just below the measured
+    # band's near end (0.16) so that being merely past the window leaves room for a backwards
+    # creep, which is the only reverse this robot has.
+    min_forward_m: 0.140
 
     # Starting estimate of how far one forward pulse carries the robot, and it has to be an UPPER
     # bound rather than the typical value: the planner steps only while more than this is left,

@@ -115,9 +115,12 @@
     <!-- The mission's target, on the desk's SOUTH edge (y -5.05) rather than its middle. The
          robot approaches from the south and has to end up with the cube 0.28 m in front of the
          pelvis and 0.20 m to its right; an object in the middle of a 1.1 m deep desk cannot be
-         reached from any legal standing position, whatever the approach does. 0.10 m in from
-         the edge leaves the 0.06 m cube fully supported. -->
-    <body name="red_cube" pos="4.5 -4.95 0.83">
+         reached from any legal standing position, whatever the approach does.
+
+         0.05 m in from the edge, not 0.10. Every centimetre the cube sits further in is a
+         centimetre closer the robot's pelvis has to come to the table edge, and at pelvis
+         height the edge is what the hips foul. The 6 cm cube still has 2 cm of top under it. -->
+    <body name="red_cube" pos="4.5 -5.00 0.83">
       <freejoint name="red_cube_joint"/>
       <geom group="2" type="box" size="0.03 0.03 0.03" material="mat_red_obj" mass="0.15" contype="1" conaffinity="1" friction="1 0.005 0.0001"/>
     </body>

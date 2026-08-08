@@ -39,11 +39,16 @@
       <!-- Arms in before walking. Arm pose measurably disturbs a walking humanoid, and tucked
            is the smallest swept volume and least COM offset of the named poses.
 
-           right_arm rather than both_arms, which would be the natural choice: both_arms fails
-           to execute a named posture on this stack while either arm alone succeeds, and the
-           cause is not yet found (docs/notes/m9-grasp-reachability.md). Only one arm carries
-           anything here, so this costs the mission nothing. -->
-      <SetArmPosture name="tuck_to_travel" group="right_arm" named_target="tucked"/>
+           BOTH arms, one leaf each. both_arms would be the natural choice and cannot execute a
+           named posture on this stack (docs/notes/m9-grasp-reachability.md), so it is two.
+
+           The LEFT one is not symmetry for its own sake. A hanging hand sits at pelvis
+           (+0.209, -0.193, -0.064), which is 21 cm in front of the pelvis and 1 cm under the
+           workbench slab, so it jams on the table edge and the base stops moving while the
+           approach keeps pulsing. Tucking only the right arm moves the collision to the left
+           one and changes nothing. -->
+      <SetArmPosture name="tuck_right_to_travel" group="right_arm" named_target="tucked"/>
+      <SetArmPosture name="tuck_left_to_travel" group="left_arm" named_target="tucked"/>
 
       <NavigateToPose name="stage_at_workbench" goal="4.30;-5.60;1.5708"/>
 
@@ -87,6 +92,7 @@
       <Retreat name="back_off_the_bench" distance="0.6" restore_heading="false"/>
 
       <SetArmPosture name="tuck_again" group="right_arm" named_target="tucked"/>
+      <SetArmPosture name="tuck_left_again" group="left_arm" named_target="tucked"/>
       <ReleaseArm name="hand_the_arm_back"/>
     </Sequence>
   </BehaviorTree>
