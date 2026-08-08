@@ -90,6 +90,15 @@ public:
         turn_pulse_ccw_s_ = declare_parameter<double>("turn_pulse_ccw_s", 0.15);
         turn_pulse_cw_s_  = declare_parameter<double>("turn_pulse_cw_s", 0.60);
         strafe_pulse_s_   = declare_parameter<double>("strafe_pulse_s", 0.15);
+        // A pulse that the gait ignores is lengthened and tried again, up to these ceilings.
+        // The gait's response depends on how recently it moved: an isolated 0.15 s yaw pulse
+        // turns 3.8 deg, and the same pulse inside this loop has been measured turning 0.5 deg.
+        // Rather than pick one duration and be wrong half the time, grow it until it bites.
+        max_turn_pulse_s_ = declare_parameter<double>("max_turn_pulse_s", 1.20);
+        max_step_pulse_s_ = declare_parameter<double>("max_step_pulse_s", 0.80);
+        pulse_growth_     = declare_parameter<double>("pulse_growth", 1.6);
+        stalled_turn_rad_ = declare_parameter<double>("stalled_turn_rad", 0.017);
+        stalled_step_m_   = declare_parameter<double>("stalled_step_m", 0.05);
         // The gait keeps stepping after the command stops. Measuring before it settles reports
         // the command plus whatever of the stride was still in flight.
         settle_s_    = declare_parameter<double>("settle_s", 2.5);
@@ -295,8 +304,9 @@ private:
         const double timeout_s = goal->timeout_s > 0.0 ? goal->timeout_s : default_timeout_s_;
         const auto   deadline  = deadlineIn(timeout_s);
 
-        auto feedback = std::make_shared<ApproachObject::Feedback>();
-        int  pulses   = 0;
+        auto   feedback   = std::make_shared<ApproachObject::Feedback>();
+        int    pulses     = 0;
+        double step_pulse = step_pulse_s_;
 
         // The heading held for the whole approach. Fixed up front rather than recomputed from
         // the object each iteration: the object moves in the base frame as the robot walks, and
@@ -409,8 +419,28 @@ private:
                         return;
                     }
 
-                    pulse(pulse_vx_, 0.0, 0.0, step_pulse_s_);
+                    const auto before = basePose();
+                    pulse(pulse_vx_, 0.0, 0.0, step_pulse);
                     ++pulses;
+
+                    // Grow the next step if this one did nothing. Measured live: three
+                    // consecutive 0.30 s steps moved the robot 1 mm each while the log happily
+                    // reported them as steps, because the gait had gone cold between pulses.
+                    const auto after = basePose();
+                    if (before && after)
+                    {
+                        const double moved = std::hypot(
+                            after->pose.position.x - before->pose.position.x,
+                            after->pose.position.y - before->pose.position.y);
+                        step_pulse = moved < stalled_step_m_ ?
+                                         std::min(step_pulse * pulse_growth_, max_step_pulse_s_) :
+                                         step_pulse_s_;
+                        RCLCPP_INFO(
+                            get_logger(),
+                            "  step moved %.3f m; next step pulse %.2f s",
+                            moved,
+                            step_pulse);
+                    }
                     break;
                 }
 
@@ -493,6 +523,9 @@ private:
         const std::shared_ptr<HandleT>& handle, double target_yaw,
         std::chrono::steady_clock::time_point deadline, int& pulses)
     {
+        double duration       = 0.0;
+        double previous_error = 0.0;
+        bool   have_previous  = false;
         for (int i = 0; i < max_aim_pulses_ && rclcpp::ok(); ++i)
         {
             if (handle->is_canceling() || std::chrono::steady_clock::now() > deadline)
@@ -509,16 +542,34 @@ private:
             {
                 return true;
             }
+
+            // Grow the pulse when the last one barely turned the robot, and start over from the
+            // short one whenever the direction changes. Clockwise pulses were measured turning
+            // 3.5 deg standalone and 0.5 deg inside this loop, which is the difference between
+            // a 45 degree turn costing thirteen pulses and costing ninety.
+            const double fresh = turnPulseFor(error);
+            if (!have_previous || std::signbit(error) != std::signbit(previous_error))
+            {
+                duration = fresh;
+            }
+            else if (std::abs(previous_error - error) < stalled_turn_rad_)
+            {
+                duration = std::min(duration * pulse_growth_, max_turn_pulse_s_);
+            }
+            previous_error = error;
+            have_previous  = true;
+
             // Per pulse, because the one thing that cannot be reconstructed after the fact is
             // whether a yaw pulse moved the robot at all -- which is exactly how the first
             // version failed, silently, for a whole goal.
             RCLCPP_INFO(
                 get_logger(),
-                "aim %d/%d: heading off by %+.1f deg",
+                "aim %d/%d: heading off by %+.1f deg, pulse %.2f s",
                 i + 1,
                 max_aim_pulses_,
-                error * 180.0 / M_PI);
-            pulse(0.0, 0.0, std::copysign(pulse_vyaw_, error), turnPulseFor(error));
+                error * 180.0 / M_PI,
+                duration);
+            pulse(0.0, 0.0, std::copysign(pulse_vyaw_, error), duration);
             ++pulses;
         }
         // Out of pulses rather than out of time. Report success anyway if the heading is close
@@ -656,6 +707,11 @@ private:
     double      turn_pulse_ccw_s_  = 0.15;
     double      turn_pulse_cw_s_   = 0.60;
     double      strafe_pulse_s_    = 0.15;
+    double      max_turn_pulse_s_  = 1.20;
+    double      max_step_pulse_s_  = 0.80;
+    double      pulse_growth_      = 1.6;
+    double      stalled_turn_rad_  = 0.017;
+    double      stalled_step_m_    = 0.05;
     double      settle_s_          = 2.5;
     double      cmd_rate_hz_       = 20.0;
     int         max_pulses_        = 90;

@@ -49,6 +49,22 @@ g1_base_approach:
     turn_pulse_cw_s: 0.60
     strafe_pulse_s: 0.15
 
+    # THESE DURATIONS ARE A STARTING POINT, NOT A CONSTANT. The gait's response depends on how
+    # recently it moved, by a factor of about seven: a 0.15 s counter-clockwise pulse turns
+    # 3.8 deg from a settled robot and 0.5 deg inside this loop, and three consecutive 0.30 s
+    # forward steps were measured moving the robot 1 mm each. So a pulse that does nothing is
+    # lengthened and tried again, and the duration resets as soon as one bites or the direction
+    # changes.
+    #
+    # This is a closed loop, so growing the pulse cannot run away: the next iteration measures
+    # what it did. The ceilings only stop it reaching for a stride the gait cannot take.
+    max_turn_pulse_s: 1.20
+    max_step_pulse_s: 0.80
+    pulse_growth: 1.6
+    # Under a degree of turn, or 5 cm of step, counts as the gait having ignored the pulse.
+    stalled_turn_rad: 0.017
+    stalled_step_m: 0.05
+
     # The gait keeps stepping after the command stops, and it does so for LONGER than it first
     # appears. At 2.5 s each pulse delivered about a third of what the same pulse produced in
     # isolation -- a clockwise turn measured -3.5 deg standalone and -1.2 deg in the approach
