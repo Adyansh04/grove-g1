@@ -71,8 +71,8 @@ protected:
     BT::NodeStatus judgeResult(const WrappedResult& result) override;
 };
 
-/// Backs the base away from a surface. Turns around and walks, because this gait has no
-/// reverse -- see the action definition.
+/// Reverses the base away from a surface and stops. No turn, no walk: a navigation goal
+/// normally follows and does that far better.
 class Retreat : public RosActionNode<g1_msgs::action::Retreat>
 {
 public:

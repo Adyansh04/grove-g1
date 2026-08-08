@@ -143,7 +143,7 @@ It serves two actions:
 | Action | What it does |
 |---|---|
 | `ApproachObject` | Closes the last gap to an object on `/objects`, until it sits where the arm can reach it. |
-| `Retreat` | Backs the base away afterwards, straight off first so a turn does not sweep the arm across the surface. |
+| `Retreat` | Reverses the base clear of the surface and stops. No turn, no walk -- a navigation goal follows and Nav2 does that properly. |
 
 ### Why it is here and not in g1_manipulation
 
@@ -163,15 +163,23 @@ Every duration this package was tuned against came from a probe firing two or th
 so it only ever measured a rested gait. Nav2 drives this robot with a continuous stream and has
 never had the problem.
 
-Turns are a hybrid, because neither primitive covers the range. A continuous turn cannot stop inside
-the tolerance -- the gait coasts about 17 degrees after the command ends -- so it drives while the
-error is bigger than that and takes one short pulse below it.
+The rare heading correction is a hybrid, because neither primitive covers the range. A continuous
+turn cannot stop inside the tolerance -- the gait coasts about 17 degrees after the command ends --
+so it drives while the error is bigger than that and takes one short pulse below it.
 
-The fine forward move is not a forward move at all. Forward is irreducible at about 0.29 m however
-short the command, so a sub-step correction turns 45 degrees off the working heading and STRAFES:
-that advances `strafe * sin(45)`, about 2.5 cm, and slides the same again in whichever direction the
-lateral error needs. Flipping the offset backs the robot up, which is the only reverse this robot
-has and what makes an overshoot recoverable.
+**There is no turning in the approach.** The heading comes from the navigation goal, which is
+already aimed at the surface, and the arm does not care which way the room faces. So the error is
+nulled with the three primitives that are stable and cheap -- drive forward, reverse, strafe -- and
+yaw is used only if the heading has drifted badly.
+
+Two earlier designs did turn and both failed on it. An oblique forward step needs about 75 degrees
+for a small remainder, which throws the robot half a metre sideways; a 45-degree creep-and-strafe
+costs 45 degrees each way, and one live run spent 48 pulses that way removing 17 cm of lateral error
+that five strafes cover.
+
+Fine forward motion, which the gait cannot produce directly, is a forward drive that stops at zero
+and a reverse that takes back whatever the coast added. Reverse resolves more finely than forward:
+-0.247 m/s against 0.35.
 
 ### What it aims at
 

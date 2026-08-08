@@ -93,7 +93,7 @@ g1_base_approach:
     # pick is proven at in the manipulation scene. That was one sample mistaken for a range, and
     # it cost twice: it put the target 8 cm nearer than the arm needs, which drives the robot's
     # hips into the table edge, and it made the window a third of its real width, so the approach
-    # was creeping after precision the gait does not have.
+    # was chasing precision the gait does not have.
     #
     # target_y_m mirrors for the left arm, exactly as the grasp offset does.
     target_x_m: 0.270
@@ -128,7 +128,7 @@ g1_base_approach:
     # 0.27 +/- 0.11 IS the measured band, x 0.16..0.38, rather than a cautious slice of it.
     #
     # Cutting it short is what caused the retries: a run stepped from 0.718 of forward error to
-    # 0.103 in one drive -- a good, finished approach -- and was then sent creeping for forty
+    # 0.103 in one drive -- a good, finished approach -- and was then sent nudging for forty
     # pulses because the tolerance was 0.090 and it was 13 mm outside. The arm could reach it the
     # whole time. Being stricter than the arm buys nothing and costs minutes.
     forward_tolerance_m: 0.110
@@ -140,40 +140,26 @@ g1_base_approach:
     heading_tolerance_rad: 0.350
 
     # Nearer than this and the object is under the robot's own shell. Set just below the measured
-    # band's near end (0.16) so that being merely past the window leaves room for a backwards
-    # creep, which is the only reverse this robot has.
+    # band's near end (0.16) so that being merely past the window leaves room to reverse out of.
     min_forward_m: 0.120
 
-    # Take a forward step while more than this is left; creep below it. About one typical step:
+    # More than this left and the forward drive may stop early and let the gait coast; less, and
+    # it drives to zero and lets a reverse take back whatever the coast added. About one typical step:
     # 0.293 m from a settled robot, 0.37 to 0.51 inside the approach loop where the gait is
     # already warm from the re-aim before it.
     #
     # It is NOT an upper bound, and was, which broke the approach outright. At 0.60 the planner
     # refused to step with 0.58 m of gap left -- on the grounds that a 0.60 step might overshoot
-    # -- and set about closing the whole 0.58 m at 2.5 cm a creep. It never arrived. Overshooting
-    # is recoverable now (a creep runs backwards), so caution here costs far more than it saves.
+    # -- and set about closing the whole 0.58 m two centimetres at a time. It never arrived.
+    # Overshooting is recoverable (the robot reverses), so caution here costs more than it saves.
     step_threshold_m: 0.32
-
-    # How far off the working heading the FINE approach aims before strafing. A strafe there
-    # advances strafe*sin(offset) and slides strafe*cos(offset): at 45 degrees that is 2.5 cm
-    # forward and 2.5 cm sideways per pulse, both precise, and the slide is pointed at whichever
-    # side the lateral error needs.
-    #
-    # This replaced an oblique FORWARD step, which does not survive contact. Closing a 12 cm
-    # remainder that way needs about 75 degrees, which throws the robot half a metre sideways and
-    # costs forty pulses to turn into and out of at 3.8 degrees each. Live, it oscillated across
-    # the target and spent its whole budget turning.
-    fine_offset_rad: 0.785
 
     object_timeout_ms: 1500.0
 
-    # Generous, because the pulses are small and each carries a 2.5 s settle. A typical approach
-    # is three forward steps, a couple of yaw pulses to re-aim before each, an oblique final
-    # step and a few strafes -- call it 25 pulses and 70 s. max_aim_pulses bounds ONE re-aim, so
-    # a heading that will not settle fails fast instead of eating the whole budget.
+    # Generous. A typical approach is one forward drive and a couple of strafes, but a bad
+    # arrival can need several of each, and every move carries a settle and a quiet gap.
+    # max_aim_attempts bounds ONE heading correction, so a heading that will not settle fails
+    # fast instead of eating the whole budget.
     max_pulses: 150
-    # A 45 degree creep turn is about 13 pulses counter-clockwise and 13 clockwise once the
-    # settle is long enough for each to land. 30 leaves room for the gait having a bad round
-    # without letting a stuck heading eat the whole goal.
-    max_aim_pulses: 30
+    max_aim_attempts: 8
     default_timeout_s: 900.0

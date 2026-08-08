@@ -117,15 +117,19 @@ Both stations face +y and hand that same yaw to `ApproachObject` to hold.
 
 ### Retreat backs straight off before turning
 
-`back_off` is not decoration. The approach leaves the robot close enough to the workbench that
-turning on the spot sweeps the robot and the carried cube across the table, which is exactly what it
-did. It now reverses out first, in a straight line, and only then turns to walk away.
+`Retreat` reverses clear and stops. It does not turn and it does not walk anywhere: the approach
+leaves the robot close enough that turning on the spot sweeps the robot and the carried cube across
+the desk, and the navigation goal that follows does the turning properly.
 
 That reverse had to be unlocked. `g1_gait_shaper` used to zero every negative `vx`, so the first
-attempt backed off with angled strafes -- which does move the base backwards, but needs a 45 degree
-turn to set up, and that turn IS the collision. The policy itself reverses perfectly well at -0.60
+attempt backed off with angled strafes -- which does move the base backwards but needs a 45 degree
+turn to set up, and that turn IS the collision. The policy reverses perfectly well at -0.60
 (-0.247 m/s measured), so the shaper now has a separate, higher `rev_engage` that keeps Nav2's
 backup speeds zeroed and lets a deliberate command through.
+
+The carry posture is taken AFTER the retreat, not before. Moving the arm to `carry` while still at
+the desk failed with `<octomap> <-> right_hand_index_1_link` 220 steps into a 248 step path: the
+pose is fine, the room to swing into is not.
 
 ## Running
 

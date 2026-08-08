@@ -1,22 +1,16 @@
-# Back away from a surface, so the robot can turn and walk off without dragging an arm across it.
+# Reverse away from a surface, far enough that whatever happens next does not drag the arm across
+# it.
 #
-# "Back" is a lie the gait cannot honour. g1_gait_shaper compares forward speed SIGNED, so any
-# negative vx is zeroed at any magnitude, and the policy measures -0.247 m/s for a commanded
-# -0.60 anyway -- reverse is entirely inside the dead zone. So this turns around, walks forward,
-# and optionally faces back. See docs/notes/m9-base-approach.md.
+# It reverses and STOPS. It does not turn, and it does not walk anywhere: a navigation goal
+# normally follows, and Nav2 is far better at going somewhere than a hand-rolled pulse controller.
+# The only job here is to get the base clear.
+#
+# Reverse is real, but only just: the policy measures -0.247 m/s for a commanded -0.60 and exactly
+# 0.000 for -0.40, and g1_gait_shaper has a separate rev_engage above a planner's backup speeds so
+# a deliberate command like this one gets through. See docs/notes/m9-base-approach.md.
 
 # How far to end up from where it started, in metres. Achieved to within about one gait pulse.
 float64 distance_m
-# How much of that to cover BEFORE turning round, backing straight off instead.
-#
-# Turning on the spot beside a workbench swings the robot and whatever it is holding across the
-# table. Backing off first costs a few centimetres a pulse and is the only way out of that,
-# since the gait has no reverse and the turn is what does the damage. 0 turns immediately.
-float64 back_off_m
-# Face the original heading again at the end. A mission that is about to navigate somewhere else
-# does not need it and pays two turns for nothing; a mission that wants to look at what it just
-# put down does.
-bool restore_heading
 # Give up after this many seconds. 0 uses the server's own default.
 float64 timeout_s
 ---
@@ -25,8 +19,5 @@ string message
 float64 travelled_m
 ---
 string PHASE_BACKING_OFF=backing_off
-string PHASE_TURNING=turning
-string PHASE_WALKING=walking
-string PHASE_RESTORING=restoring
 string phase
 float64 travelled_m

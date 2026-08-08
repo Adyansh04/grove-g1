@@ -178,27 +178,15 @@ Retreat::Retreat(const std::string& name, const BT::NodeConfig& config, RosConte
 BT::PortsList Retreat::providedPorts()
 {
     return providedBasicPorts({
-        BT::InputPort<double>("distance", 0.6, "How far to back off, in metres."),
-        BT::InputPort<double>(
-            "back_off",
-            0.3,
-            "How much of that to cover before turning round. Turning beside a workbench sweeps "
-            "the arm across it."),
-        BT::InputPort<bool>(
-            "restore_heading",
-            false,
-            "Face the original heading again. A tree about to navigate elsewhere pays two turns "
-            "for nothing."),
+        BT::InputPort<double>("distance", 0.6, "How far to reverse, in metres."),
         BT::InputPort<double>("timeout_s", 0.0, "0 uses the server's own default."),
     });
 }
 
 bool Retreat::fillGoal(Goal& goal)
 {
-    goal.distance_m      = getInput<double>("distance").value_or(0.6);
-    goal.back_off_m      = getInput<double>("back_off").value_or(0.3);
-    goal.restore_heading = getInput<bool>("restore_heading").value_or(false);
-    goal.timeout_s       = getInput<double>("timeout_s").value_or(0.0);
+    goal.distance_m = getInput<double>("distance").value_or(0.6);
+    goal.timeout_s  = getInput<double>("timeout_s").value_or(0.0);
     if (goal.distance_m <= 0.0)
     {
         RCLCPP_ERROR(node_->get_logger(), "[%s] distance must be positive", name().c_str());

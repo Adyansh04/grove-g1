@@ -117,7 +117,6 @@ public:
         limits_.heading_tolerance_rad = declare_parameter<double>("heading_tolerance_rad", 0.087);
         limits_.min_forward_m         = declare_parameter<double>("min_forward_m", 0.180);
         limits_.step_threshold_m      = declare_parameter<double>("step_threshold_m", 0.32);
-        limits_.fine_offset_rad       = declare_parameter<double>("fine_offset_rad", 0.785);
 
         max_pulses_        = declare_parameter<int>("max_pulses", 90);
         max_aim_pulses_    = declare_parameter<int>("max_aim_pulses", 14);
@@ -504,48 +503,11 @@ private:
                         {
                             return true;
                         }
-                        return object_now->point.x - limits.target_x_m <= step_lead_m_;
+                        const double lead = command.coarse ? step_lead_m_ : 0.0;
+                        return object_now->point.x - limits.target_x_m <= lead;
                     };
                     driveUntil(pulse_vx_, 0.0, 0.0, close_enough, max_step_s_, deadline);
                     ++pulses;
-                    break;
-                }
-
-                case ApproachMove::kCreep:
-                {
-                    feedback->phase = ApproachObject::Feedback::PHASE_SIDESTEPPING;
-                    handle->publish_feedback(feedback);
-                    RCLCPP_INFO(
-                        get_logger(),
-                        "creep: forward error %.3f, lateral %.3f, offset %+.0f deg",
-                        command.forward_error_m,
-                        command.lateral_error_m,
-                        command.fine_offset_rad * 180.0 / M_PI);
-                    if (!aimAt(handle, wrap(working_yaw + command.fine_offset_rad), deadline, pulses))
-                    {
-                        result->message = "facing: could not hold the creep heading";
-                        handle->abort(result);
-                        return;
-                    }
-                    pulse(0.0, command.lateral_sign * pulse_vy_, 0.0, strafe_pulse_s_);
-                    ++pulses;
-                    break;
-                }
-
-                case ApproachMove::kTurn:
-                {
-                    feedback->phase = ApproachObject::Feedback::PHASE_FACING;
-                    handle->publish_feedback(feedback);
-                    RCLCPP_INFO(
-                        get_logger(),
-                        "restoring heading, off by %+.1f deg",
-                        command.turn_rad * 180.0 / M_PI);
-                    if (!aimAt(handle, working_yaw, deadline, pulses))
-                    {
-                        result->message = "facing: could not hold the working heading";
-                        handle->abort(result);
-                        return;
-                    }
                     break;
                 }
 
@@ -692,108 +654,56 @@ private:
         const auto start = basePose();
         if (!start)
         {
-            result->message = "turning: no base pose to retreat from";
+            result->message = "backing_off: no base pose to retreat from";
             handle->abort(result);
             return;
         }
-        const double start_yaw = tf2::getYaw(start->pose.orientation);
-        const double away_yaw  = wrap(start_yaw + M_PI);
 
         const double timeout_s = goal->timeout_s > 0.0 ? goal->timeout_s : default_timeout_s_;
         const auto   deadline  = deadlineIn(timeout_s);
 
-        int pulses = 0;
-
-        // Back straight off FIRST, in reverse, before any turn.
+        // Reverse, and that is the whole skill. No turn, no walk.
         //
-        // Turning on the spot beside a workbench sweeps the robot and whatever it is holding
-        // across the table, which is what the mission does immediately after a pick. An earlier
-        // version tried to back off with angled strafes, which does move the base backwards but
-        // needs a 45 degree turn to set up -- and that turn is the collision.
+        // It used to turn 180 degrees and walk the remaining distance, which was doing Nav2's job
+        // badly: a navigation goal follows immediately and is far better at going somewhere than a
+        // hand-rolled pulse controller. And the turn was actively harmful -- taken beside a
+        // workbench it swings the robot and whatever it is holding across the table, which is
+        // exactly what this exists to prevent.
         //
-        // So this is genuine reverse. The policy does have it: -0.60 measures -0.247 m/s, and it
-        // was g1_gait_shaper refusing all negative vx that made it unavailable. The shaper now
-        // has a separate, higher rev_engage, so a planner's backup speeds are still zeroed and a
-        // deliberate command like this one gets through.
-        if (goal->back_off_m > 0.0)
-        {
-            feedback->phase = Retreat::Feedback::PHASE_BACKING_OFF;
-            handle->publish_feedback(feedback);
-
-            const auto far_enough = [&] {
-                const auto here = basePose();
-                if (!here)
-                {
-                    return true;
-                }
-                return std::hypot(
-                           here->pose.position.x - start->pose.position.x,
-                           here->pose.position.y - start->pose.position.y) >= goal->back_off_m;
-            };
-            driveUntil(-pulse_vrev_, 0.0, 0.0, far_enough, max_step_s_, deadline);
-            ++pulses;
-
-            const auto   here     = basePose();
-            const double backed   = here ? std::hypot(
-                                             here->pose.position.x - start->pose.position.x,
-                                             here->pose.position.y - start->pose.position.y) :
-                                           0.0;
-            feedback->travelled_m = backed;
-            handle->publish_feedback(feedback);
-            RCLCPP_INFO(get_logger(), "backed straight off %.3f m before turning", backed);
-        }
-
-        // Then turn to face away and walk the rest. Half a turn is a lot of yaw, which is why
-        // faceAway() is bounded by max_pulses rather than the tighter aim budget.
-        feedback->phase = Retreat::Feedback::PHASE_TURNING;
+        // Reverse is real but only just: the policy measures -0.247 m/s at a commanded -0.60 and
+        // exactly nothing at -0.40, and g1_gait_shaper has a rev_engage above a planner's backup
+        // speeds so a deliberate command like this one gets through and a stray one does not.
+        feedback->phase = Retreat::Feedback::PHASE_BACKING_OFF;
         handle->publish_feedback(feedback);
-        if (!faceAway(handle, away_yaw, deadline, pulses))
-        {
-            result->message = "turning: could not face away";
-            handle->abort(result);
-            return;
-        }
 
-        feedback->phase  = Retreat::Feedback::PHASE_WALKING;
-        double travelled = 0.0;
-        while (rclcpp::ok() && travelled < goal->distance_m && pulses < max_pulses_)
+        const auto travelled = [&] {
+            const auto here = basePose();
+            return here ? std::hypot(
+                              here->pose.position.x - start->pose.position.x,
+                              here->pose.position.y - start->pose.position.y) :
+                          0.0;
+        };
+        const auto far_enough = [&] { return travelled() >= goal->distance_m; };
+
+        while (rclcpp::ok() && !far_enough() && std::chrono::steady_clock::now() < deadline)
         {
             if (handle->is_canceling())
             {
-                result->travelled_m = travelled;
-                result->message     = "walking: cancelled";
+                result->travelled_m = travelled();
+                result->message     = "backing_off: cancelled";
                 handle->canceled(result);
                 return;
             }
-            if (std::chrono::steady_clock::now() > deadline)
-            {
-                break;
-            }
-            pulse(pulse_vx_, 0.0, 0.0, step_pulse_s_);
-            ++pulses;
-
-            const auto here = basePose();
-            if (here)
-            {
-                travelled = std::hypot(
-                    here->pose.position.x - start->pose.position.x,
-                    here->pose.position.y - start->pose.position.y);
-            }
-            feedback->travelled_m = travelled;
+            driveUntil(-pulse_vrev_, 0.0, 0.0, far_enough, max_step_s_, deadline);
+            feedback->travelled_m = travelled();
             handle->publish_feedback(feedback);
         }
 
-        if (goal->restore_heading)
-        {
-            feedback->phase = Retreat::Feedback::PHASE_RESTORING;
-            handle->publish_feedback(feedback);
-            faceAway(handle, start_yaw, deadline, pulses);
-        }
-
-        result->travelled_m = travelled;
-        result->success     = travelled >= goal->distance_m;
-        result->message     = result->success ? "backed off " + std::to_string(travelled) + " m" :
-                                                "walking: only made " + std::to_string(travelled) +
+        const double backed = travelled();
+        result->travelled_m = backed;
+        result->success     = backed >= goal->distance_m;
+        result->message     = result->success ? "reversed " + std::to_string(backed) + " m clear" :
+                                                "backing_off: only made " + std::to_string(backed) +
                                                 " m of " + std::to_string(goal->distance_m);
         RCLCPP_INFO(get_logger(), "%s", result->message.c_str());
         if (result->success)
@@ -804,38 +714,6 @@ private:
         {
             handle->abort(result);
         }
-    }
-
-    /// Yaw-pulse until the base faces `target_yaw`, however many pulses that takes.
-    ///
-    /// Separate from aimAt() only in its budget: a retreat turns roughly 180 degrees, which is
-    /// about 24 pulses, while aimAt() corrects the 8 degrees a forward step introduces and
-    /// wants a tight bound so a stuck heading fails fast instead of spinning.
-    template <typename HandleT>
-    bool faceAway(
-        const std::shared_ptr<HandleT>& handle, double target_yaw,
-        std::chrono::steady_clock::time_point deadline, int& pulses)
-    {
-        for (int i = 0; i < max_pulses_ && rclcpp::ok(); ++i)
-        {
-            if (handle->is_canceling() || std::chrono::steady_clock::now() > deadline)
-            {
-                return false;
-            }
-            const auto here = basePose();
-            if (!here)
-            {
-                return false;
-            }
-            const double error = wrap(target_yaw - tf2::getYaw(here->pose.orientation));
-            if (std::abs(error) <= limits_.heading_tolerance_rad)
-            {
-                return true;
-            }
-            pulse(0.0, 0.0, std::copysign(pulse_vyaw_, error), turnPulseFor(error));
-            ++pulses;
-        }
-        return false;
     }
 
     std::string cmd_topic_;

@@ -81,20 +81,17 @@
         <Pick name="pick_the_cube" object_id="red_cube" arm="right"/>
       </RetryUntilSuccessful>
 
-      <!-- Back off BEFORE rearranging the arm, and reverse out for the first 0.35 m.
-           Two separate reasons, both measured.
+      <!-- Reverse clear of the desk BEFORE rearranging the arm. Two separate reasons, both
+           measured.
 
-           The reverse: the approach leaves the robot close enough that turning on the spot
-           sweeps the robot and the carried cube across the desk. The gait does reverse above
-           g1_gait_shaper's rev_engage, so it backs straight out and only then turns.
+           Reverse rather than turn: the approach leaves the robot close enough that turning on
+           the spot sweeps the robot and the carried cube across the desk. It backs straight out
+           and stops; the navigation goal below does the turning, which Nav2 does properly.
 
-           The ordering: moving the arm to `carry` while still at the desk failed with
-           `<octomap> <-> right_hand_index_1_link` 220 steps into a 248 step path. The carry
-           pose is fine; the room to swing into is not, with the table right there. Away from
-           the desk there is nothing to clip.
-
-           restore_heading is false: a navigation goal follows and chooses its own heading. -->
-      <Retreat name="back_off_the_desk" distance="0.7" back_off="0.35" restore_heading="false"/>
+           Before the carry posture: moving the arm to `carry` while still at the desk failed
+           with `<octomap> <-> right_hand_index_1_link` 220 steps into a 248 step path. The pose
+           is fine; the room to swing into is not, with the table right there. -->
+      <Retreat name="back_off_the_desk" distance="0.5"/>
 
       <RetryUntilSuccessful name="carry_with_retries" num_attempts="3">
         <SetArmPosture name="hold_it_close" group="right_arm" named_target="carry"/>
@@ -110,7 +107,7 @@
            window the grasp was. -->
       <Place name="put_it_on_the_pad" target="6.50;6.25;0.855" arm="right"/>
 
-      <Retreat name="back_off_the_bench" distance="0.6" back_off="0.35" restore_heading="false"/>
+      <Retreat name="back_off_the_bench" distance="0.5"/>
 
       <SetArmPosture name="tuck_again" group="right_arm" named_target="tucked"/>
       <SetArmPosture name="tuck_left_again" group="left_arm" named_target="tucked"/>
