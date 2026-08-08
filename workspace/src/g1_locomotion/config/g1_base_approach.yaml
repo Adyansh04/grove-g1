@@ -96,14 +96,15 @@ g1_base_approach:
     # creep, which is the only reverse this robot has.
     min_forward_m: 0.140
 
-    # Starting estimate of how far one forward pulse carries the robot, and it has to be an UPPER
-    # bound rather than the typical value: the planner steps only while more than this is left,
-    # so a seed that is too small lets a step sail past the window.
+    # Take a forward step while more than this is left; creep below it. About one typical step:
+    # 0.293 m from a settled robot, 0.37 to 0.51 inside the approach loop where the gait is
+    # already warm from the re-aim before it.
     #
-    # 0.293 is what an isolated pulse measures on a settled robot. Inside the approach loop, with
-    # a re-aim immediately before, the same pulse measured 0.369, 0.407, 0.495 and 0.507 -- the
-    # gait is already moving and takes a longer stride. 0.60 covers what has actually been seen.
-    pulse_advance_m: 0.60
+    # It is NOT an upper bound, and was, which broke the approach outright. At 0.60 the planner
+    # refused to step with 0.58 m of gap left -- on the grounds that a 0.60 step might overshoot
+    # -- and set about closing the whole 0.58 m at 2.5 cm a creep. It never arrived. Overshooting
+    # is recoverable now (a creep runs backwards), so caution here costs far more than it saves.
+    step_threshold_m: 0.32
 
     # How far off the working heading the FINE approach aims before strafing. A strafe there
     # advances strafe*sin(offset) and slides strafe*cos(offset): at 45 degrees that is 2.5 cm

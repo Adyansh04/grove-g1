@@ -101,7 +101,7 @@ public:
         limits_.lateral_tolerance_m   = declare_parameter<double>("lateral_tolerance_m", 0.050);
         limits_.heading_tolerance_rad = declare_parameter<double>("heading_tolerance_rad", 0.087);
         limits_.min_forward_m         = declare_parameter<double>("min_forward_m", 0.180);
-        limits_.pulse_advance_m       = declare_parameter<double>("pulse_advance_m", 0.293);
+        limits_.step_threshold_m      = declare_parameter<double>("step_threshold_m", 0.32);
         limits_.fine_offset_rad       = declare_parameter<double>("fine_offset_rad", 0.785);
 
         max_pulses_        = declare_parameter<int>("max_pulses", 90);
@@ -344,12 +344,21 @@ private:
                 return;
             }
 
+            // Rotate the object into the WORKING-HEADING frame before planning. A creep leaves
+            // the robot 45 degrees off on purpose, so the raw base-frame reading is taken in a
+            // frame the mission is not trying to reach, and both error components then describe
+            // the wrong thing. Measured live: forward error frozen at 0.50 m while lateral grew
+            // from 0.29 to 0.50, with every creep making it worse.
             const double heading_error = wrap(working_yaw - tf2::getYaw(here->pose.orientation));
-            const auto   command =
-                planApproach(object->point.x, object->point.y, heading_error, limits);
+            const double c             = std::cos(heading_error);
+            const double sn            = std::sin(heading_error);
+            const double object_x      = object->point.x * c + object->point.y * sn;
+            const double object_y      = -object->point.x * sn + object->point.y * c;
 
-            result->final_x_m = object->point.x;
-            result->final_y_m = object->point.y;
+            const auto command = planApproach(object_x, object_y, heading_error, limits);
+
+            result->final_x_m = object_x;
+            result->final_y_m = object_y;
 
             feedback->forward_error_m = command.forward_error_m;
             feedback->lateral_error_m = command.lateral_error_m;
@@ -390,10 +399,9 @@ private:
                     // the spiral in the first probe run was.
                     RCLCPP_INFO(
                         get_logger(),
-                        "step: forward error %.3f, lateral %.3f, quantum %.3f",
+                        "step: forward error %.3f, lateral %.3f",
                         command.forward_error_m,
-                        command.lateral_error_m,
-                        limits.pulse_advance_m);
+                        command.lateral_error_m);
                     if (!aimAt(handle, working_yaw, deadline, pulses))
                     {
                         result->message = "facing: could not hold the working heading";
@@ -401,24 +409,8 @@ private:
                         return;
                     }
 
-                    const auto before = basePose();
                     pulse(pulse_vx_, 0.0, 0.0, step_pulse_s_);
                     ++pulses;
-
-                    // Only a STRAIGHT step updates the quantum, and only along the heading it was
-                    // taken on. An earlier version fed it total displacement including creeps and
-                    // drift, which inflated the estimate to 0.56 m and made every later decision
-                    // wrong in the same direction.
-                    const auto after = basePose();
-                    if (before && after)
-                    {
-                        const double yaw       = tf2::getYaw(before->pose.orientation);
-                        const double dx        = after->pose.position.x - before->pose.position.x;
-                        const double dy        = after->pose.position.y - before->pose.position.y;
-                        limits.pulse_advance_m = maxObservedAdvance(
-                            limits.pulse_advance_m,
-                            dx * std::cos(yaw) + dy * std::sin(yaw));
-                    }
                     break;
                 }
 

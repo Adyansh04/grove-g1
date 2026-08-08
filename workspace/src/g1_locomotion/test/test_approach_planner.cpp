@@ -20,7 +20,6 @@ namespace
 using g1_locomotion::ApproachLimits;
 using g1_locomotion::ApproachMove;
 using g1_locomotion::limitsAreUsable;
-using g1_locomotion::maxObservedAdvance;
 using g1_locomotion::planApproach;
 
 /// The shipped window: the manipulation scene's proven grasp at base-frame (0.28, -0.20).
@@ -59,30 +58,28 @@ TEST(ApproachPlanner, ForwardIsResolvedBeforeHeadingAndLateral)
 TEST(ApproachPlanner, ASubStepRemainderCreepsInsteadOfStepping)
 {
     const auto limits = defaults();
-    // Anything a straight step would carry past the window is closed by creeping instead. There
-    // is no smaller forward pulse to reach for: forward is irreducible at about 0.29 m.
+    // Anything under one step is closed by creeping. There is no smaller forward pulse to reach
+    // for: forward is irreducible at about 0.29 m however short the command.
     const auto command = planApproach(limits.target_x_m + 0.12, limits.target_y_m, 0.0, limits);
     ASSERT_EQ(command.move, ApproachMove::kCreep);
     EXPECT_NEAR(std::abs(command.fine_offset_rad), limits.fine_offset_rad, 1e-9);
 }
 
-TEST(ApproachPlanner, AStraightStepCanNeverCarryTheRobotPastTheWindow)
+TEST(ApproachPlanner, MoreThanAStepLeftIsStepped)
 {
-    auto limits = defaults();
-    // pulse_advance_m is maintained as an UPPER bound on what a step does, so the planner only
-    // steps while more than a full step is left. Sweeping the boundary is the cheap way to
-    // assert the invariant that matters: the gait has no reverse, so an overshoot is terminal.
-    for (double remaining = 0.0; remaining < 1.5; remaining += 0.005)
-    {
-        const auto command =
-            planApproach(limits.target_x_m + remaining, limits.target_y_m, 0.0, limits);
-        if (command.move == ApproachMove::kStep)
-        {
-            const double after = remaining - limits.pulse_advance_m;
-            EXPECT_GT(after, -limits.forward_tolerance_m)
-                << "a step from " << remaining << " would land past the window";
-        }
-    }
+    const auto limits = defaults();
+    // The regression this guards: with the threshold set to an UPPER bound on the step instead
+    // of a typical one, 0.58 m of gap was creeped rather than stepped, at 2.5 cm a pulse, and
+    // the approach never arrived.
+    EXPECT_EQ(
+        moveFor(limits.target_x_m + 0.58, limits.target_y_m, 0.0, limits),
+        ApproachMove::kStep);
+    EXPECT_EQ(
+        moveFor(limits.target_x_m + limits.step_threshold_m + 0.01, limits.target_y_m, 0.0, limits),
+        ApproachMove::kStep);
+    EXPECT_EQ(
+        moveFor(limits.target_x_m + limits.step_threshold_m - 0.01, limits.target_y_m, 0.0, limits),
+        ApproachMove::kCreep);
 }
 
 TEST(ApproachPlanner, TheCreepTurnsAwayFromTheSideItNeedsToSlideToward)
@@ -156,16 +153,6 @@ TEST(ApproachPlanner, PastTheWindowIsRecoveredByCreepingBackwards)
     EXPECT_LT(command.fine_offset_rad * approaching.fine_offset_rad, 0.0);
 }
 
-TEST(ApproachPlanner, TheQuantumEstimateOnlyEverGrows)
-{
-    // Asymmetric on purpose: undershooting costs another pulse, overshooting is unrecoverable.
-    EXPECT_DOUBLE_EQ(maxObservedAdvance(0.293, 0.60), 0.60);
-    EXPECT_DOUBLE_EQ(maxObservedAdvance(0.60, 0.293), 0.60);
-    // A pulse that produced nothing means the gait failed to start, not that it can step zero.
-    EXPECT_DOUBLE_EQ(maxObservedAdvance(0.293, 0.0), 0.293);
-    EXPECT_DOUBLE_EQ(maxObservedAdvance(0.293, -1.0), 0.293);
-}
-
 TEST(ApproachPlanner, UnusableLimitsAreRefusedRatherThanAimedAt)
 {
     EXPECT_TRUE(limitsAreUsable(defaults()));
@@ -179,8 +166,8 @@ TEST(ApproachPlanner, UnusableLimitsAreRefusedRatherThanAimedAt)
     EXPECT_FALSE(limitsAreUsable(sideways))
         << "a right-angle creep never returns to the working heading's lateral axis";
 
-    auto still            = defaults();
-    still.pulse_advance_m = 0.0;
+    auto still             = defaults();
+    still.step_threshold_m = 0.0;
     EXPECT_FALSE(limitsAreUsable(still));
 
     EXPECT_EQ(moveFor(1.0, 0.0, 0.0, no_room), ApproachMove::kInvalid);

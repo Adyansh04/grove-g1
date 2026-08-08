@@ -10,7 +10,7 @@ bool limitsAreUsable(const ApproachLimits& limits)
 {
     return limits.target_x_m > 0.0 && limits.forward_tolerance_m > 0.0 &&
            limits.lateral_tolerance_m > 0.0 && limits.heading_tolerance_rad > 0.0 &&
-           limits.pulse_advance_m > 0.0 && limits.fine_offset_rad > 0.0 &&
+           limits.step_threshold_m > 0.0 && limits.fine_offset_rad > 0.0 &&
            limits.fine_offset_rad < M_PI_2 && limits.min_forward_m >= 0.0 &&
            limits.min_forward_m < limits.target_x_m - limits.forward_tolerance_m;
 }
@@ -36,12 +36,11 @@ ApproachCommand planApproach(
         return command;
     }
 
-    // Coarse. The bound is deliberately quantum PLUS tolerance rather than minus: pulse_advance_m
-    // is maintained as an upper bound on what a step does, so stepping only while there is more
-    // than a full step to close means a straight step never carries the robot past the window.
-    // Overshooting is recoverable now, but only by creeping backwards a few centimetres at a
-    // time, so it is still much cheaper to undershoot and creep in.
-    if (command.forward_error_m > limits.pulse_advance_m + limits.forward_tolerance_m)
+    // Coarse. One step covers 0.29 to 0.50 m depending on how warm the gait is, so this cannot
+    // be exact; it only has to answer "is a step likely to help". Creeping covers 2.5 cm a
+    // pulse, so guessing wrong by a step costs a dozen creeps and guessing wrong the other way
+    // costs a creep backwards.
+    if (command.forward_error_m > limits.step_threshold_m)
     {
         command.move = ApproachMove::kStep;
         return command;
@@ -88,17 +87,6 @@ ApproachCommand planApproach(
 
     command.move = ApproachMove::kDone;
     return command;
-}
-
-double maxObservedAdvance(double current_estimate_m, double observed_m)
-{
-    // A pulse that produced nothing says the gait failed to start, not that it is capable of
-    // zero -- feeding that in would shrink the estimate and let the next step overshoot.
-    if (!(observed_m > 0.0))
-    {
-        return current_estimate_m;
-    }
-    return std::max(current_estimate_m, observed_m);
 }
 
 }  // namespace g1_locomotion

@@ -78,9 +78,15 @@ struct ApproachLimits
     /// and "unrecoverable" for a backwards creep to work in.
     double min_forward_m = 0.140;
 
-    /// What one forward pulse actually carries the robot. Seeded from measurement and raised,
-    /// never lowered, by the caller as pulses are observed. See maxObservedAdvance().
-    double pulse_advance_m = 0.293;
+    /// Take a forward step while more than this is left, and creep below it. Roughly one
+    /// typical step (measured 0.29 to 0.50 depending on how warm the gait is), so a step is
+    /// taken whenever one is likely to land nearer the window than it started.
+    ///
+    /// It does NOT have to be an upper bound on the step, which is what it used to be. That
+    /// version refused to step with 0.58 m left, on the grounds that a 0.60 m step might sail
+    /// past the window, and then tried to close the whole 0.58 m at 2.5 cm a creep. Overshooting
+    /// is recoverable now, so being cautious here costs far more than it saves.
+    double step_threshold_m = 0.32;
 
     /// How far off the working heading a creep aims. The trade is fixed by trigonometry: a
     /// strafe there advances `strafe * sin(offset)` and slides `strafe * cos(offset)`. 45 degrees
@@ -110,24 +116,21 @@ bool limitsAreUsable(const ApproachLimits& limits);
 
 /**
  * @brief Decide the next move.
- * @param object_x_m,object_y_m  The object's position in the base frame.
+ * @param object_x_m,object_y_m  The object's position in the WORKING-HEADING frame, not the
+ *        current base frame. The caller rotates it; see the note below.
  * @param heading_error_rad      `working_yaw - current_yaw`, wrapped. What a kTurn would undo.
+ *
+ * The frame matters and got this wrong once. A creep deliberately leaves the robot turned 45 deg
+ * off the working heading, so the object's position in the CURRENT base frame is measured in a
+ * rotated frame and neither error component means what it says. Live, that showed up as a
+ * forward error stuck at 0.50 m while the lateral error grew, with the robot creeping on numbers
+ * that described a frame it was no longer trying to reach.
  *
  * Forward is resolved before heading and lateral, because a forward step is the only move that
  * needs a deliberately wrong heading and the other two exist largely to clean up after it.
  */
 ApproachCommand planApproach(
     double object_x_m, double object_y_m, double heading_error_rad, const ApproachLimits& limits);
-
-/**
- * @brief Fold an observed pulse displacement into the quantum estimate.
- *
- * Deliberately a running MAXIMUM rather than an average. The two errors are not symmetric:
- * undershooting costs one more pulse, while overshooting puts the object inside the robot and
- * cannot be undone at all, because reverse is inside the gait's dead zone. Assuming the pulse is
- * as large as anything yet seen biases every oblique step toward undershoot.
- */
-double maxObservedAdvance(double current_estimate_m, double observed_m);
 
 }  // namespace g1_locomotion
 
