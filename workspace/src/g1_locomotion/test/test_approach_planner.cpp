@@ -133,24 +133,30 @@ TEST(ApproachPlanner, OnlyTheObjectBeingUnderTheRobotIsTerminal)
         ApproachMove::kOvershot);
 }
 
-TEST(ApproachPlanner, PastTheWindowIsRecoveredByCreepingBackwards)
+TEST(ApproachPlanner, PastTheWindowIsRecoveredByReversing)
 {
     const auto limits = defaults();
-    // The gait has no reverse -- g1_gait_shaper zeroes any negative vx -- but a strafe taken on
-    // a turned heading has a negative forward component, so overshooting is recoverable. That
-    // matters because the primitives are bimodal: one creep was measured carrying the robot
-    // 0.34 m when 0.025 was asked for.
+    // Coming too far is recoverable and costs no turning. g1_gait_shaper refuses a planner's
+    // backup speeds but passes a deliberate -0.60, which the policy measures at -0.247 m/s.
+    // Creeping backwards would work too and would cost a 45 degree turn each way.
     const double past    = limits.target_x_m - limits.forward_tolerance_m - 0.02;
     const auto   command = planApproach(past, limits.target_y_m, 0.0, limits);
-    ASSERT_EQ(command.move, ApproachMove::kCreep);
+    ASSERT_EQ(command.move, ApproachMove::kReverse);
     EXPECT_LT(command.forward_error_m, 0.0);
+}
 
-    // The offset flips against the approaching case, which is exactly what reverses the strafe's
-    // forward component.
-    const double ahead       = limits.target_x_m + 0.12;
-    const auto   approaching = planApproach(ahead, limits.target_y_m, 0.0, limits);
-    ASSERT_EQ(approaching.move, ApproachMove::kCreep);
-    EXPECT_LT(command.fine_offset_rad * approaching.fine_offset_rad, 0.0);
+TEST(ApproachPlanner, ShortOfTheWindowCreepsForwardWithNoReverseAvailableThatFine)
+{
+    const auto limits = defaults();
+    // The asymmetry is real: reverse resolves finely, forward does not. A sub-step gap in has to
+    // be taken sideways.
+    const auto command = planApproach(
+        limits.target_x_m + limits.forward_tolerance_m + 0.02,
+        limits.target_y_m,
+        0.0,
+        limits);
+    ASSERT_EQ(command.move, ApproachMove::kCreep);
+    EXPECT_NEAR(std::abs(command.fine_offset_rad), limits.fine_offset_rad, 1e-9);
 }
 
 TEST(ApproachPlanner, UnusableLimitsAreRefusedRatherThanAimedAt)

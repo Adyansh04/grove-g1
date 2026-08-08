@@ -48,6 +48,7 @@ enum class ApproachMove : std::uint8_t
     kDone,      ///< The object is inside the reachable window.
     kStep,      ///< On the working heading, take ONE forward pulse. Coarse: about 0.29 m.
     kCreep,     ///< Aim at `working_yaw + fine_offset_rad`, then strafe. Fine: about 0.025 m in.
+    kReverse,   ///< Straight back, no turn. For having come too far.
     kStrafe,    ///< One lateral pulse on the working heading; `lateral_sign` says which way.
     kTurn,      ///< Yaw by `turn_rad` to restore the working heading.
     kOvershot,  ///< Closer than the arm can work with, and the gait cannot reverse.

@@ -549,6 +549,28 @@ private:
                     break;
                 }
 
+                case ApproachMove::kReverse:
+                {
+                    feedback->phase = ApproachObject::Feedback::PHASE_CLOSING;
+                    handle->publish_feedback(feedback);
+                    RCLCPP_INFO(
+                        get_logger(),
+                        "reverse: forward error %.3f, lateral %.3f",
+                        command.forward_error_m,
+                        command.lateral_error_m);
+                    const auto back_far_enough = [&] {
+                        const auto object_now = objectInBase(goal->object_id);
+                        if (!object_now)
+                        {
+                            return true;
+                        }
+                        return object_now->point.x - limits.target_x_m >= -step_lead_m_;
+                    };
+                    driveUntil(-pulse_vrev_, 0.0, 0.0, back_far_enough, max_step_s_, deadline);
+                    ++pulses;
+                    break;
+                }
+
                 case ApproachMove::kStrafe:
                 {
                     feedback->phase = ApproachObject::Feedback::PHASE_SIDESTEPPING;

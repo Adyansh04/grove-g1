@@ -59,12 +59,22 @@ ApproachCommand planApproach(
     // backwards perfectly well. It is what makes overshooting the window recoverable instead of
     // fatal, which the first creeping run needed and did not have: one creep carried the robot
     // 0.34 m, well past the target, and there was nothing to be done about it.
-    if (std::abs(command.forward_error_m) > limits.forward_tolerance_m)
+    // Too far in: straight back, no turn. The gait does reverse, above g1_gait_shaper's own
+    // higher rev_engage, and using it here saves a 45 degree turn and the 45 back that a creep
+    // would cost -- most of a minute at this gait's turn rate.
+    if (command.forward_error_m < -limits.forward_tolerance_m)
+    {
+        command.move = ApproachMove::kReverse;
+        return command;
+    }
+
+    // Not far enough, and less than a step short. Forward is irreducible at about 0.29 m however
+    // short the command, so the only fine way IN is to turn off the working heading and strafe.
+    if (command.forward_error_m > limits.forward_tolerance_m)
     {
         const double lateral_sign = command.lateral_error_m >= 0.0 ? 1.0 : -1.0;
-        const double forward_sign = command.forward_error_m >= 0.0 ? 1.0 : -1.0;
         command.lateral_sign      = lateral_sign;
-        command.fine_offset_rad   = -forward_sign * lateral_sign * limits.fine_offset_rad;
+        command.fine_offset_rad   = -lateral_sign * limits.fine_offset_rad;
         command.move              = ApproachMove::kCreep;
         return command;
     }
