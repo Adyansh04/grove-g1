@@ -9,13 +9,13 @@ namespace g1_locomotion
 bool limitsAreUsable(const ApproachLimits& limits)
 {
     return limits.target_x_m > 0.0 && limits.forward_tolerance_m > 0.0 &&
-           limits.lateral_tolerance_m > 0.0 && limits.heading_tolerance_rad > 0.0 &&
-           limits.step_threshold_m > 0.0 && limits.min_forward_m >= 0.0 &&
+           limits.lateral_tolerance_m > 0.0 && limits.step_threshold_m > 0.0 &&
+           limits.min_forward_m >= 0.0 &&
            limits.min_forward_m < limits.target_x_m - limits.forward_tolerance_m;
 }
 
 ApproachCommand planApproach(
-    double object_x_m, double object_y_m, double heading_error_rad, const ApproachLimits& limits)
+    double object_x_m, double object_y_m, const ApproachLimits& limits)
 {
     ApproachCommand command;
     if (!limitsAreUsable(limits))
@@ -56,16 +56,6 @@ ApproachCommand planApproach(
     {
         command.move         = ApproachMove::kStrafe;
         command.lateral_sign = command.lateral_error_m > 0.0 ? 1.0 : -1.0;
-        return command;
-    }
-
-    // Heading LAST, and only if it has drifted badly. It is not part of reachability -- the arm
-    // works in the base frame -- so this exists to keep the robot roughly square to the surface,
-    // not to be accurate.
-    if (std::abs(heading_error_rad) > limits.heading_tolerance_rad)
-    {
-        command.move     = ApproachMove::kTurn;
-        command.turn_rad = heading_error_rad;
         return command;
     }
 

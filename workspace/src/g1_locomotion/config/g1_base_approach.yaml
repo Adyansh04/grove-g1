@@ -54,21 +54,16 @@ g1_base_approach:
     turn_pulse_cw_s: 0.60
     strafe_pulse_s: 0.15
 
-    # THESE DURATIONS ARE A STARTING POINT, NOT A CONSTANT. The gait's response depends on how
-    # recently it moved, by a factor of about seven: a 0.15 s counter-clockwise pulse turns
-    # 3.8 deg from a settled robot and 0.5 deg inside this loop, and three consecutive 0.30 s
-    # forward steps were measured moving the robot 1 mm each. So a pulse that does nothing is
-    # lengthened and tried again, and the duration resets as soon as one bites or the direction
-    # changes.
-    #
-    # This is a closed loop, so growing the pulse cannot run away: the next iteration measures
-    # what it did. The ceilings only stop it reaching for a stride the gait cannot take.
-    max_turn_pulse_s: 1.20
-    max_step_pulse_s: 0.80
-    pulse_growth: 1.6
-    # Under a degree of turn, or 5 cm of step, counts as the gait having ignored the pulse.
-    stalled_turn_rad: 0.017
-    stalled_step_m: 0.05
+    # Forward drives and big heading corrections are CONTINUOUS, closed on the measured error --
+    # a train of pulses winds the walking policy down to nothing (8.3 deg on the first pulse,
+    # ~0.1 by the twentieth), which is why a pulse-growing scheme used to live here and is gone.
+    # The ceilings bound one drive if the loop's own feedback never ends it; the leads stop the
+    # command short of the target because the gait coasts after it: ~17 deg after a turn, and
+    # about step_lead_m of travel after a drive.
+    max_turn_s: 8.0
+    max_step_s: 6.0
+    turn_lead_rad: 0.30
+    step_lead_m: 0.22
 
     # Hold zero while the gait finishes the stride it is already in, THEN say nothing at all for
     # a moment.
@@ -99,17 +94,6 @@ g1_base_approach:
     target_x_m: 0.270
     target_y_m: -0.220
 
-    # Forward is the tight axis because it is the one the gait cannot resolve directly: the
-    # oblique step buys about 1.8 cm of resolution near 60 degrees, so 0.045 is reachable.
-    # Lateral is generous next to its own 0.035 m quantum, and residual heading error lands here
-    # too.
-    #
-    # Heading is 8 deg, wider than it first looks it should be, for two reasons. The yaw response
-    # is bimodal -- a 0.15 s pulse measured anywhere from 3 to 14 degrees depending on whether
-    # the gait takes a settle or a committed step -- so a tolerance near one quantum cannot be
-    # held. And heading precision matters less here than it seems: the grasp is computed in the
-    # BASE frame, so what has to be right is where the object sits relative to the robot, and
-    # residual heading error shows up as lateral error, which is the cheap axis to fix.
     # From a 2D grid run at the workbench with the arms tucked, at the PREGRASP height, checking
     # each IK solution against /check_state_validity (m9-checks/reach_grid.py). Only the pregrasp
     # has to be collision-free: the grasp pose sits on the table and is inside its octomap by
@@ -133,10 +117,10 @@ g1_base_approach:
     # whole time. Being stricter than the arm buys nothing and costs minutes.
     forward_tolerance_m: 0.110
     lateral_tolerance_m: 0.040
-    # LOOSE on purpose, 20 degrees. The window is judged in the base frame, which is the frame
-    # the arm works in, so heading is not part of reachability at all -- it only decides which
-    # way the forward drives point and roughly how the robot stands to the surface. Holding it
-    # tightly bought nothing and cost most of the skill's pulses taking out a few degrees.
+    # LOOSE on purpose, 20 degrees, and consumed ONLY by the aim before a forward drive. The
+    # planner itself never asks for a turn: reachability is judged in the base frame, where
+    # heading does not appear, so this only decides how square the robot stands to the surface
+    # while it closes. Holding it tightly bought nothing and cost most of the skill's pulses.
     heading_tolerance_rad: 0.350
 
     # Nearer than this and the object is under the robot's own shell. Set just below the measured

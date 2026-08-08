@@ -14,28 +14,26 @@
  *   - lateral resolves to about 0.035 m, with under a degree of yaw and no forward coupling
  *   - yaw resolves to about 3.8 deg, and moves the robot 3 mm
  *
- * So lateral and heading are precision knobs and forward is a sledgehammer. The arm's window is
- * about 0.11 m wide, a third of one forward step.
+ * So lateral is a precision knob and forward is a sledgehammer. The arm's window is about
+ * 0.11 m wide, a third of one forward step.
  *
- * THERE IS NO TURNING IN THE APPROACH. The heading comes from the navigation goal, which is
- * already aimed at the surface, and the arm does not care which way the room faces -- only where
- * the object sits relative to the robot. So the error is nulled with the three primitives that
- * are stable and cheap: drive forward, reverse, strafe. Yaw is the slow, asymmetric, bimodal one
- * and it is used only if the heading has drifted badly.
+ * THE PLANNER NEVER ASKS FOR A TURN. Reachability is judged in the base frame -- where the
+ * object sits relative to the robot -- and heading is simply not part of that, so it is not an
+ * input here. The caller holds its working heading on its own during forward drives, because a
+ * forward step yaws +8 deg and an uncorrected sequence walks an arc; that aim loop is the only
+ * yaw in the skill, and it belongs to the caller, not the plan.
  *
- * Two earlier versions did turn, and both failed on it. An OBLIQUE forward step needs theta near
- * 75 degrees for a small remainder, which throws the robot half a metre sideways; a 45 degree
- * CREEP-and-strafe costs 45 degrees of turning each way, and one live run spent 48 pulses that
- * way taking out 17 cm of lateral error that five strafes would have covered.
+ * Two earlier versions planned turns, and both failed on it. An OBLIQUE forward step needs theta
+ * near 75 degrees for a small remainder, which throws the robot half a metre sideways; a 45
+ * degree CREEP-and-strafe costs 45 degrees of turning each way, and one live run spent 48 pulses
+ * that way taking out 17 cm of lateral error that five strafes would have covered. A third
+ * version kept a terminal heading gate after the position had converged, and the caller -- which
+ * had dropped turning by then -- had no handler for the turn it demanded: the loop spun
+ * silently, forever, mid-mission.
  *
  * Fine forward motion, which the gait cannot produce directly, is instead a forward drive that
  * stops at zero and a reverse that takes back whatever the coast added. Reverse resolves more
  * finely than forward does: -0.247 m/s against 0.35.
- *
- * The heading is NOT derived from where the object is. It is given by the caller and held. That
- * is the standard mobile-manipulation pattern -- a stand-off pose on the surface normal, already
- * facing the working direction -- and the previous version's habit of re-aiming at the object
- * from a metre out is what made it walk in on a curve.
  *
  * Measurements and the rest of the rationale: docs/notes/m9-base-approach.md.
  */
@@ -51,9 +49,8 @@ enum class ApproachMove : std::uint8_t
     kDone,      ///< The object is inside the reachable window.
     kStep,      ///< On the working heading, take ONE forward pulse. Coarse: about 0.29 m.
     kReverse,   ///< Straight back. For having come too far.
-    kStrafe,    ///< One lateral pulse on the working heading; `lateral_sign` says which way.
-    kTurn,      ///< Yaw by `turn_rad` to restore the working heading.
-    kOvershot,  ///< Closer than the arm can work with, and the gait cannot reverse.
+    kStrafe,    ///< One lateral pulse; `lateral_sign` says which way.
+    kOvershot,  ///< Under the robot's own shell, where no move here helps. Re-stage through Nav2.
     kInvalid,   ///< The limits themselves are unusable.
 };
 
@@ -71,14 +68,10 @@ struct ApproachLimits
     /// and the point of measuring the arm properly was to find out how much slack it grants.
     double forward_tolerance_m = 0.110;
     double lateral_tolerance_m = 0.040;
-    /// Deliberately loose. The window is judged in the base frame, so heading is not part of
-    /// reachability: it only steers the drives. A tight value here spends the whole pulse
-    /// budget taking out a few degrees that cost nothing.
-    double heading_tolerance_rad = 0.350;
 
     /// Nearer than this and the object is under the robot's own shell. Sits just below the
     /// measured reachable band, which starts at 0.16, so there is room between "past the window"
-    /// and "unrecoverable" for a backwards creep to work in.
+    /// and "unrecoverable" for a reverse to work in.
     double min_forward_m = 0.120;
 
     /// More than this left and the caller may stop its forward drive early, trusting the coast.
@@ -94,8 +87,6 @@ struct ApproachCommand
     /// and let the gait coast. False means creep the last few centimetres in, stopping at zero
     /// and letting a reverse clean up whatever the coast adds.
     bool coarse = false;
-    /// kTurn: the heading correction to make. Signed.
-    double turn_rad = 0.0;
     /// kStrafe: +1 to strafe left, -1 to strafe right.
     double lateral_sign = 0.0;
     /// Remaining error in the base frame, for feedback and logging.
@@ -108,21 +99,14 @@ bool limitsAreUsable(const ApproachLimits& limits);
 
 /**
  * @brief Decide the next move.
- * @param object_x_m,object_y_m  The object's position in the WORKING-HEADING frame, not the
- *        current base frame. The caller rotates it; see the note below.
- * @param heading_error_rad      `working_yaw - current_yaw`, wrapped. What a kTurn would undo.
+ * @param object_x_m,object_y_m  The object's position in the CURRENT base frame -- the frame
+ *        the arm works in, which is what makes the window mean reachability.
  *
- * The frame matters and got this wrong once. A creep deliberately leaves the robot turned 45 deg
- * off the working heading, so the object's position in the CURRENT base frame is measured in a
- * rotated frame and neither error component means what it says. Live, that showed up as a
- * forward error stuck at 0.50 m while the lateral error grew, with the robot creeping on numbers
- * that described a frame it was no longer trying to reach.
- *
- * Forward is resolved before heading and lateral, because a forward step is the only move that
- * needs a deliberately wrong heading and the other two exist largely to clean up after it.
+ * Forward is resolved before lateral, because a forward step is the move that yaws and drifts,
+ * and the lateral error it leaves behind is cheap to strafe out afterwards. The other order
+ * would strafe to a place the next drive walks away from.
  */
-ApproachCommand planApproach(
-    double object_x_m, double object_y_m, double heading_error_rad, const ApproachLimits& limits);
+ApproachCommand planApproach(double object_x_m, double object_y_m, const ApproachLimits& limits);
 
 }  // namespace g1_locomotion
 

@@ -24,21 +24,21 @@ using g1_locomotion::planApproach;
 /// The shipped window: the arm's measured band at the workbench.
 ApproachLimits defaults() { return ApproachLimits{}; }
 
-ApproachMove moveFor(double x, double y, double heading_error, const ApproachLimits& limits)
+ApproachMove moveFor(double x, double y, const ApproachLimits& limits)
 {
-    return planApproach(x, y, heading_error, limits).move;
+    return planApproach(x, y, limits).move;
 }
 
-TEST(ApproachPlanner, ObjectInTheWindowOnTheWorkingHeadingIsDone)
+TEST(ApproachPlanner, ObjectInTheWindowIsDone)
 {
     const auto limits = defaults();
-    EXPECT_EQ(moveFor(limits.target_x_m, limits.target_y_m, 0.0, limits), ApproachMove::kDone);
+    EXPECT_EQ(moveFor(limits.target_x_m, limits.target_y_m, limits), ApproachMove::kDone);
 }
 
 TEST(ApproachPlanner, FarAwayItDrivesForwardAndMayCoast)
 {
     const auto limits  = defaults();
-    const auto command = planApproach(limits.target_x_m + 2.0, limits.target_y_m, 0.0, limits);
+    const auto command = planApproach(limits.target_x_m + 2.0, limits.target_y_m, limits);
     ASSERT_EQ(command.move, ApproachMove::kStep);
     EXPECT_TRUE(command.coarse) << "two metres out, the caller may stop early and let it coast";
     EXPECT_NEAR(command.forward_error_m, 2.0, 1e-9);
@@ -50,10 +50,7 @@ TEST(ApproachPlanner, ASubStepGapDrivesToZeroInsteadOfCoasting)
     // Forward is irreducible at about 0.29 m, so a small gap is closed by deliberately going too
     // far and reversing back. `coarse` false is what tells the caller not to stop early.
     const auto command = planApproach(
-        limits.target_x_m + limits.forward_tolerance_m + 0.02,
-        limits.target_y_m,
-        0.0,
-        limits);
+        limits.target_x_m + limits.forward_tolerance_m + 0.02, limits.target_y_m, limits);
     ASSERT_EQ(command.move, ApproachMove::kStep);
     EXPECT_FALSE(command.coarse);
 }
@@ -64,7 +61,7 @@ TEST(ApproachPlanner, PastTheWindowIsRecoveredByReversing)
     // Coming too far costs no turning. g1_gait_shaper refuses a planner's backup speeds but
     // passes a deliberate -0.60, which the policy measures at -0.247 m/s.
     const double past    = limits.target_x_m - limits.forward_tolerance_m - 0.02;
-    const auto   command = planApproach(past, limits.target_y_m, 0.0, limits);
+    const auto   command = planApproach(past, limits.target_y_m, limits);
     ASSERT_EQ(command.move, ApproachMove::kReverse);
     EXPECT_LT(command.forward_error_m, 0.0);
 }
@@ -73,40 +70,16 @@ TEST(ApproachPlanner, OnlyTheObjectBeingUnderTheRobotIsTerminal)
 {
     const auto limits = defaults();
     EXPECT_EQ(
-        moveFor(limits.min_forward_m - 0.01, limits.target_y_m, 0.0, limits),
-        ApproachMove::kOvershot);
+        moveFor(limits.min_forward_m - 0.01, limits.target_y_m, limits), ApproachMove::kOvershot);
 }
 
 TEST(ApproachPlanner, LateralIsStrafedAndGoesTowardTheObject)
 {
     const auto limits = defaults();
-    EXPECT_GT(
-        planApproach(limits.target_x_m, limits.target_y_m + 0.30, 0.0, limits).lateral_sign,
-        0.0);
-    EXPECT_LT(
-        planApproach(limits.target_x_m, limits.target_y_m - 0.30, 0.0, limits).lateral_sign,
-        0.0);
+    EXPECT_GT(planApproach(limits.target_x_m, limits.target_y_m + 0.30, limits).lateral_sign, 0.0);
+    EXPECT_LT(planApproach(limits.target_x_m, limits.target_y_m - 0.30, limits).lateral_sign, 0.0);
     EXPECT_EQ(
-        moveFor(limits.target_x_m, limits.target_y_m + 0.30, 0.0, limits),
-        ApproachMove::kStrafe);
-}
-
-TEST(ApproachPlanner, NothingHereAsksForATurnExceptDriftedHeading)
-{
-    const auto limits = defaults();
-    // The whole point of the current design: the heading comes from the navigation goal and the
-    // arm works in the base frame, so x and y are the only axes that need controlling. Yaw is
-    // the slow, asymmetric, bimodal primitive and is used only to correct real drift.
-    for (double fwd : { -0.30, -0.05, 0.05, 0.30, 1.00 })
-    {
-        for (double lat : { -0.30, 0.0, 0.30 })
-        {
-            const auto move =
-                moveFor(limits.target_x_m + fwd, limits.target_y_m + lat, 0.0, limits);
-            EXPECT_NE(move, ApproachMove::kTurn) << "fwd " << fwd << " lat " << lat;
-        }
-    }
-    EXPECT_EQ(moveFor(limits.target_x_m, limits.target_y_m, 0.5, limits), ApproachMove::kTurn);
+        moveFor(limits.target_x_m, limits.target_y_m + 0.30, limits), ApproachMove::kStrafe);
 }
 
 TEST(ApproachPlanner, ForwardIsCorrectedBeforeLateral)
@@ -116,8 +89,24 @@ TEST(ApproachPlanner, ForwardIsCorrectedBeforeLateral)
     // error it leaves behind is cheap to strafe out afterwards. The other order would strafe to
     // a place the next drive walks away from.
     EXPECT_EQ(
-        moveFor(limits.target_x_m + 1.0, limits.target_y_m + 0.5, 0.0, limits),
-        ApproachMove::kStep);
+        moveFor(limits.target_x_m + 1.0, limits.target_y_m + 0.5, limits), ApproachMove::kStep);
+}
+
+TEST(ApproachPlanner, EveryRegionMapsToAMoveTheCallerHandles)
+{
+    const auto limits = defaults();
+    // The planner once kept a terminal heading gate after the caller had dropped its turn
+    // handler, and the pair spun silently mid-mission -- a plan with no handler is a hang, not
+    // an error. The move set is closed now; this sweep pins every position to a move that is
+    // not kInvalid, so a new move can only be added alongside its handling.
+    for (double fwd : { -0.30, -0.05, 0.05, 0.30, 1.00 })
+    {
+        for (double lat : { -0.30, 0.0, 0.30 })
+        {
+            const auto move = moveFor(limits.target_x_m + fwd, limits.target_y_m + lat, limits);
+            EXPECT_NE(move, ApproachMove::kInvalid) << "fwd " << fwd << " lat " << lat;
+        }
+    }
 }
 
 TEST(ApproachPlanner, UnusableLimitsAreRefusedRatherThanAimedAt)
@@ -132,7 +121,7 @@ TEST(ApproachPlanner, UnusableLimitsAreRefusedRatherThanAimedAt)
     still.step_threshold_m = 0.0;
     EXPECT_FALSE(limitsAreUsable(still));
 
-    EXPECT_EQ(moveFor(1.0, 0.0, 0.0, no_room), ApproachMove::kInvalid);
+    EXPECT_EQ(moveFor(1.0, 0.0, no_room), ApproachMove::kInvalid);
 }
 
 TEST(ApproachPlanner, TheLeftArmWindowIsTheRightArmWindowMirrored)
@@ -140,8 +129,8 @@ TEST(ApproachPlanner, TheLeftArmWindowIsTheRightArmWindowMirrored)
     auto left       = defaults();
     left.target_y_m = -left.target_y_m;
 
-    EXPECT_EQ(moveFor(left.target_x_m, left.target_y_m, 0.0, left), ApproachMove::kDone);
-    EXPECT_EQ(moveFor(left.target_x_m, left.target_y_m, 0.0, defaults()), ApproachMove::kStrafe);
+    EXPECT_EQ(moveFor(left.target_x_m, left.target_y_m, left), ApproachMove::kDone);
+    EXPECT_EQ(moveFor(left.target_x_m, left.target_y_m, defaults()), ApproachMove::kStrafe);
 }
 
 }  // namespace

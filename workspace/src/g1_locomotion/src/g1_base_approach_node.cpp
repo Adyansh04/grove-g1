@@ -114,12 +114,14 @@ public:
         limits_.target_y_m            = declare_parameter<double>("target_y_m", -0.200);
         limits_.forward_tolerance_m   = declare_parameter<double>("forward_tolerance_m", 0.045);
         limits_.lateral_tolerance_m   = declare_parameter<double>("lateral_tolerance_m", 0.050);
-        limits_.heading_tolerance_rad = declare_parameter<double>("heading_tolerance_rad", 0.087);
         limits_.min_forward_m         = declare_parameter<double>("min_forward_m", 0.180);
         limits_.step_threshold_m      = declare_parameter<double>("step_threshold_m", 0.32);
 
+        // Consumed only by the aim before a forward drive; the planner itself never turns, so
+        // this is not part of the reach window.
+        heading_tolerance_rad_ = declare_parameter<double>("heading_tolerance_rad", 0.350);
+
         max_pulses_        = declare_parameter<int>("max_pulses", 90);
-        max_aim_pulses_    = declare_parameter<int>("max_aim_pulses", 14);
         default_timeout_s_ = declare_parameter<double>("default_timeout_s", 420.0);
 
         if (!limitsAreUsable(limits_))
@@ -432,15 +434,9 @@ private:
 
             // Judged in the RAW base frame, because that is the frame the ARM works in. Where
             // the object sits relative to the robot is the whole of reachability; which way the
-            // room faces is not part of it.
-            //
-            // This used to rotate the object into the working-heading frame first, which made
-            // the errors describe a stance the robot was not standing in and made the skill
-            // chase exact alignment -- most of its pulse budget went on taking out a few degrees
-            // that cost nothing. The working heading now only steers the drives, loosely.
-            const double heading_error = wrap(working_yaw - tf2::getYaw(here->pose.orientation));
-            const auto   command =
-                planApproach(object->point.x, object->point.y, heading_error, limits);
+            // room faces is not part of it. The working heading only steers the drives, in
+            // aimAt -- it is not an input to the plan.
+            const auto command = planApproach(object->point.x, object->point.y, limits);
 
             result->final_x_m = object->point.x;
             result->final_y_m = object->point.y;
@@ -464,8 +460,8 @@ private:
 
                 case ApproachMove::kOvershot:
                     result->message = "closing: the object is " + std::to_string(object->point.x) +
-                                      " m ahead, inside the arm's working range, and this gait "
-                                      "cannot reverse";
+                                      " m ahead, under the robot's own footprint; re-stage "
+                                      "through Nav2";
                     handle->abort(result);
                     return;
 
@@ -599,7 +595,7 @@ private:
                 return false;
             }
             const double error = wrap(target_yaw - tf2::getYaw(here->pose.orientation));
-            if (std::abs(error) <= limits_.heading_tolerance_rad)
+            if (std::abs(error) <= heading_tolerance_rad_)
             {
                 return true;
             }
@@ -642,7 +638,7 @@ private:
 
         const auto settled = basePose();
         return settled && std::abs(wrap(target_yaw - tf2::getYaw(settled->pose.orientation))) <
-                              2.0 * limits_.heading_tolerance_rad;
+                              2.0 * heading_tolerance_rad_;
     }
 
     void runRetreat(const std::shared_ptr<GoalHandleRetreat>& handle)
@@ -731,12 +727,12 @@ private:
     double      max_step_s_        = 6.0;
     double      turn_lead_rad_     = 0.30;
     double      step_lead_m_       = 0.22;
+    double      heading_tolerance_rad_ = 0.350;
     int         max_aim_attempts_  = 8;
     double      settle_s_          = 2.5;
     double      quiet_s_           = 1.2;
     double      cmd_rate_hz_       = 20.0;
     int         max_pulses_        = 90;
-    int         max_aim_pulses_    = 14;
     double      default_timeout_s_ = 420.0;
 
     ApproachLimits limits_;
