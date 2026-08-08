@@ -1,5 +1,5 @@
 # odom -> base_footprint -> pelvis publisher for the CONVERGED unitree_mujoco track, loaded by
-# g1_bringup/launch/sim.launch.py. The planar g1_sim sandbox uses g1_odometry_publisher.yaml
+# g1_bringup/launch/sim.launch.py.
 # instead, which publishes a single odom -> base_link edge. See g1_state_estimation/README.md.
 g1_odometry_publisher:
   ros__parameters:

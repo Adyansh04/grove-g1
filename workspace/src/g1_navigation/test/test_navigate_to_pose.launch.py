@@ -22,7 +22,6 @@ import pytest
 import rclpy
 from action_msgs.msg import GoalStatus
 from ament_index_python.packages import get_package_share_directory
-from g1_msgs.msg import LocoStatus
 from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription, TimerAction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
@@ -32,6 +31,8 @@ from rclpy.action import ActionClient
 from rclpy.node import Node
 from rclpy.qos import QoSDurabilityPolicy, QoSProfile, QoSReliabilityPolicy
 from tf2_ros import Buffer, TransformListener
+
+from g1_msgs.msg import LocoStatus
 
 # Derived from maps/facility.pgm, not guessed. The robot spawns at the origin, in the middle of
 # the facility's 4x4 m crossroads. Every axis-aligned 4 m ray from there hits a partition at 2 m,

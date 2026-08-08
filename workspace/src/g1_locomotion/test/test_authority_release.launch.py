@@ -22,7 +22,6 @@ import unittest
 import launch_testing
 import pytest
 import rclpy
-from g1_msgs.action import SetLocoMode
 from launch import LaunchDescription
 from launch.actions import ExecuteProcess, SetEnvironmentVariable, TimerAction
 from launch_ros.actions import Node as LaunchNode
@@ -31,6 +30,8 @@ from lifecycle_msgs.srv import ChangeState
 from rclpy.node import Node
 from rclpy.qos import QoSDurabilityPolicy, QoSProfile, QoSReliabilityPolicy
 from std_msgs.msg import Int32MultiArray
+
+from g1_msgs.action import SetLocoMode
 
 STAND_UP = SetLocoMode.Goal.STAND_UP
 START = SetLocoMode.Goal.START

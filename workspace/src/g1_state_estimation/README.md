@@ -21,7 +21,7 @@ not exist anywhere in Unitree's code.
 | `odometry_source` | Behaviour |
 |---|---|
 | `sim_sportmodestate` | The `unitree_mujoco` track. Pelvis position from `/sportmodestate`, full orientation from `/lowstate`'s IMU. |
-| `sim_ground_truth` | The `g1_sim` planar sandbox. MuJoCo generalized coordinates from that track's planar joints. |
+| `sim_ground_truth` | MuJoCo generalized coordinates from a planar model. No launch selects it since the planar sandbox was removed. |
 | `hardware` (default) | Refuses to configure. A real source, leg odometry with an IMU EKF or LiDAR-inertial odometry, is a future milestone. |
 
 `hardware` is the default deliberately. A misconfigured hardware bring-up must never silently emit
@@ -70,8 +70,7 @@ is held. Attitude keeps being published unchanged, because a fallen robot really
 | `publish_odom_msg` | `true` | |
 | `source_timeout_ms` | `200.0` | Source age beyond this stops publishing. |
 
-Shipped configs: `g1_odometry_publisher_converged.yaml` for the `unitree_mujoco` track,
-`g1_odometry_publisher.yaml` for the planar sandbox.
+Shipped config: `g1_odometry_publisher_converged.yaml`, for the `unitree_mujoco` track.
 
 ## Running
 

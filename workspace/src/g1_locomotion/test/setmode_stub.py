@@ -15,14 +15,15 @@ Parameters:
 """
 
 import rclpy
-from g1_msgs.action import SetLocoMode
-from g1_msgs.msg import LocoStatus
 from rclpy.action import ActionServer
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import QoSDurabilityPolicy, QoSProfile, QoSReliabilityPolicy
 from std_msgs.msg import Int32MultiArray
+
+from g1_msgs.action import SetLocoMode
+from g1_msgs.msg import LocoStatus
 
 LATCHED = QoSProfile(
     depth=1,

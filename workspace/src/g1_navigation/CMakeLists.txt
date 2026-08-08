@@ -18,7 +18,7 @@ install(
 )
 
 if(BUILD_TESTING)
-  # Linters that don't conflict with ruff. No pep257, matching g1_bringup and g1_sim, the two
+  # Linters that don't conflict with ruff. No pep257, matching g1_bringup, the
   # other launch-heavy packages: its D213 wants the docstring summary on the second line and
   # every launch file in this workspace puts it on the first. ament_lint_auto offers no way to
   # pass an ignore, and one new package is not the place to fork the convention.
@@ -67,10 +67,10 @@ if(BUILD_TESTING)
   # The acceptance gate, and the only suite here that drives the robot. Longest timeout and
   # highest COST so it runs first, while the machine is quietest.
   add_launch_test(test/test_navigate_to_pose.launch.py TARGET test_navigate_to_pose TIMEOUT 500)
-  set_tests_properties(test_scan_pipeline PROPERTIES RESOURCE_LOCK g1_sim)
-  set_tests_properties(test_nav_authority PROPERTIES RESOURCE_LOCK g1_sim COST 70)
-  set_tests_properties(test_slam_map PROPERTIES RESOURCE_LOCK g1_sim)
-  set_tests_properties(test_navigate_to_pose PROPERTIES RESOURCE_LOCK g1_sim COST 100)
+  set_tests_properties(test_scan_pipeline PROPERTIES RESOURCE_LOCK mujoco_sim)
+  set_tests_properties(test_nav_authority PROPERTIES RESOURCE_LOCK mujoco_sim COST 70)
+  set_tests_properties(test_slam_map PROPERTIES RESOURCE_LOCK mujoco_sim)
+  set_tests_properties(test_navigate_to_pose PROPERTIES RESOURCE_LOCK mujoco_sim COST 100)
   # COST descending = execution order; the heavier suite goes first.
   set_tests_properties(test_slam_map PROPERTIES COST 60)
   set_tests_properties(test_scan_pipeline PROPERTIES COST 50)

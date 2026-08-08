@@ -22,7 +22,6 @@ import rclpy
 from ament_index_python.packages import get_package_share_directory
 from builtin_interfaces.msg import Duration
 from control_msgs.action import FollowJointTrajectory
-from g1_msgs.action import SetLocoMode
 from geometry_msgs.msg import Twist
 from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription, TimerAction
@@ -33,6 +32,8 @@ from rclpy.qos import QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile, QoSReli
 from sensor_msgs.msg import JointState
 from trajectory_msgs.msg import JointTrajectoryPoint
 from unitree_go.msg import SportModeState
+
+from g1_msgs.action import SetLocoMode
 
 JOINTS = [
     "left_shoulder_pitch_joint",

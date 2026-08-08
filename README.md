@@ -136,7 +136,6 @@ Two rules shape most of the design, and both apply in simulation so the habits t
 | [`g1_navigation`](workspace/src/g1_navigation) | SLAM Toolbox mapping, AMCL localization and Nav2. |
 | [`g1_orchestration`](workspace/src/g1_orchestration) | The behaviour tree that sequences navigation and manipulation into a mission. |
 | [`g1_sensor_relay`](workspace/src/g1_sensor_relay) | Publishes LiDAR and depth frames sampled inside the simulator. |
-| [`g1_sim`](workspace/src/g1_sim) | A separate planar perception sandbox. Not the main track. |
 | [`g1_state_estimation`](workspace/src/g1_state_estimation) | Publishes `odom` to `base_footprint` and the TF chain Nav2 needs. |
 
 ## Quick start

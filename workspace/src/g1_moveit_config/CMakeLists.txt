@@ -9,7 +9,7 @@ install(
 )
 
 if(BUILD_TESTING)
-  # Linters that don't conflict with ruff. No pep257, matching g1_bringup, g1_sim and
+  # Linters that don't conflict with ruff. No pep257, matching g1_bringup and
   # g1_navigation, the other launch-heavy packages.
   find_package(ament_lint_auto REQUIRED)
   ament_lint_auto_find_test_dependencies()
@@ -67,14 +67,14 @@ if(BUILD_TESTING)
   find_package(launch_testing_ament_cmake REQUIRED)
   add_launch_test(test/test_moveit_plan_execute.launch.py
     TARGET test_moveit_plan_execute TIMEOUT 400)
-  set_tests_properties(test_moveit_plan_execute PROPERTIES RESOURCE_LOCK g1_sim COST 90)
+  set_tests_properties(test_moveit_plan_execute PROPERTIES RESOURCE_LOCK mujoco_sim COST 90)
 
   # Runs the sensor track on the perception scene: the octomap has to fill from the LiDAR
   # before anything can be asserted. Note SIM_SETTLE_S inside that file cannot be raised to
   # cover the fill -- launch_testing's own startup timeout fires first.
   add_launch_test(test/test_octomap_blocks_a_plan.launch.py
     TARGET test_octomap_blocks_a_plan TIMEOUT 500)
-  set_tests_properties(test_octomap_blocks_a_plan PROPERTIES RESOURCE_LOCK g1_sim COST 95)
+  set_tests_properties(test_octomap_blocks_a_plan PROPERTIES RESOURCE_LOCK mujoco_sim COST 95)
 
   # Use workspace-root ruff.toml if available.
   find_program(RUFF_EXECUTABLE ruff)

@@ -21,7 +21,7 @@ import launch_testing.actions
 import rclpy
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import ExecuteProcess, IncludeLaunchDescription, TimerAction
+from launch.actions import IncludeLaunchDescription, TimerAction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from rclpy.action import ActionClient
 from rclpy.node import Node
