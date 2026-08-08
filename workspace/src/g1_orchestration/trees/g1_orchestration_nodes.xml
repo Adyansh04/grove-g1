@@ -4,17 +4,21 @@
             <input_port name="timeout_s" type="double" default="15.000000">Per-step service budget.</input_port>
         </Action>
         <Action ID="ApproachObject">
-            <input_port name="server_timeout_s" type="double" default="10.000000">How long to wait for the action server to appear.</input_port>
             <input_port name="timeout_s" type="double" default="0.000000">0 uses the server's own default.</input_port>
-            <input_port name="working_yaw" type="double">Heading to hold while approaching. Pass the same yaw the staging goal used.</input_port>
+            <input_port name="server_timeout_s" type="double" default="10.000000">How long to wait for the action server to appear.</input_port>
+            <input_port name="use_current_heading" type="bool" default="false">Hold whatever heading the robot already has, instead of working_yaw.</input_port>
+            <input_port name="working_yaw" type="double">Heading to hold while approaching, usually the staging goal's goal_yaw. Ignored when use_current_heading is true.</input_port>
             <input_port name="arm" type="std::string" default="right">'left' or 'right'.</input_port>
             <input_port name="object_id" type="std::string">Must match a class_id published on /objects.</input_port>
         </Action>
         <Action ID="ClearCostmaps">
+            <input_port name="local_service" type="std::string" default="/local_costmap/clear_entirely_local_costmap">Nav2 local costmap clear service. Empty skips it.</input_port>
+            <input_port name="global_service" type="std::string" default="/global_costmap/clear_entirely_global_costmap">Nav2 global costmap clear service. Empty skips it.</input_port>
             <input_port name="timeout_s" type="double" default="5.000000">Per-costmap service budget.</input_port>
         </Action>
         <Action ID="NavigateToPose">
             <output_port name="goal_yaw" type="double">The goal's heading, for an ApproachObject that has to hold it.</output_port>
+            <input_port name="behavior_tree" type="std::string" default="">Nav2 tree to drive with. Empty uses its default.</input_port>
             <input_port name="frame_id" type="std::string" default="map">Frame the goal is expressed in.</input_port>
             <input_port name="server_timeout_s" type="double" default="10.000000">How long to wait for the action server to appear.</input_port>
             <input_port name="goal" type="g1_orchestration::Station">Where to drive to, as 'x;y;yaw'.</input_port>

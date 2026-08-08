@@ -16,7 +16,19 @@ ClearCostmaps::ClearCostmaps(
 
 BT::PortsList ClearCostmaps::providedPorts()
 {
-    return { ports::serviceTimeout(5.0, "Per-costmap service budget.") };
+    // The service names are ports because Nav2's costmap names are configurable; a stack that
+    // renames them should not need this file rebuilt.
+    return {
+        ports::serviceTimeout(5.0, "Per-costmap service budget."),
+        BT::InputPort<std::string>(
+            "global_service",
+            "/global_costmap/clear_entirely_global_costmap",
+            "Nav2 global costmap clear service. Empty skips it."),
+        BT::InputPort<std::string>(
+            "local_service",
+            "/local_costmap/clear_entirely_local_costmap",
+            "Nav2 local costmap clear service. Empty skips it."),
+    };
 }
 
 BT::NodeStatus ClearCostmaps::tick()
@@ -27,9 +39,13 @@ BT::NodeStatus ClearCostmaps::tick()
     auto         client_node = makeClientNode("g1_clear_costmaps_client");
 
     bool all_cleared = true;
-    for (const char* service : { "/global_costmap/clear_entirely_global_costmap",
-                                 "/local_costmap/clear_entirely_local_costmap" })
+    for (const char* port : { "global_service", "local_service" })
     {
+        const std::string service = getInput<std::string>(port).value_or("");
+        if (service.empty())
+        {
+            continue;
+        }
         const auto response = callService<ClearEntireCostmap>(
             client_node,
             service,

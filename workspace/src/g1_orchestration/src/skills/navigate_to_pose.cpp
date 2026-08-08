@@ -37,6 +37,10 @@ BT::PortsList NavigateToPose::providedPorts()
     return providedBasicPorts({
         BT::InputPort<Station>("goal", "Where to drive to, as 'x;y;yaw'."),
         BT::InputPort<std::string>("frame_id", "map", "Frame the goal is expressed in."),
+        BT::InputPort<std::string>(
+            "behavior_tree",
+            "",
+            "Nav2 tree to drive with. Empty uses its default."),
         BT::OutputPort<double>(
             "goal_yaw",
             "The goal's heading, for an ApproachObject that has to hold it."),
@@ -52,6 +56,8 @@ bool NavigateToPose::fillGoal(Goal& goal)
         return false;
     }
     goal.pose = toPose(*station, getInput<std::string>("frame_id").value_or("map"));
+    // Nav2 picks its own default when this is empty, so a tree that does not care says nothing.
+    goal.behavior_tree = getInput<std::string>("behavior_tree").value_or("");
 
     // Published so the approach that follows can hold the heading this goal arrived on. It used
     // to be retyped as a literal in both places and kept equal by hand.

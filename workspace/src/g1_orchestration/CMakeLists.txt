@@ -69,6 +69,19 @@ if(BUILD_TESTING)
   target_compile_definitions(test_tree_loads PRIVATE
     G1_TREES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/trees")
 
+  # ament_cmake_xmllint only globs *.xml, so the Groot2 project file is not covered by it and a
+  # malformed comment in it reached a commit. Checked explicitly.
+  find_program(XMLLINT_EXECUTABLE xmllint)
+  if(XMLLINT_EXECUTABLE)
+    add_test(
+      NAME xmllint_btproj_g1_orchestration
+      COMMAND ${XMLLINT_EXECUTABLE} --noout
+        "${CMAKE_CURRENT_SOURCE_DIR}/trees/g1_orchestration.btproj"
+    )
+  else()
+    message(WARNING "xmllint not found; skipping xmllint_btproj_g1_orchestration")
+  endif()
+
   # A stale Groot2 palette invites trees that cannot load.
   ament_add_gmock(test_node_model test/test_node_model.cpp)
   target_link_libraries(test_node_model g1_bt_nodes)

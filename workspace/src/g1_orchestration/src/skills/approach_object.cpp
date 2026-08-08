@@ -19,7 +19,12 @@ BT::PortsList ApproachObject::providedPorts()
         ports::arm(),
         BT::InputPort<double>(
             "working_yaw",
-            "Heading to hold while approaching. Pass the same yaw the staging goal used."),
+            "Heading to hold while approaching, usually the staging goal's goal_yaw. Ignored "
+            "when use_current_heading is true."),
+        BT::InputPort<bool>(
+            "use_current_heading",
+            false,
+            "Hold whatever heading the robot already has, instead of working_yaw."),
         ports::goalTimeout(),
     });
 }
@@ -32,24 +37,28 @@ bool ApproachObject::fillGoal(Goal& goal)
         RCLCPP_ERROR(node_->get_logger(), "[%s] needs an object_id", name().c_str());
         return false;
     }
-    // Required, with no default. A missing heading would silently mean "face +x", which is a
-    // valid yaw and almost never the right one -- the skill would approach square to nothing and
-    // the failure would look like bad geometry rather than a missing port.
+
+    goal.use_current_heading = getInput<bool>("use_current_heading").value_or(false);
+
+    // working_yaw is required UNLESS the caller asked to keep the current heading. Defaulting it
+    // would silently mean "face +x", which is a valid yaw and almost never the right one: the
+    // skill would approach square to nothing and the failure would read as bad geometry rather
+    // than a missing port.
     const auto working_yaw = getInput<double>("working_yaw");
-    if (!working_yaw)
+    if (!goal.use_current_heading && !working_yaw)
     {
         RCLCPP_ERROR(
             node_->get_logger(),
-            "[%s] needs working_yaw: %s",
+            "[%s] needs working_yaw, or use_current_heading: %s",
             name().c_str(),
             working_yaw.error().c_str());
         return false;
     }
-    goal.object_id           = *object_id;
-    goal.arm                 = getInput<std::string>("arm").value_or("right");
-    goal.working_yaw         = *working_yaw;
-    goal.use_current_heading = false;
-    goal.timeout_s           = getInput<double>("timeout_s").value_or(0.0);
+
+    goal.object_id   = *object_id;
+    goal.arm         = getInput<std::string>("arm").value_or("right");
+    goal.working_yaw = working_yaw.value_or(0.0);
+    goal.timeout_s   = getInput<double>("timeout_s").value_or(0.0);
     return true;
 }
 
