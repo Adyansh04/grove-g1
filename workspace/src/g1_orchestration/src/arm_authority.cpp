@@ -26,6 +26,11 @@ constexpr const char* kSwitchService    = "/controller_manager/switch_controller
 // than waited out twice. Mirrors activate_arm's HAND_ACTIVATE_TIMEOUT_S.
 constexpr double kHandTimeoutS = 5.0;
 
+/// How long the arm needs after its controller activates before it can be commanded. Not tuning:
+/// the measured drift 176 ms after the switch was 0.051 rad on the elbow, against MoveIt's
+/// allowed_start_tolerance of 0.05.
+constexpr double kAcquireSettleS = 3.0;
+
 /// A node used only for these calls. The executor already owns the tree's node, and
 /// spin_until_future_complete on a node an executor holds throws instead of waiting, so this
 /// borrows nothing -- it is created for the sequence and destroyed with it.
@@ -197,6 +202,18 @@ bool acquireArm(const rclcpp::Logger& logger, double timeout_s)
                 hand.component.c_str());
         }
     }
+
+    // Settle before reporting success. Activating the controller does not leave the arm where it
+    // was: rt/arm_sdk ramps its blend weight and the joints move to the held pose over the next
+    // second or two. Command a trajectory into that and MoveIt validates the plan's start state
+    // against a robot that has since moved, and refuses with "start point deviates from current
+    // robot state more than 0.05" -- measured on the right elbow at 0.051 rad, 176 ms after the
+    // switch returned, which is the whole margin.
+    //
+    // The same reason g1_loco_authority has settle_after_start_s: an authority handoff is not
+    // complete when the service call returns, it is complete when the thing has stopped moving.
+    rclcpp::sleep_for(std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::duration<double>(kAcquireSettleS)));
     return true;
 }
 
