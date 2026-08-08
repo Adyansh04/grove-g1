@@ -186,7 +186,7 @@
 
   <group_state name="tucked" group="left_arm">
     <joint name="left_shoulder_pitch_joint" value="0.25"/>
-    <joint name="left_shoulder_roll_joint" value="0.20"/>
+    <joint name="left_shoulder_roll_joint" value="0.40"/>
     <joint name="left_shoulder_yaw_joint" value="0.00"/>
     <joint name="left_elbow_joint" value="1.30"/>
     <joint name="left_wrist_roll_joint" value="0.00"/>
@@ -195,7 +195,7 @@
   </group_state>
   <group_state name="tucked" group="right_arm">
     <joint name="right_shoulder_pitch_joint" value="0.25"/>
-    <joint name="right_shoulder_roll_joint" value="-0.20"/>
+    <joint name="right_shoulder_roll_joint" value="-0.40"/>
     <joint name="right_shoulder_yaw_joint" value="0.00"/>
     <joint name="right_elbow_joint" value="1.30"/>
     <joint name="right_wrist_roll_joint" value="0.00"/>
@@ -204,14 +204,14 @@
   </group_state>
   <group_state name="tucked" group="both_arms">
     <joint name="left_shoulder_pitch_joint" value="0.25"/>
-    <joint name="left_shoulder_roll_joint" value="0.20"/>
+    <joint name="left_shoulder_roll_joint" value="0.40"/>
     <joint name="left_shoulder_yaw_joint" value="0.00"/>
     <joint name="left_elbow_joint" value="1.30"/>
     <joint name="left_wrist_roll_joint" value="0.00"/>
     <joint name="left_wrist_pitch_joint" value="0.00"/>
     <joint name="left_wrist_yaw_joint" value="0.00"/>
     <joint name="right_shoulder_pitch_joint" value="0.25"/>
-    <joint name="right_shoulder_roll_joint" value="-0.20"/>
+    <joint name="right_shoulder_roll_joint" value="-0.40"/>
     <joint name="right_shoulder_yaw_joint" value="0.00"/>
     <joint name="right_elbow_joint" value="1.30"/>
     <joint name="right_wrist_roll_joint" value="0.00"/>
