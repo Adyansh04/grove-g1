@@ -68,10 +68,10 @@ struct ApproachLimits
     /// and the point of measuring the arm properly was to find out how much slack it grants.
     double forward_tolerance_m = 0.090;
     double lateral_tolerance_m = 0.040;
-    /// The yaw response is bimodal -- one 0.15 s pulse measured 3 to 14 degrees -- so a
-    /// tolerance near a single quantum cannot be held. Residual heading error shows up as
-    /// lateral error anyway, which is the cheap axis to correct.
-    double heading_tolerance_rad = 0.140;
+    /// Deliberately loose. The window is judged in the base frame, so heading is not part of
+    /// reachability: it only steers the drives. A tight value here spends the whole pulse
+    /// budget taking out a few degrees that cost nothing.
+    double heading_tolerance_rad = 0.350;
 
     /// Nearer than this and the object is under the robot's own shell. Sits just below the
     /// measured reachable band, which starts at 0.16, so there is room between "past the window"

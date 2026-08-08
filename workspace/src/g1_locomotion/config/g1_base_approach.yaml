@@ -122,7 +122,11 @@ g1_base_approach:
     # was refused by a 0.060 forward tolerance it had no reason to be held to.
     forward_tolerance_m: 0.090
     lateral_tolerance_m: 0.040
-    heading_tolerance_rad: 0.140
+    # LOOSE on purpose, 20 degrees. The window is judged in the base frame, which is the frame
+    # the arm works in, so heading is not part of reachability at all -- it only decides which
+    # way the forward drives point and roughly how the robot stands to the surface. Holding it
+    # tightly bought nothing and cost most of the skill's pulses taking out a few degrees.
+    heading_tolerance_rad: 0.350
 
     # Nearer than this and the object is under the robot's own shell. Set just below the measured
     # band's near end (0.16) so that being merely past the window leaves room for a backwards

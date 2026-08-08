@@ -428,21 +428,20 @@ private:
                 return;
             }
 
-            // Rotate the object into the WORKING-HEADING frame before planning. A creep leaves
-            // the robot 45 degrees off on purpose, so the raw base-frame reading is taken in a
-            // frame the mission is not trying to reach, and both error components then describe
-            // the wrong thing. Measured live: forward error frozen at 0.50 m while lateral grew
-            // from 0.29 to 0.50, with every creep making it worse.
+            // Judged in the RAW base frame, because that is the frame the ARM works in. Where
+            // the object sits relative to the robot is the whole of reachability; which way the
+            // room faces is not part of it.
+            //
+            // This used to rotate the object into the working-heading frame first, which made
+            // the errors describe a stance the robot was not standing in and made the skill
+            // chase exact alignment -- most of its pulse budget went on taking out a few degrees
+            // that cost nothing. The working heading now only steers the drives, loosely.
             const double heading_error = wrap(working_yaw - tf2::getYaw(here->pose.orientation));
-            const double c             = std::cos(heading_error);
-            const double sn            = std::sin(heading_error);
-            const double object_x      = object->point.x * c + object->point.y * sn;
-            const double object_y      = -object->point.x * sn + object->point.y * c;
+            const auto   command =
+                planApproach(object->point.x, object->point.y, heading_error, limits);
 
-            const auto command = planApproach(object_x, object_y, heading_error, limits);
-
-            result->final_x_m = object_x;
-            result->final_y_m = object_y;
+            result->final_x_m = object->point.x;
+            result->final_y_m = object->point.y;
 
             feedback->forward_error_m = command.forward_error_m;
             feedback->lateral_error_m = command.lateral_error_m;
@@ -498,16 +497,11 @@ private:
                     // finishes at a few centimetres a pulse.
                     const auto close_enough = [&] {
                         const auto object_now = objectInBase(goal->object_id);
-                        const auto pose_now   = basePose();
-                        if (!object_now || !pose_now)
+                        if (!object_now)
                         {
                             return true;
                         }
-                        const double he =
-                            wrap(working_yaw - tf2::getYaw(pose_now->pose.orientation));
-                        const double fwd =
-                            object_now->point.x * std::cos(he) + object_now->point.y * std::sin(he);
-                        return fwd - limits.target_x_m <= step_lead_m_;
+                        return object_now->point.x - limits.target_x_m <= step_lead_m_;
                     };
                     driveUntil(pulse_vx_, 0.0, 0.0, close_enough, max_step_s_, deadline);
                     ++pulses;
