@@ -140,7 +140,7 @@ TEST(ApproachPlanner, PastTheWindowIsRecoveredByCreepingBackwards)
     // a turned heading has a negative forward component, so overshooting is recoverable. That
     // matters because the primitives are bimodal: one creep was measured carrying the robot
     // 0.34 m when 0.025 was asked for.
-    const double past    = limits.target_x_m - limits.forward_tolerance_m - 0.03;
+    const double past    = limits.target_x_m - limits.forward_tolerance_m - 0.02;
     const auto   command = planApproach(past, limits.target_y_m, 0.0, limits);
     ASSERT_EQ(command.move, ApproachMove::kCreep);
     EXPECT_LT(command.forward_error_m, 0.0);

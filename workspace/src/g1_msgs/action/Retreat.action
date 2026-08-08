@@ -7,6 +7,12 @@
 
 # How far to end up from where it started, in metres. Achieved to within about one gait pulse.
 float64 distance_m
+# How much of that to cover BEFORE turning round, backing straight off instead.
+#
+# Turning on the spot beside a workbench swings the robot and whatever it is holding across the
+# table. Backing off first costs a few centimetres a pulse and is the only way out of that,
+# since the gait has no reverse and the turn is what does the damage. 0 turns immediately.
+float64 back_off_m
 # Face the original heading again at the end. A mission that is about to navigate somewhere else
 # does not need it and pays two turns for nothing; a mission that wants to look at what it just
 # put down does.
@@ -18,6 +24,7 @@ bool success
 string message
 float64 travelled_m
 ---
+string PHASE_BACKING_OFF=backing_off
 string PHASE_TURNING=turning
 string PHASE_WALKING=walking
 string PHASE_RESTORING=restoring

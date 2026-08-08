@@ -83,11 +83,11 @@
 
       <SetArmPosture name="hold_it_close" group="right_arm" named_target="carry"/>
 
-      <!-- Back off before turning. The approach leaves the robot about 0.18 m from the desk
-           edge with its feet under the overhang, and a turn-in-place from there drags the
-           carried object across the desk. restore_heading is false: the next thing that happens
-           is a navigation goal, which will choose its own heading anyway. -->
-      <Retreat name="back_off_the_desk" distance="0.7" restore_heading="false"/>
+      <!-- Back off before turning, and back STRAIGHT off for the first 0.35 m. The approach
+           leaves the robot close enough that turning on the spot sweeps the carried cube across
+           the desk, which is what it did. restore_heading is false: the next thing that happens
+           is a navigation goal, which chooses its own heading anyway. -->
+      <Retreat name="back_off_the_desk" distance="0.7" back_off="0.35" restore_heading="false"/>
 
       <NavigateToPose name="stage_at_storage" goal="6.30;5.70;1.5708"/>
 
@@ -99,7 +99,7 @@
            window the grasp was. -->
       <Place name="put_it_on_the_pad" target="6.50;6.25;0.855" arm="right"/>
 
-      <Retreat name="back_off_the_bench" distance="0.6" restore_heading="false"/>
+      <Retreat name="back_off_the_bench" distance="0.6" back_off="0.35" restore_heading="false"/>
 
       <SetArmPosture name="tuck_again" group="right_arm" named_target="tucked"/>
       <SetArmPosture name="tuck_left_again" group="left_arm" named_target="tucked"/>

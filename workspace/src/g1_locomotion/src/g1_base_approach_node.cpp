@@ -679,9 +679,48 @@ private:
 
         int pulses = 0;
 
-        // Turn to face away. Reverse is not available: g1_gait_shaper compares forward speed
-        // signed, so a negative command is zeroed at any magnitude. Half a turn costs about 24
-        // yaw pulses at 3.8 degrees each, which is why max_aim_pulses does not bound this one.
+        // Back straight off FIRST, before any turn. Turning on the spot beside a workbench
+        // swings the robot and whatever it is holding across the table, which is what the
+        // mission does immediately after a pick.
+        //
+        // The gait has no reverse, but a strafe taken on a turned heading does: at 45 degrees
+        // off, strafing the appropriate way carries the robot backwards a couple of centimetres
+        // a pulse. Slow, and the only thing that moves the base away without sweeping the arm
+        // over the surface it just picked from.
+        if (goal->back_off_m > 0.0)
+        {
+            feedback->phase = Retreat::Feedback::PHASE_BACKING_OFF;
+            handle->publish_feedback(feedback);
+            double backed = 0.0;
+            while (rclcpp::ok() && backed < goal->back_off_m && pulses < max_pulses_)
+            {
+                if (handle->is_canceling() || std::chrono::steady_clock::now() > deadline)
+                {
+                    break;
+                }
+                // A modest offset either side of the start heading; the sign only decides which
+                // way the robot drifts while it backs up, and both are equally fine here.
+                if (!aimAt(handle, wrap(start_yaw + limits_.fine_offset_rad), deadline, pulses))
+                {
+                    break;
+                }
+                pulse(0.0, pulse_vy_, 0.0, strafe_pulse_s_);
+                ++pulses;
+                const auto here = basePose();
+                if (here)
+                {
+                    backed = std::hypot(
+                        here->pose.position.x - start->pose.position.x,
+                        here->pose.position.y - start->pose.position.y);
+                }
+                feedback->travelled_m = backed;
+                handle->publish_feedback(feedback);
+            }
+            RCLCPP_INFO(get_logger(), "backed straight off %.3f m before turning", backed);
+        }
+
+        // Then turn to face away and walk the rest. Half a turn is a lot of yaw, which is why
+        // faceAway() is bounded by max_pulses rather than the tighter aim budget.
         feedback->phase = Retreat::Feedback::PHASE_TURNING;
         handle->publish_feedback(feedback);
         if (!faceAway(handle, away_yaw, deadline, pulses))

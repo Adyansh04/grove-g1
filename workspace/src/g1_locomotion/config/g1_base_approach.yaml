@@ -91,7 +91,7 @@ g1_base_approach:
     # was creeping after precision the gait does not have.
     #
     # target_y_m mirrors for the left arm, exactly as the grasp offset does.
-    target_x_m: 0.280
+    target_x_m: 0.270
     target_y_m: -0.220
 
     # Forward is the tight axis because it is the one the gait cannot resolve directly: the
@@ -120,7 +120,13 @@ g1_base_approach:
     # first single-line sweep suggested. 0.09 puts the forward window at x 0.19..0.37, all of it
     # inside the solid band; a run that stopped at 0.066 of forward error and 0.022 of lateral
     # was refused by a 0.060 forward tolerance it had no reason to be held to.
-    forward_tolerance_m: 0.090
+    # 0.27 +/- 0.11 IS the measured band, x 0.16..0.38, rather than a cautious slice of it.
+    #
+    # Cutting it short is what caused the retries: a run stepped from 0.718 of forward error to
+    # 0.103 in one drive -- a good, finished approach -- and was then sent creeping for forty
+    # pulses because the tolerance was 0.090 and it was 13 mm outside. The arm could reach it the
+    # whole time. Being stricter than the arm buys nothing and costs minutes.
+    forward_tolerance_m: 0.110
     lateral_tolerance_m: 0.040
     # LOOSE on purpose, 20 degrees. The window is judged in the base frame, which is the frame
     # the arm works in, so heading is not part of reachability at all -- it only decides which
@@ -131,7 +137,7 @@ g1_base_approach:
     # Nearer than this and the object is under the robot's own shell. Set just below the measured
     # band's near end (0.16) so that being merely past the window leaves room for a backwards
     # creep, which is the only reverse this robot has.
-    min_forward_m: 0.140
+    min_forward_m: 0.120
 
     # Take a forward step while more than this is left; creep below it. About one typical step:
     # 0.293 m from a settled robot, 0.37 to 0.51 inside the approach loop where the gait is
