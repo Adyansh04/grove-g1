@@ -14,6 +14,7 @@ flowchart TB
     AMCL -- "map to odom" --> NAV2
     ODOM["g1_odometry_publisher"] -- "odom to base_footprint" --> NAV2
     NAV2["Nav2"] -- "/cmd_vel" --> SHAPE["g1_gait_shaper"]
+    APPR["g1_base_approach"] -- "/cmd_vel_approach (priority)" --> SHAPE
     SHAPE --> BRIDGE["g1_loco_bridge"]
     AUTH["g1_loco_authority"] -.-> BRIDGE
 ```
@@ -75,6 +76,16 @@ The shaper zeroes any yaw below 1.20 rad/s, and the pure pursuit controller's cu
 usually well under that. Effective behaviour is bang-bang: drive straight until the heading error
 is large, then rotate in place. That makes `angular_dist_threshold` the dominant knob, not
 `lookahead_dist`.
+
+Nav2 is no longer the only writer on the velocity channel. `nav2.launch.py` also starts
+`g1_locomotion`'s `g1_base_approach`, which closes the last half metre to a workbench under its own
+control because Nav2's 0.5 m goal tolerance is more than twice the arm's usable window. The gait
+shaper arbitrates the two and gives the approach priority; see `g1_locomotion`'s README for why the
+arbitration lives there and not in a `twist_mux`.
+
+It is launched unconditionally rather than gated on manipulation. It reads `/objects`, so without
+`manipulation:=true` its goals simply fail with "no fresh pose", and gating it on an argument this
+package knows nothing about is the cross-package coupling this file avoids elsewhere.
 
 `behavior_server`'s `max_rotational_vel` is 1.57 rather than upstream's 1.0. At 1.0 it sat below
 the shaper's engage threshold, so every `Spin` was zeroed before reaching the bridge while still

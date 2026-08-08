@@ -76,6 +76,19 @@ That the fingers close toward +y is also why `grasp_rpy` is a **roll**: it is th
 the closing axis toward the floor for a grasp off a table, and pitching the palm instead produces
 poses with no IK anywhere useful.
 
+### Vertically it grips near the top face, not the centre
+
+Horizontally the grasp frame goes straight to the object. Vertically it does not, and aiming at the
+centre was wrong. With the closing axis pointing at the floor the fingertips sit about 24 mm beyond
+the grasp frame along it, so targeting the middle of a 60 mm cube puts them 6 mm above the table --
+inside the octomap's own 20 mm self-filter padding. The hand was being asked to close *through* the
+surface, and the descent failed every time with `GOAL_STATE_INVALID`.
+
+`grasp_depth_below_top_m` (0.015) is measured down from the object's top face, using the height the
+pose source reports in its bounding box. It is also a shorter, less extended reach, which was the
+other thing failing. `Place` mirrors it, reading the held object's height back out of the attached
+collision object, so an object is released at the same relative height it was grasped at.
+
 ## Grasping is contact
 
 The planner cannot tell intended contact from a collision, and two things are unavoidably in the
@@ -91,6 +104,28 @@ it. Both are handled, and how they are handled matters:
   table, which is visible in the viewer.
 
 The exemption is restored on every exit path, including failure.
+
+### The pregrasp has to clear the octomap on its own
+
+The exemption covers the descent and nothing before it, so the PREGRASP is planned fully
+collision-checked and must be genuinely clear. Measured at the facility workbench with
+`docs/notes/m9-checks/why_blocked.py`, which reports the colliding link pair rather than leaving it
+to be inferred:
+
+| grasp-frame height, pelvis frame | verdict |
+|---|---|
+| +0.10 | palm, all three thumb links, both wrist links |
+| +0.1575 | `<octomap> <-> right_hand_thumb_2_link` |
+| +0.22 and above | clear |
+
+The cube sits at pelvis z +0.0375, so `approach_height_m` has to exceed 0.185. It is 0.22.
+`lift_height_m` is 0.20 for a sharper reason: the exemption is restored at the end of the lift, so
+wherever the lift finishes becomes the START state of the next collision-checked plan, and finishing
+inside the octomap leaves the carry posture unplannable.
+
+Judging the reachable window by "solves at both heights" is a mistake worth naming: the grasp pose
+sits on the table and is inside its octomap *by construction*. Only the pregrasp has to be
+collision-free.
 
 ## Running
 

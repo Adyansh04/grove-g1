@@ -9,6 +9,7 @@ BehaviorTree.CPP **v4**.
 flowchart LR
     EXE["g1_bt_executor<br/>ticks the tree at 10 Hz"]
     EXE -- "NavigateToPose" --> NAV["Nav2"]
+    EXE -- "ApproachObject, Retreat" --> BA["g1_base_approach"]
     EXE -- "Pick, Place,<br/>SetArmPosture" --> MAN["g1_manipulation_server"]
     EXE -- "acquire / release" --> CM["controller_manager"]
     EXE -. "ZeroMQ 1667" .-> G["Groot2 (on the host)"]
@@ -38,6 +39,8 @@ hand-rolls its one action-client node base rather than vendoring that repo for f
 | Leaf | Wraps | Ports |
 |---|---|---|
 | `NavigateToPose` | Nav2's `/navigate_to_pose` | `goal` as `"x;y;yaw"`, `frame_id` |
+| `ApproachObject` | `g1_locomotion`'s base approach | `object_id`, `arm`, `working_yaw`, `timeout_s` |
+| `Retreat` | the same | `distance`, `back_off`, `restore_heading`, `timeout_s` |
 | `Pick` | `g1_manipulation` | `object_id`, `arm` |
 | `Place` | `g1_manipulation` | `target` as `"x;y;z"`, `arm`, `frame_id` |
 | `SetArmPosture` | `g1_manipulation` | `group`, `named_target` |
@@ -48,11 +51,22 @@ Every action leaf sends its goal on the first tick, answers RUNNING while it is 
 executing a trajectory is the "release cleanly on success or failure" rule in
 `docs/CONTROL_MODES.md` being broken.
 
+`ApproachObject` takes a `working_yaw` with no default, and refuses the goal without one. A missing
+heading would silently mean "face +x", which is a valid yaw and almost never the right one; the
+skill would approach square to nothing and the failure would read as bad geometry rather than a
+missing port. Pass the same yaw the staging `NavigateToPose` used.
+
 `AcquireArm` runs the same ordered sequence as `g1_bringup`'s `activate_arm` script — component
 before controller, arm required and hands best-effort — and `test_authority_drift` fails if the
-two stop naming the same things. It differs in one way on purpose: it switches controllers
-`BEST_EFFORT` rather than `STRICT`, because a tree leaf has to be idempotent. The arm is often
-already acquired, and `STRICT` calls that a failure.
+two stop naming the same things. It differs in two ways on purpose. It switches controllers
+`BEST_EFFORT` rather than `STRICT`, because a tree leaf has to be idempotent: the arm is often
+already acquired, and `STRICT` calls that a failure. And it does not return until the arm has
+SETTLED, three seconds after the switch, because activating the controller does not leave the arm
+where it was — `rt/arm_sdk` ramps its blend weight and the joints move for a second or two.
+Commanding a trajectory into that made MoveIt refuse with "start point deviates from current robot
+state more than 0.05", measured at 0.051 rad on the elbow 176 ms after the switch returned. An
+authority handoff is complete when the thing has stopped moving, not when the service call
+returns — the same reason `g1_loco_authority` has `settle_after_start_s`.
 
 ## The arm bracket belongs to the executor
 
@@ -70,7 +84,7 @@ than useless, and the executor releases again regardless.
 
 | Tree | Needs | What it does |
 |---|---|---|
-| `pick_and_place.xml` | Nav2, `world:=navigation`, a map | The mission: tuck, drive to the workbench, pick, carry, drive to storage, place, tuck, release. |
+| `pick_and_place.xml` | Nav2, `world:=navigation`, a map | The mission: acquire, tuck both arms, drive to a STAGING pose, close the last gap, pick, carry, back off, drive to storage, close again, place, back off, tuck, release. |
 | `pick_and_place_in_place.xml` | `world:=manipulation` | The same skills with no driving. What to run while manipulation is being tuned. |
 
 Both are plain XML and Groot2-editable. `test_tree_loads` parses every tree in `trees/` against
@@ -79,7 +93,35 @@ after a stack is already up.
 
 Named postures are driven per arm rather than through `both_arms`: `both_arms` currently fails to
 execute a named posture on this stack while either arm alone succeeds, and the cause is not yet
-found. Only one arm carries anything, so it costs the mission nothing. See `docs/notes`.
+found. See `docs/notes`.
+
+BOTH arms are tucked before travelling, and the left one is not symmetry for its own sake. A
+hanging hand sits at pelvis (+0.209, -0.193, -0.064), which is 21 cm in front of the pelvis and 1 cm
+under the workbench slab, so it jams on the table edge and the base stops moving while the approach
+keeps issuing commands. Tucking only the right arm moves the collision to the left one and changes
+nothing.
+
+The tucks are retried. The failure that shows up there is per-attempt rather than structural --
+"Motion plan was found but it seems to be invalid", which is OMPL having sampled a path that clips
+the live octomap -- and the posture itself is verified collision-free against the robot model.
+
+### The stations are staging poses, not working poses
+
+Nav2 cannot park the robot where the arm can reach anything: `xy_goal_tolerance` is 0.5 m and
+`robot_radius` is 0.45, against an arm whose usable window is about 0.2 m wide. So each
+`NavigateToPose` goal is a pose Nav2 can legally reach, short of the surface, and `ApproachObject`
+closes the rest against the measured object rather than against the map. That is the standard
+mobile-manipulation pattern: a stand-off pose on the surface normal, approached straight in.
+
+Both stations face +y and hand that same yaw to `ApproachObject` to hold.
+
+### Retreat backs straight off before turning
+
+`back_off` is not decoration. The approach leaves the robot close enough to the workbench that
+turning on the spot sweeps the robot and the carried cube across the table, which is exactly what it
+did. Backing straight off first is slow -- the gait has no reverse, so it is done with angled
+strafes at a couple of centimetres a pulse -- and is the only motion that clears the base without
+dragging the arm over the surface it just picked from.
 
 ## Running
 
@@ -123,7 +165,7 @@ None need a simulator.
 
 | Test | Covers |
 |---|---|
-| `test_tree_loads` | Every shipped tree parses with all node types registered; the mission tree still has the leaves it is supposed to; an unknown leaf is rejected; the port string conversions and their refusals. |
+| `test_tree_loads` | Every shipped tree parses with all node types registered; the mission tree still has the leaves it is supposed to, including one `ApproachObject` per surface and one `Retreat` per departure; an unknown leaf is rejected; the port string conversions and their refusals. |
 | `test_authority_drift` | The acquire sequence against `g1_bringup`'s `activate_arm`, which is the other implementation of it, and that the arm comes first with the hands behind it. |
 
 ```bash
