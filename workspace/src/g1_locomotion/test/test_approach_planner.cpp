@@ -85,33 +85,34 @@ TEST(ApproachPlanner, MoreThanAStepLeftIsStepped)
 TEST(ApproachPlanner, TheCreepTurnsAwayFromTheSideItNeedsToSlideToward)
 {
     const auto limits = defaults();
-    // Turning left and strafing right advances and slides right; turning right and strafing left
-    // advances and slides left. So the offset is signed opposite the strafe, and the slide pays
-    // down the lateral error instead of adding to it.
-    const auto needs_left =
-        planApproach(limits.target_x_m + 0.12, limits.target_y_m + 0.30, 0.0, limits);
+    // Reached only once lateral is already inside tolerance, so the residual it leans into is
+    // small. The offset is still signed opposite the strafe: turning right and strafing left is
+    // what carries the robot forward and left at the same time.
+    const auto needs_left = planApproach(
+        limits.target_x_m + limits.forward_tolerance_m + 0.02,
+        limits.target_y_m + 0.5 * limits.lateral_tolerance_m,
+        0.0,
+        limits);
     ASSERT_EQ(needs_left.move, ApproachMove::kCreep);
-    EXPECT_GT(needs_left.lateral_sign, 0.0) << "strafe left";
-    EXPECT_LT(needs_left.fine_offset_rad, 0.0) << "so turn right";
+    EXPECT_GT(needs_left.lateral_sign, 0.0);
+    EXPECT_LT(needs_left.fine_offset_rad, 0.0);
 
-    const auto needs_right =
-        planApproach(limits.target_x_m + 0.12, limits.target_y_m - 0.30, 0.0, limits);
+    const auto needs_right = planApproach(
+        limits.target_x_m + limits.forward_tolerance_m + 0.02,
+        limits.target_y_m - 0.5 * limits.lateral_tolerance_m,
+        0.0,
+        limits);
     ASSERT_EQ(needs_right.move, ApproachMove::kCreep);
-    EXPECT_LT(needs_right.lateral_sign, 0.0) << "strafe right";
-    EXPECT_GT(needs_right.fine_offset_rad, 0.0) << "so turn left";
+    EXPECT_LT(needs_right.lateral_sign, 0.0);
+    EXPECT_GT(needs_right.fine_offset_rad, 0.0);
 }
 
-TEST(ApproachPlanner, HeadingIsRestoredBeforeStrafing)
+TEST(ApproachPlanner, HeadingIsCorrectedOnlyOncePositionIsRight)
 {
     const auto limits = defaults();
-    // A strafe on the wrong heading moves in the wrong world direction, and the last step
-    // deliberately left the heading off by its oblique.
-    EXPECT_EQ(
-        moveFor(limits.target_x_m, limits.target_y_m + 0.30, 0.5, limits),
-        ApproachMove::kTurn);
-    EXPECT_EQ(
-        moveFor(limits.target_x_m, limits.target_y_m + 0.30, 0.0, limits),
-        ApproachMove::kStrafe);
+    // Heading is last and loose: it is not part of reachability, only of how the robot stands.
+    EXPECT_EQ(moveFor(limits.target_x_m, limits.target_y_m, 0.5, limits), ApproachMove::kTurn);
+    EXPECT_EQ(moveFor(limits.target_x_m, limits.target_y_m, 0.0, limits), ApproachMove::kDone);
 }
 
 TEST(ApproachPlanner, StrafeGoesTowardTheObject)

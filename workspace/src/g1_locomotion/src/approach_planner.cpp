@@ -68,6 +68,16 @@ ApproachCommand planApproach(
         return command;
     }
 
+    // Lateral BEFORE the creep, because a strafe on the working heading needs no turn at all and
+    // a creep costs 45 degrees each way. A run that had 0.17 m of lateral error to take out spent
+    // 48 pulses creeping it away; the same correction is about five strafes.
+    if (std::abs(command.lateral_error_m) > limits.lateral_tolerance_m)
+    {
+        command.move         = ApproachMove::kStrafe;
+        command.lateral_sign = command.lateral_error_m > 0.0 ? 1.0 : -1.0;
+        return command;
+    }
+
     // Not far enough, and less than a step short. Forward is irreducible at about 0.29 m however
     // short the command, so the only fine way IN is to turn off the working heading and strafe.
     if (command.forward_error_m > limits.forward_tolerance_m)
@@ -85,13 +95,6 @@ ApproachCommand planApproach(
     {
         command.move     = ApproachMove::kTurn;
         command.turn_rad = heading_error_rad;
-        return command;
-    }
-
-    if (std::abs(command.lateral_error_m) > limits.lateral_tolerance_m)
-    {
-        command.move         = ApproachMove::kStrafe;
-        command.lateral_sign = command.lateral_error_m > 0.0 ? 1.0 : -1.0;
         return command;
     }
 

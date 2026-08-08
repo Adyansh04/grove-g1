@@ -565,9 +565,20 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     attached.link_name        = arm.palm_link;
     attached.object           = object;
     attached.object.operation = moveit_msgs::msg::CollisionObject::ADD;
+    // The hand's own links, plus the palm and the WRIST. The wrist matters and was missing: a
+    // 60 mm cube gripped just under its top face reaches past the fingers, and without the
+    // wrist in touch_links every later plan starts with `right_wrist_yaw_link <-> red_cube
+    // (Robot attached)` and OMPL refuses to initialise its start tree.
+    //
+    // Same set allowHandContact() exempts, and for the same reason: these are the links that
+    // unavoidably touch what is being carried.
     attached.touch_links =
         hand_group->getRobotModel()->getJointModelGroup(arm.hand_group)->getLinkModelNames();
     attached.touch_links.push_back(arm.palm_link);
+    const std::string touch_side = arm.is_left ? "left" : "right";
+    attached.touch_links.push_back(touch_side + "_wrist_pitch_link");
+    attached.touch_links.push_back(touch_side + "_wrist_yaw_link");
+    attached.touch_links.push_back(touch_side + "_wrist_roll_link");
     planning_scene_.applyAttachedCollisionObject(attached);
 
     // Extended to the object only now that it is attached and about to be lifted OUT of the
