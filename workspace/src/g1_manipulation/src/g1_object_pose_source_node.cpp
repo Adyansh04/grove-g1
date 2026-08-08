@@ -120,18 +120,6 @@ G1ObjectPoseSource::CallbackReturn G1ObjectPoseSource::on_cleanup(const rclcpp_l
     return CallbackReturn::SUCCESS;
 }
 
-G1ObjectPoseSource::CallbackReturn
-G1ObjectPoseSource::on_activate(const rclcpp_lifecycle::State& previous_state)
-{
-    return LifecycleNode::on_activate(previous_state);
-}
-
-G1ObjectPoseSource::CallbackReturn
-G1ObjectPoseSource::on_deactivate(const rclcpp_lifecycle::State& previous_state)
-{
-    return LifecycleNode::on_deactivate(previous_state);
-}
-
 void G1ObjectPoseSource::onGroundTruth(const vision_msgs::msg::Detection3DArray::SharedPtr msg)
 {
     if (!objects_pub_->is_activated())

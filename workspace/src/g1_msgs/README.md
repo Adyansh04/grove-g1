@@ -1,7 +1,8 @@
 # g1_msgs
 
-The stack's own interfaces: what `g1_locomotion` needs to drive the LocoClient bridge, and what
-`g1_manipulation` serves to the behavior tree. Four actions and one message.
+The stack's own interfaces: what `g1_locomotion` needs to drive the LocoClient bridge and the
+base approach, and what `g1_manipulation` serves to the behavior tree. Six actions and one
+message.
 
 `ament_cmake` with `rosidl_default_generators`. No source of its own.
 
@@ -38,8 +39,17 @@ Served by `g1_manipulation_server`, called by the behavior tree in `g1_orchestra
 | Action | Goal | Notes |
 |---|---|---|
 | `Pick` | `object_id`, `arm` | No pose in the goal. The server reads it from `/objects` when the goal starts, so a retry re-reads rather than replaying a stale one, and an object that is missing or stale there is a rejected goal rather than a guess. |
-| `Place` | `pose`, `arm` | The pose is where the **object** ends up, not where the palm goes: the caller knows the target surface, only the server knows how the object is held. Transformed into the planning frame on arrival, so a goal in `odom` survives the robot having walked. |
+| `Place` | `surface_object_id` **or** `pose`, `arm` | Prefer the surface: the server reads it from `/objects` and stands the object on top of it, so the place and the approach that preceded it agree however far localization has drifted. A `pose` is where the **object** ends up, not where the palm goes, transformed into the planning frame on arrival. |
 | `SetArmPosture` | `group`, `named_target` | Named SRDF poses only, so a tree can say `tucked` without carrying fourteen joint values in XML. An unknown name is rejected, rather than silently holding position. |
+
+## The locomotion skill actions
+
+Served by `g1_base_approach` in `g1_locomotion`, called by the same behavior tree.
+
+| Action | Goal | Notes |
+|---|---|---|
+| `ApproachObject` | `object_id`, `arm`, `working_yaw`, `use_current_heading`, `timeout_s` | Walks the base until the object is inside the arm's reach window, judged in the base frame. Nav2 parks within 0.5 m and the window is about 0.2 m wide. |
+| `Retreat` | `distance_m`, `timeout_s` | Reverses clear of a surface and stops. No turn: a navigation goal normally follows. |
 
 `Pick` and `Place` publish a phase as feedback, and their result message names that phase on
 failure. The phases are constants in the `.action` files so the server and its tests share one

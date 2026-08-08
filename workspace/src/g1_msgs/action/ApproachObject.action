@@ -42,7 +42,6 @@ float64 final_y_m
 # Which phase is running. Also what the result message names on failure, so the constants live
 # here rather than as literals in the server and its tests.
 string PHASE_LOCATING=locating
-string PHASE_FACING=facing
 string PHASE_CLOSING=closing
 string PHASE_SIDESTEPPING=sidestepping
 string PHASE_VERIFYING=verifying

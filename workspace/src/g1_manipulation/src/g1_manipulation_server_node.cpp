@@ -841,10 +841,10 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
                                                                         landed->header.frame_id;
             if (const auto where = toPlanningFrame(landed->results.front().pose.pose, frame))
             {
-                const double off = std::sqrt(
-                    std::pow(where->position.x - target->position.x, 2) +
-                    std::pow(where->position.y - target->position.y, 2) +
-                    std::pow(where->position.z - target->position.z, 2));
+                const double off = std::hypot(
+                    where->position.x - target->position.x,
+                    where->position.y - target->position.y,
+                    where->position.z - target->position.z);
                 if (off > place_tolerance_m_)
                 {
                     result->success = false;

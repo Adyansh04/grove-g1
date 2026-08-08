@@ -84,10 +84,11 @@ the grasp frame along it, so targeting the middle of a 60 mm cube puts them 6 mm
 inside the octomap's own 20 mm self-filter padding. The hand was being asked to close *through* the
 surface, and the descent failed every time with `GOAL_STATE_INVALID`.
 
-`grasp_depth_below_top_m` (0.015) is measured down from the object's top face, using the height the
-pose source reports in its bounding box. It is also a shorter, less extended reach, which was the
-other thing failing. `Place` mirrors it, reading the held object's height back out of the attached
-collision object, so an object is released at the same relative height it was grasped at.
+`grasp_height_above_top_m` (0.010) is measured up from the object's top face, using the height the
+pose source reports in its bounding box. Held above the face, the palm clears the object and the
+fingers close around its upper half. `Place` mirrors it, reading the held object's height back out
+of the attached collision object, so an object is released at the same relative height it was
+grasped at.
 
 ## Grasping is contact
 
