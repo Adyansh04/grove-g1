@@ -34,6 +34,17 @@ GaitShaper::GaitShaper(const Config& config)
             "GaitShaper: yaw_clamp must be >= yaw_engage, or every turn this class accepts is "
             "clamped back below the threshold that accepted it and the robot never rotates.");
     }
+    if (config_.lat_engage <= 0.0 || config_.lat_clamp < 0.0)
+    {
+        throw std::invalid_argument("GaitShaper: lat_engage must be > 0 and lat_clamp >= 0.");
+    }
+    if (config_.lat_clamp < config_.lat_engage)
+    {
+        throw std::invalid_argument(
+            "GaitShaper: lat_clamp must be >= lat_engage, for the same reason yaw_clamp must "
+            "clear yaw_engage: otherwise every strafe this class accepts is clamped back under "
+            "the threshold that accepted it and the robot never steps sideways.");
+    }
 }
 
 GaitShaper::Command GaitShaper::shape(const Command& in) const
@@ -47,6 +58,12 @@ GaitShaper::Command GaitShaper::shape(const Command& in) const
     if (in.vx >= config_.fwd_engage)
     {
         return Command{ in.vx, 0.0, 0.0 };
+    }
+    // Last, so a command carrying anything else never becomes a strafe. The gait's measured
+    // response to mixed commands is bad enough that the primitives have to stay exclusive.
+    if (std::abs(in.vy) >= config_.lat_engage)
+    {
+        return Command{ 0.0, std::clamp(in.vy, -config_.lat_clamp, config_.lat_clamp), 0.0 };
     }
     return Command{ 0.0, 0.0, 0.0 };
 }

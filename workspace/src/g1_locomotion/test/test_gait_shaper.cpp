@@ -20,10 +20,13 @@ namespace
 constexpr double kFwdEngage = 0.45;
 constexpr double kYawEngage = 1.20;
 constexpr double kYawClamp  = 1.57;
+constexpr double kLatEngage = 0.50;
+constexpr double kLatClamp  = 0.50;
 
 GaitShaper makeShaper()
 {
-    return GaitShaper(GaitShaper::Config{ kFwdEngage, kYawEngage, kYawClamp });
+    return GaitShaper(
+        GaitShaper::Config{ kFwdEngage, kYawEngage, kYawClamp, kLatEngage, kLatClamp });
 }
 
 ::testing::AssertionResult isStop(const GaitShaper::Command& c)
@@ -99,13 +102,42 @@ TEST(GaitShaper, YawWinsSoTheOutputIsNeverACombinedCommand)
     }
 }
 
-TEST(GaitShaper, AlwaysDropsLateral)
+TEST(GaitShaper, StrafeSurvivesOnlyWhenItIsTheWholeCommand)
 {
     const auto shaper = makeShaper();
-    // Whichever branch is taken, and whatever was asked for.
-    EXPECT_DOUBLE_EQ(shaper.shape({ 0.6, 0.5, 0.0 }).vy, 0.0);
-    EXPECT_DOUBLE_EQ(shaper.shape({ 0.0, 0.5, 1.5 }).vy, 0.0);
-    EXPECT_DOUBLE_EQ(shaper.shape({ 0.0, 0.5, 0.0 }).vy, 0.0) << "lateral alone is not a primitive";
+    // Lateral is a primitive now, but the LAST one tested, so anything carrying forward or yaw
+    // as well still collapses to that. The measured combined-command response is why: a
+    // commanded (0.50, 0, 0.50) produced (0.337, 0.299, 0.390).
+    EXPECT_DOUBLE_EQ(shaper.shape({ 0.6, 0.5, 0.0 }).vy, 0.0) << "forward wins";
+    EXPECT_DOUBLE_EQ(shaper.shape({ 0.0, 0.5, 1.5 }).vy, 0.0) << "yaw wins";
+
+    const auto out = shaper.shape({ 0.0, kLatEngage, 0.0 });
+    EXPECT_DOUBLE_EQ(out.vy, kLatEngage) << "lateral alone IS a primitive";
+    EXPECT_DOUBLE_EQ(out.vx, 0.0);
+    EXPECT_DOUBLE_EQ(out.vyaw, 0.0);
+}
+
+TEST(GaitShaper, LateralBelowTheStepPointIsAStop)
+{
+    const auto shaper = makeShaper();
+    // Measured: no lateral motion at or below 0.30 m/s, steps from 0.50. Anything under the
+    // threshold has to become a stop rather than a command the gait silently ignores.
+    for (double vy : { 0.0, 0.1, 0.3, 0.49 })
+    {
+        EXPECT_TRUE(isStop(shaper.shape({ 0.0, vy, 0.0 }))) << "vy " << vy;
+        EXPECT_TRUE(isStop(shaper.shape({ 0.0, -vy, 0.0 }))) << "vy " << -vy;
+    }
+}
+
+TEST(GaitShaper, StrafesEitherWayAndClamps)
+{
+    const auto shaper = makeShaper();
+    // Unlike forward, lateral compares on MAGNITUDE. The signed forward comparison exists to
+    // block a reverse lurch; nothing suggests the two strafe directions differ.
+    EXPECT_DOUBLE_EQ(shaper.shape({ 0.0, 0.5, 0.0 }).vy, 0.5);
+    EXPECT_DOUBLE_EQ(shaper.shape({ 0.0, -0.5, 0.0 }).vy, -0.5);
+    EXPECT_DOUBLE_EQ(shaper.shape({ 0.0, 2.0, 0.0 }).vy, kLatClamp) << "clamped, not passed";
+    EXPECT_DOUBLE_EQ(shaper.shape({ 0.0, -2.0, 0.0 }).vy, -kLatClamp);
 }
 
 TEST(GaitShaper, NegativeForwardIsAlwaysAStopAtAnyMagnitude)
@@ -210,6 +242,14 @@ TEST(GaitShaperConfig, RejectsAYawClampBelowYawEngage)
     // clamped back under it, so the turn-in-place motion becomes unreachable while the shaper
     // still reports it as a turn.
     EXPECT_THROW(GaitShaper(GaitShaper::Config{ kFwdEngage, 1.20, 0.5 }), std::invalid_argument);
+    // Same trap on the lateral axis: a clamp under the engage threshold accepts a strafe and
+    // then clamps it back below the value that accepted it, so the robot never steps sideways.
+    EXPECT_THROW(
+        GaitShaper(GaitShaper::Config{ kFwdEngage, kYawEngage, kYawClamp, 0.50, 0.30 }),
+        std::invalid_argument);
+    EXPECT_THROW(
+        GaitShaper(GaitShaper::Config{ kFwdEngage, kYawEngage, kYawClamp, 0.0, kLatClamp }),
+        std::invalid_argument);
 }
 
 TEST(GaitShaperConfig, AcceptsTheShippedConfigAndTheBoundaryCase)

@@ -1,5 +1,5 @@
-# Reduces a planner's Twist onto the three motions this gait can actually produce: stop, drive
-# straight, turn in place. See g1_locomotion/README.md and gait_shaper.hpp.
+# Reduces a planner's Twist onto the four motions this gait can actually produce: stop, drive
+# straight, strafe, turn in place. See g1_locomotion/README.md and gait_shaper.hpp.
 #
 # *** THESE ARE SIM BRING-UP VALUES, NOT HARDWARE-SAFE DEFAULTS. ***
 # The deadband they encode is a property of the SIM WALKING POLICY. The real G1's onboard MPC
@@ -28,3 +28,18 @@ g1_gait_shaper:
     # Upper bound on the turn that gets through. Equals g1_loco_bridge.yaml's max_velocity[2],
     # so the shaper never hands the bridge something the bridge would clamp anyway.
     yaw_clamp: 1.57
+
+    # Lateral speed at or above which the command becomes a pure strafe.
+    #
+    # Measured on this policy: no motion at or below 0.30 m/s, steps from 0.50, and a commanded
+    # 0.5 yields 0.44. So 0.50 is the first value known to move, with no headroom above it --
+    # g1_loco_bridge.yaml's max_velocity[1] is 0.5 and lat_clamp matches it, for the same reason
+    # yaw_clamp matches max_velocity[2]: the shaper should never hand the bridge something the
+    # bridge would clamp.
+    #
+    # Nav2 never reaches these. Its controller commands no lateral on this robot, so in practice
+    # the only caller is g1_base_approach, which strafes to null the lateral error between where
+    # an object is and where the arm can reach it. That is the whole reason lateral stopped being
+    # dropped -- see gait_shaper.hpp.
+    lat_engage: 0.50
+    lat_clamp: 0.50

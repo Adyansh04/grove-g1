@@ -19,8 +19,16 @@ namespace g1_locomotion
  * metre per second of lateral nobody asked for.
  *
  * A planner samples a continuous velocity space and has no way to express any of that. This
- * class collapses its output onto the three motions that exist: stop, drive straight, turn in
- * place.
+ * class collapses its output onto the four motions that exist: stop, drive straight, strafe,
+ * turn in place.
+ *
+ * Strafe was not always here. It was dropped originally because Nav2's controller cannot command
+ * lateral on this robot anyway and the gait already produces uncommanded lateral drift, so
+ * asking for more looked pointless. Milestone 9's base approach is the caller that changes
+ * that: the mobile-manipulation answer to "park precisely enough for the arm to reach" is a
+ * holonomic base, and this gait IS holonomic at the velocity level -- the policy measures
+ * lateral motion from 0.50 m/s. Throwing that away meant every lateral correction cost a turn,
+ * a step and a turn back.
  *
  * **Subtractive only.** Every output is the input unchanged, the input clamped smaller, or
  * zero -- never larger. That is the invariant the whole design rests on: turning a small
@@ -42,6 +50,8 @@ public:
         double fwd_engage{ 0.45 };
         double yaw_engage{ 1.20 };
         double yaw_clamp{ 1.57 };
+        double lat_engage{ 0.50 };
+        double lat_clamp{ 0.50 };
     };
 
     struct Command
@@ -54,8 +64,9 @@ public:
     /**
      * @brief Constructs a shaper, rejecting a config it could not honour.
      *
-     * @throws std::invalid_argument if `fwd_engage < 0`, `yaw_engage <= 0`, `yaw_clamp < 0`, or
-     *         `yaw_clamp < yaw_engage`.
+     * @throws std::invalid_argument if `fwd_engage < 0`, `yaw_engage <= 0`, `yaw_clamp < 0`,
+     *         `yaw_clamp < yaw_engage`, `lat_engage <= 0`, `lat_clamp < 0`, or
+     *         `lat_clamp < lat_engage`.
      *
      * The class owns this rather than whoever reads the YAML. `shape()` clamps against
      * `yaw_clamp`, which is undefined for inverted bounds, and the subtractive-only invariant
@@ -76,8 +87,15 @@ public:
      * for -0.40, so a planner's usual backup speeds sit entirely inside the dead zone. It is
      * also the reason a misconfigured recovery behaviour cannot produce a reverse lurch.
      *
-     * Lateral is always dropped. The gait already produces 0.22-0.30 m/s of uncommanded
-     * lateral drift; asking for more accomplishes nothing.
+     * Lateral is tested LAST, so it only survives a command carrying nothing else. That keeps
+     * the primitives mutually exclusive, which the measured combined-command response demands:
+     * (0.50, 0, 0.50) came out (0.337, 0.299, 0.390). A caller wanting to strafe must ask for
+     * strafe alone.
+     *
+     * Like yaw, lateral compares on magnitude and keeps its sign. Unlike forward, where the
+     * signed comparison is a deliberate backstop against a reverse lurch, there is no reason to
+     * prefer one side: the policy was measured stepping laterally and nothing suggests the two
+     * directions differ.
      *
      * Non-finite inputs need no special case: NaN fails both comparisons and falls through to
      * a stop, and an infinite yaw clamps.
