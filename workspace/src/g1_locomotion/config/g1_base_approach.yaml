@@ -44,8 +44,8 @@ g1_base_approach:
     # take out 7 degrees with a symmetric 0.15 s.
     #
     # Forward is IRREDUCIBLE. A 0.10 s pulse still produced 0.42 and 0.46 m on the trials where
-    # it triggered: once the gait commits to a step sequence it takes the whole thing. That is
-    # why the last approach step is taken obliquely rather than made smaller.
+    # it triggered: once the gait commits to a step sequence it takes the whole thing, which is
+    # why a small forward gap is closed by overshooting and reversing back.
     #
     # Yaw and lateral are bimodal at longer durations -- either a small settle or a committed
     # step -- and 0.15 s is what keeps them in the small mode worth having.

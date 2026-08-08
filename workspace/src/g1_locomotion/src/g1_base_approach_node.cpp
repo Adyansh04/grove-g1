@@ -91,11 +91,7 @@ public:
         turn_pulse_ccw_s_ = declare_parameter<double>("turn_pulse_ccw_s", 0.15);
         turn_pulse_cw_s_  = declare_parameter<double>("turn_pulse_cw_s", 0.60);
         strafe_pulse_s_   = declare_parameter<double>("strafe_pulse_s", 0.15);
-        // A pulse that the gait ignores is lengthened and tried again, up to these ceilings.
-        // The gait's response depends on how recently it moved: an isolated 0.15 s yaw pulse
-        // turns 3.8 deg, and the same pulse inside this loop has been measured turning 0.5 deg.
-        // Rather than pick one duration and be wrong half the time, grow it until it bites.
-        // Ceilings on one continuous drive, so a goal that is never reached still ends.
+        // Ceilings on ONE continuous drive, so a goal the feedback never ends still ends.
         max_turn_s_   = declare_parameter<double>("max_turn_s", 8.0);
         max_step_s_   = declare_parameter<double>("max_step_s", 6.0);
         max_strafe_s_ = declare_parameter<double>("max_strafe_s", 5.0);
@@ -109,16 +105,23 @@ public:
         max_aim_attempts_ = declare_parameter<int>("max_aim_attempts", 8);
         // The gait keeps stepping after the command stops. Measuring before it settles reports
         // the command plus whatever of the stride was still in flight.
-        settle_s_    = declare_parameter<double>("settle_s", 2.5);
+        settle_s_    = declare_parameter<double>("settle_s", 1.5);
         quiet_s_     = declare_parameter<double>("quiet_after_s", 1.2);
         cmd_rate_hz_ = declare_parameter<double>("cmd_rate_hz", 20.0);
 
-        limits_.target_x_m          = declare_parameter<double>("target_x_m", 0.280);
-        limits_.target_y_m          = declare_parameter<double>("target_y_m", -0.200);
-        limits_.forward_tolerance_m = declare_parameter<double>("forward_tolerance_m", 0.045);
-        limits_.lateral_tolerance_m = declare_parameter<double>("lateral_tolerance_m", 0.050);
-        limits_.min_forward_m       = declare_parameter<double>("min_forward_m", 0.180);
-        limits_.step_threshold_m    = declare_parameter<double>("step_threshold_m", 0.32);
+        // Defaulted from ApproachLimits so the struct is the single source of truth. Written out
+        // here they drifted to the pre-tuning values, which are the ones that abort a healthy
+        // approach: a bare run with no config got min_forward_m 0.18 and a 0.045 forward window.
+        const ApproachLimits d;
+        limits_.target_x_m = declare_parameter<double>("target_x_m", d.target_x_m);
+        limits_.target_y_m = declare_parameter<double>("target_y_m", d.target_y_m);
+        limits_.forward_tolerance_m =
+            declare_parameter<double>("forward_tolerance_m", d.forward_tolerance_m);
+        limits_.lateral_tolerance_m =
+            declare_parameter<double>("lateral_tolerance_m", d.lateral_tolerance_m);
+        limits_.min_forward_m = declare_parameter<double>("min_forward_m", d.min_forward_m);
+        limits_.step_threshold_m =
+            declare_parameter<double>("step_threshold_m", d.step_threshold_m);
 
         // Consumed only by the aim before a forward drive; the planner itself never turns, so
         // this is not part of the reach window.
@@ -126,8 +129,8 @@ public:
         // How long a missing object pose or base transform is tolerated before the goal fails.
         lookup_grace_s_ = declare_parameter<double>("lookup_grace_s", 3.0);
 
-        max_pulses_        = declare_parameter<int>("max_pulses", 90);
-        default_timeout_s_ = declare_parameter<double>("default_timeout_s", 420.0);
+        max_pulses_        = declare_parameter<int>("max_pulses", 150);
+        default_timeout_s_ = declare_parameter<double>("default_timeout_s", 900.0);
 
         if (!limitsAreUsable(limits_))
         {
@@ -184,20 +187,11 @@ public:
     }
 
 private:
-    /// Command a velocity for `duration_s`, then hold zero while the gait settles.
-    ///
-    /// Zeros are published rather than merely stopping: the shaper hands the channel back to
-    /// Nav2 when this source goes quiet, so an idle gap mid-skill would surrender priority.
     /// Hold a velocity until `done()` returns true, then stop and let the gait settle.
     ///
-    /// CONTINUOUS, not pulsed, and that is the whole point. The original design commanded fixed
-    /// pulses and re-measured between them, which fights the walking policy: repeated
-    /// command-and-stop cycles wind it down, measured decaying from 8.3 degrees of yaw on the
-    /// first pulse to 0.3 by the eighth and to nothing by the twentieth. Every duration this
-    /// file was tuned against came from a probe that fired two or three pulses in a row, so it
-    /// measured a rested gait every time and the loop never saw those numbers.
-    ///
-    /// Nav2 drives this robot perfectly well with a continuous velocity stream. So does this.
+    /// CONTINUOUS, not pulsed, and that is the point: repeated command-and-stop cycles wind the
+    /// walking policy down, from 8.3 degrees of yaw on the first pulse to nothing by the
+    /// twentieth. Nav2 drives this robot with a continuous stream and has never had the problem.
     template <typename DoneT>
     bool driveUntil(
         double vx, double vy, double vyaw, DoneT done, double max_s,

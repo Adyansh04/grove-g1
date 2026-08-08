@@ -314,12 +314,12 @@ def _setup(context, *args, **kwargs):
         )
 
     if want_rviz:
-        actions.extend(_rviz(navigating, want_moveit))
+        actions.extend(_rviz(navigating, want_nav, want_moveit))
 
     return actions
 
 
-def _rviz(navigating, want_moveit):
+def _rviz(navigating, want_nav, want_moveit):
     """The RViz windows that match what is running.
 
     MoveIt's own launcher rather than this package's generic rviz.launch.py, which takes only
@@ -327,11 +327,13 @@ def _rviz(navigating, want_moveit):
     robot_description_semantic and robot_description_kinematics as node parameters, and without
     them it loads with no planning groups, which reads as a broken install.
 
-    With BOTH MoveIt and navigation up this returns TWO windows -- the MoveIt one for the arm
-    and a second on g1_navigation.rviz for the map, costmaps and plan. A combined single-window
-    view is NOT available: three merged configs were built and every one segfaulted rviz2 on
-    load (exit -11) once the navigation stack was up. docs/notes has what was tried. Two
-    processes is what works, and it is also what a mission wants to watch anyway.
+    With MoveIt and Nav2 BOTH running this returns two windows: the MoveIt one for the arm and
+    a second on g1_navigation.rviz for the map, costmaps and plan. A combined single-window view
+    is NOT available; three merged configs were built and every one segfaulted rviz2 on load
+    once the navigation stack was up. docs/notes has what was tried.
+
+    The second window keys off nav, not mode: mode=localization without nav has a map but no
+    planner, and MoveIt's view is the only one worth opening.
     """
     bringup_share = get_package_share_directory("g1_bringup")
     generic_rviz  = os.path.join(bringup_share, "launch", "rviz.launch.py")
@@ -349,16 +351,16 @@ def _rviz(navigating, want_moveit):
             )
         )
 
-    # The navigation view is its own window rather than an alternative, so moveit:=true with
-    # nav:=true gives both. The nav config carries a nav2_rviz_plugins display, so it ships from
-    # g1_navigation; on a non-navigating run g1_navigation is never named at all, which is the
-    # same rule the launch includes above follow.
-    if navigating:
+    # The nav config carries a nav2_rviz_plugins display, so it ships from g1_navigation; on a
+    # run that never navigates g1_navigation is not named at all, the same rule the launch
+    # includes above follow.
+    if want_moveit:
+        config = os.path.join(_navigation_share(), "config", "g1_navigation.rviz") if want_nav \
+            else None
+    elif navigating:
         config = os.path.join(_navigation_share(), "config", "g1_navigation.rviz")
-    elif not want_moveit:
-        config = os.path.join(bringup_share, "config", "g1_sensors.rviz")
     else:
-        config = None
+        config = os.path.join(bringup_share, "config", "g1_sensors.rviz")
 
     if config is not None:
         args = {"rviz_config": config}

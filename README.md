@@ -37,6 +37,10 @@ Learned manipulation for unstructured scenes is the next milestone and is not bu
 
 ![MoveIt Demo](docs/media/grove_moveit_demo.gif)
 
+## Pick & Place Demo
+
+![Pick & Place Demo](docs/media/grove_pick_place_demo.gif)
+
 ## Architecture
 
 ```mermaid
