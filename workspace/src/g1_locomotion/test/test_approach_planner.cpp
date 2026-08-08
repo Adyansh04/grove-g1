@@ -43,7 +43,6 @@ TEST(ApproachPlanner, FarAwayItStepsStraightIn)
     const auto limits  = defaults();
     const auto command = planApproach(limits.target_x_m + 2.0, limits.target_y_m, 0.0, limits);
     ASSERT_EQ(command.move, ApproachMove::kStep);
-    EXPECT_DOUBLE_EQ(command.oblique_rad, 0.0) << "no reason to walk crooked from two metres out";
     EXPECT_NEAR(command.forward_error_m, 2.0, 1e-9);
 }
 
@@ -57,47 +56,52 @@ TEST(ApproachPlanner, ForwardIsResolvedBeforeHeadingAndLateral)
         ApproachMove::kStep);
 }
 
-TEST(ApproachPlanner, TheObliqueAngleMakesTheAdvanceMatchWhatIsLeft)
-{
-    auto limits            = defaults();
-    limits.pulse_advance_m = 0.40;
-    // 0.15 of a 0.40 step needs 68 degrees, inside the cap the next test covers. Pick anything
-    // smaller and this measures the cap instead of the geometry.
-    const double remaining = 0.15;
-    const auto   command =
-        planApproach(limits.target_x_m + remaining, limits.target_y_m, 0.0, limits);
-
-    ASSERT_EQ(command.move, ApproachMove::kStep);
-    EXPECT_NEAR(command.forward_error_m, remaining, 1e-9);
-    // The whole point: one step along this heading closes exactly what is left.
-    EXPECT_NEAR(limits.pulse_advance_m * std::cos(command.oblique_rad), remaining, 1e-6);
-}
-
-TEST(ApproachPlanner, TheObliqueIsCappedSoTheStrafeCleanupStaysAffordable)
-{
-    auto limits            = defaults();
-    limits.pulse_advance_m = 0.60;
-    limits.max_oblique_rad = 1.2;
-    // 1 cm to close with a 60 cm step wants 89 degrees, which is almost pure lateral motion and
-    // would then cost seventeen strafes to undo.
-    const auto command = planApproach(limits.target_x_m + 0.01, limits.target_y_m, 0.0, limits);
-    EXPECT_LE(std::abs(command.oblique_rad), limits.max_oblique_rad + 1e-9);
-}
-
-TEST(ApproachPlanner, TheObliqueLeansTowardTheSideTheLateralErrorNeeds)
+TEST(ApproachPlanner, ASubStepRemainderCreepsInsteadOfStepping)
 {
     const auto limits = defaults();
-    // The step's sideways excursion is unavoidable, so it should at least pay down the lateral
-    // error rather than add to it. Both signs advance identically, so this costs nothing.
+    // Anything a straight step would carry past the window is closed by creeping instead. There
+    // is no smaller forward pulse to reach for: forward is irreducible at about 0.29 m.
+    const auto command = planApproach(limits.target_x_m + 0.12, limits.target_y_m, 0.0, limits);
+    ASSERT_EQ(command.move, ApproachMove::kCreep);
+    EXPECT_NEAR(std::abs(command.fine_offset_rad), limits.fine_offset_rad, 1e-9);
+}
+
+TEST(ApproachPlanner, AStraightStepCanNeverCarryTheRobotPastTheWindow)
+{
+    auto limits = defaults();
+    // pulse_advance_m is maintained as an UPPER bound on what a step does, so the planner only
+    // steps while more than a full step is left. Sweeping the boundary is the cheap way to
+    // assert the invariant that matters: the gait has no reverse, so an overshoot is terminal.
+    for (double remaining = 0.0; remaining < 1.5; remaining += 0.005)
+    {
+        const auto command =
+            planApproach(limits.target_x_m + remaining, limits.target_y_m, 0.0, limits);
+        if (command.move == ApproachMove::kStep)
+        {
+            const double after = remaining - limits.pulse_advance_m;
+            EXPECT_GT(after, -limits.forward_tolerance_m)
+                << "a step from " << remaining << " would land past the window";
+        }
+    }
+}
+
+TEST(ApproachPlanner, TheCreepTurnsAwayFromTheSideItNeedsToSlideToward)
+{
+    const auto limits = defaults();
+    // Turning left and strafing right advances and slides right; turning right and strafing left
+    // advances and slides left. So the offset is signed opposite the strafe, and the slide pays
+    // down the lateral error instead of adding to it.
     const auto needs_left =
-        planApproach(limits.target_x_m + 0.10, limits.target_y_m + 0.30, 0.0, limits);
-    ASSERT_EQ(needs_left.move, ApproachMove::kStep);
-    EXPECT_GT(needs_left.oblique_rad, 0.0);
+        planApproach(limits.target_x_m + 0.12, limits.target_y_m + 0.30, 0.0, limits);
+    ASSERT_EQ(needs_left.move, ApproachMove::kCreep);
+    EXPECT_GT(needs_left.lateral_sign, 0.0) << "strafe left";
+    EXPECT_LT(needs_left.fine_offset_rad, 0.0) << "so turn right";
 
     const auto needs_right =
-        planApproach(limits.target_x_m + 0.10, limits.target_y_m - 0.30, 0.0, limits);
-    ASSERT_EQ(needs_right.move, ApproachMove::kStep);
-    EXPECT_LT(needs_right.oblique_rad, 0.0);
+        planApproach(limits.target_x_m + 0.12, limits.target_y_m - 0.30, 0.0, limits);
+    ASSERT_EQ(needs_right.move, ApproachMove::kCreep);
+    EXPECT_LT(needs_right.lateral_sign, 0.0) << "strafe right";
+    EXPECT_GT(needs_right.fine_offset_rad, 0.0) << "so turn left";
 }
 
 TEST(ApproachPlanner, HeadingIsRestoredBeforeStrafing)
@@ -137,18 +141,6 @@ TEST(ApproachPlanner, TooCloseIsTerminalBecauseTheGaitCannotReverse)
         ApproachMove::kOvershot);
 }
 
-TEST(ApproachPlanner, AQuantumBiggerThanTheGapStillProducesAFiniteAngle)
-{
-    auto limits            = defaults();
-    limits.pulse_advance_m = 0.293;
-    for (double remaining = 0.001; remaining < 0.29; remaining += 0.01)
-    {
-        const auto command =
-            planApproach(limits.target_x_m + remaining, limits.target_y_m, 0.0, limits);
-        EXPECT_TRUE(std::isfinite(command.oblique_rad)) << "remaining " << remaining;
-    }
-}
-
 TEST(ApproachPlanner, TheQuantumEstimateOnlyEverGrows)
 {
     // Asymmetric on purpose: undershooting costs another pulse, overshooting is unrecoverable.
@@ -168,8 +160,9 @@ TEST(ApproachPlanner, UnusableLimitsAreRefusedRatherThanAimedAt)
     EXPECT_FALSE(limitsAreUsable(no_room)) << "the window would sit entirely inside the robot";
 
     auto sideways            = defaults();
-    sideways.max_oblique_rad = M_PI_2;
-    EXPECT_FALSE(limitsAreUsable(sideways)) << "a right angle advances nothing, forever";
+    sideways.fine_offset_rad = M_PI_2;
+    EXPECT_FALSE(limitsAreUsable(sideways))
+        << "a right-angle creep never returns to the working heading's lateral axis";
 
     auto still            = defaults();
     still.pulse_advance_m = 0.0;

@@ -102,7 +102,7 @@ public:
         limits_.heading_tolerance_rad = declare_parameter<double>("heading_tolerance_rad", 0.087);
         limits_.min_forward_m         = declare_parameter<double>("min_forward_m", 0.180);
         limits_.pulse_advance_m       = declare_parameter<double>("pulse_advance_m", 0.293);
-        limits_.max_oblique_rad       = declare_parameter<double>("max_oblique_rad", 1.309);
+        limits_.fine_offset_rad       = declare_parameter<double>("fine_offset_rad", 0.785);
 
         max_pulses_        = declare_parameter<int>("max_pulses", 90);
         max_aim_pulses_    = declare_parameter<int>("max_aim_pulses", 14);
@@ -385,17 +385,16 @@ private:
                     feedback->phase = ApproachObject::Feedback::PHASE_CLOSING;
                     handle->publish_feedback(feedback);
 
-                    // Aim first, ALWAYS, even for a straight-in step. A forward pulse yaws the
-                    // robot 8 degrees every time, so without re-aiming before each one the
-                    // approach walks an arc; that is what the spiral in the first probe run was.
+                    // Aim first, ALWAYS. A forward pulse yaws the robot 8 degrees every time, so
+                    // without re-aiming before each one the approach walks an arc; that is what
+                    // the spiral in the first probe run was.
                     RCLCPP_INFO(
                         get_logger(),
-                        "step: forward error %.3f, lateral %.3f, oblique %+.1f deg, quantum %.3f",
+                        "step: forward error %.3f, lateral %.3f, quantum %.3f",
                         command.forward_error_m,
                         command.lateral_error_m,
-                        command.oblique_rad * 180.0 / M_PI,
                         limits.pulse_advance_m);
-                    if (!aimAt(handle, wrap(working_yaw + command.oblique_rad), deadline, pulses))
+                    if (!aimAt(handle, working_yaw, deadline, pulses))
                     {
                         result->message = "facing: could not hold the working heading";
                         handle->abort(result);
@@ -406,14 +405,41 @@ private:
                     pulse(pulse_vx_, 0.0, 0.0, step_pulse_s_);
                     ++pulses;
 
+                    // Only a STRAIGHT step updates the quantum, and only along the heading it was
+                    // taken on. An earlier version fed it total displacement including creeps and
+                    // drift, which inflated the estimate to 0.56 m and made every later decision
+                    // wrong in the same direction.
                     const auto after = basePose();
                     if (before && after)
                     {
-                        const double moved = std::hypot(
-                            after->pose.position.x - before->pose.position.x,
-                            after->pose.position.y - before->pose.position.y);
-                        limits.pulse_advance_m = maxObservedAdvance(limits.pulse_advance_m, moved);
+                        const double yaw       = tf2::getYaw(before->pose.orientation);
+                        const double dx        = after->pose.position.x - before->pose.position.x;
+                        const double dy        = after->pose.position.y - before->pose.position.y;
+                        limits.pulse_advance_m = maxObservedAdvance(
+                            limits.pulse_advance_m,
+                            dx * std::cos(yaw) + dy * std::sin(yaw));
                     }
+                    break;
+                }
+
+                case ApproachMove::kCreep:
+                {
+                    feedback->phase = ApproachObject::Feedback::PHASE_SIDESTEPPING;
+                    handle->publish_feedback(feedback);
+                    RCLCPP_INFO(
+                        get_logger(),
+                        "creep: forward error %.3f, lateral %.3f, offset %+.0f deg",
+                        command.forward_error_m,
+                        command.lateral_error_m,
+                        command.fine_offset_rad * 180.0 / M_PI);
+                    if (!aimAt(handle, wrap(working_yaw + command.fine_offset_rad), deadline, pulses))
+                    {
+                        result->message = "facing: could not hold the creep heading";
+                        handle->abort(result);
+                        return;
+                    }
+                    pulse(0.0, command.lateral_sign * pulse_vy_, 0.0, strafe_pulse_s_);
+                    ++pulses;
                     break;
                 }
 

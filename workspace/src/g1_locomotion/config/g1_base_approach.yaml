@@ -90,12 +90,16 @@ g1_base_approach:
     # the point.
     pulse_advance_m: 0.293
 
-    # A step taken at theta off the working heading advances quantum*cos(theta), which is how a
-    # gait with a 0.29 m minimum step lands inside a 0.09 m window at all. It also moves
-    # quantum*sin(theta) sideways, and that has to be strafed out at 0.035 m a pulse, so this cap
-    # is about cost rather than correctness: 75 degrees leaves an advance of about a quarter of a
-    # step and seven strafes of cleanup.
-    max_oblique_rad: 1.309
+    # How far off the working heading the FINE approach aims before strafing. A strafe there
+    # advances strafe*sin(offset) and slides strafe*cos(offset): at 45 degrees that is 2.5 cm
+    # forward and 2.5 cm sideways per pulse, both precise, and the slide is pointed at whichever
+    # side the lateral error needs.
+    #
+    # This replaced an oblique FORWARD step, which does not survive contact. Closing a 12 cm
+    # remainder that way needs about 75 degrees, which throws the robot half a metre sideways and
+    # costs forty pulses to turn into and out of at 3.8 degrees each. Live, it oscillated across
+    # the target and spent its whole budget turning.
+    fine_offset_rad: 0.785
 
     object_timeout_ms: 1500.0
 

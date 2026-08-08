@@ -17,10 +17,17 @@
  * So lateral and heading are precision knobs and forward is a sledgehammer. The arm's window is
  * about 0.11 m wide, a third of one forward step.
  *
- * The answer is to take the last forward step OBLIQUELY: turn by theta, take the one step size
- * the gait has, and advance `quantum * cos(theta)`. Since theta is settable in 3.8 deg
- * increments, near 60 degrees that resolves the advance to under 2 cm. Whatever lateral error
- * the oblique step introduces is then strafed out, which is the cheap direction.
+ * So the coarse approach is forward steps and the FINE approach is not a forward step at all.
+ * Turning off the working heading by a moderate angle and strafing advances
+ * `strafe_quantum * sin(offset)` per pulse: at 45 degrees that is 2.5 cm forward and 2.5 cm
+ * sideways, both precise, and the sideways part can be pointed at whichever side the lateral
+ * error needs.
+ *
+ * An earlier version closed the last gap with an OBLIQUE forward step instead -- turn by theta,
+ * take the one step size the gait has, advance `quantum * cos(theta)`. It does not survive
+ * contact: a small remainder needs theta near 75 degrees, which throws the robot half a metre
+ * sideways and costs about forty pulses to turn into and out of, at 3.8 degrees a pulse. Live,
+ * it oscillated across the target and spent its whole budget turning.
  *
  * The heading is NOT derived from where the object is. It is given by the caller and held. That
  * is the standard mobile-manipulation pattern -- a stand-off pose on the surface normal, already
@@ -39,8 +46,9 @@ namespace g1_locomotion
 enum class ApproachMove : std::uint8_t
 {
     kDone,      ///< The object is inside the reachable window.
-    kStep,      ///< Aim at `working_yaw + oblique_rad`, then take ONE forward pulse.
-    kStrafe,    ///< One lateral pulse; `lateral_sign` says which way.
+    kStep,      ///< On the working heading, take ONE forward pulse. Coarse: about 0.29 m.
+    kCreep,     ///< Aim at `working_yaw + fine_offset_rad`, then strafe. Fine: about 0.025 m in.
+    kStrafe,    ///< One lateral pulse on the working heading; `lateral_sign` says which way.
     kTurn,      ///< Yaw by `turn_rad` to restore the working heading.
     kOvershot,  ///< Closer than the arm can work with, and the gait cannot reverse.
     kInvalid,   ///< The limits themselves are unusable.
@@ -73,21 +81,23 @@ struct ApproachLimits
     /// never lowered, by the caller as pulses are observed. See maxObservedAdvance().
     double pulse_advance_m = 0.293;
 
-    /// Ceiling on the oblique. At theta the step also moves `quantum * sin(theta)` sideways,
-    /// which then has to be strafed out at 0.035 m a pulse, so a very large theta is expensive
-    /// rather than wrong. 75 deg leaves an advance of about a quarter of a step.
-    double max_oblique_rad = 1.309;
+    /// How far off the working heading a creep aims. The trade is fixed by trigonometry: a
+    /// strafe there advances `strafe * sin(offset)` and slides `strafe * cos(offset)`. 45 degrees
+    /// splits it evenly, costs about twelve pulses to turn into, and keeps the slide useful
+    /// rather than wasted -- it is pointed at whichever side the lateral error needs.
+    double fine_offset_rad = 0.785;
 };
 
 /// The decision, plus the numbers behind it so a caller can log or publish them.
 struct ApproachCommand
 {
     ApproachMove move = ApproachMove::kInvalid;
-    /// kStep: how far off the working heading to aim before stepping. Signed.
-    double oblique_rad = 0.0;
+    /// kCreep: heading offset to aim at, relative to the working heading. Signed, and signed
+    /// OPPOSITE to the strafe, since turning left and strafing right is what moves forward.
+    double fine_offset_rad = 0.0;
     /// kTurn: the heading correction to make. Signed.
     double turn_rad = 0.0;
-    /// kStrafe: +1 to move left, -1 to move right.
+    /// kStrafe and kCreep: +1 to strafe left, -1 to strafe right.
     double lateral_sign = 0.0;
     /// Remaining error in the base frame, for feedback and logging.
     double forward_error_m = 0.0;
