@@ -69,10 +69,11 @@ struct ApproachLimits
     double forward_tolerance_m = 0.110;
     double lateral_tolerance_m = 0.040;
 
-    /// Nearer than this and the object is under the robot's own shell. Sits just below the
-    /// measured reachable band, which starts at 0.16, so there is room between "past the window"
-    /// and "unrecoverable" for a reverse to work in.
-    double min_forward_m = 0.120;
+    /// Nearer than this and the object is genuinely under the robot, where no move helps.
+    /// Everything above it is recovered by reversing, so keep it WELL below the arm band's near
+    /// end: the last centimetres of forward error are closed by deliberately overshooting and
+    /// reversing back, and a floor set near the band turns that designed move into an abort.
+    double min_forward_m = 0.050;
 
     /// More than this left and the caller may stop its forward drive early, trusting the coast.
     /// Less, and it drives to zero and lets a reverse take back the overshoot.

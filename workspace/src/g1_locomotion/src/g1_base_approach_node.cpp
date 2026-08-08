@@ -103,9 +103,11 @@ public:
         max_strafe_s_ = declare_parameter<double>("max_strafe_s", 5.0);
         // Stop commanding this far short of the target: the gait keeps going after the command
         // stops, and these are what it coasts.
-        turn_lead_rad_    = declare_parameter<double>("turn_lead_rad", 0.30);
-        step_lead_m_      = declare_parameter<double>("step_lead_m", 0.22);
-        lateral_lead_m_   = declare_parameter<double>("lateral_lead_m", 0.055);
+        turn_lead_rad_  = declare_parameter<double>("turn_lead_rad", 0.30);
+        step_lead_m_    = declare_parameter<double>("step_lead_m", 0.22);
+        lateral_lead_m_ = declare_parameter<double>("lateral_lead_m", 0.055);
+        // Kept under forward_tolerance_m; see the reverse case for why that ordering matters.
+        reverse_lead_m_   = declare_parameter<double>("reverse_lead_m", 0.045);
         max_aim_attempts_ = declare_parameter<int>("max_aim_attempts", 8);
         // The gait keeps stepping after the command stops. Measuring before it settles reports
         // the command plus whatever of the stride was still in flight.
@@ -544,13 +546,20 @@ private:
                         "reverse: forward error %.3f, lateral %.3f",
                         command.forward_error_m,
                         command.lateral_error_m);
-                    const auto back_far_enough = [&] {
+                    // The lead here MUST stay under forward_tolerance_m, and getting that
+                    // backwards livelocks rather than degrades. It used step_lead_m_ (0.22)
+                    // against a tolerance of 0.110, so every error between the two left the
+                    // planner demanding a reverse and driveUntil reporting itself already
+                    // arrived: the same "-0.138" logged every 2.7 s, forever, with no time
+                    // spent driving. Exactly the dead band the heading correction hit.
+                    const double lead = std::min(reverse_lead_m_, 0.5 * limits.forward_tolerance_m);
+                    const auto   back_far_enough = [&] {
                         const auto object_now = objectInBase(goal->object_id);
                         if (!object_now)
                         {
                             return true;
                         }
-                        return object_now->point.x - limits.target_x_m >= -step_lead_m_;
+                        return object_now->point.x - limits.target_x_m >= -lead;
                     };
                     driveUntil(-pulse_vrev_, 0.0, 0.0, back_far_enough, max_step_s_, deadline);
                     ++pulses;
@@ -797,6 +806,7 @@ private:
     double      turn_lead_rad_         = 0.30;
     double      step_lead_m_           = 0.22;
     double      lateral_lead_m_        = 0.055;
+    double      reverse_lead_m_        = 0.045;
     double      heading_tolerance_rad_ = 0.350;
     double      lookup_grace_s_        = 3.0;
     int         max_aim_attempts_      = 8;

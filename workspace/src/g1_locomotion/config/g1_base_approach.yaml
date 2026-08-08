@@ -90,6 +90,13 @@ g1_base_approach:
     max_strafe_s: 5.0
     lateral_lead_m: 0.055
 
+    # MUST stay under forward_tolerance_m. A reverse that stops further out than the tolerance
+    # leaves a dead band where the planner keeps asking for a reverse and the drive keeps
+    # reporting itself already arrived: the same error logged every 2.7 s, forever, with the
+    # robot standing still. It was step_lead_m (0.22) against a tolerance of 0.110 and did
+    # exactly that. The node clamps it to half the tolerance regardless.
+    reverse_lead_m: 0.045
+
     # WHERE THE OBJECT HAS TO END UP, in the base frame, for the arm to reach it.
     #
     # MEASURED, by asking /compute_ik for the grasp frame at the workbench cube's own height
@@ -135,9 +142,16 @@ g1_base_approach:
     # while it closes. Holding it tightly bought nothing and cost most of the skill's pulses.
     heading_tolerance_rad: 0.350
 
-    # Nearer than this and the object is under the robot's own shell. Set just below the measured
-    # band's near end (0.16) so that being merely past the window leaves room to reverse out of.
-    min_forward_m: 0.120
+    # Nearer than this and the object is genuinely under the robot, where no move helps and the
+    # tree has to re-stage through Nav2. Everything above it is recovered by reversing.
+    #
+    # It was 0.120, just under the arm band's near end, and that was too high to be a floor. The
+    # last few centimetres of forward error are closed by deliberately overshooting and reversing
+    # back, because forward is IRREDUCIBLE at about 0.29 m -- so a 0.123 m error steps to -0.161
+    # every time, by design. At 0.120 that landed 11 mm under the floor and aborted a healthy
+    # approach as unrecoverable, on the one move the design depends on. Reverse works: Retreat
+    # covers a metre with it.
+    min_forward_m: 0.050
 
     # More than this left and the forward drive may stop early and let the gait coast; less, and
     # it drives to zero and lets a reverse take back whatever the coast added. About one typical step:
