@@ -50,7 +50,7 @@ with a real detector changes nothing downstream.
 | Action | Goal | Notes |
 |---|---|---|
 | `~/pick` | `object_id`, `arm` | No pose in the goal: it is read from `/objects` when the goal starts, so a retry re-reads rather than replaying. |
-| `~/place` | `pose`, `arm` | The pose is where the **object** ends up, not the hand. Transformed into the planning frame on arrival. |
+| `~/place` | `surface_object_id` **or** `pose`, `arm` | Prefer the surface: it is read from `/objects` and the object is stood on top of it. A `pose` is where the **object** ends up, not the hand, transformed into the planning frame on arrival. |
 | `~/set_arm_posture` | `group`, `named_target` | Named SRDF poses only. |
 
 `Pick` and `Place` publish a phase as feedback and name that phase in the result on failure.
@@ -126,6 +126,36 @@ inside the octomap leaves the carry posture unplannable.
 Judging the reachable window by "solves at both heights" is a mistake worth naming: the grasp pose
 sits on the table and is inside its octomap *by construction*. Only the pregrasp has to be
 collision-free.
+
+The exemption covers the hand group, the palm and **all three** wrist joints. Roll was missing for
+a while and it is the one that reaches: a place aborted with the start state in collision,
+`<octomap> <-> right_wrist_roll_link`, on a plan whose every other link was exempt. It presents
+misleadingly, because the start-state fixer finds a valid nearby state and the plan comes back
+*successful* before the final validity check throws it out — "Motion plan was found but it seems to
+be invalid" is what an incomplete ACM looks like. The set matches the `touch_links` the pick
+attaches with, and should stay matched.
+
+### Place a surface, not a coordinate
+
+`Place` takes a `surface_object_id` and resolves the drop point from `/objects`, adding half the
+surface's height and half the held object's so it lands resting rather than intersecting.
+
+The coordinate path still exists but is a trap for anything the base approached. A tree writes its
+target in the **map** frame; `ApproachObject` parks the base against `/objects`, which is published
+in **odom**. Those agree only as well as AMCL does, and it was measured 0.23 m out at the storage
+bench — against an arm window 0.04 m wide, so a target correct on the map sat 0.14 m outside
+anything the arm could reach, failing every attempt with `GOAL_STATE_INVALID`. Reading the surface
+from the stream the approach used makes the two agree by construction.
+
+### Named postures plan and execute; they do not call move()
+
+`MoveGroupInterface::move()` runs through MoveIt's `PlanExecution`, which re-checks the remaining
+path against every planning-scene update and aborts on the first that invalidates it. With a chest
+camera continuously re-integrating voxels around the arm that is moving, something invalidates it
+constantly — the carry failed three times on three different links, each about two thirds of the
+way through an already-valid plan. Everything here now plans and executes as `Pick` always did.
+Both are fully collision-checked at plan time; only the in-flight recheck is gone, and on this
+stack it was reporting the robot's own arm.
 
 ## Running
 

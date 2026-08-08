@@ -42,7 +42,7 @@ hand-rolls its one action-client node base rather than vendoring that repo for f
 | `ApproachObject` | `g1_locomotion`'s base approach | `object_id`, `arm`, `working_yaw`, `timeout_s` |
 | `Retreat` | the same | `distance`, `back_off`, `restore_heading`, `timeout_s` |
 | `Pick` | `g1_manipulation` | `object_id`, `arm` |
-| `Place` | `g1_manipulation` | `target` as `"x;y;z"`, `arm`, `frame_id` |
+| `Place` | `g1_manipulation` | `surface` (preferred), or `target` as `"x;y;z"` with `frame_id`; `arm` |
 | `SetArmPosture` | `g1_manipulation` | `group`, `named_target` |
 | `AcquireArm` / `ReleaseArm` | `controller_manager` services | `timeout_s` |
 
@@ -55,6 +55,12 @@ executing a trajectory is the "release cleanly on success or failure" rule in
 heading would silently mean "face +x", which is a valid yaw and almost never the right one; the
 skill would approach square to nothing and the failure would read as bad geometry rather than a
 missing port. Pass the same yaw the staging `NavigateToPose` used.
+
+A failed leaf logs the **server's own reason**, not just that it failed. An aborted goal still
+carries its result, and every abort in these servers writes a phase-prefixed explanation into it:
+`did not complete: could not reach 'tucked'`. That was thrown away for a while in favour of a bare
+"did not complete", and each diagnosis then cost a full mission re-run to recover information the
+tree had already been handed.
 
 `AcquireArm` runs the same ordered sequence as `g1_bringup`'s `activate_arm` script — component
 before controller, arm required and hands best-effort — and `test_authority_drift` fails if the
@@ -101,9 +107,11 @@ under the workbench slab, so it jams on the table edge and the base stops moving
 keeps issuing commands. Tucking only the right arm moves the collision to the left one and changes
 nothing.
 
-The tucks are retried. The failure that shows up there is per-attempt rather than structural --
-"Motion plan was found but it seems to be invalid", which is OMPL having sampled a path that clips
-the live octomap -- and the posture itself is verified collision-free against the robot model.
+**Every** tuck is retried, closing ones included. The failure is per-attempt rather than structural
+-- "Motion plan was found but it seems to be invalid", which is OMPL having sampled a path that
+clips the live octomap -- and the posture itself is verified collision-free against the robot
+model. The closing pair originally had no retry wrapper and failed an otherwise complete mission on
+a single clipped waypoint, 30 of 142, after the cube was already on the pad.
 
 ### The stations are staging poses, not working poses
 

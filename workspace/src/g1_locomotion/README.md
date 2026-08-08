@@ -167,10 +167,20 @@ The rare heading correction is a hybrid, because neither primitive covers the ra
 turn cannot stop inside the tolerance -- the gait coasts about 17 degrees after the command ends --
 so it drives while the error is bigger than that and takes one short pulse below it.
 
-**There is no turning in the approach.** The heading comes from the navigation goal, which is
-already aimed at the surface, and the arm does not care which way the room faces. So the error is
-nulled with the three primitives that are stable and cheap -- drive forward, reverse, strafe -- and
-yaw is used only if the heading has drifted badly.
+**There is no turning in the approach, and the planner cannot ask for one.** The heading comes from
+the navigation goal, which is already aimed at the surface, and the arm does not care which way the
+room faces. So the error is nulled with the three primitives that are stable and cheap -- drive
+forward, reverse, strafe. Yaw survives only as an aim before a forward drive, because a forward
+step yaws +8 degrees and an uncorrected sequence walks an arc; that loop belongs to the node, and
+`heading_error` is not an input to `planApproach` at all.
+
+That separation is not tidiness. When turning was first dropped, the planner kept a terminal
+heading gate and could still return `kTurn` while the caller's `switch` had lost its case for it.
+C++ does not require a switch to be exhaustive, so control fell out of it and the loop spun: no
+publish, no log, no pulse counted, no abort, forever. It reads exactly like a deadlock from
+outside. The move set is closed now and `test_approach_planner` sweeps the position space asserting
+every cell maps to a handled move, so a re-added move without a handler fails a test rather than a
+mission.
 
 Two earlier designs did turn and both failed on it. An oblique forward step needs about 75 degrees
 for a small remainder, which throws the robot half a metre sideways; a 45-degree creep-and-strafe
@@ -192,6 +202,15 @@ alignment that cost nothing.
 `/compute_ik` plus `/check_state_validity` at the workbench (`docs/notes/m9-checks/reach_grid.py`),
 not guessed. Being stricter than the arm is not free: a run that finished a good approach 13 mm
 outside a too-tight forward tolerance then creeped for forty pulses.
+
+A missing object pose or base transform is re-read for `lookup_grace_s` (3.0) before the goal
+fails. Both go briefly unavailable for reasons that are not this skill's problem -- a TF buffer that
+has not caught up after the base moved, a sample arriving late -- and failing on the first miss
+threw away a healthy approach mid-mission with `/objects` publishing at 10 Hz throughout.
+
+The skill's weak spot is where Nav2 parks it. Good arrivals converge in 3 to 10 pulses; one arrival
+24.6 degrees off heading with 0.47 m of lateral error never converged, because the aim only runs
+before a forward drive and only to 20 degrees.
 
 `config/g1_base_approach.yaml` is heavily commented and every number in it has a measurement behind
 it. **None of them transfer to hardware**: they encode this sim policy's dead zone, its asymmetric
