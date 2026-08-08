@@ -52,9 +52,10 @@ bool resolveArm(const std::string& arm, ArmContext& out)
 G1ManipulationServer::G1ManipulationServer(const rclcpp::NodeOptions& options)
   : rclcpp::Node("g1_manipulation_server", options)
 {
-    object_timeout_s_  = declare_parameter<double>("object_timeout_ms", 1000.0) / 1000.0;
-    approach_height_m_ = declare_parameter<double>("approach_height_m", 0.12);
-    lift_height_m_     = declare_parameter<double>("lift_height_m", 0.15);
+    object_timeout_s_        = declare_parameter<double>("object_timeout_ms", 1000.0) / 1000.0;
+    approach_height_m_       = declare_parameter<double>("approach_height_m", 0.22);
+    grasp_depth_below_top_m_ = declare_parameter<double>("grasp_depth_below_top_m", 0.015);
+    lift_height_m_           = declare_parameter<double>("lift_height_m", 0.15);
     // Well under the joint limits' own 0.8 rad/s cap. Arm motion disturbs a standing humanoid
     // measurably (docs/notes/arm-motion-and-balance.md), and slowing the whole path is
     // preferred over clamping joints, which would bend the path itself.
@@ -366,13 +367,23 @@ moveit_msgs::msg::CollisionObject G1ManipulationServer::publishCollisionObject(
 }
 
 geometry_msgs::msg::Pose G1ManipulationServer::graspFrameGoal(
-    const geometry_msgs::msg::Pose& object_pose, const ArmContext& arm) const
+    const geometry_msgs::msg::Pose& object_pose, double object_height_m, const ArmContext& arm) const
 {
-    // Position passes straight through. The grasp frame is defined as the point the hand
-    // closes on, so putting that frame at the object IS the grasp -- there is no offset to
-    // apply, and the arithmetic that used to live here was the source of two separate bugs.
+    // Horizontally the grasp frame goes straight to the object: that frame is defined as the
+    // point the hand closes on, so putting it at the object IS the grasp, and the offset
+    // arithmetic that used to live here was the source of two separate bugs.
     geometry_msgs::msg::Pose goal;
     goal.position = object_pose.position;
+
+    // Vertically it does NOT, and aiming at the centre was wrong. The roll points the closing
+    // axis at the floor, and the fingertips sit about 24 mm beyond the grasp frame along it, so
+    // targeting the middle of a 60 mm cube puts them 6 mm above the table -- inside the
+    // octomap's own 20 mm padding. The hand was being asked to close through the surface.
+    //
+    // Grasp just under the top face instead. It is also a shorter, less extended reach, which
+    // is the other thing that was failing.
+    const double top = object_pose.position.z + 0.5 * object_height_m;
+    goal.position.z  = top - grasp_depth_below_top_m_;
 
     // Only the orientation is a choice, and it mirrors: the two hands close in opposite
     // directions, so the roll that points the closing axis at the floor flips sign.
@@ -483,8 +494,9 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     const moveit_msgs::msg::CollisionObject object =
         publishCollisionObject(*detection, *object_pose);
 
-    const geometry_msgs::msg::Pose grasp_goal    = graspFrameGoal(*object_pose, arm);
-    geometry_msgs::msg::Pose       pregrasp_goal = grasp_goal;
+    const geometry_msgs::msg::Pose grasp_goal =
+        graspFrameGoal(*object_pose, detection->bbox.size.z, arm);
+    geometry_msgs::msg::Pose pregrasp_goal = grasp_goal;
     pregrasp_goal.position.z += approach_height_m_;
 
     feedback->phase = Pick::Feedback::PHASE_PREGRASP;
@@ -621,7 +633,23 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
         return;
     }
 
-    const geometry_msgs::msg::Pose place_goal = graspFrameGoal(*target, arm);
+    // The height of whatever is actually attached, so the release mirrors the grasp. Pick aims
+    // the grasp frame just under the object's top face, so Place has to put it back at the same
+    // relative height or the object is released half its own height out of position. Read from
+    // the scene rather than remembered, because the attachment is the authority on what is held.
+    double held_height = 0.0;
+    for (const auto& [id, attached] : planning_scene_.getAttachedObjects())
+    {
+        (void)id;
+        if (!attached.object.primitives.empty() &&
+            attached.object.primitives.front().dimensions.size() == 3)
+        {
+            held_height = attached.object.primitives.front().dimensions[2];
+            break;
+        }
+    }
+
+    const geometry_msgs::msg::Pose place_goal = graspFrameGoal(*target, held_height, arm);
     geometry_msgs::msg::Pose       preplace   = place_goal;
     preplace.position.z += approach_height_m_;
 

@@ -98,8 +98,12 @@ private:
     /// The pose to give the arm's grasp frame so the object ends up at `object_pose`. Position
     /// passes straight through -- the grasp frame IS where the object goes -- and only the
     /// orientation is chosen here. Handed: the two hands hold at mirrored rolls.
-    geometry_msgs::msg::Pose
-    graspFrameGoal(const geometry_msgs::msg::Pose& object_pose, const ArmContext& arm) const;
+    /// Where the grasp frame has to end up. `object_height_m` is the object's FULL height: the
+    /// grasp is taken just under its top face, not at its centre, or the fingers close through
+    /// whatever the object is standing on.
+    geometry_msgs::msg::Pose graspFrameGoal(
+        const geometry_msgs::msg::Pose& object_pose, double object_height_m,
+        const ArmContext& arm) const;
 
     /// Plans and executes so that `link` reaches `pose`. False on either failure, logged.
     bool moveTo(
@@ -153,7 +157,8 @@ private:
 
     std::string planning_frame_;
     double      object_timeout_s_{ 1.0 };
-    double      approach_height_m_{ 0.12 };
+    double      grasp_depth_below_top_m_{ 0.015 };
+    double      approach_height_m_{ 0.22 };
     double      lift_height_m_{ 0.15 };
     double      velocity_scaling_{ 0.3 };
     double      planning_time_s_{ 5.0 };
