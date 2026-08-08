@@ -66,7 +66,7 @@ struct ApproachLimits
     /// How close each axis has to get. The forward window is the measured band with margin at
     /// its near end, NOT a guess about how precise the base can be -- the base is not precise,
     /// and the point of measuring the arm properly was to find out how much slack it grants.
-    double forward_tolerance_m = 0.060;
+    double forward_tolerance_m = 0.090;
     double lateral_tolerance_m = 0.040;
     /// The yaw response is bimodal -- one 0.15 s pulse measured 3 to 14 degrees -- so a
     /// tolerance near a single quantum cannot be held. Residual heading error shows up as
