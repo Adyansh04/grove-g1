@@ -65,13 +65,17 @@ g1_base_approach:
     stalled_turn_rad: 0.017
     stalled_step_m: 0.05
 
-    # The gait keeps stepping after the command stops, and it does so for LONGER than it first
-    # appears. At 2.5 s each pulse delivered about a third of what the same pulse produced in
-    # isolation -- a clockwise turn measured -3.5 deg standalone and -1.2 deg in the approach
-    # loop -- because the next pulse arrived before the previous one had finished. The probe that
-    # produced the numbers in this file left 4.0 s between pulses, so the loop has to as well or
-    # none of them apply.
-    settle_s: 3.5
+    # Hold zero while the gait finishes the stride it is already in, THEN say nothing at all for
+    # a moment.
+    #
+    # The quiet gap is the more important of the two, and was missing for most of this skill's
+    # life. Every duration in this file was measured by a probe that stopped publishing between
+    # pulses; the loop published zeros continuously instead, and the same 0.60 s clockwise pulse
+    # that turns 4 to 6 degrees under the probe turned 0.5 degrees in the loop. Going quiet lets
+    # g1_loco_bridge's velocity gate fall idle rather than re-issue SetVelocity(0) at 5 Hz, so
+    # the next pulse starts from rest.
+    settle_s: 2.5
+    quiet_after_s: 1.2
     cmd_rate_hz: 20.0
 
     # WHERE THE OBJECT HAS TO END UP, in the base frame, for the arm to reach it.

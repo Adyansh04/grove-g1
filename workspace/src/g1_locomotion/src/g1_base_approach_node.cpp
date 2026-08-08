@@ -94,11 +94,14 @@ public:
         // The gait's response depends on how recently it moved: an isolated 0.15 s yaw pulse
         // turns 3.8 deg, and the same pulse inside this loop has been measured turning 0.5 deg.
         // Rather than pick one duration and be wrong half the time, grow it until it bites.
-        max_turn_pulse_s_ = declare_parameter<double>("max_turn_pulse_s", 1.20);
-        max_step_pulse_s_ = declare_parameter<double>("max_step_pulse_s", 0.80);
-        pulse_growth_     = declare_parameter<double>("pulse_growth", 1.6);
-        stalled_turn_rad_ = declare_parameter<double>("stalled_turn_rad", 0.017);
-        stalled_step_m_   = declare_parameter<double>("stalled_step_m", 0.05);
+        // Ceilings on one continuous drive, so a goal that is never reached still ends.
+        max_turn_s_ = declare_parameter<double>("max_turn_s", 8.0);
+        max_step_s_ = declare_parameter<double>("max_step_s", 6.0);
+        // Stop commanding this far short of the target: the gait keeps going after the command
+        // stops, and these are what it coasts.
+        turn_lead_rad_    = declare_parameter<double>("turn_lead_rad", 0.30);
+        step_lead_m_      = declare_parameter<double>("step_lead_m", 0.22);
+        max_aim_attempts_ = declare_parameter<int>("max_aim_attempts", 8);
         // The gait keeps stepping after the command stops. Measuring before it settles reports
         // the command plus whatever of the stride was still in flight.
         settle_s_    = declare_parameter<double>("settle_s", 2.5);
@@ -176,6 +179,64 @@ private:
     ///
     /// Zeros are published rather than merely stopping: the shaper hands the channel back to
     /// Nav2 when this source goes quiet, so an idle gap mid-skill would surrender priority.
+    /// Hold a velocity until `done()` returns true, then stop and let the gait settle.
+    ///
+    /// CONTINUOUS, not pulsed, and that is the whole point. The original design commanded fixed
+    /// pulses and re-measured between them, which fights the walking policy: repeated
+    /// command-and-stop cycles wind it down, measured decaying from 8.3 degrees of yaw on the
+    /// first pulse to 0.3 by the eighth and to nothing by the twentieth. Every duration this
+    /// file was tuned against came from a probe that fired two or three pulses in a row, so it
+    /// measured a rested gait every time and the loop never saw those numbers.
+    ///
+    /// Nav2 drives this robot perfectly well with a continuous velocity stream. So does this.
+    template <typename DoneT>
+    bool driveUntil(
+        double vx, double vy, double vyaw, DoneT done, double max_s,
+        std::chrono::steady_clock::time_point deadline)
+    {
+        const auto period = std::chrono::duration<double>(1.0 / std::max(1.0, cmd_rate_hz_));
+        geometry_msgs::msg::Twist moving;
+        moving.linear.x  = vx;
+        moving.linear.y  = vy;
+        moving.angular.z = vyaw;
+
+        const auto give_up = std::chrono::steady_clock::now() +
+                             std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                                 std::chrono::duration<double>(max_s));
+        bool reached = false;
+        while (rclcpp::ok() && std::chrono::steady_clock::now() < give_up &&
+               std::chrono::steady_clock::now() < deadline)
+        {
+            if (done())
+            {
+                reached = true;
+                break;
+            }
+            cmd_pub_->publish(moving);
+            std::this_thread::sleep_for(period);
+        }
+
+        settle();
+        return reached;
+    }
+
+    /// Zeros while the gait finishes the stride it is in, then silence so the velocity gate
+    /// falls idle rather than re-issuing SetVelocity(0) at 5 Hz.
+    void settle()
+    {
+        const auto period = std::chrono::duration<double>(1.0 / std::max(1.0, cmd_rate_hz_));
+        const geometry_msgs::msg::Twist stop;
+        const auto                      settle_until =
+            std::chrono::steady_clock::now() + std::chrono::duration<double>(settle_s_);
+        while (rclcpp::ok() && std::chrono::steady_clock::now() < settle_until)
+        {
+            cmd_pub_->publish(stop);
+            std::this_thread::sleep_for(period);
+        }
+        std::this_thread::sleep_for(std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::duration<double>(quiet_s_)));
+    }
+
     void pulse(double vx, double vy, double vyaw, double duration_s)
     {
         const auto period = std::chrono::duration<double>(1.0 / std::max(1.0, cmd_rate_hz_));
@@ -200,6 +261,20 @@ private:
             cmd_pub_->publish(stop);
             std::this_thread::sleep_for(period);
         }
+
+        // Then say nothing at all for a moment. This is the one thing that differed between the
+        // probe that produced every number in the config and this loop, and it is worth more
+        // than any of them: the same 0.60 s clockwise pulse turns 4 to 6 degrees when measured
+        // with a silent gap after it, and 0.5 degrees when the zeros never stop. Going quiet
+        // lets g1_loco_bridge's velocity gate fall idle instead of re-issuing SetVelocity(0) at
+        // 5 Hz, and the gait starts the next pulse from rest rather than from whatever the
+        // re-issue stream left it in.
+        //
+        // Nothing takes the channel during the gap: the shaper's override lapses after
+        // override_timeout_s, but Nav2 publishes nothing between goals, so the output is silence
+        // either way.
+        std::this_thread::sleep_for(std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::duration<double>(quiet_s_)));
     }
 
     /// The base's pose in odom, or nothing if TF has not caught up.
@@ -304,9 +379,8 @@ private:
         const double timeout_s = goal->timeout_s > 0.0 ? goal->timeout_s : default_timeout_s_;
         const auto   deadline  = deadlineIn(timeout_s);
 
-        auto   feedback   = std::make_shared<ApproachObject::Feedback>();
-        int    pulses     = 0;
-        double step_pulse = step_pulse_s_;
+        auto feedback = std::make_shared<ApproachObject::Feedback>();
+        int  pulses   = 0;
 
         // The heading held for the whole approach. Fixed up front rather than recomputed from
         // the object each iteration: the object moves in the base frame as the robot walks, and
@@ -419,28 +493,24 @@ private:
                         return;
                     }
 
-                    const auto before = basePose();
-                    pulse(pulse_vx_, 0.0, 0.0, step_pulse);
+                    // Drive forward continuously and stop short of the window, leaving the
+                    // gait's coast to carry the rest. Whatever it does not close, the creep
+                    // finishes at a few centimetres a pulse.
+                    const auto close_enough = [&] {
+                        const auto object_now = objectInBase(goal->object_id);
+                        const auto pose_now   = basePose();
+                        if (!object_now || !pose_now)
+                        {
+                            return true;
+                        }
+                        const double he =
+                            wrap(working_yaw - tf2::getYaw(pose_now->pose.orientation));
+                        const double fwd =
+                            object_now->point.x * std::cos(he) + object_now->point.y * std::sin(he);
+                        return fwd - limits.target_x_m <= step_lead_m_;
+                    };
+                    driveUntil(pulse_vx_, 0.0, 0.0, close_enough, max_step_s_, deadline);
                     ++pulses;
-
-                    // Grow the next step if this one did nothing. Measured live: three
-                    // consecutive 0.30 s steps moved the robot 1 mm each while the log happily
-                    // reported them as steps, because the gait had gone cold between pulses.
-                    const auto after = basePose();
-                    if (before && after)
-                    {
-                        const double moved = std::hypot(
-                            after->pose.position.x - before->pose.position.x,
-                            after->pose.position.y - before->pose.position.y);
-                        step_pulse = moved < stalled_step_m_ ?
-                                         std::min(step_pulse * pulse_growth_, max_step_pulse_s_) :
-                                         step_pulse_s_;
-                        RCLCPP_INFO(
-                            get_logger(),
-                            "  step moved %.3f m; next step pulse %.2f s",
-                            moved,
-                            step_pulse);
-                    }
                     break;
                 }
 
@@ -523,10 +593,20 @@ private:
         const std::shared_ptr<HandleT>& handle, double target_yaw,
         std::chrono::steady_clock::time_point deadline, int& pulses)
     {
-        double duration       = 0.0;
-        double previous_error = 0.0;
-        bool   have_previous  = false;
-        for (int i = 0; i < max_aim_pulses_ && rclcpp::ok(); ++i)
+        // One continuous turn per attempt, closed on the measured heading, rather than a train
+        // of pulses. The lead angle stops the command early because the gait keeps rotating
+        // after it does: 1.5 rad/s commanded delivers about 1.08, and it coasts.
+        const auto reached = [&] {
+            const auto here = basePose();
+            if (!here)
+            {
+                return true;
+            }
+            return std::abs(wrap(target_yaw - tf2::getYaw(here->pose.orientation))) <=
+                   turn_lead_rad_;
+        };
+
+        for (int attempt = 0; attempt < max_aim_attempts_ && rclcpp::ok(); ++attempt)
         {
             if (handle->is_canceling() || std::chrono::steady_clock::now() > deadline)
             {
@@ -542,42 +622,19 @@ private:
             {
                 return true;
             }
-
-            // Grow the pulse when the last one barely turned the robot, and start over from the
-            // short one whenever the direction changes. Clockwise pulses were measured turning
-            // 3.5 deg standalone and 0.5 deg inside this loop, which is the difference between
-            // a 45 degree turn costing thirteen pulses and costing ninety.
-            const double fresh = turnPulseFor(error);
-            if (!have_previous || std::signbit(error) != std::signbit(previous_error))
-            {
-                duration = fresh;
-            }
-            else if (std::abs(previous_error - error) < stalled_turn_rad_)
-            {
-                duration = std::min(duration * pulse_growth_, max_turn_pulse_s_);
-            }
-            previous_error = error;
-            have_previous  = true;
-
-            // Per pulse, because the one thing that cannot be reconstructed after the fact is
-            // whether a yaw pulse moved the robot at all -- which is exactly how the first
-            // version failed, silently, for a whole goal.
             RCLCPP_INFO(
                 get_logger(),
-                "aim %d/%d: heading off by %+.1f deg, pulse %.2f s",
-                i + 1,
-                max_aim_pulses_,
-                error * 180.0 / M_PI,
-                duration);
-            pulse(0.0, 0.0, std::copysign(pulse_vyaw_, error), duration);
+                "aim %d/%d: heading off by %+.1f deg, turning",
+                attempt + 1,
+                max_aim_attempts_,
+                error * 180.0 / M_PI);
+            driveUntil(0.0, 0.0, std::copysign(pulse_vyaw_, error), reached, max_turn_s_, deadline);
             ++pulses;
         }
-        // Out of pulses rather than out of time. Report success anyway if the heading is close
-        // enough to work with: refusing here would fail an approach that is merely a degree or
-        // two off, which the lateral cleanup can absorb.
-        const auto here = basePose();
-        return here && std::abs(wrap(target_yaw - tf2::getYaw(here->pose.orientation))) <
-                           2.0 * limits_.heading_tolerance_rad;
+
+        const auto settled = basePose();
+        return settled && std::abs(wrap(target_yaw - tf2::getYaw(settled->pose.orientation))) <
+                              2.0 * limits_.heading_tolerance_rad;
     }
 
     void runRetreat(const std::shared_ptr<GoalHandleRetreat>& handle)
@@ -707,12 +764,13 @@ private:
     double      turn_pulse_ccw_s_  = 0.15;
     double      turn_pulse_cw_s_   = 0.60;
     double      strafe_pulse_s_    = 0.15;
-    double      max_turn_pulse_s_  = 1.20;
-    double      max_step_pulse_s_  = 0.80;
-    double      pulse_growth_      = 1.6;
-    double      stalled_turn_rad_  = 0.017;
-    double      stalled_step_m_    = 0.05;
+    double      max_turn_s_        = 8.0;
+    double      max_step_s_        = 6.0;
+    double      turn_lead_rad_     = 0.30;
+    double      step_lead_m_       = 0.22;
+    int         max_aim_attempts_  = 8;
     double      settle_s_          = 2.5;
+    double      quiet_s_           = 1.2;
     double      cmd_rate_hz_       = 20.0;
     int         max_pulses_        = 90;
     int         max_aim_pulses_    = 14;
