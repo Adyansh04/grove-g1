@@ -622,13 +622,40 @@ private:
             {
                 return true;
             }
+            // Continuous for the big swing, one short pulse for the last few degrees.
+            //
+            // Neither alone works. A continuous turn cannot stop inside the tolerance because
+            // the gait coasts about 17 degrees after the command ends, wider than the 8 degree
+            // window; and a train of pulses winds the policy down to nothing, which is what the
+            // fully pulsed design failed on. So drive while the error is bigger than the coast,
+            // and pulse once it is not.
+            //
+            // Getting this wrong deadlocks rather than degrades. With the stopping lead larger
+            // than the tolerance, every error between the two left the planner demanding a turn
+            // and driveUntil declaring itself already arrived, logged as the same +9.2 deg
+            // forever, 3.7 s apart, with no time spent driving.
+            const bool far = std::abs(error) > turn_lead_rad_;
             RCLCPP_INFO(
                 get_logger(),
-                "aim %d/%d: heading off by %+.1f deg, turning",
+                "aim %d/%d: heading off by %+.1f deg, %s",
                 attempt + 1,
                 max_aim_attempts_,
-                error * 180.0 / M_PI);
-            driveUntil(0.0, 0.0, std::copysign(pulse_vyaw_, error), reached, max_turn_s_, deadline);
+                error * 180.0 / M_PI,
+                far ? "driving" : "nudging");
+            if (far)
+            {
+                driveUntil(
+                    0.0,
+                    0.0,
+                    std::copysign(pulse_vyaw_, error),
+                    reached,
+                    max_turn_s_,
+                    deadline);
+            }
+            else
+            {
+                pulse(0.0, 0.0, std::copysign(pulse_vyaw_, error), turnPulseFor(error));
+            }
             ++pulses;
         }
 
