@@ -27,9 +27,16 @@ g1_base_approach:
     # One duration per primitive, and they are NOT interchangeable. Measured, three repeats each,
     # on a settled robot in open ground:
     #
-    #   forward 0.30 s -> 0.293 m, sd 0.010, and +8.2 deg of yaw every time
-    #   yaw     0.15 s -> 3.8 deg, sd 0.6, and 3 mm of translation
-    #   lateral 0.15 s -> ~0.035 m, under a degree of yaw, under a centimetre of forward
+    #   forward  0.30 s -> 0.293 m, sd 0.010, and +8.2 deg of yaw every time
+    #   yaw CCW  0.15 s -> +3.8 deg, and 3 mm of translation
+    #   yaw CW   0.60 s -> -3.5 deg (-3.62, -3.44, -3.39), tight
+    #   lateral  0.15 s -> ~0.035 m, under a degree of yaw, under a centimetre of forward
+    #
+    # YAW IS ASYMMETRIC, and the two directions need different durations. A 0.15 s pulse turns
+    # +3.8 deg counter-clockwise and only -1.1 deg clockwise; clockwise does not reach -3.5 deg
+    # until 0.60 s. Since a forward step yaws +8 deg EVERY time, every correction this skill
+    # needs is in the weak direction, and the first live run spent fourteen pulses failing to
+    # take out 7 degrees with a symmetric 0.15 s.
     #
     # Forward is IRREDUCIBLE. A 0.10 s pulse still produced 0.42 and 0.46 m on the trials where
     # it triggered: once the gait commits to a step sequence it takes the whole thing. That is
@@ -38,7 +45,8 @@ g1_base_approach:
     # Yaw and lateral are bimodal at longer durations -- either a small settle or a committed
     # step -- and 0.15 s is what keeps them in the small mode worth having.
     step_pulse_s: 0.30
-    turn_pulse_s: 0.15
+    turn_pulse_ccw_s: 0.15
+    turn_pulse_cw_s: 0.60
     strafe_pulse_s: 0.15
 
     # The gait keeps stepping after the command stops. Measuring before it settles reports the
@@ -60,11 +68,17 @@ g1_base_approach:
 
     # Forward is the tight axis because it is the one the gait cannot resolve directly: the
     # oblique step buys about 1.8 cm of resolution near 60 degrees, so 0.045 is reachable.
-    # Lateral is generous next to its own 0.035 m quantum, and heading is set just above the
-    # 3.8 deg turn quantum, since a tolerance under one pulse cannot be held.
+    # Lateral is generous next to its own 0.035 m quantum.
+    #
+    # Heading is 8 deg, wider than it first looks it should be, for two reasons. The yaw response
+    # is bimodal -- a 0.15 s pulse measured anywhere from 3 to 14 degrees depending on whether
+    # the gait takes a settle or a committed step -- so a tolerance near one quantum cannot be
+    # held. And heading precision matters less here than it seems: the grasp is computed in the
+    # BASE frame, so what has to be right is where the object sits relative to the robot, and
+    # residual heading error shows up as lateral error, which is the cheap axis to fix.
     forward_tolerance_m: 0.045
     lateral_tolerance_m: 0.050
-    heading_tolerance_rad: 0.087
+    heading_tolerance_rad: 0.140
 
     # Forward of this and the object is under the robot's own shell with nowhere for the arm to
     # go. Terminal, not correctable: g1_gait_shaper compares forward speed signed, so reverse is
@@ -90,5 +104,5 @@ g1_base_approach:
     # step and a few strafes -- call it 25 pulses and 70 s. max_aim_pulses bounds ONE re-aim, so
     # a heading that will not settle fails fast instead of eating the whole budget.
     max_pulses: 90
-    max_aim_pulses: 14
+    max_aim_pulses: 20
     default_timeout_s: 420.0

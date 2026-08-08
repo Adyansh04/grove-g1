@@ -86,9 +86,10 @@ public:
         // Measured durations, one per primitive. They are not interchangeable: forward is
         // irreducible at ~0.29 m however short the pulse, while yaw and lateral both have a
         // small-response mode that only survives at short durations.
-        step_pulse_s_   = declare_parameter<double>("step_pulse_s", 0.30);
-        turn_pulse_s_   = declare_parameter<double>("turn_pulse_s", 0.15);
-        strafe_pulse_s_ = declare_parameter<double>("strafe_pulse_s", 0.15);
+        step_pulse_s_     = declare_parameter<double>("step_pulse_s", 0.30);
+        turn_pulse_ccw_s_ = declare_parameter<double>("turn_pulse_ccw_s", 0.15);
+        turn_pulse_cw_s_  = declare_parameter<double>("turn_pulse_cw_s", 0.60);
+        strafe_pulse_s_   = declare_parameter<double>("strafe_pulse_s", 0.15);
         // The gait keeps stepping after the command stops. Measuring before it settles reports
         // the command plus whatever of the stride was still in flight.
         settle_s_    = declare_parameter<double>("settle_s", 2.5);
@@ -453,6 +454,18 @@ private:
         handle->abort(result);
     }
 
+    /// How long to hold a yaw command, which depends on which way it turns.
+    ///
+    /// This gait's yaw is ASYMMETRIC, measured: a 0.15 s pulse turns +3.8 deg counter-clockwise
+    /// but only -1.1 deg clockwise, and clockwise does not reach -3.5 deg until 0.60 s. That
+    /// matters more than it sounds, because a forward step yaws +8 deg every time, so every
+    /// correction the approach needs is in the weak direction -- the first live run spent
+    /// fourteen pulses failing to take out 7 degrees.
+    double turnPulseFor(double error_rad) const
+    {
+        return error_rad > 0.0 ? turn_pulse_ccw_s_ : turn_pulse_cw_s_;
+    }
+
     /// Yaw-pulse until the base is within the heading tolerance of `target_yaw`.
     ///
     /// A closed loop rather than one pulse per planner tick, because a 3.8 degree pulse would
@@ -478,7 +491,16 @@ private:
             {
                 return true;
             }
-            pulse(0.0, 0.0, std::copysign(pulse_vyaw_, error), turn_pulse_s_);
+            // Per pulse, because the one thing that cannot be reconstructed after the fact is
+            // whether a yaw pulse moved the robot at all -- which is exactly how the first
+            // version failed, silently, for a whole goal.
+            RCLCPP_INFO(
+                get_logger(),
+                "aim %d/%d: heading off by %+.1f deg",
+                i + 1,
+                max_aim_pulses_,
+                error * 180.0 / M_PI);
+            pulse(0.0, 0.0, std::copysign(pulse_vyaw_, error), turnPulseFor(error));
             ++pulses;
         }
         // Out of pulses rather than out of time. Report success anyway if the heading is close
@@ -600,7 +622,7 @@ private:
             {
                 return true;
             }
-            pulse(0.0, 0.0, std::copysign(pulse_vyaw_, error), turn_pulse_s_);
+            pulse(0.0, 0.0, std::copysign(pulse_vyaw_, error), turnPulseFor(error));
             ++pulses;
         }
         return false;
@@ -613,7 +635,8 @@ private:
     double      pulse_vyaw_        = 1.50;
     double      pulse_vy_          = 0.50;
     double      step_pulse_s_      = 0.30;
-    double      turn_pulse_s_      = 0.15;
+    double      turn_pulse_ccw_s_  = 0.15;
+    double      turn_pulse_cw_s_   = 0.60;
     double      strafe_pulse_s_    = 0.15;
     double      settle_s_          = 2.5;
     double      cmd_rate_hz_       = 20.0;

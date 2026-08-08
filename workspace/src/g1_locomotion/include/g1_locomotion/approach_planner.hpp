@@ -60,8 +60,10 @@ struct ApproachLimits
     /// cannot resolve directly; lateral is generous relative to its own 0.035 m quantum.
     double forward_tolerance_m = 0.045;
     double lateral_tolerance_m = 0.050;
-    /// One yaw pulse turns 3.8 deg, so anything under that cannot be held.
-    double heading_tolerance_rad = 0.087;
+    /// The yaw response is bimodal -- one 0.15 s pulse measured 3 to 14 degrees -- so a
+    /// tolerance near a single quantum cannot be held. Residual heading error shows up as
+    /// lateral error anyway, which is the cheap axis to correct.
+    double heading_tolerance_rad = 0.140;
 
     /// Forward of this and the object is under the robot's own shell. Terminal, not correctable:
     /// the gait has no reverse.
