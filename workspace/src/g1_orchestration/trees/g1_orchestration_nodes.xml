@@ -14,6 +14,7 @@
             <input_port name="timeout_s" type="double" default="5.000000">Per-costmap service budget.</input_port>
         </Action>
         <Action ID="NavigateToPose">
+            <output_port name="goal_yaw" type="double">The goal's heading, for an ApproachObject that has to hold it.</output_port>
             <input_port name="frame_id" type="std::string" default="map">Frame the goal is expressed in.</input_port>
             <input_port name="server_timeout_s" type="double" default="10.000000">How long to wait for the action server to appear.</input_port>
             <input_port name="goal" type="g1_orchestration::Station">Where to drive to, as 'x;y;yaw'.</input_port>
