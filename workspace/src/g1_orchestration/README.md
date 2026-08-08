@@ -34,16 +34,35 @@ verified here by installing both rather than assumed.
 `btcpp_ros2` (BehaviorTree.ROS2) is **not released for Humble**, which is why this package
 hand-rolls its one action-client node base rather than vendoring that repo for four leaves.
 
+## Layout
+
+One file per leaf under `src/skills/`, with its declaration in
+`include/g1_orchestration/skills/` — the layout `nav2_behavior_tree` uses, and the reason a new
+skill is a new file rather than an edit to a shared one.
+
+| Piece | What it is |
+|---|---|
+| `ros_action_node.hpp` | The action-client base. Owns goal handling, cancellation and timeouts; children supply `fillGoal` and `judgeResult`. |
+| `skill_action_node.hpp` | Adds `judgeResult` for the `success`/`message` convention every skill server here follows, so most leaves need only `fillGoal`. |
+| `service_leaf.hpp` | The same for leaves that call a service and finish within one tick. |
+| `ports.hpp` | Ports shared by more than one leaf, declared once so their descriptions stay identical. |
+| `registration.hpp` | Binds classes to the names a tree uses, and generates the Groot2 palette. |
+
+To add a skill: define the action in `g1_msgs`, implement the server in whichever package owns
+that domain, then add a header and source under `skills/`, list the source in `CMakeLists.txt`,
+register it in `registration.cpp`, and regenerate the palette.
+
 ## Leaves
 
 | Leaf | Wraps | Ports |
 |---|---|---|
-| `NavigateToPose` | Nav2's `/navigate_to_pose` | `goal` as `"x;y;yaw"`, `frame_id` |
+| `NavigateToPose` | Nav2's `/navigate_to_pose` | in: `goal` as `"x;y;yaw"`, `frame_id`; out: `goal_yaw` |
 | `ApproachObject` | `g1_locomotion`'s base approach | `object_id`, `arm`, `working_yaw`, `timeout_s` |
-| `Retreat` | the same | `distance`, `back_off`, `restore_heading`, `timeout_s` |
+| `Retreat` | the same | `distance`, `timeout_s` |
 | `Pick` | `g1_manipulation` | `object_id`, `arm` |
 | `Place` | `g1_manipulation` | `surface` (preferred), or `target` as `"x;y;z"` with `frame_id`; `arm` |
 | `SetArmPosture` | `g1_manipulation` | `group`, `named_target` |
+| `ClearCostmaps` | Nav2's costmap clear services | `timeout_s` |
 | `AcquireArm` / `ReleaseArm` | `controller_manager` services | `timeout_s` |
 
 Every action leaf sends its goal on the first tick, answers RUNNING while it is in flight, and
@@ -54,7 +73,17 @@ executing a trajectory is the "release cleanly on success or failure" rule in
 `ApproachObject` takes a `working_yaw` with no default, and refuses the goal without one. A missing
 heading would silently mean "face +x", which is a valid yaw and almost never the right one; the
 skill would approach square to nothing and the failure would read as bad geometry rather than a
-missing port. Pass the same yaw the staging `NavigateToPose` used.
+missing port.
+
+It has to equal the yaw the staging goal arrived on, so the tree does not retype it: `NavigateToPose`
+publishes its own `goal_yaw`, and the approach reads it back.
+
+```xml
+<NavigateToPose goal="4.30;-5.60;1.5708" goal_yaw="{workbench_yaw}"/>
+<ApproachObject object_id="red_cube" working_yaw="{workbench_yaw}"/>
+```
+
+Both numbers used to be literals kept equal by hand, with the invariant stated only in a comment.
 
 A failed leaf logs the **server's own reason**, not just that it failed. An aborted goal still
 carries its result, and every abort in these servers writes a phase-prefixed explanation into it:
@@ -121,7 +150,7 @@ Nav2 cannot park the robot where the arm can reach anything: `xy_goal_tolerance`
 closes the rest against the measured object rather than against the map. That is the standard
 mobile-manipulation pattern: a stand-off pose on the surface normal, approached straight in.
 
-Both stations face +y and hand that same yaw to `ApproachObject` to hold.
+Both stations face +y and hand that yaw to `ApproachObject` over the blackboard.
 
 ### Retreat backs straight off before turning
 
@@ -166,8 +195,25 @@ starts: the publisher only exists while a tree is running.
 
 **The free tier monitors at most 20 nodes.** The editor itself is unrestricted; it is live
 monitoring that is capped, and blackboard inspection, breakpoints and node substitution are
-PRO-only. Both shipped trees are well inside 20, but a tree grown past it will not monitor on the
-free tier, which is worth knowing before splitting a mission into many small leaves.
+PRO-only. Each subtree is monitored as its own view, so keeping any one of them under 20 is what
+matters rather than the total.
+
+### Editing, not just watching
+
+Monitoring needs nothing but the publisher. EDITING needs a palette: the list of nodes Groot2 may
+place, with their ports. Open `trees/g1_orchestration.btproj` and it loads
+`trees/g1_orchestration_nodes.xml` alongside both trees.
+
+That palette is generated from the same factory the executor builds, never hand-written, and
+`test_node_model` fails if it drifts. After adding or changing a leaf:
+
+```bash
+ros2 run g1_orchestration g1_bt_node_model \
+  src/g1_orchestration/trees/g1_orchestration_nodes.xml
+```
+
+The port descriptions in `providedPorts()` are what Groot2 shows as tooltips, so they are worth
+writing for a reader rather than for the compiler.
 
 | Argument | Default | Meaning |
 |---|---|---|
@@ -182,6 +228,7 @@ None need a simulator.
 | Test | Covers |
 |---|---|
 | `test_tree_loads` | Every shipped tree parses with all node types registered; the mission tree still has the leaves it is supposed to, including one `ApproachObject` per surface and one `Retreat` per departure; an unknown leaf is rejected; the port string conversions and their refusals. |
+| `test_node_model` | The checked-in Groot2 palette still matches the registered nodes and their ports. |
 | `test_authority_drift` | The acquire sequence against `g1_bringup`'s `activate_arm`, which is the other implementation of it, and that the arm comes first with the hands behind it. |
 
 ```bash
