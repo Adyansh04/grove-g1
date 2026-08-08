@@ -104,6 +104,16 @@
         <SetArmPosture name="hold_it_close" group="right_arm" named_target="carry"/>
       </RetryUntilSuccessful>
 
+      <!-- 5.70 is measured, not chosen, and 5.60 does NOT work despite having more geometric
+           clearance (0.55 m to the bench face against 0.45). The static map predates the
+           storage bench and drop pad entirely, so Nav2 only learns this corner from the live
+           scan, and the global planner refuses 5.60 outright with "failed to create plan with
+           tolerance 0.50" while planning to 5.70 every time. Until the map is rebuilt to
+           include this furniture, treat the number as empirical.
+
+           It is genuinely tight either way: 5.70 sits exactly robot_radius from the bench
+           face, so the footprint touches the inflated obstacle. Rebuilding the map is what
+           buys room to move it. -->
       <NavigateToPose name="stage_at_storage" goal="6.30;5.70;1.5708"/>
 
       <!-- The approach and the place RETRY TOGETHER, and that pairing is the point.
