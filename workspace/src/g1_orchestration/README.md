@@ -201,8 +201,14 @@ matters rather than the total.
 ### Editing, not just watching
 
 Monitoring needs nothing but the publisher. EDITING needs a palette: the list of nodes Groot2 may
-place, with their ports. Open `trees/g1_orchestration.btproj` and it loads
-`trees/g1_orchestration_nodes.xml` alongside both trees.
+place, with their ports.
+
+1. Open `trees/g1_orchestration.btproj`. Both trees appear.
+2. Once per project, **Import Models** and pick `trees/g1_orchestration_nodes.xml` beside it.
+   Groot2 writes the model into the project and remembers it.
+
+The tree files are symlinked into the install space, so a tree saved from Groot2 is picked up by
+the next `ros2 launch` with no rebuild.
 
 That palette is generated from the same factory the executor builds, never hand-written, and
 `test_node_model` fails if it drifts. After adding or changing a leaf:
