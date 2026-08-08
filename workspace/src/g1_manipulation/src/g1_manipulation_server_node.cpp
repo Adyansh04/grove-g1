@@ -56,6 +56,8 @@ G1ManipulationServer::G1ManipulationServer(const rclcpp::NodeOptions& options)
     approach_height_m_        = declare_parameter<double>("approach_height_m", 0.22);
     grasp_height_above_top_m_ = declare_parameter<double>("grasp_height_above_top_m", 0.010);
     lift_height_m_            = declare_parameter<double>("lift_height_m", 0.15);
+    // How far a released object may be from where it was aimed before the place is a failure.
+    place_tolerance_m_ = declare_parameter<double>("place_tolerance_m", 0.08);
     // Well under the joint limits' own 0.8 rad/s cap. Arm motion disturbs a standing humanoid
     // measurably (docs/notes/arm-motion-and-balance.md), and slowing the whole path is
     // preferred over clamping joints, which would bend the path itself.
@@ -654,17 +656,43 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
     MoveGroup* arm_group  = groupFor(arm.arm_group);
     MoveGroup* hand_group = groupFor(arm.hand_group);
 
+    // What is held, read from the scene rather than remembered, because the attachment is the
+    // authority on what the hand actually has. Needed BEFORE the exemption is applied: the
+    // object has to be named in it.
+    std::string held_id;
+    double      held_height = 0.0;
+    for (const auto& [id, attached] : planning_scene_.getAttachedObjects())
+    {
+        if (!attached.object.primitives.empty() &&
+            attached.object.primitives.front().dimensions.size() == 3)
+        {
+            held_id     = id;
+            held_height = attached.object.primitives.front().dimensions[2];
+            break;
+        }
+    }
+
+    // The octomap AND the object being carried. Exempting only the octomap was wrong in the
+    // same way the missing wrist joint was: an attached body is part of the robot for
+    // kinematics but is still its own collision entity, so exempting the palm it hangs off
+    // does nothing for it. A place aborted with "<octomap> vs red_cube (attached)" at waypoint
+    // 101 of 153 -- the carried cube clipping the bench on the way in, on a path where every
+    // link around it was already allowed through.
+    //
+    // Pick already exempted both for the lift, which is the same motion in reverse.
+    const std::vector<std::string> touchables =
+        held_id.empty() ? std::vector<std::string>{ "<octomap>" } :
+                          std::vector<std::string>{ "<octomap>", held_id };
+
     const auto fail = [&](const std::string& phase, const std::string& why) {
-        allowHandContact(arm, { "<octomap>" }, false);
+        allowHandContact(arm, touchables, false);
         result->success = false;
         result->message = phase + ": " + why;
         goal_handle->abort(result);
     };
 
-    // Lowering onto a surface enters occupied space just as reaching into one does. Only the
-    // octomap here: what is held is already attached, so MoveIt is treating it as part of the
-    // arm rather than as an obstacle.
-    allowHandContact(arm, { "<octomap>" }, true);
+    // Lowering onto a surface enters occupied space just as reaching into one does.
+    allowHandContact(arm, touchables, true);
 
     // Prefer a surface read from /objects over the caller's coordinate.
     //
@@ -704,22 +732,6 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
         return;
     }
 
-    // The height of whatever is actually attached, so the release mirrors the grasp. Pick aims
-    // the grasp frame just under the object's top face, so Place has to put it back at the same
-    // relative height or the object is released half its own height out of position. Read from
-    // the scene rather than remembered, because the attachment is the authority on what is held.
-    double held_height = 0.0;
-    for (const auto& [id, attached] : planning_scene_.getAttachedObjects())
-    {
-        (void)id;
-        if (!attached.object.primitives.empty() &&
-            attached.object.primitives.front().dimensions.size() == 3)
-        {
-            held_height = attached.object.primitives.front().dimensions[2];
-            break;
-        }
-    }
-
     // A detected surface reports its own centre, so the held object goes on TOP of it: half the
     // surface's height to reach its face, half the object's to stand it there. A caller-supplied
     // pose is where the object itself goes and needs neither.
@@ -728,8 +740,8 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
         target->position.z += 0.5 * (surface->bbox.size.z + held_height);
     }
 
-    const geometry_msgs::msg::Pose place_goal = graspFrameGoal(*target, held_height, arm);
-    geometry_msgs::msg::Pose       preplace   = place_goal;
+    geometry_msgs::msg::Pose place_goal = graspFrameGoal(*target, held_height, arm);
+    geometry_msgs::msg::Pose preplace   = place_goal;
     preplace.position.z += approach_height_m_;
 
     feedback->phase = Place::Feedback::PHASE_PREPLACE;
@@ -738,6 +750,41 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
     {
         fail(Place::Feedback::PHASE_PREPLACE, "could not reach the pose above the target");
         return;
+    }
+
+    // Re-resolve the target before descending. Everything above was computed in the pelvis
+    // frame BEFORE the arm reached out, and reaching out moves the base: the robot is
+    // balancing, so extending a loaded arm forward shifts the COM and the gait steps to keep
+    // up. Measured, one place: the cube was released 0.155 m short of the pad and fell to the
+    // floor, while every leaf in the mission reported success.
+    //
+    // The arm holds a joint trajectory, so a base that drifts back carries the held object back
+    // with it. Recomputing here prices in whatever moved during the preplace, and the descent
+    // is short enough that little more accumulates.
+    if (surface)
+    {
+        if (const auto fresh = lookUpObject(goal->surface_object_id))
+        {
+            const std::string frame =
+                fresh->header.frame_id.empty() ? objects_.header.frame_id : fresh->header.frame_id;
+            if (auto moved = toPlanningFrame(fresh->results.front().pose.pose, frame))
+            {
+                moved->position.z += 0.5 * (fresh->bbox.size.z + held_height);
+                target               = moved;
+                const auto   regrasp = graspFrameGoal(*moved, held_height, arm);
+                const double shift   = std::hypot(
+                    regrasp.position.x - place_goal.position.x,
+                    regrasp.position.y - place_goal.position.y);
+                if (shift > 0.01)
+                {
+                    RCLCPP_INFO(
+                        get_logger(),
+                        "the base moved %.3f m during the reach; re-aiming",
+                        shift);
+                }
+                place_goal = regrasp;
+            }
+        }
     }
 
     feedback->phase = Place::Feedback::PHASE_LOWER;
@@ -776,7 +823,47 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
         return;
     }
 
-    allowHandContact(arm, { "<octomap>" }, false);
+    allowHandContact(arm, touchables, false);
+
+    // Did it actually land there? Detaching the object and retreating the arm proves only that
+    // the planner is happy; it says nothing about where the thing ended up. A place that
+    // released short dropped the cube on the floor 0.155 m away and every leaf in the mission
+    // still reported success, which is the worst outcome available -- a failure that announces
+    // itself is fixable, one that does not is not.
+    //
+    // Compared against the pose the object was aimed at, in the planning frame, which is where
+    // `target` already is.
+    if (!held_id.empty())
+    {
+        if (const auto landed = lookUpObject(held_id))
+        {
+            const std::string frame = landed->header.frame_id.empty() ? objects_.header.frame_id :
+                                                                        landed->header.frame_id;
+            if (const auto where = toPlanningFrame(landed->results.front().pose.pose, frame))
+            {
+                const double off = std::sqrt(
+                    std::pow(where->position.x - target->position.x, 2) +
+                    std::pow(where->position.y - target->position.y, 2) +
+                    std::pow(where->position.z - target->position.z, 2));
+                if (off > place_tolerance_m_)
+                {
+                    result->success = false;
+                    result->message = std::string(Place::Feedback::PHASE_RELEASE) + ": " + held_id +
+                                      " ended up " + std::to_string(off) +
+                                      " m from where it was placed";
+                    RCLCPP_ERROR(get_logger(), "%s", result->message.c_str());
+                    goal_handle->abort(result);
+                    return;
+                }
+                RCLCPP_INFO(
+                    get_logger(),
+                    "%s came to rest %.3f m from the target",
+                    held_id.c_str(),
+                    off);
+            }
+        }
+    }
+
     result->success = true;
     result->message = "placed with the " + goal->arm + " hand";
     goal_handle->succeed(result);

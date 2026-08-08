@@ -106,17 +106,29 @@
 
       <NavigateToPose name="stage_at_storage" goal="6.30;5.70;1.5708"/>
 
-      <ApproachObject name="close_on_the_pad" object_id="drop_pad" arm="right"
-                      working_yaw="1.5708"/>
+      <!-- The approach and the place RETRY TOGETHER, and that pairing is the point.
+           The robot is balancing, so extending a loaded arm forward shifts its centre of mass
+           and the walking policy steps to keep up: measured at 0.182 m of base travel during
+           one reach. The place re-aims mid-motion to price that in, but past about 0.1 m the
+           surface has left the arm's band entirely and no arm motion can recover it: the BASE
+           has to move, which means approaching again. Retrying the place alone would re-plan
+           forever against a target that is simply out of range. -->
+      <RetryUntilSuccessful name="place_with_retries" num_attempts="3">
+        <Sequence name="close_in_and_place">
+          <ApproachObject name="close_on_the_pad" object_id="drop_pad" arm="right"
+                          working_yaw="1.5708"/>
 
-      <!-- Named, not a coordinate, and that is the whole point. This used to read
-           target="6.50;6.25;0.855", which is exactly right ON THE MAP and still failed every
-           time with "preplace: planning failed (-27)": a coordinate here is in the map frame,
-           while the approach immediately above parks the base against /objects in odom. AMCL
-           was measured 0.23 m from odom at this bench, and the arm's lateral window is 0.04 m,
-           so the target landed 0.14 m outside anything the arm can reach. Naming the surface
-           makes the place and the approach read the same stream, so they cannot disagree. -->
-      <Place name="put_it_on_the_pad" surface="drop_pad" arm="right"/>
+          <!-- Named, not a coordinate, and that is the whole point. This used to read
+               target="6.50;6.25;0.855", which is exactly right ON THE MAP and still failed
+               every time with "preplace: planning failed (-27)": a coordinate here is in the
+               map frame, while the approach immediately above parks the base against /objects
+               in odom. AMCL was measured 0.23 m from odom at this bench, and the arm's lateral
+               window is 0.04 m, so the target landed 0.14 m outside anything the arm can
+               reach. Naming the surface makes the place and the approach read the same stream,
+               so they cannot disagree. -->
+          <Place name="put_it_on_the_pad" surface="drop_pad" arm="right"/>
+        </Sequence>
+      </RetryUntilSuccessful>
 
       <Retreat name="back_off_the_bench" distance="0.8"/>
       <ClearCostmaps name="forget_the_bench"/>
