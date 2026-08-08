@@ -74,9 +74,21 @@ g1_base_approach:
     # that turns 4 to 6 degrees under the probe turned 0.5 degrees in the loop. Going quiet lets
     # g1_loco_bridge's velocity gate fall idle rather than re-issue SetVelocity(0) at 5 Hz, so
     # the next pulse starts from rest.
-    settle_s: 2.5
-    quiet_after_s: 1.2
+    # Both were sized for a loop that fired dozens of short pulses and needed the gait rested
+    # before each one. Forward, reverse, lateral and big heading corrections are all continuous
+    # drives now, so a run takes a handful of moves rather than fifty, and 3.7 s of standing
+    # still after every one was most of the wall clock. Trimmed, not removed: the gait really
+    # does keep stepping after the command stops, and measuring before it settles reports the
+    # command plus whatever of the stride was still in flight.
+    settle_s: 1.5
+    quiet_after_s: 0.5
     cmd_rate_hz: 20.0
+
+    # Lateral gets the same treatment as heading: drive continuously while there is real
+    # distance to cover, one short pulse below the lead. The lead is what the gait slides after
+    # a strafe command ends.
+    max_strafe_s: 5.0
+    lateral_lead_m: 0.055
 
     # WHERE THE OBJECT HAS TO END UP, in the base frame, for the arm to reach it.
     #

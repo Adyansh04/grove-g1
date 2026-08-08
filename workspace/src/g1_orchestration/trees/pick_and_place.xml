@@ -91,7 +91,14 @@
            Before the carry posture: moving the arm to `carry` while still at the desk failed
            with `<octomap> <-> right_hand_index_1_link` 220 steps into a 248 step path. The pose
            is fine; the room to swing into is not, with the table right there. -->
-      <Retreat name="back_off_the_desk" distance="0.5"/>
+      <Retreat name="back_off_the_desk" distance="0.8"/>
+
+      <!-- The costmaps have been watching an arm reach over a workbench for the last minute and
+           a half, and they hold every voxel of it: the arm itself, the object it lifted, and the
+           surface the base pressed up against. None of that is where the map says obstacles are.
+           Wipe both before asking Nav2 to plan out of here, or the first thing it does is steer
+           around the robot's own recent history. -->
+      <ClearCostmaps name="forget_the_workbench"/>
 
       <RetryUntilSuccessful name="carry_with_retries" num_attempts="3">
         <SetArmPosture name="hold_it_close" group="right_arm" named_target="carry"/>
@@ -111,7 +118,8 @@
            makes the place and the approach read the same stream, so they cannot disagree. -->
       <Place name="put_it_on_the_pad" surface="drop_pad" arm="right"/>
 
-      <Retreat name="back_off_the_bench" distance="0.5"/>
+      <Retreat name="back_off_the_bench" distance="0.8"/>
+      <ClearCostmaps name="forget_the_bench"/>
 
       <!-- Retried for the same reason the travel tucks are, which these were missing: the
            failure is per-attempt, not structural. A completed mission was failed here by

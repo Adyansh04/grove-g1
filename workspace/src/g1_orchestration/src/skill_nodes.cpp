@@ -1,8 +1,12 @@
 #include "g1_orchestration/skill_nodes.hpp"
 
+#include <behaviortree_cpp/action_node.h>
 #include <tf2/LinearMath/Quaternion.h>
 
+#include <chrono>
 #include <cmath>
+#include <memory>
+#include <nav2_msgs/srv/clear_entire_costmap.hpp>
 #include <string>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <vector>
@@ -328,6 +332,59 @@ BT::NodeStatus SetArmPosture::judgeResult(const WrappedResult& result)
     return judgeSkillResult(node_->get_logger(), name(), result);
 }
 
+ClearCostmaps::ClearCostmaps(
+    const std::string& name, const BT::NodeConfig& config, RosContext context)
+  : BT::SyncActionNode(name, config)
+  , node_(std::move(context.node))
+{}
+
+BT::PortsList ClearCostmaps::providedPorts()
+{
+    return { BT::InputPort<double>("timeout_s", 5.0, "Per-costmap service budget.") };
+}
+
+BT::NodeStatus ClearCostmaps::tick()
+{
+    using ClearEntireCostmap = nav2_msgs::srv::ClearEntireCostmap;
+
+    const double timeout_s = getInput<double>("timeout_s").value_or(5.0);
+    // A node of its own, spun here. The executor already owns the tree's node, and
+    // spin_until_future_complete on a node an executor holds throws rather than waiting --
+    // the same reason arm_authority builds one.
+    auto client_node = std::make_shared<rclcpp::Node>("g1_clear_costmaps_client");
+
+    bool all_cleared = true;
+    for (const char* service : { "/global_costmap/clear_entirely_global_costmap",
+                                 "/local_costmap/clear_entirely_local_costmap" })
+    {
+        auto client = client_node->create_client<ClearEntireCostmap>(service);
+        if (!client->wait_for_service(std::chrono::duration<double>(timeout_s)))
+        {
+            RCLCPP_WARN(node_->get_logger(), "[%s] no '%s'", name().c_str(), service);
+            all_cleared = false;
+            continue;
+        }
+        auto future = client->async_send_request(std::make_shared<ClearEntireCostmap::Request>());
+        if (rclcpp::spin_until_future_complete(
+                client_node,
+                future,
+                std::chrono::duration<double>(timeout_s)) != rclcpp::FutureReturnCode::SUCCESS)
+        {
+            RCLCPP_WARN(node_->get_logger(), "[%s] '%s' did not return", name().c_str(), service);
+            all_cleared = false;
+        }
+    }
+
+    // SUCCESS even when a costmap did not clear. This is hygiene before a navigation goal, not
+    // a precondition for one: Nav2 plans perfectly well from a stale costmap, just less
+    // directly. Failing here would abort a mission over a housekeeping step.
+    if (!all_cleared)
+    {
+        RCLCPP_WARN(node_->get_logger(), "[%s] continuing with a costmap uncleared", name().c_str());
+    }
+    return BT::NodeStatus::SUCCESS;
+}
+
 namespace
 {
 // The builder form, not registerNodeType<T>(): every leaf needs the ROS node, and the plain
@@ -351,6 +408,7 @@ void registerSkillNodes(BT::BehaviorTreeFactory& factory, const RosContext& cont
     registerLeaf<Pick>(factory, "Pick", context);
     registerLeaf<Place>(factory, "Place", context);
     registerLeaf<SetArmPosture>(factory, "SetArmPosture", context);
+    registerLeaf<ClearCostmaps>(factory, "ClearCostmaps", context);
 }
 
 }  // namespace g1_orchestration

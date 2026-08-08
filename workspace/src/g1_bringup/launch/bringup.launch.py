@@ -314,46 +314,64 @@ def _setup(context, *args, **kwargs):
         )
 
     if want_rviz:
-        actions.append(_rviz(navigating, want_moveit))
+        actions.extend(_rviz(navigating, want_moveit))
 
     return actions
 
 
 def _rviz(navigating, want_moveit):
-    """One RViz, on the config that matches what is running. MoveIt wins when both are on.
+    """The RViz windows that match what is running.
 
     MoveIt's own launcher rather than this package's generic rviz.launch.py, which takes only
     an rviz_config and passes no parameters: the MotionPlanning panel needs
     robot_description_semantic and robot_description_kinematics as node parameters, and without
     them it loads with no planning groups, which reads as a broken install.
 
-    On a navigation mode with moveit:=true this still shows the MoveIt config, and a combined
-    single-window view is NOT available. Three merges were built and every one segfaulted rviz2
-    on load (exit -11) once the navigation stack was up. Run a second RViz on
-    g1_navigation.rviz for the map and costmaps. docs/notes has what was tried.
+    With BOTH MoveIt and navigation up this returns TWO windows -- the MoveIt one for the arm
+    and a second on g1_navigation.rviz for the map, costmaps and plan. A combined single-window
+    view is NOT available: three merged configs were built and every one segfaulted rviz2 on
+    load (exit -11) once the navigation stack was up. docs/notes has what was tried. Two
+    processes is what works, and it is also what a mission wants to watch anyway.
     """
     bringup_share = get_package_share_directory("g1_bringup")
+    generic_rviz  = os.path.join(bringup_share, "launch", "rviz.launch.py")
+    windows       = []
 
     if want_moveit:
-        launch_file = os.path.join(_moveit_share(), "launch", "moveit_rviz.launch.py")
-        # Bare MoveIt leaves rviz_config unset on purpose: this file never declares that name,
-        # so there is nothing for the child's default to inherit from and g1_moveit.rviz is what
-        # applies. The one case where relying on a child default is safe.
-        rviz_args = {}
-    else:
-        launch_file = os.path.join(bringup_share, "launch", "rviz.launch.py")
-        # The nav config carries a nav2_rviz_plugins display, so it ships from g1_navigation.
-        # On the bare branch this resolves g1_bringup's own share and g1_navigation is never
-        # named -- same rule as the launch includes above.
-        if navigating:
-            rviz_config = os.path.join(_navigation_share(), "config", "g1_navigation.rviz")
-        else:
-            rviz_config = os.path.join(bringup_share, "config", "g1_sensors.rviz")
-        rviz_args = {"rviz_config": rviz_config}
+        windows.append(
+            IncludeLaunchDescription(
+                # Bare MoveIt leaves rviz_config unset on purpose: this file never declares that
+                # name, so there is nothing for the child's default to inherit from and
+                # g1_moveit.rviz is what applies. The one case where a child default is safe.
+                PythonLaunchDescriptionSource(
+                    os.path.join(_moveit_share(), "launch", "moveit_rviz.launch.py")
+                )
+            )
+        )
 
-    return IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(launch_file), launch_arguments=rviz_args.items()
-    )
+    # The navigation view is its own window rather than an alternative, so moveit:=true with
+    # nav:=true gives both. The nav config carries a nav2_rviz_plugins display, so it ships from
+    # g1_navigation; on a non-navigating run g1_navigation is never named at all, which is the
+    # same rule the launch includes above follow.
+    if navigating:
+        config = os.path.join(_navigation_share(), "config", "g1_navigation.rviz")
+    elif not want_moveit:
+        config = os.path.join(bringup_share, "config", "g1_sensors.rviz")
+    else:
+        config = None
+
+    if config is not None:
+        args = {"rviz_config": config}
+        if want_moveit:
+            # MoveIt's launcher already runs a node called rviz2.
+            args["node_name"] = "rviz2_navigation"
+        windows.append(
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(generic_rviz), launch_arguments=args.items()
+            )
+        )
+
+    return windows
 
 
 def generate_launch_description():

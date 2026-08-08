@@ -157,7 +157,7 @@ private:
 
     std::string planning_frame_;
     double      object_timeout_s_{ 1.0 };
-    double      grasp_depth_below_top_m_{ 0.015 };
+    double      grasp_height_above_top_m_{ 0.010 };
     double      approach_height_m_{ 0.22 };
     double      lift_height_m_{ 0.15 };
     double      velocity_scaling_{ 0.3 };

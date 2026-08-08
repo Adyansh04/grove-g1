@@ -121,6 +121,27 @@ protected:
     BT::NodeStatus judgeResult(const WrappedResult& result) override;
 };
 
+/// Wipes both Nav2 costmaps. Not a skill: housekeeping between one manipulation and the next
+/// navigation goal.
+///
+/// Manipulating beside a surface leaves the costmaps holding the robot's own arm, the object it
+/// lifted, and whatever the base swept past while walking the last half metre -- none of which
+/// is where the map says it is by the time the next goal is sent. Nav2 plans around all of it,
+/// which is what makes the robot set off sideways or refuse a route it has already driven.
+///
+/// Succeeds even when a costmap does not clear: this is hygiene before a navigation goal, not a
+/// precondition for one.
+class ClearCostmaps : public BT::SyncActionNode
+{
+public:
+    ClearCostmaps(const std::string& name, const BT::NodeConfig& config, RosContext context);
+    static BT::PortsList providedPorts();
+    BT::NodeStatus       tick() override;
+
+private:
+    rclcpp::Node::SharedPtr node_;
+};
+
 /// Registers every leaf this package provides, binding each to `context`.
 void registerSkillNodes(BT::BehaviorTreeFactory& factory, const RosContext& context);
 

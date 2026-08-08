@@ -52,10 +52,10 @@ bool resolveArm(const std::string& arm, ArmContext& out)
 G1ManipulationServer::G1ManipulationServer(const rclcpp::NodeOptions& options)
   : rclcpp::Node("g1_manipulation_server", options)
 {
-    object_timeout_s_        = declare_parameter<double>("object_timeout_ms", 1000.0) / 1000.0;
-    approach_height_m_       = declare_parameter<double>("approach_height_m", 0.22);
-    grasp_depth_below_top_m_ = declare_parameter<double>("grasp_depth_below_top_m", 0.015);
-    lift_height_m_           = declare_parameter<double>("lift_height_m", 0.15);
+    object_timeout_s_         = declare_parameter<double>("object_timeout_ms", 1000.0) / 1000.0;
+    approach_height_m_        = declare_parameter<double>("approach_height_m", 0.22);
+    grasp_height_above_top_m_ = declare_parameter<double>("grasp_height_above_top_m", 0.010);
+    lift_height_m_            = declare_parameter<double>("lift_height_m", 0.15);
     // Well under the joint limits' own 0.8 rad/s cap. Arm motion disturbs a standing humanoid
     // measurably (docs/notes/arm-motion-and-balance.md), and slowing the whole path is
     // preferred over clamping joints, which would bend the path itself.
@@ -380,15 +380,19 @@ geometry_msgs::msg::Pose G1ManipulationServer::graspFrameGoal(
     geometry_msgs::msg::Pose goal;
     goal.position = object_pose.position;
 
-    // Vertically it does NOT, and aiming at the centre was wrong. The roll points the closing
-    // axis at the floor, and the fingertips sit about 24 mm beyond the grasp frame along it, so
-    // targeting the middle of a 60 mm cube puts them 6 mm above the table -- inside the
-    // octomap's own 20 mm padding. The hand was being asked to close through the surface.
+    // Vertically it does NOT. Measured from the object's TOP FACE, not its centre.
     //
-    // Grasp just under the top face instead. It is also a shorter, less extended reach, which
-    // is the other thing that was failing.
+    // The roll points the closing axis at the floor and the fingertips sit about 24 mm beyond
+    // the grasp frame along it, so this offset decides where the fingers end up. Aiming at the
+    // centre put them 6 mm above the table on a 60 mm cube -- inside the octomap's 20 mm
+    // padding, asking the hand to close through the surface.
+    //
+    // It then sat 15 mm BELOW the top face, which grips but does not look like a grasp: the
+    // palm ends up level with the cube's top rather than clearing it, and the fingers reach
+    // past the middle. Held slightly ABOVE the face, the palm clears the object and the
+    // fingers close around its upper half, which is both what a hand does and a shorter reach.
     const double top = object_pose.position.z + 0.5 * object_height_m;
-    goal.position.z  = top - grasp_depth_below_top_m_;
+    goal.position.z  = top + grasp_height_above_top_m_;
 
     // Only the orientation is a choice, and it mirrors: the two hands close in opposite
     // directions, so the roll that points the closing axis at the floor flips sign.

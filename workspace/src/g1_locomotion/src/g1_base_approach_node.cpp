@@ -98,12 +98,14 @@ public:
         // turns 3.8 deg, and the same pulse inside this loop has been measured turning 0.5 deg.
         // Rather than pick one duration and be wrong half the time, grow it until it bites.
         // Ceilings on one continuous drive, so a goal that is never reached still ends.
-        max_turn_s_ = declare_parameter<double>("max_turn_s", 8.0);
-        max_step_s_ = declare_parameter<double>("max_step_s", 6.0);
+        max_turn_s_   = declare_parameter<double>("max_turn_s", 8.0);
+        max_step_s_   = declare_parameter<double>("max_step_s", 6.0);
+        max_strafe_s_ = declare_parameter<double>("max_strafe_s", 5.0);
         // Stop commanding this far short of the target: the gait keeps going after the command
         // stops, and these are what it coasts.
         turn_lead_rad_    = declare_parameter<double>("turn_lead_rad", 0.30);
         step_lead_m_      = declare_parameter<double>("step_lead_m", 0.22);
+        lateral_lead_m_   = declare_parameter<double>("lateral_lead_m", 0.055);
         max_aim_attempts_ = declare_parameter<int>("max_aim_attempts", 8);
         // The gait keeps stepping after the command stops. Measuring before it settles reports
         // the command plus whatever of the stride was still in flight.
@@ -559,12 +561,52 @@ private:
                 {
                     feedback->phase = ApproachObject::Feedback::PHASE_SIDESTEPPING;
                     handle->publish_feedback(feedback);
+
+                    // Continuous while there is real distance to cover, one short pulse for the
+                    // last few centimetres. Same hybrid the heading correction uses, and for the
+                    // same reason: neither primitive covers both ends.
+                    //
+                    // This was a fixed 0.15 s pulse for every correction, and it was the slowest
+                    // thing in the mission by a wide margin. Each one moved about 12 mm and then
+                    // spent settle + quiet standing still, so 3.9 s per centimetre and a half:
+                    // one live approach spent 54 of them closing a gap a single drive covers.
+                    // Forward and reverse had been continuous since the pulse decay was
+                    // measured; lateral was simply left behind.
+                    const bool far = std::abs(command.lateral_error_m) > lateral_lead_m_;
                     RCLCPP_INFO(
                         get_logger(),
-                        "strafe %s: lateral error %.3f",
+                        "strafe %s: lateral error %.3f, %s",
                         command.lateral_sign > 0.0 ? "left" : "right",
-                        command.lateral_error_m);
-                    pulse(0.0, command.lateral_sign * pulse_vy_, 0.0, strafe_pulse_s_);
+                        command.lateral_error_m,
+                        far ? "driving" : "nudging");
+                    if (far)
+                    {
+                        // Closed on the live measurement, stopping a lead short because the gait
+                        // keeps sliding after the command ends.
+                        const auto close_enough = [&] {
+                            const auto object_now = objectInBase(goal->object_id);
+                            if (!object_now)
+                            {
+                                return true;
+                            }
+                            const double error = object_now->point.y - limits.target_y_m;
+                            // Stop on reaching the lead band OR on crossing zero, so a fast
+                            // slide cannot run away when it passes the target between ticks.
+                            return std::abs(error) <= lateral_lead_m_ ||
+                                   error * command.lateral_sign < 0.0;
+                        };
+                        driveUntil(
+                            0.0,
+                            command.lateral_sign * pulse_vy_,
+                            0.0,
+                            close_enough,
+                            max_strafe_s_,
+                            deadline);
+                    }
+                    else
+                    {
+                        pulse(0.0, command.lateral_sign * pulse_vy_, 0.0, strafe_pulse_s_);
+                    }
                     ++pulses;
                     break;
                 }
@@ -751,8 +793,10 @@ private:
     double      strafe_pulse_s_        = 0.15;
     double      max_turn_s_            = 8.0;
     double      max_step_s_            = 6.0;
+    double      max_strafe_s_          = 5.0;
     double      turn_lead_rad_         = 0.30;
     double      step_lead_m_           = 0.22;
+    double      lateral_lead_m_        = 0.055;
     double      heading_tolerance_rad_ = 0.350;
     double      lookup_grace_s_        = 3.0;
     int         max_aim_attempts_      = 8;
