@@ -24,6 +24,11 @@ g1_base_approach:
     pulse_vyaw: 1.50
     pulse_vy: 0.50
 
+    # Reverse, for backing away from a surface without turning into it. Must clear the shaper's
+    # rev_engage, which is deliberately higher than fwd_engage: the policy measures -0.247 m/s at
+    # -0.60 and exactly nothing at -0.40, so this is the slowest command that actually reverses.
+    pulse_vrev: 0.60
+
     # One duration per primitive, and they are NOT interchangeable. Measured, three repeats each,
     # on a settled robot in open ground:
     #

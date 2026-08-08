@@ -18,6 +18,7 @@ namespace
 
 // config/g1_gait_shaper.yaml
 constexpr double kFwdEngage = 0.45;
+constexpr double kRevEngage = 0.55;
 constexpr double kYawEngage = 1.20;
 constexpr double kYawClamp  = 1.57;
 constexpr double kLatEngage = 0.50;
@@ -26,7 +27,7 @@ constexpr double kLatClamp  = 0.50;
 GaitShaper makeShaper()
 {
     return GaitShaper(
-        GaitShaper::Config{ kFwdEngage, kYawEngage, kYawClamp, kLatEngage, kLatClamp });
+        GaitShaper::Config{ kFwdEngage, kRevEngage, kYawEngage, kYawClamp, kLatEngage, kLatClamp });
 }
 
 ::testing::AssertionResult isStop(const GaitShaper::Command& c)
@@ -140,15 +141,30 @@ TEST(GaitShaper, StrafesEitherWayAndClamps)
     EXPECT_DOUBLE_EQ(shaper.shape({ 0.0, -2.0, 0.0 }).vy, -kLatClamp);
 }
 
-TEST(GaitShaper, NegativeForwardIsAlwaysAStopAtAnyMagnitude)
+TEST(GaitShaper, ReverseEngagesOnlyPastItsOwnHigherThreshold)
 {
-    // The backstop that makes reverse recovery behaviours harmless. Reverse measures -0.247 m/s
-    // for a commanded -0.60 and exactly 0.000 for -0.40, so a planner's usual backup speeds sit
-    // inside the dead zone -- but this holds even for a hand-edited tree asking for -5.
     const auto shaper = makeShaper();
-    for (double vx : { -0.01, -0.1, -0.45, -0.6, -1.0, -5.0 })
+    // Reverse exists on this policy but only well past where a planner asks for it: -0.60
+    // measures -0.247 m/s and -0.40 measures exactly zero. So a deliberate -0.60 gets through
+    // and Nav2's 0.025..0.15 m/s backup speeds do not, which is the backstop this used to get
+    // by refusing reverse outright.
+    EXPECT_DOUBLE_EQ(shaper.shape({ -0.60, 0.0, 0.0 }).vx, -0.60);
+    for (double vx : { -0.02, -0.15, -0.30, -0.40, -0.54 })
     {
         EXPECT_TRUE(isStop(shaper.shape({ vx, 0.0, 0.0 }))) << "vx " << vx;
+    }
+}
+
+TEST(GaitShaper, ReverseIsNeverAmplifiedPastWhatWasAsked)
+{
+    // Reverse is allowed now, so the invariant worth pinning is the same one forward has: what
+    // comes out is what went in, or a stop. Never something larger.
+    const auto shaper = makeShaper();
+    for (double vx : { -0.6, -1.0, -5.0 })
+    {
+        const auto out = shaper.shape({ vx, 0.0, 0.0 });
+        EXPECT_LE(std::abs(out.vx), std::abs(vx) + 1e-12) << "vx " << vx;
+        EXPECT_LE(out.vx, 0.0) << "a reverse command must not come back forward";
     }
 }
 
@@ -213,7 +229,7 @@ TEST(GaitShaper, NeverFlipsASign)
 TEST(GaitShaperConfig, RejectsANegativeYawClamp)
 {
     EXPECT_THROW(
-        GaitShaper(GaitShaper::Config{ kFwdEngage, kYawEngage, -1.0 }),
+        GaitShaper(GaitShaper::Config{ kFwdEngage, kRevEngage, kYawEngage, -1.0 }),
         std::invalid_argument);
 }
 
@@ -222,17 +238,17 @@ TEST(GaitShaperConfig, RejectsANegativeForwardEngage)
     // A negative fwd_engage makes `in.vx >= fwd_engage` true for reverse commands, which is the
     // one thing the signed comparison exists to prevent.
     EXPECT_THROW(
-        GaitShaper(GaitShaper::Config{ -0.1, kYawEngage, kYawClamp }),
+        GaitShaper(GaitShaper::Config{ -0.1, kRevEngage, kYawEngage, kYawClamp }),
         std::invalid_argument);
 }
 
 TEST(GaitShaperConfig, RejectsANonPositiveYawEngage)
 {
     EXPECT_THROW(
-        GaitShaper(GaitShaper::Config{ kFwdEngage, 0.0, kYawClamp }),
+        GaitShaper(GaitShaper::Config{ kFwdEngage, kRevEngage, 0.0, kYawClamp }),
         std::invalid_argument);
     EXPECT_THROW(
-        GaitShaper(GaitShaper::Config{ kFwdEngage, -1.0, kYawClamp }),
+        GaitShaper(GaitShaper::Config{ kFwdEngage, kRevEngage, -1.0, kYawClamp }),
         std::invalid_argument);
 }
 
@@ -241,24 +257,27 @@ TEST(GaitShaperConfig, RejectsAYawClampBelowYawEngage)
     // Structurally invalid, not merely badly tuned: every turn that clears yaw_engage is then
     // clamped back under it, so the turn-in-place motion becomes unreachable while the shaper
     // still reports it as a turn.
-    EXPECT_THROW(GaitShaper(GaitShaper::Config{ kFwdEngage, 1.20, 0.5 }), std::invalid_argument);
+    EXPECT_THROW(
+        GaitShaper(GaitShaper::Config{ kFwdEngage, kRevEngage, 1.20, 0.5 }),
+        std::invalid_argument);
     // Same trap on the lateral axis: a clamp under the engage threshold accepts a strafe and
     // then clamps it back below the value that accepted it, so the robot never steps sideways.
     EXPECT_THROW(
-        GaitShaper(GaitShaper::Config{ kFwdEngage, kYawEngage, kYawClamp, 0.50, 0.30 }),
+        GaitShaper(GaitShaper::Config{ kFwdEngage, kRevEngage, kYawEngage, kYawClamp, 0.50, 0.30 }),
         std::invalid_argument);
     EXPECT_THROW(
-        GaitShaper(GaitShaper::Config{ kFwdEngage, kYawEngage, kYawClamp, 0.0, kLatClamp }),
+        GaitShaper(
+            GaitShaper::Config{ kFwdEngage, kRevEngage, kYawEngage, kYawClamp, 0.0, kLatClamp }),
         std::invalid_argument);
 }
 
 TEST(GaitShaperConfig, AcceptsTheShippedConfigAndTheBoundaryCase)
 {
-    EXPECT_NO_THROW(GaitShaper(GaitShaper::Config{ kFwdEngage, kYawEngage, kYawClamp }));
+    EXPECT_NO_THROW(GaitShaper(GaitShaper::Config{ kFwdEngage, kRevEngage, kYawEngage, kYawClamp }));
     // yaw_clamp == yaw_engage is the tightest legal config, and zero forward engage is legal:
     // it means every non-negative vx passes through, which is a deadband of nothing, not an
     // inverted bound.
-    EXPECT_NO_THROW(GaitShaper(GaitShaper::Config{ 0.0, kYawEngage, kYawEngage }));
+    EXPECT_NO_THROW(GaitShaper(GaitShaper::Config{ 0.0, kRevEngage, kYawEngage, kYawEngage }));
 }
 
 }  // namespace

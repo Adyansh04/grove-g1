@@ -19,6 +19,16 @@ g1_gait_shaper:
     # the backstop that stops a misconfigured recovery behaviour producing a reverse lurch.
     fwd_engage: 0.45
 
+    # Reverse gets its OWN threshold, higher than forward's, rather than being refused outright.
+    #
+    # Measured: -0.60 yields -0.247 m/s and -0.40 yields exactly 0.000, so reverse exists but only
+    # well past where a planner would ask for it. Nav2's backup speeds are 0.025 to 0.15 m/s and
+    # stay zeroed, which is the whole point of the old blanket refusal and is preserved here. What
+    # changed is that a caller who deliberately commands -0.60 -- g1_base_approach backing away
+    # from a workbench -- now gets it, because turning to walk away sweeps the arm across the
+    # table it just picked from.
+    rev_engage: 0.55
+
     # Yaw rate at or above which the command becomes a pure in-place turn.
     #
     # Measured: no motion at or below 0.60 rad/s, steps from 1.50. Deliberately below 1.50 so the

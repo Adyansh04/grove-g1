@@ -48,6 +48,7 @@ public:
     struct Config
     {
         double fwd_engage{ 0.45 };
+        double rev_engage{ 0.55 };
         double yaw_engage{ 1.20 };
         double yaw_clamp{ 1.57 };
         double lat_engage{ 0.50 };
@@ -81,11 +82,15 @@ public:
      * combined-command response is the worst case, and rotate-then-drive is what the caller's
      * shim controller is trying to do anyway.
      *
-     * Yaw compares on magnitude and keeps its sign -- turning either way is proven. Forward
-     * compares *signed*, so any negative vx becomes zero at any magnitude. That asymmetry is
-     * deliberate: reverse is measured at -0.247 m/s for a commanded -0.60 and exactly 0.000
-     * for -0.40, so a planner's usual backup speeds sit entirely inside the dead zone. It is
-     * also the reason a misconfigured recovery behaviour cannot produce a reverse lurch.
+     * Yaw compares on magnitude and keeps its sign -- turning either way is proven.
+     *
+     * Forward and reverse have SEPARATE thresholds, and reverse's is higher. The policy measures
+     * -0.247 m/s for a commanded -0.60 and exactly 0.000 for -0.40, so reverse exists but only
+     * well past where a planner would ask for it: Nav2's backup speeds are 0.025 to 0.15 m/s and
+     * stay zeroed, which is the backstop against a misconfigured recovery behaviour lurching
+     * backwards. What changed is that a caller who deliberately asks for -0.60 now gets it,
+     * because backing away from a workbench without turning is the only way to leave one without
+     * sweeping the arm across it.
      *
      * Lateral is tested LAST, so it only survives a command carrying nothing else. That keeps
      * the primitives mutually exclusive, which the measured combined-command response demands:
@@ -97,8 +102,9 @@ public:
      * prefer one side: the policy was measured stepping laterally and nothing suggests the two
      * directions differ.
      *
-     * Non-finite inputs need no special case: NaN fails both comparisons and falls through to
-     * a stop, and an infinite yaw clamps.
+     * NaN fails every comparison and falls through to a stop, and an infinite yaw clamps. An
+     * infinite REVERSE is refused explicitly, because unlike +inf against a lower bound it does
+     * satisfy its own comparison.
      */
     [[nodiscard]] Command shape(const Command& in) const;
 

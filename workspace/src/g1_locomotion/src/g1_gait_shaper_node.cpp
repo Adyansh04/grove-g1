@@ -93,6 +93,7 @@ private:
         const GaitShaper::Config defaults;
         return GaitShaper::Config{
             declare_parameter("fwd_engage", defaults.fwd_engage),
+            declare_parameter("rev_engage", defaults.rev_engage),
             declare_parameter("yaw_engage", defaults.yaw_engage),
             declare_parameter("yaw_clamp", defaults.yaw_clamp),
             declare_parameter("lat_engage", defaults.lat_engage),

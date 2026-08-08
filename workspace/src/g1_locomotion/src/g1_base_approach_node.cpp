@@ -83,6 +83,9 @@ public:
         pulse_vx_   = declare_parameter<double>("pulse_vx", 0.45);
         pulse_vyaw_ = declare_parameter<double>("pulse_vyaw", 1.50);
         pulse_vy_   = declare_parameter<double>("pulse_vy", 0.50);
+        // Must clear g1_gait_shaper's rev_engage, which is higher than fwd_engage on purpose.
+        // The policy measures -0.247 m/s here and exactly nothing at -0.40.
+        pulse_vrev_ = declare_parameter<double>("pulse_vrev", 0.60);
         // Measured durations, one per primitive. They are not interchangeable: forward is
         // irreducible at ~0.29 m however short the pulse, while yaw and lateral both have a
         // small-response mode that only survives at short durations.
@@ -679,43 +682,42 @@ private:
 
         int pulses = 0;
 
-        // Back straight off FIRST, before any turn. Turning on the spot beside a workbench
-        // swings the robot and whatever it is holding across the table, which is what the
-        // mission does immediately after a pick.
+        // Back straight off FIRST, in reverse, before any turn.
         //
-        // The gait has no reverse, but a strafe taken on a turned heading does: at 45 degrees
-        // off, strafing the appropriate way carries the robot backwards a couple of centimetres
-        // a pulse. Slow, and the only thing that moves the base away without sweeping the arm
-        // over the surface it just picked from.
+        // Turning on the spot beside a workbench sweeps the robot and whatever it is holding
+        // across the table, which is what the mission does immediately after a pick. An earlier
+        // version tried to back off with angled strafes, which does move the base backwards but
+        // needs a 45 degree turn to set up -- and that turn is the collision.
+        //
+        // So this is genuine reverse. The policy does have it: -0.60 measures -0.247 m/s, and it
+        // was g1_gait_shaper refusing all negative vx that made it unavailable. The shaper now
+        // has a separate, higher rev_engage, so a planner's backup speeds are still zeroed and a
+        // deliberate command like this one gets through.
         if (goal->back_off_m > 0.0)
         {
             feedback->phase = Retreat::Feedback::PHASE_BACKING_OFF;
             handle->publish_feedback(feedback);
-            double backed = 0.0;
-            while (rclcpp::ok() && backed < goal->back_off_m && pulses < max_pulses_)
-            {
-                if (handle->is_canceling() || std::chrono::steady_clock::now() > deadline)
-                {
-                    break;
-                }
-                // A modest offset either side of the start heading; the sign only decides which
-                // way the robot drifts while it backs up, and both are equally fine here.
-                if (!aimAt(handle, wrap(start_yaw + limits_.fine_offset_rad), deadline, pulses))
-                {
-                    break;
-                }
-                pulse(0.0, pulse_vy_, 0.0, strafe_pulse_s_);
-                ++pulses;
+
+            const auto far_enough = [&] {
                 const auto here = basePose();
-                if (here)
+                if (!here)
                 {
-                    backed = std::hypot(
-                        here->pose.position.x - start->pose.position.x,
-                        here->pose.position.y - start->pose.position.y);
+                    return true;
                 }
-                feedback->travelled_m = backed;
-                handle->publish_feedback(feedback);
-            }
+                return std::hypot(
+                           here->pose.position.x - start->pose.position.x,
+                           here->pose.position.y - start->pose.position.y) >= goal->back_off_m;
+            };
+            driveUntil(-pulse_vrev_, 0.0, 0.0, far_enough, max_step_s_, deadline);
+            ++pulses;
+
+            const auto   here     = basePose();
+            const double backed   = here ? std::hypot(
+                                             here->pose.position.x - start->pose.position.x,
+                                             here->pose.position.y - start->pose.position.y) :
+                                           0.0;
+            feedback->travelled_m = backed;
+            handle->publish_feedback(feedback);
             RCLCPP_INFO(get_logger(), "backed straight off %.3f m before turning", backed);
         }
 
@@ -820,6 +822,7 @@ private:
     double      pulse_vx_          = 0.45;
     double      pulse_vyaw_        = 1.50;
     double      pulse_vy_          = 0.50;
+    double      pulse_vrev_        = 0.60;
     double      step_pulse_s_      = 0.30;
     double      turn_pulse_ccw_s_  = 0.15;
     double      turn_pulse_cw_s_   = 0.60;

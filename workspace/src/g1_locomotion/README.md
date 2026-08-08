@@ -66,7 +66,7 @@ bridge, so none of the above is needed.
 ## The gait shaper
 
 The simulated gait has a hard initiation dead zone with no hysteresis, so the usable action set has
-four elements: stop, drive straight, strafe, turn in place. `GaitShaper` reduces a continuous
+five elements: stop, drive straight, reverse, strafe, turn in place. `GaitShaper` reduces a continuous
 velocity onto exactly those.
 
 Strafe was not always one of them. It was dropped because Nav2 cannot command lateral on this robot
@@ -94,11 +94,20 @@ does not launch it.
 | `fwd_engage` | `0.45` | Forward speeds below this become a stop. |
 | `yaw_engage` | `1.20` | Yaw rates below this become a stop. |
 | `yaw_clamp` | `1.57` | Ceiling on the turn that is passed through. |
+| `rev_engage` | `0.55` | Reverse's OWN threshold, higher than forward's. |
 | `lat_engage` | `0.50` | Lateral speeds below this become a stop. The policy's measured step point. |
 | `lat_clamp` | `0.50` | Ceiling on the strafe, matching the bridge's own `max_velocity[1]`. |
 | `override_timeout_s` | `0.5` | How long `cmd_vel_override` keeps priority after each message. |
 
-The primitives are mutually exclusive and tested in order: yaw, then forward, then lateral. A
+Reverse has a separate, higher threshold rather than being refused outright. The policy measures
+-0.247 m/s at a commanded -0.60 and exactly 0.000 at -0.40, so reverse exists but only well past
+where a planner would ask for it: Nav2's backup speeds are 0.025 to 0.15 m/s and stay zeroed, which
+is the backstop the old blanket refusal provided. What it buys is that `g1_base_approach` can back
+away from a workbench without turning into it. An infinite reverse is refused explicitly, since
+unlike `+inf` against a lower bound it does satisfy its own comparison.
+
+The primitives are mutually exclusive and tested in order: yaw, then forward, then reverse, then
+lateral. A
 command carrying more than one collapses to the first that engages, because the measured response
 to mixed commands is bad -- a commanded `(0.50, 0, 0.50)` came out `(0.337, 0.299, 0.390)`.
 

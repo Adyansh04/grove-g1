@@ -119,9 +119,13 @@ Both stations face +y and hand that same yaw to `ApproachObject` to hold.
 
 `back_off` is not decoration. The approach leaves the robot close enough to the workbench that
 turning on the spot sweeps the robot and the carried cube across the table, which is exactly what it
-did. Backing straight off first is slow -- the gait has no reverse, so it is done with angled
-strafes at a couple of centimetres a pulse -- and is the only motion that clears the base without
-dragging the arm over the surface it just picked from.
+did. It now reverses out first, in a straight line, and only then turns to walk away.
+
+That reverse had to be unlocked. `g1_gait_shaper` used to zero every negative `vx`, so the first
+attempt backed off with angled strafes -- which does move the base backwards, but needs a 45 degree
+turn to set up, and that turn IS the collision. The policy itself reverses perfectly well at -0.60
+(-0.247 m/s measured), so the shaper now has a separate, higher `rev_engage` that keeps Nav2's
+backup speeds zeroed and lets a deliberate command through.
 
 ## Running
 
