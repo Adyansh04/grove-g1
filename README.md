@@ -17,9 +17,15 @@ MoveIt plans for either arm or both together, collision-checked against a live o
 the LiDAR, and each Dex3-1 hand is its own planning group with `open` and `closed` postures.
 
 On top of that, pick and place are served as actions, and a BehaviorTree.CPP behaviour tree
-sequences them with navigation into a mission: drive somewhere, pick something up, carry it,
-put it down. Object poses come from a source that refuses to run on hardware, because there is
-no object-detection pipeline yet; a real one replaces it without the skills changing.
+sequences them with navigation into a mission that runs end to end in the facility world: drive
+to a workbench, walk the last half metre under closed-loop control, pick a cube up, carry it
+across the building, and put it down on a bench. Object poses come from a source that refuses to
+run on hardware, because there is no object-detection pipeline yet; a real one replaces it
+without the skills changing.
+
+Nav2 parks within 0.5 m of a goal and the arm's usable window is about 0.2 m wide, so a base
+approach skill closes the gap against the measured object rather than against the map. The tree
+is editable in Groot2 against a generated node palette.
 
 Learned manipulation for unstructured scenes is the next milestone and is not built yet.
 
@@ -180,6 +186,21 @@ Groot2 on the host can watch it tick at `localhost:1667`:
 ```bash
 ros2 launch g1_orchestration mission.launch.py tree:=pick_and_place_in_place.xml
 ```
+
+The full navigate-pick-carry-place mission needs the facility world and a map:
+
+```bash
+ros2 launch g1_bringup bringup.launch.py \
+  mode:=localization nav:=true moveit:=true manipulation:=true world:=navigation \
+  rviz:=true activate_arm:=true activate_arm_delay_s:=55.0
+```
+
+```bash
+ros2 launch g1_orchestration mission.launch.py tree:=pick_and_place.xml
+```
+
+With `rviz:=true` and both MoveIt and Nav2 running, this opens two RViz windows: the MoveIt one
+for the arm and a second on the navigation config for the map and costmaps.
 
 Send it somewhere:
 

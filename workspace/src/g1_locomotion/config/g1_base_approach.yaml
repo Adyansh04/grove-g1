@@ -49,7 +49,6 @@ g1_base_approach:
     #
     # Yaw and lateral are bimodal at longer durations -- either a small settle or a committed
     # step -- and 0.15 s is what keeps them in the small mode worth having.
-    step_pulse_s: 0.30
     turn_pulse_ccw_s: 0.15
     turn_pulse_cw_s: 0.60
     strafe_pulse_s: 0.15
@@ -74,14 +73,13 @@ g1_base_approach:
     # that turns 4 to 6 degrees under the probe turned 0.5 degrees in the loop. Going quiet lets
     # g1_loco_bridge's velocity gate fall idle rather than re-issue SetVelocity(0) at 5 Hz, so
     # the next pulse starts from rest.
-    # Both were sized for a loop that fired dozens of short pulses and needed the gait rested
-    # before each one. Forward, reverse, lateral and big heading corrections are all continuous
-    # drives now, so a run takes a handful of moves rather than fifty, and 3.7 s of standing
-    # still after every one was most of the wall clock. Trimmed, not removed: the gait really
-    # does keep stepping after the command stops, and measuring before it settles reports the
-    # command plus whatever of the stride was still in flight.
+    # Sized for a loop that fired dozens of short pulses. Forward, reverse, lateral and big
+    # heading corrections are continuous drives now, so a run takes a handful of moves rather
+    # than fifty and settle_s was trimmed. Not removed: the gait keeps stepping after the
+    # command stops, and measuring before it settles reports the command plus whatever of the
+    # stride was still in flight.
     settle_s: 1.5
-    quiet_after_s: 0.5
+    quiet_after_s: 1.2
     cmd_rate_hz: 20.0
 
     # Lateral gets the same treatment as heading: drive continuously while there is real

@@ -86,10 +86,8 @@ public:
         // Must clear g1_gait_shaper's rev_engage, which is higher than fwd_engage on purpose.
         // The policy measures -0.247 m/s here and exactly nothing at -0.40.
         pulse_vrev_ = declare_parameter<double>("pulse_vrev", 0.60);
-        // Measured durations, one per primitive. They are not interchangeable: forward is
-        // irreducible at ~0.29 m however short the pulse, while yaw and lateral both have a
-        // small-response mode that only survives at short durations.
-        step_pulse_s_     = declare_parameter<double>("step_pulse_s", 0.30);
+        // Measured durations for the moves that are still pulsed. Not interchangeable: yaw
+        // and lateral each have a small-response mode that only survives at short durations.
         turn_pulse_ccw_s_ = declare_parameter<double>("turn_pulse_ccw_s", 0.15);
         turn_pulse_cw_s_  = declare_parameter<double>("turn_pulse_cw_s", 0.60);
         strafe_pulse_s_   = declare_parameter<double>("strafe_pulse_s", 0.15);
@@ -112,6 +110,7 @@ public:
         // The gait keeps stepping after the command stops. Measuring before it settles reports
         // the command plus whatever of the stride was still in flight.
         settle_s_    = declare_parameter<double>("settle_s", 2.5);
+        quiet_s_     = declare_parameter<double>("quiet_after_s", 1.2);
         cmd_rate_hz_ = declare_parameter<double>("cmd_rate_hz", 20.0);
 
         limits_.target_x_m          = declare_parameter<double>("target_x_m", 0.280);
@@ -796,7 +795,6 @@ private:
     double      pulse_vyaw_            = 1.50;
     double      pulse_vy_              = 0.50;
     double      pulse_vrev_            = 0.60;
-    double      step_pulse_s_          = 0.30;
     double      turn_pulse_ccw_s_      = 0.15;
     double      turn_pulse_cw_s_       = 0.60;
     double      strafe_pulse_s_        = 0.15;
