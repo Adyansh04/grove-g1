@@ -66,7 +66,18 @@ judgeSkillResult(const rclcpp::Logger& logger, const std::string& name, const Re
 {
     if (wrapped.code != rclcpp_action::ResultCode::SUCCEEDED)
     {
-        RCLCPP_ERROR(logger, "[%s] did not complete", name.c_str());
+        // An ABORTED goal still carries the server's result, and that message is the only
+        // place the reason exists -- every abort in these servers writes a phase-prefixed
+        // explanation into it. Logging just "did not complete" threw all of it away at exactly
+        // the moment it was wanted, and cost a full mission re-run per diagnosis.
+        const std::string why =
+            wrapped.result && !wrapped.result->message.empty() ? wrapped.result->message : "";
+        RCLCPP_ERROR(
+            logger,
+            "[%s] did not complete%s%s",
+            name.c_str(),
+            why.empty() ? "" : ": ",
+            why.c_str());
         return BT::NodeStatus::FAILURE;
     }
     if (!wrapped.result->success)

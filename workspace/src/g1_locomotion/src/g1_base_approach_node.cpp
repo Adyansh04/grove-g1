@@ -120,6 +120,8 @@ public:
         // Consumed only by the aim before a forward drive; the planner itself never turns, so
         // this is not part of the reach window.
         heading_tolerance_rad_ = declare_parameter<double>("heading_tolerance_rad", 0.350);
+        // How long a missing object pose or base transform is tolerated before the goal fails.
+        lookup_grace_s_ = declare_parameter<double>("lookup_grace_s", 3.0);
 
         max_pulses_        = declare_parameter<int>("max_pulses", 90);
         default_timeout_s_ = declare_parameter<double>("default_timeout_s", 420.0);
@@ -356,6 +358,14 @@ private:
                 return std::nullopt;
             }
         }
+        // The one path out of here that used to say nothing at all, and the abort it causes
+        // reads identically to a stale or untransformable pose. Worth a line: a live run
+        // aborted here with /objects publishing at 10 Hz and left no evidence of which.
+        RCLCPP_WARN(
+            get_logger(),
+            "'%s' is not among the %zu objects being reported",
+            object_id.c_str(),
+            snapshot->detections.size());
         return std::nullopt;
     }
 
@@ -422,12 +432,28 @@ private:
                 return;
             }
 
-            const auto object = objectInBase(goal->object_id);
-            const auto here   = basePose();
+            // Re-read rather than give up on the first miss. Both of these can fail for a
+            // moment for reasons that are not the skill's problem: a TF buffer that has not
+            // caught up after the base moved, or a sample arriving late. Aborting on one miss
+            // threw away an otherwise healthy approach mid-mission with /objects publishing at
+            // 10 Hz throughout. Bounded, so a genuinely absent object still ends the goal.
+            std::optional<geometry_msgs::msg::PointStamped> object;
+            std::optional<geometry_msgs::msg::PoseStamped>  here;
+            const auto give_up_looking = deadlineIn(lookup_grace_s_);
+            while (rclcpp::ok() && std::chrono::steady_clock::now() < give_up_looking)
+            {
+                object = objectInBase(goal->object_id);
+                here   = basePose();
+                if (object && here)
+                {
+                    break;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
             if (!object || !here)
             {
-                result->message =
-                    "locating: no fresh pose for '" + goal->object_id + "' on /objects";
+                result->message = "locating: no fresh pose for '" + goal->object_id + "' on " +
+                                  "/objects after " + std::to_string(lookup_grace_s_) + " s";
                 handle->abort(result);
                 return;
             }
@@ -728,6 +754,7 @@ private:
     double      turn_lead_rad_     = 0.30;
     double      step_lead_m_       = 0.22;
     double      heading_tolerance_rad_ = 0.350;
+    double      lookup_grace_s_        = 3.0;
     int         max_aim_attempts_  = 8;
     double      settle_s_          = 2.5;
     double      quiet_s_           = 1.2;

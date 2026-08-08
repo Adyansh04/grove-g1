@@ -140,6 +140,12 @@ g1_base_approach:
 
     object_timeout_ms: 1500.0
 
+    # A missing object pose or base transform is re-read for this long before the goal fails.
+    # Both go briefly unavailable for reasons that are not this skill's problem -- a TF buffer
+    # that has not caught up after the base moved, a sample arriving late -- and failing on the
+    # first miss threw away a healthy approach mid-mission with /objects publishing throughout.
+    lookup_grace_s: 3.0
+
     # Generous. A typical approach is one forward drive and a couple of strafes, but a bad
     # arrival can need several of each, and every move carries a settle and a quiet gap.
     # max_aim_attempts bounds ONE heading correction, so a heading that will not settle fails
