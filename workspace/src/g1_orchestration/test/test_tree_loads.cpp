@@ -14,12 +14,13 @@
 #include <gmock/gmock.h>
 
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <memory>
 #include <rclcpp/rclcpp.hpp>
 #include <string>
 #include <vector>
 
-#include "g1_orchestration/arm_authority.hpp"
 #include "g1_orchestration/skill_nodes.hpp"
 
 namespace
@@ -30,16 +31,24 @@ BT::BehaviorTreeFactory makeFactory(const rclcpp::Node::SharedPtr& node)
     BT::BehaviorTreeFactory      factory;
     g1_orchestration::RosContext context{ node };
     g1_orchestration::registerSkillNodes(factory, context);
-    g1_orchestration::registerAuthorityNodes(factory, context);
     return factory;
 }
 
+std::string readFile(const std::filesystem::path& path)
+{
+    std::ifstream in(path);
+    return { std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>() };
+}
+
+/// Trees only. trees/ also holds the Groot2 palette and project file, which are XML but are not
+/// trees and must not be handed to createTreeFromFile.
 std::vector<std::filesystem::path> shippedTrees()
 {
     std::vector<std::filesystem::path> trees;
     for (const auto& entry : std::filesystem::directory_iterator(G1_TREES_DIR))
     {
-        if (entry.path().extension() == ".xml")
+        if (entry.path().extension() == ".xml" &&
+            readFile(entry.path()).find("<BehaviorTree") != std::string::npos)
         {
             trees.push_back(entry.path());
         }
@@ -91,6 +100,42 @@ TEST(TreeLoads, TheMissionTreeUsesTheLeavesItIsSupposedTo)
     // Nav2 cannot honour, and it would look correct here without this.
     EXPECT_EQ(seen["ApproachObject"], 2) << "one per surface: the workbench and the drop pad";
     EXPECT_EQ(seen["Retreat"], 2) << "turning in place beside a surface drags the arm across it";
+
+    // BOTH arms tuck before travelling and both tuck again at the end, plus the carry between
+    // pick and place. A hanging hand sits 21 cm in front of the pelvis and 1 cm under the
+    // workbench slab, so it jams on the table edge and the base stops while the approach keeps
+    // commanding -- tucking only one arm moves the collision to the other and changes nothing.
+    EXPECT_EQ(seen["SetArmPosture"], 5) << "two tucks out, one carry, two tucks back";
+
+    // After manipulating beside a surface the costmaps hold the arm, the object and the surface
+    // the base pressed against, none of it where the map says obstacles are.
+    EXPECT_EQ(seen["ClearCostmaps"], 2) << "one before each navigation goal that follows a skill";
+}
+
+TEST(TreeLoads, EveryFallibleLeafInTheMissionIsRetried)
+{
+    // Pinned because losing a retry wrapper is invisible until it costs a whole mission. The
+    // closing tucks originally had none, and a run that had already placed the cube failed on a
+    // single clipped waypoint, 30 of 142, with everything else done.
+    //
+    // Counted rather than located: the count is what a careless edit drops, and asserting the
+    // exact tree shape here would make every legitimate restructure a test change.
+    auto node    = std::make_shared<rclcpp::Node>("test_mission_retries");
+    auto factory = makeFactory(node);
+
+    BT::Tree tree = factory.createTreeFromFile(std::string(G1_TREES_DIR) + "/pick_and_place.xml");
+
+    std::map<std::string, int> seen;
+    for (const auto& subtree : tree.subtrees)
+    {
+        for (const auto& bt_node : subtree->nodes)
+        {
+            seen[bt_node->registrationName()]++;
+        }
+    }
+
+    // Five postures, the object approach, the pick, and the approach-and-place pair.
+    EXPECT_EQ(seen["RetryUntilSuccessful"], 8);
 }
 
 TEST(TreeLoads, RejectsALeafNobodyRegistered)

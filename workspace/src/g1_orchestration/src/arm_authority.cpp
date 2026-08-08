@@ -1,7 +1,5 @@
 #include "g1_orchestration/arm_authority.hpp"
 
-#include <behaviortree_cpp/action_node.h>
-
 #include <chrono>
 #include <controller_manager_msgs/srv/set_hardware_component_state.hpp>
 #include <controller_manager_msgs/srv/switch_controller.hpp>
@@ -9,6 +7,8 @@
 #include <memory>
 #include <string>
 #include <vector>
+
+#include "g1_orchestration/service_leaf.hpp"
 
 namespace g1_orchestration
 {
@@ -30,36 +30,6 @@ constexpr double kHandTimeoutS = 5.0;
 /// the measured drift 176 ms after the switch was 0.051 rad on the elbow, against MoveIt's
 /// allowed_start_tolerance of 0.05.
 constexpr double kAcquireSettleS = 3.0;
-
-/// A node used only for these calls. The executor already owns the tree's node, and
-/// spin_until_future_complete on a node an executor holds throws instead of waiting, so this
-/// borrows nothing -- it is created for the sequence and destroyed with it.
-rclcpp::Node::SharedPtr makeClientNode()
-{
-    return std::make_shared<rclcpp::Node>("g1_arm_authority_client");
-}
-
-/// Blocking service call on a node nothing else is spinning.
-template <typename ServiceT>
-typename ServiceT::Response::SharedPtr callService(
-    const rclcpp::Node::SharedPtr& node, const std::string& service,
-    const typename ServiceT::Request::SharedPtr& request, double timeout_s)
-{
-    auto client = node->create_client<ServiceT>(service);
-    if (!client->wait_for_service(std::chrono::duration<double>(timeout_s)))
-    {
-        RCLCPP_ERROR(node->get_logger(), "service '%s' never appeared", service.c_str());
-        return nullptr;
-    }
-    auto future = client->async_send_request(request);
-    if (rclcpp::spin_until_future_complete(node, future, std::chrono::duration<double>(timeout_s)) !=
-        rclcpp::FutureReturnCode::SUCCESS)
-    {
-        RCLCPP_ERROR(node->get_logger(), "call to '%s' did not return", service.c_str());
-        return nullptr;
-    }
-    return future.get();
-}
 
 bool setComponentState(
     const rclcpp::Node::SharedPtr& node, const std::string& component, uint8_t state_id,
@@ -95,57 +65,6 @@ bool switchController(
     return response != nullptr && response->ok;
 }
 
-/// The leaves are trivial wrappers, so they live here rather than in their own header.
-class AcquireArm : public BT::SyncActionNode
-{
-public:
-    AcquireArm(const std::string& name, const BT::NodeConfig& config, RosContext context)
-      : BT::SyncActionNode(name, config)
-      , node_(std::move(context.node))
-    {}
-
-    static BT::PortsList providedPorts()
-    {
-        return { BT::InputPort<double>("timeout_s", 15.0, "Per-step service budget.") };
-    }
-
-    BT::NodeStatus tick() override
-    {
-        return acquireArm(node_->get_logger(), getInput<double>("timeout_s").value_or(15.0)) ?
-                   BT::NodeStatus::SUCCESS :
-                   BT::NodeStatus::FAILURE;
-    }
-
-private:
-    rclcpp::Node::SharedPtr node_;
-};
-
-class ReleaseArm : public BT::SyncActionNode
-{
-public:
-    ReleaseArm(const std::string& name, const BT::NodeConfig& config, RosContext context)
-      : BT::SyncActionNode(name, config)
-      , node_(std::move(context.node))
-    {}
-
-    static BT::PortsList providedPorts()
-    {
-        return { BT::InputPort<double>("timeout_s", 15.0, "Per-step service budget.") };
-    }
-
-    /// Always SUCCESS. A release that reported failure would fail the tree it is cleaning up
-    /// after, and there is nothing a tree can do about a controller that will not deactivate.
-    /// The executor releases again on its way out regardless.
-    BT::NodeStatus tick() override
-    {
-        releaseArm(node_->get_logger(), getInput<double>("timeout_s").value_or(15.0));
-        return BT::NodeStatus::SUCCESS;
-    }
-
-private:
-    rclcpp::Node::SharedPtr node_;
-};
-
 }  // namespace
 
 const std::vector<ControlledPart>& controlledParts()
@@ -162,7 +81,7 @@ const std::vector<ControlledPart>& controlledParts()
 
 bool acquireArm(const rclcpp::Logger& logger, double timeout_s)
 {
-    const rclcpp::Node::SharedPtr      node  = makeClientNode();
+    const rclcpp::Node::SharedPtr      node  = makeClientNode("g1_arm_authority_client");
     const std::vector<ControlledPart>& parts = controlledParts();
 
     // Component before controller, always. Humble ties command-interface availability to
@@ -221,7 +140,7 @@ void releaseArm(const rclcpp::Logger& logger, double timeout_s)
 {
     // Reverse of acquire: controllers first, then components. Deactivating a component while
     // its controller still claims its interfaces is the failure this order avoids.
-    const rclcpp::Node::SharedPtr      node  = makeClientNode();
+    const rclcpp::Node::SharedPtr      node  = makeClientNode("g1_arm_authority_client");
     const std::vector<ControlledPart>& parts = controlledParts();
     for (auto it = parts.rbegin(); it != parts.rend(); ++it)
     {
@@ -234,20 +153,6 @@ void releaseArm(const rclcpp::Logger& logger, double timeout_s)
             timeout_s);
     }
     RCLCPP_INFO(logger, "arm and hands released");
-}
-
-void registerAuthorityNodes(BT::BehaviorTreeFactory& factory, const RosContext& context)
-{
-    factory.registerBuilder<AcquireArm>(
-        "AcquireArm",
-        [context](const std::string& name, const BT::NodeConfig& config) {
-            return std::make_unique<AcquireArm>(name, config, context);
-        });
-    factory.registerBuilder<ReleaseArm>(
-        "ReleaseArm",
-        [context](const std::string& name, const BT::NodeConfig& config) {
-            return std::make_unique<ReleaseArm>(name, config, context);
-        });
 }
 
 }  // namespace g1_orchestration

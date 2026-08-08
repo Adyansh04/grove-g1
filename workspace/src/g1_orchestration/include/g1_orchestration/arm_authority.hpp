@@ -16,14 +16,10 @@
  * hands back between pick and place and drop what it was carrying.
  */
 
-#include <behaviortree_cpp/bt_factory.h>
-
 #include <memory>
 #include <rclcpp/rclcpp.hpp>
 #include <string>
 #include <vector>
-
-#include "g1_orchestration/ros_action_node.hpp"
 
 namespace g1_orchestration
 {
@@ -60,9 +56,6 @@ bool acquireArm(const rclcpp::Logger& logger, double timeout_s);
  * partway would leave a controller claiming interfaces of an inactive component.
  */
 void releaseArm(const rclcpp::Logger& logger, double timeout_s);
-
-/// Registers AcquireArm and ReleaseArm as tree leaves.
-void registerAuthorityNodes(BT::BehaviorTreeFactory& factory, const RosContext& context);
 
 }  // namespace g1_orchestration
 

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Open this in Groot2 to edit the mission trees with this package's leaves in the palette.
+
+  The node model is kept in its own file rather than inlined here, so the generator can rewrite
+  it without touching the project. Regenerate after adding or changing a leaf:
+
+    ros2 run g1_orchestration g1_bt_node_model \
+      $(ros2 pkg prefix --share g1_orchestration)/trees/g1_orchestration_nodes.xml
+
+  test_node_model fails if this drifts from what the code registers.
+-->
+<root BTCPP_format="4" project_name="g1_orchestration">
+  <include path="pick_and_place.xml"/>
+  <include path="pick_and_place_in_place.xml"/>
+  <include path="g1_orchestration_nodes.xml"/>
+</root>

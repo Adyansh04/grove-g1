@@ -1,0 +1,47 @@
+<root BTCPP_format="4">
+    <TreeNodesModel>
+        <Action ID="AcquireArm">
+            <input_port name="timeout_s" type="double" default="15.000000">Per-step service budget.</input_port>
+        </Action>
+        <Action ID="ApproachObject">
+            <input_port name="server_timeout_s" type="double" default="10.000000">How long to wait for the action server to appear.</input_port>
+            <input_port name="timeout_s" type="double" default="0.000000">0 uses the server's own default.</input_port>
+            <input_port name="working_yaw" type="double">Heading to hold while approaching. Pass the same yaw the staging goal used.</input_port>
+            <input_port name="arm" type="std::string" default="right">'left' or 'right'.</input_port>
+            <input_port name="object_id" type="std::string">Must match a class_id published on /objects.</input_port>
+        </Action>
+        <Action ID="ClearCostmaps">
+            <input_port name="timeout_s" type="double" default="5.000000">Per-costmap service budget.</input_port>
+        </Action>
+        <Action ID="NavigateToPose">
+            <input_port name="frame_id" type="std::string" default="map">Frame the goal is expressed in.</input_port>
+            <input_port name="server_timeout_s" type="double" default="10.000000">How long to wait for the action server to appear.</input_port>
+            <input_port name="goal" type="g1_orchestration::Station">Where to drive to, as 'x;y;yaw'.</input_port>
+        </Action>
+        <Action ID="Pick">
+            <input_port name="server_timeout_s" type="double" default="10.000000">How long to wait for the action server to appear.</input_port>
+            <input_port name="arm" type="std::string" default="right">'left' or 'right'.</input_port>
+            <input_port name="object_id" type="std::string">Must match a class_id published on /objects.</input_port>
+        </Action>
+        <Action ID="Place">
+            <input_port name="server_timeout_s" type="double" default="10.000000">How long to wait for the action server to appear.</input_port>
+            <input_port name="frame_id" type="std::string" default="">Frame of the target. Empty means the server's planning frame.</input_port>
+            <input_port name="arm" type="std::string" default="right">'left' or 'right'.</input_port>
+            <input_port name="target" type="g1_orchestration::Point3">Where the OBJECT should end up, as 'x;y;z'.</input_port>
+            <input_port name="surface" type="std::string" default="">Detected surface to place ON TOP OF. Preferred over 'target'.</input_port>
+        </Action>
+        <Action ID="ReleaseArm">
+            <input_port name="timeout_s" type="double" default="15.000000">Per-step service budget.</input_port>
+        </Action>
+        <Action ID="Retreat">
+            <input_port name="server_timeout_s" type="double" default="10.000000">How long to wait for the action server to appear.</input_port>
+            <input_port name="timeout_s" type="double" default="0.000000">0 uses the server's own default.</input_port>
+            <input_port name="distance" type="double" default="0.600000">How far to reverse, in metres.</input_port>
+        </Action>
+        <Action ID="SetArmPosture">
+            <input_port name="server_timeout_s" type="double" default="10.000000">How long to wait for the action server to appear.</input_port>
+            <input_port name="named_target" type="std::string">A group_state of that group, e.g. tucked.</input_port>
+            <input_port name="group" type="std::string">A group in g1.srdf, e.g. right_arm.</input_port>
+        </Action>
+    </TreeNodesModel>
+</root>

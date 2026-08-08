@@ -33,6 +33,31 @@ std::atomic<bool> g_interrupted{ false };
 
 void onSignal(int) { g_interrupted = true; }
 
+constexpr double kReleaseTimeoutS = 15.0;
+
+/// Releases the arm and hands when it goes out of scope, however that happens.
+///
+/// The bracket used to be a call at the end of main, correct only for as long as every path out
+/// kept reaching it. Making it a destructor moves that from a property of the control flow to a
+/// property of the type: docs/CONTROL_MODES.md rule 4 is then enforced by the language.
+class ArmBracket
+{
+public:
+    ArmBracket(rclcpp::Logger logger, double timeout_s)
+      : logger_(std::move(logger))
+      , timeout_s_(timeout_s)
+    {}
+
+    ArmBracket(const ArmBracket&)            = delete;
+    ArmBracket& operator=(const ArmBracket&) = delete;
+
+    ~ArmBracket() { g1_orchestration::releaseArm(logger_, timeout_s_); }
+
+private:
+    rclcpp::Logger logger_;
+    double         timeout_s_;
+};
+
 }  // namespace
 
 int main(int argc, char** argv)
@@ -67,72 +92,70 @@ int main(int argc, char** argv)
     });
 
     int exit_code = 0;
-    try
     {
-        BT::BehaviorTreeFactory      factory;
-        g1_orchestration::RosContext context{ node };
-        g1_orchestration::registerSkillNodes(factory, context);
-        g1_orchestration::registerAuthorityNodes(factory, context);
+        // Closes when this scope ends, on every path out of it.
+        const ArmBracket bracket(node->get_logger(), kReleaseTimeoutS);
 
-        BT::Tree tree = factory.createTreeFromFile(tree_file);
-        RCLCPP_INFO(node->get_logger(), "loaded %s", tree_file.c_str());
-
-        BT::StdCoutLogger                    cout_logger(tree);
-        std::unique_ptr<BT::Groot2Publisher> groot2;
-        if (groot2_port > 0)
+        try
         {
-            groot2 = std::make_unique<BT::Groot2Publisher>(tree, groot2_port);
-            RCLCPP_INFO(
-                node->get_logger(),
-                "Groot2 can connect on port %d. Note the free tier monitors at most 20 nodes.",
-                groot2_port);
+            BT::BehaviorTreeFactory      factory;
+            g1_orchestration::RosContext context{ node };
+            g1_orchestration::registerSkillNodes(factory, context);
+
+            BT::Tree tree = factory.createTreeFromFile(tree_file);
+            RCLCPP_INFO(node->get_logger(), "loaded %s", tree_file.c_str());
+
+            BT::StdCoutLogger                    cout_logger(tree);
+            std::unique_ptr<BT::Groot2Publisher> groot2;
+            if (groot2_port > 0)
+            {
+                groot2 = std::make_unique<BT::Groot2Publisher>(tree, groot2_port);
+                RCLCPP_INFO(
+                    node->get_logger(),
+                    "Groot2 can connect on port %d. Note the free tier monitors at most 20 nodes.",
+                    groot2_port);
+            }
+
+            // Ticked by hand rather than with tickWhileRunning, so the interrupt is checked
+            // between ticks and a halt still runs every leaf's own cancellation.
+            const auto     period = std::chrono::duration<double>(1.0 / tick_rate_hz);
+            BT::NodeStatus status = BT::NodeStatus::RUNNING;
+            while (rclcpp::ok() && !g_interrupted && status == BT::NodeStatus::RUNNING)
+            {
+                status = tree.tickOnce();
+                std::this_thread::sleep_for(
+                    std::chrono::duration_cast<std::chrono::steady_clock::duration>(period));
+            }
+
+            if (g_interrupted)
+            {
+                RCLCPP_WARN(node->get_logger(), "interrupted; halting the tree");
+                tree.haltTree();
+                exit_code = 130;
+            }
+            else
+            {
+                RCLCPP_INFO(
+                    node->get_logger(),
+                    "mission finished: %s",
+                    status == BT::NodeStatus::SUCCESS ? "SUCCESS" : "FAILURE");
+                exit_code = status == BT::NodeStatus::SUCCESS ? 0 : 1;
+            }
+        }
+        catch (const std::exception& e)
+        {
+            // A tree that failed to load is a normal enough mistake; leaving the arm acquired
+            // after one is not.
+            RCLCPP_ERROR(node->get_logger(), "mission aborted: %s", e.what());
+            exit_code = 1;
         }
 
-        // Ticked by hand rather than with tickWhileRunning, so the interrupt is checked
-        // between ticks and a halt still runs every leaf's own cancellation.
-        const auto     period = std::chrono::duration<double>(1.0 / tick_rate_hz);
-        BT::NodeStatus status = BT::NodeStatus::RUNNING;
-        while (rclcpp::ok() && !g_interrupted && status == BT::NodeStatus::RUNNING)
-        {
-            status = tree.tickOnce();
-            std::this_thread::sleep_for(
-                std::chrono::duration_cast<std::chrono::steady_clock::duration>(period));
-        }
-
-        if (g_interrupted)
-        {
-            RCLCPP_WARN(node->get_logger(), "interrupted; halting the tree");
-            tree.haltTree();
-            exit_code = 130;
-        }
-        else
-        {
-            RCLCPP_INFO(
-                node->get_logger(),
-                "mission finished: %s",
-                status == BT::NodeStatus::SUCCESS ? "SUCCESS" : "FAILURE");
-            exit_code = status == BT::NodeStatus::SUCCESS ? 0 : 1;
-        }
+        // Spinning stops before the bracket closes: releaseArm blocks on service calls and
+        // needs the executor out of the way to make them.
+        g_interrupted = true;
+        spinner.join();
+        executor.remove_node(node);
     }
-    catch (const std::exception& e)
-    {
-        // Caught rather than allowed to propagate, so the release below still runs. A tree
-        // that failed to load is a normal enough mistake; leaving the arm acquired after one
-        // is not.
-        RCLCPP_ERROR(node->get_logger(), "mission aborted: %s", e.what());
-        exit_code = 1;
-    }
-
-    // Spinning stops first: releaseArm blocks on service calls, and it needs the executor out
-    // of the way to make them.
-    g_interrupted = true;
-    spinner.join();
-    executor.remove_node(node);
-
-    // The bracket closes here, on every path out of the block above. It runs even when the
-    // tree never acquired anything, which is safe: deactivating an already-inactive component
-    // is a no-op that logs.
-    g1_orchestration::releaseArm(node->get_logger(), 15.0);
 
     rclcpp::shutdown();
     return exit_code;
