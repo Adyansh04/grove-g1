@@ -1,0 +1,55 @@
+# Pick and place skills, loaded by g1_manipulation/launch/manipulation.launch.py.
+#
+# Everything here is real-robot code: the skills plan through move_group onto the controllers
+# that own rt/arm_sdk and the hand topics, exactly as they will on hardware. What is
+# simulation-only is where the object POSES come from, and that lives in
+# g1_object_pose_source.yaml.
+g1_manipulation_server:
+  ros__parameters:
+    # How old a pose may be before a pick refuses to act on it. The source publishes at the
+    # sensor rate (10 Hz), so this tolerates several missed samples while still catching a
+    # dead pipeline -- which matters, because the alternative is grasping at where an object
+    # used to be.
+    object_timeout_ms: 1000.0
+
+    # How far above the grasp the approach starts, and how far the object is lifted after the
+    # hand closes. Both are along the planning frame's z, which is up while the robot stands.
+    #
+    # MEASURED, not chosen: standing at the facility workbench, the hand only clears the table's
+    # octomap at pelvis z 0.22 and above (m9-checks/why_blocked.py sweeps it). The cube sits at
+    # pelvis z 0.0375, so anything under 0.185 of approach height puts the pregrasp inside the
+    # map. At the old 0.12 it failed every time with GOAL_STATE_INVALID and the contact pair
+    # <octomap> <-> right_hand_thumb_2_link -- the thumb, by a couple of centimetres.
+    #
+    # This cannot be fixed by exempting the octomap instead. The pregrasp transit is deliberately
+    # collision-checked so the planner cannot route the arm through the table on the way in; the
+    # exemption exists for the descent that follows and nothing else.
+    approach_height_m: 0.22
+
+    # How far ABOVE the object's top face the grasp frame is aimed, using the height the
+    # object pose source reports. Not its centre, which is what this used to do.
+    #
+    # The roll points the hand's closing axis at the floor and the fingertips sit about 24 mm
+    # beyond the grasp frame along it, so this offset is what decides where the fingers land.
+    # Aim at the middle of a 60 mm cube and they reach to 6 mm above the table, inside the
+    # octomap's own 20 mm padding, so the hand is asked to close through the surface.
+    #
+    # ABOVE the top face, not below it. At 15 mm below, the grip held but did not look like one:
+    # the palm sits level with the cube's top rather than clearing it, and the fingers reach past
+    # the middle. Held 10 mm above the face the palm clears the object and the fingertips close
+    # about 14 mm down its sides -- fingers around the upper half, which is what a hand does and
+    # is a shorter reach besides. Raise it further and the fingers grip less of the object;
+    # much past 20 mm on a 60 mm cube they start to slip off the top.
+    grasp_height_above_top_m: 0.010
+    # Has to clear the same 0.185 the pregrasp does, and for a sharper reason: the collision
+    # exemption is restored at the end of the lift, so wherever the lift finishes becomes the
+    # START state of the next collision-checked plan. Finishing inside the octomap leaves the
+    # carry posture unplannable from a state that is already in collision.
+    lift_height_m: 0.20
+
+    # Well under joint_limits.yaml's own 0.8 rad/s per-joint cap. Arm motion measurably
+    # disturbs a standing humanoid, and scaling the
+    # whole trajectory is preferred to clamping joints, which bends the path itself.
+    velocity_scaling: 0.3
+    planning_time_s: 10.0
+    grasp_rpy: [-1.5707963, 0.0, 0.0]

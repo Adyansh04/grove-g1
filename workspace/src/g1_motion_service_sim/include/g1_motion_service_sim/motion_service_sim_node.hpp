@@ -98,7 +98,7 @@ private:
     /// the palm ends up against the thigh, which is a self-collision MoveIt refuses to plan out
     /// of. Nothing here runs on the robot -- the onboard controller holds the arms there -- so
     /// this is a simulator artifact being removed, not hardware behaviour being papered over.
-    /// See docs/notes/hand-mass-rest-pose.md.
+    ///
     std::vector<double> arm_hold_rad_;
 
     rclcpp::Subscription<unitree_hg::msg::LowState>::SharedPtr lowstate_sub_;

@@ -115,8 +115,10 @@ dependency cannot.
 | `config/g1_sensors.rviz` | RViz for `mode:=none`. Fixed frame `odom`. |
 | `mjcf/*.xml` | Six scene overlays. Staged next to the vendored model at launch and removed on shutdown. |
 
-Hand joints stay inert. The URDF includes the DEX3 joints for kinematic structure, but they get no
-`ros2_control` interfaces and the simulator's model has no hand joints.
+`config/controllers.yaml` also carries the two Dex3 hand components and their trajectory
+controllers, all starting inactive alongside the arm. `config/sim_sensors.yaml` additionally
+configures two simulation-only things the patched simulator reads: which bodies publish
+ground-truth poses, and the grasp weld that stands in for finger contact.
 
 ## Tests
 

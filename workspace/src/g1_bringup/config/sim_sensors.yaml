@@ -22,3 +22,46 @@ socket_path: "/tmp/g1_sensors.sock"
 # 11.5 ms with colour, of which only ~0.04 ms holds the sim lock; the rest is the render and
 # the socket write, both off-lock.
 camera_enabled: true
+
+# Ground-truth poses for the manipulable objects, sampled on the same cycle as the sweep and
+# sent ahead of it. SIMULATION ONLY: this is the stand-in for a perception pipeline, and
+# g1_object_pose_source refuses to run at all with object_source: hardware.
+#
+# An explicit list, never every body with a free joint -- the pelvis has one of those too.
+# Bodies absent from the staged scene are reported once and skipped, so the flat and
+# perception worlds cost nothing here.
+object_bodies:
+  - red_cube
+  - green_cylinder
+  - blue_sphere
+  - yellow_box
+  # Not manipulable, and tracked anyway: g1_base_approach ranges to something on /objects to
+  # decide where to stand, and the place leg needs a landmark on the drop-off bench the way the
+  # pick leg has the cube itself. Static, so its pose never changes -- which is the point.
+  - drop_pad
+
+# SIMULATION ONLY, and a stand-in rather than a model of anything. The Dex3 fingers carry no
+# contact geometry (patch 003, deliberate), so a closed hand passes through an object and
+# nothing is ever picked up. This welds the object to the palm once the fingers have measurably
+# closed near it, and releases when they open.
+#
+# NONE OF THESE THREE NUMBERS TRANSFER TO HARDWARE. There the mechanism is friction between
+# real finger pads and a real object; these describe the weld, not the Dex3's grip, and a grasp
+# that holds here says nothing about whether the real hand holds it. They sit on the hardware
+# re-validation list with the gait deadband and the hand-mass scaling, in the simulation setup notes.
+#
+# Which welds exist is declared in the scene, not here: g1_navigation_scene.xml's `grasp_*`
+# equality constraints are found by name.
+grasp_weld:
+  enabled: true
+
+  # Palm origin to object origin. Covers the palm-to-grasp-point offset plus half a small
+  # object, chosen rather than measured.
+  capture_radius_m: 0.12
+
+  # Mean fraction of available joint travel across the hand's seven joints. The SRDF's `closed`
+  # posture measures 0.70 by this metric and `open` measures 0, so 0.5 sits between them.
+  close_fraction: 0.5
+  # Deliberately below close_fraction: without the gap a hand resting at the threshold would
+  # drop and re-grab the object every few ticks.
+  release_fraction: 0.3

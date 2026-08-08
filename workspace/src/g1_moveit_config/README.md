@@ -35,7 +35,7 @@ collision-checks one arm against the other, and the only one that times a motion
 arrive together. The per-arm groups remain because a 7-DoF search is far cheaper.
 
 The hands are separate groups, never joints on an arm group, because they are a separate device
-reached over separate topics with separate authority (`docs/CONTROL_MODES.md`). `test_robot_model`
+reached over separate topics with separate control authority. `test_robot_model`
 pins that: no arm group may contain a finger joint. Each is listed as its arm's `end_effector`,
 which is what lets `attachObject` work out its own touch links.
 
@@ -79,7 +79,7 @@ the attachment rather than by friction. On hardware it is held by both.
 
 `tucked` is worth knowing about beyond convenience. Arm pose measurably disturbs a walking
 humanoid, and the standing recommendation is to manipulate stationary and navigate with the arms
-in (`docs/notes/arm-motion-and-balance.md`).
+in.
 
 ## Kinematics
 
@@ -125,8 +125,7 @@ does not own.
 With a navigation mode as well (`mode:=localization nav:=true moveit:=true rviz:=true`), the one
 RViz that opens is this package's — run a second `rviz2 -d` on `g1_navigation.rviz` for the map
 and costmaps. A single combined window was attempted and abandoned: every merge segfaulted rviz2
-once Nav2 was actually running. `docs/notes/combined-nav-moveit-rviz.md` has the four runs and
-where to resume.
+once Nav2 was actually running.
 
 Planning works immediately. **Executing does not**, until the arm is acquired — the component
 first, then the controller:
@@ -158,8 +157,7 @@ it and the map smears. `/clear_octomap` (`std_srvs/Empty`) resets it; there is n
 a voxel the sensor cannot currently see is never forgotten.
 
 The **LiDAR, not the depth camera**, and not by preference: the camera publishes a depth image,
-and `depth_image_proc`'s converter cannot receive from our best-effort relay. See
-`docs/notes/moveit-depth-octomap-plan.md` for what was tried.
+and `depth_image_proc`'s converter cannot receive from our best-effort relay.
 
 ## Regenerating the collision matrix
 
@@ -180,8 +178,8 @@ pair, which matters: `both_arms` exists to collision-check one arm against the o
 `test_robot_model` asserts those stay enabled.
 
 The "never in collision" pairs a full sampling run would add are a planning-speed optimisation, not
-a correctness requirement. Getting them needs the collision geometry simplified first — see
-`docs/notes` — after which the upstream generator becomes usable again.
+a correctness requirement. Getting them needs the collision geometry simplified first, after
+which the upstream generator becomes usable again.
 
 ## Tests
 

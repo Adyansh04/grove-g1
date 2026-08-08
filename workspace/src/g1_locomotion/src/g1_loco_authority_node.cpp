@@ -144,7 +144,7 @@ public:
 
         // The gait is not responsive the instant START returns. Measured across 8 fresh
         // launches: 1.83-1.92 s for six of seven that moved. See
-        // docs/notes/milestone6-authority-timing.md for why this is not the p90.
+        // Deliberately not the p90; see the distribution this was measured from.
         std::this_thread::sleep_for(std::chrono::duration<double>(settle_after_start_s_));
 
         RCLCPP_INFO(

@@ -14,7 +14,7 @@
 // indexes a fixed 35-slot LowCmd, so the 14 finger joints deliberately have no actuators and
 // nu stays 29. The fingers are driven through qfrc_applied instead, which is also the honest
 // model of the hardware -- the Dex3 is a separate device on its own topics, not motors 29-42
-// of the body (docs/CONTROL_MODES.md).
+// of the body.
 //
 // A no-op on models without hands (the 23-DoF G1, the perception sandbox): the joint lookup
 // fails, it says so once, and nothing starts.

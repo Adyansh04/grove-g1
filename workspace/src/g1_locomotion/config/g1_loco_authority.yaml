@@ -3,7 +3,7 @@
 #
 # Both values below were MEASURED, not guessed -- they were the only two numbers in the
 # milestone's design with no empirical grounding at all, so they were measured before this node
-# was written. Full distribution and method in docs/notes/milestone6-authority-timing.md.
+# was written. Full distribution and method in the local engineering notes.
 g1_loco_authority:
   ros__parameters:
     # The bridge's action, absolute. A parameter rather than a launch remap: remapping does not

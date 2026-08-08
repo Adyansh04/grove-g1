@@ -14,9 +14,18 @@ a goal pose under Nav2. Arm trajectories run through `ros2_control` onto Unitree
 `rt/arm_sdk` interface, so the vendor's onboard controller keeps the legs balanced throughout.
 
 MoveIt plans for either arm or both together, collision-checked against a live octomap built from
-the LiDAR, and each Dex3-1 hand is its own planning group with `open` and `closed` postures. That
-covers pick and place: reach, close, attach the object to the arm in the planning scene, move,
-place, open.
+the LiDAR, and each Dex3-1 hand is its own planning group with `open` and `closed` postures.
+
+On top of that, pick and place are served as actions, and a BehaviorTree.CPP behaviour tree
+sequences them with navigation into a mission that runs end to end in the facility world: drive
+to a workbench, walk the last half metre under closed-loop control, pick a cube up, carry it
+across the building, and put it down on a bench. Object poses come from a source that refuses to
+run on hardware, because there is no object-detection pipeline yet; a real one replaces it
+without the skills changing.
+
+Nav2 parks within 0.5 m of a goal and the arm's usable window is about 0.2 m wide, so a base
+approach skill closes the gap against the measured object rather than against the map. The tree
+is editable in Groot2 against a generated node palette.
 
 Learned manipulation for unstructured scenes is the next milestone and is not built yet.
 
@@ -27,6 +36,10 @@ Learned manipulation for unstructured scenes is the next milestone and is not bu
 ## MoveIt Demo
 
 ![MoveIt Demo](docs/media/grove_moveit_demo.gif)
+
+## Pick & Place Demo
+
+![Pick & Place Demo](docs/media/grove_pick_place_demo.gif)
 
 ## Architecture
 
@@ -46,8 +59,14 @@ flowchart TB
         ODOM["g1_odometry_publisher"]
     end
 
+    subgraph ORCH["Orchestration"]
+        BT["g1_bt_executor<br/>behaviour tree"]
+    end
+
     subgraph MANIP["Manipulation"]
         MG["move_group<br/>plan + collision check"]
+        SKILL["g1_manipulation_server<br/>pick, place, postures"]
+        OBJ["g1_object_pose_source<br/>refuses on hardware"]
     end
 
     subgraph CTRL["Bridging and control"]
@@ -67,11 +86,17 @@ flowchart TB
     OP --> CTRL
     OP --> SIMONLY
 
+    BT -- "NavigateToPose" --> NAV2
+    BT -- "Pick, Place" --> SKILL
+    SKILL --> MG
+    OBJ -- "/objects" --> SKILL
+
     MG -- "FollowJointTrajectory" --> ARMSYS
     MG -- "FollowJointTrajectory" --> HANDSYS
     HANDSYS -- "/dex3/side/cmd" --> MSS
     RELAY -- "/livox/lidar" --> SCAN
     RELAY -- "/livox/lidar" --> MG
+    RELAY -- "object ground truth" --> OBJ
     SCAN -- "/scan" --> SLAM
     SLAM -- "map to odom" --> NAV2
     ODOM -- "odom to base_footprint" --> NAV2
@@ -105,11 +130,12 @@ Two rules shape most of the design, and both apply in simulation so the habits t
 | [`g1_hardware_interface`](workspace/src/g1_hardware_interface) | `ros2_control` plugin bridging the 14 arm joints onto `rt/arm_sdk`. |
 | [`g1_locomotion`](workspace/src/g1_locomotion) | LocoClient bridge, gait shaper and the locomotion-authority bracket. |
 | [`g1_motion_service_sim`](workspace/src/g1_motion_service_sim) | Simulation stand-in for the robot's onboard motion service. |
+| [`g1_manipulation`](workspace/src/g1_manipulation) | Pick and place as actions, and the object-pose source behind them. |
 | [`g1_moveit_config`](workspace/src/g1_moveit_config) | MoveIt config: arm and hand planning groups, kinematics, the octomap. |
 | [`g1_msgs`](workspace/src/g1_msgs) | The `SetLocoMode` action and `LocoStatus` message. |
 | [`g1_navigation`](workspace/src/g1_navigation) | SLAM Toolbox mapping, AMCL localization and Nav2. |
+| [`g1_orchestration`](workspace/src/g1_orchestration) | The behaviour tree that sequences navigation and manipulation into a mission. |
 | [`g1_sensor_relay`](workspace/src/g1_sensor_relay) | Publishes LiDAR and depth frames sampled inside the simulator. |
-| [`g1_sim`](workspace/src/g1_sim) | A separate planar perception sandbox. Not the main track. |
 | [`g1_state_estimation`](workspace/src/g1_state_estimation) | Publishes `odom` to `base_footprint` and the TF chain Nav2 needs. |
 
 ## Quick start
@@ -146,10 +172,38 @@ ros2 launch g1_bringup bringup.launch.py mode:=localization nav:=true rviz:=true
 # Plan for the arms and hands, with the LiDAR octomap in the planning scene
 ros2 launch g1_bringup bringup.launch.py moveit:=true sensors:=true rviz:=true
 
-# Everything at once: localized, navigating, planning, arms acquired, RViz up
+# Pick and place skills, on the small test world where the object is already within reach
 ros2 launch g1_bringup bringup.launch.py \
-  mode:=localization nav:=true moveit:=true rviz:=true activate_arm:=true headless:=false
+  moveit:=true manipulation:=true pin_pelvis:=true world:=manipulation \
+  activate_arm:=true activate_arm_delay_s:=40.0
+
+# Everything at once: localized, navigating, planning, skills, arms acquired, RViz up
+ros2 launch g1_bringup bringup.launch.py \
+  mode:=localization nav:=true moveit:=true manipulation:=true rviz:=true \
+  activate_arm:=true activate_arm_delay_s:=40.0 headless:=false
 ```
+
+Run a mission. The tree drives navigation and manipulation; nothing else needs starting, and
+Groot2 on the host can watch it tick at `localhost:1667`:
+
+```bash
+ros2 launch g1_orchestration mission.launch.py tree:=pick_and_place_in_place.xml
+```
+
+The full navigate-pick-carry-place mission needs the facility world and a map:
+
+```bash
+ros2 launch g1_bringup bringup.launch.py \
+  mode:=localization nav:=true moveit:=true manipulation:=true world:=navigation \
+  rviz:=true activate_arm:=true activate_arm_delay_s:=55.0
+```
+
+```bash
+ros2 launch g1_orchestration mission.launch.py tree:=pick_and_place.xml
+```
+
+With `rviz:=true` and both MoveIt and Nav2 running, this opens two RViz windows: the MoveIt one
+for the arm and a second on the navigation config for the map and costmaps.
 
 Send it somewhere:
 
@@ -207,6 +261,14 @@ colcon test --packages-select g1_description g1_locomotion g1_navigation
 colcon test-result --all
 ```
 
+Leftover nodes from a previous run are the most productive source of phantom failures here:
+several copies of the stack on one DDS graph look like bugs everywhere except where they are.
+Clear them first, and note it verifies the graph rather than the process table:
+
+```bash
+./scripts/clean-stack.sh
+```
+
 Suites that launch a simulator are timing-sensitive and serialize on a shared ctest resource lock.
 Run them **one package at a time**, and check nothing is left over from a previous run
 (`pgrep -x unitree_mujoco`) before trusting a result: a stray simulator is the usual explanation
@@ -221,5 +283,5 @@ tests need a simulator.
 workspace/src/     ROS 2 packages
 workspace/patches/ patches applied to vendored sources at image build
 workspace/vendor/  our source compiled into the vendored simulator
-scripts/           container lifecycle
+scripts/           container lifecycle, and stack teardown
 ```

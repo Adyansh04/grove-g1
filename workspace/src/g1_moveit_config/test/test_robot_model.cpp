@@ -120,7 +120,7 @@ TEST_F(RobotModelTest, TheDualArmGroupIsNotAChainAndHasBothArmsAsSubgroups)
 TEST_F(RobotModelTest, NoArmGroupCommandsTheHand)
 {
     // The hand is a separate device on its own topics with its own authority
-    // (docs/CONTROL_MODES.md), and it has its own group and its own controller. An arm group
+    //, and it has its own group and its own controller. An arm group
     // that reached into one would plan a trajectory no single controller can execute, so
     // MoveIt would either split it or refuse it.
     for (const auto* name : { "left_arm", "right_arm", "both_arms" })

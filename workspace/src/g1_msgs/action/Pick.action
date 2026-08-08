@@ -1,0 +1,25 @@
+# Pick a known object off a surface with one arm.
+#
+# The pose is not a goal field: the server reads it from /objects when the goal starts, so a
+# retry re-reads it rather than replaying a stale one. A goal for an object that is missing or
+# stale on that topic is rejected, never guessed at.
+
+# Must match a class_id published on /objects.
+string object_id
+# "left" or "right". Selects the arm group, its hand group and the palm to attach to.
+string ARM_LEFT=left
+string ARM_RIGHT=right
+string arm
+---
+bool success
+# On failure, names the phase that failed and why. Not meant to be parsed.
+string message
+---
+# Which phase is running. Also what the result message names on failure, so the constants are
+# here rather than duplicated as literals in the server and its tests.
+string PHASE_LOCATING=locating
+string PHASE_PREGRASP=pregrasp
+string PHASE_APPROACH=approach
+string PHASE_GRASP=grasp
+string PHASE_LIFT=lift
+string phase

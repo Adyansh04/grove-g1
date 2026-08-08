@@ -101,7 +101,7 @@ nothing about this particular failure.
 Deliberately not fixed yet: it changes which joints this component asserts authority over, so
 it wants its own change with the sim-side blend updated to match (otherwise the simulator
 ignores a command hardware honours, and the two diverge the other way). **Fix it before any
-hardware bring-up.** Full reasoning and sources in `docs/notes/arm-motion-and-balance.md`.
+hardware bring-up.**
 
 ## Threading
 

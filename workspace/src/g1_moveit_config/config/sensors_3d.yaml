@@ -42,7 +42,7 @@ mid360_cloud:
   #
   # The LiDAR sidesteps all of it: already a PointCloud2, and the octomap updater subscribes
   # with rmw_qos_profile_sensor_data, which matches the relay. No converter node at all.
-  # docs/notes/moveit-depth-octomap-plan.md has what was tried on the camera path.
+  # The camera path was tried first and does not work; see the note above.
   point_cloud_topic: /livox/lidar
 
   # Past this a ray is carved as free space instead of marking an endpoint. The arms reach

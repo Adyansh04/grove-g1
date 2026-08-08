@@ -15,7 +15,7 @@ dependencies. On purpose.
 ================================================================================
 
 Both already declare <exec_depend>g1_bringup</exec_depend>, because each composes bring-up and
-not the other way round (docs/notes, M6 and M7). Adding a reciprocal dependency here is not
+not the other way round. Adding a reciprocal dependency here is not
 merely untidy, it does not build -- colcon refuses outright:
 
     ERROR:colcon:colcon list: Unable to order packages topologically:
@@ -126,6 +126,20 @@ def _moveit_share():
         ) from exc
 
 
+def _manipulation_share():
+    """g1_manipulation's share directory, or a message an operator can act on."""
+    try:
+        return get_package_share_directory("g1_manipulation")
+    except PackageNotFoundError as exc:
+        raise RuntimeError(
+            "bringup.launch.py: manipulation:=true needs the g1_manipulation package, which "
+            "is not on the ament prefix path.\n"
+            "  - Build it:  colcon build --packages-select g1_manipulation\n"
+            "  - Then source install/setup.bash again in this shell.\n"
+            "manipulation:=false, the default, needs none of this."
+        ) from exc
+
+
 def _simulator(sim_args):
     """The one simulator this file stages, and the only place it is named.
 
@@ -155,12 +169,19 @@ def _setup(context, *args, **kwargs):
     want_nav = LaunchConfiguration("nav").perform(context).lower() == "true"
     want_rviz = LaunchConfiguration("rviz").perform(context).lower() == "true"
     want_moveit = LaunchConfiguration("moveit").perform(context).lower() == "true"
+    want_manipulation = LaunchConfiguration("manipulation").perform(context).lower() == "true"
     pin_pelvis = LaunchConfiguration("pin_pelvis").perform(context).lower() == "true"
 
     if want_nav and mode != "localization":
         raise RuntimeError(
             f"nav:=true needs mode:=localization, not mode:={mode!r}. Navigating against a "
             "map slam_toolbox is still building means the goal pose moves under the planner."
+        )
+    if want_manipulation and not want_moveit:
+        raise RuntimeError(
+            "manipulation:=true needs moveit:=true. The skills plan and execute through "
+            "move_group, so without it every goal fails on a planning pipeline that is not "
+            "there."
         )
     if pin_pelvis and navigating:
         raise RuntimeError(
@@ -184,7 +205,13 @@ def _setup(context, *args, **kwargs):
         # joint states, and navigation is dead without all four. Forced here rather than by
         # flipping sim.launch.py's default, which is still provisional on an unthrottled
         # re-measurement of test_arm_command.
-        "sensors": "true" if navigating else LaunchConfiguration("sensors"),
+        #
+        # manipulation:=true forces it for a different reason: object ground truth leaves the
+        # simulator over the sensor relay's own socket, so without sensors the pose source
+        # comes up healthy, subscribes, and never receives anything.
+        "sensors": "true"
+        if navigating or want_manipulation
+        else LaunchConfiguration("sensors"),
         "world": LaunchConfiguration("world"),
         "headless": LaunchConfiguration("headless"),
         "pin_pelvis": "true" if pin_pelvis else "false",
@@ -238,6 +265,26 @@ def _setup(context, *args, **kwargs):
             )
         )
 
+    if want_manipulation:
+        # The pick/place skills and the object-pose source they read. Composed beside
+        # move_group rather than including it, for the same reason nav_stack.launch.py stages
+        # no simulator: both are already here, and a second copy of either would be a second
+        # writer.
+        #
+        # The object source is the simulation-specific half and says so itself -- its
+        # `hardware` default refuses to configure, so this argument is what opts into ground
+        # truth rather than something a hardware bring-up could inherit by accident.
+        actions.append(
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(
+                    os.path.join(_manipulation_share(), "launch", "manipulation.launch.py")
+                ),
+                launch_arguments={
+                    "object_source": LaunchConfiguration("object_source"),
+                }.items(),
+            )
+        )
+
     if want_moveit and LaunchConfiguration("activate_arm").perform(context).lower() == "true":
         # Off by default, and it stays off by default. Acquiring the arm is a deliberate act:
         # on hardware this is the moment /arm_sdk starts driving real joints, and a stack that
@@ -249,10 +296,10 @@ def _setup(context, *args, **kwargs):
         # this file can wait on. scripts/activate_arm still enforces the component-then-
         # controller order, and still fails loudly if it runs too early.
         #
-        # The principled version of this is a lifecycle authority bracket like g1_locomotion's
-        # g1_loco_authority, which acquires on activate and releases on the way out even on
-        # failure -- what CONTROL_MODES.md rule 4 actually asks for. That is a node, not a
-        # launch argument, and it belongs with the behaviour-tree work that will need it.
+        # The principled version of this now exists: g1_orchestration's executor brackets a
+        # whole mission, acquiring before the tree runs and releasing on success, failure and
+        # SIGINT alike -- what CONTROL_MODES.md rule 4 actually asks for. This argument stays
+        # for the case it was written for, which is driving the arm by hand from RViz.
         actions.append(
             TimerAction(
                 period=float(LaunchConfiguration("activate_arm_delay_s").perform(context)),
@@ -267,46 +314,66 @@ def _setup(context, *args, **kwargs):
         )
 
     if want_rviz:
-        actions.append(_rviz(navigating, want_moveit))
+        actions.extend(_rviz(navigating, want_nav, want_moveit))
 
     return actions
 
 
-def _rviz(navigating, want_moveit):
-    """One RViz, on the config that matches what is running. MoveIt wins when both are on.
+def _rviz(navigating, want_nav, want_moveit):
+    """The RViz windows that match what is running.
 
     MoveIt's own launcher rather than this package's generic rviz.launch.py, which takes only
     an rviz_config and passes no parameters: the MotionPlanning panel needs
     robot_description_semantic and robot_description_kinematics as node parameters, and without
     them it loads with no planning groups, which reads as a broken install.
 
-    On a navigation mode with moveit:=true this still shows the MoveIt config, and a combined
-    single-window view is NOT available. Three merges were built and every one segfaulted rviz2
-    on load (exit -11) once the navigation stack was up. Run a second RViz on
-    g1_navigation.rviz for the map and costmaps. docs/notes has what was tried.
+    With MoveIt and Nav2 BOTH running this returns two windows: the MoveIt one for the arm and
+    a second on g1_navigation.rviz for the map, costmaps and plan. A combined single-window view
+    is NOT available; three merged configs were built and every one segfaulted rviz2 on load
+    once the navigation stack was up.
+
+    The second window keys off nav, not mode: mode=localization without nav has a map but no
+    planner, and MoveIt's view is the only one worth opening.
     """
     bringup_share = get_package_share_directory("g1_bringup")
+    generic_rviz  = os.path.join(bringup_share, "launch", "rviz.launch.py")
+    windows       = []
 
     if want_moveit:
-        launch_file = os.path.join(_moveit_share(), "launch", "moveit_rviz.launch.py")
-        # Bare MoveIt leaves rviz_config unset on purpose: this file never declares that name,
-        # so there is nothing for the child's default to inherit from and g1_moveit.rviz is what
-        # applies. The one case where relying on a child default is safe.
-        rviz_args = {}
-    else:
-        launch_file = os.path.join(bringup_share, "launch", "rviz.launch.py")
-        # The nav config carries a nav2_rviz_plugins display, so it ships from g1_navigation.
-        # On the bare branch this resolves g1_bringup's own share and g1_navigation is never
-        # named -- same rule as the launch includes above.
-        if navigating:
-            rviz_config = os.path.join(_navigation_share(), "config", "g1_navigation.rviz")
-        else:
-            rviz_config = os.path.join(bringup_share, "config", "g1_sensors.rviz")
-        rviz_args = {"rviz_config": rviz_config}
+        windows.append(
+            IncludeLaunchDescription(
+                # Bare MoveIt leaves rviz_config unset on purpose: this file never declares that
+                # name, so there is nothing for the child's default to inherit from and
+                # g1_moveit.rviz is what applies. The one case where a child default is safe.
+                PythonLaunchDescriptionSource(
+                    os.path.join(_moveit_share(), "launch", "moveit_rviz.launch.py")
+                )
+            )
+        )
 
-    return IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(launch_file), launch_arguments=rviz_args.items()
-    )
+    # The nav config carries a nav2_rviz_plugins display, so it ships from g1_navigation; on a
+    # run that never navigates g1_navigation is not named at all, the same rule the launch
+    # includes above follow.
+    if want_moveit:
+        config = os.path.join(_navigation_share(), "config", "g1_navigation.rviz") if want_nav \
+            else None
+    elif navigating:
+        config = os.path.join(_navigation_share(), "config", "g1_navigation.rviz")
+    else:
+        config = os.path.join(bringup_share, "config", "g1_sensors.rviz")
+
+    if config is not None:
+        args = {"rviz_config": config}
+        if want_moveit:
+            # MoveIt's launcher already runs a node called rviz2.
+            args["node_name"] = "rviz2_navigation"
+        windows.append(
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(generic_rviz), launch_arguments=args.items()
+            )
+        )
+
+    return windows
 
 
 def generate_launch_description():
@@ -336,6 +403,19 @@ def generate_launch_description():
             default_value="false",
             description="Start move_group for arm planning. Works with any mode. Planning is "
             "available immediately; executing a plan still needs activate_arm.launch.py.",
+        ),
+        DeclareLaunchArgument(
+            "manipulation",
+            default_value="false",
+            description="Start the pick and place skills and the object-pose source. Needs "
+            "moveit:=true, since the skills plan through move_group.",
+        ),
+        DeclareLaunchArgument(
+            "object_source",
+            default_value="sim_ground_truth",
+            description="Where object poses come from with manipulation:=true. "
+            "'sim_ground_truth' reads MuJoCo bodies; 'hardware' refuses to configure, because "
+            "no object-detection pipeline exists yet.",
         ),
         DeclareLaunchArgument(
             "activate_arm",
@@ -369,7 +449,9 @@ def generate_launch_description():
             "world",
             default_value="navigation",
             description="Which scene to stage. 'navigation' is the facility the committed map "
-            "was built from; localization against any other world will not converge.",
+            "was built from; localization against any other world will not converge. "
+            "'manipulation' is one object on a pedestal at arm's length, for exercising a "
+            "pick without navigating to the workbench first.",
         ),
         DeclareLaunchArgument(
             "headless",

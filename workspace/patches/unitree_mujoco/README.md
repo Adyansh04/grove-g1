@@ -11,7 +11,7 @@ process could load the same model and mirror joint state, but that is a second p
 whose fidelity is bounded by its pose source — and the real G1 has no odometry topic at all, so that
 approach dies exactly at the hardware transition this track exists to protect.
 
-Full reasoning in `docs/notes/milestone5-convergence-plan.md` (local-only).
+Full reasoning is kept in the maintainer's local engineering notes.
 
 ## Rules
 

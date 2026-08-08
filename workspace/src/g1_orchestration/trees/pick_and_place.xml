@@ -1,0 +1,181 @@
+<?xml version="1.0"?>
+<!--
+  Navigate to the workbench, walk the last half metre, pick an object off it, carry it to the
+  storage room, put it down.
+
+  Coordinates are the g1_navigation_scene facility, in the `map` frame the committed map was
+  built in.
+
+  THE TWO STATIONS ARE STAGING POSES, NOT WORKING POSES. Nav2 cannot park the robot where the
+  arm can reach anything: its xy_goal_tolerance is 0.5 m and robot_radius is 0.45, against an
+  arm that reaches 0.28 to 0.33 m and a window about 0.11 m wide. So each station is a pose Nav2
+  can legally reach, as close to the surface as robot_radius allows, and ApproachObject closes
+  the rest against the measured object rather than against the map. Closer is better: every
+  0.29 m of leftover gap is another forward step, and anything under one step has to be creeped
+  in at 2.5 cm a pulse.
+
+  Both stations face +y (yaw 1.5708) at the south edge of their surface, and each ApproachObject
+  is given that SAME yaw to hold. The approach does not aim itself at the object: it holds the
+  working heading and nulls the object's position error in the base frame, which is the standard
+  stand-off-on-the-surface-normal pattern. It ends with the object 0.28 m in front of the pelvis
+  and 0.20 m to its right, the relative pose the grasp is proven at in the manipulation scene.
+
+  The arm bracket spans pick through place deliberately. On hardware a released Dex3 goes limp
+  about a second later and drops what it is holding, so the hands stay powered for the whole
+  carry. The executor closes the bracket again on its way out, whatever happens in here.
+-->
+<root BTCPP_format="4" main_tree_to_execute="PickAndPlace">
+  <BehaviorTree ID="PickAndPlace">
+    <Sequence name="mission">
+      <!-- FIRST, before any arm motion. It used to sit just before the pick, which left
+           tuck_to_travel depending on bringup's activate_arm:=true having already run: launch
+           the mission a moment early and the tree fails on its first leaf with "Controller is
+           not running". A tree that needs the arm should take the arm.
+
+           Idempotent by design, so acquiring here and finding it already acquired costs
+           nothing. -->
+      <AcquireArm name="take_the_arm"/>
+
+      <!-- Arms in before walking. Arm pose measurably disturbs a walking humanoid, and tucked
+           is the smallest swept volume and least COM offset of the named poses.
+
+           BOTH arms, one leaf each. both_arms would be the natural choice and cannot execute a
+           named posture on this stack, so it is two.
+
+           The LEFT one is not symmetry for its own sake. A hanging hand sits at pelvis
+           (+0.209, -0.193, -0.064), which is 21 cm in front of the pelvis and 1 cm under the
+           workbench slab, so it jams on the table edge and the base stops moving while the
+           approach keeps pulsing. Tucking only the right arm moves the collision to the left
+           one and changes nothing.
+
+           Retried, because the failure that shows up here is per-attempt rather than
+           structural: "Motion plan was found but it seems to be invalid", which is OMPL having
+           sampled a path that clips the live octomap. The posture itself is verified
+           collision-free against the robot model (m9-checks/tuck_collision_sweep.py), so
+           another sample usually gets through. -->
+      <SubTree ID="TuckBothArms" name="tuck_to_travel"/>
+
+      <RetryUntilSuccessful name="stage_at_workbench_with_retries" num_attempts="3">
+        <Sequence name="clear_then_stage_at_workbench">
+          <ClearCostmaps name="forget_before_staging"/>
+          <NavigateToPose name="stage_at_workbench" goal="4.30;-5.60;1.5708"
+                          goal_yaw="{workbench_yaw}"/>
+        </Sequence>
+      </RetryUntilSuccessful>
+
+      <!-- Walks in pulses and re-reads the cube between each one. Retried once: an approach
+           that stops short is recoverable by running it again, and the commonest reason to stop
+           short is the pulse budget rather than anything about the geometry. An approach that
+           OVERSHOOTS is not retryable and fails the mission, which is correct, because this
+           gait has no reverse. -->
+      <RetryUntilSuccessful name="approach_with_one_retry" num_attempts="2">
+        <ApproachObject name="close_on_the_cube" object_id="red_cube" arm="right"
+                        working_yaw="{workbench_yaw}"/>
+      </RetryUntilSuccessful>
+
+      <!-- Two attempts, not one, because each retry re-reads the object's pose from /objects
+           and OMPL samples a different tree, and because Pick leaves the hand open and nothing
+           attached when it fails, so the second attempt starts from a defined state.
+           The count itself is a convention, not a measurement: nothing has yet established the
+           per-attempt success rate at this workbench. -->
+      <RetryUntilSuccessful name="pick_with_one_retry" num_attempts="2">
+        <Pick name="pick_the_cube" object_id="red_cube" arm="right"/>
+      </RetryUntilSuccessful>
+
+      <!-- Reverse clear of the desk BEFORE rearranging the arm. Two separate reasons, both
+           measured.
+
+           Reverse rather than turn: the approach leaves the robot close enough that turning on
+           the spot sweeps the robot and the carried cube across the desk. It backs straight out
+           and stops; the navigation goal below does the turning, which Nav2 does properly.
+
+           Before the carry posture: moving the arm to `carry` while still at the desk failed
+           with `<octomap> <-> right_hand_index_1_link` 220 steps into a 248 step path. The pose
+           is fine; the room to swing into is not, with the table right there. -->
+      <Retreat name="back_off_the_desk" distance="0.8"/>
+
+      <!-- The costmaps have been watching an arm reach over a workbench for the last minute and
+           a half, and they hold every voxel of it: the arm itself, the object it lifted, and the
+           surface the base pressed up against. None of that is where the map says obstacles are.
+           Wipe both before asking Nav2 to plan out of here, or the first thing it does is steer
+           around the robot's own recent history. -->
+      <ClearCostmaps name="forget_the_workbench"/>
+
+      <RetryUntilSuccessful name="carry_with_retries" num_attempts="3">
+        <SetArmPosture name="hold_it_close" group="right_arm" named_target="carry"/>
+      </RetryUntilSuccessful>
+
+      <!-- 5.70 is measured, not chosen, and 5.60 does NOT work despite having more geometric
+           clearance (0.55 m to the bench face against 0.45). The static map predates the
+           storage bench and drop pad entirely, so Nav2 only learns this corner from the live
+           scan, and the global planner refuses 5.60 outright with "failed to create plan with
+           tolerance 0.50" while planning to 5.70 every time. Until the map is rebuilt to
+           include this furniture, treat the number as empirical.
+
+           It is genuinely tight either way: 5.70 sits exactly robot_radius from the bench
+           face, so the footprint touches the inflated obstacle. Rebuilding the map is what
+           buys room to move it. -->
+      <RetryUntilSuccessful name="stage_at_storage_with_retries" num_attempts="3">
+        <Sequence name="clear_then_stage_at_storage">
+          <ClearCostmaps name="forget_before_storage"/>
+          <NavigateToPose name="stage_at_storage" goal="6.30;5.70;1.5708"
+                          goal_yaw="{storage_yaw}"/>
+        </Sequence>
+      </RetryUntilSuccessful>
+
+      <!-- The approach and the place RETRY TOGETHER, and that pairing is the point.
+           The robot is balancing, so extending a loaded arm forward shifts its centre of mass
+           and the walking policy steps to keep up: measured at 0.182 m of base travel during
+           one reach. The place re-aims mid-motion to price that in, but past about 0.1 m the
+           surface has left the arm's band entirely and no arm motion can recover it: the BASE
+           has to move, which means approaching again. Retrying the place alone would re-plan
+           forever against a target that is simply out of range. -->
+      <RetryUntilSuccessful name="place_with_retries" num_attempts="3">
+        <Sequence name="close_in_and_place">
+          <ApproachObject name="close_on_the_pad" object_id="drop_pad" arm="right"
+                          working_yaw="{storage_yaw}"/>
+
+          <!-- Named, not a coordinate, and that is the whole point. This used to read
+               target="6.50;6.25;0.855", which is exactly right ON THE MAP and still failed
+               every time with "preplace: planning failed (-27)": a coordinate here is in the
+               map frame, while the approach immediately above parks the base against /objects
+               in odom. AMCL was measured 0.23 m from odom at this bench, and the arm's lateral
+               window is 0.04 m, so the target landed 0.14 m outside anything the arm can
+               reach. Naming the surface makes the place and the approach read the same stream,
+               so they cannot disagree. -->
+          <Place name="put_it_on_the_pad" surface="drop_pad" arm="right"/>
+        </Sequence>
+      </RetryUntilSuccessful>
+
+      <Retreat name="back_off_the_bench" distance="0.8"/>
+      <ClearCostmaps name="forget_the_bench"/>
+
+      <SubTree ID="TuckBothArms" name="tuck_before_handing_back"/>
+
+      <ReleaseArm name="hand_the_arm_back"/>
+    </Sequence>
+  </BehaviorTree>
+
+  <!-- Both arms, one leaf each. both_arms is the natural choice and cannot execute a named
+       posture on this stack, so it is two.
+
+       The LEFT one is not symmetry for its own sake: a hanging hand sits 21 cm in front of the
+       pelvis and 1 cm under the workbench slab, so it jams on the table edge and the base stops
+       while the approach keeps commanding. Tucking only the right arm moves the collision to
+       the left one and changes nothing.
+
+       Retried because the failure here is per-attempt, not structural: "Motion plan was found
+       but it seems to be invalid" is OMPL having sampled a path that clips the live octomap,
+       and the posture is verified collision-free against the robot model. A completed mission
+       was once failed by the closing pair having no retry, on one clipped waypoint. -->
+  <BehaviorTree ID="TuckBothArms">
+    <Sequence name="tuck_both">
+      <RetryUntilSuccessful name="tuck_right_with_retries" num_attempts="3">
+        <SetArmPosture name="tuck_right" group="right_arm" named_target="tucked"/>
+      </RetryUntilSuccessful>
+      <RetryUntilSuccessful name="tuck_left_with_retries" num_attempts="3">
+        <SetArmPosture name="tuck_left" group="left_arm" named_target="tucked"/>
+      </RetryUntilSuccessful>
+    </Sequence>
+  </BehaviorTree>
+</root>

@@ -25,12 +25,15 @@ flowchart LR
 Parameters are loaded with `xacro.load_yaml` and expanded into `<param>` tags because Humble
 hardware plugins only receive parameters that way.
 
-## Scope: arms only
+## Scope: arms and hands, not legs
 
-The `<ros2_control>` block covers the 14 arm joints and nothing else. Legs and waist belong to the
-onboard controller, which is what keeps the robot balanced; claiming them here would mean owning
-balance. The hand joints are present for kinematic structure but get no interfaces, and the
-simulated model has no finger degrees of freedom at all.
+The xacro emits three `<ros2_control>` blocks: the 14 arm joints on `G1ArmSdkSystem`, and seven
+finger joints per hand on a `G1Dex3System` each. Legs and waist belong to the onboard controller,
+which is what keeps the robot balanced; claiming them here would mean owning balance.
+
+One component per hand, separate from the arm, because the Dex3 is a separate device on its own
+topics with its own control authority, and because a hand fault should not take
+the arms down with it.
 
 ## Parameters
 

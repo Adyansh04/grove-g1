@@ -22,10 +22,19 @@ def generate_launch_description():
             "because the right one depends on whether navigation is running and this file "
             "has no way to know that.",
         ),
+        DeclareLaunchArgument(
+            "node_name",
+            default_value="rviz2",
+            # Overridable because a mission run shows two windows at once, and MoveIt's own
+            # launcher already claims 'rviz2'. Two nodes under one name is a graph the tooling
+            # cannot address unambiguously.
+            description="Node name. Give the second window its own so it does not collide "
+            "with MoveIt's.",
+        ),
         Node(
             package="rviz2",
             executable="rviz2",
-            name="rviz2",
+            name=LaunchConfiguration("node_name"),
             output="log",
             arguments=["-d", rviz_config],
         ),

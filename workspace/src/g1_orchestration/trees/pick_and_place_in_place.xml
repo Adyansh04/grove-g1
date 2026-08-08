@@ -1,0 +1,34 @@
+<?xml version="1.0"?>
+<!--
+  Pick the cube up, hold it, put it down beside where it was. No navigation.
+
+  This is the tree to run against the `manipulation` world, where the object is already at
+  arm's length and there is nowhere to drive to. pick_and_place.xml is the full mission and
+  needs Nav2, the facility world and a map; this one needs none of that, so it is what makes
+  the orchestration layer (and Groot2) testable while the manipulation work is being tuned.
+
+  Coordinates are odom, which is the frame /objects publishes in. The place target is 6 cm to
+  the robot's left of where the cube starts, on the same table top.
+
+  Assumes the arm is already acquired, which activate_arm:=true does. AcquireArm is here
+  anyway: it is idempotent, and a tree that only works when something else happened first is a
+  tree that fails confusingly.
+-->
+<root BTCPP_format="4" main_tree_to_execute="PickAndPlaceInPlace">
+  <BehaviorTree ID="PickAndPlaceInPlace">
+    <Sequence name="pick_and_put_down">
+      <AcquireArm name="take_the_arm"/>
+
+      <RetryUntilSuccessful name="pick_with_one_retry" num_attempts="2">
+        <Pick name="pick_the_cube" object_id="red_cube" arm="right"/>
+      </RetryUntilSuccessful>
+
+      <SetArmPosture name="hold_it_close" group="right_arm" named_target="carry"/>
+
+      <Place name="put_it_down" target="0.28;-0.14;0.83" frame_id="odom" arm="right"/>
+
+      <SetArmPosture name="tuck_away" group="right_arm" named_target="tucked"/>
+      <ReleaseArm name="hand_the_arm_back"/>
+    </Sequence>
+  </BehaviorTree>
+</root>

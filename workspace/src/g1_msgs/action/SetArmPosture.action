@@ -1,0 +1,16 @@
+# Move a planning group to one of its named SRDF poses.
+#
+# Named targets only. A free-form joint or pose goal belongs to MoveIt's own interfaces; this
+# exists so the behavior tree can say "tucked" without carrying fourteen joint values in XML.
+
+# A group in g1.srdf: left_arm, right_arm, both_arms, left_hand or right_hand.
+string group
+# A group_state defined for that group. Rejected if the SRDF does not have it, so a typo in a
+# tree fails at the goal rather than silently holding position.
+string named_target
+---
+bool success
+string message
+---
+# No feedback field, for the same reason SetLocoMode has none: the move either completes or
+# fails, and "still executing" is not information the caller can act on.

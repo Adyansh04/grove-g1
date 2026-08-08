@@ -47,6 +47,11 @@ struct Config
     bool camera_enabled = false;
     int  camera_width   = 848;
     int  camera_height  = 480;
+
+    // Bodies whose ground-truth pose is published, for the sim-only object source. An
+    // explicit list, never "every body with a free joint": the pelvis has one too, and so
+    // does anything else a scene author drops in. Empty means the feature is off.
+    std::vector<std::string> object_bodies;
     int    azimuth_steps   = 360;
     int    elevation_steps = 32;
     double azimuth_min     = -M_PI;
@@ -123,6 +128,9 @@ Config loadConfig()
         if (root["range_max"]) {
             cfg.range_max = root["range_max"].as<double>();
         }
+        if (root["object_bodies"]) {
+            cfg.object_bodies = root["object_bodies"].as<std::vector<std::string>>();
+        }
     } catch (const std::exception& e) {
         // Loud, and still off: a malformed config must not look like a working sensor.
         std::fprintf(
@@ -135,6 +143,83 @@ Config loadConfig()
         cfg.enabled = false;
     }
     return cfg;
+}
+
+// Axis-aligned extents of a body's own geometry, as full widths in the body frame.
+//
+// Every geom's bounding box is taken about the BODY origin rather than the geom's, so a body
+// whose geom sits off-centre reports a box that still contains it. All four scene objects are
+// single centred geoms, where this is simply the geom's own size.
+void bodyExtents(const mjModel* m, int body, double out[3])
+{
+    out[0] = out[1] = out[2] = 0.0;
+    for (int i = 0; i < m->body_geomnum[body]; ++i)
+    {
+        const int     geom = m->body_geomadr[body] + i;
+        const mjtNum* size = m->geom_size + 3 * geom;
+        // MuJoCo's geom_size means different things per type, and only these three appear in
+        // the scene's graspable bodies. An unrecognised type contributes nothing rather than
+        // a wrong number.
+        double half[3] = { 0.0, 0.0, 0.0 };
+        switch (m->geom_type[geom])
+        {
+            case mjGEOM_BOX:
+                half[0] = size[0];
+                half[1] = size[1];
+                half[2] = size[2];
+                break;
+            case mjGEOM_SPHERE:
+                half[0] = half[1] = half[2] = size[0];
+                break;
+            case mjGEOM_CYLINDER:
+            case mjGEOM_CAPSULE:
+                half[0] = half[1] = size[0];
+                half[2] = size[1];
+                break;
+            default:
+                continue;
+        }
+        const mjtNum* pos = m->geom_pos + 3 * geom;
+        for (int a = 0; a < 3; ++a)
+        {
+            out[a] = std::max(out[a], 2.0 * (std::abs(pos[a]) + half[a]));
+        }
+    }
+}
+
+// Resolves the tracked bodies against the current model, dropping any it does not have.
+// A scene without the pick-and-place objects (the flat and perception worlds) is a normal
+// configuration rather than an error, so a missing body says so once and is skipped --
+// the same treatment dex3_handler gives a model with no hands.
+void resolveObjectBodies(
+    const mjModel* m, const std::vector<std::string>& names, std::vector<int>& ids,
+    std::vector<ObjectPoseRecord>& records)
+{
+    ids.clear();
+    records.clear();
+    for (const std::string& name : names) {
+        if (name.size() >= sizeof(ObjectPoseRecord::name)) {
+            std::fprintf(
+                stderr, "[grove_g1] object body '%s' exceeds %zu chars; NOT tracked\n",
+                name.c_str(), sizeof(ObjectPoseRecord::name) - 1);
+            continue;
+        }
+        const int id = mj_name2id(m, mjOBJ_BODY, name.c_str());
+        if (id < 0) {
+            std::fprintf(
+                stderr, "[grove_g1] no body '%s' in this scene; not tracked\n", name.c_str());
+            continue;
+        }
+        ids.push_back(id);
+        ObjectPoseRecord record{};
+        std::strncpy(record.name, name.c_str(), sizeof(record.name) - 1);
+        // Geometry is fixed for the run, so it is measured here rather than every cycle.
+        bodyExtents(m, id, record.size);
+        records.push_back(record);
+    }
+    if (!ids.empty()) {
+        std::fprintf(stderr, "[grove_g1] tracking %zu object bodies\n", ids.size());
+    }
 }
 
 // Extrinsic XYZ (URDF rpy) to a row-major 3x3.
@@ -326,6 +411,10 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
     rpyToMatrix(kCamRpy, R_cam_mount);
     int cam_id = mj_name2id(m, mjOBJ_CAMERA, "d435i");
 
+    std::vector<int>              object_ids;
+    std::vector<ObjectPoseRecord> object_records;
+    resolveObjectBodies(m, cfg.object_bodies, object_ids, object_records);
+
     mjtByte geomgroup[mjNGROUP] = {0};
     if (cfg.scene_geom_group >= 0 && cfg.scene_geom_group < mjNGROUP) {
         geomgroup[cfg.scene_geom_group] = 1;
@@ -440,6 +529,17 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
                 sim_time = live->time;
                 std::memcpy(torso_pos, live->xpos + 3 * torso_id, sizeof(torso_pos));
                 std::memcpy(torso_mat, live->xmat + 9 * torso_id, sizeof(torso_mat));
+                // Body poses, not free-joint qpos: a body welded to the hand by the grasp
+                // weld still reports where it actually is, while its qpos would describe a
+                // constraint MuJoCo is currently overriding.
+                for (std::size_t i = 0; i < object_ids.size(); ++i) {
+                    std::memcpy(
+                        object_records[i].pos, live->xpos + 3 * object_ids[i],
+                        sizeof(object_records[i].pos));
+                    std::memcpy(
+                        object_records[i].quat, live->xquat + 4 * object_ids[i],
+                        sizeof(object_records[i].quat));
+                }
             }
         }
 
@@ -450,6 +550,8 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
             m        = *model;
             snapshot = mj_makeData(m);
             torso_id = mj_name2id(m, mjOBJ_BODY, "torso_link");
+            // Body ids are indices into the old model's name table; a reload renumbers them.
+            resolveObjectBodies(m, cfg.object_bodies, object_ids, object_records);
             std::fprintf(stderr, "[grove_g1] model reloaded; sensor snapshot rebuilt\n");
             // cam_scn and cam_con were built against the old model: their mesh and texture
             // ids index freed arrays, and cam_id indexes the old model's camera list, so
@@ -488,6 +590,21 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
             !std::isfinite(torso_pos[1]) || !std::isfinite(torso_pos[2])) {
             std::this_thread::sleep_until(next);
             continue;
+        }
+
+        // Before the sweep, not after: these poses are already in hand from the snapshot,
+        // and sending them here keeps them ~32 ms fresher than the LiDAR frame they share a
+        // cycle with. No sensor pose to report -- the records carry world poses directly.
+        if (!object_records.empty()) {
+            SensorFrameHeader oh{};
+            oh.magic         = kSensorFrameMagic;
+            oh.version       = kSensorFrameVersion;
+            oh.kind          = static_cast<uint32_t>(SensorFrameKind::ObjectPoses);
+            oh.payload_bytes =
+                static_cast<uint32_t>(object_records.size() * sizeof(ObjectPoseRecord));
+            oh.sim_time_s      = sim_time;
+            oh.sensor_quat[0]  = 1.0;
+            relay.send(oh, object_records.data(), oh.payload_bytes);
         }
 
         // Sensor pose = torso pose composed with the fixed mount, taken live rather than

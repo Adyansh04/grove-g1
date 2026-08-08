@@ -13,7 +13,7 @@
 # origin, which is where costmap and localization problems actually show up.
 #
 # Three things this gets right, each of which produced a false "stack defect" when done the
-# obvious way. See docs/notes for the measurements.
+# obvious way.
 #
 #   1. One goal at a time, allowed to finish. Wrapping the action client in a hard timeout
 #      kills it mid-goal and lets the next goal preempt the running one; abrupt replanning

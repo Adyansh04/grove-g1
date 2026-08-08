@@ -52,7 +52,9 @@ LEFT_HAND = [
 ]
 # The `closed` group state from g1.srdf, restated rather than read out of it: a test that took
 # its expectation from the file under test would pass no matter what that file said.
-LEFT_HAND_CLOSED = dict(zip(LEFT_HAND, [-0.30, -0.50, 1.20, -1.20, -1.40, -1.20, -1.40]))
+LEFT_HAND_CLOSED = dict(
+    zip(LEFT_HAND, [-0.30, -0.50, 1.20, -1.20, -1.40, -1.20, -1.40], strict=True)
+)
 
 # g1_description/config/arm_sdk_params.yaml. joint_limits.yaml plans under this; the test proves
 # the cap actually binds rather than trusting the two files agree.

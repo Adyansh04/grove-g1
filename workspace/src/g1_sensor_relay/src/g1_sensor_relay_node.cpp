@@ -23,7 +23,9 @@
 #include <sensor_msgs/msg/image.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <string>
+#include <utility>
 #include <vector>
+#include <vision_msgs/msg/detection3_d_array.hpp>
 
 #include "g1_sensor_relay/frame_reader.hpp"
 
@@ -82,6 +84,13 @@ public:
 
         pose_pub_ = create_publisher<geometry_msgs::msg::PoseStamped>(
             "~/sensor_pose",
+            rclcpp::SensorDataQoS());
+
+        // Node-relative and raw: this is the simulator's world frame with no staleness
+        // policy applied. g1_object_pose_source is what turns it into /objects, and naming
+        // it apart keeps a consumer from subscribing to ground truth by accident.
+        objects_pub_ = create_publisher<vision_msgs::msg::Detection3DArray>(
+            "~/object_poses",
             rclcpp::SensorDataQoS());
 
         if (!openListener())
@@ -211,15 +220,62 @@ private:
                 closeClient();
                 return;
             }
-            if (frame.kind == FrameKind::Depth)
+            switch (frame.kind)
             {
-                publishDepth(frame);
-            }
-            else
-            {
-                publish(frame);
+                case FrameKind::Depth:
+                    publishDepth(frame);
+                    break;
+                case FrameKind::ObjectPoses:
+                    publishObjects(frame);
+                    break;
+                case FrameKind::PointCloud:
+                    publish(frame);
+                    break;
             }
         }
+    }
+
+    /// Ground truth, republished verbatim in the simulator's world frame. This node does no
+    /// interpreting: g1_object_pose_source is the boundary that decides whether a consumer is
+    /// allowed to believe any of it, and on hardware that node refuses to run at all.
+    void publishObjects(const CloudFrame& frame)
+    {
+        vision_msgs::msg::Detection3DArray msg;
+        msg.header.stamp    = now();
+        msg.header.frame_id = world_frame_id_;
+        msg.detections.reserve(frame.objects.size());
+
+        for (const grove_g1::ObjectPoseRecord& record : frame.objects)
+        {
+            vision_msgs::msg::Detection3D detection;
+            detection.header = msg.header;
+            detection.id     = record.name;
+
+            vision_msgs::msg::ObjectHypothesisWithPose hypothesis;
+            hypothesis.hypothesis.class_id = record.name;
+            // Ground truth: there is nothing to be uncertain about. A real detector fills
+            // this with its own confidence and the consumer can threshold on it.
+            hypothesis.hypothesis.score        = 1.0;
+            hypothesis.pose.pose.position.x    = record.pos[0];
+            hypothesis.pose.pose.position.y    = record.pos[1];
+            hypothesis.pose.pose.position.z    = record.pos[2];
+            hypothesis.pose.pose.orientation.w = record.quat[0];
+            hypothesis.pose.pose.orientation.x = record.quat[1];
+            hypothesis.pose.pose.orientation.y = record.quat[2];
+            hypothesis.pose.pose.orientation.z = record.quat[3];
+
+            detection.bbox.center = hypothesis.pose.pose;
+            // Full widths, which is what BoundingBox3D means by size. A consumer builds its
+            // collision geometry from this rather than from its own table of object
+            // dimensions, so replacing this source with a real detector changes nothing
+            // downstream.
+            detection.bbox.size.x = record.size[0];
+            detection.bbox.size.y = record.size[1];
+            detection.bbox.size.z = record.size[2];
+            detection.results.push_back(hypothesis);
+            msg.detections.push_back(std::move(detection));
+        }
+        objects_pub_->publish(std::move(msg));
     }
 
     void publishDepth(const CloudFrame& frame)
@@ -338,13 +394,14 @@ private:
     int                       client_fd_ = -1;
     std::vector<std::uint8_t> buffer_;
 
-    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr   cloud_pub_;
-    rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pose_pub_;
-    rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr         depth_pub_;
-    rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr         color_pub_;
-    rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr    info_pub_;
-    rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr    depth_info_pub_;
-    rclcpp::TimerBase::SharedPtr                                  timer_;
+    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr      cloud_pub_;
+    rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr    pose_pub_;
+    rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr            depth_pub_;
+    rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr            color_pub_;
+    rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr       info_pub_;
+    rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr       depth_info_pub_;
+    rclcpp::Publisher<vision_msgs::msg::Detection3DArray>::SharedPtr objects_pub_;
+    rclcpp::TimerBase::SharedPtr                                     timer_;
 };
 
 }  // namespace g1_sensor_relay

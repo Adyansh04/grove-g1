@@ -12,7 +12,6 @@ import launch_testing
 import pytest
 import rclpy
 from ament_index_python.packages import get_package_share_directory
-from g1_msgs.action import SetLocoMode
 from geometry_msgs.msg import Twist
 from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription, TimerAction
@@ -23,6 +22,8 @@ from rclpy.qos import QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile, QoSReli
 from unitree_api.msg import Request, Response
 from unitree_go.msg import SportModeState
 from unitree_hg.msg import LowState
+
+from g1_msgs.action import SetLocoMode
 
 SETTLE_TIMEOUT_S = 25.0
 STAND_HEIGHT_MIN = 0.60

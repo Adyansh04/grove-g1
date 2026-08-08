@@ -1,0 +1,28 @@
+# Put down whatever the given arm is holding.
+#
+# The pose is where the OBJECT should end up, not where the palm should go: the caller knows the
+# target surface, and only the server knows how the object is currently held. It is transformed
+# into the planning frame on arrival, so a goal in odom survives the robot having walked.
+
+# Put the held object down on top of this DETECTED surface, ignoring `pose`. Prefer this to a
+# fixed coordinate, because a fixed coordinate is written in the map frame and the base approach
+# parks the robot against the object stream, which is published in odom. AMCL has been measured
+# 0.23 m apart from odom mid-mission, against an arm whose lateral window is 0.04 m -- so a map
+# coordinate that is right on the map lands well outside the arm's reach. Reading the surface
+# from the same stream the approach drove against keeps the two in agreement by construction.
+string surface_object_id
+
+# Where the object should end up, used only when surface_object_id is empty.
+geometry_msgs/PoseStamped pose
+string ARM_LEFT=left
+string ARM_RIGHT=right
+string arm
+---
+bool success
+string message
+---
+string PHASE_PREPLACE=preplace
+string PHASE_LOWER=lower
+string PHASE_RELEASE=release
+string PHASE_RETREAT=retreat
+string phase

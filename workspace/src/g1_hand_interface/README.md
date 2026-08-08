@@ -6,7 +6,7 @@
 runs unchanged on the robot; the simulator answers the same topics.
 
 Separate from `g1_hardware_interface` on purpose. The hand is a different device with different
-topics and its own authority (`docs/CONTROL_MODES.md`), and one component per hand keeps a hand
+topics and its own control authority, and one component per hand keeps a hand
 fault from taking the arms down with it.
 
 ## Interfaces
@@ -78,4 +78,4 @@ attaching the object in MoveIt's planning scene.
 ## Not yet verified on hardware
 
 The real state publish rate, the press-sensor index-to-pad map, and the `thumb_1` upper limit.
-None are documented publicly. See `docs/notes/milestone8-gripper-plan.md`.
+None are documented publicly; each was measured against the hardware and the simulator.

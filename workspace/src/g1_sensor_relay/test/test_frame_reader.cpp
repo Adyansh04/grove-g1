@@ -68,6 +68,35 @@ std::vector<std::uint8_t> makeDepthFrame(std::uint32_t w, std::uint32_t h, bool 
     return bytes;
 }
 
+// Object frames are a flat array of fixed-size records, with no count in the header: the
+// record count follows from payload_bytes, so there is no second number to disagree.
+std::vector<std::uint8_t> makeObjectFrame(const std::vector<std::string>& names)
+{
+    SensorFrameHeader header{};
+    header.magic   = grove_g1::kSensorFrameMagic;
+    header.version = grove_g1::kSensorFrameVersion;
+    header.kind    = static_cast<std::uint32_t>(grove_g1::SensorFrameKind::ObjectPoses);
+    header.payload_bytes =
+        static_cast<std::uint32_t>(names.size() * sizeof(grove_g1::ObjectPoseRecord));
+    header.sim_time_s     = 3.5;
+    header.sensor_quat[0] = 1.0;
+
+    std::vector<std::uint8_t> bytes(sizeof(header) + header.payload_bytes);
+    std::memcpy(bytes.data(), &header, sizeof(header));
+    for (std::size_t i = 0; i < names.size(); ++i)
+    {
+        grove_g1::ObjectPoseRecord record{};
+        std::strncpy(record.name, names[i].c_str(), sizeof(record.name) - 1);
+        record.pos[0]  = 1.0 + static_cast<double>(i);
+        record.pos[1]  = 2.0 + static_cast<double>(i);
+        record.pos[2]  = 0.78;
+        record.quat[0] = 1.0;
+        record.size[0] = record.size[1] = record.size[2] = 0.06;
+        std::memcpy(bytes.data() + sizeof(header) + i * sizeof(record), &record, sizeof(record));
+    }
+    return bytes;
+}
+
 }  // namespace
 
 TEST(FrameReader, ReadsAWholeFrameAndConsumesExactlyIt)
@@ -241,4 +270,65 @@ TEST(FrameReader, RefusesAnAbsurdImageSizeBeforeAllocating)
 
     CloudFrame frame;
     EXPECT_EQ(tryReadFrame(bytes, frame), FrameStatus::BadLength);
+}
+
+TEST(FrameReader, ReadsAnObjectPoseFrame)
+{
+    auto       bytes = makeObjectFrame({ "red_cube", "green_cylinder" });
+    CloudFrame frame;
+    ASSERT_EQ(tryReadFrame(bytes, frame), FrameStatus::Ok);
+
+    EXPECT_EQ(frame.kind, FrameKind::ObjectPoses);
+    ASSERT_EQ(frame.objects.size(), 2u);
+    EXPECT_STREQ(frame.objects[0].name, "red_cube");
+    EXPECT_STREQ(frame.objects[1].name, "green_cylinder");
+    EXPECT_DOUBLE_EQ(frame.objects[1].pos[0], 2.0);
+    EXPECT_DOUBLE_EQ(frame.objects[0].quat[0], 1.0);
+    EXPECT_DOUBLE_EQ(frame.objects[0].size[2], 0.06);
+    // The other payload interpretations must be cleared, not left over from a previous frame.
+    EXPECT_TRUE(frame.points.empty());
+    EXPECT_TRUE(frame.depth.empty());
+    EXPECT_TRUE(bytes.empty());
+}
+
+TEST(FrameReader, RefusesAnObjectPayloadThatIsNotAWholeNumberOfRecords)
+{
+    auto              bytes = makeObjectFrame({ "red_cube" });
+    SensorFrameHeader header{};
+    std::memcpy(&header, bytes.data(), sizeof(header));
+    header.payload_bytes -= 1;
+    bytes.resize(bytes.size() - 1);
+    std::memcpy(bytes.data(), &header, sizeof(header));
+
+    CloudFrame frame;
+    EXPECT_EQ(tryReadFrame(bytes, frame), FrameStatus::BadLength);
+}
+
+TEST(FrameReader, RefusesAnAbsurdObjectCountBeforeAllocating)
+{
+    auto              bytes = makeObjectFrame({ "red_cube" });
+    SensorFrameHeader header{};
+    std::memcpy(&header, bytes.data(), sizeof(header));
+    header.payload_bytes =
+        (kMaxObjects + 1u) * static_cast<std::uint32_t>(sizeof(grove_g1::ObjectPoseRecord));
+    std::memcpy(bytes.data(), &header, sizeof(header));
+
+    CloudFrame frame;
+    EXPECT_EQ(tryReadFrame(bytes, frame), FrameStatus::BadLength);
+}
+
+TEST(FrameReader, TerminatesAnObjectNameThatArrivesUnterminated)
+{
+    // A producer that filled all 32 bytes would otherwise leave the name running into the
+    // pose that follows it, and the relay copies that name straight into a message field.
+    auto bytes = makeObjectFrame({ "red_cube" });
+    std::memset(
+        bytes.data() + sizeof(SensorFrameHeader),
+        'x',
+        sizeof(grove_g1::ObjectPoseRecord::name));
+
+    CloudFrame frame;
+    ASSERT_EQ(tryReadFrame(bytes, frame), FrameStatus::Ok);
+    ASSERT_EQ(frame.objects.size(), 1u);
+    EXPECT_EQ(std::strlen(frame.objects[0].name), sizeof(grove_g1::ObjectPoseRecord::name) - 1);
 }

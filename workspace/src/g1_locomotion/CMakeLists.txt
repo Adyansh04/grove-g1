@@ -10,6 +10,10 @@ find_package(geometry_msgs REQUIRED)
 find_package(unitree_api REQUIRED)
 find_package(g1_msgs REQUIRED)
 find_package(nlohmann_json REQUIRED)
+find_package(vision_msgs REQUIRED)
+find_package(tf2 REQUIRED)
+find_package(tf2_ros REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
 
 # Pure, ROS-free wire-contract logic -- unit-tested directly with no rclcpp node needed (mirrors
 # g1_hardware_interface's arm_ramp_engine and g1_motion_service_sim's blend_math).
@@ -73,15 +77,28 @@ target_compile_features(g1_loco_bridge PUBLIC cxx_std_20)
 target_link_libraries(g1_loco_bridge g1_loco_bridge_node_lib)
 ament_target_dependencies(g1_loco_bridge rclcpp)
 
+# Same shape as g1_gait_shaper: the decision logic compiled straight in, so the node and its
+# unit test build it under one dialect and nothing else has to link it.
+add_executable(g1_base_approach src/g1_base_approach_node.cpp src/approach_planner.cpp)
+target_include_directories(g1_base_approach PRIVATE
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+)
+target_compile_features(g1_base_approach PUBLIC cxx_std_20)
+ament_target_dependencies(g1_base_approach
+  rclcpp rclcpp_action geometry_msgs g1_msgs vision_msgs
+  tf2 tf2_ros tf2_geometry_msgs)
+
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   target_compile_options(g1_loco_bridge_core PRIVATE -Wall -Wextra)
   target_compile_options(g1_loco_bridge_node_lib PRIVATE -Wall -Wextra)
   target_compile_options(g1_loco_bridge PRIVATE -Wall -Wextra)
   target_compile_options(g1_gait_shaper PRIVATE -Wall -Wextra)
   target_compile_options(g1_loco_authority PRIVATE -Wall -Wextra)
+  target_compile_options(g1_base_approach PRIVATE -Wall -Wextra)
 endif()
 
-install(TARGETS g1_loco_bridge g1_gait_shaper g1_loco_authority DESTINATION lib/${PROJECT_NAME})
+install(TARGETS g1_loco_bridge g1_gait_shaper g1_loco_authority g1_base_approach
+  DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY config DESTINATION share/${PROJECT_NAME})
 
 if(BUILD_TESTING)
@@ -121,6 +138,15 @@ if(BUILD_TESTING)
   # and the correlator's timers are all wired together on a live node.
   ament_add_gmock(test_loco_bridge_node test/test_loco_bridge_node.cpp)
   target_link_libraries(test_loco_bridge_node g1_loco_bridge_node_lib)
+
+  # The oblique-approach geometry, the overshoot that cannot be undone, and the deliberately
+  # asymmetric quantum estimate. All of it is arithmetic the sim cannot check cheaply: a live
+  # run exercises one trajectory, this exercises the branches.
+  ament_add_gmock(test_approach_planner test/test_approach_planner.cpp src/approach_planner.cpp)
+  target_include_directories(test_approach_planner PRIVATE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  )
+  target_compile_features(test_approach_planner PRIVATE cxx_std_20)
 
   # The one path safety rule 4 cares about that no sim suite can reach: an acquire that fails
   # after the bridge already believes authority is held. Driven against a stub, so no simulator

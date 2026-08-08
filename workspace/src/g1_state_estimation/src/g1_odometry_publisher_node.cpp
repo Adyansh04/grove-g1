@@ -39,7 +39,7 @@ G1OdometryPublisher::G1OdometryPublisher(const rclcpp::NodeOptions& options)
     // Height of base_link above the floor, making odom the ground plane. Defaults to 0,
     // which is correct for a real floating-base estimator (it measures z itself). The
     // perception sim's base is a planar body with no z DoF, so its launch supplies the
-    // spawn height from g1_sim's sensor_mounts.yaml.
+    // spawn height from the planar model's sensor mounts.
     declare_parameter<double>("base_height_m", 0.0);
     declare_parameter<double>("publish_rate_hz", 50.0);
     declare_parameter<bool>("publish_odom_msg", true);

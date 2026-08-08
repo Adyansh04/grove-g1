@@ -5,6 +5,7 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(vision_msgs REQUIRED)
 
 # Framing and validation, free of ROS and sockets so the wire format tests without a
 # simulator or a running graph.
@@ -17,7 +18,7 @@ target_compile_features(frame_reader PUBLIC cxx_std_20)
 
 add_executable(g1_sensor_relay src/g1_sensor_relay_node.cpp)
 target_link_libraries(g1_sensor_relay PUBLIC frame_reader)
-ament_target_dependencies(g1_sensor_relay PUBLIC rclcpp sensor_msgs geometry_msgs)
+ament_target_dependencies(g1_sensor_relay PUBLIC rclcpp sensor_msgs geometry_msgs vision_msgs)
 
 # This package parses length-prefixed binary frames off a socket, so -Wsign-compare and the
 # unused-result warnings earn their keep here more than anywhere else in the workspace.

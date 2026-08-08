@@ -1,0 +1,92 @@
+<mujoco model="g1_manipulation_scene">
+  <!-- The fast skill scene: one object, on a pedestal, at arm's length in front of the robot.
+
+       Exists so a pick can be exercised without navigating to the facility workbench first,
+       and without waiting on the gait to hold still once it has. The pedestal top is at the
+       workbench's own 0.75 m and the object is the same 6 cm cube, so a grasp tuned here is
+       tuned for there.
+
+       Deliberately measured against by nothing else. g1_perception_scene is what the LiDAR
+       and octomap tests assert geometry from, and adding a pedestal to it would move numbers
+       those tests were written against, which is exactly how the +x wall assertion broke
+       once already.
+
+       Every geom is group 2, for the reason g1_perception_scene explains: the sweep masks to
+       that group, or every ray returns the robot's own shell.
+
+       Staged into the vendored model directory at launch, so relative includes resolve. -->
+  <include file="g1_29dof.xml"/>
+
+  <statistic center="0 0 0.5" extent="2.0"/>
+
+  <visual>
+    <headlight diffuse="0.6 0.6 0.6" ambient="0.3 0.3 0.3" specular="0 0 0"/>
+    <rgba haze="0.15 0.25 0.35 1"/>
+    <global azimuth="-130" elevation="-20" offwidth="1280" offheight="720"/>
+  </visual>
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512"
+      height="3072"/>
+    <texture type="2d" name="groundplane" builtin="checker" mark="edge" rgb1="0.2 0.3 0.4"
+      rgb2="0.1 0.2 0.3" markrgb="0.8 0.8 0.8" width="300" height="300"/>
+    <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5"
+      reflectance="0.2"/>
+    <material name="pedestal_mat" rgba="0.35 0.38 0.42 1"/>
+    <material name="mat_red_obj" rgba="0.9 0.15 0.15 1" specular="0.6" shininess="0.8"/>
+  </asset>
+
+  <worldbody>
+    <light pos="0 0 1.5" dir="0 0 -1" directional="true"/>
+    <geom name="floor" group="2" size="0 0 0.05" type="plane" material="groundplane"/>
+
+    <!-- THE NEAR EDGE MUST CLEAR THE SPAWNED ARM. That is the constraint that decides this
+         geometry, and getting it wrong is not subtle: an earlier version put the top at
+         x 0.14 to 0.46 and the robot spawned with its right forearm resting inside the
+         tabletop. It knocked the cube several centimetres on every launch, and it quietly
+         corrupted every collision-checked IK measurement taken in the scene, because the arm
+         was in contact with the table before anything had been asked of it.
+
+         The right palm hangs at about odom (0.18, -0.18, 0.74) at spawn: arms down, elbows
+         bent forward by the hold pose in motion_service_sim. So the top starts at x 0.26,
+         8 cm clear of it, and sits at 0.80, above where the palm hangs rather than around it.
+
+         Height is chosen to match the facility workbench (0.75) as closely as the arm's reach
+         allows, so a grasp tuned here transfers. Two earlier attempts, both wrong and both
+         worth remembering: 0.97, measured against a grasp offset that had the hand's closing
+         axis wrong so the sweep meant nothing, and 0.485, which is below the arm's reach
+         entirely. -->
+    <geom name="table_top" group="2" type="box" size="0.16 0.14 0.015" pos="0.42 -0.20 0.785"
+      material="pedestal_mat" contype="1" conaffinity="1"/>
+    <geom name="table_leg_near" group="2" type="box" size="0.02 0.02 0.385"
+      pos="0.54 -0.32 0.385" material="pedestal_mat" contype="1" conaffinity="1"/>
+    <geom name="table_leg_far" group="2" type="box" size="0.02 0.02 0.385"
+      pos="0.54 -0.08 0.385" material="pedestal_mat" contype="1" conaffinity="1"/>
+
+    <!-- Same size, mass and friction as the facility scene's, so the two are the same problem.
+         On the near half of the top, which is the part the arm can reach, and spawned at
+         exactly rest height (half-height 0.03 above the 0.80 surface) rather than a few mm
+         above it, so it settles instead of bouncing. -->
+    <body name="red_cube" pos="0.28 -0.20 0.830">
+      <freejoint name="red_cube_joint"/>
+      <geom group="2" type="box" size="0.03 0.03 0.03" material="mat_red_obj" mass="0.15"
+        contype="1" conaffinity="1" friction="1 0.005 0.0001"/>
+    </body>
+
+    <!-- The depth camera element the sensor sampler renders through, exactly as the other
+         scenes carry it: the mount belongs to the vendored robot and cannot host a camera, so
+         the sampler writes this one's pose from torso_link every frame. -->
+    <camera name="d435i" mode="fixed" fovy="58" resolution="848 480" pos="0 0 1"/>
+  </worldbody>
+
+  <equality>
+    <!-- Inactive, and only grove-g1's grasp_weld manager ever turns one on, when the hand it
+         names has measurably closed near the cube. SIMULATION ONLY: the Dex3 fingers carry no
+         contact geometry (patch 003, deliberate), so without these a closed hand passes
+         straight through. -->
+    <weld name="grasp_left_red_cube" body1="left_hand_palm_link" body2="red_cube"
+      active="false"/>
+    <weld name="grasp_right_red_cube" body1="right_hand_palm_link" body2="red_cube"
+      active="false"/>
+  </equality>
+</mujoco>

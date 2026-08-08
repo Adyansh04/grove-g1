@@ -46,7 +46,7 @@ rclcpp::NodeOptions optionsWithSource(const std::string& source, bool use_sim_ti
         rclcpp::Parameter("base_height_m", 0.793),
         // The planar sandbox's own configuration, not the node default. Its base cannot tilt,
         // so it wants one edge carrying the whole pose; pelvis_frame_id stays empty and the
-        // frame keeps the name g1_sim's launch and RViz config already use.
+        // frame keeps the name the launch files and RViz configs already use.
         rclcpp::Parameter("base_frame_id", "base_link"),
         rclcpp::Parameter("use_sim_time", use_sim_time),
     });

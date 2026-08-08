@@ -1,0 +1,179 @@
+# Walks the base into arm's reach of a measured object, and backs it out again.
+# See g1_locomotion/README.md and the local engineering notes.
+#
+# *** THESE ARE SIM BRING-UP VALUES, NOT HARDWARE-SAFE DEFAULTS. ***
+# The pulse velocities and durations encode the SIM WALKING POLICY's gait-initiation dead zone,
+# the same property g1_gait_shaper.yaml exists for. The real G1's onboard controller has no such
+# gap and can be commanded continuously, so on hardware this node needs a different control law,
+# not different numbers -- and probably does not need to exist at all.
+g1_base_approach:
+  ros__parameters:
+    # Remapped to /cmd_vel_approach, which g1_gait_shaper takes as its HIGH-priority input and
+    # prefers over Nav2's /cmd_vel for override_timeout_s after each message. Two writers on the
+    # velocity channel is what CLAUDE.md section 7 forbids; sequencing in the behaviour tree makes
+    # them non-concurrent in practice, but that is a timing coincidence rather than ownership.
+    cmd_vel_topic: "cmd_vel_approach"
+    base_frame: "base_footprint"
+
+    # Every one of these must clear g1_gait_shaper's engage thresholds (fwd 0.45, yaw 1.20,
+    # lat 0.50) or the shaper zeroes them and this node walks nowhere while reporting that it is
+    # walking. pulse_vyaw was 1.30 originally, which clears the SHAPER and not the POLICY -- the
+    # policy measures "no motion at or below 0.60, steps from 1.50" -- so the first live approach
+    # spent its whole budget asking for a turn that never happened.
+    pulse_vx: 0.45
+    pulse_vyaw: 1.50
+    pulse_vy: 0.50
+
+    # Reverse, for backing away from a surface without turning into it. Must clear the shaper's
+    # rev_engage, which is deliberately higher than fwd_engage: the policy measures -0.247 m/s at
+    # -0.60 and exactly nothing at -0.40, so this is the slowest command that actually reverses.
+    pulse_vrev: 0.60
+
+    # One duration per primitive, and they are NOT interchangeable. Measured, three repeats each,
+    # on a settled robot in open ground:
+    #
+    #   forward  0.30 s -> 0.293 m, sd 0.010, and +8.2 deg of yaw every time
+    #   yaw CCW  0.15 s -> +3.8 deg, and 3 mm of translation
+    #   yaw CW   0.60 s -> -3.5 deg (-3.62, -3.44, -3.39), tight
+    #   lateral  0.15 s -> ~0.035 m, under a degree of yaw, under a centimetre of forward
+    #
+    # YAW IS ASYMMETRIC, and the two directions need different durations. A 0.15 s pulse turns
+    # +3.8 deg counter-clockwise and only -1.1 deg clockwise; clockwise does not reach -3.5 deg
+    # until 0.60 s. Since a forward step yaws +8 deg EVERY time, every correction this skill
+    # needs is in the weak direction, and the first live run spent fourteen pulses failing to
+    # take out 7 degrees with a symmetric 0.15 s.
+    #
+    # Forward is IRREDUCIBLE. A 0.10 s pulse still produced 0.42 and 0.46 m on the trials where
+    # it triggered: once the gait commits to a step sequence it takes the whole thing, which is
+    # why a small forward gap is closed by overshooting and reversing back.
+    #
+    # Yaw and lateral are bimodal at longer durations -- either a small settle or a committed
+    # step -- and 0.15 s is what keeps them in the small mode worth having.
+    turn_pulse_ccw_s: 0.15
+    turn_pulse_cw_s: 0.60
+    strafe_pulse_s: 0.15
+
+    # Forward drives and big heading corrections are CONTINUOUS, closed on the measured error --
+    # a train of pulses winds the walking policy down to nothing (8.3 deg on the first pulse,
+    # ~0.1 by the twentieth), which is why a pulse-growing scheme used to live here and is gone.
+    # The ceilings bound one drive if the loop's own feedback never ends it; the leads stop the
+    # command short of the target because the gait coasts after it: ~17 deg after a turn, and
+    # about step_lead_m of travel after a drive.
+    max_turn_s: 8.0
+    max_step_s: 6.0
+    turn_lead_rad: 0.30
+    step_lead_m: 0.22
+
+    # Hold zero while the gait finishes the stride it is already in, THEN say nothing at all for
+    # a moment.
+    #
+    # The quiet gap is the more important of the two, and was missing for most of this skill's
+    # life. Every duration in this file was measured by a probe that stopped publishing between
+    # pulses; the loop published zeros continuously instead, and the same 0.60 s clockwise pulse
+    # that turns 4 to 6 degrees under the probe turned 0.5 degrees in the loop. Going quiet lets
+    # g1_loco_bridge's velocity gate fall idle rather than re-issue SetVelocity(0) at 5 Hz, so
+    # the next pulse starts from rest.
+    # Sized for a loop that fired dozens of short pulses. Forward, reverse, lateral and big
+    # heading corrections are continuous drives now, so a run takes a handful of moves rather
+    # than fifty and settle_s was trimmed. Not removed: the gait keeps stepping after the
+    # command stops, and measuring before it settles reports the command plus whatever of the
+    # stride was still in flight.
+    settle_s: 1.5
+    quiet_after_s: 1.2
+    cmd_rate_hz: 20.0
+
+    # Lateral gets the same treatment as heading: drive continuously while there is real
+    # distance to cover, one short pulse below the lead. The lead is what the gait slides after
+    # a strafe command ends.
+    max_strafe_s: 5.0
+    lateral_lead_m: 0.055
+
+    # MUST stay under forward_tolerance_m. A reverse that stops further out than the tolerance
+    # leaves a dead band where the planner keeps asking for a reverse and the drive keeps
+    # reporting itself already arrived: the same error logged every 2.7 s, forever, with the
+    # robot standing still. It was step_lead_m (0.22) against a tolerance of 0.110 and did
+    # exactly that. The node clamps it to half the tolerance regardless.
+    reverse_lead_m: 0.045
+
+    # WHERE THE OBJECT HAS TO END UP, in the base frame, for the arm to reach it.
+    #
+    # MEASURED, by asking /compute_ik for the grasp frame at the workbench cube's own height
+    # (pelvis z +0.0375) across a sweep of x, four attempts each: m9-checks/reach_sweep.py.
+    # Everything from x 0.16 to 0.36 solves 4/4; 0.38 and beyond solve none.
+    #
+    # This replaced 0.28 with a tolerance of 0.045, which came from the one configuration the
+    # pick is proven at in the manipulation scene. That was one sample mistaken for a range, and
+    # it cost twice: it put the target 8 cm nearer than the arm needs, which drives the robot's
+    # hips into the table edge, and it made the window a third of its real width, so the approach
+    # was chasing precision the gait does not have.
+    #
+    # target_y_m mirrors for the left arm, exactly as the grasp offset does.
+    target_x_m: 0.270
+    target_y_m: -0.220
+
+    # From a 2D grid run at the workbench with the arms tucked, at the PREGRASP height, checking
+    # each IK solution against /check_state_validity (m9-checks/reach_grid.py). Only the pregrasp
+    # has to be collision-free: the grasp pose sits on the table and is inside its octomap by
+    # construction, which is what the descent's collision exemption exists for.
+    #
+    # The pregrasp band is solid across every x from 0.16 to 0.38 for y between -0.20 and -0.26,
+    # and gets patchy above -0.17. So the lateral window is the tight one and the forward window
+    # is not.
+    #
+    # The old +/-0.07 lateral is what let the approach stop with the cube at y -0.114, well into
+    # the patchy region, and the pick then died on the pregrasp with GOAL_STATE_INVALID.
+    # Forward is the LOOSE axis and lateral is the tight one, which is the opposite of what the
+    # first single-line sweep suggested. 0.09 puts the forward window at x 0.19..0.37, all of it
+    # inside the solid band; a run that stopped at 0.066 of forward error and 0.022 of lateral
+    # was refused by a 0.060 forward tolerance it had no reason to be held to.
+    # 0.27 +/- 0.11 IS the measured band, x 0.16..0.38, rather than a cautious slice of it.
+    #
+    # Cutting it short is what caused the retries: a run stepped from 0.718 of forward error to
+    # 0.103 in one drive -- a good, finished approach -- and was then sent nudging for forty
+    # pulses because the tolerance was 0.090 and it was 13 mm outside. The arm could reach it the
+    # whole time. Being stricter than the arm buys nothing and costs minutes.
+    forward_tolerance_m: 0.110
+    lateral_tolerance_m: 0.040
+    # LOOSE on purpose, 20 degrees, and consumed ONLY by the aim before a forward drive. The
+    # planner itself never asks for a turn: reachability is judged in the base frame, where
+    # heading does not appear, so this only decides how square the robot stands to the surface
+    # while it closes. Holding it tightly bought nothing and cost most of the skill's pulses.
+    heading_tolerance_rad: 0.350
+
+    # Nearer than this and the object is genuinely under the robot, where no move helps and the
+    # tree has to re-stage through Nav2. Everything above it is recovered by reversing.
+    #
+    # It was 0.120, just under the arm band's near end, and that was too high to be a floor. The
+    # last few centimetres of forward error are closed by deliberately overshooting and reversing
+    # back, because forward is IRREDUCIBLE at about 0.29 m -- so a 0.123 m error steps to -0.161
+    # every time, by design. At 0.120 that landed 11 mm under the floor and aborted a healthy
+    # approach as unrecoverable, on the one move the design depends on. Reverse works: Retreat
+    # covers a metre with it.
+    min_forward_m: 0.050
+
+    # More than this left and the forward drive may stop early and let the gait coast; less, and
+    # it drives to zero and lets a reverse take back whatever the coast added. About one typical step:
+    # 0.293 m from a settled robot, 0.37 to 0.51 inside the approach loop where the gait is
+    # already warm from the re-aim before it.
+    #
+    # It is NOT an upper bound, and was, which broke the approach outright. At 0.60 the planner
+    # refused to step with 0.58 m of gap left -- on the grounds that a 0.60 step might overshoot
+    # -- and set about closing the whole 0.58 m two centimetres at a time. It never arrived.
+    # Overshooting is recoverable (the robot reverses), so caution here costs more than it saves.
+    step_threshold_m: 0.32
+
+    object_timeout_ms: 1500.0
+
+    # A missing object pose or base transform is re-read for this long before the goal fails.
+    # Both go briefly unavailable for reasons that are not this skill's problem -- a TF buffer
+    # that has not caught up after the base moved, a sample arriving late -- and failing on the
+    # first miss threw away a healthy approach mid-mission with /objects publishing throughout.
+    lookup_grace_s: 3.0
+
+    # Generous. A typical approach is one forward drive and a couple of strafes, but a bad
+    # arrival can need several of each, and every move carries a settle and a quiet gap.
+    # max_aim_attempts bounds ONE heading correction, so a heading that will not settle fails
+    # fast instead of eating the whole budget.
+    max_pulses: 150
+    max_aim_attempts: 8
+    default_timeout_s: 900.0

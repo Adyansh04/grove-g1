@@ -1,0 +1,23 @@
+# Reverse away from a surface, far enough that whatever happens next does not drag the arm across
+# it.
+#
+# It reverses and STOPS. It does not turn, and it does not walk anywhere: a navigation goal
+# normally follows, and Nav2 is far better at going somewhere than a hand-rolled pulse controller.
+# The only job here is to get the base clear.
+#
+# Reverse is real, but only just: the policy measures -0.247 m/s for a commanded -0.60 and exactly
+# 0.000 for -0.40, and g1_gait_shaper has a separate rev_engage above a planner's backup speeds so
+# a deliberate command like this one gets through.
+
+# How far to end up from where it started, in metres. Achieved to within about one gait pulse.
+float64 distance_m
+# Give up after this many seconds. 0 uses the server's own default.
+float64 timeout_s
+---
+bool success
+string message
+float64 travelled_m
+---
+string PHASE_BACKING_OFF=backing_off
+string phase
+float64 travelled_m

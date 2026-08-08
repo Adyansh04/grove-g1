@@ -13,7 +13,7 @@ num_motor_ = mj_model_->nu and then indexes lowcmd->msg_.motor_cmd()[i], a fixed
 std::array<MotorCmd_, 35>; it also reads motor state as three contiguous nu-sized blocks
 of sensordata. Adding 14 actuators would take nu to 43 and run both loops off the end of
 those arrays. Keeping nu at 29 leaves the vendored bridge byte-identical and correct, and
-the hand is a separate device on its own DDS topics anyway (docs/CONTROL_MODES.md), so it
+the hand is a separate device on its own DDS topics anyway, so it
 is driven through qfrc_applied by dex3_handler instead.
 
 HAND MASS IS SCALED TO 0.170 kg PER HAND, not the real 0.697 kg, and that is a deliberate
@@ -35,7 +35,6 @@ What it costs: the simulated arm carries less inertia than the real one, so arm 
 arm_sdk will track better here than on hardware. Revisit when the locomotion policy is
 retrained or replaced. The real per-link masses are in the URDF and this file is generated
 from it, so restoring them is a one-line change to the generator.
-See docs/notes/hand-mass-rest-pose.md.
 
 --- a/unitree_robots/g1/g1_29dof.xml
 +++ b/unitree_robots/g1/g1_29dof.xml

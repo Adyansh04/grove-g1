@@ -15,7 +15,7 @@
        make when there is something to fix it against. -->
 
   <!-- base_link is torso_link, not pelvis: the three waist joints belong to the onboard
-       controller (docs/CONTROL_MODES.md), and a group that spans them would plan motion we
+       controller, and a group that spans them would plan motion we
        cannot command. Their state still matters, it is what places torso_link under pelvis,
        which is why motion_service_sim has to publish it.
 
@@ -56,7 +56,7 @@
 
        Kept out of every arm group on purpose, and test_robot_model pins that: an arm plan must
        never command the fingers, because the arm and the hand are separate devices with
-       separate authority (docs/CONTROL_MODES.md) reached over separate topics. -->
+       separate authority reached over separate topics. -->
   <group name="left_hand">
     <joint name="left_hand_thumb_0_joint"/>
     <joint name="left_hand_thumb_1_joint"/>
@@ -102,7 +102,7 @@
        palm against the thigh once the hands had their real mass.
 
        The small shoulder roll is what buys that margin: it swings each arm off the torso so
-       neither the sag nor a heavier hand closes the gap. See docs/notes/hand-mass-rest-pose.md.
+       neither the sag nor a heavier hand closes the gap.
 
        An earlier version of this file said zero "may well self collide" and left these out on
        that suspicion. It does not: checked, valid. The suspicion was wrong.
@@ -186,7 +186,7 @@
 
   <group_state name="tucked" group="left_arm">
     <joint name="left_shoulder_pitch_joint" value="0.25"/>
-    <joint name="left_shoulder_roll_joint" value="0.20"/>
+    <joint name="left_shoulder_roll_joint" value="0.40"/>
     <joint name="left_shoulder_yaw_joint" value="0.00"/>
     <joint name="left_elbow_joint" value="1.30"/>
     <joint name="left_wrist_roll_joint" value="0.00"/>
@@ -195,7 +195,7 @@
   </group_state>
   <group_state name="tucked" group="right_arm">
     <joint name="right_shoulder_pitch_joint" value="0.25"/>
-    <joint name="right_shoulder_roll_joint" value="-0.20"/>
+    <joint name="right_shoulder_roll_joint" value="-0.40"/>
     <joint name="right_shoulder_yaw_joint" value="0.00"/>
     <joint name="right_elbow_joint" value="1.30"/>
     <joint name="right_wrist_roll_joint" value="0.00"/>
@@ -204,14 +204,14 @@
   </group_state>
   <group_state name="tucked" group="both_arms">
     <joint name="left_shoulder_pitch_joint" value="0.25"/>
-    <joint name="left_shoulder_roll_joint" value="0.20"/>
+    <joint name="left_shoulder_roll_joint" value="0.40"/>
     <joint name="left_shoulder_yaw_joint" value="0.00"/>
     <joint name="left_elbow_joint" value="1.30"/>
     <joint name="left_wrist_roll_joint" value="0.00"/>
     <joint name="left_wrist_pitch_joint" value="0.00"/>
     <joint name="left_wrist_yaw_joint" value="0.00"/>
     <joint name="right_shoulder_pitch_joint" value="0.25"/>
-    <joint name="right_shoulder_roll_joint" value="-0.20"/>
+    <joint name="right_shoulder_roll_joint" value="-0.40"/>
     <joint name="right_shoulder_yaw_joint" value="0.00"/>
     <joint name="right_elbow_joint" value="1.30"/>
     <joint name="right_wrist_roll_joint" value="0.00"/>
@@ -284,6 +284,51 @@
     <joint name="right_shoulder_roll_joint" value="-0.20"/>
     <joint name="right_shoulder_yaw_joint" value="0.00"/>
     <joint name="right_elbow_joint" value="0.70"/>
+    <joint name="right_wrist_roll_joint" value="0.00"/>
+    <joint name="right_wrist_pitch_joint" value="0.00"/>
+    <joint name="right_wrist_yaw_joint" value="0.00"/>
+  </group_state>
+
+  <!-- `carry` is `tucked` with the forearm level and the wrist flat, so a held object stays
+       upright and close to the chest while the robot walks. tucked itself is the smallest
+       swept volume, but its wrist pitch would tip whatever the hand is holding.
+
+       The shoulder roll is 0.40 rather than the 0.25 this pose first shipped with, and that
+       is measured, not taste: at 0.25 /check_state_validity reports
+       right_hand_thumb_2_link <-> right_hip_roll_link and the pose is simply unreachable, with
+       or without an object held. It is the same hand-versus-hip clearance M8 ran into from the
+       other side; rolling the shoulder further from the
+       body is what buys the thumb room. Valid at 0.40 for both hands. -->
+  <group_state name="carry" group="left_arm">
+    <joint name="left_shoulder_pitch_joint" value="-0.20"/>
+    <joint name="left_shoulder_roll_joint" value="0.40"/>
+    <joint name="left_shoulder_yaw_joint" value="0.00"/>
+    <joint name="left_elbow_joint" value="1.40"/>
+    <joint name="left_wrist_roll_joint" value="0.00"/>
+    <joint name="left_wrist_pitch_joint" value="0.00"/>
+    <joint name="left_wrist_yaw_joint" value="0.00"/>
+  </group_state>
+  <group_state name="carry" group="right_arm">
+    <joint name="right_shoulder_pitch_joint" value="-0.20"/>
+    <joint name="right_shoulder_roll_joint" value="-0.40"/>
+    <joint name="right_shoulder_yaw_joint" value="0.00"/>
+    <joint name="right_elbow_joint" value="1.40"/>
+    <joint name="right_wrist_roll_joint" value="0.00"/>
+    <joint name="right_wrist_pitch_joint" value="0.00"/>
+    <joint name="right_wrist_yaw_joint" value="0.00"/>
+  </group_state>
+  <group_state name="carry" group="both_arms">
+    <joint name="left_shoulder_pitch_joint" value="-0.20"/>
+    <joint name="left_shoulder_roll_joint" value="0.40"/>
+    <joint name="left_shoulder_yaw_joint" value="0.00"/>
+    <joint name="left_elbow_joint" value="1.40"/>
+    <joint name="left_wrist_roll_joint" value="0.00"/>
+    <joint name="left_wrist_pitch_joint" value="0.00"/>
+    <joint name="left_wrist_yaw_joint" value="0.00"/>
+    <joint name="right_shoulder_pitch_joint" value="-0.20"/>
+    <joint name="right_shoulder_roll_joint" value="-0.40"/>
+    <joint name="right_shoulder_yaw_joint" value="0.00"/>
+    <joint name="right_elbow_joint" value="1.40"/>
     <joint name="right_wrist_roll_joint" value="0.00"/>
     <joint name="right_wrist_pitch_joint" value="0.00"/>
     <joint name="right_wrist_yaw_joint" value="0.00"/>

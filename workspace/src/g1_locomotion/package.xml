@@ -21,6 +21,14 @@
   <depend>unitree_api</depend>
   <depend>g1_msgs</depend>
 
+  <!-- g1_base_approach only. It closes the last half metre to an object it reads off /objects,
+       which is why a locomotion package depends on a perception message type: the alternative
+       is a manipulation package publishing velocity, and every /cmd_vel writer belongs here. -->
+  <depend>vision_msgs</depend>
+  <depend>tf2</depend>
+  <depend>tf2_ros</depend>
+  <depend>tf2_geometry_msgs</depend>
+
   <!-- Lint checks run via workspace-root CTests (see CMakeLists.txt). -->
   <test_depend>ament_cmake_gmock</test_depend>
   <test_depend>ament_cmake_lint_cmake</test_depend>

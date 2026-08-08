@@ -203,7 +203,7 @@ def test_the_simulator_holds_the_arms_at_home(srdf):
     The claim used to run the other way, `home` being a measurement of wherever the arms fell
     at startup, and that is how it drifted to within hundredths of putting the palm against the
     thigh once the hands had their real mass. Now motion_service_sim is told the posture and
-    this pins the pair. See docs/notes/hand-mass-rest-pose.md.
+    this pins the pair.
     """
     sim = _load(SIM_CONFIG_DIR, "motion_service_sim.yaml")["/**"]["ros__parameters"]
     home = next(
