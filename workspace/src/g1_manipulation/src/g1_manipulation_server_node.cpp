@@ -460,8 +460,7 @@ bool G1ManipulationServer::moveToNamed(MoveGroup& group, const std::string& name
     const auto      planned = group.plan(plan);
     if (planned != moveit::core::MoveItErrorCode::SUCCESS)
     {
-        RCLCPP_ERROR(
-            get_logger(), "'%s': planning failed (%d)", named_target.c_str(), planned.val);
+        RCLCPP_ERROR(get_logger(), "'%s': planning failed (%d)", named_target.c_str(), planned.val);
         return false;
     }
     return group.execute(plan) == moveit::core::MoveItErrorCode::SUCCESS;
@@ -672,7 +671,7 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
     // arm's 0.04 m lateral window and the preplace had no IK solution at all. Resolving the
     // surface from the stream the approach used makes the two agree by construction, however
     // far localization has drifted.
-    std::optional<geometry_msgs::msg::Pose>     target;
+    std::optional<geometry_msgs::msg::Pose>      target;
     std::optional<vision_msgs::msg::Detection3D> surface;
     if (!goal->surface_object_id.empty())
     {
@@ -684,8 +683,8 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
                 "nothing called '" + goal->surface_object_id + "' on /objects");
             return;
         }
-        const std::string frame = surface->header.frame_id.empty() ? objects_.header.frame_id :
-                                                                     surface->header.frame_id;
+        const std::string frame =
+            surface->header.frame_id.empty() ? objects_.header.frame_id : surface->header.frame_id;
         target = toPlanningFrame(surface->results.front().pose.pose, frame);
     }
     else

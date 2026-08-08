@@ -110,12 +110,12 @@ public:
         settle_s_    = declare_parameter<double>("settle_s", 2.5);
         cmd_rate_hz_ = declare_parameter<double>("cmd_rate_hz", 20.0);
 
-        limits_.target_x_m            = declare_parameter<double>("target_x_m", 0.280);
-        limits_.target_y_m            = declare_parameter<double>("target_y_m", -0.200);
-        limits_.forward_tolerance_m   = declare_parameter<double>("forward_tolerance_m", 0.045);
-        limits_.lateral_tolerance_m   = declare_parameter<double>("lateral_tolerance_m", 0.050);
-        limits_.min_forward_m         = declare_parameter<double>("min_forward_m", 0.180);
-        limits_.step_threshold_m      = declare_parameter<double>("step_threshold_m", 0.32);
+        limits_.target_x_m          = declare_parameter<double>("target_x_m", 0.280);
+        limits_.target_y_m          = declare_parameter<double>("target_y_m", -0.200);
+        limits_.forward_tolerance_m = declare_parameter<double>("forward_tolerance_m", 0.045);
+        limits_.lateral_tolerance_m = declare_parameter<double>("lateral_tolerance_m", 0.050);
+        limits_.min_forward_m       = declare_parameter<double>("min_forward_m", 0.180);
+        limits_.step_threshold_m    = declare_parameter<double>("step_threshold_m", 0.32);
 
         // Consumed only by the aim before a forward drive; the planner itself never turns, so
         // this is not part of the reach window.
@@ -740,27 +740,27 @@ private:
 
     std::string cmd_topic_;
     std::string base_frame_;
-    double      object_timeout_ms_ = 1500.0;
-    double      pulse_vx_          = 0.45;
-    double      pulse_vyaw_        = 1.50;
-    double      pulse_vy_          = 0.50;
-    double      pulse_vrev_        = 0.60;
-    double      step_pulse_s_      = 0.30;
-    double      turn_pulse_ccw_s_  = 0.15;
-    double      turn_pulse_cw_s_   = 0.60;
-    double      strafe_pulse_s_    = 0.15;
-    double      max_turn_s_        = 8.0;
-    double      max_step_s_        = 6.0;
-    double      turn_lead_rad_     = 0.30;
-    double      step_lead_m_       = 0.22;
+    double      object_timeout_ms_     = 1500.0;
+    double      pulse_vx_              = 0.45;
+    double      pulse_vyaw_            = 1.50;
+    double      pulse_vy_              = 0.50;
+    double      pulse_vrev_            = 0.60;
+    double      step_pulse_s_          = 0.30;
+    double      turn_pulse_ccw_s_      = 0.15;
+    double      turn_pulse_cw_s_       = 0.60;
+    double      strafe_pulse_s_        = 0.15;
+    double      max_turn_s_            = 8.0;
+    double      max_step_s_            = 6.0;
+    double      turn_lead_rad_         = 0.30;
+    double      step_lead_m_           = 0.22;
     double      heading_tolerance_rad_ = 0.350;
     double      lookup_grace_s_        = 3.0;
-    int         max_aim_attempts_  = 8;
-    double      settle_s_          = 2.5;
-    double      quiet_s_           = 1.2;
-    double      cmd_rate_hz_       = 20.0;
-    int         max_pulses_        = 90;
-    double      default_timeout_s_ = 420.0;
+    int         max_aim_attempts_      = 8;
+    double      settle_s_              = 2.5;
+    double      quiet_s_               = 1.2;
+    double      cmd_rate_hz_           = 20.0;
+    int         max_pulses_            = 90;
+    double      default_timeout_s_     = 420.0;
 
     ApproachLimits limits_;
 

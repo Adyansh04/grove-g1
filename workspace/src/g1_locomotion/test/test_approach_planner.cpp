@@ -50,7 +50,9 @@ TEST(ApproachPlanner, ASubStepGapDrivesToZeroInsteadOfCoasting)
     // Forward is irreducible at about 0.29 m, so a small gap is closed by deliberately going too
     // far and reversing back. `coarse` false is what tells the caller not to stop early.
     const auto command = planApproach(
-        limits.target_x_m + limits.forward_tolerance_m + 0.02, limits.target_y_m, limits);
+        limits.target_x_m + limits.forward_tolerance_m + 0.02,
+        limits.target_y_m,
+        limits);
     ASSERT_EQ(command.move, ApproachMove::kStep);
     EXPECT_FALSE(command.coarse);
 }
@@ -70,7 +72,8 @@ TEST(ApproachPlanner, OnlyTheObjectBeingUnderTheRobotIsTerminal)
 {
     const auto limits = defaults();
     EXPECT_EQ(
-        moveFor(limits.min_forward_m - 0.01, limits.target_y_m, limits), ApproachMove::kOvershot);
+        moveFor(limits.min_forward_m - 0.01, limits.target_y_m, limits),
+        ApproachMove::kOvershot);
 }
 
 TEST(ApproachPlanner, LateralIsStrafedAndGoesTowardTheObject)
@@ -78,8 +81,7 @@ TEST(ApproachPlanner, LateralIsStrafedAndGoesTowardTheObject)
     const auto limits = defaults();
     EXPECT_GT(planApproach(limits.target_x_m, limits.target_y_m + 0.30, limits).lateral_sign, 0.0);
     EXPECT_LT(planApproach(limits.target_x_m, limits.target_y_m - 0.30, limits).lateral_sign, 0.0);
-    EXPECT_EQ(
-        moveFor(limits.target_x_m, limits.target_y_m + 0.30, limits), ApproachMove::kStrafe);
+    EXPECT_EQ(moveFor(limits.target_x_m, limits.target_y_m + 0.30, limits), ApproachMove::kStrafe);
 }
 
 TEST(ApproachPlanner, ForwardIsCorrectedBeforeLateral)
@@ -89,7 +91,8 @@ TEST(ApproachPlanner, ForwardIsCorrectedBeforeLateral)
     // error it leaves behind is cheap to strafe out afterwards. The other order would strafe to
     // a place the next drive walks away from.
     EXPECT_EQ(
-        moveFor(limits.target_x_m + 1.0, limits.target_y_m + 0.5, limits), ApproachMove::kStep);
+        moveFor(limits.target_x_m + 1.0, limits.target_y_m + 0.5, limits),
+        ApproachMove::kStep);
 }
 
 TEST(ApproachPlanner, EveryRegionMapsToAMoveTheCallerHandles)

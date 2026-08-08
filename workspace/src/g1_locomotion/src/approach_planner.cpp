@@ -14,8 +14,7 @@ bool limitsAreUsable(const ApproachLimits& limits)
            limits.min_forward_m < limits.target_x_m - limits.forward_tolerance_m;
 }
 
-ApproachCommand planApproach(
-    double object_x_m, double object_y_m, const ApproachLimits& limits)
+ApproachCommand planApproach(double object_x_m, double object_y_m, const ApproachLimits& limits)
 {
     ApproachCommand command;
     if (!limitsAreUsable(limits))
