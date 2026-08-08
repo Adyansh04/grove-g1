@@ -101,6 +101,11 @@ bool G1ManipulationServer::allowHandContact(
     links.push_back(arm.palm_link);
     links.push_back(side + "_wrist_pitch_link");
     links.push_back(side + "_wrist_yaw_link");
+    // All THREE wrist joints, matching the touch_links the pick attaches the object with. Roll
+    // was missing here while the other two were present, and it is the one that reaches: a
+    // place beside the storage bench aborted with the start state in collision, `<octomap>` vs
+    // right_wrist_roll_link, on a plan whose every other link was exempt.
+    links.push_back(side + "_wrist_roll_link");
 
     // The current matrix has to be read first: ApplyPlanningScene replaces the whole ACM
     // rather than merging into it, so sending only our entries would drop every
@@ -435,7 +440,30 @@ bool G1ManipulationServer::moveToNamed(MoveGroup& group, const std::string& name
             group.getName().c_str());
         return false;
     }
-    return group.move() == moveit::core::MoveItErrorCode::SUCCESS;
+    // Plan then execute, NOT move(). They are not equivalent: move() runs through MoveIt's
+    // PlanExecution, which re-checks the whole remaining path against every planning-scene
+    // update and aborts the moment one invalidates it. Against a live octomap fed by a chest
+    // camera that is staring at the arm, something invalidates it constantly.
+    //
+    // That is what failed the carry: the plan was found and started, then died two thirds of the
+    // way through with "<octomap> vs right_wrist_roll_link" -- the arm colliding with voxels of
+    // ITSELF, freshly integrated while it moved. Three retries, three different links, no
+    // progress. The tucks survived only because the tree retries them, which is what the
+    // "sampled a path that clips the live octomap" note in the tree was really describing.
+    //
+    // execute() checks nothing during the motion, which is what every other motion in this file
+    // already does -- Pick and Place plan and execute for the pregrasp, descent and lift. Both
+    // paths are fully collision-checked at PLAN time; this only drops a during-flight recheck
+    // that on this stack reports the robot's own arm.
+    MoveGroup::Plan plan;
+    const auto      planned = group.plan(plan);
+    if (planned != moveit::core::MoveItErrorCode::SUCCESS)
+    {
+        RCLCPP_ERROR(
+            get_logger(), "'%s': planning failed (%d)", named_target.c_str(), planned.val);
+        return false;
+    }
+    return group.execute(plan) == moveit::core::MoveItErrorCode::SUCCESS;
 }
 
 G1ManipulationServer::MoveGroup* G1ManipulationServer::groupFor(const std::string& name)
