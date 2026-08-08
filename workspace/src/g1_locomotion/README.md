@@ -152,44 +152,27 @@ manipulation package publishing into locomotion's channel is the shape of bug
 `docs/CONTROL_MODES.md` exists to prevent, even when the topic itself is harmless. The cost is that
 this package now depends on `vision_msgs`, which is documented in `package.xml`.
 
-### How it moves, and why not the obvious way
+### How it moves
 
-Continuous velocity, closed on the measured error, with a lead because the gait coasts. NOT pulses.
+Continuous velocity, closed on the measured error, with a lead because the gait coasts. NOT pulses:
+repeated command-and-stop cycles wind the walking policy down, from 8.3 degrees of turn on the
+first pulse to 0.1 by the twentieth.
 
-Pulsing was the original design and it is what kept the approach from ever arriving. Repeated
-command-and-stop cycles wind the walking policy down: one 0.60 s clockwise pulse measured 8.3
-degrees of turn on the first try, 3.6 on the second, 1.4 on the fourth and 0.1 by the twentieth.
-Every duration this package was tuned against came from a probe firing two or three pulses in a row,
-so it only ever measured a rested gait. Nav2 drives this robot with a continuous stream and has
-never had the problem.
+**There is no turning in the approach, and the planner cannot ask for one.** The heading comes
+from the navigation goal and the arm does not care which way the room faces, so the error is
+nulled with forward, reverse and strafe. Yaw survives only as an aim before a forward drive,
+because a forward step yaws +8 degrees and an uncorrected sequence walks an arc.
 
-The rare heading correction is a hybrid, because neither primitive covers the range. A continuous
-turn cannot stop inside the tolerance -- the gait coasts about 17 degrees after the command ends --
-so it drives while the error is bigger than that and takes one short pulse below it.
-
-**There is no turning in the approach, and the planner cannot ask for one.** The heading comes from
-the navigation goal, which is already aimed at the surface, and the arm does not care which way the
-room faces. So the error is nulled with the three primitives that are stable and cheap -- drive
-forward, reverse, strafe. Yaw survives only as an aim before a forward drive, because a forward
-step yaws +8 degrees and an uncorrected sequence walks an arc; that loop belongs to the node, and
-`heading_error` is not an input to `planApproach` at all.
-
-That separation is not tidiness. When turning was first dropped, the planner kept a terminal
-heading gate and could still return `kTurn` while the caller's `switch` had lost its case for it.
-C++ does not require a switch to be exhaustive, so control fell out of it and the loop spun: no
-publish, no log, no pulse counted, no abort, forever. It reads exactly like a deadlock from
-outside. The move set is closed now and `test_approach_planner` sweeps the position space asserting
-every cell maps to a handled move, so a re-added move without a handler fails a test rather than a
-mission.
-
-Two earlier designs did turn and both failed on it. An oblique forward step needs about 75 degrees
-for a small remainder, which throws the robot half a metre sideways; a 45-degree creep-and-strafe
-costs 45 degrees each way, and one live run spent 48 pulses that way removing 17 cm of lateral error
-that five strafes cover.
+The heading correction is a hybrid: a continuous turn cannot stop inside the tolerance, since the
+gait coasts about 17 degrees after the command ends, so it drives while the error exceeds that and
+takes one short pulse below it. Every stopping lead must stay under its axis tolerance, or the
+planner asks for a move the drive reports as already arrived and the loop spins.
 
 Fine forward motion, which the gait cannot produce directly, is a forward drive that stops at zero
 and a reverse that takes back whatever the coast added. Reverse resolves more finely than forward:
 -0.247 m/s against 0.35.
+
+Two earlier designs turned and both failed on it. See `docs/notes/m9-base-approach.md`.
 
 ### What it aims at
 

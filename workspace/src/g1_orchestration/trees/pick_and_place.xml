@@ -55,8 +55,13 @@
            another sample usually gets through. -->
       <SubTree ID="TuckBothArms" name="tuck_to_travel"/>
 
-      <NavigateToPose name="stage_at_workbench" goal="4.30;-5.60;1.5708"
-                      goal_yaw="{workbench_yaw}"/>
+      <RetryUntilSuccessful name="stage_at_workbench_with_retries" num_attempts="3">
+        <Sequence name="clear_then_stage_at_workbench">
+          <ClearCostmaps name="forget_before_staging"/>
+          <NavigateToPose name="stage_at_workbench" goal="4.30;-5.60;1.5708"
+                          goal_yaw="{workbench_yaw}"/>
+        </Sequence>
+      </RetryUntilSuccessful>
 
       <!-- Walks in pulses and re-reads the cube between each one. Retried once: an approach
            that stops short is recoverable by running it again, and the commonest reason to stop
@@ -110,8 +115,13 @@
            It is genuinely tight either way: 5.70 sits exactly robot_radius from the bench
            face, so the footprint touches the inflated obstacle. Rebuilding the map is what
            buys room to move it. -->
-      <NavigateToPose name="stage_at_storage" goal="6.30;5.70;1.5708"
-                      goal_yaw="{storage_yaw}"/>
+      <RetryUntilSuccessful name="stage_at_storage_with_retries" num_attempts="3">
+        <Sequence name="clear_then_stage_at_storage">
+          <ClearCostmaps name="forget_before_storage"/>
+          <NavigateToPose name="stage_at_storage" goal="6.30;5.70;1.5708"
+                          goal_yaw="{storage_yaw}"/>
+        </Sequence>
+      </RetryUntilSuccessful>
 
       <!-- The approach and the place RETRY TOGETHER, and that pairing is the point.
            The robot is balancing, so extending a loaded arm forward shifts its centre of mass

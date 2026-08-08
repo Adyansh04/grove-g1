@@ -109,7 +109,7 @@ TEST(TreeLoads, TheMissionTreeUsesTheLeavesItIsSupposedTo)
 
     // After manipulating beside a surface the costmaps hold the arm, the object and the surface
     // the base pressed against, none of it where the map says obstacles are.
-    EXPECT_EQ(seen["ClearCostmaps"], 2) << "one before each navigation goal that follows a skill";
+    EXPECT_EQ(seen["ClearCostmaps"], 4) << "after each manipulation, and before each nav goal";
 }
 
 TEST(TreeLoads, EveryFallibleLeafInTheMissionIsRetried)
@@ -134,8 +134,9 @@ TEST(TreeLoads, EveryFallibleLeafInTheMissionIsRetried)
         }
     }
 
-    // Five postures, the object approach, the pick, and the approach-and-place pair.
-    EXPECT_EQ(seen["RetryUntilSuccessful"], 8);
+    // Five postures, two navigation goals, the object approach, the pick, and the
+    // approach-and-place pair. Nav2 aborts a plan transiently and used to fail the mission.
+    EXPECT_EQ(seen["RetryUntilSuccessful"], 10);
 }
 
 TEST(TreeLoads, RejectsALeafNobodyRegistered)
