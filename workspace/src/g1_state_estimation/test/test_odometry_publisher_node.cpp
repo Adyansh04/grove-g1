@@ -24,7 +24,6 @@
 #include "nav_msgs/msg/odometry.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "rosgraph_msgs/msg/clock.hpp"
-#include "sensor_msgs/msg/joint_state.hpp"
 #include "tf2_msgs/msg/tf_message.hpp"
 #include "unitree_go/msg/sport_mode_state.hpp"
 #include "unitree_hg/msg/low_state.hpp"
@@ -43,10 +42,10 @@ rclcpp::NodeOptions optionsWithSource(const std::string& source, bool use_sim_ti
         rclcpp::Parameter("publish_rate_hz", 100.0),
         rclcpp::Parameter("source_timeout_ms", 200.0),
         rclcpp::Parameter("wall_timeout_ms", 300.0),
-        rclcpp::Parameter("base_height_m", 0.793),
-        // The planar sandbox's own configuration, not the node default. Its base cannot tilt,
-        // so it wants one edge carrying the whole pose; pelvis_frame_id stays empty and the
-        // frame keeps the name the launch files and RViz configs already use.
+        rclcpp::Parameter("start_height_m", 0.793),
+        // One edge carrying the whole pose, so these suites assert against the pose the source
+        // reports rather than against its ground projection. The split chain has its own
+        // suites further down.
         rclcpp::Parameter("base_frame_id", "base_link"),
         rclcpp::Parameter("use_sim_time", use_sim_time),
     });
@@ -70,16 +69,19 @@ void spinFor(
     }
 }
 
-sensor_msgs::msg::JointState makeBaseState(
-    const rclcpp::Time& stamp, double x, double y, double yaw, double vx = 0.0, double vy = 0.0,
-    double omega = 0.0)
+/// What FAST-LIO publishes: the body pose in its own start frame, twist left empty.
+nav_msgs::msg::Odometry
+makeLidarOdometry(const rclcpp::Time& stamp, double x, double y, double z, double yaw)
 {
-    sensor_msgs::msg::JointState msg;
-    msg.header.stamp = stamp;
-    // Deliberately not in x, y, yaw order: the node must look joints up by name.
-    msg.name     = { "base_yaw_joint", "base_x_joint", "base_y_joint" };
-    msg.position = { yaw, x, y };
-    msg.velocity = { omega, vx, vy };
+    nav_msgs::msg::Odometry msg;
+    msg.header.stamp            = stamp;
+    msg.header.frame_id         = "camera_init";
+    msg.child_frame_id          = "body";
+    msg.pose.pose.position.x    = x;
+    msg.pose.pose.position.y    = y;
+    msg.pose.pose.position.z    = z;
+    msg.pose.pose.orientation.z = std::sin(yaw * 0.5);
+    msg.pose.pose.orientation.w = std::cos(yaw * 0.5);
     return msg;
 }
 
@@ -268,18 +270,64 @@ private:
 
 LogCapture* LogCapture::instance_ = nullptr;
 
-class OdometryPublisherTest : public ::testing::Test
+/// Drives a fast_lio node with a LiDAR pose and an attitude, and collects what comes out.
+class FastLioHarness
 {
-protected:
-    void SetUp() override
+public:
+    explicit FastLioHarness(std::shared_ptr<G1OdometryPublisher> node, const std::string& name)
+      : node_(std::move(node))
+      , helper_(std::make_shared<rclcpp::Node>(name))
     {
-        node_ = std::make_shared<G1OdometryPublisher>(optionsWithSource(source_));
+        const auto qos = rclcpp::QoS(rclcpp::KeepLast(1)).best_effort().durability_volatile();
+        lio_pub_       = helper_->create_publisher<nav_msgs::msg::Odometry>(
+            "/g1_odometry_publisher/lidar_odometry",
+            qos);
+        low_pub_ = helper_->create_publisher<unitree_hg::msg::LowState>(
+            "/g1_odometry_publisher/imu_state",
+            qos);
+        tf_sub_ = helper_->create_subscription<tf2_msgs::msg::TFMessage>(
+            "/tf",
+            rclcpp::QoS(200),
+            [this](tf2_msgs::msg::TFMessage::SharedPtr msg) {
+                transforms.insert(transforms.end(), msg->transforms.begin(), msg->transforms.end());
+            });
+        odom_sub_ = helper_->create_subscription<nav_msgs::msg::Odometry>(
+            "/g1_odometry_publisher/odom",
+            rclcpp::QoS(200),
+            [this](nav_msgs::msg::Odometry::SharedPtr msg) { odoms.push_back(*msg); });
+        nodes_ = { node_->get_node_base_interface(), helper_->get_node_base_interface() };
+        spinFor(nodes_, 200ms);
     }
 
-    void TearDown() override { node_.reset(); }
+    /// One LiDAR sample under a level attitude, stamped now.
+    ///
+    /// The attitude goes first and is allowed to land before the pose, which is the ordering
+    /// the robot gives for free: LowState runs at 500 Hz against 10 Hz scans, so an attitude
+    /// is always already in hand by the time a scan resolves.
+    void feed(double x, double y, double z, double yaw, bool with_imu = true)
+    {
+        if (with_imu)
+        {
+            low_pub_->publish(makeLowState(0.0, 0.0, 0.0));
+            spinFor(nodes_, 10ms);
+        }
+        lio_pub_->publish(makeLidarOdometry(helper_->now(), x, y, z, yaw));
+        spinFor(nodes_, 40ms);
+    }
 
-    std::string                          source_ = "sim_ground_truth";
-    std::shared_ptr<G1OdometryPublisher> node_;
+    void spin(std::chrono::milliseconds duration) { spinFor(nodes_, duration); }
+
+    std::vector<geometry_msgs::msg::TransformStamped> transforms;
+    std::vector<nav_msgs::msg::Odometry>              odoms;
+
+private:
+    std::shared_ptr<G1OdometryPublisher>                               node_;
+    std::shared_ptr<rclcpp::Node>                                      helper_;
+    rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr              lio_pub_;
+    rclcpp::Publisher<unitree_hg::msg::LowState>::SharedPtr            low_pub_;
+    rclcpp::Subscription<tf2_msgs::msg::TFMessage>::SharedPtr          tf_sub_;
+    rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr           odom_sub_;
+    std::vector<rclcpp::node_interfaces::NodeBaseInterface::SharedPtr> nodes_;
 };
 
 }  // namespace
@@ -309,138 +357,159 @@ TEST(OdometryPublisherHardwareBranch, IsTheDefaultSource)
 
 TEST(OdometryPublisherHardwareBranch, UnknownSourceAlsoFailsToConfigure)
 {
-    auto node = std::make_shared<G1OdometryPublisher>(optionsWithSource("ground_truth"));
+    auto node = std::make_shared<G1OdometryPublisher>(optionsWithSource("sim_ground_truth"));
     EXPECT_EQ(node->configure().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_UNCONFIGURED)
         << "a typo must not fall back to a working source";
     EXPECT_EQ(node->count_publishers("/tf"), 0u);
 }
 
-TEST_F(OdometryPublisherTest, SimGroundTruthConfiguresAndActivates)
+// --- fast_lio: the latch, and the odometry built on top of it -------------------------------
+
+TEST(OdometryPublisherFastLio, ConfiguresAndActivates)
 {
-    ASSERT_EQ(node_->configure().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
-    ASSERT_EQ(node_->activate().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE);
+    auto node = std::make_shared<G1OdometryPublisher>(optionsWithSource("fast_lio"));
+    ASSERT_EQ(node->configure().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
+    ASSERT_EQ(node->activate().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE);
 }
 
-TEST_F(OdometryPublisherTest, PublishesTheSampledPoseOnTfAndOdom)
+TEST(OdometryPublisherFastLio, PublishesNothingUntilTheImuHasLevelledTheOrigin)
 {
-    ASSERT_EQ(node_->configure().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
-    ASSERT_EQ(node_->activate().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE);
+    // FAST-LIO's start frame is wherever its IMU happened to be pointing, so without an
+    // attitude to level against there is no way to know which way is up. Publishing anyway
+    // would tilt odom by the robot's initial lean, permanently.
+    auto node = std::make_shared<G1OdometryPublisher>(optionsWithSource("fast_lio"));
+    ASSERT_EQ(node->configure().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
+    ASSERT_EQ(node->activate().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE);
 
-    auto helper    = std::make_shared<rclcpp::Node>("odom_test_helper");
-    auto state_pub = helper->create_publisher<sensor_msgs::msg::JointState>(
-        "/g1_odometry_publisher/base_state",
-        rclcpp::QoS(rclcpp::KeepLast(1)).best_effort().durability_volatile());
-
-    std::vector<geometry_msgs::msg::TransformStamped> transforms;
-    auto tf_sub = helper->create_subscription<tf2_msgs::msg::TFMessage>(
-        "/tf",
-        rclcpp::QoS(100),
-        [&transforms](tf2_msgs::msg::TFMessage::SharedPtr msg) {
-            transforms.insert(transforms.end(), msg->transforms.begin(), msg->transforms.end());
-        });
-
-    std::vector<nav_msgs::msg::Odometry> odoms;
-    auto odom_sub = helper->create_subscription<nav_msgs::msg::Odometry>(
-        "/g1_odometry_publisher/odom",
-        rclcpp::QoS(100),
-        [&odoms](nav_msgs::msg::Odometry::SharedPtr msg) { odoms.push_back(*msg); });
-
-    const std::vector<rclcpp::node_interfaces::NodeBaseInterface::SharedPtr> nodes = {
-        node_->get_node_base_interface(),
-        helper->get_node_base_interface()
-    };
-    spinFor(nodes, 300ms);
-
-    // Facing +y, driving world +x: the body twist must come out as -y.
-    const double yaw = M_PI_2;
-    for (int i = 0; i < 20; ++i)
+    FastLioHarness harness(node, "fastlio_no_imu_helper");
+    for (int i = 0; i < 5; ++i)
     {
-        state_pub->publish(makeBaseState(helper->now(), 1.5, -2.5, yaw, 1.0, 0.0, 0.25));
-        spinFor(nodes, 20ms);
+        harness.feed(1.0, 2.0, 0.0, 0.3, /*with_imu=*/false);
+    }
+    EXPECT_TRUE(harness.transforms.empty()) << "published without ever seeing an attitude";
+
+    harness.feed(1.0, 2.0, 0.0, 0.3);
+    harness.spin(100ms);
+    EXPECT_FALSE(harness.transforms.empty()) << "still silent once the attitude arrived";
+}
+
+TEST(OdometryPublisherFastLio, LatchesTheOriginThenReportsMotionRelativeToIt)
+{
+    auto node = std::make_shared<G1OdometryPublisher>(optionsWithSource("fast_lio"));
+    ASSERT_EQ(node->configure().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
+    ASSERT_EQ(node->activate().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE);
+
+    FastLioHarness harness(node, "fastlio_latch_helper");
+
+    // A deliberately non-trivial start pose. In practice FAST-LIO's first sample is the
+    // identity, since its start frame IS the body frame at init -- which would let a broken
+    // composition pass by doing nothing at all.
+    const double start_x = 0.4, start_y = -0.2, start_z = 0.05, start_yaw = 0.6;
+    harness.feed(start_x, start_y, start_z, start_yaw);
+    harness.spin(100ms);
+
+    ASSERT_FALSE(harness.transforms.empty()) << "nothing published on /tf";
+    const auto& latched = harness.transforms.back();
+    EXPECT_EQ(latched.header.frame_id, "odom");
+    EXPECT_EQ(latched.child_frame_id, "base_link");
+    EXPECT_NEAR(latched.transform.translation.x, 0.0, 1e-6) << "the origin must land at zero";
+    EXPECT_NEAR(latched.transform.translation.y, 0.0, 1e-6);
+    EXPECT_NEAR(latched.transform.translation.z, 0.793, 1e-6)
+        << "start_height_m is what makes odom the ground plane; without it a floor return "
+           "transformed into odom lands below the floor";
+    EXPECT_NEAR(yawOf(latched.transform.rotation), 0.0, 1e-6) << "and facing +x";
+
+    // Now drive one metre along the heading the robot started with. Whatever frame FAST-LIO
+    // reports in, odom has to call that one metre straight ahead.
+    harness.feed(start_x + std::cos(start_yaw), start_y + std::sin(start_yaw), start_z, start_yaw);
+    harness.spin(100ms);
+
+    const auto& moved = harness.transforms.back();
+    EXPECT_NEAR(moved.transform.translation.x, 1.0, 1e-5);
+    EXPECT_NEAR(moved.transform.translation.y, 0.0, 1e-5);
+    EXPECT_NEAR(yawOf(moved.transform.rotation), 0.0, 1e-5) << "driving straight is not turning";
+
+    // And a pure rotation in the LiDAR frame is a pure rotation in odom.
+    harness.feed(
+        start_x + std::cos(start_yaw),
+        start_y + std::sin(start_yaw),
+        start_z,
+        start_yaw + 0.5);
+    harness.spin(100ms);
+    EXPECT_NEAR(yawOf(harness.transforms.back().transform.rotation), 0.5, 1e-5);
+}
+
+TEST(OdometryPublisherFastLio, DifferencesTheTwistIntoTheBodyFrame)
+{
+    // FAST-LIO leaves twist empty, and Nav2's controller server reads velocity from the
+    // message rather than from TF, so this node has to supply it.
+    auto node = std::make_shared<G1OdometryPublisher>(optionsWithSource("fast_lio"));
+    ASSERT_EQ(node->configure().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
+    ASSERT_EQ(node->activate().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE);
+
+    FastLioHarness harness(node, "fastlio_twist_helper");
+    // Latch facing +x, then turn to face +y and walk that way. The world velocity is +y and
+    // the heading is +y, so in the body frame it has to read as forward.
+    harness.feed(0.0, 0.0, 0.0, 0.0);
+    harness.spin(50ms);
+    for (int i = 1; i <= 6; ++i)
+    {
+        harness.feed(0.0, 0.1 * i, 0.0, M_PI_2);
+        harness.spin(50ms);
     }
 
-    ASSERT_FALSE(transforms.empty()) << "nothing published on /tf";
-    const auto& tf = transforms.back();
-    EXPECT_EQ(tf.header.frame_id, "odom");
-    EXPECT_EQ(tf.child_frame_id, "base_link");
-    EXPECT_NEAR(tf.transform.translation.x, 1.5, 1e-9);
-    EXPECT_NEAR(tf.transform.translation.y, -2.5, 1e-9);
-    EXPECT_NEAR(tf.transform.rotation.z, std::sin(yaw / 2.0), 1e-9);
-    EXPECT_NEAR(tf.transform.rotation.w, std::cos(yaw / 2.0), 1e-9);
-
-    ASSERT_FALSE(odoms.empty()) << "nothing published on ~/odom";
-    const auto& odom = odoms.back();
-    EXPECT_EQ(odom.header.frame_id, "odom");
+    ASSERT_FALSE(harness.odoms.empty()) << "nothing published on ~/odom";
+    const auto& odom = harness.odoms.back();
     EXPECT_EQ(odom.child_frame_id, "base_link");
-    EXPECT_NEAR(odom.pose.pose.position.x, tf.transform.translation.x, 1e-9);
-    EXPECT_NEAR(odom.pose.pose.position.y, tf.transform.translation.y, 1e-9);
-
-    EXPECT_NEAR(odom.twist.twist.linear.x, 0.0, 1e-9)
-        << "twist must be in base_link, not odom: at yaw pi/2 a world +x velocity is body -y";
-    EXPECT_NEAR(odom.twist.twist.linear.y, -1.0, 1e-9);
-    EXPECT_NEAR(odom.twist.twist.angular.z, 0.25, 1e-9) << "yaw rate is frame independent";
-
+    EXPECT_GT(odom.twist.twist.linear.x, 0.05)
+        << "twist must be in base_link, not odom: heading +y and moving +y is forward";
+    EXPECT_NEAR(odom.twist.twist.linear.y, 0.0, 0.05);
     EXPECT_GT(odom.pose.covariance[0], 0.0) << "all-zero covariance is a known Nav2 footgun";
     EXPECT_GT(odom.twist.covariance[0], 0.0);
 }
 
-TEST_F(OdometryPublisherTest, StopsPublishingWhenTheSourceGoesSilent)
+TEST(OdometryPublisherFastLio, StopsPublishingWhenTheSourceGoesSilent)
 {
-    ASSERT_EQ(node_->configure().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
-    ASSERT_EQ(node_->activate().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE);
+    auto node = std::make_shared<G1OdometryPublisher>(optionsWithSource("fast_lio"));
+    ASSERT_EQ(node->configure().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
+    ASSERT_EQ(node->activate().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE);
 
-    auto helper    = std::make_shared<rclcpp::Node>("odom_test_helper_stale");
-    auto state_pub = helper->create_publisher<sensor_msgs::msg::JointState>(
-        "/g1_odometry_publisher/base_state",
-        rclcpp::QoS(rclcpp::KeepLast(1)).best_effort().durability_volatile());
-
-    std::size_t transform_count = 0;
-    auto        tf_sub          = helper->create_subscription<tf2_msgs::msg::TFMessage>(
-        "/tf",
-        rclcpp::QoS(100),
-        [&transform_count](tf2_msgs::msg::TFMessage::SharedPtr msg) {
-            transform_count += msg->transforms.size();
-        });
-
-    const std::vector<rclcpp::node_interfaces::NodeBaseInterface::SharedPtr> nodes = {
-        node_->get_node_base_interface(),
-        helper->get_node_base_interface()
-    };
-    spinFor(nodes, 300ms);
-
-    for (int i = 0; i < 10; ++i)
+    FastLioHarness harness(node, "fastlio_stale_helper");
+    for (int i = 0; i < 8; ++i)
     {
-        state_pub->publish(makeBaseState(helper->now(), 0.0, 0.0, 0.0));
-        spinFor(nodes, 20ms);
+        harness.feed(0.01 * i, 0.0, 0.0, 0.0);
     }
-    ASSERT_GT(transform_count, 0u) << "never published while the source was fresh";
+    ASSERT_FALSE(harness.transforms.empty()) << "never published while the source was fresh";
 
     // Go quiet for well past source_timeout_ms, then check it actually stopped rather than
     // re-stamping the last pose forever.
-    spinFor(nodes, 400ms);
-    const std::size_t after_timeout = transform_count;
-    spinFor(nodes, 300ms);
-    EXPECT_EQ(transform_count, after_timeout)
-        << "kept publishing " << (transform_count - after_timeout)
+    harness.spin(400ms);
+    const std::size_t after_timeout = harness.transforms.size();
+    harness.spin(300ms);
+    EXPECT_EQ(harness.transforms.size(), after_timeout)
+        << "kept publishing " << (harness.transforms.size() - after_timeout)
         << " transforms from a source that had gone silent";
 }
 
 TEST(OdometryPublisherSimTime, StopsPublishingWhenSimTimeItselfFreezes)
 {
-    // The failure the wall-clock test cannot see. /clock is published by the SAME process
-    // as the base state on this track, so when that process wedges, sim time stops with
-    // it: `now() - last_sample_stamp_` stays pinned near zero and a sim-time-only
-    // staleness check never fires, leaving a frozen pose broadcast as if it were live.
-    auto node = std::make_shared<G1OdometryPublisher>(optionsWithSource("sim_ground_truth", true));
+    // The failure the wall-clock test cannot see. On the simulator track /clock comes from the
+    // SAME process as the sensor data, so when that process wedges, sim time stops with it:
+    // `now() - last_sample_stamp_` stays pinned near zero and a sim-time-only staleness check
+    // never fires, leaving a frozen pose broadcast as if it were live.
+    auto node = std::make_shared<G1OdometryPublisher>(optionsWithSource("fast_lio", true));
     ASSERT_EQ(node->configure().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
     ASSERT_EQ(node->activate().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE);
 
     auto helper = std::make_shared<rclcpp::Node>("odom_test_helper_simtime");
     auto clock_pub =
         helper->create_publisher<rosgraph_msgs::msg::Clock>("/clock", rclcpp::ClockQoS());
-    auto state_pub = helper->create_publisher<sensor_msgs::msg::JointState>(
-        "/g1_odometry_publisher/base_state",
-        rclcpp::QoS(rclcpp::KeepLast(1)).best_effort().durability_volatile());
+    const auto qos     = rclcpp::QoS(rclcpp::KeepLast(1)).best_effort().durability_volatile();
+    auto       lio_pub = helper->create_publisher<nav_msgs::msg::Odometry>(
+        "/g1_odometry_publisher/lidar_odometry",
+        qos);
+    auto low_pub =
+        helper->create_publisher<unitree_hg::msg::LowState>("/g1_odometry_publisher/imu_state", qos);
 
     std::size_t transform_count = 0;
     auto        tf_sub          = helper->create_subscription<tf2_msgs::msg::TFMessage>(
@@ -464,7 +533,8 @@ TEST(OdometryPublisherSimTime, StopsPublishingWhenSimTimeItselfFreezes)
         rosgraph_msgs::msg::Clock clock_msg;
         clock_msg.clock = sim_now;
         clock_pub->publish(clock_msg);
-        state_pub->publish(makeBaseState(sim_now, 1.0, 2.0, 0.0));
+        low_pub->publish(makeLowState(0.0, 0.0, 0.0));
+        lio_pub->publish(makeLidarOdometry(sim_now, 0.01 * i, 0.0, 0.0, 0.0));
         spinFor(nodes, 20ms);
     }
     ASSERT_GT(transform_count, 0u) << "never published while sim time was advancing";
@@ -475,13 +545,15 @@ TEST(OdometryPublisherSimTime, StopsPublishingWhenSimTimeItselfFreezes)
     const std::size_t before_freeze = transform_count;
     for (int i = 0; i < 15; ++i)
     {
-        state_pub->publish(makeBaseState(sim_now, 1.0, 2.0, 0.0));
+        low_pub->publish(makeLowState(0.0, 0.0, 0.0));
+        lio_pub->publish(makeLidarOdometry(sim_now, 0.25, 0.0, 0.0, 0.0));
         spinFor(nodes, 40ms);
     }
     const std::size_t after_timeout = transform_count;
     for (int i = 0; i < 10; ++i)
     {
-        state_pub->publish(makeBaseState(sim_now, 1.0, 2.0, 0.0));
+        low_pub->publish(makeLowState(0.0, 0.0, 0.0));
+        lio_pub->publish(makeLidarOdometry(sim_now, 0.25, 0.0, 0.0, 0.0));
         spinFor(nodes, 40ms);
     }
 
@@ -491,42 +563,6 @@ TEST(OdometryPublisherSimTime, StopsPublishingWhenSimTimeItselfFreezes)
         << "published " << (transform_count - after_timeout)
         << " more transforms after sim time froze. With /clock stopped, elapsed sim time "
            "stays at zero forever, so only a wall-clock budget can catch this.";
-}
-
-TEST(OdometryPublisherGroundPlane, PublishesTheBaseHeightSoOdomIsTheGroundPlane)
-{
-    auto node = std::make_shared<G1OdometryPublisher>(optionsWithSource("sim_ground_truth"));
-    ASSERT_EQ(node->configure().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
-    ASSERT_EQ(node->activate().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE);
-
-    auto helper    = std::make_shared<rclcpp::Node>("odom_test_helper_height");
-    auto state_pub = helper->create_publisher<sensor_msgs::msg::JointState>(
-        "/g1_odometry_publisher/base_state",
-        rclcpp::QoS(rclcpp::KeepLast(1)).best_effort().durability_volatile());
-
-    std::vector<geometry_msgs::msg::TransformStamped> transforms;
-    auto tf_sub = helper->create_subscription<tf2_msgs::msg::TFMessage>(
-        "/tf",
-        rclcpp::QoS(100),
-        [&transforms](tf2_msgs::msg::TFMessage::SharedPtr msg) {
-            transforms.insert(transforms.end(), msg->transforms.begin(), msg->transforms.end());
-        });
-
-    const std::vector<rclcpp::node_interfaces::NodeBaseInterface::SharedPtr> nodes = {
-        node->get_node_base_interface(),
-        helper->get_node_base_interface()
-    };
-    spinFor(nodes, 300ms);
-    for (int i = 0; i < 20; ++i)
-    {
-        state_pub->publish(makeBaseState(helper->now(), 0.0, 0.0, 0.0));
-        spinFor(nodes, 20ms);
-    }
-
-    ASSERT_FALSE(transforms.empty());
-    // Without this, a floor return transformed into odom lands at -0.793 and every Nav2
-    // obstacle height band is off by the spawn height.
-    EXPECT_NEAR(transforms.back().transform.translation.z, 0.793, 1e-9);
 }
 
 // --- Converged track: the split chain and the tilt guard ------------------------------------

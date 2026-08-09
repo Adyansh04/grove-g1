@@ -19,15 +19,15 @@ namespace g1_state_estimation
 /// Where the base pose comes from. Anything else is a configuration error.
 enum class OdometrySource
 {
-    SimGroundTruth,     ///< MuJoCo generalized coordinates via planar joints. Sim-only.
     SimSportModeState,  ///< The converged track: pelvis pose from /sportmodestate. Sim-only.
-    Hardware,           ///< Not implemented: the real G1 publishes no odometry at all.
+    FastLio,            ///< LiDAR-inertial odometry. The only source that runs on the robot.
+    Hardware,           ///< Not a source: the real G1 publishes no odometry of its own.
 };
 
 /**
  * @brief Parses the `odometry_source` parameter.
  *
- * @param name   Parameter value, expected `sim_ground_truth` or `hardware`.
+ * @param name   Parameter value, expected `sim_sportmodestate`, `fast_lio` or `hardware`.
  * @param[out] out  Set only when the name is recognised.
  * @return False for an unrecognised name, so the caller can fail configure rather than
  *         silently fall back to a default that might fabricate transforms.
@@ -58,6 +58,22 @@ struct Quaternion
     double z = 0.0;
     double w = 1.0;
 };
+
+/// A rigid transform, in the same plain types as the rest of this header.
+struct Pose3d
+{
+    double     x = 0.0;
+    double     y = 0.0;
+    double     z = 0.0;
+    Quaternion q;
+};
+
+/// The transform you get by applying @p b and then @p a. Reads left-to-right as frames:
+/// composePose(a_from_b, b_from_c) is a_from_c.
+Pose3d composePose(const Pose3d& a, const Pose3d& b);
+
+/// The inverse transform: invertPose(a_from_b) is b_from_a.
+Pose3d invertPose(const Pose3d& pose);
 
 /**
  * @brief Yaw to a quaternion about +z.

@@ -6,7 +6,6 @@ find_package(rclcpp REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
 find_package(lifecycle_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
-find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2_msgs REQUIRED)
@@ -29,7 +28,7 @@ target_include_directories(g1_odometry_publisher_node PUBLIC
 target_compile_features(g1_odometry_publisher_node PUBLIC cxx_std_20)
 target_link_libraries(g1_odometry_publisher_node PUBLIC odom_math)
 ament_target_dependencies(g1_odometry_publisher_node PUBLIC
-  rclcpp rclcpp_lifecycle lifecycle_msgs nav_msgs sensor_msgs geometry_msgs tf2_ros tf2_msgs
+  rclcpp rclcpp_lifecycle lifecycle_msgs nav_msgs geometry_msgs tf2_ros tf2_msgs
   unitree_go unitree_hg)
 
 add_executable(g1_odometry_publisher src/g1_odometry_publisher_main.cpp)
@@ -49,7 +48,7 @@ install(TARGETS g1_odometry_publisher DESTINATION lib/${PROJECT_NAME})
 
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
 ament_export_include_directories(include)
-ament_export_dependencies(rclcpp rclcpp_lifecycle nav_msgs sensor_msgs geometry_msgs tf2_ros)
+ament_export_dependencies(rclcpp rclcpp_lifecycle nav_msgs geometry_msgs tf2_ros)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)

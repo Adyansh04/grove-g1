@@ -6,6 +6,8 @@ find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(vision_msgs REQUIRED)
+find_package(livox_ros_driver2 REQUIRED)
+find_package(unitree_hg REQUIRED)
 
 # Framing and validation, free of ROS and sockets so the wire format tests without a
 # simulator or a running graph.
@@ -20,16 +22,23 @@ add_executable(g1_sensor_relay src/g1_sensor_relay_node.cpp)
 target_link_libraries(g1_sensor_relay PUBLIC frame_reader)
 ament_target_dependencies(g1_sensor_relay PUBLIC rclcpp sensor_msgs geometry_msgs vision_msgs)
 
+# Restates the relay's own output in the formats FAST-LIO wants. Separate executable so the
+# odometry track can be started and stopped without touching the sensor path everything else
+# depends on.
+add_executable(g1_livox_bridge src/g1_livox_bridge_node.cpp)
+ament_target_dependencies(g1_livox_bridge PUBLIC rclcpp sensor_msgs livox_ros_driver2 unitree_hg)
+
 # This package parses length-prefixed binary frames off a socket, so -Wsign-compare and the
 # unused-result warnings earn their keep here more than anywhere else in the workspace.
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   target_compile_options(frame_reader PRIVATE -Wall -Wextra)
   target_compile_options(g1_sensor_relay PRIVATE -Wall -Wextra)
+  target_compile_options(g1_livox_bridge PRIVATE -Wall -Wextra)
 endif()
 
 install(DIRECTORY include/ DESTINATION include)
 install(TARGETS frame_reader EXPORT export_${PROJECT_NAME} DESTINATION lib)
-install(TARGETS g1_sensor_relay DESTINATION lib/${PROJECT_NAME})
+install(TARGETS g1_sensor_relay g1_livox_bridge DESTINATION lib/${PROJECT_NAME})
 
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
 ament_export_include_directories(include)

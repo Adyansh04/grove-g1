@@ -33,14 +33,12 @@ G1OdometryPublisher::G1OdometryPublisher(const rclcpp::NodeOptions& options)
     // member's comment for why the planar sandbox leaves it empty.
     declare_parameter<std::string>("pelvis_frame_id", "");
     declare_parameter<double>("max_tilt_deg", 80.0);
-    declare_parameter<std::vector<std::string>>(
-        "base_joint_names",
-        { "base_x_joint", "base_y_joint", "base_yaw_joint" });
-    // Height of base_link above the floor, making odom the ground plane. Defaults to 0,
-    // which is correct for a real floating-base estimator (it measures z itself). The
-    // perception sim's base is a planar body with no z DoF, so its launch supplies the
-    // spawn height from the planar model's sensor mounts.
-    declare_parameter<double>("base_height_m", 0.0);
+    // Empty means the LiDAR odometry already reports the frame this node publishes.
+    declare_parameter<std::string>("lidar_body_frame_id", "");
+    // Body height above the floor when the LiDAR odometry starts, which is what makes odom
+    // the ground plane. Only the fast_lio source uses it: that source measures height
+    // relative to wherever it initialised, and has no idea where the floor is.
+    declare_parameter<double>("start_height_m", 0.0);
     declare_parameter<double>("publish_rate_hz", 50.0);
     declare_parameter<bool>("publish_odom_msg", true);
     declare_parameter<double>("source_timeout_ms", 200.0);
@@ -56,8 +54,9 @@ bool G1OdometryPublisher::readParameters()
     {
         RCLCPP_ERROR(
             get_logger(),
-            "odometry_source='%s' is not a known source. Use 'sim_ground_truth' (planar "
-            "sandbox), 'sim_sportmodestate' (converged track) or 'hardware'.",
+            "odometry_source='%s' is not a known source. Use 'sim_sportmodestate' (converged "
+            "track), 'fast_lio' (LiDAR-inertial, and the only one that runs on the robot) or "
+            "'hardware'.",
             source_name.c_str());
         return false;
     }
@@ -68,34 +67,27 @@ bool G1OdometryPublisher::readParameters()
         // go looking for does not carry what they think it does.
         RCLCPP_ERROR(
             get_logger(),
-            "odometry_source='hardware' is not implemented: the real G1 publishes no odometry. "
-            "On hardware /sportmodestate carries unitree_hg::SportModeState_, which has only "
-            "fsm_id, fsm_mode, task_id and task_time -- no pose and no velocity. "
-            "rt/odommodestate does not exist. A real source (leg odometry + IMU EKF, or "
-            "LiDAR-inertial odometry) is a future state-estimation milestone. Refusing to "
-            "configure rather than publish a fabricated transform.");
+            "odometry_source='hardware' is not a source: the real G1 publishes no odometry of "
+            "its own. On hardware /sportmodestate carries unitree_hg::SportModeState_, which "
+            "has only fsm_id, fsm_mode, task_id and task_time -- no pose and no velocity. "
+            "rt/odommodestate does not exist. Use odometry_source='fast_lio' and bring up "
+            "g1_state_estimation's fastlio_odometry.launch.py, which runs the LiDAR-inertial "
+            "pipeline this reads. Refusing to configure rather than publish a fabricated "
+            "transform.");
         return false;
     }
 
-    base_height_m_    = get_parameter("base_height_m").as_double();
-    odom_frame_id_    = get_parameter("odom_frame_id").as_string();
-    base_frame_id_    = get_parameter("base_frame_id").as_string();
-    pelvis_frame_id_  = get_parameter("pelvis_frame_id").as_string();
-    max_tilt_rad_     = get_parameter("max_tilt_deg").as_double() * M_PI / 180.0;
-    base_joint_names_ = get_parameter("base_joint_names").as_string_array();
-    publish_rate_hz_  = get_parameter("publish_rate_hz").as_double();
-    publish_odom_msg_ = get_parameter("publish_odom_msg").as_bool();
-    source_timeout_s_ = get_parameter("source_timeout_ms").as_double() / 1000.0;
-    wall_timeout_s_   = get_parameter("wall_timeout_ms").as_double() / 1000.0;
+    start_height_m_      = get_parameter("start_height_m").as_double();
+    odom_frame_id_       = get_parameter("odom_frame_id").as_string();
+    base_frame_id_       = get_parameter("base_frame_id").as_string();
+    pelvis_frame_id_     = get_parameter("pelvis_frame_id").as_string();
+    lidar_body_frame_id_ = get_parameter("lidar_body_frame_id").as_string();
+    max_tilt_rad_        = get_parameter("max_tilt_deg").as_double() * M_PI / 180.0;
+    publish_rate_hz_     = get_parameter("publish_rate_hz").as_double();
+    publish_odom_msg_    = get_parameter("publish_odom_msg").as_bool();
+    source_timeout_s_    = get_parameter("source_timeout_ms").as_double() / 1000.0;
+    wall_timeout_s_      = get_parameter("wall_timeout_ms").as_double() / 1000.0;
 
-    if (base_joint_names_.size() != 3)
-    {
-        RCLCPP_ERROR(
-            get_logger(),
-            "base_joint_names needs exactly 3 entries (x, y, yaw), got %zu",
-            base_joint_names_.size());
-        return false;
-    }
     if (publish_rate_hz_ <= 0.0)
     {
         RCLCPP_ERROR(get_logger(), "publish_rate_hz must be positive, got %f", publish_rate_hz_);
@@ -158,23 +150,47 @@ G1OdometryPublisher::on_configure(const rclcpp_lifecycle::State&)
     }
     else
     {
-        base_state_sub_ = create_subscription<sensor_msgs::msg::JointState>(
-            "~/base_state",
+        lidar_odom_sub_ = create_subscription<nav_msgs::msg::Odometry>(
+            "~/lidar_odometry",
             baseStateQos(),
-            std::bind(&G1OdometryPublisher::onBaseState, this, std::placeholders::_1));
+            std::bind(&G1OdometryPublisher::onLidarOdometry, this, std::placeholders::_1));
+        // The attitude is needed once, to level the odom frame at the latch: the LiDAR
+        // odometry's own start frame is wherever its IMU was pointing, which is not gravity.
+        low_state_sub_ = create_subscription<unitree_hg::msg::LowState>(
+            "~/imu_state",
+            baseStateQos(),
+            std::bind(&G1OdometryPublisher::onLowState, this, std::placeholders::_1));
+
+        if (!lidar_body_frame_id_.empty())
+        {
+            tf_buffer_   = std::make_unique<tf2_ros::Buffer>(get_clock());
+            tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_, this, false);
+        }
     }
 
     source_topic_ =
-        sport_state_sub_ ? sport_state_sub_->get_topic_name() : base_state_sub_->get_topic_name();
+        sport_state_sub_ ? sport_state_sub_->get_topic_name() : lidar_odom_sub_->get_topic_name();
     const std::string chain = pelvis_frame_id_.empty() ? odom_frame_id_ + " -> " + base_frame_id_ :
                                                          odom_frame_id_ + " -> " + base_frame_id_ +
                                                              " -> " + pelvis_frame_id_;
-    RCLCPP_INFO(
-        get_logger(),
-        "Configured on sim ground truth: %s from %s. This is exact MuJoCo state, not an "
-        "estimate; it has no drift, noise or latency.",
-        chain.c_str(),
-        source_topic_.c_str());
+    if (source_ == OdometrySource::SimSportModeState)
+    {
+        RCLCPP_INFO(
+            get_logger(),
+            "Configured on sim ground truth: %s from %s. This is exact MuJoCo state, not an "
+            "estimate; it has no drift, noise or latency.",
+            chain.c_str(),
+            source_topic_.c_str());
+    }
+    else
+    {
+        RCLCPP_INFO(
+            get_logger(),
+            "Configured on LiDAR-inertial odometry: %s from %s. Unlike the sim source this is "
+            "an estimate and it drifts; correcting it is what map -> odom is for.",
+            chain.c_str(),
+            source_topic_.c_str());
+    }
     return CallbackReturn::SUCCESS;
 }
 
@@ -182,13 +198,19 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
 G1OdometryPublisher::on_cleanup(const rclcpp_lifecycle::State&)
 {
     timer_.reset();
-    base_state_sub_.reset();
     sport_state_sub_.reset();
     low_state_sub_.reset();
+    lidar_odom_sub_.reset();
     odom_pub_.reset();
     tf_broadcaster_.reset();
-    have_sample_      = false;
-    have_orientation_ = false;
+    tf_listener_.reset();
+    tf_buffer_.reset();
+    have_sample_          = false;
+    have_orientation_     = false;
+    have_imu_orientation_ = false;
+    // Cleared with the rest: a re-configure is a fresh start, and reusing the old origin would
+    // silently place the new run in the previous run's odom frame.
+    lidar_origin_latched_ = false;
     return CallbackReturn::SUCCESS;
 }
 
@@ -220,52 +242,152 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
 G1OdometryPublisher::on_shutdown(const rclcpp_lifecycle::State&)
 {
     timer_.reset();
-    base_state_sub_.reset();
     sport_state_sub_.reset();
     low_state_sub_.reset();
+    lidar_odom_sub_.reset();
     odom_pub_.reset();
     tf_broadcaster_.reset();
+    tf_listener_.reset();
+    tf_buffer_.reset();
     return CallbackReturn::SUCCESS;
 }
 
-void G1OdometryPublisher::onBaseState(const sensor_msgs::msg::JointState::SharedPtr msg)
+bool G1OdometryPublisher::lookUpLidarBodyOffset()
 {
-    // Look joints up by name every message: joint_state_broadcaster does not promise a
-    // stable ordering, and indexing by position would silently swap x and yaw the day it
-    // changes.
-    std::array<double, 3> values{};
-    std::array<double, 3> velocities{};
-    const bool            have_velocity = msg->velocity.size() == msg->name.size();
-
-    for (std::size_t axis = 0; axis < base_joint_names_.size(); ++axis)
+    if (lidar_body_frame_id_.empty())
     {
-        const auto it = std::find(msg->name.begin(), msg->name.end(), base_joint_names_[axis]);
-        if (it == msg->name.end())
-        {
-            return;
-        }
-        const std::size_t index = static_cast<std::size_t>(std::distance(msg->name.begin(), it));
-        if (index >= msg->position.size())
-        {
-            return;
-        }
-        values[axis]     = msg->position[index];
-        velocities[axis] = have_velocity ? msg->velocity[index] : 0.0;
+        return true;  // identity, already the default
+    }
+    const std::string& body = pelvis_frame_id_.empty() ? base_frame_id_ : pelvis_frame_id_;
+    try
+    {
+        // Static in the URDF, so any time works and tf2::TimePointZero asks for the newest.
+        const auto tf = tf_buffer_->lookupTransform(lidar_body_frame_id_, body, tf2::TimePointZero);
+        lio_body_from_base_.x = tf.transform.translation.x;
+        lio_body_from_base_.y = tf.transform.translation.y;
+        lio_body_from_base_.z = tf.transform.translation.z;
+        lio_body_from_base_.q = Quaternion{ tf.transform.rotation.x,
+                                            tf.transform.rotation.y,
+                                            tf.transform.rotation.z,
+                                            tf.transform.rotation.w };
+        return true;
+    }
+    catch (const tf2::TransformException& e)
+    {
+        RCLCPP_WARN_THROTTLE(
+            get_logger(),
+            steady_clock_,
+            5000,
+            "Waiting for %s -> %s: %s",
+            lidar_body_frame_id_.c_str(),
+            body.c_str(),
+            e.what());
+        return false;
+    }
+}
+
+bool G1OdometryPublisher::latchLidarOrigin(const Pose3d& lio_from_base)
+{
+    if (!have_imu_orientation_)
+    {
+        RCLCPP_WARN_THROTTLE(
+            get_logger(),
+            steady_clock_,
+            5000,
+            "Have LiDAR odometry but no IMU attitude yet; cannot level the odom frame.");
+        return false;
     }
 
-    pose_.x      = values[0];
-    pose_.y      = values[1];
-    pose_.yaw    = values[2];
-    world_twist_ = PlanarTwist{ velocities[0], velocities[1], velocities[2] };
+    // Where the robot is declared to have been standing when odometry began: at the origin,
+    // facing +x, at the configured height, and tilted exactly as the IMU says it was. Only the
+    // heading is discarded -- that is what makes this odom and not a map.
+    Pose3d start;
+    start.z = start_height_m_;
+    start.q =
+        splitGroundProjection(0.0, 0.0, 0.0, imu_orientation_, quaternionToYaw(imu_orientation_))
+            .tilt;
 
-    // The broadcaster stamps from this, so take the source's own time rather than now():
-    // on simulated time the two can differ by more than the whole TF cache.
-    const bool         unstamped = msg->header.stamp.sec == 0 && msg->header.stamp.nanosec == 0;
-    const rclcpp::Time stamp =
-        unstamped ? now() : rclcpp::Time(msg->header.stamp, get_clock()->get_clock_type());
-    orientation_ = yawToQuaternion(pose_.yaw);
-    pose_z_      = base_height_m_;
+    odom_from_lio_        = composePose(start, invertPose(lio_from_base));
+    lidar_origin_latched_ = true;
+    RCLCPP_INFO(
+        get_logger(),
+        "Latched the odom origin against the IMU attitude; %s starts at (0, 0, %.3f).",
+        (pelvis_frame_id_.empty() ? base_frame_id_ : pelvis_frame_id_).c_str(),
+        start_height_m_);
+    return true;
+}
+
+void G1OdometryPublisher::onLidarOdometry(const nav_msgs::msg::Odometry::SharedPtr msg)
+{
+    if (!lookUpLidarBodyOffset())
+    {
+        return;
+    }
+
+    Pose3d lio_from_lidar_body;
+    lio_from_lidar_body.x = msg->pose.pose.position.x;
+    lio_from_lidar_body.y = msg->pose.pose.position.y;
+    lio_from_lidar_body.z = msg->pose.pose.position.z;
+    lio_from_lidar_body.q = Quaternion{ msg->pose.pose.orientation.x,
+                                        msg->pose.pose.orientation.y,
+                                        msg->pose.pose.orientation.z,
+                                        msg->pose.pose.orientation.w };
+
+    const Pose3d lio_from_base = composePose(lio_from_lidar_body, lio_body_from_base_);
+    if (!lidar_origin_latched_ && !latchLidarOrigin(lio_from_base))
+    {
+        return;
+    }
+    const Pose3d base_in_odom = composePose(odom_from_lio_, lio_from_base);
+
+    // FAST-LIO's own stamp, which is the scan time rather than the time its solver finished.
+    const rclcpp::Time stamp(msg->header.stamp, get_clock()->get_clock_type());
+    const PlanarPose   previous      = pose_;
+    const bool         have_previous = have_sample_;
+    const double       dt            = have_previous ? (stamp - last_sample_stamp_).seconds() : 0.0;
+
+    pose_.x = base_in_odom.x;
+    pose_.y = base_in_odom.y;
+    pose_z_ = base_in_odom.z;
+    applyOrientation(base_in_odom.q);
+
+    // Differenced, because FAST-LIO publishes an empty twist and Nav2's controller reads
+    // velocity from the message rather than from TF. Coarse by construction: this is a
+    // difference of two ~10 Hz poses, not a filtered estimate.
+    if (dt > 0.0)
+    {
+        world_twist_ = PlanarTwist{ (pose_.x - previous.x) / dt,
+                                    (pose_.y - previous.y) / dt,
+                                    wrapAngle(pose_.yaw - previous.yaw) / dt };
+    }
     noteSample(stamp);
+}
+
+void G1OdometryPublisher::applyOrientation(const Quaternion& q)
+{
+    orientation_ = q;
+
+    // The attitude keeps going out either way -- a fallen robot really is tilted. Only the
+    // heading is held: near the vertical-axis singularity yaw swings wildly for tiny attitude
+    // changes, and that noise would reach both the ground projection and the body twist. The
+    // first sample always latches, even mid-fall, because there is nothing to hold instead.
+    if (tiltFromVertical(q) <= max_tilt_rad_ || !have_orientation_)
+    {
+        pose_.yaw = quaternionToYaw(q);
+    }
+    else
+    {
+        RCLCPP_WARN_THROTTLE(
+            get_logger(),
+            steady_clock_,
+            2000,
+            "Tilted %.1f degrees from vertical (limit %.1f); holding the last heading. The robot "
+            "is falling, not turning.",
+            tiltFromVertical(q) * 180.0 / M_PI,
+            max_tilt_rad_ * 180.0 / M_PI);
+    }
+    have_orientation_      = true;
+    last_orientation_wall_ = std::chrono::steady_clock::now();
 }
 
 void G1OdometryPublisher::onSportModeState(const unitree_go::msg::SportModeState::SharedPtr msg)
@@ -322,33 +444,16 @@ void G1OdometryPublisher::onLowState(const unitree_hg::msg::LowState::SharedPtr 
 
     // Normalise: norm^2 >= 0.5 admits 4.0 just as happily as 1.0, and an unnormalised
     // quaternion on /tf is a scale error nothing downstream reports.
-    const double inv = 1.0 / std::sqrt(norm2);
-    orientation_.w   = q.w * inv;
-    orientation_.x   = q.x * inv;
-    orientation_.y   = q.y * inv;
-    orientation_.z   = q.z * inv;
+    const double inv      = 1.0 / std::sqrt(norm2);
+    imu_orientation_      = Quaternion{ q.x * inv, q.y * inv, q.z * inv, q.w * inv };
+    have_imu_orientation_ = true;
 
-    // The attitude keeps going out either way -- a fallen robot really is tilted. Only the
-    // heading is held: near the vertical-axis singularity yaw swings wildly for tiny attitude
-    // changes, and that noise would reach both the ground projection and the body twist. The
-    // first sample always latches, even mid-fall, because there is nothing to hold instead.
-    if (tiltFromVertical(orientation_) <= max_tilt_rad_ || !have_orientation_)
+    // For fast_lio this stream is only the levelling reference for the latch; the attitude it
+    // publishes afterwards comes from the LiDAR solution, whose heading does not drift.
+    if (source_ == OdometrySource::SimSportModeState)
     {
-        pose_.yaw = quaternionToYaw(orientation_);
+        applyOrientation(imu_orientation_);
     }
-    else
-    {
-        RCLCPP_WARN_THROTTLE(
-            get_logger(),
-            steady_clock_,
-            2000,
-            "Tilted %.1f degrees from vertical (limit %.1f); holding the last heading. The robot "
-            "is falling, not turning.",
-            tiltFromVertical(orientation_) * 180.0 / M_PI,
-            max_tilt_rad_ * 180.0 / M_PI);
-    }
-    have_orientation_      = true;
-    last_orientation_wall_ = std::chrono::steady_clock::now();
 }
 
 void G1OdometryPublisher::noteSample(const rclcpp::Time& stamp)
