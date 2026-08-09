@@ -145,9 +145,14 @@ Ubuntu 22.04 and ROS 2 Humble combination the Unitree SDK needs.
 
 ```bash
 cp .env.example .env
+./scripts/import-externals.sh
 ./scripts/manage.sh start
 ./scripts/manage.sh exec
 ```
+
+`import-externals.sh` pulls the third-party packages listed in `workspace.repos` into
+`workspace/src` and puts the two that ship a non-standard layout into a buildable one. Run it
+again whenever `workspace.repos` changes.
 
 Inside the container:
 

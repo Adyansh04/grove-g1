@@ -255,6 +255,29 @@ RUN apt-get update && apt-get install -y \
         ros-humble-vision-msgs \
     && rm -rf /var/lib/apt/lists/*
 
+# --- Milestone 10: LiDAR-inertial odometry ------------------------------------
+
+# Livox-SDK2, the Mid360's transport library. livox_ros_driver2's CMakeLists does a
+# find_library(... /usr/local/lib REQUIRED) for it, so the driver does not configure without
+# it -- and the driver is what defines CustomMsg, which both FAST-LIO and the simulator
+# bridge speak. So this is needed even on the sim track, where no LiDAR is ever opened.
+#
+# Same source-build-then-discard shape as unitree_sdk2 above. Installs to /usr/local, which
+# is where the driver looks and is not searched by anything ROS ships.
+# Pinned 2026-08-09 -- current tip at authoring time.
+ARG LIVOX_SDK2_SHA=08f523c930b2f0ba1e98a6afaa8d7476bf479908
+RUN git init -q /tmp/Livox-SDK2 && \
+    cd /tmp/Livox-SDK2 && \
+    git remote add origin https://github.com/Livox-SDK/Livox-SDK2.git && \
+    git fetch --depth 1 origin ${LIVOX_SDK2_SHA} && \
+    git checkout -q FETCH_HEAD && \
+    mkdir build && cd build && \
+    cmake .. -DCMAKE_BUILD_TYPE=Release && \
+    make -j"$(nproc)" && \
+    make install && \
+    ldconfig && \
+    rm -rf /tmp/Livox-SDK2
+
 # Placed last on purpose. This is the only block that consumes COPYed host files
 # (workspace/patches, workspace/vendor), and cache invalidation flows forward: sitting
 # earlier, a one-line patch or sensor-source edit re-ran every apt block, the ONNX
