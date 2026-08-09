@@ -13,6 +13,10 @@ flowchart LR
     R --> D["/camera/aligned_depth_to_color/image_raw"]
     R --> C["/camera/color/image_raw"]
     R --> CI["camera_info"]
+    PC --> B["g1_livox_bridge"]
+    LS["/lowstate"] --> B
+    B --> CM["/livox/custom_msg"]
+    B --> IM["/livox/imu"]
 ```
 
 ## Why the split exists
@@ -34,6 +38,8 @@ frame is what crosses the boundary.
 | `/camera/color/image_raw` | `sensor_msgs/msg/Image` | `rgb8` |
 | `/camera/aligned_depth_to_color/camera_info`, `/camera/color/camera_info` | `sensor_msgs/msg/CameraInfo` | Same intrinsics. |
 | `~/sensor_pose` | `geometry_msgs/msg/PoseStamped` | Where the simulator says the sensor is. Diagnostic. |
+| `/livox/custom_msg` | `livox_ros_driver2/msg/CustomMsg` | `g1_livox_bridge` only. Reliable, depth 20, matching the real driver. |
+| `/livox/imu` | `sensor_msgs/msg/Imu` | `g1_livox_bridge` only. Reliable, depth 10, matching the real driver. |
 
 Depth and colour come from one render, so they share a pose, a timestamp and intrinsics by
 construction. A real D435i only gets that alignment from its own align-depth-to-colour step, which
@@ -65,12 +71,26 @@ ros2 launch g1_bringup bringup.launch.py sensors:=true rviz:=true
 ros2 topic hz /livox/lidar
 ```
 
+## g1_livox_bridge
+
+A second executable, run only when FAST-LIO is asked for (`odometry:=fast_lio`, via
+`g1_state_estimation`'s `fastlio_odometry.launch.py`). It restates the relay's PointCloud2 as
+the Livox `CustomMsg` FAST-LIO consumes, and the `/lowstate` IMU as `sensor_msgs/Imu` on
+`/livox/imu` -- the two topics `livox_ros_driver2` publishes on the robot, so the odometry
+pipeline downstream is identical in both places.
+
+Every point goes out with `offset_time` zero, which is truthful rather than a shortcut: the
+simulator raycasts the whole sweep against a frozen snapshot, so there is no motion inside a
+frame for FAST-LIO's undistortion to undo. A real Mid360 sweeps continuously, which is exactly
+what this bridge cannot reproduce and why undistortion stays unvalidated until hardware.
+
 ## Layout
 
 | File | Contents |
 |---|---|
 | `frame_reader.{hpp,cpp}` | Framing and validation, free of ROS and sockets so the wire format tests without a simulator. |
 | `g1_sensor_relay_node.cpp` | The socket, the poll loop and the publishers. |
+| `g1_livox_bridge_node.cpp` | The FAST-LIO front end above. |
 | `sensor_frame.h` | The wire struct, duplicated on the simulator side. |
 
 The wire format is untrusted input: every length is validated before it is trusted, including the

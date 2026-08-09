@@ -72,6 +72,17 @@
     <child link="mid360_visual"/>
   </joint>
 
+  <!-- The Mid360's built-in IMU, which is the frame FAST-LIO's odometry reports ("body").
+       Livox publish the LIDAR-in-IMU offset [-0.011, -0.02329, 0.04412]; this joint is its
+       inverse, because here the parent is the lidar frame the cloud arrives in. Rotation is
+       identity: both sensors sit in one housing and flip together with the mount. -->
+  <link name="mid360_imu"/>
+  <joint name="mid360_imu_joint" type="fixed">
+    <parent link="mid360_link"/>
+    <child link="mid360_imu"/>
+    <origin xyz="0.011 0.02329 -0.04412" rpy="0 0 0"/>
+  </joint>
+
   <!-- Load tunable YAML for ROS 2 control parameters. -->
   <xacro:property name="arm_sdk_params" value="${xacro.load_yaml('../config/arm_sdk_params.yaml')}"/>
 

@@ -34,24 +34,28 @@ public:
     LivoxBridge()
       : rclcpp::Node("g1_livox_bridge")
     {
-        // Sensor QoS on all four endpoints, matching both the relay upstream and what the real
-        // driver advertises. A reliable subscriber against these sees nothing at all.
-        const auto qos = rclcpp::SensorDataQoS();
-
+        // RELIABLE, with the same depths livox_ros_driver2 uses (lddc.cpp CreatePublisher
+        // passes a bare queue size, which is reliable by default). Not a style choice:
+        // FAST-LIO subscribes to both of these reliably, and a best-effort publisher is
+        // silently incompatible with that -- DDS drops the match and logs one warning about
+        // RELIABILITY_QOS_POLICY that is easy to read past.
         custom_pub_ = create_publisher<livox_ros_driver2::msg::CustomMsg>(
             declare_parameter<std::string>("custom_msg_topic", "/livox/custom_msg"),
-            qos);
+            rclcpp::QoS(20));
         imu_pub_ = create_publisher<sensor_msgs::msg::Imu>(
             declare_parameter<std::string>("imu_topic", "/livox/imu"),
-            qos);
+            rclcpp::QoS(10));
 
-        cloud_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(
+        // The inputs keep sensor QoS: these are the simulator's own streams, published
+        // best-effort by g1_sensor_relay and the DDS bridge.
+        const auto sensor_qos = rclcpp::SensorDataQoS();
+        cloud_sub_            = create_subscription<sensor_msgs::msg::PointCloud2>(
             declare_parameter<std::string>("cloud_topic", "/livox/lidar"),
-            qos,
+            sensor_qos,
             [this](sensor_msgs::msg::PointCloud2::ConstSharedPtr msg) { onCloud(*msg); });
         low_state_sub_ = create_subscription<unitree_hg::msg::LowState>(
             declare_parameter<std::string>("low_state_topic", "/lowstate"),
-            qos,
+            sensor_qos,
             [this](unitree_hg::msg::LowState::ConstSharedPtr msg) { onLowState(*msg); });
 
         imu_frame_id_ = declare_parameter<std::string>("imu_frame_id", "pelvis");

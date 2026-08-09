@@ -59,8 +59,9 @@ private:
     /// Stores an orientation and re-derives the heading from it, holding the last good
     /// heading past max_tilt_rad_. Shared by every source that carries a full attitude.
     void applyOrientation(const Quaternion& q);
-    /// The static transform from the frame the LiDAR odometry reports to the body frame this
-    /// node publishes. Identity unless lidar_body_frame_id_ names something else.
+    /// The transform from the frame the LiDAR odometry reports to the body frame this node
+    /// publishes. Identity unless lidar_body_frame_id_ names something else. Refreshed per
+    /// sample rather than cached: on the robot that chain crosses the waist joints.
     bool lookUpLidarBodyOffset();
     /// Shared tail of the position callbacks: staleness bookkeeping against a new stamp.
     void noteSample(const rclcpp::Time& stamp);
@@ -118,7 +119,7 @@ private:
     /// this is what turns its output into something Nav2 can consume.
     Pose3d odom_from_lio_;
     bool   lidar_origin_latched_ = false;
-    /// Body offset from lidar_body_frame_id_, resolved once from TF.
+    /// Body offset from lidar_body_frame_id_, refreshed from TF per sample.
     Pose3d lio_body_from_base_;
     /// Wall time the orientation last changed. Position and orientation come from separate
     /// topics, so one can die while the other keeps flowing; without this the node would

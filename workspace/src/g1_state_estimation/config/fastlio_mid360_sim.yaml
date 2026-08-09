@@ -1,0 +1,67 @@
+# FAST-LIO2 against the simulator. SIMULATION ONLY -- the robot uses
+# fastlio_mid360_hardware.yaml. Three keys differ, and all three are marked below.
+#
+# The difference that matters: in simulation the IMU is the PELVIS IMU, relayed out of LowState
+# by g1_livox_bridge, because MuJoCo models no IMU inside the Mid360. FAST-LIO's `body` frame is
+# therefore the pelvis rather than the sensor, and the extrinsic below is the whole mount rather
+# than the few centimetres inside the sensor housing.
+/**:
+  ros__parameters:
+    feature_extract_enable: false
+    # DIFFERS (hardware: 3). The simulated sweep is 360x32 = 11520 rays against a real
+    # Mid360's ~20k returns, so it is thinned enough already.
+    point_filter_num: 1
+    max_iteration: 3
+    filter_size_surf: 0.5
+    filter_size_map: 0.5
+    cube_side_length: 1000.0
+    runtime_pos_log_enable: false
+    map_file_path: "./test.pcd"
+
+    common:
+      lid_topic: "/livox/custom_msg"
+      imu_topic: "/livox/imu"
+      time_sync_en: false
+      time_offset_lidar_to_imu: 0.0
+
+    preprocess:
+      lidar_type: 1
+      scan_line: 4
+      blind: 0.5
+      timestamp_unit: 3
+      scan_rate: 10
+
+    mapping:
+      acc_cov: 0.1
+      gyr_cov: 0.1
+      b_acc_cov: 0.0001
+      b_gyr_cov: 0.0001
+      fov_degree: 360.0
+      det_range: 100.0
+      # DIFFERS (hardware: true). The extrinsic below is copied from the URDF, which the
+      # simulator itself is built from, so it is exact and the online estimator can only
+      # wander from it -- and it did: with estimation on, a 35 s standing run was seen to
+      # diverge kilometres once the estimate walked off. On the robot the true extrinsic is
+      # not known exactly, which is the case the estimator exists for.
+      extrinsic_est_en: false
+      # DIFFERS. mid360_link expressed in the pelvis frame, taken from the URDF with the waist
+      # joints at zero -- which is where they stay, since nothing commands them. Regenerate
+      # this if that ever changes; test_sim_extrinsic asserts the two agree.
+      extrinsic_T: [-0.00368, 0.00003, 0.472434]
+      # DIFFERS. Row-major, and inverted: the third row's -0.9987 is the Mid360 pointing its
+      # +z at the floor, which is the upside-down mount.
+      extrinsic_R: [0.99869362, 0.0, -0.05109843,
+                    0.0, -1.0, 0.0,
+                    -0.05109843, 0.0, -0.99869362]
+
+    publish:
+      path_en: false
+      effect_map_en: false
+      map_en: false
+      scan_publish_en: true
+      dense_publish_en: false
+      scan_bodyframe_pub_en: false
+
+    pcd_save:
+      pcd_save_en: false
+      interval: -1

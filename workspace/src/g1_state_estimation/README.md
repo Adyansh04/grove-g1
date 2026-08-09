@@ -2,12 +2,18 @@
 
 Publishes `odom` to the robot's base frame, and the TF chain Nav2 and slam_toolbox need.
 
-`ament_cmake`, C++20. One lifecycle node, `g1_odometry_publisher`.
+`ament_cmake`, C++20. One lifecycle node, `g1_odometry_publisher`, plus the hardware-side
+`g1_livox_pointcloud` converter.
 
 ```mermaid
 flowchart LR
-    SM["/sportmodestate<br/>pelvis position"] --> N
-    LS["/lowstate<br/>IMU orientation"] --> N
+    subgraph sim only
+        SM["/sportmodestate<br/>pelvis position"] --> N
+    end
+    subgraph either
+        LO["/Odometry_loc<br/>FAST-LIO pose"] --> N
+        LS["/lowstate<br/>IMU orientation"] --> N
+    end
     N["g1_odometry_publisher"] --> TF["/tf<br/>odom to base_footprint to pelvis"]
     N --> OD["~/odom"]
 ```
@@ -16,30 +22,59 @@ flowchart LR
 
 The real G1 publishes no odometry. On hardware `/sportmodestate` carries a type holding only
 `fsm_id`, `fsm_mode`, `task_id` and `task_time`. No pose, no velocity, and `rt/odommodestate` does
-not exist anywhere in Unitree's code.
+not exist anywhere in Unitree's code. What the robot does have is a Mid360 and an IMU, so the
+hardware source is LiDAR-inertial odometry: FAST-LIO2, from the vendored `fast_lio` package.
 
 | `odometry_source` | Behaviour |
 |---|---|
-| `sim_sportmodestate` | The `unitree_mujoco` track. Pelvis position from `/sportmodestate`, full orientation from `/lowstate`'s IMU. |
-| `sim_ground_truth` | MuJoCo generalized coordinates from a planar model. No launch selects it since the planar sandbox was removed. |
-| `hardware` (default) | Refuses to configure. A real source, leg odometry with an IMU EKF or LiDAR-inertial odometry, is a future milestone. |
+| `sim_sportmodestate` | The `unitree_mujoco` track. Pelvis position from `/sportmodestate`, full orientation from `/lowstate`'s IMU. Exact MuJoCo state: no drift, no noise, no latency. |
+| `fast_lio` | Reads FAST-LIO's `nav_msgs/Odometry`, re-references it into `odom`, and differences the twist FAST-LIO leaves empty. An estimate: it drifts, and `map -> odom` exists to correct it. Runs in sim and on the robot. |
+| `hardware` (default) | Refuses to configure, pointing at `fast_lio`. |
 
-`hardware` is the default deliberately. A misconfigured hardware bring-up must never silently emit
-fabricated odometry, so simulation is the case that has to opt in.
+`hardware` is the default deliberately. A misconfigured bring-up must never silently emit
+fabricated odometry, so every working source has to be opted into.
 
-Both simulation sources are ground truth, not estimates: no drift, no noise, no latency. Nothing
-here validates how a real estimator behaves under drift or foot slip, so treat tuning done against
-it as unvalidated on hardware.
+No `map` to `odom` transform is published. That belongs to localization, in `g1_navigation`.
 
-No `map` to `odom` transform is published. That belongs to SLAM, in `g1_navigation`.
+### How the fast_lio source works
+
+FAST-LIO reports the pose of its IMU (`body`) in the frame that IMU happened to occupy at
+startup (`camera_init`). Neither is gravity-aligned on this robot: the Mid360 is mounted upside
+down. At the first sample the node latches a correction so `base_footprint` starts at
+(0, 0, yaw 0) with the floor at z 0, using the `/lowstate` attitude to find which way is up and
+`start_height_m` to find how far up. Everything after is FAST-LIO's motion re-expressed in that
+frame, offset from the reporting IMU to the pelvis through TF (`lidar_body_frame_id`).
+
+Until both a LiDAR pose and a usable IMU attitude have arrived, nothing is published at all.
+
+### What the two front ends look like
+
+```
+hardware:  livox_ros_driver2 (CustomMsg mode) --> /livox/custom_msg --> fastlio_mapping
+           g1_livox_pointcloud: /livox/custom_msg --> /livox/lidar (PointCloud2)
+sim:       g1_sensor_relay --> /livox/lidar --> g1_livox_bridge --> /livox/custom_msg
+           unitree_mujoco --> /lowstate ------> g1_livox_bridge --> /livox/imu
+```
+
+The driver publishes ONE format per run, and FAST-LIO needs the CustomMsg (per-point
+timestamps, for undistorting scans taken mid-stride) while Nav2's costmaps, MoveIt's octomap
+and `pointcloud_to_laserscan` all read the PointCloud2 on `/livox/lidar`. So on hardware the
+driver runs in CustomMsg mode and `g1_livox_pointcloud` (this package) republishes it;
+`/livox/lidar` deliberately does not pass through FAST-LIO, so perception cannot be taken down
+by it. In simulation the conversion runs the other way, in `g1_sensor_relay`'s
+`g1_livox_bridge`.
+
+The IMU differs between the tracks, and the configs carry the consequence: on hardware FAST-LIO
+uses the Mid360's own IMU (hardware-synchronised with the points), so its extrinsic is the
+few-centimetre offset inside the sensor housing and `lidar_body_frame_id` is `mid360_imu`. In
+simulation no Mid360 IMU exists, so the pelvis IMU is bridged instead, the extrinsic is the
+whole URDF mount, and the reporting frame already is the pelvis. `test_sim_extrinsic` fails if
+the sim extrinsic and the URDF mount ever disagree.
 
 ## Frames
 
-Which chain is published depends on `pelvis_frame_id`:
-
 ```
-pelvis_frame_id: "pelvis"   ->   odom -> base_footprint -> pelvis    (unitree_mujoco track)
-pelvis_frame_id: ""         ->   odom -> base_link                   (planar sandbox)
+odom -> base_footprint -> pelvis
 ```
 
 Nav2 and slam_toolbox both want a gravity-aligned base frame, and a walking G1 does not have one:
@@ -56,6 +91,9 @@ reason.
 Past `max_tilt_deg` the heading extraction is ill-conditioned, so the last well-conditioned heading
 is held. Attitude keeps being published unchanged, because a fallen robot really is tilted.
 
+FAST-LIO also broadcasts its own `camera_init -> body` edge. That pair is an orphan tree,
+disconnected from `odom`: harmless, and useful when a scan match goes wrong.
+
 ## Parameters
 
 | Parameter | Default | Meaning |
@@ -64,34 +102,52 @@ is held. Attitude keeps being published unchanged, because a fallen robot really
 | `odom_frame_id` | `odom` | |
 | `base_frame_id` | `base_footprint` | |
 | `pelvis_frame_id` | `""` | Empty publishes one edge; naming a link splits it in two. |
-| `base_height_m` | `0.0` | Height of the base above the floor, making `odom` the ground plane. |
+| `lidar_body_frame_id` | `""` | `fast_lio` only: the frame FAST-LIO reports the pose of. Empty means it already is the base/pelvis frame. |
+| `start_height_m` | `0.0` | `fast_lio` only: body height above the floor at the origin latch. |
 | `max_tilt_deg` | `80.0` | Beyond this the heading is held. |
 | `publish_rate_hz` | `50.0` | |
 | `publish_odom_msg` | `true` | |
 | `source_timeout_ms` | `200.0` | Source age beyond this stops publishing. |
 
-Shipped config: `g1_odometry_publisher_converged.yaml`, for the `unitree_mujoco` track.
+Shipped configs: `g1_odometry_publisher_converged.yaml` (sim ground truth),
+`g1_odometry_publisher_fastlio.yaml` (LiDAR-inertial), `fastlio_mid360_hardware.yaml` and
+`fastlio_mid360_sim.yaml` (FAST-LIO itself).
 
 ## Running
 
-The node comes up with `sensors:=true`:
+Ground-truth odometry comes up with `sensors:=true`; the LiDAR-inertial pipeline with
+`odometry:=fast_lio`:
 
 ```bash
-ros2 launch g1_bringup bringup.launch.py sensors:=true
+ros2 launch g1_bringup bringup.launch.py sensors:=true odometry:=fast_lio
 ros2 run tf2_ros tf2_echo odom base_footprint
 ```
+
+Expect a few seconds of nothing while FAST-LIO initialises its IMU and the origin latches.
+
+On the robot, `launch/fastlio_odometry.launch.py` (the default `sim:=false`) starts the Livox
+driver, the converter, FAST-LIO and this publisher in one go. The driver needs the Mid360's IP
+configured in `livox_ros_driver2`'s `MID360_config.json` first.
 
 It is a lifecycle node, and configuration is where the source decision is enforced, so a refusal is
 visible as a failed transition rather than a silent absence of transforms.
 
-## Tests
+## What simulation does and does not validate
 
-None need a simulator.
+The sim track runs the real FAST-LIO binary on the real code path, so the plumbing, the frame
+math, the latch and the guards are all exercised, and the estimate can be compared against
+MuJoCo's exact ground truth. It cannot validate what the sensor itself contributes: the
+Mid360's non-repetitive scan pattern (the simulated sweep is an instantaneous raycast grid, so
+motion undistortion has nothing to do), IMU noise and bias, Livox SDK networking, or the
+physically inverted unit. Tuning done against sim FAST-LIO is unvalidated on hardware.
+
+## Tests
 
 | Test | Covers |
 |---|---|
-| `test_odom_math` | Ground projection and its recomposition, heading extraction, the tilt guard. |
-| `test_odometry_publisher_node` | The node itself: source selection, the hardware refusal, frame chains, timeouts. |
+| `test_odom_math` | Ground projection and its recomposition, heading extraction, the tilt guard, pose composition and inversion. |
+| `test_odometry_publisher_node` | The node itself: source selection, the hardware refusal, the fast_lio latch and twist, frame chains, timeouts. No simulator needed. |
+| `test_sim_extrinsic` | The sim FAST-LIO extrinsic against the URDF mount, and that the mount is actually inverted. |
 
 ```bash
 colcon test --packages-select g1_state_estimation
