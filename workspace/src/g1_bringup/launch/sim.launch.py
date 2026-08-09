@@ -206,6 +206,35 @@ def _launch_setup(context, *args, **kwargs):
                 )
             )
 
+    if sensors and LaunchConfiguration("odometry").perform(context) == "fast_lio":
+        # The LiDAR-inertial pipeline owns odom -> base_footprint instead, and brings up its
+        # own publisher. Exactly one of these two branches runs: two writers on that transform
+        # is the failure the whole odometry_source parameter exists to make impossible.
+        #
+        # Delayed past the spawn, not started with everything else. FAST-LIO estimates gravity
+        # from its first ten IMU samples, and the robot free-falls onto the floor at spawn: an
+        # init that catches the drop bakes a wrong gravity in and the estimate diverges by
+        # hundreds of metres while the robot stands still (seen, not hypothesised). Same fixed-
+        # delay approach as activate_arm_delay_s.
+        fastlio_delay_s = float(LaunchConfiguration("sim_start_delay_s").perform(context)) + 10.0
+        actions.append(
+            TimerAction(
+                period=fastlio_delay_s,
+                actions=[
+                    IncludeLaunchDescription(
+                        PythonLaunchDescriptionSource(
+                            os.path.join(
+                                get_package_share_directory("g1_state_estimation"),
+                                "launch",
+                                "fastlio_odometry.launch.py",
+                            )
+                        ),
+                        launch_arguments={"sim": "true"}.items(),
+                    )
+                ],
+            )
+        )
+    elif sensors:
         # odom -> base_footprint -> pelvis. Tunables live in the package's own converged-track
         # config rather than inline here, so there is one place to change them.
         odometry_node = LifecycleNode(
@@ -403,6 +432,16 @@ def generate_launch_description():
                 "result as unproven, not as a property of the sensor stack. Opt-in until it "
                 "is re-measured on an unthrottled machine. test_lidar_geometry, which is "
                 "pure geometry, turns sensors on explicitly and passes.",
+            ),
+            DeclareLaunchArgument(
+                "odometry",
+                default_value="sportmodestate",
+                description="Which source publishes odom -> base_footprint. 'sportmodestate' "
+                "is exact MuJoCo state -- no drift, no noise, no latency -- and is what the "
+                "mission is tuned against. 'fast_lio' runs the real LiDAR-inertial pipeline "
+                "over the simulated Mid360 instead, which is the code path the robot uses; "
+                "expect drift, and expect it to need a few seconds to initialise. Needs "
+                "sensors:=true either way.",
             ),
             DeclareLaunchArgument(
                 "pin_pelvis",

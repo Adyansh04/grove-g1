@@ -44,6 +44,7 @@ All of these belong to `bringup.launch.py`.
 | `moveit` | `false` | Start `move_group` for arm planning. Works with any mode. Planning is immediate; executing still needs `activate_arm`. |
 | `rviz` | `false` | Open RViz on the config that matches what is running. `moveit:=true` wins, because only MoveIt's launcher passes the panel its parameters. |
 | `sensors` | `false` | LiDAR, the relay and the `odom` to `base_footprint` chain. The navigation modes turn this on themselves. |
+| `odometry` | `sportmodestate` | What publishes `odom` to `base_footprint`. `sportmodestate` is exact MuJoCo state and what the mission is tuned against; `fast_lio` runs the LiDAR-inertial pipeline the robot uses, over the simulated Mid360, and drifts like the estimate it is. |
 | `world` | `navigation` | Which scene to stage. `navigation` is the facility the committed map was built from. |
 | `headless` | `true` | `false` shows the MuJoCo viewer. |
 | `pin_pelvis` | `false` | Welds the pelvis and disables the walking policy, for exercising the arms alone. `mode:=none` only. |
