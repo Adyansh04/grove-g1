@@ -28,7 +28,7 @@ hardware source is LiDAR-inertial odometry: FAST-LIO2, from the vendored `fast_l
 | `odometry_source` | Behaviour |
 |---|---|
 | `sim_sportmodestate` | The `unitree_mujoco` track. Pelvis position from `/sportmodestate`, full orientation from `/lowstate`'s IMU. Exact MuJoCo state: no drift, no noise, no latency. |
-| `fast_lio` | Reads FAST-LIO's `nav_msgs/Odometry`, re-references it into `odom`, and differences the twist FAST-LIO leaves empty. An estimate: it drifts, and `map -> odom` exists to correct it. Runs in sim and on the robot. **Not yet usable under Nav2 — see below.** |
+| `fast_lio` | Reads FAST-LIO's `nav_msgs/Odometry`, re-references it into `odom`, and differences the twist FAST-LIO leaves empty. An estimate: it drifts, and `map -> odom` exists to correct it. Runs in sim and on the robot. |
 | `hardware` (default) | Refuses to configure, pointing at `fast_lio`. |
 
 `hardware` is the default deliberately. A misconfigured bring-up must never silently emit
@@ -132,20 +132,27 @@ configured in `livox_ros_driver2`'s `MID360_config.json` first.
 It is a lifecycle node, and configuration is where the source decision is enforced, so a refusal is
 visible as a failed transition rather than a silent absence of transforms.
 
-## Status: fast_lio does not yet drive Nav2
+## Height is what this source has to get right
 
-The source itself tracks well. Standing, it stays within ~2 cm of MuJoCo's ground truth; over a
-6.3 m driven path the aligned gap was 0.44 m, about 7 %. `test_fastlio_odometry` covers both.
+Standing, the estimate stays within ~2 cm of MuJoCo's ground truth in x and y; over a 6.3 m
+driven path the aligned gap was 0.44 m, about 7 %. The tighter constraint is **height**, and it
+is worth knowing why before touching either of the two numbers that control it.
 
-Navigation on it does not work yet. Every `NavigateToPose` goal aborts with `GridBased: failed
-to create plan`, while the identical goal on `sportmodestate` succeeds in the same session. The
-global costmap comes up 44 % lethal against 34 % on ground truth — roughly 14 000 extra cells,
-enough to close the corridors the planner needs. Ruled out by measurement: the map, the goals,
-AMCL's noise model, FAST-LIO's attitude (a constant 0.46° against the IMU, no drift) and its
-height estimate.
+Nav2's obstacle layer removes the floor with `min_obstacle_height: 0.08` — about 70 % of every
+sweep is floor. Believe the pelvis, and with it the LiDAR, sits higher than it does, and floor
+returns compute above that cut and are marked as obstacle: concentric rings of them, growing
+with range, until no path exists. Two errors stacked to produce exactly that:
 
-So `odometry:=fast_lio` is for bringing the pipeline up and measuring it, not for driving.
-`sportmodestate` remains the default and the mission is unaffected.
+- `start_height_m` was a 0.793 nominal against a measured 0.7504 standing pelvis.
+- `filter_size_surf` / `filter_size_map` were the reference's 0.5 m, tuned for building-scale
+  runs. In one 18 m room that leaves height loose, and the estimate climbed 80–140 mm.
+
+With both corrected the median height error is 39 mm and navigation works. The margin is not
+generous: transients during a walk still reach ~180 mm, and the global costmap runs ~46 % lethal
+against ~34 % on ground truth, so some floor is still being marked. A constant 0.46 °
+attitude offset against the IMU contributes ~40 mm of the remainder at `obstacle_max_range`.
+
+`sportmodestate` remains the default; the mission is tuned against it and is unaffected.
 
 ## What simulation does and does not validate
 
