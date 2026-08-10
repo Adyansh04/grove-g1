@@ -53,16 +53,17 @@ fi
 
 # FAST-LIO fixes its gravity vector by averaging the first MAX_INI_COUNT IMU samples, and
 # upstream sets that to 10. Its own paper asks for the sensor to be held STATIC for about two
-# seconds while that happens; ten samples is only that long on a slow IMU, and on this robot
-# it is 20 ms at the 500 Hz the pelvis IMU runs.
+# seconds while that happens; ten samples is only that long on a slow IMU, and at the Mid360's
+# 200 Hz it is 50 ms.
 #
-# A balancing humanoid has no static pose. Twenty milliseconds does not average the sway, it
+# A balancing humanoid has no static pose. Fifty milliseconds does not average the sway, it
 # samples one instant of it, so gravity comes out tilted by whatever the body was doing at
 # that moment -- and every pose afterwards inherits that tilt, which lands on the floor plane
 # and comes back as the costmap marking the floor.
 #
-# 1000 samples is the paper's two seconds at 500 Hz. Costs two seconds of extra startup, which
-# is already hidden inside the launch delay that waits out the spawn drop.
+# 1000 samples is five seconds at 200 Hz, rather more than the paper asks for and deliberately
+# so: this robot is still settling for the first few seconds after spawn, and the extra
+# averaging is free -- it sits inside the launch delay that already waits out the spawn drop.
 # FAST-LIO subscribes to the IMU with a ten-deep queue and then does its entire update -- ikd-tree
 # search, the iterated EKF, the map insert -- inside one timer callback on a single-threaded
 # executor. Nothing takes IMU while that runs. Ten samples is 50 ms at a Mid360's 200 Hz, and an

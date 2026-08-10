@@ -7,9 +7,6 @@ find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(vision_msgs REQUIRED)
 find_package(livox_ros_driver2 REQUIRED)
-find_package(unitree_hg REQUIRED)
-find_package(tf2 REQUIRED)
-find_package(tf2_ros REQUIRED)
 
 # Framing and validation, free of ROS and sockets so the wire format tests without a
 # simulator or a running graph.
@@ -28,8 +25,7 @@ ament_target_dependencies(g1_sensor_relay PUBLIC rclcpp sensor_msgs geometry_msg
 # odometry track can be started and stopped without touching the sensor path everything else
 # depends on.
 add_executable(g1_livox_bridge src/g1_livox_bridge_node.cpp)
-ament_target_dependencies(g1_livox_bridge PUBLIC
-  rclcpp sensor_msgs livox_ros_driver2 unitree_hg tf2 tf2_ros)
+ament_target_dependencies(g1_livox_bridge PUBLIC rclcpp sensor_msgs livox_ros_driver2)
 
 # This package parses length-prefixed binary frames off a socket, so -Wsign-compare and the
 # unused-result warnings earn their keep here more than anywhere else in the workspace.

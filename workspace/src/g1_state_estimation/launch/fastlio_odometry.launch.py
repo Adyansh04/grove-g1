@@ -44,7 +44,8 @@ def _launch_setup(context, *args, **kwargs):
 
     actions = []
     if sim:
-        # Restates the relay's PointCloud2 and LowState as the driver's two topics.
+        # Restates the relay's PointCloud2 as the driver's CustomMsg. /livox/imu comes
+        # straight off g1_sensor_relay: the simulator models an IMU inside the Mid360.
         actions.append(
             Node(
                 package="g1_sensor_relay",
@@ -110,17 +111,13 @@ def _launch_setup(context, *args, **kwargs):
         )
     )
 
-    # In sim FAST-LIO runs off the pelvis IMU, so its `body` already is the pelvis and the
-    # shipped mid360_imu offset must not be applied on top.
-    overrides = [{"lidar_body_frame_id": ""}] if sim else []
     odometry_node = LifecycleNode(
         package="g1_state_estimation",
         executable="g1_odometry_publisher",
         name="g1_odometry_publisher",
         namespace="",
         output="both",
-        parameters=[os.path.join(share, "config", "g1_odometry_publisher_fastlio.yaml")]
-        + overrides,
+        parameters=[os.path.join(share, "config", "g1_odometry_publisher_fastlio.yaml")],
         remappings=[
             ("~/lidar_odometry", "/Odometry_loc"),
             # Only to level the odom frame at the origin latch; the attitude published

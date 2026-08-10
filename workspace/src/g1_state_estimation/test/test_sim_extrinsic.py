@@ -1,10 +1,10 @@
-"""In simulation there is no constant lidar-to-IMU extrinsic to write down.
+"""The lidar-to-IMU extrinsic is the same constant in simulation and on the robot.
 
-FAST-LIO reads a flat parameter file and cannot look at TF, so the obvious thing is to copy the
-mount out of the URDF as twelve literal numbers. That was done, and it was wrong: the sim IMU is
-the pelvis, the sim lidar is on torso_link, and the walking policy drives the three waist joints
-in between. g1_livox_bridge restates the sweep in the pelvis frame instead, which leaves the
-extrinsic identity. These tests hold that arrangement in place.
+It is a constant only because the IMU is inside the sensor in both places: the simulator models
+one there (patches/unitree_mujoco/006-add-mid360-imu.patch) rather than substituting the pelvis
+IMU, which sits three actuated waist joints away and made every scan arrive rotated by a
+different wrong amount. These tests hold both halves of that in place -- the numbers, and the
+reason they cannot come from the URDF chain.
 """
 
 import math
@@ -16,7 +16,10 @@ import pytest
 import yaml
 from ament_index_python.packages import get_package_share_directory
 
-_CONFIG = pathlib.Path(__file__).resolve().parent.parent / "config" / "fastlio_mid360_sim.yaml"
+_CONFIG_DIR = pathlib.Path(__file__).resolve().parent.parent / "config"
+# Livox's published lidar-in-IMU offset for the Mid360, the number both configs and the MJCF
+# site are built from.
+_LIVOX_LIDAR_IN_IMU = [-0.011, -0.02329, 0.04412]
 
 
 def _rpy_to_matrix(roll, pitch, yaw):
@@ -79,20 +82,22 @@ def _chain_from_urdf(child_link, ancestor_link):
     return translation, rotation
 
 
-def _config_extrinsic():
-    parameters = yaml.safe_load(_CONFIG.read_text())["/**"]["ros__parameters"]["mapping"]
+def _config_extrinsic(name):
+    text = (_CONFIG_DIR / name).read_text()
+    parameters = yaml.safe_load(text)["/**"]["ros__parameters"]["mapping"]
     return parameters["extrinsic_T"], parameters["extrinsic_R"]
 
 
-def test_sim_extrinsic_is_identity():
-    config_t, config_r = _config_extrinsic()
-    assert config_t == pytest.approx([0.0, 0.0, 0.0], abs=1e-12), (
-        "the sweep reaches FAST-LIO already in the IMU frame; a translation here double-counts "
-        "the mount"
-    )
-    assert config_r == pytest.approx([1, 0, 0, 0, 1, 0, 0, 0, 1], abs=1e-12), (
-        "same for the rotation -- g1_livox_bridge has already applied it, per scan"
-    )
+def test_both_configs_carry_the_livox_lever_arm():
+    # The simulator's IMU site is placed from these same numbers, so a change here without a
+    # matching change to the MJCF patch silently moves one and not the other.
+    for name in ("fastlio_mid360_sim.yaml", "fastlio_mid360_hardware.yaml"):
+        translation, rotation = _config_extrinsic(name)
+        assert translation == pytest.approx(_LIVOX_LIDAR_IN_IMU, abs=1e-9), name
+        assert rotation == pytest.approx([1, 0, 0, 0, 1, 0, 0, 0, 1], abs=1e-12), (
+            f"{name}: both sensors sit in one housing, so the rotation between them is identity "
+            "and the upside-down mount belongs in the URDF"
+        )
 
 
 def test_the_sensor_is_not_rigidly_attached_to_the_imu():
@@ -107,8 +112,8 @@ def test_the_sensor_is_not_rigidly_attached_to_the_imu():
         link = parent
     assert movable, (
         "mid360_link now reaches pelvis through fixed joints only. If the waist really was "
-        "frozen, a constant extrinsic is correct again and g1_livox_bridge's per-scan transform "
-        "is dead weight -- but check who froze it before deleting anything."
+        "frozen, the pelvis IMU would do after all and the MJCF would not need a sensor in the "
+        "Mid360 -- but check who froze it before simplifying anything."
     )
 
 
@@ -134,6 +139,5 @@ def test_the_imu_frame_inverts_the_livox_lever_arm():
     )
     assert match, "mid360_imu joint not found in g1_arm_sdk.urdf.xacro"
     offset = [float(v) for v in match.group(1).split()]
-    livox_published = [-0.011, -0.02329, 0.04412]
     for axis in range(3):
-        assert offset[axis] == pytest.approx(-livox_published[axis], abs=1e-9)
+        assert offset[axis] == pytest.approx(-_LIVOX_LIDAR_IN_IMU[axis], abs=1e-9)

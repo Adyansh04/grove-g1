@@ -21,6 +21,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/camera_info.hpp>
 #include <sensor_msgs/msg/image.hpp>
+#include <sensor_msgs/msg/imu.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <string>
 #include <utility>
@@ -85,6 +86,14 @@ public:
         pose_pub_ = create_publisher<geometry_msgs::msg::PoseStamped>(
             "~/sensor_pose",
             rclcpp::SensorDataQoS());
+
+        // RELIABLE, and the depth livox_ros_driver2 uses (lddc.cpp CreatePublisher passes a
+        // bare queue size, which is reliable by default). FAST-LIO subscribes reliably, and a
+        // best-effort publisher against it is silently unmatched.
+        imu_frame_id_ = declare_parameter<std::string>("imu_frame_id", "mid360_imu");
+        imu_pub_      = create_publisher<sensor_msgs::msg::Imu>(
+            declare_parameter<std::string>("imu_topic", "/livox/imu"),
+            rclcpp::QoS(10));
 
         // Node-relative and raw: this is the simulator's world frame with no staleness
         // policy applied. g1_object_pose_source is what turns it into /objects, and naming
@@ -231,8 +240,40 @@ private:
                 case FrameKind::PointCloud:
                     publish(frame);
                     break;
+                case FrameKind::Imu:
+                    publishImu(frame);
+                    break;
             }
         }
+    }
+
+    /// The Mid360's own IMU, in the sensor's frame, stamped from the same clock mapping as the
+    /// sweep. Both come off one socket from one simulator, so the pair FAST-LIO fuses is
+    /// consistent by construction rather than by two nodes agreeing about wall time.
+    void publishImu(const CloudFrame& frame)
+    {
+        sensor_msgs::msg::Imu imu;
+        imu.header.stamp    = stampFor(frame.sim_time_s);
+        imu.header.frame_id = imu_frame_id_;
+
+        // MuJoCo's framequat is wxyz.
+        imu.orientation.w = frame.sensor_quat[0];
+        imu.orientation.x = frame.sensor_quat[1];
+        imu.orientation.y = frame.sensor_quat[2];
+        imu.orientation.z = frame.sensor_quat[3];
+
+        imu.angular_velocity.x = frame.imu.gyro[0];
+        imu.angular_velocity.y = frame.imu.gyro[1];
+        imu.angular_velocity.z = frame.imu.gyro[2];
+
+        // Proper acceleration, gravity included, which is what MuJoCo's accelerometer sensor
+        // reports and what a real IMU reads. FAST-LIO normalises by the measured magnitude
+        // during its init, so the units only have to be self-consistent.
+        imu.linear_acceleration.x = frame.imu.acc[0];
+        imu.linear_acceleration.y = frame.imu.acc[1];
+        imu.linear_acceleration.z = frame.imu.acc[2];
+
+        imu_pub_->publish(std::move(imu));
     }
 
     /// Ground truth, republished verbatim in the simulator's world frame. This node does no
@@ -427,6 +468,7 @@ private:
     std::string socket_path_;
     std::string frame_id_;
     std::string world_frame_id_;
+    std::string imu_frame_id_;
     std::string depth_frame_id_;
     std::string color_frame_id_;
     double      poll_hz_ = 500.0;
@@ -446,6 +488,7 @@ private:
     rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr       info_pub_;
     rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr       depth_info_pub_;
     rclcpp::Publisher<vision_msgs::msg::Detection3DArray>::SharedPtr objects_pub_;
+    rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr              imu_pub_;
     rclcpp::TimerBase::SharedPtr                                     timer_;
 };
 

@@ -20,9 +20,6 @@
   <depend>geometry_msgs</depend>
   <depend>vision_msgs</depend>
   <depend>livox_ros_driver2</depend>
-  <depend>unitree_hg</depend>
-  <depend>tf2</depend>
-  <depend>tf2_ros</depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_cmake_lint_cmake</test_depend>

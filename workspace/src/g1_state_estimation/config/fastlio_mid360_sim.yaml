@@ -1,12 +1,10 @@
 # FAST-LIO2 against the simulator. SIMULATION ONLY -- the robot uses
 # fastlio_mid360_hardware.yaml. Three keys differ, and all three are marked below.
 #
-# The difference that matters: in simulation the IMU is the PELVIS IMU, relayed out of LowState
-# by g1_livox_bridge, because MuJoCo models no IMU inside the Mid360. FAST-LIO's `body` frame is
-# therefore the pelvis rather than the sensor. Rather than hand it a fixed lidar-to-IMU extrinsic
-# across the three actuated waist joints -- which the walking policy drives by up to 25 degrees,
-# so no fixed value is right -- g1_livox_bridge restates the sweep in the pelvis frame per scan
-# and the extrinsic below is identity.
+# The extrinsic is NOT one of them: the simulator models an IMU inside the Mid360, at the same
+# place g1_description puts mid360_imu, so `body` is the sensor here exactly as it is on the robot
+# and both configs carry Livox's own lidar-in-IMU offset. What differs is scan density, voxel size
+# and whether the extrinsic is estimated online.
 /**:
   ros__parameters:
     feature_extract_enable: false
@@ -48,14 +46,16 @@
       b_gyr_cov: 0.0001
       fov_degree: 360.0
       det_range: 100.0
-      # DIFFERS (hardware: true). Nothing to estimate: the sweep already arrives in the IMU's
-      # own frame, and letting the estimator wander off identity is not free -- with it on, a
-      # 35 s standing run was seen to diverge kilometres once the estimate walked away.
+      # DIFFERS (hardware: true). Nothing to estimate: the simulator places its IMU from the
+      # same numbers below, so the value is exact and the estimator can only wander from it --
+      # and it did, a 35 s standing run diverging kilometres once the estimate walked away. On
+      # the robot the true offset is only approximately Livox's published one, which is the
+      # case the estimator exists for.
       extrinsic_est_en: false
-      # DIFFERS. Identity, because g1_livox_bridge has already rotated the sweep out of
-      # mid360_link and into the pelvis using the waist state at the scan instant. The mount is
-      # not a constant here -- see that node's header.
-      extrinsic_T: [0.0, 0.0, 0.0]
+      # Livox's published lidar-in-IMU offset, the same pair the hardware config uses. Rotation
+      # is identity because both sensors sit in one housing and flip together with the mount;
+      # the upside-down mount lives in the URDF, where the rest of the stack looks for it.
+      extrinsic_T: [-0.011, -0.02329, 0.04412]
       extrinsic_R: [1.0, 0.0, 0.0,
                     0.0, 1.0, 0.0,
                     0.0, 0.0, 1.0]

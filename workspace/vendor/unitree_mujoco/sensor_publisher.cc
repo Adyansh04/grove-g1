@@ -13,6 +13,8 @@
 #include <algorithm>
 #include <cstring>
 #include <limits>
+#include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -61,6 +63,11 @@ struct Config
     double range_min       = 0.1;
     double range_max       = 40.0;
 
+    // The IMU inside the Mid360, sampled on its own thread. 200 Hz is what a real Mid360
+    // publishes, and matching it matters: FAST-LIO holds ten samples and blocks its own
+    // executor for the whole of an update, so a generously fast stream is one that loses
+    // samples in bursts rather than one that carries more information.
+    double imu_rate_hz = 200.0;
 };
 
 // Mount poses relative to torso_link, mirroring mid360_joint and d435_joint in Unitree's
@@ -74,10 +81,14 @@ constexpr double kMountRpy[3] = {M_PI, 0.05112069379091391, 0.0};
 constexpr double kCamXyz[3]   = {0.0576235, 0.01753, 0.42987};
 constexpr double kCamRpy[3]   = {0.0, 0.8307767239493009, 0.0};
 
+class RelaySocket;
+
 struct State
 {
-    std::thread       thread;
-    std::atomic<bool> running{false};
+    std::thread                  thread;
+    std::thread                  imu_thread;
+    std::unique_ptr<RelaySocket> relay;
+    std::atomic<bool>            running{false};
 };
 
 State& state()
@@ -128,6 +139,9 @@ Config loadConfig()
         if (root["range_max"]) {
             cfg.range_max = root["range_max"].as<double>();
         }
+        if (root["imu_rate_hz"]) {
+            cfg.imu_rate_hz = root["imu_rate_hz"].as<double>();
+        }
         if (root["object_bodies"]) {
             cfg.object_bodies = root["object_bodies"].as<std::vector<std::string>>();
         }
@@ -138,7 +152,8 @@ Config loadConfig()
             e.what());
         cfg.enabled = false;
     }
-    if (cfg.rate_hz <= 0.0 || cfg.azimuth_steps <= 0 || cfg.elevation_steps <= 0) {
+    if (cfg.rate_hz <= 0.0 || cfg.imu_rate_hz <= 0.0 || cfg.azimuth_steps <= 0 ||
+        cfg.elevation_steps <= 0) {
         std::fprintf(stderr, "[grove_g1] sensor config has non-positive values; DISABLED\n");
         cfg.enabled = false;
     }
@@ -271,6 +286,10 @@ void matrixToQuat(const double R[9], double q[4])
 
 // Never blocks, never raises SIGPIPE, never throws. A dead or slow relay costs one dropped
 // frame, never a stalled simulator.
+//
+// Shared by the sweep loop and the IMU loop, hence the lock: one connection keeps the relay's
+// single-client server unchanged and keeps frames in one order, and send() is short and off the
+// sim lock, so the contention is a memcpy into a socket buffer.
 class RelaySocket
 {
 public:
@@ -280,6 +299,7 @@ public:
 
     void send(const SensorFrameHeader& header, const void* payload, std::size_t payload_bytes)
     {
+        const std::lock_guard<std::mutex> guard(send_mtx_);
         if (fd_ < 0 && !tryConnect()) {
             logThrottled("relay not connected; dropping frame", connect_log_);
             return;
@@ -382,12 +402,14 @@ private:
     }
 
     std::string path_;
+    std::mutex  send_mtx_;
     int         fd_          = -1;
     int         connect_log_ = 0;
     int         slow_log_    = 0;
 };
 
-void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive_mutex* sim_mtx)
+void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive_mutex* sim_mtx,
+                RelaySocket* relay_socket)
 {
     // The model is loaded by the physics thread after this one starts, same as the SDK
     // bridge's own wait.
@@ -444,8 +466,8 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
         }
     }
 
-    mjData*     snapshot = mj_makeData(m);
-    RelaySocket relay(cfg.socket_path);
+    mjData*      snapshot = mj_makeData(m);
+    RelaySocket& relay    = *relay_socket;
 
     // offscreen render state. Its own GL context on this thread: measured safe alongside the
     // viewer's, and glfwCreateWindow off the main thread works here despite the docs.
@@ -840,6 +862,83 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
     // exit. There is no restart path to reclaim them for.
 }
 
+// The Mid360's own IMU, sampled on its own thread.
+//
+// It exists because FAST-LIO fuses the IMU that is bolted beside the laser, and substituting the
+// pelvis IMU for it does not work on this robot: three actuated waist joints lie in between and
+// the walking policy drives them through tens of degrees, so the lidar-to-IMU extrinsic FAST-LIO
+// is configured with is wrong by a different amount every scan.
+//
+// Separate from the sweep thread rather than folded into it, because a sweep spends ~32 ms
+// raycasting off the sim lock and an IMU that stops for 32 ms in every 100 is exactly the gap
+// this is here to close. What it holds the lock for is ten doubles.
+void imuLoop(const Config cfg, mjModel** model, mjData** data, std::recursive_mutex* sim_mtx,
+             RelaySocket* relay_socket)
+{
+    // The physics thread loads the model after this one starts; wait for it the same way the
+    // sweep loop does rather than dereferencing a null.
+    mjModel* m = nullptr;
+    while (state().running.load() && (m = *model) == nullptr) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+    if (!state().running.load()) {
+        return;
+    }
+
+    // By name, never by index: appending sensors to the MJCF shifts every index after them, and
+    // the SDK bridge resolves its own IMU the same way for the same reason.
+    const int quat_id = mj_name2id(m, mjOBJ_SENSOR, "mid360_imu_quat");
+    const int gyro_id = mj_name2id(m, mjOBJ_SENSOR, "mid360_imu_gyro");
+    const int acc_id  = mj_name2id(m, mjOBJ_SENSOR, "mid360_imu_acc");
+    const int site_id = mj_name2id(m, mjOBJ_SITE, "mid360_imu");
+    if (quat_id < 0 || gyro_id < 0 || acc_id < 0 || site_id < 0) {
+        std::fprintf(stderr,
+                     "[grove_g1] no mid360_imu sensors in this model; FAST-LIO will get no IMU. "
+                     "Is the MJCF patch applied?\n");
+        return;
+    }
+    const int quat_adr = m->sensor_adr[quat_id];
+    const int gyro_adr = m->sensor_adr[gyro_id];
+    const int acc_adr  = m->sensor_adr[acc_id];
+
+    std::fprintf(stderr, "[grove_g1] mid360 IMU up at %.1f Hz\n", cfg.imu_rate_hz);
+
+    const auto period = std::chrono::duration<double>(1.0 / cfg.imu_rate_hz);
+    auto       next   = std::chrono::steady_clock::now();
+    while (state().running.load()) {
+        next += std::chrono::duration_cast<std::chrono::steady_clock::duration>(period);
+        next = std::max(next, std::chrono::steady_clock::now());
+
+        SensorFrameHeader header{};
+        ImuSampleRecord   sample{};
+        {
+            std::lock_guard<std::recursive_mutex> lock(*sim_mtx);
+            const mjData*                         d = *data;
+            if (d == nullptr) {
+                std::this_thread::sleep_until(next);
+                continue;
+            }
+            header.sim_time_s = d->time;
+            for (int i = 0; i < 3; ++i) {
+                header.sensor_pos[i] = d->site_xpos[site_id * 3 + i];
+                sample.gyro[i]       = d->sensordata[gyro_adr + i];
+                sample.acc[i]        = d->sensordata[acc_adr + i];
+            }
+            for (int i = 0; i < 4; ++i) {
+                header.sensor_quat[i] = d->sensordata[quat_adr + i];
+            }
+        }
+
+        header.magic         = kSensorFrameMagic;
+        header.version       = kSensorFrameVersion;
+        header.kind          = static_cast<uint32_t>(SensorFrameKind::Imu);
+        header.payload_bytes = sizeof(sample);
+        relay_socket->send(header, &sample, sizeof(sample));
+
+        std::this_thread::sleep_until(next);
+    }
+}
+
 }  // namespace
 
 void StartSensorPublisher(mjModel** model, mjData** data, std::recursive_mutex* sim_mtx)
@@ -849,7 +948,9 @@ void StartSensorPublisher(mjModel** model, mjData** data, std::recursive_mutex* 
         return;
     }
     state().running.store(true);
-    state().thread = std::thread(sensorLoop, cfg, model, data, sim_mtx);
+    state().relay      = std::make_unique<RelaySocket>(cfg.socket_path);
+    state().thread     = std::thread(sensorLoop, cfg, model, data, sim_mtx, state().relay.get());
+    state().imu_thread = std::thread(imuLoop, cfg, model, data, sim_mtx, state().relay.get());
 }
 
 void StopSensorPublisher()
@@ -866,6 +967,9 @@ void StopSensorPublisher()
     // Costs up to one sample period (~100 ms) plus one sweep, on a debugging-only action.
     if (s.thread.joinable()) {
         s.thread.join();
+    }
+    if (s.imu_thread.joinable()) {
+        s.imu_thread.join();
     }
     std::fprintf(stderr,
                  "[grove_g1] SENSORS DISABLED: the model was replaced and the sampler was "

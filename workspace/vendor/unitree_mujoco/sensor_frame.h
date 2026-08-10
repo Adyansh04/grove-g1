@@ -14,8 +14,9 @@ namespace grove_g1
 
 // Bumped whenever the layout below changes. The relay refuses a frame it does not know
 // rather than reinterpreting bytes. v2 added the depth-image fields; v3 appends colour
-// to the depth payload; v4 adds the ObjectPoses kind; v5 gives its records a size.
-inline constexpr uint32_t kSensorFrameVersion = 5;
+// to the depth payload; v4 adds the ObjectPoses kind; v5 gives its records a size; v6 adds
+// the Imu kind.
+inline constexpr uint32_t kSensorFrameVersion = 6;
 
 inline constexpr uint32_t kSensorFrameMagic = 0x47314C44;  // "G1LD"
 
@@ -27,7 +28,25 @@ enum class SensorFrameKind : uint32_t
     // rides this socket because it is the only channel out of the simulator process, and it
     // exists for the same reason (the poses live in mjData, which no DDS topic carries).
     ObjectPoses = 3,
+    // The IMU inside the Mid360. It rides this socket rather than LowState because
+    // unitree_hg::LowState has exactly one imu_state field, matching a robot that has exactly
+    // one IMU on its DDS interface -- the Livox unit reports over its own Ethernet link, and
+    // on this side the sensor socket is the equivalent private channel.
+    Imu = 4,
 };
+
+// Rates of change at the sensor's own frame, to go with the pose the header already carries.
+//
+// The header's sensor_quat/sensor_pos ARE the IMU's attitude and position: a MuJoCo framequat
+// on the same site, filled by the same code path as every other frame, so there is no second
+// place for the pose to come from and disagree.
+struct ImuSampleRecord
+{
+    double gyro[3];  // rad/s about the sensor's own axes
+    double acc[3];   // m/s^2, PROPER acceleration -- gravity included, as a real IMU reads
+};
+
+static_assert(sizeof(ImuSampleRecord) == 48, "wire layout changed; bump kSensorFrameVersion");
 
 // One tracked body's ground-truth pose, in the MuJoCo world frame.
 //

@@ -6,7 +6,7 @@
 
       * 14 x 14 m, walls on all four sides. Walls are what constrain x, y and yaw; without a
         return at range in every direction the match is free to slide.
-      * Deliberately ASYMMETRIC feature furniture. A square empty room is degenerate -- four
+      * Deliberately ASYMMETRIC feature furniture. A square empty room is degenerate: four
         identical walls give a scan matcher no way to tell one 90-degree rotation from
         another, and it will happily lock onto the wrong one. The pillars, alcove and steps
         below are placed so no two quadrants look alike from the middle.
@@ -22,7 +22,7 @@
     that drifts shows up as a gap between start and finish that no amount of local
     smoothness hides.
 
-    Keep the path clear. The furniture is set back from it on purpose -- a collision
+    Keep the path clear. The furniture is set back from it on purpose, because a collision
     invalidates the measurement, because the gait recovers by lurching and that is not the
     motion under test.
 

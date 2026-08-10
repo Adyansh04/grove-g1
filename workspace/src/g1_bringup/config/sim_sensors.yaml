@@ -14,6 +14,13 @@ azimuth_steps: 360
 elevation_steps: 32
 range_max: 40.0
 
+# The IMU inside the Mid360, sampled on its own thread. 200 Hz because that is what a real
+# Mid360 publishes, and matching it is not cosmetic: FAST-LIO holds ten IMU samples and blocks
+# its own executor for the whole of an update, so a faster stream is one that loses samples in
+# bursts rather than one that carries more. Its own thread because a sweep spends ~32 ms
+# raycasting, and an IMU that stops for 32 ms in every 100 is the gap this exists to close.
+imu_rate_hz: 200.0
+
 # Also passed to g1_sensor_relay by the launch, so there is one source of truth.
 socket_path: "/tmp/g1_sensors.sock"
 

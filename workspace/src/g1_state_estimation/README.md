@@ -53,7 +53,7 @@ Until both a LiDAR pose and a usable IMU attitude have arrived, nothing is publi
 hardware:  livox_ros_driver2 (CustomMsg mode) --> /livox/custom_msg --> fastlio_mapping
            g1_livox_pointcloud: /livox/custom_msg --> /livox/lidar (PointCloud2)
 sim:       g1_sensor_relay --> /livox/lidar --> g1_livox_bridge --> /livox/custom_msg
-           unitree_mujoco --> /lowstate ------> g1_livox_bridge --> /livox/imu
+           g1_sensor_relay --> /livox/imu (the Mid360's own, modelled in the MJCF)
 ```
 
 The driver publishes ONE format per run, and FAST-LIO needs the CustomMsg (per-point
@@ -64,15 +64,18 @@ driver runs in CustomMsg mode and `g1_livox_pointcloud` (this package) republish
 by it. In simulation the conversion runs the other way, in `g1_sensor_relay`'s
 `g1_livox_bridge`.
 
-The IMU differs between the tracks, and the configs carry the consequence. On hardware FAST-LIO
-uses the Mid360's own IMU, hardware-synchronised with the points and rigid with them inside one
-housing, so its extrinsic is the few-centimetre offset Livox publish and `lidar_body_frame_id`
-is `mid360_imu`. Simulation models no IMU in the sensor, so the pelvis IMU stands in -- and the
-pelvis is three actuated waist joints away from the mount, all of which the walking policy
-drives. There is no constant extrinsic to write down across that chain, so `g1_livox_bridge`
-rotates each sweep into the pelvis frame using the waist state at the scan's own timestamp and
-the sim extrinsic is identity. `test_sim_extrinsic` holds that arrangement in place from both
-ends: the extrinsic must be identity, and the URDF chain must still contain a movable joint.
+The IMU is the Mid360's own on both tracks, and that is the point: rigid with the laser inside one
+housing, so the extrinsic is the few-centimetre offset Livox publish, `lidar_body_frame_id` is
+`mid360_imu`, and the two configs carry the same numbers. The simulator models it with a MuJoCo
+site at that pose (`workspace/patches/unitree_mujoco/006-add-mid360-imu.patch`), sampled at 200 Hz
+and relayed by `g1_sensor_relay`.
+
+It was briefly the pelvis IMU instead, since MuJoCo had no sensor in the Mid360. That does not
+work here: `waist_yaw`, `waist_roll` and `waist_pitch` lie between pelvis and sensor and the
+walking policy drives all three through tens of degrees, so the one constant extrinsic FAST-LIO
+accepts was wrong by a different amount every scan. `test_sim_extrinsic` asserts the sim extrinsic
+is Livox's published offset and that the URDF chain still contains a movable joint, which is the
+reason it has to be.
 
 ## Frames
 
@@ -136,8 +139,11 @@ It is a lifecycle node, and configuration is where the source decision is enforc
 visible as a failed transition rather than a silent absence of transforms.
 
 `scripts/lio_bench` scores the result against MuJoCo's own pose with nothing else in the loop,
-and writes the paired trace to `/tmp/lio_bench_trace.csv`. Run it more than once: the numbers
-move between runs by more than most changes to the configuration do.
+and writes the paired trace to `/tmp/lio_bench_trace.csv`. Over ~21 m of walking it measures a
+final gap of 1 cm and a worst-case 10 cm, about 0.05 % of path, repeatably across runs. It waits
+for the robot to stand still before taking its baseline, and aborts rather than scoring a run
+where the robot went over -- both because the spawn is not always quiet, and a run that starts
+mid-recovery measures the gait.
 
 When the estimate misbehaves, the first thing to look at is how much of each sweep is finding a
 plane in the map. Setting `publish.effect_map_en: true` in the FAST-LIO config makes it publish
@@ -146,9 +152,9 @@ long before the pose visibly does.
 
 ## Height is what this source has to get right
 
-Standing, the estimate stays within ~2 cm of MuJoCo's ground truth in x and y; over a 6.3 m
-driven path the aligned gap was 0.44 m, about 7 %. The tighter constraint is **height**, and it
-is worth knowing why before touching either of the two numbers that control it.
+Standing, the estimate holds within ~2 cm of MuJoCo's ground truth over a minute, and walking it
+stays within ~10 cm over 21 m. The tighter constraint is **height**, and it is worth knowing why
+before touching either of the two numbers that control it.
 
 Nav2's obstacle layer removes the floor with `min_obstacle_height: 0.08` — about 70 % of every
 sweep is floor. Believe the pelvis, and with it the LiDAR, sits higher than it does, and floor
@@ -159,17 +165,13 @@ with range, until no path exists. Two errors stacked to produce exactly that:
 - `filter_size_surf` / `filter_size_map` were the reference's 0.5 m, tuned for building-scale
   runs. In one 18 m room that leaves height loose, and the estimate climbed 80–140 mm.
 
-A third, larger error sat underneath both: **in simulation the scan is stamped ~35 ms late.**
-The relay stamps each cloud on arrival, after a ~32 ms off-lock raycast, while the IMU is
-stamped on arrival and is not delayed — so FAST-LIO integrates IMU to a timestamp that is too
-late, and the resulting attitude error is proportional to angular rate. Standing it is
-invisible; walking, the pelvis swings ~9° per gait cycle and it becomes degrees.
-`common.time_offset_lidar_to_imu` corrects it, and it is **simulation-only**: a real Livox
-stamps points from the sensor's own clock at capture, so the hardware config keeps `0.0`.
-
-Measured over a walking run against ground truth, the three together take the median pelvis
-height error from +54 mm to −5 mm, and the share of each sweep's floor sitting above the
-costmap's cut from 16.6 % to 0.0 %.
+A third, larger error sat underneath both: **the scan was stamped ~35 ms late.** The simulator
+snapshots `mjData` at one instant and then raycasts for ~32 ms off the lock, so a cloud stamped
+on arrival is labelled well after the instant its points describe, and everything that
+transforms it — the costmap's TF lookup, FAST-LIO's IMU integration — uses a pose from the wrong
+moment. The relay stamps from the simulator's own capture clock instead, and the IMU rides the
+same socket and the same clock mapping, so `common.time_offset_lidar_to_imu` stays `0.0` on both
+tracks. Together the three took the median pelvis height error from +54 mm to −5 mm.
 
 `sportmodestate` remains the default; the mission is tuned against it and is unaffected.
 
@@ -188,7 +190,7 @@ physically inverted unit. Tuning done against sim FAST-LIO is unvalidated on har
 |---|---|
 | `test_odom_math` | Ground projection and its recomposition, heading extraction, the tilt guard, pose composition and inversion. |
 | `test_odometry_publisher_node` | The node itself: source selection, the hardware refusal, the fast_lio latch and twist, frame chains, timeouts. No simulator needed. |
-| `test_sim_extrinsic` | That the sim FAST-LIO extrinsic stays identity, that the sensor is still not rigid with the pelvis, and that the mount is actually inverted. |
+| `test_sim_extrinsic` | That both FAST-LIO configs carry Livox's published lidar-in-IMU offset, that the sensor is still not rigid with the pelvis, and that the mount is actually inverted. |
 
 ```bash
 colcon test --packages-select g1_state_estimation
