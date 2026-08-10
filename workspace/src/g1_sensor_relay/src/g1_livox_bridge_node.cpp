@@ -27,6 +27,23 @@
 
 namespace g1_sensor_relay
 {
+namespace
+{
+/// Whether the three fields the iterators below will ask for are actually present as floats.
+bool hasXyz(const sensor_msgs::msg::PointCloud2& cloud)
+{
+    int found = 0;
+    for (const auto& field : cloud.fields)
+    {
+        if ((field.name == "x" || field.name == "y" || field.name == "z") &&
+            field.datatype == sensor_msgs::msg::PointField::FLOAT32)
+        {
+            ++found;
+        }
+    }
+    return found == 3;
+}
+}  // namespace
 
 class LivoxBridge : public rclcpp::Node
 {
@@ -64,6 +81,20 @@ public:
 private:
     void onCloud(const sensor_msgs::msg::PointCloud2& cloud)
     {
+        // The iterators throw when a field is missing, and an exception out of a subscription
+        // callback takes the whole node down. Checked instead, so a cloud from something other
+        // than the relay is a warning rather than a dead bridge.
+        if (!hasXyz(cloud))
+        {
+            RCLCPP_WARN_THROTTLE(
+                get_logger(),
+                *get_clock(),
+                5000,
+                "Ignoring a cloud on %s without x/y/z float fields.",
+                cloud_sub_->get_topic_name());
+            return;
+        }
+
         sensor_msgs::PointCloud2ConstIterator<float> x(cloud, "x");
         sensor_msgs::PointCloud2ConstIterator<float> y(cloud, "y");
         sensor_msgs::PointCloud2ConstIterator<float> z(cloud, "z");

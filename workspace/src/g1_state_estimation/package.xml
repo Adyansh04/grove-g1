@@ -22,7 +22,8 @@
   <depend>tf2_msgs</depend>
   <depend>sensor_msgs</depend>
   <depend>livox_ros_driver2</depend>
-  <depend>fast_lio</depend>
+  <!-- Launched, never linked: the odometry publisher only consumes its Odometry message. -->
+  <exec_depend>fast_lio</exec_depend>
   <depend>unitree_go</depend>
   <depend>unitree_hg</depend>
 

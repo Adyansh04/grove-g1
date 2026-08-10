@@ -206,7 +206,22 @@ def _launch_setup(context, *args, **kwargs):
                 )
             )
 
-    if sensors and LaunchConfiguration("odometry").perform(context) == "fast_lio":
+    # Checked even when sensors are off, so a typo is caught where it was made rather than
+    # silently selecting the other source. Ground truth and an estimate are not interchangeable
+    # and the difference does not announce itself: the stack comes up either way.
+    odometry = LaunchConfiguration("odometry").perform(context)
+    if odometry not in ("sportmodestate", "fast_lio"):
+        raise RuntimeError(
+            f"odometry:={odometry!r} is not an odometry source. Use 'sportmodestate' (exact "
+            "MuJoCo state, simulation only) or 'fast_lio' (LiDAR-inertial, what the robot runs)."
+        )
+    if odometry == "fast_lio" and not sensors:
+        raise RuntimeError(
+            "odometry:=fast_lio needs sensors:=true -- it is built on the Mid360, and with "
+            "sensors off nothing would publish odom -> base_footprint at all."
+        )
+
+    if sensors and odometry == "fast_lio":
         # The LiDAR-inertial pipeline owns odom -> base_footprint instead, and brings up its
         # own publisher. Exactly one of these two branches runs: two writers on that transform
         # is the failure the whole odometry_source parameter exists to make impossible.
