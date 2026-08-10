@@ -133,7 +133,7 @@ class FastLioOdometryTest(unittest.TestCase):
     def _paths(samples):
         (t0, l0) = samples[0]
         truth = [(t[0] - t0[0], t[1] - t0[1]) for t, _ in samples]
-        lio = [(l[0] - l0[0], l[1] - l0[1]) for _, l in samples]
+        lio = [(p[0] - l0[0], p[1] - l0[1]) for _, p in samples]
         return truth, lio
 
     def test_fastlio_tracks_ground_truth(self):
@@ -175,12 +175,12 @@ class FastLioOdometryTest(unittest.TestCase):
         self.assertGreater(truth_end, MIN_TRUTH_PATH_M, "the robot never actually walked")
 
         # The frames differ by the yaw the latch zeroed; fit that one rotation, then compare.
-        num = sum(tx * ly - ty * lx for (tx, ty), (lx, ly) in zip(truth_path, lio_path))
-        den = sum(tx * lx + ty * ly for (tx, ty), (lx, ly) in zip(truth_path, lio_path))
+        num = sum(tx * ly - ty * lx for (tx, ty), (lx, ly) in zip(truth_path, lio_path, strict=True))
+        den = sum(tx * lx + ty * ly for (tx, ty), (lx, ly) in zip(truth_path, lio_path, strict=True))
         theta = math.atan2(num, den)
         c, s = math.cos(theta), math.sin(theta)
         worst = max(
             math.hypot(tx - (c * lx - s * ly), ty - (s * lx + c * ly))
-            for (tx, ty), (lx, ly) in zip(truth_path, lio_path)
+            for (tx, ty), (lx, ly) in zip(truth_path, lio_path, strict=True)
         )
         self.assertLess(worst, MAX_WALK_GAP_M, f"worst aligned gap {worst:.2f} m")
