@@ -336,15 +336,56 @@ private:
         }
     }
 
+    /**
+     * @brief The wall-clock stamp for a frame captured at @p sim_time_s.
+     *
+     * Stamping on arrival is wrong by the whole pipeline latency. The simulator snapshots
+     * mjData at one instant, then raycasts for ~32 ms OUTSIDE the lock (holding it across the
+     * sweep would stall physics) and ships the frame over the socket, so a cloud stamped on
+     * arrival is labelled ~35 ms after the instant its points actually describe. Everything
+     * that transforms the cloud then uses a pose from the wrong moment -- the costmap's TF
+     * lookup, and FAST-LIO's IMU integration up to the scan time -- and the error is
+     * proportional to angular rate. Standing it is invisible; walking, a pelvis swinging ~9
+     * degrees per gait cycle turns 35 ms into degrees, and that lands on the floor plane.
+     *
+     * sim_time_s is MuJoCo's own clock at the snapshot, so the only unknown is the constant
+     * offset between that clock and this one. Latency is never negative, so the smallest
+     * (arrival - sim_time) yet seen is the best estimate of it. The slow upward leak keeps one
+     * early sample from pinning the estimate forever once the two clocks drift apart, which
+     * they do whenever the simulator cannot hold real time.
+     */
+    rclcpp::Time stampFor(double sim_time_s)
+    {
+        const rclcpp::Time arrival = now();
+        const double       delta   = arrival.seconds() - sim_time_s;
+
+        if (!have_clock_offset_ || delta < clock_offset_)
+        {
+            clock_offset_      = delta;
+            have_clock_offset_ = true;
+        }
+        else
+        {
+            // ~1 ms per second at the sweep rate: fast enough to follow a drifting sim clock,
+            // far slower than the latency being removed.
+            clock_offset_ += 1.0e-4;
+        }
+
+        const double stamped = sim_time_s + clock_offset_;
+        // A frame cannot have been captured after it arrived. Clamping keeps a bad offset from
+        // putting stamps in the future, where tf2 refuses them outright.
+        if (stamped >= arrival.seconds())
+        {
+            return arrival;
+        }
+        return rclcpp::Time(static_cast<std::int64_t>(stamped * 1.0e9), arrival.get_clock_type());
+    }
+
     void publish(const CloudFrame& frame)
     {
         sensor_msgs::msg::PointCloud2 msg;
-        // now(), not the simulator's internal time. unitree_mujoco publishes no /clock, so
-        // everything else on this track (TF included) is stamped with wall time; stamping
-        // clouds with sim-seconds-since-start put them decades in the past and no consumer
-        // could transform them. now() also stays correct if a /clock ever appears, because
-        // it follows this node's use_sim_time.
-        msg.header.stamp    = now();
+        // The capture instant, mapped onto this node's clock -- NOT arrival. See stampFor().
+        msg.header.stamp    = stampFor(frame.sim_time_s);
         msg.header.frame_id = frame_id_;
 
         const std::size_t points = frame.points.size() / 3;
@@ -389,6 +430,10 @@ private:
     std::string depth_frame_id_;
     std::string color_frame_id_;
     double      poll_hz_ = 500.0;
+
+    /// Estimated offset from the simulator's clock to this node's, in seconds. See stampFor().
+    double clock_offset_      = 0.0;
+    bool   have_clock_offset_ = false;
 
     int                       listen_fd_ = -1;
     int                       client_fd_ = -1;
