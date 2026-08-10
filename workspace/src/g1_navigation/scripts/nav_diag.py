@@ -94,7 +94,12 @@ class NavDiag(Node):
             math.degrees(abs(pitch_of(a.transform.rotation) - pitch_of(b.transform.rotation))))
 
     def on_costmap(self, msg):
-        self.lethal.append(sum(1 for v in msg.data if v >= 253))
+        # >= 99, not >= 253. The costmap is republished as an OccupancyGrid, and
+        # Costmap2DPublisher rescales on the way out: LETHAL_OBSTACLE 254 -> 100,
+        # INSCRIBED_INFLATED_OBSTACLE 253 -> 99, NO_INFORMATION -> -1, everything else 0-98.
+        # Thresholding on the raw costmap values could never match anything, so this read zero
+        # through every run whatever the costmap actually contained.
+        self.lethal.append(sum(1 for v in msg.data if v >= 99))
 
     def on_tick(self):
         t = self.get_clock().now().nanoseconds * 1e-9
