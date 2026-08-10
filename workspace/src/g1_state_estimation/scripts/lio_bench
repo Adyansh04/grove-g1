@@ -5,11 +5,17 @@ No Nav2, no AMCL, no map, no costmap. Just the simulator, the LIO pipeline, and 
 commands driven open-loop from here. Everything the earlier runs blamed on LIO could equally
 have been the planner, the controller or a stale map; this removes all of them.
 
-Drives an open-loop square and reports the two trajectories side by side:
-  truth  /sportmodestate            -- exact MuJoCo pelvis state
-  lio    odom -> base_footprint     -- what the LIO pipeline publishes
-The odom frame is latched at start with yaw zeroed, so the comparison is done under the single
-best-fit rotation between the paths. What survives that is real drift.
+  truth  /sportmodestate position + /lowstate IMU heading  -- exact MuJoCo pelvis state
+  lio    odom -> base_footprint                            -- what the LIO pipeline publishes
+
+The two live in different frames: `odom` is latched wherever FAST-LIO happened to be when it
+first produced a pose, and the robot does not spawn at a repeatable heading. So the frames are
+aligned ONCE, from the pose the robot is actually standing in when the run starts, and never
+touched again. Every gap after that is divergence accumulated since that instant.
+
+Aligning by a best fit over the whole path -- which this used to do -- reads lower and means
+less: it rotates part of the real error away and smears the rest evenly along the run, so no
+row of the table is the error at that point in the run.
 """
 import csv
 import math, os, signal, sys, time
@@ -20,6 +26,7 @@ from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from tf2_msgs.msg import TFMessage
 from unitree_go.msg import SportModeState
+from unitree_hg.msg import LowState
 from g1_msgs.action import SetLocoMode
 
 # Below these the sim walking policy does not step at all (measured, see g1_locomotion).
@@ -37,6 +44,14 @@ LEGS = [(VX, 0.0, 8.0), (0.0, WZ, 1.0), (VX, 0.0, 6.0), (0.0, -WZ, 1.4),
 # the odometry under test. One run reported 73000 % drift that way and it read as an estimator
 # failure. Abort instead.
 MIN_PELVIS_Z = 0.55
+# The robot does not always arrive at its spawn pose quietly: some launches lurch, some go over
+# entirely, and the heading it settles on varies by ten degrees or more between runs. A run that
+# starts mid-recovery measures the gait, and a frame alignment taken mid-lurch is wrong for the
+# whole run after it, so the baseline waits for the pelvis to sit at standing height and stop.
+SETTLE_Z = (0.70, 0.80)
+SETTLE_MOVE_M = 0.01
+SETTLE_SECS = 3.0
+SETTLE_TIMEOUT_S = 60.0
 # Where the full paired trace lands, for plotting the two paths against each other.
 TRACE_PATH = os.environ.get("LIO_BENCH_TRACE", "/tmp/lio_bench_trace.csv")
 # How far along the path between printed rows. Distance rather than time, so a slow leg and a
@@ -44,28 +59,43 @@ TRACE_PATH = os.environ.get("LIO_BENCH_TRACE", "/tmp/lio_bench_trace.csv")
 TRACE_EVERY_M = 1.0
 
 
+def yaw_of(x, y, z, w):
+    return math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
+
+
 class Bench(Node):
     def __init__(s):
         super().__init__("lio_bench")
-        s.truth = s.lio = s.yaw = None
+        s.truth = s.lio = s.truth_yaw = s.z = None
         s.fallen = None
+        s.start = None
         s.track = []
         s.create_subscription(TFMessage, "/tf", s._tf, 100)
         s.create_subscription(SportModeState, "/sportmodestate", s._gt, qos_profile_sensor_data)
+        # /sportmodestate carries a position but its imu_state is left zeroed by the simulator,
+        # so the true heading has to come off LowState's pelvis quaternion instead.
+        s.create_subscription(LowState, "/lowstate", s._low, qos_profile_sensor_data)
         s.cmd = s.create_publisher(Twist, "/g1_loco_bridge/cmd_vel", 1)
 
     def _tf(s, m):
         for t in m.transforms:
             if t.header.frame_id == "odom" and t.child_frame_id == "base_footprint":
-                s.lio = (t.transform.translation.x, t.transform.translation.y)
+                r = t.transform.rotation
+                s.lio = (t.transform.translation.x, t.transform.translation.y,
+                         yaw_of(r.x, r.y, r.z, r.w))
 
     def _gt(s, m):
         s.truth = (m.position[0], m.position[1])
+        s.z = m.position[2]
         if m.position[2] < MIN_PELVIS_Z:
             s.fallen = m.position[2] if s.fallen is None else min(s.fallen, m.position[2])
-        # imu_state.rpy[2] is the pelvis heading in the world frame -- ground truth, so the
-        # steering below never depends on the estimate being measured.
-        s.yaw = m.imu_state.rpy[2]
+
+    def _low(s, m):
+        q = m.imu_state.quaternion  # Unitree order the quaternion w-first.
+        s.truth_yaw = yaw_of(q[1], q[2], q[3], q[0])
+
+    def ready(s):
+        return None not in (s.truth, s.lio, s.truth_yaw, s.z)
 
     def spin(s, secs, twist=None):
         end = time.time() + secs
@@ -75,9 +105,40 @@ class Bench(Node):
             rclpy.spin_once(s, timeout_sec=0.02)
             if s.fallen is not None:
                 return False
-            if s.truth is not None and s.lio is not None:
-                s.track.append((s.truth, s.lio))
+            if s.ready():
+                s.track.append((s.truth, s.lio[:2]))
         return True
+
+    def settle(s):
+        """Blocks until the robot is standing still, then fixes the frame alignment."""
+        end = time.time() + SETTLE_TIMEOUT_S
+        anchor = None
+        since = None
+        while time.time() < end and rclpy.ok():
+            rclpy.spin_once(s, timeout_sec=0.05)
+            if not s.ready():
+                continue
+            still = (
+                SETTLE_Z[0] <= s.z <= SETTLE_Z[1]
+                and anchor is not None
+                and math.dist(s.truth, anchor[0]) < SETTLE_MOVE_M
+                and math.dist(s.lio[:2], anchor[1]) < SETTLE_MOVE_M
+            )
+            if not still:
+                anchor, since = (s.truth, s.lio[:2]), time.time()
+                continue
+            if time.time() - since >= SETTLE_SECS:
+                s.start = (s.truth, s.truth_yaw, s.lio[:2], s.lio[2])
+                print("start  truth (%+.2f, %+.2f) z=%.3f heading %+.1f deg | "
+                      "lio (%+.2f, %+.2f) heading %+.1f deg"
+                      % (s.truth[0], s.truth[1], s.z, math.degrees(s.truth_yaw),
+                         s.lio[0], s.lio[1], math.degrees(s.lio[2])), flush=True)
+                return True
+        print("RESULT ABORT: never settled (pelvis %s, wanted %.2f-%.2f and still for %.0f s)"
+              % ("%.3f m" % s.z if s.z is not None else "unknown", SETTLE_Z[0], SETTLE_Z[1],
+                 SETTLE_SECS))
+        return False
+
 
     def wait_for(s, pred, secs, why):
         end = time.time() + secs
@@ -105,30 +166,34 @@ class Bench(Node):
 
 
 def report(b):
-    if len(b.track) < 50:
+    if b.start is None or len(b.track) < 50:
         print("RESULT too few paired samples: %d" % len(b.track))
         return
-    (t0, l0) = b.track[0]
-    T = [(a[0]-t0[0], a[1]-t0[1]) for a, _ in b.track]
-    L = [(c[0]-l0[0], c[1]-l0[1]) for _, c in b.track]
-    dist = sum(math.dist(b.track[i][0], b.track[i-1][0]) for i in range(1, len(b.track)))
-    num = sum(tx*ly - ty*lx for (tx,ty),(lx,ly) in zip(T, L))
-    den = sum(tx*lx + ty*ly for (tx,ty),(lx,ly) in zip(T, L))
-    th = math.atan2(num, den); c, s_ = math.cos(th), math.sin(th)
-    gaps = [math.hypot(tx-(c*lx-s_*ly), ty-(s_*lx+c*ly)) for (tx,ty),(lx,ly) in zip(T, L)]
-    # Full paired trace, aligned into the truth frame so the two columns are directly
-    # comparable. Written before the summary so it survives even if something below throws.
+    (t0, truth_yaw0, l0, lio_yaw0) = b.start
+    # The one rotation between the frames, from the start pose and nothing else.
+    th = truth_yaw0 - lio_yaw0
+    c, s_ = math.cos(th), math.sin(th)
+
+    T = [(a[0] - t0[0], a[1] - t0[1]) for a, _ in b.track]
+    L = []
+    for _, (lx, ly) in b.track:
+        dx, dy = lx - l0[0], ly - l0[1]
+        L.append((c * dx - s_ * dy, s_ * dx + c * dy))
+    gaps = [math.hypot(tx - ax, ty - ay) for (tx, ty), (ax, ay) in zip(T, L)]
+    dist = sum(math.dist(T[i], T[i - 1]) for i in range(1, len(T)))
+
+    # Full paired trace, both columns in the truth frame. Written before the summary so it
+    # survives even if something below throws.
     try:
         with open(TRACE_PATH, "w", newline="") as fh:
             w = csv.writer(fh)
             w.writerow(["i", "truth_x", "truth_y", "lio_x", "lio_y", "gap_m", "path_m"])
             run = 0.0
-            for i, ((tx, ty), (lx, ly)) in enumerate(zip(T, L)):
+            for i, ((tx, ty), (ax, ay)) in enumerate(zip(T, L)):
                 if i:
-                    run += math.dist(T[i], T[i-1])
-                ax, ay = c*lx - s_*ly, s_*lx + c*ly
+                    run += math.dist(T[i], T[i - 1])
                 w.writerow(["%d" % i, "%.4f" % tx, "%.4f" % ty, "%.4f" % ax, "%.4f" % ay,
-                            "%.4f" % math.hypot(tx-ax, ty-ay), "%.4f" % run])
+                            "%.4f" % gaps[i], "%.4f" % run])
         print("RESULT trace              %s (%d rows)" % (TRACE_PATH, len(T)))
     except OSError as e:
         print("RESULT trace              could not write %s: %s" % (TRACE_PATH, e))
@@ -139,22 +204,22 @@ def report(b):
     print("RESULT   path_m |    truth (x, y)  |      lio (x, y)  |   gap")
     run = 0.0
     nxt = 0.0
-    for i, ((tx, ty), (lx, ly)) in enumerate(zip(T, L)):
+    for i, ((tx, ty), (ax, ay)) in enumerate(zip(T, L)):
         if i:
-            run += math.dist(T[i], T[i-1])
+            run += math.dist(T[i], T[i - 1])
         if run + 1e-9 >= nxt:
-            ax, ay = c*lx - s_*ly, s_*lx + c*ly
             print("RESULT   %6.2f | (%+6.2f, %+6.2f) | (%+6.2f, %+6.2f) | %5.3f m"
-                  % (run, tx, ty, ax, ay, math.hypot(tx-ax, ty-ay)))
+                  % (run, tx, ty, ax, ay, gaps[i]))
             nxt += TRACE_EVERY_M
     print("RESULT samples            %d" % len(b.track))
+    print("RESULT start alignment    %+.1f deg (truth %+.1f, lio %+.1f)"
+          % (math.degrees(th), math.degrees(truth_yaw0), math.degrees(lio_yaw0)))
     print("RESULT path travelled     %.2f m (truth)" % dist)
     print("RESULT truth  end         (%+.2f, %+.2f) m from start" % T[-1])
-    print("RESULT lio    end         (%+.2f, %+.2f) m from start (aligned %+.1f deg)"
-          % (c*L[-1][0]-s_*L[-1][1], s_*L[-1][0]+c*L[-1][1], math.degrees(th)))
+    print("RESULT lio    end         (%+.2f, %+.2f) m from start" % L[-1])
     print("RESULT xy drift           final=%.3f m  max=%.3f m" % (gaps[-1], max(gaps)))
     if dist > 0.5:
-        print("RESULT drift over path    %.2f%%" % (100*gaps[-1]/dist))
+        print("RESULT drift over path    %.2f%%" % (100 * gaps[-1] / dist))
 
 
 def main():
@@ -166,13 +231,19 @@ def main():
 
     # TF appearing IS the readiness signal: it only exists once FAST-LIO has fixed gravity and
     # produced a pose the publisher accepted.
-    if not b.wait_for(lambda: b.lio is not None and b.truth is not None, 180.0,
-                      "odom -> base_footprint never appeared"):
-        report(b); rclpy.shutdown(); return
+    if not b.wait_for(b.ready, 180.0, "odom -> base_footprint never appeared"):
+        rclpy.shutdown(); return
 
     if not (b.set_mode(4) and (time.sleep(3) or True) and b.set_mode(500)):
-        report(b); rclpy.shutdown(); return
-    b.spin(3.0)
+        rclpy.shutdown(); return
+
+    # Everything before this point is discarded. The baseline both paths are differenced from,
+    # and the rotation between their frames, have to come from a pose the robot actually held
+    # rather than one it was passing through on its way back upright.
+    if not b.settle():
+        rclpy.shutdown(); return
+    b.track.clear()
+    b.spin(2.0)
 
     for i, (vx, wz, secs) in enumerate(LEGS):
         t = Twist(); t.linear.x = vx; t.angular.z = wz
@@ -186,5 +257,6 @@ def main():
     b.cmd.publish(Twist())
     b.spin(2.0)
     report(b); sys.stdout.flush(); rclpy.shutdown()
+
 
 main()
