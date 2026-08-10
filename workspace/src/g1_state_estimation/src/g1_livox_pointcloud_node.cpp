@@ -20,9 +20,10 @@
 #include <memory>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
-#include <sensor_msgs/point_cloud2_iterator.hpp>
 #include <string>
 #include <utility>
+
+#include "g1_state_estimation/livox_cloud.hpp"
 
 namespace g1_state_estimation
 {
@@ -51,32 +52,7 @@ private:
     void onCustom(const livox_ros_driver2::msg::CustomMsg& custom)
     {
         sensor_msgs::msg::PointCloud2 cloud;
-        cloud.header = custom.header;
-        cloud.height = 1;
-        cloud.width  = static_cast<std::uint32_t>(custom.points.size());
-        // Unordered and possibly containing nothing at all, which is what is_dense=false says.
-        cloud.is_dense     = false;
-        cloud.is_bigendian = false;
-
-        // xyz + intensity, the layout every consumer here already reads. The per-point time
-        // and line index are dropped: only FAST-LIO uses them, and it reads the CustomMsg.
-        sensor_msgs::PointCloud2Modifier modifier(cloud);
-        modifier.setPointCloud2FieldsByString(2, "xyz", "intensity");
-        modifier.resize(custom.points.size());
-
-        sensor_msgs::PointCloud2Iterator<float> x(cloud, "x");
-        sensor_msgs::PointCloud2Iterator<float> y(cloud, "y");
-        sensor_msgs::PointCloud2Iterator<float> z(cloud, "z");
-        sensor_msgs::PointCloud2Iterator<float> intensity(cloud, "intensity");
-
-        for (const auto& point : custom.points)
-        {
-            *x         = point.x;
-            *y         = point.y;
-            *z         = point.z;
-            *intensity = static_cast<float>(point.reflectivity);
-            ++x, ++y, ++z, ++intensity;
-        }
+        toPointCloud2(custom, cloud);
         cloud_pub_->publish(std::move(cloud));
     }
 

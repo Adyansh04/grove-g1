@@ -37,12 +37,23 @@ add_executable(g1_odometry_publisher src/g1_odometry_publisher_main.cpp)
 target_link_libraries(g1_odometry_publisher PUBLIC g1_odometry_publisher_node)
 
 # Hardware only: gives the rest of the stack its PointCloud2 while FAST-LIO takes the
-# CustomMsg the driver is running in. See the file header.
+# CustomMsg the driver is running in. See the file header. The conversion is a library so it
+# can be tested without a Mid360 -- nothing in simulation exercises this direction.
+add_library(livox_cloud src/livox_cloud.cpp)
+target_include_directories(livox_cloud PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+target_compile_features(livox_cloud PUBLIC cxx_std_20)
+ament_target_dependencies(livox_cloud PUBLIC sensor_msgs livox_ros_driver2)
+
 add_executable(g1_livox_pointcloud src/g1_livox_pointcloud_node.cpp)
+target_link_libraries(g1_livox_pointcloud PUBLIC livox_cloud)
 ament_target_dependencies(g1_livox_pointcloud PUBLIC rclcpp sensor_msgs livox_ros_driver2)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   target_compile_options(odom_math PRIVATE -Wall -Wextra)
+  target_compile_options(livox_cloud PRIVATE -Wall -Wextra)
   target_compile_options(g1_odometry_publisher_node PRIVATE -Wall -Wextra)
   target_compile_options(g1_odometry_publisher PRIVATE -Wall -Wextra)
   target_compile_options(g1_livox_pointcloud PRIVATE -Wall -Wextra)
@@ -50,7 +61,7 @@ endif()
 
 install(DIRECTORY include/ DESTINATION include)
 install(DIRECTORY config launch DESTINATION share/${PROJECT_NAME})
-install(TARGETS odom_math g1_odometry_publisher_node
+install(TARGETS odom_math livox_cloud g1_odometry_publisher_node
   EXPORT export_${PROJECT_NAME} DESTINATION lib)
 install(TARGETS g1_odometry_publisher g1_livox_pointcloud DESTINATION lib/${PROJECT_NAME})
 
@@ -65,6 +76,10 @@ if(BUILD_TESTING)
   find_package(ament_cmake_gmock REQUIRED)
   ament_add_gmock(test_odom_math test/test_odom_math.cpp)
   target_link_libraries(test_odom_math odom_math)
+
+  # Hardware-only path: no simulation run reaches it, so this is its only coverage.
+  ament_add_gmock(test_livox_cloud test/test_livox_cloud.cpp)
+  target_link_libraries(test_livox_cloud livox_cloud)
 
   # Runs a real node on an isolated ROS_DOMAIN_ID, so it must not share the sim's.
   find_package(rosgraph_msgs REQUIRED)
