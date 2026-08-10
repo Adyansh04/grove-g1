@@ -1,6 +1,7 @@
 /**
  * @file g1_dex3_system.cpp
- * @brief One Dex3-1 hand as a ros2_control system, over /dex3/<side>/{cmd,state}.
+ * @brief One Dex3-1 hand as a ros2_control system, over /dex3/<side>/cmd and
+ *        /lf/dex3/<side>/state.
  */
 
 #include "g1_hand_interface/g1_dex3_system.hpp"
@@ -102,7 +103,7 @@ hardware_interface::CallbackReturn G1Dex3System::on_configure(const rclcpp_lifec
     // Sensor QoS both ways: this is a device stream, and it is what Unitree's own tooling uses.
     const auto qos = rclcpp::SensorDataQoS();
     state_sub_     = node_->create_subscription<unitree_hg::msg::HandState>(
-        "/dex3/" + side_ + "/state",
+        "/lf/dex3/" + side_ + "/state",
         qos,
         [this](const unitree_hg::msg::HandState::ConstSharedPtr& msg) { handStateCallback(msg); });
     cmd_pub_raw_ =
@@ -159,7 +160,7 @@ hardware_interface::CallbackReturn G1Dex3System::on_activate(const rclcpp_lifecy
     {
         RCLCPP_ERROR(
             node_->get_logger(),
-            "no fresh HandState on /dex3/%s/state -- refusing to activate",
+            "no fresh HandState on /lf/dex3/%s/state -- refusing to activate",
             side_.c_str());
         return hardware_interface::CallbackReturn::ERROR;
     }

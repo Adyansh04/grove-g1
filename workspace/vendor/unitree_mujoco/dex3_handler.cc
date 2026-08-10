@@ -135,7 +135,7 @@ void openChannels(Hand& hand)
         1);
 
     hand.pub.reset(
-        new unitree::robot::ChannelPublisher<HandState>("rt/dex3/" + hand.side + "/state"));
+        new unitree::robot::ChannelPublisher<HandState>("rt/lf/dex3/" + hand.side + "/state"));
     hand.pub->InitChannel();
     hand.state.motor_state().resize(kNumJoints);
     // press_sensor_state stays EMPTY on purpose. The hand has 9 tactile sensors we do not
@@ -230,7 +230,10 @@ void run(mjModel** model, mjData** data)
     {
         openChannels(hand);
     }
-    std::fprintf(stderr, "[grove_g1] Dex3 hands answering rt/dex3/{left,right}/{cmd,state}\n");
+    std::fprintf(
+        stderr,
+        "[grove_g1] Dex3 hands taking rt/dex3/{left,right}/cmd, reporting "
+        "rt/lf/dex3/{left,right}/state\n");
 
     const auto control_period =
         std::chrono::nanoseconds(std::chrono::seconds(1)) / kControlRateHz;
