@@ -12,8 +12,13 @@
     # Mid360's ~20k returns, so it is thinned enough already.
     point_filter_num: 1
     max_iteration: 3
-    filter_size_surf: 0.5
-    filter_size_map: 0.5
+    # DIFFERS (reference: 0.5/0.5). The reference tunes for a real Mid360 over building-scale
+    # runs; this is one 18x18 m room, and the voxel size is what bounds how tightly the filter
+    # can pin height against the floor. At 0.5 m the estimate climbed 80-140 mm above the true
+    # pelvis height, which is on its own more than the costmap's 0.08 m floor cut, so the floor
+    # came back as concentric rings of obstacle.
+    filter_size_surf: 0.2
+    filter_size_map: 0.2
     cube_side_length: 1000.0
     runtime_pos_log_enable: false
     map_file_path: "./test.pcd"
