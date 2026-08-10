@@ -32,6 +32,11 @@ VX, WZ = 0.5, 1.6
 LEGS = [(VX, 0.0, 8.0), (0.0, WZ, 1.0), (VX, 0.0, 6.0), (0.0, -WZ, 1.4),
         (VX, 0.0, 7.0), (0.0, WZ, 1.2), (VX, 0.0, 5.0), (0.0, -WZ, 1.0),
         (VX, 0.0, 8.0), (0.0, WZ, 1.6), (VX, 0.0, 6.0)]
+# Standing pelvis height is 0.750 m (measured). Below this the robot is on the floor, and every
+# number after that point describes a fallen robot being dragged by a flailing gait rather than
+# the odometry under test. One run reported 73000 % drift that way and it read as an estimator
+# failure. Abort instead.
+MIN_PELVIS_Z = 0.55
 # Where the full paired trace lands, for plotting the two paths against each other.
 TRACE_PATH = os.environ.get("LIO_BENCH_TRACE", "/tmp/lio_bench_trace.csv")
 # How far along the path between printed rows. Distance rather than time, so a slow leg and a
@@ -43,6 +48,7 @@ class Bench(Node):
     def __init__(s):
         super().__init__("lio_bench")
         s.truth = s.lio = s.yaw = None
+        s.fallen = None
         s.track = []
         s.create_subscription(TFMessage, "/tf", s._tf, 100)
         s.create_subscription(SportModeState, "/sportmodestate", s._gt, qos_profile_sensor_data)
@@ -55,6 +61,8 @@ class Bench(Node):
 
     def _gt(s, m):
         s.truth = (m.position[0], m.position[1])
+        if m.position[2] < MIN_PELVIS_Z:
+            s.fallen = m.position[2] if s.fallen is None else min(s.fallen, m.position[2])
         # imu_state.rpy[2] is the pelvis heading in the world frame -- ground truth, so the
         # steering below never depends on the estimate being measured.
         s.yaw = m.imu_state.rpy[2]
@@ -65,8 +73,11 @@ class Bench(Node):
             if twist is not None:
                 s.cmd.publish(twist)
             rclpy.spin_once(s, timeout_sec=0.02)
+            if s.fallen is not None:
+                return False
             if s.truth is not None and s.lio is not None:
                 s.track.append((s.truth, s.lio))
+        return True
 
     def wait_for(s, pred, secs, why):
         end = time.time() + secs
@@ -167,8 +178,11 @@ def main():
         t = Twist(); t.linear.x = vx; t.angular.z = wz
         print("leg %d/%d: vx=%.1f wz=%+.1f for %.1fs" % (i + 1, len(LEGS), vx, wz, secs),
               flush=True)
-        b.spin(secs, t)
-        b.spin(1.0)
+        if not (b.spin(secs, t) and b.spin(1.0)):
+            b.cmd.publish(Twist())
+            print("RESULT ABORT: robot fell (pelvis %.3f m, standing is 0.750) -- "
+                  "nothing after this measures odometry" % b.fallen)
+            rclpy.shutdown(); return
     b.cmd.publish(Twist())
     b.spin(2.0)
     report(b); sys.stdout.flush(); rclpy.shutdown()
