@@ -27,6 +27,19 @@ bool parseOdometrySource(const std::string& name, OdometrySource& out)
     return false;
 }
 
+bool isUsablePose(const Pose3d& pose)
+{
+    if (!std::isfinite(pose.x) || !std::isfinite(pose.y) || !std::isfinite(pose.z))
+    {
+        return false;
+    }
+    const double norm2 =
+        pose.q.w * pose.q.w + pose.q.x * pose.q.x + pose.q.y * pose.q.y + pose.q.z * pose.q.z;
+    // Same 0.5 floor the IMU path uses: it admits an unnormalised quaternion but rejects the
+    // all-zero default and anything that has collapsed toward it.
+    return std::isfinite(norm2) && norm2 >= 0.5;
+}
+
 namespace
 {
 Quaternion multiply(const Quaternion& a, const Quaternion& b)

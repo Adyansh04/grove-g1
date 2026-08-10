@@ -1,6 +1,7 @@
 #include <gmock/gmock.h>
 
 #include <cmath>
+#include <limits>
 
 #include "g1_state_estimation/odom_math.hpp"
 
@@ -332,4 +333,46 @@ TEST(ComposePose, ReferencingAPoseToAStartPoseGivesRelativeMotion)
     EXPECT_NEAR(relative.x, 1.0, 1e-9) << "one metre straight ahead";
     EXPECT_NEAR(relative.y, 0.0, 1e-9);
     EXPECT_NEAR(quaternionToYaw(relative.q), 0.0, 1e-9) << "driving straight is not turning";
+}
+
+TEST(IsUsablePose, AcceptsAnOrdinaryPose)
+{
+    EXPECT_TRUE(isUsablePose(makePose(1.0, -2.0, 0.5, 0.1, -0.2, 0.7)));
+    EXPECT_TRUE(isUsablePose(Pose3d{}));
+}
+
+TEST(IsUsablePose, RejectsWhatADivergedScanMatchProduces)
+{
+    // FAST-LIO reports NaN rather than failing when its filter diverges. tf2 would normalise
+    // the result to NaN and drop the transform without naming a source, and at the origin
+    // latch a single one of these would be permanent.
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    const double inf = std::numeric_limits<double>::infinity();
+
+    Pose3d bad_x = makePose(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+    bad_x.x      = nan;
+    EXPECT_FALSE(isUsablePose(bad_x));
+
+    Pose3d bad_z = makePose(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+    bad_z.z      = inf;
+    EXPECT_FALSE(isUsablePose(bad_z));
+
+    Pose3d bad_q = makePose(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+    bad_q.q      = Quaternion{ nan, 0.0, 0.0, 1.0 };
+    EXPECT_FALSE(isUsablePose(bad_q));
+}
+
+TEST(IsUsablePose, RejectsAnAllZeroQuaternion)
+{
+    // The default-constructed geometry_msgs quaternion, which is what an unfilled pose carries.
+    Pose3d pose = makePose(1.0, 2.0, 3.0, 0.0, 0.0, 0.0);
+    pose.q      = Quaternion{ 0.0, 0.0, 0.0, 0.0 };
+    EXPECT_FALSE(isUsablePose(pose));
+}
+
+TEST(IsUsablePose, ToleratesAnUnnormalisedButRecoverableQuaternion)
+{
+    Pose3d pose = makePose(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+    pose.q      = Quaternion{ 0.0, 0.0, 0.0, 2.0 };
+    EXPECT_TRUE(isUsablePose(pose)) << "scaled, not degenerate";
 }

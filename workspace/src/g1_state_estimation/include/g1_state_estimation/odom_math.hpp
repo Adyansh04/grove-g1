@@ -68,6 +68,16 @@ struct Pose3d
     Quaternion q;
 };
 
+/**
+ * @brief Whether a pose can safely be turned into a transform.
+ *
+ * Finite translation, and a quaternion whose norm is far enough from zero to normalise. A
+ * scan-matching filter that diverges reports NaN rather than stopping, and tf2 normalises
+ * silently -- so an unchecked NaN becomes a dropped transform with no message naming the
+ * source. Worse at the origin latch, where one bad sample would be baked in for the whole run.
+ */
+bool isUsablePose(const Pose3d& pose);
+
 /// The transform you get by applying @p b and then @p a. Reads left-to-right as frames:
 /// composePose(a_from_b, b_from_c) is a_from_c.
 Pose3d composePose(const Pose3d& a, const Pose3d& b);

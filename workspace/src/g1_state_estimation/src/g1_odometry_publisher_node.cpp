@@ -261,7 +261,12 @@ bool G1OdometryPublisher::lookUpLidarBodyOffset()
     const std::string& body = pelvis_frame_id_.empty() ? base_frame_id_ : pelvis_frame_id_;
     try
     {
-        // Static in the URDF, so any time works and tf2::TimePointZero asks for the newest.
+        // Not static: the chain from the sensor to the pelvis crosses the three waist joints,
+        // so this is looked up every sample rather than cached. TimePointZero takes the newest
+        // available, which pairs a fresh waist state with a scan about one FAST-LIO period old.
+        // That is deliberate -- the waist is uncommanded on this stack, so the error is far
+        // below the odometry's own, and a stamped lookup would instead fail outright for the
+        // first few seconds while the TF buffer fills.
         const auto tf = tf_buffer_->lookupTransform(lidar_body_frame_id_, body, tf2::TimePointZero);
         lio_body_from_base_.x = tf.transform.translation.x;
         lio_body_from_base_.y = tf.transform.translation.y;
@@ -295,6 +300,24 @@ bool G1OdometryPublisher::latchLidarOrigin(const Pose3d& lio_from_base)
             steady_clock_,
             5000,
             "Have LiDAR odometry but no IMU attitude yet; cannot level the odom frame.");
+        return false;
+    }
+
+    // The latch happens once and is never revisited, so it must not run on an attitude the
+    // heading extraction cannot handle. Past this angle the robot is falling, not standing at
+    // an origin, and a garbage tilt here would be baked into odom for the rest of the run --
+    // unlike applyOrientation(), which holds a heading and recovers.
+    const double tilt = tiltFromVertical(imu_orientation_);
+    if (tilt > max_tilt_rad_)
+    {
+        RCLCPP_WARN_THROTTLE(
+            get_logger(),
+            steady_clock_,
+            2000,
+            "Not latching the odom origin at %.1f degrees from vertical (limit %.1f); waiting "
+            "for the robot to be upright.",
+            tilt * 180.0 / M_PI,
+            max_tilt_rad_ * 180.0 / M_PI);
         return false;
     }
 
@@ -333,6 +356,19 @@ void G1OdometryPublisher::onLidarOdometry(const nav_msgs::msg::Odometry::SharedP
                                         msg->pose.pose.orientation.z,
                                         msg->pose.pose.orientation.w };
 
+    // A diverged scan match reports NaN rather than failing. Rejected here, before it can
+    // reach the origin latch, where a single bad sample is permanent.
+    if (!isUsablePose(lio_from_lidar_body))
+    {
+        RCLCPP_WARN_THROTTLE(
+            get_logger(),
+            steady_clock_,
+            5000,
+            "Discarding an unusable LiDAR odometry sample (non-finite position, or a "
+            "quaternion too close to zero to normalise).");
+        return;
+    }
+
     const Pose3d lio_from_base = composePose(lio_from_lidar_body, lio_body_from_base_);
     if (!lidar_origin_latched_ && !latchLidarOrigin(lio_from_base))
     {
@@ -354,7 +390,13 @@ void G1OdometryPublisher::onLidarOdometry(const nav_msgs::msg::Odometry::SharedP
     // Differenced, because FAST-LIO publishes an empty twist and Nav2's controller reads
     // velocity from the message rather than from TF. Coarse by construction: this is a
     // difference of two ~10 Hz poses, not a filtered estimate.
-    if (dt > 0.0)
+    //
+    // The floor is not paranoia about division: one duplicated-then-corrected stamp pair turns
+    // a normal 4 cm step into tens of m/s, and that goes to the controller server labelled as
+    // measured velocity. Below the floor the previous twist is kept rather than replaced by a
+    // fabricated one -- at 10 Hz nominal, anything this close together is a bad stamp.
+    constexpr double kMinTwistDtS = 0.005;
+    if (dt >= kMinTwistDtS)
     {
         world_twist_ = PlanarTwist{ (pose_.x - previous.x) / dt,
                                     (pose_.y - previous.y) / dt,
