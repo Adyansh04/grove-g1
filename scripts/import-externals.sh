@@ -63,6 +63,23 @@ fi
 #
 # 1000 samples is the paper's two seconds at 500 Hz. Costs two seconds of extra startup, which
 # is already hidden inside the launch delay that waits out the spawn drop.
+# FAST-LIO subscribes to the IMU with a ten-deep queue and then does its entire update -- ikd-tree
+# search, the iterated EKF, the map insert -- inside one timer callback on a single-threaded
+# executor. Nothing takes IMU while that runs. Ten samples is 50 ms at a Mid360's 200 Hz, and an
+# update on a dense indoor scan can exceed that, at which point the samples are gone: FAST-LIO
+# integrates the whole gap on the last reading it saw. Standing that is nothing. Turning at
+# 1.6 rad/s it is heading error, sized by how busy the machine happened to be, which is what made
+# runs of the same configuration score anywhere between 1 % and 27 % drift.
+#
+# 2000 is two seconds of buffer. The samples are 300 bytes each.
+LASER_MAPPING="${FAST_LIO_REPO}/FAST_LIO/src/laserMapping.cpp"
+if [ -f "${LASER_MAPPING}" ] &&
+   grep -q 'create_subscription<sensor_msgs::msg::Imu>(imu_topic, 10, imu_cbk)' "${LASER_MAPPING}"; then
+    sed -i 's/create_subscription<sensor_msgs::msg::Imu>(imu_topic, 10, imu_cbk)/create_subscription<sensor_msgs::msg::Imu>(imu_topic, 2000, imu_cbk)/' \
+        "${LASER_MAPPING}"
+    echo "raised FAST_LIO IMU queue depth to 2000 (the update blocks its own executor)"
+fi
+
 IMU_PROCESSING="${FAST_LIO_REPO}/FAST_LIO/src/IMU_Processing.hpp"
 if [ -f "${IMU_PROCESSING}" ] && grep -q '^#define MAX_INI_COUNT (10)' "${IMU_PROCESSING}"; then
     sed -i 's/^#define MAX_INI_COUNT (10)/#define MAX_INI_COUNT (1000)/' "${IMU_PROCESSING}"
