@@ -1,5 +1,6 @@
 # FAST-LIO2 on the G1's Livox Mid360. HARDWARE. The simulator uses fastlio_mid360_sim.yaml,
-# which differs only in the extrinsic and the decimation -- see that file for why.
+# which carries the SAME extrinsic -- it models an IMU inside the sensor too -- and differs only
+# in scan density, voxel size and whether the extrinsic is estimated online. See that file.
 #
 # Derived from deepglint/FAST_LIO_LOCALIZATION_HUMANOID's mid360.yaml (humble branch), which is
 # the same sensor on the same robot. Their open3d_loc relocalization layer is not used: AMCL

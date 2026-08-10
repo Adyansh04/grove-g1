@@ -6,13 +6,16 @@ the exact pelvis position MuJoCo reports. A regression anywhere in the chain -- 
 formats, QoS, FAST-LIO config, the latch, the frame composition -- shows up here.
 
 Two phases with very different tolerances, deliberately. Standing is repeatable, so it gets a
-tight bound: measured drift is ~2 cm, asserted at 0.35 m. Walking is not: the sim gait's own
-initiation is bimodal (the milestone-6 finding -- the same command can produce a smooth walk
-or a stumbling one), and a stumbling burst degrades any LIO. Straight walks measured ~2% of a
-7.5 m path on smooth runs and metres on stumbles, so the walking phase asserts only that the
-estimate stays the same order of magnitude as the truth -- which is exactly the failure class
-seen during bring-up (kilometres, when the extrinsic estimator was left on). The frames differ
-by the yaw the latch zeroed, so paths are compared under the best-fit rotation rather than raw.
+tight bound: measured drift is ~2 cm, asserted at 0.35 m. Walking is looser, because the gait
+itself is not repeatable -- the same command can produce a smooth walk or a stumbling one, and
+a stumble degrades any LIO. scripts/lio_bench measures ~10 cm worst-case over 21 m on a clean
+run; this asserts 1.0 m, which still catches the failure class seen during bring-up (kilometres,
+when the extrinsic estimator was left on) with room for a bad gait.
+
+`odom` is latched wherever FAST-LIO first produced a pose and the robot does not settle on a
+repeatable heading, so the two frames are aligned by the headings measured at the first paired
+sample. NOT by a best fit over the path: that reads lower where the estimate is bad and it is
+easy to get the sign wrong, which is exactly what happened here and to lio_bench.
 """
 
 import math
@@ -34,6 +37,7 @@ from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from tf2_msgs.msg import TFMessage
 from unitree_go.msg import SportModeState
+from unitree_hg.msg import LowState
 
 LATCH_TIMEOUT_S = 120.0
 STAND_S = 12.0
@@ -42,10 +46,15 @@ CMD_VX = 0.4
 
 # Standing: measured ~2 cm of wander; anything near this bound means the estimator is sick.
 MAX_STANDING_DRIFT_M = 0.35
-# Walking: it has to have actually moved for the comparison to mean anything, and the
-# estimate has to stay the same order of magnitude. Divergence is kilometres.
+# Walking: it has to have actually moved for the comparison to mean anything. A clean run is
+# ~10 cm worst-case over 21 m (scripts/lio_bench); this leaves an order of magnitude for a bad
+# gait and still catches divergence, which is metres and upwards.
 MIN_TRUTH_PATH_M = 0.8
-MAX_WALK_GAP_M = 4.0
+MAX_WALK_GAP_M = 1.0
+
+
+def yaw_of(x, y, z, w):
+    return math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
 
 
 @pytest.mark.launch_test
@@ -75,8 +84,14 @@ class FastLioOdometryTest(unittest.TestCase):
         cls.node = Node("fastlio_sim_test")
         cls.truth = None
         cls.lio = None
+        cls.truth_yaw = None
         cls.node.create_subscription(
             SportModeState, "/sportmodestate", cls._on_truth, qos_profile_sensor_data
+        )
+        # The true heading, which /sportmodestate does not carry: the simulator leaves its
+        # imu_state zeroed.
+        cls.node.create_subscription(
+            LowState, "/lowstate", cls._on_low_state, qos_profile_sensor_data
         )
         cls.node.create_subscription(TFMessage, "/tf", cls._on_tf, 100)
         cls.cmd_pub = cls.node.create_publisher(Twist, "/g1_loco_bridge/cmd_vel", 1)
@@ -86,10 +101,20 @@ class FastLioOdometryTest(unittest.TestCase):
         cls.truth = (msg.position[0], msg.position[1])
 
     @classmethod
+    def _on_low_state(cls, msg):
+        q = msg.imu_state.quaternion  # Unitree order the quaternion w-first.
+        cls.truth_yaw = yaw_of(q[1], q[2], q[3], q[0])
+
+    @classmethod
     def _on_tf(cls, msg):
         for tf in msg.transforms:
             if tf.header.frame_id == "odom" and tf.child_frame_id == "base_footprint":
-                cls.lio = (tf.transform.translation.x, tf.transform.translation.y)
+                r = tf.transform.rotation
+                cls.lio = (
+                    tf.transform.translation.x,
+                    tf.transform.translation.y,
+                    yaw_of(r.x, r.y, r.z, r.w),
+                )
 
     @classmethod
     def tearDownClass(cls):
@@ -125,22 +150,28 @@ class FastLioOdometryTest(unittest.TestCase):
             if command is not None:
                 self.cmd_pub.publish(command)
             rclpy.spin_once(self.node, timeout_sec=0.05)
-            if self.truth is not None and self.lio is not None:
-                samples.append((self.truth, self.lio))
+            if None not in (self.truth, self.lio, self.truth_yaw):
+                samples.append((self.truth, self.lio, self.truth_yaw))
         return samples
 
     @staticmethod
     def _paths(samples):
-        (t0, l0) = samples[0]
-        truth = [(t[0] - t0[0], t[1] - t0[1]) for t, _ in samples]
-        lio = [(p[0] - l0[0], p[1] - l0[1]) for _, p in samples]
+        """Both paths in the truth frame, aligned by the headings at the first sample."""
+        (t0, l0, truth_yaw0) = samples[0]
+        theta = truth_yaw0 - l0[2]
+        c, s = math.cos(theta), math.sin(theta)
+        truth = [(t[0] - t0[0], t[1] - t0[1]) for t, _, _ in samples]
+        lio = []
+        for _, p, _ in samples:
+            dx, dy = p[0] - l0[0], p[1] - l0[1]
+            lio.append((c * dx - s * dy, s * dx + c * dy))
         return truth, lio
 
     def test_fastlio_tracks_ground_truth(self):
         # The latch is the pipeline's own readiness signal: TF appears only after FAST-LIO has
         # initialised its IMU and produced a pose the publisher accepted.
         self._spin_until(
-            lambda: self.lio is not None,
+            lambda: None not in (self.lio, self.truth, self.truth_yaw),
             LATCH_TIMEOUT_S,
             "odom -> base_footprint never appeared: FAST-LIO or the bridge is not running",
         )
@@ -158,8 +189,8 @@ class FastLioOdometryTest(unittest.TestCase):
             f"fast_lio wandered {lio_wander:.2f} m while the robot stood still",
         )
 
-        # Phase 2: walk. Gait initiation is bimodal (see module docstring), so this asserts
-        # scale, not precision.
+        # Phase 2: walk. The gait is not repeatable (see module docstring), so this bound has
+        # room for a bad one; scripts/lio_bench is where the precision number comes from.
         self._set_mode(4)  # StandUp
         time.sleep(3.0)
         self._set_mode(500)  # Start
@@ -174,13 +205,8 @@ class FastLioOdometryTest(unittest.TestCase):
         truth_end = math.hypot(*truth_path[-1])
         self.assertGreater(truth_end, MIN_TRUTH_PATH_M, "the robot never actually walked")
 
-        # The frames differ by the yaw the latch zeroed; fit that one rotation, then compare.
-        num = sum(tx * ly - ty * lx for (tx, ty), (lx, ly) in zip(truth_path, lio_path, strict=True))
-        den = sum(tx * lx + ty * ly for (tx, ty), (lx, ly) in zip(truth_path, lio_path, strict=True))
-        theta = math.atan2(num, den)
-        c, s = math.cos(theta), math.sin(theta)
         worst = max(
-            math.hypot(tx - (c * lx - s * ly), ty - (s * lx + c * ly))
+            math.hypot(tx - lx, ty - ly)
             for (tx, ty), (lx, ly) in zip(truth_path, lio_path, strict=True)
         )
         self.assertLess(worst, MAX_WALK_GAP_M, f"worst aligned gap {worst:.2f} m")

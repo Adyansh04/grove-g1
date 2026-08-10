@@ -101,6 +101,7 @@ FrameStatus tryReadFrame(std::vector<std::uint8_t>& buffer, CloudFrame& out)
     {
         out.kind = FrameKind::Imu;
         out.depth.clear();
+        out.rgb.clear();
         out.points.clear();
         out.objects.clear();
         std::memcpy(&out.imu, buffer.data() + sizeof(header), sizeof(out.imu));

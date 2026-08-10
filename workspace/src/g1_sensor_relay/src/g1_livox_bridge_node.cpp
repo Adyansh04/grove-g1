@@ -8,11 +8,8 @@
  * it, so the odometry pipeline below is identical in either place.
  *
  * The cloud only. The IMU FAST-LIO fuses sits inside the Mid360, the simulator models it there
- * too, and g1_sensor_relay publishes /livox/imu straight off the sensor socket. It used to be the
- * pelvis IMU relayed out of LowState, which does not work on this robot: three actuated waist
- * joints lie between pelvis and sensor and the walking policy drives them through tens of degrees,
- * so the one constant lidar-to-IMU extrinsic FAST-LIO takes was wrong by a different amount every
- * scan and the scan match came apart whenever the robot turned.
+ * too, and g1_sensor_relay publishes /livox/imu straight off the sensor socket. See
+ * g1_state_estimation's README for why it is not the pelvis IMU.
  *
  * SIMULATION ONLY. On hardware the real driver publishes this topic and this node must not run --
  * two publishers on /livox/custom_msg would interleave scans from different sources.

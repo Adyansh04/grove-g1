@@ -63,10 +63,9 @@ struct Config
     double range_min       = 0.1;
     double range_max       = 40.0;
 
-    // The IMU inside the Mid360, sampled on its own thread. 200 Hz is what a real Mid360
-    // publishes, and matching it matters: FAST-LIO holds ten samples and blocks its own
-    // executor for the whole of an update, so a generously fast stream is one that loses
-    // samples in bursts rather than one that carries more information.
+    // The IMU inside the Mid360, sampled on its own thread. 200 Hz because that is what a real
+    // Mid360 publishes; a simulator that streams faster is lying about what the robot will hand
+    // FAST-LIO.
     double imu_rate_hz = 200.0;
 };
 
@@ -288,8 +287,9 @@ void matrixToQuat(const double R[9], double q[4])
 // frame, never a stalled simulator.
 //
 // Shared by the sweep loop and the IMU loop, hence the lock: one connection keeps the relay's
-// single-client server unchanged and keeps frames in one order, and send() is short and off the
-// sim lock, so the contention is a memcpy into a socket buffer.
+// single-client server unchanged and keeps frames in one order. A send is normally a memcpy into
+// a socket buffer, but against a stalled relay it retries up to the deadline in sendAll, so the
+// IMU path uses trySend and drops rather than queueing behind a 2.9 MB camera frame.
 class RelaySocket
 {
 public:
@@ -300,6 +300,24 @@ public:
     void send(const SensorFrameHeader& header, const void* payload, std::size_t payload_bytes)
     {
         const std::lock_guard<std::mutex> guard(send_mtx_);
+        sendLocked(header, payload, payload_bytes);
+    }
+
+    /// Drops the frame rather than queueing behind another thread's. For streams where a late
+    /// sample is worth less than a stalled one.
+    void trySend(const SensorFrameHeader& header, const void* payload, std::size_t payload_bytes)
+    {
+        const std::unique_lock<std::mutex> guard(send_mtx_, std::try_to_lock);
+        if (!guard.owns_lock()) {
+            return;
+        }
+        sendLocked(header, payload, payload_bytes);
+    }
+
+private:
+    void sendLocked(const SensorFrameHeader& header, const void* payload,
+                    std::size_t payload_bytes)
+    {
         if (fd_ < 0 && !tryConnect()) {
             logThrottled("relay not connected; dropping frame", connect_log_);
             return;
@@ -313,7 +331,6 @@ public:
         sendAll(payload, payload_bytes, /*frame_started=*/true);
     }
 
-private:
     bool tryConnect()
     {
         const int fd = ::socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0);
@@ -871,17 +888,18 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
 //
 // Separate from the sweep thread rather than folded into it, because a sweep spends ~32 ms
 // raycasting off the sim lock and an IMU that stops for 32 ms in every 100 is exactly the gap
-// this is here to close. What it holds the lock for is ten doubles.
+// this is here to close. What it holds the lock for is fourteen doubles.
 void imuLoop(const Config cfg, mjModel** model, mjData** data, std::recursive_mutex* sim_mtx,
              RelaySocket* relay_socket)
 {
-    // The physics thread loads the model after this one starts; wait for it the same way the
-    // sweep loop does rather than dereferencing a null.
+    // The physics thread loads both after this one starts; wait for them the same way the sweep
+    // loop does rather than dereferencing a null.
     mjModel* m = nullptr;
-    while (state().running.load() && (m = *model) == nullptr) {
+    while (state().running.load(std::memory_order_relaxed) &&
+           ((m = *model) == nullptr || *data == nullptr)) {
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
-    if (!state().running.load()) {
+    if (!state().running.load(std::memory_order_relaxed)) {
         return;
     }
 
@@ -905,18 +923,20 @@ void imuLoop(const Config cfg, mjModel** model, mjData** data, std::recursive_mu
 
     const auto period = std::chrono::duration<double>(1.0 / cfg.imu_rate_hz);
     auto       next   = std::chrono::steady_clock::now();
-    while (state().running.load()) {
+    while (state().running.load(std::memory_order_relaxed)) {
         next += std::chrono::duration_cast<std::chrono::steady_clock::duration>(period);
         next = std::max(next, std::chrono::steady_clock::now());
 
         SensorFrameHeader header{};
         ImuSampleRecord   sample{};
+        bool              have = false;
         {
             std::lock_guard<std::recursive_mutex> lock(*sim_mtx);
             const mjData*                         d = *data;
-            if (d == nullptr) {
-                std::this_thread::sleep_until(next);
-                continue;
+            // A viewer reload swaps both pointers, and the addresses above were resolved
+            // against the old model. Same check, and the same reason, as the sweep loop's.
+            if (*model != m || d == nullptr) {
+                break;
             }
             header.sim_time_s = d->time;
             for (int i = 0; i < 3; ++i) {
@@ -927,13 +947,20 @@ void imuLoop(const Config cfg, mjModel** model, mjData** data, std::recursive_mu
             for (int i = 0; i < 4; ++i) {
                 header.sensor_quat[i] = d->sensordata[quat_adr + i];
             }
+            have = true;
         }
 
-        header.magic         = kSensorFrameMagic;
-        header.version       = kSensorFrameVersion;
-        header.kind          = static_cast<uint32_t>(SensorFrameKind::Imu);
-        header.payload_bytes = sizeof(sample);
-        relay_socket->send(header, &sample, sizeof(sample));
+        if (have) {
+            header.magic         = kSensorFrameMagic;
+            header.version       = kSensorFrameVersion;
+            header.kind          = static_cast<uint32_t>(SensorFrameKind::Imu);
+            header.payload_bytes = sizeof(sample);
+            // trySend, not send: the sweep and the camera share this socket, and a stalled
+            // relay can hold it for the length of their retry deadline. Waiting out someone
+            // else's 2.9 MB frame would open a far bigger hole in this stream than the one
+            // dropped sample does.
+            relay_socket->trySend(header, &sample, sizeof(sample));
+        }
 
         std::this_thread::sleep_until(next);
     }
@@ -971,6 +998,9 @@ void StopSensorPublisher()
     if (s.imu_thread.joinable()) {
         s.imu_thread.join();
     }
+    // Closed only now, with both threads stopped: the relay sees EOF and logs a disconnect
+    // rather than holding a connection that will never carry another frame.
+    s.relay.reset();
     std::fprintf(stderr,
                  "[grove_g1] SENSORS DISABLED: the model was replaced and the sampler was "
                  "stopped to avoid reading a freed model. Relaunch the sim to restore "

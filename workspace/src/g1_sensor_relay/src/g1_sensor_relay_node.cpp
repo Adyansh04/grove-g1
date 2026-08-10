@@ -87,13 +87,16 @@ public:
             "~/sensor_pose",
             rclcpp::SensorDataQoS());
 
-        // RELIABLE, and the depth livox_ros_driver2 uses (lddc.cpp CreatePublisher passes a
-        // bare queue size, which is reliable by default). FAST-LIO subscribes reliably, and a
-        // best-effort publisher against it is silently unmatched.
+        // RELIABLE like livox_ros_driver2 (lddc.cpp CreatePublisher passes a bare queue size,
+        // which is reliable by default): FAST-LIO subscribes reliably and a best-effort
+        // publisher against it is silently unmatched. Deeper than the driver's 10, though --
+        // the driver streams from its own thread, while this node publishes 200 Hz IMU frames
+        // out of the same timer callback that ships a 2.9 MB depth+colour pair, so they arrive
+        // in bursts and ten of writer history is 50 ms of them.
         imu_frame_id_ = declare_parameter<std::string>("imu_frame_id", "mid360_imu");
         imu_pub_      = create_publisher<sensor_msgs::msg::Imu>(
             declare_parameter<std::string>("imu_topic", "/livox/imu"),
-            rclcpp::QoS(10));
+            rclcpp::QoS(400));
 
         // Node-relative and raw: this is the simulator's world frame with no staleness
         // policy applied. g1_object_pose_source is what turns it into /objects, and naming
@@ -407,8 +410,11 @@ private:
         }
         else
         {
-            // ~1 ms per second at the sweep rate: fast enough to follow a drifting sim clock,
-            // far slower than the latency being removed.
+            // Roughly 20 ms per second at the IMU rate this now runs at, which is fast enough
+            // to follow a drifting sim clock and still far slower than the latency being
+            // removed. The IMU frames also pin the estimate harder than the sweep ever did:
+            // they are sampled and sent in microseconds, so their arrival lag is close to the
+            // true clock offset, and the sweep gets back-dated by the right amount as a result.
             clock_offset_ += 1.0e-4;
         }
 

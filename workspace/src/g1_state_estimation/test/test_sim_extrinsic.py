@@ -1,10 +1,9 @@
 """The lidar-to-IMU extrinsic is the same constant in simulation and on the robot.
 
-It is a constant only because the IMU is inside the sensor in both places: the simulator models
-one there (patches/unitree_mujoco/006-add-mid360-imu.patch) rather than substituting the pelvis
-IMU, which sits three actuated waist joints away and made every scan arrive rotated by a
-different wrong amount. These tests hold both halves of that in place -- the numbers, and the
-reason they cannot come from the URDF chain.
+It is a constant only because the IMU is inside the sensor in both places -- the simulator models
+one there rather than substituting the pelvis IMU, which is three actuated waist joints away. See
+g1_state_estimation's README. These tests hold the arrangement in place: where the simulator puts
+its IMU, what both configs say about it, and the joints that make the substitution wrong.
 """
 
 import math
@@ -20,6 +19,12 @@ _CONFIG_DIR = pathlib.Path(__file__).resolve().parent.parent / "config"
 # Livox's published lidar-in-IMU offset for the Mid360, the number both configs and the MJCF
 # site are built from.
 _LIVOX_LIDAR_IN_IMU = [-0.011, -0.02329, 0.04412]
+_MJCF_PATCH = (
+    pathlib.Path(__file__).resolve().parents[3]
+    / "patches"
+    / "unitree_mujoco"
+    / "006-add-mid360-imu.patch"
+)
 
 
 def _rpy_to_matrix(roll, pitch, yaw):
@@ -86,6 +91,50 @@ def _config_extrinsic(name):
     text = (_CONFIG_DIR / name).read_text()
     parameters = yaml.safe_load(text)["/**"]["ros__parameters"]["mapping"]
     return parameters["extrinsic_T"], parameters["extrinsic_R"]
+
+
+def _quat_to_matrix(w, x, y, z):
+    return [
+        [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+        [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+        [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+    ]
+
+
+def _mjcf_site():
+    """pos and quat of the mid360_imu site, out of the MJCF patch."""
+    # Added lines only, with the diff marker off, so the element reads as XML.
+    text = "\n".join(
+        line[1:] for line in _MJCF_PATCH.read_text().splitlines() if line.startswith("+")
+    )
+    match = re.search(r'<site name="mid360_imu"[^>]*?pos="([^"]+)"\s+quat="([^"]+)"', text)
+    assert match, "mid360_imu site not found in the MJCF patch"
+    return (
+        [float(v) for v in match.group(1).split()],
+        [float(v) for v in match.group(2).split()],
+    )
+
+
+def test_the_mjcf_site_is_where_the_urdf_says_the_sensor_imu_is():
+    # This is the number the whole arrangement rests on: the simulator's IMU has to sit at the
+    # pose the extrinsic below is measured from, and nothing else compares the two. Recomputed
+    # from the URDF mount composed with Livox's offset rather than copied.
+    translation, rotation = _chain_from_urdf("mid360_link", "torso_link")
+    imu_in_lidar = [-v for v in _LIVOX_LIDAR_IN_IMU]
+    expect = [t + v for t, v in zip(translation, _mat_vec(rotation, imu_in_lidar))]
+
+    pos, quat = _mjcf_site()
+    for axis in range(3):
+        assert pos[axis] == pytest.approx(expect[axis], abs=1e-6), (
+            f"site pos[{axis}]: MJCF {pos[axis]} vs URDF chain {expect[axis]}"
+        )
+    # Same orientation as mid360_link: both sensors are in one housing and flip together.
+    site_rotation = _quat_to_matrix(*quat)
+    for i in range(3):
+        for j in range(3):
+            assert site_rotation[i][j] == pytest.approx(rotation[i][j], abs=1e-6), (
+                f"site quat row {i} col {j}: MJCF {site_rotation[i][j]} vs URDF {rotation[i][j]}"
+            )
 
 
 def test_both_configs_carry_the_livox_lever_arm():

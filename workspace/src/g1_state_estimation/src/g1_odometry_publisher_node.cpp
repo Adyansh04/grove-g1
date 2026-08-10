@@ -266,8 +266,7 @@ bool G1OdometryPublisher::lookUpLidarBodyOffset()
         // sample rather than cached. TimePointZero takes the newest available, which pairs a
         // fresh waist state with a scan about one FAST-LIO period old -- a stamped lookup would
         // instead fail outright for the first few seconds while the TF buffer fills. The
-        // residual is real but bounded by one gait step; the sweep itself is corrected properly,
-        // at its own stamp, in g1_livox_bridge.
+        // residual is real but bounded by one gait step, and far below the odometry's own.
         const auto tf = tf_buffer_->lookupTransform(lidar_body_frame_id_, body, tf2::TimePointZero);
         lio_body_from_base_.x = tf.transform.translation.x;
         lio_body_from_base_.y = tf.transform.translation.y;

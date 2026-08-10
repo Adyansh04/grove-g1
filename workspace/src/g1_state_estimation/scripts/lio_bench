@@ -139,7 +139,6 @@ class Bench(Node):
                  SETTLE_SECS))
         return False
 
-
     def wait_for(s, pred, secs, why):
         end = time.time() + secs
         while time.time() < end and rclpy.ok():
@@ -242,8 +241,13 @@ def main():
     # rather than one it was passing through on its way back upright.
     if not b.settle():
         rclpy.shutdown(); return
+    # Including the fall latch: a spawn that dips and recovers is exactly what settle() waited
+    # out, and leaving it set aborts the first leg on a robot that is standing up fine.
     b.track.clear()
-    b.spin(2.0)
+    b.fallen = None
+    if not b.spin(2.0):
+        print("RESULT ABORT: robot went down between settling and the first leg")
+        rclpy.shutdown(); return
 
     for i, (vx, wz, secs) in enumerate(LEGS):
         t = Twist(); t.linear.x = vx; t.angular.z = wz
