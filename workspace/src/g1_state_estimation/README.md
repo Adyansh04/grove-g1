@@ -147,10 +147,17 @@ with range, until no path exists. Two errors stacked to produce exactly that:
 - `filter_size_surf` / `filter_size_map` were the reference's 0.5 m, tuned for building-scale
   runs. In one 18 m room that leaves height loose, and the estimate climbed 80–140 mm.
 
-With both corrected the median height error is 39 mm and navigation works. The margin is not
-generous: transients during a walk still reach ~180 mm, and the global costmap runs ~46 % lethal
-against ~34 % on ground truth, so some floor is still being marked. A constant 0.46 °
-attitude offset against the IMU contributes ~40 mm of the remainder at `obstacle_max_range`.
+A third, larger error sat underneath both: **in simulation the scan is stamped ~35 ms late.**
+The relay stamps each cloud on arrival, after a ~32 ms off-lock raycast, while the IMU is
+stamped on arrival and is not delayed — so FAST-LIO integrates IMU to a timestamp that is too
+late, and the resulting attitude error is proportional to angular rate. Standing it is
+invisible; walking, the pelvis swings ~9° per gait cycle and it becomes degrees.
+`common.time_offset_lidar_to_imu` corrects it, and it is **simulation-only**: a real Livox
+stamps points from the sensor's own clock at capture, so the hardware config keeps `0.0`.
+
+Measured over a walking run against ground truth, the three together take the median pelvis
+height error from +54 mm to −5 mm, and the share of each sweep's floor sitting above the
+costmap's cut from 16.6 % to 0.0 %.
 
 `sportmodestate` remains the default; the mission is tuned against it and is unaffected.
 
