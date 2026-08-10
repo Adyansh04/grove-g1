@@ -61,6 +61,7 @@ endif()
 
 install(DIRECTORY include/ DESTINATION include)
 install(DIRECTORY config launch DESTINATION share/${PROJECT_NAME})
+install(PROGRAMS scripts/lio_bench DESTINATION lib/${PROJECT_NAME})
 install(TARGETS odom_math livox_cloud g1_odometry_publisher_node
   EXPORT export_${PROJECT_NAME} DESTINATION lib)
 install(TARGETS g1_odometry_publisher g1_livox_pointcloud DESTINATION lib/${PROJECT_NAME})

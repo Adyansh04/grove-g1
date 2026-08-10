@@ -1,0 +1,132 @@
+#!/usr/bin/env python3
+"""Measure FAST-LIO against ground truth with NOTHING else in the loop.
+
+No Nav2, no AMCL, no map, no costmap. Just the simulator, the LIO pipeline, and velocity
+commands driven open-loop from here. Everything the earlier runs blamed on LIO could equally
+have been the planner, the controller or a stale map; this removes all of them.
+
+Drives an open-loop square and reports the two trajectories side by side:
+  truth  /sportmodestate            -- exact MuJoCo pelvis state
+  lio    odom -> base_footprint     -- what the LIO pipeline publishes
+The odom frame is latched at start with yaw zeroed, so the comparison is done under the single
+best-fit rotation between the paths. What survives that is real drift.
+"""
+import math, signal, sys, time
+import rclpy
+from geometry_msgs.msg import Twist
+from rclpy.action import ActionClient
+from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
+from tf2_msgs.msg import TFMessage
+from unitree_go.msg import SportModeState
+from g1_msgs.action import SetLocoMode
+
+# Below these the sim walking policy does not step at all (measured, see g1_locomotion).
+VX, WZ = 0.5, 1.6
+FWD_S, TURN_S, LEGS = 9.0, 1.2, 4
+
+
+class Bench(Node):
+    def __init__(s):
+        super().__init__("lio_bench")
+        s.truth = s.lio = None
+        s.track = []
+        s.create_subscription(TFMessage, "/tf", s._tf, 100)
+        s.create_subscription(SportModeState, "/sportmodestate", s._gt, qos_profile_sensor_data)
+        s.cmd = s.create_publisher(Twist, "/g1_loco_bridge/cmd_vel", 1)
+
+    def _tf(s, m):
+        for t in m.transforms:
+            if t.header.frame_id == "odom" and t.child_frame_id == "base_footprint":
+                s.lio = (t.transform.translation.x, t.transform.translation.y)
+
+    def _gt(s, m):
+        s.truth = (m.position[0], m.position[1])
+
+    def spin(s, secs, twist=None):
+        end = time.time() + secs
+        while time.time() < end and rclpy.ok():
+            if twist is not None:
+                s.cmd.publish(twist)
+            rclpy.spin_once(s, timeout_sec=0.02)
+            if s.truth is not None and s.lio is not None:
+                s.track.append((s.truth, s.lio))
+
+    def wait_for(s, pred, secs, why):
+        end = time.time() + secs
+        while time.time() < end and rclpy.ok():
+            rclpy.spin_once(s, timeout_sec=0.05)
+            if pred():
+                return True
+        print("RESULT ABORT: " + why)
+        return False
+
+    def set_mode(s, fsm):
+        c = ActionClient(s, SetLocoMode, "/g1_loco_bridge/set_mode")
+        if not c.wait_for_server(timeout_sec=30.0):
+            print("RESULT ABORT: no set_mode server")
+            return False
+        g = SetLocoMode.Goal(); g.fsm_id = fsm
+        f = c.send_goal_async(g); rclpy.spin_until_future_complete(s, f, timeout_sec=20.0)
+        h = f.result()
+        if h is None or not h.accepted:
+            print("RESULT ABORT: SetLocoMode(%d) rejected" % fsm)
+            return False
+        r = h.get_result_async(); rclpy.spin_until_future_complete(s, r, timeout_sec=30.0)
+        c.destroy()
+        return True
+
+
+def report(b):
+    if len(b.track) < 50:
+        print("RESULT too few paired samples: %d" % len(b.track))
+        return
+    (t0, l0) = b.track[0]
+    T = [(a[0]-t0[0], a[1]-t0[1]) for a, _ in b.track]
+    L = [(c[0]-l0[0], c[1]-l0[1]) for _, c in b.track]
+    dist = sum(math.dist(b.track[i][0], b.track[i-1][0]) for i in range(1, len(b.track)))
+    num = sum(tx*ly - ty*lx for (tx,ty),(lx,ly) in zip(T, L))
+    den = sum(tx*lx + ty*ly for (tx,ty),(lx,ly) in zip(T, L))
+    th = math.atan2(num, den); c, s_ = math.cos(th), math.sin(th)
+    gaps = [math.hypot(tx-(c*lx-s_*ly), ty-(s_*lx+c*ly)) for (tx,ty),(lx,ly) in zip(T, L)]
+    print("RESULT samples            %d" % len(b.track))
+    print("RESULT path travelled     %.2f m (truth)" % dist)
+    print("RESULT truth  end         (%+.2f, %+.2f) m from start" % T[-1])
+    print("RESULT lio    end         (%+.2f, %+.2f) m from start (aligned %+.1f deg)"
+          % (c*L[-1][0]-s_*L[-1][1], s_*L[-1][0]+c*L[-1][1], math.degrees(th)))
+    print("RESULT xy drift           final=%.3f m  max=%.3f m" % (gaps[-1], max(gaps)))
+    if dist > 0.5:
+        print("RESULT drift over path    %.2f%%" % (100*gaps[-1]/dist))
+
+
+def main():
+    rclpy.init(); b = Bench()
+
+    def stop(*_):
+        b.cmd.publish(Twist()); report(b); sys.stdout.flush(); rclpy.shutdown()
+    signal.signal(signal.SIGINT, stop); signal.signal(signal.SIGTERM, stop)
+
+    # TF appearing IS the readiness signal: it only exists once FAST-LIO has fixed gravity and
+    # produced a pose the publisher accepted.
+    if not b.wait_for(lambda: b.lio is not None and b.truth is not None, 180.0,
+                      "odom -> base_footprint never appeared"):
+        report(b); rclpy.shutdown(); return
+
+    if not (b.set_mode(4) and (time.sleep(3) or True) and b.set_mode(500)):
+        report(b); rclpy.shutdown(); return
+    b.spin(3.0)
+
+    fwd = Twist(); fwd.linear.x = VX
+    turn = Twist(); turn.angular.z = WZ
+    for leg in range(LEGS):
+        print("leg %d: forward" % (leg+1), flush=True)
+        b.spin(FWD_S, fwd)
+        b.spin(1.5)
+        print("leg %d: turn" % (leg+1), flush=True)
+        b.spin(TURN_S, turn)
+        b.spin(1.5)
+    b.cmd.publish(Twist())
+    b.spin(2.0)
+    report(b); sys.stdout.flush(); rclpy.shutdown()
+
+main()
