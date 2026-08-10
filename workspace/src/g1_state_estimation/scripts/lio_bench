@@ -11,7 +11,8 @@ Drives an open-loop square and reports the two trajectories side by side:
 The odom frame is latched at start with yaw zeroed, so the comparison is done under the single
 best-fit rotation between the paths. What survives that is real drift.
 """
-import math, signal, sys, time
+import csv
+import math, os, signal, sys, time
 import rclpy
 from geometry_msgs.msg import Twist
 from rclpy.action import ActionClient
@@ -23,13 +24,25 @@ from g1_msgs.action import SetLocoMode
 
 # Below these the sim walking policy does not step at all (measured, see g1_locomotion).
 VX, WZ = 0.5, 1.6
-FWD_S, TURN_S, LEGS = 9.0, 1.2, 4
+# An arbitrary wander, not a figure. Comparing two estimates OF THE SAME MOTION does not
+# care what shape that motion is, so there is no controller here and nothing to tune -- the
+# gait just has to move the robot and turn it now and then. Three attempts at steering this
+# policy produced three different bugs; none of them made the comparison any more valid.
+# (vx, wz, seconds)
+LEGS = [(VX, 0.0, 8.0), (0.0, WZ, 1.0), (VX, 0.0, 6.0), (0.0, -WZ, 1.4),
+        (VX, 0.0, 7.0), (0.0, WZ, 1.2), (VX, 0.0, 5.0), (0.0, -WZ, 1.0),
+        (VX, 0.0, 8.0), (0.0, WZ, 1.6), (VX, 0.0, 6.0)]
+# Where the full paired trace lands, for plotting the two paths against each other.
+TRACE_PATH = os.environ.get("LIO_BENCH_TRACE", "/tmp/lio_bench_trace.csv")
+# How far along the path between printed rows. Distance rather than time, so a slow leg and a
+# fast one get the same number of samples and the table reads as geometry, not as a clock.
+TRACE_EVERY_M = 1.0
 
 
 class Bench(Node):
     def __init__(s):
         super().__init__("lio_bench")
-        s.truth = s.lio = None
+        s.truth = s.lio = s.yaw = None
         s.track = []
         s.create_subscription(TFMessage, "/tf", s._tf, 100)
         s.create_subscription(SportModeState, "/sportmodestate", s._gt, qos_profile_sensor_data)
@@ -42,6 +55,9 @@ class Bench(Node):
 
     def _gt(s, m):
         s.truth = (m.position[0], m.position[1])
+        # imu_state.rpy[2] is the pelvis heading in the world frame -- ground truth, so the
+        # steering below never depends on the estimate being measured.
+        s.yaw = m.imu_state.rpy[2]
 
     def spin(s, secs, twist=None):
         end = time.time() + secs
@@ -89,6 +105,37 @@ def report(b):
     den = sum(tx*lx + ty*ly for (tx,ty),(lx,ly) in zip(T, L))
     th = math.atan2(num, den); c, s_ = math.cos(th), math.sin(th)
     gaps = [math.hypot(tx-(c*lx-s_*ly), ty-(s_*lx+c*ly)) for (tx,ty),(lx,ly) in zip(T, L)]
+    # Full paired trace, aligned into the truth frame so the two columns are directly
+    # comparable. Written before the summary so it survives even if something below throws.
+    try:
+        with open(TRACE_PATH, "w", newline="") as fh:
+            w = csv.writer(fh)
+            w.writerow(["i", "truth_x", "truth_y", "lio_x", "lio_y", "gap_m", "path_m"])
+            run = 0.0
+            for i, ((tx, ty), (lx, ly)) in enumerate(zip(T, L)):
+                if i:
+                    run += math.dist(T[i], T[i-1])
+                ax, ay = c*lx - s_*ly, s_*lx + c*ly
+                w.writerow(["%d" % i, "%.4f" % tx, "%.4f" % ty, "%.4f" % ax, "%.4f" % ay,
+                            "%.4f" % math.hypot(tx-ax, ty-ay), "%.4f" % run])
+        print("RESULT trace              %s (%d rows)" % (TRACE_PATH, len(T)))
+    except OSError as e:
+        print("RESULT trace              could not write %s: %s" % (TRACE_PATH, e))
+
+    # Sampled every metre of travel, so divergence is visible as it develops rather than only
+    # at the end -- a loop can finish close by luck after wandering badly in the middle.
+    print("RESULT --- path, every %.1f m of travel ---" % TRACE_EVERY_M)
+    print("RESULT   path_m |    truth (x, y)  |      lio (x, y)  |   gap")
+    run = 0.0
+    nxt = 0.0
+    for i, ((tx, ty), (lx, ly)) in enumerate(zip(T, L)):
+        if i:
+            run += math.dist(T[i], T[i-1])
+        if run + 1e-9 >= nxt:
+            ax, ay = c*lx - s_*ly, s_*lx + c*ly
+            print("RESULT   %6.2f | (%+6.2f, %+6.2f) | (%+6.2f, %+6.2f) | %5.3f m"
+                  % (run, tx, ty, ax, ay, math.hypot(tx-ax, ty-ay)))
+            nxt += TRACE_EVERY_M
     print("RESULT samples            %d" % len(b.track))
     print("RESULT path travelled     %.2f m (truth)" % dist)
     print("RESULT truth  end         (%+.2f, %+.2f) m from start" % T[-1])
@@ -116,15 +163,12 @@ def main():
         report(b); rclpy.shutdown(); return
     b.spin(3.0)
 
-    fwd = Twist(); fwd.linear.x = VX
-    turn = Twist(); turn.angular.z = WZ
-    for leg in range(LEGS):
-        print("leg %d: forward" % (leg+1), flush=True)
-        b.spin(FWD_S, fwd)
-        b.spin(1.5)
-        print("leg %d: turn" % (leg+1), flush=True)
-        b.spin(TURN_S, turn)
-        b.spin(1.5)
+    for i, (vx, wz, secs) in enumerate(LEGS):
+        t = Twist(); t.linear.x = vx; t.angular.z = wz
+        print("leg %d/%d: vx=%.1f wz=%+.1f for %.1fs" % (i + 1, len(LEGS), vx, wz, secs),
+              flush=True)
+        b.spin(secs, t)
+        b.spin(1.0)
     b.cmd.publish(Twist())
     b.spin(2.0)
     report(b); sys.stdout.flush(); rclpy.shutdown()
