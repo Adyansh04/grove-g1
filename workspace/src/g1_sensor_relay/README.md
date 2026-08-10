@@ -107,6 +107,7 @@ same configuration scored anywhere between 1 % and 27 % drift.
 | File | Contents |
 |---|---|
 | `frame_reader.{hpp,cpp}` | Framing and validation, free of ROS and sockets so the wire format tests without a simulator. |
+| `livox_custom_msg.{hpp,cpp}` | PointCloud2 to CustomMsg, split out so the conversion tests without a graph. |
 | `g1_sensor_relay_node.cpp` | The socket, the poll loop and the publishers. |
 | `g1_livox_bridge_node.cpp` | The FAST-LIO front end above. |
 | `sensor_frame.h` | The wire struct, duplicated on the simulator side. |
@@ -121,5 +122,7 @@ colcon test --packages-select g1_sensor_relay
 ```
 
 `test_frame_reader` covers the framing, the bounds checks and a drift check that reads both copies
-of `sensor_frame.h`. No simulator needed. `g1_bringup`'s `test_lidar_geometry` asserts the
+of `sensor_frame.h`. `test_livox_custom_msg` covers the conversion against FAST-LIO's own
+discard gates (`line`, the tag bits, `offset_time`) and the miss handling. Neither needs a
+simulator. `g1_bringup`'s `test_lidar_geometry` asserts the
 published cloud measures the room it is in.

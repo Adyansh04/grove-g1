@@ -15,35 +15,16 @@
  * two publishers on /livox/custom_msg would interleave scans from different sources.
  */
 
-#include <cmath>
-#include <cstdint>
-#include <livox_ros_driver2/msg/custom_msg.hpp>
 #include <memory>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
-#include <sensor_msgs/point_cloud2_iterator.hpp>
 #include <string>
 #include <utility>
 
+#include "g1_sensor_relay/livox_custom_msg.hpp"
+
 namespace g1_sensor_relay
 {
-namespace
-{
-/// Whether the three fields the iterators below will ask for are actually present as floats.
-bool hasXyz(const sensor_msgs::msg::PointCloud2& cloud)
-{
-    int found = 0;
-    for (const auto& field : cloud.fields)
-    {
-        if ((field.name == "x" || field.name == "y" || field.name == "z") &&
-            field.datatype == sensor_msgs::msg::PointField::FLOAT32)
-        {
-            ++found;
-        }
-    }
-    return found == 3;
-}
-}  // namespace
 
 class LivoxBridge : public rclcpp::Node
 {
@@ -70,10 +51,8 @@ public:
 private:
     void onCloud(const sensor_msgs::msg::PointCloud2& cloud)
     {
-        // The iterators throw when a field is missing, and an exception out of a subscription
-        // callback takes the whole node down. Checked instead, so a cloud from something other
-        // than the relay is a warning rather than a dead bridge.
-        if (!hasXyz(cloud))
+        livox_ros_driver2::msg::CustomMsg msg;
+        if (!toCustomMsg(cloud, msg))
         {
             RCLCPP_WARN_THROTTLE(
                 get_logger(),
@@ -83,46 +62,6 @@ private:
                 cloud_sub_->get_topic_name());
             return;
         }
-
-        sensor_msgs::PointCloud2ConstIterator<float> x(cloud, "x");
-        sensor_msgs::PointCloud2ConstIterator<float> y(cloud, "y");
-        sensor_msgs::PointCloud2ConstIterator<float> z(cloud, "z");
-
-        livox_ros_driver2::msg::CustomMsg msg;
-        msg.header = cloud.header;
-        // Informational only -- FAST-LIO times scans off header.stamp -- but a real driver puts
-        // the first point's absolute time here, so match that rather than leave it zero.
-        msg.timebase = static_cast<std::uint64_t>(rclcpp::Time(cloud.header.stamp).nanoseconds());
-        msg.lidar_id = 0;
-        msg.points.reserve(cloud.width * cloud.height);
-
-        for (; x != x.end(); ++x, ++y, ++z)
-        {
-            // Misses come through as non-finite. Dropping them here rather than passing them on
-            // keeps point_num honest, and FAST-LIO's own range gate would discard them anyway.
-            if (!std::isfinite(*x) || !std::isfinite(*y) || !std::isfinite(*z))
-            {
-                continue;
-            }
-            livox_ros_driver2::msg::CustomPoint point;
-            point.x = *x;
-            point.y = *y;
-            point.z = *z;
-            // Zero, and correct rather than merely convenient. The simulator raycasts against a
-            // frozen mjData, so every point in a frame really is sampled at the same instant.
-            // FAST-LIO reads this as milliseconds-since-scan-start into its motion
-            // undistortion, which then finds nothing to undo -- which is the truth here.
-            point.offset_time = 0;
-            // Both are gates in FAST-LIO's Livox handler, not decoration: `line` must be under
-            // scan_line, and tag bits 4-5 must read 00 or 01 or the point is discarded.
-            point.line = 0;
-            point.tag  = 0;
-            // The sweep carries no intensity, and nothing downstream registers on it.
-            point.reflectivity = 0;
-            msg.points.push_back(point);
-        }
-
-        msg.point_num = static_cast<std::uint32_t>(msg.points.size());
         custom_pub_->publish(std::move(msg));
     }
 
