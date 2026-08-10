@@ -105,6 +105,15 @@ the round-robin slot `Spin` could have used.
 
 `z_voxels` is 40, not upstream's 16. The sensor sits at 1.22 m, outside a 0.8 m voxel column.
 
+`obstacle_max_range` is 3.0 m, well inside the sensor's reach, because the estimate's attitude is
+what limits how far a floor return can be trusted. Measured over 713 sweeps of a walk, the floor
+plane sits within a centimetre of where it belongs but tilts by 0.15 deg (median), 0.75 (p95) and
+1.62 (worst). Tilt times range is a height error: at 5 m it takes 0.92 deg to lift the floor past
+`min_obstacle_height`, at 2 m it takes 2.3. The same run marked 0.000 % of floor returns inside
+3 m and 0.091 % between 4 and 5 m. Nothing is given up -- the local costmap is 3 x 3 m rolling
+and cannot hold a return past ~2.1 m regardless, and the global costmap sees an obstacle long
+before the robot reaches it at 0.6 m/s.
+
 ## Configuration
 
 | File | Contents |
