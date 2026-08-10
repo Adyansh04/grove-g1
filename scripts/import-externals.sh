@@ -50,3 +50,21 @@ if [ -d "${FAST_LIO_REPO}/open3d_loc" ]; then
     touch "${FAST_LIO_REPO}/open3d_loc/COLCON_IGNORE"
     echo "ignoring open3d_loc"
 fi
+
+# FAST-LIO fixes its gravity vector by averaging the first MAX_INI_COUNT IMU samples, and
+# upstream sets that to 10. Its own paper asks for the sensor to be held STATIC for about two
+# seconds while that happens; ten samples is only that long on a slow IMU, and on this robot
+# it is 20 ms at the 500 Hz the pelvis IMU runs.
+#
+# A balancing humanoid has no static pose. Twenty milliseconds does not average the sway, it
+# samples one instant of it, so gravity comes out tilted by whatever the body was doing at
+# that moment -- and every pose afterwards inherits that tilt, which lands on the floor plane
+# and comes back as the costmap marking the floor.
+#
+# 1000 samples is the paper's two seconds at 500 Hz. Costs two seconds of extra startup, which
+# is already hidden inside the launch delay that waits out the spawn drop.
+IMU_PROCESSING="${FAST_LIO_REPO}/FAST_LIO/src/IMU_Processing.hpp"
+if [ -f "${IMU_PROCESSING}" ] && grep -q '^#define MAX_INI_COUNT (10)' "${IMU_PROCESSING}"; then
+    sed -i 's/^#define MAX_INI_COUNT (10)/#define MAX_INI_COUNT (1000)/' "${IMU_PROCESSING}"
+    echo "raised FAST_LIO MAX_INI_COUNT to 1000 (2 s of gravity averaging at 500 Hz)"
+fi
