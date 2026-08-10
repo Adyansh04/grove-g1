@@ -97,16 +97,43 @@ RUN mkdir -p /etc/cyclonedds && \
 </CycloneDDS>
 EOF
 
+# Second profile, for the robot. Same file, one difference: the interface. Loopback is what
+# keeps the simulator's rt/lowcmd and rt/arm_sdk off the LAN; on the robot they have to reach the
+# onboard controller, so the NIC is named instead. CycloneDDS expands ${VAR:-default} itself.
+RUN cat > /etc/cyclonedds/cyclonedds.hardware.xml <<'EOF'
+<?xml version="1.0" encoding="UTF-8" ?>
+<CycloneDDS xmlns="https://cdds.io/config"
+            xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+            xsi:schemaLocation="https://cdds.io/config https://raw.githubusercontent.com/eclipse-cyclonedds/cyclonedds/master/etc/cyclonedds.xsd">
+  <Domain id="any">
+    <General>
+      <Interfaces>
+        <NetworkInterface name="${GROVE_G1_ROBOT_NIC:-eth0}" priority="default" multicast="default" />
+      </Interfaces>
+    </General>
+    <Discovery>
+      <MaxAutoParticipantIndex>60</MaxAutoParticipantIndex>
+    </Discovery>
+  </Domain>
+</CycloneDDS>
+EOF
+
 ENV RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 ENV CYCLONEDDS_URI=file:///etc/cyclonedds/cyclonedds.xml
-# Sim-only domain; revisit at hardware bring-up.
+# Sim-only domain; the robot's is set through GROVE_G1_ROS_DOMAIN_ID below.
 ENV ROS_DOMAIN_ID=1
 
-# Override base image's /etc/profile.d/10-ros-env.sh which resets ROS_DOMAIN_ID=0.
+# Override base image's /etc/profile.d/10-ros-env.sh, which resets ROS_DOMAIN_ID=0 and would
+# otherwise win by ordering.
+#
+# Defaults, not hard sets, and read from a GROVE_G1_-prefixed variable rather than the ROS one:
+# compose can point the whole container at the robot by setting three variables in .env, and
+# the prefix is what makes that survive 10-ros-env.sh clobbering the unprefixed names. Straight
+# `${ROS_DOMAIN_ID:-1}` would read whatever that script had just written.
 RUN cat > /etc/profile.d/99-grove-g1-env.sh <<'EOF'
-export ROS_DOMAIN_ID="1"
-export RMW_IMPLEMENTATION="rmw_cyclonedds_cpp"
-export CYCLONEDDS_URI="file:///etc/cyclonedds/cyclonedds.xml"
+export ROS_DOMAIN_ID="${GROVE_G1_ROS_DOMAIN_ID:-1}"
+export RMW_IMPLEMENTATION="${GROVE_G1_RMW:-rmw_cyclonedds_cpp}"
+export CYCLONEDDS_URI="${GROVE_G1_CYCLONEDDS_URI:-file:///etc/cyclonedds/cyclonedds.xml}"
 EOF
 
 # Remove pip `em` — it shadows apt's python3-empy and breaks rosidl generation.

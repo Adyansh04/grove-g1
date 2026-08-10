@@ -52,6 +52,14 @@ XVFB_DISPLAY = ":133"
 SIM_START_DELAY_S = 2.0
 
 
+def _read_text(path):
+    try:
+        with open(path, encoding="utf-8") as handle:
+            return handle.read()
+    except OSError:
+        return ""
+
+
 def _check_environment(context, *args, **kwargs):
     """Fails the whole launch immediately, before anything starts, if the
     container's DDS/domain env isn't what the sim-first milestone assumes
@@ -86,6 +94,16 @@ def _check_environment(context, *args, **kwargs):
                 f"CYCLONEDDS_URI points at {cyclone_path!r}, which does not exist -- "
                 "CycloneDDS would silently fall back to defaults and bind the host NIC "
                 "instead of 'lo'."
+            )
+        elif 'NetworkInterface name="lo"' not in _read_text(cyclone_path):
+            # Existing and readable is not enough now that a hardware profile is baked beside
+            # it: pointing the container at cyclonedds.hardware.xml and then starting the
+            # simulator is the one mistake that puts rt/lowcmd on the LAN, and it looks like a
+            # perfectly healthy config until a real G1 answers.
+            problems.append(
+                f"{cyclone_path!r} does not pin the 'lo' interface -- this looks like the "
+                "hardware profile. The simulator must never publish rt/lowcmd anywhere a real "
+                "robot can hear it."
             )
 
     domain_id = os.environ.get("ROS_DOMAIN_ID")

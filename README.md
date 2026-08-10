@@ -238,6 +238,7 @@ layer on top. In VS Code, use `Dev Containers: Reopen in Container`.
 | ROS distro | Humble, pinned. Unitree tests only Foxy and Humble. |
 | Middleware | CycloneDDS, pinned to loopback |
 | `ROS_DOMAIN_ID` | 1 |
+| Robot override | `GROVE_G1_ROS_DOMAIN_ID`, `GROVE_G1_CYCLONEDDS_URI`, `GROVE_G1_ROBOT_NIC` |
 | C++ standard | C++20 on GCC 11.4 |
 | Workspace | `/root/workspace` |
 | Shared data | `/root/data` |
@@ -245,6 +246,14 @@ layer on top. In VS Code, use `Dev Containers: Reopen in Container`.
 The container runs `privileged` with `network_mode: host` and a `/dev` bind mount. That is
 deliberate for local robotics development: DDS discovery between the bare-DDS simulator and the
 ROS graph happens over loopback, and device access has to work.
+
+Pointing the container at a real G1 is three environment variables, not an image rebuild:
+`GROVE_G1_CYCLONEDDS_URI=file:///etc/cyclonedds/cyclonedds.hardware.xml` (baked in beside the
+loopback one, differing only in the interface), `GROVE_G1_ROBOT_NIC` for the NIC that reaches
+the robot, and `GROVE_G1_ROS_DOMAIN_ID` for its domain. They are prefixed because the base
+image's own `/etc/profile.d/10-ros-env.sh` rewrites the unprefixed names. `sim.launch.py`
+refuses to start unless `CYCLONEDDS_URI` names a profile that pins `lo`, so the simulator
+cannot be brought up pointing at a robot.
 
 Lifecycle:
 
