@@ -28,7 +28,7 @@ hardware source is LiDAR-inertial odometry: FAST-LIO2, from the vendored `fast_l
 | `odometry_source` | Behaviour |
 |---|---|
 | `sim_sportmodestate` | The `unitree_mujoco` track. Pelvis position from `/sportmodestate`, full orientation from `/lowstate`'s IMU. Exact MuJoCo state: no drift, no noise, no latency. |
-| `fast_lio` | Reads FAST-LIO's `nav_msgs/Odometry`, re-references it into `odom`, and differences the twist FAST-LIO leaves empty. An estimate: it drifts, and `map -> odom` exists to correct it. Runs in sim and on the robot. |
+| `fast_lio` | Reads FAST-LIO's `nav_msgs/Odometry`, re-references it into `odom`, and differences the twist FAST-LIO leaves empty. An estimate: it drifts, and `map -> odom` exists to correct it. Runs in sim and on the robot. **Not yet usable under Nav2 — see below.** |
 | `hardware` (default) | Refuses to configure, pointing at `fast_lio`. |
 
 `hardware` is the default deliberately. A misconfigured bring-up must never silently emit
@@ -131,6 +131,21 @@ configured in `livox_ros_driver2`'s `MID360_config.json` first.
 
 It is a lifecycle node, and configuration is where the source decision is enforced, so a refusal is
 visible as a failed transition rather than a silent absence of transforms.
+
+## Status: fast_lio does not yet drive Nav2
+
+The source itself tracks well. Standing, it stays within ~2 cm of MuJoCo's ground truth; over a
+6.3 m driven path the aligned gap was 0.44 m, about 7 %. `test_fastlio_odometry` covers both.
+
+Navigation on it does not work yet. Every `NavigateToPose` goal aborts with `GridBased: failed
+to create plan`, while the identical goal on `sportmodestate` succeeds in the same session. The
+global costmap comes up 44 % lethal against 34 % on ground truth — roughly 14 000 extra cells,
+enough to close the corridors the planner needs. Ruled out by measurement: the map, the goals,
+AMCL's noise model, FAST-LIO's attitude (a constant 0.46° against the IMU, no drift) and its
+height estimate.
+
+So `odometry:=fast_lio` is for bringing the pipeline up and measuring it, not for driving.
+`sportmodestate` remains the default and the mission is unaffected.
 
 ## What simulation does and does not validate
 

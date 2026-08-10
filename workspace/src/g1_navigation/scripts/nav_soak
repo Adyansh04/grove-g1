@@ -34,6 +34,9 @@ DIAG_OUT=/tmp/nav_soak_diag.txt
 PGID_FILE=/tmp/nav_soak.pgid
 
 RVIZ=false
+# Which source publishes odom -> base_footprint; fast_lio soaks the LiDAR-inertial pipeline
+# under real navigation load instead of ground truth.
+ODOMETRY=sportmodestate
 GOALS_RAW="4.15 -6.96,-2.79 -6.69,5.21 1.93,5.37 2.08,-4.67 4.97,-4.46 7.58,6.31 -2.10,6.53 -7.00,-2.51 -6.42,4.13 1.76,2.80 6.92,-7.49 5.23,-2.44 -6.90"
 
 # Above the 4.0 navigation default. The simulator's first physics tick can land before the
@@ -46,6 +49,7 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --rviz)  RVIZ=true; shift ;;
         --goals) GOALS_RAW="$2"; shift 2 ;;
+        --odometry) ODOMETRY="$2"; shift 2 ;;
         -h|--help) sed -n '3,27p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "unknown argument: $1" >&2; exit 2 ;;
     esac
@@ -106,7 +110,7 @@ verify_clean
 echo
 echo "########## launch ##########"
 setsid ros2 launch g1_bringup bringup.launch.py mode:=localization nav:=true \
-    rviz:="$RVIZ" sim_start_delay_s:="$DELAY" > "$LOG" 2>&1 &
+    rviz:="$RVIZ" odometry:="$ODOMETRY" sim_start_delay_s:="$DELAY" > "$LOG" 2>&1 &
 LEADER=$!
 sleep 2
 ps -o pgid= -p "$LEADER" 2>/dev/null | tr -d ' ' > "$PGID_FILE"
