@@ -65,6 +65,8 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_arm_sdk_xacro test/test_arm_sdk_xacro.py
     ENV "G1_DESCRIPTION_XACRO=${CMAKE_CURRENT_SOURCE_DIR}/urdf/g1_arm_sdk.urdf.xacro"
   )
+  # The sensor mounts are duplicated in the simulator, which links no ROS and so cannot read TF.
+  ament_add_pytest_test(test_sensor_mounts test/test_sensor_mounts.py)
 
   # Use workspace-root ruff.toml if available.
   find_program(RUFF_EXECUTABLE ruff)
