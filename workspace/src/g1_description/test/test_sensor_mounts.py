@@ -1,4 +1,5 @@
-"""The sensor mounts exist twice, and copies drift.
+"""
+The sensor mounts exist twice, and copies drift.
 
 `workspace/vendor/unitree_mujoco/sensor_publisher.cc` carries `kMountXyz`/`kMountRpy` and
 `kCamXyz`/`kCamRpy` as compile-time constants, because the simulator computes the sweep and the
@@ -47,7 +48,7 @@ def _urdf_joint_origin(joint_name):
 
 
 def _sim_constant(name):
-    """The doubles out of `constexpr double <name>[3] = {...};`."""
+    """Parse the doubles out of `constexpr double <name>[3] = {...};`."""
     text = _SENSOR_PUBLISHER.read_text()
     match = re.search(rf"constexpr double {name}\[3\]\s*=\s*{{([^}}]*)}}", text)
     assert match, f"{name} not found in {_SENSOR_PUBLISHER.name}"

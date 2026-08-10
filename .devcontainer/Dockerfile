@@ -282,6 +282,15 @@ RUN apt-get update && apt-get install -y \
         ros-humble-vision-msgs \
     && rm -rf /var/lib/apt/lists/*
 
+# behaviortree_cpp 4.9.1 installs its library under lib/x86_64-linux-gnu/ while its own
+# ament_cmake_export_libraries-extras.cmake still does find_library(... PATHS
+# "${behaviortree_cpp_DIR}/../../../lib" NO_DEFAULT_PATH). Any package that find_package()s it
+# then fails to CONFIGURE with "exports the library 'behaviortree_cpp' which couldn't be found".
+# 4.9.0 installed to lib/ and did not have this. Guarded rather than unconditional so a fixed
+# release does not get a symlink over the top of its real file.
+RUN test -e /opt/ros/humble/lib/libbehaviortree_cpp.so || \
+    ln -s x86_64-linux-gnu/libbehaviortree_cpp.so /opt/ros/humble/lib/libbehaviortree_cpp.so
+
 # --- Milestone 10: LiDAR-inertial odometry ------------------------------------
 
 # Livox-SDK2, the Mid360's transport library. livox_ros_driver2's CMakeLists does a
