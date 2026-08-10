@@ -1,9 +1,10 @@
-"""The sim FAST-LIO extrinsic is a copy of the URDF mount, and copies drift.
+"""In simulation there is no constant lidar-to-IMU extrinsic to write down.
 
-fastlio_mid360_sim.yaml carries mid360_link expressed in the pelvis frame as twelve literal
-numbers, because FAST-LIO reads a flat parameter file and cannot look at TF. The URDF is the
-source of truth for the same transform. This recomputes the chain from the URDF, waist at
-zero, and fails if someone moves the sensor in one place and not the other.
+FAST-LIO reads a flat parameter file and cannot look at TF, so the obvious thing is to copy the
+mount out of the URDF as twelve literal numbers. That was done, and it was wrong: the sim IMU is
+the pelvis, the sim lidar is on torso_link, and the walking policy drives the three waist joints
+in between. g1_livox_bridge restates the sweep in the pelvis frame instead, which leaves the
+extrinsic identity. These tests hold that arrangement in place.
 """
 
 import math
@@ -40,8 +41,7 @@ def _mat_vec(a, v):
     return [sum(a[i][k] * v[k] for k in range(3)) for i in range(3)]
 
 
-def _chain_from_urdf(child_link, ancestor_link):
-    """mid360-in-pelvis from the URDF, every joint on the way at zero."""
+def _joints_from_urdf():
     urdf = (
         pathlib.Path(get_package_share_directory("g1_description"))
         / "urdf"
@@ -59,14 +59,20 @@ def _chain_from_urdf(child_link, ancestor_link):
             joint.find("parent").get("link"),
             xyz,
             _rpy_to_matrix(*rpy),
+            joint.get("type"),
         )
+    return joints
 
+
+def _chain_from_urdf(child_link, ancestor_link):
+    """mid360-in-pelvis from the URDF, every joint on the way at zero."""
+    joints = _joints_from_urdf()
     rotation = [[1.0, 0, 0], [0, 1.0, 0], [0, 0, 1.0]]
     translation = [0.0, 0.0, 0.0]
     link = child_link
     while link != ancestor_link:
         assert link in joints, f"no joint leads to {link}"
-        parent, xyz, joint_rotation = joints[link]
+        parent, xyz, joint_rotation, _ = joints[link]
         translation = [c + v for c, v in zip(xyz, _mat_vec(joint_rotation, translation))]
         rotation = _mat_mul(joint_rotation, rotation)
         link = parent
@@ -78,19 +84,32 @@ def _config_extrinsic():
     return parameters["extrinsic_T"], parameters["extrinsic_R"]
 
 
-def test_sim_extrinsic_matches_the_urdf_mount():
-    translation, rotation = _chain_from_urdf("mid360_link", "pelvis")
+def test_sim_extrinsic_is_identity():
     config_t, config_r = _config_extrinsic()
+    assert config_t == pytest.approx([0.0, 0.0, 0.0], abs=1e-12), (
+        "the sweep reaches FAST-LIO already in the IMU frame; a translation here double-counts "
+        "the mount"
+    )
+    assert config_r == pytest.approx([1, 0, 0, 0, 1, 0, 0, 0, 1], abs=1e-12), (
+        "same for the rotation -- g1_livox_bridge has already applied it, per scan"
+    )
 
-    for axis in range(3):
-        assert config_t[axis] == pytest.approx(translation[axis], abs=1e-5), (
-            f"extrinsic_T[{axis}]: config {config_t[axis]} vs URDF {translation[axis]}"
-        )
-    flat = [rotation[i][j] for i in range(3) for j in range(3)]
-    for index in range(9):
-        assert config_r[index] == pytest.approx(flat[index], abs=1e-6), (
-            f"extrinsic_R[{index}]: config {config_r[index]} vs URDF {flat[index]}"
-        )
+
+def test_the_sensor_is_not_rigidly_attached_to_the_imu():
+    # The reason the extrinsic above cannot be a constant, asserted rather than remembered.
+    joints = _joints_from_urdf()
+    link = "mid360_link"
+    movable = []
+    while link != "pelvis":
+        parent, _, _, kind = joints[link]
+        if kind != "fixed":
+            movable.append(link)
+        link = parent
+    assert movable, (
+        "mid360_link now reaches pelvis through fixed joints only. If the waist really was "
+        "frozen, a constant extrinsic is correct again and g1_livox_bridge's per-scan transform "
+        "is dead weight -- but check who froze it before deleting anything."
+    )
 
 
 def test_the_mount_is_actually_upside_down():

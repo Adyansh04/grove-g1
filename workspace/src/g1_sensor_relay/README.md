@@ -55,6 +55,11 @@ is why the depth topic is named as if it had run.
 | `color_frame_id` | `camera_color_optical_frame` | REP-145 optical frame. |
 | `world_frame_id` | `world` | Frame for the diagnostic sensor pose. |
 
+`g1_livox_bridge` takes its own: `cloud_topic`, `low_state_topic`, `custom_msg_topic`,
+`imu_topic`, `imu_frame_id` (`pelvis`) and `cloud_target_frame`, which defaults to
+`imu_frame_id`. Setting `cloud_target_frame` empty passes the sweep through in `mid360_link`,
+which is right only once something models an IMU inside the sensor.
+
 Start order does not matter. The relay listens whenever it comes up and the simulator retries every
 cycle, so either process can start, die or restart independently.
 
@@ -83,6 +88,14 @@ Every point goes out with `offset_time` zero, which is truthful rather than a sh
 simulator raycasts the whole sweep against a frozen snapshot, so there is no motion inside a
 frame for FAST-LIO's undistortion to undo. A real Mid360 sweeps continuously, which is exactly
 what this bridge cannot reproduce and why undistortion stays unvalidated until hardware.
+
+The sweep is also rotated out of `mid360_link` and into the IMU's frame (`cloud_target_frame`,
+the pelvis) on the way through, using TF at the sweep's own timestamp. On the robot this would
+be pointless -- the Mid360's IMU is bolted beside its laser -- but here the stand-in IMU is the
+pelvis, and the three waist joints between the two are driven by the walking policy through tens
+of degrees. Handing FAST-LIO a fixed extrinsic across them is what made it lose the scan match
+whenever the robot turned. Doing it here rather than in FAST-LIO's config is the only option:
+FAST-LIO reads a flat parameter file and cannot consult TF.
 
 ## Layout
 

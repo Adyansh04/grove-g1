@@ -3,8 +3,10 @@
 #
 # The difference that matters: in simulation the IMU is the PELVIS IMU, relayed out of LowState
 # by g1_livox_bridge, because MuJoCo models no IMU inside the Mid360. FAST-LIO's `body` frame is
-# therefore the pelvis rather than the sensor, and the extrinsic below is the whole mount rather
-# than the few centimetres inside the sensor housing.
+# therefore the pelvis rather than the sensor. Rather than hand it a fixed lidar-to-IMU extrinsic
+# across the three actuated waist joints -- which the walking policy drives by up to 25 degrees,
+# so no fixed value is right -- g1_livox_bridge restates the sweep in the pelvis frame per scan
+# and the extrinsic below is identity.
 /**:
   ros__parameters:
     feature_extract_enable: false
@@ -46,21 +48,17 @@
       b_gyr_cov: 0.0001
       fov_degree: 360.0
       det_range: 100.0
-      # DIFFERS (hardware: true). The extrinsic below is copied from the URDF, which the
-      # simulator itself is built from, so it is exact and the online estimator can only
-      # wander from it -- and it did: with estimation on, a 35 s standing run was seen to
-      # diverge kilometres once the estimate walked off. On the robot the true extrinsic is
-      # not known exactly, which is the case the estimator exists for.
+      # DIFFERS (hardware: true). Nothing to estimate: the sweep already arrives in the IMU's
+      # own frame, and letting the estimator wander off identity is not free -- with it on, a
+      # 35 s standing run was seen to diverge kilometres once the estimate walked away.
       extrinsic_est_en: false
-      # DIFFERS. mid360_link expressed in the pelvis frame, taken from the URDF with the waist
-      # joints at zero -- which is where they stay, since nothing commands them. Regenerate
-      # this if that ever changes; test_sim_extrinsic asserts the two agree.
-      extrinsic_T: [-0.00368, 0.00003, 0.472434]
-      # DIFFERS. Row-major, and inverted: the third row's -0.9987 is the Mid360 pointing its
-      # +z at the floor, which is the upside-down mount.
-      extrinsic_R: [0.99869362, 0.0, -0.05109843,
-                    0.0, -1.0, 0.0,
-                    -0.05109843, 0.0, -0.99869362]
+      # DIFFERS. Identity, because g1_livox_bridge has already rotated the sweep out of
+      # mid360_link and into the pelvis using the waist state at the scan instant. The mount is
+      # not a constant here -- see that node's header.
+      extrinsic_T: [0.0, 0.0, 0.0]
+      extrinsic_R: [1.0, 0.0, 0.0,
+                    0.0, 1.0, 0.0,
+                    0.0, 0.0, 1.0]
 
     publish:
       path_en: false

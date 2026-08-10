@@ -64,12 +64,15 @@ driver runs in CustomMsg mode and `g1_livox_pointcloud` (this package) republish
 by it. In simulation the conversion runs the other way, in `g1_sensor_relay`'s
 `g1_livox_bridge`.
 
-The IMU differs between the tracks, and the configs carry the consequence: on hardware FAST-LIO
-uses the Mid360's own IMU (hardware-synchronised with the points), so its extrinsic is the
-few-centimetre offset inside the sensor housing and `lidar_body_frame_id` is `mid360_imu`. In
-simulation no Mid360 IMU exists, so the pelvis IMU is bridged instead, the extrinsic is the
-whole URDF mount, and the reporting frame already is the pelvis. `test_sim_extrinsic` fails if
-the sim extrinsic and the URDF mount ever disagree.
+The IMU differs between the tracks, and the configs carry the consequence. On hardware FAST-LIO
+uses the Mid360's own IMU, hardware-synchronised with the points and rigid with them inside one
+housing, so its extrinsic is the few-centimetre offset Livox publish and `lidar_body_frame_id`
+is `mid360_imu`. Simulation models no IMU in the sensor, so the pelvis IMU stands in -- and the
+pelvis is three actuated waist joints away from the mount, all of which the walking policy
+drives. There is no constant extrinsic to write down across that chain, so `g1_livox_bridge`
+rotates each sweep into the pelvis frame using the waist state at the scan's own timestamp and
+the sim extrinsic is identity. `test_sim_extrinsic` holds that arrangement in place from both
+ends: the extrinsic must be identity, and the URDF chain must still contain a movable joint.
 
 ## Frames
 
@@ -132,6 +135,15 @@ configured in `livox_ros_driver2`'s `MID360_config.json` first.
 It is a lifecycle node, and configuration is where the source decision is enforced, so a refusal is
 visible as a failed transition rather than a silent absence of transforms.
 
+`scripts/lio_bench` scores the result against MuJoCo's own pose with nothing else in the loop,
+and writes the paired trace to `/tmp/lio_bench_trace.csv`. Run it more than once: the numbers
+move between runs by more than most changes to the configuration do.
+
+When the estimate misbehaves, the first thing to look at is how much of each sweep is finding a
+plane in the map. Setting `publish.effect_map_en: true` in the FAST-LIO config makes it publish
+those points on `/cloud_effected_1`; the count is the health of the scan match, and it collapses
+long before the pose visibly does.
+
 ## Height is what this source has to get right
 
 Standing, the estimate stays within ~2 cm of MuJoCo's ground truth in x and y; over a 6.3 m
@@ -176,7 +188,7 @@ physically inverted unit. Tuning done against sim FAST-LIO is unvalidated on har
 |---|---|
 | `test_odom_math` | Ground projection and its recomposition, heading extraction, the tilt guard, pose composition and inversion. |
 | `test_odometry_publisher_node` | The node itself: source selection, the hardware refusal, the fast_lio latch and twist, frame chains, timeouts. No simulator needed. |
-| `test_sim_extrinsic` | The sim FAST-LIO extrinsic against the URDF mount, and that the mount is actually inverted. |
+| `test_sim_extrinsic` | That the sim FAST-LIO extrinsic stays identity, that the sensor is still not rigid with the pelvis, and that the mount is actually inverted. |
 
 ```bash
 colcon test --packages-select g1_state_estimation

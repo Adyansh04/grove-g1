@@ -262,11 +262,12 @@ bool G1OdometryPublisher::lookUpLidarBodyOffset()
     try
     {
         // Not static: the chain from the sensor to the pelvis crosses the three waist joints,
-        // so this is looked up every sample rather than cached. TimePointZero takes the newest
-        // available, which pairs a fresh waist state with a scan about one FAST-LIO period old.
-        // That is deliberate -- the waist is uncommanded on this stack, so the error is far
-        // below the odometry's own, and a stamped lookup would instead fail outright for the
-        // first few seconds while the TF buffer fills.
+        // which the walking policy drives through tens of degrees, so this is looked up every
+        // sample rather than cached. TimePointZero takes the newest available, which pairs a
+        // fresh waist state with a scan about one FAST-LIO period old -- a stamped lookup would
+        // instead fail outright for the first few seconds while the TF buffer fills. The
+        // residual is real but bounded by one gait step; the sweep itself is corrected properly,
+        // at its own stamp, in g1_livox_bridge.
         const auto tf = tf_buffer_->lookupTransform(lidar_body_frame_id_, body, tf2::TimePointZero);
         lio_body_from_base_.x = tf.transform.translation.x;
         lio_body_from_base_.y = tf.transform.translation.y;
