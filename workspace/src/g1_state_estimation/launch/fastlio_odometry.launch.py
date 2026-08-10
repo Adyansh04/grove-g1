@@ -22,13 +22,11 @@ from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
     EmitEvent,
-    IncludeLaunchDescription,
     OpaqueFunction,
     RegisterEventHandler,
 )
 from launch.event_handlers import OnProcessStart
 from launch.events import matches_action
-from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import LifecycleNode, Node
 from launch_ros.event_handlers import OnStateTransition
@@ -56,15 +54,37 @@ def _launch_setup(context, *args, **kwargs):
             )
         )
     else:
+        # The driver node directly, not the vendored msg_MID360_launch.py. That launch file
+        # hardcodes frame_id 'livox_frame', which is not a frame this robot's URDF has, and
+        # points user_config_path at a config inside the vcs checkout that
+        # import-externals.sh overwrites.
         actions.append(
-            IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(
-                    os.path.join(
-                        get_package_share_directory("livox_ros_driver2"),
-                        "launch",
-                        "msg_MID360_launch.py",
-                    )
-                )
+            Node(
+                package="livox_ros_driver2",
+                executable="livox_ros_driver2_node",
+                name="livox_lidar_publisher",
+                output="both",
+                parameters=[
+                    {
+                        # CustomMsg. FAST-LIO needs the per-point timestamps, and
+                        # g1_livox_pointcloud below covers everyone who wants PointCloud2.
+                        "xfer_format": 1,
+                        "multi_topic": 0,
+                        "data_src": 0,
+                        "publish_freq": 10.0,
+                        "output_data_type": 0,
+                        # What the URDF calls the sensor, and what the sim publishes.
+                        "frame_id": "mid360_link",
+                        "user_config_path": os.path.join(
+                            share, "config", "mid360_hardware.json"
+                        ),
+                    }
+                ],
+                # xfer_format picks the message TYPE but never the topic NAME: with
+                # multi_topic 0 the driver always publishes on livox/lidar (lddc.cpp,
+                # GetCurrentPublisher). Left alone it would put CustomMsg on the topic
+                # g1_livox_pointcloud publishes PointCloud2 to -- two types, one name.
+                remappings=[("livox/lidar", "/livox/custom_msg")],
             )
         )
         # The driver is in CustomMsg mode for FAST-LIO's sake, so /livox/lidar has to come
