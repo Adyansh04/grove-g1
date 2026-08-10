@@ -376,3 +376,73 @@ TEST(IsUsablePose, ToleratesAnUnnormalisedButRecoverableQuaternion)
     pose.q      = Quaternion{ 0.0, 0.0, 0.0, 2.0 };
     EXPECT_TRUE(isUsablePose(pose)) << "scaled, not degenerate";
 }
+
+TEST(ComposeAttitude, RoundTripsWithSplitGroundProjection)
+{
+    for (const Quaternion& q : { yawToQuaternion(0.7),
+                                 makePose(0, 0, 0, 0.2, -0.15, 1.1).q,
+                                 makePose(0, 0, 0, -0.4, 0.3, -2.2).q })
+    {
+        const double     yaw   = quaternionToYaw(q);
+        const auto       split = splitGroundProjection(0.0, 0.0, 0.0, q, yaw);
+        const Quaternion back  = composeAttitude(yaw, split.tilt);
+        // Sign is free in a quaternion, so compare the rotations rather than the components.
+        EXPECT_NEAR(quaternionToYaw(back), yaw, 1e-9);
+        EXPECT_NEAR(tiltFromVertical(back), tiltFromVertical(q), 1e-9);
+    }
+}
+
+TEST(ComposeAttitude, TakesHeadingFromOneSourceAndTiltFromAnother)
+{
+    // What the fast_lio source does: the LiDAR's heading, the IMU's gravity.
+    const Quaternion lidar = makePose(0, 0, 0, 0.05, 0.05, 1.3).q;   // heading, plus drifted tilt
+    const Quaternion imu   = makePose(0, 0, 0, 0.10, -0.02, 0.4).q;  // true gravity, other heading
+
+    const Quaternion imu_tilt =
+        splitGroundProjection(0.0, 0.0, 0.0, imu, quaternionToYaw(imu)).tilt;
+    const Quaternion out = composeAttitude(quaternionToYaw(lidar), imu_tilt);
+
+    EXPECT_NEAR(quaternionToYaw(out), quaternionToYaw(lidar), 1e-9) << "heading from the lidar";
+    EXPECT_NEAR(tiltFromVertical(out), tiltFromVertical(imu), 1e-9) << "gravity from the IMU";
+}
+
+TEST(Slerp, EndpointsAndShortestArc)
+{
+    const Quaternion a = yawToQuaternion(0.0);
+    const Quaternion b = yawToQuaternion(1.0);
+    EXPECT_NEAR(quaternionToYaw(slerp(a, b, 0.0)), 0.0, 1e-9);
+    EXPECT_NEAR(quaternionToYaw(slerp(a, b, 1.0)), 1.0, 1e-9);
+    EXPECT_NEAR(quaternionToYaw(slerp(a, b, 0.5)), 0.5, 1e-9);
+
+    // Negated quaternion is the same rotation: the interpolation must not take the long way.
+    const Quaternion b_flipped{ -b.x, -b.y, -b.z, -b.w };
+    EXPECT_NEAR(quaternionToYaw(slerp(a, b_flipped, 0.5)), 0.5, 1e-9);
+}
+
+TEST(Slerp, ClampsOutsideTheUnitInterval)
+{
+    const Quaternion a = yawToQuaternion(0.0);
+    const Quaternion b = yawToQuaternion(0.8);
+    EXPECT_NEAR(quaternionToYaw(slerp(a, b, -5.0)), 0.0, 1e-9);
+    EXPECT_NEAR(quaternionToYaw(slerp(a, b, 5.0)), 0.8, 1e-9);
+}
+
+TEST(Slerp, ConvergesOnRepeatedApplication)
+{
+    // How the tilt correction is actually used: a small step per sample toward the error.
+    const Quaternion target = makePose(0, 0, 0, 0.03, -0.02, 0.0).q;
+    Quaternion       state;
+    for (int i = 0; i < 400; ++i)
+    {
+        state = slerp(state, target, 0.05);
+    }
+    EXPECT_NEAR(tiltFromVertical(state), tiltFromVertical(target), 1e-6);
+}
+
+TEST(InvertRotation, ComposesToIdentity)
+{
+    const Quaternion q = makePose(0, 0, 0, 0.2, -0.3, 1.1).q;
+    const Quaternion r = composeRotation(q, invertRotation(q));
+    EXPECT_NEAR(std::abs(r.w), 1.0, 1e-9);
+    EXPECT_NEAR(tiltFromVertical(r), 0.0, 1e-9);
+}

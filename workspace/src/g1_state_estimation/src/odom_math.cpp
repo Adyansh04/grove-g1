@@ -135,6 +135,54 @@ GroundSplit splitGroundProjection(double x, double y, double z, const Quaternion
     return out;
 }
 
+Quaternion composeAttitude(double yaw, const Quaternion& tilt)
+{
+    // Rz(yaw) * tilt, the exact inverse of the Rz(-yaw) * q that split it.
+    return multiply(yawToQuaternion(yaw), tilt);
+}
+
+Quaternion composeRotation(const Quaternion& a, const Quaternion& b) { return multiply(a, b); }
+
+Quaternion invertRotation(const Quaternion& q) { return Quaternion{ -q.x, -q.y, -q.z, q.w }; }
+
+Quaternion slerp(const Quaternion& from, const Quaternion& to, double t)
+{
+    t = std::clamp(t, 0.0, 1.0);
+
+    double dot = from.x * to.x + from.y * to.y + from.z * to.z + from.w * to.w;
+    // q and -q are the same rotation; flip so the interpolation takes the short way.
+    Quaternion end = to;
+    if (dot < 0.0)
+    {
+        end = Quaternion{ -to.x, -to.y, -to.z, -to.w };
+        dot = -dot;
+    }
+
+    // Near-parallel: sin(theta) underflows and the general form divides by ~0. Straight lerp
+    // is accurate to well past what matters here, and this is the common case -- the
+    // correction being interpolated is a fraction of a degree.
+    double scale_from = 1.0 - t;
+    double scale_to   = t;
+    if (dot < 0.9995)
+    {
+        const double theta     = std::acos(std::clamp(dot, -1.0, 1.0));
+        const double sin_theta = std::sin(theta);
+        scale_from             = std::sin((1.0 - t) * theta) / sin_theta;
+        scale_to               = std::sin(t * theta) / sin_theta;
+    }
+
+    Quaternion   out{ scale_from * from.x + scale_to * end.x,
+                    scale_from * from.y + scale_to * end.y,
+                    scale_from * from.z + scale_to * end.z,
+                    scale_from * from.w + scale_to * end.w };
+    const double norm = std::sqrt(out.w * out.w + out.x * out.x + out.y * out.y + out.z * out.z);
+    if (norm < 1e-9)
+    {
+        return from;
+    }
+    return Quaternion{ out.x / norm, out.y / norm, out.z / norm, out.w / norm };
+}
+
 double wrapAngle(double angle)
 {
     // remainder() lands in [-pi, pi]; the shift moves the -pi endpoint up so the interval

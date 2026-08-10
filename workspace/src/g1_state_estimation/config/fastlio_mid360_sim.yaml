@@ -27,7 +27,19 @@
       lid_topic: "/livox/custom_msg"
       imu_topic: "/livox/imu"
       time_sync_en: false
-      time_offset_lidar_to_imu: 0.0
+      # DIFFERS (reference: 0.0). Subtracted from every cloud stamp
+      # (laserMapping.cpp: stamp - time_diff_lidar_to_imu), which is what this needs to be.
+      #
+      # The simulated sweep is stamped LATE. sensor_publisher.cc snapshots mjData under the
+      # lock at one instant, then raycasts for ~32 ms outside it, and g1_sensor_relay stamps
+      # the result with now() when it arrives -- so the label is ~35 ms after the instant the
+      # points describe, while /livox/imu is stamped on arrival and is not. FAST-LIO then
+      # integrates IMU up to a timestamp that is too late by that much.
+      #
+      # Standing this is invisible: the angular rate is ~0, so over-integrating costs nothing.
+      # Walking, the pelvis swings ~9 degrees per gait cycle and 35 ms of it is degrees of
+      # attitude error, which lands on the floor plane and comes back as marked obstacle.
+      time_offset_lidar_to_imu: 0.035
 
     preprocess:
       lidar_type: 1

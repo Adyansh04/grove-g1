@@ -59,6 +59,10 @@ private:
     /// Stores an orientation and re-derives the heading from it, holding the last good
     /// heading past max_tilt_rad_. Shared by every source that carries a full attitude.
     void applyOrientation(const Quaternion& q);
+    /// LiDAR attitude with its slow drift against gravity taken out, using the IMU as the
+    /// reference. Returns the input unchanged until an IMU attitude has arrived. Stateful:
+    /// advances tilt_correction_ by one step per call.
+    Quaternion levelledAttitude(const Quaternion& lidar_attitude);
     /// The transform from the frame the LiDAR odometry reports to the body frame this node
     /// publishes. Identity unless lidar_body_frame_id_ names something else. Refreshed per
     /// sample rather than cached: on the robot that chain crosses the waist joints.
@@ -110,10 +114,17 @@ private:
     /// Set once a usable orientation has arrived. Until then nothing is published:
     /// an unusable quaternion must not reach TF (see onLowState).
     bool have_orientation_ = false;
-    /// Latest validated IMU attitude. The fast_lio source needs it exactly once, to level its
-    /// odom frame against gravity at the latch; after that FAST-LIO carries the attitude.
+    /// Latest validated IMU attitude. The fast_lio source levels its odom frame against this at
+    /// the latch, and keeps using it afterwards as the gravity reference that FAST-LIO's own
+    /// estimate drifts away from.
     Quaternion imu_orientation_;
     bool       have_imu_orientation_ = false;
+    /// Low-passed tilt error between FAST-LIO's attitude and the IMU's, applied to every
+    /// published attitude. Slow on purpose -- see levelledAttitude().
+    Quaternion tilt_correction_;
+    /// Per-sample slerp fraction toward the instantaneous error. At FAST-LIO's ~10 Hz this is
+    /// roughly a 2 s time constant: far slower than the gait, far faster than the drift.
+    double tilt_correction_gain_ = 0.05;
     /// odom -> the LiDAR odometry's own start frame. FAST-LIO's `camera_init` is wherever its
     /// IMU happened to be pointing when it initialised, not a gravity-aligned world frame, so
     /// this is what turns its output into something Nav2 can consume.

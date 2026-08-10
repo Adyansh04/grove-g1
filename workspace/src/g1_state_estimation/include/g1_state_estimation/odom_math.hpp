@@ -140,6 +140,29 @@ struct GroundSplit
 GroundSplit splitGroundProjection(double x, double y, double z, const Quaternion& q, double yaw);
 
 /**
+ * @brief Recombines a heading with a tilt: the inverse of splitGroundProjection's split.
+ *
+ * composeAttitude(yaw, splitGroundProjection(..., q, yaw).tilt) reproduces q. Used to build an
+ * attitude from two sources -- heading from one, roll and pitch from another -- which is what
+ * the fast_lio source does to keep the published frame gravity-true.
+ */
+Quaternion composeAttitude(double yaw, const Quaternion& tilt);
+
+/// @p a composed with @p b: the rotation you get by applying @p b and then @p a.
+Quaternion composeRotation(const Quaternion& a, const Quaternion& b);
+
+/// The inverse rotation. Assumes a unit quaternion, which everything here maintains.
+Quaternion invertRotation(const Quaternion& q);
+
+/**
+ * @brief Moves @p from a fraction @p t of the way toward @p to along the shortest arc.
+ *
+ * Used to low-pass a correction rather than apply it whole. t is clamped to [0, 1]; the
+ * shorter arc is taken, so a correction never spins the long way round.
+ */
+Quaternion slerp(const Quaternion& from, const Quaternion& to, double t);
+
+/**
  * @brief Wraps an angle to (-pi, pi].
  *
  * The yaw joint is a continuous hinge, so its position grows without bound as the base

@@ -385,7 +385,8 @@ void G1OdometryPublisher::onLidarOdometry(const nav_msgs::msg::Odometry::SharedP
     pose_.x = base_in_odom.x;
     pose_.y = base_in_odom.y;
     pose_z_ = base_in_odom.z;
-    applyOrientation(base_in_odom.q);
+
+    applyOrientation(levelledAttitude(base_in_odom.q));
 
     // Differenced, because FAST-LIO publishes an empty twist and Nav2's controller reads
     // velocity from the message rather than from TF. Coarse by construction: this is a
@@ -403,6 +404,42 @@ void G1OdometryPublisher::onLidarOdometry(const nav_msgs::msg::Odometry::SharedP
                                     wrapAngle(pose_.yaw - previous.yaw) / dt };
     }
     noteSample(stamp);
+}
+
+Quaternion G1OdometryPublisher::levelledAttitude(const Quaternion& lidar_attitude)
+{
+    if (!have_imu_orientation_)
+    {
+        return lidar_attitude;
+    }
+
+    // FAST-LIO carries gravity as an estimated state (`(S2, grav)` in its filter) and lets it
+    // wander. Measured by fitting the floor plane out of /livox/lidar in the map frame, the
+    // published frame came out 1.32 degrees off horizontal where the ground-truth source gives
+    // 0.00. That is not cosmetic: the costmap removes the floor with an ABSOLUTE height cut
+    // (min_obstacle_height 0.08), so a degree of tilt lifts the floor over that cut a few
+    // metres out and the robot paints rings of its own floor as obstacle.
+    //
+    // Upstream's own answer to accumulated error is open3d_loc, a 6-DoF registration against a
+    // prior cloud, which corrects roll and pitch along with everything else. We localise with
+    // AMCL instead, which is 2D and can only ever correct x, y and yaw -- so nothing downstream
+    // observes this tilt, and it has to be constrained here.
+    //
+    // Only the SLOW part is taken from the IMU. Naively substituting the IMU's tilt outright is
+    // wrong while walking: the newest IMU sample would be pinned onto a scan about one FAST-LIO
+    // period older, and the pelvis swings ~9 degrees within a gait cycle, so the timing error
+    // would exceed the drift being corrected. Low-passing the DIFFERENCE leaves FAST-LIO's
+    // scan-synchronised fast dynamics untouched and removes only the part that drifts.
+    const double     lidar_yaw = quaternionToYaw(lidar_attitude);
+    const Quaternion lidar_tilt =
+        splitGroundProjection(0.0, 0.0, 0.0, lidar_attitude, lidar_yaw).tilt;
+    const Quaternion imu_tilt =
+        splitGroundProjection(0.0, 0.0, 0.0, imu_orientation_, quaternionToYaw(imu_orientation_))
+            .tilt;
+
+    const Quaternion error = composeRotation(imu_tilt, invertRotation(lidar_tilt));
+    tilt_correction_       = slerp(tilt_correction_, error, tilt_correction_gain_);
+    return composeAttitude(lidar_yaw, composeRotation(tilt_correction_, lidar_tilt));
 }
 
 void G1OdometryPublisher::applyOrientation(const Quaternion& q)
