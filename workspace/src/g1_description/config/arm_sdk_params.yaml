@@ -15,6 +15,14 @@ system:
   max_joint_velocity_rad_s: 1.0  # rad/s; slew clamp applied to every commanded joint
   lowstate_timeout_ms: 100       # ms; /lowstate age beyond this trips the emergency ramp-down
 
+  # The waist (motors 12-14) comes with the arms on /arm_sdk and is HELD, not planned: the
+  # component latches its measured position when the blend engages and commands that. Unitree's
+  # own arm_sdk example runs the waist at four times its arm gains (60/1.5 -> 240/6.0); ours are
+  # 40/1 and 25/1, so these are 4x the shoulder pair. Stiff on purpose -- this is the joint
+  # resisting two loaded arms.
+  waist_kp: 160.0
+  waist_kd: 4.0
+
 # Per-joint motor index (position in the LowCmd/LowState motor array) and
 # position-gain pair. Index map is G1Arm7JointIndex from unitree_ros2's
 # example/src/include/g1/g1.hpp: legs 0-11, waist 12-14, left arm 15-21,

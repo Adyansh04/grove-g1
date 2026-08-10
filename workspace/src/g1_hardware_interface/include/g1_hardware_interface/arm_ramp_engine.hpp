@@ -24,6 +24,18 @@ namespace g1_hardware_interface
 inline constexpr std::size_t kNumArmJoints = 14;
 
 /**
+ * @brief The three waist motors, which /arm_sdk hands over along with the arms.
+ *
+ * Not planned joints and not exposed to MoveIt: they are held where they were found. Unitree's
+ * own arm_sdk example (unitree_ros2 example/src/src/g1/high_level/g1_arm_sdk_dds_example.cpp,
+ * G1Arm7JointIndex list) commands seventeen motors, the last three being WAIST_YAW, WAIST_ROLL
+ * and WAIST_PITCH at four times the arm gains. Leaving them out of the LowCmd sends them
+ * kp=kd=0 while the blend weight is up, which is a torso with no stiffness under arm load.
+ */
+inline constexpr std::size_t        kNumWaistJoints  = 3;
+inline constexpr std::array<int, 3> kWaistMotorIndex = { 12, 13, 14 };
+
+/**
  * @brief Phases of the single writer-authority state machine.
  *
  * kInactive means "not commanding" (write() self-gates on it); the other

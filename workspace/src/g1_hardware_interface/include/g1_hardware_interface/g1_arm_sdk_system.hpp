@@ -66,7 +66,8 @@ inline constexpr std::size_t kWeightMotorIndex = 29;
 void assembleLowCmd(
     unitree_hg::msg::LowCmd& cmd, const std::array<int, kNumArmJoints>& motor_index,
     const std::array<double, kNumArmJoints>& position, const std::array<double, kNumArmJoints>& kp,
-    const std::array<double, kNumArmJoints>& kd, float weight);
+    const std::array<double, kNumArmJoints>& kd, float weight,
+    const std::array<double, kNumWaistJoints>& waist_hold, double waist_kp, double waist_kd);
 
 /**
  * @brief ros2_control System bridging the G1's 14 arm joints onto
@@ -122,6 +123,11 @@ private:
     std::array<int, kNumArmJoints>         motor_index_{};
     std::array<double, kNumArmJoints>      kp_{};
     std::array<double, kNumArmJoints>      kd_{};
+    /// Where the waist was when the blend engaged. Latched, never commanded to a new value:
+    /// nothing in this stack plans the waist, and snapping it is a fall.
+    std::array<double, kNumWaistJoints> waist_hold_{};
+    double                              waist_kp_{};
+    double                              waist_kd_{};
 
     /// System-level tunables parsed from HardwareInfo in on_init (see README's
     /// param table for units/meaning).

@@ -108,6 +108,8 @@
       <param name="emergency_ramp_down_s">${arm_sdk_params.system.emergency_ramp_down_s}</param>
       <param name="max_joint_velocity_rad_s">${arm_sdk_params.system.max_joint_velocity_rad_s}</param>
       <param name="lowstate_timeout_ms">${arm_sdk_params.system.lowstate_timeout_ms}</param>
+      <param name="waist_kp">${arm_sdk_params.system.waist_kp}</param>
+      <param name="waist_kd">${arm_sdk_params.system.waist_kd}</param>
     </hardware>
 
     <xacro:g1_arm_joint name="left_shoulder_pitch_joint"/>

@@ -85,7 +85,8 @@ constexpr std::chrono::milliseconds kRampDownTickPeriod{ 10 };
 void assembleLowCmd(
     unitree_hg::msg::LowCmd& cmd, const std::array<int, kNumArmJoints>& motor_index,
     const std::array<double, kNumArmJoints>& position, const std::array<double, kNumArmJoints>& kp,
-    const std::array<double, kNumArmJoints>& kd, float weight)
+    const std::array<double, kNumArmJoints>& kd, float weight,
+    const std::array<double, kNumWaistJoints>& waist_hold, double waist_kp, double waist_kd)
 {
     for (std::size_t i = 0; i < kNumArmJoints; ++i)
     {
@@ -95,6 +96,18 @@ void assembleLowCmd(
         motor.tau   = 0.0F;
         motor.kp    = static_cast<float>(kp[i]);
         motor.kd    = static_cast<float>(kd[i]);
+    }
+    // The waist comes with the arms. Held, not planned: the position is whatever it was when
+    // the blend engaged, and the gains are stiff because a torso carrying two loaded arms is
+    // what these motors are resisting.
+    for (std::size_t i = 0; i < kNumWaistJoints; ++i)
+    {
+        auto& motor = cmd.motor_cmd[static_cast<std::size_t>(kWaistMotorIndex[i])];
+        motor.q     = static_cast<float>(waist_hold[i]);
+        motor.dq    = 0.0F;
+        motor.tau   = 0.0F;
+        motor.kp    = static_cast<float>(waist_kp);
+        motor.kd    = static_cast<float>(waist_kd);
     }
     cmd.motor_cmd[kWeightMotorIndex].q = weight;
 }
@@ -179,7 +192,9 @@ G1ArmSdkSystem::on_init(const hardware_interface::HardwareInfo& info)
         parseDouble(hw_params, "blend_ramp_down_s", blend_ramp_down_s_) &&
         parseDouble(hw_params, "emergency_ramp_down_s", emergency_ramp_down_s_) &&
         parseDouble(hw_params, "max_joint_velocity_rad_s", max_joint_velocity_rad_s_) &&
-        parseDouble(hw_params, "lowstate_timeout_ms", lowstate_timeout_ms);
+        parseDouble(hw_params, "lowstate_timeout_ms", lowstate_timeout_ms) &&
+        parseDouble(hw_params, "waist_kp", waist_kp_) &&
+        parseDouble(hw_params, "waist_kd", waist_kd_);
     if (!params_ok)
     {
         RCLCPP_ERROR(
@@ -191,7 +206,7 @@ G1ArmSdkSystem::on_init(const hardware_interface::HardwareInfo& info)
 
     if (command_publish_rate_hz_ <= 0.0 || blend_ramp_up_s_ <= 0.0 || blend_ramp_down_s_ <= 0.0 ||
         emergency_ramp_down_s_ <= 0.0 || max_joint_velocity_rad_s_ <= 0.0 ||
-        lowstate_timeout_s_ <= 0.0)
+        lowstate_timeout_s_ <= 0.0 || waist_kp_ <= 0.0 || waist_kd_ <= 0.0)
     {
         RCLCPP_ERROR(
             rclcpp::get_logger(kLoggerName),
@@ -303,6 +318,13 @@ G1ArmSdkSystem::on_activate(const rclcpp_lifecycle::State& /*previous_state*/)
         command_position_[i] = measured[i];
     }
     ramp_engine_.seedFromMeasured(measured);
+
+    // Same instant, same reason: the waist is held where the onboard controller left it, so
+    // taking authority over it does not move it.
+    for (std::size_t i = 0; i < kNumWaistJoints; ++i)
+    {
+        waist_hold_[i] = sample->state.motor_state[static_cast<std::size_t>(kWaistMotorIndex[i])].q;
+    }
 
     time_since_last_publish_s_ = 0.0;
     /* Publishing authority acquired last, after seeding. */
@@ -447,7 +469,10 @@ G1ArmSdkSystem::write(const rclcpp::Time& /*time*/, const rclcpp::Duration& peri
                 ramp_engine_.publishedPositions(),
                 kp_,
                 kd_,
-                static_cast<float>(weight));
+                static_cast<float>(weight),
+                waist_hold_,
+                waist_kp_,
+                waist_kd_);
             vendored::computeLowCmdCrc(arm_sdk_rt_pub_->msg_);
             arm_sdk_rt_pub_->unlockAndPublish();
             terminal_publish_succeeded = true;
@@ -583,7 +608,10 @@ void G1ArmSdkSystem::rampDownSynchronously(BlendMode target_mode)
                 ramp_engine_.publishedPositions(),
                 kp_,
                 kd_,
-                static_cast<float>(weight));
+                static_cast<float>(weight),
+                waist_hold_,
+                waist_kp_,
+                waist_kd_);
             vendored::computeLowCmdCrc(arm_sdk_rt_pub_->msg_);
             arm_sdk_rt_pub_->unlockAndPublish();
         }

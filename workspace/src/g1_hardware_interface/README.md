@@ -81,27 +81,27 @@ The CRC is vendored to match Unitree's implementation bit for bit, pinned by a `
 the message size. It computes exactly what the robot validates against, so it is not a place to
 tidy up.
 
-## Known gap: the waist is not commanded
+## The waist comes with the arms
 
-`assembleLowCmd` writes the 14 arm motors and the weight slot, and nothing else. Motors 12-14,
-the waist, go out as the zero-initialised message: `q=0`, **`kp=0`, `kd=0`**.
+`assembleLowCmd` writes the 14 arm motors, the 3 waist motors and the weight slot. The waist is
+**held, not planned**: the component latches motors 12-14 at their measured position when the
+blend engages, and commands that position at `waist_kp`/`waist_kd` for as long as it has
+authority. No planning group changes; MoveIt never sees these joints.
 
-On hardware that is very likely a defect. `rt/arm_sdk` is documented as owning the arms *and*
-the waist -- Unitree's own `g1_arm5`/`arm7` examples put motors 12-14 in the commanded set with
-real gains, and so do g1pilot and Amazon FAR's holosoma. If the blend weight applies across
-12-28, then at `weight = 1` our limp zero-gain waist command displaces whatever the onboard
-controller was holding. Four users on real G1s report the robot "bending forward at the waist"
-when arms move under `arm_sdk` (unitree_sdk2_python issues #146 and #173), and #173 found that
-adding a small waist-pitch command fixed it.
+`rt/arm_sdk` owns the arms *and* the waist. Unitree's own example
+(`unitree_ros2` `example/src/src/g1/high_level/g1_arm_sdk_dds_example.cpp`) commands seventeen
+motors -- its `G1Arm7JointIndex` list ends WAIST_YAW, WAIST_ROLL, WAIST_PITCH -- at four times
+the arm gains, seeded from the measured `motor_state[idx].q` at the first LowState. This mirrors
+that.
 
-**Simulation cannot show this.** There the walking policy owns motors 0-14 and holds the waist
-every tick, so the slots we leave empty are never the ones that matter. A green sim proves
-nothing about this particular failure.
+Leaving them out, which this used to do, sent `q=0, kp=0, kd=0` on those slots every tick. At
+`weight = 1` that is a limp waist displacing whatever the onboard controller was holding, and it
+matches what real-G1 users report: the robot "bending forward at the waist" when arms move under
+`arm_sdk` (unitree_sdk2_python issues #146 and #173, the latter fixed by adding a waist command).
 
-Deliberately not fixed yet: it changes which joints this component asserts authority over, so
-it wants its own change with the sim-side blend updated to match (otherwise the simulator
-ignores a command hardware honours, and the two diverge the other way). **Fix it before any
-hardware bring-up.**
+**Simulation still cannot prove this one.** There the walking policy owns motors 0-14 and holds
+the waist every tick, so the slots matter only on hardware. The gains are Unitree's ratio applied
+to ours, not a measured value.
 
 ## Threading
 
