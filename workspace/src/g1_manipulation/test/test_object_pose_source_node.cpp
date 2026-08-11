@@ -15,8 +15,10 @@
 #include <vector>
 
 #include "g1_manipulation/g1_object_pose_source_node.hpp"
+#include "geometry_msgs/msg/transform_stamped.hpp"
 #include "lifecycle_msgs/msg/state.hpp"
 #include "rclcpp/rclcpp.hpp"
+#include "tf2_ros/static_transform_broadcaster.h"
 #include "vision_msgs/msg/detection3_d_array.hpp"
 
 using g1_manipulation::G1ObjectPoseSource;
@@ -31,6 +33,18 @@ rclcpp::NodeOptions optionsWithSource(const std::string& source)
 {
     rclcpp::NodeOptions options;
     options.parameter_overrides({ rclcpp::Parameter("object_source", source) });
+    return options;
+}
+
+/// Source and output deliberately different, which is the real configuration: a detector
+/// measures in a camera frame and /objects is published in a fixed one.
+rclcpp::NodeOptions optionsWithFrames(const std::string& source, const std::string& output)
+{
+    rclcpp::NodeOptions options;
+    options.parameter_overrides({ rclcpp::Parameter("object_source", "sim_ground_truth"),
+                                  rclcpp::Parameter("source_frame_id", source),
+                                  rclcpp::Parameter("output_frame_id", output),
+                                  rclcpp::Parameter("publish_markers", false) });
     return options;
 }
 
@@ -113,7 +127,71 @@ private:
     std::optional<vision_msgs::msg::Detection3DArray>                   last_;
 };
 
+/// Publishes one static edge so the node has a real transform to apply.
+std::shared_ptr<rclcpp::Node>
+staticTf(const std::string& parent, const std::string& child, double x, double y, double z)
+{
+    auto node   = std::make_shared<rclcpp::Node>("test_tf");
+    auto caster = std::make_shared<tf2_ros::StaticTransformBroadcaster>(node);
+    geometry_msgs::msg::TransformStamped tf;
+    tf.header.stamp            = rclcpp::Time(0, 0);
+    tf.header.frame_id         = parent;
+    tf.child_frame_id          = child;
+    tf.transform.translation.x = x;
+    tf.transform.translation.y = y;
+    tf.transform.translation.z = z;
+    tf.transform.rotation.w    = 1.0;
+    caster->sendTransform(tf);
+    // Held alive by the returned node, which owns the latched publisher.
+    node->set_parameter(rclcpp::Parameter("use_sim_time", false));
+    static std::vector<std::shared_ptr<tf2_ros::StaticTransformBroadcaster>> keep;
+    keep.push_back(caster);
+    return node;
+}
+
 }  // namespace
+
+// The regression this whole change exists for. Before it, the node rewrote the frame label and
+// left the numbers alone, which is correct only while the two frames coincide -- and they stop
+// coinciding the moment odometry is an estimate. A relabel would leave x at 1.0 here.
+TEST(ObjectPoseSource, TransformsThePoseRatherThanRelabellingTheFrame)
+{
+    auto    tf_node = staticTf("odom", "camera_color_optical_frame", 2.0, -3.0, 0.5);
+    Harness harness{ optionsWithFrames("camera_color_optical_frame", "odom") };
+    ASSERT_EQ(harness.configure(), lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
+    ASSERT_EQ(harness.activate(), lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE);
+    spinFor({ tf_node->get_node_base_interface() }, 300ms);
+
+    harness.publishAndSpin(
+        makeGroundTruth("camera_color_optical_frame", "red_cube", 1.0, 0.5, 0.25));
+
+    ASSERT_TRUE(harness.last().has_value());
+    const auto& out = *harness.last();
+    EXPECT_EQ(out.header.frame_id, "odom");
+    ASSERT_EQ(out.detections.size(), 1u);
+    const auto& pose = out.detections[0].results[0].pose.pose;
+    EXPECT_NEAR(pose.position.x, 3.0, 1e-6);
+    EXPECT_NEAR(pose.position.y, -2.5, 1e-6);
+    EXPECT_NEAR(pose.position.z, 0.75, 1e-6);
+    // The bbox carries the pose too, and a consumer that reads it instead of the hypothesis
+    // would otherwise get an untransformed one.
+    EXPECT_NEAR(out.detections[0].bbox.center.position.x, 3.0, 1e-6);
+}
+
+// No transform published for this frame, so there is nothing to place the object with.
+// Publishing it anyway, in whatever frame, would put an object somewhere no one measured.
+// A frame name no other test broadcasts: static transforms are transient local and outlive
+// the test that sent them, so reusing the camera frame here would find the earlier one.
+TEST(ObjectPoseSource, PublishesNothingWhenTheTransformIsMissing)
+{
+    Harness harness{ optionsWithFrames("unbroadcast_sensor_frame", "odom") };
+    ASSERT_EQ(harness.configure(), lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
+    ASSERT_EQ(harness.activate(), lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE);
+
+    harness.publishAndSpin(makeGroundTruth("unbroadcast_sensor_frame", "red_cube", 1.0, 0.5, 0.25));
+
+    EXPECT_FALSE(harness.last().has_value());
+}
 
 TEST(ObjectSource, ParsesTheSourcesItKnowsAndRejectsTheRest)
 {

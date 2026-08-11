@@ -14,11 +14,15 @@
  * visibly rather than feed a grasp planner simulator ground truth.
  */
 
+#include <tf2_ros/buffer.h>
+#include <tf2_ros/transform_listener.h>
+
 #include <memory>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_lifecycle/lifecycle_node.hpp>
 #include <string>
 #include <vision_msgs/msg/detection3_d_array.hpp>
+#include <visualization_msgs/msg/marker_array.hpp>
 
 namespace g1_manipulation
 {
@@ -49,13 +53,22 @@ public:
 private:
     bool readParameters();
     void onGroundTruth(const vision_msgs::msg::Detection3DArray::SharedPtr msg);
+    void publishMarkers(const vision_msgs::msg::Detection3DArray& objects);
 
     ObjectSource source_{ ObjectSource::Hardware };
+    bool         publish_markers_{ false };
     std::string  source_frame_id_;
     std::string  output_frame_id_;
 
+    std::unique_ptr<tf2_ros::Buffer>            tf_buffer_;
+    std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
+
     rclcpp::Subscription<vision_msgs::msg::Detection3DArray>::SharedPtr                 source_sub_;
     rclcpp_lifecycle::LifecyclePublisher<vision_msgs::msg::Detection3DArray>::SharedPtr objects_pub_;
+    /// Only created when publish_markers is set: an rviz aid, not part of the interface, and
+    /// nothing should grow a dependency on it.
+    rclcpp_lifecycle::LifecyclePublisher<visualization_msgs::msg::MarkerArray>::SharedPtr
+        markers_pub_;
 };
 
 }  // namespace g1_manipulation

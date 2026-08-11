@@ -19,6 +19,7 @@
   <depend>g1_msgs</depend>
   <depend>geometry_msgs</depend>
   <depend>vision_msgs</depend>
+  <depend>visualization_msgs</depend>
   <depend>moveit_ros_planning_interface</depend>
   <depend>moveit_msgs</depend>
   <depend>shape_msgs</depend>
@@ -34,6 +35,7 @@
 
   <!-- ament_lint_common intentionally not used to avoid clang-format conflicts. -->
   <test_depend>ament_lint_auto</test_depend>
+  <test_depend>tf2_ros</test_depend>
   <test_depend>ament_cmake_lint_cmake</test_depend>
   <test_depend>ament_cmake_xmllint</test_depend>
   <test_depend>ament_cmake_gmock</test_depend>

@@ -197,3 +197,24 @@ because it is a property of the Dex3 rather than of a task.
 ```bash
 colcon test --packages-select g1_manipulation
 ```
+
+### Object poses and frames
+
+The source subscribes to poses in the frame the detector measured from and transforms them into
+`output_frame_id` through TF. In simulation `g1_sensor_relay` reports in
+`camera_color_optical_frame`, which is what a real 6D-pose detector on the D435 produces, so the
+same path runs on the robot.
+
+It transforms rather than relabelling. Announcing an object directly in a fixed frame is correct
+only while that frame IS the world, which stops being true the moment odometry is an estimate:
+with `odometry:=fast_lio` the base approach chased a point 2 m from the cube until this was fixed.
+
+`publish_markers` (default true) adds `~/object_markers`, a box and a label per object built from
+the same message `/objects` carries, so rviz shows what a skill acts on. Both shipped rviz
+configs display it.
+
+| Parameter | Default | |
+|---|---|---|
+| `source_frame_id` | `camera_color_optical_frame` | The frame the detector measures in. |
+| `output_frame_id` | `odom` | Fixed, so MoveIt collision objects do not move with the robot. |
+| `publish_markers` | `true` | `~/object_markers` for rviz. |
