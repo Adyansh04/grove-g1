@@ -11,6 +11,8 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/un.h>
+#include <tf2_ros/buffer.h>
+#include <tf2_ros/transform_listener.h>
 #include <unistd.h>
 
 #include <cerrno>
@@ -26,8 +28,6 @@
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <string>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
-#include <tf2_ros/buffer.h>
-#include <tf2_ros/transform_listener.h>
 #include <utility>
 #include <vector>
 #include <vision_msgs/msg/detection3_d_array.hpp>
@@ -315,7 +315,7 @@ private:
             hypothesis.hypothesis.class_id = record.name;
             // Ground truth: there is nothing to be uncertain about. A real detector fills
             // this with its own confidence and the consumer can threshold on it.
-            hypothesis.hypothesis.score        = 1.0;
+            hypothesis.hypothesis.score = 1.0;
             geometry_msgs::msg::Pose in_world;
             in_world.position.x    = record.pos[0];
             in_world.position.y    = record.pos[1];
@@ -363,8 +363,13 @@ private:
         catch (const tf2::TransformException& ex)
         {
             RCLCPP_WARN_THROTTLE(
-                get_logger(), *get_clock(), 5000, "No %s -> %s yet: %s",
-                frame_id_.c_str(), color_frame_id_.c_str(), ex.what());
+                get_logger(),
+                *get_clock(),
+                5000,
+                "No %s -> %s yet: %s",
+                frame_id_.c_str(),
+                color_frame_id_.c_str(),
+                ex.what());
             return false;
         }
 
@@ -531,9 +536,9 @@ private:
         cloud_pub_->publish(std::move(msg));
     }
 
-    geometry_msgs::msg::Pose sensor_in_world_;
-    bool                     sensor_in_world_valid_ = false;
-    tf2_ros::Buffer          tf_buffer_{ get_clock() };
+    geometry_msgs::msg::Pose   sensor_in_world_;
+    bool                       sensor_in_world_valid_ = false;
+    tf2_ros::Buffer            tf_buffer_{ get_clock() };
     tf2_ros::TransformListener tf_listener_{ tf_buffer_ };
 
     std::string socket_path_;
