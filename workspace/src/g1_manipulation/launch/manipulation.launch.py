@@ -58,6 +58,7 @@ def generate_launch_description():
         remappings=[
             ("~/object_poses", "/g1_sensor_relay/object_poses"),
             ("~/objects", "/objects"),
+            ("~/object_markers", "/object_markers"),
         ],
     )
 

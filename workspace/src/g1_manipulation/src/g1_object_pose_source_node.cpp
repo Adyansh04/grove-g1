@@ -49,7 +49,7 @@ G1ObjectPoseSource::G1ObjectPoseSource(const rclcpp::NodeOptions& options)
     declare_parameter<std::string>("object_source", "hardware");
     declare_parameter<std::string>("source_frame_id", "odom");
     declare_parameter<std::string>("output_frame_id", "odom");
-    declare_parameter<bool>("publish_markers", false);
+    declare_parameter<bool>("publish_markers", true);
 }
 
 bool G1ObjectPoseSource::readParameters()
@@ -111,7 +111,7 @@ G1ObjectPoseSource::CallbackReturn G1ObjectPoseSource::on_configure(const rclcpp
             "~/object_markers",
             rclcpp::QoS(rclcpp::KeepLast(1)).reliable().transient_local());
     }
-    source_sub_  = create_subscription<vision_msgs::msg::Detection3DArray>(
+    source_sub_ = create_subscription<vision_msgs::msg::Detection3DArray>(
         "~/object_poses",
         sourceQos(),
         std::bind(&G1ObjectPoseSource::onGroundTruth, this, std::placeholders::_1));
@@ -166,12 +166,12 @@ void G1ObjectPoseSource::publishMarkers(const vision_msgs::msg::Detection3DArray
         markers.markers.push_back(box);
 
         visualization_msgs::msg::Marker label = box;
-        label.id    = id++;
-        label.ns    = "object_labels";
-        label.type  = visualization_msgs::msg::Marker::TEXT_VIEW_FACING;
-        label.text  = detection.id.empty() ? "object" : detection.id;
-        label.scale = geometry_msgs::msg::Vector3();
-        label.scale.z = 0.06;
+        label.id                              = id++;
+        label.ns                              = "object_labels";
+        label.type                            = visualization_msgs::msg::Marker::TEXT_VIEW_FACING;
+        label.text                            = detection.id.empty() ? "object" : detection.id;
+        label.scale                           = geometry_msgs::msg::Vector3();
+        label.scale.z                         = 0.06;
         label.pose.position.z += 0.5 * detection.bbox.size.z + 0.05;
         label.color.a = 1.0f;
         markers.markers.push_back(label);
@@ -208,7 +208,10 @@ void G1ObjectPoseSource::onGroundTruth(const vision_msgs::msg::Detection3DArray:
         // was somewhere specific, and composing it with a newer transform moves the object by
         // however far the robot walked in between.
         source_to_output = tf_buffer_->lookupTransform(
-            output_frame_id_, msg->header.frame_id, msg->header.stamp, tf2::durationFromSec(0.2));
+            output_frame_id_,
+            msg->header.frame_id,
+            msg->header.stamp,
+            tf2::durationFromSec(0.2));
     }
     catch (const tf2::TransformException& ex)
     {

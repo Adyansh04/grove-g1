@@ -126,3 +126,14 @@ of `sensor_frame.h`. `test_livox_custom_msg` covers the conversion against FAST-
 discard gates (`line`, the tag bits, `offset_time`) and the miss handling. Neither needs a
 simulator. `g1_bringup`'s `test_lidar_geometry` asserts the
 published cloud measures the room it is in.
+
+### Object poses are reported as the camera would see them
+
+`~/object_poses` carries objects in `camera_color_optical_frame`, not in the simulator's world
+frame. The simulator knows world poses; a detector knows what is in front of its lens, and
+everything downstream is built for the latter. The conversion happens here so it stays inside
+the sim-only boundary and `g1_object_pose_source` runs the same code on the robot.
+
+The camera's world pose comes from the LiDAR sweep's own ground-truth pose composed with the
+rigid LiDAR-to-camera transform, so it is one sweep stale. That is a few centimetres at walking
+pace, and a truer model of a real detector than an exact answer would be.

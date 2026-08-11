@@ -22,3 +22,8 @@ g1_object_pose_source:
     # fixed to sit; expressed in pelvis they would slide along with every step.
     source_frame_id: "camera_color_optical_frame"
     output_frame_id: "odom"
+
+    # A box and a label per object on ~/object_markers, built from the same message /objects
+    # carries so rviz shows what a skill acts on rather than a second computation of it.
+    # On by default: the frames these poses live in are the thing most worth being able to see.
+    publish_markers: true

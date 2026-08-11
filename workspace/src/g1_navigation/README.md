@@ -222,3 +222,15 @@ ctest --test-dir build/g1_navigation -R '^test_navigate_to_pose$'
 ```
 
 There is deliberately no retry wrapper, because a retry would hide the rate.
+
+### AMCL motion model
+
+`OmniMotionModel`, not differential. The robot strafes: `g1_base_approach` commands lateral
+velocity to line up on an object, and the gait adds uncommanded lateral motion on top. A
+differential model factors every odometry delta into rotate/translate/rotate and cannot express
+sideways motion at all, so it enters the filter as rotation that never happened. Left wrong, a
+mission ended with `map -> odom` at 177 deg of yaw error.
+
+The alphas are nav2's defaults. Values an order of magnitude tighter were correct only against
+exact simulator odometry; `fast_lio` drifts, and a filter told to trust it that far lurches
+instead of correcting.
