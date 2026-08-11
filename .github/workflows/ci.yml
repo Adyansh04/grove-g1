@@ -18,6 +18,12 @@ permissions:
   contents: read
   packages: write
 
+defaults:
+  run:
+    # Container jobs default to `sh`, where `source` does not exist and every ROS setup script
+    # fails with exit 127 before running anything.
+    shell: bash
+
 env:
   # Lowercase and literal: GHCR rejects uppercase, and this owner is `Adyansh04`.
   IMAGE: ghcr.io/adyansh04/grove-g1-ci
@@ -70,10 +76,13 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
     env:
-      CCACHE_DIR: ${{ github.workspace }}/.ccache
       CCACHE_MAXSIZE: 1G
     steps:
       - uses: actions/checkout@v4
+
+      # $GITHUB_WORKSPACE, not ${{ github.workspace }}: inside a container the latter expands to
+      # the runner's host path, which does not exist here.
+      - run: echo "CCACHE_DIR=$GITHUB_WORKSPACE/.ccache" >> "$GITHUB_ENV"
 
       # A CI image on different versions than the dev image tests a configuration nobody ships.
       - name: Check the two images pin the same versions
@@ -98,7 +107,7 @@ jobs:
 
       - uses: actions/cache@v4
         with:
-          path: ${{ github.workspace }}/.ccache
+          path: .ccache
           key: ccache-${{ github.ref_name }}-${{ github.sha }}
           restore-keys: |
             ccache-${{ github.ref_name }}-
@@ -130,7 +139,8 @@ jobs:
       - name: Test results
         if: always()
         working-directory: workspace
-        run: colcon test-result --verbose
+        run: |
+          [ -d build ] && colcon test-result --verbose || echo "no build directory"
 
       - name: Upload test results
         if: failure()
