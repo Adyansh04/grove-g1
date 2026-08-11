@@ -42,8 +42,7 @@ if(BUILD_TESTING)
   ament_add_gmock(test_wire_contract test/test_wire_contract.cpp)
   target_link_libraries(test_wire_contract g1_dex3_system)
   ament_target_dependencies(test_wire_contract pluginlib hardware_interface)
-  # Same workspace-root config every other package uses; see g1_description/CMakeLists.txt for
-  # why this is a plain CTest rather than ament_lint_common's uncrustify.
+  # Lint checks use workspace-root configs (see g1_description/CMakeLists.txt).
   find_program(CLANG_FORMAT_EXECUTABLE clang-format)
   set(_clang_format_config "${CMAKE_CURRENT_SOURCE_DIR}/../../.clang-format")
   if(CLANG_FORMAT_EXECUTABLE AND EXISTS "${_clang_format_config}")

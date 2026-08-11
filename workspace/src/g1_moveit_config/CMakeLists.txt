@@ -88,8 +88,7 @@ if(BUILD_TESTING)
   else()
     message(WARNING "ruff and/or workspace ruff.toml not found; skipping ruff_check_g1_moveit_config test")
   endif()
-  # Same workspace-root config every other package uses; see g1_description/CMakeLists.txt for
-  # why this is a plain CTest rather than ament_lint_common's uncrustify.
+  # Lint checks use workspace-root configs (see g1_description/CMakeLists.txt).
   find_program(CLANG_FORMAT_EXECUTABLE clang-format)
   set(_clang_format_config "${CMAKE_CURRENT_SOURCE_DIR}/../../.clang-format")
   if(CLANG_FORMAT_EXECUTABLE AND EXISTS "${_clang_format_config}")
