@@ -77,6 +77,12 @@ RUN test -e /opt/ros/humble/lib/libbehaviortree_cpp.so || \
     ln -s "$(dpkg-architecture -qDEB_HOST_MULTIARCH)/libbehaviortree_cpp.so" \
           /opt/ros/humble/lib/libbehaviortree_cpp.so
 
+# Compilation parallelism for every source build below. NOT $(nproc): heavy C++ here runs
+# 0.5-1 GB per cc1plus, so one job per core OOM-kills a 32-core/30 GB machine mid-build --
+# observed, twice, taking the desktop session with it. One job per ~2 GB of RAM is the rule.
+# Raise on a bigger box with --build-arg BUILD_JOBS=N.
+ARG BUILD_JOBS=8
+
 # --- unitree_sdk2 -------------------------------------------------------------------------
 ARG UNITREE_SDK2_SHA=21d0a3b2c46ee48c8fdf2783becb6be3beb0a59b
 RUN git init -q /tmp/unitree_sdk2 && \
@@ -86,7 +92,7 @@ RUN git init -q /tmp/unitree_sdk2 && \
     git checkout -q FETCH_HEAD && \
     mkdir build && cd build && \
     cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/opt/unitree_robotics && \
-    make -j"$(nproc)" install && \
+    make -j"${BUILD_JOBS}" install && \
     ldconfig && \
     rm -rf /tmp/unitree_sdk2
 
@@ -101,7 +107,7 @@ RUN git init -q /tmp/Livox-SDK2 && \
     git checkout -q FETCH_HEAD && \
     mkdir build && cd build && \
     cmake .. -DCMAKE_BUILD_TYPE=Release && \
-    make -j"$(nproc)" install && \
+    make -j"${BUILD_JOBS}" install && \
     ldconfig && \
     rm -rf /tmp/Livox-SDK2
 
