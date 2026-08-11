@@ -4,11 +4,14 @@
 # map. That mode loads a serialized pose graph, and for this map that is 33 MB against 130 KB
 # for the occupancy grid -- see maps/README.md.
 #
-# The honest caveat, repeated here because the numbers below look more meaningful than they
-# are: AMCL's motion model is parameterised on odometry noise, and this track's odometry is
-# exact MuJoCo ground truth. The model is degenerate, map -> odom converges to identity
-# immediately, and none of the alpha values can be tuned to anything that transfers to
-# hardware. This exercises the real pipeline; it does not validate localization.
+# Which odometry source is running changes what these values mean. Under
+# `odometry:=sportmodestate` the input is exact MuJoCo state, map -> odom converges to identity
+# and the noise model is degenerate. Under `odometry:=fast_lio` -- what the robot runs -- it
+# drifts, and every value below is load-bearing. Tuned for the latter, because a filter that
+# only works against ground truth is not localization.
+#
+# Every parameter nav2_amcl accepts is listed, defaults included, so changing one is an edit
+# rather than a search. `ros2 param dump /amcl` against a running node regenerates the list.
 map_server:
   ros__parameters:
     use_sim_time: false
@@ -21,29 +24,30 @@ amcl:
 
     global_frame_id: "map"
     odom_frame_id: "odom"
+    map_topic: "map"
+    # Default. True would ignore map updates after the first, which matters only if something
+    # republishes the map mid-run; nothing here does.
+    first_map_only: false
     # Gravity-aligned and on the ground. Nav2's default of base_footprint happens to be right
     # here, but only because g1_state_estimation publishes one -- the URDF root is pelvis.
     base_frame_id: "base_footprint"
     scan_topic: /scan
 
-    # The robot cannot strafe on command, so this is the closest of the shipped models. It is
-    # a poor description of a gait that produces 0.3 m/s of uncommanded lateral motion, which
-    # is another reason not to read anything into the alphas.
-    robot_model_type: "nav2_amcl::DifferentialMotionModel"
-    # Deliberately an order of magnitude below the usual 0.2. Those values describe wheel slip
-    # on a real differential base; this track's odometry is MuJoCo ground truth, so 0.2 injects
-    # error that is not there. The particle cloud spread on every motion update and the scan
-    # match then pulled it back, which is what produced visible map to odom steps: measured at
-    # 11 corrections in 200 s, up to 10.4 cm and 2.08 deg, against a source that is exact by
-    # construction.
-    #
-    # SIM-ONLY tuning. On hardware, where odometry really does drift, these are far too tight
-    # and the filter would fail to track.
-    alpha1: 0.02
-    alpha2: 0.02
-    alpha3: 0.02
-    alpha4: 0.02
-    alpha5: 0.02
+    # The robot does strafe: g1_base_approach commands lateral velocity to line up on an
+    # object, and the gait adds 0.22-0.30 m/s of uncommanded lateral motion on top. A
+    # differential model cannot express that at all -- it factors every delta into
+    # rotate/translate/rotate, so sideways motion enters the filter as a rotation that never
+    # happened. Measured cost of getting this wrong: a mission that ended with map -> odom at
+    # 177 deg of yaw error, the particle cloud having flipped end for end.
+    robot_model_type: "nav2_amcl::OmniMotionModel"
+    # Nav2's defaults. The 0.02 they replace said "the odometry is exact", which was true only
+    # of the sportmodestate track's MuJoCo ground truth. fast_lio drifts, so a filter told to
+    # trust it that far cannot correct in time and lurches instead.
+    alpha1: 0.2
+    alpha2: 0.2
+    alpha3: 0.2
+    alpha4: 0.2
+    alpha5: 0.2
 
     # Matches the scan's own limits, so AMCL weighs exactly the beams that exist.
     laser_max_range: 25.0
@@ -60,10 +64,8 @@ amcl:
     recovery_alpha_fast: 0.0
     recovery_alpha_slow: 0.0
 
-    # Tightened alongside the alphas above. The original reasoning was that a smaller threshold
-    # resamples on noise, but with the alphas cut there is far less injected noise to resample
-    # on, and batching the correction until the robot had moved 0.25 m is what made it land as
-    # one visible step. A 56 s gap between corrections was measured at the old values.
+    # Nav2's defaults. Correcting this often matters more now that the odometry drifts: at
+    # 0.25 m the correction batched up and landed as one visible step.
     update_min_d: 0.10
     update_min_a: 0.10
 
@@ -88,6 +90,9 @@ amcl:
     # so the initial pose is known rather than guessed. Without this AMCL waits for a manual
     # 2D Pose Estimate in RViz, which a launch test cannot give it.
     set_initial_pose: true
+    # Default. True re-seeds the filter from initial_pose on every activation, which would
+    # discard a good estimate every time the lifecycle cycles.
+    always_reset_initial_pose: false
     initial_pose:
       x: 0.0
       y: 0.0
