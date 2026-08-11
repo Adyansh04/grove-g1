@@ -43,76 +43,20 @@ Learned manipulation for unstructured scenes is the next milestone and is not bu
 
 ## Architecture
 
-```mermaid
-flowchart TB
-    OP(["ros2 launch g1_bringup bringup.launch.py"])
+![Grove-G1 architecture](docs/media/architecture.svg)
 
-    subgraph NAVL["Navigation"]
-        SCAN["pointcloud_to_laserscan"]
-        SLAM["slam_toolbox<br/>or map_server + AMCL"]
-        NAV2["Nav2<br/>planner, controller, BT"]
-        SHAPE["g1_gait_shaper"]
-        AUTH["g1_loco_authority"]
-    end
+Three lanes feed one control loop. Sensing and state on the left: the Mid360 front end, FAST-LIO2
+on top of it, and the odometry publisher that re-references its pose into `odom -> base_footprint`.
+Navigation and manipulation to the right of it, both driven by the behaviour tree. Everything lands
+on the bridging layer, and from there on one set of DDS topics.
 
-    subgraph STATE["State estimation"]
-        ODOM["g1_odometry_publisher"]
-    end
+`/livox/lidar` reaches three consumers: both Nav2 costmaps, MoveIt's octomap, and
+`pointcloud_to_laserscan` for AMCL. The diagram draws two of the three, to keep the bus readable.
 
-    subgraph ORCH["Orchestration"]
-        BT["g1_bt_executor<br/>behaviour tree"]
-    end
-
-    subgraph MANIP["Manipulation"]
-        MG["move_group<br/>plan + collision check"]
-        SKILL["g1_manipulation_server<br/>pick, place, postures"]
-        OBJ["g1_object_pose_source<br/>refuses on hardware"]
-    end
-
-    subgraph CTRL["Bridging and control"]
-        BRIDGE["g1_loco_bridge"]
-        ARMSYS["G1ArmSdkSystem<br/>ros2_control plugin"]
-        HANDSYS["G1Dex3System<br/>one per hand"]
-    end
-
-    subgraph SIMONLY["Simulation only"]
-        MSS["motion_service_sim<br/>stands in for the<br/>onboard motion service"]
-        RELAY["g1_sensor_relay"]
-        MJ["unitree_mujoco"]
-    end
-
-    OP --> NAVL
-    OP --> MANIP
-    OP --> CTRL
-    OP --> SIMONLY
-
-    BT -- "NavigateToPose" --> NAV2
-    BT -- "Pick, Place" --> SKILL
-    SKILL --> MG
-    OBJ -- "/objects" --> SKILL
-
-    MG -- "FollowJointTrajectory" --> ARMSYS
-    MG -- "FollowJointTrajectory" --> HANDSYS
-    HANDSYS -- "/dex3/side/cmd" --> MSS
-    RELAY -- "/livox/lidar" --> SCAN
-    RELAY -- "/livox/lidar" --> MG
-    RELAY -- "object ground truth" --> OBJ
-    SCAN -- "/scan" --> SLAM
-    SLAM -- "map to odom" --> NAV2
-    ODOM -- "odom to base_footprint" --> NAV2
-    NAV2 -- "/cmd_vel" --> SHAPE
-    SHAPE --> BRIDGE
-    AUTH -. "acquires authority<br/>before any motion" .-> BRIDGE
-    BRIDGE -- "/api/sport/request" --> MSS
-    ARMSYS -- "/arm_sdk" --> MSS
-    MSS -- "/lowcmd" --> MJ
-    MJ -- "/lowstate, /sportmodestate" --> MSS
-    MJ --> RELAY
-    MJ -- "/sportmodestate" --> ODOM
-```
-
-On hardware the whole "simulation only" group disappears, and the vendor's onboard motion service
-answers `/api/sport/*` and `/arm_sdk` instead. Nothing above that line changes.
+On hardware the simulation card becomes the vendor's onboard motion service, and the LiDAR front
+end becomes `livox_ros_driver2` in CustomMsg mode plus `g1_livox_pointcloud`. `g1_object_pose_source`
+refuses to run there at all. Everything above the DDS rail is unchanged, which is the point of
+developing against `unitree_mujoco`: it answers the same topics the robot does.
 
 Two rules shape most of the design, and both apply in simulation so the habits transfer:
 
