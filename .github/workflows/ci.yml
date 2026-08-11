@@ -39,7 +39,7 @@ jobs:
     outputs:
       ref: ${{ steps.tag.outputs.ref }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - id: tag
         run: |
@@ -82,7 +82,7 @@ jobs:
     env:
       CCACHE_MAXSIZE: 1G
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # $GITHUB_WORKSPACE, not ${{ github.workspace }}: inside a container the latter expands to
       # the runner's host path, which does not exist here.
@@ -185,7 +185,7 @@ jobs:
       # gcov reads .gcno next to the object file; a cache hit would not write one.
       CCACHE_DISABLE: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Import externals
         run: |
