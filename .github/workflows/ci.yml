@@ -204,7 +204,7 @@ jobs:
             echo 'largely unmeasured here. Read it per package, not as a repo total.'
             echo
             echo '```'
-            gcovr --root . --filter 'src/g1_' --exclude '/test/' \
+            gcovr --root . --filter 'src/g1_' --exclude '.*/test/' \
                   --txt --print-summary 2>&1 || echo "gcovr produced no data"
             echo '```'
           } | tee -a "$GITHUB_STEP_SUMMARY"
