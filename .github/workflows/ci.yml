@@ -128,7 +128,7 @@ jobs:
           colcon build --symlink-install \
             --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
             --event-handlers console_cohesion+ 2>&1 | tee build.log
-          if grep -q "skipping .*_check_" build.log; then
+          if grep -q "; skipping " build.log; then
             echo "::error::a lint tool is missing from the image, so its check was not built"
             exit 1
           fi
