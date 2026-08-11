@@ -1,7 +1,9 @@
 #include "g1_manipulation/g1_object_pose_source_node.hpp"
 
+#include <geometry_msgs/msg/transform_stamped.hpp>
 #include <memory>
 #include <string>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <utility>
 
 namespace g1_manipulation
@@ -95,6 +97,9 @@ G1ObjectPoseSource::CallbackReturn G1ObjectPoseSource::on_configure(const rclcpp
         return CallbackReturn::FAILURE;
     }
 
+    tf_buffer_   = std::make_unique<tf2_ros::Buffer>(get_clock());
+    tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
+
     objects_pub_ = create_publisher<vision_msgs::msg::Detection3DArray>("~/objects", outputQos());
     source_sub_  = create_subscription<vision_msgs::msg::Detection3DArray>(
         "~/object_poses",
@@ -117,6 +122,8 @@ G1ObjectPoseSource::CallbackReturn G1ObjectPoseSource::on_cleanup(const rclcpp_l
 {
     source_sub_.reset();
     objects_pub_.reset();
+    tf_listener_.reset();
+    tf_buffer_.reset();
     return CallbackReturn::SUCCESS;
 }
 
@@ -126,14 +133,10 @@ void G1ObjectPoseSource::onGroundTruth(const vision_msgs::msg::Detection3DArray:
     {
         return;
     }
-    // Verified, not transformed. On this track the source already publishes in odom, because
-    // the simulator's world origin IS odom and sim.launch.py configures g1_sensor_relay to
-    // say so. Silently accepting some other frame would place objects wherever the robot
-    // happens to be standing.
-    //
-    // This is where a real transform belongs when there is one to do: a detector reports in a
-    // camera frame, and this node would do a TF lookup rather than a check. The frames are
-    // separate parameters for that reason, even though today they hold the same value.
+    // The detector reports from the frame it measured in, which rides on the robot. Rewriting
+    // that label to a fixed frame is only correct while the two coincide, and they stop
+    // coinciding the moment odom is an estimate rather than ground truth -- an earlier version
+    // relabelled, and the base approach then chased a point 2 m from where the object was.
     if (msg->header.frame_id != source_frame_id_)
     {
         RCLCPP_WARN_THROTTLE(
@@ -146,11 +149,37 @@ void G1ObjectPoseSource::onGroundTruth(const vision_msgs::msg::Detection3DArray:
         return;
     }
 
+    geometry_msgs::msg::TransformStamped source_to_output;
+    try
+    {
+        // At the message's own stamp, not the latest: the pose was measured when the camera
+        // was somewhere specific, and composing it with a newer transform moves the object by
+        // however far the robot walked in between.
+        source_to_output = tf_buffer_->lookupTransform(
+            output_frame_id_, msg->header.frame_id, msg->header.stamp, tf2::durationFromSec(0.2));
+    }
+    catch (const tf2::TransformException& ex)
+    {
+        RCLCPP_WARN_THROTTLE(
+            get_logger(),
+            *get_clock(),
+            5000,
+            "Cannot place objects in '%s': %s",
+            output_frame_id_.c_str(),
+            ex.what());
+        return;
+    }
+
     vision_msgs::msg::Detection3DArray out = *msg;
     out.header.frame_id                    = output_frame_id_;
     for (vision_msgs::msg::Detection3D& detection : out.detections)
     {
         detection.header.frame_id = output_frame_id_;
+        tf2::doTransform(detection.bbox.center, detection.bbox.center, source_to_output);
+        for (vision_msgs::msg::ObjectHypothesisWithPose& hypothesis : detection.results)
+        {
+            tf2::doTransform(hypothesis.pose.pose, hypothesis.pose.pose, source_to_output);
+        }
     }
 
     // The stamp is carried through rather than refreshed. Restamping here would launder a

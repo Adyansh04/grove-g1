@@ -18,6 +18,8 @@
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_lifecycle/lifecycle_node.hpp>
 #include <string>
+#include <tf2_ros/buffer.h>
+#include <tf2_ros/transform_listener.h>
 #include <vision_msgs/msg/detection3_d_array.hpp>
 
 namespace g1_manipulation
@@ -53,6 +55,12 @@ private:
     ObjectSource source_{ ObjectSource::Hardware };
     std::string  source_frame_id_;
     std::string  output_frame_id_;
+
+    // A detector reports in the frame it measured from, which moves with the robot. Turning
+    // that into a fixed frame is a transform, not a relabel: the two differ by however far
+    // odom has drifted, which is the whole reason this node exists between the two.
+    std::unique_ptr<tf2_ros::Buffer>            tf_buffer_;
+    std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
 
     rclcpp::Subscription<vision_msgs::msg::Detection3DArray>::SharedPtr                 source_sub_;
     rclcpp_lifecycle::LifecyclePublisher<vision_msgs::msg::Detection3DArray>::SharedPtr objects_pub_;

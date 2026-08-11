@@ -10,12 +10,15 @@ g1_object_pose_source:
     # gets the refusal, not a silent fallback to simulator ground truth.
     object_source: "sim_ground_truth"
 
-    # The frame the source publishes in, and the frame /objects is published in. Both odom on
-    # this track: the simulator's world origin IS odom, and sim.launch.py already configures
-    # g1_sensor_relay to stamp its ground truth that way, so this node verifies the frame
-    # rather than transforming it.
+    # In: the frame the detector measures from. Out: the frame /objects is published in, and
+    # the node transforms between them through TF.
     #
-    # They are two parameters rather than one because a real detector reports in a camera
-    # frame, and this is where that transform belongs when there is one to do.
-    source_frame_id: "odom"
+    # The camera frame is what a real 6D-pose detector reports, so this is the same pair the
+    # robot will use. It also has to be a measured frame rather than a fixed one: an object
+    # announced directly in odom is only correct while odom IS the world, which stops being
+    # true as soon as odometry is an estimate.
+    #
+    # Out stays odom, not a frame on the robot. MoveIt's collision objects need somewhere
+    # fixed to sit; expressed in pelvis they would slide along with every step.
+    source_frame_id: "camera_color_optical_frame"
     output_frame_id: "odom"

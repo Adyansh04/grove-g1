@@ -17,6 +17,7 @@
 #include <cmath>
 #include <cstring>
 #include <geometry_msgs/msg/pose_stamped.hpp>
+#include <geometry_msgs/msg/transform_stamped.hpp>
 #include <memory>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/camera_info.hpp>
@@ -24,6 +25,9 @@
 #include <sensor_msgs/msg/imu.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <string>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
+#include <tf2_ros/buffer.h>
+#include <tf2_ros/transform_listener.h>
 #include <utility>
 #include <vector>
 #include <vision_msgs/msg/detection3_d_array.hpp>
@@ -279,14 +283,26 @@ private:
         imu_pub_->publish(std::move(imu));
     }
 
-    /// Ground truth, republished verbatim in the simulator's world frame. This node does no
-    /// interpreting: g1_object_pose_source is the boundary that decides whether a consumer is
-    /// allowed to believe any of it, and on hardware that node refuses to run at all.
+    /// Ground truth, re-expressed as the camera would have measured it. The simulator reports
+    /// world poses; a detector reports what it sees from its own lens, and everything
+    /// downstream is built for the latter. Doing the conversion here keeps the difference
+    /// inside the sim-only boundary, so g1_object_pose_source and the skills below it run the
+    /// same code on the robot.
+    ///
+    /// Publishing world coordinates under a fixed-frame label instead is what this replaced,
+    /// and it is exact only while that frame IS the world. It stopped being true the moment
+    /// odom became an estimate, and the base approach then drove at a point 2 m from the cube.
     void publishObjects(const CloudFrame& frame)
     {
+        geometry_msgs::msg::TransformStamped world_to_camera;
+        if (!worldToCamera(world_to_camera))
+        {
+            return;
+        }
+
         vision_msgs::msg::Detection3DArray msg;
         msg.header.stamp    = now();
-        msg.header.frame_id = world_frame_id_;
+        msg.header.frame_id = color_frame_id_;
         msg.detections.reserve(frame.objects.size());
 
         for (const grove_g1::ObjectPoseRecord& record : frame.objects)
@@ -300,13 +316,15 @@ private:
             // Ground truth: there is nothing to be uncertain about. A real detector fills
             // this with its own confidence and the consumer can threshold on it.
             hypothesis.hypothesis.score        = 1.0;
-            hypothesis.pose.pose.position.x    = record.pos[0];
-            hypothesis.pose.pose.position.y    = record.pos[1];
-            hypothesis.pose.pose.position.z    = record.pos[2];
-            hypothesis.pose.pose.orientation.w = record.quat[0];
-            hypothesis.pose.pose.orientation.x = record.quat[1];
-            hypothesis.pose.pose.orientation.y = record.quat[2];
-            hypothesis.pose.pose.orientation.z = record.quat[3];
+            geometry_msgs::msg::Pose in_world;
+            in_world.position.x    = record.pos[0];
+            in_world.position.y    = record.pos[1];
+            in_world.position.z    = record.pos[2];
+            in_world.orientation.w = record.quat[0];
+            in_world.orientation.x = record.quat[1];
+            in_world.orientation.y = record.quat[2];
+            in_world.orientation.z = record.quat[3];
+            tf2::doTransform(in_world, hypothesis.pose.pose, world_to_camera);
 
             detection.bbox.center = hypothesis.pose.pose;
             // Full widths, which is what BoundingBox3D means by size. A consumer builds its
@@ -320,6 +338,42 @@ private:
             msg.detections.push_back(std::move(detection));
         }
         objects_pub_->publish(std::move(msg));
+    }
+
+    /// Inverse of the camera's world pose, built from the LiDAR's ground-truth world pose and
+    /// the rigid LiDAR-to-camera transform out of the URDF. False until the first sweep, and
+    /// while TF has not yet published the robot's own links.
+    ///
+    /// One sweep stale: the simulator sends the object frame just before the sweep it shares a
+    /// cycle with, so this is the previous cycle's pose. That is a few centimetres at walking
+    /// pace, and it is a truer model of a real detector than an exact answer would be -- a
+    /// camera's measurement is always slightly behind the world too.
+    bool worldToCamera(geometry_msgs::msg::TransformStamped& out)
+    {
+        if (!sensor_in_world_valid_)
+        {
+            return false;
+        }
+        geometry_msgs::msg::TransformStamped sensor_to_camera;
+        try
+        {
+            sensor_to_camera =
+                tf_buffer_.lookupTransform(color_frame_id_, frame_id_, tf2::TimePointZero);
+        }
+        catch (const tf2::TransformException& ex)
+        {
+            RCLCPP_WARN_THROTTLE(
+                get_logger(), *get_clock(), 5000, "No %s -> %s yet: %s",
+                frame_id_.c_str(), color_frame_id_.c_str(), ex.what());
+            return false;
+        }
+
+        tf2::Transform world_to_sensor;
+        tf2::fromMsg(sensor_in_world_, world_to_sensor);
+        tf2::Transform to_camera;
+        tf2::fromMsg(sensor_to_camera.transform, to_camera);
+        out.transform = tf2::toMsg(to_camera * world_to_sensor.inverse());
+        return true;
     }
 
     void publishDepth(const CloudFrame& frame)
@@ -468,8 +522,19 @@ private:
         pose.pose.orientation.z = frame.sensor_quat[3];
         pose_pub_->publish(pose);
 
+        // The only ground-truth world pose of anything on the robot that reaches this node.
+        // publishObjects needs it to work out what the camera would have seen, and the object
+        // frame arrives with no sensor pose of its own (sensor_publisher.cc says so).
+        sensor_in_world_       = pose.pose;
+        sensor_in_world_valid_ = true;
+
         cloud_pub_->publish(std::move(msg));
     }
+
+    geometry_msgs::msg::Pose sensor_in_world_;
+    bool                     sensor_in_world_valid_ = false;
+    tf2_ros::Buffer          tf_buffer_{ get_clock() };
+    tf2_ros::TransformListener tf_listener_{ tf_buffer_ };
 
     std::string socket_path_;
     std::string frame_id_;

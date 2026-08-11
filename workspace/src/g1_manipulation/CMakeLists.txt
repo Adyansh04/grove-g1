@@ -21,7 +21,7 @@ target_include_directories(g1_object_pose_source_node PUBLIC
 )
 target_compile_features(g1_object_pose_source_node PUBLIC cxx_std_20)
 ament_target_dependencies(g1_object_pose_source_node PUBLIC
-  rclcpp rclcpp_lifecycle vision_msgs)
+  rclcpp rclcpp_lifecycle vision_msgs geometry_msgs tf2 tf2_geometry_msgs tf2_ros)
 
 add_executable(g1_object_pose_source src/g1_object_pose_source_main.cpp)
 target_link_libraries(g1_object_pose_source PUBLIC g1_object_pose_source_node)
