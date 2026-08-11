@@ -70,19 +70,3 @@ def test_the_simulator_mounts_match_the_urdf(xyz_name, rpy_name, joint_name):
         f"{rpy_name} vs {joint_name}'s rpy"
     )
 
-
-def test_the_two_copies_of_the_wire_header_are_the_same_file():
-    # Same class of duplication, one directory over: g1_sensor_relay's test asserts this too,
-    # and it is cheap to catch here as well since a mismatch breaks the sensor path entirely.
-    vendor = _SENSOR_PUBLISHER.parent / "sensor_frame.h"
-    package = (
-        _SENSOR_PUBLISHER.parents[2]
-        / "src"
-        / "g1_sensor_relay"
-        / "include"
-        / "g1_sensor_relay"
-        / "sensor_frame.h"
-    )
-    assert vendor.read_bytes() == package.read_bytes(), (
-        "workspace/vendor/unitree_mujoco/sensor_frame.h and g1_sensor_relay's copy differ"
-    )

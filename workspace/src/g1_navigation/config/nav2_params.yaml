@@ -237,24 +237,10 @@ local_costmap:
           # radial spoke gaps in cleared space. GUESS, and unchanged.
           raytrace_max_range: 6.0
           raytrace_min_range: 0.0
-          # MEASURED, not guessed. The floor plane as the costmap sees it sits within a
-          # centimetre of where it belongs -- the height is not the problem -- but it TILTS:
-          # 0.15 deg median, 0.75 deg at p95, 1.62 deg worst over 713 sweeps of a walk. Tilt
-          # times range is a height error, so the same estimate that is exact underfoot is
-          # wrong by centimetres at range. At 5 m it takes 0.92 deg to lift a floor return past
-          # the 0.08 m cut; at 2 m it takes 2.3 deg.
-          #
-          # Which is exactly what the same run measured, by range bucket:
-          #
-          #   1-2 m  1726642 floor points  0.000% marked
-          #   2-3 m  1597391                0.000%
-          #   3-4 m   653004                0.012%
-          #   4-5 m   338750                0.091%
-          #
-          # So 3.0. Nothing is lost: the local costmap is 3 x 3 m rolling and cannot hold a
-          # return past ~2.1 m anyway, and the global costmap picks an obstacle up well before
-          # the robot reaches it at 0.6 m/s. raytrace stays above this so anything markable is
-          # also clearable.
+          # MEASURED, and the reasoning is in the package README: the estimate's attitude, not
+          # its height, is what limits how far a floor return can be placed, and marking was
+          # 0.000% inside 3 m against 0.091% at 4-5 m. raytrace above this so anything markable
+          # is also clearable.
           obstacle_max_range: 3.0
           obstacle_min_range: 0.0
       always_send_full_costmap: True
@@ -303,24 +289,10 @@ global_costmap:
           # radial spoke gaps in cleared space. GUESS, and unchanged.
           raytrace_max_range: 6.0
           raytrace_min_range: 0.0
-          # MEASURED, not guessed. The floor plane as the costmap sees it sits within a
-          # centimetre of where it belongs -- the height is not the problem -- but it TILTS:
-          # 0.15 deg median, 0.75 deg at p95, 1.62 deg worst over 713 sweeps of a walk. Tilt
-          # times range is a height error, so the same estimate that is exact underfoot is
-          # wrong by centimetres at range. At 5 m it takes 0.92 deg to lift a floor return past
-          # the 0.08 m cut; at 2 m it takes 2.3 deg.
-          #
-          # Which is exactly what the same run measured, by range bucket:
-          #
-          #   1-2 m  1726642 floor points  0.000% marked
-          #   2-3 m  1597391                0.000%
-          #   3-4 m   653004                0.012%
-          #   4-5 m   338750                0.091%
-          #
-          # So 3.0. Nothing is lost: the local costmap is 3 x 3 m rolling and cannot hold a
-          # return past ~2.1 m anyway, and the global costmap picks an obstacle up well before
-          # the robot reaches it at 0.6 m/s. raytrace stays above this so anything markable is
-          # also clearable.
+          # MEASURED, and the reasoning is in the package README: the estimate's attitude, not
+          # its height, is what limits how far a floor return can be placed, and marking was
+          # 0.000% inside 3 m against 0.091% at 4-5 m. raytrace above this so anything markable
+          # is also clearable.
           obstacle_max_range: 3.0
           obstacle_min_range: 0.0
       static_layer:

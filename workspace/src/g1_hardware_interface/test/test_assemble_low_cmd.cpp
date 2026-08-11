@@ -9,6 +9,7 @@
 
 #include "g1_hardware_interface/g1_arm_sdk_system.hpp"
 #include "unitree_hg/msg/low_cmd.hpp"
+#include "unitree_hg/msg/low_state.hpp"
 
 namespace g1_hardware_interface
 {
@@ -93,9 +94,8 @@ TEST(AssembleLowCmd, ArmSlotsGetPositionAndGains)
 
 TEST(AssembleLowCmd, WaistSlotsHoldTheirLatchedPositionAtWaistGains)
 {
-    // Left out of the command entirely until now, which sent the waist kp=kd=0 while the blend
-    // weight was up -- a torso with no stiffness under arm load. Unitree's own arm_sdk example
-    // commands these three alongside the arms.
+    // Zero gains here are a torso with no stiffness under arm load, which is what /arm_sdk
+    // does with slots the sender leaves alone.
     unitree_hg::msg::LowCmd                 cmd{};
     const auto                              motor_index = realMotorIndexMap();
     const std::array<double, kNumArmJoints> position{};
@@ -117,13 +117,28 @@ TEST(AssembleLowCmd, WaistSlotsHoldTheirLatchedPositionAtWaistGains)
     }
 }
 
-TEST(AssembleLowCmd, WaistSlotsAreTheThreeUnitreeNames)
+TEST(AssembleLowCmd, TheLatchReadsTheSameSlotsTheCommandWrites)
 {
-    // 12, 13, 14 = WAIST_YAW, WAIST_ROLL, WAIST_PITCH in G1Arm7JointIndex. Asserted rather than
-    // trusted: getting this wrong writes stiff gains onto a leg.
-    EXPECT_EQ(kWaistMotorIndex[0], 12);
-    EXPECT_EQ(kWaistMotorIndex[1], 13);
-    EXPECT_EQ(kWaistMotorIndex[2], 14);
+    // The round trip that matters: whatever waistHoldFrom reads out of LowState has to come
+    // back out of assembleLowCmd on the same motors. Reading or writing the wrong three puts
+    // stiff gains on a leg, and 12/13/14 are WAIST_YAW/ROLL/PITCH in G1Arm7JointIndex.
+    unitree_hg::msg::LowState state{};
+    for (std::size_t slot = 0; slot < state.motor_state.size(); ++slot)
+    {
+        state.motor_state[slot].q = 0.5F + static_cast<float>(slot);
+    }
+
+    const auto hold = waistHoldFrom(state);
+    EXPECT_FLOAT_EQ(static_cast<float>(hold[0]), 12.5F);
+    EXPECT_FLOAT_EQ(static_cast<float>(hold[1]), 13.5F);
+    EXPECT_FLOAT_EQ(static_cast<float>(hold[2]), 14.5F);
+
+    unitree_hg::msg::LowCmd                 cmd{};
+    const std::array<double, kNumArmJoints> zeros{};
+    assembleLowCmd(cmd, realMotorIndexMap(), zeros, zeros, zeros, 1.0F, hold, 160.0, 4.0);
+    EXPECT_FLOAT_EQ(cmd.motor_cmd[12].q, 12.5F);
+    EXPECT_FLOAT_EQ(cmd.motor_cmd[13].q, 13.5F);
+    EXPECT_FLOAT_EQ(cmd.motor_cmd[14].q, 14.5F);
 }
 
 TEST(AssembleLowCmd, WeightSlotIsPlacedAtMotorCmd29)

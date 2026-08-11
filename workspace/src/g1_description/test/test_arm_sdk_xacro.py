@@ -79,6 +79,8 @@ def test_ros2_control_hardware_plugin_and_system_params(expanded_urdf_path):
         "emergency_ramp_down_s",
         "max_joint_velocity_rad_s",
         "lowstate_timeout_ms",
+        "waist_kp",
+        "waist_kd",
     }
     assert expected_system_params <= params.keys()
 

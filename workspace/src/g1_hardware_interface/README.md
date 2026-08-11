@@ -99,9 +99,14 @@ Leaving them out, which this used to do, sent `q=0, kp=0, kd=0` on those slots e
 matches what real-G1 users report: the robot "bending forward at the waist" when arms move under
 `arm_sdk` (unitree_sdk2_python issues #146 and #173, the latter fixed by adding a waist command).
 
-**Simulation still cannot prove this one.** There the walking policy owns motors 0-14 and holds
-the waist every tick, so the slots matter only on hardware. The gains are Unitree's ratio applied
-to ours, not a measured value.
+**Simulation still cannot prove this one, and the sim-side blend was deliberately not changed to
+let it.** `g1_motion_service_sim`'s `assembleSimLowCmd` blends motors 15-28 only; 0-14 come whole
+from the walking policy or the stiff-hold pose, so the simulator never reads the waist slots this
+component now writes. Extending it would mean two owners for the waist in sim -- the policy drives
+it through tens of degrees while walking -- and would change the gait to test a hardware-only
+path. So the asymmetry stands: on the robot `/arm_sdk` hands the waist over, in simulation the
+policy keeps it, and only the robot can show whether these gains are right. They are Unitree's
+ratio applied to ours, not a measured value.
 
 ## Threading
 

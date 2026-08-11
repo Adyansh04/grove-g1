@@ -105,14 +105,29 @@ the round-robin slot `Spin` could have used.
 
 `z_voxels` is 40, not upstream's 16. The sensor sits at 1.22 m, outside a 0.8 m voxel column.
 
-`obstacle_max_range` is 3.0 m, well inside the sensor's reach, because the estimate's attitude is
-what limits how far a floor return can be trusted. Measured over 713 sweeps of a walk, the floor
-plane sits within a centimetre of where it belongs but tilts by 0.15 deg (median), 0.75 (p95) and
-1.62 (worst). Tilt times range is a height error: at 5 m it takes 0.92 deg to lift the floor past
-`min_obstacle_height`, at 2 m it takes 2.3. The same run marked 0.000 % of floor returns inside
-3 m and 0.091 % between 4 and 5 m. Nothing is given up -- the local costmap is 3 x 3 m rolling
-and cannot hold a return past ~2.1 m regardless, and the global costmap sees an obstacle long
-before the robot reaches it at 0.6 m/s.
+`obstacle_max_range` is 3.0 m, well inside the sensor's reach, because the estimate's **attitude**
+is what limits how far a floor return can be placed -- not its height. Measured over 713 sweeps of
+a walk, the floor plane as the costmap sees it sits within a centimetre of where it belongs
+(-0.0097 m median offset, barely moving) but tilts: 0.15 deg median, 0.75 at p95, 1.62 worst.
+Tilt times range is a height error, so an estimate that is exact underfoot is wrong by
+centimetres far away. At 5 m it takes 0.92 deg to lift a floor return past
+`min_obstacle_height`; at 2 m it takes 2.3.
+
+The same run, by range bucket:
+
+| range | floor points | marked as obstacle |
+|---|---|---|
+| 1-2 m | 1 726 642 | 0.000 % |
+| 2-3 m | 1 597 391 | 0.000 % |
+| 3-4 m | 653 004 | 0.012 % |
+| 4-5 m | 338 750 | 0.091 % |
+
+3.0 m is chosen on that measurement rather than on the arithmetic, which does not quite reach:
+1.53 deg clears the cut at 3 m and the worst tilt seen was 1.62. What it costs is that an
+unmapped obstacle enters the global costmap about 2 m later; the local costmap loses nothing,
+being 3 x 3 m rolling and unable to hold a return past ~2.1 m regardless. Before this, false
+floor marks at 4-5 m were reaching the global costmap and failing the planner: a 13-goal soak
+completed 7 with `obstacle_max_range: 5.0` and all 13 with 3.0.
 
 ## Configuration
 

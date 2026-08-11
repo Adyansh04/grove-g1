@@ -82,6 +82,16 @@ bool parseInt(
 constexpr std::chrono::milliseconds kRampDownTickPeriod{ 10 };
 }  // namespace
 
+std::array<double, kNumWaistJoints> waistHoldFrom(const unitree_hg::msg::LowState& state)
+{
+    std::array<double, kNumWaistJoints> hold{};
+    for (std::size_t i = 0; i < kNumWaistJoints; ++i)
+    {
+        hold[i] = state.motor_state[static_cast<std::size_t>(kWaistMotorIndex[i])].q;
+    }
+    return hold;
+}
+
 void assembleLowCmd(
     unitree_hg::msg::LowCmd& cmd, const std::array<int, kNumArmJoints>& motor_index,
     const std::array<double, kNumArmJoints>& position, const std::array<double, kNumArmJoints>& kp,

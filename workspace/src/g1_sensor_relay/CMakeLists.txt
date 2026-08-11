@@ -21,11 +21,7 @@ add_executable(g1_sensor_relay src/g1_sensor_relay_node.cpp)
 target_link_libraries(g1_sensor_relay PUBLIC frame_reader)
 ament_target_dependencies(g1_sensor_relay PUBLIC rclcpp sensor_msgs geometry_msgs vision_msgs)
 
-# Restates the relay's own output in the formats FAST-LIO wants. Separate executable so the
-# odometry track can be started and stopped without touching the sensor path everything else
-# depends on.
-# The conversion itself, split out so it tests without a graph. The mirror of it on the
-# hardware side was extracted for the same reason and the test found it had never worked.
+# The conversion itself, split out so it tests without a graph.
 add_library(livox_custom_msg src/livox_custom_msg.cpp)
 target_include_directories(livox_custom_msg PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -33,6 +29,9 @@ target_include_directories(livox_custom_msg PUBLIC
 )
 ament_target_dependencies(livox_custom_msg PUBLIC rclcpp sensor_msgs livox_ros_driver2)
 
+# Restates the relay's own output in the format FAST-LIO wants. Separate executable so the
+# odometry track can be started and stopped without touching the sensor path everything else
+# depends on.
 add_executable(g1_livox_bridge src/g1_livox_bridge_node.cpp)
 target_link_libraries(g1_livox_bridge PUBLIC livox_custom_msg)
 ament_target_dependencies(g1_livox_bridge PUBLIC rclcpp sensor_msgs livox_ros_driver2)
