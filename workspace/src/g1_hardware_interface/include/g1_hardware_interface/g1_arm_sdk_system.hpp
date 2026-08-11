@@ -55,6 +55,14 @@ inline constexpr std::size_t                      kNumWaistJoints  = 3;
 inline constexpr std::array<int, kNumWaistJoints> kWaistMotorIndex = { 12, 13, 14 };
 
 /**
+ * @brief The waist positions to hold, read out of a LowState at authority acquisition.
+ *
+ * Free function for the same reason assembleLowCmd is: reading the wrong slots here would put
+ * stiff gains on a leg, and that is worth asserting without a live hardware component.
+ */
+std::array<double, kNumWaistJoints> waistHoldFrom(const unitree_hg::msg::LowState& state);
+
+/**
  * @brief Fills the 14 arm slots and the 3 waist slots on `cmd`, plus the weight slot
  * (motor_cmd[kWeightMotorIndex].q); dq/tau are set to 0 on all of them.
  *
@@ -77,14 +85,6 @@ inline constexpr std::array<int, kNumWaistJoints> kWaistMotorIndex = { 12, 13, 1
  * @param waist_kp     Position gain for all three waist motors.
  * @param waist_kd     Velocity gain for all three waist motors.
  */
-/**
- * @brief The waist positions to hold, read out of a LowState at authority acquisition.
- *
- * Free function for the same reason assembleLowCmd is: reading the wrong slots here would put
- * stiff gains on a leg, and that is worth asserting without a live hardware component.
- */
-std::array<double, kNumWaistJoints> waistHoldFrom(const unitree_hg::msg::LowState& state);
-
 void assembleLowCmd(
     unitree_hg::msg::LowCmd& cmd, const std::array<int, kNumArmJoints>& motor_index,
     const std::array<double, kNumArmJoints>& position, const std::array<double, kNumArmJoints>& kp,

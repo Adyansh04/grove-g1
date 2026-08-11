@@ -331,10 +331,7 @@ G1ArmSdkSystem::on_activate(const rclcpp_lifecycle::State& /*previous_state*/)
 
     // Same instant, same reason: the waist is held where the onboard controller left it, so
     // taking authority over it does not move it.
-    for (std::size_t i = 0; i < kNumWaistJoints; ++i)
-    {
-        waist_hold_[i] = sample->state.motor_state[static_cast<std::size_t>(kWaistMotorIndex[i])].q;
-    }
+    waist_hold_ = waistHoldFrom(sample->state);
 
     time_since_last_publish_s_ = 0.0;
     /* Publishing authority acquired last, after seeding. */
