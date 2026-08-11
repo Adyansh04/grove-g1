@@ -1,23 +1,25 @@
 # Build-and-test image for CI. NOT the development environment -- .devcontainer/Dockerfile is,
 # and at 19 GB a runner cannot pull it. This carries only what the packages link against.
 #
-# Absent by design: MuJoCo, CUDA, RViz, Xvfb, the unitree_mujoco tree. Anything under
-# `ctest -L simulator` cannot run here.
+# Absent by design: MuJoCo, CUDA, Xvfb, the unitree_mujoco tree. Anything under
+# `ctest -L simulator` cannot run here. RViz arrives anyway, as a dependency of the moveit and
+# navigation2 metapackages.
 #
-# The ARG versions below must match .devcontainer/Dockerfile; ci.yml fails the build if they
+# The version ARGs below must match .devcontainer/Dockerfile; ci.yml fails the build if they
 # drift, because CI on different versions tests a configuration nobody ships.
 FROM ros:humble-ros-base
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ENV DEBIAN_FRONTEND=noninteractive
 
-# clang-format 14 matches the dev image. Its output is not stable across major versions, so an
-# unpinned one rejects correctly formatted files. liburdfdom-tools is check_urdf, which
-# g1_description's xacro test shells out to.
+# clang-format's output is not stable across major versions, so an unpinned one rejects
+# correctly formatted files. liburdfdom-tools is check_urdf, which g1_description's xacro test
+# shells out to.
+ARG LLVM_VERSION=14
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
         ccache \
-        clang-format-14 \
+        clang-format-${LLVM_VERSION} \
         cmake \
         curl \
         gcovr \
@@ -26,7 +28,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         python3-colcon-common-extensions \
         python3-pip \
         python3-vcstool \
-    && ln -sf /usr/bin/clang-format-14 /usr/bin/clang-format \
+    && ln -sf /usr/bin/clang-format-${LLVM_VERSION} /usr/bin/clang-format \
     && rm -rf /var/lib/apt/lists/*
 
 # Pinned: ruff's rule set changes between minor versions.
@@ -79,11 +81,11 @@ RUN test -e /opt/ros/humble/lib/libbehaviortree_cpp.so || \
     ln -s "$(dpkg-architecture -qDEB_HOST_MULTIARCH)/libbehaviortree_cpp.so" \
           /opt/ros/humble/lib/libbehaviortree_cpp.so
 
-# Compilation parallelism for every source build below. NOT $(nproc): heavy C++ here runs
-# 0.5-1 GB per cc1plus, so one job per core OOM-kills a 32-core/30 GB machine mid-build --
-# observed, twice, taking the desktop session with it. One job per ~2 GB of RAM is the rule.
-# Raise on a bigger box with --build-arg BUILD_JOBS=N.
-ARG BUILD_JOBS=8
+# Compilation parallelism for the three source builds below. Sized for the GitHub runner that
+# builds this image, not for a workstation: heavy C++ here runs 0.5-1 GB per cc1plus, and the
+# rule that keeps it off the OOM killer is one job per ~2 GB of RAM. Raise with
+# --build-arg BUILD_JOBS=N on a bigger box.
+ARG BUILD_JOBS=3
 
 # --- unitree_sdk2 -------------------------------------------------------------------------
 ARG UNITREE_SDK2_SHA=21d0a3b2c46ee48c8fdf2783becb6be3beb0a59b
