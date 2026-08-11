@@ -47,20 +47,10 @@ Learned manipulation for unstructured scenes is the next milestone and is not bu
 
 ![Grove-G1 architecture](docs/media/architecture.svg)
 
-Three lanes feed one control loop. Sensing and state on the left: the Mid360 front end, FAST-LIO2
-on top of it, and the odometry publisher that re-references its pose into `odom -> base_footprint`.
-Navigation and manipulation to the right of it, both driven by the behaviour tree. Everything lands
-on the bridging layer, and from there on one set of DDS topics.
+On hardware the simulation card becomes the vendor's onboard motion service and the LiDAR front
+end becomes `livox_ros_driver2`. Everything above the DDS rail is unchanged.
 
-`/livox/lidar` reaches three consumers: both Nav2 costmaps, MoveIt's octomap, and
-`pointcloud_to_laserscan` for AMCL. The diagram draws two of the three, to keep the bus readable.
-
-On hardware the simulation card becomes the vendor's onboard motion service, and the LiDAR front
-end becomes `livox_ros_driver2` in CustomMsg mode plus `g1_livox_pointcloud`. `g1_object_pose_source`
-refuses to run there at all. Everything above the DDS rail is unchanged, which is the point of
-developing against `unitree_mujoco`: it answers the same topics the robot does.
-
-Two rules shape most of the design, and both apply in simulation so the habits transfer:
+Two rules shape the design, and both apply in simulation so the habits transfer:
 
 - Only one publisher ever commands a low-level channel. Control-mode ownership is explicit.
 - Arm and locomotion motion goes through `rt/arm_sdk`, which blends against the onboard balance
@@ -235,6 +225,21 @@ Run them **one package at a time**, and check nothing is left over from a previo
 for a batch of failures that all pass on a clean rerun. Each package README says which of its
 tests need a simulator.
 
+Those suites carry the ctest label `simulator`, so the rest can be run on their own:
+
+```bash
+colcon test --ctest-args -LE simulator   # everything that needs no simulator
+colcon test --ctest-args -L  simulator   # only the simulator suites
+```
+
+## Continuous integration
+
+Every push and pull request builds the workspace and runs the tests that need no simulator, in
+the image built by `.github/ci.Dockerfile`. Lint runs as part of `colcon test`, not separately.
+
+The simulator suites are excluded: they are CPU-time-sensitive and measure a shared runner
+rather than the stack. Run them locally before merging anything that touches locomotion,
+navigation or the sensor path.
 
 ## Repository layout
 
