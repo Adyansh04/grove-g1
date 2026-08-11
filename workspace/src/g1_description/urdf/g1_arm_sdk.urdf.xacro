@@ -159,6 +159,7 @@
         <param name="command_publish_rate">${dex3_params.system.command_publish_rate}</param>
         <param name="max_joint_velocity_rad_s">${dex3_params.system.max_joint_velocity_rad_s}</param>
         <param name="state_timeout_ms">${dex3_params.system.state_timeout_ms}</param>
+        <param name="state_topic">${dex3_params.system.state_topic_prefix}${side}${dex3_params.system.state_topic_suffix}</param>
       </hardware>
 
       <xacro:g1_hand_joint name="${side}_hand_thumb_0_joint"/>

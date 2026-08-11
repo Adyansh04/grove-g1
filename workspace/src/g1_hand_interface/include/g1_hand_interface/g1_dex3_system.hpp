@@ -82,6 +82,11 @@ private:
 
     std::string side_;  ///< "left" or "right"; picks the topic pair and the joint prefix.
 
+    /// Which state topic to read. Parameterised because the robot carries both
+    /// /dex3/<side>/state and a lower-rate /lf/ variant, and Unitree's own code
+    /// disagrees about which one to use.
+    std::string state_topic_;
+
     /// Per joint, in wire order.
     std::array<double, kNumHandJoints> position_command_{};
     std::array<double, kNumHandJoints> ramped_command_{};
