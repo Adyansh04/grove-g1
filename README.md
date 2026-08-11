@@ -1,3 +1,5 @@
+![Grove-G1](docs/media/banner.svg)
+
 # Grove-G1
 
 An autonomy stack for the [Unitree G1](https://www.unitree.com/g1) humanoid, built on ROS 2 Humble
