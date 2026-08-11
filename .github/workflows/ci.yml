@@ -149,7 +149,11 @@ jobs:
         if: always()
         working-directory: workspace
         run: |
-          [ -d build ] && colcon test-result --verbose || echo "no build directory"
+          if [ -d build ]; then
+            colcon test-result --verbose
+          else
+            echo "no build directory"
+          fi
 
       - name: Upload test results
         if: failure()
