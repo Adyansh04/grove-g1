@@ -146,6 +146,7 @@ void G1ObjectPoseSource::publishMarkers(const vision_msgs::msg::Detection3DArray
     // Rebuilt every message, so a vanished object must not leave its marker on screen.
     visualization_msgs::msg::Marker clear;
     clear.action = visualization_msgs::msg::Marker::DELETEALL;
+    markers.markers.reserve(1 + 2 * objects.detections.size());
     markers.markers.push_back(clear);
 
     int id = 0;
@@ -225,8 +226,13 @@ void G1ObjectPoseSource::onGroundTruth(const vision_msgs::msg::Detection3DArray:
         return;
     }
 
-    vision_msgs::msg::Detection3DArray out = *msg;
-    out.header.frame_id                    = output_frame_id_;
+    // Mutated in place and moved out rather than copied: the array carries a vector of
+    // detections, each with its own vector of hypotheses and strings. Safe because this
+    // subscription is inter-process, so the callback owns the only reference -- if this node is
+    // ever composed with intra-process comms on, the message becomes shared and this must go
+    // back to a copy.
+    vision_msgs::msg::Detection3DArray& out = *msg;
+    out.header.frame_id                     = output_frame_id_;
     for (vision_msgs::msg::Detection3D& detection : out.detections)
     {
         detection.header.frame_id = output_frame_id_;

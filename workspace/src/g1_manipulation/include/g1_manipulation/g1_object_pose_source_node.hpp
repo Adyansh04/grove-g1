@@ -60,9 +60,6 @@ private:
     std::string  source_frame_id_;
     std::string  output_frame_id_;
 
-    // A detector reports in the frame it measured from, which moves with the robot. Turning
-    // that into a fixed frame is a transform, not a relabel: the two differ by however far
-    // odom has drifted, which is the whole reason this node exists between the two.
     std::unique_ptr<tf2_ros::Buffer>            tf_buffer_;
     std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
 

@@ -21,6 +21,7 @@
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <geometry_msgs/msg/transform_stamped.hpp>
 #include <memory>
+#include <optional>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/camera_info.hpp>
 #include <sensor_msgs/msg/image.hpp>
@@ -350,7 +351,7 @@ private:
     /// camera's measurement is always slightly behind the world too.
     bool worldToCamera(geometry_msgs::msg::TransformStamped& out)
     {
-        if (!sensor_in_world_valid_)
+        if (!sensor_in_world_)
         {
             return false;
         }
@@ -373,11 +374,14 @@ private:
             return false;
         }
 
-        tf2::Transform world_to_sensor;
-        tf2::fromMsg(sensor_in_world_, world_to_sensor);
+        // sensor_to_world, not the reverse: sensor_in_world_ is the sensor's pose expressed in
+        // world, which maps sensor points into world. Inverting it is what makes the product
+        // camera_T_world, so the inverse is load-bearing rather than redundant.
+        tf2::Transform sensor_to_world;
+        tf2::fromMsg(*sensor_in_world_, sensor_to_world);
         tf2::Transform to_camera;
         tf2::fromMsg(sensor_to_camera.transform, to_camera);
-        out.transform = tf2::toMsg(to_camera * world_to_sensor.inverse());
+        out.transform = tf2::toMsg(to_camera * sensor_to_world.inverse());
         return true;
     }
 
@@ -530,16 +534,14 @@ private:
         // The only ground-truth world pose of anything on the robot that reaches this node.
         // publishObjects needs it to work out what the camera would have seen, and the object
         // frame arrives with no sensor pose of its own (sensor_publisher.cc says so).
-        sensor_in_world_       = pose.pose;
-        sensor_in_world_valid_ = true;
+        sensor_in_world_ = pose.pose;
 
         cloud_pub_->publish(std::move(msg));
     }
 
-    geometry_msgs::msg::Pose   sensor_in_world_;
-    bool                       sensor_in_world_valid_ = false;
-    tf2_ros::Buffer            tf_buffer_{ get_clock() };
-    tf2_ros::TransformListener tf_listener_{ tf_buffer_ };
+    std::optional<geometry_msgs::msg::Pose> sensor_in_world_;
+    tf2_ros::Buffer                         tf_buffer_{ get_clock() };
+    tf2_ros::TransformListener              tf_listener_{ tf_buffer_ };
 
     std::string socket_path_;
     std::string frame_id_;
