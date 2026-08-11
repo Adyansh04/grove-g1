@@ -67,10 +67,10 @@ if(BUILD_TESTING)
   # The acceptance gate, and the only suite here that drives the robot. Longest timeout and
   # highest COST so it runs first, while the machine is quietest.
   add_launch_test(test/test_navigate_to_pose.launch.py TARGET test_navigate_to_pose TIMEOUT 500)
-  set_tests_properties(test_scan_pipeline PROPERTIES RESOURCE_LOCK mujoco_sim)
-  set_tests_properties(test_nav_authority PROPERTIES RESOURCE_LOCK mujoco_sim COST 70)
-  set_tests_properties(test_slam_map PROPERTIES RESOURCE_LOCK mujoco_sim)
-  set_tests_properties(test_navigate_to_pose PROPERTIES RESOURCE_LOCK mujoco_sim COST 100)
+  set_tests_properties(test_scan_pipeline PROPERTIES RESOURCE_LOCK mujoco_sim LABELS simulator)
+  set_tests_properties(test_nav_authority PROPERTIES RESOURCE_LOCK mujoco_sim LABELS simulator COST 70)
+  set_tests_properties(test_slam_map PROPERTIES RESOURCE_LOCK mujoco_sim LABELS simulator)
+  set_tests_properties(test_navigate_to_pose PROPERTIES RESOURCE_LOCK mujoco_sim LABELS simulator COST 100)
   # COST descending = execution order; the heavier suite goes first.
   set_tests_properties(test_slam_map PROPERTIES COST 60)
   set_tests_properties(test_scan_pipeline PROPERTIES COST 50)
