@@ -954,7 +954,7 @@ void imuLoop(const Config cfg, mjModel** model, mjData** data, std::recursive_mu
             header.magic         = kSensorFrameMagic;
             header.version       = kSensorFrameVersion;
             header.kind          = static_cast<uint32_t>(SensorFrameKind::Imu);
-            header.payload_bytes = sizeof(sample);
+            header.payload_bytes = static_cast<uint32_t>(sizeof(sample));
             // trySend, not send: the sweep and the camera share this socket, and a stalled
             // relay can hold it for the length of their retry deadline. Waiting out someone
             // else's 2.9 MB frame would open a far bigger hole in this stream than the one
