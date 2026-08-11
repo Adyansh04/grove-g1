@@ -96,6 +96,15 @@ jobs:
               fail=1
             fi
           done
+          # clang-format is pinned by apt package name rather than an ARG, so the loop above
+          # cannot see it. A one-sided bump leaves CI checking formatting with a different tool
+          # than the developer runs.
+          dev=$(grep -oPm1 'clang-format-[0-9]+' .devcontainer/Dockerfile)
+          ci=$(grep -oPm1 'clang-format-[0-9]+' .github/ci.Dockerfile)
+          if [ "$dev" != "$ci" ]; then
+            echo "::error file=.github/ci.Dockerfile::${dev} vs ${ci}"
+            fail=1
+          fi
           exit $fail
 
       - name: Import externals
