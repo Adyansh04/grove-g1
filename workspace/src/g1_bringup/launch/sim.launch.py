@@ -81,29 +81,35 @@ def _check_environment(context, *args, **kwargs):
             "CYCLONEDDS_URI is unset -- expected the container-baked cyclonedds.xml "
             "pinning the 'lo' interface (see .devcontainer/Dockerfile)."
         )
-    elif cyclone_uri.startswith("file://"):
-        # Existence, not just non-emptiness. CycloneDDS treats an unreadable URI as a
-        # warning on stderr and falls back to its defaults, which with the compose file's
-        # network_mode: host means binding the real NIC instead of lo. The sim's
-        # rt/lowcmd and rt/arm_sdk would then be on the LAN on domain 1, within reach of a
-        # real G1. The simulator relies on this file too: its own config sets an empty
-        # interface so the SDK reads CYCLONEDDS_URI (see patches/unitree_mujoco/002).
-        cyclone_path = cyclone_uri[len("file://") :]
-        if not os.path.isfile(cyclone_path):
-            problems.append(
-                f"CYCLONEDDS_URI points at {cyclone_path!r}, which does not exist -- "
-                "CycloneDDS would silently fall back to defaults and bind the host NIC "
-                "instead of 'lo'."
+    else:
+        # CycloneDDS accepts three forms here: a file:// URI, a bare path, and inline XML. All
+        # three have to be checked, because the one that matters is what the config SAYS, not
+        # how it was named -- a bare path to the hardware profile would otherwise walk straight
+        # past this and put rt/lowcmd on the LAN.
+        inline = cyclone_uri.lstrip().startswith("<")
+        config = cyclone_uri
+        if not inline:
+            path = cyclone_uri[len("file://") :] if cyclone_uri.startswith("file://") else (
+                cyclone_uri
             )
-        elif 'NetworkInterface name="lo"' not in _read_text(cyclone_path):
-            # Existing and readable is not enough now that a hardware profile is baked beside
-            # it: pointing the container at cyclonedds.hardware.xml and then starting the
-            # simulator is the one mistake that puts rt/lowcmd on the LAN, and it looks like a
-            # perfectly healthy config until a real G1 answers.
+            if not os.path.isfile(path):
+                # CycloneDDS treats an unreadable URI as a warning on stderr and falls back to
+                # its defaults, which with the compose file's network_mode: host means binding
+                # the real NIC instead of lo. The simulator relies on this file too: its own
+                # config sets an empty interface so the SDK reads CYCLONEDDS_URI (see
+                # patches/unitree_mujoco/002).
+                problems.append(
+                    f"CYCLONEDDS_URI points at {path!r}, which does not exist -- CycloneDDS "
+                    "would silently fall back to defaults and bind the host NIC instead of 'lo'."
+                )
+                config = ""
+            else:
+                config = _read_text(path)
+        if config and 'NetworkInterface name="lo"' not in config:
             problems.append(
-                f"{cyclone_path!r} does not pin the 'lo' interface -- this looks like the "
-                "hardware profile. The simulator must never publish rt/lowcmd anywhere a real "
-                "robot can hear it."
+                f"the CycloneDDS config in use ({cyclone_uri!r}) does not pin the 'lo' "
+                "interface. The simulator must never publish rt/lowcmd anywhere a real robot "
+                "can hear it."
             )
 
     domain_id = os.environ.get("ROS_DOMAIN_ID")

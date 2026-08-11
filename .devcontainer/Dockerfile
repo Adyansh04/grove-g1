@@ -123,17 +123,13 @@ ENV CYCLONEDDS_URI=file:///etc/cyclonedds/cyclonedds.xml
 # Sim-only domain; the robot's is set through GROVE_G1_ROS_DOMAIN_ID below.
 ENV ROS_DOMAIN_ID=1
 
-# Override base image's /etc/profile.d/10-ros-env.sh, which resets ROS_DOMAIN_ID=0 and would
-# otherwise win by ordering.
-#
-# Defaults, not hard sets, and read from a GROVE_G1_-prefixed variable rather than the ROS one:
-# compose can point the whole container at the robot by setting three variables in .env, and
-# the prefix is what makes that survive 10-ros-env.sh clobbering the unprefixed names. Straight
-# `${ROS_DOMAIN_ID:-1}` would read whatever that script had just written.
+# Puts back what the base image's /etc/profile.d/10-ros-env.sh has just overwritten: it exports
+# ROS_DOMAIN_ID=0 unconditionally and wins by ordering. Only that one variable, and read from the
+# GROVE_G1_-prefixed copy compose also sets -- reading the unprefixed name here would read the 0
+# that was just written. RMW_IMPLEMENTATION and CYCLONEDDS_URI are not touched by that script, so
+# the container environment stands.
 RUN cat > /etc/profile.d/99-grove-g1-env.sh <<'EOF'
 export ROS_DOMAIN_ID="${GROVE_G1_ROS_DOMAIN_ID:-1}"
-export RMW_IMPLEMENTATION="${GROVE_G1_RMW:-rmw_cyclonedds_cpp}"
-export CYCLONEDDS_URI="${GROVE_G1_CYCLONEDDS_URI:-file:///etc/cyclonedds/cyclonedds.xml}"
 EOF
 
 # Remove pip `em` — it shadows apt's python3-empy and breaks rosidl generation.
@@ -289,7 +285,8 @@ RUN apt-get update && apt-get install -y \
 # 4.9.0 installed to lib/ and did not have this. Guarded rather than unconditional so a fixed
 # release does not get a symlink over the top of its real file.
 RUN test -e /opt/ros/humble/lib/libbehaviortree_cpp.so || \
-    ln -s x86_64-linux-gnu/libbehaviortree_cpp.so /opt/ros/humble/lib/libbehaviortree_cpp.so
+    ln -s "$(dpkg-architecture -qDEB_HOST_MULTIARCH)/libbehaviortree_cpp.so" \
+          /opt/ros/humble/lib/libbehaviortree_cpp.so
 
 # --- Milestone 10: LiDAR-inertial odometry ------------------------------------
 

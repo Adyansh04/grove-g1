@@ -72,6 +72,16 @@ services:
 
     # GUI environment
     environment:
+      # DDS/domain, resolved here so EVERY shell in the container sees them -- the image's own
+      # ENV would be overridden silently, and /etc/profile.d only runs for login shells, so
+      # `manage.sh exec` (interactive non-login) would never have picked an override up.
+      # Pointing the container at a real G1 is these three in .env; see README.
+      - ROS_DOMAIN_ID=${GROVE_G1_ROS_DOMAIN_ID:-1}
+      - GROVE_G1_ROS_DOMAIN_ID=${GROVE_G1_ROS_DOMAIN_ID:-1}
+      - CYCLONEDDS_URI=${GROVE_G1_CYCLONEDDS_URI:-file:///etc/cyclonedds/cyclonedds.xml}
+      # Read by CycloneDDS itself, expanding ${GROVE_G1_ROBOT_NIC:-eth0} inside the hardware
+      # profile. Inert with the loopback profile, which names `lo` outright.
+      - GROVE_G1_ROBOT_NIC=${GROVE_G1_ROBOT_NIC:-eth0}
       - DISPLAY=${DISPLAY}
       - QT_X11_NO_MITSHM=1
       - ROS_DISTRO=${ROS_DISTRO:-humble}
