@@ -13,6 +13,9 @@ two topics either way, which is the point of the split.
 The odometry publisher is a lifecycle node and is configured and activated here. It is the ONE
 owner of odom -> base_footprint, so bringing this up alongside the converged track's publisher
 would put two writers on the same transform; g1_bringup's `odometry:=` argument picks one.
+
+Neither branch stages robot_state_publisher: this needs the URDF already up, because the pose
+it publishes is offset from the sensor to the pelvis through TF.
 """
 
 import os
@@ -98,6 +101,17 @@ def _launch_setup(context, *args, **kwargs):
                 output="both",
             )
         )
+        # Without this there is no odometry at all: the waist joints reach /joint_states from
+        # nowhere else on the robot, and mid360_imu -> pelvis crosses them. See
+        # g1_hardware_interface's README.
+        actions.append(
+            Node(
+                package="g1_hardware_interface",
+                executable="g1_lowstate_joint_states",
+                name="g1_lowstate_joint_states",
+                output="both",
+            )
+        )
 
     # Publishes camera_init -> body on /tf as well as /Odometry_loc. That pair is an orphan
     # tree, disconnected from odom: harmless, and worth having when a scan match goes wrong.
@@ -120,8 +134,9 @@ def _launch_setup(context, *args, **kwargs):
         parameters=[os.path.join(share, "config", "g1_odometry_publisher_fastlio.yaml")],
         remappings=[
             ("~/lidar_odometry", "/Odometry_loc"),
-            # Only to level the odom frame at the origin latch; the attitude published
-            # afterwards is FAST-LIO's, whose heading does not drift.
+            # Levels the odom frame at the origin latch, then stays on as the gravity
+            # reference that keeps FAST-LIO's estimated gravity from wandering. Heading is
+            # never taken from here -- that comes from the scan match, which does not drift.
             ("~/imu_state", "/lowstate"),
         ],
     )

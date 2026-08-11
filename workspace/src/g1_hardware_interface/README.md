@@ -1,7 +1,9 @@
 # g1_hardware_interface
 
 A `ros2_control` `SystemInterface` plugin that bridges standard joint command and state interfaces
-onto Unitree's weight-blended `rt/arm_sdk` DDS topic. Covers the 14 arm joints.
+onto Unitree's weight-blended `rt/arm_sdk` DDS topic. Covers the 14 arm joints, and holds the 3
+waist motors that topic hands over with them. Also ships `g1_lowstate_joint_states`, which puts
+the legs and waist on `/joint_states` because no controller owns them.
 
 `ament_cmake`, C++20. This is real hardware code and runs unchanged against the physical G1.
 
@@ -24,6 +26,8 @@ the legs. The weight in motor slot 29 tells it how much of the arm command to ho
 |---|---|
 | `arm_ramp_engine.{hpp,cpp}` | Blend-weight ramping, per-joint slew clamping, motor-index validation, stale-feedback escalation. Pure and ROS-free, so it unit-tests directly. |
 | `g1_arm_sdk_system.{hpp,cpp}` | The plugin: parameters, lifecycle, DDS I/O, `LowCmd` assembly, threading. |
+| `lowstate_joint_states.{hpp,cpp}` | `LowState` motors 0-14 to `JointState`. Pure, so it tests without a graph. |
+| `g1_lowstate_joint_states_node.cpp` | The node around it. See below. |
 | `motor_crc_hg.{hpp,cpp}` | Vendored CRC, byte-exact against Unitree's. |
 | `g1_hardware_interface.xml` | pluginlib export. |
 
@@ -40,6 +44,7 @@ the legs. The weight in motor slot 29 tells it how much of the arm command to ho
 |---|---|---|---|
 | `/lowstate` | in | `unitree_hg/msg/LowState` | best-effort, keep-last(1), volatile |
 | `/arm_sdk` | out | `unitree_hg/msg/LowCmd` | reliable, keep-last(1), volatile |
+| `/joint_states` | out | `sensor_msgs/msg/JointState` | reliable, keep-last(1). `g1_lowstate_joint_states` only. |
 
 ## Parameters
 
@@ -51,6 +56,7 @@ the legs. The weight in motor slot 29 tells it how much of the arm command to ho
 | `emergency_ramp_down_s` | Faster ramp on stale feedback, error or shutdown. |
 | `max_joint_velocity_rad_s` | Slew clamp per joint, independent of the weight ramp. |
 | `lowstate_timeout_ms` | `/lowstate` age beyond this counts as stale. Blocks activation, and while active triggers the emergency ramp. |
+| `waist_kp`, `waist_kd` | Gains the three waist motors are held at while the blend is up. Unitree's 4x-the-arms ratio applied to ours; unmeasured, see below. |
 
 Values live in `g1_description/config/arm_sdk_params.yaml`.
 
@@ -118,6 +124,38 @@ ratio applied to ours, not a measured value.
 
 The real-time path does not allocate, block or throw.
 
+## g1_lowstate_joint_states
+
+A separate executable publishing `/joint_states` for the twelve leg joints and the three waist
+joints, from `/lowstate`, at `publish_rate_hz` (100 Hz default, throttled on elapsed time
+because `/lowstate` arrives at ~500 Hz on the robot and nearer 1 kHz in simulation).
+
+`joint_state_broadcaster` only knows joints a `ros2_control` component exports, which on this
+robot is the arms and the hands. Motors 0-14 belong to the onboard controller, so nothing
+publishes them — and `robot_state_publisher` emits no transform at all for a joint it has never
+received. The TF tree then comes up in two disconnected halves, `pelvis` in one and `torso_link`
+in the other, taking `mid360_link`, `mid360_imu`, `d435_link` **and both arms** with it.
+
+That is not cosmetic. `g1_state_estimation`'s LiDAR-inertial source looks up
+`mid360_imu -> pelvis` on every sample, precisely because the waist moves; with the chain broken
+the lookup fails forever and the source publishes no odometry at all. The Mid360's cloud stops
+being transformable, so both Nav2 costmaps go blind, and MoveIt's `CurrentStateMonitor` never
+sees a complete state.
+
+Its own node rather than three more state interfaces on `G1ArmSdkSystem`, because the transform
+has to exist for navigation with no arm component loaded. `robot_state_publisher` merges
+`/joint_states` by joint name and the two joint sets are disjoint, so this and
+`joint_state_broadcaster` coexist rather than compete.
+
+**Hardware bring-up must run it**, not only the LiDAR-odometry launch that happens to start it
+today. In simulation the same fifteen motors come from `g1_motion_service_sim`'s
+`publish_non_arm_joint_states`, so running both there would double-publish — which is why
+`control.launch.py` does not stage it and this has to be wired in deliberately.
+
+```bash
+ros2 run g1_hardware_interface g1_lowstate_joint_states
+```
+
 ## Tests
 
 None of these need a simulator.
@@ -126,7 +164,11 @@ None of these need a simulator.
 |---|---|
 | `test_pluginlib_loading` | pluginlib discovery. |
 | `test_arm_ramp_engine` | Weight monotonicity and slope both directions including a mid-ramp reversal, emergency ramp duration, slew clamp at the boundary, seed-from-measured, motor-index validation, idempotent staleness escalation. |
-| `test_assemble_low_cmd` | Non-arm slots stay zero, arm slots get exactly `q`/`kp`/`kd`, the weight lands on slot 29, mode fields untouched. |
+| `test_assemble_low_cmd` | Arm slots get exactly `q`/`kp`/`kd`, waist slots get the latched hold at the waist gains, the weight lands on slot 29, legs and hands stay zero, mode fields untouched. Also the round trip: the slots `waistHoldFrom` reads are the ones the command writes. |
+| `test_lowstate_joint_states` | The `/lowstate` to `/joint_states` mapping: names in DDS motor order, positions off the matching slots, and that it stops at the waist rather than reaching joints `joint_state_broadcaster` owns. |
+
+`g1_description`'s `test_motor_order` asserts this package's motor table still agrees with the
+simulator's and that every name is a joint the URDF has.
 
 ```bash
 colcon test --packages-select g1_hardware_interface

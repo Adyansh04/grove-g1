@@ -67,6 +67,7 @@ if(BUILD_TESTING)
   )
   # The sensor mounts are duplicated in the simulator, which links no ROS and so cannot read TF.
   ament_add_pytest_test(test_sensor_mounts test/test_sensor_mounts.py)
+  ament_add_pytest_test(test_motor_order test/test_motor_order.py)
 
   # Use workspace-root ruff.toml if available.
   find_program(RUFF_EXECUTABLE ruff)

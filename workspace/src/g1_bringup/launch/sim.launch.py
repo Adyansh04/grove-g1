@@ -404,9 +404,10 @@ def _launch_setup(context, *args, **kwargs):
         parameters=[
             os.path.join(motion_service_sim_share, "config", "motion_service_sim.yaml"),
             os.path.join(motion_service_sim_share, "config", "walk_policy.yaml"),
-            # Completes pelvis -> torso_link so the sensor frames are not stranded in their
-            # own TF tree, and fills in the hands, which no controller owns. Costs work on
-            # the 1 kHz /lowstate path, so it is not on by default.
+            # The legs and waist, which no controller owns. Completes pelvis -> torso_link, so
+            # without it the sensor frames and both arms are stranded in a TF tree of their
+            # own. Costs work on the 1 kHz /lowstate path, so it is not on by default. On
+            # hardware this comes from g1_hardware_interface's g1_lowstate_joint_states.
             {"publish_non_arm_joint_states": publish_non_arm},
             {"walk_policy.enabled": not pin_pelvis},
             waist_params,

@@ -27,7 +27,7 @@ composed beside it rather than wrapped around it. Neither `nav_stack.launch.py` 
 |---|---|
 | `bringup.launch.py` | What an operator runs. Stages the simulator and composes the navigation stack and MoveIt onto it as asked. |
 | `sim.launch.py` | Starts `unitree_mujoco`, `motion_service_sim`, `control.launch.py` and `loco.launch.py`. Checks the DDS environment first. Works standalone. |
-| `control.launch.py` | `robot_state_publisher`, `ros2_control_node` and the spawners. No simulator, so it carries to hardware unchanged. |
+| `control.launch.py` | `robot_state_publisher`, `ros2_control_node` and the spawners. No simulator, so it carries to hardware unchanged — but on the robot it needs `g1_hardware_interface`'s `g1_lowstate_joint_states` alongside it, or the legs and waist never reach `/joint_states` and the TF tree comes up split at the waist. `motion_service_sim` covers that in simulation. |
 | `loco.launch.py` | Starts `g1_loco_bridge` and drives it from configure to active. |
 | `rviz.launch.py` | Starts RViz on a caller-supplied `rviz_config` path. |
 | `activate_arm.launch.py` | Runs `scripts/activate_arm`, the ordered acquire step. |
