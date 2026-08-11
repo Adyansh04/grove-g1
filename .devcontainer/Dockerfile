@@ -10,12 +10,17 @@ ENV PIP_BREAK_SYSTEM_PACKAGES=1
 # EDITOR TOOLING
 # These are pre-configured tools for C++ and Python development.
 # ============================================================================
+# ruff is PINNED, and .github/ci.Dockerfile pins the same version. Unpinned, every rebuild of
+# either image picks up whatever ruff released that week, and the two then disagree about which
+# rules exist -- 0.16 raises B905 on code 0.13 accepts. CI is what would fail, on a rule the
+# developer's own colcon test never mentioned. ci.yml checks the two pins still match.
+ARG RUFF_VERSION=0.16.1
 RUN apt-get update && apt-get install -y clangd-14 clang-format-14 clang-tidy-14 && \
     update-alternatives --install /usr/bin/clangd clangd /usr/bin/clangd-14 100 && \
     update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-14 100 && \
     update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-14 100 && \
-    (python3 -m pip install --no-cache-dir --break-system-packages ruff || \
-     python3 -m pip install --no-cache-dir ruff) && \
+    (python3 -m pip install --no-cache-dir --break-system-packages ruff==${RUFF_VERSION} || \
+     python3 -m pip install --no-cache-dir ruff==${RUFF_VERSION}) && \
     rm -rf /var/lib/apt/lists/*
 
 # ============================================================================
