@@ -237,8 +237,9 @@ colcon test --ctest-args -L  simulator   # only the simulator suites
 
 ## Continuous integration
 
-Every push and pull request builds the workspace and runs the tests that need no simulator, in
-the image built by `.github/ci.Dockerfile`. Lint runs as part of `colcon test`, not separately.
+Every pull request, and every push to `main`, builds the workspace and runs the tests that need
+no simulator, in the image built by `.github/ci.Dockerfile`. Lint runs as part of `colcon test`,
+not separately.
 
 The simulator suites are excluded: they are CPU-time-sensitive and measure a shared runner
 rather than the stack. Run them locally before merging anything that touches locomotion,
