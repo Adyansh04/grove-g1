@@ -194,6 +194,8 @@ jobs:
 
       - name: Report
         working-directory: workspace
+        # tee, not plain redirection: written only to the step summary the numbers exist solely
+        # on the run's web page, and are not greppable from the log or `gh run view`.
         run: |
           {
             echo "## C++ coverage — non-simulator tests only"
@@ -205,4 +207,4 @@ jobs:
             gcovr --root . --filter 'src/g1_' --exclude '/test/' \
                   --txt --print-summary 2>&1 || echo "gcovr produced no data"
             echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
