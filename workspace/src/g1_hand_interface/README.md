@@ -40,6 +40,7 @@ Both at sensor QoS. `<side>` comes from the `side` parameter and must be `left` 
 | `command_publish_rate` | 100.0 | Hz. What Unitree's own teleop uses. |
 | `max_joint_velocity_rad_s` | 3.0 | Slew clamp on the commanded position. |
 | `state_timeout_ms` | 200.0 | State older than this blocks activation. |
+| `state_topic` | `/dex3/<side>/state` | Which of the robot's two state topics to read. See above. |
 
 ## Things the wire format will punish you for
 

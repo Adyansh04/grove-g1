@@ -1,5 +1,6 @@
 # FAST-LIO2 against the simulator. SIMULATION ONLY -- the robot uses
-# fastlio_mid360_hardware.yaml. Three keys differ, and all three are marked below.
+# fastlio_mid360_hardware.yaml. Four keys differ, each marked DIFFERS below; everything else
+# is identical and should stay that way.
 #
 # The extrinsic is NOT one of them: the simulator models an IMU inside the Mid360, at the same
 # place g1_description puts mid360_imu, so `body` is the sensor here exactly as it is on the robot
@@ -12,7 +13,7 @@
     # Mid360's ~20k returns, so it is thinned enough already.
     point_filter_num: 1
     max_iteration: 3
-    # DIFFERS (reference: 0.5/0.5). The reference tunes for a real Mid360 over building-scale
+    # DIFFERS (hardware: 0.5/0.5). The reference tunes for a real Mid360 over building-scale
     # runs; this is one 18x18 m room, and the voxel size is what bounds how tightly the filter
     # can pin height against the floor. At 0.5 m the estimate climbed 80-140 mm above the true
     # pelvis height, which is on its own more than the costmap's 0.08 m floor cut, so the floor

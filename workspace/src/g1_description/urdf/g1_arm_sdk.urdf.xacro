@@ -98,7 +98,9 @@
     </joint>
   </xacro:macro>
 
-  <!-- Arms only; waist/legs/hands stay with the onboard controller. -->
+  <!-- The 14 arm joints. The component also holds the 3 waist motors /arm_sdk hands over with
+       them, but they are not declared here: nothing plans them, so they need neither a command
+       interface nor a controller. Legs and hands stay with the onboard controller. -->
   <ros2_control name="G1ArmSdkSystem" type="system">
     <hardware>
       <plugin>g1_hardware_interface/G1ArmSdkSystem</plugin>

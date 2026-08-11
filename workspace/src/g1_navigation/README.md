@@ -129,6 +129,11 @@ being 3 x 3 m rolling and unable to hold a return past ~2.1 m regardless. Before
 floor marks at 4-5 m were reaching the global costmap and failing the planner: a 13-goal soak
 completed 7 with `obstacle_max_range: 5.0` and all 13 with 3.0.
 
+Those tilt figures are the simulator's, so the 3.0 does not transfer as a number — only as a
+method. Re-measure it on the robot the same way, by bucketing floor returns by range and
+counting what crosses `min_obstacle_height`; a real Mid360 with real IMU noise may want a
+shorter range, and it is the distribution's tail that decides, not its median.
+
 ## Configuration
 
 | File | Contents |
