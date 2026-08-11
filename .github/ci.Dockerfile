@@ -12,7 +12,8 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ENV DEBIAN_FRONTEND=noninteractive
 
 # clang-format 14 matches the dev image. Its output is not stable across major versions, so an
-# unpinned one rejects correctly formatted files.
+# unpinned one rejects correctly formatted files. liburdfdom-tools is check_urdf, which
+# g1_description's xacro test shells out to.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
         ccache \
@@ -21,6 +22,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
         gcovr \
         git \
+        liburdfdom-tools \
         python3-colcon-common-extensions \
         python3-pip \
         python3-vcstool \
