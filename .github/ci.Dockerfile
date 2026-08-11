@@ -1,26 +1,18 @@
-# Build-and-test image for CI. NOT the development environment.
+# Build-and-test image for CI. NOT the development environment -- .devcontainer/Dockerfile is,
+# and at 19 GB a runner cannot pull it. This carries only what the packages link against.
 #
-# .devcontainer/Dockerfile is what you develop in and what the simulator needs; it derives from
-# an 18 GB ROS desktop base and adds MuJoCo, CUDA tooling, RViz and a full GUI stack. A GitHub
-# runner cannot pull that, and none of it is needed to answer the only question CI asks: does
-# the workspace still compile, and do the tests that need no simulator still pass?
+# Absent by design: MuJoCo, CUDA, RViz, Xvfb, the unitree_mujoco tree. Anything under
+# `ctest -L simulator` cannot run here.
 #
-# So this starts from ros:humble-ros-base and adds only what the packages link against. What is
-# deliberately absent: MuJoCo, ONNX's GPU providers, RViz, Xvfb, clangd, and the whole
-# unitree_mujoco vendor tree. Anything under `ctest -L simulator` cannot run here, by design --
-# see g1_bringup/CMakeLists.txt for why those stay off shared runners.
-#
-# THE SHAs BELOW MUST MATCH .devcontainer/Dockerfile. They are the versions the workspace is
-# actually built against; a CI image on different ones would test a configuration nobody runs.
-# .github/workflows/ci.yml checks that they agree and fails if they drift.
+# The ARG versions below must match .devcontainer/Dockerfile; ci.yml fails the build if they
+# drift, because CI on different versions tests a configuration nobody ships.
 FROM ros:humble-ros-base
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Toolchain, plus the lint binaries the workspace's own ctest lint targets look for. Version 14
-# is pinned to match the dev image: clang-format's output is not stable across major versions,
-# so an unpinned one would fail files that are correctly formatted locally.
+# clang-format 14 matches the dev image. Its output is not stable across major versions, so an
+# unpinned one rejects correctly formatted files.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
         ccache \
@@ -34,14 +26,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && ln -sf /usr/bin/clang-format-14 /usr/bin/clang-format \
     && rm -rf /var/lib/apt/lists/*
 
-# Must match .devcontainer/Dockerfile's pin: ruff's rule set changes between minor versions, so
-# a different one here fails the workspace's own ruff_check_* targets on rules the developer's
-# container never raised. ci.yml enforces that the two agree.
+# Pinned: ruff's rule set changes between minor versions.
 ARG RUFF_VERSION=0.16.1
 RUN python3 -m pip install --no-cache-dir ruff==${RUFF_VERSION}
 
-# Library dependencies, mirroring the dev image's list minus everything GUI. libboost and
-# libeigen are unitree_sdk2's; PCL is FAST-LIO's.
+# libboost/libeigen are unitree_sdk2's, PCL is FAST-LIO's.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         libboost-all-dev \
         libeigen3-dev \
@@ -52,7 +41,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         nlohmann-json3-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# ROS packages the workspace builds against. ros-base carries none of these.
+# ROS packages the workspace builds against; ros-base carries none of them.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ros-humble-ament-cmake-gmock \
         ros-humble-ament-cmake-pytest \
@@ -81,9 +70,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ros-humble-xacro \
     && rm -rf /var/lib/apt/lists/*
 
-# Same multiarch workaround the dev image carries: behaviortree_cpp 4.9.1 installs its library
-# under lib/<triplet>/ while its own CMake export still looks in lib/, so every package that
-# find_package()s it fails to configure. Guarded, so a fixed release keeps its real file.
+# behaviortree_cpp 4.9.1 installs under lib/<triplet>/ while its own CMake export looks in
+# lib/, so dependants fail to configure. Guarded so a fixed release keeps its real file.
 RUN test -e /opt/ros/humble/lib/libbehaviortree_cpp.so || \
     ln -s "$(dpkg-architecture -qDEB_HOST_MULTIARCH)/libbehaviortree_cpp.so" \
           /opt/ros/humble/lib/libbehaviortree_cpp.so
@@ -102,9 +90,8 @@ RUN git init -q /tmp/unitree_sdk2 && \
     rm -rf /tmp/unitree_sdk2
 
 # --- Livox-SDK2 ---------------------------------------------------------------------------
-# livox_ros_driver2's CMakeLists does find_library(... /usr/local/lib REQUIRED), so the driver
-# does not configure without it -- and the driver is what defines CustomMsg, which both
-# FAST-LIO and g1_sensor_relay speak.
+# livox_ros_driver2 does find_library(... REQUIRED) for it, and that driver defines the
+# CustomMsg both FAST-LIO and g1_sensor_relay speak.
 ARG LIVOX_SDK2_SHA=08f523c930b2f0ba1e98a6afaa8d7476bf479908
 RUN git init -q /tmp/Livox-SDK2 && \
     cd /tmp/Livox-SDK2 && \
@@ -118,7 +105,7 @@ RUN git init -q /tmp/Livox-SDK2 && \
     rm -rf /tmp/Livox-SDK2
 
 # --- ONNX Runtime -------------------------------------------------------------------------
-# g1_motion_service_sim links it for the walking policy. CPU build only; nothing in CI infers.
+# g1_motion_service_sim links it for the walking policy. CPU build only.
 ARG ONNXRUNTIME_VERSION=1.20.1
 RUN mkdir -p /opt/onnxruntime && \
     curl -fsSL "https://github.com/microsoft/onnxruntime/releases/download/v${ONNXRUNTIME_VERSION}/onnxruntime-linux-x64-${ONNXRUNTIME_VERSION}.tgz" \
@@ -126,8 +113,7 @@ RUN mkdir -p /opt/onnxruntime && \
     echo /opt/onnxruntime/lib > /etc/ld.so.conf.d/onnxruntime.conf && \
     ldconfig
 
-# Loopback DDS, as the dev image does. CI never talks to a robot, and a runner binding its real
-# NIC would put a test's rt/lowcmd on whatever network GitHub gave it.
+# Loopback DDS: a runner binding its real NIC would put a test's rt/lowcmd on GitHub's network.
 RUN mkdir -p /etc/cyclonedds && \
     printf '%s\n' \
       '<?xml version="1.0" encoding="UTF-8" ?>' \

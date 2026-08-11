@@ -1,23 +1,7 @@
-# Build and test the workspace on every push and pull request.
+# Builds the workspace and runs the tests that need no simulator.
 #
-# ONE job on purpose. The obvious design is a fast lint job on a bare runner ahead of the slow
-# build, and it was tried: within minutes it disagreed with the workspace twice. A find(1) glob
-# for `*/g1_*` also matches g1_arm_sdk_dds_example.cpp inside the vendored unitree_ros2, and a
-# pip-pinned ruff is not the ruff the dev container ships, so it raised rules the per-package
-# targets never see. Both are fixable, and both would come back the next time either side moved.
-#
-# `colcon test` already runs every clang_format_check_* and ruff_check_* target with the right
-# per-package scope and the container's own tool versions. Running them a second time from a
-# workflow file means maintaining a second definition of "lint" that can drift from the first,
-# and a red CI that a developer cannot reproduce locally is worse than a slower green one.
-#
-# What this does NOT run: anything labelled `simulator`. Those suites need a live MuJoCo and are
-# CPU-time-sensitive -- the walking policy uses wall timers and MuJoCo syncs to CPU time, so on
-# two shared cores they measure the runner rather than the stack. g1_bringup/CMakeLists.txt has
-# the reasoning. `ctest -LE simulator` skips them by property, so a new sim suite is excluded by
-# being labelled rather than by anyone remembering to edit this file.
-#
-# Free on every plan: public repositories get unlimited GitHub-hosted Linux runner minutes.
+# Simulator suites are excluded: they need a live MuJoCo and are CPU-time-sensitive, so on a
+# shared runner they measure the runner. They carry the ctest label `simulator`.
 name: CI
 
 on:
@@ -27,17 +11,61 @@ on:
   workflow_dispatch:
 
 concurrency:
-  # A second push to the same branch makes the first run's answer irrelevant.
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+  packages: write
+
+env:
+  # Lowercase and literal: GHCR rejects uppercase, and this owner is `Adyansh04`.
+  IMAGE: ghcr.io/adyansh04/grove-g1-ci
+
 jobs:
+  # Tag is the Dockerfile's hash, so this is a registry probe unless the Dockerfile changed.
+  image:
+    runs-on: ubuntu-22.04
+    outputs:
+      ref: ${{ steps.tag.outputs.ref }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: tag
+        run: |
+          h=$(sha256sum .github/ci.Dockerfile | cut -c1-16)
+          echo "ref=${IMAGE}:${h}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: probe
+        run: |
+          docker manifest inspect "${{ steps.tag.outputs.ref }}" >/dev/null 2>&1 \
+            && echo "exists=true" >> "$GITHUB_OUTPUT" \
+            || echo "exists=false" >> "$GITHUB_OUTPUT"
+
+      - if: steps.probe.outputs.exists == 'false'
+        uses: docker/setup-buildx-action@v3
+
+      - if: steps.probe.outputs.exists == 'false'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: .github/ci.Dockerfile
+          tags: ${{ steps.tag.outputs.ref }}
+          push: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=min
+
   build:
+    needs: image
     runs-on: ubuntu-22.04
     container:
-      # Built by ci-image.yml. Lean by design -- see .github/ci.Dockerfile for what it leaves
-      # out and why the 19 GB dev image is not usable here.
-      image: ghcr.io/adyansh04/grove-g1-ci:latest
+      image: ${{ needs.image.outputs.ref }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -47,10 +75,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check the CI image is pinned to the same SHAs as the dev image
-        # The two Dockerfiles build the same vendored SDKs from source. If they drift, CI passes
-        # against a configuration nobody develops or ships on, which is worse than having no CI:
-        # it is a green tick for the wrong thing.
+      # A CI image on different versions than the dev image tests a configuration nobody ships.
+      - name: Check the two images pin the same versions
         run: |
           fail=0
           for arg in UNITREE_SDK2_SHA LIVOX_SDK2_SHA ONNXRUNTIME_VERSION RUFF_VERSION; do
@@ -64,11 +90,8 @@ jobs:
           exit $fail
 
       - name: Import externals
-        # Pulls the pinned third-party checkouts into workspace/src and puts the two with a
-        # non-standard layout into a buildable one. Same script a developer runs after cloning.
-        #
-        # safe.directory first: the checkout is not owned by the uid the container runs as, and
-        # git's dubious-ownership refusal surfaces as a vcs error that names neither cause.
+        # safe.directory: the checkout is not owned by the container's uid, and git's refusal
+        # surfaces as a vcs error naming neither cause.
         run: |
           git config --global --add safe.directory '*'
           ./scripts/import-externals.sh
@@ -76,8 +99,6 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ${{ github.workspace }}/.ccache
-          # Per-branch, falling back to main's, so a new branch starts warm rather than from a
-          # cold compiler cache.
           key: ccache-${{ github.ref_name }}-${{ github.sha }}
           restore-keys: |
             ccache-${{ github.ref_name }}-
@@ -94,12 +115,9 @@ jobs:
 
       - name: Test
         working-directory: workspace
-        # --packages-select-regex '^g1_': the vendored checkouts are built as dependencies but
-        # are not linted to this workspace's standards, and their copyright/cpplint/flake8
-        # targets fail by design. Selecting ours by prefix covers a new package automatically.
-        #
-        # --return-code-on-test-failure: colcon test exits 0 even when tests fail, so without
-        # this the job would be green over a red suite.
+        # ^g1_ skips the vendored checkouts, whose lint targets fail by design. Lint for ours
+        # runs here as each package's own ctest target, which is why there is no lint job.
+        # --return-code-on-test-failure: colcon test otherwise exits 0 over a failing suite.
         run: |
           source /opt/ros/humble/setup.bash
           source install/setup.bash
