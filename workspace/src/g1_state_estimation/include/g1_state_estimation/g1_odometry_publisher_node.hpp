@@ -92,8 +92,8 @@ private:
     /// identity edge and an extra frame for nothing.
     std::string pelvis_frame_id_;
     /// Frame the LiDAR odometry reports the pose OF -- FAST-LIO's `body`, which is its IMU.
-    /// Empty means that frame already is the body this node publishes, which is the case in
-    /// simulation where the IMU feeding FAST-LIO is the pelvis IMU.
+    /// Empty means that frame already is the body this node publishes. It is `mid360_imu` on
+    /// both tracks: the simulator models an IMU in the sensor housing as the robot has one.
     std::string lidar_body_frame_id_;
     /// Beyond this the heading is ill-conditioned and the last good one is held instead.
     double                 max_tilt_rad_     = 0.0;
@@ -122,8 +122,7 @@ private:
     /// Low-passed tilt error between FAST-LIO's attitude and the IMU's, applied to every
     /// published attitude. Slow on purpose -- see levelledAttitude().
     Quaternion tilt_correction_;
-    /// Per-sample slerp fraction toward the instantaneous error. At FAST-LIO's ~10 Hz this is
-    /// roughly a 2 s time constant: far slower than the gait, far faster than the drift.
+    /// Per-sample slerp fraction toward the instantaneous error, from `tilt_correction_gain`.
     double tilt_correction_gain_ = 0.05;
     /// odom -> the LiDAR odometry's own start frame. FAST-LIO's `camera_init` is wherever its
     /// IMU happened to be pointing when it initialised, not a gravity-aligned world frame, so

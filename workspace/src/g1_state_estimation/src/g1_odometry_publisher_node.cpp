@@ -39,6 +39,9 @@ G1OdometryPublisher::G1OdometryPublisher(const rclcpp::NodeOptions& options)
     // the ground plane. Only the fast_lio source uses it: that source measures height
     // relative to wherever it initialised, and has no idea where the floor is.
     declare_parameter<double>("start_height_m", 0.0);
+    // How fast the published tilt is pulled toward the IMU's. See levelledAttitude() for why
+    // this has to be slow, and the shipped config for the numbers.
+    declare_parameter<double>("tilt_correction_gain", 0.05);
     declare_parameter<double>("publish_rate_hz", 50.0);
     declare_parameter<bool>("publish_odom_msg", true);
     declare_parameter<double>("source_timeout_ms", 200.0);
@@ -77,16 +80,17 @@ bool G1OdometryPublisher::readParameters()
         return false;
     }
 
-    start_height_m_      = get_parameter("start_height_m").as_double();
-    odom_frame_id_       = get_parameter("odom_frame_id").as_string();
-    base_frame_id_       = get_parameter("base_frame_id").as_string();
-    pelvis_frame_id_     = get_parameter("pelvis_frame_id").as_string();
-    lidar_body_frame_id_ = get_parameter("lidar_body_frame_id").as_string();
-    max_tilt_rad_        = get_parameter("max_tilt_deg").as_double() * M_PI / 180.0;
-    publish_rate_hz_     = get_parameter("publish_rate_hz").as_double();
-    publish_odom_msg_    = get_parameter("publish_odom_msg").as_bool();
-    source_timeout_s_    = get_parameter("source_timeout_ms").as_double() / 1000.0;
-    wall_timeout_s_      = get_parameter("wall_timeout_ms").as_double() / 1000.0;
+    start_height_m_       = get_parameter("start_height_m").as_double();
+    tilt_correction_gain_ = get_parameter("tilt_correction_gain").as_double();
+    odom_frame_id_        = get_parameter("odom_frame_id").as_string();
+    base_frame_id_        = get_parameter("base_frame_id").as_string();
+    pelvis_frame_id_      = get_parameter("pelvis_frame_id").as_string();
+    lidar_body_frame_id_  = get_parameter("lidar_body_frame_id").as_string();
+    max_tilt_rad_         = get_parameter("max_tilt_deg").as_double() * M_PI / 180.0;
+    publish_rate_hz_      = get_parameter("publish_rate_hz").as_double();
+    publish_odom_msg_     = get_parameter("publish_odom_msg").as_bool();
+    source_timeout_s_     = get_parameter("source_timeout_ms").as_double() / 1000.0;
+    wall_timeout_s_       = get_parameter("wall_timeout_ms").as_double() / 1000.0;
 
     if (publish_rate_hz_ <= 0.0)
     {
@@ -110,6 +114,16 @@ bool G1OdometryPublisher::readParameters()
             get_logger(),
             "max_tilt_deg must be in (0, 180), got %f",
             get_parameter("max_tilt_deg").as_double());
+        return false;
+    }
+    // 1.0 would substitute the IMU's tilt outright, which is the timing error levelledAttitude()
+    // exists to avoid; 0.0 is the honest way to turn the correction off.
+    if (tilt_correction_gain_ < 0.0 || tilt_correction_gain_ >= 1.0)
+    {
+        RCLCPP_ERROR(
+            get_logger(),
+            "tilt_correction_gain must be in [0, 1), got %f",
+            tilt_correction_gain_);
         return false;
     }
 
@@ -527,8 +541,9 @@ void G1OdometryPublisher::onLowState(const unitree_hg::msg::LowState::SharedPtr 
     imu_orientation_      = Quaternion{ q.x * inv, q.y * inv, q.z * inv, q.w * inv };
     have_imu_orientation_ = true;
 
-    // For fast_lio this stream is only the levelling reference for the latch; the attitude it
-    // publishes afterwards comes from the LiDAR solution, whose heading does not drift.
+    // For fast_lio this stream levels the odom frame at the latch and then stays on as the
+    // gravity reference levelledAttitude() corrects roll and pitch against. Heading is never
+    // taken from it: that comes from the LiDAR solution, which is what does not drift.
     if (source_ == OdometrySource::SimSportModeState)
     {
         applyOrientation(imu_orientation_);

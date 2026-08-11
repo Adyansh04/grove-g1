@@ -14,9 +14,13 @@ g1_odometry_publisher:
     pelvis_frame_id: "pelvis"
 
     # The frame FAST-LIO reports the pose OF, so this node can offset the estimate over to the
-    # pelvis through TF. Which frame that is depends on which IMU feeds FAST-LIO, and the two
-    # tracks differ: in simulation it is the pelvis IMU (the launch overrides this to ""), on
-    # hardware it is the Mid360's own IMU, mid360_imu in the URDF.
+    # pelvis through TF. It is the Mid360's own IMU on both tracks -- the simulator models one
+    # in the sensor housing too -- so unlike most of this stack there is no sim/hardware split
+    # here.
+    #
+    # That chain crosses the three waist joints, so /joint_states must carry them or the lookup
+    # never resolves and this source publishes nothing. In simulation motion_service_sim does
+    # it; on the robot g1_hardware_interface's g1_lowstate_joint_states does.
     lidar_body_frame_id: "mid360_imu"
 
     # Pelvis height above the floor when odometry starts, which is what puts odom on the ground
@@ -35,6 +39,14 @@ g1_odometry_publisher:
     start_height_m: 0.750
 
     max_tilt_deg: 80.0
+
+    # How hard the published roll and pitch are pulled toward the pelvis IMU's, as a slerp
+    # fraction per LiDAR sample. At FAST-LIO's 10 Hz this is roughly a 2 s time constant:
+    # slower than the gait, so scan-synchronised attitude passes through untouched, and faster
+    # than FAST-LIO's gravity drift, which is the thing being removed. Raise it only with a
+    # measurement in hand -- too fast pins a fresh IMU sample onto an older scan and injects
+    # gait-frequency error rather than removing drift. 0.0 turns the correction off.
+    tilt_correction_gain: 0.05
 
     publish_rate_hz: 50.0
     publish_odom_msg: true
