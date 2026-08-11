@@ -109,7 +109,7 @@ jobs:
           git config --global --add safe.directory '*'
           ./scripts/import-externals.sh
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: .ccache
           key: ccache-${{ github.ref_name }}-${{ github.sha }}
