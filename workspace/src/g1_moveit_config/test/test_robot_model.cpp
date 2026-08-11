@@ -250,8 +250,9 @@ TEST_F(RobotModelTest, EachHandHasAnOpenAndAClosedPosture)
     }
     for (const auto* side : { "left", "right" })
     {
-        EXPECT_EQ(poses_by_group[std::string(side) + "_hand"],
-                  (std::set<std::string>{ "open", "closed" }));
+        EXPECT_EQ(
+            poses_by_group[std::string(side) + "_hand"],
+            (std::set<std::string>{ "open", "closed" }));
     }
 }
 
