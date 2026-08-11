@@ -65,7 +65,7 @@
 </defs>
 <rect width="900" height="838" fill="var(--bg)"/>
 <text class="ttl" x="28" y="36">Grove-G1</text>
-<text class="sub" x="112" y="36">ROS 2 Humble autonomy stack for the Unitree G1 humanoid</text>
+<text class="sub" x="112" y="36">ROS 2 autonomy stack for the Unitree G1 humanoid</text>
 <rect class="card" x="326" y="62" width="248" height="30" rx="15"/><text class="t" x="450" y="77.5" text-anchor="middle" dominant-baseline="middle">ros2 launch g1_bringup bringup.launch.py</text>
 <rect class="card" x="326" y="108" width="248" height="44"/>
 <path d="M326.5,116 v28" stroke="var(--man)" stroke-width="3.5" stroke-linecap="round"/>
