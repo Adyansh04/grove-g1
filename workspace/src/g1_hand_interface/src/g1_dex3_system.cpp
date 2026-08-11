@@ -21,6 +21,14 @@ double paramOr(const hardware_interface::HardwareInfo& info, const std::string& 
     const auto it = info.hardware_parameters.find(key);
     return it == info.hardware_parameters.end() ? fallback : std::stod(it->second);
 }
+
+std::string paramOr(
+    const hardware_interface::HardwareInfo& info, const std::string& key,
+    const std::string& fallback)
+{
+    const auto it = info.hardware_parameters.find(key);
+    return it == info.hardware_parameters.end() || it->second.empty() ? fallback : it->second;
+}
 }  // namespace
 
 hardware_interface::CallbackReturn
@@ -83,6 +91,7 @@ G1Dex3System::on_init(const hardware_interface::HardwareInfo& info)
     command_publish_rate_ = paramOr(info, "command_publish_rate", 100.0);
     max_joint_velocity_   = paramOr(info, "max_joint_velocity_rad_s", 3.0);
     state_timeout_s_      = paramOr(info, "state_timeout_ms", 200.0) / 1000.0;
+    state_topic_          = paramOr(info, "state_topic", "/dex3/" + side_ + "/state");
 
     if (command_publish_rate_ <= 0.0 || max_joint_velocity_ <= 0.0 || state_timeout_s_ <= 0.0)
     {
@@ -102,7 +111,7 @@ hardware_interface::CallbackReturn G1Dex3System::on_configure(const rclcpp_lifec
     // Sensor QoS both ways: this is a device stream, and it is what Unitree's own tooling uses.
     const auto qos = rclcpp::SensorDataQoS();
     state_sub_     = node_->create_subscription<unitree_hg::msg::HandState>(
-        "/dex3/" + side_ + "/state",
+        state_topic_,
         qos,
         [this](const unitree_hg::msg::HandState::ConstSharedPtr& msg) { handStateCallback(msg); });
     cmd_pub_raw_ =
@@ -159,8 +168,8 @@ hardware_interface::CallbackReturn G1Dex3System::on_activate(const rclcpp_lifecy
     {
         RCLCPP_ERROR(
             node_->get_logger(),
-            "no fresh HandState on /dex3/%s/state -- refusing to activate",
-            side_.c_str());
+            "no fresh HandState on %s -- refusing to activate",
+            state_topic_.c_str());
         return hardware_interface::CallbackReturn::ERROR;
     }
     for (std::size_t i = 0; i < kNumHandJoints; ++i)

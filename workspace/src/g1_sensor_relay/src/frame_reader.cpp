@@ -29,7 +29,8 @@ FrameStatus tryReadFrame(std::vector<std::uint8_t>& buffer, CloudFrame& out)
     const bool is_cloud   = header.kind == static_cast<std::uint32_t>(SensorFrameKind::PointCloud);
     const bool is_depth   = header.kind == static_cast<std::uint32_t>(SensorFrameKind::Depth);
     const bool is_objects = header.kind == static_cast<std::uint32_t>(SensorFrameKind::ObjectPoses);
-    if (!is_cloud && !is_depth && !is_objects)
+    const bool is_imu     = header.kind == static_cast<std::uint32_t>(SensorFrameKind::Imu);
+    if (!is_cloud && !is_depth && !is_objects && !is_imu)
     {
         return FrameStatus::BadKind;
     }
@@ -39,6 +40,13 @@ FrameStatus tryReadFrame(std::vector<std::uint8_t>& buffer, CloudFrame& out)
     {
         if (header.point_count > kMaxPoints ||
             header.payload_bytes != header.point_count * 3u * sizeof(float))
+        {
+            return FrameStatus::BadLength;
+        }
+    }
+    else if (is_imu)
+    {
+        if (header.payload_bytes != sizeof(grove_g1::ImuSampleRecord))
         {
             return FrameStatus::BadLength;
         }
@@ -88,6 +96,15 @@ FrameStatus tryReadFrame(std::vector<std::uint8_t>& buffer, CloudFrame& out)
         {
             std::memcpy(out.points.data(), buffer.data() + sizeof(header), header.payload_bytes);
         }
+    }
+    else if (is_imu)
+    {
+        out.kind = FrameKind::Imu;
+        out.depth.clear();
+        out.rgb.clear();
+        out.points.clear();
+        out.objects.clear();
+        std::memcpy(&out.imu, buffer.data() + sizeof(header), sizeof(out.imu));
     }
     else if (is_objects)
     {

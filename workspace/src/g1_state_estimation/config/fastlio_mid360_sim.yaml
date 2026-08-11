@@ -1,0 +1,74 @@
+# FAST-LIO2 against the simulator. SIMULATION ONLY -- the robot uses
+# fastlio_mid360_hardware.yaml. Four keys differ, each marked DIFFERS below; everything else
+# is identical and should stay that way.
+#
+# The extrinsic is NOT one of them: the simulator models an IMU inside the Mid360, at the same
+# place g1_description puts mid360_imu, so `body` is the sensor here exactly as it is on the robot
+# and both configs carry Livox's own lidar-in-IMU offset. What differs is scan density, voxel size
+# and whether the extrinsic is estimated online.
+/**:
+  ros__parameters:
+    feature_extract_enable: false
+    # DIFFERS (hardware: 3). The simulated sweep is 360x32 = 11520 rays against a real
+    # Mid360's ~20k returns, so it is thinned enough already.
+    point_filter_num: 1
+    max_iteration: 3
+    # DIFFERS (hardware: 0.5/0.5). The reference tunes for a real Mid360 over building-scale
+    # runs; this is one 18x18 m room, and the voxel size is what bounds how tightly the filter
+    # can pin height against the floor. At 0.5 m the estimate climbed 80-140 mm above the true
+    # pelvis height, which is on its own more than the costmap's 0.08 m floor cut, so the floor
+    # came back as concentric rings of obstacle.
+    filter_size_surf: 0.2
+    filter_size_map: 0.2
+    cube_side_length: 1000.0
+    runtime_pos_log_enable: false
+    map_file_path: "./test.pcd"
+
+    common:
+      lid_topic: "/livox/custom_msg"
+      imu_topic: "/livox/imu"
+      time_sync_en: false
+      # 0.0, same as the reference and as hardware. The sim's scan-stamp lag used to be
+      # compensated here; g1_sensor_relay now stamps clouds from the simulator's own capture
+      # time instead, so there is no residual offset to remove.
+      time_offset_lidar_to_imu: 0.0
+
+    preprocess:
+      lidar_type: 1
+      scan_line: 4
+      blind: 0.5
+      timestamp_unit: 3
+      scan_rate: 10
+
+    mapping:
+      acc_cov: 0.1
+      gyr_cov: 0.1
+      b_acc_cov: 0.0001
+      b_gyr_cov: 0.0001
+      fov_degree: 360.0
+      det_range: 100.0
+      # DIFFERS (hardware: true). Nothing to estimate: the simulator places its IMU from the
+      # same numbers below, so the value is exact and the estimator can only wander from it --
+      # and it did, a 35 s standing run diverging kilometres once the estimate walked away. On
+      # the robot the true offset is only approximately Livox's published one, which is the
+      # case the estimator exists for.
+      extrinsic_est_en: false
+      # Livox's published lidar-in-IMU offset, the same pair the hardware config uses. Rotation
+      # is identity because both sensors sit in one housing and flip together with the mount;
+      # the upside-down mount lives in the URDF, where the rest of the stack looks for it.
+      extrinsic_T: [-0.011, -0.02329, 0.04412]
+      extrinsic_R: [1.0, 0.0, 0.0,
+                    0.0, 1.0, 0.0,
+                    0.0, 0.0, 1.0]
+
+    publish:
+      path_en: false
+      effect_map_en: false
+      map_en: false
+      scan_publish_en: true
+      dense_publish_en: false
+      scan_bodyframe_pub_en: false
+
+    pcd_save:
+      pcd_save_en: false
+      interval: -1

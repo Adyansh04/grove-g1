@@ -6,6 +6,7 @@ find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(vision_msgs REQUIRED)
+find_package(livox_ros_driver2 REQUIRED)
 
 # Framing and validation, free of ROS and sockets so the wire format tests without a
 # simulator or a running graph.
@@ -20,16 +21,33 @@ add_executable(g1_sensor_relay src/g1_sensor_relay_node.cpp)
 target_link_libraries(g1_sensor_relay PUBLIC frame_reader)
 ament_target_dependencies(g1_sensor_relay PUBLIC rclcpp sensor_msgs geometry_msgs vision_msgs)
 
+# The conversion itself, split out so it tests without a graph.
+add_library(livox_custom_msg src/livox_custom_msg.cpp)
+target_include_directories(livox_custom_msg PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+ament_target_dependencies(livox_custom_msg PUBLIC rclcpp sensor_msgs livox_ros_driver2)
+
+# Restates the relay's own output in the format FAST-LIO wants. Separate executable so the
+# odometry track can be started and stopped without touching the sensor path everything else
+# depends on.
+add_executable(g1_livox_bridge src/g1_livox_bridge_node.cpp)
+target_link_libraries(g1_livox_bridge PUBLIC livox_custom_msg)
+ament_target_dependencies(g1_livox_bridge PUBLIC rclcpp sensor_msgs livox_ros_driver2)
+
 # This package parses length-prefixed binary frames off a socket, so -Wsign-compare and the
 # unused-result warnings earn their keep here more than anywhere else in the workspace.
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   target_compile_options(frame_reader PRIVATE -Wall -Wextra)
   target_compile_options(g1_sensor_relay PRIVATE -Wall -Wextra)
+  target_compile_options(livox_custom_msg PRIVATE -Wall -Wextra)
+  target_compile_options(g1_livox_bridge PRIVATE -Wall -Wextra)
 endif()
 
 install(DIRECTORY include/ DESTINATION include)
-install(TARGETS frame_reader EXPORT export_${PROJECT_NAME} DESTINATION lib)
-install(TARGETS g1_sensor_relay DESTINATION lib/${PROJECT_NAME})
+install(TARGETS frame_reader livox_custom_msg EXPORT export_${PROJECT_NAME} DESTINATION lib)
+install(TARGETS g1_sensor_relay g1_livox_bridge DESTINATION lib/${PROJECT_NAME})
 
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
 ament_export_include_directories(include)
@@ -41,6 +59,9 @@ if(BUILD_TESTING)
   find_package(ament_cmake_gmock REQUIRED)
   ament_add_gmock(test_frame_reader test/test_frame_reader.cpp)
   target_link_libraries(test_frame_reader frame_reader)
+
+  ament_add_gmock(test_livox_custom_msg test/test_livox_custom_msg.cpp)
+  target_link_libraries(test_livox_custom_msg livox_custom_msg)
   # The wire-format drift check reads both copies of sensor_frame.h by relative path.
   set_tests_properties(test_frame_reader PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})

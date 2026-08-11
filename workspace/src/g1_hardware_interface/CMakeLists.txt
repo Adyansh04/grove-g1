@@ -7,6 +7,7 @@ find_package(pluginlib REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
 find_package(realtime_tools REQUIRED)
+find_package(sensor_msgs REQUIRED)
 find_package(unitree_hg REQUIRED)
 
 add_library(g1_arm_sdk_system SHARED
@@ -35,17 +36,37 @@ ament_target_dependencies(g1_arm_sdk_system PUBLIC
 # same path controller_manager uses to load it by name from the URDF.
 pluginlib_export_plugin_description_file(hardware_interface g1_hardware_interface.xml)
 
+# The legs and waist as JointState. Split from the node so the mapping tests without a graph.
+add_library(lowstate_joint_states src/lowstate_joint_states.cpp)
+target_include_directories(lowstate_joint_states PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+target_compile_features(lowstate_joint_states PUBLIC cxx_std_20)
+ament_target_dependencies(lowstate_joint_states PUBLIC sensor_msgs unitree_hg)
+
+# Its own executable, not part of the plugin: the transform it completes has to exist whether
+# or not an arm component is loaded.
+add_executable(g1_lowstate_joint_states src/g1_lowstate_joint_states_node.cpp)
+target_link_libraries(g1_lowstate_joint_states PRIVATE lowstate_joint_states)
+ament_target_dependencies(g1_lowstate_joint_states PUBLIC rclcpp sensor_msgs unitree_hg)
+if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  target_compile_options(lowstate_joint_states PRIVATE -Wall -Wextra)
+  target_compile_options(g1_lowstate_joint_states PRIVATE -Wall -Wextra)
+endif()
+
 install(
   DIRECTORY include/
   DESTINATION include
 )
 install(
-  TARGETS g1_arm_sdk_system
+  TARGETS g1_arm_sdk_system lowstate_joint_states
   EXPORT export_g1_arm_sdk_system
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin
 )
+install(TARGETS g1_lowstate_joint_states DESTINATION lib/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
@@ -70,6 +91,9 @@ if(BUILD_TESTING)
   ament_add_gmock(test_assemble_low_cmd test/test_assemble_low_cmd.cpp)
   target_link_libraries(test_assemble_low_cmd g1_arm_sdk_system)
   ament_target_dependencies(test_assemble_low_cmd unitree_hg)
+
+  ament_add_gmock(test_lowstate_joint_states test/test_lowstate_joint_states.cpp)
+  target_link_libraries(test_lowstate_joint_states lowstate_joint_states)
 
   # workspace/ruff.toml's sibling root config; see g1_description/CMakeLists.txt
   # for why this is a plain CTest instead of ament_lint_common's uncrustify.
@@ -101,6 +125,7 @@ ament_export_dependencies(
   rclcpp
   rclcpp_lifecycle
   realtime_tools
+  sensor_msgs
   unitree_hg
 )
 

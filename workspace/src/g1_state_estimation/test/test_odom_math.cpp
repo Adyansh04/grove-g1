@@ -1,15 +1,19 @@
 #include <gmock/gmock.h>
 
 #include <cmath>
+#include <limits>
 
 #include "g1_state_estimation/odom_math.hpp"
 
+using g1_state_estimation::composePose;
 using g1_state_estimation::diagonalCovariance;
 using g1_state_estimation::GroundSplit;
+using g1_state_estimation::invertPose;
 using g1_state_estimation::isStale;
 using g1_state_estimation::OdometrySource;
 using g1_state_estimation::parseOdometrySource;
 using g1_state_estimation::PlanarTwist;
+using g1_state_estimation::Pose3d;
 using g1_state_estimation::Quaternion;
 using g1_state_estimation::quaternionToYaw;
 using g1_state_estimation::splitGroundProjection;
@@ -23,38 +27,37 @@ namespace
 constexpr double kTol = 1e-12;
 }
 
-TEST(ParseOdometrySource, AcceptsTheTwoKnownNames)
+TEST(ParseOdometrySource, AcceptsEveryKnownName)
 {
     OdometrySource source = OdometrySource::Hardware;
-    ASSERT_TRUE(parseOdometrySource("sim_ground_truth", source));
-    EXPECT_EQ(source, OdometrySource::SimGroundTruth);
+    ASSERT_TRUE(parseOdometrySource("sim_sportmodestate", source));
+    EXPECT_EQ(source, OdometrySource::SimSportModeState);
+
+    ASSERT_TRUE(parseOdometrySource("fast_lio", source));
+    EXPECT_EQ(source, OdometrySource::FastLio);
 
     ASSERT_TRUE(parseOdometrySource("hardware", source));
     EXPECT_EQ(source, OdometrySource::Hardware);
 }
 
-TEST(ParseOdometrySource, AcceptsTheConvergedTrackSource)
-{
-    OdometrySource source = OdometrySource::Hardware;
-    ASSERT_TRUE(parseOdometrySource("sim_sportmodestate", source));
-    EXPECT_EQ(source, OdometrySource::SimSportModeState);
-}
-
 TEST(ParseOdometrySource, RejectsAnythingElseAndLeavesTheOutputAlone)
 {
-    // A typo must not silently become sim ground truth, which would fabricate
-    // transforms.
-    OdometrySource source = OdometrySource::SimGroundTruth;
+    // A typo must not silently become a working source, which would fabricate transforms.
+    // sim_ground_truth is in the list because it used to BE one: the planar sandbox it read
+    // is gone, and a stale config naming it has to fail rather than quietly pick something.
+    OdometrySource source = OdometrySource::SimSportModeState;
     for (const char* name : { "",
                               "sim",
-                              "SIM_GROUND_TRUTH",
+                              "sim_ground_truth",
+                              "SIM_SPORTMODESTATE",
                               "ground_truth",
                               "hardware ",
+                              "fastlio",
                               "sportmodestate",
                               "sim_sportmode" })
     {
         EXPECT_FALSE(parseOdometrySource(name, source)) << "accepted " << name;
-        EXPECT_EQ(source, OdometrySource::SimGroundTruth);
+        EXPECT_EQ(source, OdometrySource::SimSportModeState);
     }
 }
 
@@ -265,4 +268,181 @@ TEST(DiagonalCovariance, FillsOnlyTheDiagonal)
             EXPECT_DOUBLE_EQ(covariance[row * 6 + col], expected) << row << "," << col;
         }
     }
+}
+
+// --- Pose composition, which is what turns a LiDAR odometry frame into odom ------------------
+
+namespace
+{
+Pose3d makePose(double x, double y, double z, double roll, double pitch, double yaw)
+{
+    return Pose3d{ x, y, z, rpyToQuaternion(roll, pitch, yaw) };
+}
+
+void expectSamePose(const Pose3d& actual, const Pose3d& expected, double tolerance = 1e-9)
+{
+    EXPECT_NEAR(actual.x, expected.x, tolerance);
+    EXPECT_NEAR(actual.y, expected.y, tolerance);
+    EXPECT_NEAR(actual.z, expected.z, tolerance);
+    // Sign-insensitive: q and -q are the same rotation, and composePose is free to return
+    // either. Comparing components directly makes this test fail on an equivalent answer.
+    const double dot = std::abs(
+        actual.q.x * expected.q.x + actual.q.y * expected.q.y + actual.q.z * expected.q.z +
+        actual.q.w * expected.q.w);
+    EXPECT_NEAR(dot, 1.0, tolerance);
+}
+}  // namespace
+
+TEST(ComposePose, IdentityOnEitherSideChangesNothing)
+{
+    const Pose3d identity;
+    const Pose3d pose = makePose(1.0, -2.0, 0.5, 0.1, -0.2, 0.7);
+    expectSamePose(composePose(identity, pose), pose);
+    expectSamePose(composePose(pose, identity), pose);
+}
+
+TEST(ComposePose, RotatesTheSecondTranslationByTheFirstRotation)
+{
+    // A quarter turn about +z, then one metre along the child's +x. The child's forward is
+    // the parent's +y, so the result has to land there rather than at (1, 0).
+    const Pose3d turn  = makePose(0.0, 0.0, 0.0, 0.0, 0.0, M_PI_2);
+    const Pose3d ahead = makePose(1.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+    expectSamePose(composePose(turn, ahead), makePose(0.0, 1.0, 0.0, 0.0, 0.0, M_PI_2));
+}
+
+TEST(InvertPose, ComposesWithItsOwnInverseToIdentity)
+{
+    for (const Pose3d& pose : { makePose(1.0, -2.0, 0.5, 0.1, -0.2, 0.7),
+                                makePose(0.0, 0.0, 0.0, 0.0, 0.0, -3.0),
+                                makePose(-4.5, 0.25, -1.0, 1.2, 0.4, 2.9) })
+    {
+        expectSamePose(composePose(pose, invertPose(pose)), Pose3d{});
+        expectSamePose(composePose(invertPose(pose), pose), Pose3d{});
+    }
+}
+
+TEST(ComposePose, ReferencingAPoseToAStartPoseGivesRelativeMotion)
+{
+    // The latch, in miniature: given where the LiDAR said the robot started and where it says
+    // it is now, odom must report the motion between them expressed in the start frame.
+    const Pose3d start = makePose(0.4, -0.2, 0.05, 0.0, 0.0, 0.6);
+    // One metre along the heading it started with.
+    const Pose3d now = makePose(0.4 + std::cos(0.6), -0.2 + std::sin(0.6), 0.05, 0.0, 0.0, 0.6);
+
+    const Pose3d relative = composePose(invertPose(start), now);
+    EXPECT_NEAR(relative.x, 1.0, 1e-9) << "one metre straight ahead";
+    EXPECT_NEAR(relative.y, 0.0, 1e-9);
+    EXPECT_NEAR(quaternionToYaw(relative.q), 0.0, 1e-9) << "driving straight is not turning";
+}
+
+TEST(IsUsablePose, AcceptsAnOrdinaryPose)
+{
+    EXPECT_TRUE(isUsablePose(makePose(1.0, -2.0, 0.5, 0.1, -0.2, 0.7)));
+    EXPECT_TRUE(isUsablePose(Pose3d{}));
+}
+
+TEST(IsUsablePose, RejectsWhatADivergedScanMatchProduces)
+{
+    // FAST-LIO reports NaN rather than failing when its filter diverges. tf2 would normalise
+    // the result to NaN and drop the transform without naming a source, and at the origin
+    // latch a single one of these would be permanent.
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    const double inf = std::numeric_limits<double>::infinity();
+
+    Pose3d bad_x = makePose(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+    bad_x.x      = nan;
+    EXPECT_FALSE(isUsablePose(bad_x));
+
+    Pose3d bad_z = makePose(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+    bad_z.z      = inf;
+    EXPECT_FALSE(isUsablePose(bad_z));
+
+    Pose3d bad_q = makePose(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+    bad_q.q      = Quaternion{ nan, 0.0, 0.0, 1.0 };
+    EXPECT_FALSE(isUsablePose(bad_q));
+}
+
+TEST(IsUsablePose, RejectsAnAllZeroQuaternion)
+{
+    // The default-constructed geometry_msgs quaternion, which is what an unfilled pose carries.
+    Pose3d pose = makePose(1.0, 2.0, 3.0, 0.0, 0.0, 0.0);
+    pose.q      = Quaternion{ 0.0, 0.0, 0.0, 0.0 };
+    EXPECT_FALSE(isUsablePose(pose));
+}
+
+TEST(IsUsablePose, ToleratesAnUnnormalisedButRecoverableQuaternion)
+{
+    Pose3d pose = makePose(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+    pose.q      = Quaternion{ 0.0, 0.0, 0.0, 2.0 };
+    EXPECT_TRUE(isUsablePose(pose)) << "scaled, not degenerate";
+}
+
+TEST(ComposeAttitude, RoundTripsWithSplitGroundProjection)
+{
+    for (const Quaternion& q : { yawToQuaternion(0.7),
+                                 makePose(0, 0, 0, 0.2, -0.15, 1.1).q,
+                                 makePose(0, 0, 0, -0.4, 0.3, -2.2).q })
+    {
+        const double     yaw   = quaternionToYaw(q);
+        const auto       split = splitGroundProjection(0.0, 0.0, 0.0, q, yaw);
+        const Quaternion back  = composeAttitude(yaw, split.tilt);
+        // Sign is free in a quaternion, so compare the rotations rather than the components.
+        EXPECT_NEAR(quaternionToYaw(back), yaw, 1e-9);
+        EXPECT_NEAR(tiltFromVertical(back), tiltFromVertical(q), 1e-9);
+    }
+}
+
+TEST(ComposeAttitude, TakesHeadingFromOneSourceAndTiltFromAnother)
+{
+    // What the fast_lio source does: the LiDAR's heading, the IMU's gravity.
+    const Quaternion lidar = makePose(0, 0, 0, 0.05, 0.05, 1.3).q;   // heading, plus drifted tilt
+    const Quaternion imu   = makePose(0, 0, 0, 0.10, -0.02, 0.4).q;  // true gravity, other heading
+
+    const Quaternion imu_tilt =
+        splitGroundProjection(0.0, 0.0, 0.0, imu, quaternionToYaw(imu)).tilt;
+    const Quaternion out = composeAttitude(quaternionToYaw(lidar), imu_tilt);
+
+    EXPECT_NEAR(quaternionToYaw(out), quaternionToYaw(lidar), 1e-9) << "heading from the lidar";
+    EXPECT_NEAR(tiltFromVertical(out), tiltFromVertical(imu), 1e-9) << "gravity from the IMU";
+}
+
+TEST(Slerp, EndpointsAndShortestArc)
+{
+    const Quaternion a = yawToQuaternion(0.0);
+    const Quaternion b = yawToQuaternion(1.0);
+    EXPECT_NEAR(quaternionToYaw(slerp(a, b, 0.0)), 0.0, 1e-9);
+    EXPECT_NEAR(quaternionToYaw(slerp(a, b, 1.0)), 1.0, 1e-9);
+    EXPECT_NEAR(quaternionToYaw(slerp(a, b, 0.5)), 0.5, 1e-9);
+
+    // Negated quaternion is the same rotation: the interpolation must not take the long way.
+    const Quaternion b_flipped{ -b.x, -b.y, -b.z, -b.w };
+    EXPECT_NEAR(quaternionToYaw(slerp(a, b_flipped, 0.5)), 0.5, 1e-9);
+}
+
+TEST(Slerp, ClampsOutsideTheUnitInterval)
+{
+    const Quaternion a = yawToQuaternion(0.0);
+    const Quaternion b = yawToQuaternion(0.8);
+    EXPECT_NEAR(quaternionToYaw(slerp(a, b, -5.0)), 0.0, 1e-9);
+    EXPECT_NEAR(quaternionToYaw(slerp(a, b, 5.0)), 0.8, 1e-9);
+}
+
+TEST(Slerp, ConvergesOnRepeatedApplication)
+{
+    // How the tilt correction is actually used: a small step per sample toward the error.
+    const Quaternion target = makePose(0, 0, 0, 0.03, -0.02, 0.0).q;
+    Quaternion       state;
+    for (int i = 0; i < 400; ++i)
+    {
+        state = slerp(state, target, 0.05);
+    }
+    EXPECT_NEAR(tiltFromVertical(state), tiltFromVertical(target), 1e-6);
+}
+
+TEST(InvertRotation, ComposesToIdentity)
+{
+    const Quaternion q = makePose(0, 0, 0, 0.2, -0.3, 1.1).q;
+    const Quaternion r = composeRotation(q, invertRotation(q));
+    EXPECT_NEAR(std::abs(r.w), 1.0, 1e-9);
+    EXPECT_NEAR(tiltFromVertical(r), 0.0, 1e-9);
 }

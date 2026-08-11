@@ -72,6 +72,17 @@
     <child link="mid360_visual"/>
   </joint>
 
+  <!-- The Mid360's built-in IMU, which is the frame FAST-LIO's odometry reports ("body").
+       Livox publish the LIDAR-in-IMU offset [-0.011, -0.02329, 0.04412]; this joint is its
+       inverse, because here the parent is the lidar frame the cloud arrives in. Rotation is
+       identity: both sensors sit in one housing and flip together with the mount. -->
+  <link name="mid360_imu"/>
+  <joint name="mid360_imu_joint" type="fixed">
+    <parent link="mid360_link"/>
+    <child link="mid360_imu"/>
+    <origin xyz="0.011 0.02329 -0.04412" rpy="0 0 0"/>
+  </joint>
+
   <!-- Load tunable YAML for ROS 2 control parameters. -->
   <xacro:property name="arm_sdk_params" value="${xacro.load_yaml('../config/arm_sdk_params.yaml')}"/>
 
@@ -87,7 +98,9 @@
     </joint>
   </xacro:macro>
 
-  <!-- Arms only; waist/legs/hands stay with the onboard controller. -->
+  <!-- The 14 arm joints. The component also holds the 3 waist motors /arm_sdk hands over with
+       them, but they are not declared here: nothing plans them, so they need neither a command
+       interface nor a controller. Legs and hands stay with the onboard controller. -->
   <ros2_control name="G1ArmSdkSystem" type="system">
     <hardware>
       <plugin>g1_hardware_interface/G1ArmSdkSystem</plugin>
@@ -97,6 +110,8 @@
       <param name="emergency_ramp_down_s">${arm_sdk_params.system.emergency_ramp_down_s}</param>
       <param name="max_joint_velocity_rad_s">${arm_sdk_params.system.max_joint_velocity_rad_s}</param>
       <param name="lowstate_timeout_ms">${arm_sdk_params.system.lowstate_timeout_ms}</param>
+      <param name="waist_kp">${arm_sdk_params.system.waist_kp}</param>
+      <param name="waist_kd">${arm_sdk_params.system.waist_kd}</param>
     </hardware>
 
     <xacro:g1_arm_joint name="left_shoulder_pitch_joint"/>
@@ -146,6 +161,7 @@
         <param name="command_publish_rate">${dex3_params.system.command_publish_rate}</param>
         <param name="max_joint_velocity_rad_s">${dex3_params.system.max_joint_velocity_rad_s}</param>
         <param name="state_timeout_ms">${dex3_params.system.state_timeout_ms}</param>
+        <param name="state_topic">${dex3_params.system.state_topic_prefix}${side}${dex3_params.system.state_topic_suffix}</param>
       </hardware>
 
       <xacro:g1_hand_joint name="${side}_hand_thumb_0_joint"/>

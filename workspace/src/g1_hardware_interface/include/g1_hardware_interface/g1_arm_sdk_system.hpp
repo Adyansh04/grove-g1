@@ -43,18 +43,37 @@ namespace g1_hardware_interface
 inline constexpr std::size_t kWeightMotorIndex = 29;
 
 /**
- * @brief Fills every arm slot's q (from `position`) and per-joint kp/kd,
- * plus the weight slot (motor_cmd[kWeightMotorIndex].q), on `cmd`; dq/tau
- * on arm slots are set to 0.
+ * @brief The three waist motors, which /arm_sdk hands over along with the arms.
  *
- * Every other motor slot is left exactly as `cmd` already had it --
- * callers rely on a preallocated, zero-initialized LowCmd never being
- * touched anywhere else, so legs/waist/hands stay provably inert. Mirrors
- * exactly what Unitree's own g1_arm_sdk_dds_example touches on the
- * outgoing message (arm q/dq/tau/kp/kd and the weight slot) and nothing
- * else -- notably, it does not set mode_pr/mode_machine or any motor's
- * `mode` field, and neither does this. Kept as a standalone function so
- * the assembly logic is unit-testable without a live hardware component.
+ * Not planned joints and not exposed to MoveIt: they are held where they were found. Unitree's
+ * own arm_sdk example (unitree_ros2 example/src/src/g1/high_level/g1_arm_sdk_dds_example.cpp,
+ * G1Arm7JointIndex list) commands seventeen motors, the last three being WAIST_YAW, WAIST_ROLL
+ * and WAIST_PITCH at four times the arm gains. Leaving them out of the LowCmd sends them
+ * kp=kd=0 while the blend weight is up, which is a torso with no stiffness under arm load.
+ */
+inline constexpr std::size_t                      kNumWaistJoints  = 3;
+inline constexpr std::array<int, kNumWaistJoints> kWaistMotorIndex = { 12, 13, 14 };
+
+/**
+ * @brief The waist positions to hold, read out of a LowState at authority acquisition.
+ *
+ * Free function for the same reason assembleLowCmd is: reading the wrong slots here would put
+ * stiff gains on a leg, and that is worth asserting without a live hardware component.
+ */
+std::array<double, kNumWaistJoints> waistHoldFrom(const unitree_hg::msg::LowState& state);
+
+/**
+ * @brief Fills the 14 arm slots and the 3 waist slots on `cmd`, plus the weight slot
+ * (motor_cmd[kWeightMotorIndex].q); dq/tau are set to 0 on all of them.
+ *
+ * Arms take `position`; the waist takes `waist_hold`, which is where it was measured when
+ * authority was acquired. LEGS AND HANDS are left exactly as `cmd` already had it -- callers
+ * rely on a preallocated, zero-initialized LowCmd never being touched anywhere else, so those
+ * stay provably inert. This is the same set of slots Unitree's own g1_arm_sdk_dds_example
+ * touches, waist included: /arm_sdk hands over the arms AND the waist, and leaving the waist
+ * slots zero commands it at zero stiffness. Like that example it sets neither mode_pr,
+ * mode_machine, nor any motor's `mode`. Kept as a standalone function so the assembly logic is
+ * unit-testable without a live hardware component.
  *
  * @param cmd          LowCmd message filled in place.
  * @param motor_index  Per-joint motor_cmd slot index for each arm joint.
@@ -62,16 +81,20 @@ inline constexpr std::size_t kWeightMotorIndex = 29;
  * @param kp           Per-joint position gain for each arm joint.
  * @param kd           Per-joint velocity gain for each arm joint.
  * @param weight       Arm-sdk blend weight written to the weight slot.
+ * @param waist_hold   Latched waist position, one per kWaistMotorIndex entry.
+ * @param waist_kp     Position gain for all three waist motors.
+ * @param waist_kd     Velocity gain for all three waist motors.
  */
 void assembleLowCmd(
     unitree_hg::msg::LowCmd& cmd, const std::array<int, kNumArmJoints>& motor_index,
     const std::array<double, kNumArmJoints>& position, const std::array<double, kNumArmJoints>& kp,
-    const std::array<double, kNumArmJoints>& kd, float weight);
+    const std::array<double, kNumArmJoints>& kd, float weight,
+    const std::array<double, kNumWaistJoints>& waist_hold, double waist_kp, double waist_kd);
 
 /**
- * @brief ros2_control System bridging the G1's 14 arm joints onto
- * Unitree's weight-blended rt/arm_sdk DDS channel; legs/waist/hands stay
- * with the onboard controller.
+ * @brief ros2_control System bridging the G1's 14 arm joints onto Unitree's weight-blended
+ * rt/arm_sdk DDS channel, holding the 3 waist joints that channel hands over with them; legs
+ * and hands stay with the onboard controller.
  *
  * See the package README for the safety/authority model this class
  * enforces (single writer, ramp-not-snap, self-gated lifecycle).
@@ -122,6 +145,11 @@ private:
     std::array<int, kNumArmJoints>         motor_index_{};
     std::array<double, kNumArmJoints>      kp_{};
     std::array<double, kNumArmJoints>      kd_{};
+    /// Where the waist was when the blend engaged. Latched, never commanded to a new value:
+    /// nothing in this stack plans the waist, and snapping it is a fall.
+    std::array<double, kNumWaistJoints> waist_hold_{};
+    double                              waist_kp_{};
+    double                              waist_kd_{};
 
     /// System-level tunables parsed from HardwareInfo in on_init (see README's
     /// param table for units/meaning).

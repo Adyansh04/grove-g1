@@ -97,6 +97,29 @@ std::vector<std::uint8_t> makeObjectFrame(const std::vector<std::string>& names)
     return bytes;
 }
 
+// An IMU frame is one fixed-size record, with the attitude in the header fields every frame
+// already carries.
+std::vector<std::uint8_t> makeImuFrame()
+{
+    SensorFrameHeader header{};
+    header.magic          = grove_g1::kSensorFrameMagic;
+    header.version        = grove_g1::kSensorFrameVersion;
+    header.kind           = static_cast<std::uint32_t>(grove_g1::SensorFrameKind::Imu);
+    header.payload_bytes  = sizeof(grove_g1::ImuSampleRecord);
+    header.sim_time_s     = 12.25;
+    header.sensor_quat[0] = 1.0;
+    header.sensor_pos[2]  = 1.22;
+
+    grove_g1::ImuSampleRecord sample{};
+    sample.gyro[1] = 0.5;
+    sample.acc[2]  = 9.81;
+
+    std::vector<std::uint8_t> bytes(sizeof(header) + sizeof(sample));
+    std::memcpy(bytes.data(), &header, sizeof(header));
+    std::memcpy(bytes.data() + sizeof(header), &sample, sizeof(sample));
+    return bytes;
+}
+
 }  // namespace
 
 TEST(FrameReader, ReadsAWholeFrameAndConsumesExactlyIt)
@@ -331,4 +354,35 @@ TEST(FrameReader, TerminatesAnObjectNameThatArrivesUnterminated)
     ASSERT_EQ(tryReadFrame(bytes, frame), FrameStatus::Ok);
     ASSERT_EQ(frame.objects.size(), 1u);
     EXPECT_EQ(std::strlen(frame.objects[0].name), sizeof(grove_g1::ObjectPoseRecord::name) - 1);
+}
+
+TEST(FrameReader, ReadsAnImuFrame)
+{
+    auto       bytes = makeImuFrame();
+    CloudFrame frame;
+    ASSERT_EQ(tryReadFrame(bytes, frame), FrameStatus::Ok);
+
+    EXPECT_EQ(frame.kind, FrameKind::Imu);
+    EXPECT_DOUBLE_EQ(frame.imu.gyro[1], 0.5);
+    EXPECT_DOUBLE_EQ(frame.imu.acc[2], 9.81);
+    EXPECT_DOUBLE_EQ(frame.sim_time_s, 12.25);
+    EXPECT_DOUBLE_EQ(frame.sensor_quat[0], 1.0);
+    // The other payload interpretations must be cleared, not left over from a previous frame.
+    EXPECT_TRUE(frame.points.empty());
+    EXPECT_TRUE(frame.depth.empty());
+    EXPECT_TRUE(frame.objects.empty());
+    EXPECT_TRUE(bytes.empty());
+}
+
+TEST(FrameReader, RefusesAnImuPayloadOfTheWrongSize)
+{
+    auto              bytes = makeImuFrame();
+    SensorFrameHeader header{};
+    std::memcpy(&header, bytes.data(), sizeof(header));
+    header.payload_bytes += 8;
+    std::memcpy(bytes.data(), &header, sizeof(header));
+    bytes.resize(bytes.size() + 8);
+
+    CloudFrame frame;
+    EXPECT_EQ(tryReadFrame(bytes, frame), FrameStatus::BadLength);
 }

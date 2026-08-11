@@ -1,3 +1,5 @@
+![Grove-G1](docs/media/banner.svg)
+
 # Grove-G1
 
 An autonomy stack for the [Unitree G1](https://www.unitree.com/g1) humanoid, built on ROS 2 Humble
@@ -43,76 +45,20 @@ Learned manipulation for unstructured scenes is the next milestone and is not bu
 
 ## Architecture
 
-```mermaid
-flowchart TB
-    OP(["ros2 launch g1_bringup bringup.launch.py"])
+![Grove-G1 architecture](docs/media/architecture.svg)
 
-    subgraph NAVL["Navigation"]
-        SCAN["pointcloud_to_laserscan"]
-        SLAM["slam_toolbox<br/>or map_server + AMCL"]
-        NAV2["Nav2<br/>planner, controller, BT"]
-        SHAPE["g1_gait_shaper"]
-        AUTH["g1_loco_authority"]
-    end
+Three lanes feed one control loop. Sensing and state on the left: the Mid360 front end, FAST-LIO2
+on top of it, and the odometry publisher that re-references its pose into `odom -> base_footprint`.
+Navigation and manipulation to the right of it, both driven by the behaviour tree. Everything lands
+on the bridging layer, and from there on one set of DDS topics.
 
-    subgraph STATE["State estimation"]
-        ODOM["g1_odometry_publisher"]
-    end
+`/livox/lidar` reaches three consumers: both Nav2 costmaps, MoveIt's octomap, and
+`pointcloud_to_laserscan` for AMCL. The diagram draws two of the three, to keep the bus readable.
 
-    subgraph ORCH["Orchestration"]
-        BT["g1_bt_executor<br/>behaviour tree"]
-    end
-
-    subgraph MANIP["Manipulation"]
-        MG["move_group<br/>plan + collision check"]
-        SKILL["g1_manipulation_server<br/>pick, place, postures"]
-        OBJ["g1_object_pose_source<br/>refuses on hardware"]
-    end
-
-    subgraph CTRL["Bridging and control"]
-        BRIDGE["g1_loco_bridge"]
-        ARMSYS["G1ArmSdkSystem<br/>ros2_control plugin"]
-        HANDSYS["G1Dex3System<br/>one per hand"]
-    end
-
-    subgraph SIMONLY["Simulation only"]
-        MSS["motion_service_sim<br/>stands in for the<br/>onboard motion service"]
-        RELAY["g1_sensor_relay"]
-        MJ["unitree_mujoco"]
-    end
-
-    OP --> NAVL
-    OP --> MANIP
-    OP --> CTRL
-    OP --> SIMONLY
-
-    BT -- "NavigateToPose" --> NAV2
-    BT -- "Pick, Place" --> SKILL
-    SKILL --> MG
-    OBJ -- "/objects" --> SKILL
-
-    MG -- "FollowJointTrajectory" --> ARMSYS
-    MG -- "FollowJointTrajectory" --> HANDSYS
-    HANDSYS -- "/dex3/side/cmd" --> MSS
-    RELAY -- "/livox/lidar" --> SCAN
-    RELAY -- "/livox/lidar" --> MG
-    RELAY -- "object ground truth" --> OBJ
-    SCAN -- "/scan" --> SLAM
-    SLAM -- "map to odom" --> NAV2
-    ODOM -- "odom to base_footprint" --> NAV2
-    NAV2 -- "/cmd_vel" --> SHAPE
-    SHAPE --> BRIDGE
-    AUTH -. "acquires authority<br/>before any motion" .-> BRIDGE
-    BRIDGE -- "/api/sport/request" --> MSS
-    ARMSYS -- "/arm_sdk" --> MSS
-    MSS -- "/lowcmd" --> MJ
-    MJ -- "/lowstate, /sportmodestate" --> MSS
-    MJ --> RELAY
-    MJ -- "/sportmodestate" --> ODOM
-```
-
-On hardware the whole "simulation only" group disappears, and the vendor's onboard motion service
-answers `/api/sport/*` and `/arm_sdk` instead. Nothing above that line changes.
+On hardware the simulation card becomes the vendor's onboard motion service, and the LiDAR front
+end becomes `livox_ros_driver2` in CustomMsg mode plus `g1_livox_pointcloud`. `g1_object_pose_source`
+refuses to run there at all. Everything above the DDS rail is unchanged, which is the point of
+developing against `unitree_mujoco`: it answers the same topics the robot does.
 
 Two rules shape most of the design, and both apply in simulation so the habits transfer:
 
@@ -145,9 +91,14 @@ Ubuntu 22.04 and ROS 2 Humble combination the Unitree SDK needs.
 
 ```bash
 cp .env.example .env
+./scripts/import-externals.sh
 ./scripts/manage.sh start
 ./scripts/manage.sh exec
 ```
+
+`import-externals.sh` pulls the third-party packages listed in `workspace.repos` into
+`workspace/src` and puts the two that ship a non-standard layout into a buildable one. Run it
+again whenever `workspace.repos` changes.
 
 Inside the container:
 
@@ -233,6 +184,7 @@ layer on top. In VS Code, use `Dev Containers: Reopen in Container`.
 | ROS distro | Humble, pinned. Unitree tests only Foxy and Humble. |
 | Middleware | CycloneDDS, pinned to loopback |
 | `ROS_DOMAIN_ID` | 1 |
+| Robot override | `GROVE_G1_ROS_DOMAIN_ID`, `GROVE_G1_CYCLONEDDS_URI`, `GROVE_G1_ROBOT_NIC` |
 | C++ standard | C++20 on GCC 11.4 |
 | Workspace | `/root/workspace` |
 | Shared data | `/root/data` |
@@ -240,6 +192,14 @@ layer on top. In VS Code, use `Dev Containers: Reopen in Container`.
 The container runs `privileged` with `network_mode: host` and a `/dev` bind mount. That is
 deliberate for local robotics development: DDS discovery between the bare-DDS simulator and the
 ROS graph happens over loopback, and device access has to work.
+
+Pointing the container at a real G1 is three environment variables, not an image rebuild:
+`GROVE_G1_CYCLONEDDS_URI=file:///etc/cyclonedds/cyclonedds.hardware.xml` (baked in beside the
+loopback one, differing only in the interface), `GROVE_G1_ROBOT_NIC` for the NIC that reaches
+the robot, and `GROVE_G1_ROS_DOMAIN_ID` for its domain. They are prefixed because the base
+image's own `/etc/profile.d/10-ros-env.sh` rewrites the unprefixed names. `sim.launch.py`
+refuses to start unless `CYCLONEDDS_URI` names a profile that pins `lo`, so the simulator
+cannot be brought up pointing at a robot.
 
 Lifecycle:
 

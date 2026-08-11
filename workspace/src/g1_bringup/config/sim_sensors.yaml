@@ -14,6 +14,13 @@ azimuth_steps: 360
 elevation_steps: 32
 range_max: 40.0
 
+# The IMU inside the Mid360, sampled on its own thread. 200 Hz because that is what a real
+# Mid360 publishes: FAST-LIO's gravity init averages a fixed sample COUNT, so a different rate
+# here would average a different span of time than it will on the robot. Its own thread because
+# a sweep spends ~32 ms raycasting, and an IMU that stops for 32 ms in every 100 is the gap
+# this exists to close.
+imu_rate_hz: 200.0
+
 # Also passed to g1_sensor_relay by the launch, so there is one source of truth.
 socket_path: "/tmp/g1_sensors.sock"
 

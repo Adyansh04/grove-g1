@@ -18,7 +18,8 @@ namespace g1_hardware_interface
  * @brief Number of arm joints exported by the G1ArmSdkSystem.
  *
  * The G1ArmSdkSystem exports exactly the 14 arm joints (7 per arm: shoulder
- * pitch/roll/yaw, elbow, wrist roll/pitch/yaw); legs/waist/hands stay with
+ * pitch/roll/yaw, elbow, wrist roll/pitch/yaw). The waist rides along on /arm_sdk but is
+ * held rather than ramped, so it is not this engine's concern; legs and hands stay with
  * the onboard controller.
  */
 inline constexpr std::size_t kNumArmJoints = 14;

@@ -97,16 +97,39 @@ RUN mkdir -p /etc/cyclonedds && \
 </CycloneDDS>
 EOF
 
+# Second profile, for the robot. Same file, one difference: the interface. Loopback is what
+# keeps the simulator's rt/lowcmd and rt/arm_sdk off the LAN; on the robot they have to reach the
+# onboard controller, so the NIC is named instead. CycloneDDS expands ${VAR:-default} itself.
+RUN cat > /etc/cyclonedds/cyclonedds.hardware.xml <<'EOF'
+<?xml version="1.0" encoding="UTF-8" ?>
+<CycloneDDS xmlns="https://cdds.io/config"
+            xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+            xsi:schemaLocation="https://cdds.io/config https://raw.githubusercontent.com/eclipse-cyclonedds/cyclonedds/master/etc/cyclonedds.xsd">
+  <Domain id="any">
+    <General>
+      <Interfaces>
+        <NetworkInterface name="${GROVE_G1_ROBOT_NIC:-eth0}" priority="default" multicast="default" />
+      </Interfaces>
+    </General>
+    <Discovery>
+      <MaxAutoParticipantIndex>60</MaxAutoParticipantIndex>
+    </Discovery>
+  </Domain>
+</CycloneDDS>
+EOF
+
 ENV RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 ENV CYCLONEDDS_URI=file:///etc/cyclonedds/cyclonedds.xml
-# Sim-only domain; revisit at hardware bring-up.
+# Sim-only domain; the robot's is set through GROVE_G1_ROS_DOMAIN_ID below.
 ENV ROS_DOMAIN_ID=1
 
-# Override base image's /etc/profile.d/10-ros-env.sh which resets ROS_DOMAIN_ID=0.
+# Puts back what the base image's /etc/profile.d/10-ros-env.sh has just overwritten: it exports
+# ROS_DOMAIN_ID=0 unconditionally and wins by ordering. Only that one variable, and read from the
+# GROVE_G1_-prefixed copy compose also sets -- reading the unprefixed name here would read the 0
+# that was just written. RMW_IMPLEMENTATION and CYCLONEDDS_URI are not touched by that script, so
+# the container environment stands.
 RUN cat > /etc/profile.d/99-grove-g1-env.sh <<'EOF'
-export ROS_DOMAIN_ID="1"
-export RMW_IMPLEMENTATION="rmw_cyclonedds_cpp"
-export CYCLONEDDS_URI="file:///etc/cyclonedds/cyclonedds.xml"
+export ROS_DOMAIN_ID="${GROVE_G1_ROS_DOMAIN_ID:-1}"
 EOF
 
 # Remove pip `em` — it shadows apt's python3-empy and breaks rosidl generation.
@@ -254,6 +277,39 @@ RUN apt-get update && apt-get install -y \
         ros-humble-behaviortree-cpp \
         ros-humble-vision-msgs \
     && rm -rf /var/lib/apt/lists/*
+
+# behaviortree_cpp 4.9.1 installs its library under lib/x86_64-linux-gnu/ while its own
+# ament_cmake_export_libraries-extras.cmake still does find_library(... PATHS
+# "${behaviortree_cpp_DIR}/../../../lib" NO_DEFAULT_PATH). Any package that find_package()s it
+# then fails to CONFIGURE with "exports the library 'behaviortree_cpp' which couldn't be found".
+# 4.9.0 installed to lib/ and did not have this. Guarded rather than unconditional so a fixed
+# release does not get a symlink over the top of its real file.
+RUN test -e /opt/ros/humble/lib/libbehaviortree_cpp.so || \
+    ln -s "$(dpkg-architecture -qDEB_HOST_MULTIARCH)/libbehaviortree_cpp.so" \
+          /opt/ros/humble/lib/libbehaviortree_cpp.so
+
+# --- Milestone 10: LiDAR-inertial odometry ------------------------------------
+
+# Livox-SDK2, the Mid360's transport library. livox_ros_driver2's CMakeLists does a
+# find_library(... /usr/local/lib REQUIRED) for it, so the driver does not configure without
+# it -- and the driver is what defines CustomMsg, which both FAST-LIO and the simulator
+# bridge speak. So this is needed even on the sim track, where no LiDAR is ever opened.
+#
+# Same source-build-then-discard shape as unitree_sdk2 above. Installs to /usr/local, which
+# is where the driver looks and is not searched by anything ROS ships.
+# Pinned 2026-08-09 -- current tip at authoring time.
+ARG LIVOX_SDK2_SHA=08f523c930b2f0ba1e98a6afaa8d7476bf479908
+RUN git init -q /tmp/Livox-SDK2 && \
+    cd /tmp/Livox-SDK2 && \
+    git remote add origin https://github.com/Livox-SDK/Livox-SDK2.git && \
+    git fetch --depth 1 origin ${LIVOX_SDK2_SHA} && \
+    git checkout -q FETCH_HEAD && \
+    mkdir build && cd build && \
+    cmake .. -DCMAKE_BUILD_TYPE=Release && \
+    make -j"$(nproc)" && \
+    make install && \
+    ldconfig && \
+    rm -rf /tmp/Livox-SDK2
 
 # Placed last on purpose. This is the only block that consumes COPYed host files
 # (workspace/patches, workspace/vendor), and cache invalidation flows forward: sitting

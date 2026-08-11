@@ -1,0 +1,102 @@
+<mujoco model="g1_lio_scene">
+  <!--
+    A room built to TEST LIDAR-INERTIAL ODOMETRY, not to look like a facility.
+
+    Everything here exists to make scan matching observable and the answer checkable:
+
+      * 14 x 14 m, walls on all four sides. Walls are what constrain x, y and yaw; without a
+        return at range in every direction the match is free to slide.
+      * Deliberately ASYMMETRIC feature furniture. A square empty room is degenerate: four
+        identical walls give a scan matcher no way to tell one 90-degree rotation from
+        another, and it will happily lock onto the wrong one. The pillars, alcove and steps
+        below are placed so no two quadrants look alike from the middle.
+      * Vertical structure at several heights (pillars, a low block, a tall post). A sweep
+        that only ever sees flat wall has weak vertical constraint, which is exactly the
+        z drift being chased.
+      * A 5 m square of floor markers at KNOWN coordinates, so a run can be scored against
+        absolute truth rather than only against relative drift.
+
+    The test path is the 5 m square (0,0) -> (5,0) -> (5,5) -> (0,5) -> (0,0). The robot
+    spawns at the origin facing +x. Every marker centre below is on that path, and the
+    corners are (0,0), (5,0), (5,5), (0,5). Closing the loop is the point: a LIO estimate
+    that drifts shows up as a gap between start and finish that no amount of local
+    smoothness hides.
+
+    Keep the path clear. The furniture is set back from it on purpose, because a collision
+    invalidates the measurement, because the gait recovers by lurching and that is not the
+    motion under test.
+
+    Every geom carries group="2": the LiDAR sweep masks to that group, so the robot's own
+    collision shell cannot occlude the world. Same rule as the other scenes here.
+  -->
+
+  <include file="g1_29dof.xml"/>
+
+  <statistic center="2.5 2.5 0.8" extent="8"/>
+
+  <visual>
+    <headlight diffuse="0.5 0.5 0.5" ambient="0.3 0.3 0.3" specular="0.2 0.2 0.2"/>
+    <rgba haze="0.15 0.2 0.25 1"/>
+    <global azimuth="120" elevation="-20" offwidth="1920" offheight="1080"/>
+  </visual>
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.2 0.3 0.42" rgb2="0.05 0.05 0.1"
+             width="512" height="3072"/>
+    <texture type="2d" name="floor_tile" builtin="checker"
+             rgb1="0.78 0.80 0.84" rgb2="0.62 0.65 0.70" width="512" height="512"/>
+    <material name="floor_mat" texture="floor_tile" texrepeat="14 14" specular="0.1"
+              shininess="0.1" reflectance="0.02"/>
+    <material name="wall_mat" rgba="0.55 0.58 0.62 1"/>
+    <material name="feature_mat" rgba="0.35 0.45 0.60 1"/>
+    <material name="marker_mat" rgba="0.90 0.35 0.15 1"/>
+  </asset>
+
+  <worldbody>
+    <light pos="2.5 2.5 6" dir="0 0 -1" directional="true" diffuse="0.6 0.6 0.6"/>
+    <geom name="floor" type="plane" size="9 9 0.05" material="floor_mat" group="2"
+          pos="2.5 2.5 0"/>
+
+    <!-- Perimeter. 2.5 m tall: above the Mid360 at ~1.22 m, so the sweep always lands on
+         wall rather than escaping over the top at range. -->
+    <geom name="wall_north" type="box" size="7.0 0.1 1.25" pos="2.5 9.5 1.25"
+          material="wall_mat" group="2"/>
+    <geom name="wall_south" type="box" size="7.0 0.1 1.25" pos="2.5 -4.5 1.25"
+          material="wall_mat" group="2"/>
+    <geom name="wall_east" type="box" size="0.1 7.0 1.25" pos="9.5 2.5 1.25"
+          material="wall_mat" group="2"/>
+    <geom name="wall_west" type="box" size="0.1 7.0 1.25" pos="-4.5 2.5 1.25"
+          material="wall_mat" group="2"/>
+
+    <!-- Asymmetric features. Placed outside the 5 m square with >1.5 m clearance from the
+         path, and different in every quadrant so orientation is never ambiguous. -->
+    <geom name="pillar_a" type="cylinder" size="0.25 1.25" pos="-2.5 -2.5 1.25"
+          material="feature_mat" group="2"/>
+    <geom name="pillar_b" type="cylinder" size="0.35 1.25" pos="7.5 -2.0 1.25"
+          material="feature_mat" group="2"/>
+    <geom name="tall_post" type="box" size="0.2 0.2 1.8" pos="7.8 7.5 1.8"
+          material="feature_mat" group="2"/>
+    <geom name="low_block" type="box" size="0.8 0.4 0.35" pos="-2.2 6.5 0.35"
+          material="feature_mat" group="2"/>
+
+    <!-- A stepped alcove in one corner only: three heights in one place gives the vertical
+         constraint a flat wall cannot. -->
+    <geom name="step_low" type="box" size="0.6 0.6 0.20" pos="-3.0 2.5 0.20"
+          material="feature_mat" group="2"/>
+    <geom name="step_mid" type="box" size="0.6 0.6 0.55" pos="-3.0 3.8 0.55"
+          material="feature_mat" group="2"/>
+    <geom name="step_high" type="box" size="0.6 0.6 0.95" pos="-3.0 5.1 0.95"
+          material="feature_mat" group="2"/>
+
+    <!-- Corner markers for the 5 m square, at known coordinates. Thin plates, well below
+         min_obstacle_height, so they are visual ground truth and never costmap obstacles. -->
+    <geom name="mark_origin" type="box" size="0.15 0.15 0.005" pos="0 0 0.005"
+          material="marker_mat" group="2"/>
+    <geom name="mark_corner_x" type="box" size="0.15 0.15 0.005" pos="5 0 0.005"
+          material="marker_mat" group="2"/>
+    <geom name="mark_corner_xy" type="box" size="0.15 0.15 0.005" pos="5 5 0.005"
+          material="marker_mat" group="2"/>
+    <geom name="mark_corner_y" type="box" size="0.15 0.15 0.005" pos="0 5 0.005"
+          material="marker_mat" group="2"/>
+  </worldbody>
+</mujoco>

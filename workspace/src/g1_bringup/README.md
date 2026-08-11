@@ -27,7 +27,7 @@ composed beside it rather than wrapped around it. Neither `nav_stack.launch.py` 
 |---|---|
 | `bringup.launch.py` | What an operator runs. Stages the simulator and composes the navigation stack and MoveIt onto it as asked. |
 | `sim.launch.py` | Starts `unitree_mujoco`, `motion_service_sim`, `control.launch.py` and `loco.launch.py`. Checks the DDS environment first. Works standalone. |
-| `control.launch.py` | `robot_state_publisher`, `ros2_control_node` and the spawners. No simulator, so it carries to hardware unchanged. |
+| `control.launch.py` | `robot_state_publisher`, `ros2_control_node` and the spawners. No simulator, so it carries to hardware unchanged — but on the robot it needs `g1_hardware_interface`'s `g1_lowstate_joint_states` alongside it, or the legs and waist never reach `/joint_states` and the TF tree comes up split at the waist. `motion_service_sim` covers that in simulation. |
 | `loco.launch.py` | Starts `g1_loco_bridge` and drives it from configure to active. |
 | `rviz.launch.py` | Starts RViz on a caller-supplied `rviz_config` path. |
 | `activate_arm.launch.py` | Runs `scripts/activate_arm`, the ordered acquire step. |
@@ -44,6 +44,7 @@ All of these belong to `bringup.launch.py`.
 | `moveit` | `false` | Start `move_group` for arm planning. Works with any mode. Planning is immediate; executing still needs `activate_arm`. |
 | `rviz` | `false` | Open RViz on the config that matches what is running. `moveit:=true` wins, because only MoveIt's launcher passes the panel its parameters. |
 | `sensors` | `false` | LiDAR, the relay and the `odom` to `base_footprint` chain. The navigation modes turn this on themselves. |
+| `odometry` | `sportmodestate` | What publishes `odom` to `base_footprint`. `sportmodestate` is exact MuJoCo state and what the mission is tuned against; `fast_lio` runs the LiDAR-inertial pipeline the robot uses, over the simulated Mid360, and drifts like the estimate it is. |
 | `world` | `navigation` | Which scene to stage. `navigation` is the facility the committed map was built from. |
 | `headless` | `true` | `false` shows the MuJoCo viewer. |
 | `pin_pelvis` | `false` | Welds the pelvis and disables the walking policy, for exercising the arms alone. `mode:=none` only. |

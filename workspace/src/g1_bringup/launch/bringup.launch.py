@@ -213,6 +213,7 @@ def _setup(context, *args, **kwargs):
         if navigating or want_manipulation
         else LaunchConfiguration("sensors"),
         "world": LaunchConfiguration("world"),
+        "odometry": LaunchConfiguration("odometry"),
         "headless": LaunchConfiguration("headless"),
         "pin_pelvis": "true" if pin_pelvis else "false",
         "waist_hold_rad": LaunchConfiguration("waist_hold_rad"),
@@ -444,6 +445,13 @@ def generate_launch_description():
             description="LiDAR sweep, the relay and the odom -> base_footprint -> pelvis "
             "chain. Only meaningful with mode:=none -- the navigation modes need it and turn "
             "it on themselves.",
+        ),
+        DeclareLaunchArgument(
+            "odometry",
+            default_value="sportmodestate",
+            description="Which source publishes odom -> base_footprint. 'sportmodestate' is "
+            "exact MuJoCo state and is what the mission is tuned against. 'fast_lio' runs the "
+            "LiDAR-inertial pipeline the real robot uses, over the simulated Mid360.",
         ),
         DeclareLaunchArgument(
             "world",

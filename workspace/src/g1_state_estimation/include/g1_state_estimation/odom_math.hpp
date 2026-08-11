@@ -19,15 +19,15 @@ namespace g1_state_estimation
 /// Where the base pose comes from. Anything else is a configuration error.
 enum class OdometrySource
 {
-    SimGroundTruth,     ///< MuJoCo generalized coordinates via planar joints. Sim-only.
     SimSportModeState,  ///< The converged track: pelvis pose from /sportmodestate. Sim-only.
-    Hardware,           ///< Not implemented: the real G1 publishes no odometry at all.
+    FastLio,            ///< LiDAR-inertial odometry. The only source that runs on the robot.
+    Hardware,           ///< Not a source: the real G1 publishes no odometry of its own.
 };
 
 /**
  * @brief Parses the `odometry_source` parameter.
  *
- * @param name   Parameter value, expected `sim_ground_truth` or `hardware`.
+ * @param name   Parameter value, expected `sim_sportmodestate`, `fast_lio` or `hardware`.
  * @param[out] out  Set only when the name is recognised.
  * @return False for an unrecognised name, so the caller can fail configure rather than
  *         silently fall back to a default that might fabricate transforms.
@@ -58,6 +58,32 @@ struct Quaternion
     double z = 0.0;
     double w = 1.0;
 };
+
+/// A rigid transform, in the same plain types as the rest of this header.
+struct Pose3d
+{
+    double     x = 0.0;
+    double     y = 0.0;
+    double     z = 0.0;
+    Quaternion q;
+};
+
+/**
+ * @brief Whether a pose can safely be turned into a transform.
+ *
+ * Finite translation, and a quaternion whose norm is far enough from zero to normalise. A
+ * scan-matching filter that diverges reports NaN rather than stopping, and tf2 normalises
+ * silently -- so an unchecked NaN becomes a dropped transform with no message naming the
+ * source. Worse at the origin latch, where one bad sample would be baked in for the whole run.
+ */
+bool isUsablePose(const Pose3d& pose);
+
+/// The transform you get by applying @p b and then @p a. Reads left-to-right as frames:
+/// composePose(a_from_b, b_from_c) is a_from_c.
+Pose3d composePose(const Pose3d& a, const Pose3d& b);
+
+/// The inverse transform: invertPose(a_from_b) is b_from_a.
+Pose3d invertPose(const Pose3d& pose);
 
 /**
  * @brief Yaw to a quaternion about +z.
@@ -112,6 +138,29 @@ struct GroundSplit
  *               caller mid-fall can hold the last well-conditioned heading instead.
  */
 GroundSplit splitGroundProjection(double x, double y, double z, const Quaternion& q, double yaw);
+
+/**
+ * @brief Recombines a heading with a tilt: the inverse of splitGroundProjection's split.
+ *
+ * composeAttitude(yaw, splitGroundProjection(..., q, yaw).tilt) reproduces q. Used to build an
+ * attitude from two sources -- heading from one, roll and pitch from another -- which is what
+ * the fast_lio source does to keep the published frame gravity-true.
+ */
+Quaternion composeAttitude(double yaw, const Quaternion& tilt);
+
+/// @p a composed with @p b: the rotation you get by applying @p b and then @p a.
+Quaternion composeRotation(const Quaternion& a, const Quaternion& b);
+
+/// The inverse rotation. Assumes a unit quaternion, which everything here maintains.
+Quaternion invertRotation(const Quaternion& q);
+
+/**
+ * @brief Moves @p from a fraction @p t of the way toward @p to along the shortest arc.
+ *
+ * Used to low-pass a correction rather than apply it whole. t is clamped to [0, 1]; the
+ * shorter arc is taken, so a correction never spins the long way round.
+ */
+Quaternion slerp(const Quaternion& from, const Quaternion& to, double t);
 
 /**
  * @brief Wraps an angle to (-pi, pi].

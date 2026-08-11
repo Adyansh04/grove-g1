@@ -39,6 +39,7 @@ enum class FrameKind
     PointCloud,
     Depth,
     ObjectPoses,
+    Imu,
 };
 
 /// A validated frame. `kind` says which payload interpretation applies: `points` is xyz
@@ -58,6 +59,9 @@ struct CloudFrame
     double                                  sensor_quat[4]{};
     std::vector<float>                      points;
     std::vector<grove_g1::ObjectPoseRecord> objects;
+    /// Rates at the sensor's own frame. Only meaningful on FrameKind::Imu, where the pose
+    /// fields above carry the IMU's attitude.
+    grove_g1::ImuSampleRecord imu{};
 };
 
 /**

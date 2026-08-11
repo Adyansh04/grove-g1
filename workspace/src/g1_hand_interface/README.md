@@ -5,6 +5,13 @@
 `ament_cmake`, C++20. **Real hardware code** — it speaks Unitree's published Dex3 contract and
 runs unchanged on the robot; the simulator answers the same topics.
 
+The robot carries two state topics: `/dex3/<side>/state` and a lower-rate
+`/lf/dex3/<side>/state`. Unitree's own code disagrees about which to read — their Dex3 example
+subscribes to the `lf` one, their SDK bridge publishes the plain one. This is a control loop
+with a freshness gate, so `state_topic` defaults to the full-rate name; it is a hardware
+parameter (`g1_description/config/dex3_params.yaml`) so hardware bring-up can switch without a
+rebuild if the robot turns out to populate only the other one.
+
 Separate from `g1_hardware_interface` on purpose. The hand is a different device with different
 topics and its own control authority, and one component per hand keeps a hand
 fault from taking the arms down with it.
@@ -19,7 +26,7 @@ fault from taking the arms down with it.
 | Topic | Direction | Type |
 |---|---|---|
 | `/dex3/<side>/cmd` | out | `unitree_hg/msg/HandCmd` |
-| `/dex3/<side>/state` | in | `unitree_hg/msg/HandState` |
+| `/dex3/<side>/state` | in | `unitree_hg/msg/HandState` (`state_topic`) |
 
 Both at sensor QoS. `<side>` comes from the `side` parameter and must be `left` or `right`.
 
@@ -33,6 +40,7 @@ Both at sensor QoS. `<side>` comes from the `side` parameter and must be `left` 
 | `command_publish_rate` | 100.0 | Hz. What Unitree's own teleop uses. |
 | `max_joint_velocity_rad_s` | 3.0 | Slew clamp on the commanded position. |
 | `state_timeout_ms` | 200.0 | State older than this blocks activation. |
+| `state_topic` | `/dex3/<side>/state` | Which of the robot's two state topics to read. See above. |
 
 ## Things the wire format will punish you for
 

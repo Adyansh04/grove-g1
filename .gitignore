@@ -19,6 +19,8 @@ workspace/log/
 # match an ignore rule before it can evaluate a later negation on their
 # contents, so the broad form silently drops g1_* packages too.
 workspace/src/unitree_ros2/
+workspace/src/livox_ros_driver2/
+workspace/src/fast_lio_humanoid/
 
 # Environment files (keep .env.example)
 .env

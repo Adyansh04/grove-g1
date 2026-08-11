@@ -1,0 +1,233 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+    Property Tree Widget:
+      Expanded: ~
+      Splitter Ratio: 0.5
+    Tree Height: 700
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Enabled: true
+      Cell Size: 1
+      Plane Cell Count: 20
+      Color: 160; 160; 164
+      Name: Grid
+      Reference Frame: odom
+      Value: true
+    - Class: rviz_default_plugins/TF
+      Enabled: true
+      Name: TF
+      Frame Timeout: 15
+      Marker Scale: 0.6
+      Show Arrows: false
+      Show Axes: true
+      Show Names: true
+      Value: true
+    - Alpha: 1
+      Class: rviz_default_plugins/RobotModel
+      Description Topic:
+        Depth: 5
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /robot_description
+      Enabled: true
+      Name: RobotModel
+      Value: true
+    - Class: rviz_default_plugins/Map
+      Enabled: false
+      Name: Map
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /map
+      Alpha: 0.5
+      Color Scheme: map
+      Value: false
+    - Class: rviz_default_plugins/Map
+      Enabled: false
+      Name: GlobalCostmap
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /global_costmap/costmap
+      Alpha: 0.6
+      Color Scheme: costmap
+      Value: false
+    # The raw sweep, in the frame the costmap marks from. If the floor here sits above the
+    # 0.08 m obstacle cut, that is the floor-marked-as-obstacle failure, visible directly.
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Class: rviz_default_plugins/PointCloud2
+      Color: 255; 255; 255
+      Color Transformer: AxisColor
+      Axis: Z
+      Decay Time: 0
+      Enabled: true
+      Name: LivoxSweep
+      Size (Pixels): 2
+      Size (m): 0.02
+      Style: Points
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /livox/lidar
+      Value: true
+    # FAST-LIO's own registered cloud. Where THIS disagrees with the map walls is where the
+    # scan match is losing it -- the most direct view of LIO health there is.
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Class: rviz_default_plugins/PointCloud2
+      Color: 255; 120; 0
+      Color Transformer: FlatColor
+      Decay Time: 0
+      Enabled: true
+      Name: FastLioRegistered
+      Size (Pixels): 2
+      Size (m): 0.02
+      Style: Points
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /cloud_registered_1
+      Value: true
+    # FAST-LIO's accumulated map, in its own camera_init frame (an orphan tree, so it will
+    # not line up with map -- that is expected, it is there to show internal consistency).
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Class: rviz_default_plugins/PointCloud2
+      Color: 0; 200; 255
+      Color Transformer: FlatColor
+      Decay Time: 0
+      Enabled: false
+      Name: FastLioMap
+      Size (Pixels): 1
+      Size (m): 0.02
+      Style: Points
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /Laser_map_1
+      Value: false
+    # FAST-LIO's raw trajectory. Compare its shape against the 5 m square: a loop that does
+    # not close is drift you can see without a probe.
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz_default_plugins/Path
+      Color: 255; 0; 255
+      Enabled: true
+      Line Style: Lines
+      Name: FastLioPath
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /path_1
+      Value: true
+    - Angle Tolerance: 0.1
+      Class: rviz_default_plugins/Odometry
+      Covariance:
+        Value: false
+      Enabled: true
+      Keep: 200
+      Name: OdomFromLio
+      Position Tolerance: 0.05
+      Shape:
+        Alpha: 1
+        Color: 0; 255; 0
+        Head Length: 0.1
+        Head Radius: 0.06
+        Shaft Length: 0.3
+        Shaft Radius: 0.03
+        Value: Arrow
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /g1_odometry_publisher/odom
+      Value: true
+    # Ground truth, straight from the simulator. Frame is `world`, which is NOT connected to
+    # odom -- so it will sit apart from the robot. That separation IS the reading: it is the
+    # accumulated LIO error, and it grows as the robot drives.
+    - Alpha: 1
+      Axes Length: 0.6
+      Axes Radius: 0.06
+      Class: rviz_default_plugins/Pose
+      Color: 255; 25; 0
+      Enabled: true
+      Head Length: 0.2
+      Head Radius: 0.1
+      Name: GroundTruthPose
+      Shaft Length: 0.6
+      Shaft Radius: 0.04
+      Shape: Arrow
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /g1_sensor_relay/sensor_pose
+      Value: true
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz_default_plugins/Path
+      Color: 25; 255; 255
+      Enabled: false
+      Line Style: Lines
+      Name: Nav2Plan
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /plan
+      Value: false
+  Enabled: true
+  Global Options:
+    Background Color: 48; 48; 48
+    Fixed Frame: odom
+    Frame Rate: 30
+  Name: root
+  Tools:
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+    - Class: rviz_default_plugins/SetGoal
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /goal_pose
+  Value: true
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 18
+      Focal Point:
+        X: 2.5
+        Y: 2.5
+        Z: 0
+      Name: Current View
+      Pitch: 0.7
+      Target Frame: odom
+      Yaw: 0.8
+    Saved: ~
+Window Geometry:
+  Height: 1000
+  Width: 1600
+  Displays:
+    collapsed: false

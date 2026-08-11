@@ -74,6 +74,12 @@ if(BUILD_TESTING)
   add_launch_test(test/test_walk_stand.launch.py TARGET test_walk_stand TIMEOUT 240)
   set_tests_properties(test_walk_stand PROPERTIES RESOURCE_LOCK mujoco_sim)
 
+  # FAST-LIO odometry against MuJoCo ground truth on a real walk. Lives here rather than in
+  # g1_state_estimation because it launches sim.launch.py, and that dependency edge would be
+  # a cycle from there.
+  add_launch_test(test/test_fastlio_odometry.launch.py TARGET test_fastlio_odometry TIMEOUT 300)
+  set_tests_properties(test_fastlio_odometry PROPERTIES RESOURCE_LOCK mujoco_sim COST 90)
+
   # Full LocoClient authority path with rejection and randomized commands.
   add_launch_test(test/test_walk_teleop.launch.py TARGET test_walk_teleop TIMEOUT 400)
   set_tests_properties(test_walk_teleop PROPERTIES RESOURCE_LOCK mujoco_sim)

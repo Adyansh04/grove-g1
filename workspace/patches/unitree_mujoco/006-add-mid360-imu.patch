@@ -1,0 +1,57 @@
+Gives the simulated Mid360 the IMU the real one has inside it.
+
+Generated against unitree_mujoco ae6a8403e272733e9996ef59990880330496177f.
+
+FAST-LIO fuses the IMU that shares a housing with the laser, and until this patch the
+simulator had none there, so the pelvis IMU stood in for it. That does not work on this
+robot: waist_yaw, waist_roll and waist_pitch lie between pelvis and torso_link, the
+walking policy owns all three (walk_policy.hpp: "legs 0-11 plus waist 12-14"), and they
+move through 25, 9 and 16 degrees respectively while walking. FAST-LIO takes ONE constant
+lidar-to-IMU extrinsic, so across that chain no value is right and the scan match came
+apart whenever the robot turned.
+
+The site sits where g1_description puts mid360_imu -- the mid360_joint mount composed with
+Livox's published lidar-in-IMU offset [-0.011, -0.02329, 0.04412] -- and carries the same
+orientation as mid360_link, because both sensors sit in one housing and flip together with
+the upside-down mount. That makes the simulator's extrinsic Livox's own constant, the same
+number the hardware config uses.
+
+SENSORS APPENDED AT THE END of the block, which is load-bearing: unitree_sdk2_bridge reads
+motor state as three contiguous nu-sized blocks of sensordata and everything after by
+resolved address, so appending shifts nothing it indexes. Nothing new is actuated and nu is
+untouched, so RobotBridge's fixed 35-motor arrays are unaffected -- same constraint the
+Dex3 patch works under.
+
+NO NOISE MODEL, deliberately. The pelvis IMU the model already carries has none either, so
+adding it here would make the two sensors incomparable and would change what a drift
+measurement means in the same commit that changes where the IMU is. Livox specify the
+ICM40609's noise; adding it is a separate, measurable change.
+
+diff --git a/unitree_robots/g1/g1_29dof.xml b/unitree_robots/g1/g1_29dof.xml
+index 2aa7600..2ed4e3a 100644
+--- a/unitree_robots/g1/g1_29dof.xml
++++ b/unitree_robots/g1/g1_29dof.xml
+@@ -239,6 +239,11 @@
+             mesh="waist_roll_link" />
+           <site name="secondary_imu" size="0.01" pos="-0.03959 -0.00224 0.13792"/>
+           <body name="torso_link" pos="0 0 0.019">
++            <!-- The IMU inside the Mid360. Pose mirrors g1_description's mid360_imu frame: the
++                 mid360_joint mount composed with Livox's lidar-in-IMU offset, and the sensor's
++                 own upside-down orientation, because both sit in one housing. -->
++            <site name="mid360_imu" size="0.01" pos="0.013523592 -0.02326 0.471934279"
++                  quat="0 0.99967335 0 -0.02555756"/>
+             <inertial pos="0.00331658 0.000261533 0.179856"
+               quat="0.999831 0.000376204 0.0179895 -0.00377704" mass="9.598"
+               diaginertia="0.12407 0.111951 0.0325382" />
+@@ -629,6 +634,10 @@
+     <framequat name="secondary_imu_quat" objtype="site" objname="secondary_imu" />
+     <gyro name="secondary_imu_gyro" site="secondary_imu" noise="5e-4" cutoff="34.9"/>
+     <accelerometer name="secondary_imu_acc" site="secondary_imu" noise="1e-2" cutoff="157"/>
++
++    <framequat name="mid360_imu_quat" objtype="site" objname="mid360_imu" />
++    <gyro name="mid360_imu_gyro" site="mid360_imu" />
++    <accelerometer name="mid360_imu_acc" site="mid360_imu" />
+   </sensor>
+ 
+ </mujoco>
+\ No newline at end of file

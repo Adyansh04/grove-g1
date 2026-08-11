@@ -6,7 +6,8 @@
   <description>
     ros2_control SystemInterface bridging the G1's 14 arm joints onto Unitree's
     weight-blended rt/arm_sdk DDS channel, with the onboard controller kept
-    balancing the legs. See README for the safety/authority model.
+    balancing the legs. Also publishes the legs and waist to /joint_states, which
+    no controller owns. See README for the safety/authority model.
   </description>
   <maintainer email="gupta.adyansh@gmail.com">Adyansh</maintainer>
   <license>BSD-3-Clause</license>
@@ -18,6 +19,7 @@
   <depend>rclcpp</depend>
   <depend>rclcpp_lifecycle</depend>
   <depend>realtime_tools</depend>
+  <depend>sensor_msgs</depend>
   <depend>unitree_hg</depend>
 
   <!-- Lint checks run via workspace-root CTests (see CMakeLists.txt). -->

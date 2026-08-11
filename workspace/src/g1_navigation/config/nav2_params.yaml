@@ -234,19 +234,14 @@ local_costmap:
           # Ceiling and light fixtures. Walls are 3.2 m; the robot is ~1.3 m.
           max_obstacle_height: 1.80
           # At 15 m adjacent 1-degree beams are 26 cm apart, so long-range raytracing leaves
-          # radial spoke gaps in cleared space. GUESSES.
-          # Pulled in from 12.0/10.0. Attitude error scales with range: at 10 m, 0.5 deg of
-          # unaccounted pelvis pitch lifts a floor return 8.7 cm, clearing the 0.08 m cut on
-          # its own, and the gait swings 9.31 deg. Beyond about 5 m the sweep cannot be
-          # trusted to stay below the cut while walking. raytrace stays above obstacle so
-          # anything markable is also clearable.
-          #
-          # Inert for the local costmap, which is 3 x 3 m rolling and can only hold returns
-          # within 1.5 m. These matter for the global costmap, where a long-range floor strike
-          # is what persists.
+          # radial spoke gaps in cleared space. GUESS, and unchanged.
           raytrace_max_range: 6.0
           raytrace_min_range: 0.0
-          obstacle_max_range: 5.0
+          # MEASURED, and the reasoning is in the package README: the estimate's attitude, not
+          # its height, is what limits how far a floor return can be placed, and marking was
+          # 0.000% inside 3 m against 0.091% at 4-5 m. raytrace above this so anything markable
+          # is also clearable.
+          obstacle_max_range: 3.0
           obstacle_min_range: 0.0
       always_send_full_costmap: True
 
@@ -291,19 +286,14 @@ global_costmap:
           # Ceiling and light fixtures. Walls are 3.2 m; the robot is ~1.3 m.
           max_obstacle_height: 1.80
           # At 15 m adjacent 1-degree beams are 26 cm apart, so long-range raytracing leaves
-          # radial spoke gaps in cleared space. GUESSES.
-          # Pulled in from 12.0/10.0. Attitude error scales with range: at 10 m, 0.5 deg of
-          # unaccounted pelvis pitch lifts a floor return 8.7 cm, clearing the 0.08 m cut on
-          # its own, and the gait swings 9.31 deg. Beyond about 5 m the sweep cannot be
-          # trusted to stay below the cut while walking. raytrace stays above obstacle so
-          # anything markable is also clearable.
-          #
-          # Inert for the local costmap, which is 3 x 3 m rolling and can only hold returns
-          # within 1.5 m. These matter for the global costmap, where a long-range floor strike
-          # is what persists.
+          # radial spoke gaps in cleared space. GUESS, and unchanged.
           raytrace_max_range: 6.0
           raytrace_min_range: 0.0
-          obstacle_max_range: 5.0
+          # MEASURED, and the reasoning is in the package README: the estimate's attitude, not
+          # its height, is what limits how far a floor return can be placed, and marking was
+          # 0.000% inside 3 m against 0.091% at 4-5 m. raytrace above this so anything markable
+          # is also clearable.
+          obstacle_max_range: 3.0
           obstacle_min_range: 0.0
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"

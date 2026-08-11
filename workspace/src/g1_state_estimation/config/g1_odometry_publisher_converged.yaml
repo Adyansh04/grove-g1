@@ -1,11 +1,12 @@
 # odom -> base_footprint -> pelvis publisher for the CONVERGED unitree_mujoco track, loaded by
-# g1_bringup/launch/sim.launch.py.
-# instead, which publishes a single odom -> base_link edge. See g1_state_estimation/README.md.
+# g1_bringup/launch/sim.launch.py. See g1_state_estimation/README.md.
+#
+# SIMULATION ONLY. This is MuJoCo's own state, not an estimate; the robot has no equivalent.
+# The hardware source is odometry:=fast_lio, configured in g1_odometry_publisher_fastlio.yaml.
 g1_odometry_publisher:
   ros__parameters:
     # /sportmodestate for position (exact MuJoCo state from the pelvis imu site) and /lowstate
-    # for full orientation. Not sim_ground_truth: that reads the planar sandbox's joints, which
-    # this track does not have.
+    # for full orientation, which /sportmodestate leaves at all zeros.
     odometry_source: "sim_sportmodestate"
 
     odom_frame_id: "odom"
@@ -23,8 +24,9 @@ g1_odometry_publisher:
     # that 80 is the right number. Lower it if a hard gait ever holds the heading spuriously.
     max_tilt_deg: 80.0
 
-    # base_height_m is deliberately absent: unlike the planar sandbox, whose base has no z DoF,
-    # a walking robot's height is measured from /sportmodestate.
+    # No start height is configured: a walking robot's height is measured, and this source
+    # reads it straight from /sportmodestate. Only fast_lio needs one, to place its latched
+    # origin above the floor.
 
     publish_rate_hz: 50.0
     publish_odom_msg: true

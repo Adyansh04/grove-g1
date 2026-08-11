@@ -15,8 +15,9 @@
 #include "nav_msgs/msg/odometry.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
-#include "sensor_msgs/msg/joint_state.hpp"
+#include "tf2_ros/buffer.h"
 #include "tf2_ros/transform_broadcaster.h"
+#include "tf2_ros/transform_listener.h"
 #include "unitree_go/msg/sport_mode_state.hpp"
 #include "unitree_hg/msg/low_state.hpp"
 
@@ -49,18 +50,34 @@ private:
     /// Reads and validates every parameter. False means configure must fail.
     bool readParameters();
 
-    void onBaseState(const sensor_msgs::msg::JointState::SharedPtr msg);
     void onSportModeState(const unitree_go::msg::SportModeState::SharedPtr msg);
     void onLowState(const unitree_hg::msg::LowState::SharedPtr msg);
-    /// Shared tail of both callbacks: staleness bookkeeping against a new stamp.
+    void onLidarOdometry(const nav_msgs::msg::Odometry::SharedPtr msg);
+    /// Latches odom_from_lio_ so the first LiDAR sample lands at a canonical start pose.
+    /// False until the IMU has supplied a gravity-aligned attitude to level it against.
+    bool latchLidarOrigin(const Pose3d& lio_from_base);
+    /// Stores an orientation and re-derives the heading from it, holding the last good
+    /// heading past max_tilt_rad_. Shared by every source that carries a full attitude.
+    void applyOrientation(const Quaternion& q);
+    /// LiDAR attitude with its slow drift against gravity taken out, using the IMU as the
+    /// reference. Returns the input unchanged until an IMU attitude has arrived. Stateful:
+    /// advances tilt_correction_ by one step per call.
+    Quaternion levelledAttitude(const Quaternion& lidar_attitude);
+    /// The transform from the frame the LiDAR odometry reports to the body frame this node
+    /// publishes. Identity unless lidar_body_frame_id_ names something else. Refreshed per
+    /// sample rather than cached: on the robot that chain crosses the waist joints.
+    bool lookUpLidarBodyOffset();
+    /// Shared tail of the position callbacks: staleness bookkeeping against a new stamp.
     void noteSample(const rclcpp::Time& stamp);
     void onTimer();
 
-    rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr            base_state_sub_;
     rclcpp::Subscription<unitree_go::msg::SportModeState>::SharedPtr         sport_state_sub_;
     rclcpp::Subscription<unitree_hg::msg::LowState>::SharedPtr               low_state_sub_;
+    rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr                 lidar_odom_sub_;
     rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub_;
     std::unique_ptr<tf2_ros::TransformBroadcaster>                           tf_broadcaster_;
+    std::unique_ptr<tf2_ros::Buffer>                                         tf_buffer_;
+    std::shared_ptr<tf2_ros::TransformListener>                              tf_listener_;
     rclcpp::TimerBase::SharedPtr                                             timer_;
 
     OdometrySource source_ = OdometrySource::Hardware;
@@ -73,11 +90,14 @@ private:
     /// Empty publishes a single odom -> base_frame_id_ edge with the full pose, which is what the
     /// planar sandbox wants: its base has no z DoF and cannot tilt, so the split would be an
     /// identity edge and an extra frame for nothing.
-    std::string              pelvis_frame_id_;
-    std::vector<std::string> base_joint_names_;
+    std::string pelvis_frame_id_;
+    /// Frame the LiDAR odometry reports the pose OF -- FAST-LIO's `body`, which is its IMU.
+    /// Empty means that frame already is the body this node publishes. It is `mid360_imu` on
+    /// both tracks: the simulator models an IMU in the sensor housing as the robot has one.
+    std::string lidar_body_frame_id_;
     /// Beyond this the heading is ill-conditioned and the last good one is held instead.
     double                 max_tilt_rad_     = 0.0;
-    double                 base_height_m_    = 0.0;
+    double                 start_height_m_   = 0.0;
     double                 publish_rate_hz_  = 50.0;
     bool                   publish_odom_msg_ = true;
     double                 source_timeout_s_ = 0.2;
@@ -94,6 +114,23 @@ private:
     /// Set once a usable orientation has arrived. Until then nothing is published:
     /// an unusable quaternion must not reach TF (see onLowState).
     bool have_orientation_ = false;
+    /// Latest validated IMU attitude. The fast_lio source levels its odom frame against this at
+    /// the latch, and keeps using it afterwards as the gravity reference that FAST-LIO's own
+    /// estimate drifts away from.
+    Quaternion imu_orientation_;
+    bool       have_imu_orientation_ = false;
+    /// Low-passed tilt error between FAST-LIO's attitude and the IMU's, applied to every
+    /// published attitude. Slow on purpose -- see levelledAttitude().
+    Quaternion tilt_correction_;
+    /// Per-sample slerp fraction toward the instantaneous error, from `tilt_correction_gain`.
+    double tilt_correction_gain_ = 0.05;
+    /// odom -> the LiDAR odometry's own start frame. FAST-LIO's `camera_init` is wherever its
+    /// IMU happened to be pointing when it initialised, not a gravity-aligned world frame, so
+    /// this is what turns its output into something Nav2 can consume.
+    Pose3d odom_from_lio_;
+    bool   lidar_origin_latched_ = false;
+    /// Body offset from lidar_body_frame_id_, refreshed from TF per sample.
+    Pose3d lio_body_from_base_;
     /// Wall time the orientation last changed. Position and orientation come from separate
     /// topics, so one can die while the other keeps flowing; without this the node would
     /// publish a frozen orientation under a fresh stamp, which is the exact failure this

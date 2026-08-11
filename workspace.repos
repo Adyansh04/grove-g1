@@ -3,3 +3,21 @@ repositories:
     type: git
     url: https://github.com/unitreerobotics/unitree_ros2
     version: 668d1ec5a05d1c38d3306bdca7d59f2ba3581a88
+
+  # Livox Mid360 driver. Vendored for two reasons, only one of which is the driver itself:
+  # livox_ros_driver2/msg/CustomMsg is the format FAST-LIO consumes, and it has to be the
+  # real definition rather than a lookalike, or the sim and the robot stop agreeing on the
+  # wire. Needs the sources patched into ROS 2 layout before it builds -- see
+  # scripts/import-externals.sh.
+  livox_ros_driver2:
+    type: git
+    url: https://github.com/Livox-SDK/livox_ros_driver2
+    version: 4a1def929e5b59c7a8122d19fce6efba581ce9f7
+
+  # FAST-LIO2 tuned for the Mid360 on a G1, from the humble branch. We build only its
+  # FAST_LIO package: open3d_loc is a map-relocalization layer we do not use (AMCL owns
+  # map -> odom) and it is the only thing in the repo that wants Open3D.
+  fast_lio_humanoid:
+    type: git
+    url: https://github.com/deepglint/FAST_LIO_LOCALIZATION_HUMANOID
+    version: df4772ec4797172430e7efe990711d09a529f4ad

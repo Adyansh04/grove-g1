@@ -52,6 +52,14 @@ XVFB_DISPLAY = ":133"
 SIM_START_DELAY_S = 2.0
 
 
+def _read_text(path):
+    try:
+        with open(path, encoding="utf-8") as handle:
+            return handle.read()
+    except OSError:
+        return ""
+
+
 def _check_environment(context, *args, **kwargs):
     """Fails the whole launch immediately, before anything starts, if the
     container's DDS/domain env isn't what the sim-first milestone assumes
@@ -73,19 +81,35 @@ def _check_environment(context, *args, **kwargs):
             "CYCLONEDDS_URI is unset -- expected the container-baked cyclonedds.xml "
             "pinning the 'lo' interface (see .devcontainer/Dockerfile)."
         )
-    elif cyclone_uri.startswith("file://"):
-        # Existence, not just non-emptiness. CycloneDDS treats an unreadable URI as a
-        # warning on stderr and falls back to its defaults, which with the compose file's
-        # network_mode: host means binding the real NIC instead of lo. The sim's
-        # rt/lowcmd and rt/arm_sdk would then be on the LAN on domain 1, within reach of a
-        # real G1. The simulator relies on this file too: its own config sets an empty
-        # interface so the SDK reads CYCLONEDDS_URI (see patches/unitree_mujoco/002).
-        cyclone_path = cyclone_uri[len("file://") :]
-        if not os.path.isfile(cyclone_path):
+    else:
+        # CycloneDDS accepts three forms here: a file:// URI, a bare path, and inline XML. All
+        # three have to be checked, because the one that matters is what the config SAYS, not
+        # how it was named -- a bare path to the hardware profile would otherwise walk straight
+        # past this and put rt/lowcmd on the LAN.
+        inline = cyclone_uri.lstrip().startswith("<")
+        config = cyclone_uri
+        if not inline:
+            path = cyclone_uri[len("file://") :] if cyclone_uri.startswith("file://") else (
+                cyclone_uri
+            )
+            if not os.path.isfile(path):
+                # CycloneDDS treats an unreadable URI as a warning on stderr and falls back to
+                # its defaults, which with the compose file's network_mode: host means binding
+                # the real NIC instead of lo. The simulator relies on this file too: its own
+                # config sets an empty interface so the SDK reads CYCLONEDDS_URI (see
+                # patches/unitree_mujoco/002).
+                problems.append(
+                    f"CYCLONEDDS_URI points at {path!r}, which does not exist -- CycloneDDS "
+                    "would silently fall back to defaults and bind the host NIC instead of 'lo'."
+                )
+                config = ""
+            else:
+                config = _read_text(path)
+        if config and 'NetworkInterface name="lo"' not in config:
             problems.append(
-                f"CYCLONEDDS_URI points at {cyclone_path!r}, which does not exist -- "
-                "CycloneDDS would silently fall back to defaults and bind the host NIC "
-                "instead of 'lo'."
+                f"the CycloneDDS config in use ({cyclone_uri!r}) does not pin the 'lo' "
+                "interface. The simulator must never publish rt/lowcmd anywhere a real robot "
+                "can hear it."
             )
 
     domain_id = os.environ.get("ROS_DOMAIN_ID")
@@ -133,11 +157,13 @@ def _launch_setup(context, *args, **kwargs):
     # World and pinning compose: pinning is orthogonal to which room the robot is in, and
     # the geometry test wants both at once (a known robot pose in a known room).
     world = LaunchConfiguration("world").perform(context)
-    if world not in ("navigation", "perception", "manipulation"):
+    if world not in ("navigation", "perception", "manipulation", "lio"):
         raise RuntimeError(
             f"world:={world!r} is not a scene. Use 'navigation' (the multi-room facility), "
-            "'perception' (the small room the geometry test measures against) or "
-            "'manipulation' (one object on a pedestal at arm's length, for the skill tests)."
+            "'perception' (the small room the geometry test measures against), "
+            "'manipulation' (one object on a pedestal at arm's length, for the skill tests) "
+            "or 'lio' (the walled, asymmetric room for scoring LiDAR-inertial odometry "
+            "against a known 5 m square)."
         )
     if sensors:
         suffix       = "_pinned" if pin_pelvis else ""
@@ -206,6 +232,50 @@ def _launch_setup(context, *args, **kwargs):
                 )
             )
 
+    # Checked even when sensors are off, so a typo is caught where it was made rather than
+    # silently selecting the other source. Ground truth and an estimate are not interchangeable
+    # and the difference does not announce itself: the stack comes up either way.
+    odometry = LaunchConfiguration("odometry").perform(context)
+    if odometry not in ("sportmodestate", "fast_lio"):
+        raise RuntimeError(
+            f"odometry:={odometry!r} is not an odometry source. Use 'sportmodestate' (exact "
+            "MuJoCo state, simulation only) or 'fast_lio' (LiDAR-inertial, what the robot runs)."
+        )
+    if odometry == "fast_lio" and not sensors:
+        raise RuntimeError(
+            "odometry:=fast_lio needs sensors:=true -- it is built on the Mid360, and with "
+            "sensors off nothing would publish odom -> base_footprint at all."
+        )
+
+    if sensors and odometry == "fast_lio":
+        # The LiDAR-inertial pipeline owns odom -> base_footprint instead, and brings up its
+        # own publisher. Exactly one of these two branches runs: two writers on that transform
+        # is the failure the whole odometry_source parameter exists to make impossible.
+        #
+        # Delayed past the spawn, not started with everything else. FAST-LIO estimates gravity
+        # from its first ten IMU samples, and the robot free-falls onto the floor at spawn: an
+        # init that catches the drop bakes a wrong gravity in and the estimate diverges by
+        # hundreds of metres while the robot stands still (seen, not hypothesised). Same fixed-
+        # delay approach as activate_arm_delay_s.
+        fastlio_delay_s = float(LaunchConfiguration("sim_start_delay_s").perform(context)) + 10.0
+        actions.append(
+            TimerAction(
+                period=fastlio_delay_s,
+                actions=[
+                    IncludeLaunchDescription(
+                        PythonLaunchDescriptionSource(
+                            os.path.join(
+                                get_package_share_directory("g1_state_estimation"),
+                                "launch",
+                                "fastlio_odometry.launch.py",
+                            )
+                        ),
+                        launch_arguments={"sim": "true"}.items(),
+                    )
+                ],
+            )
+        )
+    elif sensors:
         # odom -> base_footprint -> pelvis. Tunables live in the package's own converged-track
         # config rather than inline here, so there is one place to change them.
         odometry_node = LifecycleNode(
@@ -334,9 +404,10 @@ def _launch_setup(context, *args, **kwargs):
         parameters=[
             os.path.join(motion_service_sim_share, "config", "motion_service_sim.yaml"),
             os.path.join(motion_service_sim_share, "config", "walk_policy.yaml"),
-            # Completes pelvis -> torso_link so the sensor frames are not stranded in their
-            # own TF tree, and fills in the hands, which no controller owns. Costs work on
-            # the 1 kHz /lowstate path, so it is not on by default.
+            # The legs and waist, which no controller owns. Completes pelvis -> torso_link, so
+            # without it the sensor frames and both arms are stranded in a TF tree of their
+            # own. Costs work on the 1 kHz /lowstate path, so it is not on by default. On
+            # hardware this comes from g1_hardware_interface's g1_lowstate_joint_states.
             {"publish_non_arm_joint_states": publish_non_arm},
             {"walk_policy.enabled": not pin_pelvis},
             waist_params,
@@ -403,6 +474,16 @@ def generate_launch_description():
                 "result as unproven, not as a property of the sensor stack. Opt-in until it "
                 "is re-measured on an unthrottled machine. test_lidar_geometry, which is "
                 "pure geometry, turns sensors on explicitly and passes.",
+            ),
+            DeclareLaunchArgument(
+                "odometry",
+                default_value="sportmodestate",
+                description="Which source publishes odom -> base_footprint. 'sportmodestate' "
+                "is exact MuJoCo state -- no drift, no noise, no latency -- and is what the "
+                "mission is tuned against. 'fast_lio' runs the real LiDAR-inertial pipeline "
+                "over the simulated Mid360 instead, which is the code path the robot uses; "
+                "expect drift, and expect it to need a few seconds to initialise. Needs "
+                "sensors:=true either way.",
             ),
             DeclareLaunchArgument(
                 "pin_pelvis",
