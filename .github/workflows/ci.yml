@@ -16,7 +16,7 @@ concurrency:
 
 permissions:
   contents: read
-  packages: write
+  packages: read
 
 defaults:
   run:
@@ -32,6 +32,10 @@ jobs:
   # Tag is the Dockerfile's hash, so this is a registry probe unless the Dockerfile changed.
   image:
     runs-on: ubuntu-22.04
+    # The only job that pushes; the other two pull with a read-only token.
+    permissions:
+      contents: read
+      packages: write
     outputs:
       ref: ${{ steps.tag.outputs.ref }}
     steps:
