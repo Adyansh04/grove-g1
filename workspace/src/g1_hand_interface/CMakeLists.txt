@@ -42,6 +42,24 @@ if(BUILD_TESTING)
   ament_add_gmock(test_wire_contract test/test_wire_contract.cpp)
   target_link_libraries(test_wire_contract g1_dex3_system)
   ament_target_dependencies(test_wire_contract pluginlib hardware_interface)
+  # Lint checks use workspace-root configs (see g1_description/CMakeLists.txt).
+  find_program(CLANG_FORMAT_EXECUTABLE clang-format)
+  set(_clang_format_config "${CMAKE_CURRENT_SOURCE_DIR}/../../.clang-format")
+  if(CLANG_FORMAT_EXECUTABLE AND EXISTS "${_clang_format_config}")
+    file(GLOB_RECURSE _format_sources
+      "${CMAKE_CURRENT_SOURCE_DIR}/include/*.hpp"
+      "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
+      "${CMAKE_CURRENT_SOURCE_DIR}/test/*.cpp"
+    )
+    add_test(
+      NAME clang_format_check_g1_hand_interface
+      COMMAND ${CLANG_FORMAT_EXECUTABLE} --style=file:${_clang_format_config} --dry-run --Werror
+        ${_format_sources}
+    )
+  else()
+    message(WARNING
+      "clang-format and/or workspace .clang-format not found; skipping clang_format_check_g1_hand_interface test")
+  endif()
 endif()
 
 ament_package()

@@ -35,6 +35,10 @@
   <test_depend>ament_cmake_xmllint</test_depend>
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>control_msgs</test_depend>
+  <!-- test_launch_threading asserts on g1_navigation's rviz config being
+       substituted into moveit_rviz.launch.py, so that package has to be on the
+       test environment's ament index. -->
+  <test_depend>g1_navigation</test_depend>
   <test_depend>launch_testing</test_depend>
   <test_depend>launch_testing_ament_cmake</test_depend>
   <test_depend>moveit_core</test_depend>

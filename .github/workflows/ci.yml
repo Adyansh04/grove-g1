@@ -1,0 +1,229 @@
+# Builds the workspace and runs the tests that need no simulator.
+#
+# Simulator suites are excluded: they need a live MuJoCo and are CPU-time-sensitive, so on a
+# shared runner they measure the runner. They carry the ctest label `simulator`.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: read
+
+defaults:
+  run:
+    # Container jobs default to `sh`, where `source` does not exist and every ROS setup script
+    # fails with exit 127 before running anything.
+    shell: bash
+
+env:
+  # Lowercase and literal: GHCR rejects uppercase, and this owner is `Adyansh04`.
+  IMAGE: ghcr.io/adyansh04/grove-g1-ci
+
+jobs:
+  # Tag is the Dockerfile's hash, so this is a registry probe unless the Dockerfile changed.
+  image:
+    runs-on: ubuntu-22.04
+    # The only job that pushes; the other two pull with a read-only token.
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      ref: ${{ steps.tag.outputs.ref }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: tag
+        run: |
+          h=$(sha256sum .github/ci.Dockerfile | cut -c1-16)
+          echo "ref=${IMAGE}:${h}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: probe
+        run: |
+          docker manifest inspect "${{ steps.tag.outputs.ref }}" >/dev/null 2>&1 \
+            && echo "exists=true" >> "$GITHUB_OUTPUT" \
+            || echo "exists=false" >> "$GITHUB_OUTPUT"
+
+      - if: steps.probe.outputs.exists == 'false'
+        uses: docker/setup-buildx-action@v3
+
+      - if: steps.probe.outputs.exists == 'false'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: .github/ci.Dockerfile
+          tags: ${{ steps.tag.outputs.ref }}
+          push: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=min
+
+  build:
+    needs: image
+    runs-on: ubuntu-22.04
+    container:
+      image: ${{ needs.image.outputs.ref }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    env:
+      CCACHE_MAXSIZE: 1G
+    steps:
+      - uses: actions/checkout@v4
+
+      # $GITHUB_WORKSPACE, not ${{ github.workspace }}: inside a container the latter expands to
+      # the runner's host path, which does not exist here.
+      - run: echo "CCACHE_DIR=$GITHUB_WORKSPACE/.ccache" >> "$GITHUB_ENV"
+
+      # A CI image on different versions than the dev image tests a configuration nobody ships.
+      - name: Check the two images pin the same versions
+        run: |
+          fail=0
+          for arg in UNITREE_SDK2_SHA LIVOX_SDK2_SHA ONNXRUNTIME_VERSION RUFF_VERSION LLVM_VERSION; do
+            dev=$(grep -oP "^ARG ${arg}=\K\S+" .devcontainer/Dockerfile)
+            ci=$(grep -oP "^ARG ${arg}=\K\S+" .github/ci.Dockerfile)
+            if [ "$dev" != "$ci" ]; then
+              echo "::error file=.github/ci.Dockerfile::${arg} differs: dev=${dev} ci=${ci}"
+              fail=1
+            fi
+          done
+          exit $fail
+
+      - name: Import externals
+        # safe.directory: the checkout is not owned by the container's uid, and git's refusal
+        # surfaces as a vcs error naming neither cause.
+        run: |
+          git config --global --add safe.directory '*'
+          ./scripts/import-externals.sh
+
+      - uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ccache-${{ github.ref_name }}-${{ github.sha }}
+          restore-keys: |
+            ccache-${{ github.ref_name }}-
+            ccache-main-
+            ccache-
+
+      - name: Build
+        working-directory: workspace
+        # Each package's lint check is guarded by find_program, so a missing clang-format or
+        # ruff does not fail the test -- it deletes it, and CI stays green with nothing linted.
+        # The grep is what notices.
+        run: |
+          source /opt/ros/humble/setup.bash
+          colcon build --symlink-install \
+            --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+            --event-handlers console_cohesion+ 2>&1 | tee build.log
+          if grep -q "; skipping " build.log; then
+            echo "::error::a lint tool is missing from the image, so its check was not built"
+            exit 1
+          fi
+
+      - name: Test
+        working-directory: workspace
+        # ^g1_ skips the vendored checkouts, whose lint targets fail by design. Lint for ours
+        # runs here as each package's own ctest target, which is why there is no lint job.
+        # --return-code-on-test-failure: colcon test otherwise exits 0 over a failing suite.
+        run: |
+          source /opt/ros/humble/setup.bash
+          source install/setup.bash
+          colcon test \
+            --packages-select-regex '^g1_' \
+            --executor sequential \
+            --return-code-on-test-failure \
+            --ctest-args -LE simulator
+
+      - name: Test results
+        if: always()
+        working-directory: workspace
+        run: |
+          if [ -d build ]; then
+            colcon test-result --verbose
+          else
+            echo "no build directory"
+          fi
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          # Testing/ as well: the lint targets are plain add_test()s and write no xunit file,
+          # so a formatting failure appears only in ctest's own log.
+          path: |
+            workspace/build/*/test_results/**/*.xml
+            workspace/build/*/Testing/**/*.xml
+          retention-days: 7
+
+  # Informational, and non-blocking. It reports only what the non-simulator tests reach, so the
+  # integration layer reads low by construction -- treat it as a per-package signal on the pure
+  # logic, not as a number for the repo. Deliberately no badge.
+  coverage:
+    needs: image
+    runs-on: ubuntu-22.04
+    continue-on-error: true
+    container:
+      image: ${{ needs.image.outputs.ref }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    env:
+      # gcov reads .gcno next to the object file; a cache hit would not write one.
+      CCACHE_DISABLE: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Import externals
+        run: |
+          git config --global --add safe.directory '*'
+          ./scripts/import-externals.sh
+
+      - name: Build instrumented
+        working-directory: workspace
+        # Everything, because our packages do not build without the vendored ones. gcovr's
+        # filter is what narrows the report back down to ours.
+        run: |
+          source /opt/ros/humble/setup.bash
+          colcon build \
+            --cmake-args -DCMAKE_BUILD_TYPE=Debug \
+              -DCMAKE_CXX_FLAGS="--coverage -O0" -DCMAKE_EXE_LINKER_FLAGS="--coverage" \
+            --event-handlers console_cohesion+
+
+      - name: Test
+        working-directory: workspace
+        run: |
+          source /opt/ros/humble/setup.bash
+          source install/setup.bash
+          colcon test --packages-select-regex '^g1_' --executor sequential \
+            --ctest-args -LE simulator
+
+      - name: Report
+        working-directory: workspace
+        # tee, not plain redirection: written only to the step summary the numbers exist solely
+        # on the run's web page, and are not greppable from the log or `gh run view`.
+        run: |
+          {
+            echo "## C++ coverage — non-simulator tests only"
+            echo
+            echo 'Excludes every suite labelled `simulator`, so the node and launch layer is'
+            echo 'largely unmeasured here. Read it per package, not as a repo total.'
+            echo
+            echo '```'
+            gcovr --root . --filter 'src/g1_' --exclude '.*/test/' \
+                  --txt --print-summary 2>&1 || echo "gcovr produced no data"
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"

@@ -67,14 +67,14 @@ if(BUILD_TESTING)
   find_package(launch_testing_ament_cmake REQUIRED)
   add_launch_test(test/test_moveit_plan_execute.launch.py
     TARGET test_moveit_plan_execute TIMEOUT 400)
-  set_tests_properties(test_moveit_plan_execute PROPERTIES RESOURCE_LOCK mujoco_sim COST 90)
+  set_tests_properties(test_moveit_plan_execute PROPERTIES RESOURCE_LOCK mujoco_sim LABELS simulator COST 90)
 
   # Runs the sensor track on the perception scene: the octomap has to fill from the LiDAR
   # before anything can be asserted. Note SIM_SETTLE_S inside that file cannot be raised to
   # cover the fill -- launch_testing's own startup timeout fires first.
   add_launch_test(test/test_octomap_blocks_a_plan.launch.py
     TARGET test_octomap_blocks_a_plan TIMEOUT 500)
-  set_tests_properties(test_octomap_blocks_a_plan PROPERTIES RESOURCE_LOCK mujoco_sim COST 95)
+  set_tests_properties(test_octomap_blocks_a_plan PROPERTIES RESOURCE_LOCK mujoco_sim LABELS simulator COST 95)
 
   # Use workspace-root ruff.toml if available.
   find_program(RUFF_EXECUTABLE ruff)
@@ -87,6 +87,24 @@ if(BUILD_TESTING)
     )
   else()
     message(WARNING "ruff and/or workspace ruff.toml not found; skipping ruff_check_g1_moveit_config test")
+  endif()
+  # Lint checks use workspace-root configs (see g1_description/CMakeLists.txt).
+  find_program(CLANG_FORMAT_EXECUTABLE clang-format)
+  set(_clang_format_config "${CMAKE_CURRENT_SOURCE_DIR}/../../.clang-format")
+  if(CLANG_FORMAT_EXECUTABLE AND EXISTS "${_clang_format_config}")
+    file(GLOB_RECURSE _format_sources
+      "${CMAKE_CURRENT_SOURCE_DIR}/include/*.hpp"
+      "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
+      "${CMAKE_CURRENT_SOURCE_DIR}/test/*.cpp"
+    )
+    add_test(
+      NAME clang_format_check_g1_moveit_config
+      COMMAND ${CLANG_FORMAT_EXECUTABLE} --style=file:${_clang_format_config} --dry-run --Werror
+        ${_format_sources}
+    )
+  else()
+    message(WARNING
+      "clang-format and/or workspace .clang-format not found; skipping clang_format_check_g1_moveit_config test")
   endif()
 endif()
 

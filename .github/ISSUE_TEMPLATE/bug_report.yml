@@ -1,0 +1,43 @@
+name: Bug report
+description: Something in the stack does not behave as documented
+labels: [bug]
+body:
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where did this happen?
+      options:
+        - Simulation (unitree_mujoco)
+        - Real G1 hardware
+    validations:
+      required: true
+
+  - type: input
+    id: package
+    attributes:
+      label: Package
+      description: The `g1_*` package involved, if you know which one.
+      placeholder: g1_navigation
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you expected, and what you got instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: The launch command, and anything needed to set the scene.
+    validations:
+      required: true
+
+  - type: textarea
+    id: output
+    attributes:
+      label: Output
+      description: The relevant part of the launch output, or the failing test.
+      render: shell
