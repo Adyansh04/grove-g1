@@ -19,6 +19,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         clang-format-14 \
         cmake \
         curl \
+        gcovr \
         git \
         python3-colcon-common-extensions \
         python3-pip \

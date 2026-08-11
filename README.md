@@ -2,6 +2,9 @@
 
 # Grove-G1
 
+[![CI](https://github.com/Adyansh04/grove-g1/actions/workflows/ci.yml/badge.svg)](https://github.com/Adyansh04/grove-g1/actions/workflows/ci.yml)
+[![License: BSD-3-Clause](https://img.shields.io/badge/license-BSD--3--Clause-blue.svg)](LICENSE)
+
 An autonomy stack for the [Unitree G1](https://www.unitree.com/g1) humanoid, built on ROS 2 Humble
 and developed simulation-first against `unitree_mujoco`.
 
@@ -240,6 +243,10 @@ the image built by `.github/ci.Dockerfile`. Lint runs as part of `colcon test`, 
 The simulator suites are excluded: they are CPU-time-sensitive and measure a shared runner
 rather than the stack. Run them locally before merging anything that touches locomotion,
 navigation or the sensor path.
+
+A per-package C++ coverage table is printed to each run's summary. It covers only the tests CI
+runs, so the node and launch layer reads low there by construction — it is a signal on the pure
+logic, not a figure for the repository, which is why there is no badge for it.
 
 ## Repository layout
 

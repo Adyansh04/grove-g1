@@ -139,3 +139,60 @@ jobs:
           name: test-results
           path: workspace/build/*/test_results/**/*.xml
           retention-days: 7
+
+  # Informational, and non-blocking. It reports only what the non-simulator tests reach, so the
+  # integration layer reads low by construction -- treat it as a per-package signal on the pure
+  # logic, not as a number for the repo. Deliberately no badge.
+  coverage:
+    needs: image
+    runs-on: ubuntu-22.04
+    continue-on-error: true
+    container:
+      image: ${{ needs.image.outputs.ref }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    env:
+      # gcov reads .gcno next to the object file; a cache hit would not write one.
+      CCACHE_DISABLE: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Import externals
+        run: |
+          git config --global --add safe.directory '*'
+          ./scripts/import-externals.sh
+
+      - name: Build instrumented
+        working-directory: workspace
+        # Everything, because our packages do not build without the vendored ones. gcovr's
+        # filter is what narrows the report back down to ours.
+        run: |
+          source /opt/ros/humble/setup.bash
+          colcon build \
+            --cmake-args -DCMAKE_BUILD_TYPE=Debug \
+              -DCMAKE_CXX_FLAGS="--coverage -O0" -DCMAKE_EXE_LINKER_FLAGS="--coverage" \
+            --event-handlers console_cohesion+
+
+      - name: Test
+        working-directory: workspace
+        run: |
+          source /opt/ros/humble/setup.bash
+          source install/setup.bash
+          colcon test --packages-select-regex '^g1_' --executor sequential \
+            --ctest-args -LE simulator
+
+      - name: Report
+        working-directory: workspace
+        run: |
+          {
+            echo "## C++ coverage — non-simulator tests only"
+            echo
+            echo 'Excludes every suite labelled `simulator`, so the node and launch layer is'
+            echo 'largely unmeasured here. Read it per package, not as a repo total.'
+            echo
+            echo '```'
+            gcovr --root . --filter 'src/g1_' --exclude '/test/' \
+                  --txt --print-summary 2>&1 || echo "gcovr produced no data"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
