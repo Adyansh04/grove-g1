@@ -111,6 +111,12 @@ g1_base_approach:
     target_x_m: 0.270
     target_y_m: -0.220
 
+    # Objects the robot must stand FURTHER BACK from than target_x_m. Reaching over a surface to
+    # set something down sweeps the palm and wrist across its face; reaching onto one for a cube
+    # does not. From the cube's 0.270 the drop pad's preplace has no collision-free path at all.
+    standoff_object_ids: ["drop_pad"]
+    standoff_target_x_m: [0.350]
+
     # From a 2D grid run at the workbench with the arms tucked, at the PREGRASP height, checking
     # each IK solution against /check_state_validity (m9-checks/reach_grid.py). Only the pregrasp
     # has to be collision-free: the grasp pose sits on the table and is inside its octomap by
