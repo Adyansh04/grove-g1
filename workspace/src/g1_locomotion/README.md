@@ -181,6 +181,11 @@ sits relative to the robot is the whole of reachability; which way the room face
 An earlier version judged it in the working-heading frame and spent most of its pulse budget chasing
 alignment that cost nothing.
 
+`standoff_object_ids` / `standoff_target_x_m` name objects that need a different `target_x_m` from
+the default. Reaching over a surface to set something down sweeps the palm and wrist across its
+face, which reaching onto one for an object does not: `drop_pad` is approached to 0.350 where the
+cube uses 0.270.
+
 `target_x_m` / `target_y_m` and their tolerances are the arm's reachable band, MEASURED with
 `/compute_ik` plus `/check_state_validity` at the workbench, not guessed. Being stricter than the arm is not free: a run that finished a good approach 13 mm
 outside a too-tight forward tolerance then creeped for forty pulses.

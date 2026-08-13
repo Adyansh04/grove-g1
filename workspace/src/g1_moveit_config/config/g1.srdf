@@ -184,9 +184,11 @@
     <joint name="right_wrist_yaw_joint" value="0.00"/>
   </group_state>
 
+  <!-- Shoulder roll is 0.55 for the same reason carry's is 0.60: at 0.40 the thumb sits 0.10 rad
+       from the hip. Nothing walks narrower for it, since the carry leg is already at 0.60. -->
   <group_state name="tucked" group="left_arm">
     <joint name="left_shoulder_pitch_joint" value="0.25"/>
-    <joint name="left_shoulder_roll_joint" value="0.40"/>
+    <joint name="left_shoulder_roll_joint" value="0.55"/>
     <joint name="left_shoulder_yaw_joint" value="0.00"/>
     <joint name="left_elbow_joint" value="1.30"/>
     <joint name="left_wrist_roll_joint" value="0.00"/>
@@ -195,7 +197,7 @@
   </group_state>
   <group_state name="tucked" group="right_arm">
     <joint name="right_shoulder_pitch_joint" value="0.25"/>
-    <joint name="right_shoulder_roll_joint" value="-0.40"/>
+    <joint name="right_shoulder_roll_joint" value="-0.55"/>
     <joint name="right_shoulder_yaw_joint" value="0.00"/>
     <joint name="right_elbow_joint" value="1.30"/>
     <joint name="right_wrist_roll_joint" value="0.00"/>
@@ -204,14 +206,14 @@
   </group_state>
   <group_state name="tucked" group="both_arms">
     <joint name="left_shoulder_pitch_joint" value="0.25"/>
-    <joint name="left_shoulder_roll_joint" value="0.40"/>
+    <joint name="left_shoulder_roll_joint" value="0.55"/>
     <joint name="left_shoulder_yaw_joint" value="0.00"/>
     <joint name="left_elbow_joint" value="1.30"/>
     <joint name="left_wrist_roll_joint" value="0.00"/>
     <joint name="left_wrist_pitch_joint" value="0.00"/>
     <joint name="left_wrist_yaw_joint" value="0.00"/>
     <joint name="right_shoulder_pitch_joint" value="0.25"/>
-    <joint name="right_shoulder_roll_joint" value="-0.40"/>
+    <joint name="right_shoulder_roll_joint" value="-0.55"/>
     <joint name="right_shoulder_yaw_joint" value="0.00"/>
     <joint name="right_elbow_joint" value="1.30"/>
     <joint name="right_wrist_roll_joint" value="0.00"/>
@@ -293,15 +295,21 @@
        upright and close to the chest while the robot walks. tucked itself is the smallest
        swept volume, but its wrist pitch would tip whatever the hand is holding.
 
-       The shoulder roll is 0.40 rather than the 0.25 this pose first shipped with, and that
-       is measured, not taste: at 0.25 /check_state_validity reports
-       right_hand_thumb_2_link <-> right_hip_roll_link and the pose is simply unreachable, with
-       or without an object held. It is the same hand-versus-hip clearance M8 ran into from the
-       other side; rolling the shoulder further from the
-       body is what buys the thumb room. Valid at 0.40 for both hands. -->
+       The shoulder roll is 0.60, and it is the one value in this pose with a measurement behind
+       it. Rolling the shoulder away from the body is what buys the thumb room off the hip: at
+       0.25 the pose is invalid outright (right_hand_thumb_2_link <-> right_hip_roll_link), the
+       same hand-versus-hip clearance M8 met from the other side.
+
+       0.40 fixed that and was left there, valid but with 4.6 DEGREES OF MARGIN. The arm droops
+       more than that carrying the cube through a walk, and a start state in collision cannot be
+       planned out of: fix_start_state_collision jitters the start, plans from the jitter, and
+       the path check rejects the result against the original.
+
+       Margin against roll, others held: 0.40 -> 4.6 deg, 0.50 -> 10.3, 0.55 -> 12.6,
+       0.60 -> 16.0, 0.65 -> 18.3. test_robot_model holds the line at 0.20 rad. -->
   <group_state name="carry" group="left_arm">
     <joint name="left_shoulder_pitch_joint" value="-0.20"/>
-    <joint name="left_shoulder_roll_joint" value="0.40"/>
+    <joint name="left_shoulder_roll_joint" value="0.60"/>
     <joint name="left_shoulder_yaw_joint" value="0.00"/>
     <joint name="left_elbow_joint" value="1.40"/>
     <joint name="left_wrist_roll_joint" value="0.00"/>
@@ -310,7 +318,7 @@
   </group_state>
   <group_state name="carry" group="right_arm">
     <joint name="right_shoulder_pitch_joint" value="-0.20"/>
-    <joint name="right_shoulder_roll_joint" value="-0.40"/>
+    <joint name="right_shoulder_roll_joint" value="-0.60"/>
     <joint name="right_shoulder_yaw_joint" value="0.00"/>
     <joint name="right_elbow_joint" value="1.40"/>
     <joint name="right_wrist_roll_joint" value="0.00"/>
@@ -319,14 +327,14 @@
   </group_state>
   <group_state name="carry" group="both_arms">
     <joint name="left_shoulder_pitch_joint" value="-0.20"/>
-    <joint name="left_shoulder_roll_joint" value="0.40"/>
+    <joint name="left_shoulder_roll_joint" value="0.60"/>
     <joint name="left_shoulder_yaw_joint" value="0.00"/>
     <joint name="left_elbow_joint" value="1.40"/>
     <joint name="left_wrist_roll_joint" value="0.00"/>
     <joint name="left_wrist_pitch_joint" value="0.00"/>
     <joint name="left_wrist_yaw_joint" value="0.00"/>
     <joint name="right_shoulder_pitch_joint" value="-0.20"/>
-    <joint name="right_shoulder_roll_joint" value="-0.40"/>
+    <joint name="right_shoulder_roll_joint" value="-0.60"/>
     <joint name="right_shoulder_yaw_joint" value="0.00"/>
     <joint name="right_elbow_joint" value="1.40"/>
     <joint name="right_wrist_roll_joint" value="0.00"/>

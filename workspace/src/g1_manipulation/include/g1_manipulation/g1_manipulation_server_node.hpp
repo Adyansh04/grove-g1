@@ -133,8 +133,11 @@ private:
      * arm, one skill -- and always restored, including on every failure path, so the arm is
      * never left planning against a permanently blinded scene.
      */
+    /// @param include_links  false exempts the touchables from each other only, leaving the hand
+    ///        and wrist collision-checked -- what carrying an object over a surface wants.
     bool allowHandContact(
-        const ArmContext& arm, const std::vector<std::string>& touchables, bool allowed);
+        const ArmContext& arm, const std::vector<std::string>& touchables, bool allowed,
+        bool include_links = true);
 
     MoveGroup* groupFor(const std::string& name);
 

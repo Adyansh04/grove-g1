@@ -7,12 +7,14 @@
  */
 
 #include <gmock/gmock.h>
+#include <moveit/planning_scene/planning_scene.h>
 #include <moveit/robot_model/robot_model.h>
 #include <moveit/robot_state/robot_state.h>
 #include <srdfdom/model.h>
 #include <urdf_parser/urdf_parser.h>
 
 #include <fstream>
+#include <iostream>
 #include <map>
 #include <memory>
 #include <set>
@@ -44,6 +46,15 @@ const std::vector<std::string> kReachingLinks = {
     "elbow_link", "wrist_roll_link", "wrist_pitch_link", "wrist_yaw_link", "hand_palm_link",
 };
 
+/// How far every joint of a named posture must move before the robot self-collides.
+///
+/// Merely valid is not usable. `carry` shipped valid with 4.6 degrees of room on
+/// right_shoulder_roll, and an arm carrying the cube through a walk droops more than that --
+/// 0.071 and 0.155 rad on two missions that then deadlocked, since MoveIt cannot plan out of a
+/// start state in collision. 0.20 clears the worst droop seen with room over.
+constexpr double kPostureMarginRad = 0.20;
+constexpr double kMarginStepRad    = 0.02;
+
 class RobotModelTest : public ::testing::Test
 {
 protected:
@@ -59,9 +70,77 @@ protected:
         ASSERT_TRUE(model_);
     }
 
+    /// Smallest distance any single joint of `group` can move out of `posture` before the state
+    /// self-collides, capped at `cap` so an unbounded axis does not sweep the whole range.
+    double postureMargin(
+        const std::string& group, const std::string& posture, std::string& tightest,
+        double cap = 0.30) const
+    {
+        planning_scene::PlanningScene scene(model_);
+        const auto*                   jmg = model_->getJointModelGroup(group);
+        moveit::core::RobotState      state(model_);
+        state.setToDefaultValues();
+        EXPECT_TRUE(state.setToDefaultValues(jmg, posture))
+            << group << " has no named posture '" << posture << "'";
+        state.update();
+
+        std::vector<double> base;
+        state.copyJointGroupPositions(jmg, base);
+        double worst = cap;
+        for (std::size_t i = 0; i < base.size(); ++i)
+        {
+            for (const double direction : { -1.0, 1.0 })
+            {
+                for (double delta = kMarginStepRad; delta <= cap + 1e-9; delta += kMarginStepRad)
+                {
+                    std::vector<double> probe = base;
+                    probe[i] += direction * delta;
+                    moveit::core::RobotState moved(state);
+                    moved.setJointGroupPositions(jmg, probe);
+                    moved.update();
+                    // Joint limits are the model's business, not this test's: a posture backed
+                    // against a limit is reported by satisfiesBounds, not by a collision.
+                    if (!moved.satisfiesBounds(jmg))
+                    {
+                        break;
+                    }
+                    if (scene.isStateColliding(moved, group))
+                    {
+                        if (delta < worst)
+                        {
+                            worst    = delta;
+                            tightest = jmg->getActiveJointModelNames()[i];
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+        return worst;
+    }
+
     std::shared_ptr<srdf::Model>              srdf_;
     std::shared_ptr<moveit::core::RobotModel> model_;
 };
+
+TEST_F(RobotModelTest, NamedPosturesKeepRoomBeforeSelfCollision)
+{
+    for (const std::string& group : { "left_arm", "right_arm" })
+    {
+        for (const std::string& posture : { "tucked", "carry" })
+        {
+            std::string  tightest = "(none)";
+            const double margin   = postureMargin(group, posture, tightest);
+            std::cout << "  " << group << "/" << posture << ": " << margin << " rad on " << tightest
+                      << "\n";
+            EXPECT_GE(margin, kPostureMarginRad)
+                << group << "/" << posture << " has only " << margin << " rad of room on "
+                << tightest
+                << ". A posture this close to a self-collision deadlocks every later plan when "
+                   "the arm droops into it.";
+        }
+    }
+}
 
 TEST_F(RobotModelTest, PlansInThePelvisFrame)
 {

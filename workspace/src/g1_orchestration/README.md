@@ -7,6 +7,7 @@ BehaviorTree.CPP **v4**. `ament_cmake`, C++20.
 flowchart LR
     EXE["g1_bt_executor<br/>ticks the tree at 10 Hz"]
     EXE -- "NavigateToPose, ClearCostmaps" --> NAV["Nav2"]
+    EXE -- "ClearOctomap" --> MG["move_group"]
     EXE -- "ApproachObject, Retreat" --> BA["g1_locomotion"]
     EXE -- "Pick, Place,<br/>SetArmPosture" --> MAN["g1_manipulation"]
     EXE -- "acquire / release" --> CM["controller_manager"]
@@ -44,6 +45,7 @@ One file per leaf, the layout `nav2_behavior_tree` uses.
 | `Place` | `/g1_manipulation_server/place` | `surface` (preferred), or `target` as `"x;y;z"` with `frame_id`; `arm` |
 | `SetArmPosture` | `/g1_manipulation_server/set_arm_posture` | `group`, `named_target` |
 | `ClearCostmaps` | Nav2 costmap clear services | `timeout_s`, `global_service`, `local_service` |
+| `ClearOctomap` | MoveIt `/clear_octomap` | `timeout_s`, `service` |
 | `AcquireArm` / `ReleaseArm` | `controller_manager` services | `timeout_s` |
 
 Every action leaf also takes `server_timeout_s` (default 10.0), how long to wait for the server to

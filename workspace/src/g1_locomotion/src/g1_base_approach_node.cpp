@@ -120,6 +120,15 @@ public:
         limits_.lateral_tolerance_m =
             declare_parameter<double>("lateral_tolerance_m", d.lateral_tolerance_m);
         limits_.min_forward_m = declare_parameter<double>("min_forward_m", d.min_forward_m);
+        // Two parallel lists rather than a map, which ROS 2 parameters cannot express.
+        standoff_ids_      = declare_parameter<std::vector<std::string>>("standoff_object_ids", {});
+        standoff_target_x_ = declare_parameter<std::vector<double>>("standoff_target_x_m", {});
+        if (standoff_ids_.size() != standoff_target_x_.size())
+        {
+            throw std::runtime_error(
+                "g1_base_approach: standoff_object_ids and standoff_target_x_m must be the same "
+                "length");
+        }
         limits_.step_threshold_m =
             declare_parameter<double>("step_threshold_m", d.step_threshold_m);
 
@@ -385,6 +394,21 @@ private:
         if (goal->arm == ApproachObject::Goal::ARM_LEFT)
         {
             limits.target_y_m = -limits.target_y_m;
+        }
+        // Reaching over a surface needs more room than reaching onto one; see the config.
+        for (std::size_t i = 0; i < standoff_ids_.size(); ++i)
+        {
+            if (standoff_ids_[i] == goal->object_id)
+            {
+                limits.target_x_m = standoff_target_x_[i];
+                RCLCPP_INFO(
+                    get_logger(),
+                    "'%s' is approached to %.3f rather than the default %.3f",
+                    goal->object_id.c_str(),
+                    limits.target_x_m,
+                    limits_.target_x_m);
+                break;
+            }
         }
 
         const double timeout_s = goal->timeout_s > 0.0 ? goal->timeout_s : default_timeout_s_;
@@ -808,7 +832,9 @@ private:
     int         max_pulses_            = 90;
     double      default_timeout_s_     = 420.0;
 
-    ApproachLimits limits_;
+    ApproachLimits           limits_;
+    std::vector<std::string> standoff_ids_;
+    std::vector<double>      standoff_target_x_;
 
     rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr             cmd_pub_;
     rclcpp::Subscription<vision_msgs::msg::Detection3DArray>::SharedPtr objects_sub_;
