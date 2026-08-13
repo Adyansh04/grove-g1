@@ -87,7 +87,8 @@ G1ManipulationServer::G1ManipulationServer(const rclcpp::NodeOptions& options)
 }
 
 bool G1ManipulationServer::allowHandContact(
-    const ArmContext& arm, const std::vector<std::string>& touchables, bool allowed)
+    const ArmContext& arm, const std::vector<std::string>& touchables, bool allowed,
+    bool include_links)
 {
     // The links that unavoidably enter occupied space during a grasp: the hand itself, and
     // the wrist that carries it. Taken from the robot model rather than listed, so a renamed
@@ -167,7 +168,7 @@ bool G1ManipulationServer::allowHandContact(
             acm.entry_values[b].enabled[a] = allowed;
         }
     }
-    for (const std::string& touchable : touchables)
+    for (const std::string& touchable : include_links ? touchables : std::vector<std::string>{})
     {
         const std::size_t other = index_of(touchable);
         for (const std::string& link : links)
@@ -691,8 +692,11 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
         goal_handle->abort(result);
     };
 
-    // Lowering onto a surface enters occupied space just as reaching into one does.
-    allowHandContact(arm, touchables, true);
+    // The carried object may pass through the surface's voxels on the way in; the ARM may not.
+    // Exempting the hand this early let plans route the arm into the bench, and the strike shoved
+    // the base 0.12 to 0.17 m, which then put the re-aimed descent out of reach. Same hazard the
+    // pick defers its exemption for; the descent below gets the full one.
+    allowHandContact(arm, touchables, true, /*include_links=*/false);
 
     // Prefer a surface read from /objects over the caller's coordinate.
     //
@@ -752,21 +756,22 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
         return;
     }
 
-    // Re-resolve the target before descending. Everything above was computed in the pelvis
-    // frame BEFORE the arm reached out, and reaching out moves the base: the robot is
-    // balancing, so extending a loaded arm forward shifts the COM and the gait steps to keep
-    // up. Measured, one place: the cube was released 0.155 m short of the pad and fell to the
-    // floor, while every leaf in the mission reported success.
+    // Re-resolve before descending. Everything above was computed in the pelvis frame before the
+    // arm reached out, and the reach moves the base: extending a loaded arm shifts the COM and
+    // the balancing gait steps to keep up, measured at 0.165 m.
     //
-    // The arm holds a joint trajectory, so a base that drifts back carries the held object back
-    // with it. Recomputing here prices in whatever moved during the preplace, and the descent
-    // is short enough that little more accumulates.
+    // `expected` is the same target in the /objects frame, for the accuracy check at the end.
+    // That check runs after a reach, a release and a retreat, so in the pelvis frame the base's
+    // own travel reads as placement error.
+    std::optional<geometry_msgs::msg::Point> expected;
     if (surface)
     {
         if (const auto fresh = lookUpObject(goal->surface_object_id))
         {
             const std::string frame =
                 fresh->header.frame_id.empty() ? objects_.header.frame_id : fresh->header.frame_id;
+            expected = fresh->results.front().pose.pose.position;
+            expected->z += 0.5 * (fresh->bbox.size.z + held_height);
             if (auto moved = toPlanningFrame(fresh->results.front().pose.pose, frame))
             {
                 moved->position.z += 0.5 * (fresh->bbox.size.z + held_height);
@@ -783,12 +788,18 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
                         shift);
                 }
                 place_goal = regrasp;
+                // The retreat returns here, so it moves with the re-aim. Left stale, the lift is
+                // diagonal by however far the base walked.
+                preplace = place_goal;
+                preplace.position.z += approach_height_m_;
             }
         }
     }
 
     feedback->phase = Place::Feedback::PHASE_LOWER;
     goal_handle->publish_feedback(feedback);
+    // Now the hand may touch the surface: the descent ends in contact by definition.
+    allowHandContact(arm, touchables, true);
     if (!moveTo(*arm_group, place_goal, arm.grasp_frame, "lower"))
     {
         fail(Place::Feedback::PHASE_LOWER, "could not lower onto the target");
@@ -817,6 +828,13 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
 
     feedback->phase = Place::Feedback::PHASE_RETREAT;
     goal_handle->publish_feedback(feedback);
+    // Restored BEFORE the retreat is planned, or the lift may route the open hand through what
+    // was just set down. The object only: the hand is inside the surface's voxels at this height
+    // by construction, so restoring `<octomap>` here would put the start state in collision.
+    if (!held_id.empty())
+    {
+        allowHandContact(arm, { held_id }, false);
+    }
     if (!moveTo(*arm_group, preplace, arm.grasp_frame, "retreat"))
     {
         fail(Place::Feedback::PHASE_RETREAT, "could not retreat clear of the object");
@@ -825,30 +843,35 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
 
     allowHandContact(arm, touchables, false);
 
-    // Did it actually land there? Detaching the object and retreating the arm proves only that
-    // the planner is happy; it says nothing about where the thing ended up. A place that
-    // released short dropped the cube on the floor 0.155 m away and every leaf in the mission
-    // still reported success, which is the worst outcome available -- a failure that announces
-    // itself is fixable, one that does not is not.
+    // Did it actually land there? A successful plan says nothing about where the object ended
+    // up: one release short dropped the cube on the floor with every leaf reporting success.
     //
-    // Compared against the pose the object was aimed at, in the planning frame, which is where
-    // `target` already is.
+    // Against `expected` when a surface gave one, so both sides come from /objects and the
+    // walking base cancels. A caller-supplied pose falls back to the planning frame.
     if (!held_id.empty())
     {
         if (const auto landed = lookUpObject(held_id))
         {
-            const std::string frame = landed->header.frame_id.empty() ? objects_.header.frame_id :
-                                                                        landed->header.frame_id;
-            if (const auto where = toPlanningFrame(landed->results.front().pose.pose, frame))
+            const geometry_msgs::msg::Pose& pose = landed->results.front().pose.pose;
+            // Binds without a temporary; `target` is checked engaged above.
+            const geometry_msgs::msg::Point& aim = expected ? *expected : target->position;
+
+            std::optional<geometry_msgs::msg::Point> where = pose.position;
+            if (!expected)
             {
-                const double off = std::hypot(
-                    where->position.x - target->position.x,
-                    where->position.y - target->position.y,
-                    where->position.z - target->position.z);
+                const std::string frame       = landed->header.frame_id.empty() ?
+                                                    objects_.header.frame_id :
+                                                    landed->header.frame_id;
+                const auto        in_planning = toPlanningFrame(pose, frame);
+                where = in_planning ? std::optional(in_planning->position) : std::nullopt;
+            }
+            if (where)
+            {
+                const double off = std::hypot(where->x - aim.x, where->y - aim.y, where->z - aim.z);
                 if (off > place_tolerance_m_)
                 {
                     result->success = false;
-                    result->message = std::string(Place::Feedback::PHASE_RELEASE) + ": " + held_id +
+                    result->message = std::string(Place::Feedback::PHASE_RETREAT) + ": " + held_id +
                                       " ended up " + std::to_string(off) +
                                       " m from where it was placed";
                     RCLCPP_ERROR(get_logger(), "%s", result->message.c_str());
