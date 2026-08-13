@@ -12,6 +12,7 @@ find_package(nav2_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(controller_manager_msgs REQUIRED)
 find_package(lifecycle_msgs REQUIRED)
+find_package(std_srvs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
 
@@ -25,6 +26,7 @@ add_library(g1_bt_nodes
   src/skills/approach_object.cpp
   src/skills/arm_authority_leaves.cpp
   src/skills/clear_costmaps.cpp
+  src/skills/clear_octomap.cpp
   src/skills/navigate_to_pose.cpp
   src/skills/pick.cpp
   src/skills/place.cpp
@@ -38,7 +40,7 @@ target_include_directories(g1_bt_nodes PUBLIC
 target_compile_features(g1_bt_nodes PUBLIC cxx_std_20)
 ament_target_dependencies(g1_bt_nodes PUBLIC
   rclcpp rclcpp_action behaviortree_cpp g1_msgs nav2_msgs geometry_msgs
-  controller_manager_msgs lifecycle_msgs tf2 tf2_geometry_msgs)
+  controller_manager_msgs lifecycle_msgs std_srvs tf2 tf2_geometry_msgs)
 
 add_executable(g1_bt_executor src/g1_bt_executor_main.cpp)
 target_link_libraries(g1_bt_executor PUBLIC g1_bt_nodes)

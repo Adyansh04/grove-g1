@@ -16,6 +16,10 @@
             <input_port name="global_service" type="std::string" default="/global_costmap/clear_entirely_global_costmap">Nav2 global costmap clear service. Empty skips it.</input_port>
             <input_port name="timeout_s" type="double" default="5.000000">Per-costmap service budget.</input_port>
         </Action>
+        <Action ID="ClearOctomap">
+            <input_port name="service" type="std::string" default="/clear_octomap">move_group's octomap clear service. Empty skips it.</input_port>
+            <input_port name="timeout_s" type="double" default="5.000000">Service budget.</input_port>
+        </Action>
         <Action ID="NavigateToPose">
             <output_port name="goal_yaw" type="double">The goal's heading, for an ApproachObject that has to hold it.</output_port>
             <input_port name="behavior_tree" type="std::string" default="">Nav2 tree to drive with. Empty uses its default.</input_port>

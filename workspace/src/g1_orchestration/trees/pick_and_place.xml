@@ -101,6 +101,13 @@
            around the robot's own recent history. -->
       <ClearCostmaps name="forget_the_workbench"/>
 
+      <!-- The 3D counterpart, and a different subsystem: ClearCostmaps wipes Nav2's grids, which
+           the base plans over, and leaves the planning scene the ARM plans against untouched.
+           Reaching over the workbench leaves the octomap holding the arm and the cube where they
+           were, and those voxels do not decay: one mission died here with <octomap> against the
+           carried cube at the third waypoint of the carry, a metre clear of the bench. -->
+      <ClearOctomap name="forget_the_workbench_in_3d"/>
+
       <RetryUntilSuccessful name="carry_with_retries" num_attempts="3">
         <SetArmPosture name="hold_it_close" group="right_arm" named_target="carry"/>
       </RetryUntilSuccessful>

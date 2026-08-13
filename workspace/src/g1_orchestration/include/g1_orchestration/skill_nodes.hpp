@@ -17,6 +17,7 @@
 #include "g1_orchestration/skills/approach_object.hpp"
 #include "g1_orchestration/skills/arm_authority_leaves.hpp"
 #include "g1_orchestration/skills/clear_costmaps.hpp"
+#include "g1_orchestration/skills/clear_octomap.hpp"
 #include "g1_orchestration/skills/navigate_to_pose.hpp"
 #include "g1_orchestration/skills/pick.hpp"
 #include "g1_orchestration/skills/place.hpp"
