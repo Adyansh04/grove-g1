@@ -4,7 +4,7 @@ Includes g1_bringup rather than the other way round, the same direction as g1_na
 nav_sim.launch.py. Manipulation sits above bring-up, and a moveit:=true argument on
 sim.launch.py would give g1_bringup a dependency on all of MoveIt.
 
-Every argument is forwarded EXPLICITLY, including ones whose values match this file's own
+Every argument is forwarded explicitly, including ones whose values match this file's own
 defaults. An included launch file inherits the parent's configurations, so a child's
 DeclareLaunchArgument default never fires for anything declared here -- relying on it is how
 this stack has already shipped two silent bugs.

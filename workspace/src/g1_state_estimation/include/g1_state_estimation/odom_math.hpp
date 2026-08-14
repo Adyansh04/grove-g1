@@ -98,7 +98,7 @@ Quaternion yawToQuaternion(double yaw);
  * Round-trip inverse of yawToQuaternion(); result is wrapped to (-pi, pi].
  *
  * The general form matters on the converged track. The short `2*atan2(z, w)` is exact only for
- * a pure +z rotation, which the planar sandbox's base always is and a walking G1 never is.
+ * a pure +z rotation, and a walking G1 is never that.
  */
 double quaternionToYaw(const Quaternion& q);
 

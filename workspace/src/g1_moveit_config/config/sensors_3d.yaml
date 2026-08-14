@@ -1,6 +1,6 @@
 # The 3D LiDAR into the planning scene, so move_group plans around what the robot can see.
 #
-# octomap_resolution is read at the NODE root, not inside a sensor block -- move_group's
+# octomap_resolution is read at the node root, not inside a sensor block -- move_group's
 # to_dict() flat-merges this whole file into its parameters, which is the only reason a
 # top-level key here becomes a node parameter. Without it move_group logs "Resolution not
 # specified for Octomap. Assuming resolution = 0.1".
@@ -13,17 +13,17 @@
 # an SRDF virtual joint to odom, argued in g1.srdf, not a setting here.
 octomap_resolution: 0.025
 
-# `sensors` is a flat list of NAMES, each a sibling top-level key below. It is NOT a list of
+# `sensors` is a flat list of names, each a sibling top-level key below. It is not a list of
 # dicts -- ROS 2 parameters cannot represent that, which is why the Humble perception tutorial
 # (still an unmigrated ROS 1 page, its source begins ":moveit1:") cannot be copied.
 sensors:
   - mid360_cloud
 
 # PointCloudOctomapUpdater rather than DepthImageOctomapUpdater, and not by preference.
-# On 2.5.9 the depth-image plugin's initialize() runs BEFORE setParams()
+# On 2.5.9 the depth-image plugin's initialize() runs before setParams()
 # (occupancy_map_monitor.cpp L97 then L100), and initialize() is where the clipping planes,
 # shadow threshold and padding are pushed into the mesh filter -- so none of its YAML ever
-# applies. Padding IS the self-filter, and an untunable self-filter is not usable. That plugin
+# applies. Padding is the self-filter, and an untunable self-filter is not usable. That plugin
 # also links OpenGL, which a CPU-only machine cannot load.
 #
 # Every key below is mandatory: setParams() ANDs all seven, and dropping one skips the sensor
@@ -32,8 +32,8 @@ sensors:
 mid360_cloud:
   sensor_plugin: occupancy_map_monitor/PointCloudOctomapUpdater
 
-  # The LiDAR, not the depth camera, and that was not the first choice. The camera publishes a
-  # depth IMAGE, and turning it into a cloud needs depth_image_proc, whose point_cloud_xyz node
+  # The LiDAR, not the depth camera. The camera publishes a
+  # depth image, and turning it into a cloud needs depth_image_proc, whose point_cloud_xyz node
   # would not receive from our relay: the relay publishes SensorDataQoS (best effort) and that
   # node's image_transport subscription is reliable, so it sat silent with the image publishing
   # at 10 Hz beside it. Remapping was correct (verified with `ros2 node info`) and a
@@ -42,7 +42,6 @@ mid360_cloud:
   #
   # The LiDAR sidesteps all of it: already a PointCloud2, and the octomap updater subscribes
   # with rmw_qos_profile_sensor_data, which matches the relay. No converter node at all.
-  # The camera path was tried first and does not work; see the note above.
   point_cloud_topic: /livox/lidar
 
   # Past this a ray is carved as free space instead of marking an endpoint. The arms reach

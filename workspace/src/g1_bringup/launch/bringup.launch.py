@@ -330,8 +330,8 @@ def _rviz(navigating, want_nav, want_moveit):
 
     With MoveIt and Nav2 BOTH running this returns two windows: the MoveIt one for the arm and
     a second on g1_navigation.rviz for the map, costmaps and plan. A combined single-window view
-    is NOT available; three merged configs were built and every one segfaulted rviz2 on load
-    once the navigation stack was up.
+    is NOT available: merging the two configs segfaults rviz2 on load once the navigation stack
+    is up.
 
     The second window keys off nav, not mode: mode=localization without nav has a map but no
     planner, and MoveIt's view is the only one worth opening.

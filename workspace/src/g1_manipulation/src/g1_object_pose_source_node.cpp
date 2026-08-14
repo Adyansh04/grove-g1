@@ -188,8 +188,7 @@ void G1ObjectPoseSource::onGroundTruth(const vision_msgs::msg::Detection3DArray:
     }
     // The detector reports from the frame it measured in, which rides on the robot. Rewriting
     // that label to a fixed frame is only correct while the two coincide, and they stop
-    // coinciding the moment odom is an estimate rather than ground truth -- an earlier version
-    // relabelled, and the base approach then chased a point 2 m from where the object was.
+    // coinciding the moment odom is an estimate rather than ground truth.
     if (msg->header.frame_id != source_frame_id_)
     {
         RCLCPP_WARN_THROTTLE(

@@ -43,8 +43,8 @@ TEST(ParseOdometrySource, AcceptsEveryKnownName)
 TEST(ParseOdometrySource, RejectsAnythingElseAndLeavesTheOutputAlone)
 {
     // A typo must not silently become a working source, which would fabricate transforms.
-    // sim_ground_truth is in the list because it used to BE one: the planar sandbox it read
-    // is gone, and a stale config naming it has to fail rather than quietly pick something.
+    // sim_ground_truth is in the list because it named a source this node no longer has: a
+    // stale config still naming it has to fail rather than quietly pick something else.
     OdometrySource source = OdometrySource::SimSportModeState;
     for (const char* name : { "",
                               "sim",

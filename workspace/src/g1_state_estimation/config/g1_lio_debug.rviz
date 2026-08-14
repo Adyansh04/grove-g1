@@ -81,7 +81,7 @@ Visualization Manager:
         Reliability Policy: Best Effort
         Value: /livox/lidar
       Value: true
-    # FAST-LIO's own registered cloud. Where THIS disagrees with the map walls is where the
+    # FAST-LIO's own registered cloud. Where this disagrees with the map walls is where the
     # scan match is losing it -- the most direct view of LIO health there is.
     - Alpha: 1
       Autocompute Intensity Bounds: true
@@ -160,8 +160,8 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /g1_odometry_publisher/odom
       Value: true
-    # Ground truth, straight from the simulator. Frame is `world`, which is NOT connected to
-    # odom -- so it will sit apart from the robot. That separation IS the reading: it is the
+    # Ground truth, straight from the simulator. Frame is `world`, which is not connected to
+    # odom -- so it will sit apart from the robot. That separation is the reading: it is the
     # accumulated LIO error, and it grows as the robot drives.
     - Alpha: 1
       Axes Length: 0.6

@@ -8,8 +8,7 @@
 
        Deliberately measured against by nothing else. g1_perception_scene is what the LiDAR
        and octomap tests assert geometry from, and adding a pedestal to it would move numbers
-       those tests were written against, which is exactly how the +x wall assertion broke
-       once already.
+       those tests were written against.
 
        Every geom is group 2, for the reason g1_perception_scene explains: the sweep masks to
        that group, or every ray returns the robot's own shell.
@@ -40,22 +39,13 @@
     <light pos="0 0 1.5" dir="0 0 -1" directional="true"/>
     <geom name="floor" group="2" size="0 0 0.05" type="plane" material="groundplane"/>
 
-    <!-- THE NEAR EDGE MUST CLEAR THE SPAWNED ARM. That is the constraint that decides this
-         geometry, and getting it wrong is not subtle: an earlier version put the top at
-         x 0.14 to 0.46 and the robot spawned with its right forearm resting inside the
-         tabletop. It knocked the cube several centimetres on every launch, and it quietly
-         corrupted every collision-checked IK measurement taken in the scene, because the arm
-         was in contact with the table before anything had been asked of it.
-
-         The right palm hangs at about odom (0.18, -0.18, 0.74) at spawn: arms down, elbows
-         bent forward by the hold pose in motion_service_sim. So the top starts at x 0.26,
-         8 cm clear of it, and sits at 0.80, above where the palm hangs rather than around it.
+    <!-- The near edge must clear the spawned arm. The right palm hangs at about odom
+         (0.18, -0.18, 0.74) at spawn: arms down, elbows bent forward by the hold pose in
+         motion_service_sim. So the top starts at x 0.26, 8 cm clear of it, and sits at 0.80,
+         above where the palm hangs rather than around it.
 
          Height is chosen to match the facility workbench (0.75) as closely as the arm's reach
-         allows, so a grasp tuned here transfers. Two earlier attempts, both wrong and both
-         worth remembering: 0.97, measured against a grasp offset that had the hand's closing
-         axis wrong so the sweep meant nothing, and 0.485, which is below the arm's reach
-         entirely. -->
+         allows, so a grasp tuned here transfers. -->
     <geom name="table_top" group="2" type="box" size="0.16 0.14 0.015" pos="0.42 -0.20 0.785"
       material="pedestal_mat" contype="1" conaffinity="1"/>
     <geom name="table_leg_near" group="2" type="box" size="0.02 0.02 0.385"

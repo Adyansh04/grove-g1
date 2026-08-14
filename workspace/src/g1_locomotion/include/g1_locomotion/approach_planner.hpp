@@ -23,19 +23,14 @@
  * forward step yaws +8 deg and an uncorrected sequence walks an arc; that aim loop is the only
  * yaw in the skill, and it belongs to the caller, not the plan.
  *
- * Two earlier versions planned turns, and both failed on it. An OBLIQUE forward step needs theta
- * near 75 degrees for a small remainder, which throws the robot half a metre sideways; a 45
- * degree CREEP-and-strafe costs 45 degrees of turning each way, and one live run spent 48 pulses
- * that way taking out 17 cm of lateral error that five strafes would have covered. A third
- * version kept a terminal heading gate after the position had converged, and the caller -- which
- * had dropped turning by then -- had no handler for the turn it demanded: the loop spun
- * silently, forever, mid-mission.
+ * Earlier versions planned turns as part of this decision, and each one failed differently: an
+ * oblique step throws the robot sideways for a small remainder, a turn-and-strafe hybrid burns
+ * far more pulses than strafing alone, and a terminal heading gate can deadlock the caller if it
+ * ever stops handling turns. Heading stays out of this decision entirely.
  *
  * Fine forward motion, which the gait cannot produce directly, is instead a forward drive that
  * stops at zero and a reverse that takes back whatever the coast added. Reverse resolves more
  * finely than forward does: -0.247 m/s against 0.35.
- *
- * Measurements and the rest of the rationale: the local engineering notes.
  */
 
 #include <cstdint>

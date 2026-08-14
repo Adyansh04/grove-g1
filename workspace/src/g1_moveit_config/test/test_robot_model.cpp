@@ -198,10 +198,10 @@ TEST_F(RobotModelTest, TheDualArmGroupIsNotAChainAndHasBothArmsAsSubgroups)
 
 TEST_F(RobotModelTest, NoArmGroupCommandsTheHand)
 {
-    // The hand is a separate device on its own topics with its own authority
-    //, and it has its own group and its own controller. An arm group
-    // that reached into one would plan a trajectory no single controller can execute, so
-    // MoveIt would either split it or refuse it.
+    // The hand is a separate device on its own topics with its own authority, and it has its
+    // own group and its own controller. An arm group that reached into one would plan a
+    // trajectory no single controller can execute, so MoveIt would either split it or refuse
+    // it.
     for (const auto* name : { "left_arm", "right_arm", "both_arms" })
     {
         const auto* group = model_->getJointModelGroup(name);
@@ -269,10 +269,10 @@ TEST_F(RobotModelTest, TheNamedPosesAgreeAcrossTheThreeGroups)
 
 TEST_F(RobotModelTest, EachHandIsExactlyItsSevenFingerJoints)
 {
-    // A SET, not a sequence, and that is the point worth recording: a group declared as a joint
-    // list comes back SORTED, not in document order, where a chain group keeps chain order. So
-    // left_hand reads index, middle, thumb here while the wire, the URDF component and the
-    // controller all say thumb, middle, index.
+    // A set, not a sequence: a group declared as a joint list comes back sorted, not in
+    // document order, where a chain group keeps chain order. So left_hand reads index, middle,
+    // thumb here while the wire, the URDF component and the controller all say thumb, middle,
+    // index.
     //
     // Harmless as long as nothing lines a MoveIt trajectory up against HandCmd positionally:
     // the JTC remaps by name, and G1Dex3System takes its order from the URDF. The wire order

@@ -384,8 +384,9 @@ void MotionServiceSim::lowstateCallback(const unitree_hg::msg::LowState::ConstSh
     // dimensions are arm position, arm velocity and arm last-action. During training the arms
     // only ever sat within the policy's own action distribution around the default posture --
     // about one action-scale unit, and the arm scales are 0.438577, which is exactly the
-    // plus/minus 0.4 rad envelope M3 measured as stable. A MoveIt goal of "arms straight ahead"
-    // is roughly four units out, so the policy is extrapolating on a third of its input.
+    // measured plus/minus 0.4 rad envelope this robot holds stably. A MoveIt goal of "arms
+    // straight ahead" is roughly four units out, so the policy is extrapolating on a third of
+    // its input.
     //
     // The real G1 has no equivalent failure: its onboard controller is not this policy, and per
     // CMU's G1 notes it "is not aware of how the arms are being controlled" -- it rejects arm

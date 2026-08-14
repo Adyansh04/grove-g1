@@ -40,8 +40,8 @@ TEST(Dex3WireContract, EveryMotorCarriesItsOwnIndex)
 TEST(Dex3WireContract, JointOrderIsThumbThenMiddleThenIndex)
 {
     // Unitree's own Dex3_1_Right_JointIndex enum lists index before middle, contradicting
-    // their documented order. It is inert in their code and a hand that closes the wrong
-    // fingers here, so it is pinned rather than trusted.
+    // their documented order. It is inert in their code, but transcribing it here would
+    // close the wrong fingers, so this order is pinned rather than trusted.
     EXPECT_THAT(
         kJointSuffixes,
         ::testing::ElementsAre(

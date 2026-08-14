@@ -1,8 +1,6 @@
-"""Milestone-3 acceptance test: legs walking and arms moving in the SAME session.
+"""Acceptance test: legs walking and arms moving in the same session.
 
-Neither half is new on its own -- Milestone 1 shipped the arm bridge and Milestone 3
-the walking policy -- but the point of the milestone is that they coexist. The two
-own disjoint motor ranges (policy 0-14, /arm_sdk 15-28) through a single /lowcmd
+The two own disjoint motor ranges (policy 0-14, /arm_sdk 15-28) through a single /lowcmd
 writer, and this is the test that says so end to end: drive the robot forward through
 the real LocoClient path while a FollowJointTrajectory goal runs on the arms.
 
@@ -192,9 +190,9 @@ class WalkAndArmTest(unittest.TestCase):
         self.assertTrue(self._set_mode(SetLocoMode.Goal.STAND_UP).success, "StandUp rejected")
         self.assertTrue(self._set_mode(SetLocoMode.Goal.START).success, "Start rejected")
 
-        # 4. Send the arm trajectory, then drive the legs WHILE it executes. The overlap is the
-        #    whole point -- run sequentially and the test would pass with the two paths still
-        #    fighting over /lowcmd.
+        # 4. Send the arm trajectory, then drive the legs while it executes: run the two
+        #    sequentially instead and the test would pass even with the two paths fighting
+        #    over /lowcmd.
         client = ActionClient(
             self.node, FollowJointTrajectory, "/arm_trajectory_controller/follow_joint_trajectory"
         )

@@ -27,7 +27,7 @@ inline constexpr int kNumArmMotors  = 14;
 /**
  * @brief 29 total, matching the sim's G1 MJCF.
  *
- * 29-DoF, no hands -- confirmed in the milestone-1 spike.
+ * 29-DoF, no hands.
  */
 inline constexpr int         kNumBodyMotors    = kFirstArmMotor + kNumArmMotors;
 inline constexpr std::size_t kWeightMotorIndex = 29;

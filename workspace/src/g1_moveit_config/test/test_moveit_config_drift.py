@@ -198,12 +198,11 @@ def test_each_hand_has_an_open_and_a_closed_posture(side, srdf):
 
 
 def test_the_simulator_holds_the_arms_at_home(srdf):
-    """`home` claims to be where the simulator holds the arms. This is what makes it true.
+    """`home` claims to be where the simulator holds the arms; this test pins that pairing.
 
-    The claim used to run the other way, `home` being a measurement of wherever the arms fell
-    at startup, and that is how it drifted to within hundredths of putting the palm against the
-    thigh once the hands had their real mass. Now motion_service_sim is told the posture and
-    this pins the pair.
+    motion_service_sim is told the posture from the SRDF's `home` state, rather than the SRDF
+    being derived from wherever the arms happen to fall at startup: that direction would leave
+    no margin against a heavier hand closing the palm-to-thigh gap.
     """
     sim = _load(SIM_CONFIG_DIR, "motion_service_sim.yaml")["/**"]["ros__parameters"]
     home = next(
@@ -222,7 +221,7 @@ def test_the_simulator_holds_the_arms_at_home(srdf):
 
 
 def test_chain_groups_have_a_solver_and_the_composite_one_does_not(srdf, kinematics):
-    """The composite group must NOT appear in kinematics.yaml.
+    """The composite group must not appear in kinematics.yaml.
 
     pick_ik rejects any group that is not a chain, and MoveIt only builds the per-subgroup
     solver map for groups that have no solver of their own. Naming both_arms here suppresses
@@ -335,7 +334,7 @@ def test_every_sensor_block_is_fully_specified(sensors_3d):
 
 
 def test_the_self_filter_padding_is_not_disabled(sensors_3d):
-    """Padding IS the self-filter margin. At zero the robot's own arms get mapped as obstacles
+    """Padding is the self-filter margin. At zero the robot's own arms get mapped as obstacles
     the moment a link's TF is a little late."""
     for name in sensors_3d["sensors"]:
         assert sensors_3d[name]["padding_scale"] >= 1.0, f"{name} shrinks the robot's own shapes"

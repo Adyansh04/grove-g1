@@ -1,8 +1,7 @@
 <mujoco model="g1_pinned_scene">
-  <!-- SIM-ONLY testing scaffolding for the arm-bridge milestone. Pins the pelvis
-       to the world purely so the arm bridge can be validated in isolation.
-       Staged into the vendored model directory at launch time so MuJoCo's
-       relative meshdir and include paths resolve correctly. -->
+  <!-- SIM-ONLY testing scaffolding: pins the pelvis to the world purely so the arm bridge
+       can be validated in isolation. Staged into the vendored model directory at launch
+       time so MuJoCo's relative meshdir and include paths resolve correctly. -->
   <include file="g1_29dof.xml"/>
 
   <statistic center="0 0 0.5" extent="2.0"/>
@@ -28,7 +27,7 @@
   </worldbody>
 
   <equality>
-    <!-- weld fixes position AND orientation. Scoped to the pelvis body only,
+    <!-- weld fixes position and orientation. Scoped to the pelvis body only,
          leaving all 14 arm joints and legs freely actuated via /lowcmd. -->
     <weld name="pelvis_world_pin" body1="pelvis"/>
   </equality>

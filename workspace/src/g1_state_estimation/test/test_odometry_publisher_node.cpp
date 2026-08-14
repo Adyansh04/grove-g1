@@ -567,8 +567,8 @@ TEST(OdometryPublisherSimTime, StopsPublishingWhenSimTimeItselfFreezes)
 
 // --- Converged track: the split chain and the tilt guard ------------------------------------
 //
-// The planar suites above never reach this code. sim_sportmodestate is the only source that
-// publishes two edges, and the tilt guard lives on a callback only that source subscribes to.
+// The suites above never reach this code: sim_sportmodestate is the only source that publishes
+// two edges, and the tilt guard lives on a callback only that source subscribes to.
 
 TEST(OdometryPublisherConverged, PublishesTheSplitChainWithOneStamp)
 {

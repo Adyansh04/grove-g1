@@ -27,8 +27,7 @@ GaitShaper::GaitShaper(const Config& config)
     }
     // Not merely a bad tuning value: it makes the third motion this class exists to produce
     // unreachable. Every turn that clears yaw_engage is then clamped back under it, so the
-    // shaper emits a turn the gait cannot step for. Nav2's max_rotational_vel had exactly this
-    // shape at 1.0 against yaw_engage 1.20, shipped, and was only caught in review.
+    // shaper emits a turn the gait cannot step for.
     if (config_.yaw_clamp < config_.yaw_engage)
     {
         throw std::invalid_argument(
@@ -64,9 +63,8 @@ GaitShaper::Command GaitShaper::shape(const Command& in) const
     // still a stop, which is where a planner's backup speeds live.
     //
     // Finiteness is checked HERE and not on the forward branch because an infinity fails
-    // `>= fwd_engage` on its own only in the positive direction. -inf satisfies this comparison
-    // perfectly well, and used to be caught by the blanket refusal of reverse that this branch
-    // replaced.
+    // `>= fwd_engage` on its own only in the positive direction: -inf satisfies that comparison
+    // perfectly well and would otherwise reach the gait as a real reverse command.
     if (std::isfinite(in.vx) && in.vx <= -config_.rev_engage)
     {
         return Command{ in.vx, 0.0, 0.0 };

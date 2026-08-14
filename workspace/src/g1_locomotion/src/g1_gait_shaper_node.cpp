@@ -5,12 +5,12 @@
  * A stateless transform on a topic, so a plain node rather than a lifecycle one -- there is
  * nothing to activate. All the shaping logic worth testing is in GaitShaper, which needs no ROS.
  *
- * It also arbitrates. Since milestone 9 the velocity channel has two writers: Nav2, and
- * g1_base_approach walking the last half metre to a workbench because Nav2 cannot park the robot
- * accurately enough for the arm to reach anything. CLAUDE.md section 7 wants that ownership
- * explicit rather than merely well-sequenced, and this node is where it belongs -- it is already
- * the sole writer onto the bridge's input, so making it the sole arbiter of its own inputs adds
- * no new authority to the system.
+ * It also arbitrates: the velocity channel has two writers, Nav2 and g1_base_approach walking
+ * the last half metre to a workbench because Nav2 cannot park the robot accurately enough for
+ * the arm to reach anything. CLAUDE.md section 7 wants that ownership explicit rather than
+ * merely well-sequenced, and this node is where it belongs -- it is already the sole writer
+ * onto the bridge's input, so making it the sole arbiter of its own inputs adds no new
+ * authority to the system.
  *
  * twist_mux is the off-the-shelf answer and was tried first. ros-humble-twist-mux 4.3.0 links
  * libdiagnostic_updater.so, and the only ros-humble-diagnostic-updater this apt snapshot offers

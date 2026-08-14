@@ -6,7 +6,7 @@ publish the legs and waist to `/joint_states` on the robot, where no controller 
 two packages cannot share a header -- one is simulation only and the other is what ships -- so
 each carries its own table.
 
-Index into either table IS the LowState motor index. Permute one and a knee angle lands on a
+Index into either table is the LowState motor index. Permute one and a knee angle lands on a
 waist joint, which moves every sensor frame hanging off `torso_link` and reads downstream as an
 odometry or calibration fault rather than as what it is.
 """

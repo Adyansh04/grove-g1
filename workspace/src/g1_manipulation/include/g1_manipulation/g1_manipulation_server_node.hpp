@@ -98,9 +98,9 @@ private:
     /// The pose to give the arm's grasp frame so the object ends up at `object_pose`. Position
     /// passes straight through -- the grasp frame IS where the object goes -- and only the
     /// orientation is chosen here. Handed: the two hands hold at mirrored rolls.
-    /// Where the grasp frame has to end up. `object_height_m` is the object's FULL height: the
-    /// grasp is taken just under its top face, not at its centre, or the fingers close through
-    /// whatever the object is standing on.
+    ///
+    /// `object_height_m` is the object's FULL height: the grasp is taken just under its top
+    /// face, not at its centre, or the fingers close through whatever the object is standing on.
     geometry_msgs::msg::Pose graspFrameGoal(
         const geometry_msgs::msg::Pose& object_pose, double object_height_m,
         const ArmContext& arm) const;

@@ -15,7 +15,7 @@ system:
   max_joint_velocity_rad_s: 1.0  # rad/s; slew clamp applied to every commanded joint
   lowstate_timeout_ms: 100       # ms; /lowstate age beyond this trips the emergency ramp-down
 
-  # The waist (motors 12-14) comes with the arms on /arm_sdk and is HELD, not planned: the
+  # The waist (motors 12-14) comes with the arms on /arm_sdk and is held, not planned: the
   # component latches its measured position when the blend engages and commands that. Unitree's
   # own arm_sdk example runs the waist at four times its arm gains (60/1.5 -> 240/6.0); ours are
   # 40/1 and 25/1, so these are 4x the shoulder pair. Stiff on purpose -- this is the joint

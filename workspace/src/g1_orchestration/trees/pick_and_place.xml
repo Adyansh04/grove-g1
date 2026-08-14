@@ -27,10 +27,10 @@
 <root BTCPP_format="4" main_tree_to_execute="PickAndPlace">
   <BehaviorTree ID="PickAndPlace">
     <Sequence name="mission">
-      <!-- FIRST, before any arm motion. It used to sit just before the pick, which left
-           tuck_to_travel depending on bringup's activate_arm:=true having already run: launch
-           the mission a moment early and the tree fails on its first leaf with "Controller is
-           not running". A tree that needs the arm should take the arm.
+      <!-- FIRST, before any arm motion: a tree that needs the arm should take the arm rather
+           than depending on activate_arm:=true having already run at bring-up, which would fail
+           the first leaf with "Controller is not running" if the mission launched a moment
+           early.
 
            Idempotent by design, so acquiring here and finding it already acquired costs
            nothing. -->
@@ -104,8 +104,8 @@
       <!-- The 3D counterpart, and a different subsystem: ClearCostmaps wipes Nav2's grids, which
            the base plans over, and leaves the planning scene the ARM plans against untouched.
            Reaching over the workbench leaves the octomap holding the arm and the cube where they
-           were, and those voxels do not decay: one mission died here with <octomap> against the
-           carried cube at the third waypoint of the carry, a metre clear of the bench. -->
+           were, and those voxels do not decay: a later plan can collide with a ghost of
+           something that was cleared out of the world minutes ago. -->
       <ClearOctomap name="forget_the_workbench_in_3d"/>
 
       <RetryUntilSuccessful name="carry_with_retries" num_attempts="3">
@@ -130,10 +130,10 @@
         </Sequence>
       </RetryUntilSuccessful>
 
-      <!-- The approach and the place RETRY TOGETHER, and that pairing is the point.
-           The robot is balancing, so extending a loaded arm forward shifts its centre of mass
-           and the walking policy steps to keep up: measured at 0.182 m of base travel during
-           one reach. The place re-aims mid-motion to price that in, but past about 0.1 m the
+      <!-- The approach and the place RETRY TOGETHER: the robot is balancing, so extending a
+           loaded arm forward shifts its centre of mass and the walking policy steps to keep up,
+           measured at 0.182 m of base travel during one reach. The place re-aims mid-motion to
+           price that in, but past about 0.1 m the
            surface has left the arm's band entirely and no arm motion can recover it: the BASE
            has to move, which means approaching again. Retrying the place alone would re-plan
            forever against a target that is simply out of range. -->
@@ -142,12 +142,10 @@
           <ApproachObject name="close_on_the_pad" object_id="drop_pad" arm="right"
                           working_yaw="{storage_yaw}"/>
 
-          <!-- Named, not a coordinate, and that is the whole point. This used to read
-               target="6.50;6.25;0.855", which is exactly right ON THE MAP and still failed
-               every time with "preplace: planning failed (-27)": a coordinate here is in the
-               map frame, while the approach immediately above parks the base against /objects
-               in odom. AMCL was measured 0.23 m from odom at this bench, and the arm's lateral
-               window is 0.04 m, so the target landed 0.14 m outside anything the arm can
+          <!-- Named, not a coordinate: a coordinate here is in the MAP frame, while the
+               approach immediately above parks the base against /objects in ODOM. AMCL was
+               measured 0.23 m from odom at this bench, well outside the arm's 0.04 m lateral
+               window, so a map coordinate can land the target outside anything the arm can
                reach. Naming the surface makes the place and the approach read the same stream,
                so they cannot disagree. -->
           <Place name="put_it_on_the_pad" surface="drop_pad" arm="right"/>
@@ -173,8 +171,7 @@
 
        Retried because the failure here is per-attempt, not structural: "Motion plan was found
        but it seems to be invalid" is OMPL having sampled a path that clips the live octomap,
-       and the posture is verified collision-free against the robot model. A completed mission
-       was once failed by the closing pair having no retry, on one clipped waypoint. -->
+       and the posture is verified collision-free against the robot model. -->
   <BehaviorTree ID="TuckBothArms">
     <Sequence name="tuck_both">
       <RetryUntilSuccessful name="tuck_right_with_retries" num_attempts="3">

@@ -1,6 +1,6 @@
 # Velocity and acceleration limits MoveIt times its trajectories against.
 #
-# These are NOT the URDF's limits, and the difference is the point. The URDF says 22 to 37 rad/s,
+# These are not the URDF's limits. The URDF says 22 to 37 rad/s,
 # which is the motor; the arm reaches the robot through g1_hardware_interface, which slew-clamps
 # every joint at max_joint_velocity_rad_s = 1.0 rad/s (g1_description/config/arm_sdk_params.yaml).
 # Time a trajectory against the motor and the bridge stretches it by a factor of thirty-odd,

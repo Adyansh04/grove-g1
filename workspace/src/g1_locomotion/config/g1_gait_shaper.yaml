@@ -22,11 +22,11 @@ g1_gait_shaper:
     # Reverse gets its OWN threshold, higher than forward's, rather than being refused outright.
     #
     # Measured: -0.60 yields -0.247 m/s and -0.40 yields exactly 0.000, so reverse exists but only
-    # well past where a planner would ask for it. Nav2's backup speeds are 0.025 to 0.15 m/s and
-    # stay zeroed, which is the whole point of the old blanket refusal and is preserved here. What
-    # changed is that a caller who deliberately commands -0.60 -- g1_base_approach backing away
-    # from a workbench -- now gets it, because turning to walk away sweeps the arm across the
-    # table it just picked from.
+    # well past where a planner would ask for it. Nav2's backup speeds (0.025 to 0.15 m/s) stay
+    # zeroed, which backstops against a misconfigured recovery behaviour lurching backwards. A
+    # caller that deliberately commands -0.60 -- g1_base_approach backing away from a workbench,
+    # because turning to walk away would sweep the arm across the table it just picked from --
+    # gets through on purpose.
     rev_engage: 0.55
 
     # Yaw rate at or above which the command becomes a pure in-place turn.
@@ -47,9 +47,8 @@ g1_gait_shaper:
     # yaw_clamp matches max_velocity[2]: the shaper should never hand the bridge something the
     # bridge would clamp.
     #
-    # Nav2 never reaches these. Its controller commands no lateral on this robot, so in practice
-    # the only caller is g1_base_approach, which strafes to null the lateral error between where
-    # an object is and where the arm can reach it. That is the whole reason lateral stopped being
-    # dropped -- see gait_shaper.hpp.
+    # Nav2 never reaches these: its controller commands no lateral on this robot. The only caller
+    # is g1_base_approach, which strafes to null the lateral error between where an object is and
+    # where the arm can reach it -- see gait_shaper.hpp.
     lat_engage: 0.50
     lat_clamp: 0.50

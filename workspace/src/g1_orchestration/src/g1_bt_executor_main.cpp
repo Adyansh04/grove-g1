@@ -37,9 +37,10 @@ constexpr double kReleaseTimeoutS = 15.0;
 
 /// Releases the arm and hands when it goes out of scope, however that happens.
 ///
-/// The bracket used to be a call at the end of main, correct only for as long as every path out
-/// kept reaching it. Making it a destructor moves that from a property of the control flow to a
-/// property of the type: control-mode rule 4 is then enforced by the language.
+/// A destructor rather than a call at the end of main: releasing only stays correct if every
+/// path out actually reaches it, and a destructor turns that from a property of the control
+/// flow into a property of the type -- control-mode rule 4 is then enforced by the language
+/// itself.
 class ArmBracket
 {
 public:

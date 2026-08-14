@@ -28,11 +28,10 @@ g1_odometry_publisher:
     # the floor is.
     #
     # MEASURED on the standing robot: /sportmodestate reports 0.7504 m over 23k samples, with a
-    # spread of 0.2 mm. The old value here was a 0.793 nominal, 43 mm high, and that error is
-    # not cosmetic: the costmap's obstacle layer cuts the floor out at min_obstacle_height 0.08,
-    # so believing the pelvis -- and with it the LiDAR -- sits 43 mm high pushes floor returns
-    # most of the way over that cut before FAST-LIO's own drift is counted. The symptom is
-    # concentric rings of floor marked as obstacle and a planner that can find no path.
+    # spread of 0.2 mm. Getting this even a few centimetres high is not cosmetic: the costmap's
+    # obstacle layer cuts the floor out at min_obstacle_height 0.08, so an inflated pelvis
+    # height pushes floor returns toward that cut before FAST-LIO's own drift is even counted,
+    # and the symptom is concentric rings of floor marked as obstacle with no path found.
     #
     # Re-measure if the stance changes. It is a property of this robot's standing pose, not a
     # constant of the G1.

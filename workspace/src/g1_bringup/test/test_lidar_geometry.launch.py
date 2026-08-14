@@ -5,9 +5,9 @@ also publishes the sensor's exact world pose, so the points can be put into worl
 coordinates and checked against facts of g1_perception_pinned_scene.xml: floor at z=0,
 inner wall faces at +/-4.0 m.
 
-Runs with the pelvis pinned. Not for convenience: a free-standing G1 drifts and its waist
-leans (the torso pitches tens of degrees), so the numbers would move under the test
-without anything being wrong.
+Runs with the pelvis pinned: a free-standing G1 drifts and its waist leans (the torso
+pitches tens of degrees), so the numbers would move under the test without anything
+being wrong.
 """
 
 import os
@@ -80,8 +80,8 @@ class LidarGeometryTest(unittest.TestCase):
     def setUpClass(cls):
         rclpy.init()
         cls.node = Node("test_lidar_geometry")
-        # Bounded: 11520-point clouds at 10 Hz over a long bring-up would otherwise be
-        # hundreds of megabytes, the resource-starvation shape that bit milestone 3.
+        # Bounded: 11520-point clouds at 10 Hz over a long bring-up would otherwise
+        # accumulate to hundreds of megabytes.
         cls.clouds = deque(maxlen=4)
         cls.poses = deque(maxlen=4)
         cls.stamps = deque(maxlen=512)
@@ -173,8 +173,8 @@ class LidarGeometryTest(unittest.TestCase):
     def test_04_the_sensor_is_where_the_mount_puts_it(self):
         """Height above the floor, from the vendored URDF mount on a pinned pelvis.
 
-        Not a round number by choice: it is the waist chain plus mid360_joint's own offset,
-        so a wrong mount or a wrong torso pose moves it.
+        The waist chain plus mid360_joint's own offset, so a wrong mount or a wrong torso
+        pose moves it.
         """
         _, origin = self.world_returns()
         self.assertAlmostEqual(
@@ -215,8 +215,8 @@ class LidarGeometryTest(unittest.TestCase):
 
         # Three walls, so a sweep that lost a sector fails rather than averaging out. The +x
         # wall is deliberately absent: reach_obstacle sits 0.18 m in front of the sensor at its
-        # own height and occludes that whole direction, which is exactly what makes
-        # g1_moveit_config's octomap test work. Measured, the cloud stops at x = 1.60.
+        # own height and occludes that whole direction, so it is the only obstacle
+        # g1_moveit_config's octomap test sees in +x. Measured, the cloud stops at x = 1.60.
         for axis, sign, name in ((0, -1, "-x"), (1, 1, "+y"), (1, -1, "-y")):
             on_wall = np.abs(world[:, axis] - sign * ROOM_HALF) < 0.05
             self.assertGreater(

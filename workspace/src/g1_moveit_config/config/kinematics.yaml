@@ -11,7 +11,7 @@
 # what pick_ik already provides is not worth the pin. Swapping back to KDL is one line:
 #   kinematics_solver: kdl_kinematics_plugin/KDLKinematicsPlugin
 #
-# both_arms has no entry here ON PURPOSE, and adding one breaks dual-arm IK. See g1.srdf.
+# both_arms has no entry here on purpose, and adding one breaks dual-arm IK. See g1.srdf.
 
 left_arm:
   kinematics_solver: pick_ik/PickIkPlugin

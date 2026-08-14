@@ -27,7 +27,7 @@
     <origin xyz="0 0 0" rpy="-1.5707963267948966 0 -1.5707963267948966"/>
   </joint>
 
-  <!-- Sensor bodies. The vendored URDF leaves d435_link and mid360_link as EMPTY links, so both
+  <!-- Sensor bodies. The vendored URDF leaves d435_link and mid360_link as empty links, so both
        sensors are invisible in RViz and it is impossible to see where either is pointing.
        Attached as child links rather than by editing those links, for the same reason the
        optical frames above are: the vendored file stays byte-for-byte diffable against
@@ -179,7 +179,7 @@
 
   <!-- Where the hand actually closes, as a frame rather than a number in a config file.
 
-       The palm link's origin is NOT the point the fingers grip at, and the difference is large
+       The palm link's origin is not the point the fingers grip at, and the difference is large
        enough to matter: at the SRDF's `closed` posture the thumb tip lands at palm
        (-0.030, +0.020, +0.017) and the middle and index tips at (+0.050, +0.068, -/+0.029), so
        what the hand encloses sits well forward of the origin and mostly to one side of it.

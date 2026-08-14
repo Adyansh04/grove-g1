@@ -1,7 +1,7 @@
 # Reverse away from a surface, far enough that whatever happens next does not drag the arm across
 # it.
 #
-# It reverses and STOPS. It does not turn, and it does not walk anywhere: a navigation goal
+# It reverses and stops. It does not turn, and it does not walk anywhere: a navigation goal
 # normally follows, and Nav2 is far better at going somewhere than a hand-rolled pulse controller.
 # The only job here is to get the base clear.
 #

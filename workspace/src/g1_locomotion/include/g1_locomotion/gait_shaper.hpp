@@ -22,13 +22,9 @@ namespace g1_locomotion
  * class collapses its output onto the four motions that exist: stop, drive straight, strafe,
  * turn in place.
  *
- * Strafe was not always here. It was dropped originally because Nav2's controller cannot command
- * lateral on this robot anyway and the gait already produces uncommanded lateral drift, so
- * asking for more looked pointless. Milestone 9's base approach is the caller that changes
- * that: the mobile-manipulation answer to "park precisely enough for the arm to reach" is a
- * holonomic base, and this gait IS holonomic at the velocity level -- the policy measures
- * lateral motion from 0.50 m/s. Throwing that away meant every lateral correction cost a turn,
- * a step and a turn back.
+ * This gait IS holonomic at the velocity level -- the policy measures lateral motion from
+ * 0.50 m/s -- which is what makes strafe worth having: it lets a caller correct sideways error
+ * directly, rather than paying for a turn, a step and a turn back every time.
  *
  * **Subtractive only.** Every output is the input unchanged, the input clamped smaller, or
  * zero -- never larger. That is the invariant the whole design rests on: turning a small
@@ -88,9 +84,8 @@ public:
      * -0.247 m/s for a commanded -0.60 and exactly 0.000 for -0.40, so reverse exists but only
      * well past where a planner would ask for it: Nav2's backup speeds are 0.025 to 0.15 m/s and
      * stay zeroed, which is the backstop against a misconfigured recovery behaviour lurching
-     * backwards. What changed is that a caller who deliberately asks for -0.60 now gets it,
-     * because backing away from a workbench without turning is the only way to leave one without
-     * sweeping the arm across it.
+     * backwards. A caller that deliberately asks for -0.60, such as backing away from a
+     * workbench without turning, gets through that same backstop on purpose.
      *
      * Lateral is tested LAST, so it only survives a command carrying nothing else. That keeps
      * the primitives mutually exclusive, which the measured combined-command response demands:

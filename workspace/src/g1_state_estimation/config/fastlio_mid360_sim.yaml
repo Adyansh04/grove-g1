@@ -28,9 +28,8 @@
       lid_topic: "/livox/custom_msg"
       imu_topic: "/livox/imu"
       time_sync_en: false
-      # 0.0, same as the reference and as hardware. The sim's scan-stamp lag used to be
-      # compensated here; g1_sensor_relay now stamps clouds from the simulator's own capture
-      # time instead, so there is no residual offset to remove.
+      # 0.0, same as the reference and as hardware: g1_sensor_relay stamps clouds from the
+      # simulator's own capture time, so there is no residual lag here to compensate for.
       time_offset_lidar_to_imu: 0.0
 
     preprocess:

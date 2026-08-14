@@ -119,7 +119,7 @@ hardware_interface::CallbackReturn G1Dex3System::on_configure(const rclcpp_lifec
     cmd_pub_ =
         std::make_shared<realtime_tools::RealtimePublisher<unitree_hg::msg::HandCmd>>(cmd_pub_raw_);
 
-    // motor_cmd is an UNBOUNDED SEQUENCE, not a fixed array. Publishing it unresized is
+    // motor_cmd is an unbounded sequence, not a fixed array. Publishing it unresized is
     // accepted by DDS and silently moves nothing, which is a miserable thing to debug.
     cmd_pub_->msg_.motor_cmd.resize(kNumHandJoints);
 

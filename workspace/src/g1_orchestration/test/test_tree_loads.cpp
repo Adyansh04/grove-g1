@@ -114,9 +114,9 @@ TEST(TreeLoads, TheMissionTreeUsesTheLeavesItIsSupposedTo)
 
 TEST(TreeLoads, EveryFallibleLeafInTheMissionIsRetried)
 {
-    // Pinned because losing a retry wrapper is invisible until it costs a whole mission. The
-    // closing tucks originally had none, and a run that had already placed the cube failed on a
-    // single clipped waypoint, 30 of 142, with everything else done.
+    // Pinned because losing a retry wrapper is invisible until it costs a whole mission: a
+    // single clipped waypoint near the very end can fail a run that had already done everything
+    // else.
     //
     // Counted rather than located: the count is what a careless edit drops, and asserting the
     // exact tree shape here would make every legitimate restructure a test change.
@@ -135,7 +135,8 @@ TEST(TreeLoads, EveryFallibleLeafInTheMissionIsRetried)
     }
 
     // Five postures, two navigation goals, the object approach, the pick, and the
-    // approach-and-place pair. Nav2 aborts a plan transiently and used to fail the mission.
+    // approach-and-place pair, each wrapped because Nav2 aborts a plan transiently often enough
+    // to fail an otherwise-healthy mission if nothing retries it.
     EXPECT_EQ(seen["RetryUntilSuccessful"], 10);
 }
 

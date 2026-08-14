@@ -37,8 +37,8 @@ amcl:
     # object, and the gait adds 0.22-0.30 m/s of uncommanded lateral motion on top. A
     # differential model cannot express that at all -- it factors every delta into
     # rotate/translate/rotate, so sideways motion enters the filter as a rotation that never
-    # happened. Measured cost of getting this wrong: a mission that ended with map -> odom at
-    # 177 deg of yaw error, the particle cloud having flipped end for end.
+    # happened. Getting this wrong is not subtle: the particle cloud can flip end for end,
+    # landing map -> odom at roughly 180 degrees of yaw error.
     robot_model_type: "nav2_amcl::OmniMotionModel"
     # Nav2's defaults. The 0.02 they replace said "the odometry is exact", which was true only
     # of the sportmodestate track's MuJoCo ground truth. fast_lio drifts, so a filter told to

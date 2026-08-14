@@ -81,8 +81,7 @@ TEST(ResolveArm, RejectsAnythingElseWithoutAssigning)
 TEST(GraspFrameGoal, PutsTheGraspFrameExactlyOnTheObject)
 {
     // The whole point of moving the offset into the URDF: the goal position IS the object
-    // position, with no arithmetic left in this file to get wrong. Two separate bugs lived in
-    // the arithmetic this replaced.
+    // position, with no arithmetic left in this file to get wrong.
     const std::vector<double> rpy{ -M_PI_2, 0.0, 0.0 };
     const auto                target = objectAt(0.35, -0.20, 0.83);
 
@@ -97,8 +96,8 @@ TEST(GraspFrameGoal, PointsTheClosingAxisAtTheFloor)
 {
     // The Dex3's fingers curl toward the palm's +y, so it is THAT axis that has to end up
     // pointing down for a grasp off a table -- and the palm's +x has to stay forward, so the
-    // arm reaches out rather than the wrist contorting. Getting this wrong made the first
-    // version unplannable anywhere useful, so it is pinned rather than left to inspection.
+    // arm reaches out rather than the wrist contorting. Getting this wrong is easy to miss by
+    // inspection, so it is pinned here instead.
     const auto palm = graspFrameGoal(objectAt(0.4, 0.0, 0.8), { -M_PI_2, 0.0, 0.0 }, false);
 
     tf2::Quaternion rotation;

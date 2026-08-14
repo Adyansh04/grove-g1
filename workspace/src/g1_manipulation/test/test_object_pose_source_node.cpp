@@ -151,9 +151,9 @@ staticTf(const std::string& parent, const std::string& child, double x, double y
 
 }  // namespace
 
-// The regression this whole change exists for. Before it, the node rewrote the frame label and
-// left the numbers alone, which is correct only while the two frames coincide -- and they stop
-// coinciding the moment odometry is an estimate. A relabel would leave x at 1.0 here.
+// Transform, not relabel: rewriting only the frame label while leaving the numbers alone is
+// correct only while the two frames coincide, and they stop coinciding the moment odometry is
+// an estimate. A relabel-only bug would leave x at 1.0 here.
 TEST(ObjectPoseSource, TransformsThePoseRatherThanRelabellingTheFrame)
 {
     auto    tf_node = staticTf("odom", "camera_color_optical_frame", 2.0, -3.0, 0.5);

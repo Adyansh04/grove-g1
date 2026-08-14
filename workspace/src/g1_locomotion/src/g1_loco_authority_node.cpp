@@ -143,8 +143,7 @@ public:
         }
 
         // The gait is not responsive the instant START returns. Measured across 8 fresh
-        // launches: 1.83-1.92 s for six of seven that moved. See
-        // Deliberately not the p90; see the distribution this was measured from.
+        // launches: 1.83-1.92 s for six of seven that moved, deliberately not the p90.
         std::this_thread::sleep_for(std::chrono::duration<double>(settle_after_start_s_));
 
         RCLCPP_INFO(
@@ -395,8 +394,7 @@ static_assert(
 ///
 /// rclcpp's own signal handler invalidates the context before spin() returns, which leaves
 /// nothing able to send the release goal -- the node would exit from ACTIVE with the bridge
-/// still in kHeld. Verified on this stack before this handler existed: SIGINT left
-/// ~/status reporting authority 2, fsm_id 500, with nobody supervising it.
+/// still in kHeld, holding authority with nobody supervising it.
 ///
 /// Note that on_shutdown() does NOT cover this. It only runs for an explicit
 /// TRANSITION_ACTIVE_SHUTDOWN, which neither launch_ros nor a signal ever issues.

@@ -98,10 +98,9 @@ TEST(ApproachPlanner, ForwardIsCorrectedBeforeLateral)
 TEST(ApproachPlanner, EveryRegionMapsToAMoveTheCallerHandles)
 {
     const auto limits = defaults();
-    // The planner once kept a terminal heading gate after the caller had dropped its turn
-    // handler, and the pair spun silently mid-mission -- a plan with no handler is a hang, not
-    // an error. The move set is closed now; this sweep pins every position to a move that is
-    // not kInvalid, so a new move can only be added alongside its handling.
+    // A plan the caller has no handler for is a hang, not an error -- silent and mid-mission.
+    // This sweep pins every position to a move that is not kInvalid, so a new move can only be
+    // added alongside its handling.
     for (double fwd : { -0.30, -0.05, 0.05, 0.30, 1.00 })
     {
         for (double lat : { -0.30, 0.0, 0.30 })

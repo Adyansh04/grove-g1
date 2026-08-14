@@ -29,8 +29,8 @@ G1OdometryPublisher::G1OdometryPublisher(const rclcpp::NodeOptions& options)
     // REP-105: gravity-aligned and on the ground. Nav2's robot_base_frame and slam_toolbox's
     // base_frame both default to a frame like this, and a 2D costmap has nowhere to put tilt.
     declare_parameter<std::string>("base_frame_id", "base_footprint");
-    // Empty means one edge carrying the full pose; naming a link splits it in two. See the
-    // member's comment for why the planar sandbox leaves it empty.
+    // Empty means one edge carrying the full pose; naming a link splits it in two (see
+    // GroundSplit).
     declare_parameter<std::string>("pelvis_frame_id", "");
     declare_parameter<double>("max_tilt_deg", 80.0);
     // Empty means the LiDAR odometry already reports the frame this node publishes.
@@ -514,8 +514,8 @@ void G1OdometryPublisher::onSportModeState(const unitree_go::msg::SportModeState
 
 void G1OdometryPublisher::onLowState(const unitree_hg::msg::LowState::SharedPtr msg)
 {
-    // Full orientation, unlike the planar track: a walking robot rolls and pitches, and
-    // flattening that to yaw would tilt every sensor frame hanging off the base.
+    // Full orientation: a walking robot rolls and pitches, and flattening that to yaw would
+    // tilt every sensor frame hanging off the base.
     const Quaternion q{ msg->imu_state.quaternion[1],
                         msg->imu_state.quaternion[2],
                         msg->imu_state.quaternion[3],

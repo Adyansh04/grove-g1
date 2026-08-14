@@ -28,8 +28,7 @@ inline Port objectId()
 }
 
 /// Sent to the SERVER as part of the goal. Distinct from serviceTimeout(): this one bounds the
-/// skill, that one bounds a local call. Both used to be called `timeout_s` with no way for a
-/// tree author to tell them apart.
+/// skill, that one bounds a local call, named apart so a tree author does not confuse the two.
 inline Port goalTimeout()
 {
     return BT::InputPort<double>("timeout_s", 0.0, "0 uses the server's own default.");

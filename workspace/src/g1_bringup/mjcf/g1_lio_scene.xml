@@ -1,26 +1,26 @@
 <mujoco model="g1_lio_scene">
   <!--
-    A room built to TEST LIDAR-INERTIAL ODOMETRY, not to look like a facility.
+    A room built to test lidar-inertial odometry, not to look like a facility.
 
     Everything here exists to make scan matching observable and the answer checkable:
 
       * 14 x 14 m, walls on all four sides. Walls are what constrain x, y and yaw; without a
         return at range in every direction the match is free to slide.
-      * Deliberately ASYMMETRIC feature furniture. A square empty room is degenerate: four
+      * Deliberately asymmetric feature furniture. A square empty room is degenerate: four
         identical walls give a scan matcher no way to tell one 90-degree rotation from
         another, and it will happily lock onto the wrong one. The pillars, alcove and steps
         below are placed so no two quadrants look alike from the middle.
       * Vertical structure at several heights (pillars, a low block, a tall post). A sweep
         that only ever sees flat wall has weak vertical constraint, which is exactly the
         z drift being chased.
-      * A 5 m square of floor markers at KNOWN coordinates, so a run can be scored against
+      * A 5 m square of floor markers at known coordinates, so a run can be scored against
         absolute truth rather than only against relative drift.
 
     The test path is the 5 m square (0,0) -> (5,0) -> (5,5) -> (0,5) -> (0,0). The robot
     spawns at the origin facing +x. Every marker centre below is on that path, and the
-    corners are (0,0), (5,0), (5,5), (0,5). Closing the loop is the point: a LIO estimate
-    that drifts shows up as a gap between start and finish that no amount of local
-    smoothness hides.
+    corners are (0,0), (5,0), (5,5), (0,5). The path closes the loop: a LIO estimate that
+    drifts shows up as a gap between start and finish that no amount of local smoothness
+    hides.
 
     Keep the path clear. The furniture is set back from it on purpose, because a collision
     invalidates the measurement, because the gait recovers by lurching and that is not the

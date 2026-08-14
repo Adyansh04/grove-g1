@@ -290,9 +290,8 @@ private:
     /// inside the sim-only boundary, so g1_object_pose_source and the skills below it run the
     /// same code on the robot.
     ///
-    /// Publishing world coordinates under a fixed-frame label instead is what this replaced,
-    /// and it is exact only while that frame IS the world. It stopped being true the moment
-    /// odom became an estimate, and the base approach then drove at a point 2 m from the cube.
+    /// A world coordinate under a fixed-frame label is only correct while that frame IS the
+    /// world, which stops holding the moment odom becomes an estimate rather than ground truth.
     void publishObjects(const CloudFrame& frame)
     {
         geometry_msgs::msg::TransformStamped world_to_camera;

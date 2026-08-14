@@ -4,7 +4,8 @@ The alternative to slam.launch.py, never run alongside it -- both would broadcas
 Neither includes the scan pipeline; scan.launch.py does, and both need it.
 
 Structure mirrors nav2_bringup's own localization_launch.py, including the composed and
-non-composed branches, so PR B's server set drops into the same container.
+non-composed branches, so this file's servers drop into the same shared container as the rest
+of the navigation stack.
 """
 
 import os

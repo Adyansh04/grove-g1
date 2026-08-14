@@ -149,7 +149,7 @@ class WalkTeleopTest(unittest.TestCase):
             self._spin(settle_s)
 
     def _set_mode(self, fsm_id, timeout_s=10.0):
-        """Drives the REAL SetLocoMode action -- the same path an operator or Nav2 would use."""
+        """Drives the real SetLocoMode action -- the same path an operator or Nav2 would use."""
         self.assertTrue(self.mode_client.wait_for_server(timeout_sec=timeout_s), "no action server")
         goal = SetLocoMode.Goal()
         goal.fsm_id = fsm_id
@@ -180,11 +180,11 @@ class WalkTeleopTest(unittest.TestCase):
     def test_01_velocity_before_start_is_rejected_and_moves_nothing(self):
         """SET_VELOCITY outside Start must return 7301 and not move the robot.
 
-        Published as a RAW request because the bridge's VelocityGate would never emit
+        Published as a raw request because the bridge's VelocityGate would never emit
         one outside kHeld. Publisher is created/destroyed inside this test to avoid
         tripping the single-writer guard for the rest of the session.
         """
-        # Settle first: the measurement below is about whether a REJECTED command moved the
+        # Settle first: the measurement below is about whether a rejected command moved the
         # robot, so the spawn transient must not be inside the window.
         self._await_standing(settle_s=4.0)
         before = list(self._position())
@@ -266,7 +266,7 @@ class WalkTeleopTest(unittest.TestCase):
         )
 
     def test_05_damp_releases_authority_and_robot_keeps_standing(self):
-        """Releasing locomotion authority stops motion but must NOT drop the robot.
+        """Releasing locomotion authority stops motion but must not drop the robot.
 
         The policy runs continuously regardless of FSM state -- leg authority is gated on policy
         freshness, not on the FSM -- so Damp ends walking without ending balance.
@@ -315,7 +315,7 @@ class WalkTeleopTest(unittest.TestCase):
         """Slam between above- and below-threshold commands.
 
         The policy has no hysteresis: dropping below threshold stops the gait outright. Doing that
-        at speed, repeatedly, is the transition Phase-1 characterisation never measured.
+        at speed, repeatedly, is the transition this test exists to cover.
         """
         worst_height = 10.0
         for _ in range(3):
