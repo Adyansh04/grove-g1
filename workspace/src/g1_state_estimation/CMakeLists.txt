@@ -119,8 +119,8 @@ if(BUILD_TESTING)
   # label: `--ctest-args -LE clang_tidy` skips it for a fast local loop. CI runs it.
   find_program(RUN_CLANG_TIDY_EXECUTABLE NAMES run-clang-tidy-14 run-clang-tidy)
   set(_clang_tidy_config "${CMAKE_CURRENT_SOURCE_DIR}/../../.clang-tidy")
-  set(_clang_tidy_db "${CMAKE_BINARY_DIR}/compile_commands.json")
-  if(RUN_CLANG_TIDY_EXECUTABLE AND EXISTS "${_clang_tidy_config}" AND EXISTS "${_clang_tidy_db}")
+  if(RUN_CLANG_TIDY_EXECUTABLE AND EXISTS "${_clang_tidy_config}"
+      AND CMAKE_EXPORT_COMPILE_COMMANDS)
     add_test(
       NAME clang_tidy_check_g1_state_estimation
       COMMAND ${RUN_CLANG_TIDY_EXECUTABLE} -p ${CMAKE_BINARY_DIR} -quiet -j 4
@@ -128,7 +128,7 @@ if(BUILD_TESTING)
     set_tests_properties(clang_tidy_check_g1_state_estimation PROPERTIES LABELS clang_tidy TIMEOUT 900)
   else()
     message(WARNING
-      "run-clang-tidy, the workspace .clang-tidy or compile_commands.json not found; skipping clang_tidy_check_g1_state_estimation test")
+      "run-clang-tidy or .clang-tidy not found, or compile commands are off; skipping clang_tidy_check_g1_state_estimation test")
   endif()
 endif()
 
