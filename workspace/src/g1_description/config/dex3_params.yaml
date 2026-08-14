@@ -29,7 +29,7 @@ system:
 # looks like a transposed digit); the URDF matches the published spec and is the conservative
 # pair, so it wins.
 #
-# Order is the Dex3 WIRE order and the component refuses to init if the xacro reorders it.
+# Order is the Dex3 wire order and the component refuses to init if the xacro reorders it.
 joints:
   left_hand_thumb_0_joint:   { min: -1.04719755, max:  1.04719755 }
   left_hand_thumb_1_joint:   { min: -0.61086523, max:  1.04719755 }

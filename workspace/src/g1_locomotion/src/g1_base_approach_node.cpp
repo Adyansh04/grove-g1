@@ -4,8 +4,7 @@
  *
  * The missing step between navigation and manipulation. Nav2 parks the robot within 0.5 m of a
  * goal it chose from a map; the arm reaches 0.28 to 0.33 m and its usable window is about
- * 0.12 m wide. Nothing bridges that today, which is why navigate-then-pick does not work
- *.
+ * 0.12 m wide. Nothing bridges that today, which is why navigate-then-pick does not work.
  *
  * Lives in g1_locomotion, not in g1_manipulation, on one principle: everything that writes a
  * velocity command belongs to the package that owns the velocity path. A manipulation package
@@ -102,7 +101,7 @@ public:
         lateral_lead_m_ = declare_parameter<double>("lateral_lead_m", 0.055);
         // Kept under forward_tolerance_m; see the reverse case for why that ordering matters.
         reverse_lead_m_   = declare_parameter<double>("reverse_lead_m", 0.045);
-        max_aim_attempts_ = declare_parameter<int>("max_aim_attempts", 8);
+        max_aim_attempts_ = static_cast<int>(declare_parameter<int>("max_aim_attempts", 8));
         // The gait keeps stepping after the command stops. Measuring before it settles reports
         // the command plus whatever of the stride was still in flight.
         settle_s_    = declare_parameter<double>("settle_s", 1.5);
@@ -138,7 +137,7 @@ public:
         // How long a missing object pose or base transform is tolerated before the goal fails.
         lookup_grace_s_ = declare_parameter<double>("lookup_grace_s", 3.0);
 
-        max_pulses_        = declare_parameter<int>("max_pulses", 150);
+        max_pulses_        = static_cast<int>(declare_parameter<int>("max_pulses", 150));
         default_timeout_s_ = declare_parameter<double>("default_timeout_s", 900.0);
 
         if (!limitsAreUsable(limits_))
@@ -160,26 +159,26 @@ public:
         approach_server_ = rclcpp_action::create_server<ApproachObject>(
             this,
             "~/approach_object",
-            [](const rclcpp_action::GoalUUID&, ApproachObject::Goal::ConstSharedPtr) {
+            [](const rclcpp_action::GoalUUID&, const ApproachObject::Goal::ConstSharedPtr&) {
                 return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
             },
-            [](const std::shared_ptr<GoalHandleApproach>) {
+            [](const std::shared_ptr<GoalHandleApproach>&) {
                 return rclcpp_action::CancelResponse::ACCEPT;
             },
-            [this](const std::shared_ptr<GoalHandleApproach> handle) {
+            [this](const std::shared_ptr<GoalHandleApproach>& handle) {
                 std::thread{ [this, handle] { runApproach(handle); } }.detach();
             });
 
         retreat_server_ = rclcpp_action::create_server<Retreat>(
             this,
             "~/retreat",
-            [](const rclcpp_action::GoalUUID&, Retreat::Goal::ConstSharedPtr) {
+            [](const rclcpp_action::GoalUUID&, const Retreat::Goal::ConstSharedPtr&) {
                 return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
             },
-            [](const std::shared_ptr<GoalHandleRetreat>) {
+            [](const std::shared_ptr<GoalHandleRetreat>&) {
                 return rclcpp_action::CancelResponse::ACCEPT;
             },
-            [this](const std::shared_ptr<GoalHandleRetreat> handle) {
+            [this](const std::shared_ptr<GoalHandleRetreat>& handle) {
                 std::thread{ [this, handle] { runRetreat(handle); } }.detach();
             });
 
@@ -198,9 +197,9 @@ public:
 private:
     /// Hold a velocity until `done()` returns true, then stop and let the gait settle.
     ///
-    /// CONTINUOUS, not pulsed, and that is the point: repeated command-and-stop cycles wind the
-    /// walking policy down, from 8.3 degrees of yaw on the first pulse to nothing by the
-    /// twentieth. Nav2 drives this robot with a continuous stream and has never had the problem.
+    /// CONTINUOUS, not pulsed: repeated command-and-stop cycles wind the walking policy down,
+    /// from 8.3 degrees of yaw on the first pulse to nothing by the twentieth. Nav2 drives this
+    /// robot with a continuous stream and has never had the problem.
     template <typename DoneT>
     bool driveUntil(
         double vx, double vy, double vyaw, DoneT done, double max_s,
@@ -274,13 +273,11 @@ private:
             std::this_thread::sleep_for(period);
         }
 
-        // Then say nothing at all for a moment. This is the one thing that differed between the
-        // probe that produced every number in the config and this loop, and it is worth more
-        // than any of them: the same 0.60 s clockwise pulse turns 4 to 6 degrees when measured
-        // with a silent gap after it, and 0.5 degrees when the zeros never stop. Going quiet
-        // lets g1_loco_bridge's velocity gate fall idle instead of re-issuing SetVelocity(0) at
-        // 5 Hz, and the gait starts the next pulse from rest rather than from whatever the
-        // re-issue stream left it in.
+        // Then say nothing at all for a moment: the same 0.60 s clockwise pulse turns 4 to 6
+        // degrees when measured with a silent gap after it, and 0.5 degrees when the zeros
+        // never stop. Going quiet lets g1_loco_bridge's velocity gate fall idle instead of
+        // re-issuing SetVelocity(0) at 5 Hz, so the gait starts the next pulse from rest rather
+        // than from whatever the re-issue stream left it in.
         //
         // Nothing takes the channel during the gap: the shaper's override lapses after
         // override_timeout_s, but Nav2 publishes nothing between goals, so the output is silence
@@ -364,9 +361,8 @@ private:
                 return std::nullopt;
             }
         }
-        // The one path out of here that used to say nothing at all, and the abort it causes
-        // reads identically to a stale or untransformable pose. Worth a line: a live run
-        // aborted here with /objects publishing at 10 Hz and left no evidence of which.
+        // Logged explicitly: without it, this abort reads identically to a stale or
+        // untransformable pose, with no way to tell which one actually happened.
         RCLCPP_WARN(
             get_logger(),
             "'%s' is not among the %zu objects being reported",
@@ -418,8 +414,8 @@ private:
         int  pulses   = 0;
 
         // The heading held for the whole approach. Fixed up front rather than recomputed from
-        // the object each iteration: the object moves in the base frame as the robot walks, and
-        // chasing it is what made the previous version arrive square to nothing.
+        // the object each iteration: the object moves in the base frame as the robot walks, so
+        // chasing it would never let the approach arrive square to anything.
         const auto start_pose = basePose();
         if (!start_pose)
         {
@@ -455,9 +451,9 @@ private:
 
             // Re-read rather than give up on the first miss. Both of these can fail for a
             // moment for reasons that are not the skill's problem: a TF buffer that has not
-            // caught up after the base moved, or a sample arriving late. Aborting on one miss
-            // threw away an otherwise healthy approach mid-mission with /objects publishing at
-            // 10 Hz throughout. Bounded, so a genuinely absent object still ends the goal.
+            // caught up after the base moved, or a sample arriving late. Aborting on the first
+            // miss would throw away an otherwise healthy approach for a momentary hiccup.
+            // Bounded, so a genuinely absent object still ends the goal.
             std::optional<geometry_msgs::msg::PointStamped> object;
             std::optional<geometry_msgs::msg::PoseStamped>  here;
             const auto give_up_looking = deadlineIn(lookup_grace_s_);
@@ -523,8 +519,8 @@ private:
                     handle->publish_feedback(feedback);
 
                     // Aim first, ALWAYS. A forward pulse yaws the robot 8 degrees every time, so
-                    // without re-aiming before each one the approach walks an arc; that is what
-                    // the spiral in the first probe run was.
+                    // without re-aiming before each one the approach walks an arc instead of a
+                    // straight line.
                     RCLCPP_INFO(
                         get_logger(),
                         "step: forward error %.3f, lateral %.3f",
@@ -564,11 +560,10 @@ private:
                         command.forward_error_m,
                         command.lateral_error_m);
                     // The lead here MUST stay under forward_tolerance_m, and getting that
-                    // backwards livelocks rather than degrades. It used step_lead_m_ (0.22)
-                    // against a tolerance of 0.110, so every error between the two left the
-                    // planner demanding a reverse and driveUntil reporting itself already
-                    // arrived: the same "-0.138" logged every 2.7 s, forever, with no time
-                    // spent driving. Exactly the dead band the heading correction hit.
+                    // backwards livelocks rather than degrades: every error between the two
+                    // would leave the planner demanding a reverse and driveUntil reporting
+                    // itself already arrived, logged forever with no time spent driving. Exactly
+                    // the dead band the heading correction hits.
                     const double lead = std::min(reverse_lead_m_, 0.5 * limits.forward_tolerance_m);
                     const auto   back_far_enough = [&] {
                         const auto object_now = objectInBase(goal->object_id);
@@ -591,13 +586,6 @@ private:
                     // Continuous while there is real distance to cover, one short pulse for the
                     // last few centimetres. Same hybrid the heading correction uses, and for the
                     // same reason: neither primitive covers both ends.
-                    //
-                    // This was a fixed 0.15 s pulse for every correction, and it was the slowest
-                    // thing in the mission by a wide margin. Each one moved about 12 mm and then
-                    // spent settle + quiet standing still, so 3.9 s per centimetre and a half:
-                    // one live approach spent 54 of them closing a gap a single drive covers.
-                    // Forward and reverse had been continuous since the pulse decay was
-                    // measured; lateral was simply left behind.
                     const bool far = std::abs(command.lateral_error_m) > lateral_lead_m_;
                     RCLCPP_INFO(
                         get_logger(),
@@ -648,8 +636,7 @@ private:
     /// This gait's yaw is ASYMMETRIC, measured: a 0.15 s pulse turns +3.8 deg counter-clockwise
     /// but only -1.1 deg clockwise, and clockwise does not reach -3.5 deg until 0.60 s. That
     /// matters more than it sounds, because a forward step yaws +8 deg every time, so every
-    /// correction the approach needs is in the weak direction -- the first live run spent
-    /// fourteen pulses failing to take out 7 degrees.
+    /// correction the approach needs is in the weak direction.
     double turnPulseFor(double error_rad) const
     {
         return error_rad > 0.0 ? turn_pulse_ccw_s_ : turn_pulse_cw_s_;
@@ -697,14 +684,13 @@ private:
             //
             // Neither alone works. A continuous turn cannot stop inside the tolerance because
             // the gait coasts about 17 degrees after the command ends, wider than the 8 degree
-            // window; and a train of pulses winds the policy down to nothing, which is what the
-            // fully pulsed design failed on. So drive while the error is bigger than the coast,
-            // and pulse once it is not.
+            // window; and a train of pulses winds the policy down to nothing. So drive while
+            // the error is bigger than the coast, and pulse once it is not.
             //
-            // Getting this wrong deadlocks rather than degrades. With the stopping lead larger
-            // than the tolerance, every error between the two left the planner demanding a turn
-            // and driveUntil declaring itself already arrived, logged as the same +9.2 deg
-            // forever, 3.7 s apart, with no time spent driving.
+            // Getting this wrong deadlocks rather than degrades: with the stopping lead larger
+            // than the tolerance, every error between the two leaves the planner demanding a
+            // turn while driveUntil declares itself already arrived, logged forever with no
+            // time spent driving.
             const bool far = std::abs(error) > turn_lead_rad_;
             RCLCPP_INFO(
                 get_logger(),
@@ -752,13 +738,10 @@ private:
         const double timeout_s = goal->timeout_s > 0.0 ? goal->timeout_s : default_timeout_s_;
         const auto   deadline  = deadlineIn(timeout_s);
 
-        // Reverse, and that is the whole skill. No turn, no walk.
-        //
-        // It used to turn 180 degrees and walk the remaining distance, which was doing Nav2's job
-        // badly: a navigation goal follows immediately and is far better at going somewhere than a
-        // hand-rolled pulse controller. And the turn was actively harmful -- taken beside a
-        // workbench it swings the robot and whatever it is holding across the table, which is
-        // exactly what this exists to prevent.
+        // Reverse. No turn, no walk: a turn taken beside a workbench swings the robot and
+        // whatever it is holding across the table, which is exactly what this exists to
+        // prevent. A navigation goal follows immediately and is far better at going somewhere
+        // than a hand-rolled pulse controller would be anyway.
         //
         // Reverse is real but only just: the policy measures -0.247 m/s at a commanded -0.60 and
         // exactly nothing at -0.40, and g1_gait_shaper has a rev_engage above a planner's backup
@@ -852,12 +835,22 @@ private:
 int main(int argc, char** argv)
 {
     rclcpp::init(argc, argv);
-    // Multi-threaded: a goal executes on its own thread and blocks on gait pulses for seconds
-    // at a time, while /objects, TF and cancellation all have to keep flowing underneath it.
-    rclcpp::executors::MultiThreadedExecutor executor;
-    auto node = std::make_shared<g1_locomotion::BaseApproachNode>();
-    executor.add_node(node);
-    executor.spin();
-    rclcpp::shutdown();
-    return 0;
+    try
+    {
+        // Multi-threaded: a goal executes on its own thread and blocks on gait pulses for
+        // seconds at a time, while /objects, TF and cancellation all have to keep flowing
+        // underneath it.
+        rclcpp::executors::MultiThreadedExecutor executor;
+        auto node = std::make_shared<g1_locomotion::BaseApproachNode>();
+        executor.add_node(node);
+        executor.spin();
+        rclcpp::shutdown();
+        return 0;
+    }
+    catch (const std::exception& e)
+    {
+        RCLCPP_ERROR(rclcpp::get_logger("g1_base_approach"), "fatal: %s", e.what());
+        rclcpp::shutdown();
+        return 1;
+    }
 }

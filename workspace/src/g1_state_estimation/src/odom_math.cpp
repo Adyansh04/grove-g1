@@ -11,17 +11,17 @@ bool parseOdometrySource(const std::string& name, OdometrySource& out)
 {
     if (name == "sim_sportmodestate")
     {
-        out = OdometrySource::SimSportModeState;
+        out = OdometrySource::kSimSportModeState;
         return true;
     }
     if (name == "fast_lio")
     {
-        out = OdometrySource::FastLio;
+        out = OdometrySource::kFastLio;
         return true;
     }
     if (name == "hardware")
     {
-        out = OdometrySource::Hardware;
+        out = OdometrySource::kHardware;
         return true;
     }
     return false;

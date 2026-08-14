@@ -13,9 +13,9 @@ first produced a pose, and the robot does not spawn at a repeatable heading. So 
 aligned ONCE, from the pose the robot is actually standing in when the run starts, and never
 touched again. Every gap after that is divergence accumulated since that instant.
 
-Aligning by a best fit over the whole path -- which this used to do -- reads lower and means
-less: it rotates part of the real error away and smears the rest evenly along the run, so no
-row of the table is the error at that point in the run.
+Aligning by a best fit over the whole path reads lower and means less: it rotates part of the
+real error away and smears the rest evenly along the run, so no row of the table is the error
+at that point in the run.
 """
 import csv
 import math, os, signal, sys, time
@@ -33,16 +33,15 @@ from g1_msgs.action import SetLocoMode
 VX, WZ = 0.5, 1.6
 # An arbitrary wander, not a figure. Comparing two estimates OF THE SAME MOTION does not
 # care what shape that motion is, so there is no controller here and nothing to tune -- the
-# gait just has to move the robot and turn it now and then. Three attempts at steering this
-# policy produced three different bugs; none of them made the comparison any more valid.
+# gait just has to move the robot and turn it now and then.
 # (vx, wz, seconds)
 LEGS = [(VX, 0.0, 8.0), (0.0, WZ, 1.0), (VX, 0.0, 6.0), (0.0, -WZ, 1.4),
         (VX, 0.0, 7.0), (0.0, WZ, 1.2), (VX, 0.0, 5.0), (0.0, -WZ, 1.0),
         (VX, 0.0, 8.0), (0.0, WZ, 1.6), (VX, 0.0, 6.0)]
 # Standing pelvis height is 0.750 m (measured). Below this the robot is on the floor, and every
 # number after that point describes a fallen robot being dragged by a flailing gait rather than
-# the odometry under test. One run reported 73000 % drift that way and it read as an estimator
-# failure. Abort instead.
+# the odometry under test -- a huge drift number that has nothing to do with the estimator.
+# Abort instead.
 MIN_PELVIS_Z = 0.55
 # The robot does not always arrive at its spawn pose quietly: some launches lurch, some go over
 # entirely, and the heading it settles on varies by ten degrees or more between runs. A run that

@@ -14,8 +14,8 @@ when the extrinsic estimator was left on) with room for a bad gait.
 
 `odom` is latched wherever FAST-LIO first produced a pose and the robot does not settle on a
 repeatable heading, so the two frames are aligned by the headings measured at the first paired
-sample. NOT by a best fit over the path: that reads lower where the estimate is bad and it is
-easy to get the sign wrong, which is exactly what happened here and to lio_bench.
+sample, not by a best fit over the path: that reads lower where the estimate is bad and it is
+easy to get the sign wrong.
 """
 
 import math

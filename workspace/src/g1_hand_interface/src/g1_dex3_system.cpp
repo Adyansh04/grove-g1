@@ -82,8 +82,8 @@ G1Dex3System::on_init(const hardware_interface::HardwareInfo& info)
         // disagrees on thumb_1 (0.724 vs 0.611) and its right hand says 0.742, which looks
         // like a transposed digit. The conservative pair is the right one to trust.
         const auto& limits = info.joints[i].parameters;
-        lower_limit_[i]    = limits.count("min") ? std::stod(limits.at("min")) : -3.15;
-        upper_limit_[i]    = limits.count("max") ? std::stod(limits.at("max")) : 3.15;
+        lower_limit_[i]    = limits.contains("min") ? std::stod(limits.at("min")) : -3.15;
+        upper_limit_[i]    = limits.contains("max") ? std::stod(limits.at("max")) : 3.15;
     }
 
     kp_                   = paramOr(info, "kp", 1.5);
@@ -119,7 +119,7 @@ hardware_interface::CallbackReturn G1Dex3System::on_configure(const rclcpp_lifec
     cmd_pub_ =
         std::make_shared<realtime_tools::RealtimePublisher<unitree_hg::msg::HandCmd>>(cmd_pub_raw_);
 
-    // motor_cmd is an UNBOUNDED SEQUENCE, not a fixed array. Publishing it unresized is
+    // motor_cmd is an unbounded sequence, not a fixed array. Publishing it unresized is
     // accepted by DDS and silently moves nothing, which is a miserable thing to debug.
     cmd_pub_->msg_.motor_cmd.resize(kNumHandJoints);
 

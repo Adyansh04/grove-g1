@@ -29,8 +29,8 @@ G1OdometryPublisher::G1OdometryPublisher(const rclcpp::NodeOptions& options)
     // REP-105: gravity-aligned and on the ground. Nav2's robot_base_frame and slam_toolbox's
     // base_frame both default to a frame like this, and a 2D costmap has nowhere to put tilt.
     declare_parameter<std::string>("base_frame_id", "base_footprint");
-    // Empty means one edge carrying the full pose; naming a link splits it in two. See the
-    // member's comment for why the planar sandbox leaves it empty.
+    // Empty means one edge carrying the full pose; naming a link splits it in two (see
+    // GroundSplit).
     declare_parameter<std::string>("pelvis_frame_id", "");
     declare_parameter<double>("max_tilt_deg", 80.0);
     // Empty means the LiDAR odometry already reports the frame this node publishes.
@@ -64,7 +64,7 @@ bool G1OdometryPublisher::readParameters()
         return false;
     }
 
-    if (source_ == OdometrySource::Hardware)
+    if (source_ == OdometrySource::kHardware)
     {
         // Deliberately long. Anyone hitting this needs to know the topic they are about to
         // go looking for does not carry what they think it does.
@@ -148,32 +148,35 @@ G1OdometryPublisher::on_configure(const rclcpp_lifecycle::State&)
     {
         odom_pub_ = create_publisher<nav_msgs::msg::Odometry>("~/odom", rclcpp::QoS(10));
     }
-    if (source_ == OdometrySource::SimSportModeState)
+    // Every callback below takes its SharedPtr by value because rclcpp offers no const-ref
+    // dispatch for a mutable pointee; the handlers they forward to do take const-ref.
+    // NOLINTBEGIN(performance-unnecessary-value-param)
+    if (source_ == OdometrySource::kSimSportModeState)
     {
         sport_state_sub_ = create_subscription<unitree_go::msg::SportModeState>(
             "~/sport_state",
             baseStateQos(),
-            std::bind(&G1OdometryPublisher::onSportModeState, this, std::placeholders::_1));
+            [this](unitree_go::msg::SportModeState::SharedPtr msg) { onSportModeState(msg); });
         // Orientation comes from /lowstate, not /sportmodestate: unitree_mujoco leaves the
         // latter's imu_state at all zeros, and tf2 normalises a zero quaternion straight to
         // NaN, which it then silently drops.
         low_state_sub_ = create_subscription<unitree_hg::msg::LowState>(
             "~/imu_state",
             baseStateQos(),
-            std::bind(&G1OdometryPublisher::onLowState, this, std::placeholders::_1));
+            [this](unitree_hg::msg::LowState::SharedPtr msg) { onLowState(msg); });
     }
     else
     {
         lidar_odom_sub_ = create_subscription<nav_msgs::msg::Odometry>(
             "~/lidar_odometry",
             baseStateQos(),
-            std::bind(&G1OdometryPublisher::onLidarOdometry, this, std::placeholders::_1));
+            [this](nav_msgs::msg::Odometry::SharedPtr msg) { onLidarOdometry(msg); });
         // The attitude is needed once, to level the odom frame at the latch: the LiDAR
         // odometry's own start frame is wherever its IMU was pointing, which is not gravity.
         low_state_sub_ = create_subscription<unitree_hg::msg::LowState>(
             "~/imu_state",
             baseStateQos(),
-            std::bind(&G1OdometryPublisher::onLowState, this, std::placeholders::_1));
+            [this](unitree_hg::msg::LowState::SharedPtr msg) { onLowState(msg); });
 
         if (!lidar_body_frame_id_.empty())
         {
@@ -181,13 +184,14 @@ G1OdometryPublisher::on_configure(const rclcpp_lifecycle::State&)
             tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_, this, false);
         }
     }
+    // NOLINTEND(performance-unnecessary-value-param)
 
     source_topic_ =
         sport_state_sub_ ? sport_state_sub_->get_topic_name() : lidar_odom_sub_->get_topic_name();
     const std::string chain = pelvis_frame_id_.empty() ? odom_frame_id_ + " -> " + base_frame_id_ :
                                                          odom_frame_id_ + " -> " + base_frame_id_ +
                                                              " -> " + pelvis_frame_id_;
-    if (source_ == OdometrySource::SimSportModeState)
+    if (source_ == OdometrySource::kSimSportModeState)
     {
         RCLCPP_INFO(
             get_logger(),
@@ -239,9 +243,10 @@ G1OdometryPublisher::on_activate(const rclcpp_lifecycle::State& previous_state)
         return base_result;
     }
     const auto period = std::chrono::duration<double>(1.0 / publish_rate_hz_);
-    timer_            = create_wall_timer(
-        std::chrono::duration_cast<std::chrono::nanoseconds>(period),
-        std::bind(&G1OdometryPublisher::onTimer, this));
+    timer_ =
+        create_wall_timer(std::chrono::duration_cast<std::chrono::nanoseconds>(period), [this] {
+            onTimer();
+        });
     return CallbackReturn::SUCCESS;
 }
 
@@ -354,7 +359,7 @@ bool G1OdometryPublisher::latchLidarOrigin(const Pose3d& lio_from_base)
     return true;
 }
 
-void G1OdometryPublisher::onLidarOdometry(const nav_msgs::msg::Odometry::SharedPtr msg)
+void G1OdometryPublisher::onLidarOdometry(const nav_msgs::msg::Odometry::SharedPtr& msg)
 {
     if (!lookUpLidarBodyOffset())
     {
@@ -483,7 +488,7 @@ void G1OdometryPublisher::applyOrientation(const Quaternion& q)
     last_orientation_wall_ = std::chrono::steady_clock::now();
 }
 
-void G1OdometryPublisher::onSportModeState(const unitree_go::msg::SportModeState::SharedPtr msg)
+void G1OdometryPublisher::onSportModeState(const unitree_go::msg::SportModeState::SharedPtr& msg)
 {
     // The converged track's ground truth. unitree_mujoco fills position and velocity from
     // framepos/framelinvel on the pelvis imu site, so this is exact MuJoCo state, not an
@@ -512,10 +517,10 @@ void G1OdometryPublisher::onSportModeState(const unitree_go::msg::SportModeState
     noteSample(now());
 }
 
-void G1OdometryPublisher::onLowState(const unitree_hg::msg::LowState::SharedPtr msg)
+void G1OdometryPublisher::onLowState(const unitree_hg::msg::LowState::SharedPtr& msg)
 {
-    // Full orientation, unlike the planar track: a walking robot rolls and pitches, and
-    // flattening that to yaw would tilt every sensor frame hanging off the base.
+    // Full orientation: a walking robot rolls and pitches, and flattening that to yaw would
+    // tilt every sensor frame hanging off the base.
     const Quaternion q{ msg->imu_state.quaternion[1],
                         msg->imu_state.quaternion[2],
                         msg->imu_state.quaternion[3],
@@ -544,7 +549,7 @@ void G1OdometryPublisher::onLowState(const unitree_hg::msg::LowState::SharedPtr 
     // For fast_lio this stream levels the odom frame at the latch and then stays on as the
     // gravity reference levelledAttitude() corrects roll and pitch against. Heading is never
     // taken from it: that comes from the LiDAR solution, which is what does not drift.
-    if (source_ == OdometrySource::SimSportModeState)
+    if (source_ == OdometrySource::kSimSportModeState)
     {
         applyOrientation(imu_orientation_);
     }
@@ -565,7 +570,7 @@ void G1OdometryPublisher::noteSample(const rclcpp::Time& stamp)
 
 void G1OdometryPublisher::onTimer()
 {
-    if (source_ == OdometrySource::SimSportModeState && !have_orientation_)
+    if (source_ == OdometrySource::kSimSportModeState && !have_orientation_)
     {
         RCLCPP_WARN_THROTTLE(
             get_logger(),
@@ -588,7 +593,7 @@ void G1OdometryPublisher::onTimer()
     // Sim time alone cannot see a wedged simulator: /clock comes from the same process as
     // the base state, so it freezes too and `elapsed` stays at zero. Hence the wall budget.
     const double elapsed = (now() - last_sample_stamp_).seconds();
-    if (source_ == OdometrySource::SimSportModeState)
+    if (source_ == OdometrySource::kSimSportModeState)
     {
         const double orientation_age =
             std::chrono::duration<double>(std::chrono::steady_clock::now() - last_orientation_wall_)

@@ -37,7 +37,7 @@ PolicyConfig makeConfig()
 
 std::vector<std::string> ddsOrderAsVector()
 {
-    return std::vector<std::string>(kDdsMotorOrder.begin(), kDdsMotorOrder.end());
+    return { kDdsMotorOrder.begin(), kDdsMotorOrder.end() };
 }
 
 // --- joint order -----------------------------------------------------------------------------
@@ -285,8 +285,8 @@ TEST(WalkPolicyVelocity, NoLatchMeansZeroCommand)
 
 // --- leg-authority fallback (B1) and guarded inference (B2) -------------------------------------
 //
-// Both blocking review findings lived on this path, and both were fixed by inspection alone. These
-// force the path rather than assuming the fix.
+// Both were real regressions on this path, fixed once and pinned here so neither comes back
+// silently.
 
 std::array<double, kNumLowerMotors> makePolicyQ()
 {

@@ -145,9 +145,9 @@ TEST(GaitShaper, ReverseEngagesOnlyPastItsOwnHigherThreshold)
 {
     const auto shaper = makeShaper();
     // Reverse exists on this policy but only well past where a planner asks for it: -0.60
-    // measures -0.247 m/s and -0.40 measures exactly zero. So a deliberate -0.60 gets through
-    // and Nav2's 0.025..0.15 m/s backup speeds do not, which is the backstop this used to get
-    // by refusing reverse outright.
+    // measures -0.247 m/s and -0.40 measures exactly zero. A deliberate -0.60 gets through while
+    // Nav2's 0.025..0.15 m/s backup speeds stay blocked -- the same backstop against a
+    // misconfigured recovery behaviour lurching backwards.
     EXPECT_DOUBLE_EQ(shaper.shape({ -0.60, 0.0, 0.0 }).vx, -0.60);
     for (double vx : { -0.02, -0.15, -0.30, -0.40, -0.54 })
     {
@@ -190,10 +190,12 @@ TEST(GaitShaper, NeverAmplifiesAnyAxis)
     // Turning a small command into a large motion is exactly what this stack's control-mode
     // rules exist to prevent, so it is swept rather than spot-checked.
     const auto shaper = makeShaper();
-    for (double vx = -2.0; vx <= 2.0; vx += 0.05)
+    for (int ix = 0; - 2.0 + ix * 0.05 <= 2.0; ++ix)
     {
-        for (double vyaw = -2.0; vyaw <= 2.0; vyaw += 0.05)
+        const double vx = -2.0 + ix * 0.05;
+        for (int iyaw = 0; - 2.0 + iyaw * 0.05 <= 2.0; ++iyaw)
         {
+            const double vyaw = -2.0 + iyaw * 0.05;
             for (double vy : { -0.5, 0.0, 0.5 })
             {
                 const GaitShaper::Command in{ vx, vy, vyaw };
@@ -211,9 +213,10 @@ TEST(GaitShaper, NeverFlipsASign)
     // Weaker than the magnitude invariant but independent of it: reversing a command would
     // also be "not amplifying", and would be just as wrong.
     const auto shaper = makeShaper();
-    for (double vyaw = -2.0; vyaw <= 2.0; vyaw += 0.05)
+    for (int i = 0; - 2.0 + i * 0.05 <= 2.0; ++i)
     {
-        const auto out = shaper.shape({ 0.0, 0.0, vyaw });
+        const double vyaw = -2.0 + i * 0.05;
+        const auto   out  = shaper.shape({ 0.0, 0.0, vyaw });
         if (out.vyaw != 0.0)
         {
             EXPECT_GT(out.vyaw * vyaw, 0.0) << "vyaw " << vyaw;

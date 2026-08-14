@@ -1,9 +1,8 @@
 # Lifecycle bracket around LocoClient velocity authority: active means the robot is
 # walk-capable, inactive means authority has been handed back. See g1_locomotion/README.md.
 #
-# Both values below were MEASURED, not guessed -- they were the only two numbers in the
-# milestone's design with no empirical grounding at all, so they were measured before this node
-# was written. Full distribution and method in the local engineering notes.
+# Both values below were MEASURED, not guessed -- they were the two numbers here with no
+# empirical grounding at all otherwise, so they were measured before this node was written.
 g1_loco_authority:
   ros__parameters:
     # The bridge's action, absolute. A parameter rather than a launch remap: remapping does not

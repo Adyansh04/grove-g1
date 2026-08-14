@@ -87,7 +87,7 @@ private:
 
     /// Latest pose for `object_id`, or nullopt if it is unknown or older than the timeout.
     std::optional<vision_msgs::msg::Detection3D> lookUpObject(const std::string& object_id);
-    void onObjects(const vision_msgs::msg::Detection3DArray::SharedPtr msg);
+    void onObjects(const vision_msgs::msg::Detection3DArray::ConstSharedPtr& msg);
 
     /// Into the planning frame, or nullopt with the reason logged. Everything a goal carries
     /// goes through here: /objects is in odom, the planner works in pelvis, and the two differ
@@ -98,9 +98,9 @@ private:
     /// The pose to give the arm's grasp frame so the object ends up at `object_pose`. Position
     /// passes straight through -- the grasp frame IS where the object goes -- and only the
     /// orientation is chosen here. Handed: the two hands hold at mirrored rolls.
-    /// Where the grasp frame has to end up. `object_height_m` is the object's FULL height: the
-    /// grasp is taken just under its top face, not at its centre, or the fingers close through
-    /// whatever the object is standing on.
+    ///
+    /// `object_height_m` is the object's FULL height: the grasp is taken just under its top
+    /// face, not at its centre, or the fingers close through whatever the object is standing on.
     geometry_msgs::msg::Pose graspFrameGoal(
         const geometry_msgs::msg::Pose& object_pose, double object_height_m,
         const ArmContext& arm) const;

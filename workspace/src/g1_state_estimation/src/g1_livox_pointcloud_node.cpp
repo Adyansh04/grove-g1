@@ -45,14 +45,16 @@ public:
         custom_sub_ = create_subscription<livox_ros_driver2::msg::CustomMsg>(
             declare_parameter<std::string>("custom_msg_topic", "/livox/custom_msg"),
             rclcpp::QoS(20),
-            [this](livox_ros_driver2::msg::CustomMsg::ConstSharedPtr msg) { onCustom(*msg); });
+            [this](const livox_ros_driver2::msg::CustomMsg::ConstSharedPtr& msg) {
+                onCustom(*msg);
+            });
     }
 
 private:
     void onCustom(const livox_ros_driver2::msg::CustomMsg& custom)
     {
-        sensor_msgs::msg::PointCloud2 cloud;
-        toPointCloud2(custom, cloud);
+        auto cloud = std::make_unique<sensor_msgs::msg::PointCloud2>();
+        toPointCloud2(custom, *cloud);
         cloud_pub_->publish(std::move(cloud));
     }
 

@@ -15,6 +15,7 @@
 #include <tf2_ros/transform_listener.h>
 #include <unistd.h>
 
+#include <array>
 #include <cerrno>
 #include <cmath>
 #include <cstring>
@@ -28,6 +29,7 @@
 #include <sensor_msgs/msg/imu.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <string>
+#include <system_error>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <utility>
 #include <vector>
@@ -140,6 +142,10 @@ public:
     }
 
 private:
+    /// std::strerror() keeps its message in a shared static buffer and is not thread-safe;
+    /// system_category().message() allocates a fresh std::string per call instead.
+    static std::string lastErrorMessage() { return std::system_category().message(errno); }
+
     bool openListener()
     {
         // A leftover socket file from a crashed run makes bind() fail with EADDRINUSE, and
@@ -149,7 +155,7 @@ private:
         listen_fd_ = ::socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0);
         if (listen_fd_ < 0)
         {
-            RCLCPP_ERROR(get_logger(), "socket(): %s", std::strerror(errno));
+            RCLCPP_ERROR(get_logger(), "socket(): %s", lastErrorMessage().c_str());
             return false;
         }
         sockaddr_un addr{};
@@ -157,12 +163,16 @@ private:
         std::strncpy(addr.sun_path, socket_path_.c_str(), sizeof(addr.sun_path) - 1);
         if (::bind(listen_fd_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0)
         {
-            RCLCPP_ERROR(get_logger(), "bind(%s): %s", socket_path_.c_str(), std::strerror(errno));
+            RCLCPP_ERROR(
+                get_logger(),
+                "bind(%s): %s",
+                socket_path_.c_str(),
+                lastErrorMessage().c_str());
             return false;
         }
         if (::listen(listen_fd_, 1) != 0)
         {
-            RCLCPP_ERROR(get_logger(), "listen(): %s", std::strerror(errno));
+            RCLCPP_ERROR(get_logger(), "listen(): %s", lastErrorMessage().c_str());
             return false;
         }
         return true;
@@ -194,13 +204,13 @@ private:
         // Drain whatever is available, then publish every complete frame in it. Draining
         // fully matters: at 500 Hz polling against 10 Hz frames the socket is usually
         // empty, but after any hiccup several frames can be queued.
-        std::uint8_t chunk[65536];
+        std::array<std::uint8_t, 65536> chunk;
         for (;;)
         {
-            const ssize_t n = ::recv(client_fd_, chunk, sizeof(chunk), MSG_DONTWAIT);
+            const ssize_t n = ::recv(client_fd_, chunk.data(), chunk.size(), MSG_DONTWAIT);
             if (n > 0)
             {
-                buffer_.insert(buffer_.end(), chunk, chunk + n);
+                buffer_.insert(buffer_.end(), chunk.data(), chunk.data() + n);
                 continue;
             }
             if (n == 0)
@@ -213,7 +223,7 @@ private:
             {
                 break;
             }
-            RCLCPP_WARN(get_logger(), "recv(): %s", std::strerror(errno));
+            RCLCPP_WARN(get_logger(), "recv(): %s", lastErrorMessage().c_str());
             closeClient();
             return;
         }
@@ -225,11 +235,11 @@ private:
         for (;;)
         {
             const FrameStatus status = tryReadFrame(buffer_, frame);
-            if (status == FrameStatus::Incomplete)
+            if (status == FrameStatus::kIncomplete)
             {
                 return;
             }
-            if (status != FrameStatus::Ok)
+            if (status != FrameStatus::kOk)
             {
                 // Unrecoverable by design: a desynchronised stream cannot be realigned, and
                 // guessing would publish plausible-looking nonsense.
@@ -239,16 +249,16 @@ private:
             }
             switch (frame.kind)
             {
-                case FrameKind::Depth:
+                case FrameKind::kDepth:
                     publishDepth(frame);
                     break;
-                case FrameKind::ObjectPoses:
+                case FrameKind::kObjectPoses:
                     publishObjects(frame);
                     break;
-                case FrameKind::PointCloud:
+                case FrameKind::kPointCloud:
                     publish(frame);
                     break;
-                case FrameKind::Imu:
+                case FrameKind::kImu:
                     publishImu(frame);
                     break;
             }
@@ -260,26 +270,26 @@ private:
     /// consistent by construction rather than by two nodes agreeing about wall time.
     void publishImu(const CloudFrame& frame)
     {
-        sensor_msgs::msg::Imu imu;
-        imu.header.stamp    = stampFor(frame.sim_time_s);
-        imu.header.frame_id = imu_frame_id_;
+        auto imu             = std::make_unique<sensor_msgs::msg::Imu>();
+        imu->header.stamp    = stampFor(frame.sim_time_s);
+        imu->header.frame_id = imu_frame_id_;
 
         // MuJoCo's framequat is wxyz.
-        imu.orientation.w = frame.sensor_quat[0];
-        imu.orientation.x = frame.sensor_quat[1];
-        imu.orientation.y = frame.sensor_quat[2];
-        imu.orientation.z = frame.sensor_quat[3];
+        imu->orientation.w = frame.sensor_quat[0];
+        imu->orientation.x = frame.sensor_quat[1];
+        imu->orientation.y = frame.sensor_quat[2];
+        imu->orientation.z = frame.sensor_quat[3];
 
-        imu.angular_velocity.x = frame.imu.gyro[0];
-        imu.angular_velocity.y = frame.imu.gyro[1];
-        imu.angular_velocity.z = frame.imu.gyro[2];
+        imu->angular_velocity.x = frame.imu.gyro[0];
+        imu->angular_velocity.y = frame.imu.gyro[1];
+        imu->angular_velocity.z = frame.imu.gyro[2];
 
         // Proper acceleration, gravity included, which is what MuJoCo's accelerometer sensor
         // reports and what a real IMU reads. FAST-LIO normalises by the measured magnitude
         // during its init, so the units only have to be self-consistent.
-        imu.linear_acceleration.x = frame.imu.acc[0];
-        imu.linear_acceleration.y = frame.imu.acc[1];
-        imu.linear_acceleration.z = frame.imu.acc[2];
+        imu->linear_acceleration.x = frame.imu.acc[0];
+        imu->linear_acceleration.y = frame.imu.acc[1];
+        imu->linear_acceleration.z = frame.imu.acc[2];
 
         imu_pub_->publish(std::move(imu));
     }
@@ -290,9 +300,8 @@ private:
     /// inside the sim-only boundary, so g1_object_pose_source and the skills below it run the
     /// same code on the robot.
     ///
-    /// Publishing world coordinates under a fixed-frame label instead is what this replaced,
-    /// and it is exact only while that frame IS the world. It stopped being true the moment
-    /// odom became an estimate, and the base approach then drove at a point 2 m from the cube.
+    /// A world coordinate under a fixed-frame label is only correct while that frame IS the
+    /// world, which stops holding the moment odom becomes an estimate rather than ground truth.
     void publishObjects(const CloudFrame& frame)
     {
         geometry_msgs::msg::TransformStamped world_to_camera;
@@ -301,15 +310,15 @@ private:
             return;
         }
 
-        vision_msgs::msg::Detection3DArray msg;
-        msg.header.stamp    = now();
-        msg.header.frame_id = color_frame_id_;
-        msg.detections.reserve(frame.objects.size());
+        auto msg             = std::make_unique<vision_msgs::msg::Detection3DArray>();
+        msg->header.stamp    = now();
+        msg->header.frame_id = color_frame_id_;
+        msg->detections.reserve(frame.objects.size());
 
         for (const grove_g1::ObjectPoseRecord& record : frame.objects)
         {
             vision_msgs::msg::Detection3D detection;
-            detection.header = msg.header;
+            detection.header = msg->header;
             detection.id     = record.name;
 
             vision_msgs::msg::ObjectHypothesisWithPose hypothesis;
@@ -336,7 +345,7 @@ private:
             detection.bbox.size.y = record.size[1];
             detection.bbox.size.z = record.size[2];
             detection.results.push_back(hypothesis);
-            msg.detections.push_back(std::move(detection));
+            msg->detections.push_back(std::move(detection));
         }
         objects_pub_->publish(std::move(msg));
     }
@@ -387,21 +396,21 @@ private:
 
     void publishDepth(const CloudFrame& frame)
     {
-        sensor_msgs::msg::Image img;
-        img.header.stamp    = now();
-        img.header.frame_id = depth_frame_id_;
-        img.height          = frame.height;
-        img.width           = frame.width;
+        auto img             = std::make_unique<sensor_msgs::msg::Image>();
+        img->header.stamp    = now();
+        img->header.frame_id = depth_frame_id_;
+        img->height          = frame.height;
+        img->width           = frame.width;
         // 32FC1 metres. The simulator linearises MuJoCo's non-linear depth buffer before
         // sending, so nothing downstream has to know about znear/zfar.
-        img.encoding     = "32FC1";
-        img.is_bigendian = 0;
-        img.step         = frame.width * sizeof(float);
-        img.data.resize(frame.depth.size() * sizeof(float));
-        std::memcpy(img.data.data(), frame.depth.data(), img.data.size());
+        img->encoding     = "32FC1";
+        img->is_bigendian = 0;
+        img->step         = frame.width * sizeof(float);
+        img->data.resize(frame.depth.size() * sizeof(float));
+        std::memcpy(img->data.data(), frame.depth.data(), img->data.size());
 
         sensor_msgs::msg::CameraInfo info;
-        info.header           = img.header;
+        info.header           = img->header;
         info.height           = frame.height;
         info.width            = frame.width;
         info.distortion_model = "plumb_bob";
@@ -415,10 +424,8 @@ private:
         info.r          = { 1, 0, 0, 0, 1, 0, 0, 0, 1 };
         info.p          = { f, 0, cx, 0, 0, f, cy, 0, 0, 0, 1, 0 };
 
-        // Captured before the move: the colour image below is stamped from it, and reading it
-        // back off a moved-from message would put the shared-timestamp guarantee at the mercy
-        // of how Image happens to move its header.
-        const auto render_stamp = img.header.stamp;
+        // Captured before publish: img is a null pointer afterwards, only ownership moves.
+        const auto render_stamp = img->header.stamp;
 
         depth_pub_->publish(std::move(img));
         depth_info_pub_->publish(info);
@@ -430,15 +437,15 @@ private:
 
         if (!frame.rgb.empty())
         {
-            sensor_msgs::msg::Image color;
-            color.header.stamp    = render_stamp;
-            color.header.frame_id = color_frame_id_;
-            color.height          = frame.height;
-            color.width           = frame.width;
-            color.encoding        = "rgb8";
-            color.is_bigendian    = 0;
-            color.step            = frame.width * 3;
-            color.data.assign(frame.rgb.begin(), frame.rgb.end());
+            auto color             = std::make_unique<sensor_msgs::msg::Image>();
+            color->header.stamp    = render_stamp;
+            color->header.frame_id = color_frame_id_;
+            color->height          = frame.height;
+            color->width           = frame.width;
+            color->encoding        = "rgb8";
+            color->is_bigendian    = 0;
+            color->step            = frame.width * 3;
+            color->data.assign(frame.rgb.begin(), frame.rgb.end());
             color_pub_->publish(std::move(color));
         }
     }
@@ -493,34 +500,34 @@ private:
 
     void publish(const CloudFrame& frame)
     {
-        sensor_msgs::msg::PointCloud2 msg;
+        auto msg = std::make_unique<sensor_msgs::msg::PointCloud2>();
         // The capture instant, mapped onto this node's clock -- NOT arrival. See stampFor().
-        msg.header.stamp    = stampFor(frame.sim_time_s);
-        msg.header.frame_id = frame_id_;
+        msg->header.stamp    = stampFor(frame.sim_time_s);
+        msg->header.frame_id = frame_id_;
 
         const std::size_t points = frame.points.size() / 3;
-        msg.height               = 1;
-        msg.width                = static_cast<std::uint32_t>(points);
-        msg.is_bigendian         = false;
-        msg.is_dense             = false;
-        msg.point_step           = 12;
-        msg.row_step             = msg.point_step * msg.width;
+        msg->height              = 1;
+        msg->width               = static_cast<std::uint32_t>(points);
+        msg->is_bigendian        = false;
+        msg->is_dense            = false;
+        msg->point_step          = 12;
+        msg->row_step            = msg->point_step * msg->width;
 
-        msg.fields.resize(3);
-        const char* names[3] = { "x", "y", "z" };
+        msg->fields.resize(3);
+        const std::array<const char*, 3> names = { "x", "y", "z" };
         for (int i = 0; i < 3; ++i)
         {
-            msg.fields[i].name     = names[i];
-            msg.fields[i].offset   = static_cast<std::uint32_t>(i * 4);
-            msg.fields[i].datatype = sensor_msgs::msg::PointField::FLOAT32;
-            msg.fields[i].count    = 1;
+            msg->fields[i].name     = names[i];
+            msg->fields[i].offset   = static_cast<std::uint32_t>(i * 4);
+            msg->fields[i].datatype = sensor_msgs::msg::PointField::FLOAT32;
+            msg->fields[i].count    = 1;
         }
 
-        msg.data.resize(frame.points.size() * sizeof(float));
-        std::memcpy(msg.data.data(), frame.points.data(), msg.data.size());
+        msg->data.resize(frame.points.size() * sizeof(float));
+        std::memcpy(msg->data.data(), frame.points.data(), msg->data.size());
 
         geometry_msgs::msg::PoseStamped pose;
-        pose.header             = msg.header;
+        pose.header             = msg->header;
         pose.header.frame_id    = world_frame_id_;
         pose.pose.position.x    = frame.sensor_pos[0];
         pose.pose.position.y    = frame.sensor_pos[1];

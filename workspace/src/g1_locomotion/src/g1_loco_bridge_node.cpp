@@ -157,13 +157,13 @@ G1LocoBridge::on_configure(const rclcpp_lifecycle::State& /*previous_state*/)
         get_node_logging_interface(),
         get_node_waitables_interface(),
         "~/set_mode",
-        [this](const rclcpp_action::GoalUUID& uuid, std::shared_ptr<const SetLocoMode::Goal> goal) {
-            return handleGoal(uuid, goal);
-        },
-        [this](const std::shared_ptr<GoalHandleSetLocoMode> goal_handle) {
+        [this](
+            const rclcpp_action::GoalUUID&                  uuid,
+            const std::shared_ptr<const SetLocoMode::Goal>& goal) { return handleGoal(uuid, goal); },
+        [](const std::shared_ptr<GoalHandleSetLocoMode>& goal_handle) {
             return handleCancel(goal_handle);
         },
-        [this](const std::shared_ptr<GoalHandleSetLocoMode> goal_handle) {
+        [this](const std::shared_ptr<GoalHandleSetLocoMode>& goal_handle) {
             handleAccepted(goal_handle);
         },
         rcl_action_server_get_default_options(),
@@ -268,7 +268,7 @@ G1LocoBridge::on_error(const rclcpp_lifecycle::State& /*previous_state*/)
 }
 
 rclcpp_action::GoalResponse G1LocoBridge::handleGoal(
-    const rclcpp_action::GoalUUID& /*uuid*/, std::shared_ptr<const SetLocoMode::Goal> goal)
+    const rclcpp_action::GoalUUID& /*uuid*/, const std::shared_ptr<const SetLocoMode::Goal>& goal)
 {
     // Self-gated: the action server has no lifecycle awareness in Humble,
     // so we must check state ourselves.

@@ -34,10 +34,10 @@ struct Point3
 namespace BT
 {
 template <>
-g1_orchestration::Station convertFromString(StringView text);
+g1_orchestration::Station convertFromString(StringView str);
 
 template <>
-g1_orchestration::Point3 convertFromString(StringView text);
+g1_orchestration::Point3 convertFromString(StringView str);
 }  // namespace BT
 
 #endif  // G1_ORCHESTRATION__PORT_TYPES_HPP_

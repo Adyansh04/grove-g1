@@ -1,9 +1,9 @@
 """Headless sim integration test: the LocoClient loop end to end -- g1_locomotion's g1_loco_bridge
 talking real DDS to motion_service_sim's protocol-only /api/sport/* responder.
 
-sim.launch.py now brings up g1_loco_bridge itself (via loco.launch.py, lifecycle-configured and
-activated automatically), so this test only has to drive it: a manual SET_VELOCITY published
-directly (the bridge itself never sends one outside kHeld, so this is the only way to exercise the
+sim.launch.py brings up g1_loco_bridge itself (via loco.launch.py, lifecycle-configured and
+activated automatically), so this test drives it: a manual SET_VELOCITY published directly
+(the bridge itself never sends one outside kHeld, so this is the only way to exercise the
 responder's Start-only gate before any SetLocoMode goal has run -- see g1_bringup's README's FSM
 table), the STAND_UP -> START sequence the responder's legality table requires, the velocity
 re-issue loop's rate and fixed duration, the zero-Twist stop, and DAMP releasing authority. All in
@@ -33,7 +33,7 @@ from rclpy.qos import QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile, QoSReli
 from unitree_api.msg import Request, Response
 
 # See test_sim_bringup.launch.py's comment on this constant: kept below launch_testing's own
-# hardcoded 15 s process-startup deadline. sim.launch.py now also configures+activates
+# hardcoded 15 s process-startup deadline. sim.launch.py also configures+activates
 # g1_loco_bridge, a near-instant lifecycle handshake (no ramp) well inside this same window.
 SIM_SETTLE_S = 10.0
 

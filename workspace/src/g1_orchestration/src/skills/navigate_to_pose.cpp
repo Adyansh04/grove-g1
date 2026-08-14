@@ -29,7 +29,7 @@ geometry_msgs::msg::PoseStamped toPose(const Station& station, const std::string
 
 NavigateToPose::NavigateToPose(
     const std::string& name, const BT::NodeConfig& config, RosContext context)
-  : RosActionNode(name, config, context, "/navigate_to_pose")
+  : RosActionNode(name, config, std::move(context), "/navigate_to_pose")
 {}
 
 BT::PortsList NavigateToPose::providedPorts()
@@ -59,8 +59,8 @@ bool NavigateToPose::fillGoal(Goal& goal)
     // Nav2 picks its own default when this is empty, so a tree that does not care says nothing.
     goal.behavior_tree = getInput<std::string>("behavior_tree").value_or("");
 
-    // Published so the approach that follows can hold the heading this goal arrived on. It used
-    // to be retyped as a literal in both places and kept equal by hand.
+    // Published so the approach that follows can hold the heading this goal arrived on, rather
+    // than needing a matching literal typed by hand in both places.
     setOutput("goal_yaw", station->yaw);
     return true;
 }

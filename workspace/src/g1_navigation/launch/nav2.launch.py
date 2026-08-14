@@ -1,41 +1,26 @@
 """Nav2 servers, plus the two G1-specific nodes that make their output usable.
 
 Adapted from nav2_bringup's own navigation_launch.py (Humble 1.1.20), keeping its structure:
-the same composed/non-composed split and the same /tf remappings. What differs from upstream is
-listed below, because each difference is a decision rather than drift.
+the same composed/non-composed split and the same /tf remappings. Differences from upstream:
 
-  * Three servers are NOT launched. velocity_smoother smooths toward zero, which on this robot
-    means decelerating into the gait's dead zone and stopping dead; smoother_server smooths
-    paths for a robot with two motion primitives; waypoint_follower has no caller. All three
-    are in upstream's list, so their absence is deliberate, not an oversight.
+  * velocity_smoother, smoother_server and waypoint_follower are NOT launched: smoothing toward
+    zero decelerates this robot into the gait's dead zone and stops it dead, path smoothing is
+    for a robot with more than two motion primitives, and nothing calls waypoint_follower.
   * controller_server's cmd_vel goes to /cmd_vel rather than upstream's cmd_vel_nav, because
-    g1_gait_shaper is what sits between Nav2 and the robot here, in place of velocity_smoother.
-    The shaper is also what arbitrates Nav2 against g1_base_approach's higher-priority
-    /cmd_vel_approach, so nothing else has to sit in that path.
-  * controller_server also REMAPS odom. Its OdomSmoother is built with the C++ default topic
+    g1_gait_shaper sits between Nav2 and the robot here, in place of velocity_smoother, and also
+    arbitrates Nav2 against g1_base_approach's higher-priority /cmd_vel_approach.
+  * controller_server also REMAPS odom. Its OdomSmoother is built with the C++ default topic,
     and controller_server declares no odom_topic parameter on Humble -- setting one is silently
-    ignored, and Nav2 then believes the robot is permanently stationary.
-  * g1_gait_shaper, g1_loco_authority and g1_base_approach are added; none of them exists
-    upstream.
+    ignored, leaving Nav2 believing the robot is permanently stationary.
+  * g1_gait_shaper, g1_loco_authority and g1_base_approach are added; none exists upstream.
 
-use_composition defaults to FALSE here, unlike scan.launch.py and localization.launch.py.
-
-Measured, not assumed. Composed, the costmaps silently come up on Costmap2DROS's built-in
-defaults: /local_costmap/local_costmap reported robot_base_frame "base_link", global_frame
-"map" and robot_radius 0.1 while config/nav2_params.yaml plainly says base_footprint, odom and
-0.45. controller_server then hangs forever in Activating, waiting on a transform from a frame
-that does not exist, and the whole bringup stalls behind it. Run non-composed and the identical
-file delivers every value and controller_server, planner_server and behavior_server all reach
-active.
-
-Three ways of passing the file were tried under composition -- a bare path, RewrittenYaml as
-upstream uses, and ParameterFile(allow_substs=True) as upstream wraps it -- and all three
-behaved the same. The nested sections belong to differently-named nodes than the ComposableNode
-being loaded, which is the shape of the problem, but the root cause was not chased further:
-composition here is an optimisation, and correctness is not negotiable for it.
-
-PR A's scan and localization nodes still compose, and do get their parameters. Their sections
-are flat and named for the node itself, which is consistent with that diagnosis.
+use_composition defaults to FALSE here, unlike scan.launch.py and localization.launch.py:
+composed, the nested costmap parameter sections never reach the ComposableNode being loaded --
+they resolve against differently-named nodes instead -- so Costmap2DROS comes up on its own
+built-in defaults (base_link/map/0.1) instead of this package's config (base_footprint/odom/
+0.45), and controller_server hangs forever in Activating, waiting on a transform from a frame
+that does not exist. Uncomposed, the identical file delivers every value correctly. Composition
+here is an optimisation; correctness is not negotiable for it.
 """
 
 import os
@@ -99,8 +84,8 @@ def generate_launch_description():
 
     remappings = [("/tf", "tf"), ("/tf_static", "tf_static")]
     # Nav2's controller publishes here; the shaper reduces it onto the gait's achievable
-    # motions and forwards to the bridge. Since milestone 9 it is the LOW-priority of two
-    # sources, and the shaper is what decides between them.
+    # motions and forwards to the bridge. It is the LOW-priority of two sources, and the
+    # shaper is what decides between them.
     controller_remappings = remappings + [
         ("cmd_vel", "/cmd_vel"),
         ("odom", "/g1_odometry_publisher/odom"),

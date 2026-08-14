@@ -142,6 +142,8 @@ void releaseArm(const rclcpp::Logger& logger, double timeout_s)
     // its controller still claims its interfaces is the failure this order avoids.
     const rclcpp::Node::SharedPtr      node  = makeClientNode("g1_arm_authority_client");
     const std::vector<ControlledPart>& parts = controlledParts();
+    // std::ranges::reverse_view breaks clang-tidy's Clang-14 parser against libstdc++ here.
+    // NOLINTNEXTLINE(modernize-loop-convert)
     for (auto it = parts.rbegin(); it != parts.rend(); ++it)
     {
         switchController(node, {}, { it->controller }, timeout_s);

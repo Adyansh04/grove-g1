@@ -55,6 +55,7 @@ if(BUILD_TESTING)
 
   ament_add_gmock(test_robot_model test/test_robot_model.cpp)
   if(TARGET test_robot_model)
+    target_compile_features(test_robot_model PUBLIC cxx_std_20)
     add_dependencies(test_robot_model g1_moveit_config_expanded_urdf)
     target_compile_definitions(test_robot_model PRIVATE
       G1_TEST_URDF_PATH="${_expanded_urdf}"
@@ -105,6 +106,23 @@ if(BUILD_TESTING)
   else()
     message(WARNING
       "clang-format and/or workspace .clang-format not found; skipping clang_format_check_g1_moveit_config test")
+  endif()
+
+  # clang-tidy over this package's own translation units, gated by WarningsAsErrors in the
+  # workspace .clang-tidy. Minutes rather than the format check's milliseconds, so it carries a
+  # label: `--ctest-args -LE clang_tidy` skips it for a fast local loop. CI runs it.
+  find_program(RUN_CLANG_TIDY_EXECUTABLE NAMES run-clang-tidy-14 run-clang-tidy)
+  set(_clang_tidy_config "${CMAKE_CURRENT_SOURCE_DIR}/../../.clang-tidy")
+  if(RUN_CLANG_TIDY_EXECUTABLE AND EXISTS "${_clang_tidy_config}"
+      AND CMAKE_EXPORT_COMPILE_COMMANDS)
+    add_test(
+      NAME clang_tidy_check_g1_moveit_config
+      COMMAND ${RUN_CLANG_TIDY_EXECUTABLE} -p ${CMAKE_BINARY_DIR} -quiet -j 4
+    )
+    set_tests_properties(clang_tidy_check_g1_moveit_config PROPERTIES LABELS clang_tidy TIMEOUT 900)
+  else()
+    message(WARNING
+      "run-clang-tidy or .clang-tidy not found, or compile commands are off; skipping clang_tidy_check_g1_moveit_config test")
   endif()
 endif()
 

@@ -7,7 +7,7 @@ namespace g1_orchestration
 
 SetArmPosture::SetArmPosture(
     const std::string& name, const BT::NodeConfig& config, RosContext context)
-  : SkillActionNode(name, config, context, "/g1_manipulation_server/set_arm_posture")
+  : SkillActionNode(name, config, std::move(context), "/g1_manipulation_server/set_arm_posture")
 {}
 
 BT::PortsList SetArmPosture::providedPorts()

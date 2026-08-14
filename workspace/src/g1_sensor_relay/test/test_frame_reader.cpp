@@ -7,7 +7,12 @@
 
 #include "g1_sensor_relay/frame_reader.hpp"
 
-using namespace g1_sensor_relay;
+using g1_sensor_relay::CloudFrame;
+using g1_sensor_relay::FrameKind;
+using g1_sensor_relay::FrameStatus;
+using g1_sensor_relay::kMaxObjects;
+using g1_sensor_relay::kMaxPoints;
+using g1_sensor_relay::tryReadFrame;
 using grove_g1::SensorFrameHeader;
 
 namespace
@@ -16,20 +21,21 @@ namespace
 std::vector<std::uint8_t> makeFrame(std::uint32_t point_count, double sim_time = 1.5)
 {
     SensorFrameHeader header{};
-    header.magic          = grove_g1::kSensorFrameMagic;
-    header.version        = grove_g1::kSensorFrameVersion;
-    header.kind           = static_cast<std::uint32_t>(grove_g1::SensorFrameKind::PointCloud);
-    header.point_count    = point_count;
-    header.payload_bytes  = point_count * 3u * sizeof(float);
+    header.magic       = grove_g1::kSensorFrameMagic;
+    header.version     = grove_g1::kSensorFrameVersion;
+    header.kind        = static_cast<std::uint32_t>(grove_g1::SensorFrameKind::PointCloud);
+    header.point_count = point_count;
+    header.payload_bytes =
+        static_cast<std::uint32_t>(static_cast<std::size_t>(point_count) * 3U * sizeof(float));
     header.sim_time_s     = sim_time;
     header.sensor_pos[2]  = 1.26;
     header.sensor_quat[0] = 1.0;
 
     std::vector<std::uint8_t> bytes(sizeof(header) + header.payload_bytes);
     std::memcpy(bytes.data(), &header, sizeof(header));
-    for (std::uint32_t i = 0; i < point_count * 3u; ++i)
+    for (std::uint32_t i = 0; i < point_count * 3U; ++i)
     {
-        const float v = static_cast<float>(i);
+        const auto v = static_cast<float>(i);
         std::memcpy(bytes.data() + sizeof(header) + i * sizeof(float), &v, sizeof(float));
     }
     return bytes;
@@ -40,7 +46,7 @@ std::vector<std::uint8_t> makeFrame(std::uint32_t point_count, double sim_time =
 std::vector<std::uint8_t> makeDepthFrame(std::uint32_t w, std::uint32_t h, bool with_color)
 {
     const std::uint32_t pixels = w * h;
-    const std::uint32_t rgb    = with_color ? pixels * 3u : 0u;
+    const std::uint32_t rgb    = with_color ? pixels * 3U : 0U;
 
     SensorFrameHeader header{};
     header.magic          = grove_g1::kSensorFrameMagic;
@@ -48,7 +54,7 @@ std::vector<std::uint8_t> makeDepthFrame(std::uint32_t w, std::uint32_t h, bool 
     header.kind           = static_cast<std::uint32_t>(grove_g1::SensorFrameKind::Depth);
     header.width          = w;
     header.height         = h;
-    header.fovy_deg       = 58.0f;
+    header.fovy_deg       = 58.0F;
     header.rgb_bytes      = rgb;
     header.payload_bytes  = pixels * sizeof(float) + rgb;
     header.sim_time_s     = 2.5;
@@ -58,7 +64,7 @@ std::vector<std::uint8_t> makeDepthFrame(std::uint32_t w, std::uint32_t h, bool 
     std::memcpy(bytes.data(), &header, sizeof(header));
     for (std::uint32_t i = 0; i < pixels; ++i)
     {
-        const float d = 1.0f + static_cast<float>(i);
+        const float d = 1.0F + static_cast<float>(i);
         std::memcpy(bytes.data() + sizeof(header) + i * sizeof(float), &d, sizeof(float));
     }
     for (std::uint32_t i = 0; i < rgb; ++i)
@@ -128,11 +134,11 @@ TEST(FrameReader, ReadsAWholeFrameAndConsumesExactlyIt)
     const auto size  = bytes.size();
     CloudFrame frame;
 
-    ASSERT_EQ(tryReadFrame(bytes, frame), FrameStatus::Ok);
+    ASSERT_EQ(tryReadFrame(bytes, frame), FrameStatus::kOk);
     EXPECT_TRUE(bytes.empty()) << "consumed " << (size - bytes.size()) << " of " << size;
-    EXPECT_EQ(frame.points.size(), 12u);
+    EXPECT_EQ(frame.points.size(), 12U);
     EXPECT_DOUBLE_EQ(frame.sim_time_s, 1.5);
-    EXPECT_FLOAT_EQ(frame.points[11], 11.0f);
+    EXPECT_FLOAT_EQ(frame.points[11], 11.0F);
 }
 
 TEST(FrameReader, WaitsWhenTheFrameIsOnlyPartlyArrived)
@@ -143,9 +149,11 @@ TEST(FrameReader, WaitsWhenTheFrameIsOnlyPartlyArrived)
     // A stream socket splits writes anywhere; every prefix must be safe to retry.
     for (std::size_t n = 0; n < full.size(); ++n)
     {
-        std::vector<std::uint8_t> partial(full.begin(), full.begin() + n);
-        const auto                before = partial.size();
-        EXPECT_EQ(tryReadFrame(partial, frame), FrameStatus::Incomplete) << "at " << n << " bytes";
+        std::vector<std::uint8_t> partial(
+            full.begin(),
+            full.begin() + static_cast<std::ptrdiff_t>(n));
+        const auto before = partial.size();
+        EXPECT_EQ(tryReadFrame(partial, frame), FrameStatus::kIncomplete) << "at " << n << " bytes";
         EXPECT_EQ(partial.size(), before) << "consumed bytes from an incomplete frame";
     }
 }
@@ -157,13 +165,13 @@ TEST(FrameReader, ReadsBackToBackFramesFromOneBuffer)
     bytes.insert(bytes.end(), second.begin(), second.end());
 
     CloudFrame frame;
-    ASSERT_EQ(tryReadFrame(bytes, frame), FrameStatus::Ok);
+    ASSERT_EQ(tryReadFrame(bytes, frame), FrameStatus::kOk);
     EXPECT_DOUBLE_EQ(frame.sim_time_s, 1.0);
-    EXPECT_EQ(frame.points.size(), 6u);
+    EXPECT_EQ(frame.points.size(), 6U);
 
-    ASSERT_EQ(tryReadFrame(bytes, frame), FrameStatus::Ok);
+    ASSERT_EQ(tryReadFrame(bytes, frame), FrameStatus::kOk);
     EXPECT_DOUBLE_EQ(frame.sim_time_s, 2.0);
-    EXPECT_EQ(frame.points.size(), 9u);
+    EXPECT_EQ(frame.points.size(), 9U);
     EXPECT_TRUE(bytes.empty());
 }
 
@@ -173,29 +181,30 @@ TEST(FrameReader, RejectsGarbageRatherThanGuessing)
 
     auto bad_magic = makeFrame(2);
     bad_magic[0] ^= 0xFF;
-    EXPECT_EQ(tryReadFrame(bad_magic, frame), FrameStatus::BadMagic);
+    EXPECT_EQ(tryReadFrame(bad_magic, frame), FrameStatus::kBadMagic);
 
     auto                bad_version = makeFrame(2);
     const std::uint32_t v           = grove_g1::kSensorFrameVersion + 1;
     std::memcpy(bad_version.data() + 4, &v, sizeof(v));
-    EXPECT_EQ(tryReadFrame(bad_version, frame), FrameStatus::BadVersion);
+    EXPECT_EQ(tryReadFrame(bad_version, frame), FrameStatus::kBadVersion);
 
     auto                bad_kind = makeFrame(2);
     const std::uint32_t k        = 99;
     std::memcpy(bad_kind.data() + 8, &k, sizeof(k));
-    EXPECT_EQ(tryReadFrame(bad_kind, frame), FrameStatus::BadKind);
+    EXPECT_EQ(tryReadFrame(bad_kind, frame), FrameStatus::kBadKind);
 }
 
 TEST(FrameReader, RefusesALengthThatDoesNotMatchThePointCount)
 {
     // The failure mode that matters: a desynchronised stream yields a plausible header whose
     // length is nonsense. Trusting it means allocating whatever it says.
-    auto                bytes = makeFrame(4);
-    const std::uint32_t lie   = 4u * 3u * sizeof(float) + 4u;
+    auto       bytes = makeFrame(4);
+    const auto lie =
+        static_cast<std::uint32_t>(static_cast<std::size_t>(4) * 3U * sizeof(float) + 4U);
     std::memcpy(bytes.data() + 12, &lie, sizeof(lie));
 
     CloudFrame frame;
-    EXPECT_EQ(tryReadFrame(bytes, frame), FrameStatus::BadLength);
+    EXPECT_EQ(tryReadFrame(bytes, frame), FrameStatus::kBadLength);
 }
 
 TEST(FrameReader, RefusesAnAbsurdPointCountBeforeAllocating)
@@ -204,18 +213,19 @@ TEST(FrameReader, RefusesAnAbsurdPointCountBeforeAllocating)
     const std::uint32_t huge  = kMaxPoints + 1;
     std::memcpy(bytes.data() + 80, &huge, sizeof(huge));
     // Keep payload_bytes consistent so only the cap can reject it.
-    const std::uint32_t payload = huge * 3u * sizeof(float);
+    const auto payload =
+        static_cast<std::uint32_t>(static_cast<std::size_t>(huge) * 3U * sizeof(float));
     std::memcpy(bytes.data() + 12, &payload, sizeof(payload));
 
     CloudFrame frame;
-    EXPECT_EQ(tryReadFrame(bytes, frame), FrameStatus::BadLength);
+    EXPECT_EQ(tryReadFrame(bytes, frame), FrameStatus::kBadLength);
 }
 
 TEST(FrameReader, HandlesAnEmptyCloud)
 {
     auto       bytes = makeFrame(0);
     CloudFrame frame;
-    ASSERT_EQ(tryReadFrame(bytes, frame), FrameStatus::Ok);
+    ASSERT_EQ(tryReadFrame(bytes, frame), FrameStatus::kOk);
     EXPECT_TRUE(frame.points.empty());
 }
 
@@ -226,11 +236,13 @@ TEST(WireFormat, TheTwoCopiesOfSensorFrameAreIdentical)
     const char* ours   = "include/g1_sensor_relay/sensor_frame.h";
     const char* theirs = "../../vendor/unitree_mujoco/sensor_frame.h";
 
-    std::ifstream a(ours), b(theirs);
+    std::ifstream a(ours);
+    std::ifstream b(theirs);
     ASSERT_TRUE(a.is_open()) << "cannot open " << ours;
     ASSERT_TRUE(b.is_open()) << "cannot open " << theirs;
 
-    std::stringstream sa, sb;
+    std::stringstream sa;
+    std::stringstream sb;
     sa << a.rdbuf();
     sb << b.rdbuf();
     EXPECT_EQ(sa.str(), sb.str())
@@ -241,26 +253,26 @@ TEST(FrameReader, ReadsADepthFrameWithColour)
 {
     auto       bytes = makeDepthFrame(4, 3, /*with_color=*/true);
     CloudFrame frame;
-    ASSERT_EQ(tryReadFrame(bytes, frame), FrameStatus::Ok);
+    ASSERT_EQ(tryReadFrame(bytes, frame), FrameStatus::kOk);
     EXPECT_TRUE(bytes.empty());
-    EXPECT_EQ(frame.kind, FrameKind::Depth);
-    EXPECT_EQ(frame.width, 4u);
-    EXPECT_EQ(frame.height, 3u);
-    EXPECT_EQ(frame.depth.size(), 12u);
-    EXPECT_EQ(frame.rgb.size(), 36u);
-    EXPECT_FLOAT_EQ(frame.depth.front(), 1.0f);
-    EXPECT_FLOAT_EQ(frame.depth.back(), 12.0f);
+    EXPECT_EQ(frame.kind, FrameKind::kDepth);
+    EXPECT_EQ(frame.width, 4U);
+    EXPECT_EQ(frame.height, 3U);
+    EXPECT_EQ(frame.depth.size(), 12U);
+    EXPECT_EQ(frame.rgb.size(), 36U);
+    EXPECT_FLOAT_EQ(frame.depth.front(), 1.0F);
+    EXPECT_FLOAT_EQ(frame.depth.back(), 12.0F);
     // The colour bytes must come from behind the depth floats, not overlap them.
-    EXPECT_EQ(frame.rgb.front(), 0u);
-    EXPECT_EQ(frame.rgb.back(), 35u);
+    EXPECT_EQ(frame.rgb.front(), 0U);
+    EXPECT_EQ(frame.rgb.back(), 35U);
 }
 
 TEST(FrameReader, ReadsADepthFrameWithoutColour)
 {
     auto       bytes = makeDepthFrame(4, 3, /*with_color=*/false);
     CloudFrame frame;
-    ASSERT_EQ(tryReadFrame(bytes, frame), FrameStatus::Ok);
-    EXPECT_EQ(frame.depth.size(), 12u);
+    ASSERT_EQ(tryReadFrame(bytes, frame), FrameStatus::kOk);
+    EXPECT_EQ(frame.depth.size(), 12U);
     EXPECT_TRUE(frame.rgb.empty());
 }
 
@@ -277,7 +289,7 @@ TEST(FrameReader, RefusesAnRgbLengthThatDoesNotMatchThePixelCount)
     std::memcpy(bytes.data(), &header, sizeof(header));
 
     CloudFrame frame;
-    EXPECT_EQ(tryReadFrame(bytes, frame), FrameStatus::BadLength);
+    EXPECT_EQ(tryReadFrame(bytes, frame), FrameStatus::kBadLength);
 }
 
 TEST(FrameReader, RefusesAnAbsurdImageSizeBeforeAllocating)
@@ -292,17 +304,17 @@ TEST(FrameReader, RefusesAnAbsurdImageSizeBeforeAllocating)
     std::memcpy(bytes.data(), &header, sizeof(header));
 
     CloudFrame frame;
-    EXPECT_EQ(tryReadFrame(bytes, frame), FrameStatus::BadLength);
+    EXPECT_EQ(tryReadFrame(bytes, frame), FrameStatus::kBadLength);
 }
 
 TEST(FrameReader, ReadsAnObjectPoseFrame)
 {
     auto       bytes = makeObjectFrame({ "red_cube", "green_cylinder" });
     CloudFrame frame;
-    ASSERT_EQ(tryReadFrame(bytes, frame), FrameStatus::Ok);
+    ASSERT_EQ(tryReadFrame(bytes, frame), FrameStatus::kOk);
 
-    EXPECT_EQ(frame.kind, FrameKind::ObjectPoses);
-    ASSERT_EQ(frame.objects.size(), 2u);
+    EXPECT_EQ(frame.kind, FrameKind::kObjectPoses);
+    ASSERT_EQ(frame.objects.size(), 2U);
     EXPECT_STREQ(frame.objects[0].name, "red_cube");
     EXPECT_STREQ(frame.objects[1].name, "green_cylinder");
     EXPECT_DOUBLE_EQ(frame.objects[1].pos[0], 2.0);
@@ -324,7 +336,7 @@ TEST(FrameReader, RefusesAnObjectPayloadThatIsNotAWholeNumberOfRecords)
     std::memcpy(bytes.data(), &header, sizeof(header));
 
     CloudFrame frame;
-    EXPECT_EQ(tryReadFrame(bytes, frame), FrameStatus::BadLength);
+    EXPECT_EQ(tryReadFrame(bytes, frame), FrameStatus::kBadLength);
 }
 
 TEST(FrameReader, RefusesAnAbsurdObjectCountBeforeAllocating)
@@ -333,11 +345,11 @@ TEST(FrameReader, RefusesAnAbsurdObjectCountBeforeAllocating)
     SensorFrameHeader header{};
     std::memcpy(&header, bytes.data(), sizeof(header));
     header.payload_bytes =
-        (kMaxObjects + 1u) * static_cast<std::uint32_t>(sizeof(grove_g1::ObjectPoseRecord));
+        (kMaxObjects + 1U) * static_cast<std::uint32_t>(sizeof(grove_g1::ObjectPoseRecord));
     std::memcpy(bytes.data(), &header, sizeof(header));
 
     CloudFrame frame;
-    EXPECT_EQ(tryReadFrame(bytes, frame), FrameStatus::BadLength);
+    EXPECT_EQ(tryReadFrame(bytes, frame), FrameStatus::kBadLength);
 }
 
 TEST(FrameReader, TerminatesAnObjectNameThatArrivesUnterminated)
@@ -351,8 +363,8 @@ TEST(FrameReader, TerminatesAnObjectNameThatArrivesUnterminated)
         sizeof(grove_g1::ObjectPoseRecord::name));
 
     CloudFrame frame;
-    ASSERT_EQ(tryReadFrame(bytes, frame), FrameStatus::Ok);
-    ASSERT_EQ(frame.objects.size(), 1u);
+    ASSERT_EQ(tryReadFrame(bytes, frame), FrameStatus::kOk);
+    ASSERT_EQ(frame.objects.size(), 1U);
     EXPECT_EQ(std::strlen(frame.objects[0].name), sizeof(grove_g1::ObjectPoseRecord::name) - 1);
 }
 
@@ -360,9 +372,9 @@ TEST(FrameReader, ReadsAnImuFrame)
 {
     auto       bytes = makeImuFrame();
     CloudFrame frame;
-    ASSERT_EQ(tryReadFrame(bytes, frame), FrameStatus::Ok);
+    ASSERT_EQ(tryReadFrame(bytes, frame), FrameStatus::kOk);
 
-    EXPECT_EQ(frame.kind, FrameKind::Imu);
+    EXPECT_EQ(frame.kind, FrameKind::kImu);
     EXPECT_DOUBLE_EQ(frame.imu.gyro[1], 0.5);
     EXPECT_DOUBLE_EQ(frame.imu.acc[2], 9.81);
     EXPECT_DOUBLE_EQ(frame.sim_time_s, 12.25);
@@ -384,5 +396,5 @@ TEST(FrameReader, RefusesAnImuPayloadOfTheWrongSize)
     bytes.resize(bytes.size() + 8);
 
     CloudFrame frame;
-    EXPECT_EQ(tryReadFrame(bytes, frame), FrameStatus::BadLength);
+    EXPECT_EQ(tryReadFrame(bytes, frame), FrameStatus::kBadLength);
 }

@@ -1,6 +1,6 @@
 """Headless sim integration test: the walking policy stands the robot up and holds it.
 
-Everything here requires the robot NOT to have moved, so it is deliberately
+Everything here requires the robot not to have moved, so it is deliberately
 separate from test_walk_teleop.launch.py (which drives it). Launches the default
 unwelded stack -- pin_pelvis defaults false, so nothing but the policy keeps the
 robot upright.
@@ -60,8 +60,8 @@ def generate_test_description():
         PythonLaunchDescriptionSource(
             os.path.join(get_package_share_directory("g1_bringup"), "launch", "sim.launch.py")
         )
-        # No launch_arguments: this suite exercises the DEFAULT stack, unwelded, with the
-        # walking policy holding the robot up. That default is the point of the test.
+        # No launch_arguments: this suite exercises the default stack, unwelded, with the
+        # walking policy holding the robot up.
     )
     return (
         LaunchDescription([sim_launch, TimerAction(period=1.0, actions=[launch_testing.actions.ReadyToTest()])]),

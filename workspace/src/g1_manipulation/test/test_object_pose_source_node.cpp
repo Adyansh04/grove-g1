@@ -102,7 +102,7 @@ public:
         objects_sub_ = peer_->create_subscription<vision_msgs::msg::Detection3DArray>(
             "/g1_object_pose_source/objects",
             rclcpp::QoS(rclcpp::KeepLast(1)).reliable(),
-            [this](const vision_msgs::msg::Detection3DArray::SharedPtr msg) { last_ = *msg; });
+            [this](const vision_msgs::msg::Detection3DArray::ConstSharedPtr& msg) { last_ = *msg; });
     }
 
     unsigned int configure() { return node_->configure().id(); }
@@ -151,9 +151,9 @@ staticTf(const std::string& parent, const std::string& child, double x, double y
 
 }  // namespace
 
-// The regression this whole change exists for. Before it, the node rewrote the frame label and
-// left the numbers alone, which is correct only while the two frames coincide -- and they stop
-// coinciding the moment odometry is an estimate. A relabel would leave x at 1.0 here.
+// Transform, not relabel: rewriting only the frame label while leaving the numbers alone is
+// correct only while the two frames coincide, and they stop coinciding the moment odometry is
+// an estimate. A relabel-only bug would leave x at 1.0 here.
 TEST(ObjectPoseSource, TransformsThePoseRatherThanRelabellingTheFrame)
 {
     auto    tf_node = staticTf("odom", "camera_color_optical_frame", 2.0, -3.0, 0.5);
@@ -168,7 +168,7 @@ TEST(ObjectPoseSource, TransformsThePoseRatherThanRelabellingTheFrame)
     ASSERT_TRUE(harness.last().has_value());
     const auto& out = *harness.last();
     EXPECT_EQ(out.header.frame_id, "odom");
-    ASSERT_EQ(out.detections.size(), 1u);
+    ASSERT_EQ(out.detections.size(), 1U);
     const auto& pose = out.detections[0].results[0].pose.pose;
     EXPECT_NEAR(pose.position.x, 3.0, 1e-6);
     EXPECT_NEAR(pose.position.y, -2.5, 1e-6);
@@ -195,16 +195,16 @@ TEST(ObjectPoseSource, PublishesNothingWhenTheTransformIsMissing)
 
 TEST(ObjectSource, ParsesTheSourcesItKnowsAndRejectsTheRest)
 {
-    ObjectSource source = ObjectSource::Hardware;
+    ObjectSource source = ObjectSource::kHardware;
     ASSERT_TRUE(parseObjectSource("sim_ground_truth", source));
-    EXPECT_EQ(source, ObjectSource::SimGroundTruth);
+    EXPECT_EQ(source, ObjectSource::kSimGroundTruth);
     ASSERT_TRUE(parseObjectSource("hardware", source));
-    EXPECT_EQ(source, ObjectSource::Hardware);
+    EXPECT_EQ(source, ObjectSource::kHardware);
 
-    ObjectSource untouched = ObjectSource::SimGroundTruth;
+    ObjectSource untouched = ObjectSource::kSimGroundTruth;
     EXPECT_FALSE(parseObjectSource("ground_truth", untouched));
     EXPECT_FALSE(parseObjectSource("", untouched));
-    EXPECT_EQ(untouched, ObjectSource::SimGroundTruth) << "a rejected name must not assign";
+    EXPECT_EQ(untouched, ObjectSource::kSimGroundTruth) << "a rejected name must not assign";
 }
 
 TEST(ObjectPoseSource, RefusesToConfigureOnHardware)
@@ -240,11 +240,11 @@ TEST(ObjectPoseSource, RepublishesGroundTruthInTheOutputFrame)
     ASSERT_TRUE(harness.last().has_value());
     const auto& out = *harness.last();
     EXPECT_EQ(out.header.frame_id, "odom");
-    ASSERT_EQ(out.detections.size(), 1u);
+    ASSERT_EQ(out.detections.size(), 1U);
     // The per-detection header is relabelled too: a consumer that reads that one instead of
     // the array's would otherwise be told the pose is in a frame that is not in the TF tree.
     EXPECT_EQ(out.detections[0].header.frame_id, "odom");
-    ASSERT_EQ(out.detections[0].results.size(), 1u);
+    ASSERT_EQ(out.detections[0].results.size(), 1U);
     EXPECT_EQ(out.detections[0].results[0].hypothesis.class_id, "red_cube");
     EXPECT_DOUBLE_EQ(out.detections[0].results[0].pose.pose.position.x, 4.1);
     EXPECT_DOUBLE_EQ(out.detections[0].results[0].pose.pose.position.z, 0.78);
@@ -265,7 +265,7 @@ TEST(ObjectPoseSource, CarriesTheSourceStampRatherThanRestampingIt)
     // message carries RCL_ROS_TIME, the literal would be RCL_SYSTEM_TIME, and rclcpp throws
     // on comparing the two rather than answering.
     EXPECT_EQ(harness.last()->header.stamp.sec, 123);
-    EXPECT_EQ(harness.last()->header.stamp.nanosec, 456u);
+    EXPECT_EQ(harness.last()->header.stamp.nanosec, 456U);
 }
 
 TEST(ObjectPoseSource, DropsPosesStampedWithAFrameItWasNotConfiguredFor)
@@ -294,6 +294,8 @@ TEST(ObjectPoseSource, StaysQuietUntilActivated)
 int main(int argc, char** argv)
 {
     // Isolated domain: a running sim on the default domain must not be able to feed this.
+    // Before any node or thread exists, so the thread-safety this warns about does not apply.
+    // NOLINTNEXTLINE(concurrency-mt-unsafe)
     setenv("ROS_DOMAIN_ID", "78", 1);
     ::testing::InitGoogleMock(&argc, argv);
     rclcpp::init(argc, argv);

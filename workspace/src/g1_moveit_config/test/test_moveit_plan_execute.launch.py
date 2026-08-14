@@ -3,7 +3,7 @@
 Covers the properties that only exist once every layer is running together, and that no config
 test can see: that MoveIt refuses to execute before the arm is acquired, that a coordinated
 14-joint both_arms plan reaches the controller as one trajectory, that planned motion respects
-the bridge's speed clamp, and that the arm chain is placed correctly when the waist is NOT at
+the bridge's speed clamp, and that the arm chain is placed correctly when the waist is not at
 zero -- the case a robot standing square hides completely.
 
 Run via `colcon test --packages-select g1_moveit_config`.
@@ -243,7 +243,7 @@ class TestMoveItPlanExecute(unittest.TestCase):
             moved = max(abs(self.joint_state[n] - before[n]) for n in joints)
             self.assertGreater(moved, 0.02, f"{side} arm did not move during a both_arms plan")
 
-    # 5. The cross-package coupling this milestone introduces.
+    # 5. The cross-package coupling between MoveIt's planned speed and the hardware bridge's clamp.
     def test_06_planned_motion_respects_the_bridge_clamp(self):
         # Well above the jitter a stiff-held arm shows at rest, so this cannot pass on noise
         # while the plan above quietly failed to execute.

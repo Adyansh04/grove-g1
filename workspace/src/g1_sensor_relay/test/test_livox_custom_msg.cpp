@@ -9,6 +9,7 @@
  */
 #include <gmock/gmock.h>
 
+#include <array>
 #include <cmath>
 #include <vector>
 
@@ -32,7 +33,7 @@ sensor_msgs::msg::PointCloud2 cloudOf(const std::vector<std::array<float, 3>>& p
     cloud.point_step           = 12;
     cloud.row_step             = cloud.point_step * cloud.width;
     cloud.fields.resize(3);
-    const char* names[3] = { "x", "y", "z" };
+    const std::array<const char*, 3> names = { "x", "y", "z" };
     for (std::size_t i = 0; i < 3; ++i)
     {
         cloud.fields[i].name     = names[i];

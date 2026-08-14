@@ -3,7 +3,7 @@
 # Exists because navigation cannot hand manipulation a pose it can work with: Nav2's
 # xy_goal_tolerance is 0.5 m and the arm's whole reach envelope is about 0.13 m wide.
 #
-# This does NOT converge on a distance setpoint. The gait's smallest forward pulse measures
+# This does not converge on a distance setpoint. The gait's smallest forward pulse measures
 # 0.3 to 0.6 m -- larger than the reach tolerance -- so no control law can hit a 5 cm target
 # head-on. It walks in pulses, re-reads the object between each one, and approaches obliquely
 # once the remaining distance is under one pulse, so the advance per pulse is what shrinks
@@ -19,7 +19,7 @@ string ARM_RIGHT=right
 string arm
 # The heading to hold while approaching, in the odometry frame, radians.
 #
-# NOT derived from where the object is, deliberately. The standard mobile-manipulation pattern is
+# Not derived from where the object is, deliberately. The standard mobile-manipulation pattern is
 # a stand-off pose on the surface normal, already facing the working direction, closed straight
 # in; Nav2 has GoalAngleCritic for exactly that. An approach that re-aims at the object from a
 # metre out walks in on a curve and arrives square to nothing. Pass the same yaw the staging

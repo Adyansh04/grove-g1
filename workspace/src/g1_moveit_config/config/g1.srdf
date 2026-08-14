@@ -97,15 +97,12 @@
        (/check_state_validity, both_arms) before being written here, not chosen on a diagram.
        `home` is the posture the simulator holds the arms at, and the arrow points this way
        round: g1_motion_service_sim's `arm_hold_rad` is set from these values, and the drift
-       test pins the pair. It used to be the other way, a measurement of wherever the arms
-       happened to fall at startup, which is how it ended up a few hundredths from putting the
-       palm against the thigh once the hands had their real mass.
+       test pins the pair, rather than the SRDF being derived from wherever the arms happen to
+       fall at startup: that direction leaves no margin against a heavier hand closing the
+       palm-to-thigh gap.
 
        The small shoulder roll is what buys that margin: it swings each arm off the torso so
        neither the sag nor a heavier hand closes the gap.
-
-       An earlier version of this file said zero "may well self collide" and left these out on
-       that suspicion. It does not: checked, valid. The suspicion was wrong.
 
        roll and yaw mirror between the arms so a positive value swings each arm away from the
        torso on its own side; pitch and elbow do not mirror.
@@ -298,9 +295,9 @@
        The shoulder roll is 0.60, and it is the one value in this pose with a measurement behind
        it. Rolling the shoulder away from the body is what buys the thumb room off the hip: at
        0.25 the pose is invalid outright (right_hand_thumb_2_link <-> right_hip_roll_link), the
-       same hand-versus-hip clearance M8 met from the other side.
+       same hand-versus-hip clearance problem met elsewhere, from the other side.
 
-       0.40 fixed that and was left there, valid but with 4.6 DEGREES OF MARGIN. The arm droops
+       0.40 fixed that and was left there, valid but with 4.6 degrees of margin. The arm droops
        more than that carrying the cube through a walk, and a start state in collision cannot be
        planned out of: fix_start_state_collision jitters the start, plans from the jitter, and
        the path check rejects the result against the original.
@@ -397,7 +394,7 @@
        reports the robot as colliding with itself before it has moved, and RRTConnect refuses
        to seed its tree: "Skipping invalid start state".
 
-       Deliberately NOT generated: the "never in collision" pairs the Setup Assistant's
+       Deliberately not generated: the "never in collision" pairs the Setup Assistant's
        collisions_updater finds by random sampling. Those are a planning-speed optimisation,
        not a correctness requirement, and on this model the sampling does not finish in a
        usable time: the URDF's collision geometry is its full visual meshes, about 525k

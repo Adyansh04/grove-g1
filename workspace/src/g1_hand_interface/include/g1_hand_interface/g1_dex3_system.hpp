@@ -8,7 +8,7 @@
  * Real hardware code. It speaks Unitree's published Dex3 contract and carries to the robot
  * unchanged; the simulator is expected to answer the same topics.
  *
- * Deliberately NOT part of G1ArmSdkSystem. The hand is a separate device on separate topics
+ * Deliberately not part of G1ArmSdkSystem. The hand is a separate device on separate topics
  * with separate authority, and one component per hand keeps a hand
  * fault from taking the arms down with it.
  */

@@ -95,13 +95,10 @@
     <!-- ZONE 1: Pick-and-Place Manipulation Testing Lab (East-South Room)   -->
     <!-- ==================================================================== -->
     <body name="manipulation_workbench" pos="4.5 -4.5 0">
-      <!-- Top at 0.80, matching g1_manipulation_scene's pedestal exactly rather than the 0.75
-           it used to be. Not cosmetic: the arm's reachable band at a useful forward reach
-           starts around pelvis z +0.03, which with the pelvis at 0.7925 puts the lowest
-           graspable object at about 0.82. At the old height the cube sat at 0.78, BELOW the
-           whole measured envelope, so the approach could have been perfect and the grasp would
-           still have had no IK. Matching the scene the pick is proven in means the demo depends
-           on a measured grasp instead of an assumed one. -->
+      <!-- Top at 0.80, matching g1_manipulation_scene's pedestal exactly, so the pick this demo
+           runs is the same pick already proven reachable there. The arm's useful forward-reach
+           band starts around pelvis z +0.03, and with the pelvis at 0.7925 that puts the lowest
+           graspable object at about 0.82: a measured constraint, not a cosmetic choice. -->
       <geom group="2" name="desk_top" type="box" size="0.9 0.55 0.03" pos="0 0 0.77" material="wood_desk" contype="1" conaffinity="1"/>
       <geom group="2" name="desk_leg_1" type="box" size="0.04 0.04 0.385" pos="0.8 0.45 0.385" material="metal_gray" contype="1" conaffinity="1"/>
       <geom group="2" name="desk_leg_2" type="box" size="0.04 0.04 0.385" pos="-0.8 0.45 0.385" material="metal_gray" contype="1" conaffinity="1"/>
@@ -188,10 +185,9 @@
          same reason: that is the height the grasp and the release are measured at, and a
          surface at any other height would need its own reachability answer.
 
-         The crate stacks are NOT usable for this. crate_stack_1's top sits at 1.10 m, above the
+         The crate stacks are not usable for this: crate_stack_1's top sits at 1.10 m, above the
          measured envelope, and its footprint is a metre across, so an approach that ranges to a
-         body origin would ask the robot to stand inside it. The mission tree used to name a
-         place target of 0.78 there, which is the SIDE of the upper crate. -->
+         body origin would ask the robot to stand inside it. -->
     <body name="storage_bench" pos="6.5 6.5 0">
       <geom group="2" name="bench_top" type="box" size="0.35 0.35 0.03" pos="0 0 0.77" material="wood_desk" contype="1" conaffinity="1"/>
       <geom group="2" name="bench_leg_1" type="box" size="0.04 0.04 0.385" pos="0.28 0.28 0.385" material="metal_gray" contype="1" conaffinity="1"/>

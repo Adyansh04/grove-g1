@@ -8,6 +8,7 @@
 
 #include <gmock/gmock.h>
 
+#include <array>
 #include <cassert>
 #include <chrono>
 #include <cmath>
@@ -161,11 +162,13 @@ public:
         tf_sub_ = helper_->create_subscription<tf2_msgs::msg::TFMessage>(
             "/tf",
             rclcpp::QoS(200),
-            [this](tf2_msgs::msg::TFMessage::SharedPtr msg) { batches.push_back(msg->transforms); });
+            [this](const tf2_msgs::msg::TFMessage::ConstSharedPtr& msg) {
+                batches.push_back(msg->transforms);
+            });
         odom_sub_ = helper_->create_subscription<nav_msgs::msg::Odometry>(
             "/g1_odometry_publisher/odom",
             rclcpp::QoS(200),
-            [this](nav_msgs::msg::Odometry::SharedPtr msg) { odoms.push_back(*msg); });
+            [this](const nav_msgs::msg::Odometry::ConstSharedPtr& msg) { odoms.push_back(*msg); });
         nodes_ = { node_->get_node_base_interface(), helper_->get_node_base_interface() };
         spinFor(nodes_, 200ms);
     }
@@ -187,6 +190,8 @@ public:
     std::optional<geometry_msgs::msg::TransformStamped>
     latest(const std::string& parent, const std::string& child) const
     {
+        // std::ranges::reverse_view breaks clang-tidy's Clang-14 parser against libstdc++ here.
+        // NOLINTNEXTLINE(modernize-loop-convert)
         for (auto batch = batches.rbegin(); batch != batches.rend(); ++batch)
         {
             for (const auto& tf : *batch)
@@ -246,12 +251,15 @@ private:
     {
         if (instance_ != nullptr)
         {
+            // va_copy is required here: previous_ below still needs an unconsumed *args.
             va_list copy;
+            // NOLINTNEXTLINE(clang-analyzer-valist.Uninitialized)
             va_copy(copy, *args);
-            char buffer[1024];
-            vsnprintf(buffer, sizeof(buffer), format, copy);
+            std::array<char, 1024> buffer;
+            // Truncation is fine here: this only has to be long enough to find the needle in.
+            (void)vsnprintf(buffer.data(), buffer.size(), format, copy);
             va_end(copy);
-            if (std::string(buffer).find(instance_->needle_) != std::string::npos)
+            if (std::string(buffer.data()).find(instance_->needle_) != std::string::npos)
             {
                 ++instance_->count_;
             }
@@ -265,9 +273,13 @@ private:
     std::string                      needle_;
     int                              count_    = 0;
     rcutils_logging_output_handler_t previous_ = nullptr;
-    static LogCapture*               instance_;
+    // Mutable and static because rcutils_logging_set_output_handler takes a bare function
+    // pointer, so this is the only route from the handler back to the instance.
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+    static LogCapture* instance_;
 };
 
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 LogCapture* LogCapture::instance_ = nullptr;
 
 /// Drives a fast_lio node with a LiDAR pose and an attitude, and collects what comes out.
@@ -288,13 +300,13 @@ public:
         tf_sub_ = helper_->create_subscription<tf2_msgs::msg::TFMessage>(
             "/tf",
             rclcpp::QoS(200),
-            [this](tf2_msgs::msg::TFMessage::SharedPtr msg) {
+            [this](const tf2_msgs::msg::TFMessage::ConstSharedPtr& msg) {
                 transforms.insert(transforms.end(), msg->transforms.begin(), msg->transforms.end());
             });
         odom_sub_ = helper_->create_subscription<nav_msgs::msg::Odometry>(
             "/g1_odometry_publisher/odom",
             rclcpp::QoS(200),
-            [this](nav_msgs::msg::Odometry::SharedPtr msg) { odoms.push_back(*msg); });
+            [this](const nav_msgs::msg::Odometry::ConstSharedPtr& msg) { odoms.push_back(*msg); });
         nodes_ = { node_->get_node_base_interface(), helper_->get_node_base_interface() };
         spinFor(nodes_, 200ms);
     }
@@ -341,8 +353,8 @@ TEST(OdometryPublisherHardwareBranch, ConfigureFailsAndCreatesNothing)
 
     // The point of failing in on_configure rather than at first tick. Advertising /tf and
     // then never publishing is the silent mode this node exists to rule out.
-    EXPECT_EQ(node->count_publishers("/tf"), 0u) << "a /tf publisher was created anyway";
-    EXPECT_EQ(node->count_publishers("/g1_odometry_publisher/odom"), 0u)
+    EXPECT_EQ(node->count_publishers("/tf"), 0U) << "a /tf publisher was created anyway";
+    EXPECT_EQ(node->count_publishers("/g1_odometry_publisher/odom"), 0U)
         << "an odom publisher was created anyway";
 }
 
@@ -360,7 +372,7 @@ TEST(OdometryPublisherHardwareBranch, UnknownSourceAlsoFailsToConfigure)
     auto node = std::make_shared<G1OdometryPublisher>(optionsWithSource("sim_ground_truth"));
     EXPECT_EQ(node->configure().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_UNCONFIGURED)
         << "a typo must not fall back to a working source";
-    EXPECT_EQ(node->count_publishers("/tf"), 0u);
+    EXPECT_EQ(node->count_publishers("/tf"), 0U);
 }
 
 // --- fast_lio: the latch, and the odometry built on top of it -------------------------------
@@ -404,7 +416,10 @@ TEST(OdometryPublisherFastLio, LatchesTheOriginThenReportsMotionRelativeToIt)
     // A deliberately non-trivial start pose. In practice FAST-LIO's first sample is the
     // identity, since its start frame IS the body frame at init -- which would let a broken
     // composition pass by doing nothing at all.
-    const double start_x = 0.4, start_y = -0.2, start_z = 0.05, start_yaw = 0.6;
+    const double start_x   = 0.4;
+    const double start_y   = -0.2;
+    const double start_z   = 0.05;
+    const double start_yaw = 0.6;
     harness.feed(start_x, start_y, start_z, start_yaw);
     harness.spin(100ms);
 
@@ -515,7 +530,7 @@ TEST(OdometryPublisherSimTime, StopsPublishingWhenSimTimeItselfFreezes)
     auto        tf_sub          = helper->create_subscription<tf2_msgs::msg::TFMessage>(
         "/tf",
         rclcpp::QoS(100),
-        [&transform_count](tf2_msgs::msg::TFMessage::SharedPtr msg) {
+        [&transform_count](const tf2_msgs::msg::TFMessage::ConstSharedPtr& msg) {
             transform_count += msg->transforms.size();
         });
 
@@ -537,7 +552,7 @@ TEST(OdometryPublisherSimTime, StopsPublishingWhenSimTimeItselfFreezes)
         lio_pub->publish(makeLidarOdometry(sim_now, 0.01 * i, 0.0, 0.0, 0.0));
         spinFor(nodes, 20ms);
     }
-    ASSERT_GT(transform_count, 0u) << "never published while sim time was advancing";
+    ASSERT_GT(transform_count, 0U) << "never published while sim time was advancing";
 
     // Now the simulator wedges: /clock stops AND the stamp stops advancing, but samples
     // keep arriving, so the node still has fresh-looking data on a frozen clock. Wall time
@@ -567,8 +582,8 @@ TEST(OdometryPublisherSimTime, StopsPublishingWhenSimTimeItselfFreezes)
 
 // --- Converged track: the split chain and the tilt guard ------------------------------------
 //
-// The planar suites above never reach this code. sim_sportmodestate is the only source that
-// publishes two edges, and the tilt guard lives on a callback only that source subscribes to.
+// The suites above never reach this code: sim_sportmodestate is the only source that publishes
+// two edges, and the tilt guard lives on a callback only that source subscribes to.
 
 TEST(OdometryPublisherConverged, PublishesTheSplitChainWithOneStamp)
 {
@@ -578,7 +593,10 @@ TEST(OdometryPublisherConverged, PublishesTheSplitChainWithOneStamp)
 
     ConvergedHarness harness(node, "converged_split_helper");
     // A walking attitude: a few degrees of roll and pitch under a real heading.
-    const double roll = -0.05, pitch = 0.0847, yaw = 1.2, height = 0.758;
+    const double roll   = -0.05;
+    const double pitch  = 0.0847;
+    const double yaw    = 1.2;
+    const double height = 0.758;
     harness.feed(3.0, -4.0, height, roll, pitch, yaw);
 
     const auto foot = harness.latest("odom", "base_footprint");
@@ -741,6 +759,8 @@ TEST(OdometryPublisherConverged, RejectsAFrameChainThatCannotExist)
 int main(int argc, char** argv)
 {
     // Isolated domain: a running sim on the default domain must not be able to feed this.
+    // Before any node or thread exists, so the thread-safety this warns about does not apply.
+    // NOLINTNEXTLINE(concurrency-mt-unsafe)
     setenv("ROS_DOMAIN_ID", "77", 1);
     ::testing::InitGoogleMock(&argc, argv);
     rclcpp::init(argc, argv);

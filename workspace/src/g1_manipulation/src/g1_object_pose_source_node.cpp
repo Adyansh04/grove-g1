@@ -32,12 +32,12 @@ bool parseObjectSource(const std::string& name, ObjectSource& out)
 {
     if (name == "sim_ground_truth")
     {
-        out = ObjectSource::SimGroundTruth;
+        out = ObjectSource::kSimGroundTruth;
         return true;
     }
     if (name == "hardware")
     {
-        out = ObjectSource::Hardware;
+        out = ObjectSource::kHardware;
         return true;
     }
     return false;
@@ -64,7 +64,7 @@ bool G1ObjectPoseSource::readParameters()
         return false;
     }
 
-    if (source_ == ObjectSource::Hardware)
+    if (source_ == ObjectSource::kHardware)
     {
         // Long on purpose. Anyone who reaches this is about to go looking for a perception
         // stack that does not exist yet, and the alternative -- publishing nothing, quietly --
@@ -114,7 +114,9 @@ G1ObjectPoseSource::CallbackReturn G1ObjectPoseSource::on_configure(const rclcpp
     source_sub_ = create_subscription<vision_msgs::msg::Detection3DArray>(
         "~/object_poses",
         sourceQos(),
-        std::bind(&G1ObjectPoseSource::onGroundTruth, this, std::placeholders::_1));
+        [this](vision_msgs::msg::Detection3DArray::SharedPtr msg) {
+            onGroundTruth(std::move(msg));
+        });
 
     RCLCPP_INFO(
         get_logger(),
@@ -142,12 +144,12 @@ G1ObjectPoseSource::CallbackReturn G1ObjectPoseSource::on_cleanup(const rclcpp_l
 // carries, so what rviz shows is what a skill acts on rather than a second computation of it.
 void G1ObjectPoseSource::publishMarkers(const vision_msgs::msg::Detection3DArray& objects)
 {
-    visualization_msgs::msg::MarkerArray markers;
+    auto markers = std::make_unique<visualization_msgs::msg::MarkerArray>();
     // Rebuilt every message, so a vanished object must not leave its marker on screen.
     visualization_msgs::msg::Marker clear;
     clear.action = visualization_msgs::msg::Marker::DELETEALL;
-    markers.markers.reserve(1 + 2 * objects.detections.size());
-    markers.markers.push_back(clear);
+    markers->markers.reserve(1 + 2 * objects.detections.size());
+    markers->markers.push_back(clear);
 
     int id = 0;
     for (const vision_msgs::msg::Detection3D& detection : objects.detections)
@@ -160,11 +162,11 @@ void G1ObjectPoseSource::publishMarkers(const vision_msgs::msg::Detection3DArray
         box.action  = visualization_msgs::msg::Marker::ADD;
         box.pose    = detection.bbox.center;
         box.scale   = detection.bbox.size;
-        box.color.r = 0.1f;
-        box.color.g = 0.8f;
-        box.color.b = 1.0f;
-        box.color.a = 0.6f;
-        markers.markers.push_back(box);
+        box.color.r = 0.1F;
+        box.color.g = 0.8F;
+        box.color.b = 1.0F;
+        box.color.a = 0.6F;
+        markers->markers.push_back(box);
 
         visualization_msgs::msg::Marker label = box;
         label.id                              = id++;
@@ -174,13 +176,16 @@ void G1ObjectPoseSource::publishMarkers(const vision_msgs::msg::Detection3DArray
         label.scale                           = geometry_msgs::msg::Vector3();
         label.scale.z                         = 0.06;
         label.pose.position.z += 0.5 * detection.bbox.size.z + 0.05;
-        label.color.a = 1.0f;
-        markers.markers.push_back(label);
+        label.color.a = 1.0F;
+        markers->markers.push_back(label);
     }
     markers_pub_->publish(std::move(markers));
 }
 
-void G1ObjectPoseSource::onGroundTruth(const vision_msgs::msg::Detection3DArray::SharedPtr msg)
+// By value, not const-ref: this mutates the message in place, and rclcpp has no const-ref
+// dispatch for a mutable pointee.
+// NOLINTNEXTLINE(performance-unnecessary-value-param)
+void G1ObjectPoseSource::onGroundTruth(vision_msgs::msg::Detection3DArray::SharedPtr msg)
 {
     if (!objects_pub_->is_activated())
     {
@@ -188,8 +193,7 @@ void G1ObjectPoseSource::onGroundTruth(const vision_msgs::msg::Detection3DArray:
     }
     // The detector reports from the frame it measured in, which rides on the robot. Rewriting
     // that label to a fixed frame is only correct while the two coincide, and they stop
-    // coinciding the moment odom is an estimate rather than ground truth -- an earlier version
-    // relabelled, and the base approach then chased a point 2 m from where the object was.
+    // coinciding the moment odom is an estimate rather than ground truth.
     if (msg->header.frame_id != source_frame_id_)
     {
         RCLCPP_WARN_THROTTLE(
@@ -250,7 +254,7 @@ void G1ObjectPoseSource::onGroundTruth(const vision_msgs::msg::Detection3DArray:
     {
         publishMarkers(out);
     }
-    objects_pub_->publish(std::move(out));
+    objects_pub_->publish(std::make_unique<vision_msgs::msg::Detection3DArray>(std::move(out)));
 }
 
 }  // namespace g1_manipulation

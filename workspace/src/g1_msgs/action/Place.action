@@ -1,10 +1,10 @@
 # Put down whatever the given arm is holding.
 #
-# The pose is where the OBJECT should end up, not where the palm should go: the caller knows the
+# The pose is where the object should end up, not where the palm should go: the caller knows the
 # target surface, and only the server knows how the object is currently held. It is transformed
 # into the planning frame on arrival, so a goal in odom survives the robot having walked.
 
-# Put the held object down on top of this DETECTED surface, ignoring `pose`. Prefer this to a
+# Put the held object down on top of this detected surface, ignoring `pose`. Prefer this to a
 # fixed coordinate, because a fixed coordinate is written in the map frame and the base approach
 # parks the robot against the object stream, which is published in odom. AMCL has been measured
 # 0.23 m apart from odom mid-mission, against an arm whose lateral window is 0.04 m -- so a map

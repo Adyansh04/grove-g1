@@ -32,10 +32,9 @@
     # *** THIS IS A SIM BRING-UP VALUE, NOT A HARDWARE-SAFE DEFAULT. ***
     # It is chosen to clear the sim walking policy's measured gait-initiation
     # thresholds ([0.40, 0.50, 1.50]) with real headroom, and matches the range
-    # the reference package validated (~0.8 / 0.5 / 1.57). Below those
-    # thresholds this policy stands still instead of stepping, so the previous
-    # [0.3, 0.2, 0.5] clamped every axis under its own threshold and the robot
-    # could never take a step at all.
+    # the reference package validated (~0.8 / 0.5 / 1.57). A clamp under those
+    # thresholds on any axis means that axis can never step at all: the policy
+    # stands still below them rather than moving slowly.
     #
     # The conservative slow-by-default ceiling that hardware wants is a SEPARATE
     # decision to be made at hardware bring-up, against the real controller's own

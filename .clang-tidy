@@ -29,6 +29,7 @@ Checks: '
   -readability-identifier-length,
   -readability-magic-numbers,
   -readability-function-cognitive-complexity,
+  -readability-named-parameter,
   modernize-*,
   -modernize-use-trailing-return-type,
   -modernize-use-nodiscard,
@@ -39,7 +40,9 @@ Checks: '
   -bugprone-easily-swappable-parameters,
   -bugprone-reserved-identifier,
   concurrency-*,
+  cert-err33-c,
   cppcoreguidelines-*,
+  -cppcoreguidelines-non-private-member-variables-in-classes,
   -cppcoreguidelines-pro-type-reinterpret-cast,
   -cppcoreguidelines-pro-bounds-pointer-arithmetic,
   -cppcoreguidelines-pro-bounds-constant-array-index,
@@ -65,9 +68,32 @@ Checks: '
 # -bugprone-easily-swappable-parameters: assembleSimLowCmd() intentionally
 #   takes parallel gain/target groups; splitting them into structs would hurt
 #   the call site more than it helps.
+# -cppcoreguidelines-non-private-member-variables-in-classes: an ALIAS of the
+#   misc- check disabled above. clang-tidy does not propagate a disable across
+#   an alias pair, so both halves have to be named -- the same reason
+#   readability-magic-numbers and cppcoreguidelines-avoid-magic-numbers both
+#   appear here.
+# -readability-named-parameter: every hit is an unused rclcpp_lifecycle::State&,
+#   rclcpp::Time& or rclcpp::Duration& on a lifecycle / hardware-interface
+#   override, or the unused int on a POSIX signal handler. Naming them trades a
+#   warning for an unused-variable one and fights the override idiom.
+# cert-err33-c (cherry-picked, NOT cert-*): catches an unchecked std::signal(),
+#   which is how the authority-release handlers in g1_loco_authority_node and
+#   g1_bt_executor_main are installed -- a silent SIG_ERR there loses the
+#   Ctrl-C release the control-mode rules require. The rest of cert-* is
+#   aliases plus cert-dcl37-c/dcl51-cpp, which re-flag the ROS 2
+#   PACKAGE__FILE_HPP_ include guards that -bugprone-reserved-identifier above
+#   deliberately allows.
 
 # First-party headers only -- keeps vendored unitree_ros2 headers out.
 HeaderFilterRegex: '^.*/g1_[a-z_]+/(include|src)/.*$'
+
+# The workspace is clean under the checks above, so anything that fires is a regression rather
+# than a backlog item. This is what makes the per-package clang_tidy_check_* CTest targets a
+# gate: run-clang-tidy 14 has no --warnings-as-errors of its own and only propagates the exit
+# code. A finding that is genuinely correct-as-written gets a NOLINT naming the check and the
+# reason, not a relaxation here.
+WarningsAsErrors: '*'
 
 CheckOptions:
   - key:    readability-identifier-naming.NamespaceCase
@@ -136,3 +162,14 @@ CheckOptions:
     value:  lower_case
   - key:    readability-identifier-naming.ConstantMemberPrefix
     value:  ''
+  # A const member is still a member, so it keeps the trailing underscore its
+  # non-const siblings have. Without this it falls through to a rule that has
+  # no suffix expectation and every const member reads as misnamed.
+  - key:    readability-identifier-naming.ConstantMemberSuffix
+    value:  '_'
+  # Static data members (ClassMember) are their own category; unset, they land
+  # on the plain-variable rule instead of the member one.
+  - key:    readability-identifier-naming.ClassMemberCase
+    value:  lower_case
+  - key:    readability-identifier-naming.ClassMemberSuffix
+    value:  '_'

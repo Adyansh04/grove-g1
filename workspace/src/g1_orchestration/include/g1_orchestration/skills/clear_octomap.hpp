@@ -13,8 +13,8 @@ namespace g1_orchestration
 /// the arm plans against.
 ///
 /// Manipulating beside a surface leaves the octomap holding the arm and whatever it picked up,
-/// where they used to be. Those voxels do not decay, so later plans route around a ghost: one
-/// mission died at `carry` on <octomap> against the carried cube, a metre clear of the bench.
+/// where they used to be. Those voxels do not decay, so a later plan can route around -- or
+/// collide with -- a ghost of something that was cleared out of the world minutes ago.
 ///
 /// Succeeds even when the clear fails, for ClearCostmaps' reason: housekeeping, not a
 /// precondition.

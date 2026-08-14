@@ -31,6 +31,7 @@ target_include_directories(livox_custom_msg PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
+target_compile_features(livox_custom_msg PUBLIC cxx_std_20)
 ament_target_dependencies(livox_custom_msg PUBLIC rclcpp sensor_msgs livox_ros_driver2)
 
 # Restates the relay's own output in the format FAST-LIO wants. Separate executable so the
@@ -87,6 +88,23 @@ if(BUILD_TESTING)
   else()
     message(WARNING
       "clang-format and/or workspace .clang-format not found; skipping clang_format_check_g1_sensor_relay test")
+  endif()
+
+  # clang-tidy over this package's own translation units, gated by WarningsAsErrors in the
+  # workspace .clang-tidy. Minutes rather than the format check's milliseconds, so it carries a
+  # label: `--ctest-args -LE clang_tidy` skips it for a fast local loop. CI runs it.
+  find_program(RUN_CLANG_TIDY_EXECUTABLE NAMES run-clang-tidy-14 run-clang-tidy)
+  set(_clang_tidy_config "${CMAKE_CURRENT_SOURCE_DIR}/../../.clang-tidy")
+  if(RUN_CLANG_TIDY_EXECUTABLE AND EXISTS "${_clang_tidy_config}"
+      AND CMAKE_EXPORT_COMPILE_COMMANDS)
+    add_test(
+      NAME clang_tidy_check_g1_sensor_relay
+      COMMAND ${RUN_CLANG_TIDY_EXECUTABLE} -p ${CMAKE_BINARY_DIR} -quiet -j 4
+    )
+    set_tests_properties(clang_tidy_check_g1_sensor_relay PROPERTIES LABELS clang_tidy TIMEOUT 900)
+  else()
+    message(WARNING
+      "run-clang-tidy or .clang-tidy not found, or compile commands are off; skipping clang_tidy_check_g1_sensor_relay test")
   endif()
 endif()
 

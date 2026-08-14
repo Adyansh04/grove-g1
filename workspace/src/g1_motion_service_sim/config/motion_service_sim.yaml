@@ -46,7 +46,7 @@
     # SIM-ONLY, and it removes an artifact rather than adding one: without it the hold target is
     # the first /lowstate sample, by which point the arms have been falling freely since the
     # simulator started. The real robot's onboard controller holds the arms and none of this
-    # code runs there. Measurements in the local engineering notes.
+    # code runs there.
     arm_hold_rad: [-0.70,  0.15, 0.0, 1.50, 0.0, 0.0, 0.0,
                    -0.70, -0.15, 0.0, 1.50, 0.0, 0.0, 0.0]
 
@@ -54,7 +54,7 @@
     # last-action instead of what /arm_sdk is actually doing. This is a SIM-FIDELITY fix, not a
     # crutch -- the real onboard controller is not this policy and does not have its
     # out-of-distribution problem, so an unmasked sim fails in a way hardware will not. See the
-    # comment in lowstateCallback() and the local engineering notes.
+    # comment in lowstateCallback().
     # false reproduces the old behaviour, which is only useful for demonstrating the failure.
     mask_arm_observations: true
 

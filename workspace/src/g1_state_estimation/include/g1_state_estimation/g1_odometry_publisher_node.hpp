@@ -50,9 +50,9 @@ private:
     /// Reads and validates every parameter. False means configure must fail.
     bool readParameters();
 
-    void onSportModeState(const unitree_go::msg::SportModeState::SharedPtr msg);
-    void onLowState(const unitree_hg::msg::LowState::SharedPtr msg);
-    void onLidarOdometry(const nav_msgs::msg::Odometry::SharedPtr msg);
+    void onSportModeState(const unitree_go::msg::SportModeState::SharedPtr& msg);
+    void onLowState(const unitree_hg::msg::LowState::SharedPtr& msg);
+    void onLidarOdometry(const nav_msgs::msg::Odometry::SharedPtr& msg);
     /// Latches odom_from_lio_ so the first LiDAR sample lands at a canonical start pose.
     /// False until the IMU has supplied a gravity-aligned attitude to level it against.
     bool latchLidarOrigin(const Pose3d& lio_from_base);
@@ -80,16 +80,16 @@ private:
     std::shared_ptr<tf2_ros::TransformListener>                              tf_listener_;
     rclcpp::TimerBase::SharedPtr                                             timer_;
 
-    OdometrySource source_ = OdometrySource::Hardware;
+    OdometrySource source_ = OdometrySource::kHardware;
     /// Topic the configured source actually reads. Held as a string because only one
     /// of the two subscriptions exists, and the other is null.
     std::string source_topic_;
     std::string odom_frame_id_;
     std::string base_frame_id_;
     /// Body link hung under base_frame_id_, carrying the height and tilt the footprint drops.
-    /// Empty publishes a single odom -> base_frame_id_ edge with the full pose, which is what the
-    /// planar sandbox wants: its base has no z DoF and cannot tilt, so the split would be an
-    /// identity edge and an extra frame for nothing.
+    /// Empty publishes a single odom -> base_frame_id_ edge with the full pose; naming a link
+    /// here splits it into a ground-projected edge plus a second edge carrying the height and
+    /// tilt (see GroundSplit).
     std::string pelvis_frame_id_;
     /// Frame the LiDAR odometry reports the pose OF -- FAST-LIO's `body`, which is its IMU.
     /// Empty means that frame already is the body this node publishes. It is `mid360_imu` on
@@ -106,9 +106,8 @@ private:
     std::array<double, 36> twist_covariance_{};
 
     PlanarPose pose_;
-    /// Height and full orientation. The planar track has neither (its body has no z
-    /// DoF and cannot tilt); a walking G1 has both, so they are carried separately
-    /// rather than forced through PlanarPose.
+    /// Height and full orientation, carried separately from PlanarPose: a walking G1 has both a
+    /// height and a tilt that a flat 2D pose cannot express.
     double     pose_z_ = 0.0;
     Quaternion orientation_;
     /// Set once a usable orientation has arrived. Until then nothing is published:

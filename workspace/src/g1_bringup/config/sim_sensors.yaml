@@ -44,7 +44,7 @@ object_bodies:
   - yellow_box
   # Not manipulable, and tracked anyway: g1_base_approach ranges to something on /objects to
   # decide where to stand, and the place leg needs a landmark on the drop-off bench the way the
-  # pick leg has the cube itself. Static, so its pose never changes -- which is the point.
+  # pick leg has the cube itself. Static, so its pose never changes.
   - drop_pad
 
 # SIMULATION ONLY, and a stand-in rather than a model of anything. The Dex3 fingers carry no
@@ -55,7 +55,7 @@ object_bodies:
 # NONE OF THESE THREE NUMBERS TRANSFER TO HARDWARE. There the mechanism is friction between
 # real finger pads and a real object; these describe the weld, not the Dex3's grip, and a grasp
 # that holds here says nothing about whether the real hand holds it. They sit on the hardware
-# re-validation list with the gait deadband and the hand-mass scaling, in the simulation setup notes.
+# re-validation list with the gait deadband and the hand-mass scaling.
 #
 # Which welds exist is declared in the scene, not here: g1_navigation_scene.xml's `grasp_*`
 # equality constraints are found by name.

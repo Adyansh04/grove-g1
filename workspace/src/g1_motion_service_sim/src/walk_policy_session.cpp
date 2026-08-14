@@ -83,23 +83,24 @@ std::array<float, kActionDim> WalkPolicySession::run(const std::array<float, kOb
     // not write through this pointer for an input tensor.
     auto input_tensor = Ort::Value::CreateTensor<float>(
         memory_info_,
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
         const_cast<float*>(observation.data()),
         observation.size(),
         kInputShape.data(),
         kInputShape.size());
 
-    const char* input_names[]  = { input_name_.c_str() };
-    const char* output_names[] = { output_name_.c_str() };
+    const std::array<const char*, 1> input_names{ input_name_.c_str() };
+    const std::array<const char*, 1> output_names{ output_name_.c_str() };
 
     // In-place overload: fills output_buffer_ through the tensor bound at construction. The
     // returning overload allocates a std::vector<Ort::Value> per call, which this path runs
     // 50 times a second alongside a 500 Hz publish loop.
     session_->Run(
         Ort::RunOptions{ nullptr },
-        input_names,
+        input_names.data(),
         &input_tensor,
         1,
-        output_names,
+        output_names.data(),
         &output_tensor_,
         1);
 

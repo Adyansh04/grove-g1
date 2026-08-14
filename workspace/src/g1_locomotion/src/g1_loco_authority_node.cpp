@@ -143,8 +143,7 @@ public:
         }
 
         // The gait is not responsive the instant START returns. Measured across 8 fresh
-        // launches: 1.83-1.92 s for six of seven that moved. See
-        // Deliberately not the p90; see the distribution this was measured from.
+        // launches: 1.83-1.92 s for six of seven that moved, deliberately not the p90.
         std::this_thread::sleep_for(std::chrono::duration<double>(settle_after_start_s_));
 
         RCLCPP_INFO(
@@ -383,6 +382,9 @@ private:
 
 namespace
 {
+// Mutable by necessity: a signal handler cannot capture, so a flag at namespace scope is the
+// only way back into the process.
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 std::atomic<bool> g_stopping{ false };
 // The handler below only stores to this. That is async-signal-safe if and only if the store
 // is lock-free; if it were not, the "just a flag" argument would smuggle a lock into the
@@ -395,8 +397,7 @@ static_assert(
 ///
 /// rclcpp's own signal handler invalidates the context before spin() returns, which leaves
 /// nothing able to send the release goal -- the node would exit from ACTIVE with the bridge
-/// still in kHeld. Verified on this stack before this handler existed: SIGINT left
-/// ~/status reporting authority 2, fsm_id 500, with nobody supervising it.
+/// still in kHeld, holding authority with nobody supervising it.
 ///
 /// Note that on_shutdown() does NOT cover this. It only runs for an explicit
 /// TRANSITION_ACTIVE_SHUTDOWN, which neither launch_ros nor a signal ever issues.
@@ -415,46 +416,75 @@ int main(int argc, char** argv)
     init_options.shutdown_on_signal = false;
     rclcpp::init(argc, argv, init_options);
 
-    // Two threads, not the hardware default: on_activate blocks on an action result that this
-    // same node must service, so the result callback needs a thread the transition is not
-    // holding. Two is exactly enough and bounds the deviation. See the package README.
-    rclcpp::executors::MultiThreadedExecutor executor(rclcpp::ExecutorOptions(), 2);
-    auto node = std::make_shared<g1_locomotion::G1LocoAuthority>(rclcpp::NodeOptions());
-    executor.add_node(node->get_node_base_interface());
-
-    std::signal(SIGINT, onSignal);
-    std::signal(SIGTERM, onSignal);
-
-    std::thread watcher([&executor] {
-        while (!g_stopping.load())
-        {
-            std::this_thread::sleep_for(std::chrono::milliseconds(50));
-        }
-        executor.cancel();
-    });
-
-    executor.spin();
-    g_stopping.store(true);  // covers spin() returning for any other reason, so watcher joins
-    watcher.join();
-
-    // The context is still valid here, so the release can actually reach the bridge. It runs on
-    // its own thread because sendMode blocks on futures that only the executor can resolve.
-    std::atomic<bool> released{ false };
-    std::thread       releaser([&node, &released] {
-        node->releaseOnExit();
-        released.store(true);
-    });
-    // The loop stops pumping after 8 s; the join after it is deliberately unbounded. Detaching
-    // instead would let the releaser touch the node while shutdown() tears the context down.
-    // Without the executor pumping, the futures inside can only run out their own timeouts, so
-    // this terminates -- at worst 2 x acquire_timeout_s.
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(8);
-    while (!released.load() && std::chrono::steady_clock::now() < deadline)
+    // Nothing below may escape uncaught: unwinding past main() does not guarantee the release
+    // logic runs, which is this file's entire reason to exist past on_activate.
+    try
     {
-        executor.spin_some(std::chrono::milliseconds(50));
-    }
-    releaser.join();
+        // Two threads, not the hardware default: on_activate blocks on an action result that this
+        // same node must service, so the result callback needs a thread the transition is not
+        // holding. Two is exactly enough and bounds the deviation. See the package README.
+        rclcpp::executors::MultiThreadedExecutor executor(rclcpp::ExecutorOptions(), 2);
+        auto node = std::make_shared<g1_locomotion::G1LocoAuthority>(rclcpp::NodeOptions());
+        executor.add_node(node->get_node_base_interface());
 
-    rclcpp::shutdown();
-    return 0;
+        // Checked: a handler that failed to install means Ctrl-C kills the process with
+        // authority still held, which is the leak the whole watcher/releaser dance below exists
+        // to close.
+        const auto previous_int  = std::signal(SIGINT, onSignal);
+        const auto previous_term = std::signal(SIGTERM, onSignal);
+        if (previous_int == SIG_ERR || previous_term == SIG_ERR)
+        {
+            RCLCPP_ERROR(
+                node->get_logger(),
+                "could not install the SIGINT/SIGTERM handlers -- an interrupt will now exit "
+                "without releasing locomotion authority");
+        }
+
+        std::thread watcher([&executor] {
+            while (!g_stopping.load())
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            }
+            executor.cancel();
+        });
+
+        try
+        {
+            executor.spin();
+        }
+        catch (const std::exception& e)
+        {
+            // A callback that throws must not skip the release below.
+            RCLCPP_ERROR(node->get_logger(), "executor.spin() threw: %s", e.what());
+        }
+        g_stopping.store(true);  // covers spin() returning for any other reason, so watcher joins
+        watcher.join();
+
+        // The context is still valid here, so the release can actually reach the bridge. It runs on
+        // its own thread because sendMode blocks on futures that only the executor can resolve.
+        std::atomic<bool> released{ false };
+        std::thread       releaser([&node, &released] {
+            node->releaseOnExit();
+            released.store(true);
+        });
+        // The loop stops pumping after 8 s; the join after it is deliberately unbounded. Detaching
+        // instead would let the releaser touch the node while shutdown() tears the context down.
+        // Without the executor pumping, the futures inside can only run out their own timeouts, so
+        // this terminates -- at worst 2 x acquire_timeout_s.
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(8);
+        while (!released.load() && std::chrono::steady_clock::now() < deadline)
+        {
+            executor.spin_some(std::chrono::milliseconds(50));
+        }
+        releaser.join();
+
+        rclcpp::shutdown();
+        return 0;
+    }
+    catch (const std::exception& e)
+    {
+        RCLCPP_ERROR(rclcpp::get_logger("g1_loco_authority"), "fatal: %s", e.what());
+        rclcpp::shutdown();
+        return 1;
+    }
 }

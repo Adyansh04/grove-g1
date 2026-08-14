@@ -45,14 +45,14 @@ public:
         cloud_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(
             declare_parameter<std::string>("cloud_topic", "/livox/lidar"),
             rclcpp::SensorDataQoS(),
-            [this](sensor_msgs::msg::PointCloud2::ConstSharedPtr msg) { onCloud(*msg); });
+            [this](const sensor_msgs::msg::PointCloud2::ConstSharedPtr& msg) { onCloud(*msg); });
     }
 
 private:
     void onCloud(const sensor_msgs::msg::PointCloud2& cloud)
     {
-        livox_ros_driver2::msg::CustomMsg msg;
-        if (!toCustomMsg(cloud, msg))
+        auto msg = std::make_unique<livox_ros_driver2::msg::CustomMsg>();
+        if (!toCustomMsg(cloud, *msg))
         {
             RCLCPP_WARN_THROTTLE(
                 get_logger(),

@@ -8,7 +8,7 @@ namespace g1_orchestration
 {
 
 Pick::Pick(const std::string& name, const BT::NodeConfig& config, RosContext context)
-  : SkillActionNode(name, config, context, "/g1_manipulation_server/pick")
+  : SkillActionNode(name, config, std::move(context), "/g1_manipulation_server/pick")
 {}
 
 BT::PortsList Pick::providedPorts()

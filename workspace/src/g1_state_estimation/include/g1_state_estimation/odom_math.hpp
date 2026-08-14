@@ -19,9 +19,9 @@ namespace g1_state_estimation
 /// Where the base pose comes from. Anything else is a configuration error.
 enum class OdometrySource
 {
-    SimSportModeState,  ///< The converged track: pelvis pose from /sportmodestate. Sim-only.
-    FastLio,            ///< LiDAR-inertial odometry. The only source that runs on the robot.
-    Hardware,           ///< Not a source: the real G1 publishes no odometry of its own.
+    kSimSportModeState,  ///< The converged track: pelvis pose from /sportmodestate. Sim-only.
+    kFastLio,            ///< LiDAR-inertial odometry. The only source that runs on the robot.
+    kHardware,           ///< Not a source: the real G1 publishes no odometry of its own.
 };
 
 /**
@@ -98,7 +98,7 @@ Quaternion yawToQuaternion(double yaw);
  * Round-trip inverse of yawToQuaternion(); result is wrapped to (-pi, pi].
  *
  * The general form matters on the converged track. The short `2*atan2(z, w)` is exact only for
- * a pure +z rotation, which the planar sandbox's base always is and a walking G1 never is.
+ * a pure +z rotation, and a walking G1 is never that.
  */
 double quaternionToYaw(const Quaternion& q);
 

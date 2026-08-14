@@ -52,7 +52,7 @@ TEST(AuthorityDrift, TheArmComesFirstAndBothHandsFollow)
     // Order is not cosmetic. The arm is the part whose failure fails the whole acquire, and
     // the hands are best-effort behind it, so the arm has to be parts.front().
     const auto& parts = g1_orchestration::controlledParts();
-    ASSERT_EQ(parts.size(), 3u);
+    ASSERT_EQ(parts.size(), 3U);
     EXPECT_EQ(parts[0].component, "G1ArmSdkSystem");
     EXPECT_EQ(parts[1].component, "G1Dex3SystemLeft");
     EXPECT_EQ(parts[2].component, "G1Dex3SystemRight");

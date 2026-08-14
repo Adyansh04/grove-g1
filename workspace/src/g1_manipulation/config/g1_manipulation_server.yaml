@@ -18,8 +18,7 @@ g1_manipulation_server:
     # MEASURED, not chosen: standing at the facility workbench, the hand only clears the table's
     # octomap at pelvis z 0.22 and above (m9-checks/why_blocked.py sweeps it). The cube sits at
     # pelvis z 0.0375, so anything under 0.185 of approach height puts the pregrasp inside the
-    # map. At the old 0.12 it failed every time with GOAL_STATE_INVALID and the contact pair
-    # <octomap> <-> right_hand_thumb_2_link -- the thumb, by a couple of centimetres.
+    # map.
     #
     # This cannot be fixed by exempting the octomap instead. The pregrasp transit is deliberately
     # collision-checked so the planner cannot route the arm through the table on the way in; the
@@ -27,7 +26,7 @@ g1_manipulation_server:
     approach_height_m: 0.22
 
     # How far ABOVE the object's top face the grasp frame is aimed, using the height the
-    # object pose source reports. Not its centre, which is what this used to do.
+    # object pose source reports, not its centre.
     #
     # The roll points the hand's closing axis at the floor and the fingertips sit about 24 mm
     # beyond the grasp frame along it, so this offset is what decides where the fingers land.
@@ -48,8 +47,8 @@ g1_manipulation_server:
     lift_height_m: 0.20
 
     # Well under joint_limits.yaml's own 0.8 rad/s per-joint cap. Arm motion measurably
-    # disturbs a standing humanoid, and scaling the
-    # whole trajectory is preferred to clamping joints, which bends the path itself.
+    # disturbs a standing humanoid, and scaling the whole trajectory is preferred to clamping
+    # joints, which bends the path itself.
     velocity_scaling: 0.3
     planning_time_s: 10.0
     grasp_rpy: [-1.5707963, 0.0, 0.0]

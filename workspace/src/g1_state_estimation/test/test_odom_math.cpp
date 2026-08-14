@@ -29,23 +29,23 @@ constexpr double kTol = 1e-12;
 
 TEST(ParseOdometrySource, AcceptsEveryKnownName)
 {
-    OdometrySource source = OdometrySource::Hardware;
+    OdometrySource source = OdometrySource::kHardware;
     ASSERT_TRUE(parseOdometrySource("sim_sportmodestate", source));
-    EXPECT_EQ(source, OdometrySource::SimSportModeState);
+    EXPECT_EQ(source, OdometrySource::kSimSportModeState);
 
     ASSERT_TRUE(parseOdometrySource("fast_lio", source));
-    EXPECT_EQ(source, OdometrySource::FastLio);
+    EXPECT_EQ(source, OdometrySource::kFastLio);
 
     ASSERT_TRUE(parseOdometrySource("hardware", source));
-    EXPECT_EQ(source, OdometrySource::Hardware);
+    EXPECT_EQ(source, OdometrySource::kHardware);
 }
 
 TEST(ParseOdometrySource, RejectsAnythingElseAndLeavesTheOutputAlone)
 {
     // A typo must not silently become a working source, which would fabricate transforms.
-    // sim_ground_truth is in the list because it used to BE one: the planar sandbox it read
-    // is gone, and a stale config naming it has to fail rather than quietly pick something.
-    OdometrySource source = OdometrySource::SimSportModeState;
+    // sim_ground_truth is in the list because it named a source this node no longer has: a
+    // stale config still naming it has to fail rather than quietly pick something else.
+    OdometrySource source = OdometrySource::kSimSportModeState;
     for (const char* name : { "",
                               "sim",
                               "sim_ground_truth",
@@ -57,14 +57,15 @@ TEST(ParseOdometrySource, RejectsAnythingElseAndLeavesTheOutputAlone)
                               "sim_sportmode" })
     {
         EXPECT_FALSE(parseOdometrySource(name, source)) << "accepted " << name;
-        EXPECT_EQ(source, OdometrySource::SimSportModeState);
+        EXPECT_EQ(source, OdometrySource::kSimSportModeState);
     }
 }
 
 TEST(YawQuaternion, RoundTripsOverTheFullCircle)
 {
-    for (double yaw = -M_PI + 1e-6; yaw < M_PI; yaw += 0.1)
+    for (int i = 0; - M_PI + 1e-6 + i * 0.1 < M_PI; ++i)
     {
+        const double yaw = -M_PI + 1e-6 + i * 0.1;
         EXPECT_NEAR(quaternionToYaw(yawToQuaternion(yaw)), yaw, 1e-9) << "yaw " << yaw;
     }
 }
@@ -130,8 +131,9 @@ TEST(ToBodyTwist, PreservesSpeedAndYawRate)
 {
     const PlanarTwist world{ 0.3, -0.7, 0.9 };
     const double      world_speed = std::hypot(world.vx, world.vy);
-    for (double yaw = -3.0; yaw < 3.0; yaw += 0.37)
+    for (int i = 0; - 3.0 + i * 0.37 < 3.0; ++i)
     {
+        const double      yaw  = -3.0 + i * 0.37;
         const PlanarTwist body = toBodyTwist(world, yaw);
         EXPECT_NEAR(std::hypot(body.vx, body.vy), world_speed, 1e-12) << "yaw " << yaw;
         EXPECT_NEAR(body.omega, world.omega, kTol) << "yaw rate is frame independent";
@@ -188,9 +190,10 @@ TEST(QuaternionToYaw, IgnoresRollAndPitch)
     // The measured standing attitude on the converged track: a few degrees of
     // pitch under a real heading. The old 2*atan2(z, w) form was exact only at
     // zero tilt.
-    for (double yaw = -3.0; yaw < 3.0; yaw += 0.41)
+    for (int i = 0; - 3.0 + i * 0.41 < 3.0; ++i)
     {
-        const Quaternion q = rpyToQuaternion(0.0, 0.0794, yaw);
+        const double     yaw = -3.0 + i * 0.41;
+        const Quaternion q   = rpyToQuaternion(0.0, 0.0794, yaw);
         EXPECT_NEAR(quaternionToYaw(q), wrapAngle(yaw), 1e-9) << "yaw " << yaw;
     }
 }
@@ -222,13 +225,16 @@ TEST(SplitGroundProjection, FootprintIsGravityAlignedAndTheOffsetIsPurelyVertica
 
 TEST(SplitGroundProjection, RecomposesToTheOriginalPose)
 {
-    for (double roll = -0.4; roll <= 0.4; roll += 0.19)
+    for (int ir = 0; - 0.4 + ir * 0.19 <= 0.4; ++ir)
     {
-        for (double pitch = -0.4; pitch <= 0.4; pitch += 0.19)
+        const double roll = -0.4 + ir * 0.19;
+        for (int ip = 0; - 0.4 + ip * 0.19 <= 0.4; ++ip)
         {
-            for (double yaw = -3.0; yaw < 3.0; yaw += 0.91)
+            const double pitch = -0.4 + ip * 0.19;
+            for (int iy = 0; - 3.0 + iy * 0.91 < 3.0; ++iy)
             {
-                const Quaternion  q = rpyToQuaternion(roll, pitch, yaw);
+                const double      yaw = -3.0 + iy * 0.91;
+                const Quaternion  q   = rpyToQuaternion(roll, pitch, yaw);
                 const GroundSplit split =
                     splitGroundProjection(1.5, 2.5, 0.75, q, quaternionToYaw(q));
                 const Quaternion recomposed =
