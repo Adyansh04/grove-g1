@@ -13,13 +13,16 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ENV DEBIAN_FRONTEND=noninteractive
 
 # clang-format's output is not stable across major versions, so an unpinned one rejects
-# correctly formatted files. liburdfdom-tools is check_urdf, which g1_description's xacro test
-# shells out to.
+# correctly formatted files. The same pin covers clang-tidy, whose check set and fix-its also
+# move between releases -- and it has to match the dev container's 14, or the clang_tidy_check_*
+# tests disagree with what a developer reproduces locally. liburdfdom-tools is check_urdf, which
+# g1_description's xacro test shells out to.
 ARG LLVM_VERSION=14
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
         ccache \
         clang-format-${LLVM_VERSION} \
+        clang-tidy-${LLVM_VERSION} \
         cmake \
         curl \
         gcovr \
@@ -29,6 +32,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         python3-pip \
         python3-vcstool \
     && ln -sf /usr/bin/clang-format-${LLVM_VERSION} /usr/bin/clang-format \
+    && ln -sf /usr/bin/clang-tidy-${LLVM_VERSION} /usr/bin/clang-tidy \
     && rm -rf /var/lib/apt/lists/*
 
 # Pinned: ruff's rule set changes between minor versions.
