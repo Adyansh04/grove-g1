@@ -12,7 +12,7 @@ FrameStatus tryReadFrame(std::vector<std::uint8_t>& buffer, CloudFrame& out)
 
     if (buffer.size() < sizeof(SensorFrameHeader))
     {
-        return FrameStatus::Incomplete;
+        return FrameStatus::kIncomplete;
     }
 
     SensorFrameHeader header;
@@ -20,11 +20,11 @@ FrameStatus tryReadFrame(std::vector<std::uint8_t>& buffer, CloudFrame& out)
 
     if (header.magic != grove_g1::kSensorFrameMagic)
     {
-        return FrameStatus::BadMagic;
+        return FrameStatus::kBadMagic;
     }
     if (header.version != grove_g1::kSensorFrameVersion)
     {
-        return FrameStatus::BadVersion;
+        return FrameStatus::kBadVersion;
     }
     const bool is_cloud   = header.kind == static_cast<std::uint32_t>(SensorFrameKind::PointCloud);
     const bool is_depth   = header.kind == static_cast<std::uint32_t>(SensorFrameKind::Depth);
@@ -32,23 +32,24 @@ FrameStatus tryReadFrame(std::vector<std::uint8_t>& buffer, CloudFrame& out)
     const bool is_imu     = header.kind == static_cast<std::uint32_t>(SensorFrameKind::Imu);
     if (!is_cloud && !is_depth && !is_objects && !is_imu)
     {
-        return FrameStatus::BadKind;
+        return FrameStatus::kBadKind;
     }
     // Every length is checked before it is trusted for anything: a desynchronised stream
     // otherwise reserves whatever garbage it read.
     if (is_cloud)
     {
         if (header.point_count > kMaxPoints ||
-            header.payload_bytes != header.point_count * 3u * sizeof(float))
+            header.payload_bytes !=
+                static_cast<std::size_t>(header.point_count) * 3U * sizeof(float))
         {
-            return FrameStatus::BadLength;
+            return FrameStatus::kBadLength;
         }
     }
     else if (is_imu)
     {
         if (header.payload_bytes != sizeof(grove_g1::ImuSampleRecord))
         {
-            return FrameStatus::BadLength;
+            return FrameStatus::kBadLength;
         }
     }
     else if (is_objects)
@@ -58,7 +59,7 @@ FrameStatus tryReadFrame(std::vector<std::uint8_t>& buffer, CloudFrame& out)
         if (header.payload_bytes % sizeof(grove_g1::ObjectPoseRecord) != 0 ||
             header.payload_bytes / sizeof(grove_g1::ObjectPoseRecord) > kMaxObjects)
         {
-            return FrameStatus::BadLength;
+            return FrameStatus::kBadLength;
         }
     }
     else
@@ -68,30 +69,30 @@ FrameStatus tryReadFrame(std::vector<std::uint8_t>& buffer, CloudFrame& out)
         const std::uint64_t expect =
             pixels * sizeof(float) + static_cast<std::uint64_t>(header.rgb_bytes);
         if (pixels == 0 || pixels > kMaxPoints || header.payload_bytes != expect ||
-            (header.rgb_bytes != 0 && header.rgb_bytes != pixels * 3u))
+            (header.rgb_bytes != 0 && header.rgb_bytes != pixels * 3U))
         {
-            return FrameStatus::BadLength;
+            return FrameStatus::kBadLength;
         }
     }
 
     const std::size_t total = sizeof(header) + header.payload_bytes;
     if (buffer.size() < total)
     {
-        return FrameStatus::Incomplete;
+        return FrameStatus::kIncomplete;
     }
 
     out.sim_time_s = header.sim_time_s;
-    std::memcpy(out.sensor_pos, header.sensor_pos, sizeof(out.sensor_pos));
-    std::memcpy(out.sensor_quat, header.sensor_quat, sizeof(out.sensor_quat));
+    std::memcpy(out.sensor_pos.data(), header.sensor_pos, sizeof(out.sensor_pos));
+    std::memcpy(out.sensor_quat.data(), header.sensor_quat, sizeof(out.sensor_quat));
     out.width    = header.width;
     out.height   = header.height;
     out.fovy_deg = header.fovy_deg;
     if (is_cloud)
     {
-        out.kind = FrameKind::PointCloud;
+        out.kind = FrameKind::kPointCloud;
         out.depth.clear();
         out.objects.clear();
-        out.points.resize(static_cast<std::size_t>(header.point_count) * 3u);
+        out.points.resize(static_cast<std::size_t>(header.point_count) * 3U);
         if (header.payload_bytes > 0)
         {
             std::memcpy(out.points.data(), buffer.data() + sizeof(header), header.payload_bytes);
@@ -99,7 +100,7 @@ FrameStatus tryReadFrame(std::vector<std::uint8_t>& buffer, CloudFrame& out)
     }
     else if (is_imu)
     {
-        out.kind = FrameKind::Imu;
+        out.kind = FrameKind::kImu;
         out.depth.clear();
         out.rgb.clear();
         out.points.clear();
@@ -108,7 +109,7 @@ FrameStatus tryReadFrame(std::vector<std::uint8_t>& buffer, CloudFrame& out)
     }
     else if (is_objects)
     {
-        out.kind = FrameKind::ObjectPoses;
+        out.kind = FrameKind::kObjectPoses;
         out.depth.clear();
         out.points.clear();
         out.objects.resize(header.payload_bytes / sizeof(grove_g1::ObjectPoseRecord));
@@ -125,7 +126,7 @@ FrameStatus tryReadFrame(std::vector<std::uint8_t>& buffer, CloudFrame& out)
     }
     else
     {
-        out.kind = FrameKind::Depth;
+        out.kind = FrameKind::kDepth;
         out.points.clear();
         out.objects.clear();
         const std::size_t px          = static_cast<std::size_t>(header.width) * header.height;
@@ -143,24 +144,24 @@ FrameStatus tryReadFrame(std::vector<std::uint8_t>& buffer, CloudFrame& out)
     }
 
     buffer.erase(buffer.begin(), buffer.begin() + static_cast<std::ptrdiff_t>(total));
-    return FrameStatus::Ok;
+    return FrameStatus::kOk;
 }
 
 const char* toString(FrameStatus status)
 {
     switch (status)
     {
-        case FrameStatus::Ok:
+        case FrameStatus::kOk:
             return "ok";
-        case FrameStatus::Incomplete:
+        case FrameStatus::kIncomplete:
             return "incomplete";
-        case FrameStatus::BadMagic:
+        case FrameStatus::kBadMagic:
             return "bad magic (stream desynchronised or not ours)";
-        case FrameStatus::BadVersion:
+        case FrameStatus::kBadVersion:
             return "version mismatch between simulator and relay";
-        case FrameStatus::BadKind:
+        case FrameStatus::kBadKind:
             return "unknown frame kind";
-        case FrameStatus::BadLength:
+        case FrameStatus::kBadLength:
             return "payload length inconsistent with point count";
     }
     return "unknown";

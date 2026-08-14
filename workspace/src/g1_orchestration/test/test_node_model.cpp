@@ -41,6 +41,8 @@ TEST(NodeModel, TheCheckedInPaletteMatchesTheRegisteredNodes)
 
 int main(int argc, char** argv)
 {
+    // Before any node or thread exists, so the thread-safety this warns about does not apply.
+    // NOLINTNEXTLINE(concurrency-mt-unsafe)
     setenv("ROS_DOMAIN_ID", "79", 1);
     ::testing::InitGoogleMock(&argc, argv);
     rclcpp::init(argc, argv);

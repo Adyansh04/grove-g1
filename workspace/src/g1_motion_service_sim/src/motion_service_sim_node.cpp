@@ -138,7 +138,7 @@ MotionServiceSim::MotionServiceSim(const rclcpp::NodeOptions& options)
     {
         RCLCPP_ERROR(
             get_logger(),
-            "arm_hold_rad needs %zu values (left arm then right, motors 15 to 28) but got %zu -- "
+            "arm_hold_rad needs %d values (left arm then right, motors 15 to 28) but got %zu -- "
             "ignoring it and holding whatever the arms fell into at startup",
             kNumArmMotors,
             arm_hold_rad_.size());

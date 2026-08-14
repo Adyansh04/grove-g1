@@ -37,7 +37,7 @@ PolicyConfig makeConfig()
 
 std::vector<std::string> ddsOrderAsVector()
 {
-    return std::vector<std::string>(kDdsMotorOrder.begin(), kDdsMotorOrder.end());
+    return { kDdsMotorOrder.begin(), kDdsMotorOrder.end() };
 }
 
 // --- joint order -----------------------------------------------------------------------------

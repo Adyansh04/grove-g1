@@ -57,9 +57,9 @@ private:
     /// defeating the whole point of re-issuing.
     bool readParameters();
 
-    rclcpp_action::GoalResponse
-    handleGoal(const rclcpp_action::GoalUUID& uuid, std::shared_ptr<const SetLocoMode::Goal> goal);
-    rclcpp_action::CancelResponse
+    rclcpp_action::GoalResponse handleGoal(
+        const rclcpp_action::GoalUUID& uuid, const std::shared_ptr<const SetLocoMode::Goal>& goal);
+    static rclcpp_action::CancelResponse
          handleCancel(const std::shared_ptr<GoalHandleSetLocoMode>& goal_handle);
     void handleAccepted(const std::shared_ptr<GoalHandleSetLocoMode>& goal_handle);
     void onSetLocoModeResult(

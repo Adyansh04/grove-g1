@@ -149,7 +149,7 @@ TEST(TreeLoads, RejectsALeafNobodyRegistered)
 
     EXPECT_THROW(
         {
-            factory.createTreeFromText(
+            (void)factory.createTreeFromText(
                 R"(<root BTCPP_format="4"><BehaviorTree ID="M">
                      <Sequence><NoSuchSkill/></Sequence>
                    </BehaviorTree></root>)");
@@ -166,7 +166,9 @@ TEST(Ports, AStationParsesAsThreeNumbers)
 
     // Rejected rather than silently zero-filled: a goal short one number would drive the base
     // somewhere nobody asked for.
-    EXPECT_THROW(BT::convertFromString<g1_orchestration::Station>("4.5;-4.5"), BT::RuntimeError);
+    EXPECT_THROW(
+        (void)BT::convertFromString<g1_orchestration::Station>("4.5;-4.5"),
+        BT::RuntimeError);
 }
 
 TEST(Ports, APointParsesAsThreeNumbers)
@@ -176,11 +178,13 @@ TEST(Ports, APointParsesAsThreeNumbers)
     EXPECT_DOUBLE_EQ(point.y, 4.0);
     EXPECT_DOUBLE_EQ(point.z, 0.78);
 
-    EXPECT_THROW(BT::convertFromString<g1_orchestration::Point3>("7.0;4.0"), BT::RuntimeError);
+    EXPECT_THROW((void)BT::convertFromString<g1_orchestration::Point3>("7.0;4.0"), BT::RuntimeError);
 }
 
 int main(int argc, char** argv)
 {
+    // Before any node or thread exists, so the thread-safety this warns about does not apply.
+    // NOLINTNEXTLINE(concurrency-mt-unsafe)
     setenv("ROS_DOMAIN_ID", "79", 1);
     ::testing::InitGoogleMock(&argc, argv);
     rclcpp::init(argc, argv);

@@ -87,7 +87,7 @@ private:
 
     /// Latest pose for `object_id`, or nullopt if it is unknown or older than the timeout.
     std::optional<vision_msgs::msg::Detection3D> lookUpObject(const std::string& object_id);
-    void onObjects(const vision_msgs::msg::Detection3DArray::SharedPtr msg);
+    void onObjects(const vision_msgs::msg::Detection3DArray::ConstSharedPtr& msg);
 
     /// Into the planning frame, or nullopt with the reason logged. Everything a goal carries
     /// goes through here: /objects is in odom, the planner works in pelvis, and the two differ

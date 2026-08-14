@@ -19,9 +19,9 @@ namespace g1_state_estimation
 /// Where the base pose comes from. Anything else is a configuration error.
 enum class OdometrySource
 {
-    SimSportModeState,  ///< The converged track: pelvis pose from /sportmodestate. Sim-only.
-    FastLio,            ///< LiDAR-inertial odometry. The only source that runs on the robot.
-    Hardware,           ///< Not a source: the real G1 publishes no odometry of its own.
+    kSimSportModeState,  ///< The converged track: pelvis pose from /sportmodestate. Sim-only.
+    kFastLio,            ///< LiDAR-inertial odometry. The only source that runs on the robot.
+    kHardware,           ///< Not a source: the real G1 publishes no odometry of its own.
 };
 
 /**

@@ -91,8 +91,9 @@ protected:
         {
             for (const double direction : { -1.0, 1.0 })
             {
-                for (double delta = kMarginStepRad; delta <= cap + 1e-9; delta += kMarginStepRad)
+                for (int step = 1; step * kMarginStepRad <= cap + 1e-9; ++step)
                 {
+                    const double        delta = step * kMarginStepRad;
                     std::vector<double> probe = base;
                     probe[i] += direction * delta;
                     moveit::core::RobotState moved(state);
@@ -242,14 +243,14 @@ TEST_F(RobotModelTest, TheNamedPosesAgreeAcrossTheThreeGroups)
     std::map<std::string, int>                           group_count;
     for (const auto& state : states)
     {
-        if (arm_groups.count(state.group_) == 0)
+        if (!arm_groups.contains(state.group_))
         {
             continue;  // the hand postures are two groups, not three; see below
         }
         group_count[state.name_]++;
         for (const auto& [joint, values] : state.joint_values_)
         {
-            ASSERT_EQ(values.size(), 1u) << joint << " in " << state.name_;
+            ASSERT_EQ(values.size(), 1U) << joint << " in " << state.name_;
             auto [it, fresh] = by_pose[state.name_].emplace(joint, values.front());
             if (!fresh)
             {
@@ -263,7 +264,7 @@ TEST_F(RobotModelTest, TheNamedPosesAgreeAcrossTheThreeGroups)
     {
         EXPECT_EQ(count, 3) << "pose '" << pose << "' should exist for left_arm, right_arm and "
                             << "both_arms";
-        EXPECT_EQ(by_pose[pose].size(), 14u) << "pose '" << pose << "' should name all 14 joints";
+        EXPECT_EQ(by_pose[pose].size(), 14U) << "pose '" << pose << "' should name all 14 joints";
     }
 }
 
@@ -302,7 +303,7 @@ TEST_F(RobotModelTest, EachHandIsItsArmsEndEffector)
     {
         by_group.emplace(effector.component_group_, effector);
     }
-    ASSERT_EQ(by_group.size(), 2u) << "expected one end effector per hand";
+    ASSERT_EQ(by_group.size(), 2U) << "expected one end effector per hand";
 
     for (const auto* side : { "left", "right" })
     {
@@ -323,7 +324,7 @@ TEST_F(RobotModelTest, EachHandHasAnOpenAndAClosedPosture)
         if (state.group_ == "left_hand" || state.group_ == "right_hand")
         {
             poses_by_group[state.group_].insert(state.name_);
-            EXPECT_EQ(state.joint_values_.size(), 7u)
+            EXPECT_EQ(state.joint_values_.size(), 7U)
                 << state.group_ << " posture '" << state.name_ << "' does not cover the hand";
         }
     }
@@ -363,7 +364,7 @@ TEST_F(RobotModelTest, TheCollisionMatrixExists)
     // Deliberately a conservative matrix: adjacent pairs plus what touches at rest, and nothing
     // found by random sampling. Enough that the robot is not in collision before it moves, which
     // is what RRTConnect needs to seed. The bound is a floor, not a target.
-    EXPECT_GT(srdf_->getDisabledCollisionPairs().size(), 40u)
+    EXPECT_GT(srdf_->getDisabledCollisionPairs().size(), 40U)
         << "g1.srdf carries no generated collision matrix; see the package README";
 }
 
@@ -398,7 +399,7 @@ TEST_F(RobotModelTest, AdjacentLinksAreDisabled)
         }
         // Links joined by a joint touch by construction. This is the category a careless hand
         // edit drops, and dropping it makes every plan start in collision.
-        EXPECT_TRUE(disabled.count({ parent, child }) > 0)
+        EXPECT_TRUE(disabled.contains({ parent, child }))
             << "adjacent pair " << parent << " / " << child << " is not disabled";
     }
 }

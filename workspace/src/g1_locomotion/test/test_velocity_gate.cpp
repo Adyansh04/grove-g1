@@ -232,19 +232,19 @@ TEST(VelocityGate, CountsNonZeroCommandsInEveryStateThatIsNotHeld)
     VelocityGate released(VelocityGate::Config{ kCmdVelTimeoutS, kFailureStreakLimit });
     ASSERT_EQ(released.authority(), LocoAuthority::kReleased);
     released.setCommand(0.6, 0.0, 0.0, now);
-    EXPECT_EQ(released.ignoredCommandCount(), 1u);
+    EXPECT_EQ(released.ignoredCommandCount(), 1U);
 
     VelocityGate acquiring(VelocityGate::Config{ kCmdVelTimeoutS, kFailureStreakLimit });
     acquiring.beginAcquire();
     ASSERT_EQ(acquiring.authority(), LocoAuthority::kAcquiring);
     acquiring.setCommand(0.6, 0.0, 0.0, now);
-    EXPECT_EQ(acquiring.ignoredCommandCount(), 1u) << "mid-acquire the command is still dropped";
+    EXPECT_EQ(acquiring.ignoredCommandCount(), 1U) << "mid-acquire the command is still dropped";
 
     auto releasing = makeHeldGate();
     releasing.beginRelease();
     ASSERT_EQ(releasing.authority(), LocoAuthority::kReleasing);
     releasing.setCommand(0.6, 0.0, 0.0, now);
-    EXPECT_EQ(releasing.ignoredCommandCount(), 1u);
+    EXPECT_EQ(releasing.ignoredCommandCount(), 1U);
 }
 
 TEST(VelocityGate, NeverCountsWhileHeld)
@@ -255,7 +255,7 @@ TEST(VelocityGate, NeverCountsWhileHeld)
     {
         gate.setCommand(0.6, 0.1, 0.3, now);
     }
-    EXPECT_EQ(gate.ignoredCommandCount(), 0u)
+    EXPECT_EQ(gate.ignoredCommandCount(), 0U)
         << "a held gate acts on commands, it does not drop them";
 }
 
@@ -269,11 +269,11 @@ TEST(VelocityGate, NeverCountsAZeroCommand)
     {
         gate.setCommand(0.0, 0.0, 0.0, now);
     }
-    EXPECT_EQ(gate.ignoredCommandCount(), 0u);
+    EXPECT_EQ(gate.ignoredCommandCount(), 0U);
 
     // One non-zero axis is enough to count.
     gate.setCommand(0.0, 0.0, 0.2, now);
-    EXPECT_EQ(gate.ignoredCommandCount(), 1u);
+    EXPECT_EQ(gate.ignoredCommandCount(), 1U);
 }
 
 TEST(VelocityGate, IsMonotonicAcrossAnAcquire)
@@ -284,18 +284,18 @@ TEST(VelocityGate, IsMonotonicAcrossAnAcquire)
     const auto   now = std::chrono::steady_clock::now();
     gate.setCommand(0.6, 0.0, 0.0, now);
     gate.setCommand(0.6, 0.0, 0.0, now);
-    ASSERT_EQ(gate.ignoredCommandCount(), 2u);
+    ASSERT_EQ(gate.ignoredCommandCount(), 2U);
 
     gate.beginAcquire();
     gate.onAcquireResult(/*success=*/true);
-    EXPECT_EQ(gate.ignoredCommandCount(), 2u) << "acquiring must not reset the tally";
+    EXPECT_EQ(gate.ignoredCommandCount(), 2U) << "acquiring must not reset the tally";
 
     gate.setCommand(0.6, 0.0, 0.0, now);
-    EXPECT_EQ(gate.ignoredCommandCount(), 2u) << "and held commands do not add to it";
+    EXPECT_EQ(gate.ignoredCommandCount(), 2U) << "and held commands do not add to it";
 
     gate.forceRelease();
     gate.setCommand(0.6, 0.0, 0.0, now);
-    EXPECT_EQ(gate.ignoredCommandCount(), 3u) << "but dropping resumes after a release";
+    EXPECT_EQ(gate.ignoredCommandCount(), 3U) << "but dropping resumes after a release";
 }
 
 }  // namespace

@@ -8,7 +8,7 @@ namespace g1_orchestration
 {
 
 Retreat::Retreat(const std::string& name, const BT::NodeConfig& config, RosContext context)
-  : SkillActionNode(name, config, context, "/g1_base_approach/retreat")
+  : SkillActionNode(name, config, std::move(context), "/g1_base_approach/retreat")
 {}
 
 BT::PortsList Retreat::providedPorts()

@@ -49,7 +49,7 @@ rclcpp::QoS cmdVelWriterQos()
 }
 
 /**
- * @brief Drives a G1LocoBridge in-process against a fake /api/sport/* responder: no sim, no
+ * @brief Drives a G1LocoBridge in-process against a fake /api/sport/... responder: no sim, no
  * launch_testing, just DDS loopback on an isolated domain.
  * The fake responder answers SET_FSM_ID immediately and never answers SET_VELOCITY.
  */
@@ -59,6 +59,8 @@ protected:
     void SetUp() override
     {
         // Isolated domain to avoid collision with a live sim or concurrent tests.
+        // Before any node or thread exists, so the thread-safety this warns about does not apply.
+        // NOLINTNEXTLINE(concurrency-mt-unsafe)
         setenv("ROS_DOMAIN_ID", "67", 1);
         rclcpp::init(0, nullptr);
 
@@ -181,6 +183,8 @@ protected:
 
     std::optional<unitree_api::msg::Request> lastRequest(std::int64_t api_id) const
     {
+        // std::ranges::reverse_view breaks clang-tidy's Clang-14 parser against libstdc++ here.
+        // NOLINTNEXTLINE(modernize-loop-convert)
         for (auto it = requests_.rbegin(); it != requests_.rend(); ++it)
         {
             if (it->header.identity.api_id == api_id)

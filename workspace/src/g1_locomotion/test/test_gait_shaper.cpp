@@ -190,10 +190,12 @@ TEST(GaitShaper, NeverAmplifiesAnyAxis)
     // Turning a small command into a large motion is exactly what this stack's control-mode
     // rules exist to prevent, so it is swept rather than spot-checked.
     const auto shaper = makeShaper();
-    for (double vx = -2.0; vx <= 2.0; vx += 0.05)
+    for (int ix = 0; - 2.0 + ix * 0.05 <= 2.0; ++ix)
     {
-        for (double vyaw = -2.0; vyaw <= 2.0; vyaw += 0.05)
+        const double vx = -2.0 + ix * 0.05;
+        for (int iyaw = 0; - 2.0 + iyaw * 0.05 <= 2.0; ++iyaw)
         {
+            const double vyaw = -2.0 + iyaw * 0.05;
             for (double vy : { -0.5, 0.0, 0.5 })
             {
                 const GaitShaper::Command in{ vx, vy, vyaw };
@@ -211,9 +213,10 @@ TEST(GaitShaper, NeverFlipsASign)
     // Weaker than the magnitude invariant but independent of it: reversing a command would
     // also be "not amplifying", and would be just as wrong.
     const auto shaper = makeShaper();
-    for (double vyaw = -2.0; vyaw <= 2.0; vyaw += 0.05)
+    for (int i = 0; - 2.0 + i * 0.05 <= 2.0; ++i)
     {
-        const auto out = shaper.shape({ 0.0, 0.0, vyaw });
+        const double vyaw = -2.0 + i * 0.05;
+        const auto   out  = shaper.shape({ 0.0, 0.0, vyaw });
         if (out.vyaw != 0.0)
         {
             EXPECT_GT(out.vyaw * vyaw, 0.0) << "vyaw " << vyaw;

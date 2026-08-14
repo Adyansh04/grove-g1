@@ -29,7 +29,7 @@ geometry_msgs::msg::PoseStamped toPose(const Station& station, const std::string
 
 NavigateToPose::NavigateToPose(
     const std::string& name, const BT::NodeConfig& config, RosContext context)
-  : RosActionNode(name, config, context, "/navigate_to_pose")
+  : RosActionNode(name, config, std::move(context), "/navigate_to_pose")
 {}
 
 BT::PortsList NavigateToPose::providedPorts()

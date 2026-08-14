@@ -50,9 +50,9 @@ private:
     /// Reads and validates every parameter. False means configure must fail.
     bool readParameters();
 
-    void onSportModeState(const unitree_go::msg::SportModeState::SharedPtr msg);
-    void onLowState(const unitree_hg::msg::LowState::SharedPtr msg);
-    void onLidarOdometry(const nav_msgs::msg::Odometry::SharedPtr msg);
+    void onSportModeState(const unitree_go::msg::SportModeState::SharedPtr& msg);
+    void onLowState(const unitree_hg::msg::LowState::SharedPtr& msg);
+    void onLidarOdometry(const nav_msgs::msg::Odometry::SharedPtr& msg);
     /// Latches odom_from_lio_ so the first LiDAR sample lands at a canonical start pose.
     /// False until the IMU has supplied a gravity-aligned attitude to level it against.
     bool latchLidarOrigin(const Pose3d& lio_from_base);
@@ -80,7 +80,7 @@ private:
     std::shared_ptr<tf2_ros::TransformListener>                              tf_listener_;
     rclcpp::TimerBase::SharedPtr                                             timer_;
 
-    OdometrySource source_ = OdometrySource::Hardware;
+    OdometrySource source_ = OdometrySource::kHardware;
     /// Topic the configured source actually reads. Held as a string because only one
     /// of the two subscriptions exists, and the other is null.
     std::string source_topic_;

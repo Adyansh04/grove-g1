@@ -101,7 +101,7 @@ public:
         lateral_lead_m_ = declare_parameter<double>("lateral_lead_m", 0.055);
         // Kept under forward_tolerance_m; see the reverse case for why that ordering matters.
         reverse_lead_m_   = declare_parameter<double>("reverse_lead_m", 0.045);
-        max_aim_attempts_ = declare_parameter<int>("max_aim_attempts", 8);
+        max_aim_attempts_ = static_cast<int>(declare_parameter<int>("max_aim_attempts", 8));
         // The gait keeps stepping after the command stops. Measuring before it settles reports
         // the command plus whatever of the stride was still in flight.
         settle_s_    = declare_parameter<double>("settle_s", 1.5);
@@ -137,7 +137,7 @@ public:
         // How long a missing object pose or base transform is tolerated before the goal fails.
         lookup_grace_s_ = declare_parameter<double>("lookup_grace_s", 3.0);
 
-        max_pulses_        = declare_parameter<int>("max_pulses", 150);
+        max_pulses_        = static_cast<int>(declare_parameter<int>("max_pulses", 150));
         default_timeout_s_ = declare_parameter<double>("default_timeout_s", 900.0);
 
         if (!limitsAreUsable(limits_))
@@ -159,26 +159,26 @@ public:
         approach_server_ = rclcpp_action::create_server<ApproachObject>(
             this,
             "~/approach_object",
-            [](const rclcpp_action::GoalUUID&, ApproachObject::Goal::ConstSharedPtr) {
+            [](const rclcpp_action::GoalUUID&, const ApproachObject::Goal::ConstSharedPtr&) {
                 return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
             },
-            [](const std::shared_ptr<GoalHandleApproach>) {
+            [](const std::shared_ptr<GoalHandleApproach>&) {
                 return rclcpp_action::CancelResponse::ACCEPT;
             },
-            [this](const std::shared_ptr<GoalHandleApproach> handle) {
+            [this](const std::shared_ptr<GoalHandleApproach>& handle) {
                 std::thread{ [this, handle] { runApproach(handle); } }.detach();
             });
 
         retreat_server_ = rclcpp_action::create_server<Retreat>(
             this,
             "~/retreat",
-            [](const rclcpp_action::GoalUUID&, Retreat::Goal::ConstSharedPtr) {
+            [](const rclcpp_action::GoalUUID&, const Retreat::Goal::ConstSharedPtr&) {
                 return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
             },
-            [](const std::shared_ptr<GoalHandleRetreat>) {
+            [](const std::shared_ptr<GoalHandleRetreat>&) {
                 return rclcpp_action::CancelResponse::ACCEPT;
             },
-            [this](const std::shared_ptr<GoalHandleRetreat> handle) {
+            [this](const std::shared_ptr<GoalHandleRetreat>& handle) {
                 std::thread{ [this, handle] { runRetreat(handle); } }.detach();
             });
 
@@ -835,12 +835,22 @@ private:
 int main(int argc, char** argv)
 {
     rclcpp::init(argc, argv);
-    // Multi-threaded: a goal executes on its own thread and blocks on gait pulses for seconds
-    // at a time, while /objects, TF and cancellation all have to keep flowing underneath it.
-    rclcpp::executors::MultiThreadedExecutor executor;
-    auto node = std::make_shared<g1_locomotion::BaseApproachNode>();
-    executor.add_node(node);
-    executor.spin();
-    rclcpp::shutdown();
-    return 0;
+    try
+    {
+        // Multi-threaded: a goal executes on its own thread and blocks on gait pulses for
+        // seconds at a time, while /objects, TF and cancellation all have to keep flowing
+        // underneath it.
+        rclcpp::executors::MultiThreadedExecutor executor;
+        auto node = std::make_shared<g1_locomotion::BaseApproachNode>();
+        executor.add_node(node);
+        executor.spin();
+        rclcpp::shutdown();
+        return 0;
+    }
+    catch (const std::exception& e)
+    {
+        RCLCPP_ERROR(rclcpp::get_logger("g1_base_approach"), "fatal: %s", e.what());
+        rclcpp::shutdown();
+        return 1;
+    }
 }

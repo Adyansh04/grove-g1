@@ -9,7 +9,7 @@ namespace g1_orchestration
 
 ApproachObject::ApproachObject(
     const std::string& name, const BT::NodeConfig& config, RosContext context)
-  : SkillActionNode(name, config, context, "/g1_base_approach/approach_object")
+  : SkillActionNode(name, config, std::move(context), "/g1_base_approach/approach_object")
 {}
 
 BT::PortsList ApproachObject::providedPorts()

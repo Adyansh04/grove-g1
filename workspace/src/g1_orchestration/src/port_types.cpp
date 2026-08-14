@@ -7,12 +7,12 @@ namespace BT
 {
 
 template <>
-g1_orchestration::Station convertFromString(StringView text)
+g1_orchestration::Station convertFromString(StringView str)
 {
-    const std::vector<StringView> parts = splitString(text, ';');
+    const std::vector<StringView> parts = splitString(str, ';');
     if (parts.size() != 3)
     {
-        throw RuntimeError("a station is 'x;y;yaw', got: ", std::string(text));
+        throw RuntimeError("a station is 'x;y;yaw', got: ", std::string(str));
     }
     g1_orchestration::Station station;
     station.x   = convertFromString<double>(parts[0]);
@@ -22,12 +22,12 @@ g1_orchestration::Station convertFromString(StringView text)
 }
 
 template <>
-g1_orchestration::Point3 convertFromString(StringView text)
+g1_orchestration::Point3 convertFromString(StringView str)
 {
-    const std::vector<StringView> parts = splitString(text, ';');
+    const std::vector<StringView> parts = splitString(str, ';');
     if (parts.size() != 3)
     {
-        throw RuntimeError("a point is 'x;y;z', got: ", std::string(text));
+        throw RuntimeError("a point is 'x;y;z', got: ", std::string(str));
     }
     g1_orchestration::Point3 point;
     point.x = convertFromString<double>(parts[0]);

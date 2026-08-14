@@ -68,7 +68,7 @@ TEST(LocoRequestCorrelator, TwoOverlappingRequestsBothCompleteCorrectly)
         correlator.send(kApiIdSetFsmId, "{\"data\":4}", now, recordInto(first));
     const auto request_two = correlator.send(
         kApiIdSetVelocity,
-        "{\"velocity\":[0,0,0],\"duration\":1.0}",
+        R"({"velocity":[0,0,0],"duration":1.0})",
         now,
         recordInto(second));
     ASSERT_TRUE(request_one.has_value());

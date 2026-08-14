@@ -82,8 +82,8 @@ G1Dex3System::on_init(const hardware_interface::HardwareInfo& info)
         // disagrees on thumb_1 (0.724 vs 0.611) and its right hand says 0.742, which looks
         // like a transposed digit. The conservative pair is the right one to trust.
         const auto& limits = info.joints[i].parameters;
-        lower_limit_[i]    = limits.count("min") ? std::stod(limits.at("min")) : -3.15;
-        upper_limit_[i]    = limits.count("max") ? std::stod(limits.at("max")) : 3.15;
+        lower_limit_[i]    = limits.contains("min") ? std::stod(limits.at("min")) : -3.15;
+        upper_limit_[i]    = limits.contains("max") ? std::stod(limits.at("max")) : 3.15;
     }
 
     kp_                   = paramOr(info, "kp", 1.5);

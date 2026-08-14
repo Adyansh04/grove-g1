@@ -12,6 +12,10 @@
 namespace grove_g1
 {
 
+// The enum spellings and C arrays below are the wire layout itself, fixed by the sizeof
+// assertions and shared with the simulator, so they are not ours to restyle.
+// NOLINTBEGIN(readability-identifier-naming,cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
+
 // Bumped whenever the layout below changes. The relay refuses a frame it does not know
 // rather than reinterpreting bytes. v2 added the depth-image fields; v3 appends colour
 // to the depth payload; v4 adds the ObjectPoses kind; v5 gives its records a size; v6 adds
@@ -111,6 +115,8 @@ struct SensorFrameHeader
 };
 
 static_assert(sizeof(SensorFrameHeader) == 104, "wire layout changed; bump kSensorFrameVersion");
+
+// NOLINTEND(readability-identifier-naming,cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
 
 }  // namespace grove_g1
 

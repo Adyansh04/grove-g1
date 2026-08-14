@@ -31,9 +31,9 @@ namespace g1_manipulation
 enum class ObjectSource
 {
     /// MuJoCo body poses, sampled inside the simulator and carried by g1_sensor_relay.
-    SimGroundTruth,
+    kSimGroundTruth,
     /// Not implemented. Refuses to configure; see the node's on_configure.
-    Hardware,
+    kHardware,
 };
 
 /// False if the name is not a known source, leaving `out` untouched.
@@ -52,10 +52,10 @@ public:
 
 private:
     bool readParameters();
-    void onGroundTruth(const vision_msgs::msg::Detection3DArray::SharedPtr msg);
+    void onGroundTruth(vision_msgs::msg::Detection3DArray::SharedPtr msg);
     void publishMarkers(const vision_msgs::msg::Detection3DArray& objects);
 
-    ObjectSource source_{ ObjectSource::Hardware };
+    ObjectSource source_{ ObjectSource::kHardware };
     bool         publish_markers_{ false };
     std::string  source_frame_id_;
     std::string  output_frame_id_;

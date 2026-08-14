@@ -77,7 +77,7 @@ G1ManipulationServer::G1ManipulationServer(const rclcpp::NodeOptions& options)
     objects_sub_ = create_subscription<vision_msgs::msg::Detection3DArray>(
         "/objects",
         objectsQos(),
-        std::bind(&G1ManipulationServer::onObjects, this, std::placeholders::_1));
+        [this](const vision_msgs::msg::Detection3DArray::ConstSharedPtr& msg) { onObjects(msg); });
 
     tf_buffer_   = std::make_unique<tf2_ros::Buffer>(get_clock());
     tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
@@ -260,39 +260,39 @@ void G1ManipulationServer::initialize()
     pick_server_ = rclcpp_action::create_server<Pick>(
         this,
         "~/pick",
-        [](const rclcpp_action::GoalUUID&, std::shared_ptr<const Pick::Goal>) {
+        [](const rclcpp_action::GoalUUID&, const std::shared_ptr<const Pick::Goal>&) {
             return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
         },
-        [](const std::shared_ptr<GoalHandle<Pick>>) {
+        [](const std::shared_ptr<GoalHandle<Pick>>&) {
             return rclcpp_action::CancelResponse::ACCEPT;
         },
-        [this](const std::shared_ptr<GoalHandle<Pick>> handle) {
+        [this](const std::shared_ptr<GoalHandle<Pick>>& handle) {
             std::thread{ [this, handle] { executePick(handle); } }.detach();
         });
 
     place_server_ = rclcpp_action::create_server<Place>(
         this,
         "~/place",
-        [](const rclcpp_action::GoalUUID&, std::shared_ptr<const Place::Goal>) {
+        [](const rclcpp_action::GoalUUID&, const std::shared_ptr<const Place::Goal>&) {
             return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
         },
-        [](const std::shared_ptr<GoalHandle<Place>>) {
+        [](const std::shared_ptr<GoalHandle<Place>>&) {
             return rclcpp_action::CancelResponse::ACCEPT;
         },
-        [this](const std::shared_ptr<GoalHandle<Place>> handle) {
+        [this](const std::shared_ptr<GoalHandle<Place>>& handle) {
             std::thread{ [this, handle] { executePlace(handle); } }.detach();
         });
 
     posture_server_ = rclcpp_action::create_server<SetArmPosture>(
         this,
         "~/set_arm_posture",
-        [](const rclcpp_action::GoalUUID&, std::shared_ptr<const SetArmPosture::Goal>) {
+        [](const rclcpp_action::GoalUUID&, const std::shared_ptr<const SetArmPosture::Goal>&) {
             return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
         },
-        [](const std::shared_ptr<GoalHandle<SetArmPosture>>) {
+        [](const std::shared_ptr<GoalHandle<SetArmPosture>>&) {
             return rclcpp_action::CancelResponse::ACCEPT;
         },
-        [this](const std::shared_ptr<GoalHandle<SetArmPosture>> handle) {
+        [this](const std::shared_ptr<GoalHandle<SetArmPosture>>& handle) {
             std::thread{ [this, handle] { executeSetArmPosture(handle); } }.detach();
         });
 
@@ -303,7 +303,7 @@ void G1ManipulationServer::initialize()
         planning_frame_.c_str());
 }
 
-void G1ManipulationServer::onObjects(const vision_msgs::msg::Detection3DArray::SharedPtr msg)
+void G1ManipulationServer::onObjects(const vision_msgs::msg::Detection3DArray::ConstSharedPtr& msg)
 {
     std::lock_guard<std::mutex> lock(objects_mutex_);
     objects_ = *msg;

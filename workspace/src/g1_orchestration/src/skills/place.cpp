@@ -8,7 +8,7 @@ namespace g1_orchestration
 {
 
 Place::Place(const std::string& name, const BT::NodeConfig& config, RosContext context)
-  : SkillActionNode(name, config, context, "/g1_manipulation_server/place")
+  : SkillActionNode(name, config, std::move(context), "/g1_manipulation_server/place")
 {}
 
 BT::PortsList Place::providedPorts()
