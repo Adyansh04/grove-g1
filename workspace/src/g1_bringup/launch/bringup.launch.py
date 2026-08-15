@@ -202,9 +202,7 @@ def _setup(context, *args, **kwargs):
     sim_args = {
         # Not optional on the navigation modes, whatever the operator asked for: sensors gates
         # the LiDAR sweep, the relay, the odom -> base_footprint -> pelvis chain and the waist
-        # joint states, and navigation is dead without all four. Forced here rather than by
-        # flipping sim.launch.py's default, which is still provisional on an unthrottled
-        # re-measurement of test_arm_command.
+        # joint states, and navigation is dead without all four.
         #
         # manipulation:=true forces it for a different reason: object ground truth leaves the
         # simulator over the sensor relay's own socket, so without sensors the pose source
@@ -448,10 +446,11 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument(
             "odometry",
-            default_value="sportmodestate",
-            description="Which source publishes odom -> base_footprint. 'sportmodestate' is "
-            "exact MuJoCo state and is what the mission is tuned against. 'fast_lio' runs the "
-            "LiDAR-inertial pipeline the real robot uses, over the simulated Mid360.",
+            default_value="fast_lio",
+            description="Which source publishes odom -> base_footprint. 'fast_lio' is the "
+            "default because it is the pipeline the real robot runs, over the simulated "
+            "Mid360. 'sportmodestate' is exact MuJoCo state, for isolating a fault to 'not "
+            "the odometry'.",
         ),
         DeclareLaunchArgument(
             "world",

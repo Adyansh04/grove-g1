@@ -233,20 +233,13 @@ def _launch_setup(context, *args, **kwargs):
             )
 
     # Checked even when sensors are off, so a typo is caught where it was made rather than
-    # silently selecting the other source. Ground truth and an estimate are not interchangeable
-    # and the difference does not announce itself: the stack comes up either way.
+    # silently selecting the other source.
     odometry = LaunchConfiguration("odometry").perform(context)
     if odometry not in ("sportmodestate", "fast_lio"):
         raise RuntimeError(
             f"odometry:={odometry!r} is not an odometry source. Use 'sportmodestate' (exact "
             "MuJoCo state, simulation only) or 'fast_lio' (LiDAR-inertial, what the robot runs)."
         )
-    if odometry == "fast_lio" and not sensors:
-        raise RuntimeError(
-            "odometry:=fast_lio needs sensors:=true -- it is built on the Mid360, and with "
-            "sensors off nothing would publish odom -> base_footprint at all."
-        )
-
     if sensors and odometry == "fast_lio":
         # The LiDAR-inertial pipeline owns odom -> base_footprint instead, and brings up its
         # own publisher. Exactly one of these two branches runs: two writers on that transform
@@ -477,13 +470,12 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "odometry",
-                default_value="sportmodestate",
-                description="Which source publishes odom -> base_footprint. 'sportmodestate' "
-                "is exact MuJoCo state -- no drift, no noise, no latency -- and is what the "
-                "mission is tuned against. 'fast_lio' runs the real LiDAR-inertial pipeline "
-                "over the simulated Mid360 instead, which is the code path the robot uses; "
-                "expect drift, and expect it to need a few seconds to initialise. Needs "
-                "sensors:=true either way.",
+                default_value="fast_lio",
+                description="Which source publishes odom -> base_footprint. 'fast_lio' is the "
+                "default because it is the pipeline the robot runs; expect drift and a few "
+                "seconds to initialise. 'sportmodestate' is exact MuJoCo state and exists to "
+                "isolate a fault to 'not the odometry'. Either needs sensors:=true; with "
+                "sensors off neither runs.",
             ),
             DeclareLaunchArgument(
                 "pin_pelvis",
