@@ -10,11 +10,22 @@ find_package(realtime_tools REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(unitree_hg REQUIRED)
 
+# Shared by both hardware plugins, so it is its own library rather than a source compiled into
+# each: pluginlib dlopens both .so files into one controller_manager, and two copies of the same
+# externally-visible symbols is a resolution order nobody should have to reason about.
+add_library(motor_crc_hg src/motor_crc_hg.cpp)
+target_include_directories(motor_crc_hg PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+target_compile_features(motor_crc_hg PUBLIC cxx_std_20)
+ament_target_dependencies(motor_crc_hg PUBLIC unitree_hg)
+
 add_library(g1_arm_sdk_system SHARED
   src/arm_ramp_engine.cpp
-  src/motor_crc_hg.cpp
   src/g1_arm_sdk_system.cpp
 )
+target_link_libraries(g1_arm_sdk_system PUBLIC motor_crc_hg)
 target_include_directories(g1_arm_sdk_system PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
@@ -60,7 +71,7 @@ install(
   DESTINATION include
 )
 install(
-  TARGETS g1_arm_sdk_system lowstate_joint_states
+  TARGETS g1_arm_sdk_system lowstate_joint_states motor_crc_hg
   EXPORT export_g1_arm_sdk_system
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
@@ -91,6 +102,12 @@ if(BUILD_TESTING)
   ament_add_gmock(test_assemble_low_cmd test/test_assemble_low_cmd.cpp)
   target_link_libraries(test_assemble_low_cmd g1_arm_sdk_system)
   ament_target_dependencies(test_assemble_low_cmd unitree_hg)
+
+  # Not the bit loop, which is vendored: which bytes it covers, and that the mirror struct's
+  # padding is deterministic. A checksum the firmware rejects means every command is ignored.
+  ament_add_gmock(test_motor_crc_hg test/test_motor_crc_hg.cpp)
+  target_link_libraries(test_motor_crc_hg motor_crc_hg)
+  ament_target_dependencies(test_motor_crc_hg unitree_hg)
 
   ament_add_gmock(test_lowstate_joint_states test/test_lowstate_joint_states.cpp)
   target_link_libraries(test_lowstate_joint_states lowstate_joint_states)

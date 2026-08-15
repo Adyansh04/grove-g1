@@ -7,6 +7,7 @@
 #include "g1_hardware_interface/motor_crc_hg.hpp"
 
 #include <array>
+#include <bit>
 #include <cstddef>
 #include <cstring>
 
@@ -106,10 +107,15 @@ void computeLowCmdCrc(unitree_hg::msg::LowCmd& msg)
     }
     raw.reserve = msg.reserve;
 
-    raw.crc = crc32Core(
-        reinterpret_cast<const std::uint32_t*>(&raw),
-        static_cast<std::uint32_t>(sizeof(RawLowCmd) >> 2) - 1);
-    msg.crc = raw.crc;
+    /*
+     * bit_cast, not reinterpret_cast: reading RawLowCmd through a uint32_t* is a strict-aliasing
+     * violation, and at -O2 GCC 13 acts on it -- measured, the mode_pr/mode_machine stores were
+     * dropped from the checksum entirely. Harmless on rt/arm_sdk where both are always 0, fatal
+     * on rt/lowcmd where mode_machine carries 5. test_motor_crc_hg pins it.
+     */
+    const auto words = std::bit_cast<std::array<std::uint32_t, sizeof(RawLowCmd) / 4>>(raw);
+    raw.crc          = crc32Core(words.data(), static_cast<std::uint32_t>(words.size()) - 1);
+    msg.crc          = raw.crc;
 }
 
 }  // namespace g1_hardware_interface::vendored
