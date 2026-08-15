@@ -5,16 +5,15 @@ bridge feeds into its PD law, the freeze controller holding the other 28 joints,
 kPositionOnly branch on the probe joint. No policy is involved; that is PR 4.
 
 The pelvis is pinned because nothing is balancing: rt/lowcmd replaces the onboard controller
-outright, and a free-standing robot with no policy falls over. See docs/CONTROL_MODES.md.
+outright, and a free-standing robot with no policy falls over.
 """
 
 import os
 import time
 import unittest
 
-# Set before rclpy is imported and initialised: this test talks to a stack that runs on
-# fastrtps, because the lowcmd component owns the robot wire through unitree_sdk2's own
-# CycloneDDS. See docs/notes/lowcmd-dds-config.md.
+# Set before rclpy initialises: the lowcmd stack runs on fastrtps, because the component owns
+# the robot wire through unitree_sdk2's own CycloneDDS and ROS must not load a second one.
 os.environ["RMW_IMPLEMENTATION"] = "rmw_fastrtps_cpp"
 
 import launch_testing.actions

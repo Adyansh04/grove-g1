@@ -6,7 +6,7 @@ Included by sim.launch.py for the simulation milestone.
 
 `control_stack` picks which hardware component owns the motors. The two are mutually exclusive
 by construction: `arm_sdk` blends our arm targets under the onboard balance controller, `lowcmd`
-takes the whole body and leaves no balance running. See docs/CONTROL_MODES.md.
+takes the whole body and leaves no balance running.
 """
 
 import os

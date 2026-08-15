@@ -19,7 +19,7 @@
       <description>
         ros2_control System owning all 29 G1 body motors over Unitree's rt/lowcmd, with no
         onboard balance running underneath. Adapted from NVIDIA's unitree_g1_ros2_control.
-        See the package README and docs/CONTROL_MODES.md.
+        See the package README for the authority model.
       </description>
     </class>
   </library>

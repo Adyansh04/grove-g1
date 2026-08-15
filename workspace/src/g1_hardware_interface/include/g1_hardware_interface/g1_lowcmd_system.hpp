@@ -99,7 +99,7 @@ struct ImuData
  * @brief ros2_control System publishing rt/lowcmd and subscribing rt/lowstate over unitree_sdk2.
  *
  * Owns the whole body: nothing else may publish rt/lowcmd while this is active, and no onboard
- * balance runs underneath it. See docs/CONTROL_MODES.md before changing anything here.
+ * balance runs underneath it. See the package README for the authority model.
  */
 class G1LowCmdSystem : public hardware_interface::SystemInterface
 {

@@ -122,8 +122,8 @@ G1LowCmdSystem::on_init(const hardware_interface::HardwareComponentInterfacePara
 
     const auto& hw = info.hardware_parameters;
 
-    // Empty by default, and that is deliberate: a non-empty interface makes the SDK build its own
-    // inline CycloneDDS config and discard CYCLONEDDS_URI. See docs/notes/lowcmd-dds-config.md.
+    // Deliberately empty by default: a non-empty interface makes the SDK build its own inline
+    // CycloneDDS config and discard CYCLONEDDS_URI, which is what pins us to loopback.
     if (const auto it = hw.find("network_interface"); it != hw.end())
     {
         network_interface_ = it->second;

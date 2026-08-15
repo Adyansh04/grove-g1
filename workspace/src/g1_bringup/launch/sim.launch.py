@@ -68,11 +68,8 @@ def _check_environment(context, *args, **kwargs):
     """
     problems = []
 
-    # Which RMW is correct depends on who owns the robot wire. On the arm_sdk stack our ROS
-    # nodes reach rt/* themselves, so ROS must be on CycloneDDS. On the lowcmd stack the
-    # hardware component owns the wire through unitree_sdk2's own CycloneDDS, and ROS must NOT
-    # also load one -- the two ship the same SONAME and different ABIs. See
-    # docs/notes/lowcmd-dds-config.md.
+    # Which RMW is correct depends on who owns the robot wire: arm_sdk reaches rt/* from ROS
+    # itself, lowcmd reaches it from the SDK's own CycloneDDS and ROS must not load a second.
     control_stack = LaunchConfiguration("control_stack").perform(context)
     expected_rmw = "rmw_fastrtps_cpp" if control_stack == "lowcmd" else "rmw_cyclonedds_cpp"
     rmw = os.environ.get("RMW_IMPLEMENTATION")

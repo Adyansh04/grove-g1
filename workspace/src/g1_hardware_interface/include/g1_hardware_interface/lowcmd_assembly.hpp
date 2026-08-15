@@ -105,7 +105,7 @@ void fillReleaseCmd(
  *        requires on every frame.
  *
  * @param cmd LowCmd whose crc field is overwritten.
- * @note bit_cast rather than a uint32_t* cast; see docs/notes/lowcmd-crc-aliasing.md.
+ * @note bit_cast rather than a uint32_t* cast, which GCC 13 optimises fields out of at -O2.
  */
 void computeLowCmdCrc(unitree_hg::msg::dds_::LowCmd_& cmd);
 

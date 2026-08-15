@@ -6,8 +6,9 @@
 #include "g1_controllers/g1_freeze_controller.hpp"
 
 #include <algorithm>
-
 #include <pluginlib/class_list_macros.hpp>
+#include <string_view>
+#include <utility>
 
 #include "hardware_interface/types/hardware_interface_type_values.hpp"
 
@@ -17,16 +18,19 @@ namespace g1_controllers
 namespace
 {
 /// Must match g1_hardware_interface's kHwIfKp/kHwIfKd, which follow NVIDIA's spelling.
-constexpr char kHwIfKp[] = "kp";
-constexpr char kHwIfKd[] = "kd";
+constexpr std::string_view kHwIfKp{ "kp" };
+constexpr std::string_view kHwIfKd{ "kd" };
 
-std::vector<std::string> suffixed(const std::vector<std::string>& joints, const std::string& type)
+std::vector<std::string> suffixed(const std::vector<std::string>& joints, std::string_view type)
 {
     std::vector<std::string> names;
     names.reserve(joints.size());
     for (const auto& joint : joints)
     {
-        names.push_back(joint + "/" + type);
+        std::string name = joint;
+        name += '/';
+        name += type;
+        names.push_back(std::move(name));
     }
     return names;
 }
@@ -41,10 +45,10 @@ bool G1FreezeController::indexInterfaces(
     out.reserve(names.size());
     for (const auto& name : names)
     {
-        const auto it = std::find_if(
-            interfaces.begin(),
-            interfaces.end(),
-            [&name](const auto& iface) { return iface.get_name() == name; });
+        const auto it =
+            std::find_if(interfaces.begin(), interfaces.end(), [&name](const auto& iface) {
+                return iface.get_name() == name;
+            });
         if (it == interfaces.end())
         {
             RCLCPP_ERROR(get_node()->get_logger(), "interface '%s' was not claimed", name.c_str());
@@ -91,13 +95,15 @@ G1FreezeController::command_interface_configuration() const
 {
     controller_interface::InterfaceConfiguration config;
     config.type = controller_interface::interface_configuration_type::INDIVIDUAL;
-    for (const auto& joint : joint_names_)
+    config.names.reserve(joint_names_.size() * 5);
+    for (const std::string_view type : { std::string_view{ hardware_interface::HW_IF_POSITION },
+                                         std::string_view{ hardware_interface::HW_IF_VELOCITY },
+                                         std::string_view{ hardware_interface::HW_IF_EFFORT },
+                                         kHwIfKp,
+                                         kHwIfKd })
     {
-        config.names.push_back(joint + "/" + hardware_interface::HW_IF_POSITION);
-        config.names.push_back(joint + "/" + hardware_interface::HW_IF_VELOCITY);
-        config.names.push_back(joint + "/" + hardware_interface::HW_IF_EFFORT);
-        config.names.push_back(joint + "/" + kHwIfKp);
-        config.names.push_back(joint + "/" + kHwIfKd);
+        const auto names = suffixed(joint_names_, type);
+        config.names.insert(config.names.end(), names.begin(), names.end());
     }
     return config;
 }
@@ -182,5 +188,4 @@ G1FreezeController::update(const rclcpp::Time& /*time*/, const rclcpp::Duration&
 
 }  // namespace g1_controllers
 
-PLUGINLIB_EXPORT_CLASS(
-    g1_controllers::G1FreezeController, controller_interface::ControllerInterface)
+PLUGINLIB_EXPORT_CLASS(g1_controllers::G1FreezeController, controller_interface::ControllerInterface)
