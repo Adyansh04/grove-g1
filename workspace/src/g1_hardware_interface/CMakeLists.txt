@@ -21,6 +21,16 @@ target_include_directories(motor_crc_hg PUBLIC
 target_compile_features(motor_crc_hg PUBLIC cxx_std_20)
 ament_target_dependencies(motor_crc_hg PUBLIC unitree_hg)
 
+# The rt/lowcmd mode table and per-motor packing, split out for the same reason
+# arm_ramp_engine is: it is the part worth asserting without a live component.
+add_library(lowcmd_assembly src/lowcmd_assembly.cpp)
+target_include_directories(lowcmd_assembly PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+target_compile_features(lowcmd_assembly PUBLIC cxx_std_20)
+ament_target_dependencies(lowcmd_assembly PUBLIC unitree_hg)
+
 add_library(g1_arm_sdk_system SHARED
   src/arm_ramp_engine.cpp
   src/g1_arm_sdk_system.cpp
@@ -71,7 +81,7 @@ install(
   DESTINATION include
 )
 install(
-  TARGETS g1_arm_sdk_system lowstate_joint_states motor_crc_hg
+  TARGETS g1_arm_sdk_system lowstate_joint_states motor_crc_hg lowcmd_assembly
   EXPORT export_g1_arm_sdk_system
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
@@ -102,6 +112,11 @@ if(BUILD_TESTING)
   ament_add_gmock(test_assemble_low_cmd test/test_assemble_low_cmd.cpp)
   target_link_libraries(test_assemble_low_cmd g1_arm_sdk_system)
   ament_target_dependencies(test_assemble_low_cmd unitree_hg)
+
+  # The mode table rt/lowcmd resolves interface claims through, plus the release ramp's packing.
+  ament_add_gmock(test_lowcmd_assembly test/test_lowcmd_assembly.cpp)
+  target_link_libraries(test_lowcmd_assembly lowcmd_assembly)
+  ament_target_dependencies(test_lowcmd_assembly unitree_hg)
 
   # Not the bit loop, which is vendored: which bytes it covers, and that the mirror struct's
   # padding is deterministic. A checksum the firmware rejects means every command is ignored.
