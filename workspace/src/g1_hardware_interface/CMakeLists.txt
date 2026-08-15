@@ -41,6 +41,12 @@ target_include_directories(lowcmd_assembly PUBLIC
 )
 target_compile_features(lowcmd_assembly PUBLIC cxx_std_20)
 target_link_libraries(lowcmd_assembly PUBLIC unitree_sdk2 motor_crc_hg)
+# SYSTEM so clang-tidy's WarningsAsErrors does not fail us on the SDK's own headers, which still
+# use std::result_of.
+target_include_directories(lowcmd_assembly SYSTEM PUBLIC
+  ${UNITREE_SDK2_PREFIX}/include
+  ${UNITREE_SDK2_PREFIX}/include/ddscxx
+)
 
 add_library(g1_lowcmd_system SHARED src/g1_lowcmd_system.cpp)
 target_include_directories(g1_lowcmd_system PUBLIC
@@ -49,7 +55,10 @@ target_include_directories(g1_lowcmd_system PUBLIC
 )
 target_compile_features(g1_lowcmd_system PUBLIC cxx_std_20)
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  target_compile_options(g1_lowcmd_system PRIVATE -Wall -Wextra)
+  # unitree_sdk2's dds_entity.hpp still builds its queue thread through std::result_of, which
+  # InitChannel instantiates unconditionally. Scoped to this one target so the rest of the package
+  # keeps the strict gate PR 2 earned back; drop it when the SDK is bumped past the deprecation.
+  target_compile_options(g1_lowcmd_system PRIVATE -Wall -Wextra -Wno-deprecated-declarations)
 endif()
 target_link_libraries(g1_lowcmd_system PUBLIC lowcmd_assembly)
 ament_target_dependencies(g1_lowcmd_system PUBLIC

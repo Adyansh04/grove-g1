@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <unitree/idl/hg/LowCmd_.hpp>
 #include <unitree/idl/hg/LowState_.hpp>
 #include <unitree/robot/channel/channel_publisher.hpp>
@@ -37,8 +38,8 @@ namespace g1_hardware_interface
 {
 
 /// Interface names NVIDIA's controllers claim for per-joint gains. Must match theirs exactly.
-inline constexpr char kHwIfKp[] = "kp";
-inline constexpr char kHwIfKd[] = "kd";
+inline constexpr std::string_view kHwIfKp{ "kp" };
+inline constexpr std::string_view kHwIfKd{ "kd" };
 
 /// Joint names in SDK motor index order, from NVIDIA's kG1JointNames. This is the mapping, so
 /// the URDF needs no per-joint motor_index param.

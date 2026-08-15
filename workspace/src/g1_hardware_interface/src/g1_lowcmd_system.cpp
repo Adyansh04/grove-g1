@@ -9,6 +9,7 @@
 #include <bit>
 #include <functional>
 #include <pluginlib/class_list_macros.hpp>
+#include <string_view>
 #include <thread>
 #include <unitree/robot/b2/motion_switcher/motion_switcher_client.hpp>
 #include <utility>
@@ -279,8 +280,8 @@ std::vector<hardware_interface::CommandInterface> G1LowCmdSystem::export_command
         interfaces.emplace_back(jd.name, hardware_interface::HW_IF_POSITION, &jd.command.position);
         interfaces.emplace_back(jd.name, hardware_interface::HW_IF_VELOCITY, &jd.command.velocity);
         interfaces.emplace_back(jd.name, hardware_interface::HW_IF_EFFORT, &jd.command.effort);
-        interfaces.emplace_back(jd.name, kHwIfKp, &jd.command.kp);
-        interfaces.emplace_back(jd.name, kHwIfKd, &jd.command.kd);
+        interfaces.emplace_back(jd.name, std::string(kHwIfKp), &jd.command.kp);
+        interfaces.emplace_back(jd.name, std::string(kHwIfKd), &jd.command.kd);
     }
 
     return interfaces;
@@ -330,7 +331,7 @@ bool G1LowCmdSystem::initializeSdk()
             std::make_shared<unitree::robot::ChannelSubscriber<unitree_hg::msg::dds_::LowState_>>(
                 "rt/lowstate");
         lowstate_subscriber_->InitChannel(
-            std::bind(&G1LowCmdSystem::lowStateCallback, this, std::placeholders::_1),
+            [this](const void* message) { lowStateCallback(message); },
             1);
 
         lowcmd_publisher_ =
@@ -462,8 +463,9 @@ hardware_interface::return_type G1LowCmdSystem::perform_command_mode_switch(
     // kp and kd move as a pair: one alone does not define an impedance, so the flag only changes
     // when both appear on the same side of the switch.
     const auto listed =
-        [](const std::vector<std::string>& list, const std::string& joint, const char* type) {
-            return std::find(list.begin(), list.end(), joint + "/" + type) != list.end();
+        [](const std::vector<std::string>& list, const std::string& joint, std::string_view type) {
+            const std::string full = joint + "/" + std::string(type);
+            return std::find(list.begin(), list.end(), full) != list.end();
         };
 
     const auto apply = [&](const std::vector<std::string>& list, bool held) {
