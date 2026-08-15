@@ -12,7 +12,7 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.actions import DeclareLaunchArgument, OpaqueFunction, TimerAction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
@@ -42,13 +42,25 @@ def _setup(context, *args, **kwargs):
             output="both",
             parameters=parameters,
         ),
-        # slam_toolbox is a LifecycleNode from Jazzy.
-        Node(
-            package="nav2_lifecycle_manager",
-            executable="lifecycle_manager",
-            name="lifecycle_manager_slam",
-            output="both",
-            parameters=[{"autostart": True, "node_names": ["slam_toolbox"]}],
+        # slam_toolbox is a LifecycleNode from Jazzy on and comes up unconfigured.
+        TimerAction(
+            period=2.0,
+            actions=[
+                Node(
+                    package="nav2_lifecycle_manager",
+                    executable="lifecycle_manager",
+                    name="lifecycle_manager_slam",
+                    output="both",
+                    # bond_timeout 0 disables the heartbeat: bond is a Nav2 server convention
+                    # and slam_toolbox creates none, so any non-zero value tears it back down
+                    # ~4 s after activating it.
+                    parameters=[{
+                        "autostart": True,
+                        "node_names": ["slam_toolbox"],
+                        "bond_timeout": 0.0,
+                    }],
+                ),
+            ],
         ),
     ]
 
