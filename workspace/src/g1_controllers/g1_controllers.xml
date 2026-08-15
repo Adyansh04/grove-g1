@@ -1,0 +1,15 @@
+<class_libraries>
+
+  <library path="g1_freeze_controller">
+    <class name="g1_controllers/G1FreezeController"
+           type="g1_controllers::G1FreezeController"
+           base_class_type="controller_interface::ControllerInterface">
+      <description>
+        Captures each claimed joint's position on activation and holds it there under
+        impedance control. The safe resting state for a robot whose balance policy is not
+        running. Adapted from NVIDIA's isaac_ros_deploy_ros2_control FreezeController.
+      </description>
+    </class>
+  </library>
+
+</class_libraries>
