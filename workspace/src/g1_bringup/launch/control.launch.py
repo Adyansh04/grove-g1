@@ -3,16 +3,27 @@
 No sim, no motion_service_sim here -- this is the launch file that carries
 over unchanged to hardware bring-up (see README.md's domain/DDS story).
 Included by sim.launch.py for the simulation milestone.
+
+`control_stack` picks which hardware component owns the motors. The two are mutually exclusive
+by construction: `arm_sdk` blends our arm targets under the onboard balance controller, `lowcmd`
+takes the whole body and leaves no balance running. See docs/CONTROL_MODES.md.
 """
 
 import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import EmitEvent, ExecuteProcess, RegisterEventHandler
+from launch.actions import (
+    DeclareLaunchArgument,
+    EmitEvent,
+    ExecuteProcess,
+    OpaqueFunction,
+    RegisterEventHandler,
+    SetEnvironmentVariable,
+)
 from launch.event_handlers import OnProcessExit
 from launch.events import Shutdown
-from launch.substitutions import Command, FindExecutable
+from launch.substitutions import Command, FindExecutable, LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
@@ -28,12 +39,44 @@ _SIGNAL_FORWARDING_WRAPPER = (
 )
 
 
-def generate_launch_description():
+def _launch_setup(context, *args, **kwargs):
     g1_description_share = get_package_share_directory("g1_description")
     g1_bringup_share = get_package_share_directory("g1_bringup")
 
-    xacro_path = os.path.join(g1_description_share, "urdf", "g1_arm_sdk.urdf.xacro")
-    controllers_yaml = os.path.join(g1_bringup_share, "config", "controllers.yaml")
+    control_stack = LaunchConfiguration("control_stack").perform(context)
+    if control_stack not in ("arm_sdk", "lowcmd"):
+        raise RuntimeError(
+            f"control_stack must be 'arm_sdk' or 'lowcmd', got '{control_stack}'"
+        )
+
+    rmw_for_stack = []
+    if control_stack == "lowcmd":
+        rmw_for_stack = [SetEnvironmentVariable("RMW_IMPLEMENTATION", "rmw_fastrtps_cpp")]
+
+    if control_stack == "lowcmd":
+        xacro_path = os.path.join(g1_description_share, "urdf", "g1_lowcmd.urdf.xacro")
+        controllers_yaml = os.path.join(
+            get_package_share_directory("g1_controllers"), "config", "lowcmd_controllers.yaml"
+        )
+        # The freeze holds the body from the moment the component activates; the probe joint is
+        # the one left free. Neither may load inactive: unclaimed joints are unpowered.
+        controller_spawners = [
+            ExecuteProcess(
+                cmd=["ros2", "run", "controller_manager", "spawner", name],
+                name=f"{name}_spawner",
+                output="screen",
+            )
+            for name in (
+                "joint_state_broadcaster",
+                "imu_sensor_broadcaster",
+                "body_freeze_controller",
+                "probe_position_controller",
+            )
+        ]
+    else:
+        xacro_path = os.path.join(g1_description_share, "urdf", "g1_arm_sdk.urdf.xacro")
+        controllers_yaml = os.path.join(g1_bringup_share, "config", "controllers.yaml")
+        controller_spawners = None
 
     robot_description_content = Command([FindExecutable(name="xacro"), " ", xacro_path])
     robot_description = {
@@ -110,13 +153,32 @@ def generate_launch_description():
         )
     )
 
-    return LaunchDescription(
-        [
-            robot_state_publisher_node,
-            control_node,
+    if controller_spawners is None:
+        controller_spawners = [
             joint_state_broadcaster_spawner,
             arm_trajectory_controller_spawner,
             *hand_controller_spawners,
-            shutdown_on_control_node_exit,
+        ]
+
+    return [
+        *rmw_for_stack,
+        robot_state_publisher_node,
+        control_node,
+        *controller_spawners,
+        shutdown_on_control_node_exit,
+    ]
+
+
+def generate_launch_description():
+    return LaunchDescription(
+        [
+            DeclareLaunchArgument(
+                "control_stack",
+                default_value="arm_sdk",
+                description="Which hardware component owns the motors. 'arm_sdk' blends arm "
+                "targets under the onboard balance controller; 'lowcmd' takes the whole body "
+                "and runs no balance underneath it.",
+            ),
+            OpaqueFunction(function=_launch_setup),
         ]
     )
