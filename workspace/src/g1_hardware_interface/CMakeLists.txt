@@ -26,11 +26,16 @@ ament_target_dependencies(motor_crc_hg PUBLIC unitree_hg)
 set(UNITREE_SDK2_PREFIX /opt/unitree_robotics)
 find_package(unitree_sdk2 REQUIRED PATHS ${UNITREE_SDK2_PREFIX}/lib/cmake NO_DEFAULT_PATH)
 
-# The SDK ships its own libddsc/libddscxx there and nothing else puts that directory on the
-# loader path. Scoped to this package rather than /etc/ld.so.conf.d so the SDK's older CycloneDDS
-# cannot shadow ROS's for every other process -- see docs/notes/lowcmd-dds-config.md.
+# The SDK ships its own libddsc/libddscxx there and must bind to those, not to ROS's newer
+# CycloneDDS: same SONAME, different ABI, and mixing them corrupts the heap. Scoped to this
+# package, not /etc/ld.so.conf.d. See docs/notes/lowcmd-dds-config.md.
 list(APPEND CMAKE_BUILD_RPATH ${UNITREE_SDK2_PREFIX}/lib)
 list(APPEND CMAKE_INSTALL_RPATH ${UNITREE_SDK2_PREFIX}/lib)
+
+# DT_RPATH, not the modern DT_RUNPATH: RUNPATH is searched *after* LD_LIBRARY_PATH, which
+# carries /opt/ros/jazzy/lib/x86_64-linux-gnu, so the SDK would still get ROS's libddsc.
+string(APPEND CMAKE_SHARED_LINKER_FLAGS " -Wl,--disable-new-dtags")
+string(APPEND CMAKE_EXE_LINKER_FLAGS " -Wl,--disable-new-dtags")
 
 # The rt/lowcmd mode table and per-motor packing, split out for the same reason
 # arm_ramp_engine is: it is the part worth asserting without a live component.
