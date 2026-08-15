@@ -42,6 +42,14 @@ def _setup(context, *args, **kwargs):
             output="both",
             parameters=parameters,
         ),
+        # slam_toolbox is a LifecycleNode from Jazzy.
+        Node(
+            package="nav2_lifecycle_manager",
+            executable="lifecycle_manager",
+            name="lifecycle_manager_slam",
+            output="both",
+            parameters=[{"autostart": True, "node_names": ["slam_toolbox"]}],
+        ),
     ]
 
 
