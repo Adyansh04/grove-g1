@@ -85,6 +85,9 @@ if(BUILD_TESTING)
               ${CMAKE_CURRENT_SOURCE_DIR}/launch ${CMAKE_CURRENT_SOURCE_DIR}/test
               ${CMAKE_CURRENT_SOURCE_DIR}/scripts
     )
+    # From the build dir, ruff.toml's relative src= would not resolve and isort finds nothing.
+    set_tests_properties(ruff_check_g1_navigation PROPERTIES
+      WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../..")
   else()
     message(WARNING "ruff and/or workspace ruff.toml not found; skipping ruff_check_g1_navigation test")
   endif()

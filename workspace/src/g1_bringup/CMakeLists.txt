@@ -45,6 +45,9 @@ if(BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/scripts/deactivate_arm
         ${CMAKE_CURRENT_SOURCE_DIR}/test
     )
+    # From the build dir, ruff.toml's relative src= would not resolve and isort finds nothing.
+    set_tests_properties(ruff_check_g1_bringup PROPERTIES
+      WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../..")
   else()
     message(WARNING "ruff and/or workspace ruff.toml not found; skipping ruff_check_g1_bringup test")
   endif()

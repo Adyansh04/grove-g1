@@ -90,6 +90,9 @@ if(BUILD_TESTING)
       COMMAND ${RUFF_EXECUTABLE} check --config ${_ruff_config}
               ${CMAKE_CURRENT_SOURCE_DIR}/launch ${CMAKE_CURRENT_SOURCE_DIR}/test
     )
+    # From the build dir, ruff.toml's relative src= would not resolve and isort finds nothing.
+    set_tests_properties(ruff_check_g1_moveit_config PROPERTIES
+      WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../..")
   else()
     message(WARNING "ruff and/or workspace ruff.toml not found; skipping ruff_check_g1_moveit_config test")
   endif()
