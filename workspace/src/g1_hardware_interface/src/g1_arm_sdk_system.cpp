@@ -125,9 +125,9 @@ void assembleLowCmd(
 G1ArmSdkSystem::~G1ArmSdkSystem() { shutdownInternalNode(); }
 
 hardware_interface::CallbackReturn
-G1ArmSdkSystem::on_init(const hardware_interface::HardwareInfo& info)
+G1ArmSdkSystem::on_init(const hardware_interface::HardwareComponentInterfaceParams& params)
 {
-    if (SystemInterface::on_init(info) != hardware_interface::CallbackReturn::SUCCESS)
+    if (SystemInterface::on_init(params) != hardware_interface::CallbackReturn::SUCCESS)
     {
         return hardware_interface::CallbackReturn::ERROR;
     }
