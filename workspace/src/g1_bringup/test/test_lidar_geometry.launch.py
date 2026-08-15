@@ -89,7 +89,7 @@ class LidarGeometryTest(unittest.TestCase):
             PointCloud2, CLOUD_TOPIC, cls._on_cloud, qos_profile_sensor_data
         )
         cls.node.create_subscription(
-            PoseStamped, POSE_TOPIC, cls.poses.append, qos_profile_sensor_data
+            PoseStamped, POSE_TOPIC, lambda msg: cls.poses.append(msg), qos_profile_sensor_data
         )
         cls._wait(lambda: len(cls.clouds) > 0 and len(cls.poses) > 0, BRINGUP_TIMEOUT_S)
 

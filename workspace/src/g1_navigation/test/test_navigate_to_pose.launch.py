@@ -81,7 +81,7 @@ class NavigateToPoseTest(unittest.TestCase):
         cls.node.create_subscription(
             LocoStatus,
             "/g1_loco_bridge/status",
-            cls.status.append,
+            lambda msg: cls.status.append(msg),
             QoSProfile(
                 depth=1,
                 reliability=QoSReliabilityPolicy.RELIABLE,
@@ -93,7 +93,7 @@ class NavigateToPoseTest(unittest.TestCase):
         cls.node.create_subscription(
             OccupancyGrid,
             "/global_costmap/costmap",
-            cls.costmaps.append,
+            lambda msg: cls.costmaps.append(msg),
             QoSProfile(
                 depth=1,
                 reliability=QoSReliabilityPolicy.RELIABLE,

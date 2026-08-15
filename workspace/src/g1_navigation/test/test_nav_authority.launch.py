@@ -85,7 +85,7 @@ class NavAuthorityTest(unittest.TestCase):
         cls.node.create_subscription(
             LocoStatus,
             "/g1_loco_bridge/status",
-            cls.status.append,
+            lambda msg: cls.status.append(msg),
             QoSProfile(
                 depth=1,
                 reliability=QoSReliabilityPolicy.RELIABLE,

@@ -94,7 +94,7 @@ class SlamMapTest(unittest.TestCase):
         cls.node.create_subscription(
             OccupancyGrid,
             "/map",
-            cls.maps.append,
+            lambda msg: cls.maps.append(msg),
             QoSProfile(
                 depth=1,
                 reliability=QoSReliabilityPolicy.RELIABLE,

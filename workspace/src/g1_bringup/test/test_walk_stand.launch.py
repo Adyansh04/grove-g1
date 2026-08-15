@@ -79,7 +79,7 @@ class WalkStandTest(unittest.TestCase):
         cls.sport_states = deque(maxlen=400)
         cls.low_states = deque(maxlen=1500)
         cls.node.create_subscription(
-            SportModeState, "/sportmodestate", cls.sport_states.append, _best_effort_qos()
+            SportModeState, "/sportmodestate", lambda msg: cls.sport_states.append(msg), _best_effort_qos()
         )
         # The entry transient is measured in the callback rather than by keeping the messages:
         # the bounded buffer would have evicted the first second long before test_04 runs.

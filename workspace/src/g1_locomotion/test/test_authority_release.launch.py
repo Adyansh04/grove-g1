@@ -89,7 +89,7 @@ class AuthorityReleaseTest(unittest.TestCase):
         cls.node.create_subscription(
             Int32MultiArray,
             "/setmode_stub/goals",
-            cls.goals.append,
+            lambda msg: cls.goals.append(msg),
             QoSProfile(
                 depth=1,
                 reliability=QoSReliabilityPolicy.RELIABLE,

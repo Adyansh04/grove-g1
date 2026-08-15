@@ -80,13 +80,13 @@ class WalkTeleopTest(unittest.TestCase):
         cls.low_states = deque(maxlen=1500)
         cls.responses = deque(maxlen=200)
         cls.node.create_subscription(
-            SportModeState, "/sportmodestate", cls.sport_states.append, _best_effort_qos()
+            SportModeState, "/sportmodestate", lambda msg: cls.sport_states.append(msg), _best_effort_qos()
         )
         cls.node.create_subscription(
-            LowState, "/lowstate", cls.low_states.append, _best_effort_qos()
+            LowState, "/lowstate", lambda msg: cls.low_states.append(msg), _best_effort_qos()
         )
         cls.node.create_subscription(
-            Response, "/api/sport/response", cls.responses.append, _sport_qos()
+            Response, "/api/sport/response", lambda msg: cls.responses.append(msg), _sport_qos()
         )
         # NO raw /api/sport/request publisher here to avoid dual-writer guard trips.
         cls.cmd_vel_pub = cls.node.create_publisher(

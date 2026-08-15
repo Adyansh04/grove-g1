@@ -95,9 +95,9 @@ class WalkAndArmTest(unittest.TestCase):
         cls.sport_states = deque(maxlen=400)
         cls.joint_states = deque(maxlen=200)
         cls.node.create_subscription(
-            SportModeState, "/sportmodestate", cls.sport_states.append, _best_effort_qos()
+            SportModeState, "/sportmodestate", lambda msg: cls.sport_states.append(msg), _best_effort_qos()
         )
-        cls.node.create_subscription(JointState, "/joint_states", cls.joint_states.append, 10)
+        cls.node.create_subscription(JointState, "/joint_states", lambda msg: cls.joint_states.append(msg), 10)
         cls.cmd_vel_pub = cls.node.create_publisher(
             Twist,
             "/g1_loco_bridge/cmd_vel",
