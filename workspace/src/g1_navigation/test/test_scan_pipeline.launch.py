@@ -51,6 +51,9 @@ def generate_test_description():
         ),
         launch_arguments={
             "sensors": "true",
+            # Ground truth, not the stack default: this asserts scan geometry through TF, so
+            # the odometry under it should contribute nothing.
+            "odometry": "sportmodestate",
             "pin_pelvis": "true",
             "world": "perception",
         }.items(),
