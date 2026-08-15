@@ -63,7 +63,7 @@ private:
     std::unique_ptr<tf2_ros::Buffer>            tf_buffer_;
     std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
 
-    rclcpp::Subscription<vision_msgs::msg::Detection3DArray>::SharedPtr                 source_sub_;
+    rclcpp::Subscription<vision_msgs::msg::Detection3DArray>::SharedPtr source_sub_;
     rclcpp_lifecycle::LifecyclePublisher<vision_msgs::msg::Detection3DArray>::SharedPtr objects_pub_;
     /// Only created when publish_markers is set: an rviz aid, not part of the interface, and
     /// nothing should grow a dependency on it.

@@ -158,7 +158,7 @@ G1LocoBridge::on_configure(const rclcpp_lifecycle::State& /*previous_state*/)
         get_node_waitables_interface(),
         "~/set_mode",
         [this](
-            const rclcpp_action::GoalUUID&                  uuid,
+            const rclcpp_action::GoalUUID& uuid,
             const std::shared_ptr<const SetLocoMode::Goal>& goal) { return handleGoal(uuid, goal); },
         [](const std::shared_ptr<GoalHandleSetLocoMode>& goal_handle) {
             return handleCancel(goal_handle);
@@ -175,10 +175,8 @@ G1LocoBridge::on_configure(const rclcpp_lifecycle::State& /*previous_state*/)
         callback_group_);
     const auto reissue_period = std::chrono::duration_cast<std::chrono::nanoseconds>(
         std::chrono::duration<double>(1.0 / velocity_reissue_hz_));
-    reissue_timer_ = create_wall_timer(
-        reissue_period,
-        [this] { onReissueTick(); },
-        callback_group_);
+    reissue_timer_ =
+        create_wall_timer(reissue_period, [this] { onReissueTick(); }, callback_group_);
 
     // Phase-offset heartbeat timer from reissue timer to avoid back-to-back
     // SET_VELOCITY and GET_FSM_ID on a single-call-in-flight channel
@@ -189,10 +187,8 @@ G1LocoBridge::on_configure(const rclcpp_lifecycle::State& /*previous_state*/)
         kHeartbeatPeriod + heartbeat_phase_offset,
         [this] {
             heartbeat_phase_timer_->cancel();
-            heartbeat_timer_ = create_wall_timer(
-                kHeartbeatPeriod,
-                [this] { onHeartbeatTick(); },
-                callback_group_);
+            heartbeat_timer_ =
+                create_wall_timer(kHeartbeatPeriod, [this] { onHeartbeatTick(); }, callback_group_);
             onHeartbeatTick();
         },
         callback_group_);
