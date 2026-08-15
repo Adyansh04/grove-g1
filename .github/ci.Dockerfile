@@ -40,9 +40,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && ln -sf /usr/bin/run-clang-tidy-${LLVM_VERSION} /usr/bin/run-clang-tidy \
     && rm -rf /var/lib/apt/lists/*
 
-# Pinned: ruff's rule set changes between minor versions.
+# Pinned: ruff's rule set changes between minor versions. --break-system-packages because
+# Ubuntu 24.04 marks the system Python externally managed (PEP 668) and refuses the install.
 ARG RUFF_VERSION=0.16.1
-RUN python3 -m pip install --no-cache-dir ruff==${RUFF_VERSION}
+RUN python3 -m pip install --no-cache-dir --break-system-packages ruff==${RUFF_VERSION}
 
 # libboost/libeigen are unitree_sdk2's, PCL is FAST-LIO's.
 RUN apt-get update && apt-get install -y --no-install-recommends \
