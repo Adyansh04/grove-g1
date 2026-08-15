@@ -3,14 +3,14 @@
 
 /**
  * @file lowcmd_assembly.hpp
- * @brief Per-motor LowCmd packing for the full-body rt/lowcmd path, kept free of rclcpp so the
- *        mode table can be asserted without a live hardware component.
+ * @brief Per-motor LowCmd packing for rt/lowcmd, on unitree_sdk2's DDS structs rather than the
+ *        unitree_hg ROS messages G1ArmSdkSystem uses. Same 1004-byte wire, different API.
  */
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
-
-#include "unitree_hg/msg/low_cmd.hpp"
+#include <unitree/idl/hg/LowCmd_.hpp>
 
 namespace g1_hardware_interface
 {
@@ -19,18 +19,18 @@ namespace g1_hardware_interface
 inline constexpr std::size_t kNumBodyMotors = 29;
 
 /**
- * @brief What a joint's claimed interfaces mean for the firmware's control law,
- * `tau = tau_ff + kp * (q - q_meas) + kd * (dq - dq_meas)`.
+ * @brief Per-joint branch of the firmware law `tau = tau_ff + kp*(q - q_meas) + kd*(dq - dq_meas)`.
+ *
+ * Mirrors NVIDIA's fill_motor_cmd so their controllers behave identically against this component.
  */
 enum class JointControlMode : std::uint8_t
 {
-    /// Unclaimed: motor disabled, every field zero. Also where a finished release ramp lands.
+    /// Unclaimed: motor off. Holding is a controller's job, see G1FreezeController.
     kDisabled,
-    /// Position tracked at the joint's configured fallback gains, no feedforward torque.
     kPositionOnly,
-    /// Torque with damping: kp is forced to zero so the position term cannot fight the effort.
+    /// kp forced to 0 so the position term cannot fight the commanded torque.
     kEffort,
-    /// The policy mode -- the controller owns q, dq, tau, kp and kd on every tick.
+    /// The policy mode: controller owns q, dq, tau, kp and kd every tick.
     kImpedance,
 };
 
@@ -40,20 +40,22 @@ struct InterfaceClaims
     bool position = false;
     bool velocity = false;
     bool effort   = false;
-    /// kp and kd together; either one alone does not define an impedance.
+    /// kp and kd together; either alone does not define an impedance.
     bool impedance = false;
 };
 
 /**
- * @brief Maps claimed interfaces onto the mode write() acts on.
+ * @brief Maps claimed command interfaces onto the mode write() acts on.
  *
- * Impedance wins because it is the only claim carrying its own gains. A velocity-only claim
- * resolves to kDisabled: with kp and kd both zero the firmware law has no term left to act on,
- * so there is no such mode on this hardware.
+ * Impedance outranks the rest, being the only claim carrying its own gains. Velocity alone
+ * resolves to kDisabled: with kp and kd zero the firmware law has no term left to act on.
+ *
+ * @param claims Interfaces a controller currently holds on one joint.
+ * @return The branch fillMotorCmd should take for that joint.
  */
 [[nodiscard]] JointControlMode resolveJointMode(const InterfaceClaims& claims) noexcept;
 
-/// One joint's commanded values, as written by whichever controller holds its interfaces.
+/// One joint's commanded values, from whichever controller holds its interfaces.
 struct JointCommand
 {
     double position = 0.0;
@@ -63,7 +65,7 @@ struct JointCommand
     double kd       = 0.0;
 };
 
-/// Gains used in kPositionOnly, where the controller supplies no kp/kd of its own.
+/// Gains used in kPositionOnly, where the controller supplies none of its own.
 struct PositionOnlyGains
 {
     double kp = 0.0;
@@ -73,26 +75,39 @@ struct PositionOnlyGains
 /**
  * @brief Fills one motor_cmd slot for `mode`.
  *
- * @param measured_position Read only in kEffort, where q must sit on the measurement so the
- *                          position term contributes nothing while tau does the work.
+ * @param motor             Slot filled in place.
+ * @param mode              Which branch of the firmware law to command.
+ * @param command           Values written by the claiming controller.
+ * @param fallback          Gains applied in kPositionOnly.
+ * @param measured_position Read only in kEffort, where q sits on the measurement so the position
+ *                          term contributes nothing.
  */
 void fillMotorCmd(
-    unitree_hg::msg::MotorCmd& motor, JointControlMode mode, const JointCommand& command,
+    unitree_hg::msg::dds_::MotorCmd_& motor, JointControlMode mode, const JointCommand& command,
     const PositionOnlyGains& fallback, double measured_position);
 
 /**
- * @brief Fills one motor_cmd slot for the release ramp: hold position at fading stiffness with
- *        fixed damping, so authority hands back as a controlled sag rather than a drop.
+ * @brief Fills one motor_cmd slot for the release ramp: fading stiffness, fixed damping.
  *
- * @param hold_position   Where the joint was when the release began, not the live measurement --
- *                        tracking the fall would drive the joint down with it.
- * @param kp_at_release   The joint's stiffness on the last commanded tick.
+ * @param motor           Slot filled in place.
+ * @param hold_position   Where the joint was when the release began; tracking the live
+ *                        measurement would drive the joint down with the fall.
+ * @param kp_at_release   The joint's stiffness on its last commanded tick.
  * @param stiffness_scale 1.0 at the start of the ramp, 0.0 at its end.
- * @param release_kd      Damping held flat across the whole ramp, so it survives kp reaching zero.
+ * @param release_kd      Damping held flat across the ramp, so it survives kp reaching zero.
  */
 void fillReleaseCmd(
-    unitree_hg::msg::MotorCmd& motor, double hold_position, double kp_at_release,
+    unitree_hg::msg::dds_::MotorCmd_& motor, double hold_position, double kp_at_release,
     double stiffness_scale, double release_kd);
+
+/**
+ * @brief Checksums `cmd` in place over every byte but its own crc field, which the firmware
+ *        requires on every frame.
+ *
+ * @param cmd LowCmd whose crc field is overwritten.
+ * @note bit_cast rather than a uint32_t* cast; see docs/notes/lowcmd-crc-aliasing.md.
+ */
+void computeLowCmdCrc(unitree_hg::msg::dds_::LowCmd_& cmd);
 
 }  // namespace g1_hardware_interface
 

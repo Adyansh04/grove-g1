@@ -107,12 +107,8 @@ void computeLowCmdCrc(unitree_hg::msg::LowCmd& msg)
     }
     raw.reserve = msg.reserve;
 
-    /*
-     * bit_cast, not reinterpret_cast: reading RawLowCmd through a uint32_t* is a strict-aliasing
-     * violation, and at -O2 GCC 13 acts on it -- measured, the mode_pr/mode_machine stores were
-     * dropped from the checksum entirely. Harmless on rt/arm_sdk where both are always 0, fatal
-     * on rt/lowcmd where mode_machine carries 5. test_motor_crc_hg pins it.
-     */
+    // bit_cast, not a uint32_t* cast: that cast is a strict-aliasing violation GCC 13 acts on at
+    // -O2, dropping mode_pr/mode_machine. See docs/notes/lowcmd-crc-aliasing.md.
     const auto words = std::bit_cast<std::array<std::uint32_t, sizeof(RawLowCmd) / 4>>(raw);
     raw.crc          = crc32Core(words.data(), static_cast<std::uint32_t>(words.size()) - 1);
     msg.crc          = raw.crc;

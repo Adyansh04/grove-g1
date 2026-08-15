@@ -21,6 +21,7 @@
   <depend>realtime_tools</depend>
   <depend>sensor_msgs</depend>
   <depend>unitree_hg</depend>
+  <depend>diagnostic_msgs</depend>
 
   <!-- Lint checks run via workspace-root CTests (see CMakeLists.txt). -->
   <test_depend>ament_lint_auto</test_depend>

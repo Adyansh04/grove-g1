@@ -1,10 +1,7 @@
 /**
  * @file test_motor_crc_hg.cpp
- * @brief Coverage tests for the LowCmd checksum the firmware validates.
- *
- * The bit loop is vendored and unmodified, so these do not re-derive it. What they pin down is
- * the part that can silently rot: which bytes the CRC actually covers, and whether the raw
- * mirror struct's padding is deterministic.
+ * @brief Which bytes the LowCmd checksum covers, and whether the mirror struct's padding is
+ *        deterministic. The bit loop itself is vendored, so it is not re-derived here.
  */
 #include <gmock/gmock.h>
 
@@ -19,7 +16,7 @@ namespace g1_hardware_interface::vendored
 namespace
 {
 
-/// A non-trivial baseline: an all-zero message makes too many mistakes look identical.
+/// Non-trivial on purpose: an all-zero message makes too many mistakes look identical.
 unitree_hg::msg::LowCmd baseline()
 {
     unitree_hg::msg::LowCmd cmd{};
@@ -72,8 +69,7 @@ TEST(MotorCrcHg, EveryMotorCmdFieldIsCovered)
 
 TEST(MotorCrcHg, TheLastMotorSlotIsCovered)
 {
-    // The covered length is derived from sizeof, so an off-by-one would drop the tail of the
-    // array. Slot 29 is the arm_sdk weight and 34 is the end of the message.
+    // The covered length comes from sizeof, so an off-by-one drops the tail of the array.
     expectCovered("motor_cmd[29]", [](auto& cmd) { cmd.motor_cmd[29].q = 1.0F; });
     expectCovered("motor_cmd[34]", [](auto& cmd) { cmd.motor_cmd[34].q = 1.0F; });
 }
@@ -87,9 +83,8 @@ TEST(MotorCrcHg, TheChecksumFieldItselfIsExcluded)
 
 TEST(MotorCrcHg, IdenticalContentChecksumsIdenticallyAcrossMessages)
 {
-    // The CRC runs over a raw mirror struct including its alignment padding, so a message built
-    // field by field must agree with one built any other way. Divergence here means uninitialised
-    // padding is reaching the wire.
+    // The CRC covers the mirror struct's alignment padding too, so divergence here means
+    // uninitialised padding is reaching the wire.
     unitree_hg::msg::LowCmd built_in_reverse{};
     built_in_reverse.mode_machine = 5;
     built_in_reverse.mode_pr      = 0;

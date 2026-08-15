@@ -1,6 +1,6 @@
 /**
  * @file test_pluginlib_loading.cpp
- * @brief Verifies the G1ArmSdkSystem hardware_interface plugin is discoverable via pluginlib.
+ * @brief Verifies both hardware_interface plugins in this package are discoverable via pluginlib.
  */
 
 #include <gmock/gmock.h>
@@ -24,5 +24,23 @@ TEST(G1ArmSdkSystemPluginlib, DiscoversAndInstantiates)
     ASSERT_TRUE(loader.isClassAvailable("g1_hardware_interface/G1ArmSdkSystem"));
 
     auto instance = loader.createUniqueInstance("g1_hardware_interface/G1ArmSdkSystem");
+    ASSERT_NE(instance, nullptr);
+}
+
+/**
+ * @brief Same discovery proof for the rt/lowcmd component.
+ *
+ * Two <library> blocks now live in one plugin description file, so this also catches a second
+ * entry that names a library or class that does not exist.
+ */
+TEST(G1LowCmdSystemPluginlib, DiscoversAndInstantiates)
+{
+    pluginlib::ClassLoader<hardware_interface::SystemInterface> loader(
+        "hardware_interface",
+        "hardware_interface::SystemInterface");
+
+    ASSERT_TRUE(loader.isClassAvailable("g1_hardware_interface/G1LowCmdSystem"));
+
+    auto instance = loader.createUniqueInstance("g1_hardware_interface/G1LowCmdSystem");
     ASSERT_NE(instance, nullptr);
 }
