@@ -136,8 +136,9 @@ RUN cat > /etc/profile.d/99-grove-g1-env.sh <<'EOF'
 export ROS_DOMAIN_ID="${GROVE_G1_ROS_DOMAIN_ID:-1}"
 EOF
 
-# Remove pip `em` — it shadows apt's python3-empy and breaks rosidl generation.
-RUN python3 -m pip uninstall -y em
+# rosidl needs empy 3.3.4 (apt python3-empy); pip's `em` and `empy` 4.x both shadow it from
+# /usr/local, and 4.x's rewritten API throws TransientParseError while expanding templates.
+RUN python3 -m pip uninstall -y em empy
 
 # --- Milestone 2: LocoClient deps -------------------------------------------
 
