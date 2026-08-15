@@ -1,7 +1,11 @@
 # Extends your pre-built image (tag is provided by docker-compose.yml via BASE_IMAGE)
 
-ARG BASE_IMAGE=adyansh04/ros-dev:humble
+ARG BASE_IMAGE=adyansh04/ros-dev:jazzy
 FROM ${BASE_IMAGE}
+
+# Pinned explicitly rather than inherited from the base image ENV: every `ros-${ROS_DISTRO}-*`
+# apt name below resolves through it, and an unset value would silently install nothing.
+ARG ROS_DISTRO=jazzy
 
 # Allow pip installs in distro-managed Python images (required on Ubuntu 24.04+/ROS Jazzy).
 ENV PIP_BREAK_SYSTEM_PACKAGES=1
@@ -37,15 +41,15 @@ RUN apt-get update && apt-get install -y \
         libglx-mesa0 \
         libspdlog-dev \
         libyaml-cpp-dev \
-        ros-humble-launch-testing \
-        ros-humble-launch-testing-ament-cmake \
-        ros-humble-realtime-tools \
-        ros-humble-rmw-cyclonedds-cpp \
-        ros-humble-ros2-control \
-        ros-humble-ros2-controllers \
-        ros-humble-ros2launch \
-        ros-humble-rosidl-generator-dds-idl \
-        ros-humble-xacro \
+        ros-${ROS_DISTRO}-launch-testing \
+        ros-${ROS_DISTRO}-launch-testing-ament-cmake \
+        ros-${ROS_DISTRO}-realtime-tools \
+        ros-${ROS_DISTRO}-rmw-cyclonedds-cpp \
+        ros-${ROS_DISTRO}-ros2-control \
+        ros-${ROS_DISTRO}-ros2-controllers \
+        ros-${ROS_DISTRO}-ros2launch \
+        ros-${ROS_DISTRO}-rosidl-generator-dds-idl \
+        ros-${ROS_DISTRO}-xacro \
         xvfb \
     && rm -rf /var/lib/apt/lists/*
 
@@ -144,7 +148,7 @@ RUN apt-get update && apt-get install -y nlohmann-json3-dev \
 # --- Milestone 3: walking-policy deps ---------------------------------------
 
 # ONNX Runtime CPU tarball. ldconfig (not RPATH) avoids LD_LIBRARY_PATH shadowing
-# by ROS's /opt/ros/humble/lib.
+# by ROS's /opt/ros/${ROS_DISTRO}/lib.
 ARG ONNXRUNTIME_VERSION=1.20.1
 RUN mkdir -p /opt/onnxruntime && \
     curl -fsSL "https://github.com/microsoft/onnxruntime/releases/download/v${ONNXRUNTIME_VERSION}/onnxruntime-linux-x64-${ONNXRUNTIME_VERSION}.tgz" \
@@ -153,7 +157,7 @@ RUN mkdir -p /opt/onnxruntime && \
     ldconfig
 
 # teleop_twist_keyboard for manual velocity testing via ~/cmd_vel.
-RUN apt-get update && apt-get install -y ros-humble-teleop-twist-keyboard \
+RUN apt-get update && apt-get install -y ros-${ROS_DISTRO}-teleop-twist-keyboard \
     && rm -rf /var/lib/apt/lists/*
 
 # --- Milestone 4: perception sim track ---------------------------------------
@@ -162,13 +166,13 @@ RUN apt-get update && apt-get install -y ros-humble-teleop-twist-keyboard \
 # Pinned to main, not a release: only main has the 3D PointCloud2 lidar the Mid360 needs.
 ARG MUJOCO_ROS2_CONTROL_SHA=ae0b235affe8792cf8584cb7074e10038f26f57b
 RUN apt-get update && apt-get install -y \
-        ros-humble-mujoco-vendor \
-        ros-humble-ros2-control-cmake \
-        ros-humble-backward-ros \
-        ros-humble-control-toolbox \
-        ros-humble-transmission-interface \
-        ros-humble-tinyxml2-vendor \
-        ros-humble-velocity-controllers \
+        ros-${ROS_DISTRO}-mujoco-vendor \
+        ros-${ROS_DISTRO}-ros2-control-cmake \
+        ros-${ROS_DISTRO}-backward-ros \
+        ros-${ROS_DISTRO}-control-toolbox \
+        ros-${ROS_DISTRO}-transmission-interface \
+        ros-${ROS_DISTRO}-tinyxml2-vendor \
+        ros-${ROS_DISTRO}-velocity-controllers \
     && rm -rf /var/lib/apt/lists/*
 
 # demos/_tests skipped: extra deps and example robots we do not use.
@@ -180,7 +184,7 @@ RUN mkdir -p /opt/mujoco_ros2_control_ws/src && \
     git checkout -q FETCH_HEAD && \
     rm -rf .git && \
     cd /opt/mujoco_ros2_control_ws && \
-    . /opt/ros/humble/setup.sh && \
+    . /opt/ros/${ROS_DISTRO}/setup.sh && \
     MAKEFLAGS=-j${BUILD_JOBS} colcon build --merge-install --parallel-workers 1 \
         --cmake-args -DCMAKE_BUILD_TYPE=Release \
         --packages-skip mujoco_ros2_control_demos mujoco_ros2_control_tests && \
@@ -196,10 +200,10 @@ RUN printf '. /opt/mujoco_ros2_control_ws/install/setup.sh\n' \
 # floats and a silent removal would surface as a missing launch file. pointcloud-to-laserscan
 # is the one genuinely absent -- slam_toolbox consumes LaserScan only.
 RUN apt-get update && apt-get install -y \
-        ros-humble-navigation2 \
-        ros-humble-nav2-bringup \
-        ros-humble-slam-toolbox \
-        ros-humble-pointcloud-to-laserscan \
+        ros-${ROS_DISTRO}-navigation2 \
+        ros-${ROS_DISTRO}-nav2-bringup \
+        ros-${ROS_DISTRO}-slam-toolbox \
+        ros-${ROS_DISTRO}-pointcloud-to-laserscan \
     && rm -rf /var/lib/apt/lists/*
 
 # --- Milestone 7: MoveIt 2 (structured manipulation) --------------------------
@@ -208,12 +212,12 @@ RUN apt-get update && apt-get install -y \
 # 7-DoF arms, moveit-ros-perception carries the octomap updater plugins the metapackage omits,
 # realsense2-description supplies the D435's real geometry. moveit-servo is deliberately absent.
 RUN apt-get update && apt-get install -y \
-        ros-humble-moveit \
-        ros-humble-moveit-configs-utils \
-        ros-humble-moveit-setup-assistant \
-        ros-humble-pick-ik \
-        ros-humble-moveit-ros-perception \
-        ros-humble-realsense2-description \
+        ros-${ROS_DISTRO}-moveit \
+        ros-${ROS_DISTRO}-moveit-configs-utils \
+        ros-${ROS_DISTRO}-moveit-setup-assistant \
+        ros-${ROS_DISTRO}-pick-ik \
+        ros-${ROS_DISTRO}-moveit-ros-perception \
+        ros-${ROS_DISTRO}-realsense2-description \
     && rm -rf /var/lib/apt/lists/*
 
 # --- Milestone 9: orchestration + manipulation skills -------------------------
@@ -222,15 +226,15 @@ RUN apt-get update && apt-get install -y \
 # include roots, and nothing links both. vision-msgs carries the Detection3DArray that
 # g1_manipulation publishes. twist-mux is deliberately absent -- its Humble build is broken.
 RUN apt-get update && apt-get install -y \
-        ros-humble-behaviortree-cpp \
-        ros-humble-vision-msgs \
+        ros-${ROS_DISTRO}-behaviortree-cpp \
+        ros-${ROS_DISTRO}-vision-msgs \
     && rm -rf /var/lib/apt/lists/*
 
 # behaviortree_cpp 4.9.1 installs under lib/<triplet>/ while its own CMake export looks in
 # lib/, so dependants fail to configure. Guarded so a fixed release keeps its real file.
-RUN test -e /opt/ros/humble/lib/libbehaviortree_cpp.so || \
+RUN test -e /opt/ros/${ROS_DISTRO}/lib/libbehaviortree_cpp.so || \
     ln -s "$(dpkg-architecture -qDEB_HOST_MULTIARCH)/libbehaviortree_cpp.so" \
-          /opt/ros/humble/lib/libbehaviortree_cpp.so
+          /opt/ros/${ROS_DISTRO}/lib/libbehaviortree_cpp.so
 
 # --- Milestone 10: LiDAR-inertial odometry ------------------------------------
 

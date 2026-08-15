@@ -7,7 +7,11 @@
 #
 # The version ARGs below must match .devcontainer/Dockerfile; ci.yml fails the build if they
 # drift, because CI on different versions tests a configuration nobody ships.
-FROM ros:humble-ros-base
+FROM ros:jazzy-ros-base
+
+# Must match .devcontainer/Dockerfile: every `ros-${ROS_DISTRO}-*` apt name below resolves
+# through it.
+ARG ROS_DISTRO=jazzy
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ENV DEBIAN_FRONTEND=noninteractive
@@ -52,38 +56,38 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # ROS packages the workspace builds against; ros-base carries none of them.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        ros-humble-ament-cmake-gmock \
-        ros-humble-ament-cmake-pytest \
-        ros-humble-ament-lint-auto \
-        ros-humble-ament-lint-common \
-        ros-humble-behaviortree-cpp \
-        ros-humble-launch-testing \
-        ros-humble-launch-testing-ament-cmake \
-        ros-humble-moveit \
-        ros-humble-moveit-configs-utils \
-        ros-humble-moveit-ros-perception \
-        ros-humble-navigation2 \
-        ros-humble-nav2-bringup \
-        ros-humble-pcl-conversions \
-        ros-humble-pcl-ros \
-        ros-humble-pick-ik \
-        ros-humble-pointcloud-to-laserscan \
-        ros-humble-realsense2-description \
-        ros-humble-realtime-tools \
-        ros-humble-rmw-cyclonedds-cpp \
-        ros-humble-ros2-control \
-        ros-humble-ros2-controllers \
-        ros-humble-rosidl-generator-dds-idl \
-        ros-humble-slam-toolbox \
-        ros-humble-vision-msgs \
-        ros-humble-xacro \
+        ros-${ROS_DISTRO}-ament-cmake-gmock \
+        ros-${ROS_DISTRO}-ament-cmake-pytest \
+        ros-${ROS_DISTRO}-ament-lint-auto \
+        ros-${ROS_DISTRO}-ament-lint-common \
+        ros-${ROS_DISTRO}-behaviortree-cpp \
+        ros-${ROS_DISTRO}-launch-testing \
+        ros-${ROS_DISTRO}-launch-testing-ament-cmake \
+        ros-${ROS_DISTRO}-moveit \
+        ros-${ROS_DISTRO}-moveit-configs-utils \
+        ros-${ROS_DISTRO}-moveit-ros-perception \
+        ros-${ROS_DISTRO}-navigation2 \
+        ros-${ROS_DISTRO}-nav2-bringup \
+        ros-${ROS_DISTRO}-pcl-conversions \
+        ros-${ROS_DISTRO}-pcl-ros \
+        ros-${ROS_DISTRO}-pick-ik \
+        ros-${ROS_DISTRO}-pointcloud-to-laserscan \
+        ros-${ROS_DISTRO}-realsense2-description \
+        ros-${ROS_DISTRO}-realtime-tools \
+        ros-${ROS_DISTRO}-rmw-cyclonedds-cpp \
+        ros-${ROS_DISTRO}-ros2-control \
+        ros-${ROS_DISTRO}-ros2-controllers \
+        ros-${ROS_DISTRO}-rosidl-generator-dds-idl \
+        ros-${ROS_DISTRO}-slam-toolbox \
+        ros-${ROS_DISTRO}-vision-msgs \
+        ros-${ROS_DISTRO}-xacro \
     && rm -rf /var/lib/apt/lists/*
 
 # behaviortree_cpp 4.9.1 installs under lib/<triplet>/ while its own CMake export looks in
 # lib/, so dependants fail to configure. Guarded so a fixed release keeps its real file.
-RUN test -e /opt/ros/humble/lib/libbehaviortree_cpp.so || \
+RUN test -e /opt/ros/${ROS_DISTRO}/lib/libbehaviortree_cpp.so || \
     ln -s "$(dpkg-architecture -qDEB_HOST_MULTIARCH)/libbehaviortree_cpp.so" \
-          /opt/ros/humble/lib/libbehaviortree_cpp.so
+          /opt/ros/${ROS_DISTRO}/lib/libbehaviortree_cpp.so
 
 # Compilation parallelism for the three source builds below. Sized for the GitHub runner that
 # builds this image, not for a workstation: heavy C++ here runs 0.5-1 GB per cc1plus, and the

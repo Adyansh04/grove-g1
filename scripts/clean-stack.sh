@@ -30,7 +30,7 @@
 #.
 set -u
 
-CONTAINER=${CONTAINER:-ros_dev_humble}
+CONTAINER=${CONTAINER:-ros_dev_jazzy}
 
 # Re-enter the container when run from the host. The worker is piped in rather than mounted:
 # only ./workspace is bind-mounted, so this file is not visible inside.
@@ -106,7 +106,7 @@ rm -f /tmp/.X133-lock /tmp/.X11-unix/X133 /tmp/g1_sensors.sock
 # aborts the script silently right here -- which looked exactly like the cleanup working and
 # then skipping its own verification.
 set +u
-source /opt/ros/humble/setup.bash 2>/dev/null || true
+source /opt/ros/${ROS_DISTRO:-jazzy}/setup.bash 2>/dev/null || true
 [ -f /root/workspace/install/setup.bash ] && source /root/workspace/install/setup.bash
 set -u
 ros2 daemon stop >/dev/null 2>&1

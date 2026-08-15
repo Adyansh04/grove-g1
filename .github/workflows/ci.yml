@@ -31,7 +31,7 @@ env:
 jobs:
   # Tag is the Dockerfile's hash, so this is a registry probe unless the Dockerfile changed.
   image:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     # The only job that pushes; the other two pull with a read-only token.
     permissions:
       contents: read
@@ -73,7 +73,7 @@ jobs:
 
   build:
     needs: image
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     container:
       image: ${{ needs.image.outputs.ref }}
       credentials:
@@ -124,7 +124,7 @@ jobs:
         # ruff does not fail the test -- it deletes it, and CI stays green with nothing linted.
         # The grep is what notices.
         run: |
-          source /opt/ros/humble/setup.bash
+          source /opt/ros/jazzy/setup.bash
           colcon build --symlink-install \
             --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
             --event-handlers console_cohesion+ 2>&1 | tee build.log
@@ -139,7 +139,7 @@ jobs:
         # runs here as each package's own ctest target, which is why there is no lint job.
         # --return-code-on-test-failure: colcon test otherwise exits 0 over a failing suite.
         run: |
-          source /opt/ros/humble/setup.bash
+          source /opt/ros/jazzy/setup.bash
           source install/setup.bash
           colcon test \
             --packages-select-regex '^g1_' \
@@ -174,7 +174,7 @@ jobs:
   # logic, not as a number for the repo. Deliberately no badge.
   coverage:
     needs: image
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     continue-on-error: true
     container:
       image: ${{ needs.image.outputs.ref }}
@@ -197,7 +197,7 @@ jobs:
         # Everything, because our packages do not build without the vendored ones. gcovr's
         # filter is what narrows the report back down to ours.
         run: |
-          source /opt/ros/humble/setup.bash
+          source /opt/ros/jazzy/setup.bash
           colcon build \
             --cmake-args -DCMAKE_BUILD_TYPE=Debug \
               -DCMAKE_CXX_FLAGS="--coverage -O0" -DCMAKE_EXE_LINKER_FLAGS="--coverage" \
@@ -206,7 +206,7 @@ jobs:
       - name: Test
         working-directory: workspace
         run: |
-          source /opt/ros/humble/setup.bash
+          source /opt/ros/jazzy/setup.bash
           source install/setup.bash
           colcon test --packages-select-regex '^g1_' --executor sequential \
             --ctest-args -LE simulator

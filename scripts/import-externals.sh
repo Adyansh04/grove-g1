@@ -51,7 +51,7 @@ if [ -d "${DRIVER}" ]; then
     # colcon.pkg keeps them attached to this package instead of every build command in the
     # repo's docs having to carry them.
     cat > "${DRIVER}/colcon.pkg" <<'EOF'
-{"cmake-args": ["-DROS_EDITION=ROS2", "-DDISTRO_ROS=humble"]}
+{"cmake-args": ["-DROS_EDITION=ROS2", "-DDISTRO_ROS=jazzy"]}
 EOF
     echo "prepared livox_ros_driver2 for ROS 2"
 fi

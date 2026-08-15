@@ -36,5 +36,5 @@
 		}
 	},
 	// Build once to generate compile_commands.json for clangd. Uses ROS_DISTRO from image env.
-	"postCreateCommand": "bash -lc 'source /opt/ros/${ROS_DISTRO:-humble}/setup.bash && cd /root/workspace && colcon build --symlink-install --cmake-args -DCMAKE_EXPORT_COMPILE_COMMANDS=ON || true'"
+	"postCreateCommand": "bash -lc 'source /opt/ros/${ROS_DISTRO:-jazzy}/setup.bash && cd /root/workspace && colcon build --symlink-install --cmake-args -DCMAKE_EXPORT_COMPILE_COMMANDS=ON || true'"
 }
