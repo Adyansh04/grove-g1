@@ -33,13 +33,16 @@ The hold is tracked per motor rather than globally, so controllers spawning in a
 over one group at a time. Globally, the first controller to activate released every joint the
 others had not claimed yet.
 
-The weld is released only once every motor is driven, so the robot is never left balancing on
-a half-claimed body. A scene that declares no such weld simply has nothing to release, which
+The weld is released only once every motor has been driven for half a second, so the robot is
+never left balancing on a half-claimed body or on a policy that has not reached its stance.
+Which controller activates last is a spawner race, so without that settle the weld sometimes
+released on the very tick a balance policy first wrote, while its blend was still at zero and
+its command was therefore a static pose. Measured, that dropped the robot about half the time. A scene that declares no such weld simply has nothing to release, which
 is what keeps the arm_sdk scenes and the permanently-pinned test scene unchanged.
 
 --- a/simulate/src/unitree_sdk2_bridge.h
 +++ b/simulate/src/unitree_sdk2_bridge.h
-@@ -90,6 +90,56 @@
+@@ -90,6 +90,66 @@
  
      std::shared_ptr<unitree::common::UnitreeJoystick> joystick = nullptr;
  
@@ -54,12 +57,16 @@ is what keeps the arm_sdk scenes and the permanently-pinned test scene unchanged
 +    static constexpr const char* kStartupWeldName = "pelvis_startup_hold";
 +    static constexpr double kStartupHoldKp = 200.0;
 +    static constexpr double kStartupHoldKd = 5.0;
++    // Bridge ticks at 1 kHz, so half a second for a balance policy to reach its stance while the
++    // pelvis is still supported.
++    static constexpr int kStartupSettleTicks = 500;
 +
 +    // Per motor, so controllers spawning in any order hand over one group at a time instead of
 +    // the first to activate dropping every joint the others still hold.
 +    std::vector<char> startup_hold_;
 +    std::vector<mjtNum> startup_hold_q_;
 +    int startup_weld_id_ = -1;
++    int startup_settle_ticks_ = 0;
 +
 +    void _capture_startup_hold()
 +    {
@@ -81,14 +88,20 @@ is what keeps the arm_sdk scenes and the permanently-pinned test scene unchanged
 +            kStartupHoldKd * (0.0 - mj_data_->sensordata[i + num_motor_]);
 +    }
 +
-+    // Released only once every motor is driven, so the robot is never left balancing on a
-+    // half-claimed body. A scene without the weld simply has nothing to release.
++    // Released once every motor has been driven for kStartupSettleTicks, so the robot is never
++    // left balancing on a half-claimed body or on a policy that has not reached its stance yet.
++    // A scene without the weld simply has nothing to release.
++    //
++    // The settle matters: which controller activates last is a spawner race, so without it the
++    // weld sometimes releases on the tick a balance policy first writes, while its blend is still
++    // at zero and its command is therefore a static pose. A static pose topples.
 +    void _release_startup_weld_if_done()
 +    {
 +        if (startup_weld_id_ < 0) { return; }
 +        for (int i = 0; i < num_motor_; i++) {
 +            if (startup_hold_[i]) { return; }
 +        }
++        if (++startup_settle_ticks_ < kStartupSettleTicks) { return; }
 +        mj_data_->eq_active[startup_weld_id_] = 0;
 +        startup_weld_id_ = -1;
 +    }
@@ -96,7 +109,7 @@ is what keeps the arm_sdk scenes and the permanently-pinned test scene unchanged
      void _check_sensor()
      {
          num_motor_ = mj_model_->nu;
-@@ -178,12 +228,29 @@
+@@ -178,12 +238,29 @@
          // lowcmd
          {
              std::lock_guard<std::mutex> lock(lowcmd->mutex_);
