@@ -177,16 +177,17 @@ def test_the_mount_is_actually_upside_down():
 def test_the_imu_frame_inverts_the_livox_lever_arm():
     # mid360_imu is hand-written as the inverse of Livox's published lidar-in-IMU offset;
     # check the two cancel instead of trusting the sign flip was done right.
+    #
+    # g1_common.xacro, not either stack's file: the frames both control stacks share live there,
+    # and reading one stack's would silently stop covering the other.
     xacro = (
-        pathlib.Path(get_package_share_directory("g1_description"))
-        / "urdf"
-        / "g1_arm_sdk.urdf.xacro"
+        pathlib.Path(get_package_share_directory("g1_description")) / "urdf" / "g1_common.xacro"
     )
     match = re.search(
         r'<child link="mid360_imu"/>\s*<origin xyz="([^"]+)"',
         xacro.read_text(),
     )
-    assert match, "mid360_imu joint not found in g1_arm_sdk.urdf.xacro"
+    assert match, "mid360_imu joint not found in g1_common.xacro"
     offset = [float(v) for v in match.group(1).split()]
     for axis in range(3):
         assert offset[axis] == pytest.approx(-_LIVOX_LIDAR_IN_IMU[axis], abs=1e-9)
