@@ -6,6 +6,7 @@
 #include "g1_controllers/g1_agile_controller.hpp"
 
 #include <algorithm>
+#include <ament_index_cpp/get_package_share_directory.hpp>
 #include <cmath>
 #include <pluginlib/class_list_macros.hpp>
 #include <stdexcept>
@@ -35,6 +36,7 @@ double clampMagnitude(double value, double limit)
 controller_interface::CallbackReturn G1AgileController::on_init()
 {
     auto_declare<std::string>("model_path", "");
+    auto_declare<std::string>("cmd_vel_topic", "/cmd_vel");
     auto_declare<std::string>("imu_sensor_name", "imu");
     auto_declare<std::string>("command_prefix", "");
     auto_declare<std::string>("command_suffix", "");
@@ -51,6 +53,7 @@ G1AgileController::on_configure(const rclcpp_lifecycle::State& /*previous_state*
     const auto logger = get_node()->get_logger();
 
     model_path_        = get_node()->get_parameter("model_path").as_string();
+    cmd_vel_topic_     = get_node()->get_parameter("cmd_vel_topic").as_string();
     imu_sensor_name_   = get_node()->get_parameter("imu_sensor_name").as_string();
     command_prefix_    = get_node()->get_parameter("command_prefix").as_string();
     command_suffix_    = get_node()->get_parameter("command_suffix").as_string();
@@ -61,8 +64,9 @@ G1AgileController::on_configure(const rclcpp_lifecycle::State& /*previous_state*
 
     if (model_path_.empty())
     {
-        RCLCPP_ERROR(logger, "model_path is required");
-        return controller_interface::CallbackReturn::ERROR;
+        // Default to the policy shipped with this package, so only a retrained one needs a path.
+        model_path_ = ament_index_cpp::get_package_share_directory("g1_controllers")
+                      + "/policy/unitree_g1_velocity_e2e.onnx";
     }
     if (decimation_ < 1)
     {
@@ -98,7 +102,7 @@ G1AgileController::on_configure(const rclcpp_lifecycle::State& /*previous_state*
 
     cmd_vel_buffer_.writeFromNonRT(geometry_msgs::msg::Twist{});
     cmd_vel_subscriber_ = get_node()->create_subscription<geometry_msgs::msg::Twist>(
-        "~/cmd_vel",
+        cmd_vel_topic_,
         rclcpp::SystemDefaultsQoS(),
         [this](const geometry_msgs::msg::Twist::SharedPtr message) {
             cmd_vel_buffer_.writeFromNonRT(*message);

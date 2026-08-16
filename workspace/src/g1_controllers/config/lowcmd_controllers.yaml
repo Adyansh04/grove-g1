@@ -1,13 +1,15 @@
 # controller_manager config for the whole-body rt/lowcmd stack.
 #
-# Bring-up shape only: a freeze that holds the body and one probe joint to prove the path end to
-# end. PR 4 replaces this wholesale when the AGILE policy controller lands and claims the 12 leg
-# joints plus waist_roll/waist_pitch.
+# Ownership split across the component's 29 body motors:
+#   locomotion_safety_controller  12 legs + waist roll/pitch, fed by the AGILE policy
+#   upper_body_freeze_controller  waist yaw + the 14 arm joints, held until MoveIt claims them
+# The two sets are disjoint and together cover all 29, which matters because the component
+# leaves any unclaimed joint unpowered.
 
 controller_manager:
   ros__parameters:
-    # 200 Hz, matching NVIDIA's. Their policy runs at 50 Hz under it via decimation: 4, so this
-    # rate is part of the policy contract rather than a free choice.
+    # 200 Hz. The policy runs at 50 Hz under it via decimation 4, so this rate is part of the
+    # policy's contract rather than a free choice.
     update_rate: 200
 
     joint_state_broadcaster:
@@ -16,11 +18,17 @@ controller_manager:
     imu_sensor_broadcaster:
       type: imu_sensor_broadcaster/IMUSensorBroadcaster
 
+    upper_body_freeze_controller:
+      type: g1_controllers/G1FreezeController
+
     body_freeze_controller:
       type: g1_controllers/G1FreezeController
 
-    probe_position_controller:
-      type: forward_command_controller/ForwardCommandController
+    locomotion_safety_controller:
+      type: g1_controllers/G1SafetyController
+
+    agile_controller:
+      type: g1_controllers/G1AgileController
 
 joint_state_broadcaster:
   ros__parameters:
@@ -34,8 +42,31 @@ imu_sensor_broadcaster:
     sensor_name: imu
     frame_id: pelvis
 
-# Holds everything except the probe joint. Claiming kp/kd puts these joints in the component's
-# impedance branch, which is the mode a policy controller will also use.
+# Waist yaw and both arms: everything the policy does not claim. PR 5 hands these to MoveIt's
+# trajectory controller, at which point this shrinks to waist_yaw alone.
+upper_body_freeze_controller:
+  ros__parameters:
+    kp: 10.0
+    kd: 1.0
+    joints:
+      - waist_yaw_joint
+      - left_shoulder_pitch_joint
+      - left_shoulder_roll_joint
+      - left_shoulder_yaw_joint
+      - left_elbow_joint
+      - left_wrist_roll_joint
+      - left_wrist_pitch_joint
+      - left_wrist_yaw_joint
+      - right_shoulder_pitch_joint
+      - right_shoulder_roll_joint
+      - right_shoulder_yaw_joint
+      - right_elbow_joint
+      - right_wrist_roll_joint
+      - right_wrist_pitch_joint
+      - right_wrist_yaw_joint
+
+# All 29, for the policy-off fallback and as the emergency target the safety controller switches
+# to. Never active at the same time as the two controllers above: it claims the same joints.
 body_freeze_controller:
   ros__parameters:
     kp: 10.0
@@ -59,6 +90,7 @@ body_freeze_controller:
       - left_shoulder_pitch_joint
       - left_shoulder_roll_joint
       - left_shoulder_yaw_joint
+      - left_elbow_joint
       - left_wrist_roll_joint
       - left_wrist_pitch_joint
       - left_wrist_yaw_joint
@@ -70,11 +102,57 @@ body_freeze_controller:
       - right_wrist_pitch_joint
       - right_wrist_yaw_joint
 
-# The one joint left free, so a single command can be pushed through the whole path and read back.
-# Position only and no gains, so it exercises the component's kPositionOnly branch and the
-# position_only_kp/kd params from the URDF.
-probe_position_controller:
+# The blend stage the policy writes through. Joint order here fixes the reference-interface
+# layout, not the policy's own ordering, which the controller maps by name.
+locomotion_safety_controller:
   ros__parameters:
+    blend_ratio: 1.0
+    # Fast on purpose. The simulator releases its pelvis weld the moment every motor is driven,
+    # which is the same tick this controller starts writing, so authority has to be complete by
+    # then: a partial blend commands a static pose, and a static pose topples exactly the way an
+    # unbalanced statue does. Measured, a one-second ramp put the robot on its face every time.
+    # On hardware the robot is supported and an operator raises blend_ratio by hand, so the rate
+    # limit still does its job there.
+    max_blend_ratio_speed: 20.0
+    # Deliberately unclamped: a balance policy corrects faster than any rate limit worth setting,
+    # and throttling it is what makes the robot fall rather than what prevents it.
+    max_velocity: [-1.0]
+    # Only reached when the policy writes nothing, which is the ticks before its first inference.
+    kp: [100.0]
+    kd: [2.0]
+    # Measured joint speeds this far outside the trained range mean the policy has diverged.
+    mean_velocity_limit: 10.0
+    max_velocity_limit: 35.0
+    emergency_controller: body_freeze_controller
     joints:
-      - left_elbow_joint
-    interface_name: position
+      - left_hip_pitch_joint
+      - left_hip_roll_joint
+      - left_hip_yaw_joint
+      - left_knee_joint
+      - left_ankle_pitch_joint
+      - left_ankle_roll_joint
+      - right_hip_pitch_joint
+      - right_hip_roll_joint
+      - right_hip_yaw_joint
+      - right_knee_joint
+      - right_ankle_pitch_joint
+      - right_ankle_roll_joint
+      - waist_roll_joint
+      - waist_pitch_joint
+
+agile_controller:
+  ros__parameters:
+    # Empty resolves to the policy shipped in this package's share directory.
+    model_path: ""
+    # Nav2's controller_server output, taken straight with no shaping in between.
+    cmd_vel_topic: /cmd_vel
+    imu_sensor_name: imu
+    decimation: 4
+    command_prefix: locomotion_safety_controller
+    command_suffix: _raw
+    # Zero the command if Nav2 stops publishing, so a dead planner halts the robot.
+    cmd_vel_timeout: 0.5
+    # Beyond the measured envelope the policy simply saturates, so clamping here keeps the
+    # commanded and achieved velocities in a sane relationship for Nav2's own feedback.
+    max_linear_speed: 0.6
+    max_angular_speed: 0.9

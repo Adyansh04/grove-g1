@@ -65,7 +65,9 @@ private:
     /// reference interfaces are `<prefix>/<joint>/<type><suffix>`.
     std::string command_prefix_;
     std::string command_suffix_;
+    /// Empty resolves to the policy shipped in this package's share directory.
     std::string model_path_;
+    std::string cmd_vel_topic_;
     std::string imu_sensor_name_;
 
     int decimation_       = kPolicyDecimation;

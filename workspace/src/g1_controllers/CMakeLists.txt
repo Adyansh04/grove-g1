@@ -59,6 +59,7 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 target_link_libraries(g1_agile_controller PUBLIC g1_agile_policy)
 ament_target_dependencies(g1_agile_controller PUBLIC
+  ament_index_cpp
   controller_interface
   geometry_msgs
   hardware_interface
