@@ -12,6 +12,12 @@ controller_manager:
     # policy's contract rather than a free choice.
     update_rate: 200
 
+    # SCHED_FIFO for the update loop. Without it the loop misses its 5 ms deadline by 2-3x as
+    # soon as the perception stack shares the machine -- measured at 14 ms on an otherwise idle
+    # 32-core box, so it is scheduling latency rather than a shortage of cores. A balance policy
+    # fed stale observations diverges, so this is a correctness setting, not a tuning one.
+    thread_priority: 80
+
     joint_state_broadcaster:
       type: joint_state_broadcaster/JointStateBroadcaster
 

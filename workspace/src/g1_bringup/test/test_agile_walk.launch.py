@@ -11,7 +11,6 @@ directly; see the g1_controllers README. What this gate proves is that the integ
 the robot upright and walking on command.
 """
 
-import math
 import os
 import statistics
 import time
@@ -37,12 +36,18 @@ from std_msgs.msg import Bool
 # Kept under launch_testing's 15 s startup deadline, then the policy needs a moment to settle.
 SIM_SETTLE_S = 12.0
 
-# Upright means the pelvis quaternion is near identity apart from yaw. Cosine of half the tilt
-# angle: 0.90 allows roughly 50 degrees, far more than walking needs and far less than a fall.
-MIN_UPRIGHT_W = 0.90
+# Upright is measured as tilt, never as the quaternion's w: yawing drives w down while the robot
+# stands perfectly straight, so a w threshold fails the moment anything turns. This is the world
+# z-component of the body's own z-axis, 1.0 straight up and 0.0 on its side. 0.64 is about 50
+# degrees of lean, far more than walking needs and far less than a fall.
+MIN_UPRIGHT_Z = 0.64
 
 DRIVE_VX = 0.3
 DRIVE_S = 10.0
+
+# Yaw tracks near 1:1 with no deadband, so 8 s at 0.5 rad/s is an unmistakable turn.
+TURN_WZ = 0.5
+TURN_S = 8.0
 
 # Knee travel while walking versus standing. Standing is near-static, a gait swings the knee
 # through a good fraction of a radian, so an order of magnitude separates them.
@@ -110,14 +115,20 @@ class TestAgileWalk(unittest.TestCase):
         while time.monotonic() < deadline:
             cls.executor.spin_once(timeout_sec=0.05)
 
-    def _drive(self, vx, seconds):
+    def _drive(self, seconds, vx=0.0, wz=0.0):
         """Publishes at 20 Hz throughout, so the controller's cmd_vel timeout never trips."""
         command = Twist()
         command.linear.x = vx
+        command.angular.z = wz
         deadline = time.monotonic() + seconds
         while time.monotonic() < deadline:
             self.cmd_vel.publish(command)
             self.executor.spin_once(timeout_sec=0.05)
+
+    @staticmethod
+    def _uprightness(orientation):
+        """World z-component of the body z-axis, from the rotation matrix's lower-right term."""
+        return 1.0 - (2.0 * ((orientation.x * orientation.x) + (orientation.y * orientation.y)))
 
     def _joint_series(self, joint, since_index):
         values = []
@@ -163,11 +174,11 @@ class TestAgileWalk(unittest.TestCase):
     def test_robot_stands_without_a_pinned_pelvis(self):
         """Nothing but the policy is holding the robot up by this point."""
         self.assertTrue(self.imu, "no IMU messages")
-        upright = abs(self.imu[-1].orientation.w)
+        upright = self._uprightness(self.imu[-1].orientation)
         self.assertGreater(
             upright,
-            MIN_UPRIGHT_W,
-            f"pelvis quaternion w={upright:.3f}: the robot is not upright, it has fallen",
+            MIN_UPRIGHT_Z,
+            f"pelvis uprightness {upright:.3f}: the robot is not upright, it has fallen",
         )
 
     def test_walks_on_command_and_stays_up(self):
@@ -176,7 +187,7 @@ class TestAgileWalk(unittest.TestCase):
         standing = self._joint_series(GAIT_JOINT, standing_from)
 
         walking_from = len(self.joint_states)
-        self._drive(DRIVE_VX, DRIVE_S)
+        self._drive(DRIVE_S, vx=DRIVE_VX)
         walking = self._joint_series(GAIT_JOINT, walking_from)
 
         self.assertGreater(len(standing), 10, "too few standing samples")
@@ -199,9 +210,26 @@ class TestAgileWalk(unittest.TestCase):
 
         # Still upright after walking, which is the assertion a fall breaks.
         self.assertGreater(
-            abs(self.imu[-1].orientation.w),
-            MIN_UPRIGHT_W,
+            self._uprightness(self.imu[-1].orientation),
+            MIN_UPRIGHT_Z,
             "the robot fell over while walking",
+        )
+
+    def test_turns_on_command_and_stays_up(self):
+        """Also the case that catches a yaw-blind uprightness check: turning drives the
+        quaternion's w right down while the robot stands perfectly straight."""
+        before = self.imu[-1].orientation
+        self._drive(TURN_S, wz=TURN_WZ)
+        after = self.imu[-1].orientation
+
+        yawed = abs(after.z - before.z)
+        self.assertGreater(
+            yawed, 0.1, f"pelvis yaw barely changed ({yawed:.3f}); the robot did not turn"
+        )
+        self.assertGreater(
+            self._uprightness(after),
+            MIN_UPRIGHT_Z,
+            "the robot fell over while turning",
         )
 
     def test_safety_controller_never_latched(self):

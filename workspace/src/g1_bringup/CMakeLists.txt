@@ -97,7 +97,7 @@ if(BUILD_TESTING)
   set_tests_properties(test_walk_and_arm PROPERTIES RESOURCE_LOCK mujoco_sim LABELS simulator)
 
   # The rt/lowcmd stack under the AGILE policy: standing on its own balance, then walking.
-  add_launch_test(test/test_agile_walk.launch.py TARGET test_agile_walk TIMEOUT 300)
+  add_launch_test(test/test_agile_walk.launch.py TARGET test_agile_walk TIMEOUT 360)
   set_tests_properties(test_agile_walk PROPERTIES RESOURCE_LOCK mujoco_sim LABELS simulator)
 
   # DDS drain gap before the critical balance test.
