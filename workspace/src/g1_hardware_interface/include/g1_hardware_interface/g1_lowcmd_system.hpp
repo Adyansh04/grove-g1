@@ -118,6 +118,10 @@ public:
     on_deactivate(const rclcpp_lifecycle::State& previous_state) override;
     hardware_interface::CallbackReturn
     on_error(const rclcpp_lifecycle::State& previous_state) override;
+    /// Belt and braces: controller_manager does not guarantee on_deactivate runs before the
+    /// process goes away, and this is the only channel holding the robot up.
+    hardware_interface::CallbackReturn
+    on_shutdown(const rclcpp_lifecycle::State& previous_state) override;
 
     hardware_interface::return_type perform_command_mode_switch(
         const std::vector<std::string>& start_interfaces,
@@ -144,7 +148,8 @@ private:
     void registerImuSensor(const hardware_interface::HardwareInfo& info);
     void buildJointSdkMapping();
     void lowStateCallback(const void* message);
-    void publishLowCmd();
+    /// @return false if the DDS write was refused, which write() escalates to a component error.
+    bool publishLowCmd();
     /// Ramps stiffness to zero over release_ramp_s, then stops publishing.
     void               releaseSynchronously();
     [[nodiscard]] bool lowStateIsStale() const;

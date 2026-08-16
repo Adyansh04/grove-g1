@@ -428,6 +428,16 @@ G1LowCmdSystem::on_activate(const rclcpp_lifecycle::State& /*previous_state*/)
                                      diagnostic_msgs::msg::DiagnosticStatus::OK;
             status.message = "surface " + std::to_string(jd.surface_temperature) + " C, winding " +
                              std::to_string(jd.winding_temperature) + " C";
+
+            // Same keys NVIDIA publish, so a consumer written against their stack reads ours.
+            diagnostic_msgs::msg::KeyValue surface;
+            surface.key   = "surface_temperature_C";
+            surface.value = std::to_string(jd.surface_temperature);
+            diagnostic_msgs::msg::KeyValue winding;
+            winding.key   = "winding_temperature_C";
+            winding.value = std::to_string(jd.winding_temperature);
+            status.values = { surface, winding };
+
             msg.status.push_back(status);
         }
         diagnostics_pub_->publish(msg);
@@ -451,6 +461,15 @@ G1LowCmdSystem::on_deactivate(const rclcpp_lifecycle::State& /*previous_state*/)
 hardware_interface::CallbackReturn
 G1LowCmdSystem::on_error(const rclcpp_lifecycle::State& /*previous_state*/)
 {
+    releaseSynchronously();
+    shutdownSdk();
+    return hardware_interface::CallbackReturn::SUCCESS;
+}
+
+hardware_interface::CallbackReturn
+G1LowCmdSystem::on_shutdown(const rclcpp_lifecycle::State& /*previous_state*/)
+{
+    // Idempotent: releaseSynchronously() returns immediately if a deactivate already ran.
     releaseSynchronously();
     shutdownSdk();
     return hardware_interface::CallbackReturn::SUCCESS;
@@ -562,12 +581,12 @@ G1LowCmdSystem::read(const rclcpp::Time& /*time*/, const rclcpp::Duration& /*per
     return hardware_interface::return_type::OK;
 }
 
-void G1LowCmdSystem::publishLowCmd()
+bool G1LowCmdSystem::publishLowCmd()
 {
     low_cmd_.mode_pr()      = kModePr;
     low_cmd_.mode_machine() = mode_machine_;
     computeLowCmdCrc(low_cmd_);
-    lowcmd_publisher_->Write(low_cmd_);
+    return lowcmd_publisher_->Write(low_cmd_);
 }
 
 hardware_interface::return_type
@@ -588,7 +607,11 @@ G1LowCmdSystem::write(const rclcpp::Time& /*time*/, const rclcpp::Duration& /*pe
             jd.position_state);
     }
 
-    publishLowCmd();
+    if (!publishLowCmd())
+    {
+        RCLCPP_ERROR(logger_, "rt/lowcmd write refused -- the robot is no longer being commanded");
+        return hardware_interface::return_type::ERROR;
+    }
     return hardware_interface::return_type::OK;
 }
 
@@ -606,8 +629,12 @@ void G1LowCmdSystem::releaseSynchronously()
             jd.mode == JointControlMode::kImpedance ? jd.command.kp : jd.position_only_gains.kp;
     }
 
-    const auto ticks = static_cast<int>(
-        release_ramp_s_ / std::chrono::duration<double>(kReleaseTickPeriod).count());
+    // At least one tick: release_ramp_s_ is only validated positive, and a sub-tick value would
+    // divide by zero below and put NaN gains on every motor.
+    const int ticks = std::max(
+        1,
+        static_cast<int>(
+            release_ramp_s_ / std::chrono::duration<double>(kReleaseTickPeriod).count()));
     for (int tick = 0; tick <= ticks; ++tick)
     {
         const double scale = 1.0 - static_cast<double>(tick) / static_cast<double>(ticks);
