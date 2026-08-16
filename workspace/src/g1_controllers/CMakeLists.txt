@@ -8,6 +8,25 @@ find_package(pluginlib REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
 
+# The shipped onnxruntimeConfig.cmake points at lib64/ and include/onnxruntime/, neither of which
+# exists in this tarball's layout, so locate the pieces directly instead of find_package.
+find_path(ONNXRUNTIME_INCLUDE_DIR onnxruntime_cxx_api.h
+  PATHS /opt/onnxruntime/include REQUIRED)
+find_library(ONNXRUNTIME_LIBRARY onnxruntime
+  PATHS /opt/onnxruntime/lib REQUIRED)
+
+add_library(g1_agile_policy SHARED src/agile_policy.cpp)
+target_include_directories(g1_agile_policy PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+target_include_directories(g1_agile_policy SYSTEM PUBLIC ${ONNXRUNTIME_INCLUDE_DIR})
+target_link_libraries(g1_agile_policy PUBLIC ${ONNXRUNTIME_LIBRARY})
+target_compile_features(g1_agile_policy PUBLIC cxx_std_20)
+if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  target_compile_options(g1_agile_policy PRIVATE -Wall -Wextra)
+endif()
+
 add_library(g1_freeze_controller SHARED src/g1_freeze_controller.cpp)
 target_include_directories(g1_freeze_controller PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -32,13 +51,14 @@ install(
   DESTINATION include
 )
 install(
-  TARGETS g1_freeze_controller
+  TARGETS g1_agile_policy g1_freeze_controller
   EXPORT export_g1_controllers
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin
 )
 install(DIRECTORY config DESTINATION share/${PROJECT_NAME})
+install(DIRECTORY policy DESTINATION share/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
@@ -51,6 +71,12 @@ if(BUILD_TESTING)
   ament_add_gmock(test_freeze_pluginlib test/test_freeze_pluginlib.cpp)
   target_link_libraries(test_freeze_pluginlib g1_freeze_controller)
   ament_target_dependencies(test_freeze_pluginlib pluginlib controller_interface)
+
+  # Loads the installed policy, so it pins the ONNX contract and the joint tables together.
+  find_package(ament_index_cpp REQUIRED)
+  ament_add_gmock(test_agile_policy test/test_agile_policy.cpp)
+  target_link_libraries(test_agile_policy g1_agile_policy)
+  ament_target_dependencies(test_agile_policy ament_index_cpp)
 
   # See g1_description/CMakeLists.txt for why this is a plain CTest rather than uncrustify.
   find_program(CLANG_FORMAT_EXECUTABLE clang-format)
@@ -89,7 +115,7 @@ if(BUILD_TESTING)
 endif()
 
 ament_export_include_directories(include)
-ament_export_libraries(g1_freeze_controller)
+ament_export_libraries(g1_agile_policy g1_freeze_controller)
 ament_export_targets(export_g1_controllers)
 ament_export_dependencies(
   controller_interface
