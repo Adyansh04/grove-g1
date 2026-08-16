@@ -14,10 +14,14 @@
   <buildtool_depend>ament_cmake</buildtool_depend>
 
   <depend>controller_interface</depend>
+  <depend>controller_manager_msgs</depend>
+  <depend>geometry_msgs</depend>
   <depend>hardware_interface</depend>
   <depend>pluginlib</depend>
   <depend>rclcpp</depend>
   <depend>rclcpp_lifecycle</depend>
+  <depend>realtime_tools</depend>
+  <depend>std_msgs</depend>
 
   <!-- Lint checks run via workspace-root CTests (see CMakeLists.txt). -->
   <test_depend>ament_lint_auto</test_depend>

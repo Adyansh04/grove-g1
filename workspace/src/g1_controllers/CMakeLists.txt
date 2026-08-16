@@ -7,6 +7,10 @@ find_package(hardware_interface REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
+find_package(controller_manager_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(realtime_tools REQUIRED)
+find_package(std_msgs REQUIRED)
 
 # The shipped onnxruntimeConfig.cmake points at lib64/ and include/onnxruntime/, neither of which
 # exists in this tarball's layout, so locate the pieces directly instead of find_package.
@@ -44,6 +48,45 @@ ament_target_dependencies(g1_freeze_controller PUBLIC
   rclcpp_lifecycle
 )
 
+add_library(g1_agile_controller SHARED src/g1_agile_controller.cpp)
+target_include_directories(g1_agile_controller PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+target_compile_features(g1_agile_controller PUBLIC cxx_std_20)
+if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  target_compile_options(g1_agile_controller PRIVATE -Wall -Wextra)
+endif()
+target_link_libraries(g1_agile_controller PUBLIC g1_agile_policy)
+ament_target_dependencies(g1_agile_controller PUBLIC
+  controller_interface
+  geometry_msgs
+  hardware_interface
+  pluginlib
+  rclcpp
+  rclcpp_lifecycle
+  realtime_tools
+  std_msgs
+)
+
+add_library(g1_safety_controller SHARED src/g1_safety_controller.cpp)
+target_include_directories(g1_safety_controller PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+target_compile_features(g1_safety_controller PUBLIC cxx_std_20)
+if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  target_compile_options(g1_safety_controller PRIVATE -Wall -Wextra)
+endif()
+ament_target_dependencies(g1_safety_controller PUBLIC
+  controller_interface
+  controller_manager_msgs
+  hardware_interface
+  pluginlib
+  rclcpp
+  rclcpp_lifecycle
+)
+
 pluginlib_export_plugin_description_file(controller_interface g1_controllers.xml)
 
 install(
@@ -51,7 +94,7 @@ install(
   DESTINATION include
 )
 install(
-  TARGETS g1_agile_policy g1_freeze_controller
+  TARGETS g1_agile_policy g1_freeze_controller g1_agile_controller g1_safety_controller
   EXPORT export_g1_controllers
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
@@ -69,8 +112,14 @@ if(BUILD_TESTING)
   # Discovery through pluginlib's own loader is the proof controller_manager can spawn it;
   # a clean compile does not check the plugin XML or its export.
   ament_add_gmock(test_freeze_pluginlib test/test_freeze_pluginlib.cpp)
-  target_link_libraries(test_freeze_pluginlib g1_freeze_controller)
+  target_link_libraries(test_freeze_pluginlib
+    g1_freeze_controller g1_agile_controller g1_safety_controller)
   ament_target_dependencies(test_freeze_pluginlib pluginlib controller_interface)
+
+  # The blend and slew are the only safety-critical arithmetic here, so they are tested directly
+  # rather than through a controller_manager harness.
+  ament_add_gmock(test_safety_blend test/test_safety_blend.cpp)
+  target_link_libraries(test_safety_blend g1_safety_controller)
 
   # Loads the installed policy, so it pins the ONNX contract and the joint tables together.
   find_package(ament_index_cpp REQUIRED)
@@ -115,14 +164,23 @@ if(BUILD_TESTING)
 endif()
 
 ament_export_include_directories(include)
-ament_export_libraries(g1_agile_policy g1_freeze_controller)
+ament_export_libraries(
+  g1_agile_policy
+  g1_freeze_controller
+  g1_agile_controller
+  g1_safety_controller
+)
 ament_export_targets(export_g1_controllers)
 ament_export_dependencies(
   controller_interface
+  controller_manager_msgs
+  geometry_msgs
   hardware_interface
   pluginlib
   rclcpp
   rclcpp_lifecycle
+  realtime_tools
+  std_msgs
 )
 
 ament_package()

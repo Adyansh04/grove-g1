@@ -44,13 +44,6 @@ public:
     update(const rclcpp::Time& time, const rclcpp::Duration& period) override;
 
 private:
-    /// Locates `names` within `interfaces`, preserving the order of `names`.
-    /// @return false, having logged, if any name is absent.
-    template <typename InterfaceT>
-    bool indexInterfaces(
-        const std::vector<std::string>& names, const std::vector<InterfaceT>& interfaces,
-        std::vector<std::size_t>& out) const;
-
     std::vector<std::string> joint_names_;
     double                   kp_ = 0.0;
     double                   kd_ = 0.0;
