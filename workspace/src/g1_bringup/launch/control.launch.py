@@ -58,10 +58,14 @@ def _launch_setup(context, *args, **kwargs):
         controllers_yaml = os.path.join(
             get_package_share_directory("g1_controllers"), "config", "lowcmd_controllers.yaml"
         )
-        # Nothing may load inactive: a joint the component sees unclaimed is a joint it leaves
-        # unpowered. The policy and the safety controller it writes through must activate in one
-        # switch, hence --activate-as-group: a chainable controller's reference interfaces only
-        # become claimable as it enters chained mode, which happens within that same switch.
+        # Every body joint must be claimed from the start: one the component sees unclaimed is
+        # one it leaves unpowered. The policy and the safety controller it writes through must
+        # activate in one switch, hence --activate-as-group: a chainable controller's reference
+        # interfaces only become claimable as it enters chained mode, within that same switch.
+        #
+        # The three that load inactive are the ones something else switches in later: the arm
+        # and hands wait for the arm bracket, and the locomotion freeze is the safety
+        # controller's emergency target, which can only be activated if it is already loaded.
         controller_spawners = [
             ExecuteProcess(
                 cmd=["ros2", "run", "controller_manager", "spawner", *names, *extra],
@@ -71,11 +75,16 @@ def _launch_setup(context, *args, **kwargs):
             for names, extra in (
                 (["joint_state_broadcaster"], []),
                 (["imu_sensor_broadcaster"], []),
-                (["upper_body_freeze_controller"], []),
+                (["waist_freeze_controller"], []),
+                (["arm_freeze_controller"], []),
                 (
                     ["locomotion_safety_controller", "agile_controller"],
                     ["--activate-as-group"],
                 ),
+                (["locomotion_freeze_controller"], ["--inactive"]),
+                (["arm_trajectory_controller"], ["--inactive"]),
+                (["left_hand_controller"], ["--inactive"]),
+                (["right_hand_controller"], ["--inactive"]),
             )
         ]
     else:

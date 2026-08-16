@@ -160,7 +160,8 @@ class TestAgileWalk(unittest.TestCase):
         for name in (
             "joint_state_broadcaster",
             "imu_sensor_broadcaster",
-            "upper_body_freeze_controller",
+            "waist_freeze_controller",
+            "arm_freeze_controller",
             "locomotion_safety_controller",
             "agile_controller",
         ):
@@ -232,6 +233,18 @@ class TestAgileWalk(unittest.TestCase):
             "the robot fell over while turning",
         )
 
+    def test_the_emergency_target_is_loaded_and_ready(self):
+        """An emergency can only switch to a controller that is already loaded, and this one is
+        never active in a healthy run, so nothing else would notice it missing."""
+        result = self._call(ListControllers, "/controller_manager/list_controllers")
+        states = {controller.name: controller.state for controller in result.controller}
+        self.assertEqual(
+            states.get("locomotion_freeze_controller"),
+            "inactive",
+            f"the safety controller's emergency target is {states.get('locomotion_freeze_controller')}, "
+            "so a divergence would leave the legs with no controller at all",
+        )
+
     def test_safety_controller_never_latched(self):
         """The out-of-domain detector switches to the freeze on divergence, so if it is still
         active the policy stayed inside the range it was trained in for the whole run."""
@@ -243,7 +256,7 @@ class TestAgileWalk(unittest.TestCase):
             "the safety controller latched its emergency and handed over to the freeze",
         )
         self.assertNotEqual(
-            states.get("body_freeze_controller"),
+            states.get("locomotion_freeze_controller"),
             "active",
             "the emergency freeze took over, so the policy diverged at some point",
         )

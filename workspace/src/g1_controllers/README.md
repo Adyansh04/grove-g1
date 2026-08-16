@@ -27,9 +27,24 @@ stack unchanged.
               (policy, 50 Hz)       (blend + clamp)        (hardware component)
 ```
 
-The policy claims 14 joints. `G1FreezeController` holds the other 15 (waist yaw and both arms)
-until PR 5 hands them to MoveIt. The two sets are disjoint and together cover all 29 motors, which
-matters because the component leaves any unclaimed joint unpowered.
+The policy claims 14 joints. The other 15 are held by two more controllers, and every one of the
+29 motors is claimed at every instant, which matters because the component leaves any unclaimed
+joint unpowered:
+
+| Controller | Joints | When active |
+|---|---|---|
+| `locomotion_safety_controller` (with `agile_controller` chained above it) | 12 legs + waist roll/pitch | always |
+| `waist_freeze_controller` | waist yaw | always |
+| `arm_freeze_controller` | the 14 arm joints | until the arm is acquired |
+| `arm_trajectory_controller` | the same 14 | while the arm is acquired |
+| `locomotion_freeze_controller` | 12 legs + waist roll/pitch | emergency only; loaded inactive |
+
+The last two rows are the ones worth reading twice. `arm_freeze_controller` and
+`arm_trajectory_controller` claim identical joints, so they trade in one `switch_controller` call
+rather than two, which `ros2_control` applies inside a single update cycle. And
+`locomotion_freeze_controller` covers exactly what the safety controller was driving and no more:
+a wider freeze could not activate while the arm and waist controllers hold their own joints, so
+the emergency would fail in the one situation it exists for.
 
 `rt/lowcmd` is one message covering all 29 motors, so the component sends something for every
 joint on every tick, claimed or not. Holding is therefore a controller rather than component

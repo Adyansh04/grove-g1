@@ -128,6 +128,15 @@ if(BUILD_TESTING)
   target_link_libraries(test_agile_policy g1_agile_policy)
   ament_target_dependencies(test_agile_policy ament_index_cpp)
 
+  # Reads the controller config against g1_description's own joint list: an unowned motor is an
+  # unpowered one, and neither package's tests can see the pair on their own.
+  find_package(ament_cmake_pytest REQUIRED)
+  ament_add_pytest_test(test_joint_ownership test/test_joint_ownership.py
+    ENV
+      "G1_CONTROLLERS_CONFIG_DIR=${CMAKE_CURRENT_SOURCE_DIR}/config"
+      "G1_DESCRIPTION_URDF_DIR=${CMAKE_CURRENT_SOURCE_DIR}/../g1_description/urdf"
+  )
+
   # See g1_description/CMakeLists.txt for why this is a plain CTest rather than uncrustify.
   find_program(CLANG_FORMAT_EXECUTABLE clang-format)
   set(_clang_format_config "${CMAKE_CURRENT_SOURCE_DIR}/../../.clang-format")
@@ -161,6 +170,21 @@ if(BUILD_TESTING)
   else()
     message(WARNING
       "run-clang-tidy or .clang-tidy not found, or compile commands are off; skipping clang_tidy_check_g1_controllers test")
+  endif()
+
+  # Use workspace-root ruff.toml if available.
+  find_program(RUFF_EXECUTABLE ruff)
+  set(_ruff_config "${CMAKE_CURRENT_SOURCE_DIR}/../../ruff.toml")
+  if(RUFF_EXECUTABLE AND EXISTS "${_ruff_config}")
+    add_test(
+      NAME ruff_check_g1_controllers
+      COMMAND ${RUFF_EXECUTABLE} check --config ${_ruff_config} ${CMAKE_CURRENT_SOURCE_DIR}/test
+    )
+    # From the build dir, ruff.toml's relative src= would not resolve and isort finds nothing.
+    set_tests_properties(ruff_check_g1_controllers PROPERTIES
+      WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../..")
+  else()
+    message(WARNING "ruff and/or workspace ruff.toml not found; skipping ruff_check_g1_controllers test")
   endif()
 endif()
 
