@@ -1,12 +1,18 @@
 #!/usr/bin/env python3
-"""Acquires control authority over the G1 arm bridge, in the mandatory order.
+"""Acquires control authority over the G1 arms, in the order each control stack requires.
 
-Waits for /lowstate to be flowing (covers the sim/CM discovery race: the
-hardware component refuses to activate on stale/absent feedback -- see
-g1_hardware_interface's README), then activates G1ArmSdkSystem *before*
-arm_trajectory_controller. That order is mandatory: Humble ties
-command-interface availability to hardware component state, so switching the
-controller in first can fail (see g1_bringup's README).
+On arm_sdk: waits for /lowstate to be flowing (covers the sim/CM discovery
+race: the hardware component refuses to activate on stale/absent feedback --
+see g1_hardware_interface's README), then activates G1ArmSdkSystem *before*
+arm_trajectory_controller. That order is mandatory: command-interface
+availability is tied to hardware component state, so switching the controller
+in first can fail (see g1_bringup's README).
+
+On lowcmd there is no arm component to activate: G1LowCmdSystem owns all 29
+body motors and is active from bring-up, holding the arms through
+arm_freeze_controller. Acquiring is one switch that trades that freeze for
+arm_trajectory_controller, and it must be one switch, because a joint this
+component sees unclaimed is a joint it leaves unpowered.
 
 Python, not C++: this is a one-shot administrative sequencing tool (service
 calls + a bounded retry loop, well under 1 Hz), the same category as the
@@ -14,6 +20,7 @@ launch files it's a sibling to -- not a control loop, so there's no
 real-time/hot-path argument for C++ here.
 """
 
+import argparse
 import sys
 import time
 
@@ -26,6 +33,8 @@ from unitree_hg.msg import LowState
 
 COMPONENT_NAME = "G1ArmSdkSystem"
 CONTROLLER_NAME = "arm_trajectory_controller"
+# What holds the arms on the lowcmd stack until the trajectory controller displaces it.
+ARM_FREEZE_CONTROLLER = "arm_freeze_controller"
 LOWSTATE_TOPIC = "/lowstate"
 
 # The hands, acquired in the same order and by the same rules. Best-effort on purpose: a
@@ -126,16 +135,42 @@ def switch_controller(node, client, activate, deactivate, timeout_s):
     return result is not None and result.ok
 
 
-def main():
+def retry_switch(node, client, activate, deactivate, retry_timeout_s):
+    """Same patience the component activation gets: controller_manager may not be discovered
+    yet, and on the lowcmd stack the switch is the whole acquire rather than its second half.
+    """
+    deadline = time.monotonic() + retry_timeout_s
+    while time.monotonic() < deadline:
+        if switch_controller(node, client, activate, deactivate, SERVICE_CALL_TIMEOUT_S):
+            return True
+        time.sleep(COMPONENT_RETRY_PERIOD_S)
+    return False
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--stack",
+        choices=("arm_sdk", "lowcmd"),
+        default="arm_sdk",
+        help="Which control stack is running. Must match the one sim.launch.py was given.",
+    )
+    args, _ = parser.parse_known_args(argv)
+    lowcmd = args.stack == "lowcmd"
+
     rclpy.init()
     node = Node("g1_bringup_activate_arm")
     try:
-        node.get_logger().info(f"waiting for {LOWSTATE_TOPIC} to be flowing...")
-        if not wait_for_fresh_lowstate(node, LOWSTATE_WAIT_TIMEOUT_S):
-            node.get_logger().error(
-                f"{LOWSTATE_TOPIC} never became fresh -- is sim.launch.py running?"
-            )
-            return 1
+        # Skipped on lowcmd: there the SDK reaches the wire through its own CycloneDDS while
+        # ROS runs fastrtps, so /lowstate is not a ROS topic at all and this would only ever
+        # time out. The component's own freshness gate still applies, one layer down.
+        if not lowcmd:
+            node.get_logger().info(f"waiting for {LOWSTATE_TOPIC} to be flowing...")
+            if not wait_for_fresh_lowstate(node, LOWSTATE_WAIT_TIMEOUT_S):
+                node.get_logger().error(
+                    f"{LOWSTATE_TOPIC} never became fresh -- is sim.launch.py running?"
+                )
+                return 1
 
         component_client = node.create_client(
             SetHardwareComponentState, "/controller_manager/set_hardware_component_state"
@@ -144,21 +179,27 @@ def main():
             SwitchController, "/controller_manager/switch_controller"
         )
 
-        node.get_logger().info(f"activating hardware component {COMPONENT_NAME}...")
-        if not set_component_state(
-            node,
-            component_client,
-            COMPONENT_NAME,
-            State.PRIMARY_STATE_ACTIVE,
-            "active",
-            COMPONENT_ACTIVATE_TIMEOUT_S,
-        ):
-            return 1
+        if not lowcmd:
+            node.get_logger().info(f"activating hardware component {COMPONENT_NAME}...")
+            if not set_component_state(
+                node,
+                component_client,
+                COMPONENT_NAME,
+                State.PRIMARY_STATE_ACTIVE,
+                "active",
+                COMPONENT_ACTIVATE_TIMEOUT_S,
+            ):
+                return 1
 
         # Component-then-controller: see this script's module docstring.
+        displaced = [ARM_FREEZE_CONTROLLER] if lowcmd else []
         node.get_logger().info(f"activating controller {CONTROLLER_NAME}...")
-        if not switch_controller(
-            node, controller_client, [CONTROLLER_NAME], [], SERVICE_CALL_TIMEOUT_S
+        if not retry_switch(
+            node,
+            controller_client,
+            [CONTROLLER_NAME],
+            displaced,
+            COMPONENT_ACTIVATE_TIMEOUT_S,
         ):
             node.get_logger().error(f"failed to activate {CONTROLLER_NAME}")
             return 1

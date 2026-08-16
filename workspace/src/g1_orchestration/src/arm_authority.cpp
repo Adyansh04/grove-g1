@@ -5,7 +5,9 @@
 #include <controller_manager_msgs/srv/switch_controller.hpp>
 #include <lifecycle_msgs/msg/state.hpp>
 #include <memory>
+#include <stdexcept>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "g1_orchestration/service_leaf.hpp"
@@ -19,8 +21,9 @@ namespace
 using SetHardwareComponentState = controller_manager_msgs::srv::SetHardwareComponentState;
 using SwitchController          = controller_manager_msgs::srv::SwitchController;
 
-constexpr const char* kComponentService = "/controller_manager/set_hardware_component_state";
-constexpr const char* kSwitchService    = "/controller_manager/switch_controller";
+constexpr const char* kComponentService  = "/controller_manager/set_hardware_component_state";
+constexpr const char* kSwitchService     = "/controller_manager/switch_controller";
+constexpr const char* kControlStackParam = "control_stack";
 
 // Shorter than the arm's budget, on purpose: an absent hand should be reported quickly rather
 // than waited out twice. Mirrors activate_arm's HAND_ACTIVATE_TIMEOUT_S.
@@ -45,6 +48,12 @@ bool setComponentState(
     return response != nullptr && response->ok;
 }
 
+/// A one-or-zero element list, for the parts whose `component` or `displaces` is empty.
+std::vector<std::string> nonEmpty(const std::string& name)
+{
+    return name.empty() ? std::vector<std::string>{} : std::vector<std::string>{ name };
+}
+
 bool switchController(
     const rclcpp::Node::SharedPtr& node, const std::vector<std::string>& activate,
     const std::vector<std::string>& deactivate, double timeout_s)
@@ -67,37 +76,79 @@ bool switchController(
 
 }  // namespace
 
-const std::vector<ControlledPart>& controlledParts()
+ControlStack controlStackFromString(std::string_view name)
+{
+    if (name == "arm_sdk")
+    {
+        return ControlStack::kArmSdk;
+    }
+    if (name == "lowcmd")
+    {
+        return ControlStack::kLowCmd;
+    }
+    throw std::invalid_argument(
+        "control_stack must be 'arm_sdk' or 'lowcmd', got '" + std::string(name) + "'");
+}
+
+ControlStack controlStackOf(const rclcpp::Node::SharedPtr& node)
+{
+    if (!node->has_parameter(kControlStackParam))
+    {
+        node->declare_parameter<std::string>(kControlStackParam, "arm_sdk");
+    }
+    return controlStackFromString(node->get_parameter(kControlStackParam).as_string());
+}
+
+const std::vector<ControlledPart>& controlledParts(ControlStack stack)
 {
     // Duplicated from g1_bringup/scripts/activate_arm, which is the other implementation of
     // this sequence. test_authority_drift reads both and fails if they diverge.
-    static const std::vector<ControlledPart> parts = {
-        { "G1ArmSdkSystem", "arm_trajectory_controller" },
-        { "G1Dex3SystemLeft", "left_hand_controller" },
-        { "G1Dex3SystemRight", "right_hand_controller" },
+    //
+    // The hands are identical on both stacks: a Dex3 is its own device on its own topics, so
+    // which interface owns the body motors never reaches it.
+    static const std::vector<ControlledPart> arm_sdk_parts = {
+        { "G1ArmSdkSystem", "arm_trajectory_controller", "" },
+        { "G1Dex3SystemLeft", "left_hand_controller", "" },
+        { "G1Dex3SystemRight", "right_hand_controller", "" },
     };
-    return parts;
+    // No component to activate for the arm: G1LowCmdSystem owns all 29 motors and is active
+    // from bring-up, holding the arms through arm_freeze_controller. Acquiring is therefore
+    // one switch that trades the freeze for the trajectory controller, which ros2_control
+    // applies atomically -- and it has to be one switch, because the two claim the same joints
+    // and a joint this component sees unclaimed is a joint it leaves unpowered.
+    static const std::vector<ControlledPart> lowcmd_parts = {
+        { "", "arm_trajectory_controller", "arm_freeze_controller" },
+        { "G1Dex3SystemLeft", "left_hand_controller", "" },
+        { "G1Dex3SystemRight", "right_hand_controller", "" },
+    };
+    return stack == ControlStack::kLowCmd ? lowcmd_parts : arm_sdk_parts;
 }
 
-bool acquireArm(const rclcpp::Logger& logger, double timeout_s)
+bool acquireArm(const rclcpp::Logger& logger, double timeout_s, ControlStack stack)
 {
     const rclcpp::Node::SharedPtr      node  = makeClientNode("g1_arm_authority_client");
-    const std::vector<ControlledPart>& parts = controlledParts();
+    const std::vector<ControlledPart>& parts = controlledParts(stack);
 
-    // Component before controller, always. Humble ties command-interface availability to
-    // hardware component state, so switching the controller in first can fail the switch or
-    // strand a controller claiming interfaces that do not exist yet.
+    // Component before controller, always. Command-interface availability is tied to hardware
+    // component state, so switching the controller in first can fail the switch or strand a
+    // controller claiming interfaces that do not exist yet.
     const ControlledPart& arm = parts.front();
-    RCLCPP_INFO(logger, "acquiring %s", arm.component.c_str());
-    if (!setComponentState(
-            node,
-            arm.component,
-            lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE,
-            "active",
-            timeout_s) ||
-        !switchController(node, { arm.controller }, {}, timeout_s))
+    RCLCPP_INFO(logger, "acquiring %s", arm.controller.c_str());
+
+    // Nothing to activate when the component is already up for other reasons, which is the
+    // lowcmd case: there the switch below is the whole acquire.
+    const bool component_ready =
+        arm.component.empty() || setComponentState(
+                                     node,
+                                     arm.component,
+                                     lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE,
+                                     "active",
+                                     timeout_s);
+
+    if (!component_ready ||
+        !switchController(node, { arm.controller }, nonEmpty(arm.displaces), timeout_s))
     {
-        RCLCPP_ERROR(logger, "could not acquire the arm. Is the stack up and is /lowstate flowing?");
+        RCLCPP_ERROR(logger, "could not acquire the arm. Is the control stack up?");
         return false;
     }
 
@@ -136,23 +187,28 @@ bool acquireArm(const rclcpp::Logger& logger, double timeout_s)
     return true;
 }
 
-void releaseArm(const rclcpp::Logger& logger, double timeout_s)
+void releaseArm(const rclcpp::Logger& logger, double timeout_s, ControlStack stack)
 {
     // Reverse of acquire: controllers first, then components. Deactivating a component while
     // its controller still claims its interfaces is the failure this order avoids.
     const rclcpp::Node::SharedPtr      node  = makeClientNode("g1_arm_authority_client");
-    const std::vector<ControlledPart>& parts = controlledParts();
+    const std::vector<ControlledPart>& parts = controlledParts(stack);
     // std::ranges::reverse_view breaks clang-tidy's Clang-14 parser against libstdc++ here.
     // NOLINTNEXTLINE(modernize-loop-convert)
     for (auto it = parts.rbegin(); it != parts.rend(); ++it)
     {
-        switchController(node, {}, { it->controller }, timeout_s);
-        setComponentState(
-            node,
-            it->component,
-            lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE,
-            "inactive",
-            timeout_s);
+        // Whatever was displaced comes straight back in the same switch, so the joints are
+        // never momentarily unowned on a stack where unowned means unpowered.
+        switchController(node, nonEmpty(it->displaces), { it->controller }, timeout_s);
+        if (!it->component.empty())
+        {
+            setComponentState(
+                node,
+                it->component,
+                lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE,
+                "inactive",
+                timeout_s);
+        }
     }
     RCLCPP_INFO(logger, "arm and hands released");
 }

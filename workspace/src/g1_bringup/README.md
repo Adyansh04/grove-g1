@@ -30,8 +30,8 @@ composed beside it rather than wrapped around it. Neither `nav_stack.launch.py` 
 | `control.launch.py` | `robot_state_publisher`, `ros2_control_node` and the spawners. No simulator, so it carries to hardware unchanged — but on the robot it needs `g1_hardware_interface`'s `g1_lowstate_joint_states` alongside it, or the legs and waist never reach `/joint_states` and the TF tree comes up split at the waist. `motion_service_sim` covers that in simulation. |
 | `loco.launch.py` | Starts `g1_loco_bridge` and drives it from configure to active. |
 | `rviz.launch.py` | Starts RViz on a caller-supplied `rviz_config` path. |
-| `activate_arm.launch.py` | Runs `scripts/activate_arm`, the ordered acquire step. |
-| `deactivate_arm.launch.py` | Runs `scripts/deactivate_arm`, the ordered release step. |
+| `activate_arm.launch.py` | Runs `scripts/activate_arm`, the ordered acquire step. Takes `control_stack:=`. |
+| `deactivate_arm.launch.py` | Runs `scripts/deactivate_arm`, the ordered release step. Takes `control_stack:=`. |
 
 ## Arguments
 
@@ -80,7 +80,7 @@ ros2 launch g1_bringup bringup.launch.py mode:=localization nav:=true moveit:=tr
 hang off three waist joints `joint_state_broadcaster` does not own, and `move_group` will not plan
 until every joint it models has a state.
 
-Arms and hands, in order. The order is mandatory: Humble ties command-interface availability to
+Arms and hands, in order. The order is mandatory: command-interface availability is tied to
 hardware component state, so activating the controller before the component can fail the switch.
 
 ```bash
@@ -90,12 +90,18 @@ ros2 launch g1_bringup activate_arm.launch.py
 ros2 launch g1_bringup deactivate_arm.launch.py
 ```
 
-The same step acquires both Dex3 hands, but only best-effort: a hand that is absent, unpowered or
-not publishing state logs a warning and leaves the arm usable. The arm is the part that fails the
-whole acquire.
+Both take `control_stack:=` and it must match what the stack was launched with. What acquiring
+*is* differs between them: on `arm_sdk` it activates `G1ArmSdkSystem` and then its controller; on
+`lowcmd` that component is already active and holding the arms through `arm_freeze_controller`,
+so acquiring trades the freeze for `arm_trajectory_controller` in a single switch. It has to be
+one switch, because a joint that component sees unclaimed is a joint it leaves unpowered.
 
-`deactivate_arm.launch.py` blocks for about two seconds while the blend weight ramps to zero. That
-is the ramp, not a hang. Ctrl-C is also safe.
+The same step acquires both Dex3 hands on either stack, but only best-effort: a hand that is
+absent, unpowered or not publishing state logs a warning and leaves the arm usable. The arm is
+the part that fails the whole acquire.
+
+On `arm_sdk`, `deactivate_arm.launch.py` blocks for about two seconds while the blend weight ramps
+to zero. That is the ramp, not a hang. Ctrl-C is also safe.
 
 Walking by hand needs FSM `Start` first:
 
