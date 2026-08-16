@@ -88,7 +88,12 @@ waist_freeze_controller:
 # claims exactly the same joints, so the pair is a straight 1:1 handover.
 arm_freeze_controller:
   ros__parameters:
-    kp: 10.0
+    # 40, not the 10 the other freezes use, so that swapping to arm_trajectory_controller does
+    # not change the arms' stiffness: that controller claims position alone and so runs on the
+    # component's position_only_kp, which is 40 for these joints. 10 does hold the rest pose --
+    # the arms hang along gravity there and the torque is small -- but the handover would be a
+    # step change in stiffness, and MoveIt's first trajectory leaves that low-torque pose.
+    kp: 40.0
     kd: 1.0
     joints:
       - left_shoulder_pitch_joint

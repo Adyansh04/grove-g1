@@ -25,9 +25,15 @@ system:
   release_motion_mode: false
 
 # Gains used only when a controller claims position without kp/kd, i.e. the kPositionOnly branch.
-# 10/1 across the board is NVIDIA's shipped value (their fill_motor_cmd hardcodes it, and their
-# FreezeController config uses the same pair for every joint). Kept per joint so it is tunable
-# without touching code; NOT yet validated against our robot under load.
+# 10/1 is the upstream value everywhere it has not been measured otherwise, and it is what the
+# legs and waist keep: nothing claims them position-only, so the number is never reached there.
+#
+# The 14 arm joints are the exception, because arm_trajectory_controller claims position alone
+# and so lands on this branch on every MoveIt execution. 10 is enough to hold the arms hanging
+# at rest, where they lie along gravity, but not to track a trajectory that lifts them: measured
+# under a controller commanding the arms forward, 10 left them sagging about 0.4 rad, resting on
+# the hips. These are the gains the arm_sdk stack runs -- 40 for shoulders and elbow, 25 for the
+# lighter wrists -- which are Unitree's own arm example values, proven in this simulator.
 joints:
   left_hip_pitch_joint:        { position_only_kp: 10.0, position_only_kd: 1.0 }
   left_hip_roll_joint:         { position_only_kp: 10.0, position_only_kd: 1.0 }
@@ -44,17 +50,17 @@ joints:
   waist_yaw_joint:             { position_only_kp: 10.0, position_only_kd: 1.0 }
   waist_roll_joint:            { position_only_kp: 10.0, position_only_kd: 1.0 }
   waist_pitch_joint:           { position_only_kp: 10.0, position_only_kd: 1.0 }
-  left_shoulder_pitch_joint:   { position_only_kp: 10.0, position_only_kd: 1.0 }
-  left_shoulder_roll_joint:    { position_only_kp: 10.0, position_only_kd: 1.0 }
-  left_shoulder_yaw_joint:     { position_only_kp: 10.0, position_only_kd: 1.0 }
-  left_elbow_joint:            { position_only_kp: 10.0, position_only_kd: 1.0 }
-  left_wrist_roll_joint:       { position_only_kp: 10.0, position_only_kd: 1.0 }
-  left_wrist_pitch_joint:      { position_only_kp: 10.0, position_only_kd: 1.0 }
-  left_wrist_yaw_joint:        { position_only_kp: 10.0, position_only_kd: 1.0 }
-  right_shoulder_pitch_joint:  { position_only_kp: 10.0, position_only_kd: 1.0 }
-  right_shoulder_roll_joint:   { position_only_kp: 10.0, position_only_kd: 1.0 }
-  right_shoulder_yaw_joint:    { position_only_kp: 10.0, position_only_kd: 1.0 }
-  right_elbow_joint:           { position_only_kp: 10.0, position_only_kd: 1.0 }
-  right_wrist_roll_joint:      { position_only_kp: 10.0, position_only_kd: 1.0 }
-  right_wrist_pitch_joint:     { position_only_kp: 10.0, position_only_kd: 1.0 }
-  right_wrist_yaw_joint:       { position_only_kp: 10.0, position_only_kd: 1.0 }
+  left_shoulder_pitch_joint:   { position_only_kp: 40.0, position_only_kd: 1.0 }
+  left_shoulder_roll_joint:    { position_only_kp: 40.0, position_only_kd: 1.0 }
+  left_shoulder_yaw_joint:     { position_only_kp: 40.0, position_only_kd: 1.0 }
+  left_elbow_joint:            { position_only_kp: 40.0, position_only_kd: 1.0 }
+  left_wrist_roll_joint:       { position_only_kp: 25.0, position_only_kd: 1.0 }
+  left_wrist_pitch_joint:      { position_only_kp: 25.0, position_only_kd: 1.0 }
+  left_wrist_yaw_joint:        { position_only_kp: 25.0, position_only_kd: 1.0 }
+  right_shoulder_pitch_joint:  { position_only_kp: 40.0, position_only_kd: 1.0 }
+  right_shoulder_roll_joint:   { position_only_kp: 40.0, position_only_kd: 1.0 }
+  right_shoulder_yaw_joint:    { position_only_kp: 40.0, position_only_kd: 1.0 }
+  right_elbow_joint:           { position_only_kp: 40.0, position_only_kd: 1.0 }
+  right_wrist_roll_joint:      { position_only_kp: 25.0, position_only_kd: 1.0 }
+  right_wrist_pitch_joint:     { position_only_kp: 25.0, position_only_kd: 1.0 }
+  right_wrist_yaw_joint:       { position_only_kp: 25.0, position_only_kd: 1.0 }
