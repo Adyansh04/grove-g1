@@ -37,6 +37,14 @@ unpowered, so the arms are always held by something. `arm_freeze_controller` has
 arm is acquired, and the acquire trades the two in a single switch. `g1_controllers`' README has
 the full ownership table.
 
+**The hands do not move on `lowcmd` yet.** `G1Dex3System` reaches them as ROS topics, and that
+only ever matched the simulator because ROS on CycloneDDS mangles `/dex3/left/state` to the same
+DDS name the SDK publishes. This stack runs fastrtps, so `/dex3/left/state` has no publisher and
+the component refuses to activate for want of feedback (both measured). Moving that transport to
+SDK channels waits for the middleware unification, since doing it now would put two `libddsc`
+builds in one process on the `arm_sdk` stack. Planning is unaffected: finger *state* still
+reaches `/joint_states` from the configured components, which is all `move_group` needs.
+
 ## Planning groups
 
 | Group | Joints | Chain |
@@ -207,7 +215,7 @@ which the upstream generator becomes usable again.
 | `test_launch_threading` | no | The arguments `g1_bringup`'s `moveit:=true` branch threads into the simulator, the RViz choice, and that `moveit_sim.launch.py` still composes what it did. |
 | `test_octomap_blocks_a_plan` | yes | That the octomap fills from the LiDAR **and** that MoveIt collision-checks against it: a reach into a mapped obstacle is rejected, with `<octomap>` named in the contact. |
 | `test_moveit_plan_execute` | yes | Execution refused before acquire, a coordinated `both_arms` plan, planned speed under the clamp, and hand placement with the waist turned. `arm_sdk`, pinned pelvis. |
-| `test_moveit_lowcmd` | yes | The same path on `lowcmd` with the pelvis unpinned: every motor claimed before the acquire, the freeze traded for the trajectory controller and back, and both arms moving without the balance policy losing the robot. |
+| `test_moveit_lowcmd` | yes | The same path on `lowcmd` with the pelvis unpinned: every motor claimed before the acquire, the freeze traded for the trajectory controller and back, and both arms moving without the balance policy losing the robot. No hand assertions; see above. |
 
 ```bash
 colcon test --packages-select g1_moveit_config
