@@ -169,11 +169,19 @@ def _launch_setup(context, *args, **kwargs):
             "or 'lio' (the walled, asymmetric room for scoring LiDAR-inertial odometry "
             "against a known 5 m square)."
         )
+    # Unpinned on the lowcmd stack needs the walk scene, whose pelvis weld the simulator holds
+    # only until the control stack drives every motor. Nothing balances the robot before then,
+    # so the bare flat scene would leave it prone by the time the policy activates.
+    control_stack_for_scene = LaunchConfiguration("control_stack").perform(context)
     if sensors:
         suffix       = "_pinned" if pin_pelvis else ""
         overlay_name = f"g1_{world}{suffix}_scene.xml"
+    elif pin_pelvis:
+        overlay_name = "g1_pinned_scene.xml"
+    elif control_stack_for_scene == "lowcmd":
+        overlay_name = "g1_walk_scene.xml"
     else:
-        overlay_name = "g1_pinned_scene.xml" if pin_pelvis else "g1_flat_scene.xml"
+        overlay_name = "g1_flat_scene.xml"
     mjcf_dir     = os.path.join(get_package_share_directory("g1_bringup"), "mjcf")
     staged_path  = os.path.join(G1_MODEL_DIR, STAGED_SCENE_NAME)
     shutil.copyfile(os.path.join(mjcf_dir, overlay_name), staged_path)

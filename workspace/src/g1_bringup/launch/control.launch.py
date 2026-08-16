@@ -58,19 +58,24 @@ def _launch_setup(context, *args, **kwargs):
         controllers_yaml = os.path.join(
             get_package_share_directory("g1_controllers"), "config", "lowcmd_controllers.yaml"
         )
-        # The freeze holds the body from the moment the component activates; the probe joint is
-        # the one left free. Neither may load inactive: unclaimed joints are unpowered.
+        # Nothing may load inactive: a joint the component sees unclaimed is a joint it leaves
+        # unpowered. The policy and the safety controller it writes through must activate in one
+        # switch, hence --activate-as-group: a chainable controller's reference interfaces only
+        # become claimable as it enters chained mode, which happens within that same switch.
         controller_spawners = [
             ExecuteProcess(
-                cmd=["ros2", "run", "controller_manager", "spawner", name],
-                name=f"{name}_spawner",
+                cmd=["ros2", "run", "controller_manager", "spawner", *names, *extra],
+                name=f"{names[0]}_spawner",
                 output="screen",
             )
-            for name in (
-                "joint_state_broadcaster",
-                "imu_sensor_broadcaster",
-                "body_freeze_controller",
-                "probe_position_controller",
+            for names, extra in (
+                (["joint_state_broadcaster"], []),
+                (["imu_sensor_broadcaster"], []),
+                (["upper_body_freeze_controller"], []),
+                (
+                    ["locomotion_safety_controller", "agile_controller"],
+                    ["--activate-as-group"],
+                ),
             )
         ]
     else:
