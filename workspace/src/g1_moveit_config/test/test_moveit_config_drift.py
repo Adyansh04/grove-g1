@@ -17,6 +17,15 @@ MOVEIT_CONFIG_DIR = os.environ["G1_MOVEIT_CONFIG_DIR"]
 BRINGUP_CONFIG_DIR = os.environ["G1_BRINGUP_CONFIG_DIR"]
 DESCRIPTION_CONFIG_DIR = os.environ["G1_DESCRIPTION_CONFIG_DIR"]
 SIM_CONFIG_DIR = os.environ["G1_SIM_CONFIG_DIR"]
+CONTROLLERS_CONFIG_DIR = os.environ["G1_CONTROLLERS_CONFIG_DIR"]
+
+# One moveit_controllers.yaml serves both control stacks, which only works because both define
+# the same controller names over the same joints. Every test taking the `controllers` fixture
+# therefore runs twice, once per stack.
+CONTROLLER_FILES = {
+    "arm_sdk": (BRINGUP_CONFIG_DIR, "controllers.yaml"),
+    "lowcmd": (CONTROLLERS_CONFIG_DIR, "lowcmd_controllers.yaml"),
+}
 
 ARM_JOINTS = [
     f"{side}_{joint}_joint"
@@ -49,9 +58,9 @@ def moveit_controllers():
     return _load(MOVEIT_CONFIG_DIR, "moveit_controllers.yaml")
 
 
-@pytest.fixture(scope="module")
-def controllers():
-    return _load(BRINGUP_CONFIG_DIR, "controllers.yaml")
+@pytest.fixture(scope="module", params=sorted(CONTROLLER_FILES), ids=sorted(CONTROLLER_FILES))
+def controllers(request):
+    return _load(*CONTROLLER_FILES[request.param])
 
 
 @pytest.fixture(scope="module")

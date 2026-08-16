@@ -26,6 +26,7 @@ if(BUILD_TESTING)
     "G1_BRINGUP_LAUNCH_DIR=${CMAKE_CURRENT_SOURCE_DIR}/../g1_bringup/launch"
     "G1_DESCRIPTION_CONFIG_DIR=${CMAKE_CURRENT_SOURCE_DIR}/../g1_description/config"
     "G1_SIM_CONFIG_DIR=${CMAKE_CURRENT_SOURCE_DIR}/../g1_motion_service_sim/config"
+    "G1_CONTROLLERS_CONFIG_DIR=${CMAKE_CURRENT_SOURCE_DIR}/../g1_controllers/config"
   )
 
   # Reads three packages' config at once: MoveIt's arm, the controller's arm and the bridge's
@@ -73,6 +74,12 @@ if(BUILD_TESTING)
   add_launch_test(test/test_moveit_plan_execute.launch.py
     TARGET test_moveit_plan_execute TIMEOUT 400)
   set_tests_properties(test_moveit_plan_execute PROPERTIES RESOURCE_LOCK mujoco_sim LABELS simulator COST 90)
+
+  # The same path on the whole-body stack, with the balance policy holding the robot up rather
+  # than a pinned pelvis. Longer budget: the policy has to settle before the arms are touched.
+  add_launch_test(test/test_moveit_lowcmd.launch.py
+    TARGET test_moveit_lowcmd TIMEOUT 500)
+  set_tests_properties(test_moveit_lowcmd PROPERTIES RESOURCE_LOCK mujoco_sim LABELS simulator COST 95)
 
   # Runs the sensor track on the perception scene: the octomap has to fill from the LiDAR
   # before anything can be asserted. Note SIM_SETTLE_S inside that file cannot be raised to

@@ -35,6 +35,10 @@
   <test_depend>ament_cmake_xmllint</test_depend>
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>control_msgs</test_depend>
+  <!-- test_moveit_lowcmd reads controller states around the arm bracket's switch. -->
+  <test_depend>controller_manager_msgs</test_depend>
+  <!-- test_moveit_config_drift reads g1_controllers' lowcmd controller config. -->
+  <test_depend>g1_controllers</test_depend>
   <!-- test_launch_threading asserts on g1_navigation's rviz config being
        substituted into moveit_rviz.launch.py, so that package has to be on the
        test environment's ament index. -->

@@ -42,13 +42,18 @@ def _setup(context, *args, **kwargs):
                 "sensors": LaunchConfiguration("sensors"),
                 "headless": LaunchConfiguration("headless"),
                 "world": LaunchConfiguration("world"),
+                "control_stack": LaunchConfiguration("control_stack"),
                 "pin_pelvis": LaunchConfiguration("pin_pelvis"),
                 "waist_hold_rad": LaunchConfiguration("waist_hold_rad"),
                 "sim_start_delay_s": LaunchConfiguration("sim_start_delay_s"),
                 "rviz": "false",
             }.items(),
         ),
-        IncludeLaunchDescription(PythonLaunchDescriptionSource(moveit_launch)),
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(moveit_launch),
+            # move_group must plan against the description the running stack loaded.
+            launch_arguments={"control_stack": LaunchConfiguration("control_stack")}.items(),
+        ),
         # No depth-to-cloud converter here. The octomap consumes /livox/lidar directly, which
         # is already a PointCloud2 with QoS the updater matches; the camera path needs
         # depth_image_proc and that node cannot receive from our best-effort relay. See
@@ -75,6 +80,14 @@ def generate_launch_description():
             description="LiDAR, camera and the odom chain. Required for the octomap: without a "
             "depth image there is nothing to build a planning scene from. Off by default "
             "because it costs sim performance and manipulation does not otherwise need it.",
+        ),
+        DeclareLaunchArgument(
+            "control_stack",
+            default_value="arm_sdk",
+            description="Which hardware component owns the motors. 'lowcmd' plans against the "
+            "whole-body description and executes through the trajectory controller the arm "
+            "bracket swaps in; it also needs RMW_IMPLEMENTATION=rmw_fastrtps_cpp exported in "
+            "the launching shell.",
         ),
         DeclareLaunchArgument(
             "pin_pelvis",

@@ -14,23 +14,39 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from moveit_configs_utils import MoveItConfigsBuilder
 
+# Which description each control stack runs. They describe the same robot and differ only in
+# the ros2_control block, but move_group must load the one robot_state_publisher has, or the
+# two disagree about which component owns the arm joints.
+STACK_XACRO = {
+    "arm_sdk": "g1_arm_sdk.urdf.xacro",
+    "lowcmd": "g1_lowcmd.urdf.xacro",
+}
 
-def generate_launch_description():
+
+def _launch_setup(context, *args, **kwargs):
     # Every path is passed explicitly. MoveItConfigsBuilder will otherwise guess file names from
     # the robot name and silently carry on when one is missing, which surfaces much later as an
     # empty planning pipeline rather than as an error here.
     description_share = get_package_share_directory("g1_description")
     config_share = get_package_share_directory("g1_moveit_config")
 
+    control_stack = LaunchConfiguration("control_stack").perform(context)
+    if control_stack not in STACK_XACRO:
+        raise RuntimeError(
+            f"control_stack must be one of {sorted(STACK_XACRO)}, got '{control_stack}'"
+        )
+
     moveit_config = (
         MoveItConfigsBuilder("g1", package_name="g1_moveit_config")
         # The same xacro control.launch.py feeds robot_state_publisher, so move_group plans
         # against exactly the model the rest of the stack is running.
         .robot_description(
-            file_path=os.path.join(description_share, "urdf", "g1_arm_sdk.urdf.xacro")
+            file_path=os.path.join(description_share, "urdf", STACK_XACRO[control_stack])
         )
         .robot_description_semantic(file_path=os.path.join(config_share, "config", "g1.srdf"))
         .robot_description_kinematics(
@@ -61,4 +77,18 @@ def generate_launch_description():
         ],
     )
 
-    return LaunchDescription([move_group_node])
+    return [move_group_node]
+
+
+def generate_launch_description():
+    return LaunchDescription(
+        [
+            DeclareLaunchArgument(
+                "control_stack",
+                default_value="arm_sdk",
+                description="Which control stack is running, and so which description to plan "
+                "against. Must match control.launch.py's own control_stack.",
+            ),
+            OpaqueFunction(function=_launch_setup),
+        ]
+    )
