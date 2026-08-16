@@ -65,6 +65,12 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_arm_sdk_xacro test/test_arm_sdk_xacro.py
     ENV "G1_DESCRIPTION_XACRO=${CMAKE_CURRENT_SOURCE_DIR}/urdf/g1_arm_sdk.urdf.xacro"
   )
+  # Both paths: one of its tests compares the two expansions, which is what keeps
+  # g1_common.xacro honest.
+  ament_add_pytest_test(test_lowcmd_xacro test/test_lowcmd_xacro.py
+    ENV "G1_LOWCMD_XACRO=${CMAKE_CURRENT_SOURCE_DIR}/urdf/g1_lowcmd.urdf.xacro"
+        "G1_ARM_SDK_XACRO=${CMAKE_CURRENT_SOURCE_DIR}/urdf/g1_arm_sdk.urdf.xacro"
+  )
   # The sensor mounts are duplicated in the simulator, which links no ROS and so cannot read TF.
   ament_add_pytest_test(test_sensor_mounts test/test_sensor_mounts.py)
   ament_add_pytest_test(test_motor_order test/test_motor_order.py)

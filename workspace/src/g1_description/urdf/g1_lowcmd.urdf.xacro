@@ -3,8 +3,11 @@
 
   <!-- Whole-body variant: the 29 body motors are owned by G1LowCmdSystem over rt/lowcmd, with no
        onboard balance running underneath. g1_arm_sdk.urdf.xacro is the blended-arm variant and
-       stays until PR 6 retires it. Only one of the two may be loaded at a time. -->
-  <xacro:include filename="g1_29dof_with_hand_rev_1_0.urdf"/>
+       stays until PR 6 retires it. Only one of the two may be loaded at a time.
+
+       g1_common.xacro brings the body, the sensor and grasp frames, and both Dex3 components:
+       everything that is identical whichever interface owns the motors. -->
+  <xacro:include filename="g1_common.xacro"/>
 
   <xacro:property name="lowcmd" value="${xacro.load_yaml('../config/lowcmd_params.yaml')}"/>
 

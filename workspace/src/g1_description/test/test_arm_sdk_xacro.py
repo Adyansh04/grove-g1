@@ -35,6 +35,11 @@ def expanded_urdf_path():
     os.remove(out_path)
 
 
+def component(root, name):
+    # Never index the components: they arrive in whatever order the xacro includes emit.
+    return next(c for c in root.findall("ros2_control") if c.get("name") == name)
+
+
 def test_xacro_expands_to_valid_urdf(expanded_urdf_path):
     # check_urdf is urdfdom's own parser/validator -- the same one
     # robot_state_publisher uses, so this is the real acceptance test.
@@ -44,11 +49,7 @@ def test_xacro_expands_to_valid_urdf(expanded_urdf_path):
 
 def test_ros2_control_exports_exactly_the_arm_joints(expanded_urdf_path):
     root = ET.parse(expanded_urdf_path).getroot()
-    ros2_control = root.find("ros2_control")
-    assert ros2_control is not None
-    assert ros2_control.get("name") == "G1ArmSdkSystem"
-
-    joints = ros2_control.findall("joint")
+    joints = component(root, "G1ArmSdkSystem").findall("joint")
     names = [j.get("name") for j in joints]
     assert names == EXPECTED_ARM_JOINTS, (
         f"arm joint set/order mismatch against the spike list:\n"
@@ -68,7 +69,7 @@ def test_ros2_control_exports_exactly_the_arm_joints(expanded_urdf_path):
 
 def test_ros2_control_hardware_plugin_and_system_params(expanded_urdf_path):
     root = ET.parse(expanded_urdf_path).getroot()
-    hardware = root.find("ros2_control/hardware")
+    hardware = component(root, "G1ArmSdkSystem").find("hardware")
     assert hardware.find("plugin").text == "g1_hardware_interface/G1ArmSdkSystem"
 
     params = {p.get("name"): p.text for p in hardware.findall("param")}
@@ -89,8 +90,7 @@ def test_no_non_arm_joints_leak_into_ros2_control(expanded_urdf_path):
     # Waist/legs/hands must stay off this component's interfaces -- they
     # belong to the onboard controller. Fourteen is the whole arm-only budget.
     root = ET.parse(expanded_urdf_path).getroot()
-    joints = root.find("ros2_control").findall("joint")
-    assert len(joints) == 14
+    assert len(component(root, "G1ArmSdkSystem").findall("joint")) == 14
 
 
 @pytest.mark.parametrize("side", ["left", "right"])
@@ -99,16 +99,15 @@ def test_each_hand_is_its_own_component_in_wire_order(expanded_urdf_path, side):
     # rather than extra joints on the arm's. Order is load-bearing here and not merely
     # tidy: HandCmd.motor_cmd is positional, and G1Dex3System refuses to init on a
     # mismatch precisely so a reordered list cannot silently close the wrong fingers.
-    name = f"G1Dex3System{side.capitalize()}"
     root = ET.parse(expanded_urdf_path).getroot()
-    component = next(c for c in root.findall("ros2_control") if c.get("name") == name)
+    hand = component(root, f"G1Dex3System{side.capitalize()}")
 
-    assert component.find("hardware/plugin").text == "g1_hand_interface/G1Dex3System"
-    params = {p.get("name"): p.text for p in component.findall("hardware/param")}
+    assert hand.find("hardware/plugin").text == "g1_hand_interface/G1Dex3System"
+    params = {p.get("name"): p.text for p in hand.findall("hardware/param")}
     assert params["side"] == side
     assert {"kp", "kd", "command_publish_rate", "max_joint_velocity_rad_s"} <= params.keys()
 
-    joints = component.findall("joint")
+    joints = hand.findall("joint")
     assert [j.get("name") for j in joints] == [
         f"{side}_hand_{suffix}_joint"
         for suffix in ("thumb_0", "thumb_1", "thumb_2", "middle_0", "middle_1",
