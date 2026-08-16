@@ -172,7 +172,8 @@ G1SafetyController::on_export_reference_interfaces()
         joint_names_.size() * kInterfacesPerJoint,
         std::numeric_limits<double>::quiet_NaN());
 
-    // Names follow NVIDIA's `<controller>/<joint>/<type>_raw` so their controllers chain unchanged.
+    // Names follow the upstream `<controller>/<joint>/<type>_raw`, so a third-party controller
+    // chains onto this unchanged.
     std::vector<hardware_interface::CommandInterface> refs;
     refs.reserve(joint_names_.size() * kInterfacesPerJoint);
 

@@ -3,11 +3,11 @@
 
 /**
  * @file agile_policy.hpp
- * @brief Runs NVIDIA's AGILE velocity policy: observation packing, inference, history feedback.
+ * @brief Runs the AGILE velocity policy: observation packing, inference, history feedback.
  *
  * Wraps the shipped end-to-end ONNX, which carries its own normalisation, action scaling and
  * history buffers. Callers supply state in the policy's own joint orderings and get absolute
- * joint targets with the gains to hold them. Adapted from NVIDIA's WBC-AGILE (Apache-2.0).
+ * joint targets with the gains to hold them.
  */
 
 #include <onnxruntime_cxx_api.h>

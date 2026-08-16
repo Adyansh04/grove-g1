@@ -25,7 +25,9 @@ TEST(G1ControllersPluginlib, PlainControllersResolveAndInstantiate)
          { "g1_controllers/G1FreezeController", "g1_controllers/G1AgileController" })
     {
         ASSERT_TRUE(loader.isClassAvailable(name)) << name;
-        EXPECT_NE(loader.createUniqueInstance(name), nullptr) << name;
+        // Shared rather than unique: pluginlib's unique-instance deleter calls a virtual during
+        // its own teardown, which the static analyser flags and we have no way to fix.
+        EXPECT_NE(loader.createSharedInstance(name), nullptr) << name;
     }
 }
 
@@ -38,7 +40,7 @@ TEST(G1ControllersPluginlib, SafetyControllerResolvesAsChainable)
         "controller_interface::ChainableControllerInterface");
 
     ASSERT_TRUE(loader.isClassAvailable("g1_controllers/G1SafetyController"));
-    EXPECT_NE(loader.createUniqueInstance("g1_controllers/G1SafetyController"), nullptr);
+    EXPECT_NE(loader.createSharedInstance("g1_controllers/G1SafetyController"), nullptr);
 }
 
 }  // namespace

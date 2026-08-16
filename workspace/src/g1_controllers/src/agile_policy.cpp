@@ -120,7 +120,7 @@ const std::array<std::string, kNumActJoints> kAgileActionJointNames{
 
 std::optional<std::size_t> agileObsIndex(std::string_view name) noexcept
 {
-    const auto it = std::ranges::find(kAgileObsJointNames, name);
+    const auto* const it = std::ranges::find(kAgileObsJointNames, name);
     if (it == kAgileObsJointNames.end())
     {
         return std::nullopt;
@@ -130,7 +130,7 @@ std::optional<std::size_t> agileObsIndex(std::string_view name) noexcept
 
 std::optional<std::size_t> agileActionIndex(std::string_view name) noexcept
 {
-    const auto it = std::ranges::find(kAgileActionJointNames, name);
+    const auto* const it = std::ranges::find(kAgileActionJointNames, name);
     if (it == kAgileActionJointNames.end())
     {
         return std::nullopt;

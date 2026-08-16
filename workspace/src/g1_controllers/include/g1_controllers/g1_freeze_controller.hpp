@@ -5,8 +5,7 @@
  * @file g1_freeze_controller.hpp
  * @brief Capture-and-hold controller for joints on the rt/lowcmd component.
  *
- * Adapted from NVIDIA's isaac_ros_deploy_ros2_control FreezeController (Apache-2.0), minus its
- * regex gain patterns: their own G1 config sets one value for every joint.
+ * Drops the upstream regex gain patterns: one value per joint is all any G1 config has used.
  */
 
 #include <string>

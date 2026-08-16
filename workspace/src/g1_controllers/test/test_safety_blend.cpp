@@ -29,7 +29,7 @@ TEST(BlendAndSlew, HalfBlendSitsHalfway)
 
 TEST(BlendAndSlew, NonPositiveMaxVelocityLeavesTheJointUnclamped)
 {
-    // NVIDIA's tested G1 config leaves the whole lower body like this on purpose.
+    // The whole lower body is configured like this on purpose.
     EXPECT_DOUBLE_EQ(blendAndSlew(0.0, 10.0, 1.0, 0.0, 0.0, kDt), 10.0);
     EXPECT_DOUBLE_EQ(blendAndSlew(0.0, 10.0, 1.0, 0.0, -5.0, kDt), 10.0);
 }

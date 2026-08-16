@@ -65,8 +65,8 @@ G1AgileController::on_configure(const rclcpp_lifecycle::State& /*previous_state*
     if (model_path_.empty())
     {
         // Default to the policy shipped with this package, so only a retrained one needs a path.
-        model_path_ = ament_index_cpp::get_package_share_directory("g1_controllers")
-                      + "/policy/unitree_g1_velocity_e2e.onnx";
+        model_path_ = ament_index_cpp::get_package_share_directory("g1_controllers") +
+                      "/policy/unitree_g1_velocity_e2e.onnx";
     }
     if (decimation_ < 1)
     {
@@ -74,7 +74,7 @@ G1AgileController::on_configure(const rclcpp_lifecycle::State& /*previous_state*
         return controller_interface::CallbackReturn::ERROR;
     }
 
-    const double update_rate = static_cast<double>(get_update_rate());
+    const auto update_rate = static_cast<double>(get_update_rate());
     if (update_rate > 0.0)
     {
         const double policy_hz = update_rate / static_cast<double>(decimation_);
@@ -104,7 +104,9 @@ G1AgileController::on_configure(const rclcpp_lifecycle::State& /*previous_state*
     cmd_vel_subscriber_ = get_node()->create_subscription<geometry_msgs::msg::Twist>(
         cmd_vel_topic_,
         rclcpp::SystemDefaultsQoS(),
-        [this](const geometry_msgs::msg::Twist::SharedPtr message) {
+        // ConstSharedPtr by reference: the only const-ref callback signature rclcpp accepts, and
+        // it avoids a refcount bump per message.
+        [this](const geometry_msgs::msg::Twist::ConstSharedPtr& message) {
             cmd_vel_buffer_.writeFromNonRT(*message);
             last_cmd_vel_seconds_.store(get_node()->now().seconds());
         });
@@ -138,6 +140,27 @@ controller_interface::InterfaceConfiguration G1AgileController::state_interface_
     return config;
 }
 
+std::vector<std::string> G1AgileController::commandNamesFor(std::string_view type) const
+{
+    std::vector<std::string> names;
+    names.reserve(kNumActJoints);
+    for (const auto& joint : kAgileActionJointNames)
+    {
+        std::string name;
+        if (!command_prefix_.empty())
+        {
+            name += command_prefix_;
+            name += '/';
+        }
+        name += joint;
+        name += '/';
+        name += type;
+        name += command_suffix_;
+        names.push_back(std::move(name));
+    }
+    return names;
+}
+
 controller_interface::InterfaceConfiguration
 G1AgileController::command_interface_configuration() const
 {
@@ -151,20 +174,8 @@ G1AgileController::command_interface_configuration() const
                                          kHwIfKp,
                                          kHwIfKd })
     {
-        for (const auto& joint : kAgileActionJointNames)
-        {
-            std::string name;
-            if (!command_prefix_.empty())
-            {
-                name += command_prefix_;
-                name += '/';
-            }
-            name += joint;
-            name += '/';
-            name += type;
-            name += command_suffix_;
-            config.names.push_back(std::move(name));
-        }
+        const auto names = commandNamesFor(type);
+        config.names.insert(config.names.end(), names.begin(), names.end());
     }
     return config;
 }
@@ -199,43 +210,31 @@ bool G1AgileController::resolveInterfaces()
         return false;
     }
 
-    const auto commandNames = [this](std::string_view type) {
-        std::vector<std::string> names;
-        names.reserve(kNumActJoints);
-        for (const auto& joint : kAgileActionJointNames)
-        {
-            std::string name;
-            if (!command_prefix_.empty())
-            {
-                name += command_prefix_;
-                name += '/';
-            }
-            name += joint;
-            name += '/';
-            name += type;
-            name += command_suffix_;
-            names.push_back(std::move(name));
-        }
-        return names;
-    };
-
     return indexInterfaces(
                logger,
-               commandNames(hardware_interface::HW_IF_POSITION),
+               commandNamesFor(hardware_interface::HW_IF_POSITION),
                command_interfaces_,
                position_command_indices_) &&
            indexInterfaces(
                logger,
-               commandNames(hardware_interface::HW_IF_VELOCITY),
+               commandNamesFor(hardware_interface::HW_IF_VELOCITY),
                command_interfaces_,
                velocity_command_indices_) &&
            indexInterfaces(
                logger,
-               commandNames(hardware_interface::HW_IF_EFFORT),
+               commandNamesFor(hardware_interface::HW_IF_EFFORT),
                command_interfaces_,
                effort_command_indices_) &&
-           indexInterfaces(logger, commandNames(kHwIfKp), command_interfaces_, kp_command_indices_) &&
-           indexInterfaces(logger, commandNames(kHwIfKd), command_interfaces_, kd_command_indices_);
+           indexInterfaces(
+               logger,
+               commandNamesFor(kHwIfKp),
+               command_interfaces_,
+               kp_command_indices_) &&
+           indexInterfaces(
+               logger,
+               commandNamesFor(kHwIfKd),
+               command_interfaces_,
+               kd_command_indices_);
 }
 
 controller_interface::CallbackReturn

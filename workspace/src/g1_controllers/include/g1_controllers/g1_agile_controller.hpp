@@ -5,9 +5,8 @@
  * @file g1_agile_controller.hpp
  * @brief Runs the AGILE velocity policy over the rt/lowcmd component's state and command interfaces.
  *
- * Adapted from NVIDIA's isaac_ros_deploy_ros2_control InferenceController (Apache-2.0). Theirs is a
- * general tensor-graph engine configured by YAML and backed by isaac_deploy_core; this drives the
- * one policy directly, whose signature is fixed and checked at load.
+ * Drives the one policy directly rather than interpreting a tensor graph, so its signature is
+ * fixed and checked at load. See the package README for what this was adapted from.
  */
 
 #include <atomic>
@@ -60,6 +59,14 @@ private:
     void packObservation();
     /// @return false, having logged, if a required interface was not claimed.
     [[nodiscard]] bool resolveInterfaces();
+
+    /**
+     * @brief Command-interface names for one interface type, over the policy's action joints.
+     *
+     * @param type Interface type, e.g. "position".
+     * @return One name per action joint, prefixed and suffixed for whatever this chains onto.
+     */
+    [[nodiscard]] std::vector<std::string> commandNamesFor(std::string_view type) const;
 
     /// Empty writes straight to the component; otherwise the chained controller's name, whose
     /// reference interfaces are `<prefix>/<joint>/<type><suffix>`.

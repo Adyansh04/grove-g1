@@ -5,10 +5,10 @@
  * @file g1_safety_controller.hpp
  * @brief Chainable blend and slew stage between a policy and the rt/lowcmd component.
  *
- * Adapted from NVIDIA's isaac_ros_deploy_ros2_control SafetyController (Apache-2.0): same
- * reference-interface layout and naming, so their controllers chain onto this unchanged. Their
- * strategy registry and gravity compensation are left out, having one implementation and no
- * inverse-dynamics solver here respectively.
+ * Keeps the upstream reference-interface layout and naming so a third-party controller chains onto
+ * this unchanged. The upstream strategy registry and gravity compensation are left out: one
+ * implementation needs no registry, and there is no inverse-dynamics solver here. See the package
+ * README.
  */
 
 #include <atomic>
@@ -93,8 +93,8 @@ private:
     std::vector<std::string> joint_names_;
     std::vector<double>      fallback_kp_;
     std::vector<double>      fallback_kd_;
-    /// Non-positive disables the clamp for that joint, which is what NVIDIA's tested G1 config
-    /// does for the whole lower body: a balance policy needs its fast corrections unthrottled.
+    /// Non-positive disables the clamp for that joint, which is what the whole lower body wants:
+    /// a balance policy needs its fast corrections unthrottled.
     std::vector<double> max_velocity_;
 
     /// Settable at runtime. Read once per tick, so a change mid-tick cannot tear.

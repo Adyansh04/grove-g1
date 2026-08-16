@@ -50,6 +50,21 @@ All of these belong to `bringup.launch.py`.
 | `pin_pelvis` | `false` | Welds the pelvis and disables the walking policy, for exercising the arms alone. `mode:=none` only. |
 | `waist_hold_rad` | `""` | Sim only. Three comma-separated radians (yaw,roll,pitch) to stand the waist at. Needs `pin_pelvis:=true`. |
 | `sim_start_delay_s` | branch default | Seconds to delay the simulator. Empty means 2.0 bare, 4.0 whenever navigation or MoveIt starts alongside it. |
+| `control_stack` | `arm_sdk` | Which hardware component owns the motors. `arm_sdk` blends arm targets under the onboard balance controller; `lowcmd` takes the whole body and runs the AGILE policy for balance. Mutually exclusive by construction. |
+
+### Running the lowcmd stack by hand
+
+```bash
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+ros2 launch g1_bringup sim.launch.py control_stack:=lowcmd pin_pelvis:=false
+```
+
+The export is not optional. `control.launch.py` sets it for the processes it spawns, but
+`sim.launch.py` checks the *launching* environment and refuses to start on the wrong middleware,
+which is deliberate: a lowcmd stack on CycloneDDS corrupts its own heap.
+
+`pin_pelvis` is not needed here. The simulator holds the robot up only until the control stack
+drives every motor, then releases the pelvis weld its scene declares and the policy balances.
 
 ## Running
 
@@ -132,6 +147,7 @@ ground-truth poses, and the grasp weld that stands in for finger contact.
 | `test_walk_teleop` | yes | Rejection before `Start`, the dead-man, Damp release, randomized sequences. |
 | `test_walk_and_arm` | yes | Walking under `cmd_vel` while an arm trajectory converges. |
 | `test_lidar_geometry` | yes | The LiDAR measures the room it is in. |
+| `test_agile_walk` | yes | The lowcmd stack under the AGILE policy: stands with an unpinned pelvis, then walks on `/cmd_vel` without the safety controller latching. |
 | `ruff_check_g1_bringup` | no | Python lint and import order. |
 
 ```bash

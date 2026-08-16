@@ -19,7 +19,7 @@ namespace g1_controllers
 {
 
 /// Gain interface names the lowcmd component exports. Must match g1_hardware_interface's
-/// kHwIfKp/kHwIfKd, which follow NVIDIA's spelling so their controllers bind unchanged.
+/// kHwIfKp/kHwIfKd. The spelling is upstream's, so a third-party controller binds unchanged.
 inline constexpr std::string_view kHwIfKp{ "kp" };
 inline constexpr std::string_view kHwIfKd{ "kd" };
 

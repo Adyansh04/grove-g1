@@ -1,0 +1,8 @@
+# Inherits the workspace config and relaxes one check for test code only.
+#
+# pluginlib's ClassLoader destructor calls a virtual on itself (class_loader_imp.hpp:112). The
+# analyser reports it inside pluginlib's own header, so NOLINT at our call site cannot reach it,
+# and it only surfaces here because this file instantiates a second loader for the chainable base.
+# It is an upstream defect in a header we do not own, and nothing in this package can fix it.
+InheritParentConfig: true
+Checks: '-clang-analyzer-optin.cplusplus.VirtualCall'
