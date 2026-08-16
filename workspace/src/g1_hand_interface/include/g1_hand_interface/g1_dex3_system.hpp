@@ -58,6 +58,15 @@ inline constexpr std::uint8_t kStatusFoc  = 0x01;  ///< driven
 class G1Dex3System : public hardware_interface::SystemInterface
 {
 public:
+    G1Dex3System()                               = default;
+    G1Dex3System(const G1Dex3System&)            = delete;
+    G1Dex3System& operator=(const G1Dex3System&) = delete;
+    G1Dex3System(G1Dex3System&&)                 = delete;
+    G1Dex3System& operator=(G1Dex3System&&)      = delete;
+
+    /// Joins the spinner. Without this, destroying a configured component calls std::terminate.
+    ~G1Dex3System() override;
+
     hardware_interface::CallbackReturn
     on_init(const hardware_interface::HardwareComponentInterfaceParams& params) override;
     hardware_interface::CallbackReturn
@@ -80,6 +89,9 @@ private:
     /// Fills every motor slot and publishes. `driven` false emits the release command: status
     /// Lock, timeout armed, zero gains.
     void publish(bool driven);
+
+    /// Stops and joins the executor thread, if one is running. Idempotent.
+    void stopSpinner() noexcept;
 
     std::string side_;  ///< "left" or "right"; picks the topic pair and the joint prefix.
 

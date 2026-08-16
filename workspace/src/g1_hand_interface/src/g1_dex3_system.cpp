@@ -105,8 +105,24 @@ G1Dex3System::on_init(const hardware_interface::HardwareComponentInterfaceParams
     return hardware_interface::CallbackReturn::SUCCESS;
 }
 
+G1Dex3System::~G1Dex3System() { stopSpinner(); }
+
+void G1Dex3System::stopSpinner() noexcept
+{
+    spinning_ = false;
+    if (spin_thread_.joinable())
+    {
+        spin_thread_.join();
+    }
+}
+
 hardware_interface::CallbackReturn G1Dex3System::on_configure(const rclcpp_lifecycle::State&)
 {
+    // The resource manager re-configures a component whose activation failed, so this runs more
+    // than once. Assigning over a joinable std::thread calls std::terminate, which took the
+    // whole controller_manager down with it.
+    stopSpinner();
+
     node_ = std::make_shared<rclcpp::Node>("g1_dex3_" + side_ + "_system");
 
     // Sensor QoS both ways: this is a device stream, and it is what Unitree's own tooling uses.
