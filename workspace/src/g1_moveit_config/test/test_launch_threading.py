@@ -97,34 +97,15 @@ def test_the_moveit_branch_stages_a_simulator_and_move_group(bringup):
     assert names == ["sim.launch.py", "move_group.launch.py"]
 
 
-def test_moveit_demands_non_arm_joint_states(bringup):
-    """The coupling pin.
+def test_moveit_gets_a_simulator_with_sensors(bringup):
+    """move_group refuses to plan until every active joint has a state.
 
-    move_group refuses to plan until every active joint has a state, and the arms hang off
-    three waist joints joint_state_broadcaster does not own. Without this the stack comes up
-    looking healthy and every plan fails.
+    joint_state_broadcaster covers all 29 body motors from the hardware component, so the
+    only thing MoveIt still needs staged for it is the simulator itself.
     """
-    sim = dict(_includes(_run_setup(bringup, mode="none", moveit="true")))["sim.launch.py"]
-    assert sim["non_arm_joint_states"] == "true"
-
-
-def test_the_flag_is_not_offered_to_the_operator(bringup):
-    """moveit:=true cannot be talked out of the joint states it needs.
-
-    Declaring the name here would allow moveit:=true non_arm_joint_states:=false, which is a
-    move_group that starts healthy and then never plans. A bare launch still leaves the
-    decision to sim.launch.py's own default.
-    """
-    declared = [
-        name
-        for name in (
-            getattr(entity, "name", None)
-            for entity in bringup.generate_launch_description().entities
-        )
-        if name
-    ]
-    assert "moveit" in declared, "sanity: this is how the other assertion reads the arguments"
-    assert "non_arm_joint_states" not in declared
+    includes = dict(_includes(_run_setup(bringup, mode="none", moveit="true")))
+    assert "sim.launch.py" in includes
+    assert "move_group.launch.py" in includes
 
     bare = dict(_includes(_run_setup(bringup, mode="none")))["sim.launch.py"]
     assert "non_arm_joint_states" not in bare
@@ -183,18 +164,9 @@ def test_the_arm_development_combination_is_not_blocked(bringup):
     """pin_pelvis is refused on the navigation modes but must stay available with MoveIt: a
     balancing robot sways, and the whole arm chain hangs off the pelvis."""
     sim = dict(
-        _includes(
-            _run_setup(
-                bringup,
-                mode="none",
-                moveit="true",
-                pin_pelvis="true",
-                waist_hold_rad="0.35,0.0,0.0",
-            )
-        )
+        _includes(_run_setup(bringup, mode="none", moveit="true", pin_pelvis="true"))
     )["sim.launch.py"]
     assert sim["pin_pelvis"] == "true"
-    assert sim["waist_hold_rad"] == "0.35,0.0,0.0"
 
 
 def test_no_moveit_means_g1_moveit_config_is_never_named(bringup):

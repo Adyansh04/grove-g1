@@ -120,9 +120,9 @@ def _nodes(setup_result):
 def test_nav_stack_never_stages_a_simulator(nav_stack, mode):
     """The safety pin.
 
-    Both callers stage their own simulator. A second one here would mean two
-    motion_service_sim processes publishing /lowcmd at once, which is the failure mode
-    CONTROL_MODES.md puts first: the robot collapses and nothing in the logs says why.
+    Both callers stage their own simulator. A second one here would mean two writers on
+    rt/lowcmd at once, which is the failure mode the control-mode rules put first: the robot
+    collapses and nothing in the logs says why.
     """
     nav = "false" if mode == "mapping" else "true"
     actions, context = _run_setup(nav_stack, mode=mode, nav=nav)

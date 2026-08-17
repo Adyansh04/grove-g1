@@ -7,13 +7,11 @@ find_package(builtin_interfaces REQUIRED)
 find_package(geometry_msgs REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
-  "action/SetLocoMode.action"
   "action/ApproachObject.action"
   "action/Pick.action"
   "action/Place.action"
   "action/Retreat.action"
   "action/SetArmPosture.action"
-  "msg/LocoStatus.msg"
   DEPENDENCIES builtin_interfaces geometry_msgs
 )
 

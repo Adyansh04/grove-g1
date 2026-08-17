@@ -73,9 +73,8 @@ def generate_launch_description():
         ],
     )
 
-    # Driven by launch event handlers rather than a lifecycle manager, matching how
-    # g1_navigation drives g1_loco_authority: there is one node here, and adding a manager
-    # for it would be more moving parts than the thing it manages.
+    # Driven by launch event handlers rather than a lifecycle manager: there is one node here,
+    # and adding a manager for it would be more moving parts than the thing it manages.
     configure = EmitEvent(
         event=ChangeState(
             lifecycle_node_matcher=matches_action(object_source),

@@ -39,10 +39,9 @@ This file composes independent pieces; it does not delegate to one bundled entry
 package. Three pieces, each conditional and each unaware of the others:
 
   * the simulator -- `_simulator()`, the only place it is named anywhere in this file, and
-    exactly once per launch. Two would put two motion_service_sim processes on /lowcmd, and
-    CONTROL_MODES.md puts that failure first for a reason. Swapping in a hardware bring-up
-    later means replacing that function's body; the branches only decide what goes in its
-    arguments.
+    exactly once per launch. Two would put two writers on rt/lowcmd, and CONTROL_MODES.md puts
+    that failure first for a reason. Swapping in a hardware bring-up later means replacing that
+    function's body; the branches only decide what goes in its arguments.
   * navigation -- g1_navigation's nav_stack.launch.py, which stages no simulator of its own.
   * manipulation -- g1_moveit_config's move_group.launch.py, sim-free by the same design.
 
@@ -53,9 +52,9 @@ pieces, and bring-up may reach whichever it needs.
 
 nav_sim.launch.py and moveit_sim.launch.py still exist and still run standalone, each composing
 the same pieces for a single-package session, and they are what those packages' integration
-suites launch. That leaves two facts stated in two files each -- sensors:=true and
-non_arm_joint_states:=true on the simulator -- because every one of these files stages its own
-simulator and there is nowhere shared to put them. test_launch_threading asserts both copies.
+suites launch. That leaves sensors:=true stated in more than one file, because every one of
+them stages its own simulator and there is nowhere shared to put it. test_launch_threading
+asserts the copies agree.
 
 A note on what is NOT forwarded, since the reflex here is to forward everything. The hazard is
 inheritance: a child's DeclareLaunchArgument default never fires for a name the PARENT also
@@ -215,18 +214,10 @@ def _setup(context, *args, **kwargs):
         "control_stack": LaunchConfiguration("control_stack"),
         "headless": LaunchConfiguration("headless"),
         "pin_pelvis": "true" if pin_pelvis else "false",
-        "waist_hold_rad": LaunchConfiguration("waist_hold_rad"),
         "sim_start_delay_s": delay,
         # We own RViz, below. Without this the simulator opens its own on the wrong config.
         "rviz": "false",
     }
-
-    if want_moveit:
-        # MoveIt refuses to plan until every active joint has a state, and the arms hang off
-        # three waist joints joint_state_broadcaster does not own. Not exposed as an operator
-        # argument: moveit:=true with this off is a move_group that comes up healthy and then
-        # silently never plans, which is a worse failure than not having the knob.
-        sim_args["non_arm_joint_states"] = "true"
 
     actions = [_simulator(sim_args)]
 
@@ -440,13 +431,6 @@ def generate_launch_description():
             default_value="25.0",
             description="Seconds to wait before the automatic activation. The component has to "
             "be loaded and /lowstate flowing first; too early and activate_arm fails loudly.",
-        ),
-        DeclareLaunchArgument(
-            "waist_hold_rad",
-            default_value="",
-            description="SIM-ONLY: three comma-separated radians (yaw,roll,pitch) to stand the "
-            "waist at. Requires pin_pelvis:=true, which sim.launch.py enforces. Use it to "
-            "check arm planning against a torso that is not square to the pelvis.",
         ),
         DeclareLaunchArgument(
             "sensors",

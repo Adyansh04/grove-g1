@@ -1,4 +1,4 @@
-"""Sim bring-up: unitree_mujoco + motion_service_sim + control.launch.py + loco.launch.py.
+"""Sim bring-up: unitree_mujoco + control.launch.py.
 
 See README.md for the full operating procedure (sim.launch.py ->
 activate_arm.launch.py -> command -> deactivate_arm.launch.py -> stop),
@@ -365,77 +365,11 @@ def _launch_setup(context, *args, **kwargs):
     sim_start_delay_s = float(LaunchConfiguration("sim_start_delay_s").perform(context))
     actions.append(TimerAction(period=sim_start_delay_s, actions=[sim_process]))
 
-    # Empty means "whatever sensors: decided", which is what every caller before MoveIt
-    # wanted. Kept as a sentinel rather than a plain bool default because the answer differs
-    # per branch and a bool would silently override the sensor track's choice.
-    non_arm_arg = LaunchConfiguration("non_arm_joint_states").perform(context).strip().lower()
-    if non_arm_arg == "":
-        publish_non_arm = sensors
-    elif non_arm_arg in ("true", "false"):
-        publish_non_arm = non_arm_arg == "true"
-    else:
-        raise RuntimeError(
-            f"non_arm_joint_states:={non_arm_arg!r} is not true, false or empty. Empty follows "
-            "sensors:, which is the historical behaviour."
-        )
-
-    # Empty unless asked for, and only the stiff-hold path reads it -- see the argument's
-    # own description for why that means pin_pelvis.
-    waist_hold = LaunchConfiguration("waist_hold_rad").perform(context).strip()
-    waist_params = {}
-    if waist_hold:
-        if not pin_pelvis:
-            raise RuntimeError(
-                "waist_hold_rad needs pin_pelvis:=true. With the walking policy running it "
-                "owns the waist and overwrites the hold pose every tick, so the setting would "
-                "look like it applied and then quietly do nothing."
-            )
-        try:
-            waist_values = [float(v) for v in waist_hold.split(",")]
-        except ValueError as exc:
-            raise RuntimeError(
-                f"waist_hold_rad:={waist_hold!r} is not numbers. Expected three comma-separated "
-                "radians, yaw,roll,pitch."
-            ) from exc
-        if len(waist_values) != 3:
-            raise RuntimeError(
-                f"waist_hold_rad:={waist_hold!r} has {len(waist_values)} values; the waist has "
-                "three joints (yaw, roll, pitch)."
-            )
-        waist_params = {"waist_hold_rad": waist_values}
-
-    # Pelvis weld and walking policy are mutually exclusive.
-    motion_service_sim_share = get_package_share_directory("g1_motion_service_sim")
-    motion_service_sim_node  = Node(
-        package="g1_motion_service_sim",
-        executable="motion_service_sim",
-        name="motion_service_sim",
-        output="screen",
-        parameters=[
-            os.path.join(motion_service_sim_share, "config", "motion_service_sim.yaml"),
-            os.path.join(motion_service_sim_share, "config", "walk_policy.yaml"),
-            # The legs and waist, which no controller owns. Completes pelvis -> torso_link, so
-            # without it the sensor frames and both arms are stranded in a TF tree of their
-            # own. Costs work on the 1 kHz /lowstate path, so it is not on by default. On
-            # hardware this comes from g1_hardware_interface's g1_lowstate_joint_states.
-            {"publish_non_arm_joint_states": publish_non_arm},
-            {"walk_policy.enabled": not pin_pelvis},
-            waist_params,
-        ],
-    )
-
     control_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(get_package_share_directory("g1_bringup"), "launch", "control.launch.py")
         ),
         launch_arguments={"control_stack": control_stack}.items(),
-    )
-
-    # LocoClient bridge — talks to motion_service_sim's /api/sport/* responder.
-    loco_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(get_package_share_directory("g1_bringup"), "launch", "loco.launch.py")
-        )
     )
 
     # Tear down the whole launch if the sim dies.
@@ -446,15 +380,7 @@ def _launch_setup(context, *args, **kwargs):
         )
     )
 
-    # motion_service_sim and the LocoClient bridge both stand in for the onboard controller,
-    # which rt/lowcmd replaces outright. Running them alongside it would put a second writer on
-    # the motors, the one thing CONTROL_MODES.md forbids.
-    if control_stack == "lowcmd":
-        actions.extend([control_launch, shutdown_on_sim_exit])
-    else:
-        actions.extend(
-            [motion_service_sim_node, control_launch, loco_launch, shutdown_on_sim_exit]
-        )
+    actions.extend([control_launch, shutdown_on_sim_exit])
     return actions
 
 
@@ -515,24 +441,6 @@ def generate_launch_description():
                 description="SIM-ONLY debugging aid: weld the pelvis to the world AND disable the "
                 "walking policy, so the arm bridge can be exercised with nothing else driving the "
                 "legs. Default false -- the policy balances the robot itself.",
-            ),
-            DeclareLaunchArgument(
-                "non_arm_joint_states",
-                default_value="",
-                description="Publish the joints joint_state_broadcaster does not own -- legs, "
-                "waist and hands. Empty follows sensors:, which is what the sensor frames "
-                "needed and the only behaviour that existed before. Set true to get the full "
-                "43-joint robot state without the LiDAR: MoveIt will not plan until every "
-                "active joint has a state, and the arms hang off the waist.",
-            ),
-            DeclareLaunchArgument(
-                "waist_hold_rad",
-                default_value="",
-                description="SIM-ONLY: three comma-separated radians (yaw,roll,pitch) to stand "
-                "the waist at instead of the pose it spawned in. Needs pin_pelvis:=true, "
-                "because a running walking policy owns the waist and overwrites this. Exists "
-                "so manipulation can be exercised with a torso that is not square to the "
-                "pelvis, which is the case a zero waist hides.",
             ),
             DeclareLaunchArgument(
                 "sim_start_delay_s",

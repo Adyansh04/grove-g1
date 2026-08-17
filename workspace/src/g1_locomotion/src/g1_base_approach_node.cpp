@@ -11,9 +11,8 @@
  * publishing into locomotion's channel is the shape of bug the control-mode rules exists to
  * prevent, even when the topic itself is harmless.
  *
- * Publishes on its own topic rather than writing /cmd_vel alongside Nav2. g1_gait_shaper
- * subscribes to both and gives this one priority while it is publishing, so ownership of the
- * velocity channel is declared rather than left to the behaviour tree's sequencing.
+ * Writes /cmd_vel directly, as Nav2 does. Nothing arbitrates between the two because the
+ * mission tree runs NavigateToPose and ApproachObject in sequence, never together.
  */
 
 #include <tf2/LinearMath/Quaternion.h>
@@ -73,7 +72,7 @@ public:
       , tf_buffer_(get_clock())
       , tf_listener_(tf_buffer_)
     {
-        cmd_topic_         = declare_parameter<std::string>("cmd_vel_topic", "cmd_vel_approach");
+        cmd_topic_         = declare_parameter<std::string>("cmd_vel_topic", "/cmd_vel");
         base_frame_        = declare_parameter<std::string>("base_frame", "base_footprint");
         object_timeout_ms_ = declare_parameter<double>("object_timeout_ms", 1500.0);
 

@@ -9,7 +9,7 @@
 # gate a test run rather than just being run hopefully.
 #
 # WHY THIS EXISTS. Leftover nodes are the most productive source of phantom bugs in this stack.
-# Seen in one session: four motion_service_sim instances writing /lowcmd at once, a second
+# Seen in one session: four simulator instances writing rt/lowcmd at once, a second
 # controller_manager aborting on startup and taking the whole launch down with it, a pinned
 # robot settling somewhere different every launch, and a ROS daemon cheerfully answering for
 # nodes that had already exited. Every one of those looked like a bug somewhere else first.
@@ -18,7 +18,7 @@
 #
 # 1. It matches the FULL COMMAND LINE, not the executable name. `pgrep -x` matches
 #    /proc/PID/comm, which the kernel truncates to 15 characters, so `ros2_control_node` (17),
-#    `motion_service_sim` (18) and `robot_state_publisher` (21) never match and are silently
+#    `g1_base_approach` (16) and `robot_state_publisher` (21) never match and are silently
 #    left running. Most of this stack is `python3` or a `ros2 run` wrapper anyway, whose comm
 #    says nothing useful at all.
 #
@@ -59,7 +59,7 @@ fi
 # one `nav2_container` process, so none of their names appear anywhere in the process table and
 # a name-based sweep reports "killed 0" while `ros2 node list` still shows all of them. That
 # exact combination is what motivated this rewrite.
-NAMED='unitree_mujoco|ros2_control_node|move_group|g1_manipulation|g1_object_pose|g1_sensor_relay|motion_service|g1_loco|g1_gait|g1_odometry|robot_state_publisher|rviz2|controller_manager|spawner|Xvfb|bt_executor|slam_toolbox|amcl|map_server|planner_server|controller_server|behavior_server|bt_navigator|lifecycle_manager|pointcloud_to_laserscan|planning_scene|transform_listener|activate_arm|deactivate_arm|nav_soak'
+NAMED='unitree_mujoco|ros2_control_node|move_group|g1_manipulation|g1_object_pose|g1_sensor_relay|g1_base_approach|g1_odometry|robot_state_publisher|rviz2|controller_manager|spawner|Xvfb|bt_executor|slam_toolbox|amcl|map_server|planner_server|controller_server|behavior_server|bt_navigator|lifecycle_manager|pointcloud_to_laserscan|planning_scene|transform_listener|activate_arm|deactivate_arm|nav_soak'
 ANY_ROS='component_container|rclcpp_components|--ros-args|/opt/ros/[a-z]+/lib/|ros2 run |ros2 launch |ros2 daemon'
 
 protected=" $$ $PPID "

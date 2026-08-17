@@ -10,8 +10,8 @@ runs a mapping session that never loads Nav2 at all.
 
 It stages NO simulator, deliberately. Both callers -- `nav_sim.launch.py` here and
 `g1_bringup`'s `bringup.launch.py` -- stage exactly one themselves. A simulator include in this
-file would give whichever caller already had one a second `motion_service_sim`, and that is two
-publishers on `/lowcmd` fighting for the same joints. The robot would
+file would give whichever caller already had one a second simulator, and that is two
+publishers on `rt/lowcmd` fighting for the same joints. The robot would
 collapse with nothing in the logs to explain it, so `test_launch_threading` asserts the absence
 rather than trusting it.
 

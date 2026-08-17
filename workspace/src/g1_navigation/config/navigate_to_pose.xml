@@ -29,12 +29,12 @@
           <Spin spin_dist="1.57"/>
           <Wait wait_duration="5"/>
           <!--
-            Upstream also has <BackUp backup_dist="0.30" backup_speed="0.05"/> here. Removed:
-            this gait produces exactly 0.000 m/s for a commanded -0.40, so BackUp would burn its
-            whole time_allowance producing no motion and consume the round-robin slot Spin could
-            have used. Putting it back needs backup_speed near 0.6, which is an uncontrolled
-            reverse lurch next to an obstacle. Rejected, not overlooked; full numbers and the
-            second, independent reason are in g1_navigation/README.md.
+            Upstream also has <BackUp backup_dist="0.30" backup_speed="0.05"/> here. Removed
+            against a gait that produced exactly 0.000 m/s for a commanded -0.40, so BackUp
+            burned its whole time_allowance producing no motion and consumed the round-robin
+            slot Spin could have used. The current policy does reverse proportionally above
+            about 0.15 m/s, so this is worth revisiting, but with a measured backup_speed.
+            Upstream's 0.05 is still inside the deadband.
 
             Spin stays: in-place rotation at 1.5 rad/s is a proven primitive here.
           -->

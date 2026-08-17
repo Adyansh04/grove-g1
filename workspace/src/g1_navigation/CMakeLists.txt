@@ -33,7 +33,6 @@ if(BUILD_TESTING)
   set(_pytest_env
     "G1_NAVIGATION_CONFIG_DIR=${CMAKE_CURRENT_SOURCE_DIR}/config"
     "G1_NAVIGATION_LAUNCH_DIR=${CMAKE_CURRENT_SOURCE_DIR}/launch"
-    "G1_LOCOMOTION_CONFIG_DIR=${CMAKE_CURRENT_SOURCE_DIR}/../g1_locomotion/config"
     "G1_BRINGUP_CONFIG_DIR=${CMAKE_CURRENT_SOURCE_DIR}/../g1_bringup/config"
     "G1_BRINGUP_LAUNCH_DIR=${CMAKE_CURRENT_SOURCE_DIR}/../g1_bringup/launch"
   )
@@ -43,18 +42,13 @@ if(BUILD_TESTING)
   # clock that never advances, which surfaces as TF lookups failing somewhere unrelated.
   ament_add_pytest_test(test_no_sim_time test/test_no_sim_time.py ENV ${_pytest_env})
 
-  # Spin's rotational limits against g1_gait_shaper's engage threshold. The two numbers live in
-  # different packages, so neither package's own tests can see the pair -- and the pair has
-  # already been wrong once, silently.
-  ament_add_pytest_test(test_gait_coupling test/test_gait_coupling.py ENV ${_pytest_env})
-
   # Arguments crossing bringup.launch.py -> nav_sim.launch.py -> sim.launch.py. Lives here
   # rather than in g1_bringup because it reads both packages' launch files, and g1_bringup
   # cannot depend on g1_navigation without a colcon cycle. Needs no simulator.
   ament_add_pytest_test(test_launch_threading test/test_launch_threading.py ENV ${_pytest_env})
 
-  # The sensor display group is duplicated across two RViz configs in two packages; same
-  # cross-package blind spot as test_gait_coupling.
+  # The sensor display group is duplicated across two RViz configs in two packages, so neither
+  # package's own tests can see the pair.
   ament_add_pytest_test(test_rviz_configs test/test_rviz_configs.py ENV ${_pytest_env})
 
   # Headless sim integration suites. RESOURCE_LOCK matches g1_bringup's: two of these sharing
@@ -62,13 +56,11 @@ if(BUILD_TESTING)
   # lock g1_bringup uses rather than a separate one.
   find_package(launch_testing_ament_cmake REQUIRED)
   add_launch_test(test/test_scan_pipeline.launch.py TARGET test_scan_pipeline TIMEOUT 200)
-  add_launch_test(test/test_nav_authority.launch.py TARGET test_nav_authority TIMEOUT 320)
   add_launch_test(test/test_slam_map.launch.py TARGET test_slam_map TIMEOUT 240)
   # The acceptance gate, and the only suite here that drives the robot. Longest timeout and
   # highest COST so it runs first, while the machine is quietest.
   add_launch_test(test/test_navigate_to_pose.launch.py TARGET test_navigate_to_pose TIMEOUT 500)
   set_tests_properties(test_scan_pipeline PROPERTIES RESOURCE_LOCK mujoco_sim LABELS simulator)
-  set_tests_properties(test_nav_authority PROPERTIES RESOURCE_LOCK mujoco_sim LABELS simulator COST 70)
   set_tests_properties(test_slam_map PROPERTIES RESOURCE_LOCK mujoco_sim LABELS simulator)
   set_tests_properties(test_navigate_to_pose PROPERTIES RESOURCE_LOCK mujoco_sim LABELS simulator COST 100)
   # COST descending = execution order; the heavier suite goes first.

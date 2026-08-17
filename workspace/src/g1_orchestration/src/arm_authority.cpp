@@ -180,8 +180,8 @@ bool acquireArm(const rclcpp::Logger& logger, double timeout_s, ControlStack sta
     // robot state more than 0.05" -- measured on the right elbow at 0.051 rad, 176 ms after the
     // switch returned, which is the whole margin.
     //
-    // The same reason g1_loco_authority has settle_after_start_s: an authority handoff is not
-    // complete when the service call returns, it is complete when the thing has stopped moving.
+    // An authority handoff is not complete when the service call returns, it is complete when
+    // the thing has stopped moving.
     rclcpp::sleep_for(std::chrono::duration_cast<std::chrono::nanoseconds>(
         std::chrono::duration<double>(kAcquireSettleS)));
     return true;
