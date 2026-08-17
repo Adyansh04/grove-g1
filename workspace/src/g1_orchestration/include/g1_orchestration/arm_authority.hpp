@@ -19,29 +19,10 @@
 #include <memory>
 #include <rclcpp/rclcpp.hpp>
 #include <string>
-#include <string_view>
 #include <vector>
 
 namespace g1_orchestration
 {
-
-/// Which stack owns the body motors, and so what acquiring the arm actually consists of.
-enum class ControlStack
-{
-    /// Arms live on their own component, which is inactive until acquired.
-    kArmSdk,
-    /// One always-active component owns all 29 motors, so the arms only change controller.
-    kLowCmd,
-};
-
-/// @return kArmSdk for "arm_sdk" and kLowCmd for "lowcmd"; throws on anything else.
-[[nodiscard]] ControlStack controlStackFromString(std::string_view name);
-
-/// @brief The node's `control_stack` parameter, declared as "arm_sdk" if nothing set it.
-///
-/// One reader for the executor's bracket and for the AcquireArm/ReleaseArm leaves, so a
-/// mission cannot acquire under one stack's rules and release under the other's.
-[[nodiscard]] ControlStack controlStackOf(const rclcpp::Node::SharedPtr& node);
 
 /// A controller to activate, and what it has to displace to get there.
 struct ControlledPart
@@ -55,10 +36,10 @@ struct ControlledPart
 };
 
 /// The arm, then each hand. Order matters: see `acquireArm`.
-const std::vector<ControlledPart>& controlledParts(ControlStack stack);
+const std::vector<ControlledPart>& controlledParts();
 
 /**
- * @brief Takes the arm, then each hand, in the order each stack requires.
+ * @brief Takes the arm, then each hand.
  *
  * The arm is required; a hand is best-effort. A Dex3 that is absent, unpowered or not
  * publishing state must not stop the arm from being usable, which is exactly what
@@ -68,17 +49,22 @@ const std::vector<ControlledPart>& controlledParts(ControlStack stack);
  * blocking service calls, and spin_until_future_complete on a node an executor already owns
  * throws rather than waiting.
  *
+ * @param logger Where progress and failures are reported.
+ * @param timeout_s Per-step service budget.
  * @return false only if the ARM failed. A hand that did not come up warns and returns true.
  */
-bool acquireArm(const rclcpp::Logger& logger, double timeout_s, ControlStack stack);
+bool acquireArm(const rclcpp::Logger& logger, double timeout_s);
 
 /**
  * @brief Hands each part back, in reverse: controllers first, then components.
  *
  * Best-effort throughout and never throws: this runs on the failure path too, where giving up
  * partway would leave a controller claiming interfaces of an inactive component.
+ *
+ * @param logger Where failures are reported.
+ * @param timeout_s Per-step service budget.
  */
-void releaseArm(const rclcpp::Logger& logger, double timeout_s, ControlStack stack);
+void releaseArm(const rclcpp::Logger& logger, double timeout_s);
 
 }  // namespace g1_orchestration
 

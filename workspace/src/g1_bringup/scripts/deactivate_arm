@@ -1,23 +1,15 @@
 #!/usr/bin/env python3
-"""Releases control authority over the G1 arms, in the mandatory order.
+"""Releases control authority over the G1 arms.
 
-Reverse of activate_arm. On arm_sdk it deactivates arm_trajectory_controller
-*before* G1ArmSdkSystem, so an active controller never claims interfaces out
-from under a deactivating component. The component's own on_deactivate runs
-its ramp-down synchronously and blocks the service call for roughly
-blend_ramp_down_s -- that's by design (see g1_hardware_interface's README),
-not a timeout to work around, so this script's service-call timeout is set
-comfortably longer than the configured ramp.
-
-On lowcmd there is no component to deactivate, and the arms cannot simply be
-let go: unclaimed means unpowered there. So arm_freeze_controller comes back
-in the same switch that takes arm_trajectory_controller out.
+Reverse of activate_arm. The arms cannot simply be let go: a joint the body
+component sees unclaimed is a joint it leaves unpowered. So
+arm_freeze_controller comes back in the same switch that takes
+arm_trajectory_controller out.
 
 Python for the same reason as activate_arm: one-shot administrative
 sequencing, not a control loop.
 """
 
-import argparse
 import sys
 
 import rclpy
@@ -25,7 +17,6 @@ from controller_manager_msgs.srv import SetHardwareComponentState, SwitchControl
 from lifecycle_msgs.msg import State
 from rclpy.node import Node
 
-COMPONENT_NAME = "G1ArmSdkSystem"
 CONTROLLER_NAME = "arm_trajectory_controller"
 ARM_FREEZE_CONTROLLER = "arm_freeze_controller"
 SERVICE_CALL_TIMEOUT_S = 5.0
@@ -36,14 +27,6 @@ HANDS = (
     ("G1Dex3SystemLeft", "left_hand_controller"),
     ("G1Dex3SystemRight", "right_hand_controller"),
 )
-
-# Must comfortably exceed blend_ramp_down_s (2.0 s default): on_deactivate
-# blocks the whole service call for the ramp's duration by design (see
-# g1_hardware_interface's README -- resource_manager serializes lifecycle
-# transitions against read()/write(), so the ramp-down runs synchronously
-# inside this call).
-COMPONENT_DEACTIVATE_TIMEOUT_S = 10.0
-
 
 def switch_controller(node, client, activate, deactivate, timeout_s):
     if not client.wait_for_service(timeout_sec=timeout_s):
@@ -80,16 +63,6 @@ def set_component_state(node, client, name, target_state_id, target_label, timeo
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--stack",
-        choices=("arm_sdk", "lowcmd"),
-        default="arm_sdk",
-        help="Which control stack is running. Must match the one sim.launch.py was given.",
-    )
-    args, _ = parser.parse_known_args(argv)
-    lowcmd = args.stack == "lowcmd"
-
     rclpy.init()
     node = Node("g1_bringup_deactivate_arm")
     try:
@@ -112,36 +85,19 @@ def main(argv=None):
                 SERVICE_CALL_TIMEOUT_S,
             )
 
-        # Controller-then-component: see this script's module docstring. On lowcmd the freeze
-        # goes back in the same switch, so the arms are never momentarily unowned.
-        restored = [ARM_FREEZE_CONTROLLER] if lowcmd else []
+        # The freeze goes back in the same switch, so the arms are never momentarily unowned.
         node.get_logger().info(f"deactivating controller {CONTROLLER_NAME}...")
         if not switch_controller(
-            node, controller_client, restored, [CONTROLLER_NAME], SERVICE_CALL_TIMEOUT_S
+            node,
+            controller_client,
+            [ARM_FREEZE_CONTROLLER],
+            [CONTROLLER_NAME],
+            SERVICE_CALL_TIMEOUT_S,
         ):
             node.get_logger().error(f"failed to deactivate {CONTROLLER_NAME}")
             return 1
 
-        if lowcmd:
-            node.get_logger().info(f"release complete: the arms are back on {ARM_FREEZE_CONTROLLER}.")
-            return 0
-
-        node.get_logger().info(
-            f"deactivating hardware component {COMPONENT_NAME} "
-            "(blocks for the ramp-down by design)..."
-        )
-        if not set_component_state(
-            node,
-            component_client,
-            COMPONENT_NAME,
-            State.PRIMARY_STATE_INACTIVE,
-            "inactive",
-            COMPONENT_DEACTIVATE_TIMEOUT_S,
-        ):
-            node.get_logger().error(f"failed to deactivate {COMPONENT_NAME}")
-            return 1
-
-        node.get_logger().info("deactivation complete: controller and component both inactive.")
+        node.get_logger().info(f"release complete: the arms are back on {ARM_FREEZE_CONTROLLER}.")
         return 0
     finally:
         node.destroy_node()

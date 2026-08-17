@@ -22,7 +22,6 @@ if(BUILD_TESTING)
   set(_pytest_env
     "G1_MOVEIT_CONFIG_DIR=${CMAKE_CURRENT_SOURCE_DIR}/config"
     "G1_MOVEIT_LAUNCH_DIR=${CMAKE_CURRENT_SOURCE_DIR}/launch"
-    "G1_BRINGUP_CONFIG_DIR=${CMAKE_CURRENT_SOURCE_DIR}/../g1_bringup/config"
     "G1_BRINGUP_LAUNCH_DIR=${CMAKE_CURRENT_SOURCE_DIR}/../g1_bringup/launch"
     "G1_DESCRIPTION_CONFIG_DIR=${CMAKE_CURRENT_SOURCE_DIR}/../g1_description/config"
     "G1_CONTROLLERS_CONFIG_DIR=${CMAKE_CURRENT_SOURCE_DIR}/../g1_controllers/config"
@@ -48,11 +47,12 @@ if(BUILD_TESTING)
   set(_description_dir "${CMAKE_CURRENT_SOURCE_DIR}/../g1_description")
   add_custom_command(
     OUTPUT ${_expanded_urdf}
-    COMMAND xacro ${_description_dir}/urdf/g1_arm_sdk.urdf.xacro -o ${_expanded_urdf}
-    DEPENDS ${_description_dir}/urdf/g1_arm_sdk.urdf.xacro
+    COMMAND xacro ${_description_dir}/urdf/g1_lowcmd.urdf.xacro -o ${_expanded_urdf}
+    DEPENDS ${_description_dir}/urdf/g1_lowcmd.urdf.xacro
+            ${_description_dir}/urdf/g1_common.xacro
             ${_description_dir}/urdf/g1_29dof_with_hand_rev_1_0.urdf
-            ${_description_dir}/config/arm_sdk_params.yaml
-    COMMENT "Expanding g1_arm_sdk.urdf.xacro for test_robot_model"
+            ${_description_dir}/config/lowcmd_params.yaml
+    COMMENT "Expanding g1_lowcmd.urdf.xacro for test_robot_model"
     VERBATIM
   )
   add_custom_target(g1_moveit_config_expanded_urdf ALL DEPENDS ${_expanded_urdf})

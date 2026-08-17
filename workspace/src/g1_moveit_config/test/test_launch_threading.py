@@ -147,19 +147,6 @@ def test_the_mode_config_still_wins_without_moveit(bringup):
     assert rviz["rviz.launch.py"]["rviz_config"].endswith("g1_navigation/config/g1_navigation.rviz")
 
 
-@pytest.mark.parametrize("stack", ["arm_sdk", "lowcmd"])
-def test_the_control_stack_reaches_both_the_simulator_and_move_group(bringup, stack):
-    """move_group must plan against the description robot_state_publisher actually loaded.
-
-    The two stacks describe the same robot and differ only in the ros2_control block, so a
-    mismatch is not a visible failure: move_group comes up, plans, and then hands the
-    trajectory to a controller name that belongs to the other stack.
-    """
-    includes = dict(_includes(_run_setup(bringup, mode="none", moveit="true", control_stack=stack)))
-    assert includes["sim.launch.py"]["control_stack"] == stack
-    assert includes["move_group.launch.py"]["control_stack"] == stack
-
-
 def test_the_arm_development_combination_is_not_blocked(bringup):
     """pin_pelvis is refused on the navigation modes but must stay available with MoveIt: a
     balancing robot sways, and the whole arm chain hangs off the pelvis."""
@@ -196,15 +183,7 @@ def test_moveit_sim_still_composes_the_same_two_pieces(moveit_sim):
     assert [name for name, _ in includes] == ["sim.launch.py", "move_group.launch.py"]
 
     sim = dict(includes)["sim.launch.py"]
-    assert sim["non_arm_joint_states"] == "true"
     # The other copy of each fact bringup states; if these drift, one path plans and the other
     # silently does not.
     assert sim["sensors"] == "false"
     assert sim["rviz"] == "false"
-
-
-@pytest.mark.parametrize("stack", ["arm_sdk", "lowcmd"])
-def test_moveit_sim_threads_the_control_stack_too(moveit_sim, stack):
-    includes = dict(_includes(_run_setup(moveit_sim, control_stack=stack)))
-    assert includes["sim.launch.py"]["control_stack"] == stack
-    assert includes["move_group.launch.py"]["control_stack"] == stack

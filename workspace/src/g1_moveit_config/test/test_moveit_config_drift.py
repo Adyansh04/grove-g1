@@ -14,15 +14,10 @@ import pytest
 import yaml
 
 MOVEIT_CONFIG_DIR = os.environ["G1_MOVEIT_CONFIG_DIR"]
-BRINGUP_CONFIG_DIR = os.environ["G1_BRINGUP_CONFIG_DIR"]
 DESCRIPTION_CONFIG_DIR = os.environ["G1_DESCRIPTION_CONFIG_DIR"]
 CONTROLLERS_CONFIG_DIR = os.environ["G1_CONTROLLERS_CONFIG_DIR"]
 
-# One moveit_controllers.yaml serves both control stacks, which only works because both define
-# the same controller names over the same joints. Every test taking the `controllers` fixture
-# therefore runs twice, once per stack.
 CONTROLLER_FILES = {
-    "arm_sdk": (BRINGUP_CONFIG_DIR, "controllers.yaml"),
     "lowcmd": (CONTROLLERS_CONFIG_DIR, "lowcmd_controllers.yaml"),
 }
 
@@ -111,22 +106,17 @@ def test_partial_joint_goals_stay_enabled(controllers):
     assert params["allow_partial_joints_goal"] is True
 
 
-@pytest.mark.parametrize(
-    ("params_file", "joints"),
-    [
-        ("arm_sdk_params.yaml", ARM_JOINTS),
-        ("dex3_params.yaml", HAND_JOINTS["left"] + HAND_JOINTS["right"]),
-    ],
-)
-def test_planned_speed_stays_under_the_bridge_clamp(joint_limits, params_file, joints):
+def test_planned_hand_speed_stays_under_the_clamp(joint_limits):
     """The clamp is a backstop, not a controller in the loop.
 
-    Both hardware components slew-clamp every joint they own; plan faster than that and the
-    motion is silently stretched until the controller aborts on a goal-time tolerance instead.
-    The arm and the hands clamp at different speeds, so each is checked against its own.
+    G1Dex3System slew-clamps every finger it owns; plan faster than that and the motion is
+    silently stretched until the controller aborts on a goal-time tolerance instead.
+
+    The body component has no such clamp, deliberately: it would throttle exactly the fast
+    corrections the balance policy needs, so there is nothing to check the arm against.
     """
-    clamp = _load(DESCRIPTION_CONFIG_DIR, params_file)["system"]["max_joint_velocity_rad_s"]
-    for joint in joints:
+    clamp = _load(DESCRIPTION_CONFIG_DIR, "dex3_params.yaml")["system"]["max_joint_velocity_rad_s"]
+    for joint in HAND_JOINTS["left"] + HAND_JOINTS["right"]:
         limits = joint_limits[joint]
         assert limits["has_velocity_limits"] is True, joint
         assert limits["max_velocity"] < clamp, (

@@ -68,16 +68,13 @@ def _check_environment(context, *args, **kwargs):
     """
     problems = []
 
-    # Which RMW is correct depends on who owns the robot wire: arm_sdk reaches rt/* from ROS
-    # itself, lowcmd reaches it from the SDK's own CycloneDDS and ROS must not load a second.
-    control_stack = LaunchConfiguration("control_stack").perform(context)
-    expected_rmw = "rmw_fastrtps_cpp" if control_stack == "lowcmd" else "rmw_cyclonedds_cpp"
+    # The robot wire is reached from unitree_sdk2's own CycloneDDS, inside the hardware
+    # component, so ROS must not load a second one: both ship libddsc.so.0 with different ABIs
+    # and mixing them corrupts the heap.
+    expected_rmw = "rmw_fastrtps_cpp"
     rmw = os.environ.get("RMW_IMPLEMENTATION")
     if rmw != expected_rmw:
-        problems.append(
-            f"RMW_IMPLEMENTATION={rmw!r}, expected {expected_rmw!r} for "
-            f"control_stack={control_stack!r}."
-        )
+        problems.append(f"RMW_IMPLEMENTATION={rmw!r}, expected {expected_rmw!r}.")
 
     cyclone_uri = os.environ.get("CYCLONEDDS_URI")
     if not cyclone_uri:
@@ -169,12 +166,11 @@ def _launch_setup(context, *args, **kwargs):
             "or 'lio' (the walled, asymmetric room for scoring LiDAR-inertial odometry "
             "against a known 5 m square)."
         )
-    control_stack_for_scene = LaunchConfiguration("control_stack").perform(context)
-    # Unpinned on the lowcmd stack wraps whichever world was chosen in the walk overlay, whose
-    # pelvis weld the simulator holds until the control stack has driven every motor. Nothing
-    # balances the robot before that, so an unwrapped scene leaves it prone by the time the
-    # policy activates. It has to compose with the sensor worlds too, not just the bare floor.
-    walk_overlay = control_stack_for_scene == "lowcmd" and not pin_pelvis
+    # Unpinned wraps whichever world was chosen in the walk overlay, whose pelvis weld the
+    # simulator holds until the control stack has driven every motor. Nothing balances the robot
+    # before that, so an unwrapped scene leaves it prone by the time the policy activates. It
+    # has to compose with the sensor worlds too, not just the bare floor.
+    walk_overlay = not pin_pelvis
     if walk_overlay:
         overlay_name = "g1_walk_scene.xml"
         walk_base    = f"g1_{world}_scene.xml" if sensors else "g1_flat_scene.xml"
@@ -253,7 +249,6 @@ def _launch_setup(context, *args, **kwargs):
 
     # Checked even when sensors are off, so a typo is caught where it was made rather than
     # silently selecting the other source.
-    control_stack = LaunchConfiguration("control_stack").perform(context)
     odometry = LaunchConfiguration("odometry").perform(context)
     if odometry not in ("ground_truth", "fast_lio"):
         raise RuntimeError(
@@ -368,8 +363,7 @@ def _launch_setup(context, *args, **kwargs):
     control_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(get_package_share_directory("g1_bringup"), "launch", "control.launch.py")
-        ),
-        launch_arguments={"control_stack": control_stack}.items(),
+        )
     )
 
     # Tear down the whole launch if the sim dies.
@@ -420,13 +414,6 @@ def generate_launch_description():
                 "pure geometry, turns sensors on explicitly and passes.",
             ),
             DeclareLaunchArgument(
-                "control_stack",
-                default_value="arm_sdk",
-                description="Forwarded to control.launch.py. 'lowcmd' also drops "
-                "motion_service_sim and the LocoClient bridge, which stand in for the onboard "
-                "controller that rt/lowcmd replaces.",
-            ),
-            DeclareLaunchArgument(
                 "odometry",
                 default_value="fast_lio",
                 description="Which source publishes odom -> base_footprint. 'fast_lio' is the "
@@ -450,7 +437,6 @@ def generate_launch_description():
                 "sim's first physics tick. Raise this if the robot still topples on startup "
                 "(slower discovery); do not set to 0.",
             ),
-            # After the arguments, because it now depends on control_stack.
             OpaqueFunction(function=_check_environment),
             OpaqueFunction(function=_launch_setup),
         ]

@@ -2,7 +2,7 @@
  * @file test_authority_drift.cpp
  * @brief The BT's acquire sequence against g1_bringup's script, the other implementation of it.
  *
- * Two places now know how to take the arm: this package, in C++, for a mission, and
+ * Two places know how to take the arm: this package, in C++, for a mission, and
  * g1_bringup/scripts/activate_arm, in Python, for an operator. They must name the same
  * components and controllers, because a rename that reaches only one of them leaves the other
  * timing out against a component that no longer exists -- and it would time out at exactly the
@@ -16,7 +16,6 @@
 
 #include <fstream>
 #include <sstream>
-#include <stdexcept>
 #include <string>
 
 #include "g1_orchestration/arm_authority.hpp"
@@ -35,21 +34,11 @@ std::string readScript()
 
 }  // namespace
 
-class AuthorityDrift : public ::testing::TestWithParam<g1_orchestration::ControlStack>
-{
-};
-
-INSTANTIATE_TEST_SUITE_P(
-    BothStacks, AuthorityDrift,
-    ::testing::Values(
-        g1_orchestration::ControlStack::kArmSdk, g1_orchestration::ControlStack::kLowCmd));
-
-TEST_P(AuthorityDrift, EveryNameThisPackageUsesAppearsInTheScript)
+TEST(AuthorityDrift, EveryNameThisPackageUsesAppearsInTheScript)
 {
     const std::string script = readScript();
 
-    for (const g1_orchestration::ControlledPart& part :
-         g1_orchestration::controlledParts(GetParam()))
+    for (const g1_orchestration::ControlledPart& part : g1_orchestration::controlledParts())
     {
         // A part may legitimately have no component or nothing to displace, and an empty
         // string is a substring of everything, so those would assert nothing at all.
@@ -68,40 +57,26 @@ TEST_P(AuthorityDrift, EveryNameThisPackageUsesAppearsInTheScript)
     }
 }
 
-TEST_P(AuthorityDrift, TheArmComesFirstAndBothHandsFollow)
+TEST(AuthorityDrift, TheArmComesFirstAndBothHandsFollow)
 {
     // Order is not cosmetic. The arm is the part whose failure fails the whole acquire, and
     // the hands are best-effort behind it, so the arm has to be parts.front().
-    const auto& parts = g1_orchestration::controlledParts(GetParam());
+    const auto& parts = g1_orchestration::controlledParts();
     ASSERT_EQ(parts.size(), 3U);
     EXPECT_EQ(parts[0].controller, "arm_trajectory_controller");
     EXPECT_EQ(parts[1].component, "G1Dex3SystemLeft");
     EXPECT_EQ(parts[2].component, "G1Dex3SystemRight");
 }
 
-TEST(AuthorityDrift, TheArmsAreNeverUnownedOnTheLowCmdStack)
+TEST(AuthorityDrift, TheArmsAreNeverUnowned)
 {
-    // The whole reason the lowcmd arm entry carries a `displaces`: that component leaves any
+    // The whole reason the arm entry carries a `displaces`: the body component leaves any
     // unclaimed joint unpowered, so the freeze has to leave in the same switch the trajectory
     // controller arrives in. An empty `displaces` here would drop the arms.
-    const auto& parts = g1_orchestration::controlledParts(g1_orchestration::ControlStack::kLowCmd);
+    const auto& parts = g1_orchestration::controlledParts();
     EXPECT_TRUE(parts.front().component.empty())
-        << "the lowcmd body component is active from bring-up and must not be cycled";
+        << "the body component is active from bring-up and must not be cycled";
     EXPECT_EQ(parts.front().displaces, "arm_freeze_controller");
-}
-
-TEST(AuthorityDrift, TheStackNameIsValidated)
-{
-    EXPECT_EQ(
-        g1_orchestration::controlStackFromString("arm_sdk"),
-        g1_orchestration::ControlStack::kArmSdk);
-    EXPECT_EQ(
-        g1_orchestration::controlStackFromString("lowcmd"),
-        g1_orchestration::ControlStack::kLowCmd);
-    // The cast is for clang-tidy: the function is [[nodiscard]] and EXPECT_THROW discards.
-    EXPECT_THROW(
-        static_cast<void>(g1_orchestration::controlStackFromString("low_cmd")),
-        std::invalid_argument);
 }
 
 int main(int argc, char** argv)

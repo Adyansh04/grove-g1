@@ -31,7 +31,7 @@ def generate_launch_description():
     moveit_config = (
         MoveItConfigsBuilder("g1", package_name="g1_moveit_config")
         .robot_description(
-            file_path=os.path.join(description_share, "urdf", "g1_arm_sdk.urdf.xacro")
+            file_path=os.path.join(description_share, "urdf", "g1_lowcmd.urdf.xacro")
         )
         .robot_description_semantic(file_path=os.path.join(moveit_share, "config", "g1.srdf"))
         .robot_description_kinematics(

@@ -27,9 +27,8 @@ BT::PortsList AcquireArm::providedPorts()
 BT::NodeStatus AcquireArm::tick()
 {
     const double timeout_s = getInput<double>("timeout_s").value_or(kAuthorityTimeoutS);
-    return acquireArm(node_->get_logger(), timeout_s, controlStackOf(node_)) ?
-               BT::NodeStatus::SUCCESS :
-               BT::NodeStatus::FAILURE;
+    return acquireArm(node_->get_logger(), timeout_s) ? BT::NodeStatus::SUCCESS :
+                                                        BT::NodeStatus::FAILURE;
 }
 
 ReleaseArm::ReleaseArm(const std::string& name, const BT::NodeConfig& config, RosContext context)
@@ -43,10 +42,7 @@ BT::PortsList ReleaseArm::providedPorts()
 
 BT::NodeStatus ReleaseArm::tick()
 {
-    releaseArm(
-        node_->get_logger(),
-        getInput<double>("timeout_s").value_or(kAuthorityTimeoutS),
-        controlStackOf(node_));
+    releaseArm(node_->get_logger(), getInput<double>("timeout_s").value_or(kAuthorityTimeoutS));
     return BT::NodeStatus::SUCCESS;
 }
 

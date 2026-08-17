@@ -46,21 +46,19 @@ constexpr double kReleaseTimeoutS = 15.0;
 class ArmBracket
 {
 public:
-    ArmBracket(const rclcpp::Logger& logger, double timeout_s, g1_orchestration::ControlStack stack)
+    ArmBracket(const rclcpp::Logger& logger, double timeout_s)
       : logger_(logger)
       , timeout_s_(timeout_s)
-      , stack_(stack)
     {}
 
     ArmBracket(const ArmBracket&)            = delete;
     ArmBracket& operator=(const ArmBracket&) = delete;
 
-    ~ArmBracket() { g1_orchestration::releaseArm(logger_, timeout_s_, stack_); }
+    ~ArmBracket() { g1_orchestration::releaseArm(logger_, timeout_s_); }
 
 private:
-    rclcpp::Logger                 logger_;
-    double                         timeout_s_;
-    g1_orchestration::ControlStack stack_;
+    rclcpp::Logger logger_;
+    double         timeout_s_;
 };
 
 }  // namespace
@@ -113,10 +111,7 @@ int main(int argc, char** argv)
         int exit_code = 0;
         {
             // Closes when this scope ends, on every path out of it.
-            const ArmBracket bracket(
-                node->get_logger(),
-                kReleaseTimeoutS,
-                g1_orchestration::controlStackOf(node));
+            const ArmBracket bracket(node->get_logger(), kReleaseTimeoutS);
 
             try
             {

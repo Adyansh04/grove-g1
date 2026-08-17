@@ -211,7 +211,6 @@ def _setup(context, *args, **kwargs):
         else LaunchConfiguration("sensors"),
         "world": LaunchConfiguration("world"),
         "odometry": LaunchConfiguration("odometry"),
-        "control_stack": LaunchConfiguration("control_stack"),
         "headless": LaunchConfiguration("headless"),
         "pin_pelvis": "true" if pin_pelvis else "false",
         "sim_start_delay_s": delay,
@@ -246,16 +245,12 @@ def _setup(context, *args, **kwargs):
     if want_moveit:
         # Sim-free by design -- planning needs joint states, which bring-up publishes from the
         # moment it runs -- and it activates nothing: executing a plan still needs the ordered
-        # acquire in scripts/activate_arm. control_stack has to be forwarded so move_group plans
-        # against the same description robot_state_publisher is running.
+        # acquire in scripts/activate_arm.
         actions.append(
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
                     os.path.join(_moveit_share(), "launch", "move_group.launch.py")
-                ),
-                launch_arguments={
-                    "control_stack": LaunchConfiguration("control_stack"),
-                }.items(),
+                )
             )
         )
 
@@ -397,13 +392,6 @@ def generate_launch_description():
             default_value="false",
             description="Start move_group for arm planning. Works with any mode. Planning is "
             "available immediately; executing a plan still needs activate_arm.launch.py.",
-        ),
-        DeclareLaunchArgument(
-            "control_stack",
-            default_value="arm_sdk",
-            description="Which hardware component owns the motors. 'arm_sdk' blends arm targets "
-            "under the onboard balance controller; 'lowcmd' takes the whole body and balances "
-            "on our own policy. See sim.launch.py, which validates it.",
         ),
         DeclareLaunchArgument(
             "manipulation",

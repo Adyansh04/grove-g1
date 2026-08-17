@@ -1,4 +1,4 @@
-# Validates the whole-body xacro, and that it describes the same robot as the arm_sdk one.
+# Validates the whole-body xacro: the body component, the hands, and their wire order.
 import os
 import subprocess
 import tempfile
@@ -54,13 +54,6 @@ def expanded_urdf_path():
     os.remove(path)
 
 
-@pytest.fixture(scope="module")
-def arm_sdk_urdf_path():
-    path = _expand(os.environ["G1_ARM_SDK_XACRO"])
-    yield path
-    os.remove(path)
-
-
 def component(root, name):
     return next(c for c in root.findall("ros2_control") if c.get("name") == name)
 
@@ -89,29 +82,26 @@ def test_every_body_joint_exports_kp_and_kd(expanded_urdf_path):
 
 
 @pytest.mark.parametrize("side", ["left", "right"])
-def test_the_hands_come_along_unchanged(expanded_urdf_path, side):
-    # The Dex3 is its own device on its own topics, so which interface owns the body motors
-    # does not reach it. Wire order is load-bearing: HandCmd.motor_cmd is positional.
+def test_each_hand_is_its_own_component_in_wire_order(expanded_urdf_path, side):
+    # The Dex3 is a separate device with its own authority, so it gets its own component
+    # rather than extra joints on the body's. Order is load-bearing here and not merely
+    # tidy: HandCmd.motor_cmd is positional, and G1Dex3System refuses to init on a mismatch
+    # precisely so a reordered list cannot silently close the wrong fingers.
     root = ET.parse(expanded_urdf_path).getroot()
     hand = component(root, f"G1Dex3System{side.capitalize()}")
+
     assert hand.find("hardware/plugin").text == "g1_hand_interface/G1Dex3System"
-    assert [j.get("name") for j in hand.findall("joint")] == [
+    params = {p.get("name"): p.text for p in hand.findall("hardware/param")}
+    assert params["side"] == side
+    assert {"kp", "kd", "command_publish_rate", "max_joint_velocity_rad_s"} <= params.keys()
+
+    joints = hand.findall("joint")
+    assert [j.get("name") for j in joints] == [
         f"{side}_hand_{suffix}_joint"
         for suffix in ("thumb_0", "thumb_1", "thumb_2", "middle_0", "middle_1",
                        "index_0", "index_1")
     ]
-
-
-def test_both_stacks_describe_the_same_robot(expanded_urdf_path, arm_sdk_urdf_path):
-    # The two differ only in which component owns the body motors. A grasp frame or sensor
-    # extrinsic present on one and not the other breaks manipulation on that stack alone,
-    # which is why g1_common.xacro exists and why this compares the whole link and joint sets
-    # rather than spot-checking the frames anyone remembered to list.
-    def skeleton(path):
-        root = ET.parse(path).getroot()
-        return (
-            sorted(link.get("name") for link in root.findall("link")),
-            sorted(joint.get("name") for joint in root.findall("joint")),
-        )
-
-    assert skeleton(expanded_urdf_path) == skeleton(arm_sdk_urdf_path)
+    for joint in joints:
+        assert [c.get("name") for c in joint.findall("command_interface")] == ["position"]
+        limits = {p.get("name"): float(p.text) for p in joint.findall("param")}
+        assert limits["min"] < limits["max"]

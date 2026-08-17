@@ -31,29 +31,18 @@ def _setup(context, *args, **kwargs):
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(bringup_launch),
             launch_arguments={
-                # Not optional. MoveIt refuses to plan until every active joint has a state,
-                # and the arms hang off three waist joints joint_state_broadcaster does not
-                # own -- so without this the model has no idea where the torso is pointing.
-                "non_arm_joint_states": "true",
-                # Off by default for the same reason as ever: g1_bringup's README records that
-                # sensors:=true cost test_arm_command its slew-limited convergence window, and
-                # manipulation executes the same kind of trajectory. Turning it on is what feeds
-                # the octomap -- there is no depth image without it.
+                # Off by default: sensors cost sim performance and manipulation does not
+                # otherwise need them. Turning them on is what feeds the octomap -- there is
+                # no depth image without it.
                 "sensors": LaunchConfiguration("sensors"),
                 "headless": LaunchConfiguration("headless"),
                 "world": LaunchConfiguration("world"),
-                "control_stack": LaunchConfiguration("control_stack"),
                 "pin_pelvis": LaunchConfiguration("pin_pelvis"),
-                "waist_hold_rad": LaunchConfiguration("waist_hold_rad"),
                 "sim_start_delay_s": LaunchConfiguration("sim_start_delay_s"),
                 "rviz": "false",
             }.items(),
         ),
-        IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(moveit_launch),
-            # move_group must plan against the description the running stack loaded.
-            launch_arguments={"control_stack": LaunchConfiguration("control_stack")}.items(),
-        ),
+        IncludeLaunchDescription(PythonLaunchDescriptionSource(moveit_launch)),
         # No depth-to-cloud converter here. The octomap consumes /livox/lidar directly, which
         # is already a PointCloud2 with QoS the updater matches; the camera path needs
         # depth_image_proc and that node cannot receive from our best-effort relay. See
@@ -82,26 +71,11 @@ def generate_launch_description():
             "because it costs sim performance and manipulation does not otherwise need it.",
         ),
         DeclareLaunchArgument(
-            "control_stack",
-            default_value="arm_sdk",
-            description="Which hardware component owns the motors. 'lowcmd' plans against the "
-            "whole-body description and executes through the trajectory controller the arm "
-            "bracket swaps in; it also needs RMW_IMPLEMENTATION=rmw_fastrtps_cpp exported in "
-            "the launching shell.",
-        ),
-        DeclareLaunchArgument(
             "pin_pelvis",
             default_value="false",
             description="SIM-ONLY: weld the pelvis and disable the walking policy, so the arms "
             "can be exercised with nothing driving the legs. Worth it for planning work -- a "
             "balancing robot sways, and the arm chain hangs off that.",
-        ),
-        DeclareLaunchArgument(
-            "waist_hold_rad",
-            default_value="",
-            description="SIM-ONLY: three comma-separated radians (yaw,roll,pitch) to stand the "
-            "waist at. Requires pin_pelvis:=true. Use it to check arm planning against a torso "
-            "that is not square to the pelvis.",
         ),
         DeclareLaunchArgument(
             "sim_start_delay_s",

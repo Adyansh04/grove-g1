@@ -7,20 +7,16 @@ find_package(pluginlib REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
 find_package(realtime_tools REQUIRED)
-find_package(sensor_msgs REQUIRED)
-find_package(unitree_hg REQUIRED)
 find_package(diagnostic_msgs REQUIRED)
 
-# Shared by both hardware plugins, so it is its own library rather than a source compiled into
-# each: pluginlib dlopens both .so files into one controller_manager, and two copies of the same
-# externally-visible symbols is a resolution order nobody should have to reason about.
+# Its own library rather than a source compiled into the plugin: the bit loop is vendored under
+# an external licence, and keeping it separately compiled keeps that boundary visible.
 add_library(motor_crc_hg src/motor_crc_hg.cpp)
 target_include_directories(motor_crc_hg PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
 target_compile_features(motor_crc_hg PUBLIC cxx_std_20)
-ament_target_dependencies(motor_crc_hg PUBLIC unitree_hg)
 
 # Plain CMake package baked into the dev image, not an ament one, so it needs the prefix.
 set(UNITREE_SDK2_PREFIX /opt/unitree_robotics)
@@ -73,63 +69,21 @@ ament_target_dependencies(g1_lowcmd_system PUBLIC
   realtime_tools
 )
 
-add_library(g1_arm_sdk_system SHARED
-  src/arm_ramp_engine.cpp
-  src/g1_arm_sdk_system.cpp
-)
-target_link_libraries(g1_arm_sdk_system PUBLIC motor_crc_hg)
-target_include_directories(g1_arm_sdk_system PUBLIC
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  $<INSTALL_INTERFACE:include>
-)
-target_compile_features(g1_arm_sdk_system PUBLIC cxx_std_20)
-if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  target_compile_options(g1_arm_sdk_system PRIVATE -Wall -Wextra)
-endif()
-ament_target_dependencies(g1_arm_sdk_system PUBLIC
-  hardware_interface
-  pluginlib
-  rclcpp
-  rclcpp_lifecycle
-  realtime_tools
-  unitree_hg
-)
-
 # Makes the plugin discoverable via pluginlib's ament-index lookup -- the
 # same path controller_manager uses to load it by name from the URDF.
 pluginlib_export_plugin_description_file(hardware_interface g1_hardware_interface.xml)
-
-# The legs and waist as JointState. Split from the node so the mapping tests without a graph.
-add_library(lowstate_joint_states src/lowstate_joint_states.cpp)
-target_include_directories(lowstate_joint_states PUBLIC
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  $<INSTALL_INTERFACE:include>
-)
-target_compile_features(lowstate_joint_states PUBLIC cxx_std_20)
-ament_target_dependencies(lowstate_joint_states PUBLIC sensor_msgs unitree_hg)
-
-# Its own executable, not part of the plugin: the transform it completes has to exist whether
-# or not an arm component is loaded.
-add_executable(g1_lowstate_joint_states src/g1_lowstate_joint_states_node.cpp)
-target_link_libraries(g1_lowstate_joint_states PRIVATE lowstate_joint_states)
-ament_target_dependencies(g1_lowstate_joint_states PUBLIC rclcpp sensor_msgs unitree_hg)
-if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  target_compile_options(lowstate_joint_states PRIVATE -Wall -Wextra)
-  target_compile_options(g1_lowstate_joint_states PRIVATE -Wall -Wextra)
-endif()
 
 install(
   DIRECTORY include/
   DESTINATION include
 )
 install(
-  TARGETS g1_arm_sdk_system g1_lowcmd_system lowstate_joint_states motor_crc_hg lowcmd_assembly
-  EXPORT export_g1_arm_sdk_system
+  TARGETS g1_lowcmd_system motor_crc_hg lowcmd_assembly
+  EXPORT export_g1_lowcmd_system
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin
 )
-install(TARGETS g1_lowstate_joint_states DESTINATION lib/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
@@ -141,32 +95,17 @@ if(BUILD_TESTING)
   # ClassLoader is the actual proof controller_manager will find it -- a
   # clean compile doesn't guarantee the plugin XML/export is wired correctly.
   ament_add_gmock(test_pluginlib_loading test/test_pluginlib_loading.cpp)
-  target_link_libraries(test_pluginlib_loading g1_arm_sdk_system g1_lowcmd_system)
+  target_link_libraries(test_pluginlib_loading g1_lowcmd_system)
   ament_target_dependencies(test_pluginlib_loading pluginlib hardware_interface)
-
-  # The safety-critical surface: pure, ROS-free ramp/slew/staleness logic --
-  # no pluginlib, no rclcpp node, no sim needed to exercise it.
-  ament_add_gmock(test_arm_ramp_engine test/test_arm_ramp_engine.cpp)
-  target_link_libraries(test_arm_ramp_engine g1_arm_sdk_system)
-
-  # LowCmd slot assembly (arm/weight slots touched, everything else stays
-  # zeroed) -- directly testable without a live hardware component.
-  ament_add_gmock(test_assemble_low_cmd test/test_assemble_low_cmd.cpp)
-  target_link_libraries(test_assemble_low_cmd g1_arm_sdk_system)
-  ament_target_dependencies(test_assemble_low_cmd unitree_hg)
 
   # The mode table rt/lowcmd resolves interface claims through, plus the release ramp's packing.
   ament_add_gmock(test_lowcmd_assembly test/test_lowcmd_assembly.cpp)
   target_link_libraries(test_lowcmd_assembly lowcmd_assembly)
 
-  # Not the bit loop, which is vendored: which bytes it covers, and that the mirror struct's
-  # padding is deterministic. A checksum the firmware rejects means every command is ignored.
+  # Not the bit loop, which is vendored: which bytes it covers, and that the struct's padding is
+  # deterministic. A checksum the firmware rejects means every command is ignored.
   ament_add_gmock(test_motor_crc_hg test/test_motor_crc_hg.cpp)
-  target_link_libraries(test_motor_crc_hg motor_crc_hg)
-  ament_target_dependencies(test_motor_crc_hg unitree_hg)
-
-  ament_add_gmock(test_lowstate_joint_states test/test_lowstate_joint_states.cpp)
-  target_link_libraries(test_lowstate_joint_states lowstate_joint_states)
+  target_link_libraries(test_motor_crc_hg lowcmd_assembly)
 
   # workspace/ruff.toml's sibling root config; see g1_description/CMakeLists.txt
   # for why this is a plain CTest instead of ament_lint_common's uncrustify.
@@ -207,16 +146,14 @@ if(BUILD_TESTING)
 endif()
 
 ament_export_include_directories(include)
-ament_export_libraries(g1_arm_sdk_system)
-ament_export_targets(export_g1_arm_sdk_system)
+ament_export_libraries(g1_lowcmd_system)
+ament_export_targets(export_g1_lowcmd_system)
 ament_export_dependencies(
   hardware_interface
   pluginlib
   rclcpp
   rclcpp_lifecycle
   realtime_tools
-  sensor_msgs
-  unitree_hg
 )
 
 ament_package()
