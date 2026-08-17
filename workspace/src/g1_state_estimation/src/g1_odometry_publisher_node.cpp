@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cmath>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -18,6 +19,21 @@ namespace
 rclcpp::QoS baseStateQos()
 {
     return rclcpp::QoS(rclcpp::KeepLast(1)).best_effort().durability_volatile();
+}
+
+/// Validates and normalises an attitude before it can reach TF. tf2 normalises too, so a
+/// zero-norm quaternion becomes NaN there and the transform is dropped with a message that
+/// points at tf2 rather than here. Normalising also matters on its own: a norm^2 test that
+/// admits 1.0 admits 4.0, and an unscaled quaternion on /tf is an error nothing reports.
+std::optional<Quaternion> normalisedAttitude(const geometry_msgs::msg::Quaternion& q)
+{
+    const double norm2 = (q.w * q.w) + (q.x * q.x) + (q.y * q.y) + (q.z * q.z);
+    if (!std::isfinite(norm2) || norm2 < 0.5)
+    {
+        return std::nullopt;
+    }
+    const double inv = 1.0 / std::sqrt(norm2);
+    return Quaternion{ q.x * inv, q.y * inv, q.z * inv, q.w * inv };
 }
 }  // namespace
 
@@ -57,8 +73,8 @@ bool G1OdometryPublisher::readParameters()
     {
         RCLCPP_ERROR(
             get_logger(),
-            "odometry_source='%s' is not a known source. Use 'sim_sportmodestate' (converged "
-            "track), 'fast_lio' (LiDAR-inertial, and the only one that runs on the robot) or "
+            "odometry_source='%s' is not a known source. Use 'ground_truth' (exact simulator "
+            "state), 'fast_lio' (LiDAR-inertial, and the only one that runs on the robot) or "
             "'hardware'.",
             source_name.c_str());
         return false;
@@ -71,9 +87,9 @@ bool G1OdometryPublisher::readParameters()
         RCLCPP_ERROR(
             get_logger(),
             "odometry_source='hardware' is not a source: the real G1 publishes no odometry of "
-            "its own. On hardware /sportmodestate carries unitree_hg::SportModeState_, which "
-            "has only fsm_id, fsm_mode, task_id and task_time -- no pose and no velocity. "
-            "rt/odommodestate does not exist. Use odometry_source='fast_lio' and bring up "
+            "its own. Its sport-mode state carries only fsm_id, fsm_mode, task_id and "
+            "task_time -- no pose and no velocity -- and rt/odommodestate does not exist. "
+            "Use odometry_source='fast_lio' and bring up "
             "g1_state_estimation's fastlio_odometry.launch.py, which runs the LiDAR-inertial "
             "pipeline this reads. Refusing to configure rather than publish a fabricated "
             "transform.");
@@ -151,19 +167,14 @@ G1OdometryPublisher::on_configure(const rclcpp_lifecycle::State&)
     // Every callback below takes its SharedPtr by value because rclcpp offers no const-ref
     // dispatch for a mutable pointee; the handlers they forward to do take const-ref.
     // NOLINTBEGIN(performance-unnecessary-value-param)
-    if (source_ == OdometrySource::kSimSportModeState)
+    if (source_ == OdometrySource::kGroundTruth)
     {
-        sport_state_sub_ = create_subscription<unitree_go::msg::SportModeState>(
-            "~/sport_state",
+        // Pose and twist in one message, so unlike the estimator below there is no second
+        // topic whose attitude could go stale independently.
+        ground_truth_sub_ = create_subscription<nav_msgs::msg::Odometry>(
+            "~/base_state",
             baseStateQos(),
-            [this](unitree_go::msg::SportModeState::SharedPtr msg) { onSportModeState(msg); });
-        // Orientation comes from /lowstate, not /sportmodestate: unitree_mujoco leaves the
-        // latter's imu_state at all zeros, and tf2 normalises a zero quaternion straight to
-        // NaN, which it then silently drops.
-        low_state_sub_ = create_subscription<unitree_hg::msg::LowState>(
-            "~/imu_state",
-            baseStateQos(),
-            [this](unitree_hg::msg::LowState::SharedPtr msg) { onLowState(msg); });
+            [this](nav_msgs::msg::Odometry::SharedPtr msg) { onGroundTruth(msg); });
     }
     else
     {
@@ -173,10 +184,11 @@ G1OdometryPublisher::on_configure(const rclcpp_lifecycle::State&)
             [this](nav_msgs::msg::Odometry::SharedPtr msg) { onLidarOdometry(msg); });
         // The attitude is needed once, to level the odom frame at the latch: the LiDAR
         // odometry's own start frame is wherever its IMU was pointing, which is not gravity.
-        low_state_sub_ = create_subscription<unitree_hg::msg::LowState>(
-            "~/imu_state",
+        // This must be the pelvis IMU, because what it levels is the pelvis attitude.
+        imu_sub_ = create_subscription<sensor_msgs::msg::Imu>(
+            "~/imu",
             baseStateQos(),
-            [this](unitree_hg::msg::LowState::SharedPtr msg) { onLowState(msg); });
+            [this](sensor_msgs::msg::Imu::SharedPtr msg) { onImu(msg); });
 
         if (!lidar_body_frame_id_.empty())
         {
@@ -187,11 +199,11 @@ G1OdometryPublisher::on_configure(const rclcpp_lifecycle::State&)
     // NOLINTEND(performance-unnecessary-value-param)
 
     source_topic_ =
-        sport_state_sub_ ? sport_state_sub_->get_topic_name() : lidar_odom_sub_->get_topic_name();
+        ground_truth_sub_ ? ground_truth_sub_->get_topic_name() : lidar_odom_sub_->get_topic_name();
     const std::string chain = pelvis_frame_id_.empty() ? odom_frame_id_ + " -> " + base_frame_id_ :
                                                          odom_frame_id_ + " -> " + base_frame_id_ +
                                                              " -> " + pelvis_frame_id_;
-    if (source_ == OdometrySource::kSimSportModeState)
+    if (source_ == OdometrySource::kGroundTruth)
     {
         RCLCPP_INFO(
             get_logger(),
@@ -216,8 +228,8 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
 G1OdometryPublisher::on_cleanup(const rclcpp_lifecycle::State&)
 {
     timer_.reset();
-    sport_state_sub_.reset();
-    low_state_sub_.reset();
+    ground_truth_sub_.reset();
+    imu_sub_.reset();
     lidar_odom_sub_.reset();
     odom_pub_.reset();
     tf_broadcaster_.reset();
@@ -261,8 +273,8 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
 G1OdometryPublisher::on_shutdown(const rclcpp_lifecycle::State&)
 {
     timer_.reset();
-    sport_state_sub_.reset();
-    low_state_sub_.reset();
+    ground_truth_sub_.reset();
+    imu_sub_.reset();
     lidar_odom_sub_.reset();
     odom_pub_.reset();
     tf_broadcaster_.reset();
@@ -484,18 +496,16 @@ void G1OdometryPublisher::applyOrientation(const Quaternion& q)
             tiltFromVertical(q) * 180.0 / M_PI,
             max_tilt_rad_ * 180.0 / M_PI);
     }
-    have_orientation_      = true;
-    last_orientation_wall_ = std::chrono::steady_clock::now();
+    have_orientation_ = true;
 }
 
-void G1OdometryPublisher::onSportModeState(const unitree_go::msg::SportModeState::SharedPtr& msg)
+void G1OdometryPublisher::onGroundTruth(const nav_msgs::msg::Odometry::SharedPtr& msg)
 {
-    // The converged track's ground truth. unitree_mujoco fills position and velocity from
-    // framepos/framelinvel on the pelvis imu site, so this is exact MuJoCo state, not an
-    // estimate. It is also why the hardware branch still refuses: the real G1 publishes the
-    // hg variant of this message, which has none of these fields.
-    if (!std::isfinite(msg->position[0]) || !std::isfinite(msg->position[1]) ||
-        !std::isfinite(msg->position[2]))
+    // Exact pelvis state, sampled inside the simulator off the same MuJoCo site the robot's
+    // own IMU reports from. It reaches ROS over the sensor relay's socket rather than a DDS
+    // topic, which is why it does not depend on which middleware is running.
+    const auto& p = msg->pose.pose.position;
+    if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z))
     {
         // A diverged MuJoCo publishes NaN here, and tf2 drops NaN transforms silently, so
         // the symptom would be a frame that simply stops existing.
@@ -506,53 +516,52 @@ void G1OdometryPublisher::onSportModeState(const unitree_go::msg::SportModeState
             "Discarding a non-finite position sample.");
         return;
     }
-    pose_.x = msg->position[0];
-    pose_.y = msg->position[1];
-    pose_z_ = msg->position[2];
 
-    world_twist_ =
-        PlanarTwist{ msg->velocity[0], msg->velocity[1], static_cast<double>(msg->yaw_speed) };
-
-    // This message carries no header stamp, so the arrival time is the only stamp available.
-    noteSample(now());
-}
-
-void G1OdometryPublisher::onLowState(const unitree_hg::msg::LowState::SharedPtr& msg)
-{
-    // Full orientation: a walking robot rolls and pitches, and flattening that to yaw would
-    // tilt every sensor frame hanging off the base.
-    const Quaternion q{ msg->imu_state.quaternion[1],
-                        msg->imu_state.quaternion[2],
-                        msg->imu_state.quaternion[3],
-                        msg->imu_state.quaternion[0] };
-
-    // Validate before it can reach TF. tf2 normalises, so a zero-norm quaternion becomes
-    // NaN and the transform is dropped with a message that points at tf2 rather than here.
-    const double norm2 = q.w * q.w + q.x * q.x + q.y * q.y + q.z * q.z;
-    if (!std::isfinite(norm2) || norm2 < 0.5)
+    const std::optional<Quaternion> attitude = normalisedAttitude(msg->pose.pose.orientation);
+    if (!attitude)
     {
         RCLCPP_WARN_THROTTLE(
             get_logger(),
             steady_clock_,
             5000,
-            "IMU quaternion is unusable (norm^2 %.3f); not publishing an orientation.",
-            norm2);
+            "Ground-truth quaternion is unusable; not publishing an orientation.");
         return;
     }
 
-    // Normalise: norm^2 >= 0.5 admits 4.0 just as happily as 1.0, and an unnormalised
-    // quaternion on /tf is a scale error nothing downstream reports.
-    const double inv      = 1.0 / std::sqrt(norm2);
-    imu_orientation_      = Quaternion{ q.x * inv, q.y * inv, q.z * inv, q.w * inv };
-    have_imu_orientation_ = true;
+    pose_.x = p.x;
+    pose_.y = p.y;
+    pose_z_ = p.z;
+    applyOrientation(*attitude);
 
-    // For fast_lio this stream levels the odom frame at the latch and then stays on as the
-    // gravity reference levelledAttitude() corrects roll and pitch against. Heading is never
-    // taken from it: that comes from the LiDAR solution, which is what does not drift.
-    if (source_ == OdometrySource::kSimSportModeState)
+    // The wire twist is body-frame, per nav_msgs/Odometry; the publish path re-derives that
+    // from the world twist held here, so rotate once on the way in.
+    const auto&  v = msg->twist.twist.linear;
+    const double c = std::cos(pose_.yaw);
+    const double s = std::sin(pose_.yaw);
+    world_twist_ =
+        PlanarTwist{ (v.x * c) - (v.y * s), (v.x * s) + (v.y * c), msg->twist.twist.angular.z };
+
+    noteSample(rclcpp::Time(msg->header.stamp, get_clock()->get_clock_type()));
+}
+
+void G1OdometryPublisher::onImu(const sensor_msgs::msg::Imu::SharedPtr& msg)
+{
+    // The pelvis IMU, published by ros2_control's broadcaster rather than read off the robot
+    // wire, so one topic serves both simulation and hardware. It levels the odom frame at the
+    // latch and stays on as the gravity reference levelledAttitude() corrects against; heading
+    // never comes from it, because that is what the LiDAR solution does not drift in.
+    const std::optional<Quaternion> attitude = normalisedAttitude(msg->orientation);
+    if (!attitude)
     {
-        applyOrientation(imu_orientation_);
+        RCLCPP_WARN_THROTTLE(
+            get_logger(),
+            steady_clock_,
+            5000,
+            "IMU quaternion is unusable; not levelling against it.");
+        return;
     }
+    imu_orientation_      = *attitude;
+    have_imu_orientation_ = true;
 }
 
 void G1OdometryPublisher::noteSample(const rclcpp::Time& stamp)
@@ -570,13 +579,9 @@ void G1OdometryPublisher::noteSample(const rclcpp::Time& stamp)
 
 void G1OdometryPublisher::onTimer()
 {
-    if (source_ == OdometrySource::kSimSportModeState && !have_orientation_)
+    if (!have_orientation_)
     {
-        RCLCPP_WARN_THROTTLE(
-            get_logger(),
-            steady_clock_,
-            5000,
-            "Waiting for a usable IMU orientation.");
+        RCLCPP_WARN_THROTTLE(get_logger(), steady_clock_, 5000, "Waiting for a usable orientation.");
         return;
     }
     if (!have_sample_)
@@ -593,26 +598,6 @@ void G1OdometryPublisher::onTimer()
     // Sim time alone cannot see a wedged simulator: /clock comes from the same process as
     // the base state, so it freezes too and `elapsed` stays at zero. Hence the wall budget.
     const double elapsed = (now() - last_sample_stamp_).seconds();
-    if (source_ == OdometrySource::kSimSportModeState)
-    {
-        const double orientation_age =
-            std::chrono::duration<double>(std::chrono::steady_clock::now() - last_orientation_wall_)
-                .count();
-        if (isStale(orientation_age, wall_timeout_s_))
-        {
-            RCLCPP_WARN_THROTTLE(
-                get_logger(),
-                steady_clock_,
-                2000,
-                "Orientation has not advanced for %.3f s (limit %.3f); stopped publishing "
-                "%s -> %s. Position alone would be a frozen attitude under a fresh stamp.",
-                orientation_age,
-                wall_timeout_s_,
-                odom_frame_id_.c_str(),
-                base_frame_id_.c_str());
-            return;
-        }
-    }
 
     const double wall_elapsed =
         std::chrono::duration<double>(std::chrono::steady_clock::now() - last_advance_wall_).count();

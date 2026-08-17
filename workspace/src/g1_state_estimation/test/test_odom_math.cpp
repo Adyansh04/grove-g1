@@ -30,8 +30,8 @@ constexpr double kTol = 1e-12;
 TEST(ParseOdometrySource, AcceptsEveryKnownName)
 {
     OdometrySource source = OdometrySource::kHardware;
-    ASSERT_TRUE(parseOdometrySource("sim_sportmodestate", source));
-    EXPECT_EQ(source, OdometrySource::kSimSportModeState);
+    ASSERT_TRUE(parseOdometrySource("ground_truth", source));
+    EXPECT_EQ(source, OdometrySource::kGroundTruth);
 
     ASSERT_TRUE(parseOdometrySource("fast_lio", source));
     EXPECT_EQ(source, OdometrySource::kFastLio);
@@ -43,21 +43,22 @@ TEST(ParseOdometrySource, AcceptsEveryKnownName)
 TEST(ParseOdometrySource, RejectsAnythingElseAndLeavesTheOutputAlone)
 {
     // A typo must not silently become a working source, which would fabricate transforms.
-    // sim_ground_truth is in the list because it named a source this node no longer has: a
-    // stale config still naming it has to fail rather than quietly pick something else.
-    OdometrySource source = OdometrySource::kSimSportModeState;
+    // sim_ground_truth and sim_sportmodestate are in the list because each named a source this
+    // node no longer has: a stale config still naming one has to fail rather than quietly pick
+    // something else.
+    OdometrySource source = OdometrySource::kGroundTruth;
     for (const char* name : { "",
                               "sim",
                               "sim_ground_truth",
-                              "SIM_SPORTMODESTATE",
-                              "ground_truth",
+                              "sim_sportmodestate",
+                              "GROUND_TRUTH",
                               "hardware ",
                               "fastlio",
                               "sportmodestate",
                               "sim_sportmode" })
     {
         EXPECT_FALSE(parseOdometrySource(name, source)) << "accepted " << name;
-        EXPECT_EQ(source, OdometrySource::kSimSportModeState);
+        EXPECT_EQ(source, OdometrySource::kGroundTruth);
     }
 }
 

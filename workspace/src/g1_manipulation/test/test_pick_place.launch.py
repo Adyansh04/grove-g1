@@ -51,7 +51,7 @@ def generate_test_description():
             # manipulation world is a bench at arm's length with the pelvis pinned, so the
             # Mid360 returns nothing, fast_lio logs "No point, skip this scan!" forever and
             # never publishes odom, leaving g1_object_pose_source with no frame to place into.
-            "odometry": "sportmodestate",
+            "odometry": "ground_truth",
             # The object is at arm's length here, so nothing has to drive anywhere and the
             # gait cannot make the test flaky. The facility mission is g1_orchestration's.
             "world": "manipulation",

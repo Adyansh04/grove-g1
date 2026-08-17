@@ -9,8 +9,6 @@ find_package(nav_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2_msgs REQUIRED)
-find_package(unitree_go REQUIRED)
-find_package(unitree_hg REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(livox_ros_driver2 REQUIRED)
 
@@ -30,8 +28,7 @@ target_include_directories(g1_odometry_publisher_node PUBLIC
 target_compile_features(g1_odometry_publisher_node PUBLIC cxx_std_20)
 target_link_libraries(g1_odometry_publisher_node PUBLIC odom_math)
 ament_target_dependencies(g1_odometry_publisher_node PUBLIC
-  rclcpp rclcpp_lifecycle lifecycle_msgs nav_msgs geometry_msgs tf2_ros tf2_msgs
-  unitree_go unitree_hg)
+  rclcpp rclcpp_lifecycle lifecycle_msgs nav_msgs geometry_msgs sensor_msgs tf2_ros tf2_msgs)
 
 add_executable(g1_odometry_publisher src/g1_odometry_publisher_main.cpp)
 target_link_libraries(g1_odometry_publisher PUBLIC g1_odometry_publisher_node)

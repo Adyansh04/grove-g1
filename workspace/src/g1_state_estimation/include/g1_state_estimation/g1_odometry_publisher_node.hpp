@@ -15,11 +15,10 @@
 #include "nav_msgs/msg/odometry.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
+#include "sensor_msgs/msg/imu.hpp"
 #include "tf2_ros/buffer.h"
 #include "tf2_ros/transform_broadcaster.h"
 #include "tf2_ros/transform_listener.h"
-#include "unitree_go/msg/sport_mode_state.hpp"
-#include "unitree_hg/msg/low_state.hpp"
 
 namespace g1_state_estimation
 {
@@ -50,8 +49,8 @@ private:
     /// Reads and validates every parameter. False means configure must fail.
     bool readParameters();
 
-    void onSportModeState(const unitree_go::msg::SportModeState::SharedPtr& msg);
-    void onLowState(const unitree_hg::msg::LowState::SharedPtr& msg);
+    void onGroundTruth(const nav_msgs::msg::Odometry::SharedPtr& msg);
+    void onImu(const sensor_msgs::msg::Imu::SharedPtr& msg);
     void onLidarOdometry(const nav_msgs::msg::Odometry::SharedPtr& msg);
     /// Latches odom_from_lio_ so the first LiDAR sample lands at a canonical start pose.
     /// False until the IMU has supplied a gravity-aligned attitude to level it against.
@@ -71,8 +70,8 @@ private:
     void noteSample(const rclcpp::Time& stamp);
     void onTimer();
 
-    rclcpp::Subscription<unitree_go::msg::SportModeState>::SharedPtr         sport_state_sub_;
-    rclcpp::Subscription<unitree_hg::msg::LowState>::SharedPtr               low_state_sub_;
+    rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr                 ground_truth_sub_;
+    rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr                   imu_sub_;
     rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr                 lidar_odom_sub_;
     rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub_;
     std::unique_ptr<tf2_ros::TransformBroadcaster>                           tf_broadcaster_;
@@ -111,7 +110,7 @@ private:
     double     pose_z_ = 0.0;
     Quaternion orientation_;
     /// Set once a usable orientation has arrived. Until then nothing is published:
-    /// an unusable quaternion must not reach TF (see onLowState).
+    /// an unusable quaternion must not reach TF.
     bool have_orientation_ = false;
     /// Latest validated IMU attitude. The fast_lio source levels its odom frame against this at
     /// the latch, and keeps using it afterwards as the gravity reference that FAST-LIO's own
@@ -129,15 +128,10 @@ private:
     Pose3d odom_from_lio_;
     bool   lidar_origin_latched_ = false;
     /// Body offset from lidar_body_frame_id_, refreshed from TF per sample.
-    Pose3d lio_body_from_base_;
-    /// Wall time the orientation last changed. Position and orientation come from separate
-    /// topics, so one can die while the other keeps flowing; without this the node would
-    /// publish a frozen orientation under a fresh stamp, which is the exact failure this
-    /// publisher exists to refuse.
-    std::chrono::steady_clock::time_point last_orientation_wall_{};
-    PlanarTwist                           world_twist_;
-    bool                                  have_sample_ = false;
-    rclcpp::Time                          last_sample_stamp_;
+    Pose3d       lio_body_from_base_;
+    PlanarTwist  world_twist_;
+    bool         have_sample_ = false;
+    rclcpp::Time last_sample_stamp_;
     /// Wall time at which the sample stamp last changed.
     std::chrono::steady_clock::time_point last_advance_wall_{};
     /// Throttling clock for the staleness warnings; the ROS clock freezes with the sim.

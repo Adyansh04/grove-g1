@@ -54,7 +54,7 @@ def generate_test_description():
             "sensors": "true",
             # Ground truth, not the stack default: the numbers here are sensor geometry against
             # a known room, measured with the pelvis pinned.
-            "odometry": "sportmodestate",
+            "odometry": "ground_truth",
             "pin_pelvis": "true",
             # The small bare room this test's numbers come from, not the facility.
             "world": "perception",

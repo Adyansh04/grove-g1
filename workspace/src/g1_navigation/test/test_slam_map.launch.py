@@ -50,7 +50,7 @@ def generate_test_description():
             "sensors": "true",
             # Ground truth, not the stack default: this scores the map, and estimator drift
             # would show up as map error that is not the mapper's.
-            "odometry": "sportmodestate",
+            "odometry": "ground_truth",
             "pin_pelvis": "true",
             "world": "perception",
         }.items(),

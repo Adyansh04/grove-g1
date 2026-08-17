@@ -41,6 +41,7 @@ enum class FrameKind
     kDepth,
     kObjectPoses,
     kImu,
+    kBaseState,
 };
 
 /// A validated frame. `kind` says which payload interpretation applies: `points` is xyz
@@ -63,6 +64,9 @@ struct CloudFrame
     /// Rates at the sensor's own frame. Only meaningful on FrameKind::kImu, where the pose
     /// fields above carry the IMU's attitude.
     grove_g1::ImuSampleRecord imu{};
+    /// Body-frame pelvis twist. Only meaningful on FrameKind::kBaseState, where the pose
+    /// fields above carry the pelvis pose in the world.
+    grove_g1::BaseStateRecord base{};
 };
 
 /**

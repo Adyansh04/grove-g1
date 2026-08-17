@@ -29,8 +29,6 @@
   <exec_depend>g1_hardware_interface</exec_depend>
   <!-- ...and the sim branch starts its g1_livox_bridge. -->
   <exec_depend>g1_sensor_relay</exec_depend>
-  <depend>unitree_go</depend>
-  <depend>unitree_hg</depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_cmake_lint_cmake</test_depend>

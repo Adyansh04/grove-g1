@@ -460,7 +460,7 @@ def generate_launch_description():
             default_value="fast_lio",
             description="Which source publishes odom -> base_footprint. 'fast_lio' is the "
             "default because it is the pipeline the real robot runs, over the simulated "
-            "Mid360. 'sportmodestate' is exact MuJoCo state, for isolating a fault to 'not "
+            "Mid360. 'ground_truth' is exact MuJoCo state, for isolating a fault to 'not "
             "the odometry'.",
         ),
         DeclareLaunchArgument(

@@ -94,7 +94,7 @@ def generate_launch_description():
             default_value="fast_lio",
             description="Forwarded to sim.launch.py. Declared here because a name this file "
             "does not declare cannot be forwarded explicitly, and this stack needs to be able "
-            "to fall back to 'sportmodestate' to isolate a fault to 'not the odometry'.",
+            "to fall back to 'ground_truth' to isolate a fault to 'not the odometry'.",
         ),
         DeclareLaunchArgument(
             "world",

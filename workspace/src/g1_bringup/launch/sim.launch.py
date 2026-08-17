@@ -255,9 +255,9 @@ def _launch_setup(context, *args, **kwargs):
     # silently selecting the other source.
     control_stack = LaunchConfiguration("control_stack").perform(context)
     odometry = LaunchConfiguration("odometry").perform(context)
-    if odometry not in ("sportmodestate", "fast_lio"):
+    if odometry not in ("ground_truth", "fast_lio"):
         raise RuntimeError(
-            f"odometry:={odometry!r} is not an odometry source. Use 'sportmodestate' (exact "
+            f"odometry:={odometry!r} is not an odometry source. Use 'ground_truth' (exact "
             "MuJoCo state, simulation only) or 'fast_lio' (LiDAR-inertial, what the robot runs)."
         )
     if sensors and odometry == "fast_lio":
@@ -304,10 +304,7 @@ def _launch_setup(context, *args, **kwargs):
                     "g1_odometry_publisher_converged.yaml",
                 )
             ],
-            remappings=[
-                ("~/sport_state", "/sportmodestate"),
-                ("~/imu_state", "/lowstate"),
-            ],
+            remappings=[("~/base_state", "/g1_sensor_relay/base_state")],
         )
         actions.append(odometry_node)
         actions.append(
@@ -508,7 +505,7 @@ def generate_launch_description():
                 default_value="fast_lio",
                 description="Which source publishes odom -> base_footprint. 'fast_lio' is the "
                 "default because it is the pipeline the robot runs; expect drift and a few "
-                "seconds to initialise. 'sportmodestate' is exact MuJoCo state and exists to "
+                "seconds to initialise. 'ground_truth' is exact MuJoCo state and exists to "
                 "isolate a fault to 'not the odometry'. Either needs sensors:=true; with "
                 "sensors off neither runs.",
             ),

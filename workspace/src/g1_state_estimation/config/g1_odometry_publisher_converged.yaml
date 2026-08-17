@@ -1,13 +1,13 @@
-# odom -> base_footprint -> pelvis publisher for the CONVERGED unitree_mujoco track, loaded by
-# g1_bringup/launch/sim.launch.py. See g1_state_estimation/README.md.
+# odom -> base_footprint -> pelvis publisher for the unitree_mujoco ground-truth track, loaded
+# by g1_bringup/launch/sim.launch.py. See g1_state_estimation/README.md.
 #
 # SIMULATION ONLY. This is MuJoCo's own state, not an estimate; the robot has no equivalent.
 # The hardware source is odometry:=fast_lio, configured in g1_odometry_publisher_fastlio.yaml.
 g1_odometry_publisher:
   ros__parameters:
-    # /sportmodestate for position (exact MuJoCo state from the pelvis imu site) and /lowstate
-    # for full orientation, which /sportmodestate leaves at all zeros.
-    odometry_source: "sim_sportmodestate"
+    # Pose and twist together, sampled in the simulator off the pelvis imu site and carried
+    # over the sensor relay's socket. Needs sensors:=true, which is what runs the relay.
+    odometry_source: "ground_truth"
 
     odom_frame_id: "odom"
     # Split, because the pelvis pitches a few degrees with the gait and both Nav2 and
@@ -25,8 +25,7 @@ g1_odometry_publisher:
     max_tilt_deg: 80.0
 
     # No start height is configured: a walking robot's height is measured, and this source
-    # reads it straight from /sportmodestate. Only fast_lio needs one, to place its latched
-    # origin above the floor.
+    # carries it. Only fast_lio needs one, to place its latched origin above the floor.
 
     publish_rate_hz: 50.0
     publish_odom_msg: true

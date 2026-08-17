@@ -19,8 +19,8 @@ namespace grove_g1
 // Bumped whenever the layout below changes. The relay refuses a frame it does not know
 // rather than reinterpreting bytes. v2 added the depth-image fields; v3 appends colour
 // to the depth payload; v4 adds the ObjectPoses kind; v5 gives its records a size; v6 adds
-// the Imu kind.
-inline constexpr uint32_t kSensorFrameVersion = 6;
+// the Imu kind; v7 adds the BaseState kind.
+inline constexpr uint32_t kSensorFrameVersion = 7;
 
 inline constexpr uint32_t kSensorFrameMagic = 0x47314C44;  // "G1LD"
 
@@ -37,6 +37,11 @@ enum class SensorFrameKind : uint32_t
     // one IMU on its DDS interface -- the Livox unit reports over its own Ethernet link, and
     // on this side the sensor socket is the equivalent private channel.
     Imu = 4,
+    // Exact pelvis pose and twist out of mjData, for the sim-only ground-truth odometry
+    // source. Like ObjectPoses it is not a sensor: it rides this socket because the socket
+    // is the only channel out of the simulator process that does not depend on which
+    // middleware ROS happens to be running.
+    BaseState = 5,
 };
 
 // Rates of change at the sensor's own frame, to go with the pose the header already carries.
@@ -51,6 +56,19 @@ struct ImuSampleRecord
 };
 
 static_assert(sizeof(ImuSampleRecord) == 48, "wire layout changed; bump kSensorFrameVersion");
+
+// The pelvis twist that goes with the pose in the header, both in the body frame so the relay
+// can publish a nav_msgs/Odometry without rotating anything.
+//
+// The header's sensor_pos/sensor_quat ARE the pelvis pose here, in the world frame, sampled
+// from the same MuJoCo site the robot's own IMU sits on.
+struct BaseStateRecord
+{
+    double lin_vel[3];  // m/s along the body axes
+    double ang_vel[3];  // rad/s about the body axes
+};
+
+static_assert(sizeof(BaseStateRecord) == 48, "wire layout changed; bump kSensorFrameVersion");
 
 // One tracked body's ground-truth pose, in the MuJoCo world frame.
 //

@@ -19,15 +19,15 @@ namespace g1_state_estimation
 /// Where the base pose comes from. Anything else is a configuration error.
 enum class OdometrySource
 {
-    kSimSportModeState,  ///< The converged track: pelvis pose from /sportmodestate. Sim-only.
-    kFastLio,            ///< LiDAR-inertial odometry. The only source that runs on the robot.
-    kHardware,           ///< Not a source: the real G1 publishes no odometry of its own.
+    kGroundTruth,  ///< Exact pelvis state out of the simulator, over the relay. Sim-only.
+    kFastLio,      ///< LiDAR-inertial odometry. The only source that runs on the robot.
+    kHardware,     ///< Not a source: the real G1 publishes no odometry of its own.
 };
 
 /**
  * @brief Parses the `odometry_source` parameter.
  *
- * @param name   Parameter value, expected `sim_sportmodestate`, `fast_lio` or `hardware`.
+ * @param name   Parameter value, expected `ground_truth`, `fast_lio` or `hardware`.
  * @param[out] out  Set only when the name is recognised.
  * @return False for an unrecognised name, so the caller can fail configure rather than
  *         silently fall back to a default that might fabricate transforms.

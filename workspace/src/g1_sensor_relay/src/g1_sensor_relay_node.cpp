@@ -22,6 +22,7 @@
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <geometry_msgs/msg/transform_stamped.hpp>
 #include <memory>
+#include <nav_msgs/msg/odometry.hpp>
 #include <optional>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/camera_info.hpp>
@@ -111,6 +112,14 @@ public:
         objects_pub_ = create_publisher<vision_msgs::msg::Detection3DArray>(
             "~/object_poses",
             rclcpp::SensorDataQoS());
+
+        // Exact pelvis state out of MuJoCo, for the odometry publisher's sim source. Named
+        // ~/base_state and not /odom for the same reason as above: this is truth, not an
+        // estimate, and nothing on the robot publishes it.
+        base_frame_id_   = declare_parameter<std::string>("base_state_frame_id", "pelvis");
+        base_odom_frame_ = declare_parameter<std::string>("base_state_odom_frame", "odom");
+        base_state_pub_ =
+            create_publisher<nav_msgs::msg::Odometry>("~/base_state", rclcpp::QoS(50));
 
         if (!openListener())
         {
@@ -261,6 +270,9 @@ private:
                 case FrameKind::kImu:
                     publishImu(frame);
                     break;
+                case FrameKind::kBaseState:
+                    publishBaseState(frame);
+                    break;
             }
         }
     }
@@ -292,6 +304,38 @@ private:
         imu->linear_acceleration.z = frame.imu.acc[2];
 
         imu_pub_->publish(std::move(imu));
+    }
+
+    /// The simulator's exact pelvis pose and twist. This is what stands in for the robot's
+    /// own odometry in sim: the real G1 publishes none, and the estimator that replaces it on
+    /// hardware is FAST-LIO. Twist is body-frame, so this is an ordinary nav_msgs/Odometry.
+    void publishBaseState(const CloudFrame& frame)
+    {
+        auto odom             = std::make_unique<nav_msgs::msg::Odometry>();
+        odom->header.stamp    = stampFor(frame.sim_time_s);
+        odom->header.frame_id = base_odom_frame_;
+        odom->child_frame_id  = base_frame_id_;
+
+        odom->pose.pose.position.x = frame.sensor_pos[0];
+        odom->pose.pose.position.y = frame.sensor_pos[1];
+        odom->pose.pose.position.z = frame.sensor_pos[2];
+
+        // MuJoCo's framequat is wxyz.
+        odom->pose.pose.orientation.w = frame.sensor_quat[0];
+        odom->pose.pose.orientation.x = frame.sensor_quat[1];
+        odom->pose.pose.orientation.y = frame.sensor_quat[2];
+        odom->pose.pose.orientation.z = frame.sensor_quat[3];
+
+        odom->twist.twist.linear.x  = frame.base.lin_vel[0];
+        odom->twist.twist.linear.y  = frame.base.lin_vel[1];
+        odom->twist.twist.linear.z  = frame.base.lin_vel[2];
+        odom->twist.twist.angular.x = frame.base.ang_vel[0];
+        odom->twist.twist.angular.y = frame.base.ang_vel[1];
+        odom->twist.twist.angular.z = frame.base.ang_vel[2];
+
+        // Covariance left at zero: this is exact state, and a consumer that fuses it against
+        // anything else should be reading the estimator instead.
+        base_state_pub_->publish(std::move(odom));
     }
 
     /// Ground truth, re-expressed as the camera would have measured it. The simulator reports
@@ -556,6 +600,8 @@ private:
     std::string imu_frame_id_;
     std::string depth_frame_id_;
     std::string color_frame_id_;
+    std::string base_frame_id_;
+    std::string base_odom_frame_;
     double      poll_hz_ = 500.0;
 
     /// Estimated offset from the simulator's clock to this node's, in seconds. See stampFor().
@@ -574,6 +620,7 @@ private:
     rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr       depth_info_pub_;
     rclcpp::Publisher<vision_msgs::msg::Detection3DArray>::SharedPtr objects_pub_;
     rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr              imu_pub_;
+    rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr            base_state_pub_;
     rclcpp::TimerBase::SharedPtr                                     timer_;
 };
 

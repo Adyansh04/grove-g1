@@ -137,7 +137,8 @@ def _launch_setup(context, *args, **kwargs):
             # Levels the odom frame at the origin latch, then stays on as the gravity
             # reference that keeps FAST-LIO's estimated gravity from wandering. Heading is
             # never taken from here -- that comes from the scan match, which does not drift.
-            ("~/imu_state", "/lowstate"),
+            # The broadcaster's copy of the pelvis IMU, so one topic serves sim and hardware.
+            ("~/imu", "/imu_sensor_broadcaster/imu"),
         ],
     )
     actions.append(odometry_node)

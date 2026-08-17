@@ -9,9 +9,9 @@ namespace g1_state_estimation
 
 bool parseOdometrySource(const std::string& name, OdometrySource& out)
 {
-    if (name == "sim_sportmodestate")
+    if (name == "ground_truth")
     {
-        out = OdometrySource::kSimSportModeState;
+        out = OdometrySource::kGroundTruth;
         return true;
     }
     if (name == "fast_lio")
