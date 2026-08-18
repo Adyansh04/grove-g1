@@ -94,6 +94,11 @@ def test_each_hand_is_its_own_component_in_wire_order(expanded_urdf_path, side):
     params = {p.get("name"): p.text for p in hand.findall("hardware/param")}
     assert params["side"] == side
     assert {"kp", "kd", "command_publish_rate", "max_joint_velocity_rad_s"} <= params.keys()
+    # ChannelFactory is per process and only its first Init applies, so a hand on a different
+    # domain than the body component is silently stranded. G1Dex3System requires this param.
+    assert params["domain_id"] == component(root, "G1LowCmdSystem").find(
+        "hardware/param[@name='domain_id']"
+    ).text
 
     joints = hand.findall("joint")
     assert [j.get("name") for j in joints] == [

@@ -103,20 +103,24 @@
     </joint>
   </xacro:macro>
 
-  <!-- One component per hand, on both stacks. The Dex3 is a separate device on its own DDS
-       topics with its own authority, so it is neither folded into the body component nor
-       shared between the two hands: a fault on one hand must not take the arms or the other
-       hand down with it. That the body motors move to a different interface under lowcmd
-       changes nothing here, which is why this block is stack-independent.
+  <!-- One component per hand. The Dex3 is a separate device on its own SDK channels with its
+       own authority, so it is neither folded into the body component nor shared between the
+       two hands: a fault on one hand must not take the arms or the other hand down with it.
+
+       domain_id and network_interface must match the body component's. ChannelFactory is per
+       process and only its first Init takes effect, so a disagreement would silently strand
+       whichever component initialised second.
 
        Joint order is the Dex3 wire order and G1Dex3System refuses to init if it is disturbed,
-       because HandCmd.motor_cmd is a positional array and a reordered list would close the
+       because HandCmd_::motor_cmd is a positional array and a reordered list would close the
        wrong fingers. -->
   <xacro:macro name="g1_dex3_hand" params="side">
     <ros2_control name="G1Dex3System${'Left' if side == 'left' else 'Right'}" type="system">
       <hardware>
         <plugin>g1_hand_interface/G1Dex3System</plugin>
         <param name="side">${side}</param>
+        <param name="domain_id">${dex3_params.system.domain_id}</param>
+        <param name="network_interface">${dex3_params.system.network_interface}</param>
         <param name="kp">${dex3_params.system.kp}</param>
         <param name="kd">${dex3_params.system.kd}</param>
         <param name="command_publish_rate">${dex3_params.system.command_publish_rate}</param>

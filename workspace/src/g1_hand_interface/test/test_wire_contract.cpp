@@ -1,7 +1,7 @@
 /**
  * @file test_wire_contract.cpp
- * @brief The two things about the Dex3 wire format that are easy to get wrong and expensive
- * to discover on hardware: the packed mode byte and the joint order.
+ * @brief The parts of the Dex3 wire format that are easy to get wrong and expensive to discover
+ * on hardware: the packed mode byte, the joint order, and what a command frame carries.
  */
 
 #include <gmock/gmock.h>
@@ -15,6 +15,7 @@ using g1_hand_interface::kJointSuffixes;
 using g1_hand_interface::kNumHandJoints;
 using g1_hand_interface::kStatusFoc;
 using g1_hand_interface::kStatusLock;
+using g1_hand_interface::packHandMotor;
 using g1_hand_interface::packMode;
 
 TEST(Dex3WireContract, ModePacksIdStatusAndTimeoutIntoTheirOwnFields)
@@ -52,6 +53,34 @@ TEST(Dex3WireContract, JointOrderIsThumbThenMiddleThenIndex)
             ::testing::StrEq("middle_1"),
             ::testing::StrEq("index_0"),
             ::testing::StrEq("index_1")));
+}
+
+TEST(Dex3WireContract, ReleaseLocksTheMotorAtItsMeasuredPositionWithNoStiffness)
+{
+    // The release frame is what a deactivate leaves on the wire. Non-zero gains here would
+    // leave the fingers driving toward a target nothing is updating any more.
+    unitree_hg::msg::dds_::MotorCmd_ motor{};
+    packHandMotor(motor, 2, false, 0.42, 1.5, 0.2);
+
+    EXPECT_EQ(motor.mode(), packMode(2, kStatusLock, true));
+    EXPECT_FLOAT_EQ(motor.q(), 0.42F);
+    EXPECT_FLOAT_EQ(motor.kp(), 0.0F);
+    EXPECT_FLOAT_EQ(motor.kd(), 0.0F);
+}
+
+TEST(Dex3WireContract, DrivenCarriesTheGainsAndLeavesTheTimeoutDisarmed)
+{
+    // Arming the timeout while driving would stop the fingers a second after any hiccup in the
+    // control loop, so this pins the flag as much as the gains.
+    unitree_hg::msg::dds_::MotorCmd_ motor{};
+    packHandMotor(motor, 5, true, -0.7, 1.5, 0.2);
+
+    EXPECT_EQ(motor.mode(), packMode(5, kStatusFoc, false));
+    EXPECT_FLOAT_EQ(motor.q(), -0.7F);
+    EXPECT_FLOAT_EQ(motor.kp(), 1.5F);
+    EXPECT_FLOAT_EQ(motor.kd(), 0.2F);
+    EXPECT_FLOAT_EQ(motor.dq(), 0.0F);
+    EXPECT_FLOAT_EQ(motor.tau(), 0.0F);
 }
 
 /**
