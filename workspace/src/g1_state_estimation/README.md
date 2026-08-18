@@ -129,8 +129,8 @@ disconnected from `odom`: harmless, and useful when a scan match goes wrong.
 | `max_tilt_deg` | `80.0` | Beyond this the heading is held. |
 | `publish_rate_hz` | `50.0` | |
 | `publish_odom_msg` | `true` | |
-| `source_timeout_ms` | `200.0` | Source age beyond this stops publishing. |
-| `wall_timeout_ms` | `2000.0` | Same, on wall time: a wedged simulator freezes `/clock` too. |
+| `source_timeout_ms` | `200.0` | Stops publishing once the sample stamp has not changed for this long. |
+| `wall_timeout_ms` | `2000.0` | The same bound, and the tighter of the two decides. Both are measured on a steady clock, which a wedged simulator cannot freeze. |
 | `tilt_correction_gain` | `0.05` | `fast_lio` only: slerp fraction per LiDAR sample toward the IMU's tilt. At ~10 Hz that is a ~2 s time constant. `0.0` disables the correction. |
 | `pose_covariance`, `twist_covariance` | `1.0e-6` | Diagonal value. Placeholders, not characterisations. |
 

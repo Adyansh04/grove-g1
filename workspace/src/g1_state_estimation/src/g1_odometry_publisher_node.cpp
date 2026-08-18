@@ -595,13 +595,16 @@ void G1OdometryPublisher::onTimer()
         return;
     }
 
-    // Sim time alone cannot see a wedged simulator: /clock comes from the same process as
-    // the base state, so it freezes too and `elapsed` stays at zero. Hence the wall budget.
-    const double elapsed = (now() - last_sample_stamp_).seconds();
-
-    const double wall_elapsed =
+    // Measured on the steady clock, from the moment the sample stamp last CHANGED. Both budgets
+    // bound that same quantity, so the tighter one decides.
+    //
+    // Comparing now() against the stamp instead measures the offset between two clocks rather
+    // than staleness. With the MuJoCo viewer running the simulator drops below real time, so its
+    // capture stamps sit seconds behind wall clock while arriving perfectly steadily -- that read
+    // as permanent staleness and stopped odom -> base_footprint for the whole run.
+    const double since_advance =
         std::chrono::duration<double>(std::chrono::steady_clock::now() - last_advance_wall_).count();
-    if (isStale(elapsed, source_timeout_s_) || isStale(wall_elapsed, wall_timeout_s_))
+    if (isStale(since_advance, std::min(source_timeout_s_, wall_timeout_s_)))
     {
         // Stop publishing rather than re-stamping the last pose. A frozen transform with a
         // fresh timestamp is indistinguishable from a stationary robot, which is how a dead
@@ -610,11 +613,10 @@ void G1OdometryPublisher::onTimer()
             get_logger(),
             steady_clock_,
             2000,
-            "Base state has not advanced for %.3f s on the source clock (limit %.3f) or "
-            "%.3f s on wall time (limit %.3f); stopped publishing %s -> %s.",
-            elapsed,
+            "Base state stamp has not advanced for %.3f s (limits: source %.3f, wall %.3f); "
+            "stopped publishing %s -> %s.",
+            since_advance,
             source_timeout_s_,
-            wall_elapsed,
             wall_timeout_s_,
             odom_frame_id_.c_str(),
             base_frame_id_.c_str());
