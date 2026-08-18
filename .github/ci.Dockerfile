@@ -78,7 +78,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ros-${ROS_DISTRO}-realtime-tools \
         ros-${ROS_DISTRO}-ros2-control \
         ros-${ROS_DISTRO}-ros2-controllers \
-        ros-${ROS_DISTRO}-rosidl-generator-dds-idl \
         ros-${ROS_DISTRO}-slam-toolbox \
         ros-${ROS_DISTRO}-vision-msgs \
         ros-${ROS_DISTRO}-xacro \

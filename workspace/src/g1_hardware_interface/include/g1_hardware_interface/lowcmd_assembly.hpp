@@ -3,8 +3,8 @@
 
 /**
  * @file lowcmd_assembly.hpp
- * @brief Per-motor LowCmd packing for rt/lowcmd, on unitree_sdk2's DDS structs rather than the
- *        unitree_hg ROS messages G1ArmSdkSystem uses. Same 1004-byte wire, different API.
+ * @brief Per-motor LowCmd packing for rt/lowcmd, on unitree_sdk2's own DDS structs. Split out
+ *        from the component so the mode table and the checksum are assertable without one.
  */
 
 #include <array>

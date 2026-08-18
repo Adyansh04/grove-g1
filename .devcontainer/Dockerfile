@@ -48,7 +48,6 @@ RUN apt-get update && apt-get install -y \
         ros-${ROS_DISTRO}-ros2-control \
         ros-${ROS_DISTRO}-ros2-controllers \
         ros-${ROS_DISTRO}-ros2launch \
-        ros-${ROS_DISTRO}-rosidl-generator-dds-idl \
         ros-${ROS_DISTRO}-xacro \
         xvfb \
     && rm -rf /var/lib/apt/lists/*
