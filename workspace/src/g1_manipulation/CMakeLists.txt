@@ -60,20 +60,26 @@ if(BUILD_TESTING)
   ament_add_gmock(test_grasp_geometry test/test_grasp_geometry.cpp)
   target_link_libraries(test_grasp_geometry g1_manipulation_server_node)
 
-  # test/test_pick_place.launch.py is written and runnable BY HAND, but is deliberately not
-  # registered here yet. Under ament_add_test it fails at import with "No module named
-  # 'g1_msgs'": this workspace installs generated Python bindings under
-  # install/<pkg>/local/lib/python3.10/dist-packages, which the sourced environment picks up
-  # and the launch test's restricted environment does not. Adding g1_msgs as a test_depend and
-  # forcing a reconfigure did not change it.
+  # test/test_pick_place.launch.py runs but does not pass, so it stays unregistered: a
+  # permanently red test is worse than an unregistered one, because it trains people to ignore
+  # the result.
   #
-  # Registering it would put a permanently red test in the suite, which is worse than an
-  # unregistered one: it trains people to ignore the result. Run it by hand meanwhile:
+  # It used to die before any test ran, with "Timed out waiting for processes to start up".
+  # That was launch_testing's 15 s ReadyToTest default against this file's 55 s stack settle,
+  # and the file now carries its own ready_to_test_action_timeout, so the assertions execute.
+  #
+  # What they report is a real problem and not a test defect. The robot is staged AT the
+  # workbench with its arms hanging, and a hanging hand sits about 1 cm under the bench slab, so
+  # it is inside the bench's octomap. MoveIt's CheckStartStateCollision looks at the whole robot
+  # rather than the group being planned for, so EVERY plan is refused in milliseconds --
+  # including the tuck that would move the arms out. The mission tree does not hit this because
+  # it tucks both arms before it ever walks to the bench.
+  #
+  # Fixing it means the arms coming up clear of the furniture, which is a rest-pose question for
+  # the control stack, not something this test can arrange. Run it by hand meanwhile:
   #
   #   source install/setup.bash
   #   python3 -m launch_testing.launch_test src/g1_manipulation/test/test_pick_place.launch.py
-  #
-  #
 
   # Lint checks use workspace-root configs (see g1_description/CMakeLists.txt).
   find_program(CLANG_FORMAT_EXECUTABLE clang-format)
