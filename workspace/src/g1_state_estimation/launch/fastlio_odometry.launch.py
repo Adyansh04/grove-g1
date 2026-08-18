@@ -113,8 +113,11 @@ def _launch_setup(context, *args, **kwargs):
             )
         )
 
-    # Publishes camera_init -> body on /tf as well as /Odometry_loc. That pair is an orphan
-    # tree, disconnected from odom: harmless, and worth having when a scan match goes wrong.
+    # Its camera_init -> body pair is a second root, disconnected from odom, and nothing here
+    # consumes it: this node reads /Odometry_loc instead. Left on /tf it makes every TF client
+    # see two unconnected trees -- RViz reports transform errors, and move_group's planning
+    # scene monitor logs two warnings per octomap update. Kept, on its own topic, because the
+    # pose is worth having when a scan match goes wrong.
     actions.append(
         Node(
             package="fast_lio",
@@ -122,6 +125,7 @@ def _launch_setup(context, *args, **kwargs):
             name="fastlio_mapping",
             output="both",
             parameters=[fastlio_config, {"use_sim_time": False}],
+            remappings=[("/tf", "/fastlio/tf")],
         )
     )
 
