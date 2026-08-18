@@ -10,12 +10,9 @@ Also covers the ownership invariant that makes the split safe: the component lea
 unclaimed joint unpowered, so the arm freeze and the trajectory controller have to trade places
 in a single switch, never both out at once.
 
-No hand assertions here, unlike the arm_sdk suite. G1Dex3System reaches the hands as ROS topics,
-which only ever matched the simulator because ROS-on-CycloneDDS mangles /dex3/left/state to the
-same DDS name the SDK publishes; this stack runs fastrtps, so nothing publishes it and the
-component cannot activate. Moving that transport belongs to the middleware unification, not
-here. Finger *state* still arrives, because joint_state_broadcaster reads configured components
-and MoveIt refuses to plan without every modelled joint.
+The hands are asserted here too, on the same acquire: three components now share one process and
+one ChannelFactory, so "the hand activated and its fingers moved" is the only proof that the
+body component's SDK init did not shut the other two out.
 """
 
 import os
@@ -23,14 +20,10 @@ import subprocess
 import time
 import unittest
 
-# Set before rclpy initialises: the lowcmd stack runs on fastrtps, because the component owns
-# the robot wire through unitree_sdk2's own CycloneDDS and ROS must not load a second one.
-os.environ["RMW_IMPLEMENTATION"] = "rmw_fastrtps_cpp"
-
 import launch_testing.actions
 import rclpy
 from ament_index_python.packages import get_package_share_directory
-from controller_manager_msgs.srv import ListControllers
+from controller_manager_msgs.srv import ListControllers, ListHardwareComponents
 from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription, TimerAction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
@@ -64,9 +57,19 @@ ARM_NUDGE = {f"{side}_shoulder_pitch_joint": -0.20 for side in ("left", "right")
     f"{side}_elbow_joint": 0.20 for side in ("left", "right")
 }
 
-# 12 legs + 3 waist + 14 arms + 14 hand joints. The fingers count even though the hands cannot
-# be driven here: move_group will not plan until every joint it models has a state.
+# 12 legs + 3 waist + 14 arms + 14 hand joints. move_group will not plan until every joint it
+# models has a state.
 EXPECTED_JOINT_COUNT = 43
+
+LEFT_HAND = [
+    f"left_hand_{suffix}_joint"
+    for suffix in ("thumb_0", "thumb_1", "thumb_2", "middle_0", "middle_1", "index_0", "index_1")
+]
+# The `closed` group state from g1.srdf, restated rather than read out of it: a test that took
+# its expectation from the file under test would pass no matter what that file said.
+LEFT_HAND_CLOSED = dict(
+    zip(LEFT_HAND, [-0.30, -0.50, 1.20, -1.20, -1.40, -1.20, -1.40], strict=True)
+)
 
 
 def generate_test_description():
@@ -106,6 +109,9 @@ class TestMoveItLowCmd(unittest.TestCase):
         cls.controllers = cls.node.create_client(
             ListControllers, "/controller_manager/list_controllers"
         )
+        cls.components = cls.node.create_client(
+            ListHardwareComponents, "/controller_manager/list_hardware_components"
+        )
 
     @classmethod
     def tearDownClass(cls):
@@ -138,6 +144,15 @@ class TestMoveItLowCmd(unittest.TestCase):
         self._spin_until(future.done, 20.0, "list_controllers did not answer")
         return {c.name: c.state for c in future.result().controller}
 
+    def _component_states(self):
+        self.assertTrue(
+            self.components.wait_for_service(timeout_sec=30.0),
+            "no list_hardware_components service",
+        )
+        future = self.components.call_async(ListHardwareComponents.Request())
+        self._spin_until(future.done, 20.0, "list_hardware_components did not answer")
+        return {c.name: c.state.label for c in future.result().component}
+
     def _uprightness(self):
         # The subscriptions are made when the first test runs, not while the stack settles, so
         # the very first read has to wait for a sample rather than assume one arrived.
@@ -153,7 +168,7 @@ class TestMoveItLowCmd(unittest.TestCase):
 
     def _run_bringup_script(self, executable, timeout_s=60.0):
         proc = subprocess.Popen(
-            ["ros2", "run", "g1_bringup", executable, "--stack", "lowcmd"],
+            ["ros2", "run", "g1_bringup", executable],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
         )
         deadline = time.monotonic() + timeout_s
@@ -162,8 +177,10 @@ class TestMoveItLowCmd(unittest.TestCase):
         stdout, stderr = proc.communicate(timeout=10.0)
         self.assertEqual(proc.returncode, 0, f"{executable} failed:\n{stdout}\n{stderr}")
 
-    def _joint_goal(self, group, offsets):
-        """`offsets` maps joint name to a delta from where that joint is now."""
+    def _joint_goal(self, group, targets, absolute=False):
+        """`targets` maps joint name to a delta from where it is now, or to an absolute
+        position when `absolute`.
+        """
         goal = MoveGroup.Goal()
         goal.request.group_name = group
         goal.request.num_planning_attempts = 5
@@ -174,10 +191,10 @@ class TestMoveItLowCmd(unittest.TestCase):
         goal.request.start_state.is_diff = True
 
         constraints = Constraints()
-        for name, offset in offsets.items():
+        for name, target in targets.items():
             constraint = JointConstraint()
             constraint.joint_name = name
-            constraint.position = self.joint_state[name] + offset
+            constraint.position = target if absolute else self.joint_state[name] + target
             constraint.tolerance_above = 0.02
             constraint.tolerance_below = 0.02
             constraint.weight = 1.0
@@ -252,6 +269,16 @@ class TestMoveItLowCmd(unittest.TestCase):
         )
         # waist_yaw is deliberately not part of the trade, so acquiring must not disturb it.
         self.assertEqual(states.get("waist_freeze_controller"), "active")
+
+        # The hands come up in the same acquire, each on its own component and its own SDK
+        # channel pair. A component stuck inactive here means it never saw HandState, which on
+        # one shared ChannelFactory is how a domain or init-order fault presents.
+        components = self._component_states()
+        for name in ("G1Dex3SystemLeft", "G1Dex3SystemRight"):
+            self.assertEqual(components.get(name), "active", f"{name} did not activate")
+        for name in ("left_hand_controller", "right_hand_controller"):
+            self.assertEqual(states.get(name), "active", f"{name} did not activate")
+
         self._assert_still_standing("after acquiring the arms")
 
     def test_06_both_arms_move_while_the_policy_balances(self):
@@ -272,7 +299,44 @@ class TestMoveItLowCmd(unittest.TestCase):
         # The assertion this whole file exists for: the arms moved and the robot stayed up.
         self._assert_still_standing("after moving both arms")
 
-    def test_07_releasing_hands_the_arms_back_to_the_freeze(self):
+    def test_07_the_hand_closes_and_opens_through_moveit(self):
+        """A Dex3 is seven joints, so MoveIt drives it as a group, not as a GripperCommand.
+
+        The fingers that come back on /joint_states are the ones the simulator actually moved,
+        so this is the end-to-end proof that G1Dex3System's channel reaches the hand.
+        """
+        before = {name: self.joint_state[name] for name in LEFT_HAND}
+
+        result = self._send_move_goal(
+            self._joint_goal("left_hand", LEFT_HAND_CLOSED, absolute=True)
+        )
+        self.assertIsNotNone(result, "left_hand closed goal was rejected")
+        self.assertEqual(
+            result.error_code.val,
+            1,
+            f"closing the left hand failed with error_code {result.error_code.val}",
+        )
+        self._spin(2.0)
+
+        for name, target in LEFT_HAND_CLOSED.items():
+            self.assertAlmostEqual(
+                self.joint_state[name],
+                target,
+                delta=0.05,
+                msg=f"{name} is at {self.joint_state[name]:.3f}, commanded {target:.3f}",
+            )
+        moved = max(abs(self.joint_state[n] - before[n]) for n in LEFT_HAND)
+        self.assertGreater(moved, 0.1, "no finger moved; the grasp was a no-op")
+
+        # Back to open, so the release below finds the hand where the suite did.
+        result = self._send_move_goal(
+            self._joint_goal("left_hand", dict.fromkeys(LEFT_HAND, 0.0), absolute=True)
+        )
+        self.assertIsNotNone(result, "left_hand open goal was rejected")
+        self.assertEqual(result.error_code.val, 1, "opening the left hand failed")
+        self._assert_still_standing("after closing and opening the hand")
+
+    def test_08_releasing_hands_the_arms_back_to_the_freeze(self):
         self._run_bringup_script("deactivate_arm")
         self._spin(3.0)
 
@@ -286,7 +350,7 @@ class TestMoveItLowCmd(unittest.TestCase):
         self.assertNotEqual(states.get("arm_trajectory_controller"), "active")
         self._assert_still_standing("after releasing the arms")
 
-    def test_08_the_policy_never_diverged(self):
+    def test_09_the_policy_never_diverged(self):
         states = self._controller_states()
         self.assertEqual(
             states.get("locomotion_safety_controller"),
