@@ -40,9 +40,9 @@
     <geom name="floor" group="2" size="0 0 0.05" type="plane" material="groundplane"/>
 
     <!-- The near edge must clear the spawned arm. The right palm hangs at about odom
-         (0.18, -0.18, 0.74) at spawn: arms down, elbows bent forward by the hold pose in
-         motion_service_sim. So the top starts at x 0.26, 8 cm clear of it, and sits at 0.80,
-         above where the palm hangs rather than around it.
+         (0.18, -0.18, 0.74) at spawn: arms down, elbows bent forward by the pose
+         arm_freeze_controller captures. So the top starts at x 0.26, 8 cm clear of it, and
+         sits at 0.80, above where the palm hangs rather than around it.
 
          Height is chosen to match the facility workbench (0.75) as closely as the arm's reach
          allows, so a grasp tuned here transfers. -->

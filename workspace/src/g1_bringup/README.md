@@ -46,7 +46,6 @@ All of these belong to `bringup.launch.py`.
 | `world` | `navigation` | Which scene to stage. `navigation` is the facility the committed map was built from. |
 | `headless` | `true` | `false` shows the MuJoCo viewer. |
 | `pin_pelvis` | `false` | Welds the pelvis and disables the walking policy, for exercising the arms alone. `mode:=none` only. |
-| `waist_hold_rad` | `""` | Sim only. Three comma-separated radians (yaw,roll,pitch) to stand the waist at. Needs `pin_pelvis:=true`. |
 | `sim_start_delay_s` | branch default | Seconds to delay the simulator. Empty means 2.0 bare, 4.0 whenever navigation or MoveIt starts alongside it. |
 
 ### Running the simulator by hand

@@ -35,9 +35,8 @@ def generate_launch_description():
     # Same builder call as move_group.launch.py. RViz needs the semantic and kinematics
     # descriptions; it does not need the controller or planning-pipeline configuration.
     #
-    # The shared description rather than either stack's: RViz reads links and joints and never
-    # the ros2_control block, which is the only thing the two stacks differ in. So this needs no
-    # control_stack argument and cannot show the wrong robot for the stack that is running.
+    # The shared description rather than the stack's own: RViz reads links and joints and never
+    # the ros2_control block, so this stays correct however the hardware side is configured.
     moveit_config = (
         MoveItConfigsBuilder("g1", package_name="g1_moveit_config")
         .robot_description(file_path=os.path.join(description_share, "urdf", "g1_common.xacro"))

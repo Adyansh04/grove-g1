@@ -8,11 +8,11 @@ Publishes `odom` to the robot's base frame, and the TF chain Nav2 and slam_toolb
 ```mermaid
 flowchart LR
     subgraph sim only
-        SM["/sportmodestate<br/>pelvis position"] --> N
+        SM["/g1_sensor_relay/base_state<br/>pelvis pose and twist"] --> N
     end
     subgraph either
         LO["/Odometry_loc<br/>FAST-LIO pose"] --> N
-        LS["/lowstate<br/>IMU orientation"] --> N
+        LS["/imu_sensor_broadcaster/imu<br/>IMU orientation"] --> N
     end
     N["g1_odometry_publisher"] --> TF["/tf<br/>odom to base_footprint to pelvis"]
     N --> OD["~/odom"]
@@ -27,7 +27,7 @@ hardware source is LiDAR-inertial odometry: FAST-LIO2, from the vendored `fast_l
 
 | `odometry_source` | Behaviour |
 |---|---|
-| `sim_sportmodestate` | The `unitree_mujoco` track. Pelvis position from `/sportmodestate`, full orientation from `/lowstate`'s IMU. Exact MuJoCo state: no drift, no noise, no latency. |
+| `ground_truth` | The `unitree_mujoco` track. Pose and twist together from the simulator's own pelvis sample, relayed off the sensor socket. Exact MuJoCo state: no drift, no noise, no latency. |
 | `fast_lio` | Reads FAST-LIO's `nav_msgs/Odometry`, re-references it into `odom`, and differences the twist FAST-LIO leaves empty. An estimate: it drifts, and `map -> odom` exists to correct it. Runs in sim and on the robot. |
 | `hardware` (default) | Refuses to configure, pointing at `fast_lio`. |
 
@@ -41,7 +41,7 @@ No `map` to `odom` transform is published. That belongs to localization, in `g1_
 FAST-LIO reports the pose of its IMU (`body`) in the frame that IMU happened to occupy at
 startup (`camera_init`). Neither is gravity-aligned on this robot: the Mid360 is mounted upside
 down. At the first sample the node latches a correction so `base_footprint` starts at
-(0, 0, yaw 0) with the floor at z 0, using the `/lowstate` attitude to find which way is up and
+(0, 0, yaw 0) with the floor at z 0, using the pelvis IMU attitude to find which way is up and
 `start_height_m` to find how far up. Everything after is FAST-LIO's motion re-expressed in that
 frame, offset from the reporting IMU to the pelvis through TF (`lidar_body_frame_id`).
 
@@ -59,10 +59,9 @@ Until both a LiDAR pose and a usable IMU attitude have arrived, nothing is publi
 **The TF chain from the sensor down to the pelvis crosses the three waist joints**, and it is
 looked up per sample rather than cached because the waist moves. On the robot that means
 `/joint_states` has to carry `waist_yaw_joint`, `waist_roll_joint` and `waist_pitch_joint`, or
-`mid360_imu -> pelvis` never resolves and this source publishes nothing at all.
-`joint_state_broadcaster` does not own those joints, so `g1_hardware_interface`'s
-`g1_lowstate_joint_states` publishes them from `/lowstate`; the hardware branch of
-`fastlio_odometry.launch.py` starts it.
+`mid360_imu -> pelvis` never resolves and this source publishes nothing at all. The hardware
+component exports all 29 motors, so `joint_state_broadcaster` covers the waist and nothing extra
+is needed on either track.
 
 ### What the two front ends look like
 
@@ -198,7 +197,8 @@ moment. The relay stamps from the simulator's own capture clock instead, and the
 same socket and the same clock mapping, so `common.time_offset_lidar_to_imu` stays `0.0` on both
 tracks. Together the three took the median pelvis height error from +54 mm to −5 mm.
 
-`sportmodestate` remains the default; the mission is tuned against it and is unaffected.
+`fast_lio` is the default the launch files select. `ground_truth` stays available to isolate a
+fault to "not the odometry".
 
 ## What simulation does and does not validate
 

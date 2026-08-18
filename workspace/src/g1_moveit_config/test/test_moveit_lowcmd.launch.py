@@ -83,7 +83,6 @@ def generate_test_description():
                 )
             ),
             launch_arguments={
-                "control_stack": "lowcmd",
                 # The whole point: the policy is holding the robot up while the arms move.
                 "pin_pelvis": "false",
                 "headless": "true",

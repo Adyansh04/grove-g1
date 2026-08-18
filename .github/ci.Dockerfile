@@ -124,7 +124,7 @@ RUN git init -q /tmp/Livox-SDK2 && \
     rm -rf /tmp/Livox-SDK2
 
 # --- ONNX Runtime -------------------------------------------------------------------------
-# g1_motion_service_sim links it for the walking policy. CPU build only.
+# g1_controllers links it to run the balance policy. CPU build only.
 ARG ONNXRUNTIME_VERSION=1.20.1
 RUN mkdir -p /opt/onnxruntime && \
     curl -fsSL "https://github.com/microsoft/onnxruntime/releases/download/v${ONNXRUNTIME_VERSION}/onnxruntime-linux-x64-${ONNXRUNTIME_VERSION}.tgz" \

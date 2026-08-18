@@ -58,7 +58,6 @@ def generate_test_description():
         launch_arguments={
             "headless": "true",
             "rviz": "false",
-            "control_stack": "lowcmd",
             "pin_pelvis": "false",
             "sensors": "false",
         }.items(),

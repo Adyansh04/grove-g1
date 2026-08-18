@@ -5,7 +5,7 @@
 # for the occupancy grid -- see maps/README.md.
 #
 # Which odometry source is running changes what these values mean. Under
-# `odometry:=sportmodestate` the input is exact MuJoCo state, map -> odom converges to identity
+# `odometry:=ground_truth` the input is exact MuJoCo state, map -> odom converges to identity
 # and the noise model is degenerate. Under `odometry:=fast_lio` -- what the robot runs -- it
 # drifts, and every value below is load-bearing. Tuned for the latter, because a filter that
 # only works against ground truth is not localization.
@@ -41,7 +41,7 @@ amcl:
     # landing map -> odom at roughly 180 degrees of yaw error.
     robot_model_type: "nav2_amcl::OmniMotionModel"
     # Nav2's defaults. The 0.02 they replace said "the odometry is exact", which was true only
-    # of the sportmodestate track's MuJoCo ground truth. fast_lio drifts, so a filter told to
+    # of the ground-truth track's MuJoCo state. fast_lio drifts, so a filter told to
     # trust it that far cannot correct in time and lurches instead.
     alpha1: 0.2
     alpha2: 0.2

@@ -155,8 +155,9 @@ Until then the controller refuses the goal, which is the intended failure rather
 `moveit_manage_controllers` is false so MoveIt never activates anything itself. Release with
 `deactivate_arm.launch.py` on success or failure alike.
 
-`waist_hold_rad:=0.35,0.0,0.0` stands the torso off-square, which is worth doing when changing
-anything about frames.
+Nothing currently stands the torso off-square, which is what would exercise the arm groups
+composing through a turned waist. `waist_freeze_controller` latches whatever angle the scene
+starts at, so giving the MJCF keyframe a non-zero waist is the way back to that coverage.
 
 ## Seeing the world
 
