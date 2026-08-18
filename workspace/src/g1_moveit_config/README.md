@@ -1,7 +1,7 @@
 # g1_moveit_config
 
-MoveIt 2 planning for the G1's two 7-DoF arms, layered on the `arm_trajectory_controller` that
-already exists on whichever control stack is running.
+MoveIt 2 planning for the G1's two 7-DoF arms, layered on the `arm_trajectory_controller` the
+control stack already runs.
 
 `ament_cmake`, configuration and launch only. No nodes: `move_group` is upstream.
 
@@ -9,9 +9,9 @@ already exists on whichever control stack is running.
 flowchart LR
     MG["move_group<br/>plan + collision check"] -- "FollowJointTrajectory" --> JTC["arm_trajectory_controller"]
     MG -- "FollowJointTrajectory" --> HC["left/right_hand_controller"]
-    JTC --> HW["G1ArmSdkSystem&nbsp;/&nbsp;G1LowCmdSystem"]
+    JTC --> HW["G1LowCmdSystem"]
     HC --> HH["G1Dex3System (one per hand)"]
-    HW -- "/arm_sdk or rt/lowcmd" --> MS["the onboard controller,<br/>or our own balance policy"]
+    HW -- "rt/lowcmd" --> MS["our own balance policy"]
     HH -- "rt/dex3/side/cmd" --> SIM["unitree_mujoco<br/>(the hand itself on hardware)"]
     MS -- "/lowstate" --> HW
     JS["/joint_states<br/>arms + legs + waist + fingers"] --> MG
@@ -20,22 +20,16 @@ flowchart LR
 MoveIt adds no command path. It is another client of actions the controllers already serve, so
 the arm channel and each hand's topic keep exactly one writer.
 
-## The two control stacks
+## Arm ownership
 
-`control_stack:=arm_sdk|lowcmd` selects which hardware component owns the arms, and it must match
-what `sim.launch.py` was given: `move_group.launch.py` uses it to load the same description
-`robot_state_publisher` did. A mismatch is not a visible failure — `move_group` comes up and
-plans, then hands the trajectory to a controller belonging to the other stack.
+The hardware component leaves any unclaimed joint unpowered, so the arms are always held by
+something. `arm_freeze_controller` has them until the arm is acquired, and the acquire trades
+the two in a single switch — never both out at once, or the arms drop.
+`g1_controllers`' README has the full ownership table.
 
-Nothing else here changes between them. `moveit_controllers.yaml` is shared, because both stacks
-define `arm_trajectory_controller` and the two hand controllers over the same joints;
-`test_moveit_config_drift` reads both files and fails if that stops being true. Planning groups,
-kinematics and joint limits are stack-independent by construction.
-
-On `lowcmd` there is one extra property to be aware of: the component leaves any unclaimed joint
-unpowered, so the arms are always held by something. `arm_freeze_controller` has them until the
-arm is acquired, and the acquire trades the two in a single switch. `g1_controllers`' README has
-the full ownership table.
+`move_group.launch.py` loads the same description `robot_state_publisher` does, so planning and
+execution always agree about the model. `test_moveit_config_drift` reads the controller config
+against the description and fails if they diverge.
 
 The hands are separate components on their own SDK channels (`rt/dex3/<side>/{cmd,state}`), so
 `activate_arm` brings them up after the arm and treats them as best-effort: a hand that is
@@ -62,10 +56,10 @@ reached over separate topics with separate control authority. `test_robot_model`
 pins that: no arm group may contain a finger joint. Each is listed as its arm's `end_effector`,
 which is what lets `attachObject` work out its own touch links.
 
-Groups are rooted at `torso_link`, not `pelvis`. The three waist joints belong to the onboard
-controller, so a group spanning them would plan motion this stack cannot command. Their *state*
-still matters, since it places the torso under the pelvis, which is why `motion_service_sim`
-publishes it.
+Groups are rooted at `torso_link`, not `pelvis`. The three waist joints are held by
+`waist_freeze_controller` for the whole session, so a group spanning them would plan motion nothing
+will execute. Their *state* still matters, since it places the torso under the pelvis, and
+`joint_state_broadcaster` publishes it from the component along with everything else.
 
 The planning frame is `pelvis` — the vendored URDF's floating base is commented out upstream and
 the SRDF declares no virtual joint. Fine while the robot stands still to manipulate; scene
@@ -212,7 +206,7 @@ which the upstream generator becomes usable again.
 | `test_robot_model` | no | Group composition and order, planning frame, no hand or waist joints in an arm group, the collision matrix's adjacent pairs and its cross-arm pairs, and the named poses (per-group copies agree, all within joint limits). |
 | `test_launch_threading` | no | The arguments `g1_bringup`'s `moveit:=true` branch threads into the simulator, the RViz choice, and that `moveit_sim.launch.py` still composes what it did. |
 | `test_octomap_blocks_a_plan` | yes | That the octomap fills from the LiDAR **and** that MoveIt collision-checks against it: a reach into a mapped obstacle is rejected, with `<octomap>` named in the contact. |
-| `test_moveit_plan_execute` | yes | Execution refused before acquire, a coordinated `both_arms` plan, planned speed under the clamp, and hand placement with the waist turned. `arm_sdk`, pinned pelvis. |
+| `test_moveit_plan_execute` | yes | Execution refused before acquire, a coordinated `both_arms` plan, planned speed under the clamp, and hand placement with the waist turned. Pinned pelvis. |
 | `test_moveit_lowcmd` | yes | The same path with the pelvis unpinned: every motor claimed before the acquire, the freeze traded for the trajectory controller and back, both arms moving without the balance policy losing the robot, and both hands activating and closing through MoveIt. |
 
 ```bash

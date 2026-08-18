@@ -216,7 +216,7 @@ robot:
 | The physically inverted unit | Modelled in the URDF, never verified against the real mount. |
 | `start_height_m` | 0.750 is this simulator's standing pelvis. It is a property of the robot's stance and must be re-measured. |
 | `obstacle_max_range` | 3.0 was derived from attitude error measured here. See `g1_navigation`'s README for how to re-derive it. |
-| `waist_kp` / `waist_kd` | The waist is owned by the walking policy in sim, so `/arm_sdk`'s hold is never exercised. See `g1_hardware_interface`'s README. |
+| `waist_kp` / `waist_kd` | The waist is held by `waist_freeze_controller` for the whole session, so nothing else exercises these. See `g1_controllers`' README. |
 | The Dex3 state topic | The simulator publishes one of the robot's two. See `g1_hand_interface`'s README. |
 
 Any tuning done against sim FAST-LIO is unvalidated on hardware.

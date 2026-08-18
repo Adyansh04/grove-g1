@@ -99,7 +99,7 @@ letting the robot down.
 ## Running
 
 ```bash
-ros2 launch g1_bringup sim.launch.py control_stack:=lowcmd pin_pelvis:=false
+ros2 launch g1_bringup sim.launch.py pin_pelvis:=false
 ```
 
 The pelvis does not need pinning: the policy balances the robot.

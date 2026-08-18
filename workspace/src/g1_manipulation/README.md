@@ -15,8 +15,8 @@ flowchart LR
 ```
 
 The server adds no command path. It is another client of `move_group`, which is another client
-of the controllers that already own `rt/arm_sdk` and the hand topics, so every low-level channel
-keeps exactly one writer.
+of the controllers that already own the arm joints and the hand channels, so every low-level
+channel keeps exactly one writer.
 
 It also takes no control authority. The arm and hands must already be acquired before a goal
 will execute, and releasing them is the caller's job — for a mission that is

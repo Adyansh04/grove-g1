@@ -13,8 +13,7 @@ flowchart LR
     B -->|"moveit:=true"| MG["g1_moveit_config<br/>move_group.launch.py"]
     B -->|"rviz:=true"| R["rviz.launch.py<br/>or moveit_rviz.launch.py"]
     S --> C["control.launch.py"]
-    S --> L["loco.launch.py"]
-    S --> MJ["unitree_mujoco +<br/>motion_service_sim"]
+    S --> MJ["unitree_mujoco"]
 ```
 
 The simulator edge is unconditional: this file stages exactly one, and the optional stacks are
@@ -26,12 +25,11 @@ composed beside it rather than wrapped around it. Neither `nav_stack.launch.py` 
 | File | Purpose |
 |---|---|
 | `bringup.launch.py` | What an operator runs. Stages the simulator and composes the navigation stack and MoveIt onto it as asked. |
-| `sim.launch.py` | Starts `unitree_mujoco`, `motion_service_sim`, `control.launch.py` and `loco.launch.py`. Checks the DDS environment first. Works standalone. |
-| `control.launch.py` | `robot_state_publisher`, `ros2_control_node` and the spawners. No simulator, so it carries to hardware unchanged — but on the robot it needs `g1_hardware_interface`'s `g1_lowstate_joint_states` alongside it, or the legs and waist never reach `/joint_states` and the TF tree comes up split at the waist. `motion_service_sim` covers that in simulation. |
-| `loco.launch.py` | Starts `g1_loco_bridge` and drives it from configure to active. |
+| `sim.launch.py` | Starts `unitree_mujoco` and `control.launch.py`. Checks the DDS environment first and refuses to start on the wrong middleware. Works standalone. |
+| `control.launch.py` | `robot_state_publisher`, `ros2_control_node` and the spawners. No simulator, so it carries to hardware unchanged. `joint_state_broadcaster` covers all 29 joints from the component, so nothing else has to fill `/joint_states`. |
 | `rviz.launch.py` | Starts RViz on a caller-supplied `rviz_config` path. |
-| `activate_arm.launch.py` | Runs `scripts/activate_arm`, the ordered acquire step. Takes `control_stack:=`. |
-| `deactivate_arm.launch.py` | Runs `scripts/deactivate_arm`, the ordered release step. Takes `control_stack:=`. |
+| `activate_arm.launch.py` | Runs `scripts/activate_arm`, the ordered acquire step. |
+| `deactivate_arm.launch.py` | Runs `scripts/deactivate_arm`, the ordered release step. |
 
 ## Arguments
 
@@ -40,22 +38,21 @@ All of these belong to `bringup.launch.py`.
 | Argument | Default | Meaning |
 |---|---|---|
 | `mode` | `none` | `none` is the simulator alone. `mapping` adds the scan pipeline and slam_toolbox. `localization` adds `map_server` and AMCL. |
-| `nav` | `false` | Start Nav2, the gait shaper and the authority bracket. Needs `mode:=localization`. |
+| `nav` | `false` | Start Nav2 and the base-approach skill. Needs `mode:=localization`. |
 | `moveit` | `false` | Start `move_group` for arm planning. Works with any mode. Planning is immediate; executing still needs `activate_arm`. |
 | `rviz` | `false` | Open RViz on the config that matches what is running. `moveit:=true` wins, because only MoveIt's launcher passes the panel its parameters. |
 | `sensors` | `false` | LiDAR, the relay and the `odom` to `base_footprint` chain. The navigation modes turn this on themselves. |
-| `odometry` | `sportmodestate` | What publishes `odom` to `base_footprint`. `sportmodestate` is exact MuJoCo state and what the mission is tuned against; `fast_lio` runs the LiDAR-inertial pipeline the robot uses, over the simulated Mid360, and drifts like the estimate it is. |
+| `odometry` | `fast_lio` | What publishes `odom` to `base_footprint`. `fast_lio` runs the LiDAR-inertial pipeline the robot uses, over the simulated Mid360, and drifts like the estimate it is; `ground_truth` is the simulator's exact pelvis pose, over the sensor socket, for isolating a fault to "not the odometry". |
 | `world` | `navigation` | Which scene to stage. `navigation` is the facility the committed map was built from. |
 | `headless` | `true` | `false` shows the MuJoCo viewer. |
 | `pin_pelvis` | `false` | Welds the pelvis and disables the walking policy, for exercising the arms alone. `mode:=none` only. |
 | `waist_hold_rad` | `""` | Sim only. Three comma-separated radians (yaw,roll,pitch) to stand the waist at. Needs `pin_pelvis:=true`. |
 | `sim_start_delay_s` | branch default | Seconds to delay the simulator. Empty means 2.0 bare, 4.0 whenever navigation or MoveIt starts alongside it. |
-| `control_stack` | `arm_sdk` | Which hardware component owns the motors. `arm_sdk` blends arm targets under the onboard balance controller; `lowcmd` takes the whole body and runs the AGILE policy for balance. Mutually exclusive by construction. |
 
-### Running the lowcmd stack by hand
+### Running the simulator by hand
 
 ```bash
-ros2 launch g1_bringup sim.launch.py control_stack:=lowcmd pin_pelvis:=false
+ros2 launch g1_bringup sim.launch.py
 ```
 
 The image runs `rmw_fastrtps_cpp`, and `sim.launch.py` refuses to start on anything else: the
@@ -89,30 +86,25 @@ ros2 launch g1_bringup activate_arm.launch.py
 ros2 launch g1_bringup deactivate_arm.launch.py
 ```
 
-Both take `control_stack:=` and it must match what the stack was launched with. What acquiring
-*is* differs between them: on `arm_sdk` it activates `G1ArmSdkSystem` and then its controller; on
-`lowcmd` that component is already active and holding the arms through `arm_freeze_controller`,
-so acquiring trades the freeze for `arm_trajectory_controller` in a single switch. It has to be
-one switch, because a joint that component sees unclaimed is a joint it leaves unpowered.
+The hardware component is already active and holding the arms through `arm_freeze_controller`, so
+acquiring trades the freeze for `arm_trajectory_controller` in a single switch. It has to be one
+switch, because a joint that component sees unclaimed is a joint it leaves unpowered.
 
-The same step acquires both Dex3 hands on either stack, but only best-effort: a hand that is
-absent, unpowered or not publishing state logs a warning and leaves the arm usable. The arm is
-the part that fails the whole acquire.
+The same step acquires both Dex3 hands, but only best-effort: a hand that is absent, unpowered or
+not publishing state logs a warning and leaves the arm usable. The arm is the part that fails the
+whole acquire.
 
-On `arm_sdk`, `deactivate_arm.launch.py` blocks for about two seconds while the blend weight ramps
-to zero. That is the ramp, not a hang. Ctrl-C is also safe.
-
-Walking by hand needs FSM `Start` first:
+Walking by hand needs no mode change — the policy is already balancing the robot and takes
+velocity directly:
 
 ```bash
-ros2 action send_goal /g1_loco_bridge/set_mode g1_msgs/action/SetLocoMode "{fsm_id: 4}"
-ros2 action send_goal /g1_loco_bridge/set_mode g1_msgs/action/SetLocoMode "{fsm_id: 500}"
 ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args \
-  -r /cmd_vel:=/g1_loco_bridge/cmd_vel -p speed:=0.6 -p turn:=1.57
+  -p speed:=0.35 -p turn:=0.6
 ```
 
-Both teleop overrides matter. The defaults sit inside the gait's dead zone and the robot will not
-move. See `g1_motion_service_sim` for the measured thresholds.
+Both overrides matter. The defaults sit inside the gait's dead zone -- below roughly 0.15 m/s
+nothing moves at all -- and the robot will not respond. See `g1_controllers` for the measured
+envelope.
 
 ## g1_navigation and g1_moveit_config are referenced but not depended on
 
@@ -131,13 +123,12 @@ dependency cannot.
 
 | File | Contents |
 |---|---|
-| `config/controllers.yaml` | `controller_manager` at 200 Hz. `G1ArmSdkSystem` starts inactive, `joint_state_broadcaster` active. |
+| `config/lowcmd_controllers.yaml` | Lives in `g1_controllers`: `controller_manager` at 200 Hz, the policy, the safety and freeze controllers, and the arm and hand trajectory controllers. |
 | `config/sim_sensors.yaml` | LiDAR and camera parameters read by the patched simulator. |
 | `config/g1_sensors.rviz` | RViz for `mode:=none`. Fixed frame `odom`. |
 | `mjcf/*.xml` | Six scene overlays. Staged next to the vendored model at launch and removed on shutdown. |
 
-`config/controllers.yaml` also carries the two Dex3 hand components and their trajectory
-controllers, all starting inactive alongside the arm. `config/sim_sensors.yaml` additionally
+`config/sim_sensors.yaml` additionally
 configures two simulation-only things the patched simulator reads: which bodies publish
 ground-truth poses, and the grasp weld that stands in for finger contact.
 
@@ -145,13 +136,8 @@ ground-truth poses, and the grasp weld that stands in for finger contact.
 
 | Test | Needs a simulator | Covers |
 |---|---|---|
-| `test_sim_bringup` | yes | Bring-up topics, rates, controller and component states. |
-| `test_arm_command` | yes | Ordered activation, weight ramp, closed-loop trajectory, slew clamp. |
-| `test_loco` | yes | LocoClient protocol end to end over DDS. |
-| `test_walk_stand` | yes | The policy stands the robot up unwelded and holds it. |
-| `test_walk_teleop` | yes | Rejection before `Start`, the dead-man, Damp release, randomized sequences. |
-| `test_walk_and_arm` | yes | Walking under `cmd_vel` while an arm trajectory converges. |
 | `test_lidar_geometry` | yes | The LiDAR measures the room it is in. |
+| `test_fastlio_odometry` | yes | FAST-LIO's `odom` against the simulator's own pelvis pose, standing and walking. |
 | `test_agile_walk` | yes | The lowcmd stack under the AGILE policy: stands with an unpinned pelvis, then walks on `/cmd_vel` without the safety controller latching. |
 | `ruff_check_g1_bringup` | no | Python lint and import order. |
 

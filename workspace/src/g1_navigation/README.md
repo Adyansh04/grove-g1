@@ -13,10 +13,8 @@ flowchart TB
     SLAM -- "map to odom" --> NAV2
     AMCL -- "map to odom" --> NAV2
     ODOM["g1_odometry_publisher"] -- "odom to base_footprint" --> NAV2
-    NAV2["Nav2"] -- "/cmd_vel" --> SHAPE["g1_gait_shaper"]
-    APPR["g1_base_approach"] -- "/cmd_vel_approach (priority)" --> SHAPE
-    SHAPE --> BRIDGE["g1_loco_bridge"]
-    AUTH["g1_loco_authority"] -.-> BRIDGE
+    NAV2["Nav2"] -- "/cmd_vel" --> POL["the walking policy"]
+    APPR["g1_base_approach"] -- "/cmd_vel" --> POL
 ```
 
 ## Launch files
@@ -66,30 +64,25 @@ Everything here needs `sensors:=true`, which gates the LiDAR, the relay and the
 
 ## What the gait forces
 
-The simulated gait has a hard initiation dead zone, so the usable action set is stop, drive
-straight, turn in place. `g1_locomotion`'s `g1_gait_shaper` collapses Nav2's continuous output onto
-those three, subtractively. Full numbers are in `g1_motion_service_sim`'s README.
+The walking policy takes a velocity and returns a proportional fraction of it, with one property
+Nav2 has to respect: a **deadband below roughly 0.15 m/s on both linear axes**. Commanded 0.10 m/s
+the robot does not move at all. Yaw has no deadband and tracks near 1:1. `g1_controllers`' README
+carries the measured envelope.
 
-Two consequences worth knowing before tuning:
+That is the whole coupling. There is no shaper and no primitive set: the policy accepts continuous
+velocity on all three axes at once, so ordinary Nav2 tuning applies, and the only thing to check
+when changing a controller or a recovery is that its minimum speeds clear the deadband rather than
+asking for motion the robot ignores.
 
-The shaper zeroes any yaw below 1.20 rad/s, and the pure pursuit controller's curvature steering is
-usually well under that. Effective behaviour is bang-bang: drive straight until the heading error
-is large, then rotate in place. That makes `angular_dist_threshold` the dominant knob, not
-`lookahead_dist`.
-
-Nav2 is no longer the only writer on the velocity channel. `nav2.launch.py` also starts
+Nav2 is not the only writer on the velocity channel. `nav2.launch.py` also starts
 `g1_locomotion`'s `g1_base_approach`, which closes the last half metre to a workbench under its own
-control because Nav2's 0.5 m goal tolerance is more than twice the arm's usable window. The gait
-shaper arbitrates the two and gives the approach priority; see `g1_locomotion`'s README for why the
-arbitration lives there and not in a `twist_mux`.
+closed-loop control because Nav2's 0.5 m goal tolerance is more than twice the arm's usable window.
+Nothing arbitrates between them: the mission tree runs `NavigateToPose` and `ApproachObject` in
+sequence, never together.
 
 It is launched unconditionally rather than gated on manipulation. It reads `/objects`, so without
 `manipulation:=true` its goals simply fail with "no fresh pose", and gating it on an argument this
 package knows nothing about is the cross-package coupling this file avoids elsewhere.
-
-`behavior_server`'s `max_rotational_vel` is 1.57 rather than upstream's 1.0. At 1.0 it sat below
-the shaper's engage threshold, so every `Spin` was zeroed before reaching the bridge while still
-reporting success. `test_gait_coupling` now fails if that pairing regresses.
 
 ## Decisions that look odd without the reason
 
@@ -99,9 +92,10 @@ activating against a frame that does not exist. `use_composition:=true` raises w
 explanation rather than hanging.
 
 Reverse recovery is removed from both behaviour trees and from `behavior_plugins`, so no action
-server exists to invoke. This gait barely reverses at all, and upstream's backup speed sits inside
-the dead zone, so `BackUp` would burn its whole time allowance producing no motion while consuming
-the round-robin slot `Spin` could have used.
+server exists to invoke. That was decided against the previous gait, which barely reversed at all.
+This policy does reverse (-0.140 m/s delivered at a commanded -0.20), so the reason has expired
+and `BackUp` could come back — but upstream's backup speed still sits inside the deadband, so
+re-enabling it means measuring a speed that works first, not just restoring the plugin.
 
 `z_voxels` is 40, not upstream's 16. The sensor sits at 1.22 m, outside a 0.8 m voxel column.
 
@@ -165,11 +159,9 @@ Nav2 dependency.
 
 | Test | Needs a simulator | Covers |
 |---|---|---|
-| `test_navigate_to_pose` | yes | The acceptance gate: the robot reaches a goal on its own. |
-| `test_nav_authority` | yes | Authority acquired on activate, released on deactivate, `cmd_vel` discarded before it. |
+| `test_navigate_to_pose` | yes | The acceptance gate: the robot reaches a goal on its own, stays upright, and never hands the joints to the emergency freeze while the perception stack shares the machine. |
 | `test_scan_pipeline` | yes | The frame chain and the scan. |
 | `test_slam_map` | yes | slam_toolbox owning `map` to `odom`, and the map's geometry. |
-| `test_gait_coupling` | no | Spin's rotational limits against the shaper's engage threshold. |
 | `test_launch_threading` | no | Arguments surviving every include boundary, for both callers; `nav_stack.launch.py`'s include set, its single container, the uncomposed Nav2 pin, and that it stages no simulator. |
 | `test_rviz_configs` | no | The sensor display group not drifting between the two configs. |
 | `test_no_sim_time` | no | No shipped config enables `use_sim_time`. There is no `/clock` on this track. |
@@ -189,7 +181,7 @@ ros2 run g1_navigation nav_soak --rviz
 ros2 run g1_navigation nav_soak --goals "3.0 -3.0,-2.5 2.0"
 ```
 
-It reports distance driven, how much of Nav2's output falls inside the gait shaper's dead
+It reports distance driven, how much of Nav2's output falls inside the gait's dead
 band, `map` to `odom` correction sizes, pelvis pitch through the gait, and local costmap
 lethal-cell counts. `nav_diag.py` is the recorder and also runs on its own against a stack
 that is already up:
@@ -213,9 +205,8 @@ Verify by hand that nothing survived:
 ros2 node list --no-daemon | sort | uniq -d    # any output means an orphan is still running
 ```
 
-`test_navigate_to_pose` will fail occasionally without anything being wrong. It drives the real
-gait, which sometimes comes up unresponsive, and the suites are timing-sensitive. Re-run it alone
-before believing a red run:
+`test_navigate_to_pose` drives the real gait with the whole perception stack running, so it is
+timing-sensitive. Re-run it alone before believing a red run:
 
 ```bash
 ctest --test-dir build/g1_navigation -R '^test_navigate_to_pose$'

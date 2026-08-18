@@ -189,14 +189,11 @@ a property of the type.
 reports SUCCESS: a release that failed the tree it is cleaning up after would be worse than
 useless.
 
-What acquiring consists of depends on which control stack is running, and the executor's
-`control_stack` parameter (`arm_sdk` by default) selects it. On `arm_sdk` the arms live on their
-own component, so the bracket activates that component and then its controller. On `lowcmd` one
-always-active component owns all 29 body motors and is already holding the arms through
-`arm_freeze_controller`, so the bracket only switches controllers — trading the freeze for
-`arm_trajectory_controller` in one call, because that component leaves any unclaimed joint
-unpowered and two calls would drop the arms in between. The hands are component activations on
-either stack: a Dex3 is its own device on its own topics.
+Acquiring is one `switch_controller` call. The always-active component owns all 29 body motors and
+is already holding the arms through `arm_freeze_controller`, so the bracket trades that freeze for
+`arm_trajectory_controller` in a single call — it has to be one, because the component leaves any
+unclaimed joint unpowered and two calls would drop the arms in between. The hands are separate
+component activations: a Dex3 is its own device on its own channels.
 
 ## Running
 
