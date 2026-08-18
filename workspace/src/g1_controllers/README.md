@@ -102,8 +102,7 @@ letting the robot down.
 ros2 launch g1_bringup sim.launch.py control_stack:=lowcmd pin_pelvis:=false
 ```
 
-The pelvis does not need pinning: the policy balances the robot. Running the lowcmd stack by hand
-also needs `RMW_IMPLEMENTATION=rmw_fastrtps_cpp` exported in the launching shell.
+The pelvis does not need pinning: the policy balances the robot.
 
 The policy and its safety controller must be spawned in one switch (`--activate-as-group`), which
 `control.launch.py` does. A chainable controller's reference interfaces only become claimable as
@@ -111,8 +110,8 @@ it enters chained mode, and that happens inside the switch that activates it.
 
 ## What sim does not validate
 
-- **Displacement.** On this stack ROS runs `rmw_fastrtps_cpp` while the simulator's ground truth
-  is on the SDK's CycloneDDS, so `/sportmodestate` is unreachable. The gait envelope is measured
+- **Displacement.** `test_agile_walk` runs without the sensor relay, so no ground truth reaches
+  ROS and it asserts uprightness rather than distance travelled. The gait envelope is measured
   against MuJoCo directly instead.
 - **Hardware timing.** The 200 Hz loop overruns when the perception stack shares the machine, and
   the policy is sensitive to that. On a robot this needs real-time scheduling.

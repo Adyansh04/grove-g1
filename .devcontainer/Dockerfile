@@ -45,7 +45,6 @@ RUN apt-get update && apt-get install -y \
         ros-${ROS_DISTRO}-launch-testing \
         ros-${ROS_DISTRO}-launch-testing-ament-cmake \
         ros-${ROS_DISTRO}-realtime-tools \
-        ros-${ROS_DISTRO}-rmw-cyclonedds-cpp \
         ros-${ROS_DISTRO}-ros2-control \
         ros-${ROS_DISTRO}-ros2-controllers \
         ros-${ROS_DISTRO}-ros2launch \
@@ -85,7 +84,8 @@ RUN mkdir -p /opt/unitree_robotics/mujoco-${MUJOCO_VERSION} && \
 
 
 # --- CycloneDDS / ROS domain (unconditional -- required by Unitree SDK) -----
-# Pin DDS discovery to loopback so ROS and unitree_mujoco find each other.
+# Pin the SDK's DDS discovery to loopback so the hardware component and unitree_mujoco find
+# each other. ROS itself is on fastrtps and ignores this file.
 RUN mkdir -p /etc/cyclonedds && \
     cat > /etc/cyclonedds/cyclonedds.xml <<'EOF'
 <?xml version="1.0" encoding="UTF-8" ?>
@@ -126,7 +126,10 @@ RUN cat > /etc/cyclonedds/cyclonedds.hardware.xml <<'EOF'
 </CycloneDDS>
 EOF
 
-ENV RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+# ROS runs fastrtps and never loads a CycloneDDS RMW: unitree_sdk2 links its own CycloneDDS
+# inside the hardware component, and two libddsc.so.0 of different ABIs corrupt the heap.
+ENV RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+# Still set: the SDK and unitree_mujoco read it directly, which is what pins them to loopback.
 ENV CYCLONEDDS_URI=file:///etc/cyclonedds/cyclonedds.xml
 # Sim-only domain; the robot's is set through GROVE_G1_ROS_DOMAIN_ID below.
 ENV ROS_DOMAIN_ID=1

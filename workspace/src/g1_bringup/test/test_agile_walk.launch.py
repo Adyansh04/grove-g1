@@ -4,21 +4,16 @@ The pelvis is NOT pinned. The robot stands because the policy is balancing it, w
 whole point of this stage. The simulator holds it up only until the control stack drives every
 motor, then releases its weld and never re-applies it.
 
-Displacement is deliberately not asserted here: on the lowcmd stack ROS runs fastrtps while the
-simulator's ground truth is on the SDK's CycloneDDS, so /sportmodestate is unreachable and there
-is no odometry without the sensor relay. The gait envelope is measured separately against MuJoCo
-directly; see the g1_controllers README. What this gate proves is that the integrated stack keeps
-the robot upright and walking on command.
+Displacement is deliberately not asserted here: this runs with sensors:=false, so the relay that
+carries the simulator's ground truth into ROS is not up. The gait envelope is measured separately
+against MuJoCo directly; see the g1_controllers README. What this gate proves is that the
+integrated stack keeps the robot upright and walking on command.
 """
 
 import os
 import statistics
 import time
 import unittest
-
-# Set before rclpy initialises: the lowcmd stack runs on fastrtps, because the component owns
-# the robot wire through unitree_sdk2's own CycloneDDS and ROS must not load a second one.
-os.environ["RMW_IMPLEMENTATION"] = "rmw_fastrtps_cpp"
 
 import launch_testing.actions
 import rclpy

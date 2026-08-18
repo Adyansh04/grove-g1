@@ -55,13 +55,12 @@ All of these belong to `bringup.launch.py`.
 ### Running the lowcmd stack by hand
 
 ```bash
-export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 ros2 launch g1_bringup sim.launch.py control_stack:=lowcmd pin_pelvis:=false
 ```
 
-The export is not optional. `control.launch.py` sets it for the processes it spawns, but
-`sim.launch.py` checks the *launching* environment and refuses to start on the wrong middleware,
-which is deliberate: a lowcmd stack on CycloneDDS corrupts its own heap.
+The image runs `rmw_fastrtps_cpp`, and `sim.launch.py` refuses to start on anything else: the
+hardware component reaches the robot wire through the SDK's own CycloneDDS, and a second one in
+the same process corrupts the heap.
 
 `pin_pelvis` is not needed here. The simulator holds the robot up only until the control stack
 drives every motor, then releases the pelvis weld its scene declares and the policy balances.

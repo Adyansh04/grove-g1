@@ -89,7 +89,7 @@ jobs:
       - run: echo "CCACHE_DIR=$GITHUB_WORKSPACE/.ccache" >> "$GITHUB_ENV"
 
       # A CI image on different versions than the dev image tests a configuration nobody ships.
-      - name: Check the two images pin the same versions
+      - name: Check the two images pin the same versions and middleware
         run: |
           fail=0
           for arg in UNITREE_SDK2_SHA LIVOX_SDK2_SHA ONNXRUNTIME_VERSION RUFF_VERSION LLVM_VERSION; do
@@ -100,6 +100,14 @@ jobs:
               fail=1
             fi
           done
+          # Two images on different RMWs would each pass while testing a different wire. Empty
+          # fails too: an unpinned RMW is the divergence, not a match.
+          dev=$(grep -oP '^ENV RMW_IMPLEMENTATION=\K\S+' .devcontainer/Dockerfile)
+          ci=$(grep -oP '^ENV RMW_IMPLEMENTATION=\K\S+' .github/ci.Dockerfile)
+          if [ -z "$dev" ] || [ "$dev" != "$ci" ]; then
+            echo "::error file=.github/ci.Dockerfile::RMW_IMPLEMENTATION differs: dev=${dev:-unset} ci=${ci:-unset}"
+            fail=1
+          fi
           exit $fail
 
       - name: Import externals

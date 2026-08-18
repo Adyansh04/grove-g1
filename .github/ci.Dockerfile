@@ -76,7 +76,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ros-${ROS_DISTRO}-pointcloud-to-laserscan \
         ros-${ROS_DISTRO}-realsense2-description \
         ros-${ROS_DISTRO}-realtime-tools \
-        ros-${ROS_DISTRO}-rmw-cyclonedds-cpp \
         ros-${ROS_DISTRO}-ros2-control \
         ros-${ROS_DISTRO}-ros2-controllers \
         ros-${ROS_DISTRO}-rosidl-generator-dds-idl \
@@ -144,7 +143,8 @@ RUN mkdir -p /etc/cyclonedds && \
       '  </Interfaces></General></Domain>' \
       '</CycloneDDS>' > /etc/cyclonedds/cyclonedds.xml
 
-ENV RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+# Must match .devcontainer/Dockerfile; the version-drift job in ci.yml checks that it does.
+ENV RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 ENV CYCLONEDDS_URI=file:///etc/cyclonedds/cyclonedds.xml
 ENV ROS_DOMAIN_ID=1
 ENV CMAKE_C_COMPILER_LAUNCHER=ccache
