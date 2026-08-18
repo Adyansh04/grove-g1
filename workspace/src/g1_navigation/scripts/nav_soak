@@ -34,9 +34,10 @@ DIAG_OUT=/tmp/nav_soak_diag.txt
 PGID_FILE=/tmp/nav_soak.pgid
 
 RVIZ=false
-# Which source publishes odom -> base_footprint; fast_lio soaks the LiDAR-inertial pipeline
-# under real navigation load instead of ground truth.
-ODOMETRY=sportmodestate
+# Which source publishes odom -> base_footprint. Defaults to the stack's own default so a soak
+# exercises what an operator actually runs; --odometry ground_truth isolates a fault to "not the
+# odometry" by removing LiDAR-inertial drift from the loop.
+ODOMETRY=fast_lio
 GOALS_RAW="4.15 -6.96,-2.79 -6.69,5.21 1.93,5.37 2.08,-4.67 4.97,-4.46 7.58,6.31 -2.10,6.53 -7.00,-2.51 -6.42,4.13 1.76,2.80 6.92,-7.49 5.23,-2.44 -6.90"
 
 # Above the 4.0 navigation default. The simulator's first physics tick can land before the
