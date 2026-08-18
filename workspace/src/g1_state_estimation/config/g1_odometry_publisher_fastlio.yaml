@@ -27,15 +27,16 @@ g1_odometry_publisher:
     # plane. FAST-LIO measures height relative to wherever it initialised and cannot know where
     # the floor is.
     #
-    # MEASURED on the standing robot: /sportmodestate reports 0.7504 m over 23k samples, with a
-    # spread of 0.2 mm. Getting this even a few centimetres high is not cosmetic: the costmap's
-    # obstacle layer cuts the floor out at min_obstacle_height 0.08, so an inflated pelvis
-    # height pushes floor returns toward that cut before FAST-LIO's own drift is even counted,
-    # and the symptom is concentric rings of floor marked as obstacle with no path found.
+    # MEASURED on the standing robot, 5459 samples with no spread at all. Getting this even a
+    # few centimetres high is not cosmetic: the costmap's obstacle layer cuts the floor out at
+    # min_obstacle_height 0.08, so an inflated pelvis height pushes floor returns toward that
+    # cut before the estimator's own tilt drift is even counted, and the symptom is rings of
+    # floor marked as obstacle with no path found.
     #
     # Re-measure if the stance changes. It is a property of this robot's standing pose, not a
-    # constant of the G1.
-    start_height_m: 0.750
+    # constant of the G1 -- the balance policy that replaced the earlier one stands 21 mm
+    # lower, and the stale 0.750 left a permanent bias under the floor for a whole milestone.
+    start_height_m: 0.729
 
     max_tilt_deg: 80.0
 
