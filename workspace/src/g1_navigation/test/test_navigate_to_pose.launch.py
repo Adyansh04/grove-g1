@@ -30,6 +30,7 @@ from rclpy.action import ActionClient
 from rclpy.node import Node
 from rclpy.qos import QoSDurabilityPolicy, QoSProfile, QoSReliabilityPolicy
 from sensor_msgs.msg import Imu
+from std_srvs.srv import Trigger
 from tf2_ros import Buffer, TransformListener
 
 # Derived from maps/facility.pgm, not guessed. The robot spawns at the origin, in the middle of
@@ -83,6 +84,9 @@ class NavigateToPoseTest(unittest.TestCase):
         cls.client = ActionClient(cls.node, NavigateToPose, "navigate_to_pose")
         cls.controllers = cls.node.create_client(
             ListControllers, "/controller_manager/list_controllers"
+        )
+        cls.nav_active = cls.node.create_client(
+            Trigger, "/lifecycle_manager_navigation/is_active"
         )
 
         cls.imu = []
@@ -174,6 +178,24 @@ class NavigateToPoseTest(unittest.TestCase):
 
         upright_before = self.uprightness()
         self.assertGreater(upright_before, MIN_UPRIGHT_Z, "the robot was already down")
+
+        # And wait for the whole nav stack to be ACTIVE, not merely present. The action server
+        # appears as soon as bt_navigator is constructed, but bt_navigator is near the end of
+        # the lifecycle manager's ordered activation and rejects goals until it gets there --
+        # which reads as "bt_navigator rejected the goal" with nothing else wrong.
+        self.assertTrue(
+            self.nav_active.wait_for_service(timeout_sec=60.0),
+            "no lifecycle_manager_navigation/is_active service",
+        )
+        deadline = time.time() + 90.0
+        active = False
+        while time.time() < deadline and not active:
+            future = self.nav_active.call_async(Trigger.Request())
+            inner = time.time() + 10.0
+            while not future.done() and time.time() < inner:
+                rclpy.spin_once(self.node, timeout_sec=0.05)
+            active = future.done() and future.result() is not None and future.result().success
+        self.assertTrue(active, "the navigation lifecycle never reported active")
 
         goal = NavigateToPose.Goal()
         goal.pose.header.frame_id = "map"

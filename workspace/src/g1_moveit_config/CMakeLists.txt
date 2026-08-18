@@ -70,12 +70,9 @@ if(BUILD_TESTING)
   # Headless sim suite. Shares g1_bringup's RESOURCE_LOCK: two suites on one DDS graph and one
   # simulator is what makes them flaky.
   find_package(launch_testing_ament_cmake REQUIRED)
-  add_launch_test(test/test_moveit_plan_execute.launch.py
-    TARGET test_moveit_plan_execute TIMEOUT 400)
-  set_tests_properties(test_moveit_plan_execute PROPERTIES RESOURCE_LOCK mujoco_sim LABELS simulator COST 90)
 
-  # The same path on the whole-body stack, with the balance policy holding the robot up rather
-  # than a pinned pelvis. Longer budget: the policy has to settle before the arms are touched.
+  # The whole path, with the balance policy holding the robot up rather than a pinned pelvis.
+  # Long budget: the policy has to settle before the arms are touched.
   add_launch_test(test/test_moveit_lowcmd.launch.py
     TARGET test_moveit_lowcmd TIMEOUT 500)
   set_tests_properties(test_moveit_lowcmd PROPERTIES RESOURCE_LOCK mujoco_sim LABELS simulator COST 95)

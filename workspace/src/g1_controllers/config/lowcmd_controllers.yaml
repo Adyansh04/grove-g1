@@ -139,6 +139,10 @@ locomotion_freeze_controller:
 # layout, not the policy's own ordering, which the controller maps by name.
 locomotion_safety_controller:
   ros__parameters:
+    # 1.0 means "follow the policy". The controller's own code default is 0.0 -- hold the
+    # activation pose -- so the robot never follows a policy because a config file went missing.
+    # Upstream ships 0.0 here and raises it to 1.0 for simulation only; first hardware bring-up
+    # should start from 0.0 and raise it deliberately rather than inheriting this.
     blend_ratio: 1.0
     # Fast on purpose. The simulator releases its pelvis weld the moment every motor is driven,
     # which is the same tick this controller starts writing, so authority has to be complete by

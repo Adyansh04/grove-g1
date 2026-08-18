@@ -44,6 +44,7 @@
   <test_depend>g1_msgs</test_depend>
   <test_depend>launch_testing</test_depend>
   <test_depend>launch_testing_ament_cmake</test_depend>
+  <test_depend>std_srvs</test_depend>
   <test_depend>lifecycle_msgs</test_depend>
   <test_depend>nav2_msgs</test_depend>
   <test_depend>nav_msgs</test_depend>
