@@ -105,6 +105,11 @@ private:
         const geometry_msgs::msg::Pose& object_pose, double object_height_m,
         const ArmContext& arm) const;
 
+    /// Seeds the plan from the measured state with the group's joints clamped into their URDF
+    /// limits. MoveIt's start-state check rejects a joint that is outside by any amount at all,
+    /// and a joint commanded to its own limit tracks a fraction past it.
+    static void setStartStateInBounds(MoveGroup& group);
+
     /// Plans and executes so that `link` reaches `pose`. False on either failure, logged.
     bool moveTo(
         MoveGroup& group, const geometry_msgs::msg::Pose& pose, const std::string& link,

@@ -398,11 +398,29 @@ geometry_msgs::msg::Pose G1ManipulationServer::graspFrameGoal(
     return goal;
 }
 
+void G1ManipulationServer::setStartStateInBounds(MoveGroup& group)
+{
+    // The planner aborts outright if a start joint sits outside its URDF limit by any margin,
+    // and there is no upstream adapter that clamps one back. Measured after a grasp:
+    // right_shoulder_yaw at -2.61874 against a -2.618 limit, 0.74 mrad of tracking error on a
+    // joint the IK solution put exactly on the stop. Falls back to the plain current state if
+    // the monitor has nothing yet, which fails later with a clearer message than a null deref.
+    const auto state = group.getCurrentState();
+    if (!state)
+    {
+        group.setStartStateToCurrentState();
+        return;
+    }
+    moveit::core::RobotState bounded(*state);
+    bounded.enforceBounds(bounded.getRobotModel()->getJointModelGroup(group.getName()));
+    group.setStartState(bounded);
+}
+
 bool G1ManipulationServer::moveTo(
     MoveGroup& group, const geometry_msgs::msg::Pose& pose, const std::string& link,
     const std::string& what)
 {
-    group.setStartStateToCurrentState();
+    setStartStateInBounds(group);
     // Named explicitly rather than relying on the group's default tip: the goal is for the
     // grasp frame, which hangs off the palm and is not what the group ends at.
     group.setPoseTarget(pose, link);
@@ -430,7 +448,7 @@ bool G1ManipulationServer::moveTo(
 
 bool G1ManipulationServer::moveToNamed(MoveGroup& group, const std::string& named_target)
 {
-    group.setStartStateToCurrentState();
+    setStartStateInBounds(group);
     if (!group.setNamedTarget(named_target))
     {
         RCLCPP_ERROR(
