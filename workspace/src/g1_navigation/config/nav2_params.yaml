@@ -291,3 +291,11 @@ behavior_server:
     min_rotational_vel: 1.2
     rotational_acc_lim: 3.2
 
+lifecycle_manager_navigation:
+  ros__parameters:
+    # No /clock on this track: the simulator links no ROS at all.
+    use_sim_time: false
+    autostart: true
+    # Upstream's list minus smoother_server, waypoint_follower and velocity_smoother.
+    node_names: ["controller_server", "planner_server", "behavior_server", "bt_navigator"]
+

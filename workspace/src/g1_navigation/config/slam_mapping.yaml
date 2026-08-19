@@ -92,3 +92,11 @@ slam_toolbox:
     use_response_expansion: true
     min_pass_through: 2
     occupancy_threshold: 0.1
+
+lifecycle_manager_slam:
+  ros__parameters:
+    autostart: true
+    node_names: ["slam_toolbox"]
+    # 0 disables the heartbeat. bond is a Nav2 server convention and slam_toolbox creates
+    # none, so any non-zero value tears it back down ~4 s after activating it.
+    bond_timeout: 0.0

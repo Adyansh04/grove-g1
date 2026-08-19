@@ -98,3 +98,10 @@ amcl:
       y: 0.0
       z: 0.0
       yaw: 0.0
+
+lifecycle_manager_localization:
+  ros__parameters:
+    # No /clock on this track: the simulator links no ROS at all.
+    use_sim_time: false
+    autostart: true
+    node_names: ["map_server", "amcl"]

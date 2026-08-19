@@ -53,7 +53,7 @@ target_link_libraries(g1_bt_node_model PUBLIC g1_bt_nodes)
 install(DIRECTORY include/ DESTINATION include)
 install(TARGETS g1_bt_nodes EXPORT export_${PROJECT_NAME} DESTINATION lib)
 install(TARGETS g1_bt_executor g1_bt_node_model DESTINATION lib/${PROJECT_NAME})
-install(DIRECTORY launch trees DESTINATION share/${PROJECT_NAME})
+install(DIRECTORY config launch trees DESTINATION share/${PROJECT_NAME})
 
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
 ament_export_include_directories(include)

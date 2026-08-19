@@ -54,6 +54,7 @@ endif()
 install(DIRECTORY include/ DESTINATION include)
 install(TARGETS frame_reader livox_custom_msg EXPORT export_${PROJECT_NAME} DESTINATION lib)
 install(TARGETS g1_sensor_relay g1_livox_bridge DESTINATION lib/${PROJECT_NAME})
+install(DIRECTORY config DESTINATION share/${PROJECT_NAME})
 
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
 ament_export_include_directories(include)

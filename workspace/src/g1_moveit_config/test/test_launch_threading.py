@@ -158,7 +158,7 @@ def test_the_arm_development_combination_is_not_blocked(bringup):
 
 def test_no_moveit_means_g1_moveit_config_is_never_named(bringup):
     """Keeps a workspace without this package launchable, which is what the undeclared
-    dependency buys and what _moveit_share() would otherwise refuse."""
+    dependency buys and what _share() would otherwise refuse."""
     for mode in ("none", "localization"):
         actions, context = _run_setup(bringup, mode=mode, rviz="true")
         for action in actions:
@@ -172,7 +172,7 @@ def test_a_missing_package_is_reported_actionably(bringup, monkeypatch):
 
     monkeypatch.setattr(bringup, "get_package_share_directory", absent)
     with pytest.raises(RuntimeError, match="colcon build --packages-select g1_moveit_config"):
-        bringup._moveit_share()
+        bringup._share("g1_moveit_config")
 
 
 # --- the standalone wrapper, which this refactor must leave alone ---------------------

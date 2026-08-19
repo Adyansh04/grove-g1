@@ -1,11 +1,8 @@
 """Composition-pure control stack: robot_state_publisher + controller_manager.
 
-No simulator here -- this is the launch file that carries
-over unchanged to hardware bring-up (see README.md's domain/DDS story).
-Included by sim.launch.py for the simulation milestone.
-
-`G1LowCmdSystem` owns all 29 body motors, with no onboard balance running underneath: the
-policy spawned here is the balance controller.
+No simulator, so this is the file that carries to hardware bring-up unchanged. G1LowCmdSystem
+owns all 29 body motors with no onboard balance underneath: the policy spawned here IS the
+balance controller.
 """
 
 import os
@@ -24,98 +21,89 @@ from launch.substitutions import Command, FindExecutable
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
-# Workaround: `ros2 run` CLI instead of launch_ros `Node` — under `Node`,
-# arm_trajectory_controller's params reliably declare empty. `ros2 run` works
-# correctly every time.
-# The shell wrapper forwards SIGTERM/INT to the `ros2 run` subprocess (which
-# would otherwise be orphaned) and re-waits so launch sees a clean exit.
+XACRO_PATH = os.path.join(
+    get_package_share_directory("g1_description"), "urdf", "g1_lowcmd.urdf.xacro"
+)
+CONTROLLERS_YAML = os.path.join(
+    get_package_share_directory("g1_controllers"), "config", "lowcmd_controllers.yaml"
+)
+
+# Forwards SIGTERM/INT to the `ros2 run` subprocess, which would otherwise be orphaned, and
+# re-waits so launch sees a clean exit.
 _SIGNAL_FORWARDING_WRAPPER = (
     "set -m; {command} & child=$!; "
     "trap 'kill -TERM -$child 2>/dev/null; wait $child' TERM INT; "
     "wait $child"
 )
 
+# Every body joint must be claimed from the start: one the component sees unclaimed is one it
+# leaves unpowered. The policy and the safety controller it writes through activate in ONE
+# switch, because a chainable controller's reference interfaces only become claimable inside it.
+# The --inactive four are switched in later: the arm and hands by the arm bracket, the
+# locomotion freeze by the safety controller, which can only activate an already-loaded target.
+CONTROLLERS = (
+    (["joint_state_broadcaster"], []),
+    (["imu_sensor_broadcaster"], []),
+    (["waist_freeze_controller"], []),
+    (["arm_freeze_controller"], []),
+    (["locomotion_safety_controller", "agile_controller"], ["--activate-as-group"]),
+    (["locomotion_freeze_controller"], ["--inactive"]),
+    (["arm_trajectory_controller"], ["--inactive"]),
+    (["left_hand_controller"], ["--inactive"]),
+    (["right_hand_controller"], ["--inactive"]),
+)
 
-def _launch_setup(context, *args, **kwargs):
-    g1_description_share = get_package_share_directory("g1_description")
 
-    xacro_path = os.path.join(g1_description_share, "urdf", "g1_lowcmd.urdf.xacro")
-    controllers_yaml = os.path.join(
-        get_package_share_directory("g1_controllers"), "config", "lowcmd_controllers.yaml"
-    )
-    # Every body joint must be claimed from the start: one the component sees unclaimed is
-    # one it leaves unpowered. The policy and the safety controller it writes through must
-    # activate in one switch, hence --activate-as-group: a chainable controller's reference
-    # interfaces only become claimable as it enters chained mode, within that same switch.
-    #
-    # The four that load inactive are the ones something else switches in later: the arm
-    # and hands wait for the arm bracket, and the locomotion freeze is the safety
-    # controller's emergency target, which can only be activated if it is already loaded.
-    controller_spawners = [
+def _spawners():
+    return [
         ExecuteProcess(
             cmd=["ros2", "run", "controller_manager", "spawner", *names, *extra],
             name=f"{names[0]}_spawner",
             output="screen",
         )
-        for names, extra in (
-            (["joint_state_broadcaster"], []),
-            (["imu_sensor_broadcaster"], []),
-            (["waist_freeze_controller"], []),
-            (["arm_freeze_controller"], []),
-            (
-                ["locomotion_safety_controller", "agile_controller"],
-                ["--activate-as-group"],
-            ),
-            (["locomotion_freeze_controller"], ["--inactive"]),
-            (["arm_trajectory_controller"], ["--inactive"]),
-            (["left_hand_controller"], ["--inactive"]),
-            (["right_hand_controller"], ["--inactive"]),
-        )
+        for names, extra in CONTROLLERS
     ]
 
-    robot_description_content = Command([FindExecutable(name="xacro"), " ", xacro_path])
-    robot_description = {
-        "robot_description": ParameterValue(robot_description_content, value_type=str)
-    }
 
-    robot_state_publisher_node = Node(
+def _robot_state_publisher():
+    description = Command([FindExecutable(name="xacro"), " ", XACRO_PATH])
+    return Node(
         package="robot_state_publisher",
         executable="robot_state_publisher",
         name="robot_state_publisher",
         output="screen",
-        parameters=[robot_description],
+        parameters=[{"robot_description": ParameterValue(description, value_type=str)}],
     )
 
-    # robot_description delivered via ~/robot_description topic, remapped to global.
-    control_node = ExecuteProcess(
-        cmd=[
-            "bash",
-            "-c",
-            _SIGNAL_FORWARDING_WRAPPER.format(
-                command=(
-                    "ros2 run controller_manager ros2_control_node --ros-args "
-                    "-r '~/robot_description:=/robot_description' "
-                    f"--params-file {controllers_yaml}"
-                )
-            ),
-        ],
+
+def _control_node():
+    """`ros2 run` rather than launch_ros Node: under Node, arm_trajectory_controller's
+    parameters reliably declare empty."""
+    command = (
+        "ros2 run controller_manager ros2_control_node --ros-args "
+        "-r '~/robot_description:=/robot_description' "
+        f"--params-file {CONTROLLERS_YAML}"
+    )
+    return ExecuteProcess(
+        cmd=["bash", "-c", _SIGNAL_FORWARDING_WRAPPER.format(command=command)],
         name="ros2_control_node",
         output="screen",
     )
 
-    # Tear down the whole launch if controller_manager dies.
-    shutdown_on_control_node_exit = RegisterEventHandler(
-        OnProcessExit(
-            target_action=control_node,
-            on_exit=[EmitEvent(event=Shutdown(reason="ros2_control_node exited"))],
-        )
-    )
 
+def _launch_setup(context, *args, **kwargs):
+    control_node = _control_node()
     return [
-        robot_state_publisher_node,
+        _robot_state_publisher(),
         control_node,
-        *controller_spawners,
-        shutdown_on_control_node_exit,
+        *_spawners(),
+        # Tear down the whole launch if controller_manager dies.
+        RegisterEventHandler(
+            OnProcessExit(
+                target_action=control_node,
+                on_exit=[EmitEvent(event=Shutdown(reason="ros2_control_node exited"))],
+            )
+        ),
     ]
 
 
