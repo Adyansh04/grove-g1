@@ -20,8 +20,9 @@
 #include <vector>
 
 #include "hardware_interface/system_interface.hpp"
+#include "hardware_interface/types/hardware_component_interface_params.hpp"
 #include "rclcpp/rclcpp.hpp"
-#include "realtime_tools/realtime_publisher.h"
+#include "realtime_tools/realtime_publisher.hpp"
 #include "unitree_hg/msg/hand_cmd.hpp"
 #include "unitree_hg/msg/hand_state.hpp"
 
@@ -58,7 +59,7 @@ class G1Dex3System : public hardware_interface::SystemInterface
 {
 public:
     hardware_interface::CallbackReturn
-    on_init(const hardware_interface::HardwareInfo& info) override;
+    on_init(const hardware_interface::HardwareComponentInterfaceParams& params) override;
     hardware_interface::CallbackReturn
     on_configure(const rclcpp_lifecycle::State& previous) override;
     hardware_interface::CallbackReturn on_activate(const rclcpp_lifecycle::State& previous) override;

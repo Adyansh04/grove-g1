@@ -34,9 +34,7 @@ def _setup(context, *args, **kwargs):
 
     actions = [
         # sensors:=true is not optional: it gates the LiDAR sweep, the relay, the
-        # odom -> base_footprint -> pelvis chain and the waist joint states. Passed explicitly
-        # rather than by flipping the bringup default, which is still provisional on an
-        # unthrottled re-measurement of test_arm_command.
+        # odom -> base_footprint -> pelvis chain and the waist joint states.
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(
                 os.path.join(
@@ -45,6 +43,7 @@ def _setup(context, *args, **kwargs):
             ),
             launch_arguments={
                 "sensors": "true",
+                "odometry": LaunchConfiguration("odometry"),
                 "world": LaunchConfiguration("world"),
                 "headless": LaunchConfiguration("headless"),
                 "sim_start_delay_s": LaunchConfiguration("sim_start_delay_s"),
@@ -89,6 +88,13 @@ def generate_launch_description():
             default_value="mapping",
             description="'mapping' builds a new map with slam_toolbox; 'localization' runs "
             "map_server + AMCL against maps/facility.",
+        ),
+        DeclareLaunchArgument(
+            "odometry",
+            default_value="fast_lio",
+            description="Forwarded to sim.launch.py. Declared here because a name this file "
+            "does not declare cannot be forwarded explicitly, and this stack needs to be able "
+            "to fall back to 'sportmodestate' to isolate a fault to 'not the odometry'.",
         ),
         DeclareLaunchArgument(
             "world",

@@ -40,7 +40,6 @@ Checks: '
   -cppcoreguidelines-pro-type-vararg,
   -cppcoreguidelines-avoid-magic-numbers,
   -misc-include-cleaner,
-  -clang-diagnostic-deprecated-declarations,
   -readability-redundant-member-init,
   -misc-const-correctness,
   -bugprone-unchecked-optional-access,

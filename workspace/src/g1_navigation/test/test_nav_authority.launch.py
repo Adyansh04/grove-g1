@@ -47,6 +47,9 @@ def generate_test_description():
         ),
         launch_arguments={
             "sensors": "true",
+            # Ground truth, not the stack default: this asserts who owns cmd_vel, and a
+            # FAST-LIO warm-up would only add latency to a test that measures arbitration.
+            "odometry": "sportmodestate",
             "world": "navigation",
             "headless": "true",
             "sim_start_delay_s": "4.0",

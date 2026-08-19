@@ -32,12 +32,13 @@ std::string paramOr(
 }  // namespace
 
 hardware_interface::CallbackReturn
-G1Dex3System::on_init(const hardware_interface::HardwareInfo& info)
+G1Dex3System::on_init(const hardware_interface::HardwareComponentInterfaceParams& params)
 {
-    if (SystemInterface::on_init(info) != hardware_interface::CallbackReturn::SUCCESS)
+    if (SystemInterface::on_init(params) != hardware_interface::CallbackReturn::SUCCESS)
     {
         return hardware_interface::CallbackReturn::ERROR;
     }
+    const auto& info = get_hardware_info();
 
     const auto side_it = info.hardware_parameters.find("side");
     if (side_it == info.hardware_parameters.end() ||

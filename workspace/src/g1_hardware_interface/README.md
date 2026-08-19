@@ -69,9 +69,9 @@ ros2 launch g1_bringup bringup.launch.py
 ros2 launch g1_bringup activate_arm.launch.py
 ```
 
-Acquire and release order is mandatory. Humble ties command-interface availability to hardware
-component state, so activating the controller before the component can fail the switch or strand a
-controller claiming interfaces. The `activate_arm` and `deactivate_arm` scripts encode the order.
+Acquire and release order is mandatory. ros2_control ties command-interface availability to
+hardware component state, so activating the controller before the component can fail the switch or
+strand a controller claiming interfaces. The `activate_arm` and `deactivate_arm` scripts encode the order.
 
 ## Safety model
 
