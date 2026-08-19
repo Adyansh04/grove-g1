@@ -67,93 +67,20 @@ failure reads `did not complete: could not reach 'tucked'` rather than just fail
 ## Adding a skill
 
 A skill is a ROS action served by whichever package owns that domain, plus a leaf here that calls
-it. Anything that writes a velocity belongs in `g1_locomotion`; anything that moves the arm
-belongs in `g1_manipulation`. Nothing about the robot goes in this package.
+it. Anything that writes a velocity belongs in `g1_locomotion`; anything that moves the arm belongs
+in `g1_manipulation`. Nothing about the robot goes in this package.
 
-**1. Define the action** in `g1_msgs/action/OpenDoor.action` and add it to that package's
-`CMakeLists.txt`. Give the result a `success` and a `message` so the leaf can use the shared
-result judging:
-
-```
-string door_id
-string arm
----
-bool success
-string message
----
-string phase
-```
-
-**2. Implement the server** in the owning package. Not here.
-
-**3. Add the leaf.** `include/g1_orchestration/skills/open_door.hpp`:
-
-```cpp
-#include <g1_msgs/action/open_door.hpp>
-#include "g1_orchestration/skill_action_node.hpp"
-
-namespace g1_orchestration
-{
-/// Opens a named door. Reads the handle pose itself, so a retry re-reads.
-class OpenDoor : public SkillActionNode<g1_msgs::action::OpenDoor>
-{
-public:
-    OpenDoor(const std::string& name, const BT::NodeConfig& config, RosContext context);
-    static BT::PortsList providedPorts();
-
-protected:
-    bool fillGoal(Goal& goal) override;
-};
-}  // namespace g1_orchestration
-```
-
-`src/skills/open_door.cpp`:
-
-```cpp
-#include "g1_orchestration/skills/open_door.hpp"
-#include "g1_orchestration/ports.hpp"
-
-namespace g1_orchestration
-{
-OpenDoor::OpenDoor(const std::string& name, const BT::NodeConfig& config, RosContext context)
-  : SkillActionNode(name, config, context, "/g1_manipulation_server/open_door")
-{}
-
-BT::PortsList OpenDoor::providedPorts()
-{
-    return providedBasicPorts({
-        BT::InputPort<std::string>("door_id", "Which door. Must match a class_id on /objects."),
-        ports::arm(),
-    });
-}
-
-bool OpenDoor::fillGoal(Goal& goal)
-{
-    const auto door_id = getInput<std::string>("door_id");
-    if (!door_id || door_id->empty())
-    {
-        RCLCPP_ERROR(node_->get_logger(), "[%s] needs a door_id", name().c_str());
-        return false;
-    }
-    goal.door_id = *door_id;
-    goal.arm     = getInput<std::string>("arm").value_or("right");
-    return true;
-}
-}  // namespace g1_orchestration
-```
-
-Deriving from `SkillActionNode` means `judgeResult` is already written. Derive from
-`RosActionNode` instead only if the result is not `success`/`message`, as Nav2's is not. For a
-leaf that calls a service and finishes in one tick, derive from `ServiceLeaf` and override
-`tick()`; see `clear_costmaps.cpp`.
-
-**4. Register it** in `src/registration.cpp` and list the source in `CMakeLists.txt`:
-
-```cpp
-registerLeaf<OpenDoor>(factory, "OpenDoor", context);
-```
-
-**5. Regenerate the Groot2 palette** and rebuild:
+1. **Define the action** in `g1_msgs`, and add it to that package's `CMakeLists.txt`. Give the
+   result a `success` and a `message` so the leaf can use the shared result judging.
+2. **Implement the server** in the owning package. Not here.
+3. **Add the leaf**, a header and a source under `skills/`. Derive from `SkillActionNode` and the
+   only thing left to write is `fillGoal`, because `judgeResult` already handles the
+   `success`/`message` convention. Derive from `RosActionNode` instead when the result is not that
+   shape, as Nav2's is not, or from `ServiceLeaf` and override `tick()` for a call that finishes in
+   one tick. `skills/pick.cpp` and `skills/clear_costmaps.cpp` are the two shortest examples.
+4. **Register it** in `src/registration.cpp` with `registerLeaf<OpenDoor>(factory, "OpenDoor",
+   context)`, and list the source in `CMakeLists.txt`.
+5. **Regenerate the Groot2 palette** and rebuild:
 
 ```bash
 ros2 run g1_orchestration g1_bt_node_model src/g1_orchestration/trees/g1_orchestration_nodes.xml
@@ -180,11 +107,10 @@ stack while either arm alone succeeds; the cause is not yet found.
 
 ## The arm bracket belongs to the executor
 
-A skill must release control authority cleanly on success *or* failure. At mission scope the
-only place that can be guaranteed is around the whole tree, so the
-executor releases the arm and hands on **every** exit path: success, tree failure, an exception
-while loading, and SIGINT. It is an RAII guard rather than a call at the end, so the guarantee is
-a property of the type.
+A skill must release control authority cleanly on success or failure alike. At mission scope the
+only place that can be guaranteed is around the whole tree, so the executor releases the arm and
+hands on every exit path: success, tree failure, an exception while loading, and SIGINT. It is an
+RAII guard rather than a call at the end, so the guarantee is a property of the type.
 
 `ReleaseArm` exists as a leaf too, for a tree that wants to hand the arm back early. It always
 reports SUCCESS: a release that failed the tree it is cleaning up after would be worse than
@@ -192,14 +118,13 @@ useless.
 
 Acquiring is one `switch_controller` call. The always-active component owns all 29 body motors and
 is already holding the arms through `arm_freeze_controller`, so the bracket trades that freeze for
-`arm_trajectory_controller` in a single call — it has to be one, because the component leaves any
+`arm_trajectory_controller` in a single call. It has to be one, because the component leaves any
 unclaimed joint unpowered and two calls would drop the arms in between. The hands are separate
 component activations: a Dex3 is its own device on its own channels.
 
 That one call is `STRICT`, and only the arm's is. `BEST_EFFORT` drops whichever controller it
-cannot switch and applies the rest, still answering `ok` — so a trajectory controller that is
-loaded but not yet configured leaves the request as a bare deactivation of the freeze, and the arms
-fall. `STRICT` is all-or-nothing but refuses a switch that is already done, so the two controllers'
+cannot switch and applies the rest, still answering `ok`, so a trajectory controller that is loaded
+but not yet configured leaves the request as a bare deactivation of the freeze and the arms fall. `STRICT` is all-or-nothing but refuses a switch that is already done, so the two controllers'
 states are read first and an arm already in the wanted state is left alone. The hands keep
 `BEST_EFFORT`: nothing is displaced there, so there is no half of a pair to apply on its own, and a
 hand that will not come up must still leave the arm usable. `planArmSwitch` is that decision on its

@@ -5,8 +5,8 @@
 # normally follows, and Nav2 is far better at going somewhere than a hand-rolled controller. The
 # only job here is to get the base clear.
 #
-# Reverse tracks about as well as forward -- the policy measures -0.140 m/s at a commanded -0.20
-# and -0.236 at -0.30 -- and shares the same deadband, so the server drives it above that floor.
+# Reverse tracks about as well as forward, the policy measuring -0.140 m/s at a commanded -0.20
+# and -0.236 at -0.30, and shares the same deadband, so the server drives it above that floor.
 
 # How far to end up from where it started, in metres. The gait coasts a little after the command
 # stops, so expect to land slightly beyond it.

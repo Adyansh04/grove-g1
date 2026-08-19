@@ -13,9 +13,10 @@ those come out at 33 MB and 1.6 MB against 130 KB for the grid. A 33 MB binary t
 regenerated whenever the scene changes does not belong in git.
 
 The consequence is that localization runs on `nav2_map_server` and AMCL rather than slam_toolbox's
-`localization` mode, which needs the pose graph. The cost is worth knowing: AMCL's motion model is
-parameterised on odometry noise, and this track's odometry is exact ground truth, so the model is
-degenerate and its `alpha1` through `alpha5` cannot be tuned to anything that transfers to hardware.
+`localization` mode, which needs the pose graph. AMCL's motion model is parameterised on odometry
+noise, so its `alpha1` through `alpha5` are left at Nav2's defaults: under `odometry:=ground_truth`
+the model is degenerate, and under `fast_lio` the noise is the simulated sensor's rather than the
+robot's. Neither transfers to hardware as a tuning.
 
 ## Regenerating
 

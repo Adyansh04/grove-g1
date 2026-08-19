@@ -15,12 +15,8 @@ string object_id
 string ARM_LEFT=left
 string ARM_RIGHT=right
 string arm
-# The heading to hold while approaching, in the odometry frame, radians.
-#
-# Not derived from where the object is, deliberately. The standard mobile-manipulation pattern is
-# a stand-off pose on the surface normal, already facing the working direction, closed straight
-# in; Nav2 has GoalAngleCritic for exactly that. An approach that re-aims at the object from a
-# metre out walks in on a curve and arrives square to nothing. Pass the same yaw the staging
+# The heading to hold while approaching, in the odometry frame, radians. Not derived from where
+# the object is: re-aiming from a metre out walks in on a curve. Pass the same yaw the staging
 # NavigateToPose goal used.
 float64 working_yaw
 # Hold whatever heading the robot arrived with, ignoring working_yaw. For a caller that trusts

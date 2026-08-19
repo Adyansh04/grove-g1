@@ -16,9 +16,10 @@ The controller design and its interface naming are adapted from NVIDIA's
 NVIDIA's [WBC-AGILE](https://github.com/nvidia-isaac/WBC-AGILE) G1 velocity policy, also
 Apache-2.0; its licence ships beside it.
 
-Keeping their reference-interface names (`<controller>/<joint>/{position,velocity,effort,kp,kd}_raw`)
-and their `kp`/`kd` command-interface spelling is deliberate, so their controllers chain onto this
-stack unchanged.
+Their reference-interface names
+(`<controller>/<joint>/{position,velocity,effort,kp,kd}_raw`) and their `kp`/`kd`
+command-interface spelling are kept deliberately, so their controllers chain onto this stack
+unchanged.
 
 ## How the pieces fit
 
@@ -27,46 +28,45 @@ stack unchanged.
               (policy, 50 Hz)       (blend + clamp)        (hardware component)
 ```
 
-The policy claims 14 joints. The other 15 are held by two more controllers, and every one of the
-29 motors is claimed at every instant, which matters because the component leaves any unclaimed
-joint unpowered:
+The policy claims 14 joints. The other 15 are held by two more controllers, so all 29 motors are
+claimed at every instant. That matters because the component leaves any unclaimed joint unpowered.
 
 | Controller | Joints | When active |
 |---|---|---|
-| `locomotion_safety_controller` (with `agile_controller` chained above it) | 12 legs + waist roll/pitch | always |
+| `locomotion_safety_controller`, with `agile_controller` chained above it | 12 legs + waist roll/pitch | always |
 | `waist_freeze_controller` | waist yaw | always |
 | `arm_freeze_controller` | the 14 arm joints | until the arm is acquired |
 | `arm_trajectory_controller` | the same 14 | while the arm is acquired |
 | `locomotion_freeze_controller` | 12 legs + waist roll/pitch | emergency only; loaded inactive |
 
-The last two rows are the ones worth reading twice. `arm_freeze_controller` and
-`arm_trajectory_controller` claim identical joints, so they trade in one `switch_controller` call
-rather than two, which `ros2_control` applies inside a single update cycle. And
-`locomotion_freeze_controller` covers exactly what the safety controller was driving and no more:
-a wider freeze could not activate while the arm and waist controllers hold their own joints, so
-the emergency would fail in the one situation it exists for.
+The last two rows are worth reading twice. `arm_freeze_controller` and `arm_trajectory_controller`
+claim identical joints, so they trade in one `switch_controller` call rather than two, and
+`ros2_control` applies that inside a single update cycle. `locomotion_freeze_controller` covers
+exactly what the safety controller was driving and no more: a wider freeze could not activate
+while the arm and waist controllers hold their own joints, so the emergency would fail in the one
+situation it exists for.
 
-`rt/lowcmd` is one message covering all 29 motors, so the component sends something for every
-joint on every tick, claimed or not. Holding is therefore a controller rather than component
-behaviour: it can be switched in and out at runtime, and the component stays free of policy.
+`rt/lowcmd` is one message covering all 29 motors, so the component sends something for every joint
+on every tick, claimed or not. Holding is therefore a controller rather than component behaviour:
+it switches in and out at runtime, and the component stays free of policy.
 
 ## The policy contract
 
-`policy/unitree_g1_velocity_e2e.onnx` is end-to-end. Three properties are worth knowing before
-touching `AgilePolicy`:
+`policy/unitree_g1_velocity_e2e.onnx` is end-to-end. Three properties matter before touching
+`AgilePolicy`:
 
-- **It is stateful.** Seven of its twelve inputs are history tensors that it emits again as
-  outputs, so the runner feeds them straight back and keeps no ring buffers of its own.
-- **`action_joint_pos` is an absolute radian target**, not a scaled action. The graph applies its
-  own scale and default-pose offset.
-- **The gains come out of the graph**, per joint, and are forwarded rather than configured.
+- It is stateful. Seven of its twelve inputs are history tensors it emits again as outputs, so the
+  runner feeds them straight back and keeps no ring buffers of its own.
+- `action_joint_pos` is an absolute radian target, not a scaled action. The graph applies its own
+  scale and default-pose offset.
+- The gains come out of the graph, per joint, and are forwarded rather than configured.
 
-Its two joint orderings differ from each other and from the SDK's motor order, so
-`agileObsIndex()` / `agileActionIndex()` map by name. `AgilePolicy`'s constructor verifies the
-model's IO names and widths against this contract and throws if they have drifted.
+Its two joint orderings differ from each other and from the SDK's motor order, so `agileObsIndex()`
+and `agileActionIndex()` map by name. `AgilePolicy`'s constructor verifies the model's IO names and
+widths against this contract and throws if they have drifted.
 
-Inference costs **0.056 ms mean, 0.319 ms max** single-threaded on CPU, about 6 % of a 200 Hz
-tick, so plain `onnxruntime` is enough and no GPU runtime is involved.
+Inference costs 0.056 ms mean and 0.319 ms max, single-threaded on CPU, about 6% of a 200 Hz tick.
+Plain `onnxruntime` is enough and no GPU runtime is involved.
 
 ## Parameters
 
@@ -75,7 +75,7 @@ tick, so plain `onnxruntime` is enough and no GPU runtime is involved.
 | Parameter | Meaning |
 |---|---|
 | `model_path` | Empty resolves to the policy shipped in this package's share directory. |
-| `cmd_vel_topic` | Where velocity commands come from. `/cmd_vel` by default, Nav2's output. |
+| `cmd_vel_topic` | Where velocity commands come from. `/cmd_vel` by default, which is Nav2's output. |
 | `decimation` | Controller-manager ticks per inference. 4, giving 50 Hz under 200 Hz. |
 | `command_prefix` / `command_suffix` | Chain target. Empty writes straight to the component. |
 | `cmd_vel_timeout` | Seconds before a silent publisher is treated as a zero command. |
@@ -92,39 +92,43 @@ tick, so plain `onnxruntime` is enough and no GPU runtime is involved.
 | `mean_velocity_limit` / `max_velocity_limit` | Divergence thresholds; 0 disables the detector. |
 | `emergency_controller` | Switched in when the detector fires. Empty disables the switch. |
 
-`G1FreezeController` takes `joints`, `kp` and `kd`. Both gains must be positive: a freeze with no
-stiffness is a disable with extra steps, and `on_configure` rejects it rather than silently
-letting the robot down.
+`G1FreezeController` takes `joints`, `kp` and `kd`. Both gains must be positive, and
+`on_configure` rejects them otherwise: a freeze with no stiffness is a disable with extra steps.
 
 ## Running
 
 ```bash
-ros2 launch g1_bringup sim.launch.py pin_pelvis:=false
+ros2 launch g1_bringup sim.launch.py
 ```
 
-The pelvis does not need pinning: the policy balances the robot.
+The pelvis is unpinned by default, because the policy balances the robot.
 
 The policy and its safety controller must be spawned in one switch (`--activate-as-group`), which
-`control.launch.py` does. A chainable controller's reference interfaces only become claimable as
-it enters chained mode, and that happens inside the switch that activates it.
+`control.launch.py` does. A chainable controller's reference interfaces only become claimable as it
+enters chained mode, and that happens inside the switch that activates it.
 
-## What sim does not validate
+## What simulation does not validate
 
-- **Displacement.** `test_agile_walk` runs without the sensor relay, so no ground truth reaches
-  ROS and it asserts uprightness rather than distance travelled. The gait envelope is measured
-  against MuJoCo directly instead.
-- **Hardware timing.** The 200 Hz loop overruns when the perception stack shares the machine, and
-  the policy is sensitive to that. On a robot this needs real-time scheduling.
-- **`MotionSwitcherClient`.** Entry to `rt/lowcmd` on a real G1 is untested; see
+- Displacement. `test_agile_walk` runs without the sensor relay, so no ground truth reaches ROS and
+  it asserts uprightness rather than distance travelled. The gait envelope is measured against
+  MuJoCo directly instead.
+- Hardware timing. The 200 Hz loop overruns when the perception stack shares the machine, and the
+  policy is sensitive to that. On a robot this needs real-time scheduling.
+- `MotionSwitcherClient`. Entry to `rt/lowcmd` on a real G1 is untested; see
   `g1_hardware_interface`.
 
 ## Tests
+
+```bash
+colcon test --packages-select g1_controllers
+```
 
 | Test | Covers |
 |---|---|
 | `test_agile_policy` | The ONNX contract and both joint tables, against the installed policy. |
 | `test_safety_blend` | The blend-and-slew arithmetic, including that the rate clamp survives a blend-ratio step. |
 | `test_freeze_pluginlib` | All three controllers resolve through pluginlib, the path `controller_manager` uses. |
+| `test_joint_ownership` | Reads this package's controller config against `g1_description`'s joint list, so no body motor is left unclaimed. |
 
-Behaviour is covered by `g1_bringup`'s `test_agile_walk`, which stands the robot on the policy
-with an unpinned pelvis and walks it on command.
+Behaviour is covered by `g1_bringup`'s `test_agile_walk`, which stands the robot on the policy with
+an unpinned pelvis and walks it on command.

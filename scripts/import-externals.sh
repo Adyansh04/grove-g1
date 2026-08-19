@@ -13,7 +13,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SRC="${REPO_ROOT}/workspace/src"
 
 command -v vcs >/dev/null || {
-    echo "vcstool is not installed: pip install vcstool" >&2
+    echo "vcstool is not installed: sudo apt install python3-vcstool" >&2
     exit 1
 }
 

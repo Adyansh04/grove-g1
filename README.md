@@ -5,6 +5,10 @@
 [![CI](https://github.com/Adyansh04/grove-g1/actions/workflows/ci.yml/badge.svg)](https://github.com/Adyansh04/grove-g1/actions/workflows/ci.yml)
 [![License: BSD-3-Clause](https://img.shields.io/badge/license-BSD--3--Clause-blue.svg)](LICENSE)
 
+> The earlier Humble line, where Unitree's own internal leg policy walks the robot and this stack
+> only does arm manipulation on top, is kept on
+> [`humble-unitree`](https://github.com/Adyansh04/grove-g1/tree/humble-unitree).
+
 An autonomy stack for the [Unitree G1](https://www.unitree.com/g1) humanoid, built on ROS 2 Jazzy
 and developed simulation-first against `unitree_mujoco`.
 
@@ -52,8 +56,8 @@ Learned manipulation for unstructured scenes is the next milestone and is not bu
 
 ![Grove-G1 architecture](docs/media/architecture.svg)
 
-On hardware the simulation card becomes the vendor's onboard motion service and the LiDAR front
-end becomes `livox_ros_driver2`. Everything above the DDS rail is unchanged.
+On hardware the simulation card becomes the physical G1 and the LiDAR front end becomes
+`livox_ros_driver2`. Everything above the DDS rail is unchanged.
 
 Two rules shape the design, and both apply in simulation so the habits transfer:
 
@@ -83,8 +87,25 @@ Two rules shape the design, and both apply in simulation so the habits transfer:
 
 ## Quick start
 
-Everything runs inside the dev container, which pins the ROS 2 Jazzy / Ubuntu 24.04 toolchain the
-stack is built and tested against.
+The ROS build and runtime commands run inside the dev container, which pins the ROS 2 Jazzy and
+Ubuntu 24.04 toolchain the stack is built and tested against.
+
+### Prerequisites
+
+Install Docker Engine with Docker Compose v2, the NVIDIA driver and the NVIDIA Container Toolkit
+on the host. The simulator uses the GPU exposed by `docker-compose.yml`. For the GUI modes, run
+from an X11 desktop session; `manage.sh start` grants the container local X11 access.
+
+Install [`vcstool`](https://github.com/dirk-thomas/vcstool) on the host as well, because the
+import script uses its `vcs` command before the development container exists:
+
+```bash
+sudo apt install python3-vcstool
+```
+
+### Start the development container
+
+From the repository root, on the host:
 
 ```bash
 cp .env.example .env
@@ -97,6 +118,8 @@ cp .env.example .env
 `workspace/src` and puts the two that ship a non-standard layout into a buildable one. Run it
 again whenever `workspace.repos` changes.
 
+### Build and run the stack
+
 Inside the container:
 
 ```bash
@@ -108,27 +131,37 @@ source install/setup.bash
 Then bring up the robot. One command covers every mode:
 
 ```bash
-# Simulator only
-ros2 launch g1_bringup bringup.launch.py
+# Simulator only, with the MuJoCo viewer
+ros2 launch g1_bringup bringup.launch.py headless:=false
 
-# Build a map, with RViz
-ros2 launch g1_bringup bringup.launch.py mode:=mapping rviz:=true
+# Build a map, with RViz but without the MuJoCo viewer
+ros2 launch g1_bringup bringup.launch.py mode:=mapping rviz:=true headless:=true
 
-# Localize against the committed map and navigate
-ros2 launch g1_bringup bringup.launch.py mode:=localization nav:=true rviz:=true
+# Localize against the committed map and navigate, with RViz but without the MuJoCo viewer
+ros2 launch g1_bringup bringup.launch.py mode:=localization nav:=true rviz:=true headless:=true
 
 # Plan for the arms and hands, with the LiDAR octomap in the planning scene
-ros2 launch g1_bringup bringup.launch.py moveit:=true sensors:=true rviz:=true
+ros2 launch g1_bringup bringup.launch.py moveit:=true sensors:=true rviz:=true headless:=true
 
 # Pick and place skills, on the small test world where the object is already within reach
 ros2 launch g1_bringup bringup.launch.py \
   moveit:=true manipulation:=true pin_pelvis:=true world:=manipulation \
-  activate_arm:=true activate_arm_delay_s:=40.0
+  activate_arm:=true activate_arm_delay_s:=40.0 headless:=true
 
-# Everything at once: localized, navigating, planning, skills, arms acquired, RViz up
+# Everything at once, including the MuJoCo viewer and RViz
 ros2 launch g1_bringup bringup.launch.py \
   mode:=localization nav:=true moveit:=true manipulation:=true rviz:=true \
   activate_arm:=true activate_arm_delay_s:=40.0 headless:=false
+```
+
+`headless:=true` is the default and suits any run without a display. Set `headless:=false` only
+when a local display is available to open the MuJoCo viewer, and do not use the viewer's Reload
+button while sensors are running.
+
+After launching a mode, confirm the ROS graph is up from a second container shell:
+
+```bash
+ros2 topic list -t
 ```
 
 Run a mission. The tree drives navigation and manipulation; nothing else needs starting, and
@@ -250,7 +283,7 @@ rather than the stack. Run them locally before merging anything that touches loc
 navigation or the sensor path.
 
 A per-package C++ coverage table is printed to each run's summary. It covers only the tests CI
-runs, so the node and launch layer reads low there by construction — it is a signal on the pure
+runs, so the node and launch layer reads low there by construction. It is a signal on the pure
 logic, not a figure for the repository, which is why there is no badge for it.
 
 ## Repository layout
