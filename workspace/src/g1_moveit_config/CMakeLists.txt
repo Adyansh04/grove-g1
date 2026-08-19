@@ -16,22 +16,26 @@ if(BUILD_TESTING)
 
   find_package(ament_cmake_pytest REQUIRED)
 
+  # One env block for every pytest test here, not one per test: pytest 8+ imports every module
+  # in the directory while collecting any single file, so a sibling's missing variable is a
+  # collection error for tests that never read it. test/conftest.py handles the launch files.
+  set(_pytest_env
+    "G1_MOVEIT_CONFIG_DIR=${CMAKE_CURRENT_SOURCE_DIR}/config"
+    "G1_MOVEIT_LAUNCH_DIR=${CMAKE_CURRENT_SOURCE_DIR}/launch"
+    "G1_BRINGUP_CONFIG_DIR=${CMAKE_CURRENT_SOURCE_DIR}/../g1_bringup/config"
+    "G1_BRINGUP_LAUNCH_DIR=${CMAKE_CURRENT_SOURCE_DIR}/../g1_bringup/launch"
+    "G1_DESCRIPTION_CONFIG_DIR=${CMAKE_CURRENT_SOURCE_DIR}/../g1_description/config"
+    "G1_SIM_CONFIG_DIR=${CMAKE_CURRENT_SOURCE_DIR}/../g1_motion_service_sim/config"
+  )
+
   # Reads three packages' config at once: MoveIt's arm, the controller's arm and the bridge's
   # speed clamp all have to agree, and no single package's tests can see the disagreement.
-  ament_add_pytest_test(test_moveit_config_drift test/test_moveit_config_drift.py
-    ENV "G1_MOVEIT_CONFIG_DIR=${CMAKE_CURRENT_SOURCE_DIR}/config"
-        "G1_BRINGUP_CONFIG_DIR=${CMAKE_CURRENT_SOURCE_DIR}/../g1_bringup/config"
-        "G1_DESCRIPTION_CONFIG_DIR=${CMAKE_CURRENT_SOURCE_DIR}/../g1_description/config"
-        "G1_SIM_CONFIG_DIR=${CMAKE_CURRENT_SOURCE_DIR}/../g1_motion_service_sim/config"
-  )
+  ament_add_pytest_test(test_moveit_config_drift test/test_moveit_config_drift.py ENV ${_pytest_env})
 
   # bringup's moveit branch names this package's share, so its threading assertions cannot
   # live in g1_navigation alongside the navigation ones. Source directories rather than
   # installed shares, same as above: these read launch files, not built artifacts.
-  ament_add_pytest_test(test_launch_threading test/test_launch_threading.py
-    ENV "G1_MOVEIT_LAUNCH_DIR=${CMAKE_CURRENT_SOURCE_DIR}/launch"
-        "G1_BRINGUP_LAUNCH_DIR=${CMAKE_CURRENT_SOURCE_DIR}/../g1_bringup/launch"
-  )
+  ament_add_pytest_test(test_launch_threading test/test_launch_threading.py ENV ${_pytest_env})
 
   # move_group plans against the expanded xacro, not a checked-in URDF, so the model test has
   # to expand it too -- otherwise it validates a robot nobody runs. Regenerated whenever the
@@ -86,6 +90,9 @@ if(BUILD_TESTING)
       COMMAND ${RUFF_EXECUTABLE} check --config ${_ruff_config}
               ${CMAKE_CURRENT_SOURCE_DIR}/launch ${CMAKE_CURRENT_SOURCE_DIR}/test
     )
+    # From the build dir, ruff.toml's relative src= would not resolve and isort finds nothing.
+    set_tests_properties(ruff_check_g1_moveit_config PROPERTIES
+      WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../..")
   else()
     message(WARNING "ruff and/or workspace ruff.toml not found; skipping ruff_check_g1_moveit_config test")
   endif()
@@ -111,7 +118,7 @@ if(BUILD_TESTING)
   # clang-tidy over this package's own translation units, gated by WarningsAsErrors in the
   # workspace .clang-tidy. Minutes rather than the format check's milliseconds, so it carries a
   # label: `--ctest-args -LE clang_tidy` skips it for a fast local loop. CI runs it.
-  find_program(RUN_CLANG_TIDY_EXECUTABLE NAMES run-clang-tidy-14 run-clang-tidy)
+  find_program(RUN_CLANG_TIDY_EXECUTABLE NAMES run-clang-tidy run-clang-tidy-18 run-clang-tidy-14)
   set(_clang_tidy_config "${CMAKE_CURRENT_SOURCE_DIR}/../../.clang-tidy")
   if(RUN_CLANG_TIDY_EXECUTABLE AND EXISTS "${_clang_tidy_config}"
       AND CMAKE_EXPORT_COMPILE_COMMANDS)

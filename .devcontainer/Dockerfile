@@ -17,12 +17,13 @@ ENV PIP_BREAK_SYSTEM_PACKAGES=1
 # ruff and clang-format are PINNED and .github/ci.Dockerfile pins the same versions; ci.yml
 # fails if they drift. Neither tool's rule set is stable across versions.
 ARG RUFF_VERSION=0.16.1
-ARG LLVM_VERSION=14
+ARG LLVM_VERSION=18
 RUN apt-get update && apt-get install -y \
         clangd-${LLVM_VERSION} clang-format-${LLVM_VERSION} clang-tidy-${LLVM_VERSION} && \
     update-alternatives --install /usr/bin/clangd clangd /usr/bin/clangd-${LLVM_VERSION} 100 && \
     update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-${LLVM_VERSION} 100 && \
     update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-${LLVM_VERSION} 100 && \
+    update-alternatives --install /usr/bin/run-clang-tidy run-clang-tidy /usr/bin/run-clang-tidy-${LLVM_VERSION} 100 && \
     (python3 -m pip install --no-cache-dir --break-system-packages ruff==${RUFF_VERSION} || \
      python3 -m pip install --no-cache-dir ruff==${RUFF_VERSION}) && \
     rm -rf /var/lib/apt/lists/*
@@ -136,8 +137,9 @@ RUN cat > /etc/profile.d/99-grove-g1-env.sh <<'EOF'
 export ROS_DOMAIN_ID="${GROVE_G1_ROS_DOMAIN_ID:-1}"
 EOF
 
-# Remove pip `em` — it shadows apt's python3-empy and breaks rosidl generation.
-RUN python3 -m pip uninstall -y em
+# rosidl needs empy 3.3.4 (apt python3-empy); pip's `em` and `empy` 4.x both shadow it from
+# /usr/local, and 4.x's rewritten API throws TransientParseError while expanding templates.
+RUN python3 -m pip uninstall -y em empy
 
 # --- Milestone 2: LocoClient deps -------------------------------------------
 

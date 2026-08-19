@@ -20,7 +20,6 @@ import launch_testing
 import pytest
 import rclpy
 from ament_index_python.packages import get_package_share_directory
-from g1_msgs.msg import LocoStatus
 from geometry_msgs.msg import Twist
 from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription, TimerAction
@@ -30,6 +29,8 @@ from lifecycle_msgs.msg import Transition
 from lifecycle_msgs.srv import ChangeState, GetState
 from rclpy.node import Node
 from rclpy.qos import QoSDurabilityPolicy, QoSProfile, QoSReliabilityPolicy
+
+from g1_msgs.msg import LocoStatus
 
 BRINGUP_TIMEOUT_S = 150.0
 # The acquire sends two FSM goals and then sleeps settle_after_start_s, and it retries while the
@@ -85,7 +86,7 @@ class NavAuthorityTest(unittest.TestCase):
         cls.node.create_subscription(
             LocoStatus,
             "/g1_loco_bridge/status",
-            cls.status.append,
+            lambda msg: cls.status.append(msg),
             QoSProfile(
                 depth=1,
                 reliability=QoSReliabilityPolicy.RELIABLE,

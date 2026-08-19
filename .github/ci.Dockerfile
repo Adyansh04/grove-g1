@@ -18,10 +18,10 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 # clang-format's output is not stable across major versions, so an unpinned one rejects
 # correctly formatted files. The same pin covers clang-tidy, whose check set and fix-its also
-# move between releases -- and it has to match the dev container's 14, or the clang_tidy_check_*
+# move between releases -- and it has to match the dev container's, or the clang_tidy_check_*
 # tests disagree with what a developer reproduces locally. liburdfdom-tools is check_urdf, which
 # g1_description's xacro test shells out to.
-ARG LLVM_VERSION=14
+ARG LLVM_VERSION=18
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
         ccache \
@@ -37,11 +37,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         python3-vcstool \
     && ln -sf /usr/bin/clang-format-${LLVM_VERSION} /usr/bin/clang-format \
     && ln -sf /usr/bin/clang-tidy-${LLVM_VERSION} /usr/bin/clang-tidy \
+    && ln -sf /usr/bin/run-clang-tidy-${LLVM_VERSION} /usr/bin/run-clang-tidy \
     && rm -rf /var/lib/apt/lists/*
 
-# Pinned: ruff's rule set changes between minor versions.
+# Pinned: ruff's rule set changes between minor versions. --break-system-packages because
+# Ubuntu 24.04 marks the system Python externally managed (PEP 668) and refuses the install.
 ARG RUFF_VERSION=0.16.1
-RUN python3 -m pip install --no-cache-dir ruff==${RUFF_VERSION}
+RUN python3 -m pip install --no-cache-dir --break-system-packages ruff==${RUFF_VERSION}
 
 # libboost/libeigen are unitree_sdk2's, PCL is FAST-LIO's.
 RUN apt-get update && apt-get install -y --no-install-recommends \

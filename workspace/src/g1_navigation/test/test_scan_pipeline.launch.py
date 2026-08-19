@@ -89,7 +89,7 @@ class ScanPipelineTest(unittest.TestCase):
         cls.listener = TransformListener(cls.buffer, cls.node)
         cls.scans = []
         cls.node.create_subscription(
-            LaserScan, "/scan", cls.scans.append, qos_profile_sensor_data
+            LaserScan, "/scan", lambda msg: cls.scans.append(msg), qos_profile_sensor_data
         )
 
         deadline = time.time() + BRINGUP_TIMEOUT_S

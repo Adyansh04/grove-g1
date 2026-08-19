@@ -79,7 +79,7 @@ class TestSimBringup(unittest.TestCase):
 
     def _collect_for(self, topic_type, topic, duration_s):
         samples = []
-        sub = self.node.create_subscription(topic_type, topic, samples.append, 10)
+        sub = self.node.create_subscription(topic_type, topic, lambda msg: samples.append(msg), 10)
         deadline = time.monotonic() + duration_s
         while time.monotonic() < deadline:
             rclpy.spin_once(self.node, timeout_sec=0.05)

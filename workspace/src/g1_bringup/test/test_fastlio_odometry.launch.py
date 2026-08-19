@@ -27,7 +27,6 @@ import launch_testing
 import pytest
 import rclpy
 from ament_index_python.packages import get_package_share_directory
-from g1_msgs.action import SetLocoMode
 from geometry_msgs.msg import Twist
 from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription, TimerAction
@@ -38,6 +37,8 @@ from rclpy.qos import qos_profile_sensor_data
 from tf2_msgs.msg import TFMessage
 from unitree_go.msg import SportModeState
 from unitree_hg.msg import LowState
+
+from g1_msgs.action import SetLocoMode
 
 LATCH_TIMEOUT_S = 120.0
 STAND_S = 12.0

@@ -12,7 +12,6 @@ import launch_testing
 import pytest
 import rclpy
 from ament_index_python.packages import get_package_share_directory
-from g1_msgs.action import SetLocoMode
 from geometry_msgs.msg import Twist
 from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription, TimerAction
@@ -23,6 +22,8 @@ from rclpy.qos import QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile, QoSReli
 from unitree_api.msg import Request, Response
 from unitree_go.msg import SportModeState
 from unitree_hg.msg import LowState
+
+from g1_msgs.action import SetLocoMode
 
 SETTLE_TIMEOUT_S = 25.0
 STAND_HEIGHT_MIN = 0.60
@@ -80,13 +81,13 @@ class WalkTeleopTest(unittest.TestCase):
         cls.low_states = deque(maxlen=1500)
         cls.responses = deque(maxlen=200)
         cls.node.create_subscription(
-            SportModeState, "/sportmodestate", cls.sport_states.append, _best_effort_qos()
+            SportModeState, "/sportmodestate", lambda msg: cls.sport_states.append(msg), _best_effort_qos()
         )
         cls.node.create_subscription(
-            LowState, "/lowstate", cls.low_states.append, _best_effort_qos()
+            LowState, "/lowstate", lambda msg: cls.low_states.append(msg), _best_effort_qos()
         )
         cls.node.create_subscription(
-            Response, "/api/sport/response", cls.responses.append, _sport_qos()
+            Response, "/api/sport/response", lambda msg: cls.responses.append(msg), _sport_qos()
         )
         # NO raw /api/sport/request publisher here to avoid dual-writer guard trips.
         cls.cmd_vel_pub = cls.node.create_publisher(

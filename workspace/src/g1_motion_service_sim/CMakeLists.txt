@@ -146,7 +146,7 @@ if(BUILD_TESTING)
   # clang-tidy over this package's own translation units, gated by WarningsAsErrors in the
   # workspace .clang-tidy. Minutes rather than the format check's milliseconds, so it carries a
   # label: `--ctest-args -LE clang_tidy` skips it for a fast local loop. CI runs it.
-  find_program(RUN_CLANG_TIDY_EXECUTABLE NAMES run-clang-tidy-14 run-clang-tidy)
+  find_program(RUN_CLANG_TIDY_EXECUTABLE NAMES run-clang-tidy run-clang-tidy-18 run-clang-tidy-14)
   set(_clang_tidy_config "${CMAKE_CURRENT_SOURCE_DIR}/../../.clang-tidy")
   if(RUN_CLANG_TIDY_EXECUTABLE AND EXISTS "${_clang_tidy_config}"
       AND CMAKE_EXPORT_COMPILE_COMMANDS)
