@@ -5,6 +5,14 @@
 [![CI](https://github.com/Adyansh04/grove-g1/actions/workflows/ci.yml/badge.svg)](https://github.com/Adyansh04/grove-g1/actions/workflows/ci.yml)
 [![License: BSD-3-Clause](https://img.shields.io/badge/license-BSD--3--Clause-blue.svg)](LICENSE)
 
+> **This is the Humble line.** Locomotion below the waist stays with Unitree's own internal leg
+> policy: the stack sends walking commands to the onboard controller and never touches a leg
+> joint directly. Arm and hand manipulation is done through MoveIt on top of that.
+>
+> For the ROS 2 Jazzy line, where the stack owns all 29 body motors over `rt/lowcmd` and runs its
+> own balance policy with no onboard controller underneath, see
+> [`main`](https://github.com/Adyansh04/grove-g1/tree/main).
+
 An autonomy stack for the [Unitree G1](https://www.unitree.com/g1) humanoid, built on ROS 2 Humble
 and developed simulation-first against `unitree_mujoco`.
 
