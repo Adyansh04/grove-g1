@@ -18,7 +18,12 @@ real error away and smears the rest evenly along the run, so no row of the table
 at that point in the run.
 """
 import csv
-import math, os, signal, sys, time
+import math
+import os
+import signal
+import sys
+import time
+
 import rclpy
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
@@ -158,7 +163,7 @@ def report(b):
     for _, (lx, ly) in b.track:
         dx, dy = lx - l0[0], ly - l0[1]
         L.append((c * dx - s_ * dy, s_ * dx + c * dy))
-    gaps = [math.hypot(tx - ax, ty - ay) for (tx, ty), (ax, ay) in zip(T, L)]
+    gaps = [math.hypot(tx - ax, ty - ay) for (tx, ty), (ax, ay) in zip(T, L, strict=True)]
     dist = sum(math.dist(T[i], T[i - 1]) for i in range(1, len(T)))
 
     # Full paired trace, both columns in the truth frame. Written before the summary so it
@@ -168,7 +173,7 @@ def report(b):
             w = csv.writer(fh)
             w.writerow(["i", "truth_x", "truth_y", "lio_x", "lio_y", "gap_m", "path_m"])
             run = 0.0
-            for i, ((tx, ty), (ax, ay)) in enumerate(zip(T, L)):
+            for i, ((tx, ty), (ax, ay)) in enumerate(zip(T, L, strict=True)):
                 if i:
                     run += math.dist(T[i], T[i - 1])
                 w.writerow(["%d" % i, "%.4f" % tx, "%.4f" % ty, "%.4f" % ax, "%.4f" % ay,
@@ -183,7 +188,7 @@ def report(b):
     print("RESULT   path_m |    truth (x, y)  |      lio (x, y)  |   gap")
     run = 0.0
     nxt = 0.0
-    for i, ((tx, ty), (ax, ay)) in enumerate(zip(T, L)):
+    for i, ((tx, ty), (ax, ay)) in enumerate(zip(T, L, strict=True)):
         if i:
             run += math.dist(T[i], T[i - 1])
         if run + 1e-9 >= nxt:
@@ -202,42 +207,56 @@ def report(b):
 
 
 def main():
-    rclpy.init(); b = Bench()
+    rclpy.init()
+    b = Bench()
 
     def stop(*_):
-        b.cmd.publish(Twist()); report(b); sys.stdout.flush(); rclpy.shutdown()
-    signal.signal(signal.SIGINT, stop); signal.signal(signal.SIGTERM, stop)
+        b.cmd.publish(Twist())
+        report(b)
+        sys.stdout.flush()
+        rclpy.shutdown()
+
+    signal.signal(signal.SIGINT, stop)
+    signal.signal(signal.SIGTERM, stop)
 
     # TF appearing IS the readiness signal: it only exists once FAST-LIO has fixed gravity and
     # produced a pose the publisher accepted.
     if not b.wait_for(b.ready, 180.0, "odom -> base_footprint never appeared"):
-        rclpy.shutdown(); return
+        rclpy.shutdown()
+        return
 
     # Everything before this point is discarded. The baseline both paths are differenced from,
     # and the rotation between their frames, have to come from a pose the robot actually held
     # rather than one it was passing through on its way back upright.
     if not b.settle():
-        rclpy.shutdown(); return
+        rclpy.shutdown()
+        return
     # Including the fall latch: a spawn that dips and recovers is exactly what settle() waited
     # out, and leaving it set aborts the first leg on a robot that is standing up fine.
     b.track.clear()
     b.fallen = None
     if not b.spin(2.0):
         print("RESULT ABORT: robot went down between settling and the first leg")
-        rclpy.shutdown(); return
+        rclpy.shutdown()
+        return
 
     for i, (vx, wz, secs) in enumerate(LEGS):
-        t = Twist(); t.linear.x = vx; t.angular.z = wz
+        t = Twist()
+        t.linear.x = vx
+        t.angular.z = wz
         print("leg %d/%d: vx=%.1f wz=%+.1f for %.1fs" % (i + 1, len(LEGS), vx, wz, secs),
               flush=True)
         if not (b.spin(secs, t) and b.spin(1.0)):
             b.cmd.publish(Twist())
             print("RESULT ABORT: robot fell (pelvis %.3f m, standing is 0.734) -- "
                   "nothing after this measures odometry" % b.fallen)
-            rclpy.shutdown(); return
+            rclpy.shutdown()
+        return
     b.cmd.publish(Twist())
     b.spin(2.0)
-    report(b); sys.stdout.flush(); rclpy.shutdown()
+    report(b)
+    sys.stdout.flush()
+    rclpy.shutdown()
 
 
 main()

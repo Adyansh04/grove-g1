@@ -81,7 +81,9 @@ def _chain_from_urdf(child_link, ancestor_link):
     while link != ancestor_link:
         assert link in joints, f"no joint leads to {link}"
         parent, xyz, joint_rotation, _ = joints[link]
-        translation = [c + v for c, v in zip(xyz, _mat_vec(joint_rotation, translation))]
+        translation = [
+            c + v for c, v in zip(xyz, _mat_vec(joint_rotation, translation), strict=True)
+        ]
         rotation = _mat_mul(joint_rotation, rotation)
         link = parent
     return translation, rotation
@@ -121,7 +123,9 @@ def test_the_mjcf_site_is_where_the_urdf_says_the_sensor_imu_is():
     # from the URDF mount composed with Livox's offset rather than copied.
     translation, rotation = _chain_from_urdf("mid360_link", "torso_link")
     imu_in_lidar = [-v for v in _LIVOX_LIDAR_IN_IMU]
-    expect = [t + v for t, v in zip(translation, _mat_vec(rotation, imu_in_lidar))]
+    expect = [
+        t + v for t, v in zip(translation, _mat_vec(rotation, imu_in_lidar), strict=True)
+    ]
 
     pos, quat = _mjcf_site()
     for axis in range(3):

@@ -16,6 +16,7 @@ body component's SDK init did not shut the other two out.
 """
 
 import os
+import re
 import subprocess
 import time
 import unittest
@@ -27,11 +28,13 @@ from controller_manager_msgs.srv import ListControllers, ListHardwareComponents
 from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription, TimerAction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from moveit_msgs.action import MoveGroup
+from moveit_msgs.action import ExecuteTrajectory, MoveGroup
 from moveit_msgs.msg import Constraints, JointConstraint, RobotState
 from rclpy.action import ActionClient
 from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import Imu, JointState
+from std_msgs.msg import String
 
 # Generous on purpose: the policy has to bring the robot to a settled stand before anything is
 # asked of the arms, and move_group starts alongside.
@@ -105,6 +108,18 @@ class TestMoveItLowCmd(unittest.TestCase):
             Imu, "/imu_sensor_broadcaster/imu", lambda msg: cls.imu.append(msg), 10
         )
         cls.move_client = ActionClient(cls.node, MoveGroup, "/move_action")
+        cls.execute_client = ActionClient(cls.node, ExecuteTrajectory, "/execute_trajectory")
+        cls.limits = {}
+        cls.node.create_subscription(
+            String,
+            "/robot_description",
+            cls._description_cb,
+            QoSProfile(
+                depth=1,
+                durability=DurabilityPolicy.TRANSIENT_LOCAL,
+                reliability=ReliabilityPolicy.RELIABLE,
+            ),
+        )
         cls.controllers = cls.node.create_client(
             ListControllers, "/controller_manager/list_controllers"
         )
@@ -121,6 +136,16 @@ class TestMoveItLowCmd(unittest.TestCase):
     def _joint_cb(cls, msg):
         for name, position in zip(msg.name, msg.position, strict=False):
             cls.joint_state[name] = position
+
+    @classmethod
+    def _description_cb(cls, msg):
+        for name, lower, upper in re.findall(
+            r'<joint name="([^"]+)" type="revolute">.*?'
+            r'<limit[^>]*lower="([^"]+)"[^>]*upper="([^"]+)"',
+            msg.data,
+            re.S,
+        ):
+            cls.limits[name] = (float(lower), float(upper))
 
     def _spin(self, seconds):
         deadline = time.monotonic() + seconds
@@ -176,6 +201,16 @@ class TestMoveItLowCmd(unittest.TestCase):
         stdout, stderr = proc.communicate(timeout=10.0)
         self.assertEqual(proc.returncode, 0, f"{executable} failed:\n{stdout}\n{stderr}")
 
+    def _bounded_start_state(self, targets):
+        """Every joint we know a position for, clamped into its limits."""
+        state = RobotState()
+        state.is_diff = False
+        for name, position in self.joint_state.items():
+            lower, upper = self.limits.get(name, (position, position))
+            state.joint_state.name.append(name)
+            state.joint_state.position.append(min(max(position, lower), upper))
+        return state
+
     def _joint_goal(self, group, targets, absolute=False):
         """`targets` maps joint name to a delta from where it is now, or to an absolute
         position when `absolute`.
@@ -186,8 +221,12 @@ class TestMoveItLowCmd(unittest.TestCase):
         goal.request.allowed_planning_time = 10.0
         goal.request.max_velocity_scaling_factor = 0.5
         goal.request.max_acceleration_scaling_factor = 0.5
-        goal.request.start_state = RobotState()
-        goal.request.start_state.is_diff = True
+        # Seeded from the measured state with this group's joints clamped into their URDF
+        # limits, the same thing g1_manipulation's setStartStateInBounds does for the arm.
+        # A Dex3 finger rests at exactly 0, which IS its limit, so the simulator settling it a
+        # microradian past is enough for CheckStartStateBounds to abort the plan -- and Jazzy
+        # ships no adapter that clamps one back.
+        goal.request.start_state = self._bounded_start_state(targets)
 
         constraints = Constraints()
         for name, target in targets.items():
@@ -201,15 +240,39 @@ class TestMoveItLowCmd(unittest.TestCase):
         goal.request.goal_constraints = [constraints]
         return goal
 
-    def _send_move_goal(self, goal, timeout_s=90.0):
-        send = self.move_client.send_goal_async(goal)
-        self._spin_until(send.done, 20.0, "move_group never answered the goal request")
+    def _await_goal(self, client, goal, timeout_s, what):
+        send = client.send_goal_async(goal)
+        self._spin_until(send.done, 20.0, f"{what} never answered the goal request")
         handle = send.result()
         if handle is None or not handle.accepted:
             return None
         result = handle.get_result_async()
-        self._spin_until(result.done, timeout_s, "move_group never returned a result")
+        self._spin_until(result.done, timeout_s, f"{what} never returned a result")
         return result.result().result
+
+    def _send_move_goal(self, goal, timeout_s=90.0):
+        """Plans, then executes what was planned.
+
+        Two steps rather than one combined request, because move_group DISCARDS the start
+        state of a plan-and-execute goal ("Ignoring the state supplied as start state") and
+        re-reads the current one. Only the plan-only form honours it, and this test needs it
+        honoured: a Dex3 finger rests at exactly 0, which is its own limit, so the simulator
+        settling it a microradian past aborts the plan on CheckStartStateBounds. Planning and
+        executing separately is what MoveGroupInterface does, so this matches g1_manipulation.
+        """
+        goal.planning_options.plan_only = True
+        planned = self._await_goal(self.move_client, goal, timeout_s, "move_group")
+        if planned is None or planned.error_code.val != 1:
+            return planned
+
+        execute = ExecuteTrajectory.Goal()
+        execute.trajectory = planned.planned_trajectory
+        executed = self._await_goal(
+            self.execute_client, execute, timeout_s, "execute_trajectory"
+        )
+        if executed is not None:
+            planned.error_code = executed.error_code
+        return planned
 
     def test_01_every_joint_has_a_state(self):
         self._spin_until(

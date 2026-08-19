@@ -125,6 +125,13 @@ fi
 
 echo "killed $total process(es) in total, inside the container"
 
+# Killing the processes does not reclaim their shared memory. Enough runs and the leftover
+# segments break discovery: sensor topics come up but a subscriber never matches, which reads
+# as "FAST-LIO is not running" rather than as a stale-transport problem.
+shm=$(ls /dev/shm/fastrtps_* /dev/shm/sem.fastrtps_* 2>/dev/null | wc -l)
+rm -f /dev/shm/fastrtps_* /dev/shm/sem.fastrtps_* 2>/dev/null
+echo "cleared $shm stale DDS shared-memory segment(s)"
+
 nodes=$(graph_nodes)
 topics=$(timeout 25 ros2 topic list 2>/dev/null | grep -vE '^/parameter_events$|^/rosout$')
 
