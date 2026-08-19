@@ -5,7 +5,7 @@ checking against it, and those are separate failures: the updater can be filling
 planning scene never consults, and everything looks healthy.
 
 So this drives a hand at `reach_obstacle`, the box g1_bringup's perception scene puts 0.42 m in
-front of the chest, and asserts the state is rejected as colliding -- then asserts the same
+front of the chest, and asserts the state is rejected as colliding, then asserts the same
 state is fine with sensors off, which is the control. Without that second half the test would
 pass just as well against a pose that self-collides.
 
@@ -31,7 +31,7 @@ from rclpy.node import Node
 from sensor_msgs.msg import JointState
 
 # Matches test_moveit_plan_execute. Longer than this and launch_testing's own startup timeout
-# fires first -- it kills the whole launch with "Timed out waiting for processes to start up"
+# fires first, killing the whole launch with "Timed out waiting for processes to start up"
 # and every test reports "Launch stopped before the active tests finished", which looks like a
 # stack failure and is not one. The octomap needs far longer than 12 s to fill; that wait
 # belongs inside the tests, where the timeout is ours to choose.
@@ -140,7 +140,7 @@ class TestOctomapBlocksAPlan(unittest.TestCase):
             octomap = result.scene.world.octomap
             if not octomap.octomap.data:
                 return False
-            # The frame is the planning frame, never octomap_frame -- pinned here because a
+            # The frame is the planning frame, never octomap_frame, pinned here because a
             # change would silently move every voxel relative to the robot.
             self.assertEqual(octomap.header.frame_id, "pelvis")
             return True

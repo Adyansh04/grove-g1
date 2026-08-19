@@ -12,5 +12,5 @@ string named_target
 bool success
 string message
 ---
-# No feedback field, for the same reason SetLocoMode has none: the move either completes or
-# fails, and "still executing" is not information the caller can act on.
+# No feedback field: the move either completes or fails, and "still executing" is not information
+# the caller can act on.

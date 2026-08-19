@@ -6,7 +6,7 @@
 #
 # Async rather than sync: the two ship byte-identical parameter files, so the choice is the
 # node binary and its threading model. Sync's advantage is fidelity when the mapper cannot
-# keep up with the scan rate, and it does keep up here with room to spare -- neither
+# keep up with the scan rate, and it does keep up here with room to spare, since neither
 # slam_toolbox nor the flatten reached the top twelve processes by CPU, against a simulator
 # at 139%. Async also degrades by dropping a scan rather than by lagging TF, which is the
 # safer failure on a stack where TF staleness is already a live concern.
@@ -92,3 +92,11 @@ slam_toolbox:
     use_response_expansion: true
     min_pass_through: 2
     occupancy_threshold: 0.1
+
+lifecycle_manager_slam:
+  ros__parameters:
+    autostart: true
+    node_names: ["slam_toolbox"]
+    # 0 disables the heartbeat. bond is a Nav2 server convention and slam_toolbox creates
+    # none, so any non-zero value tears it back down ~4 s after activating it.
+    bond_timeout: 0.0

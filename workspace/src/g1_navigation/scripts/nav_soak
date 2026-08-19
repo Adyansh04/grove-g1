@@ -8,12 +8,10 @@
 #   ros2 run g1_navigation nav_soak --rviz
 #   ros2 run g1_navigation nav_soak --goals "3.0 -3.0,-2.5 2.0"
 #
-# Default goals are ones an operator drove interactively in a session that completed all of
-# them with no falls and no recoveries. They cross the facility rather than nudging around the
-# origin, which is where costmap and localization problems actually show up.
+# The default goals cross the facility rather than nudging around the origin, which is where
+# costmap and localization problems actually show up.
 #
-# Three things this gets right, each of which produced a false "stack defect" when done the
-# obvious way.
+# Three things that are easy to get wrong here:
 #
 #   1. One goal at a time, allowed to finish. Wrapping the action client in a hard timeout
 #      kills it mid-goal and lets the next goal preempt the running one; abrupt replanning
@@ -34,9 +32,10 @@ DIAG_OUT=/tmp/nav_soak_diag.txt
 PGID_FILE=/tmp/nav_soak.pgid
 
 RVIZ=false
-# Which source publishes odom -> base_footprint; fast_lio soaks the LiDAR-inertial pipeline
-# under real navigation load instead of ground truth.
-ODOMETRY=sportmodestate
+# Which source publishes odom -> base_footprint. Defaults to the stack's own default so a soak
+# exercises what an operator actually runs; --odometry ground_truth isolates a fault to "not the
+# odometry" by removing LiDAR-inertial drift from the loop.
+ODOMETRY=fast_lio
 GOALS_RAW="4.15 -6.96,-2.79 -6.69,5.21 1.93,5.37 2.08,-4.67 4.97,-4.46 7.58,6.31 -2.10,6.53 -7.00,-2.51 -6.42,4.13 1.76,2.80 6.92,-7.49 5.23,-2.44 -6.90"
 
 # Above the 4.0 navigation default. The simulator's first physics tick can land before the

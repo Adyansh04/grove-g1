@@ -86,6 +86,7 @@ struct State
 {
     std::thread                  thread;
     std::thread                  imu_thread;
+    std::thread                  base_thread;
     std::unique_ptr<RelaySocket> relay;
     std::atomic<bool>            running{false};
 };
@@ -966,6 +967,95 @@ void imuLoop(const Config cfg, mjModel** model, mjData** data, std::recursive_mu
     }
 }
 
+// Fast enough that the 50 Hz odometry publisher always has a fresh sample, and the frame is
+// 48 bytes, so the cost is noise next to one LiDAR sweep.
+constexpr double kBaseStateRateHz = 200.0;
+
+// Ground truth for the sim-only odometry source. Every quantity is a stock MJCF sensor on the
+// pelvis IMU site, the same site the robot's own IMU reports from, so this is exact MuJoCo
+// state rather than anything modelled.
+void baseStateLoop(mjModel** model, mjData** data, std::recursive_mutex* sim_mtx,
+                   RelaySocket* relay_socket)
+{
+    mjModel* m = nullptr;
+    while (state().running.load(std::memory_order_relaxed) &&
+           ((m = *model) == nullptr || *data == nullptr)) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+    if (!state().running.load(std::memory_order_relaxed)) {
+        return;
+    }
+
+    const int quat_id = mj_name2id(m, mjOBJ_SENSOR, "imu_quat");
+    const int gyro_id = mj_name2id(m, mjOBJ_SENSOR, "imu_gyro");
+    const int pos_id  = mj_name2id(m, mjOBJ_SENSOR, "frame_pos");
+    const int vel_id  = mj_name2id(m, mjOBJ_SENSOR, "frame_vel");
+    const int site_id = mj_name2id(m, mjOBJ_SITE, "imu");
+    if (quat_id < 0 || gyro_id < 0 || pos_id < 0 || vel_id < 0 || site_id < 0) {
+        std::fprintf(stderr,
+                     "[grove_g1] no pelvis imu sensors in this model; nothing will publish "
+                     "ground-truth odometry\n");
+        return;
+    }
+    const int quat_adr = m->sensor_adr[quat_id];
+    const int gyro_adr = m->sensor_adr[gyro_id];
+    const int pos_adr  = m->sensor_adr[pos_id];
+    const int vel_adr  = m->sensor_adr[vel_id];
+
+    std::fprintf(stderr, "[grove_g1] ground-truth base state up at %.1f Hz\n", kBaseStateRateHz);
+
+    const auto period = std::chrono::duration<double>(1.0 / kBaseStateRateHz);
+    auto       next   = std::chrono::steady_clock::now();
+    while (state().running.load(std::memory_order_relaxed)) {
+        next += std::chrono::duration_cast<std::chrono::steady_clock::duration>(period);
+        next = std::max(next, std::chrono::steady_clock::now());
+
+        SensorFrameHeader header{};
+        BaseStateRecord   sample{};
+        bool              have = false;
+        {
+            std::lock_guard<std::recursive_mutex> lock(*sim_mtx);
+            const mjData*                         d = *data;
+            // A viewer reload swaps both pointers and the addresses above belong to the old
+            // model. Same check, same reason, as the sweep and IMU loops'.
+            if (*model != m || d == nullptr) {
+                break;
+            }
+            header.sim_time_s = d->time;
+            for (int i = 0; i < 3; ++i) {
+                header.sensor_pos[i] = d->sensordata[pos_adr + i];
+                sample.ang_vel[i]    = d->sensordata[gyro_adr + i];
+            }
+            for (int i = 0; i < 4; ++i) {
+                header.sensor_quat[i] = d->sensordata[quat_adr + i];
+            }
+            // framelinvel reports in the world frame; the record carries body-frame rates, so
+            // rotate here and the relay can publish a conventional Odometry twist untouched.
+            const double* site_mat = d->site_xmat + (site_id * 9);
+            for (int r = 0; r < 3; ++r) {
+                double acc = 0.0;
+                for (int k = 0; k < 3; ++k) {
+                    acc += site_mat[(3 * k) + r] * d->sensordata[vel_adr + k];
+                }
+                sample.lin_vel[r] = acc;
+            }
+            have = true;
+        }
+
+        if (have) {
+            header.magic         = kSensorFrameMagic;
+            header.version       = kSensorFrameVersion;
+            header.kind          = static_cast<uint32_t>(SensorFrameKind::BaseState);
+            header.payload_bytes = static_cast<uint32_t>(sizeof(sample));
+            // trySend for the same reason the IMU uses it: this socket is shared, and waiting
+            // out someone else's multi-megabyte frame costs more than one dropped sample.
+            relay_socket->trySend(header, &sample, sizeof(sample));
+        }
+
+        std::this_thread::sleep_until(next);
+    }
+}
+
 }  // namespace
 
 void StartSensorPublisher(mjModel** model, mjData** data, std::recursive_mutex* sim_mtx)
@@ -978,6 +1068,8 @@ void StartSensorPublisher(mjModel** model, mjData** data, std::recursive_mutex* 
     state().relay      = std::make_unique<RelaySocket>(cfg.socket_path);
     state().thread     = std::thread(sensorLoop, cfg, model, data, sim_mtx, state().relay.get());
     state().imu_thread = std::thread(imuLoop, cfg, model, data, sim_mtx, state().relay.get());
+    state().base_thread =
+        std::thread(baseStateLoop, model, data, sim_mtx, state().relay.get());
 }
 
 void StopSensorPublisher()
@@ -997,6 +1089,9 @@ void StopSensorPublisher()
     }
     if (s.imu_thread.joinable()) {
         s.imu_thread.join();
+    }
+    if (s.base_thread.joinable()) {
+        s.base_thread.join();
     }
     // Closed only now, with both threads stopped: the relay sees EOF and logs a disconnect
     // rather than holding a connection that will never carry another frame.

@@ -1,0 +1,144 @@
+Hold the robot standing until the control stack drives the motors
+
+The bridge applies `ctrl[i] = tau + kp*(q - q_meas) + kd*(dq - dq_meas)` straight from the
+last received lowcmd. That message is default-constructed until one arrives, so every term
+is zero and every motor is dead from the moment the simulator starts.
+
+On the arm_sdk stack that was invisible, because the onboard-controller stand-in owned the
+legs and lowcmd was never used. On the lowcmd stack it drops the robot. The simulator starts
+stepping physics roughly six seconds before `G1LowCmdSystem` initialises and ten before any
+controller claims a joint, so the robot is already prone by the time a balance policy exists.
+The policy then gets a prone observation, diverges, and the safety controller latches its
+out-of-domain emergency. `pin_pelvis` existed to paper over exactly this.
+
+The hold has two parts, because a joint PD alone cannot balance a humanoid: measured, it
+holds the joint angles perfectly well and the robot topples about its feet anyway, ending at
+a pelvis height of 0.094 m. So the pose comes from a per-motor PD at the model's initial
+configuration, and the balance comes from a weld the scene declares by name,
+`pelvis_startup_hold`. Both are released together and never re-applied.
+
+That is the parity-correct behaviour rather than a simulator convenience. On a real G1 the
+onboard controller holds the robot standing until `MotionSwitcherClient::ReleaseMode()`
+returns, and only then do the motors become ours. The simulator having no equivalent was the
+gap.
+
+Three details worth stating, each of which was a failed attempt first:
+
+Handover triggers on a non-zero kp, kd or tau rather than on the arrival of a frame. The
+hardware component publishes continuously from the moment it activates, and until a
+controller claims a joint it sends that joint kp=kd=tau=0, so "a frame arrived" fires several
+seconds before anything is actually holding the robot up.
+
+The hold is tracked per motor rather than globally, so controllers spawning in any order hand
+over one group at a time. Globally, the first controller to activate released every joint the
+others had not claimed yet.
+
+The weld is released only once every motor has been driven for half a second, so the robot is
+never left balancing on a half-claimed body or on a policy that has not reached its stance.
+Which controller activates last is a spawner race, so without that settle the weld sometimes
+released on the very tick a balance policy first wrote, while its blend was still at zero and
+its command was therefore a static pose. Measured, that dropped the robot about half the time. A scene that declares no such weld simply has nothing to release, which
+is what keeps the arm_sdk scenes and the permanently-pinned test scene unchanged.
+
+--- a/simulate/src/unitree_sdk2_bridge.h
++++ b/simulate/src/unitree_sdk2_bridge.h
+@@ -90,6 +90,66 @@
+ 
+     std::shared_ptr<unitree::common::UnitreeJoystick> joystick = nullptr;
+ 
++    // Stands in for the onboard controller a real robot runs until ReleaseMode(): holds the robot
++    // standing until the control stack starts driving the motors, then hands it over for good.
++    // Without this every motor is dead from t=0, because the default-constructed lowcmd carries
++    // zero gains, and the robot is on the floor before any controller can claim a joint.
++    //
++    // Two parts, because a joint PD alone cannot balance a humanoid: it holds joint angles while
++    // the robot topples about its feet. The pose comes from the PD, the balance from a weld the
++    // scene declares by name.
++    static constexpr const char* kStartupWeldName = "pelvis_startup_hold";
++    static constexpr double kStartupHoldKp = 200.0;
++    static constexpr double kStartupHoldKd = 5.0;
++    // Bridge ticks at 1 kHz, so half a second for a balance policy to reach its stance while the
++    // pelvis is still supported.
++    static constexpr int kStartupSettleTicks = 500;
++
++    // Per motor, so controllers spawning in any order hand over one group at a time instead of
++    // the first to activate dropping every joint the others still hold.
++    std::vector<char> startup_hold_;
++    std::vector<mjtNum> startup_hold_q_;
++    int startup_weld_id_ = -1;
++    int startup_settle_ticks_ = 0;
++
++    void _capture_startup_hold()
++    {
++        startup_hold_.assign(num_motor_, 1);
++        startup_hold_q_.resize(num_motor_);
++        for (int i = 0; i < num_motor_; i++) {
++            const int joint_id = mj_model_->actuator_trnid[2 * i];
++            startup_hold_q_[i] = joint_id >= 0
++                                     ? mj_model_->qpos0[mj_model_->jnt_qposadr[joint_id]]
++                                     : 0.0;
++        }
++        startup_weld_id_ = mj_name2id(mj_model_, mjOBJ_EQUALITY, kStartupWeldName);
++    }
++
++    void _hold_motor(int i)
++    {
++        mj_data_->ctrl[i] =
++            kStartupHoldKp * (startup_hold_q_[i] - mj_data_->sensordata[i]) +
++            kStartupHoldKd * (0.0 - mj_data_->sensordata[i + num_motor_]);
++    }
++
++    // Released once every motor has been driven for kStartupSettleTicks, so the robot is never
++    // left balancing on a half-claimed body or on a policy that has not reached its stance yet.
++    // A scene without the weld simply has nothing to release.
++    //
++    // The settle matters: which controller activates last is a spawner race, so without it the
++    // weld sometimes releases on the tick a balance policy first writes, while its blend is still
++    // at zero and its command is therefore a static pose. A static pose topples.
++    void _release_startup_weld_if_done()
++    {
++        if (startup_weld_id_ < 0) { return; }
++        for (int i = 0; i < num_motor_; i++) {
++            if (startup_hold_[i]) { return; }
++        }
++        if (++startup_settle_ticks_ < kStartupSettleTicks) { return; }
++        mj_data_->eq_active[startup_weld_id_] = 0;
++        startup_weld_id_ = -1;
++    }
++
+     void _check_sensor()
+     {
+         num_motor_ = mj_model_->nu;
+@@ -178,12 +238,29 @@
+         // lowcmd
+         {
+             std::lock_guard<std::mutex> lock(lowcmd->mutex_);
++            if(startup_hold_.empty()) { _capture_startup_hold(); }
++
+             for(int i(0); i<num_motor_; i++) {
+                 auto & m = lowcmd->msg_.motor_cmd()[i];
+-                mj_data_->ctrl[i] = m.tau() +
+-                                    m.kp() * (m.q() - mj_data_->sensordata[i]) +
+-                                    m.kd() * (m.dq() - mj_data_->sensordata[i + num_motor_]);
++
++                // Hand this motor over on the first frame that would actually drive it, not on
++                // the first frame to arrive: the hardware component publishes continuously from
++                // the moment it activates, and sends kp=kd=tau=0 for every joint no controller
++                // has claimed yet. Latched, so a motor cannot fall back to the hold.
++                if(startup_hold_[i] &&
++                   (m.kp() != 0.0f || m.kd() != 0.0f || m.tau() != 0.0f)) {
++                    startup_hold_[i] = 0;
++                }
++
++                if(startup_hold_[i]) {
++                    _hold_motor(i);
++                } else {
++                    mj_data_->ctrl[i] = m.tau() +
++                                        m.kp() * (m.q() - mj_data_->sensordata[i]) +
++                                        m.kd() * (m.dq() - mj_data_->sensordata[i + num_motor_]);
++                }
+             }
++            _release_startup_weld_if_done();
+         }
+ 
+         // lowstate

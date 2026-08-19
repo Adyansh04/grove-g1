@@ -1,0 +1,6 @@
+# Hardware front end: republishes the driver's CustomMsg as PointCloud2 for everything
+# except FAST-LIO. In simulation g1_sensor_relay publishes the same topic directly.
+g1_livox_pointcloud:
+  ros__parameters:
+    custom_msg_topic: "/livox/custom_msg"
+    cloud_topic: "/livox/lidar"

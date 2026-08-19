@@ -33,8 +33,8 @@ Visualization Manager:
       Alpha: 0.3
       Reference Frame: <Fixed Frame>
 
-    # The robot. Needs pelvis -> torso_link, which motion_service_sim supplies from
-    # /lowstate; joint_state_broadcaster only covers the arms.
+    # The robot. Needs pelvis -> torso_link, which joint_state_broadcaster covers along with
+    # every other motor the hardware component exports.
     - Class: rviz_default_plugins/RobotModel
       Name: Robot
       Enabled: true

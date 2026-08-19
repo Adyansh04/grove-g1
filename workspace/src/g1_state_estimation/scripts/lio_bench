@@ -5,8 +5,8 @@ No Nav2, no AMCL, no map, no costmap. Just the simulator, the LIO pipeline, and 
 commands driven open-loop from here. Everything the earlier runs blamed on LIO could equally
 have been the planner, the controller or a stale map; this removes all of them.
 
-  truth  /sportmodestate position + /lowstate IMU heading  -- exact MuJoCo pelvis state
-  lio    odom -> base_footprint                            -- what the LIO pipeline publishes
+  truth  /g1_sensor_relay/base_state   -- exact MuJoCo pelvis state, pose and heading in one
+  lio    odom -> base_footprint        -- what the LIO pipeline publishes
 
 The two live in different frames: `odom` is latched wherever FAST-LIO happened to be when it
 first produced a pose, and the robot does not spawn at a repeatable heading. So the frames are
@@ -18,19 +18,22 @@ real error away and smears the rest evenly along the run, so no row of the table
 at that point in the run.
 """
 import csv
-import math, os, signal, sys, time
+import math
+import os
+import signal
+import sys
+import time
+
 import rclpy
 from geometry_msgs.msg import Twist
-from rclpy.action import ActionClient
+from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from tf2_msgs.msg import TFMessage
-from unitree_go.msg import SportModeState
-from unitree_hg.msg import LowState
-from g1_msgs.action import SetLocoMode
 
-# Below these the sim walking policy does not step at all (measured, see g1_locomotion).
-VX, WZ = 0.5, 1.6
+# Clear of the gait's 0.15 m/s translation deadband and inside the controller's own clamps
+# (0.6 m/s, 0.9 rad/s). Yaw tracks near 1:1 and has no deadband.
+VX, WZ = 0.5, 0.8
 # An arbitrary wander, not a figure. Comparing two estimates OF THE SAME MOTION does not
 # care what shape that motion is, so there is no controller here and nothing to tune -- the
 # gait just has to move the robot and turn it now and then.
@@ -38,7 +41,7 @@ VX, WZ = 0.5, 1.6
 LEGS = [(VX, 0.0, 8.0), (0.0, WZ, 1.0), (VX, 0.0, 6.0), (0.0, -WZ, 1.4),
         (VX, 0.0, 7.0), (0.0, WZ, 1.2), (VX, 0.0, 5.0), (0.0, -WZ, 1.0),
         (VX, 0.0, 8.0), (0.0, WZ, 1.6), (VX, 0.0, 6.0)]
-# Standing pelvis height is 0.750 m (measured). Below this the robot is on the floor, and every
+# Standing pelvis height is 0.734 m (measured). Below this the robot is on the floor, and every
 # number after that point describes a fallen robot being dragged by a flailing gait rather than
 # the odometry under test -- a huge drift number that has nothing to do with the estimator.
 # Abort instead.
@@ -70,11 +73,10 @@ class Bench(Node):
         s.start = None
         s.track = []
         s.create_subscription(TFMessage, "/tf", s._tf, 100)
-        s.create_subscription(SportModeState, "/sportmodestate", s._gt, qos_profile_sensor_data)
-        # /sportmodestate carries a position but its imu_state is left zeroed by the simulator,
-        # so the true heading has to come off LowState's pelvis quaternion instead.
-        s.create_subscription(LowState, "/lowstate", s._low, qos_profile_sensor_data)
-        s.cmd = s.create_publisher(Twist, "/g1_loco_bridge/cmd_vel", 1)
+        s.create_subscription(
+            Odometry, "/g1_sensor_relay/base_state", s._gt, qos_profile_sensor_data
+        )
+        s.cmd = s.create_publisher(Twist, "/cmd_vel", 1)
 
     def _tf(s, m):
         for t in m.transforms:
@@ -84,14 +86,13 @@ class Bench(Node):
                          yaw_of(r.x, r.y, r.z, r.w))
 
     def _gt(s, m):
-        s.truth = (m.position[0], m.position[1])
-        s.z = m.position[2]
-        if m.position[2] < MIN_PELVIS_Z:
-            s.fallen = m.position[2] if s.fallen is None else min(s.fallen, m.position[2])
-
-    def _low(s, m):
-        q = m.imu_state.quaternion  # Unitree order the quaternion w-first.
-        s.truth_yaw = yaw_of(q[1], q[2], q[3], q[0])
+        p = m.pose.pose.position
+        q = m.pose.pose.orientation
+        s.truth = (p.x, p.y)
+        s.z = p.z
+        s.truth_yaw = yaw_of(q.x, q.y, q.z, q.w)
+        if p.z < MIN_PELVIS_Z:
+            s.fallen = p.z if s.fallen is None else min(s.fallen, p.z)
 
     def ready(s):
         return None not in (s.truth, s.lio, s.truth_yaw, s.z)
@@ -147,21 +148,6 @@ class Bench(Node):
         print("RESULT ABORT: " + why)
         return False
 
-    def set_mode(s, fsm):
-        c = ActionClient(s, SetLocoMode, "/g1_loco_bridge/set_mode")
-        if not c.wait_for_server(timeout_sec=30.0):
-            print("RESULT ABORT: no set_mode server")
-            return False
-        g = SetLocoMode.Goal(); g.fsm_id = fsm
-        f = c.send_goal_async(g); rclpy.spin_until_future_complete(s, f, timeout_sec=20.0)
-        h = f.result()
-        if h is None or not h.accepted:
-            print("RESULT ABORT: SetLocoMode(%d) rejected" % fsm)
-            return False
-        r = h.get_result_async(); rclpy.spin_until_future_complete(s, r, timeout_sec=30.0)
-        c.destroy()
-        return True
-
 
 def report(b):
     if b.start is None or len(b.track) < 50:
@@ -177,7 +163,7 @@ def report(b):
     for _, (lx, ly) in b.track:
         dx, dy = lx - l0[0], ly - l0[1]
         L.append((c * dx - s_ * dy, s_ * dx + c * dy))
-    gaps = [math.hypot(tx - ax, ty - ay) for (tx, ty), (ax, ay) in zip(T, L)]
+    gaps = [math.hypot(tx - ax, ty - ay) for (tx, ty), (ax, ay) in zip(T, L, strict=True)]
     dist = sum(math.dist(T[i], T[i - 1]) for i in range(1, len(T)))
 
     # Full paired trace, both columns in the truth frame. Written before the summary so it
@@ -187,7 +173,7 @@ def report(b):
             w = csv.writer(fh)
             w.writerow(["i", "truth_x", "truth_y", "lio_x", "lio_y", "gap_m", "path_m"])
             run = 0.0
-            for i, ((tx, ty), (ax, ay)) in enumerate(zip(T, L)):
+            for i, ((tx, ty), (ax, ay)) in enumerate(zip(T, L, strict=True)):
                 if i:
                     run += math.dist(T[i], T[i - 1])
                 w.writerow(["%d" % i, "%.4f" % tx, "%.4f" % ty, "%.4f" % ax, "%.4f" % ay,
@@ -202,7 +188,7 @@ def report(b):
     print("RESULT   path_m |    truth (x, y)  |      lio (x, y)  |   gap")
     run = 0.0
     nxt = 0.0
-    for i, ((tx, ty), (ax, ay)) in enumerate(zip(T, L)):
+    for i, ((tx, ty), (ax, ay)) in enumerate(zip(T, L, strict=True)):
         if i:
             run += math.dist(T[i], T[i - 1])
         if run + 1e-9 >= nxt:
@@ -221,45 +207,56 @@ def report(b):
 
 
 def main():
-    rclpy.init(); b = Bench()
+    rclpy.init()
+    b = Bench()
 
     def stop(*_):
-        b.cmd.publish(Twist()); report(b); sys.stdout.flush(); rclpy.shutdown()
-    signal.signal(signal.SIGINT, stop); signal.signal(signal.SIGTERM, stop)
+        b.cmd.publish(Twist())
+        report(b)
+        sys.stdout.flush()
+        rclpy.shutdown()
+
+    signal.signal(signal.SIGINT, stop)
+    signal.signal(signal.SIGTERM, stop)
 
     # TF appearing IS the readiness signal: it only exists once FAST-LIO has fixed gravity and
     # produced a pose the publisher accepted.
     if not b.wait_for(b.ready, 180.0, "odom -> base_footprint never appeared"):
-        rclpy.shutdown(); return
-
-    if not (b.set_mode(4) and (time.sleep(3) or True) and b.set_mode(500)):
-        rclpy.shutdown(); return
+        rclpy.shutdown()
+        return
 
     # Everything before this point is discarded. The baseline both paths are differenced from,
     # and the rotation between their frames, have to come from a pose the robot actually held
     # rather than one it was passing through on its way back upright.
     if not b.settle():
-        rclpy.shutdown(); return
+        rclpy.shutdown()
+        return
     # Including the fall latch: a spawn that dips and recovers is exactly what settle() waited
     # out, and leaving it set aborts the first leg on a robot that is standing up fine.
     b.track.clear()
     b.fallen = None
     if not b.spin(2.0):
         print("RESULT ABORT: robot went down between settling and the first leg")
-        rclpy.shutdown(); return
+        rclpy.shutdown()
+        return
 
     for i, (vx, wz, secs) in enumerate(LEGS):
-        t = Twist(); t.linear.x = vx; t.angular.z = wz
+        t = Twist()
+        t.linear.x = vx
+        t.angular.z = wz
         print("leg %d/%d: vx=%.1f wz=%+.1f for %.1fs" % (i + 1, len(LEGS), vx, wz, secs),
               flush=True)
         if not (b.spin(secs, t) and b.spin(1.0)):
             b.cmd.publish(Twist())
-            print("RESULT ABORT: robot fell (pelvis %.3f m, standing is 0.750) -- "
+            print("RESULT ABORT: robot fell (pelvis %.3f m, standing is 0.734) -- "
                   "nothing after this measures odometry" % b.fallen)
-            rclpy.shutdown(); return
+            rclpy.shutdown()
+        return
     b.cmd.publish(Twist())
     b.spin(2.0)
-    report(b); sys.stdout.flush(); rclpy.shutdown()
+    report(b)
+    sys.stdout.flush()
+    rclpy.shutdown()
 
 
 main()

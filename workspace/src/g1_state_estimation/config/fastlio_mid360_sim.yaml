@@ -1,4 +1,4 @@
-# FAST-LIO2 against the simulator. SIMULATION ONLY -- the robot uses
+# FAST-LIO2 against the simulator. Simulation only; the robot uses
 # fastlio_mid360_hardware.yaml. Four keys differ, each marked DIFFERS below; everything else
 # is identical and should stay that way.
 #
@@ -47,7 +47,7 @@
       fov_degree: 360.0
       det_range: 100.0
       # DIFFERS (hardware: true). Nothing to estimate: the simulator places its IMU from the
-      # same numbers below, so the value is exact and the estimator can only wander from it --
+      # same numbers below, so the value is exact and the estimator can only wander from it,
       # and it did, a 35 s standing run diverging kilometres once the estimate walked away. On
       # the robot the true offset is only approximately Livox's published one, which is the
       # case the estimator exists for.

@@ -5,8 +5,8 @@
  * @file odom_math.hpp
  * @brief Frame and staleness math for the odom -> base publisher.
  *
- * ROS-free so it is testable without a node, DDS or a running sim, same split as
- * g1_motion_service_sim's blend_math and g1_hardware_interface's arm_ramp_engine.
+ * ROS-free so it is testable without a node, DDS or a running sim, the same split
+ * g1_hardware_interface applies to lowcmd_assembly.
  */
 
 #include <array>
@@ -16,25 +16,29 @@
 namespace g1_state_estimation
 {
 
-/// Where the base pose comes from. Anything else is a configuration error.
+/**
+ * @brief Where the base pose comes from. Anything else is a configuration error.
+ */
 enum class OdometrySource
 {
-    kSimSportModeState,  ///< The converged track: pelvis pose from /sportmodestate. Sim-only.
-    kFastLio,            ///< LiDAR-inertial odometry. The only source that runs on the robot.
-    kHardware,           ///< Not a source: the real G1 publishes no odometry of its own.
+    kGroundTruth,  ///< Exact pelvis state out of the simulator, over the relay. Sim-only.
+    kFastLio,      ///< LiDAR-inertial odometry. The only source that runs on the robot.
+    kHardware,     ///< Not a source: the real G1 publishes no odometry of its own.
 };
 
 /**
  * @brief Parses the `odometry_source` parameter.
  *
- * @param name   Parameter value, expected `sim_sportmodestate`, `fast_lio` or `hardware`.
+ * @param name   Parameter value, expected `ground_truth`, `fast_lio` or `hardware`.
  * @param[out] out  Set only when the name is recognised.
  * @return False for an unrecognised name, so the caller can fail configure rather than
  *         silently fall back to a default that might fabricate transforms.
  */
 bool parseOdometrySource(const std::string& name, OdometrySource& out);
 
-/// Planar pose of the base frame in the odom frame.
+/**
+ * @brief Planar pose of the base frame in the odom frame.
+ */
 struct PlanarPose
 {
     double x   = 0.0;
@@ -42,7 +46,9 @@ struct PlanarPose
     double yaw = 0.0;
 };
 
-/// Planar twist. Frame depends on context, see toBodyTwist().
+/**
+ * @brief Planar twist. Frame depends on context, see toBodyTwist().
+ */
 struct PlanarTwist
 {
     double vx    = 0.0;
@@ -50,7 +56,9 @@ struct PlanarTwist
     double omega = 0.0;
 };
 
-/// Quaternion, w-last to match geometry_msgs.
+/**
+ * @brief Quaternion, w-last to match geometry_msgs.
+ */
 struct Quaternion
 {
     double x = 0.0;
@@ -59,7 +67,9 @@ struct Quaternion
     double w = 1.0;
 };
 
-/// A rigid transform, in the same plain types as the rest of this header.
+/**
+ * @brief A rigid transform, in the same plain types as the rest of this header.
+ */
 struct Pose3d
 {
     double     x = 0.0;
@@ -72,17 +82,22 @@ struct Pose3d
  * @brief Whether a pose can safely be turned into a transform.
  *
  * Finite translation, and a quaternion whose norm is far enough from zero to normalise. A
- * scan-matching filter that diverges reports NaN rather than stopping, and tf2 normalises
- * silently -- so an unchecked NaN becomes a dropped transform with no message naming the
- * source. Worse at the origin latch, where one bad sample would be baked in for the whole run.
+ * diverging scan matcher reports NaN rather than stopping and tf2 normalises silently, so an
+ * unchecked NaN becomes a dropped transform naming no source, and one latched at the origin
+ * is baked in for the whole run.
  */
 bool isUsablePose(const Pose3d& pose);
 
-/// The transform you get by applying @p b and then @p a. Reads left-to-right as frames:
-/// composePose(a_from_b, b_from_c) is a_from_c.
+/**
+ * @brief The transform you get by applying @p b and then @p a.
+ *
+ * Reads left-to-right as frames: composePose(a_from_b, b_from_c) is a_from_c.
+ */
 Pose3d composePose(const Pose3d& a, const Pose3d& b);
 
-/// The inverse transform: invertPose(a_from_b) is b_from_a.
+/**
+ * @brief The inverse transform: invertPose(a_from_b) is b_from_a.
+ */
 Pose3d invertPose(const Pose3d& pose);
 
 /**
@@ -93,7 +108,7 @@ Pose3d invertPose(const Pose3d& pose);
 Quaternion yawToQuaternion(double yaw);
 
 /**
- * @brief Heading about +z -- the ZYX yaw, valid under roll and pitch.
+ * @brief Heading about +z: the ZYX yaw, valid under roll and pitch.
  *
  * Round-trip inverse of yawToQuaternion(); result is wrapped to (-pi, pi].
  *
@@ -107,8 +122,8 @@ double quaternionToYaw(const Quaternion& q);
  *
  * Roll and pitch together, without picking an Euler convention. Used to refuse a ground
  * projection whose heading has gone ill-conditioned: approaching 90 degrees of pitch the yaw
- * swings wildly for tiny attitude changes, and that is a fall rather than a navigation state.
- * Deliberately conservative -- it also trips on pure roll, where the yaw is still fine.
+ * swings wildly for tiny attitude changes, which is a fall rather than a navigation state.
+ * Conservative on purpose: it also trips on pure roll, where the yaw is still fine.
  */
 double tiltFromVertical(const Quaternion& q);
 
@@ -142,16 +157,20 @@ GroundSplit splitGroundProjection(double x, double y, double z, const Quaternion
 /**
  * @brief Recombines a heading with a tilt: the inverse of splitGroundProjection's split.
  *
- * composeAttitude(yaw, splitGroundProjection(..., q, yaw).tilt) reproduces q. Used to build an
- * attitude from two sources -- heading from one, roll and pitch from another -- which is what
- * the fast_lio source does to keep the published frame gravity-true.
+ * composeAttitude(yaw, splitGroundProjection(..., q, yaw).tilt) reproduces q. Builds an
+ * attitude from two sources, heading from one and roll/pitch from another, which is what the
+ * fast_lio source does to keep the published frame gravity-true.
  */
 Quaternion composeAttitude(double yaw, const Quaternion& tilt);
 
-/// @p a composed with @p b: the rotation you get by applying @p b and then @p a.
+/**
+ * @brief @p a composed with @p b: the rotation you get by applying @p b and then @p a.
+ */
 Quaternion composeRotation(const Quaternion& a, const Quaternion& b);
 
-/// The inverse rotation. Assumes a unit quaternion, which everything here maintains.
+/**
+ * @brief The inverse rotation. Assumes a unit quaternion, which everything here maintains.
+ */
 Quaternion invertRotation(const Quaternion& q);
 
 /**
@@ -174,10 +193,9 @@ double wrapAngle(double angle);
 /**
  * @brief Rotates a world-frame planar twist into the base frame.
  *
- * nav_msgs/Odometry defines `twist` in the child frame, not the header frame, which is a
- * standing trap: the planar joints report velocity in the world frame, so handing it
- * straight to the message is wrong for every yaw except zero. Nav2's controller server
- * reads this, so getting it wrong shows up as the robot fighting its own heading.
+ * nav_msgs/Odometry defines `twist` in the child frame, not the header frame, while the planar
+ * joints report velocity in the world frame. Handing it straight to the message is wrong for
+ * every yaw except zero, and Nav2's controller server reads it.
  *
  * @param world_twist  Twist expressed in the odom frame.
  * @param yaw          Current base yaw in the odom frame.

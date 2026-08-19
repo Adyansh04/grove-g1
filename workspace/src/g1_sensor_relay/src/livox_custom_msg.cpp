@@ -1,3 +1,8 @@
+/**
+ * @file livox_custom_msg.cpp
+ * @brief The PointCloud2 -> Livox CustomMsg conversion FAST-LIO consumes in simulation.
+ */
+
 #include "g1_sensor_relay/livox_custom_msg.hpp"
 
 #include <cmath>
@@ -37,7 +42,7 @@ bool toCustomMsg(const sensor_msgs::msg::PointCloud2& cloud, livox_ros_driver2::
     sensor_msgs::PointCloud2ConstIterator<float> z(cloud, "z");
 
     out.header = cloud.header;
-    // Informational only -- FAST-LIO times scans off header.stamp -- but a real driver puts the
+    // Informational only, since FAST-LIO times scans off header.stamp, but a real driver puts the
     // first point's absolute time here, so match that rather than leave it zero.
     out.timebase = static_cast<std::uint64_t>(rclcpp::Time(cloud.header.stamp).nanoseconds());
     out.lidar_id = 0;
@@ -59,7 +64,7 @@ bool toCustomMsg(const sensor_msgs::msg::PointCloud2& cloud, livox_ros_driver2::
         // Zero, and correct rather than merely convenient. The simulator raycasts against a
         // frozen mjData, so every point in a frame really is sampled at the same instant.
         // FAST-LIO reads this as milliseconds-since-scan-start into its motion undistortion,
-        // which then finds nothing to undo -- which is the truth here.
+        // which then finds nothing to undo, which is the truth here.
         point.offset_time = 0;
         // Both are gates in FAST-LIO's Livox handler, not decoration: `line` must be under
         // scan_line, and tag bits 4-5 must read 00 or 01 or the point is discarded.

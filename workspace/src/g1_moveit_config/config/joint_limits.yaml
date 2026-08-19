@@ -1,17 +1,16 @@
 # Velocity and acceleration limits MoveIt times its trajectories against.
 #
-# These are not the URDF's limits. The URDF says 22 to 37 rad/s,
-# which is the motor; the arm reaches the robot through g1_hardware_interface, which slew-clamps
-# every joint at max_joint_velocity_rad_s = 1.0 rad/s (g1_description/config/arm_sdk_params.yaml).
-# Time a trajectory against the motor and the bridge stretches it by a factor of thirty-odd,
-# which surfaces as the controller aborting on a goal-time tolerance that looks unrelated to
-# speed. 0.8 leaves the clamp as a backstop rather than a controller in the loop: JTC
+# These are not the URDF's limits. The URDF says 22 to 37 rad/s, which is what the motor can do,
+# not what the arm tracks. arm_trajectory_controller claims position alone, so the component runs
+# these joints on its position_only_kp of 25 to 40, soft enough that a trajectory timed against
+# the motor is one the arm falls behind, which surfaces as the controller aborting on a goal-time
+# tolerance that looks unrelated to speed. 0.8 is what the arm actually follows: JTC
 # interpolation and the 200 Hz controller_manager against a 100 Hz publish rate can push
 # instantaneous command deltas above the nominal.
 #
 # g1_moveit_config's drift test asserts every value here stays under that clamp.
 #
-# Acceleration has no URDF equivalent at all -- the vendored file declares none -- and
+# Acceleration has no URDF equivalent at all, the vendored file declaring none, and
 # time-optimal parameterization needs one. Without it a plan comes back "successful" carrying
 # zero timestamps and only fails at execution. 2.0 rad/s^2 reaches full speed in 0.4 s; arm
 # acceleration shifts the centre of mass on a robot that is balancing itself, so it starts

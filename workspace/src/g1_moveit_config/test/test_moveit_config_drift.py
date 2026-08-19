@@ -1,8 +1,8 @@
 """Numbers that must agree across packages, where neither package's own tests can see the pair.
 
-Same blind spot test_gait_coupling and test_rviz_configs exist for: MoveIt's idea of the arm
-lives here, the controller's lives in g1_bringup, and the bridge's speed clamp lives in
-g1_description. Nothing but a test that reads all three notices when they drift apart.
+The same blind spot test_rviz_configs exists for: MoveIt's idea of the arm lives here, the
+controller's lives in g1_controllers, and the hand's speed clamp lives in g1_description.
+Nothing but a test that reads all three notices when they drift apart.
 
 No simulator, no ROS graph.
 """
@@ -14,9 +14,12 @@ import pytest
 import yaml
 
 MOVEIT_CONFIG_DIR = os.environ["G1_MOVEIT_CONFIG_DIR"]
-BRINGUP_CONFIG_DIR = os.environ["G1_BRINGUP_CONFIG_DIR"]
 DESCRIPTION_CONFIG_DIR = os.environ["G1_DESCRIPTION_CONFIG_DIR"]
-SIM_CONFIG_DIR = os.environ["G1_SIM_CONFIG_DIR"]
+CONTROLLERS_CONFIG_DIR = os.environ["G1_CONTROLLERS_CONFIG_DIR"]
+
+CONTROLLER_FILES = {
+    "lowcmd": (CONTROLLERS_CONFIG_DIR, "lowcmd_controllers.yaml"),
+}
 
 ARM_JOINTS = [
     f"{side}_{joint}_joint"
@@ -49,9 +52,9 @@ def moveit_controllers():
     return _load(MOVEIT_CONFIG_DIR, "moveit_controllers.yaml")
 
 
-@pytest.fixture(scope="module")
-def controllers():
-    return _load(BRINGUP_CONFIG_DIR, "controllers.yaml")
+@pytest.fixture(scope="module", params=sorted(CONTROLLER_FILES), ids=sorted(CONTROLLER_FILES))
+def controllers(request):
+    return _load(*CONTROLLER_FILES[request.param])
 
 
 @pytest.fixture(scope="module")
@@ -73,7 +76,7 @@ def test_the_srdf_is_well_formed_xml(srdf):
     """It has already been unparseable once.
 
     XML forbids a double hyphen inside a comment, the SRDF is comment-heavy, and no linter in
-    this workspace reads .srdf -- ament_xmllint only looks at .xml. The failure surfaces as
+    this workspace reads .srdf, since ament_xmllint only looks at .xml. The failure surfaces as
     move_group dying at launch with a column number.
     """
     assert srdf.tag == "robot"
@@ -103,22 +106,17 @@ def test_partial_joint_goals_stay_enabled(controllers):
     assert params["allow_partial_joints_goal"] is True
 
 
-@pytest.mark.parametrize(
-    ("params_file", "joints"),
-    [
-        ("arm_sdk_params.yaml", ARM_JOINTS),
-        ("dex3_params.yaml", HAND_JOINTS["left"] + HAND_JOINTS["right"]),
-    ],
-)
-def test_planned_speed_stays_under_the_bridge_clamp(joint_limits, params_file, joints):
+def test_planned_hand_speed_stays_under_the_clamp(joint_limits):
     """The clamp is a backstop, not a controller in the loop.
 
-    Both hardware components slew-clamp every joint they own; plan faster than that and the
-    motion is silently stretched until the controller aborts on a goal-time tolerance instead.
-    The arm and the hands clamp at different speeds, so each is checked against its own.
+    G1Dex3System slew-clamps every finger it owns; plan faster than that and the motion is
+    silently stretched until the controller aborts on a goal-time tolerance instead.
+
+    The body component has no such clamp, deliberately: it would throttle exactly the fast
+    corrections the balance policy needs, so there is nothing to check the arm against.
     """
-    clamp = _load(DESCRIPTION_CONFIG_DIR, params_file)["system"]["max_joint_velocity_rad_s"]
-    for joint in joints:
+    clamp = _load(DESCRIPTION_CONFIG_DIR, "dex3_params.yaml")["system"]["max_joint_velocity_rad_s"]
+    for joint in HAND_JOINTS["left"] + HAND_JOINTS["right"]:
         limits = joint_limits[joint]
         assert limits["has_velocity_limits"] is True, joint
         assert limits["max_velocity"] < clamp, (
@@ -197,27 +195,13 @@ def test_each_hand_has_an_open_and_a_closed_posture(side, srdf):
         assert named == set(HAND_JOINTS[side]), f"{side} {name} does not cover the hand"
 
 
-def test_the_simulator_holds_the_arms_at_home(srdf):
-    """`home` claims to be where the simulator holds the arms; this test pins that pairing.
-
-    motion_service_sim is told the posture from the SRDF's `home` state, rather than the SRDF
-    being derived from wherever the arms happen to fall at startup: that direction would leave
-    no margin against a heavier hand closing the palm-to-thigh gap.
-    """
-    sim = _load(SIM_CONFIG_DIR, "motion_service_sim.yaml")["/**"]["ros__parameters"]
+def test_the_home_state_lists_the_arm_joints_in_motor_order(srdf):
+    """`home` is compared positionally elsewhere, so its joint order is part of its contract."""
     home = next(
         s for s in srdf.findall("group_state")
         if s.get("name") == "home" and s.get("group") == "both_arms"
     )
-    expected = [float(j.get("value")) for j in home.findall("joint")]
-    assert [j.get("name") for j in home.findall("joint")] == ARM_JOINTS, (
-        "the both_arms `home` state no longer lists the joints in motor order, so comparing it "
-        "positionally against arm_hold_rad would compare the wrong pairs"
-    )
-    assert sim["arm_hold_rad"] == pytest.approx(expected), (
-        "motion_service_sim holds the arms somewhere other than `home`; the simulator's resting "
-        "posture and the pose MoveIt calls home have drifted apart"
-    )
+    assert [j.get("name") for j in home.findall("joint")] == ARM_JOINTS
 
 
 def test_chain_groups_have_a_solver_and_the_composite_one_does_not(srdf, kinematics):
@@ -265,11 +249,10 @@ def test_no_config_here_claims_simulated_time():
 
 # --- sensors_3d.yaml -------------------------------------------------------------------
 #
-# The octomap updater fails quietly in more ways than most MoveIt config. setParams() ANDs its
-# seven required keys and skips the sensor with only an error log if one is missing; a wrong
-# type throws out of the monitor constructor; and MoveItConfigsBuilder guards the whole file
-# with `if sensors_path.exists()`, so a rename is a silent no-op. None of that shows up as a
-# failed launch -- you get a stack that comes up healthy and never builds a map.
+# The octomap updater fails quietly. setParams() ANDs its seven required keys and skips the
+# sensor with only an error log if one is missing, a wrong type throws out of the monitor
+# constructor, and MoveItConfigsBuilder guards the whole file with an exists() check so a rename
+# is a no-op. The stack then comes up healthy and never builds a map.
 
 POINTCLOUD_PLUGIN = "occupancy_map_monitor/PointCloudOctomapUpdater"
 DEPTH_IMAGE_PLUGIN = "occupancy_map_monitor/DepthImageOctomapUpdater"

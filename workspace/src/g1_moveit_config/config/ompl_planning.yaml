@@ -15,7 +15,9 @@ response_adapters:
   - default_planning_response_adapters/ValidateSolution
   - default_planning_response_adapters/DisplayMotionPath
 
-start_state_max_bounds_error: 0.1
+# No start_state_max_bounds_error here, and do not add one back: CheckStartStateBounds only
+# checks. It reads no parameter and aborts on any excursion at all, however small, and there is
+# no adapter left that clamps one. g1_manipulation brings the start state into bounds itself.
 
 planner_configs:
   RRTConnect:

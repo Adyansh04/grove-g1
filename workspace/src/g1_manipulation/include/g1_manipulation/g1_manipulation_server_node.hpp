@@ -6,14 +6,11 @@
  * @brief Pick, place and named-posture skills, served as actions over MoveIt.
  *
  * Adds no command path: every motion goes out through the same `move_group` the RViz panel
- * uses, onto the controllers that already own `rt/arm_sdk` and the hand topics. So the
- * one-writer rule in the control-mode rules is unaffected by this node existing.
+ * uses, onto the controllers that already own the body motors and the hand topics, so the
+ * one-writer rule is unaffected by this node existing.
  *
- * It also takes no control authority of its own. The arm and hands must already be acquired
- * (g1_bringup's activate_arm) before a goal will execute, and releasing them is the caller's
- * job -- for the mission that is g1_orchestration's executor, which brackets the whole run.
- * A skill that acquired authority per goal would hand it back mid-mission and drop whatever
- * the hand was holding.
+ * Takes no control authority of its own. The arm and hands must already be acquired before a
+ * goal will execute, and releasing them is the caller's job.
  */
 
 #include <moveit/move_group_interface/move_group_interface.h>
@@ -21,6 +18,7 @@
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
 
+#include <atomic>
 #include <g1_msgs/action/pick.hpp>
 #include <g1_msgs/action/place.hpp>
 #include <g1_msgs/action/set_arm_posture.hpp>
@@ -42,7 +40,9 @@
 namespace g1_manipulation
 {
 
-/// The MoveIt groups and links one arm brings, resolved from the `arm` field of a goal.
+/**
+ * @brief The MoveIt groups and links one arm brings, resolved from a goal's `arm` field.
+ */
 struct ArmContext
 {
     std::string arm_group;   ///< left_arm / right_arm
@@ -55,7 +55,12 @@ struct ArmContext
     bool is_left{ false };
 };
 
-/// False if `arm` is neither "left" nor "right", leaving `out` untouched.
+/**
+ * @brief Resolves an arm name to its group, frames and handedness.
+ *
+ * @param[out] out Set only when the name is recognised.
+ * @return False if @p arm is neither "left" nor "right", leaving @p out untouched.
+ */
 bool resolveArm(const std::string& arm, ArmContext& out);
 
 class G1ManipulationServer : public rclcpp::Node
@@ -64,11 +69,19 @@ public:
     explicit G1ManipulationServer(const rclcpp::NodeOptions& options);
 
     /**
+     * @brief Waits for any goal still running on a detached thread.
+     *
+     * Without the wait those threads outlive the MoveGroups, the planning scene and the
+     * service clients they are dereferencing.
+     */
+    ~G1ManipulationServer() override;
+
+    /**
      * @brief Builds the MoveGroupInterfaces.
      *
      * Separate from the constructor because MoveGroupInterface blocks until it has the robot
      * description and the current state, which only arrive once something is spinning this
-     * node -- constructing one from inside the constructor deadlocks.
+     * node; constructing one from inside the constructor deadlocks.
      */
     void initialize();
 
@@ -81,39 +94,134 @@ private:
     template <typename ActionT>
     using GoalHandle = rclcpp_action::ServerGoalHandle<ActionT>;
 
+    /**
+     * @brief Runs a pick to completion: approach, grasp, lift.
+     */
     void executePick(const std::shared_ptr<GoalHandle<Pick>>& goal_handle);
+
+    /**
+     * @brief Runs a place to completion: approach, release, retreat.
+     */
     void executePlace(const std::shared_ptr<GoalHandle<Place>>& goal_handle);
+
+    /**
+     * @brief Moves one planning group to a named SRDF pose.
+     */
     void executeSetArmPosture(const std::shared_ptr<GoalHandle<SetArmPosture>>& goal_handle);
 
-    /// Latest pose for `object_id`, or nullopt if it is unknown or older than the timeout.
+    /**
+     * @brief Claims the arm for one goal.
+     *
+     * @return true if this goal may run, false if another one already holds the arm.
+     */
+    bool acquire();
+
+    /**
+     * @brief The /objects array frame, read under objects_mutex_.
+     */
+    std::string objectsFrame();
+
+    /**
+     * @brief Runs one goal body, balancing the running count and releasing the arm.
+     *
+     * Turns an escaping exception into an aborted goal rather than std::terminate on a
+     * detached thread.
+     *
+     * @tparam ActionT The action this goal belongs to.
+     * @tparam Body Callable holding the skill itself.
+     */
+    template <typename ActionT, typename Body>
+    void
+    runGuarded(Body&& body, const std::shared_ptr<rclcpp_action::ServerGoalHandle<ActionT>>& handle)
+    {
+        goals_running_.fetch_add(1);
+        try
+        {
+            body();
+        }
+        catch (const std::exception& e)
+        {
+            RCLCPP_ERROR(get_logger(), "manipulation goal threw: %s", e.what());
+            auto result     = std::make_shared<typename ActionT::Result>();
+            result->success = false;
+            result->message = std::string("aborted on an internal error: ") + e.what();
+            if (handle->is_executing() || handle->is_canceling())
+            {
+                handle->abort(result);
+            }
+        }
+        busy_.store(false);
+        goals_running_.fetch_sub(1);
+    }
+
+    /**
+     * @brief Latest pose for @p object_id.
+     *
+     * @return nullopt if the object is unknown or its pose is older than the timeout.
+     */
     std::optional<vision_msgs::msg::Detection3D> lookUpObject(const std::string& object_id);
+
+    /**
+     * @brief Stores the latest detection array under objects_mutex_.
+     */
     void onObjects(const vision_msgs::msg::Detection3DArray::ConstSharedPtr& msg);
 
-    /// Into the planning frame, or nullopt with the reason logged. Everything a goal carries
-    /// goes through here: /objects is in odom, the planner works in pelvis, and the two differ
-    /// by wherever the robot is standing.
+    /**
+     * @brief Transforms a pose into the planning frame.
+     *
+     * Everything a goal carries goes through here: /objects is in odom, the planner works in
+     * pelvis, and the two differ by wherever the robot is standing.
+     *
+     * @return nullopt with the reason logged.
+     */
     std::optional<geometry_msgs::msg::Pose>
     toPlanningFrame(const geometry_msgs::msg::Pose& pose, const std::string& frame_id);
 
-    /// The pose to give the arm's grasp frame so the object ends up at `object_pose`. Position
-    /// passes straight through -- the grasp frame IS where the object goes -- and only the
-    /// orientation is chosen here. Handed: the two hands hold at mirrored rolls.
-    ///
-    /// `object_height_m` is the object's FULL height: the grasp is taken just under its top
-    /// face, not at its centre, or the fingers close through whatever the object is standing on.
+    /**
+     * @brief The pose to give the arm's grasp frame so the object ends up at @p object_pose.
+     *
+     * Position passes straight through, since the grasp frame is where the object goes, and
+     * only the orientation is chosen here. The two hands hold at mirrored rolls.
+     *
+     * @param object_height_m The object's full height. The grasp is taken just under its top
+     *        face, not at its centre, or the fingers close through whatever it stands on.
+     */
     geometry_msgs::msg::Pose graspFrameGoal(
         const geometry_msgs::msg::Pose& object_pose, double object_height_m,
         const ArmContext& arm) const;
 
-    /// Plans and executes so that `link` reaches `pose`. False on either failure, logged.
+    /**
+     * @brief Seeds the plan from the measured state, clamped into the group's URDF limits.
+     *
+     * MoveIt's start-state check rejects a joint that is outside by any amount at all, and a
+     * joint commanded to its own limit tracks a fraction past it.
+     */
+    static void setStartStateInBounds(MoveGroup& group);
+
+    /**
+     * @brief Plans and executes so that @p link reaches @p pose.
+     *
+     * @param what Name of the step, used in the failure log.
+     * @return False on either a planning or an execution failure, logged.
+     */
     bool moveTo(
         MoveGroup& group, const geometry_msgs::msg::Pose& pose, const std::string& link,
         const std::string& what);
+
+    /**
+     * @brief Plans and executes to a named SRDF pose.
+     *
+     * @return False on either a planning or an execution failure, logged.
+     */
     bool moveToNamed(MoveGroup& group, const std::string& named_target);
 
-    /// Puts the object into the planning scene at its measured pose, already transformed into
-    /// the planning frame, so plans route around it. Returns what it built: the world copy is
-    /// removed before the grasp, and the attached body then has to carry the same geometry.
+    /**
+     * @brief Puts the object into the planning scene so plans route around it.
+     *
+     * @param in_planning_frame The object's measured pose, already transformed.
+     * @return What was built: the world copy is removed before the grasp, and the attached
+     *         body then has to carry the same geometry.
+     */
     moveit_msgs::msg::CollisionObject publishCollisionObject(
         const vision_msgs::msg::Detection3D& detection,
         const geometry_msgs::msg::Pose&      in_planning_frame);
@@ -129,16 +237,35 @@ private:
      * supposed to close on it. Without this every grasp pose measures as "reachable but
      * collides".
      *
-     * Scoped as narrowly as the problem allows -- the hand and the wrist that carries it, one
-     * arm, one skill -- and always restored, including on every failure path, so the arm is
-     * never left planning against a permanently blinded scene.
+     * Scoped as narrowly as the problem allows, to the hand and the wrist that carries it on
+     * one arm for one skill, and always restored on every failure path, so the arm is never
+     * left planning against a permanently blinded scene.
+     *
+     * This is allowHandContact() plus the log, and is what callers use.
+     *
+     * @param include_links false exempts the touchables from each other only, leaving the hand
+     *        and wrist collision-checked, which is what carrying an object over a surface wants.
      */
-    /// @param include_links  false exempts the touchables from each other only, leaving the hand
-    ///        and wrist collision-checked -- what carrying an object over a surface wants.
-    bool allowHandContact(
+    void setHandContact(
         const ArmContext& arm, const std::vector<std::string>& touchables, bool allowed,
         bool include_links = true);
 
+    /**
+     * @brief setHandContact() without the logging, for a caller that must see the failure.
+     *
+     * @return false if the planning-scene service did not answer, in which case the exemption
+     *         was neither applied nor restored. A silently failed restore leaves the scene
+     *         blinded, and a silently failed apply reads downstream as an unreachable pose.
+     */
+    [[nodiscard]] bool allowHandContact(
+        const ArmContext& arm, const std::vector<std::string>& touchables, bool allowed,
+        bool include_links = true);
+
+    /**
+     * @brief The MoveGroupInterface for a planning group.
+     *
+     * @return nullptr if no group of that name was built.
+     */
     MoveGroup* groupFor(const std::string& name);
 
     std::map<std::string, std::shared_ptr<MoveGroup>>  groups_;
@@ -166,10 +293,17 @@ private:
     double      lift_height_m_{ 0.15 };
     double      velocity_scaling_{ 0.3 };
     double      planning_time_s_{ 5.0 };
-    // How the hand is held at the grasp. The WHERE is the grasp frame in the URDF; only the
+    // How the hand is held at the grasp. Where it grips is the grasp frame in the URDF; only the
     // orientation is a choice, and it is the one thing that depends on the surface rather than
     // on the hand.
     std::vector<double> grasp_rpy_;
+
+    /// One goal at a time across ALL THREE servers. MoveGroupInterface is not thread-safe and
+    /// carries mutable start-state and plan state, and two goals on different groups still drive
+    /// overlapping joints through the one arm_trajectory_controller, so the second trajectory
+    /// preempts the first mid-motion, possibly with an object in the hand.
+    std::atomic<bool> busy_{ false };
+    std::atomic<int>  goals_running_{ 0 };
 };
 
 }  // namespace g1_manipulation

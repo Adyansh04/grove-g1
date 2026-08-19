@@ -6,6 +6,7 @@
 #include "g1_hardware_interface/lowcmd_assembly.hpp"
 
 #include <bit>
+#include <cmath>
 #include <type_traits>
 
 #include "g1_hardware_interface/motor_crc_hg.hpp"
@@ -49,6 +50,18 @@ void fillMotorCmd(
     unitree_hg::msg::dds_::MotorCmd_& motor, JointControlMode mode, const JointCommand& command,
     const PositionOnlyGains& fallback, double measured_position)
 {
+    // The only funnel between a controller and rt/lowcmd: every controller, both arm states, the
+    // freeze paths and the release ramp come through here. A non-finite value from any of them
+    // would otherwise reach the motors as a float cast that is undefined for anything outside
+    // float range, so the joint goes unpowered instead: garbage on the wire is worse than a
+    // joint that stops being driven, and the caller finds out from the joint not moving.
+    if (!std::isfinite(command.position) || !std::isfinite(command.velocity) ||
+        !std::isfinite(command.effort) || !std::isfinite(command.kp) ||
+        !std::isfinite(command.kd) || !std::isfinite(measured_position))
+    {
+        mode = JointControlMode::kDisabled;
+    }
+
     switch (mode)
     {
         case JointControlMode::kImpedance:

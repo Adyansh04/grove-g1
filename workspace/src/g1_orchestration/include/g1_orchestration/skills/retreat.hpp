@@ -1,6 +1,11 @@
 #ifndef G1_ORCHESTRATION__SKILLS__RETREAT_HPP_
 #define G1_ORCHESTRATION__SKILLS__RETREAT_HPP_
 
+/**
+ * @file retreat.hpp
+ * @brief BT leaf for the Retreat skill.
+ */
+
 #include <g1_msgs/action/retreat.hpp>
 #include <string>
 
@@ -9,8 +14,11 @@
 namespace g1_orchestration
 {
 
-/// Reverses the base away from a surface and stops. No turn, no walk: a navigation goal
-/// normally follows and does that far better.
+/**
+ * @brief Reverses the base away from a surface and stops.
+ *
+ * No turn, no walk: a navigation goal normally follows and does that far better.
+ */
 class Retreat : public SkillActionNode<g1_msgs::action::Retreat>
 {
 public:

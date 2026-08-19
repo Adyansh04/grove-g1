@@ -1,3 +1,8 @@
+/**
+ * @file frame_reader.cpp
+ * @brief Validates and unpacks one sensor frame from the socket byte stream.
+ */
+
 #include "g1_sensor_relay/frame_reader.hpp"
 
 #include <cstring>
@@ -30,7 +35,8 @@ FrameStatus tryReadFrame(std::vector<std::uint8_t>& buffer, CloudFrame& out)
     const bool is_depth   = header.kind == static_cast<std::uint32_t>(SensorFrameKind::Depth);
     const bool is_objects = header.kind == static_cast<std::uint32_t>(SensorFrameKind::ObjectPoses);
     const bool is_imu     = header.kind == static_cast<std::uint32_t>(SensorFrameKind::Imu);
-    if (!is_cloud && !is_depth && !is_objects && !is_imu)
+    const bool is_base    = header.kind == static_cast<std::uint32_t>(SensorFrameKind::BaseState);
+    if (!is_cloud && !is_depth && !is_objects && !is_imu && !is_base)
     {
         return FrameStatus::kBadKind;
     }
@@ -48,6 +54,13 @@ FrameStatus tryReadFrame(std::vector<std::uint8_t>& buffer, CloudFrame& out)
     else if (is_imu)
     {
         if (header.payload_bytes != sizeof(grove_g1::ImuSampleRecord))
+        {
+            return FrameStatus::kBadLength;
+        }
+    }
+    else if (is_base)
+    {
+        if (header.payload_bytes != sizeof(grove_g1::BaseStateRecord))
         {
             return FrameStatus::kBadLength;
         }
@@ -106,6 +119,15 @@ FrameStatus tryReadFrame(std::vector<std::uint8_t>& buffer, CloudFrame& out)
         out.points.clear();
         out.objects.clear();
         std::memcpy(&out.imu, buffer.data() + sizeof(header), sizeof(out.imu));
+    }
+    else if (is_base)
+    {
+        out.kind = FrameKind::kBaseState;
+        out.depth.clear();
+        out.rgb.clear();
+        out.points.clear();
+        out.objects.clear();
+        std::memcpy(&out.base, buffer.data() + sizeof(header), sizeof(out.base));
     }
     else if (is_objects)
     {

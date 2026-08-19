@@ -76,10 +76,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ros-${ROS_DISTRO}-pointcloud-to-laserscan \
         ros-${ROS_DISTRO}-realsense2-description \
         ros-${ROS_DISTRO}-realtime-tools \
-        ros-${ROS_DISTRO}-rmw-cyclonedds-cpp \
         ros-${ROS_DISTRO}-ros2-control \
         ros-${ROS_DISTRO}-ros2-controllers \
-        ros-${ROS_DISTRO}-rosidl-generator-dds-idl \
         ros-${ROS_DISTRO}-slam-toolbox \
         ros-${ROS_DISTRO}-vision-msgs \
         ros-${ROS_DISTRO}-xacro \
@@ -126,7 +124,7 @@ RUN git init -q /tmp/Livox-SDK2 && \
     rm -rf /tmp/Livox-SDK2
 
 # --- ONNX Runtime -------------------------------------------------------------------------
-# g1_motion_service_sim links it for the walking policy. CPU build only.
+# g1_controllers links it to run the balance policy. CPU build only.
 ARG ONNXRUNTIME_VERSION=1.20.1
 RUN mkdir -p /opt/onnxruntime && \
     curl -fsSL "https://github.com/microsoft/onnxruntime/releases/download/v${ONNXRUNTIME_VERSION}/onnxruntime-linux-x64-${ONNXRUNTIME_VERSION}.tgz" \
@@ -144,7 +142,8 @@ RUN mkdir -p /etc/cyclonedds && \
       '  </Interfaces></General></Domain>' \
       '</CycloneDDS>' > /etc/cyclonedds/cyclonedds.xml
 
-ENV RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+# Must match .devcontainer/Dockerfile; the version-drift job in ci.yml checks that it does.
+ENV RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 ENV CYCLONEDDS_URI=file:///etc/cyclonedds/cyclonedds.xml
 ENV ROS_DOMAIN_ID=1
 ENV CMAKE_C_COMPILER_LAUNCHER=ccache

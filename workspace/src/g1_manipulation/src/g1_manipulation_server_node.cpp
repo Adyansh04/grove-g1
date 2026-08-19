@@ -1,3 +1,8 @@
+/**
+ * @file g1_manipulation_server_node.cpp
+ * @brief The pick, place and posture action servers, planned and executed through MoveIt.
+ */
+
 #include "g1_manipulation/g1_manipulation_server_node.hpp"
 
 #include <moveit/robot_state/attached_body.h>
@@ -49,6 +54,33 @@ bool resolveArm(const std::string& arm, ArmContext& out)
     return true;
 }
 
+G1ManipulationServer::~G1ManipulationServer()
+{
+    while (goals_running_.load() > 0)
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+}
+
+/// The /objects array frame, read under the lock. Reaching around lookUpObject's snapshot to
+/// touch objects_.header from a detached thread is a data race on a std::string.
+std::string G1ManipulationServer::objectsFrame()
+{
+    const std::lock_guard<std::mutex> lock(objects_mutex_);
+    return objects_.header.frame_id;
+}
+
+bool G1ManipulationServer::acquire()
+{
+    bool expected = false;
+    if (!busy_.compare_exchange_strong(expected, true))
+    {
+        RCLCPP_WARN(get_logger(), "rejecting a goal: the arm is already running one");
+        return false;
+    }
+    return true;
+}
+
 G1ManipulationServer::G1ManipulationServer(const rclcpp::NodeOptions& options)
   : rclcpp::Node("g1_manipulation_server", options)
 {
@@ -64,14 +96,9 @@ G1ManipulationServer::G1ManipulationServer(const rclcpp::NodeOptions& options)
     velocity_scaling_ = declare_parameter<double>("velocity_scaling", 0.3);
     planning_time_s_  = declare_parameter<double>("planning_time_s", 5.0);
 
-    // How the hand is held at the grasp, for the RIGHT hand; the left mirrors its roll.
-    //
-    // WHERE the hand grips is not here: it is the {side}_hand_grasp_frame link in the URDF,
-    // which is a property of the Dex3's geometry rather than of this task. Goals are given for
-    // that frame, so nothing in this file adds an offset to a palm pose.
-    //
-    // The fingers close toward the palm's +y, so it is the ROLL that turns the closing axis
-    // downward for a grasp off a table, and the pitch that would be wrong.
+    // How the right hand is held at the grasp; the left mirrors its roll. Where it grips is the
+    // {side}_hand_grasp_frame link in the URDF, not here. The fingers close toward the palm's
+    // +y, so the roll is what turns the closing axis down for a grasp off a table.
     grasp_rpy_ = declare_parameter<std::vector<double>>("grasp_rpy", { -M_PI_2, 0.0, 0.0 });
 
     objects_sub_ = create_subscription<vision_msgs::msg::Detection3DArray>(
@@ -84,6 +111,20 @@ G1ManipulationServer::G1ManipulationServer(const rclcpp::NodeOptions& options)
 
     get_scene_   = create_client<moveit_msgs::srv::GetPlanningScene>("/get_planning_scene");
     apply_scene_ = create_client<moveit_msgs::srv::ApplyPlanningScene>("/apply_planning_scene");
+}
+
+void G1ManipulationServer::setHandContact(
+    const ArmContext& arm, const std::vector<std::string>& touchables, bool allowed,
+    bool include_links)
+{
+    if (!allowHandContact(arm, touchables, allowed, include_links))
+    {
+        RCLCPP_ERROR(
+            get_logger(),
+            "collision exemption %s failed; the planning scene may be left %s",
+            allowed ? "apply" : "restore",
+            allowed ? "unchanged" : "blinded to the octomap");
+    }
 }
 
 bool G1ManipulationServer::allowHandContact(
@@ -152,11 +193,9 @@ bool G1ManipulationServer::allowHandContact(
     {
         ensure_entry(touchable);
     }
-    // The exempted things also have to be allowed to touch EACH OTHER, not just the hand.
-    // Once the object is attached it stops being a world object and starts moving with the
-    // arm, and lifting it out of a surface drags it through the octomap voxels of that
-    // surface -- which is a collision between two things the hand is already allowed to
-    // touch, and would otherwise fail the lift with the grasp already made.
+    // The exempted things must also be allowed to touch each other, not just the hand: lifting
+    // an attached object out of a surface drags it through that surface's octomap voxels, which
+    // is a collision between two things the hand may already touch.
     for (std::size_t i = 0; i < touchables.size(); ++i)
     {
         for (std::size_t j = i + 1; j < touchables.size(); ++j)
@@ -242,10 +281,9 @@ void G1ManipulationServer::initialize()
 
     // both_arms included: the mission tree uses it to tuck both arms in one motion before
     // walking, and a group this node does not build is a goal it rejects outright. It is only
-    // ever driven to named postures here -- pose goals for it would need the subgroup IK map,
+    // ever driven to named postures here; pose goals for it would need the subgroup IK map,
     // which is why g1.srdf deliberately gives it no kinematics entry.
-    for (const std::string& name :
-         { "left_arm", "right_arm", "both_arms", "left_hand", "right_hand" })
+    for (const char* name : { "left_arm", "right_arm", "both_arms", "left_hand", "right_hand" })
     {
         auto group = std::make_shared<MoveGroup>(shared_from_this(), name);
         group->setMaxVelocityScalingFactor(velocity_scaling_);
@@ -260,40 +298,49 @@ void G1ManipulationServer::initialize()
     pick_server_ = rclcpp_action::create_server<Pick>(
         this,
         "~/pick",
-        [](const rclcpp_action::GoalUUID&, const std::shared_ptr<const Pick::Goal>&) {
-            return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
+        [this](const rclcpp_action::GoalUUID&, const std::shared_ptr<const Pick::Goal>&) {
+            return acquire() ? rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE :
+                               rclcpp_action::GoalResponse::REJECT;
         },
         [](const std::shared_ptr<GoalHandle<Pick>>&) {
             return rclcpp_action::CancelResponse::ACCEPT;
         },
         [this](const std::shared_ptr<GoalHandle<Pick>>& handle) {
-            std::thread{ [this, handle] { executePick(handle); } }.detach();
+            std::thread{ [this, handle] {
+                runGuarded([&] { executePick(handle); }, handle);
+            } }.detach();
         });
 
     place_server_ = rclcpp_action::create_server<Place>(
         this,
         "~/place",
-        [](const rclcpp_action::GoalUUID&, const std::shared_ptr<const Place::Goal>&) {
-            return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
+        [this](const rclcpp_action::GoalUUID&, const std::shared_ptr<const Place::Goal>&) {
+            return acquire() ? rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE :
+                               rclcpp_action::GoalResponse::REJECT;
         },
         [](const std::shared_ptr<GoalHandle<Place>>&) {
             return rclcpp_action::CancelResponse::ACCEPT;
         },
         [this](const std::shared_ptr<GoalHandle<Place>>& handle) {
-            std::thread{ [this, handle] { executePlace(handle); } }.detach();
+            std::thread{ [this, handle] {
+                runGuarded([&] { executePlace(handle); }, handle);
+            } }.detach();
         });
 
     posture_server_ = rclcpp_action::create_server<SetArmPosture>(
         this,
         "~/set_arm_posture",
-        [](const rclcpp_action::GoalUUID&, const std::shared_ptr<const SetArmPosture::Goal>&) {
-            return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
+        [this](const rclcpp_action::GoalUUID&, const std::shared_ptr<const SetArmPosture::Goal>&) {
+            return acquire() ? rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE :
+                               rclcpp_action::GoalResponse::REJECT;
         },
         [](const std::shared_ptr<GoalHandle<SetArmPosture>>&) {
             return rclcpp_action::CancelResponse::ACCEPT;
         },
         [this](const std::shared_ptr<GoalHandle<SetArmPosture>>& handle) {
-            std::thread{ [this, handle] { executeSetArmPosture(handle); } }.detach();
+            std::thread{ [this, handle] {
+                runGuarded([&] { executeSetArmPosture(handle); }, handle);
+            } }.detach();
         });
 
     RCLCPP_INFO(
@@ -381,12 +428,9 @@ geometry_msgs::msg::Pose G1ManipulationServer::graspFrameGoal(
     geometry_msgs::msg::Pose goal;
     goal.position = object_pose.position;
 
-    // Vertically it does NOT. Measured from the object's TOP FACE, not its centre.
-    //
-    // The roll points the closing axis at the floor and the fingertips sit about 24 mm beyond
-    // the grasp frame along it, so this offset decides where the fingers end up. Aiming at the
-    // centre would put them inside the octomap's 20 mm padding around the surface, closing
-    // through it rather than around the object's upper half.
+    // Vertically it does not: measured from the object's top face, not its centre. The
+    // fingertips sit ~24 mm beyond the grasp frame along the closing axis, so aiming at the
+    // centre puts them inside the octomap's 20 mm padding around the surface.
     const double top = object_pose.position.z + 0.5 * object_height_m;
     goal.position.z  = top + grasp_height_above_top_m_;
 
@@ -398,11 +442,27 @@ geometry_msgs::msg::Pose G1ManipulationServer::graspFrameGoal(
     return goal;
 }
 
+void G1ManipulationServer::setStartStateInBounds(MoveGroup& group)
+{
+    // The planner aborts if a start joint sits outside its URDF limit by any margin, and no
+    // adapter clamps one back. Measured after a grasp: right_shoulder_yaw at -2.61874 against a
+    // -2.618 limit, 0.74 mrad of tracking error on a joint IK put exactly on the stop.
+    const auto state = group.getCurrentState();
+    if (!state)
+    {
+        group.setStartStateToCurrentState();
+        return;
+    }
+    moveit::core::RobotState bounded(*state);
+    bounded.enforceBounds(bounded.getRobotModel()->getJointModelGroup(group.getName()));
+    group.setStartState(bounded);
+}
+
 bool G1ManipulationServer::moveTo(
     MoveGroup& group, const geometry_msgs::msg::Pose& pose, const std::string& link,
     const std::string& what)
 {
-    group.setStartStateToCurrentState();
+    setStartStateInBounds(group);
     // Named explicitly rather than relying on the group's default tip: the goal is for the
     // grasp frame, which hangs off the palm and is not what the group ends at.
     group.setPoseTarget(pose, link);
@@ -430,7 +490,7 @@ bool G1ManipulationServer::moveTo(
 
 bool G1ManipulationServer::moveToNamed(MoveGroup& group, const std::string& named_target)
 {
-    group.setStartStateToCurrentState();
+    setStartStateInBounds(group);
     if (!group.setNamedTarget(named_target))
     {
         RCLCPP_ERROR(
@@ -441,16 +501,9 @@ bool G1ManipulationServer::moveToNamed(MoveGroup& group, const std::string& name
         return false;
     }
 
-    // Plan then execute, NOT move(). They are not equivalent: move() runs through MoveIt's
-    // PlanExecution, which re-checks the whole remaining path against every planning-scene
-    // update and aborts the moment one invalidates it. Against a live octomap fed by a chest
-    // camera staring at the arm, the arm's own freshly integrated voxels invalidate it
-    // constantly, so a plan that started fine can die partway through against itself.
-    //
-    // execute() checks nothing during the motion, matching every other move in this file: Pick
-    // and Place plan and execute for the pregrasp, descent and lift, all fully collision-checked
-    // at PLAN time. This only drops a during-flight recheck that, on this stack, reports the
-    // robot's own arm.
+    // Plan then execute, not move(): move() re-checks the remaining path against every
+    // planning-scene update, and against a live octomap the arm's own freshly integrated voxels
+    // invalidate it constantly. Everything here is still fully collision-checked at plan time.
     MoveGroup::Plan plan;
     const auto      planned = group.plan(plan);
     if (planned != moveit::core::MoveItErrorCode::SUCCESS)
@@ -490,10 +543,19 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     const auto fail = [&](const std::string& phase, const std::string& why) {
         moveToNamed(*hand_group, "open");
         arm_group->detachObject(goal->object_id);
-        allowHandContact(arm, { "<octomap>", goal->object_id }, false);
+        setHandContact(arm, { "<octomap>", goal->object_id }, false);
         result->success = false;
         result->message = phase + ": " + why;
         goal_handle->abort(result);
+    };
+    // Same cleanup as a failure, but reported as a cancel so the tree can tell the two apart.
+    const auto cancelled = [&](const std::string& phase) {
+        moveToNamed(*hand_group, "open");
+        arm_group->detachObject(goal->object_id);
+        setHandContact(arm, { "<octomap>", goal->object_id }, false);
+        result->success = false;
+        result->message = phase + ": cancelled";
+        goal_handle->canceled(result);
     };
 
     feedback->phase = Pick::Feedback::PHASE_LOCATING;
@@ -507,7 +569,7 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     // /objects is in odom and the planner works in pelvis; the two differ by wherever the
     // robot is standing, so every measured pose goes through TF before it is planned against.
     const std::string object_frame =
-        detection->header.frame_id.empty() ? objects_.header.frame_id : detection->header.frame_id;
+        detection->header.frame_id.empty() ? objectsFrame() : detection->header.frame_id;
     const auto object_pose = toPlanningFrame(detection->results.front().pose.pose, object_frame);
     if (!object_pose)
     {
@@ -522,15 +584,18 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     geometry_msgs::msg::Pose pregrasp_goal = grasp_goal;
     pregrasp_goal.position.z += approach_height_m_;
 
+    // A cancel is accepted by the server, so it has to be honoured somewhere: between phases is
+    // the only safe place, because a trajectory already executing cannot be unwound here.
+    if (goal_handle->is_canceling())
+    {
+        cancelled(Pick::Feedback::PHASE_PREGRASP);
+        return;
+    }
     feedback->phase = Pick::Feedback::PHASE_PREGRASP;
     goal_handle->publish_feedback(feedback);
-    // Opened before the approach, not after: closing on the way in would knock the object off
-    // the table before the hand is around it.
-    //
-    // Reported separately from the arm move rather than sharing one message. They fail for
-    // completely different reasons -- a hand that will not open is usually an unacquired or
-    // unpowered Dex3, an arm that will not reach is geometry -- and collapsing both into
-    // "could not reach the pregrasp pose" sends anyone debugging it to the wrong place.
+    // Opened before the approach: closing on the way in would knock the object off the table.
+    // Reported separately from the arm move because the causes differ, a hand that will not open
+    // being an unpowered Dex3 where an arm that will not reach is geometry.
     if (!moveToNamed(*hand_group, "open"))
     {
         fail(Pick::Feedback::PHASE_PREGRASP, "the hand would not open");
@@ -542,23 +607,21 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
         return;
     }
 
+    if (goal_handle->is_canceling())
+    {
+        cancelled(Pick::Feedback::PHASE_APPROACH);
+        return;
+    }
     feedback->phase = Pick::Feedback::PHASE_APPROACH;
     goal_handle->publish_feedback(feedback);
 
-    // Only NOW is contact allowed, and only for the last few centimetres.
+    // Contact is allowed only now, for the last few centimetres. Exempting the hand for the
+    // whole skill costs a plan nothing to route straight through the table on the way in.
     //
-    // Turning it on earlier is what let a plan route the arm straight through the table on the
-    // way to the pregrasp pose: with the hand exempt from the octomap for the whole skill, a
-    // path through the surface costs the planner nothing. The transit above therefore runs
-    // fully collision-checked, and the exemption covers only the short descent that has to end
-    // in contact.
-    //
-    // The object's own collision geometry is REMOVED rather than exempted. It was added so the
-    // pregrasp plan would route around it; from here it is in the way, and MoveIt's documented
-    // pick sequence is remove, close, attach. Attaching re-adds it as an attached body, which
-    // is also what gets PointCloudOctomapUpdater's ShapeMask to stop feeding it back into the
-    // octomap -- world collision objects get no such filtering, attached bodies do.
-    allowHandContact(arm, { "<octomap>" }, true);
+    // The object's geometry is removed rather than exempted, following MoveIt's pick sequence
+    // of remove, close, attach. Attaching re-adds it as an attached body, which is also what
+    // stops PointCloudOctomapUpdater feeding it back into the octomap.
+    setHandContact(arm, { "<octomap>" }, true);
     planning_scene_.removeCollisionObjects({ goal->object_id });
 
     if (!moveTo(*arm_group, grasp_goal, arm.grasp_frame, "approach"))
@@ -567,6 +630,11 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
         return;
     }
 
+    if (goal_handle->is_canceling())
+    {
+        cancelled(Pick::Feedback::PHASE_GRASP);
+        return;
+    }
     feedback->phase = Pick::Feedback::PHASE_GRASP;
     goal_handle->publish_feedback(feedback);
     if (!moveToNamed(*hand_group, "closed"))
@@ -574,26 +642,19 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
         fail(Pick::Feedback::PHASE_GRASP, "the hand did not close");
         return;
     }
-    // Attached AFTER the hand closes, so the planner starts treating the object as part of the
-    // arm at the same moment the hand does.
+    // Attached after the hand closes, so the planner treats the object as part of the arm from
+    // the same moment the hand does. Built explicitly rather than via attachObject(id, link),
+    // which promotes an object still in the world, and this one was already removed.
     //
-    // Built explicitly rather than via attachObject(id, link), which promotes an object that is
-    // still in the world -- and this one was removed before the approach, so there is nothing
-    // left to promote. An attached body carries its own geometry, so the shape and pose come
-    // from what publishCollisionObject built.
-    //
-    // touch_links is what tells the planner the fingers are SUPPOSED to be in contact with it.
-    // Without them the attach itself reads as a collision the moment it takes effect.
+    // touch_links tells the planner the fingers are supposed to be in contact with it; without
+    // them the attach itself reads as a collision the moment it takes effect.
     moveit_msgs::msg::AttachedCollisionObject attached;
     attached.link_name        = arm.palm_link;
     attached.object           = object;
     attached.object.operation = moveit_msgs::msg::CollisionObject::ADD;
-    // The hand's own links, plus the palm and the WRIST: a cube gripped just under its top face
-    // reaches past the fingers to touch it, and without the wrist in touch_links every later
-    // plan starts with the attached object already in collision.
-    //
-    // Same set allowHandContact() exempts, and for the same reason: these are the links that
-    // unavoidably touch what is being carried.
+    // The hand's links plus the palm and the wrist: a cube gripped just under its top face
+    // reaches past the fingers to touch the wrist, and without it every later plan starts with
+    // the attached object already in collision. Same set allowHandContact() exempts.
     attached.touch_links =
         hand_group->getRobotModel()->getJointModelGroup(arm.hand_group)->getLinkModelNames();
     attached.touch_links.push_back(arm.palm_link);
@@ -603,13 +664,16 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     attached.touch_links.push_back(touch_side + "_wrist_roll_link");
     planning_scene_.applyAttachedCollisionObject(attached);
 
-    // Extended to the object only now that it is attached and about to be lifted OUT of the
-    // surface it was resting on. Its own voxels, and the table's underneath it, are still in
-    // the octomap from before the grasp -- the ShapeMask stops new clouds re-adding it, but it
-    // does not erase what is already there. Without this exemption the lift starts with the
-    // attached cube already in collision against the table it is still sitting on.
-    allowHandContact(arm, { "<octomap>", goal->object_id }, true);
+    // Extended to the object now that it is attached and about to be lifted out of the surface.
+    // The ShapeMask stops new clouds re-adding it but does not erase the voxels already there,
+    // so without this the lift starts in collision against the table it is still sitting on.
+    setHandContact(arm, { "<octomap>", goal->object_id }, true);
 
+    if (goal_handle->is_canceling())
+    {
+        cancelled(Pick::Feedback::PHASE_LIFT);
+        return;
+    }
     feedback->phase = Pick::Feedback::PHASE_LIFT;
     goal_handle->publish_feedback(feedback);
     geometry_msgs::msg::Pose lifted = grasp_goal;
@@ -620,7 +684,7 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
         return;
     }
 
-    allowHandContact(arm, { "<octomap>", goal->object_id }, false);
+    setHandContact(arm, { "<octomap>", goal->object_id }, false);
     result->success = true;
     result->message = "picked " + goal->object_id + " with the " + goal->arm + " hand";
     goal_handle->succeed(result);
@@ -643,14 +707,21 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
     MoveGroup* arm_group  = groupFor(arm.arm_group);
     MoveGroup* hand_group = groupFor(arm.hand_group);
 
-    // What is held, read from the scene rather than remembered, because the attachment is the
-    // authority on what the hand actually has. Needed BEFORE the exemption is applied: the
-    // object has to be named in it.
+    // Read from the scene rather than remembered, because the attachment is the authority on
+    // what the hand has, and needed before the exemption because the object is named in it.
+    //
+    // Filtered by this arm: getAttachedObjects() covers the whole scene, so an unfiltered first
+    // match would let a left-hand place pick up whatever the right hand is holding. The detach
+    // below filters by joint model group and the two have to agree.
     std::string held_id;
     double      held_height = 0.0;
+    MoveGroup*  held_group  = groupFor(arm.arm_group);
     for (const auto& [id, attached] : planning_scene_.getAttachedObjects())
     {
-        if (!attached.object.primitives.empty() &&
+        const bool mine = held_group != nullptr && held_group->getRobotModel()
+                                                       ->getJointModelGroup(arm.arm_group)
+                                                       ->hasLinkModel(attached.link_name);
+        if (mine && !attached.object.primitives.empty() &&
             attached.object.primitives.front().dimensions.size() == 3)
         {
             held_id     = id;
@@ -669,24 +740,27 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
                           std::vector<std::string>{ "<octomap>", held_id };
 
     const auto fail = [&](const std::string& phase, const std::string& why) {
-        allowHandContact(arm, touchables, false);
+        setHandContact(arm, touchables, false);
         result->success = false;
         result->message = phase + ": " + why;
         goal_handle->abort(result);
+    };
+    const auto cancelled = [&](const std::string& phase) {
+        setHandContact(arm, touchables, false);
+        result->success = false;
+        result->message = phase + ": cancelled";
+        goal_handle->canceled(result);
     };
 
     // The carried object may pass through the surface's voxels on the way in; the ARM may not.
     // Exempting the hand this early let plans route the arm into the bench, and the collision
     // shoved the base off its stance, putting the re-aimed descent out of reach. Same hazard
     // the pick defers its exemption for; the descent below gets the full one.
-    allowHandContact(arm, touchables, true, /*include_links=*/false);
+    setHandContact(arm, touchables, true, /*include_links=*/false);
 
-    // Prefer a surface read from /objects over the caller's coordinate.
-    //
-    // A tree writes its drop point in the MAP frame, while the base approach that parked the
-    // robot drove against /objects, published in ODOM -- and those two frames are only as
-    // close as AMCL is right. A realistic map->odom drift is bigger than the arm's 0.04 m
-    // lateral window, so a target correct on the map can leave the preplace with no IK
+    // Prefer a surface read from /objects over the caller's coordinate. A tree writes its drop
+    // point in map, while the approach that parked the robot drove against /objects in odom, and
+    // a realistic map->odom drift exceeds the arm's 0.04 m lateral window, leaving no IK
     // solution at all. Resolving the surface from the stream the approach used makes the two
     // agree by construction, however far localization has drifted.
     std::optional<geometry_msgs::msg::Pose>      target;
@@ -702,7 +776,7 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
             return;
         }
         const std::string frame =
-            surface->header.frame_id.empty() ? objects_.header.frame_id : surface->header.frame_id;
+            surface->header.frame_id.empty() ? objectsFrame() : surface->header.frame_id;
         target = toPlanningFrame(surface->results.front().pose.pose, frame);
     }
     else
@@ -730,6 +804,13 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
     geometry_msgs::msg::Pose preplace   = place_goal;
     preplace.position.z += approach_height_m_;
 
+    // A cancel is accepted by the server, so it has to be honoured somewhere: between phases is
+    // the only safe place, because a trajectory already executing cannot be unwound here.
+    if (goal_handle->is_canceling())
+    {
+        cancelled(Place::Feedback::PHASE_PREPLACE);
+        return;
+    }
     feedback->phase = Place::Feedback::PHASE_PREPLACE;
     goal_handle->publish_feedback(feedback);
     if (!moveTo(*arm_group, preplace, arm.grasp_frame, "preplace"))
@@ -738,20 +819,18 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
         return;
     }
 
-    // Re-resolve before descending. Everything above was computed in the pelvis frame before the
-    // arm reached out, and the reach moves the base: extending a loaded arm shifts the COM and
-    // the balancing gait steps to keep up, measured at 0.165 m.
+    // Re-resolve before descending: the reach itself moves the base, because extending a loaded
+    // arm shifts the COM and the balancing gait steps to keep up, measured at 0.165 m.
     //
     // `expected` is the same target in the /objects frame, for the accuracy check at the end.
-    // That check runs after a reach, a release and a retreat, so in the pelvis frame the base's
-    // own travel reads as placement error.
+    // In the pelvis frame the base's own travel would read as placement error.
     std::optional<geometry_msgs::msg::Point> expected;
     if (surface)
     {
         if (const auto fresh = lookUpObject(goal->surface_object_id))
         {
             const std::string frame =
-                fresh->header.frame_id.empty() ? objects_.header.frame_id : fresh->header.frame_id;
+                fresh->header.frame_id.empty() ? objectsFrame() : fresh->header.frame_id;
             expected = fresh->results.front().pose.pose.position;
             expected->z += 0.5 * (fresh->bbox.size.z + held_height);
             if (auto moved = toPlanningFrame(fresh->results.front().pose.pose, frame))
@@ -778,16 +857,26 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
         }
     }
 
+    if (goal_handle->is_canceling())
+    {
+        cancelled(Place::Feedback::PHASE_LOWER);
+        return;
+    }
     feedback->phase = Place::Feedback::PHASE_LOWER;
     goal_handle->publish_feedback(feedback);
     // Now the hand may touch the surface: the descent ends in contact by definition.
-    allowHandContact(arm, touchables, true);
+    setHandContact(arm, touchables, true);
     if (!moveTo(*arm_group, place_goal, arm.grasp_frame, "lower"))
     {
         fail(Place::Feedback::PHASE_LOWER, "could not lower onto the target");
         return;
     }
 
+    if (goal_handle->is_canceling())
+    {
+        cancelled(Place::Feedback::PHASE_RELEASE);
+        return;
+    }
     feedback->phase = Place::Feedback::PHASE_RELEASE;
     goal_handle->publish_feedback(feedback);
     if (!moveToNamed(*hand_group, "open"))
@@ -795,12 +884,18 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
         fail(Place::Feedback::PHASE_RELEASE, "the hand did not open");
         return;
     }
-    // Detached only after the hand is open. Detaching first would let the planner route the
-    // arm through a volume the object is still occupying.
+    // Detached only after the hand is open: detaching first would let the planner route the arm
+    // through a volume the object still occupies. What is held is read from the scene rather
+    // than remembered, so a place works against a server that did not do the picking.
     //
-    // What is held is read from the scene rather than remembered from the pick, so a place
-    // still works against a server that did not do the picking.
-    const moveit::core::RobotStatePtr              state = arm_group->getCurrentState();
+    // Null when the state monitor has nothing yet; unguarded that is a hard crash on a detached
+    // thread rather than a failed goal.
+    const moveit::core::RobotStatePtr state = arm_group->getCurrentState();
+    if (!state)
+    {
+        fail(Place::Feedback::PHASE_RELEASE, "no current state, cannot detach what was held");
+        return;
+    }
     std::vector<const moveit::core::AttachedBody*> attached;
     state->getAttachedBodies(attached, state->getJointModelGroup(arm.arm_group));
     for (const moveit::core::AttachedBody* body : attached)
@@ -808,6 +903,11 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
         arm_group->detachObject(body->getName());
     }
 
+    if (goal_handle->is_canceling())
+    {
+        cancelled(Place::Feedback::PHASE_RETREAT);
+        return;
+    }
     feedback->phase = Place::Feedback::PHASE_RETREAT;
     goal_handle->publish_feedback(feedback);
     // Restored BEFORE the retreat is planned, or the lift may route the open hand through what
@@ -815,7 +915,7 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
     // by construction, so restoring `<octomap>` here would put the start state in collision.
     if (!held_id.empty())
     {
-        allowHandContact(arm, { held_id }, false);
+        setHandContact(arm, { held_id }, false);
     }
     if (!moveTo(*arm_group, preplace, arm.grasp_frame, "retreat"))
     {
@@ -823,7 +923,7 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
         return;
     }
 
-    allowHandContact(arm, touchables, false);
+    setHandContact(arm, touchables, false);
 
     // Did it actually land there? A successful plan says nothing about where the object ended
     // up: one release short dropped the cube on the floor with every leaf reporting success.
@@ -841,10 +941,9 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
             std::optional<geometry_msgs::msg::Point> where = pose.position;
             if (!expected)
             {
-                const std::string frame       = landed->header.frame_id.empty() ?
-                                                    objects_.header.frame_id :
-                                                    landed->header.frame_id;
-                const auto        in_planning = toPlanningFrame(pose, frame);
+                const std::string frame =
+                    landed->header.frame_id.empty() ? objectsFrame() : landed->header.frame_id;
+                const auto in_planning = toPlanningFrame(pose, frame);
                 where = in_planning ? std::optional(in_planning->position) : std::nullopt;
             }
             if (where)

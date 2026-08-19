@@ -24,13 +24,8 @@
   <depend>livox_ros_driver2</depend>
   <!-- Launched, never linked: the odometry publisher only consumes its Odometry message. -->
   <exec_depend>fast_lio</exec_depend>
-  <!-- The hardware branch of fastlio_odometry.launch.py starts its g1_lowstate_joint_states,
-       without which the sensor-to-pelvis lookup never resolves on the robot. -->
-  <exec_depend>g1_hardware_interface</exec_depend>
   <!-- ...and the sim branch starts its g1_livox_bridge. -->
   <exec_depend>g1_sensor_relay</exec_depend>
-  <depend>unitree_go</depend>
-  <depend>unitree_hg</depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_cmake_lint_cmake</test_depend>

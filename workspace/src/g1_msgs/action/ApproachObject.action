@@ -1,13 +1,11 @@
 # Close the last gap to a measured object, after navigation has got the robot roughly there.
 #
 # Exists because navigation cannot hand manipulation a pose it can work with: Nav2's
-# xy_goal_tolerance is 0.5 m and the arm's whole reach envelope is about 0.13 m wide.
+# xy_goal_tolerance is 0.5 m and the arm's whole reach envelope is about 0.2 m wide.
 #
-# This does not converge on a distance setpoint. The gait's smallest forward pulse measures
-# 0.3 to 0.6 m -- larger than the reach tolerance -- so no control law can hit a 5 cm target
-# head-on. It walks in pulses, re-reads the object between each one, and approaches obliquely
-# once the remaining distance is under one pulse, so the advance per pulse is what shrinks
-# rather than the step.
+# One closed loop over the measured object pose, driving forward, sideways and in yaw at once.
+# The walking policy has a deadband below roughly 0.15 m/s on both linear axes, so the server
+# floors its commands rather than letting a proportional term fade to a speed the robot ignores.
 
 # Must match a class_id published on /objects. The pose is read fresh from there rather than
 # passed in, for the same reason Pick does it: a retry re-reads instead of replaying.
@@ -17,12 +15,8 @@ string object_id
 string ARM_LEFT=left
 string ARM_RIGHT=right
 string arm
-# The heading to hold while approaching, in the odometry frame, radians.
-#
-# Not derived from where the object is, deliberately. The standard mobile-manipulation pattern is
-# a stand-off pose on the surface normal, already facing the working direction, closed straight
-# in; Nav2 has GoalAngleCritic for exactly that. An approach that re-aims at the object from a
-# metre out walks in on a curve and arrives square to nothing. Pass the same yaw the staging
+# The heading to hold while approaching, in the odometry frame, radians. Not derived from where
+# the object is: re-aiming from a metre out walks in on a curve. Pass the same yaw the staging
 # NavigateToPose goal used.
 float64 working_yaw
 # Hold whatever heading the robot arrived with, ignoring working_yaw. For a caller that trusts
@@ -43,9 +37,7 @@ float64 final_y_m
 # here rather than as literals in the server and its tests.
 string PHASE_LOCATING=locating
 string PHASE_CLOSING=closing
-string PHASE_SIDESTEPPING=sidestepping
 string PHASE_VERIFYING=verifying
 string phase
 float64 forward_error_m
 float64 lateral_error_m
-int32 pulses

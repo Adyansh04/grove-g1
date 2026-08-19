@@ -3,8 +3,8 @@
 
 /**
  * @file lowcmd_assembly.hpp
- * @brief Per-motor LowCmd packing for rt/lowcmd, on unitree_sdk2's DDS structs rather than the
- *        unitree_hg ROS messages G1ArmSdkSystem uses. Same 1004-byte wire, different API.
+ * @brief Per-motor LowCmd packing for rt/lowcmd, on unitree_sdk2's own DDS structs. Split out
+ *        from the component so the mode table and the checksum are assertable without one.
  */
 
 #include <array>
@@ -21,7 +21,8 @@ inline constexpr std::size_t kNumBodyMotors = 29;
 /**
  * @brief Per-joint branch of the firmware law `tau = tau_ff + kp*(q - q_meas) + kd*(dq - dq_meas)`.
  *
- * Mirrors NVIDIA's fill_motor_cmd so their controllers behave identically against this component.
+ * Mirrors the upstream motor-command fill, so controllers written against it behave identically
+ * here.
  */
 enum class JointControlMode : std::uint8_t
 {
@@ -34,7 +35,9 @@ enum class JointControlMode : std::uint8_t
     kImpedance,
 };
 
-/// Which command interfaces a controller currently holds on one joint.
+/**
+ * @brief Which command interfaces a controller currently holds on one joint.
+ */
 struct InterfaceClaims
 {
     bool position = false;
@@ -55,7 +58,9 @@ struct InterfaceClaims
  */
 [[nodiscard]] JointControlMode resolveJointMode(const InterfaceClaims& claims) noexcept;
 
-/// One joint's commanded values, from whichever controller holds its interfaces.
+/**
+ * @brief One joint's commanded values, from whichever controller holds its interfaces.
+ */
 struct JointCommand
 {
     double position = 0.0;
@@ -65,7 +70,9 @@ struct JointCommand
     double kd       = 0.0;
 };
 
-/// Gains used in kPositionOnly, where the controller supplies none of its own.
+/**
+ * @brief Gains used in kPositionOnly, where the controller supplies none of its own.
+ */
 struct PositionOnlyGains
 {
     double kp = 0.0;

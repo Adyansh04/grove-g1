@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""Acquires control authority over the G1 arm bridge, in the mandatory order.
+"""Acquires control authority over the G1 arms.
 
-Waits for /lowstate to be flowing (covers the sim/CM discovery race: the
-hardware component refuses to activate on stale/absent feedback -- see
-g1_hardware_interface's README), then activates G1ArmSdkSystem *before*
-arm_trajectory_controller. That order is mandatory: Humble ties
-command-interface availability to hardware component state, so switching the
-controller in first can fail (see g1_bringup's README).
+There is no arm component to activate: G1LowCmdSystem owns all 29 body motors
+and is active from bring-up, holding the arms through arm_freeze_controller.
+Acquiring is one switch that trades that freeze for arm_trajectory_controller,
+and it must be one switch, because a joint this component sees unclaimed is a
+joint it leaves unpowered.
+
+The hands are separate components and are activated after the arm.
 
 Python, not C++: this is a one-shot administrative sequencing tool (service
 calls + a bounded retry loop, well under 1 Hz), the same category as the
@@ -21,17 +22,14 @@ import rclpy
 from controller_manager_msgs.srv import SetHardwareComponentState, SwitchController
 from lifecycle_msgs.msg import State
 from rclpy.node import Node
-from rclpy.qos import QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile, QoSReliabilityPolicy
-from unitree_hg.msg import LowState
 
-COMPONENT_NAME = "G1ArmSdkSystem"
 CONTROLLER_NAME = "arm_trajectory_controller"
-LOWSTATE_TOPIC = "/lowstate"
+# What holds the arms until the trajectory controller displaces it.
+ARM_FREEZE_CONTROLLER = "arm_freeze_controller"
 
-# The hands, acquired in the same order and by the same rules. Best-effort on purpose: a
-# Dex3 that is absent, unpowered or simply not publishing state must not stop the arm from
-# being usable, and G1Dex3System refuses to activate without fresh feedback precisely so
-# that shows up here rather than as fingers driven from a stale measurement.
+# The hands, acquired in the same order and by the same rules. Best-effort on purpose: a Dex3
+# that is absent, unpowered or not publishing state must not stop the arm from being usable,
+# and G1Dex3System refuses to activate without fresh feedback rather than drive from a stale one.
 HANDS = (
     ("G1Dex3SystemLeft", "left_hand_controller"),
     ("G1Dex3SystemRight", "right_hand_controller"),
@@ -39,49 +37,15 @@ HANDS = (
 # Shorter than the arm's: an absent hand should be reported quickly, not waited out twice.
 HAND_ACTIVATE_TIMEOUT_S = 5.0
 
-# Generous versus the component's own lowstate_timeout_ms (100 ms default):
-# this check only proves /lowstate is flowing at all before we even attempt
-# activation, not the component's own freshness gate.
-LOWSTATE_FRESH_WINDOW_S = 0.5
-LOWSTATE_WAIT_TIMEOUT_S = 30.0
-
 COMPONENT_RETRY_PERIOD_S = 0.5
 COMPONENT_ACTIVATE_TIMEOUT_S = 15.0
 SERVICE_CALL_TIMEOUT_S = 5.0
 
 
-def wait_for_fresh_lowstate(node, timeout_s):
-    """Blocks until at least one recent /lowstate sample has arrived."""
-    last_arrival = {"time": None}
-
-    def _cb(_msg):
-        last_arrival["time"] = time.monotonic()
-
-    qos = QoSProfile(
-        depth=1,
-        reliability=QoSReliabilityPolicy.BEST_EFFORT,
-        durability=QoSDurabilityPolicy.VOLATILE,
-        history=QoSHistoryPolicy.KEEP_LAST,
-    )
-    sub = node.create_subscription(LowState, LOWSTATE_TOPIC, _cb, qos)
-    try:
-        deadline = time.monotonic() + timeout_s
-        while time.monotonic() < deadline:
-            rclpy.spin_once(node, timeout_sec=0.1)
-            if (
-                last_arrival["time"] is not None
-                and (time.monotonic() - last_arrival["time"]) < LOWSTATE_FRESH_WINDOW_S
-            ):
-                return True
-        return False
-    finally:
-        node.destroy_subscription(sub)
-
-
 def set_component_state(node, client, name, target_state_id, target_label, retry_timeout_s):
     """Bounded retry: the component/controller_manager may not be discovered
-    yet, or activation may be legitimately refused if /lowstate just barely
-    missed the freshness window (see g1_hardware_interface's on_activate).
+    yet, or activation may be legitimately refused if feedback just barely
+    missed the freshness window (see g1_hand_interface's on_activate).
     """
     deadline = time.monotonic() + retry_timeout_s
     last_error = "no attempt made"
@@ -126,17 +90,22 @@ def switch_controller(node, client, activate, deactivate, timeout_s):
     return result is not None and result.ok
 
 
-def main():
+def retry_switch(node, client, activate, deactivate, retry_timeout_s):
+    """Same patience the component activation gets: controller_manager may not be discovered
+    yet, and this switch is the whole arm acquire.
+    """
+    deadline = time.monotonic() + retry_timeout_s
+    while time.monotonic() < deadline:
+        if switch_controller(node, client, activate, deactivate, SERVICE_CALL_TIMEOUT_S):
+            return True
+        time.sleep(COMPONENT_RETRY_PERIOD_S)
+    return False
+
+
+def main(argv=None):
     rclpy.init()
     node = Node("g1_bringup_activate_arm")
     try:
-        node.get_logger().info(f"waiting for {LOWSTATE_TOPIC} to be flowing...")
-        if not wait_for_fresh_lowstate(node, LOWSTATE_WAIT_TIMEOUT_S):
-            node.get_logger().error(
-                f"{LOWSTATE_TOPIC} never became fresh -- is sim.launch.py running?"
-            )
-            return 1
-
         component_client = node.create_client(
             SetHardwareComponentState, "/controller_manager/set_hardware_component_state"
         )
@@ -144,21 +113,14 @@ def main():
             SwitchController, "/controller_manager/switch_controller"
         )
 
-        node.get_logger().info(f"activating hardware component {COMPONENT_NAME}...")
-        if not set_component_state(
-            node,
-            component_client,
-            COMPONENT_NAME,
-            State.PRIMARY_STATE_ACTIVE,
-            "active",
-            COMPONENT_ACTIVATE_TIMEOUT_S,
-        ):
-            return 1
-
-        # Component-then-controller: see this script's module docstring.
+        # One switch, not two: see this script's module docstring.
         node.get_logger().info(f"activating controller {CONTROLLER_NAME}...")
-        if not switch_controller(
-            node, controller_client, [CONTROLLER_NAME], [], SERVICE_CALL_TIMEOUT_S
+        if not retry_switch(
+            node,
+            controller_client,
+            [CONTROLLER_NAME],
+            [ARM_FREEZE_CONTROLLER],
+            COMPONENT_ACTIVATE_TIMEOUT_S,
         ):
             node.get_logger().error(f"failed to activate {CONTROLLER_NAME}")
             return 1
@@ -180,7 +142,7 @@ def main():
                     "will not move. Check that it is powered and publishing state."
                 )
 
-        node.get_logger().info("activation complete: component and controller both active.")
+        node.get_logger().info("activation complete: the arm and both hands are acquired.")
         return 0
     finally:
         node.destroy_node()

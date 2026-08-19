@@ -2,6 +2,9 @@
   <class name="g1_hand_interface/G1Dex3System"
          type="g1_hand_interface::G1Dex3System"
          base_class_type="hardware_interface::SystemInterface">
-    <description>One Unitree Dex3-1 hand on /dex3/&lt;side&gt;/{cmd,state}.</description>
+    <description>
+      One Unitree Dex3-1 hand on its own unitree_sdk2 channels, rt/dex3/&lt;side&gt;/{cmd,state}.
+      These are SDK channels, not ROS topics. See the package README.
+    </description>
   </class>
 </library>

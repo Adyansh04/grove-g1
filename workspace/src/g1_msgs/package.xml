@@ -4,10 +4,10 @@
   <name>g1_msgs</name>
   <version>0.1.0</version>
   <description>
-    Interfaces for the G1 stack: the SetLocoMode action and LocoStatus message
-    for the LocoClient bridge (g1_locomotion), and the Pick, Place and
-    SetArmPosture actions the manipulation skills serve (g1_manipulation). See
-    README for why each is an action rather than a service.
+    Interfaces for the G1 stack: the ApproachObject and Retreat actions the base
+    approach serves (g1_locomotion), and the Pick, Place and SetArmPosture actions
+    the manipulation skills serve (g1_manipulation). See README for why each is an
+    action rather than a service.
   </description>
   <maintainer email="gupta.adyansh@gmail.com">Adyansh</maintainer>
   <license>BSD-3-Clause</license>

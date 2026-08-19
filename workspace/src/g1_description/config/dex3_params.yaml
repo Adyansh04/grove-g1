@@ -1,25 +1,31 @@
 # Hardware parameters for g1_hand_interface/G1Dex3System, one component per hand.
 #
-# Consumed by urdf/g1_arm_sdk.urdf.xacro via xacro.load_yaml, for the same reason
-# arm_sdk_params.yaml is: Humble ros2_control plugins only see parameters that arrive
-# as <ros2_control><param> tags, never controller_manager's own YAML.
+# Consumed by urdf/g1_common.xacro via xacro.load_yaml, for the same reason lowcmd_params.yaml
+# is: ros2_control plugins only ever see parameters that arrive as <ros2_control><param> tags,
+# never controller_manager's own YAML.
 
-# Common to both hands. Gains are the hand's own -- roughly 300x smaller than the arm's,
+# Common to both hands. Gains are the hand's own, roughly 300x smaller than the arm's,
 # because these are finger motors. From Unitree's maintained teleop path; their SDK example
 # sweeps at 0.5/0.1 and grips at 1.5/0.1.
 system:
+  # Must match lowcmd_params.yaml. ChannelFactory is per process and only its first Init
+  # applies, so a mismatch strands whichever component initialises second.
+  domain_id: 1
+  network_interface: ""
+
   kp: 1.5
   kd: 0.2
   command_publish_rate: 100.0    # Hz; what Unitree's own teleop publishes at
   max_joint_velocity_rad_s: 3.0  # rad/s; slew clamp. There is no blend weight on this
                                  # interface, so this is the only thing between a large
                                  # trajectory step and a finger moving at motor speed.
-  state_timeout_ms: 200.0        # ms; HandState older than this blocks activation
-  # The robot carries both /dex3/<side>/state and a lower-rate /lf/dex3/<side>/state, and
+  state_timeout_ms: 200.0        # ms; HandState older than this blocks activation, and errors
+                                 # the component if it goes stale once active
+  # The robot carries both rt/dex3/<side>/state and a lower-rate rt/lf/dex3/<side>/state, and
   # Unitree's own code disagrees about which to read: their Dex3 example takes the `lf` one,
   # the SDK bridge publishes the plain one. This is a control loop with the freshness gate
-  # above, so the full-rate topic is the default. The xacro puts the side between these two.
-  state_topic_prefix: "/dex3/"
+  # above, so the full-rate channel is the default. The xacro puts the side between these two.
+  state_topic_prefix: "rt/dex3/"
   state_topic_suffix: "/state"
 
 # Position limits, straight from g1_29dof_with_hand_rev_1_0.urdf. Duplicated here because

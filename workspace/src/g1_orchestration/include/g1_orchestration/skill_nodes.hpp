@@ -7,9 +7,7 @@
  *
  * Each leaf is a thin client with its own file under skills/. The tree decides what happens and
  * in what order; the skills decide how. Nothing here plans, moves a joint, or takes control
- * authority -- Nav2 and g1_manipulation own all of that, and this package only sequences them.
- *
- * Include this to get them all, or one skills/ header to get one.
+ * authority: Nav2 and g1_manipulation own all of that, and this package only sequences them.
  */
 
 #include "g1_orchestration/port_types.hpp"

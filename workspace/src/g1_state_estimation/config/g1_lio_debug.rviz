@@ -101,8 +101,9 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /cloud_registered_1
       Value: true
-    # FAST-LIO's accumulated map, in its own camera_init frame (an orphan tree, so it will
-    # not line up with map -- that is expected, it is there to show internal consistency).
+    # FAST-LIO's accumulated map, in its own camera_init frame. That frame is off the main
+    # tree and its transform is remapped to /fastlio/tf, so this display cannot resolve against
+    # the odom fixed frame -- it needs a second RViz subscribed to that topic.
     - Alpha: 1
       Autocompute Intensity Bounds: true
       Class: rviz_default_plugins/PointCloud2

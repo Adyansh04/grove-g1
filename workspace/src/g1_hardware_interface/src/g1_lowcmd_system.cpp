@@ -39,12 +39,20 @@ namespace
 /// mode_pr selects the ankle parameterisation; 0 is pitch/roll, which is what our URDF models.
 constexpr std::uint8_t kModePr = 0;
 
-/// Retry budget for handing control over from the onboard service. NVIDIA's numbers.
+/// Retry budget for handing control over from the onboard service. The upstream numbers.
 constexpr int                       kMotionSwitchAttempts = 5;
 constexpr float                     kMotionSwitchTimeoutS = 5.0F;
 constexpr std::chrono::seconds      kMotionSwitchBackoff{ 2 };
 constexpr std::chrono::milliseconds kReleaseTickPeriod{ 5 };
 constexpr std::chrono::seconds      kFirstStateTimeout{ 10 };
+
+/// Clears the flag on every exit from write(), including the error return. Pointer rather than
+/// reference so the type stays assignable, which clang-tidy requires of a data member.
+struct InWriteGuard
+{
+    std::atomic<bool>* flag;
+    ~InWriteGuard() { flag->store(false, std::memory_order_release); }
+};
 
 bool parseDouble(
     const std::unordered_map<std::string, std::string>& params, const std::string& key, double& out)
@@ -161,6 +169,16 @@ G1LowCmdSystem::on_init(const hardware_interface::HardwareComponentInterfacePara
         if (jd.sdk_index < 0)
         {
             RCLCPP_ERROR(logger_, "joint '%s' is not a G1 body motor", jd.name.c_str());
+            return hardware_interface::CallbackReturn::ERROR;
+        }
+        // These default to zero, so a missing or unparseable <param> would put the joint on the
+        // position-only branch enabled but with no stiffness: owned by a controller and limp.
+        if (jd.position_only_gains.kp <= 0.0 || jd.position_only_gains.kd <= 0.0)
+        {
+            RCLCPP_ERROR(
+                logger_,
+                "joint '%s' needs position_only_kp and position_only_kd params > 0",
+                jd.name.c_str());
             return hardware_interface::CallbackReturn::ERROR;
         }
     }
@@ -345,6 +363,7 @@ bool G1LowCmdSystem::initializeSdk()
             if (std::chrono::steady_clock::now() > deadline)
             {
                 RCLCPP_ERROR(logger_, "no rt/lowstate within 10 s -- is the robot or sim up?");
+                shutdownSdk();
                 return false;
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(20));
@@ -356,19 +375,22 @@ bool G1LowCmdSystem::initializeSdk()
     catch (const std::exception& e)
     {
         RCLCPP_ERROR(logger_, "SDK init failed: %s", e.what());
+        shutdownSdk();
         return false;
     }
 }
 
+/// Idempotent, and unguarded on purpose: a failed initializeSdk leaves channels open with
+/// sdk_initialized_ still false, and those have to go too: the subscriber's handler captures
+/// this, so an outliving channel writes into a destroyed component.
 void G1LowCmdSystem::shutdownSdk()
 {
-    if (!sdk_initialized_.load())
-    {
-        return;
-    }
     lowstate_subscriber_.reset();
     lowcmd_publisher_.reset();
-    sdk_initialized_ = false;
+    // first_state_received_ is cleared so a re-activation waits for a frame on the new
+    // subscriber rather than seeding from whatever the buffer holds from the previous session.
+    sdk_initialized_      = false;
+    first_state_received_ = false;
 }
 
 void G1LowCmdSystem::lowStateCallback(const void* message)
@@ -378,14 +400,6 @@ void G1LowCmdSystem::lowStateCallback(const void* message)
     sample.arrival = std::chrono::steady_clock::now();
     lowstate_buffer_.writeFromNonRT(sample);
     first_state_received_ = true;
-}
-
-bool G1LowCmdSystem::lowStateIsStale() const
-{
-    const auto* sample = lowstate_buffer_.readFromNonRT();
-    const auto  age    = std::chrono::steady_clock::now() - sample->arrival;
-    return age > std::chrono::duration_cast<std::chrono::steady_clock::duration>(
-                     std::chrono::duration<double>(lowstate_timeout_s_));
 }
 
 hardware_interface::CallbackReturn
@@ -429,7 +443,7 @@ G1LowCmdSystem::on_activate(const rclcpp_lifecycle::State& /*previous_state*/)
             status.message = "surface " + std::to_string(jd.surface_temperature) + " C, winding " +
                              std::to_string(jd.winding_temperature) + " C";
 
-            // Same keys NVIDIA publish, so a consumer written against their stack reads ours.
+            // The upstream key names, so a consumer written against that stack reads ours.
             diagnostic_msgs::msg::KeyValue surface;
             surface.key   = "surface_temperature_C";
             surface.value = std::to_string(jd.surface_temperature);
@@ -597,6 +611,11 @@ G1LowCmdSystem::write(const rclcpp::Time& /*time*/, const rclcpp::Duration& /*pe
         return hardware_interface::return_type::OK;
     }
 
+    // Announced for the whole body, so the release ramp cannot start filling low_cmd_ underneath
+    // this tick. Two relaxed-ish atomic stores, no allocation and no lock on the 200 Hz path.
+    in_write_.store(true, std::memory_order_release);
+    const InWriteGuard guard{ &in_write_ };
+
     for (const auto& jd : joint_data_)
     {
         fillMotorCmd(
@@ -620,6 +639,14 @@ void G1LowCmdSystem::releaseSynchronously()
     if (!active_.exchange(false) || !sdk_initialized_.load())
     {
         return;
+    }
+
+    // active_ is now false, so no further write() can enter; wait out the one that may already
+    // be inside. Without this the ramp's first frame can interleave with a controller command
+    // mid-CRC, and shutdownSdk() can reset the publisher while write() is dereferencing it.
+    while (in_write_.load(std::memory_order_acquire))
+    {
+        std::this_thread::yield();
     }
 
     for (auto& jd : joint_data_)

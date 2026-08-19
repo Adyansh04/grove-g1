@@ -15,11 +15,12 @@
 namespace g1_state_estimation
 {
 
-/// Fills @p cloud with @p custom's points as xyz + intensity, preserving header and frame.
-///
-/// The per-point time and line index are dropped: only FAST-LIO wants them, and it reads the
-/// CustomMsg itself. Reflectivity becomes intensity, which is the field every consumer of
-/// /livox/lidar already reads.
+/**
+ * @brief Fills @p cloud with @p custom's points as xyz + intensity, keeping header and frame.
+ *
+ * The per-point time and line index are dropped: only FAST-LIO wants them and it reads the
+ * CustomMsg itself. Reflectivity becomes intensity, the field every consumer already reads.
+ */
 void toPointCloud2(
     const livox_ros_driver2::msg::CustomMsg& custom, sensor_msgs::msg::PointCloud2& cloud);
 

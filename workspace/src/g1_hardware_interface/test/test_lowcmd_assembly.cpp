@@ -73,6 +73,9 @@ TEST(FillMotorCmd, EffortPinsPositionToTheMeasurementAndZeroesStiffness)
     unitree_hg::msg::dds_::MotorCmd_ motor{};
     fillMotorCmd(motor, JointControlMode::kEffort, commandFixture(), kFallback, 99.0);
 
+    // A fresh MotorCmd_ is already mode 0, so without this a branch that forgot to enable the
+    // motor would pass every other assertion here while leaving the joint unpowered.
+    EXPECT_EQ(motor.mode(), 1);
     // q sits on the measurement, not a stale setpoint a later gain change could turn into a lurch.
     EXPECT_FLOAT_EQ(motor.q(), 99.0F);
     EXPECT_FLOAT_EQ(motor.kp(), 0.0F);
@@ -85,6 +88,7 @@ TEST(FillMotorCmd, PositionOnlyUsesFallbackGainsAndNoFeedforward)
     unitree_hg::msg::dds_::MotorCmd_ motor{};
     fillMotorCmd(motor, JointControlMode::kPositionOnly, commandFixture(), kFallback, 99.0);
 
+    EXPECT_EQ(motor.mode(), 1);
     EXPECT_FLOAT_EQ(motor.q(), 0.25F);
     EXPECT_FLOAT_EQ(motor.dq(), 0.0F);
     EXPECT_FLOAT_EQ(motor.tau(), 0.0F);

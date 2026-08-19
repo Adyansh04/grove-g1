@@ -2,7 +2,7 @@
  * @file test_grasp_geometry.cpp
  * @brief The arm/group mapping and the grasp-frame goal, without a running MoveIt.
  *
- * Where the hand grips is no longer arithmetic here at all: it is the {side}_hand_grasp_frame
+ * Where the hand grips is not arithmetic here at all: it is the {side}_hand_grasp_frame
  * link in g1_description, and goals are given for that frame directly. What is left to pin is
  * which groups and frames an "arm" string resolves to, and that the goal passes position
  * through untouched while orienting the closing axis at the floor.
@@ -80,8 +80,8 @@ TEST(ResolveArm, RejectsAnythingElseWithoutAssigning)
 
 TEST(GraspFrameGoal, PutsTheGraspFrameExactlyOnTheObject)
 {
-    // The whole point of moving the offset into the URDF: the goal position IS the object
-    // position, with no arithmetic left in this file to get wrong.
+    // The offset lives in the URDF, so the goal position is the object position with no
+    // arithmetic left here to get wrong.
     const std::vector<double> rpy{ -M_PI_2, 0.0, 0.0 };
     const auto                target = objectAt(0.35, -0.20, 0.83);
 
@@ -95,7 +95,7 @@ TEST(GraspFrameGoal, PutsTheGraspFrameExactlyOnTheObject)
 TEST(GraspFrameGoal, PointsTheClosingAxisAtTheFloor)
 {
     // The Dex3's fingers curl toward the palm's +y, so it is THAT axis that has to end up
-    // pointing down for a grasp off a table -- and the palm's +x has to stay forward, so the
+    // pointing down for a grasp off a table, and the palm's +x has to stay forward, so the
     // arm reaches out rather than the wrist contorting. Getting this wrong is easy to miss by
     // inspection, so it is pinned here instead.
     const auto palm = graspFrameGoal(objectAt(0.4, 0.0, 0.8), { -M_PI_2, 0.0, 0.0 }, false);

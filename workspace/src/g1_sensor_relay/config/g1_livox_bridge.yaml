@@ -1,0 +1,5 @@
+# Republishes the relay's PointCloud2 as the CustomMsg FAST-LIO expects.
+g1_livox_bridge:
+  ros__parameters:
+    cloud_topic: "/livox/lidar"
+    custom_msg_topic: "/livox/custom_msg"

@@ -11,7 +11,9 @@
 namespace g1_orchestration
 {
 
-/// A base goal written into the tree XML as "x;y;yaw", in metres and radians.
+/**
+ * @brief A base goal written into the tree XML as "x;y;yaw", in metres and radians.
+ */
 struct Station
 {
     double x   = 0.0;
@@ -19,8 +21,12 @@ struct Station
     double yaw = 0.0;
 };
 
-/// A point written into the tree XML as "x;y;z", in metres. Distinct from Station rather than
-/// reusing its third field: a place target has a height, not a heading.
+/**
+ * @brief A point written into the tree XML as "x;y;z", in metres.
+ *
+ * Distinct from Station rather than reusing its third field: a place target has a height, not
+ * a heading.
+ */
 struct Point3
 {
     double x = 0.0;
@@ -33,9 +39,15 @@ struct Point3
 // Declared in BT's namespace because that is where the library looks the conversion up.
 namespace BT
 {
+/**
+ * @brief Parses "x;y;yaw" into a Station.
+ */
 template <>
 g1_orchestration::Station convertFromString(StringView str);
 
+/**
+ * @brief Parses "x;y;z" into a Point3.
+ */
 template <>
 g1_orchestration::Point3 convertFromString(StringView str);
 }  // namespace BT

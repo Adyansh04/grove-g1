@@ -1,0 +1,7 @@
+g1_bt_executor:
+  ros__parameters:
+    # How often the tree is ticked, in Hz. Must be positive and finite.
+    tick_rate_hz: 10.0
+    # ZeroMQ port Groot2 connects to for live monitoring; 0 disables the publisher.
+    # The container uses host networking, so the editor reaches it on localhost.
+    groot2_port: 1667

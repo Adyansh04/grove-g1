@@ -1,10 +1,8 @@
 """No shipped config may enable use_sim_time.
 
-The converged track has no /clock -- the simulator links no ROS at all. Every upstream
-config this package adapts (nav2_bringup's nav2_params.yaml, slam_toolbox's mapper_params_*)
-ships use_sim_time: True, so this is a copy-paste hazard rather than a hypothetical one, and
-one missed block gives that node a clock that never advances. The symptom is a TF lookup
-failing in some unrelated node, which points nowhere near the cause.
+There is no /clock on this track: the simulator links no ROS at all, so a node with
+use_sim_time gets a clock that never advances and the symptom surfaces as a TF lookup failing
+somewhere unrelated. The upstream configs this package adapts all ship it true.
 """
 
 import os

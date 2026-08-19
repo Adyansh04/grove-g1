@@ -1,3 +1,8 @@
+/**
+ * @file arm_authority_leaves.cpp
+ * @brief Ports and ticks for the AcquireArm and ReleaseArm leaves.
+ */
+
 #include "g1_orchestration/skills/arm_authority_leaves.hpp"
 
 #include <string>

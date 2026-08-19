@@ -15,13 +15,13 @@ flowchart LR
 ```
 
 The server adds no command path. It is another client of `move_group`, which is another client
-of the controllers that already own `rt/arm_sdk` and the hand topics, so every low-level channel
-keeps exactly one writer.
+of the controllers that already own the arm joints and the hand channels, so every low-level
+channel keeps exactly one writer.
 
 It also takes no control authority. The arm and hands must already be acquired before a goal
-will execute, and releasing them is the caller's job — for a mission that is
-`g1_orchestration`'s executor, which brackets the whole run. A skill that acquired per goal
-would hand the hands back between pick and place and drop what it was carrying.
+will execute, and releasing them is the caller's job. For a mission that is `g1_orchestration`'s
+executor, which brackets the whole run: a skill that acquired per goal would hand the hands back
+between pick and place and drop what it was carrying.
 
 ## Where object poses come from
 
@@ -38,8 +38,8 @@ touching them.
 bring-up that forgets to say what it has must fail visibly rather than feed a grasp planner
 simulator ground truth it cannot tell from a measurement.
 
-These poses are exact — no noise, no occlusion, no misdetection, and every listed object is
-always visible. Nothing here validates behaviour under a detector that is wrong.
+These poses are exact: no noise, no occlusion, no misdetection, and every listed object always
+visible. Nothing here validates behaviour under a detector that is wrong.
 
 `/objects` is `vision_msgs/Detection3DArray` in `odom`, carrying a pose and a bounding box per
 object. The box is what the server builds its collision geometry from, so replacing the source
@@ -55,7 +55,7 @@ with a real detector changes nothing downstream.
 
 `Pick` and `Place` publish a phase as feedback and name that phase in the result on failure.
 Every `Pick` failure path leaves the hand open and nothing attached, so a retry starts from a
-defined state rather than part-way into a grasp — that is what makes the behavior tree's retry
+defined state rather than part-way into a grasp, which is what makes the behavior tree's retry
 meaningful rather than a replay.
 
 ## Where the hand grips
@@ -80,7 +80,7 @@ poses with no IK anywhere useful.
 
 Horizontally the grasp frame goes straight to the object. Vertically it does not, and aiming at the
 centre was wrong. With the closing axis pointing at the floor the fingertips sit about 24 mm beyond
-the grasp frame along it, so targeting the middle of a 60 mm cube puts them 6 mm above the table --
+the grasp frame along it, so targeting the middle of a 60 mm cube puts them 6 mm above the table,
 inside the octomap's own 20 mm self-filter padding. The hand was being asked to close *through* the
 surface, and the descent failed every time with `GOAL_STATE_INVALID`.
 
@@ -131,8 +131,8 @@ The exemption covers the hand group, the palm and **all three** wrist joints. Ro
 a while and it is the one that reaches: a place aborted with the start state in collision,
 `<octomap> <-> right_wrist_roll_link`, on a plan whose every other link was exempt. It presents
 misleadingly, because the start-state fixer finds a valid nearby state and the plan comes back
-*successful* before the final validity check throws it out — "Motion plan was found but it seems to
-be invalid" is what an incomplete ACM looks like. The set matches the `touch_links` the pick
+successful before the final validity check throws it out. "Motion plan was found but it seems to be
+invalid" is what an incomplete ACM looks like. The set matches the `touch_links` the pick
 attaches with, and should stay matched.
 
 ### Place a surface, not a coordinate
@@ -143,8 +143,8 @@ surface's height and half the held object's so it lands resting rather than inte
 The coordinate path still exists but is a trap for anything the base approached. A tree writes its
 target in the **map** frame; `ApproachObject` parks the base against `/objects`, which is published
 in **odom**. Those agree only as well as AMCL does, and it was measured 0.23 m out at the storage
-bench — against an arm window 0.04 m wide, so a target correct on the map sat 0.14 m outside
-anything the arm could reach, failing every attempt with `GOAL_STATE_INVALID`. Reading the surface
+bench, against an arm window 0.04 m wide, so a target correct on the map sat 0.14 m outside
+anything the arm could reach and failed every attempt with `GOAL_STATE_INVALID`. Reading the surface
 from the stream the approach used makes the two agree by construction.
 
 ### Named postures plan and execute; they do not call move()
@@ -152,8 +152,8 @@ from the stream the approach used makes the two agree by construction.
 `MoveGroupInterface::move()` runs through MoveIt's `PlanExecution`, which re-checks the remaining
 path against every planning-scene update and aborts on the first that invalidates it. With a chest
 camera continuously re-integrating voxels around the arm that is moving, something invalidates it
-constantly — the carry failed three times on three different links, each about two thirds of the
-way through an already-valid plan. Everything here now plans and executes as `Pick` always did.
+constantly: the carry failed three times on three different links, each about two thirds of the way
+through an already-valid plan. Everything here now plans and executes as `Pick` always did.
 Both are fully collision-checked at plan time; only the in-flight recheck is gone, and on this
 stack it was reporting the robot's own arm.
 
@@ -165,9 +165,9 @@ Comes up with the operator entry point:
 ros2 launch g1_bringup bringup.launch.py moveit:=true manipulation:=true pin_pelvis:=true world:=manipulation activate_arm:=true activate_arm_delay_s:=40.0
 ```
 
-`manipulation:=true` requires `moveit:=true`, and turns on `sensors:=true` itself — object ground
-truth leaves the simulator over the sensor relay's socket, so without it the pose source comes up
-healthy and never receives anything.
+`manipulation:=true` requires `moveit:=true`, and turns on `sensors:=true` itself, because object
+ground truth leaves the simulator over the sensor relay's socket. Without it the pose source comes
+up healthy and never receives anything.
 
 ```bash
 ros2 action send_goal /g1_manipulation_server/pick g1_msgs/action/Pick \
@@ -196,6 +196,17 @@ because it is a property of the Dex3 rather than of a task.
 
 ```bash
 colcon test --packages-select g1_manipulation
+```
+
+`test/test_pick_place.launch.py` is a full sim mission and is deliberately **not** registered,
+because it does not currently pass. The failure is real rather than a test defect: the robot is
+staged at the workbench with its arms hanging, a hanging hand sits about 1 cm under the bench slab
+and so inside its octomap, and `CheckStartStateCollision` looks at the whole robot rather than the
+group being planned for, so every plan is refused. Fixing it is a rest-pose question for the
+control stack. Run it by hand meanwhile:
+
+```bash
+python3 -m launch_testing.launch_test src/g1_manipulation/test/test_pick_place.launch.py
 ```
 
 ### Object poses and frames

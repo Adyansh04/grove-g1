@@ -5,59 +5,14 @@
 
 #include "g1_controllers/g1_freeze_controller.hpp"
 
-#include <algorithm>
 #include <pluginlib/class_list_macros.hpp>
 #include <string_view>
-#include <utility>
 
+#include "g1_controllers/interface_naming.hpp"
 #include "hardware_interface/types/hardware_interface_type_values.hpp"
 
 namespace g1_controllers
 {
-
-namespace
-{
-/// Must match g1_hardware_interface's kHwIfKp/kHwIfKd, which follow NVIDIA's spelling.
-constexpr std::string_view kHwIfKp{ "kp" };
-constexpr std::string_view kHwIfKd{ "kd" };
-
-std::vector<std::string> suffixed(const std::vector<std::string>& joints, std::string_view type)
-{
-    std::vector<std::string> names;
-    names.reserve(joints.size());
-    for (const auto& joint : joints)
-    {
-        std::string name = joint;
-        name += '/';
-        name += type;
-        names.push_back(std::move(name));
-    }
-    return names;
-}
-}  // namespace
-
-template <typename InterfaceT>
-bool G1FreezeController::indexInterfaces(
-    const std::vector<std::string>& names, const std::vector<InterfaceT>& interfaces,
-    std::vector<std::size_t>& out) const
-{
-    out.clear();
-    out.reserve(names.size());
-    for (const auto& name : names)
-    {
-        const auto it =
-            std::find_if(interfaces.begin(), interfaces.end(), [&name](const auto& iface) {
-                return iface.get_name() == name;
-            });
-        if (it == interfaces.end())
-        {
-            RCLCPP_ERROR(get_node()->get_logger(), "interface '%s' was not claimed", name.c_str());
-            return false;
-        }
-        out.push_back(static_cast<std::size_t>(std::distance(interfaces.begin(), it)));
-    }
-    return true;
-}
 
 controller_interface::CallbackReturn G1FreezeController::on_init()
 {
@@ -120,24 +75,37 @@ G1FreezeController::state_interface_configuration() const
 controller_interface::CallbackReturn
 G1FreezeController::on_activate(const rclcpp_lifecycle::State& /*previous_state*/)
 {
+    const auto logger = get_node()->get_logger();
     if (!indexInterfaces(
+            logger,
             suffixed(joint_names_, hardware_interface::HW_IF_POSITION),
             state_interfaces_,
             position_state_indices_) ||
         !indexInterfaces(
+            logger,
             suffixed(joint_names_, hardware_interface::HW_IF_POSITION),
             command_interfaces_,
             position_command_indices_) ||
         !indexInterfaces(
+            logger,
             suffixed(joint_names_, hardware_interface::HW_IF_VELOCITY),
             command_interfaces_,
             velocity_command_indices_) ||
         !indexInterfaces(
+            logger,
             suffixed(joint_names_, hardware_interface::HW_IF_EFFORT),
             command_interfaces_,
             effort_command_indices_) ||
-        !indexInterfaces(suffixed(joint_names_, kHwIfKp), command_interfaces_, kp_command_indices_) ||
-        !indexInterfaces(suffixed(joint_names_, kHwIfKd), command_interfaces_, kd_command_indices_))
+        !indexInterfaces(
+            logger,
+            suffixed(joint_names_, kHwIfKp),
+            command_interfaces_,
+            kp_command_indices_) ||
+        !indexInterfaces(
+            logger,
+            suffixed(joint_names_, kHwIfKd),
+            command_interfaces_,
+            kd_command_indices_))
     {
         return controller_interface::CallbackReturn::ERROR;
     }

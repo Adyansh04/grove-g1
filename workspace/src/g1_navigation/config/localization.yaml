@@ -2,11 +2,11 @@
 #
 # Not slam_toolbox's localization mode, which would reuse the same scan matcher that built the
 # map. That mode loads a serialized pose graph, and for this map that is 33 MB against 130 KB
-# for the occupancy grid -- see maps/README.md.
+# for the occupancy grid; see maps/README.md.
 #
 # Which odometry source is running changes what these values mean. Under
-# `odometry:=sportmodestate` the input is exact MuJoCo state, map -> odom converges to identity
-# and the noise model is degenerate. Under `odometry:=fast_lio` -- what the robot runs -- it
+# `odometry:=ground_truth` the input is exact MuJoCo state, map -> odom converges to identity
+# and the noise model is degenerate. Under `odometry:=fast_lio`, which is what the robot runs, it
 # drifts, and every value below is load-bearing. Tuned for the latter, because a filter that
 # only works against ground truth is not localization.
 #
@@ -29,20 +29,11 @@ amcl:
     # republishes the map mid-run; nothing here does.
     first_map_only: false
     # Gravity-aligned and on the ground. Nav2's default of base_footprint happens to be right
-    # here, but only because g1_state_estimation publishes one -- the URDF root is pelvis.
+    # here, but only because g1_state_estimation publishes one; the URDF root is pelvis.
     base_frame_id: "base_footprint"
     scan_topic: /scan
 
-    # The robot does strafe: g1_base_approach commands lateral velocity to line up on an
-    # object, and the gait adds 0.22-0.30 m/s of uncommanded lateral motion on top. A
-    # differential model cannot express that at all -- it factors every delta into
-    # rotate/translate/rotate, so sideways motion enters the filter as a rotation that never
-    # happened. Getting this wrong is not subtle: the particle cloud can flip end for end,
-    # landing map -> odom at roughly 180 degrees of yaw error.
     robot_model_type: "nav2_amcl::OmniMotionModel"
-    # Nav2's defaults. The 0.02 they replace said "the odometry is exact", which was true only
-    # of the sportmodestate track's MuJoCo ground truth. fast_lio drifts, so a filter told to
-    # trust it that far cannot correct in time and lurches instead.
     alpha1: 0.2
     alpha2: 0.2
     alpha3: 0.2
@@ -98,3 +89,10 @@ amcl:
       y: 0.0
       z: 0.0
       yaw: 0.0
+
+lifecycle_manager_localization:
+  ros__parameters:
+    # No /clock on this track: the simulator links no ROS at all.
+    use_sim_time: false
+    autostart: true
+    node_names: ["map_server", "amcl"]

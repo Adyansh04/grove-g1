@@ -1,3 +1,8 @@
+/**
+ * @file odom_math.cpp
+ * @brief Frame and staleness math for the odom -> base publisher.
+ */
+
 #include "g1_state_estimation/odom_math.hpp"
 
 #include <algorithm>
@@ -9,9 +14,9 @@ namespace g1_state_estimation
 
 bool parseOdometrySource(const std::string& name, OdometrySource& out)
 {
-    if (name == "sim_sportmodestate")
+    if (name == "ground_truth")
     {
-        out = OdometrySource::kSimSportModeState;
+        out = OdometrySource::kGroundTruth;
         return true;
     }
     if (name == "fast_lio")
@@ -159,7 +164,7 @@ Quaternion slerp(const Quaternion& from, const Quaternion& to, double t)
     }
 
     // Near-parallel: sin(theta) underflows and the general form divides by ~0. Straight lerp
-    // is accurate to well past what matters here, and this is the common case -- the
+    // is accurate to well past what matters here, and this is the common case: the
     // correction being interpolated is a fraction of a degree.
     double scale_from = 1.0 - t;
     double scale_to   = t;

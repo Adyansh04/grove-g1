@@ -1,21 +1,16 @@
 """Arguments must survive every include boundary bringup.launch.py introduces.
 
-This is the failure mode this stack keeps hitting. Included launch files inherit the
-parent's configurations, so a child's own DeclareLaunchArgument default never fires for
-anything the parent declared. Both previous instances -- a second RViz window on the wrong
-config, and use_composition silently ignoring its default -- looked like successful
-launches. Nothing crashed; the wrong value simply arrived.
+Included launch files inherit the parent's configurations, so a child's own
+DeclareLaunchArgument default never fires for anything the parent declared. Nothing crashes
+when that happens; the wrong value simply arrives. So this walks the includes rather than
+launching them, resolving what each file actually forwards. It needs no simulator and no DDS.
 
-So this walks the includes rather than launching them, resolving what each file actually
-forwards. It needs no simulator and no DDS.
+Both callers of the same two pieces are checked: bringup.launch.py and nav_sim.launch.py each
+stage a simulator and include nav_stack.launch.py, which is itself checked for staging no
+simulator, since that is what makes including it next to one safe.
 
-Two callers compose the same two pieces and both are checked here: bringup.launch.py stages a
-simulator and includes nav_stack.launch.py, and nav_sim.launch.py does the same for a nav-only
-session. nav_stack.launch.py itself is checked for staging no simulator at all, which is what
-makes including it next to one safe.
-
-Lives in g1_navigation because it reads both packages' launch files, and g1_bringup cannot
-depend on g1_navigation (colcon dependency cycle -- see bringup.launch.py's docstring).
+Lives in g1_navigation because it reads both packages' launch files and g1_bringup cannot
+depend on g1_navigation.
 """
 
 import importlib.util
@@ -69,10 +64,9 @@ def _resolve(context, value):
 def _included_path(context, action):
     """The path an include points at, without loading it.
 
-    LaunchDescriptionSource.location repr()s its substitutions until the source has actually
-    been loaded, and loading it would execute the included launch file -- sim.launch.py would
-    run its DDS environment check. The unexpanded substitutions are only reachable through
-    the name-mangled attribute.
+    LaunchDescriptionSource.location repr()s its substitutions until the source is loaded, and
+    loading it would execute the included launch file. The unexpanded substitutions are only
+    reachable through the name-mangled attribute.
     """
     subs = action.launch_description_source._LaunchDescriptionSource__location
     return perform_substitutions(context, subs)
@@ -118,12 +112,8 @@ def _nodes(setup_result):
 
 @pytest.mark.parametrize("mode", ["mapping", "localization"])
 def test_nav_stack_never_stages_a_simulator(nav_stack, mode):
-    """The safety pin.
-
-    Both callers stage their own simulator. A second one here would mean two
-    motion_service_sim processes publishing /lowcmd at once, which is the failure mode
-    CONTROL_MODES.md puts first: the robot collapses and nothing in the logs says why.
-    """
+    """Both callers stage their own simulator, so a second one here would put two writers on
+    rt/lowcmd at once and the robot collapses."""
     nav = "false" if mode == "mapping" else "true"
     actions, context = _run_setup(nav_stack, mode=mode, nav=nav)
     for action in actions:
@@ -147,8 +137,8 @@ def test_nav_stack_includes_the_pipeline_for_each_mode(nav_stack):
 
 
 def test_only_the_composable_pieces_are_told_about_the_container(nav_stack):
-    # slam_toolbox is deliberately left out of the container (40 MB serialization stack), so
-    # handing it a container name would be the visible half of a wrong decision.
+    # slam_toolbox is deliberately left out of the container (40 MB serialization stack), so it
+    # must not be handed a container name.
     includes = dict(_includes(_run_setup(nav_stack, mode="mapping")))
     assert includes["scan.launch.py"]["container_name"] == "nav2_container"
     assert includes["slam.launch.py"] == {}
@@ -158,8 +148,8 @@ def test_only_the_composable_pieces_are_told_about_the_container(nav_stack):
 
 
 def test_nav2_is_never_composed(nav_stack):
-    """Measured, not stylistic: composed, the costmaps silently fall back to Costmap2DROS's
-    built-in defaults and controller_server hangs in Activating forever."""
+    """Composed, the costmaps silently fall back to Costmap2DROS's built-in defaults and
+    controller_server hangs in Activating forever."""
     includes = dict(_includes(_run_setup(nav_stack, mode="localization", nav="true")))
     assert includes["nav2.launch.py"]["use_composition"] == "false"
 
@@ -180,11 +170,8 @@ def test_nav_stack_refuses_bad_input(nav_stack):
 
 
 def _sim_args(setup_result):
-    """The arguments bringup hands its one simulator, looked up by name.
-
-    By name rather than by index: bringup now emits several includes and their order is not
-    what any of these tests are about.
-    """
+    """The arguments bringup hands its one simulator, looked up by name rather than by index:
+    bringup emits several includes and their order is not what these tests are about."""
     sims = [args for name, args in _includes(setup_result) if name == "sim.launch.py"]
     assert len(sims) == 1, f"expected exactly one simulator, got {len(sims)}"
     return sims[0]
@@ -193,7 +180,7 @@ def _sim_args(setup_result):
 def test_bare_mode_stages_only_a_simulator_and_names_no_optional_package(bringup):
     result = _run_setup(bringup, mode="none")
     assert [name for name, _ in _includes(result)] == ["sim.launch.py"]
-    # The whole point of the undeclared reference: this path must not touch the package.
+    # The undeclared reference exists so this path never touches the package.
     actions, context = result
     for action in actions:
         if isinstance(action, IncludeLaunchDescription):
@@ -257,8 +244,8 @@ def test_world_threads_through_unchanged(bringup, mode):
 
 @pytest.mark.parametrize("mode", ["none", "mapping", "localization"])
 def test_rviz_is_always_suppressed_in_the_simulator(bringup, mode):
-    # The exact shape of the shipped bug: without an explicit false the child inherits
-    # rviz:=true and opens a second window on the wrong config.
+    # Without an explicit false the child inherits rviz:=true and opens a second window on the
+    # wrong config.
     assert _sim_args(_run_setup(bringup, mode=mode, rviz="true"))["rviz"] == "false"
 
 
@@ -287,14 +274,14 @@ def test_no_rviz_include_when_not_asked(bringup):
 
 
 def test_nav_sim_composes_one_simulator_and_one_stack(nav_sim):
-    """nav_sim is no longer in bringup's path, so its own contract needs asserting directly."""
+    """nav_sim is not in bringup's path, so its own contract is asserted directly."""
     names = [name for name, _ in _includes(_run_setup(nav_sim, mode="localization"))]
     assert names == ["sim.launch.py", "nav_stack.launch.py"]
 
 
 def test_nav_sim_forces_sensors_and_suppresses_rviz(nav_sim):
-    """The other half of the one fact stated in two files. bringup asserts its copy above; if
-    these two ever disagree, navigation silently loses its scan or gains a second RViz."""
+    """The same fact bringup asserts above. If the two disagree, navigation silently loses its
+    scan or gains a second RViz."""
     sim = dict(_includes(_run_setup(nav_sim, mode="mapping")))["sim.launch.py"]
     assert sim["sensors"] == "true"
     assert sim["rviz"] == "false"
