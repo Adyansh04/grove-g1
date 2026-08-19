@@ -1,9 +1,11 @@
 #include "g1_orchestration/arm_authority.hpp"
 
 #include <chrono>
+#include <controller_manager_msgs/srv/list_controllers.hpp>
 #include <controller_manager_msgs/srv/set_hardware_component_state.hpp>
 #include <controller_manager_msgs/srv/switch_controller.hpp>
 #include <lifecycle_msgs/msg/state.hpp>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -16,11 +18,16 @@ namespace g1_orchestration
 namespace
 {
 
+using ListControllers           = controller_manager_msgs::srv::ListControllers;
 using SetHardwareComponentState = controller_manager_msgs::srv::SetHardwareComponentState;
 using SwitchController          = controller_manager_msgs::srv::SwitchController;
 
 constexpr const char* kComponentService = "/controller_manager/set_hardware_component_state";
 constexpr const char* kSwitchService    = "/controller_manager/switch_controller";
+constexpr const char* kListService      = "/controller_manager/list_controllers";
+
+/// The one controller_manager state that means a controller is holding its joints.
+constexpr const char* kActiveState = "active";
 
 // Shorter than the arm's budget, on purpose: an absent hand should be reported quickly rather
 // than waited out twice. Mirrors activate_arm's HAND_ACTIVATE_TIMEOUT_S.
@@ -45,33 +52,102 @@ bool setComponentState(
     return response != nullptr && response->ok;
 }
 
-/// A one-or-zero element list, for the parts whose `component` or `displaces` is empty.
-std::vector<std::string> nonEmpty(const std::string& name)
-{
-    return name.empty() ? std::vector<std::string>{} : std::vector<std::string>{ name };
-}
-
 bool switchController(
     const rclcpp::Node::SharedPtr& node, const std::vector<std::string>& activate,
-    const std::vector<std::string>& deactivate, double timeout_s)
+    const std::vector<std::string>& deactivate, double timeout_s, uint8_t strictness)
 {
     auto request                    = std::make_shared<SwitchController::Request>();
     request->activate_controllers   = activate;
     request->deactivate_controllers = deactivate;
-    // BEST_EFFORT, not STRICT, and the difference matters here. This runs as a tree leaf, so
-    // it has to be idempotent: the arm is very often already acquired (activate_arm:=true does
-    // it at bring-up, and a retried or re-run mission re-enters this), and STRICT reports
-    // activating an already-active controller as a failure. The bring-up script uses STRICT
-    // because it IS the fresh acquire; a mission cannot assume it is first.
-    request->strictness    = SwitchController::Request::BEST_EFFORT;
-    request->activate_asap = true;
-    request->timeout.sec   = static_cast<int>(timeout_s);
+    request->strictness             = strictness;
+    request->activate_asap          = true;
+    request->timeout.sec            = static_cast<int>(timeout_s);
 
     const auto response = callService<SwitchController>(node, kSwitchService, request, timeout_s);
     return response != nullptr && response->ok;
 }
 
+/// Every controller controller_manager knows, by name. Empty when it did not answer, which is
+/// indistinguishable from knowing nothing and is treated the same way: as no controller able to
+/// take the arms.
+std::map<std::string, std::string>
+controllerStates(const rclcpp::Node::SharedPtr& node, double timeout_s)
+{
+    std::map<std::string, std::string> states;
+    const auto                         response = callService<ListControllers>(
+        node,
+        kListService,
+        std::make_shared<ListControllers::Request>(),
+        timeout_s);
+    if (response == nullptr)
+    {
+        return states;
+    }
+    for (const auto& state : response->controller)
+    {
+        states.emplace(state.name, state.state);
+    }
+    return states;
+}
+
+/// Trades `outgoing` for `incoming` over the same joints, in one switch or not at all.
+bool swapArmController(
+    const rclcpp::Node::SharedPtr& node, const std::string& incoming, const std::string& outgoing,
+    const rclcpp::Logger& logger, double timeout_s)
+{
+    // One listing for both, not one call each: this runs inside a tick with the interrupt
+    // unchecked, and the arm's budget is 15 s.
+    const std::map<std::string, std::string> states = controllerStates(node, timeout_s);
+    if (states.empty())
+    {
+        RCLCPP_ERROR(logger, "controller_manager did not list its controllers; not switching");
+        return false;
+    }
+
+    const auto state_of = [&states](const std::string& name) {
+        const auto it = states.find(name);
+        return it == states.end() ? std::string{} : it->second;
+    };
+    const ArmSwitchPlan plan = planArmSwitch(state_of(incoming), state_of(outgoing));
+
+    if (!plan.possible)
+    {
+        RCLCPP_ERROR(
+            logger,
+            "%s cannot take the arms, so %s keeps them",
+            incoming.c_str(),
+            outgoing.c_str());
+        return false;
+    }
+    if (plan.already_held)
+    {
+        return true;
+    }
+    return switchController(
+        node,
+        { incoming },
+        plan.displace ? std::vector<std::string>{ outgoing } : std::vector<std::string>{},
+        timeout_s,
+        SwitchController::Request::STRICT);
+}
+
 }  // namespace
+
+ArmSwitchPlan planArmSwitch(const std::string& incoming_state, const std::string& outgoing_state)
+{
+    ArmSwitchPlan plan;
+    // An unknown incoming controller is the dangerous case and the reason this returns a plan
+    // rather than a pair of lists: it is exactly when the switch must ask for NOTHING, because
+    // deactivating the holder on its own is what drops the arms.
+    if (incoming_state.empty())
+    {
+        return plan;
+    }
+    plan.possible     = true;
+    plan.already_held = incoming_state == kActiveState;
+    plan.displace     = outgoing_state == kActiveState;
+    return plan;
+}
 
 const std::vector<ControlledPart>& controlledParts()
 {
@@ -115,7 +191,7 @@ bool acquireArm(const rclcpp::Logger& logger, double timeout_s)
                                      timeout_s);
 
     if (!component_ready ||
-        !switchController(node, { arm.controller }, nonEmpty(arm.displaces), timeout_s))
+        !swapArmController(node, arm.controller, arm.displaces, logger, timeout_s))
     {
         RCLCPP_ERROR(logger, "could not acquire the arm. Is the control stack up?");
         return false;
@@ -124,13 +200,21 @@ bool acquireArm(const rclcpp::Logger& logger, double timeout_s)
     for (std::size_t i = 1; i < parts.size(); ++i)
     {
         const ControlledPart& hand = parts[i];
+        // BEST_EFFORT for the hands, unlike the arm above. Nothing is displaced here, so there
+        // is no half of a pair to apply on its own, and a hand that will not come up has to
+        // leave the arm usable.
         if (!setComponentState(
                 node,
                 hand.component,
                 lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE,
                 "active",
                 kHandTimeoutS) ||
-            !switchController(node, { hand.controller }, {}, kHandTimeoutS))
+            !switchController(
+                node,
+                { hand.controller },
+                {},
+                kHandTimeoutS,
+                SwitchController::Request::BEST_EFFORT))
         {
             // Best-effort, exactly as activate_arm treats it: a hand that is absent, unpowered
             // or not publishing state leaves the arm usable, and only the arm fails the whole
@@ -166,9 +250,23 @@ void releaseArm(const rclcpp::Logger& logger, double timeout_s)
     // NOLINTNEXTLINE(modernize-loop-convert)
     for (auto it = parts.rbegin(); it != parts.rend(); ++it)
     {
-        // Whatever was displaced comes straight back in the same switch, so the joints are
-        // never momentarily unowned, which here means unpowered.
-        switchController(node, nonEmpty(it->displaces), { it->controller }, timeout_s);
+        if (it->displaces.empty())
+        {
+            switchController(
+                node,
+                {},
+                { it->controller },
+                timeout_s,
+                SwitchController::Request::BEST_EFFORT);
+        }
+        else
+        {
+            // Whatever was displaced comes straight back in the same switch, so the joints are
+            // never momentarily unowned, which here means unpowered. If it cannot come back the
+            // switch is not made at all and this controller keeps them -- still powered, which
+            // beats a tidy release that drops the arms.
+            swapArmController(node, it->displaces, it->controller, logger, timeout_s);
+        }
         if (!it->component.empty())
         {
             setComponentState(

@@ -4,7 +4,7 @@
   <version>0.1.0</version>
   <description>ros2_control system interface for the Unitree Dex3-1 hand, over its own SDK channels.</description>
   <maintainer email="gupta.adyansh@gmail.com">Adyansh Gupta</maintainer>
-  <license>Apache-2.0</license>
+  <license>BSD-3-Clause</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
   <depend>hardware_interface</depend>

@@ -1,12 +1,10 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="g1_29dof_with_hand_rev_1_0">
 
-  <!-- Everything both control stacks describe identically: the vendored body, the frames the
-       rest of the stack looks up by name, and the two hands. Only the ros2_control block that
-       owns the body motors differs between g1_arm_sdk.urdf.xacro and g1_lowcmd.urdf.xacro, so
-       only that lives in each. A grasp frame or a sensor extrinsic that drifted between the two
-       would break manipulation on one stack and not the other, which is the kind of fault that
-       takes a day to find. -->
+  <!-- The robot itself: the vendored body, the frames the rest of the stack looks up by name,
+       and the two hands. Split from g1_lowcmd.urdf.xacro because consumers that only need the
+       geometry (RViz, the sensor-extrinsic test) must not pull in a ros2_control block that
+       would try to claim the body motors. -->
 
   <!-- Upstream description, with one mechanical edit: mesh paths were changed from relative
        ("meshes/x.STL") to package:// so RViz can resolve them. See g1_description/README.md.

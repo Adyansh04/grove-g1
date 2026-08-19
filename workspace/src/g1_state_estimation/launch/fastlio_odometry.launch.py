@@ -101,17 +101,10 @@ def _launch_setup(context, *args, **kwargs):
                 output="both",
             )
         )
-        # Without this there is no odometry at all: the waist joints reach /joint_states from
-        # nowhere else on the robot, and mid360_imu -> pelvis crosses them. See
-        # g1_hardware_interface's README.
-        actions.append(
-            Node(
-                package="g1_hardware_interface",
-                executable="g1_lowstate_joint_states",
-                name="g1_lowstate_joint_states",
-                output="both",
-            )
-        )
+        # The waist joints have to reach /joint_states from somewhere, because mid360_imu ->
+        # pelvis crosses all three and this source publishes nothing without that lookup. On
+        # this stack joint_state_broadcaster covers all 29 from the body component, so nothing
+        # extra is launched here.
 
     # Its camera_init -> body pair is a second root, disconnected from odom, and nothing here
     # consumes it: this node reads /Odometry_loc instead. Left on /tf it makes every TF client

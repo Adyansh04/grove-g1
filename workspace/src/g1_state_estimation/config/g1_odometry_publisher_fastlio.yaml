@@ -19,8 +19,8 @@ g1_odometry_publisher:
     # here.
     #
     # That chain crosses the three waist joints, so /joint_states must carry them or the lookup
-    # never resolves and this source publishes nothing. In simulation motion_service_sim does
-    # it; on the robot g1_hardware_interface's g1_lowstate_joint_states does.
+    # never resolves and this source publishes nothing. joint_state_broadcaster covers all 29
+    # from the body component, on both tracks.
     lidar_body_frame_id: "mid360_imu"
 
     # Pelvis height above the floor when odometry starts, which is what puts odom on the ground

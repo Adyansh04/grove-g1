@@ -26,8 +26,8 @@ left_arm:
   # calls IK many times per motion, so solve time matters more than solution quality here.
   stop_optimization_on_valid_solution: true
 
-  # 1 mm and ~0.6 deg. Tighter than the arm can actually track under the arm_sdk gains, so the
-  # solver is not the limiting factor in where the hand ends up.
+  # 1 mm and ~0.6 deg. Tighter than the arm can actually track on its position-only gains, so
+  # the solver is not the limiting factor in where the hand ends up.
   position_threshold: 0.001
   orientation_threshold: 0.01
 

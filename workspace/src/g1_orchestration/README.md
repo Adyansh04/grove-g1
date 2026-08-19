@@ -17,9 +17,10 @@ flowchart LR
 The tree decides *what* happens and in what order; the skills decide *how*. Nothing here plans,
 moves a joint, or drives a costmap.
 
-Nav2 uses BehaviorTree.CPP v3 for its own navigator and keeps it. The two install side by side
-with disjoint files and nothing links both. `btcpp_ros2` is not released for Humble, which is why
-this package has its own action-client base.
+Nav2's own navigator links the same `libbehaviortree_cpp.so` this package does: there is one
+BehaviorTree.CPP in the image and no v3 package, so a leaf here and a Nav2 BT node are the same
+version. `behaviortree_ros2` is not in the image, which is why this package has its own
+action-client base.
 
 ## Layout
 
@@ -195,6 +196,15 @@ is already holding the arms through `arm_freeze_controller`, so the bracket trad
 unclaimed joint unpowered and two calls would drop the arms in between. The hands are separate
 component activations: a Dex3 is its own device on its own channels.
 
+That one call is `STRICT`, and only the arm's is. `BEST_EFFORT` drops whichever controller it
+cannot switch and applies the rest, still answering `ok` — so a trajectory controller that is
+loaded but not yet configured leaves the request as a bare deactivation of the freeze, and the arms
+fall. `STRICT` is all-or-nothing but refuses a switch that is already done, so the two controllers'
+states are read first and an arm already in the wanted state is left alone. The hands keep
+`BEST_EFFORT`: nothing is displaced there, so there is no half of a pair to apply on its own, and a
+hand that will not come up must still leave the arm usable. `planArmSwitch` is that decision on its
+own, with no service calls in it, so `test_authority_drift` can assert it directly.
+
 ## Running
 
 The mission starts nothing else. The simulator, Nav2, MoveIt and the skills must already be up.
@@ -238,8 +248,9 @@ None need a simulator.
 | Test | Covers |
 |---|---|
 | `test_tree_loads` | Every shipped tree parses against the registered node set; the mission tree still has the leaves and retry wrappers it is supposed to; an unknown leaf is rejected; the port string conversions and their refusals. |
+| `test_action_leaf` | A leaf ticked against a real server on the two threads the executor uses: a rejected goal fails the leaf instead of leaving it RUNNING, and an accepted one that succeeds reaches SUCCESS. |
 | `test_node_model` | The checked-in Groot2 palette matches the registered nodes and their ports. |
-| `test_authority_drift` | The acquire sequence against `g1_bringup`'s `activate_arm`, on both control stacks, and that the arm comes first with the hands behind it. |
+| `test_authority_drift` | The acquire sequence against `g1_bringup`'s `activate_arm`: the same names, the arm first with the hands behind it, and the freeze controller still displaced in the same switch. Plus `planArmSwitch`, including that an incoming controller which is not loaded switches nothing at all. |
 
 ```bash
 colcon test --packages-select g1_orchestration

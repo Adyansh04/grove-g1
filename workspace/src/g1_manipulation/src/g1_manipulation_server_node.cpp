@@ -49,6 +49,34 @@ bool resolveArm(const std::string& arm, ArmContext& out)
     return true;
 }
 
+G1ManipulationServer::~G1ManipulationServer()
+{
+    while (goals_running_.load() > 0)
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+}
+
+/// The /objects array frame, read under the lock. Every caller used to reach around
+/// lookUpObject's locked snapshot and touch objects_.header directly from a detached thread,
+/// which is a plain data race on a std::string.
+std::string G1ManipulationServer::objectsFrame()
+{
+    const std::lock_guard<std::mutex> lock(objects_mutex_);
+    return objects_.header.frame_id;
+}
+
+bool G1ManipulationServer::acquire()
+{
+    bool expected = false;
+    if (!busy_.compare_exchange_strong(expected, true))
+    {
+        RCLCPP_WARN(get_logger(), "rejecting a goal: the arm is already running one");
+        return false;
+    }
+    return true;
+}
+
 G1ManipulationServer::G1ManipulationServer(const rclcpp::NodeOptions& options)
   : rclcpp::Node("g1_manipulation_server", options)
 {
@@ -84,6 +112,20 @@ G1ManipulationServer::G1ManipulationServer(const rclcpp::NodeOptions& options)
 
     get_scene_   = create_client<moveit_msgs::srv::GetPlanningScene>("/get_planning_scene");
     apply_scene_ = create_client<moveit_msgs::srv::ApplyPlanningScene>("/apply_planning_scene");
+}
+
+void G1ManipulationServer::setHandContact(
+    const ArmContext& arm, const std::vector<std::string>& touchables, bool allowed,
+    bool include_links)
+{
+    if (!allowHandContact(arm, touchables, allowed, include_links))
+    {
+        RCLCPP_ERROR(
+            get_logger(),
+            "collision exemption %s failed; the planning scene may be left %s",
+            allowed ? "apply" : "restore",
+            allowed ? "unchanged" : "blinded to the octomap");
+    }
 }
 
 bool G1ManipulationServer::allowHandContact(
@@ -260,40 +302,49 @@ void G1ManipulationServer::initialize()
     pick_server_ = rclcpp_action::create_server<Pick>(
         this,
         "~/pick",
-        [](const rclcpp_action::GoalUUID&, const std::shared_ptr<const Pick::Goal>&) {
-            return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
+        [this](const rclcpp_action::GoalUUID&, const std::shared_ptr<const Pick::Goal>&) {
+            return acquire() ? rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE :
+                               rclcpp_action::GoalResponse::REJECT;
         },
         [](const std::shared_ptr<GoalHandle<Pick>>&) {
             return rclcpp_action::CancelResponse::ACCEPT;
         },
         [this](const std::shared_ptr<GoalHandle<Pick>>& handle) {
-            std::thread{ [this, handle] { executePick(handle); } }.detach();
+            std::thread{ [this, handle] {
+                runGuarded([&] { executePick(handle); }, handle);
+            } }.detach();
         });
 
     place_server_ = rclcpp_action::create_server<Place>(
         this,
         "~/place",
-        [](const rclcpp_action::GoalUUID&, const std::shared_ptr<const Place::Goal>&) {
-            return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
+        [this](const rclcpp_action::GoalUUID&, const std::shared_ptr<const Place::Goal>&) {
+            return acquire() ? rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE :
+                               rclcpp_action::GoalResponse::REJECT;
         },
         [](const std::shared_ptr<GoalHandle<Place>>&) {
             return rclcpp_action::CancelResponse::ACCEPT;
         },
         [this](const std::shared_ptr<GoalHandle<Place>>& handle) {
-            std::thread{ [this, handle] { executePlace(handle); } }.detach();
+            std::thread{ [this, handle] {
+                runGuarded([&] { executePlace(handle); }, handle);
+            } }.detach();
         });
 
     posture_server_ = rclcpp_action::create_server<SetArmPosture>(
         this,
         "~/set_arm_posture",
-        [](const rclcpp_action::GoalUUID&, const std::shared_ptr<const SetArmPosture::Goal>&) {
-            return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
+        [this](const rclcpp_action::GoalUUID&, const std::shared_ptr<const SetArmPosture::Goal>&) {
+            return acquire() ? rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE :
+                               rclcpp_action::GoalResponse::REJECT;
         },
         [](const std::shared_ptr<GoalHandle<SetArmPosture>>&) {
             return rclcpp_action::CancelResponse::ACCEPT;
         },
         [this](const std::shared_ptr<GoalHandle<SetArmPosture>>& handle) {
-            std::thread{ [this, handle] { executeSetArmPosture(handle); } }.detach();
+            std::thread{ [this, handle] {
+                runGuarded([&] { executeSetArmPosture(handle); }, handle);
+            } }.detach();
         });
 
     RCLCPP_INFO(
@@ -508,10 +559,19 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     const auto fail = [&](const std::string& phase, const std::string& why) {
         moveToNamed(*hand_group, "open");
         arm_group->detachObject(goal->object_id);
-        allowHandContact(arm, { "<octomap>", goal->object_id }, false);
+        setHandContact(arm, { "<octomap>", goal->object_id }, false);
         result->success = false;
         result->message = phase + ": " + why;
         goal_handle->abort(result);
+    };
+    // Same cleanup as a failure, but reported as a cancel so the tree can tell the two apart.
+    const auto cancelled = [&](const std::string& phase) {
+        moveToNamed(*hand_group, "open");
+        arm_group->detachObject(goal->object_id);
+        setHandContact(arm, { "<octomap>", goal->object_id }, false);
+        result->success = false;
+        result->message = phase + ": cancelled";
+        goal_handle->canceled(result);
     };
 
     feedback->phase = Pick::Feedback::PHASE_LOCATING;
@@ -525,7 +585,7 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     // /objects is in odom and the planner works in pelvis; the two differ by wherever the
     // robot is standing, so every measured pose goes through TF before it is planned against.
     const std::string object_frame =
-        detection->header.frame_id.empty() ? objects_.header.frame_id : detection->header.frame_id;
+        detection->header.frame_id.empty() ? objectsFrame() : detection->header.frame_id;
     const auto object_pose = toPlanningFrame(detection->results.front().pose.pose, object_frame);
     if (!object_pose)
     {
@@ -540,6 +600,13 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     geometry_msgs::msg::Pose pregrasp_goal = grasp_goal;
     pregrasp_goal.position.z += approach_height_m_;
 
+    // A cancel is accepted by the server, so it has to be honoured somewhere: between phases is
+    // the only safe place, because a trajectory already executing cannot be unwound here.
+    if (goal_handle->is_canceling())
+    {
+        cancelled(Pick::Feedback::PHASE_PREGRASP);
+        return;
+    }
     feedback->phase = Pick::Feedback::PHASE_PREGRASP;
     goal_handle->publish_feedback(feedback);
     // Opened before the approach, not after: closing on the way in would knock the object off
@@ -560,6 +627,11 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
         return;
     }
 
+    if (goal_handle->is_canceling())
+    {
+        cancelled(Pick::Feedback::PHASE_APPROACH);
+        return;
+    }
     feedback->phase = Pick::Feedback::PHASE_APPROACH;
     goal_handle->publish_feedback(feedback);
 
@@ -576,7 +648,7 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     // pick sequence is remove, close, attach. Attaching re-adds it as an attached body, which
     // is also what gets PointCloudOctomapUpdater's ShapeMask to stop feeding it back into the
     // octomap -- world collision objects get no such filtering, attached bodies do.
-    allowHandContact(arm, { "<octomap>" }, true);
+    setHandContact(arm, { "<octomap>" }, true);
     planning_scene_.removeCollisionObjects({ goal->object_id });
 
     if (!moveTo(*arm_group, grasp_goal, arm.grasp_frame, "approach"))
@@ -585,6 +657,11 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
         return;
     }
 
+    if (goal_handle->is_canceling())
+    {
+        cancelled(Pick::Feedback::PHASE_GRASP);
+        return;
+    }
     feedback->phase = Pick::Feedback::PHASE_GRASP;
     goal_handle->publish_feedback(feedback);
     if (!moveToNamed(*hand_group, "closed"))
@@ -626,8 +703,13 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     // the octomap from before the grasp -- the ShapeMask stops new clouds re-adding it, but it
     // does not erase what is already there. Without this exemption the lift starts with the
     // attached cube already in collision against the table it is still sitting on.
-    allowHandContact(arm, { "<octomap>", goal->object_id }, true);
+    setHandContact(arm, { "<octomap>", goal->object_id }, true);
 
+    if (goal_handle->is_canceling())
+    {
+        cancelled(Pick::Feedback::PHASE_LIFT);
+        return;
+    }
     feedback->phase = Pick::Feedback::PHASE_LIFT;
     goal_handle->publish_feedback(feedback);
     geometry_msgs::msg::Pose lifted = grasp_goal;
@@ -638,7 +720,7 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
         return;
     }
 
-    allowHandContact(arm, { "<octomap>", goal->object_id }, false);
+    setHandContact(arm, { "<octomap>", goal->object_id }, false);
     result->success = true;
     result->message = "picked " + goal->object_id + " with the " + goal->arm + " hand";
     goal_handle->succeed(result);
@@ -664,11 +746,19 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
     // What is held, read from the scene rather than remembered, because the attachment is the
     // authority on what the hand actually has. Needed BEFORE the exemption is applied: the
     // object has to be named in it.
+    // Filtered by THIS arm's links. getAttachedObjects() covers the whole scene, so an unfiltered
+    // first-match would let a left-hand place pick up whatever the right hand is holding, use its
+    // height for the placement arithmetic and name it in the ACM exemptions. The detach below
+    // already filters by joint model group; these two have to agree.
     std::string held_id;
     double      held_height = 0.0;
+    MoveGroup*  held_group  = groupFor(arm.arm_group);
     for (const auto& [id, attached] : planning_scene_.getAttachedObjects())
     {
-        if (!attached.object.primitives.empty() &&
+        const bool mine = held_group != nullptr && held_group->getRobotModel()
+                                                       ->getJointModelGroup(arm.arm_group)
+                                                       ->hasLinkModel(attached.link_name);
+        if (mine && !attached.object.primitives.empty() &&
             attached.object.primitives.front().dimensions.size() == 3)
         {
             held_id     = id;
@@ -687,17 +777,23 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
                           std::vector<std::string>{ "<octomap>", held_id };
 
     const auto fail = [&](const std::string& phase, const std::string& why) {
-        allowHandContact(arm, touchables, false);
+        setHandContact(arm, touchables, false);
         result->success = false;
         result->message = phase + ": " + why;
         goal_handle->abort(result);
+    };
+    const auto cancelled = [&](const std::string& phase) {
+        setHandContact(arm, touchables, false);
+        result->success = false;
+        result->message = phase + ": cancelled";
+        goal_handle->canceled(result);
     };
 
     // The carried object may pass through the surface's voxels on the way in; the ARM may not.
     // Exempting the hand this early let plans route the arm into the bench, and the collision
     // shoved the base off its stance, putting the re-aimed descent out of reach. Same hazard
     // the pick defers its exemption for; the descent below gets the full one.
-    allowHandContact(arm, touchables, true, /*include_links=*/false);
+    setHandContact(arm, touchables, true, /*include_links=*/false);
 
     // Prefer a surface read from /objects over the caller's coordinate.
     //
@@ -720,7 +816,7 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
             return;
         }
         const std::string frame =
-            surface->header.frame_id.empty() ? objects_.header.frame_id : surface->header.frame_id;
+            surface->header.frame_id.empty() ? objectsFrame() : surface->header.frame_id;
         target = toPlanningFrame(surface->results.front().pose.pose, frame);
     }
     else
@@ -748,6 +844,13 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
     geometry_msgs::msg::Pose preplace   = place_goal;
     preplace.position.z += approach_height_m_;
 
+    // A cancel is accepted by the server, so it has to be honoured somewhere: between phases is
+    // the only safe place, because a trajectory already executing cannot be unwound here.
+    if (goal_handle->is_canceling())
+    {
+        cancelled(Place::Feedback::PHASE_PREPLACE);
+        return;
+    }
     feedback->phase = Place::Feedback::PHASE_PREPLACE;
     goal_handle->publish_feedback(feedback);
     if (!moveTo(*arm_group, preplace, arm.grasp_frame, "preplace"))
@@ -769,7 +872,7 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
         if (const auto fresh = lookUpObject(goal->surface_object_id))
         {
             const std::string frame =
-                fresh->header.frame_id.empty() ? objects_.header.frame_id : fresh->header.frame_id;
+                fresh->header.frame_id.empty() ? objectsFrame() : fresh->header.frame_id;
             expected = fresh->results.front().pose.pose.position;
             expected->z += 0.5 * (fresh->bbox.size.z + held_height);
             if (auto moved = toPlanningFrame(fresh->results.front().pose.pose, frame))
@@ -796,16 +899,26 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
         }
     }
 
+    if (goal_handle->is_canceling())
+    {
+        cancelled(Place::Feedback::PHASE_LOWER);
+        return;
+    }
     feedback->phase = Place::Feedback::PHASE_LOWER;
     goal_handle->publish_feedback(feedback);
     // Now the hand may touch the surface: the descent ends in contact by definition.
-    allowHandContact(arm, touchables, true);
+    setHandContact(arm, touchables, true);
     if (!moveTo(*arm_group, place_goal, arm.grasp_frame, "lower"))
     {
         fail(Place::Feedback::PHASE_LOWER, "could not lower onto the target");
         return;
     }
 
+    if (goal_handle->is_canceling())
+    {
+        cancelled(Place::Feedback::PHASE_RELEASE);
+        return;
+    }
     feedback->phase = Place::Feedback::PHASE_RELEASE;
     goal_handle->publish_feedback(feedback);
     if (!moveToNamed(*hand_group, "open"))
@@ -818,7 +931,14 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
     //
     // What is held is read from the scene rather than remembered from the pick, so a place
     // still works against a server that did not do the picking.
-    const moveit::core::RobotStatePtr              state = arm_group->getCurrentState();
+    // Null when the state monitor has nothing yet, which setStartStateInBounds already handles.
+    // Unguarded here it is a hard crash on a detached thread rather than a failed goal.
+    const moveit::core::RobotStatePtr state = arm_group->getCurrentState();
+    if (!state)
+    {
+        fail(Place::Feedback::PHASE_RELEASE, "no current state, cannot detach what was held");
+        return;
+    }
     std::vector<const moveit::core::AttachedBody*> attached;
     state->getAttachedBodies(attached, state->getJointModelGroup(arm.arm_group));
     for (const moveit::core::AttachedBody* body : attached)
@@ -826,6 +946,11 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
         arm_group->detachObject(body->getName());
     }
 
+    if (goal_handle->is_canceling())
+    {
+        cancelled(Place::Feedback::PHASE_RETREAT);
+        return;
+    }
     feedback->phase = Place::Feedback::PHASE_RETREAT;
     goal_handle->publish_feedback(feedback);
     // Restored BEFORE the retreat is planned, or the lift may route the open hand through what
@@ -833,7 +958,7 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
     // by construction, so restoring `<octomap>` here would put the start state in collision.
     if (!held_id.empty())
     {
-        allowHandContact(arm, { held_id }, false);
+        setHandContact(arm, { held_id }, false);
     }
     if (!moveTo(*arm_group, preplace, arm.grasp_frame, "retreat"))
     {
@@ -841,7 +966,7 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
         return;
     }
 
-    allowHandContact(arm, touchables, false);
+    setHandContact(arm, touchables, false);
 
     // Did it actually land there? A successful plan says nothing about where the object ended
     // up: one release short dropped the cube on the floor with every leaf reporting success.
@@ -859,10 +984,9 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
             std::optional<geometry_msgs::msg::Point> where = pose.position;
             if (!expected)
             {
-                const std::string frame       = landed->header.frame_id.empty() ?
-                                                    objects_.header.frame_id :
-                                                    landed->header.frame_id;
-                const auto        in_planning = toPlanningFrame(pose, frame);
+                const std::string frame =
+                    landed->header.frame_id.empty() ? objectsFrame() : landed->header.frame_id;
+                const auto in_planning = toPlanningFrame(pose, frame);
                 where = in_planning ? std::optional(in_planning->position) : std::nullopt;
             }
             if (where)

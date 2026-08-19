@@ -13,6 +13,7 @@
 
 #include <behaviortree_cpp/action_node.h>
 
+#include <algorithm>
 #include <chrono>
 #include <memory>
 #include <rclcpp/rclcpp.hpp>
@@ -32,14 +33,24 @@ typename ServiceT::Response::SharedPtr callService(
     const rclcpp::Node::SharedPtr& node, const std::string& service,
     const typename ServiceT::Request::SharedPtr& request, double timeout_s)
 {
+    // One budget across both waits, not one each. These run inside a single tick with the
+    // interrupt flag unchecked, and giving the discovery wait and the call a full timeout apiece
+    // makes a leaf that says it will take 15 s take 30, five times over in one acquire.
+    using Clock         = std::chrono::steady_clock;
+    const auto deadline = Clock::now() + std::chrono::duration_cast<Clock::duration>(
+                                             std::chrono::duration<double>(timeout_s));
+    const auto remaining = [&deadline] {
+        return std::max(deadline - Clock::now(), Clock::duration::zero());
+    };
+
     auto client = node->create_client<ServiceT>(service);
-    if (!client->wait_for_service(std::chrono::duration<double>(timeout_s)))
+    if (!client->wait_for_service(remaining()))
     {
         RCLCPP_ERROR(node->get_logger(), "service '%s' never appeared", service.c_str());
         return nullptr;
     }
     auto future = client->async_send_request(request);
-    if (rclcpp::spin_until_future_complete(node, future, std::chrono::duration<double>(timeout_s)) !=
+    if (rclcpp::spin_until_future_complete(node, future, remaining()) !=
         rclcpp::FutureReturnCode::SUCCESS)
     {
         RCLCPP_ERROR(node->get_logger(), "call to '%s' did not return", service.c_str());

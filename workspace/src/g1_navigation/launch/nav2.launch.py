@@ -164,7 +164,13 @@ def generate_launch_description():
         executable="g1_base_approach",
         name="g1_base_approach",
         output="both",
-        parameters=[os.path.join(loco_share, "config", "g1_base_approach.yaml")],
+        parameters=[
+            os.path.join(loco_share, "config", "g1_base_approach.yaml"),
+            # Passed for the same reason every Nav2 node above gets it: this node looks up TF and
+            # ages object detections against its own clock, so leaving it on wall time while the
+            # rest of the stack runs on /clock makes it the one node that disagrees.
+            {"use_sim_time": use_sim_time},
+        ],
         remappings=[("objects", "/objects")],
     )
 

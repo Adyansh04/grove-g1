@@ -87,7 +87,7 @@ private:
 
     /// @return true if the tick's joint velocities are outside the trained range.
     [[nodiscard]] bool outOfDomain() const;
-    void               latchEmergency(const std::string& reason);
+    void               latchEmergency(const char* reason);
     void               requestEmergencySwitch();
 
     std::vector<std::string> joint_names_;
@@ -115,7 +115,6 @@ private:
 
     std::atomic<bool> emergency_latched_{ false };
     bool              emergency_switch_sent_ = false;
-    std::string       emergency_reason_;
 
     std::vector<std::size_t> position_state_indices_;
     std::vector<std::size_t> velocity_state_indices_;

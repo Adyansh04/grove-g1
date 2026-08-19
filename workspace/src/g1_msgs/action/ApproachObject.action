@@ -1,7 +1,7 @@
 # Close the last gap to a measured object, after navigation has got the robot roughly there.
 #
 # Exists because navigation cannot hand manipulation a pose it can work with: Nav2's
-# xy_goal_tolerance is 0.5 m and the arm's whole reach envelope is about 0.13 m wide.
+# xy_goal_tolerance is 0.5 m and the arm's whole reach envelope is about 0.2 m wide.
 #
 # One closed loop over the measured object pose, driving forward, sideways and in yaw at once.
 # The walking policy has a deadband below roughly 0.15 m/s on both linear axes, so the server

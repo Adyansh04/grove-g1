@@ -79,6 +79,46 @@ TEST(AuthorityDrift, TheArmsAreNeverUnowned)
     EXPECT_EQ(parts.front().displaces, "arm_freeze_controller");
 }
 
+TEST(ArmSwitch, AnIncomingControllerThatIsNotLoadedSwitchesNothingAtAll)
+{
+    // The one that drops the arms. controller_manager's BEST_EFFORT applies whichever half of a
+    // paired switch it can and still answers ok, so asking it to displace the freeze for a
+    // controller it cannot activate deactivates the freeze alone -- and the body component
+    // leaves the fifteen arm joints unclaimed, which on this robot means unpowered.
+    const auto plan = g1_orchestration::planArmSwitch("", "active");
+    EXPECT_FALSE(plan.possible) << "the holder must be left alone when nothing can replace it";
+}
+
+TEST(ArmSwitch, ALoadedButUnconfiguredControllerIsStillWorthTrying)
+{
+    // Distinct from the case above, and it is the bring-up race the mission's AcquireArm exists
+    // for: the controller is spawned --inactive, so between load and configure it is present but
+    // not usable. The switch is issued STRICT, which either performs both halves or neither.
+    const auto plan = g1_orchestration::planArmSwitch("unconfigured", "active");
+    EXPECT_TRUE(plan.possible);
+    EXPECT_FALSE(plan.already_held);
+    EXPECT_TRUE(plan.displace);
+}
+
+TEST(ArmSwitch, AnArmAlreadyHeldIsLeftAlone)
+{
+    // What BEST_EFFORT was originally chosen for. AcquireArm runs as a tree leaf and cannot
+    // assume it is first, and STRICT calls activating an already-active controller a failure --
+    // so the already-correct case is answered here rather than sent to the service.
+    const auto plan = g1_orchestration::planArmSwitch("active", "inactive");
+    EXPECT_TRUE(plan.possible);
+    EXPECT_TRUE(plan.already_held);
+}
+
+TEST(ArmSwitch, NothingIsDeactivatedWhenTheOutgoingControllerIsNotHoldingAnything)
+{
+    // A STRICT switch fails outright if asked to deactivate a controller that is already
+    // inactive, so a second release must ask only for the activation.
+    const auto plan = g1_orchestration::planArmSwitch("inactive", "inactive");
+    EXPECT_TRUE(plan.possible);
+    EXPECT_FALSE(plan.displace);
+}
+
 int main(int argc, char** argv)
 {
     ::testing::InitGoogleMock(&argc, argv);

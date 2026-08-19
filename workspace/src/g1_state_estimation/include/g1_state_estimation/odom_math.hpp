@@ -5,8 +5,8 @@
  * @file odom_math.hpp
  * @brief Frame and staleness math for the odom -> base publisher.
  *
- * ROS-free so it is testable without a node, DDS or a running sim, same split as
- * g1_motion_service_sim's blend_math and g1_hardware_interface's arm_ramp_engine.
+ * ROS-free so it is testable without a node, DDS or a running sim, the same split
+ * g1_hardware_interface applies to lowcmd_assembly.
  */
 
 #include <array>

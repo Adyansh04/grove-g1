@@ -5,7 +5,7 @@
   <version>0.1.0</version>
   <description>
     MoveIt 2 planning for the G1's two 7-DoF arms, layered on the arm_trajectory_controller
-    that already drives rt/arm_sdk. Configuration and launch only -- the nodes are upstream.
+    that already owns the arm joints. Configuration and launch only, the nodes are upstream.
   </description>
   <maintainer email="gupta.adyansh@gmail.com">Adyansh</maintainer>
   <license>BSD-3-Clause</license>

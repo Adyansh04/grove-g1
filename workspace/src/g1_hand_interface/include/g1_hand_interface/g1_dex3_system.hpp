@@ -98,6 +98,10 @@ public:
     hardware_interface::CallbackReturn on_activate(const rclcpp_lifecycle::State& previous) override;
     hardware_interface::CallbackReturn
     on_deactivate(const rclcpp_lifecycle::State& previous) override;
+    /// read() can error the component straight to a failed state without on_deactivate ever
+    /// running, and the release frame is the only one that arms the motor's own timeout.
+    hardware_interface::CallbackReturn on_error(const rclcpp_lifecycle::State& previous) override;
+    hardware_interface::CallbackReturn on_shutdown(const rclcpp_lifecycle::State& previous) override;
 
     std::vector<hardware_interface::StateInterface>   export_state_interfaces() override;
     std::vector<hardware_interface::CommandInterface> export_command_interfaces() override;
@@ -118,6 +122,9 @@ private:
     /// @return false if the channels could not be opened or no state arrived in time.
     bool initializeSdk();
     void shutdownSdk();
+    /// The one teardown path: release frame, then channels. Shared by deactivate, error and
+    /// shutdown so an error can never skip the release.
+    void releaseAndShutdown();
     void handStateCallback(const void* message);
 
     /// Fills every motor slot and writes. `driven` false emits the release command: status
@@ -160,8 +167,9 @@ private:
 
     /// The first write takes full authority -- unlike a blended interface, there is no weight to
     /// bring up. So the ramp is ours, and it is the only thing between a large command step and
-    /// a fast finger.
-    bool                                  seeded_{ false };
+    /// a fast finger. Atomic because the lifecycle callbacks clear it from the executor thread
+    /// while read() and write() are reading it on the update thread.
+    std::atomic<bool>                     seeded_{ false };
     std::chrono::steady_clock::time_point last_publish_{};
 
     /// Preallocated and resized once, so the write path never allocates.

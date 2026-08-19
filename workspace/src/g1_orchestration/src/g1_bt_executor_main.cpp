@@ -15,6 +15,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <csignal>
 #include <memory>
 #include <rclcpp/rclcpp.hpp>
@@ -37,6 +38,10 @@ void onSignal(int) { g_interrupted = true; }
 
 constexpr double kReleaseTimeoutS = 15.0;
 
+/// How long the executor keeps running after a halt, so the cancels it published are delivered
+/// and answered before the clients that sent them are destroyed.
+constexpr auto kCancelSettle = std::chrono::milliseconds(500);
+
 /// Releases the arm and hands when it goes out of scope, however that happens.
 ///
 /// A destructor rather than a call at the end of main: releasing only stays correct if every
@@ -54,7 +59,19 @@ public:
     ArmBracket(const ArmBracket&)            = delete;
     ArmBracket& operator=(const ArmBracket&) = delete;
 
-    ~ArmBracket() { g1_orchestration::releaseArm(logger_, timeout_s_); }
+    ~ArmBracket()
+    {
+        // A destructor is noexcept, so anything escaping releaseArm ends the process instead of
+        // releasing -- and it makes service calls on a node it builds, either of which can throw.
+        try
+        {
+            g1_orchestration::releaseArm(logger_, timeout_s_);
+        }
+        catch (const std::exception& e)
+        {
+            RCLCPP_ERROR(logger_, "the arm may still be acquired: release threw: %s", e.what());
+        }
+    }
 
 private:
     rclcpp::Logger logger_;
@@ -86,6 +103,17 @@ int main(int argc, char** argv)
             return 1;
         }
 
+        // Refused rather than clamped, because every unusable value fails silently and
+        // differently: 0 divides to infinity and casting that to a duration is undefined, and a
+        // negative sleeps for no time at all, ticking the tree as fast as the CPU allows and
+        // hammering every action server behind it.
+        if (!std::isfinite(tick_rate_hz) || tick_rate_hz <= 0.0)
+        {
+            RCLCPP_ERROR(node->get_logger(), "tick_rate_hz must be positive, got %f", tick_rate_hz);
+            rclcpp::shutdown();
+            return 1;
+        }
+
         // Installed before anything is acquired, so a Ctrl-C during the run reaches the release
         // below rather than killing the process with the arm still active. Checked, because a
         // failed install silently removes that guarantee.
@@ -101,12 +129,6 @@ int main(int argc, char** argv)
 
         rclcpp::executors::SingleThreadedExecutor executor;
         executor.add_node(node);
-        std::thread spinner([&executor] {
-            while (rclcpp::ok() && !g_interrupted)
-            {
-                executor.spin_some(std::chrono::milliseconds(10));
-            }
-        });
 
         int exit_code = 0;
         {
@@ -134,6 +156,22 @@ int main(int argc, char** argv)
                         groot2_port);
                 }
 
+                // Declared AFTER the tree, so it is stopped and joined BEFORE the tree is
+                // destroyed on every path out of this block. The other order is a use-after-free:
+                // a leaf freed while the executor is inside that leaf's result callback leaves
+                // the callback writing through a dangling `this`.
+                //
+                // spin_once, not spin_some. spin_some's argument bounds how long it keeps
+                // executing work and never blocks waiting for any, so on an idle executor it
+                // returns immediately -- measured at 15.7k wakeups per second against
+                // spin_once's 100, on a machine also running the simulator and a 200 Hz loop.
+                std::jthread spinner([&executor](const std::stop_token& stop) {
+                    while (rclcpp::ok() && !stop.stop_requested())
+                    {
+                        executor.spin_once(std::chrono::milliseconds(10));
+                    }
+                });
+
                 // Ticked by hand rather than with tickWhileRunning, so the interrupt is checked
                 // between ticks and a halt still runs every leaf's own cancellation.
                 const auto     period = std::chrono::duration<double>(1.0 / tick_rate_hz);
@@ -149,6 +187,11 @@ int main(int argc, char** argv)
                 {
                     RCLCPP_WARN(node->get_logger(), "interrupted; halting the tree");
                     tree.haltTree();
+                    // The halt publishes each running leaf's cancel and returns. The spinner is
+                    // still up here, so this is the window in which those reach the wire and the
+                    // servers answer; without it the clients are destroyed microseconds later
+                    // and a skill carries on running against a tree that has stopped.
+                    std::this_thread::sleep_for(kCancelSettle);
                     exit_code = 130;
                 }
                 else
@@ -168,10 +211,7 @@ int main(int argc, char** argv)
                 exit_code = 1;
             }
 
-            // Spinning stops before the bracket closes: releaseArm blocks on service calls and
-            // needs the executor out of the way to make them.
-            g_interrupted = true;
-            spinner.join();
+            // The spinner and the tree are already gone by here, both inside the block above.
             executor.remove_node(node);
         }
 

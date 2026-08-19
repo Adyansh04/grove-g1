@@ -14,6 +14,8 @@ import pathlib
 import re
 import xml.etree.ElementTree as ET
 
+from test_lowcmd_xacro import EXPECTED_BODY_JOINTS
+
 _SRC = pathlib.Path(__file__).resolve().parents[2]
 _MOTOR_TABLE = _SRC / "g1_hardware_interface" / "src" / "g1_lowcmd_system.cpp"
 _URDF = (
@@ -40,13 +42,12 @@ def test_the_table_covers_every_body_motor_exactly_once():
     assert len(set(order)) == _NUM_BODY_MOTORS, "a name appears twice, so one motor is unreachable"
 
 
-def test_the_legs_come_first_then_the_waist_then_the_arms():
-    # The grouping is what lets the policy claim motors 0-13 and MoveIt claim 15-28 by index
-    # rather than by name. Asserting the boundaries catches a reordering that still type-checks.
-    order = _motor_order()
-    assert all("hip" in n or "knee" in n or "ankle" in n for n in order[:12])
-    assert order[12:15] == ["waist_yaw_joint", "waist_roll_joint", "waist_pitch_joint"]
-    assert all("shoulder" in n or "elbow" in n or "wrist" in n for n in order[15:])
+def test_the_table_is_in_sdk_motor_index_order():
+    # Position in this table IS the motor index the component packs LowCmd from, so the whole
+    # order is load-bearing, not just the leg/waist/arm boundaries. A swap inside one group --
+    # hip roll for hip yaw, say -- keeps the set, the counts and the boundaries intact and still
+    # sends every command to the wrong motor.
+    assert _motor_order() == EXPECTED_BODY_JOINTS
 
 
 def test_every_name_is_a_joint_the_urdf_actually_has():

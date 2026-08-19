@@ -31,8 +31,8 @@ list(APPEND CMAKE_INSTALL_RPATH ${UNITREE_SDK2_PREFIX}/lib)
 string(APPEND CMAKE_SHARED_LINKER_FLAGS " -Wl,--disable-new-dtags")
 string(APPEND CMAKE_EXE_LINKER_FLAGS " -Wl,--disable-new-dtags")
 
-# The rt/lowcmd mode table and per-motor packing, split out for the same reason
-# arm_ramp_engine is: it is the part worth asserting without a live component.
+# The rt/lowcmd mode table and per-motor packing, split out because it is the part worth
+# asserting without a live component.
 add_library(lowcmd_assembly src/lowcmd_assembly.cpp)
 target_include_directories(lowcmd_assembly PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>

@@ -21,6 +21,7 @@
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
 
+#include <atomic>
 #include <g1_msgs/action/pick.hpp>
 #include <g1_msgs/action/place.hpp>
 #include <g1_msgs/action/set_arm_posture.hpp>
@@ -63,6 +64,10 @@ class G1ManipulationServer : public rclcpp::Node
 public:
     explicit G1ManipulationServer(const rclcpp::NodeOptions& options);
 
+    /// Waits for any goal still running on a detached thread. Without it those threads outlive
+    /// the MoveGroups, the planning scene and the service clients they are dereferencing.
+    ~G1ManipulationServer() override;
+
     /**
      * @brief Builds the MoveGroupInterfaces.
      *
@@ -84,6 +89,38 @@ private:
     void executePick(const std::shared_ptr<GoalHandle<Pick>>& goal_handle);
     void executePlace(const std::shared_ptr<GoalHandle<Place>>& goal_handle);
     void executeSetArmPosture(const std::shared_ptr<GoalHandle<SetArmPosture>>& goal_handle);
+
+    /// @return true if this goal may run, false if another one already holds the arm.
+    bool acquire();
+
+    /// @return the /objects array frame, read under objects_mutex_.
+    std::string objectsFrame();
+
+    /// Runs one goal body, balancing the running count, releasing the arm, and turning an
+    /// escaping exception into an aborted goal rather than std::terminate on a detached thread.
+    template <typename ActionT, typename Body>
+    void
+    runGuarded(Body&& body, const std::shared_ptr<rclcpp_action::ServerGoalHandle<ActionT>>& handle)
+    {
+        goals_running_.fetch_add(1);
+        try
+        {
+            body();
+        }
+        catch (const std::exception& e)
+        {
+            RCLCPP_ERROR(get_logger(), "manipulation goal threw: %s", e.what());
+            auto result     = std::make_shared<typename ActionT::Result>();
+            result->success = false;
+            result->message = std::string("aborted on an internal error: ") + e.what();
+            if (handle->is_executing() || handle->is_canceling())
+            {
+                handle->abort(result);
+            }
+        }
+        busy_.store(false);
+        goals_running_.fetch_sub(1);
+    }
 
     /// Latest pose for `object_id`, or nullopt if it is unknown or older than the timeout.
     std::optional<vision_msgs::msg::Detection3D> lookUpObject(const std::string& object_id);
@@ -140,7 +177,16 @@ private:
      */
     /// @param include_links  false exempts the touchables from each other only, leaving the hand
     ///        and wrist collision-checked -- what carrying an object over a surface wants.
-    bool allowHandContact(
+    /// @return false if the planning-scene service did not answer, in which case the exemption
+    /// was neither applied nor restored. Never discard it: a silently failed restore leaves the
+    /// scene blinded, and a silently failed apply reads downstream as an unreachable pose.
+    /// allowHandContact plus the log. Callers use this; the raw form exists so the return value
+    /// cannot be dropped by accident.
+    void setHandContact(
+        const ArmContext& arm, const std::vector<std::string>& touchables, bool allowed,
+        bool include_links = true);
+
+    [[nodiscard]] bool allowHandContact(
         const ArmContext& arm, const std::vector<std::string>& touchables, bool allowed,
         bool include_links = true);
 
@@ -175,6 +221,13 @@ private:
     // orientation is a choice, and it is the one thing that depends on the surface rather than
     // on the hand.
     std::vector<double> grasp_rpy_;
+
+    /// One goal at a time across ALL THREE servers. MoveGroupInterface is not thread-safe and
+    /// carries mutable start-state and plan state, and two goals on different groups still drive
+    /// overlapping joints through the one arm_trajectory_controller -- so the second trajectory
+    /// preempts the first mid-motion, possibly with an object in the hand.
+    std::atomic<bool> busy_{ false };
+    std::atomic<int>  goals_running_{ 0 };
 };
 
 }  // namespace g1_manipulation

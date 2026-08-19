@@ -241,8 +241,11 @@ bool AgilePolicy::run(const PolicyObservation& observation, PolicyAction& action
             outputs_.data(),
             outputs_.size());
     }
-    catch (const Ort::Exception&)
+    catch (...)
     {
+        // Not just Ort::Exception: ORT can throw std::bad_alloc and others, and this function is
+        // noexcept on the 200 Hz thread -- an escape is std::terminate, which takes down
+        // controller_manager and with it rt/lowcmd, on a robot with nothing holding it up.
         return false;
     }
 

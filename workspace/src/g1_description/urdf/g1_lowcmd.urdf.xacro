@@ -1,12 +1,9 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="g1_29dof_with_hand_rev_1_0">
 
-  <!-- Whole-body variant: the 29 body motors are owned by G1LowCmdSystem over rt/lowcmd, with no
-       onboard balance running underneath. g1_arm_sdk.urdf.xacro is the blended-arm variant and
-       stays until PR 6 retires it. Only one of the two may be loaded at a time.
-
-       g1_common.xacro brings the body, the sensor and grasp frames, and both Dex3 components:
-       everything that is identical whichever interface owns the motors. -->
+  <!-- The 29 body motors are owned by G1LowCmdSystem over rt/lowcmd, with no onboard balance
+       running underneath. This file holds only that ros2_control block; g1_common.xacro brings
+       the body, the sensor and grasp frames, and both Dex3 components. -->
   <xacro:include filename="g1_common.xacro"/>
 
   <xacro:property name="lowcmd" value="${xacro.load_yaml('../config/lowcmd_params.yaml')}"/>
@@ -17,7 +14,7 @@
       <command_interface name="velocity"/>
       <command_interface name="effort"/>
       <!-- kp and kd as command interfaces is what lets a controller pick the joint's control
-           mode per tick, and what a policy controller needs. Names match NVIDIA's exactly. -->
+           mode per tick, and what a policy controller needs. The names are the upstream ones. -->
       <command_interface name="kp"/>
       <command_interface name="kd"/>
       <state_interface name="position"/>
@@ -70,8 +67,8 @@
     <xacro:g1_lowcmd_joint name="right_wrist_pitch_joint"/>
     <xacro:g1_lowcmd_joint name="right_wrist_yaw_joint"/>
 
-    <!-- The pelvis IMU, exported under the names imu_sensor_broadcaster expects. AGILE reads
-         root orientation and angular velocity from here in PR 4. -->
+    <!-- The pelvis IMU, exported under the names imu_sensor_broadcaster expects. The locomotion
+         policy reads root orientation and angular velocity from here. -->
     <sensor name="imu">
       <state_interface name="orientation.x"/>
       <state_interface name="orientation.y"/>

@@ -58,9 +58,9 @@ controller_server:
     # Progress checker parameters
     progress_checker:
       plugin: "nav2_controller::SimpleProgressChecker"
-      # Gait initiation takes seconds and the shaper's deadband-to-zero makes genuinely
-      # stationary intervals normal, so upstream's 10 s aborts healthy goals. 20 s still trips
-      # on the measured frozen-gait case, which moved 0.09 m in 30 s.
+      # Gait initiation takes seconds, and the policy ignores any command inside its 0.15 m/s
+      # deadband, so genuinely stationary intervals are normal and upstream's 10 s aborts
+      # healthy goals. 20 s still trips on the measured frozen-gait case, 0.09 m in 30 s.
       required_movement_radius: 0.5
       movement_time_allowance: 20.0
     # Goal checker parameters

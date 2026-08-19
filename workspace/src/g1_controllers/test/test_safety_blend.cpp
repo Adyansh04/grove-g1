@@ -1,6 +1,7 @@
 #include <gmock/gmock.h>
 
 #include <cmath>
+#include <limits>
 
 #include "g1_controllers/g1_safety_controller.hpp"
 
@@ -90,6 +91,20 @@ TEST(BlendAndSlew, OutputIsFiniteForAFiniteCommand)
 {
     EXPECT_TRUE(std::isfinite(blendAndSlew(0.0, 1e6, 1.0, 0.0, 1.0, kDt)));
     EXPECT_TRUE(std::isfinite(blendAndSlew(0.0, 1e6, 1.0, 0.0, -1.0, kDt)));
+}
+
+TEST(BlendAndSlew, AnInfiniteCommandPoisonsTheIntegratorEvenAtBlendRatioZero)
+{
+    // Documents why the caller filters non-finite references rather than relying on the blend.
+    // At ratio 0 the blend is meant to ignore the command entirely, but `0.0 * inf` is NaN, so
+    // even "ignore the policy" does not survive one infinite reference.
+    const double inf = std::numeric_limits<double>::infinity();
+    EXPECT_FALSE(std::isfinite(blendAndSlew(0.5, inf, 0.0, 0.5, -1.0, kDt)));
+    EXPECT_FALSE(std::isfinite(blendAndSlew(0.5, inf, 1.0, 0.5, -1.0, kDt)));
+
+    // And it latches: once integrated is non-finite, a well-behaved command cannot recover it.
+    const double poisoned = blendAndSlew(0.5, inf, 1.0, 0.5, -1.0, kDt);
+    EXPECT_FALSE(std::isfinite(blendAndSlew(0.5, 0.5, 1.0, poisoned, -1.0, kDt)));
 }
 
 }  // namespace

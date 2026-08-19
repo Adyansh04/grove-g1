@@ -4,8 +4,8 @@ project(g1_orchestration)
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
-# v4. Nav2 depends on the separate behaviortree_cpp_v3 package and keeps it: the two install
-# side by side with disjoint files and sonames, and nothing links both. See README.
+# v4, and the same library Nav2's own navigator links: there is one libbehaviortree_cpp.so in
+# this image and no v3 package at all, so a leaf here and a Nav2 BT node share a version.
 find_package(behaviortree_cpp REQUIRED)
 find_package(g1_msgs REQUIRED)
 find_package(nav2_msgs REQUIRED)
@@ -83,6 +83,11 @@ if(BUILD_TESTING)
   else()
     message(WARNING "xmllint not found; skipping xmllint_btproj_g1_orchestration")
   endif()
+
+  # The leaf base against a real server. Needs a graph, unlike everything else here, because the
+  # goal handling it owns only exists once something answers a goal.
+  ament_add_gmock(test_action_leaf test/test_action_leaf.cpp TIMEOUT 120)
+  target_link_libraries(test_action_leaf g1_bt_nodes)
 
   # A stale Groot2 palette invites trees that cannot load.
   ament_add_gmock(test_node_model test/test_node_model.cpp)

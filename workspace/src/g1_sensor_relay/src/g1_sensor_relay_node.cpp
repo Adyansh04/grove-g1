@@ -195,6 +195,11 @@ private:
             client_fd_ = -1;
         }
         buffer_.clear();
+        // The clock offset belongs to the connection, not to the node. A restarted simulator
+        // begins near sim_time 0 again, so every later delta is ~1.7e9 and can never beat the
+        // running minimum from the old session -- leaving every stamp pinned a few tens of
+        // milliseconds after the Unix epoch, which tf2 refuses without saying why.
+        have_clock_offset_ = false;
     }
 
     void poll()
@@ -515,7 +520,14 @@ private:
     rclcpp::Time stampFor(double sim_time_s)
     {
         const rclcpp::Time arrival = now();
-        const double       delta   = arrival.seconds() - sim_time_s;
+        // A non-finite sim_time_s would latch clock_offset_ at NaN for good: every later
+        // comparison against it is false, so the running minimum never recovers, and the cast
+        // below turns NaN into an arbitrary nanosecond count.
+        if (!std::isfinite(sim_time_s))
+        {
+            return arrival;
+        }
+        const double delta = arrival.seconds() - sim_time_s;
 
         if (!have_clock_offset_ || delta < clock_offset_)
         {

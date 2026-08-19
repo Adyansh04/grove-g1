@@ -387,7 +387,7 @@ TEST_F(RobotModelTest, AdjacentLinksAreDisabled)
             continue;
         }
         // Only pairs that can actually collide need disabling. The sensor bodies added in
-        // g1_arm_sdk.urdf.xacro are visual-only on purpose, so they carry no collision shapes
+        // g1_common.xacro are visual-only on purpose, so they carry no collision shapes
         // and MoveIt never checks them; requiring them here would pad the matrix with entries
         // that mean nothing.
         const auto* parent_link = model_->getLinkModel(parent);

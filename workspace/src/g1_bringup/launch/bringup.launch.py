@@ -276,7 +276,7 @@ def _setup(context, *args, **kwargs):
 
     if want_moveit and LaunchConfiguration("activate_arm").perform(context).lower() == "true":
         # Off by default, and it stays off by default. Acquiring the arm is a deliberate act:
-        # on hardware this is the moment /arm_sdk starts driving real joints, and a stack that
+        # on hardware this is the moment MoveIt starts driving real joints, and a stack that
         # goes live on `ros2 launch` is a stack that goes live when someone launches it to look
         # at something else. This argument is a sim convenience, nothing more.
         #
@@ -411,7 +411,7 @@ def generate_launch_description():
             default_value="false",
             description="SIM CONVENIENCE: run scripts/activate_arm automatically once the stack "
             "is up, instead of as a separate command. Needs moveit:=true. Off by default -- "
-            "acquiring the arm is deliberate, and on hardware it is the moment /arm_sdk starts "
+            "acquiring the arm is deliberate, and on hardware it is the moment MoveIt starts "
             "driving real joints.",
         ),
         DeclareLaunchArgument(

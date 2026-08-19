@@ -18,8 +18,11 @@ namespace g1_controllers
 namespace
 {
 
-/// Reference interfaces start as NaN, meaning no upstream controller wrote them this tick.
-constexpr bool unwritten(double value) { return std::isnan(value); }
+/// Reference interfaces start as NaN, meaning no upstream controller wrote them this tick. Also
+/// true for an infinity, which is not a value we can use either -- and which would otherwise
+/// reach the integrator, where `inf - inf` makes integrated_position_ NaN for the rest of the
+/// session. Note blend_ratio 0 is no protection: `0.0 * inf` is NaN, not zero.
+bool unwritten(double value) { return !std::isfinite(value); }
 
 /// Expands a single-value or per-joint parameter to one entry per joint.
 bool expandToJoints(const std::vector<double>& values, std::size_t joints, std::vector<double>& out)
@@ -307,8 +310,9 @@ bool G1SafetyController::outOfDomain() const
         return false;
     }
 
-    double sum  = 0.0;
-    double peak = 0.0;
+    double      sum       = 0.0;
+    double      peak      = 0.0;
+    std::size_t contribed = 0;
     for (const auto index : velocity_state_indices_)
     {
         const auto velocity = state_interfaces_[index].get_optional();
@@ -316,27 +320,43 @@ bool G1SafetyController::outOfDomain() const
         {
             continue;
         }
+        // Every comparison below is false against NaN -- std::max returns the accumulator and
+        // NaN > limit is false -- so without this a robot whose velocities have gone non-finite
+        // reads as in-domain. This check fails closed on exactly the input it exists to catch.
+        if (!std::isfinite(velocity.value()))
+        {
+            return true;
+        }
         const double magnitude = std::abs(velocity.value());
         sum += magnitude;
         peak = std::max(peak, magnitude);
+        ++contribed;
     }
-    const double mean = sum / static_cast<double>(velocity_state_indices_.size());
+    // Divided by the joints that actually contributed. Counting skipped ones biases the mean low,
+    // which weakens the guard precisely when interface access is already degraded.
+    if (contribed == 0)
+    {
+        return true;
+    }
+    const double mean = sum / static_cast<double>(contribed);
 
     return (max_velocity_limit_ > 0.0 && peak > max_velocity_limit_) ||
            (mean_velocity_limit_ > 0.0 && mean > mean_velocity_limit_);
 }
 
-void G1SafetyController::latchEmergency(const std::string& reason)
+void G1SafetyController::latchEmergency(const char* reason)
 {
     if (emergency_latched_.exchange(true))
     {
         return;
     }
-    emergency_reason_ = reason;
+    // const char* rather than std::string: this runs on the 200 Hz path, and building a string
+    // from the literal would put a heap allocation in the tick where the policy has just gone
+    // out of range.
     RCLCPP_ERROR(
         get_node()->get_logger(),
         "%s -- holding the last safe pose and switching to '%s'",
-        reason.c_str(),
+        reason,
         emergency_controller_.c_str());
 }
 
@@ -381,17 +401,28 @@ controller_interface::return_type G1SafetyController::update_and_write_commands(
         const double      commanded   = reference_interfaces_[base + kPosition];
         const double      position_in = unwritten(commanded) ? activation_position_[i] : commanded;
 
-        // A latched emergency stops the pose advancing, so the last safe command keeps standing.
-        if (!emergency_latched_.load())
+        // A latched emergency means the policy is no longer trusted, so nothing it writes is
+        // used: the pose stops advancing AND the gains revert to the freeze values. Reading its
+        // stiffness here would hold the last safe pose with a diverging policy's gains, updated
+        // at 50 Hz, for as long as the switch takes to land.
+        if (emergency_latched_.load())
         {
-            integrated_position_[i] = blendAndSlew(
-                activation_position_[i],
-                position_in,
-                blend_ratio_,
-                integrated_position_[i],
-                max_velocity_[i],
-                dt);
+            (void)command_interfaces_[position_command_indices_[i]].set_value(
+                integrated_position_[i]);
+            (void)command_interfaces_[velocity_command_indices_[i]].set_value(0.0);
+            (void)command_interfaces_[effort_command_indices_[i]].set_value(0.0);
+            (void)command_interfaces_[kp_command_indices_[i]].set_value(fallback_kp_[i]);
+            (void)command_interfaces_[kd_command_indices_[i]].set_value(fallback_kd_[i]);
+            continue;
         }
+
+        integrated_position_[i] = blendAndSlew(
+            activation_position_[i],
+            position_in,
+            blend_ratio_,
+            integrated_position_[i],
+            max_velocity_[i],
+            dt);
 
         const double velocity_in = reference_interfaces_[base + kVelocity];
         const double effort_in   = reference_interfaces_[base + kEffort];

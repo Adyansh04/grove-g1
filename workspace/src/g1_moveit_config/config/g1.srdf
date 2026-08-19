@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <robot name="g1_29dof_with_hand_rev_1_0">
-  <!-- Hand-authored, against urdf/g1_arm_sdk.urdf.xacro in g1_description. Only the
+  <!-- Hand-authored, against urdf/g1_lowcmd.urdf.xacro in g1_description. Only the
        disable_collisions block at the bottom is generated; that block carries its own note
        on how, and README.md has the command.
 

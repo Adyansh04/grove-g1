@@ -37,15 +37,15 @@
 namespace g1_hardware_interface
 {
 
-/// Interface names NVIDIA's controllers claim for per-joint gains. Must match theirs exactly.
+/// Interface names upstream controllers claim for per-joint gains. Must match upstream exactly.
 inline constexpr std::string_view kHwIfKp{ "kp" };
 inline constexpr std::string_view kHwIfKd{ "kd" };
 
-/// Joint names in SDK motor index order, from NVIDIA's kG1JointNames. This is the mapping, so
-/// the URDF needs no per-joint motor_index param.
+/// Joint names in SDK motor index order. Position here IS the wire motor index, so the URDF
+/// needs no per-joint motor_index param. g1_description's test_motor_order pins the order.
 extern const std::array<std::string, kNumBodyMotors> kG1JointNames;
 
-/// Everything the component tracks for one joint. Layout follows NVIDIA's JointData.
+/// Everything the component tracks for one joint.
 struct JointData
 {
     std::string name;
@@ -58,7 +58,7 @@ struct JointData
     InterfaceClaims claims;
 
     /// Applied in kPositionOnly, where no controller supplies gains. Per joint because a knee
-    /// and a wrist do not share a sensible default; NVIDIA hardcodes 10/1 for every motor.
+    /// and a wrist do not share a sensible default; upstream hardcodes 10/1 for every motor.
     PositionOnlyGains position_only_gains;
 
     std::int16_t surface_temperature = 0;
@@ -151,8 +151,7 @@ private:
     /// @return false if the DDS write was refused, which write() escalates to a component error.
     bool publishLowCmd();
     /// Ramps stiffness to zero over release_ramp_s, then stops publishing.
-    void               releaseSynchronously();
-    [[nodiscard]] bool lowStateIsStale() const;
+    void releaseSynchronously();
 
     rclcpp::Logger logger_{ rclcpp::get_logger("g1_lowcmd_system") };
 
@@ -171,19 +170,23 @@ private:
     std::uint8_t mode_machine_              = 0;
 
     /// Preallocated and zeroed once: the checksum covers this struct's padding, so a per-tick
-    /// stack object (what NVIDIA does) would checksum whatever the stack held.
+    /// stack object would checksum whatever the stack held.
     unitree_hg::msg::dds_::LowCmd_ low_cmd_{};
 
     realtime_tools::RealtimeBuffer<StampedLowState> lowstate_buffer_;
     std::atomic<bool>                               sdk_initialized_{ false };
     std::atomic<bool>                               first_state_received_{ false };
     std::atomic<bool>                               active_{ false };
+    /// Held for the body of write(). Clearing active_ does not stop a write() already past its
+    /// check, and the release ramp runs on the executor thread while write() runs on the update
+    /// thread -- both fill low_cmd_ and both publish it, so one frame could carry half of each.
+    std::atomic<bool> in_write_{ false };
 
     unitree::robot::ChannelSubscriberPtr<unitree_hg::msg::dds_::LowState_> lowstate_subscriber_;
     unitree::robot::ChannelPublisherPtr<unitree_hg::msg::dds_::LowCmd_>    lowcmd_publisher_;
 
     /// Added to the controller_manager's own executor, which Jazzy hands us in on_init. Humble
-    /// had no such hook, which is why NVIDIA's version reaches for get_node() instead.
+    /// had no such hook, so ports from that era reach for get_node() instead.
     rclcpp::Node::SharedPtr                                             node_;
     rclcpp::Executor::WeakPtr                                           executor_;
     rclcpp::Publisher<diagnostic_msgs::msg::DiagnosticArray>::SharedPtr diagnostics_pub_;

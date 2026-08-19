@@ -1,7 +1,7 @@
 # g1_description
 
-The Unitree G1 robot description: a vendored, kinematics-only URDF plus a xacro wrapper that adds
-the `ros2_control` block for the arms.
+The Unitree G1 robot description: a vendored, kinematics-only URDF plus the xacro wrappers that add
+the `ros2_control` blocks for the body motors and the two hands.
 
 `ament_cmake`, no compiled code.
 
@@ -18,8 +18,8 @@ flowchart LR
 | File | Purpose |
 |---|---|
 | `urdf/g1_29dof_with_hand_rev_1_0.urdf` | The vendored upstream description, unmodified. |
-| `urdf/g1_lowcmd.urdf.xacro` | Includes the vendored URDF and appends the `<ros2_control>` blocks. |
-| `urdf/g1_common.xacro` | The blocks themselves, plus the sensor frames both consumers share. |
+| `urdf/g1_lowcmd.urdf.xacro` | Includes the below and adds the body component's `<ros2_control>` block. |
+| `urdf/g1_common.xacro` | The vendored body, the sensor and grasp frames, and both hand components. Loaded on its own by consumers that need the geometry without the body component. |
 | `config/lowcmd_params.yaml` | Body-component tunables and the per-joint position-only gains. |
 | `config/dex3_params.yaml` | Hand-component tunables and the per-finger limits. |
 | `meshes/` | Vendored visual meshes, installed at configure time so the model renders in RViz. |

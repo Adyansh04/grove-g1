@@ -1,8 +1,7 @@
 # Hardware parameters for g1_hardware_interface/G1LowCmdSystem.
 #
-# Consumed by urdf/g1_lowcmd.urdf.xacro at xacro-expansion time, for the same reason
-# arm_sdk_params.yaml is: ros2_control plugins only ever see <ros2_control><param> tags, never
-# controller_manager's own YAML.
+# Consumed by urdf/g1_lowcmd.urdf.xacro at xacro-expansion time, not by controller_manager:
+# ros2_control plugins only ever see parameters that arrive as <ros2_control><param> tags.
 
 system:
   # unitree_sdk2's ChannelFactory takes its own domain, which must match the simulator's
@@ -18,7 +17,7 @@ system:
   lowstate_timeout_ms: 100     # ms; rt/lowstate older than this errors the component while active
   release_ramp_s: 0.5          # s; stiffness fades to zero over this on deactivate
   release_kd: 2.0              # damping held flat across the release, so it outlives the stiffness
-  motor_temp_warn_threshold: 120   # deg C; NVIDIA's value, warns on /diagnostics
+  motor_temp_warn_threshold: 120   # deg C; the upstream value, warns on /diagnostics
 
   # Whether to ask the onboard motion service to hand over the motors. There is no such service
   # in unitree_mujoco, so sim leaves it false; hardware must set it true or rt/lowcmd is ignored.
@@ -32,8 +31,8 @@ system:
 # and so lands on this branch on every MoveIt execution. 10 is enough to hold the arms hanging
 # at rest, where they lie along gravity, but not to track a trajectory that lifts them: measured
 # under a controller commanding the arms forward, 10 left them sagging about 0.4 rad, resting on
-# the hips. These are the gains the arm_sdk stack runs -- 40 for shoulders and elbow, 25 for the
-# lighter wrists -- which are Unitree's own arm example values, proven in this simulator.
+# the hips. 40 for shoulders and elbow, 25 for the lighter wrists, which are Unitree's own arm
+# example values, proven in this simulator.
 joints:
   left_hip_pitch_joint:        { position_only_kp: 10.0, position_only_kd: 1.0 }
   left_hip_roll_joint:         { position_only_kp: 10.0, position_only_kd: 1.0 }

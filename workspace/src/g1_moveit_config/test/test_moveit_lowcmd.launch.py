@@ -1,8 +1,8 @@
 """Headless sim gate: MoveIt on the rt/lowcmd stack, with the balance policy running.
 
-The lowcmd counterpart to test_moveit_plan_execute, and it exists for the property neither the
-walk gate nor the arm_sdk arm gate can see: two controllers writing the same component every
-tick, one balancing the robot on 14 joints and one executing a MoveIt trajectory on 14 others.
+The counterpart to test_moveit_plan_execute, and it exists for the property the walk gate cannot
+see: two controllers writing the same component every tick, one balancing the robot on 14 joints
+and one executing a MoveIt trajectory on 14 others.
 The pelvis is NOT pinned, so if acquiring the arms or moving them disturbed the policy the robot
 would simply fall, and every assertion after that point would fail.
 
@@ -33,8 +33,8 @@ from rclpy.action import ActionClient
 from rclpy.node import Node
 from sensor_msgs.msg import Imu, JointState
 
-# Longer than the arm_sdk gate's: the policy has to bring the robot to a settled stand before
-# anything is asked of the arms, and move_group starts alongside.
+# Generous on purpose: the policy has to bring the robot to a settled stand before anything is
+# asked of the arms, and move_group starts alongside.
 SIM_SETTLE_S = 14.0
 
 # Tilt, never the quaternion's w: yawing drives w down while the robot stands perfectly

@@ -238,6 +238,12 @@ G1OdometryPublisher::on_cleanup(const rclcpp_lifecycle::State&)
     have_sample_          = false;
     have_orientation_     = false;
     have_imu_orientation_ = false;
+    // Neither of these is gated by a have_* flag, so without clearing them a re-configure would
+    // publish the previous session's accumulated tilt correction, and its first ~/odom message
+    // would carry the previous session's velocity: dt is zero on the first sample, so the twist
+    // branch is skipped and whatever world_twist_ held goes straight to Nav2.
+    tilt_correction_ = Quaternion{};
+    world_twist_     = PlanarTwist{};
     // Cleared with the rest: a re-configure is a fresh start, and reusing the old origin would
     // silently place the new run in the previous run's odom frame.
     lidar_origin_latched_ = false;
@@ -378,18 +384,20 @@ void G1OdometryPublisher::onLidarOdometry(const nav_msgs::msg::Odometry::SharedP
         return;
     }
 
+    // Normalised, not merely range-checked: everything downstream takes the conjugate as the
+    // inverse and assumes a unit rotation, so a norm-2 quaternion would scale every composed
+    // translation by four and reach /tf unscaled, which nothing reports.
+    const std::optional<Quaternion> lidar_attitude = normalisedAttitude(msg->pose.pose.orientation);
+
     Pose3d lio_from_lidar_body;
     lio_from_lidar_body.x = msg->pose.pose.position.x;
     lio_from_lidar_body.y = msg->pose.pose.position.y;
     lio_from_lidar_body.z = msg->pose.pose.position.z;
-    lio_from_lidar_body.q = Quaternion{ msg->pose.pose.orientation.x,
-                                        msg->pose.pose.orientation.y,
-                                        msg->pose.pose.orientation.z,
-                                        msg->pose.pose.orientation.w };
+    lio_from_lidar_body.q = lidar_attitude.value_or(Quaternion{});
 
     // A diverged scan match reports NaN rather than failing. Rejected here, before it can
     // reach the origin latch, where a single bad sample is permanent.
-    if (!isUsablePose(lio_from_lidar_body))
+    if (!lidar_attitude.has_value() || !isUsablePose(lio_from_lidar_body))
     {
         RCLCPP_WARN_THROTTLE(
             get_logger(),
@@ -604,7 +612,10 @@ void G1OdometryPublisher::onTimer()
     // as permanent staleness and stopped odom -> base_footprint for the whole run.
     const double since_advance =
         std::chrono::duration<double>(std::chrono::steady_clock::now() - last_advance_wall_).count();
-    if (isStale(since_advance, std::min(source_timeout_s_, wall_timeout_s_)))
+    // Not std::min: isStale treats a non-positive timeout as "disabled", and min(0, 2) is 0, so
+    // disabling one budget would silently disable the other -- leaving the node publishing a
+    // frozen transform, which is the one failure it exists to prevent. Each is judged on its own.
+    if (isStale(since_advance, source_timeout_s_) || isStale(since_advance, wall_timeout_s_))
     {
         // Stop publishing rather than re-stamping the last pose. A frozen transform with a
         // fresh timestamp is indistinguishable from a stationary robot, which is how a dead

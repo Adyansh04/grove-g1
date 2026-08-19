@@ -3,7 +3,7 @@
  * @brief In-process lifecycle tests for the odom -> base publisher, both sources.
  *
  * Runs on an isolated ROS_DOMAIN_ID so a sim or another test on the machine cannot feed it
- * real data, same pattern as g1_locomotion's test_loco_bridge_node.
+ * real data.
  */
 
 #include <gmock/gmock.h>

@@ -71,15 +71,19 @@ TEST(MotorCrcHg, EveryMotorCmdFieldIsCovered)
     expectCovered("motor reserve", [](auto& cmd) { cmd.motor_cmd()[0].reserve() = 7; });
 }
 
-TEST(MotorCrcHg, TheLastMotorSlotIsCovered)
+TEST(MotorCrcHg, TheCoveredRangeReachesTheWordBeforeTheChecksum)
 {
-    // The covered length comes from sizeof, so an off-by-one drops the tail of the array.
+    // The covered length comes from sizeof, so an off-by-one drops the tail. reserve[3] is the
+    // last word before crc, and it is the only perturbation that catches a length one word short.
     expectCovered("motor_cmd[29]", [](auto& cmd) { cmd.motor_cmd()[29].q() = 1.0F; });
     expectCovered("motor_cmd[34]", [](auto& cmd) { cmd.motor_cmd()[34].q() = 1.0F; });
+    expectCovered("reserve[3]", [](auto& cmd) { cmd.reserve()[3] = 0xABCDEF01; });
 }
 
-TEST(MotorCrcHg, TheChecksumFieldItselfIsExcluded)
+TEST(MotorCrcHg, AStaleChecksumCannotLeakIntoTheSum)
 {
+    // Pins the zeroing at the top of computeLowCmdCrc, not the covered length: with crc zeroed
+    // first, a leftover value cannot reach the sum whatever the length is.
     LowCmd stale = baseline();
     stale.crc()  = 0xDEADBEEF;
     EXPECT_EQ(crcOf(stale), crcOf(baseline()));

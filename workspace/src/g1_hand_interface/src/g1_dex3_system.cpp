@@ -6,6 +6,7 @@
 #include "g1_hand_interface/g1_dex3_system.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <stdexcept>
 #include <thread>
 #include <unitree/robot/channel/channel_factory.hpp>
@@ -20,10 +21,23 @@ namespace
 /// Long enough for the hand's firmware to come up after the body component has claimed the wire.
 constexpr auto kFirstStateTimeout = std::chrono::seconds(5);
 
+/// Falls back on an absent, empty or unparseable value: std::stod throws, and on_init reports
+/// failure through its return value rather than by letting an exception escape a lifecycle call.
 double paramOr(const hardware_interface::HardwareInfo& info, const std::string& key, double fallback)
 {
     const auto it = info.hardware_parameters.find(key);
-    return it == info.hardware_parameters.end() ? fallback : std::stod(it->second);
+    if (it == info.hardware_parameters.end())
+    {
+        return fallback;
+    }
+    try
+    {
+        return std::stod(it->second);
+    }
+    catch (const std::exception&)
+    {
+        return fallback;
+    }
 }
 
 std::string paramOr(
@@ -87,9 +101,24 @@ G1Dex3System::on_init(const hardware_interface::HardwareComponentInterfaceParams
         // Clamp to the URDF, which agrees with Unitree's published spec. Their SDK example
         // disagrees on thumb_1 (0.724 vs 0.611) and its right hand says 0.742, which looks
         // like a transposed digit. The conservative pair is the right one to trust.
+        //
+        // Required rather than defaulted: this is the backstop against a bad command, so a
+        // renamed param must fail here rather than silently widen it to the whole joint range.
         const auto& limits = info.joints[i].parameters;
-        lower_limit_[i]    = limits.contains("min") ? std::stod(limits.at("min")) : -3.15;
-        upper_limit_[i]    = limits.contains("max") ? std::stod(limits.at("max")) : 3.15;
+        if (!limits.contains("min") || !limits.contains("max"))
+        {
+            RCLCPP_FATAL(logger_, "joint '%s' needs min and max params", info.joints[i].name.c_str());
+            return hardware_interface::CallbackReturn::ERROR;
+        }
+        lower_limit_[i] = std::stod(limits.at("min"));
+        upper_limit_[i] = std::stod(limits.at("max"));
+        // std::clamp is undefined when the bounds are transposed, and libstdc++ answers a
+        // transposed pair by snapping every command to max rather than clamping.
+        if (!(lower_limit_[i] < upper_limit_[i]))
+        {
+            RCLCPP_FATAL(logger_, "joint '%s' has min >= max", info.joints[i].name.c_str());
+            return hardware_interface::CallbackReturn::ERROR;
+        }
     }
 
     kp_                   = paramOr(info, "kp", 1.5);
@@ -113,11 +142,14 @@ G1Dex3System::on_init(const hardware_interface::HardwareComponentInterfaceParams
     }
     domain_id_ = std::stoi(info.hardware_parameters.at("domain_id"));
 
-    if (command_publish_rate_ <= 0.0 || max_joint_velocity_ <= 0.0 || state_timeout_s_ <= 0.0)
+    // kp and kd are in here for the same reason the rest are: kp 0 is fingers that report as
+    // driven and hold nothing.
+    if (command_publish_rate_ <= 0.0 || max_joint_velocity_ <= 0.0 || state_timeout_s_ <= 0.0 ||
+        kp_ <= 0.0 || kd_ <= 0.0)
     {
         RCLCPP_FATAL(
             logger_,
-            "command_publish_rate, max_joint_velocity_rad_s and state_timeout_ms must "
+            "kp, kd, command_publish_rate, max_joint_velocity_rad_s and state_timeout_ms must "
             "all be strictly positive");
         return hardware_interface::CallbackReturn::ERROR;
     }
@@ -229,12 +261,30 @@ hardware_interface::CallbackReturn G1Dex3System::on_activate(const rclcpp_lifecy
 
 hardware_interface::CallbackReturn G1Dex3System::on_deactivate(const rclcpp_lifecycle::State&)
 {
-    // Release: Lock status with zero gains, and timeout armed so the motor stops on its own if
-    // anything downstream keeps the last frame alive.
-    publish(false);
-    seeded_ = false;
-    shutdownSdk();
+    releaseAndShutdown();
     return hardware_interface::CallbackReturn::SUCCESS;
+}
+
+hardware_interface::CallbackReturn G1Dex3System::on_error(const rclcpp_lifecycle::State&)
+{
+    releaseAndShutdown();
+    return hardware_interface::CallbackReturn::SUCCESS;
+}
+
+hardware_interface::CallbackReturn G1Dex3System::on_shutdown(const rclcpp_lifecycle::State&)
+{
+    releaseAndShutdown();
+    return hardware_interface::CallbackReturn::SUCCESS;
+}
+
+void G1Dex3System::releaseAndShutdown()
+{
+    // Release: Lock status with zero gains, and timeout armed so the motor stops on its own if
+    // anything downstream keeps the last frame alive. Clearing seeded_ first stops write()
+    // assembling a driven frame into the same buffer.
+    seeded_ = false;
+    publish(false);
+    shutdownSdk();
 }
 
 std::vector<hardware_interface::StateInterface> G1Dex3System::export_state_interfaces()
@@ -281,6 +331,18 @@ hardware_interface::return_type G1Dex3System::read(const rclcpp::Time&, const rc
     }
 
     const StampedHandState* sample = state_buffer_.readFromRT();
+
+    // Ahead of the size check on purpose. The callback stamps arrival for every frame, short ones
+    // included, so a hand that regresses to short frames would keep this reading fresh for ever
+    // while write() drove on from a frozen position_state_.
+    const auto age = std::chrono::steady_clock::now() - sample->arrival;
+    if (seeded_ && age > std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                             std::chrono::duration<double>(state_timeout_s_)))
+    {
+        RCLCPP_ERROR(logger_, "%s went stale while active", state_topic_.c_str());
+        return hardware_interface::return_type::ERROR;
+    }
+
     if (sample->state.motor_state().size() < kNumHandJoints)
     {
         RCLCPP_WARN_THROTTLE(
@@ -300,14 +362,6 @@ hardware_interface::return_type G1Dex3System::read(const rclcpp::Time&, const rc
         velocity_state_[i] = motor.dq();
         effort_state_[i]   = motor.tau_est();
     }
-
-    const auto age = std::chrono::steady_clock::now() - sample->arrival;
-    if (seeded_ && age > std::chrono::duration_cast<std::chrono::steady_clock::duration>(
-                             std::chrono::duration<double>(state_timeout_s_)))
-    {
-        RCLCPP_ERROR(logger_, "%s went stale while active", state_topic_.c_str());
-        return hardware_interface::return_type::ERROR;
-    }
     return hardware_interface::return_type::OK;
 }
 
@@ -322,9 +376,19 @@ G1Dex3System::write(const rclcpp::Time&, const rclcpp::Duration& period)
     // Slew toward the commanded position. The first write takes full authority, so this ramp is
     // the only thing between a large trajectory step and a finger moving as fast as the motor
     // can manage.
-    const double step = max_joint_velocity_ * period.seconds();
+    // period is whatever controller_manager hands us, so a stalled update loop would make step
+    // big enough that the limiter stops limiting -- and a negative period would call std::clamp
+    // below with its bounds transposed, which is undefined. Cap it at 20 update ticks.
+    const double step = max_joint_velocity_ * std::clamp(period.seconds(), 0.0, 0.1);
     for (std::size_t i = 0; i < kNumHandJoints; ++i)
     {
+        // std::clamp passes NaN straight through, and ramped_command_ carries state, so one NaN
+        // setpoint would latch this finger at NaN for good -- it never recovers, even once the
+        // controller resumes sending valid targets. Hold the last good value instead.
+        if (!std::isfinite(position_command_[i]))
+        {
+            continue;
+        }
         const double target = std::clamp(position_command_[i], lower_limit_[i], upper_limit_[i]);
         ramped_command_[i] += std::clamp(target - ramped_command_[i], -step, step);
     }

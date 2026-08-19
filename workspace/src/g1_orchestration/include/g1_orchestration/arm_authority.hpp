@@ -38,6 +38,34 @@ struct ControlledPart
 /// The arm, then each hand. Order matters: see `acquireArm`.
 const std::vector<ControlledPart>& controlledParts();
 
+/// What a paired switch should ask controller_manager for, given what it currently reports.
+struct ArmSwitchPlan
+{
+    /// False when the incoming controller cannot take the joints. The outgoing one must then be
+    /// left exactly where it is: the body component leaves an unclaimed joint unpowered.
+    bool possible{ false };
+    /// The incoming controller already holds them; there is nothing to ask for.
+    bool already_held{ false };
+    /// The outgoing controller still has to be displaced, in the same switch.
+    bool displace{ false };
+};
+
+/**
+ * @brief Decides the paired arm switch from the two controllers' current states.
+ *
+ * Split out from the service calls because it is the whole safety argument: `BEST_EFFORT`
+ * applies whichever half of a pair it can and still answers ok, so a switch that asks to
+ * displace the freeze for a trajectory controller that is loaded but not yet configured
+ * deactivates the freeze and drops the rest -- fifteen arm joints claimed by nobody. Deciding
+ * here and switching `STRICT` removes that, and this way the decision is testable without a
+ * controller_manager.
+ *
+ * @param incoming_state State of the controller that should end up holding the joints, as
+ *        controller_manager reports it. Empty means it does not know the controller.
+ * @param outgoing_state State of the controller currently holding them, same convention.
+ */
+ArmSwitchPlan planArmSwitch(const std::string& incoming_state, const std::string& outgoing_state);
+
 /**
  * @brief Takes the arm, then each hand.
  *

@@ -21,7 +21,8 @@ inline constexpr std::size_t kNumBodyMotors = 29;
 /**
  * @brief Per-joint branch of the firmware law `tau = tau_ff + kp*(q - q_meas) + kd*(dq - dq_meas)`.
  *
- * Mirrors NVIDIA's fill_motor_cmd so their controllers behave identically against this component.
+ * Mirrors the upstream motor-command fill, so controllers written against it behave identically
+ * here.
  */
 enum class JointControlMode : std::uint8_t
 {

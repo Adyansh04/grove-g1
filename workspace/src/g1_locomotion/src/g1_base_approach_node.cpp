@@ -3,8 +3,8 @@
  * @brief Walks the base into arm's reach of a measured object, and backs it out again.
  *
  * The missing step between navigation and manipulation. Nav2 parks the robot within 0.5 m of a
- * goal it chose from a map; the arm reaches 0.28 to 0.33 m and its usable window is about
- * 0.12 m wide. Nothing bridges that today, which is why navigate-then-pick does not work.
+ * goal it chose from a map, and the arm's measured reach window is about 0.2 m wide, so
+ * navigate-then-pick does not work without something to close the gap. This is that something.
  *
  * Lives in g1_locomotion, not in g1_manipulation, on one principle: everything that writes a
  * velocity command belongs to the package that owns the velocity path. A manipulation package
@@ -25,6 +25,7 @@
 #include <tf2_ros/transform_listener.h>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <g1_msgs/action/approach_object.hpp>
@@ -48,6 +49,10 @@
 
 namespace g1_locomotion
 {
+
+/// Nothing in this workspace asks for a longer reverse, and an unbounded distance_m is a request
+/// to walk backwards out of the room. A retreat is meant to get the base clear of a surface.
+constexpr double kMaxRetreatDistanceM = 2.0;
 
 using ApproachObject     = g1_msgs::action::ApproachObject;
 using Retreat            = g1_msgs::action::Retreat;
@@ -143,27 +148,42 @@ public:
         approach_server_ = rclcpp_action::create_server<ApproachObject>(
             this,
             "~/approach_object",
-            [](const rclcpp_action::GoalUUID&, const ApproachObject::Goal::ConstSharedPtr&) {
-                return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
+            [this](const rclcpp_action::GoalUUID&, const ApproachObject::Goal::ConstSharedPtr&) {
+                return acquire() ? rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE :
+                                   rclcpp_action::GoalResponse::REJECT;
             },
             [](const std::shared_ptr<GoalHandleApproach>&) {
                 return rclcpp_action::CancelResponse::ACCEPT;
             },
             [this](const std::shared_ptr<GoalHandleApproach>& handle) {
-                std::thread{ [this, handle] { runApproach(handle); } }.detach();
+                std::thread{ [this, handle] {
+                    runGuarded([&] { runApproach(handle); }, handle);
+                } }.detach();
             });
 
         retreat_server_ = rclcpp_action::create_server<Retreat>(
             this,
             "~/retreat",
-            [](const rclcpp_action::GoalUUID&, const Retreat::Goal::ConstSharedPtr&) {
-                return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
+            [this](const rclcpp_action::GoalUUID&, const Retreat::Goal::ConstSharedPtr& goal) {
+                if (goal->distance_m <= 0.0 || goal->distance_m > kMaxRetreatDistanceM)
+                {
+                    RCLCPP_ERROR(
+                        get_logger(),
+                        "rejecting a retreat of %.3f m: must be within (0, %.1f]",
+                        goal->distance_m,
+                        kMaxRetreatDistanceM);
+                    return rclcpp_action::GoalResponse::REJECT;
+                }
+                return acquire() ? rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE :
+                                   rclcpp_action::GoalResponse::REJECT;
             },
             [](const std::shared_ptr<GoalHandleRetreat>&) {
                 return rclcpp_action::CancelResponse::ACCEPT;
             },
             [this](const std::shared_ptr<GoalHandleRetreat>& handle) {
-                std::thread{ [this, handle] { runRetreat(handle); } }.detach();
+                std::thread{ [this, handle] {
+                    runGuarded([&] { runRetreat(handle); }, handle);
+                } }.detach();
             });
 
         RCLCPP_INFO(
@@ -178,7 +198,76 @@ public:
             cmd_topic_.c_str());
     }
 
+    ~BaseApproachNode() override
+    {
+        // The goal threads are detached and dereference this node's members, so tearing down
+        // without waiting is a use-after-free -- and the twist left on /cmd_vel would be whatever
+        // the loop last commanded. Ask them to stop, wait, then leave the wire at zero.
+        stopping_.store(true);
+        while (goals_running_.load() > 0)
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+        try
+        {
+            if (cmd_pub_)
+            {
+                publish(0.0, 0.0, 0.0);
+            }
+        }
+        catch (const std::exception& e)
+        {
+            // The C logger, not RCLCPP_*: this runs while the node is being destroyed, and a
+            // destructor must not throw whatever the publisher does.
+            RCUTILS_LOG_ERROR_NAMED(
+                "g1_base_approach",
+                "could not stop the base on shutdown: %s",
+                e.what());
+        }
+    }
+
 private:
+    /// One goal at a time across BOTH actions: an approach and a retreat running together would
+    /// interleave a forward and a reverse command on the same channel.
+    bool acquire()
+    {
+        bool expected = false;
+        if (!busy_.compare_exchange_strong(expected, true))
+        {
+            RCLCPP_WARN(get_logger(), "rejecting a goal: another one is already running");
+            return false;
+        }
+        return true;
+    }
+
+    /// Runs one goal body, guaranteeing the busy flag is released, the running count is balanced,
+    /// and that an escaping exception stops the robot and aborts the goal rather than terminating
+    /// the process with the last twist still latched on the wire.
+    template <typename ActionT, typename Body>
+    void
+    runGuarded(Body&& body, const std::shared_ptr<rclcpp_action::ServerGoalHandle<ActionT>>& handle)
+    {
+        goals_running_.fetch_add(1);
+        try
+        {
+            body();
+        }
+        catch (const std::exception& e)
+        {
+            RCLCPP_ERROR(get_logger(), "goal threw, stopping the base: %s", e.what());
+            publish(0.0, 0.0, 0.0);
+            auto result     = std::make_shared<typename ActionT::Result>();
+            result->success = false;
+            result->message = std::string("aborted on an internal error: ") + e.what();
+            if (handle->is_executing() || handle->is_canceling())
+            {
+                handle->abort(result);
+            }
+        }
+        busy_.store(false);
+        goals_running_.fetch_sub(1);
+    }
+
     std::chrono::duration<double> tickPeriod() const
     {
         return std::chrono::duration<double>(1.0 / std::max(1.0, cmd_rate_hz_));
@@ -527,38 +616,77 @@ private:
         feedback->phase = Retreat::Feedback::PHASE_BACKING_OFF;
         handle->publish_feedback(feedback);
 
-        const auto travelled = [&] {
+        // nullopt, not 0.0. Reporting no progress on a TF outage would make the loop condition
+        // below unsatisfiable, so the robot reverses blind at retreat_speed until the deadline --
+        // which is 900 s whenever the goal leaves timeout_s at 0.
+        const auto travelled = [&]() -> std::optional<double> {
             const auto here = basePose();
-            return here ? std::hypot(
-                              here->pose.position.x - start->pose.position.x,
-                              here->pose.position.y - start->pose.position.y) :
-                          0.0;
+            if (!here)
+            {
+                return std::nullopt;
+            }
+            return std::hypot(
+                here->pose.position.x - start->pose.position.x,
+                here->pose.position.y - start->pose.position.y);
         };
+        double     last_travelled = 0.0;
+        const auto blind_until =
+            [&,
+             grace = std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                 std::chrono::duration<double>(lookup_grace_s_))] {
+                return std::chrono::steady_clock::now() + grace;
+            };
+        auto blind_deadline = blind_until();
 
         const int feedback_every = std::max(1, static_cast<int>(cmd_rate_hz_ / 2.0));
         int       tick           = 0;
-        while (rclcpp::ok() && travelled() < goal->distance_m &&
+        while (rclcpp::ok() && !stopping_.load() && last_travelled < goal->distance_m &&
                std::chrono::steady_clock::now() < deadline)
         {
             if (handle->is_canceling())
             {
                 publish(0.0, 0.0, 0.0);
-                result->travelled_m = travelled();
+                result->travelled_m = last_travelled;
                 result->message     = "backing_off: cancelled";
                 handle->canceled(result);
                 return;
             }
+
+            if (const auto measured = travelled())
+            {
+                last_travelled = *measured;
+                blind_deadline = blind_until();
+            }
+            else
+            {
+                // Same treatment the approach loop gives a lookup failure: stop, and give TF a
+                // bounded grace to come back before abandoning the goal.
+                publish(0.0, 0.0, 0.0);
+                if (std::chrono::steady_clock::now() > blind_deadline)
+                {
+                    result->success     = false;
+                    result->travelled_m = last_travelled;
+                    result->message     = "backing_off: lost the base pose";
+                    handle->abort(result);
+                    return;
+                }
+                std::this_thread::sleep_for(tickPeriod());
+                continue;
+            }
+
             publish(-retreat_speed_mps_, 0.0, 0.0);
             if (tick++ % feedback_every == 0)
             {
-                feedback->travelled_m = travelled();
+                feedback->travelled_m = last_travelled;
                 handle->publish_feedback(feedback);
             }
             std::this_thread::sleep_for(tickPeriod());
         }
         settle();
 
-        const double backed = travelled();
+        // Falls back to the last good reading rather than to zero: after settle() the lookup can
+        // still be down, and reporting 0.0 there would call a completed retreat a failure.
+        const double backed = travelled().value_or(last_travelled);
         result->travelled_m = backed;
         result->success     = backed >= goal->distance_m;
         result->message     = result->success ? "reversed " + std::to_string(backed) + " m clear" :
@@ -598,6 +726,15 @@ private:
     vision_msgs::msg::Detection3DArray::SharedPtr objects_;
     tf2_ros::Buffer                               tf_buffer_;
     tf2_ros::TransformListener                    tf_listener_;
+
+    /// Shared across BOTH actions: they are the second writer on /cmd_vel and must never overlap
+    /// each other any more than they may overlap Nav2. rclcpp_action has no single-goal policy,
+    /// so without this two accepted goals run on two threads and both publish at 20 Hz.
+    std::atomic<bool> busy_{ false };
+    /// Set by the destructor so a running goal leaves its loop, and waited on before teardown --
+    /// the goal threads are detached and would otherwise outlive the members they dereference.
+    std::atomic<bool> stopping_{ false };
+    std::atomic<int>  goals_running_{ 0 };
 };
 
 }  // namespace g1_locomotion
