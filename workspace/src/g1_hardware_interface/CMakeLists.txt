@@ -9,12 +9,75 @@ find_package(rclcpp_lifecycle REQUIRED)
 find_package(realtime_tools REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(unitree_hg REQUIRED)
+find_package(diagnostic_msgs REQUIRED)
+
+# Shared by both hardware plugins, so it is its own library rather than a source compiled into
+# each: pluginlib dlopens both .so files into one controller_manager, and two copies of the same
+# externally-visible symbols is a resolution order nobody should have to reason about.
+add_library(motor_crc_hg src/motor_crc_hg.cpp)
+target_include_directories(motor_crc_hg PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+target_compile_features(motor_crc_hg PUBLIC cxx_std_20)
+ament_target_dependencies(motor_crc_hg PUBLIC unitree_hg)
+
+# Plain CMake package baked into the dev image, not an ament one, so it needs the prefix.
+set(UNITREE_SDK2_PREFIX /opt/unitree_robotics)
+find_package(unitree_sdk2 REQUIRED PATHS ${UNITREE_SDK2_PREFIX}/lib/cmake NO_DEFAULT_PATH)
+
+# The SDK must bind the libddsc/libddscxx it ships, not ROS's newer CycloneDDS: same SONAME,
+# different ABI, and mixing them corrupts the heap. Scoped here, not /etc/ld.so.conf.d.
+list(APPEND CMAKE_BUILD_RPATH ${UNITREE_SDK2_PREFIX}/lib)
+list(APPEND CMAKE_INSTALL_RPATH ${UNITREE_SDK2_PREFIX}/lib)
+
+# DT_RPATH, not the default DT_RUNPATH, which loses to LD_LIBRARY_PATH and its ROS lib dir.
+string(APPEND CMAKE_SHARED_LINKER_FLAGS " -Wl,--disable-new-dtags")
+string(APPEND CMAKE_EXE_LINKER_FLAGS " -Wl,--disable-new-dtags")
+
+# The rt/lowcmd mode table and per-motor packing, split out for the same reason
+# arm_ramp_engine is: it is the part worth asserting without a live component.
+add_library(lowcmd_assembly src/lowcmd_assembly.cpp)
+target_include_directories(lowcmd_assembly PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+target_compile_features(lowcmd_assembly PUBLIC cxx_std_20)
+target_link_libraries(lowcmd_assembly PUBLIC unitree_sdk2 motor_crc_hg)
+# SYSTEM so clang-tidy's WarningsAsErrors does not fail us on the SDK's own headers, which still
+# use std::result_of.
+target_include_directories(lowcmd_assembly SYSTEM PUBLIC
+  ${UNITREE_SDK2_PREFIX}/include
+  ${UNITREE_SDK2_PREFIX}/include/ddscxx
+)
+
+add_library(g1_lowcmd_system SHARED src/g1_lowcmd_system.cpp)
+target_include_directories(g1_lowcmd_system PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+target_compile_features(g1_lowcmd_system PUBLIC cxx_std_20)
+if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  # unitree_sdk2's dds_entity.hpp still builds its queue thread through std::result_of, which
+  # InitChannel instantiates unconditionally. Scoped to this one target so the rest of the package
+  # keeps the strict gate PR 2 earned back; drop it when the SDK is bumped past the deprecation.
+  target_compile_options(g1_lowcmd_system PRIVATE -Wall -Wextra -Wno-deprecated-declarations)
+endif()
+target_link_libraries(g1_lowcmd_system PUBLIC lowcmd_assembly)
+ament_target_dependencies(g1_lowcmd_system PUBLIC
+  diagnostic_msgs
+  hardware_interface
+  pluginlib
+  rclcpp
+  rclcpp_lifecycle
+  realtime_tools
+)
 
 add_library(g1_arm_sdk_system SHARED
   src/arm_ramp_engine.cpp
-  src/motor_crc_hg.cpp
   src/g1_arm_sdk_system.cpp
 )
+target_link_libraries(g1_arm_sdk_system PUBLIC motor_crc_hg)
 target_include_directories(g1_arm_sdk_system PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
@@ -60,7 +123,7 @@ install(
   DESTINATION include
 )
 install(
-  TARGETS g1_arm_sdk_system lowstate_joint_states
+  TARGETS g1_arm_sdk_system g1_lowcmd_system lowstate_joint_states motor_crc_hg lowcmd_assembly
   EXPORT export_g1_arm_sdk_system
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
@@ -78,7 +141,7 @@ if(BUILD_TESTING)
   # ClassLoader is the actual proof controller_manager will find it -- a
   # clean compile doesn't guarantee the plugin XML/export is wired correctly.
   ament_add_gmock(test_pluginlib_loading test/test_pluginlib_loading.cpp)
-  target_link_libraries(test_pluginlib_loading g1_arm_sdk_system)
+  target_link_libraries(test_pluginlib_loading g1_arm_sdk_system g1_lowcmd_system)
   ament_target_dependencies(test_pluginlib_loading pluginlib hardware_interface)
 
   # The safety-critical surface: pure, ROS-free ramp/slew/staleness logic --
@@ -91,6 +154,16 @@ if(BUILD_TESTING)
   ament_add_gmock(test_assemble_low_cmd test/test_assemble_low_cmd.cpp)
   target_link_libraries(test_assemble_low_cmd g1_arm_sdk_system)
   ament_target_dependencies(test_assemble_low_cmd unitree_hg)
+
+  # The mode table rt/lowcmd resolves interface claims through, plus the release ramp's packing.
+  ament_add_gmock(test_lowcmd_assembly test/test_lowcmd_assembly.cpp)
+  target_link_libraries(test_lowcmd_assembly lowcmd_assembly)
+
+  # Not the bit loop, which is vendored: which bytes it covers, and that the mirror struct's
+  # padding is deterministic. A checksum the firmware rejects means every command is ignored.
+  ament_add_gmock(test_motor_crc_hg test/test_motor_crc_hg.cpp)
+  target_link_libraries(test_motor_crc_hg motor_crc_hg)
+  ament_target_dependencies(test_motor_crc_hg unitree_hg)
 
   ament_add_gmock(test_lowstate_joint_states test/test_lowstate_joint_states.cpp)
   target_link_libraries(test_lowstate_joint_states lowstate_joint_states)

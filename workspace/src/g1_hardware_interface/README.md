@@ -1,9 +1,16 @@
 # g1_hardware_interface
 
-A `ros2_control` `SystemInterface` plugin that bridges standard joint command and state interfaces
-onto Unitree's weight-blended `rt/arm_sdk` DDS topic. Covers the 14 arm joints, and holds the 3
-waist motors that topic hands over with them. Also ships `g1_lowstate_joint_states`, which puts
-the legs and waist on `/joint_states` because no controller owns them.
+Two `ros2_control` `SystemInterface` plugins, one per control mode. Exactly one may be loaded at
+a time; `control_stack` in `g1_bringup` picks.
+
+| Plugin | Channel | Owns |
+|---|---|---|
+| `G1LowCmdSystem` | `rt/lowcmd` | all 29 body motors, no onboard balance underneath |
+| `G1ArmSdkSystem` | `rt/arm_sdk` | 14 arm joints + 3 waist, balance stays onboard |
+
+`G1LowCmdSystem` is where the stack is heading; `G1ArmSdkSystem` is the path being replaced.
+Also ships `g1_lowstate_joint_states`, which puts the legs and waist on `/joint_states` on the
+arm_sdk path, because no controller owns them there.
 
 `ament_cmake`, C++20. This is real hardware code and runs unchanged against the physical G1.
 
@@ -29,7 +36,9 @@ the legs. The weight in motor slot 29 tells it how much of the arm command to ho
 | `lowstate_joint_states.{hpp,cpp}` | `LowState` motors 0-14 to `JointState`. Pure, so it tests without a graph. |
 | `g1_lowstate_joint_states_node.cpp` | The node around it. See below. |
 | `motor_crc_hg.{hpp,cpp}` | Vendored CRC, byte-exact against Unitree's. |
-| `g1_hardware_interface.xml` | pluginlib export. |
+| `g1_lowcmd_system.{hpp,cpp}` | The whole-body plugin: SDK channels, mode switching, release ramp, diagnostics. |
+| `lowcmd_assembly.{hpp,cpp}` | The `rt/lowcmd` mode table and per-motor packing. Pure, so the branches unit-test. |
+| `g1_hardware_interface.xml` | pluginlib export for both plugins. |
 
 ## Interfaces
 
@@ -176,3 +185,47 @@ colcon test --packages-select g1_hardware_interface
 
 End-to-end validation against a live simulator lives in `g1_bringup`'s `test_sim_bringup` and
 `test_arm_command`.
+
+
+## G1LowCmdSystem
+
+Adapted from NVIDIA's `unitree_g1_ros2_control`, and deliberately close to it so their controllers
+bind unchanged: same SDK joint order, same `kp`/`kd` command-interface names, same mode branches,
+same IMU sensor interface names.
+
+### Interfaces
+
+Per joint: `position`, `velocity`, `effort`, `kp`, `kd` as commands; `position`, `velocity`,
+`effort` as state. Plus an `imu` sensor with the ten fields `imu_sensor_broadcaster` expects.
+
+**`kp` and `kd` being command interfaces is the point.** Which ones a controller claims decides
+the joint's mode for that tick:
+
+| Claimed | Mode | What goes out |
+|---|---|---|
+| `kp` + `kd` | impedance | q, dq, tau, kp, kd all from the controller |
+| `position` only | position | q from the controller, gains from `position_only_*` in the URDF |
+| `effort` | effort | q pinned to the measurement, kp forced to 0 |
+| nothing | disabled | motor unpowered |
+
+An unclaimed joint is unpowered, never held. Holding is `g1_controllers/G1FreezeController`, so
+the choice is a runtime controller switch rather than behaviour baked into the component.
+
+### Where we differ from NVIDIA
+
+- **Lock-free state path.** They take a `shared_mutex` in `write()`; we copy through a
+  `realtime_tools::RealtimeBuffer`, and error out when `rt/lowstate` goes stale, which they do
+  not check at all.
+- **One preallocated `LowCmd_`, zeroed once.** The checksum covers the struct's padding, so their
+  per-tick stack object checksums whatever the stack held.
+- **`domain_id` 1 and an empty `network_interface`.** A non-empty interface makes the SDK discard
+  `CYCLONEDDS_URI`, which is what pins the sim to loopback.
+- **A damped release ramp on deactivate** rather than dropping the channel.
+- **The Dex3 stays on `G1Dex3System`**, one component per hand, so a hand fault cannot take the
+  body down with it. NVIDIA fold the hands into this component.
+
+### What sim does not validate
+
+The `MotionSwitcherClient` handover (`release_motion_mode` is false in sim, since MuJoCo has no
+motion service), real motor temperatures, and whether control can be handed *back* to the onboard
+service afterwards. Assume it cannot without a reboot.

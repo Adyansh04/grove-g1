@@ -68,11 +68,15 @@ def _check_environment(context, *args, **kwargs):
     """
     problems = []
 
+    # Which RMW is correct depends on who owns the robot wire: arm_sdk reaches rt/* from ROS
+    # itself, lowcmd reaches it from the SDK's own CycloneDDS and ROS must not load a second.
+    control_stack = LaunchConfiguration("control_stack").perform(context)
+    expected_rmw = "rmw_fastrtps_cpp" if control_stack == "lowcmd" else "rmw_cyclonedds_cpp"
     rmw = os.environ.get("RMW_IMPLEMENTATION")
-    if rmw != "rmw_cyclonedds_cpp":
+    if rmw != expected_rmw:
         problems.append(
-            f"RMW_IMPLEMENTATION={rmw!r}, expected 'rmw_cyclonedds_cpp' -- "
-            "the Unitree SDK/sim only speak CycloneDDS."
+            f"RMW_IMPLEMENTATION={rmw!r}, expected {expected_rmw!r} for "
+            f"control_stack={control_stack!r}."
         )
 
     cyclone_uri = os.environ.get("CYCLONEDDS_URI")
@@ -234,6 +238,7 @@ def _launch_setup(context, *args, **kwargs):
 
     # Checked even when sensors are off, so a typo is caught where it was made rather than
     # silently selecting the other source.
+    control_stack = LaunchConfiguration("control_stack").perform(context)
     odometry = LaunchConfiguration("odometry").perform(context)
     if odometry not in ("sportmodestate", "fast_lio"):
         raise RuntimeError(
@@ -410,7 +415,8 @@ def _launch_setup(context, *args, **kwargs):
     control_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(get_package_share_directory("g1_bringup"), "launch", "control.launch.py")
-        )
+        ),
+        launch_arguments={"control_stack": control_stack}.items(),
     )
 
     # LocoClient bridge — talks to motion_service_sim's /api/sport/* responder.
@@ -428,14 +434,21 @@ def _launch_setup(context, *args, **kwargs):
         )
     )
 
-    actions.extend([motion_service_sim_node, control_launch, loco_launch, shutdown_on_sim_exit])
+    # motion_service_sim and the LocoClient bridge both stand in for the onboard controller,
+    # which rt/lowcmd replaces outright. Running them alongside it would put a second writer on
+    # the motors, the one thing CONTROL_MODES.md forbids.
+    if control_stack == "lowcmd":
+        actions.extend([control_launch, shutdown_on_sim_exit])
+    else:
+        actions.extend(
+            [motion_service_sim_node, control_launch, loco_launch, shutdown_on_sim_exit]
+        )
     return actions
 
 
 def generate_launch_description():
     return LaunchDescription(
         [
-            OpaqueFunction(function=_check_environment),
             DeclareLaunchArgument(
                 "headless",
                 default_value="true",
@@ -467,6 +480,13 @@ def generate_launch_description():
                 "result as unproven, not as a property of the sensor stack. Opt-in until it "
                 "is re-measured on an unthrottled machine. test_lidar_geometry, which is "
                 "pure geometry, turns sensors on explicitly and passes.",
+            ),
+            DeclareLaunchArgument(
+                "control_stack",
+                default_value="arm_sdk",
+                description="Forwarded to control.launch.py. 'lowcmd' also drops "
+                "motion_service_sim and the LocoClient bridge, which stand in for the onboard "
+                "controller that rt/lowcmd replaces.",
             ),
             DeclareLaunchArgument(
                 "odometry",
@@ -510,6 +530,8 @@ def generate_launch_description():
                 "sim's first physics tick. Raise this if the robot still topples on startup "
                 "(slower discovery); do not set to 0.",
             ),
+            # After the arguments, because it now depends on control_stack.
+            OpaqueFunction(function=_check_environment),
             OpaqueFunction(function=_launch_setup),
         ]
     )

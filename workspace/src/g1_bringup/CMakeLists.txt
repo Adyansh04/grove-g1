@@ -96,6 +96,10 @@ if(BUILD_TESTING)
   add_launch_test(test/test_walk_and_arm.launch.py TARGET test_walk_and_arm TIMEOUT 400)
   set_tests_properties(test_walk_and_arm PROPERTIES RESOURCE_LOCK mujoco_sim LABELS simulator)
 
+  # PR 3's gate: one joint commanded through the rt/lowcmd component and read back.
+  add_launch_test(test/test_lowcmd_joint.launch.py TARGET test_lowcmd_joint TIMEOUT 240)
+  set_tests_properties(test_lowcmd_joint PROPERTIES RESOURCE_LOCK mujoco_sim LABELS simulator)
+
   # DDS drain gap before the critical balance test.
   set(_SIM_SETTLE_S 5)
   add_test(NAME sim_settle_gap COMMAND ${CMAKE_COMMAND} -E sleep ${_SIM_SETTLE_S})

@@ -20,6 +20,9 @@
   <depend>robot_state_publisher</depend>
   <depend>controller_manager</depend>
   <depend>joint_state_broadcaster</depend>
+  <depend>imu_sensor_broadcaster</depend>
+  <depend>forward_command_controller</depend>
+  <depend>g1_controllers</depend>
   <depend>joint_trajectory_controller</depend>
   <depend>xacro</depend>
   <depend>controller_manager_msgs</depend>
