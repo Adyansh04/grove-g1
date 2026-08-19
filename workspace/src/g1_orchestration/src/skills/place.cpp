@@ -1,3 +1,8 @@
+/**
+ * @file place.cpp
+ * @brief Ports and goal for the Place leaf.
+ */
+
 #include "g1_orchestration/skills/place.hpp"
 
 #include <string>
@@ -31,10 +36,9 @@ bool Place::fillGoal(Goal& goal)
 {
     goal.arm = getInput<std::string>("arm").value_or("right");
 
-    // A named surface beats a coordinate. A coordinate here is in the MAP frame, while
-    // ApproachObject parks the base against /objects, which is published in ODOM. Those agree
-    // only as well as AMCL does, and it was measured 0.23 m out mid-mission against an arm
-    // window of 0.04 m.
+    // A named surface beats a coordinate: a coordinate here is in map, while ApproachObject
+    // parks against /objects in odom. Those agree only as well as AMCL does, measured 0.23 m
+    // out against an arm window of 0.04 m.
     goal.surface_object_id = getInput<std::string>("surface").value_or("");
     if (!goal.surface_object_id.empty())
     {

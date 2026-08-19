@@ -33,8 +33,8 @@ inline constexpr std::size_t kHistoryLength = 5;
 inline constexpr double kPolicyRateHz     = 50.0;
 inline constexpr int    kPolicyDecimation = 4;
 
-/// Joint ordering of the 29-wide observations. Isaac Lab's breadth-first order, not SDK index
-/// order, so it cannot be reused from the hardware component's table.
+/// Joint ordering of the 29-wide observations. The trainer's breadth-first order, not SDK
+/// index order, so it cannot be reused from the hardware component's table.
 extern const std::array<std::string, kNumObsJoints> kAgileObsJointNames;
 
 /// Joint ordering of the 14-wide action and gain outputs. Differs again from the observation order.
@@ -56,7 +56,9 @@ extern const std::array<std::string, kNumActJoints> kAgileActionJointNames;
  */
 [[nodiscard]] std::optional<std::size_t> agileActionIndex(std::string_view name) noexcept;
 
-/// One tick of robot state, already in the policy's orderings.
+/**
+ * @brief One tick of robot state, already in the policy's orderings.
+ */
 struct PolicyObservation
 {
     /// Pelvis orientation in world, w first. The ros2_control IMU interface is x,y,z,w.
@@ -70,7 +72,9 @@ struct PolicyObservation
     std::array<float, kNumObsJoints> joint_velocity{};
 };
 
-/// What the policy returns for its 14 joints: absolute targets, and the gains to hold them with.
+/**
+ * @brief What the policy returns for its 14 joints: targets, and the gains to hold them.
+ */
 struct PolicyAction
 {
     /// Absolute radians, not a scaled action: the graph applies its own scale and offset.
@@ -97,7 +101,11 @@ public:
      */
     explicit AgilePolicy(const std::string& model_path);
 
-    /// The bound tensors point into this object, so it must not be relocated after construction.
+    /**
+     * @brief Neither copyable nor movable.
+     *
+     * The bound tensors point into this object, so it must not be relocated after construction.
+     */
     AgilePolicy(const AgilePolicy&)            = delete;
     AgilePolicy& operator=(const AgilePolicy&) = delete;
     AgilePolicy(AgilePolicy&&)                 = delete;
@@ -113,7 +121,9 @@ public:
      */
     [[nodiscard]] bool run(const PolicyObservation& observation, PolicyAction& action) noexcept;
 
-    /// Zeroes the carried history so the next run() starts as if freshly activated.
+    /**
+     * @brief Zeroes the carried history so the next run() starts as if freshly activated.
+     */
     void reset() noexcept;
 
 private:
@@ -122,8 +132,16 @@ private:
     /// last_actions plus the six history terms, the tensors the graph feeds back to itself.
     static constexpr std::size_t kStateFloats = kNumActJoints + (3 * kHist3) + (3 * kHist14);
 
-    /// @throws std::runtime_error if the model's IO names or counts are not the ones bound below.
+    /**
+     * @brief Checks the loaded graph against the IO this class binds.
+     *
+     * @throws std::runtime_error if the model's IO names or counts are not the ones bound below.
+     */
     void verifySignature();
+
+    /**
+     * @brief Binds the input and output tensors to this object's own buffers.
+     */
     void bindTensors();
 
     Ort::Env            env_;

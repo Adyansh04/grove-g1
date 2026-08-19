@@ -1,13 +1,12 @@
 """Headless sim gate for the AGILE policy on the rt/lowcmd stack: stand, then walk.
 
-The pelvis is NOT pinned. The robot stands because the policy is balancing it, which is the
-whole point of this stage. The simulator holds it up only until the control stack drives every
-motor, then releases its weld and never re-applies it.
+The pelvis is not pinned: the robot stands because the policy is balancing it. The simulator
+holds it up only until the control stack drives every motor, then releases its weld and never
+re-applies it.
 
-Displacement is deliberately not asserted here: this runs with sensors:=false, so the relay that
-carries the simulator's ground truth into ROS is not up. The gait envelope is measured separately
-against MuJoCo directly; see the g1_controllers README. What this gate proves is that the
-integrated stack keeps the robot upright and walking on command.
+Displacement is deliberately not asserted here, because this runs with sensors:=false and the
+relay carrying the simulator's ground truth into ROS is not up. The gait envelope is measured
+separately against MuJoCo; see the g1_controllers README.
 """
 
 import os

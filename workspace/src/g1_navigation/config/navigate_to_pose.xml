@@ -30,11 +30,9 @@
           <Wait wait_duration="5"/>
           <!--
             Upstream also has <BackUp backup_dist="0.30" backup_speed="0.05"/> here. Removed
-            against a gait that produced exactly 0.000 m/s for a commanded -0.40, so BackUp
-            burned its whole time_allowance producing no motion and consumed the round-robin
-            slot Spin could have used. The current policy does reverse proportionally above
-            about 0.15 m/s, so this is worth revisiting, but with a measured backup_speed.
-            Upstream's 0.05 is still inside the deadband.
+            because 0.05 m/s sits inside the walking policy's 0.15 m/s deadband, so BackUp
+            burns its whole time_allowance producing no motion and consumes the round-robin
+            slot Spin could have used. Worth revisiting with a backup_speed above the deadband.
 
             Spin stays: in-place rotation at 1.5 rad/s is a proven primitive here.
           -->

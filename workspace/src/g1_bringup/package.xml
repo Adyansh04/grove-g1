@@ -5,7 +5,7 @@
   <version>0.1.0</version>
   <description>
     Sim bring-up for the G1 stack: launches unitree_mujoco alongside the ros2_control stack.
-    Launch files, config, scenes and scripts only -- no compiled code of its own. See README
+    Launch files, config, scenes and scripts only, with no compiled code of its own. See README
     for the full operating procedure.
   </description>
   <maintainer email="gupta.adyansh@gmail.com">Adyansh</maintainer>

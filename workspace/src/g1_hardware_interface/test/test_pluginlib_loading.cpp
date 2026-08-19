@@ -9,9 +9,8 @@
 #include <pluginlib/class_loader.hpp>
 
 /**
- * @brief Confirms g1_hardware_interface/G1LowCmdSystem is actually discoverable through
- * pluginlib's ament-index plugin description lookup -- the same path controller_manager
- * uses -- rather than merely compiling.
+ * @brief Confirms G1LowCmdSystem is discoverable through the same pluginlib lookup
+ * controller_manager uses, rather than merely compiling.
  *
  * Also the canary for the SDK's RPATH: this dlopens the library, which links unitree_sdk2 and
  * its own CycloneDDS, so a broken DT_RPATH fails here rather than on the robot.

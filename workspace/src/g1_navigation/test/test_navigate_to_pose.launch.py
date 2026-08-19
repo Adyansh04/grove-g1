@@ -1,13 +1,11 @@
 """The acceptance gate: the robot reaches a navigation goal on its own.
 
-Everything else in this package tests a part. This tests the claim the milestone is actually
-making -- that a planner, a controller and a balancing walking policy add up to a robot that gets
-somewhere.
+Everything else in this package tests a part; this tests that a planner, a controller and a
+balancing walking policy add up to a robot that gets somewhere.
 
 It is also the only place the whole machine runs at once. `sensors:=true` puts the LiDAR sweep,
-the relay and FAST-LIO on the same box as the 200 Hz control loop and the 50 Hz policy, so the
-two safety assertions at the end are not decoration: they are how a loop that could not keep up
-under that load would show itself.
+the relay and FAST-LIO on the same box as the 200 Hz control loop and the 50 Hz policy, which
+is what the two safety assertions at the end are there to catch.
 """
 
 import math
@@ -33,11 +31,9 @@ from sensor_msgs.msg import Imu
 from std_srvs.srv import Trigger
 from tf2_ros import Buffer, TransformListener
 
-# Derived from maps/facility.pgm, not guessed. The robot spawns at the origin, in the middle of
-# the facility's 4x4 m crossroads. Every axis-aligned 4 m ray from there hits a partition at 2 m,
-# so the plan's original "4 m ahead" is inside a wall. This pose is 3.54 m out at exactly -45
-# degrees, with a clear straight line from spawn and 1.80 m to the nearest obstacle -- which also
-# makes it the intended decomposition: rotate in place, then one straight run.
+# Derived from maps/facility.pgm. The robot spawns at the origin of a 4x4 m crossroads, where
+# every axis-aligned 4 m ray hits a partition at 2 m. This pose is 3.54 m out at -45 degrees,
+# with a clear line from spawn and 1.80 m to the nearest obstacle.
 GOAL_X = 2.5
 GOAL_Y = -2.5
 
@@ -158,14 +154,9 @@ class NavigateToPoseTest(unittest.TestCase):
         # navigation failure rather than as the localization problem it actually is.
         self.assertTrue(self.tf_ready, "map -> base_footprint never became available")
 
-        # Wait for the GLOBAL costmap to carry the static map before asking for a plan. The
-        # action server accepts goals as soon as bt_navigator is active, which is well before
-        # the map has been rasterised into the costmap, and a goal planned against an empty
-        # global costmap makes the BT loop without ever returning a result.
-        #
-        # Global, not local: the local one is a 3 m rolling window and at spawn the nearest wall
-        # is further away than that, so it is legitimately empty and asserting on it fails a
-        # perfectly healthy stack.
+        # Goals are accepted well before the map is rasterised, and one planned against an empty
+        # global costmap makes the BT loop without ever returning a result. Global, not local:
+        # the local one is a 3 m rolling window and is legitimately empty at spawn.
         deadline = time.time() + 60.0
         populated = False
         while time.time() < deadline and not populated:
@@ -179,10 +170,8 @@ class NavigateToPoseTest(unittest.TestCase):
         upright_before = self.uprightness()
         self.assertGreater(upright_before, MIN_UPRIGHT_Z, "the robot was already down")
 
-        # And wait for the whole nav stack to be ACTIVE, not merely present. The action server
-        # appears as soon as bt_navigator is constructed, but bt_navigator is near the end of
-        # the lifecycle manager's ordered activation and rejects goals until it gets there --
-        # which reads as "bt_navigator rejected the goal" with nothing else wrong.
+        # Active, not merely present: bt_navigator is near the end of the lifecycle manager's
+        # ordered activation and rejects goals until it gets there.
         self.assertTrue(
             self.nav_active.wait_for_service(timeout_sec=60.0),
             "no lifecycle_manager_navigation/is_active service",

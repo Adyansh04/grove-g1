@@ -34,7 +34,7 @@ camera_enabled: true
 # sent ahead of it. SIMULATION ONLY: this is the stand-in for a perception pipeline, and
 # g1_object_pose_source refuses to run at all with object_source: hardware.
 #
-# An explicit list, never every body with a free joint -- the pelvis has one of those too.
+# An explicit list, never every body with a free joint: the pelvis has one of those too.
 # Bodies absent from the staged scene are reported once and skipped, so the flat and
 # perception worlds cost nothing here.
 object_bodies:

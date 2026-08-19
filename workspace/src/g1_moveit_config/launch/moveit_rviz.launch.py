@@ -1,7 +1,7 @@
 """RViz with the MotionPlanning panel, for dragging the arms around by hand.
 
 Its own launcher rather than g1_bringup's rviz.launch.py because RViz needs the semantic and
-kinematics descriptions as parameters -- nothing publishes them, and without them the panel
+kinematics descriptions as parameters, which nothing publishes, and without them the panel
 loads with no planning groups. Run alongside a stack that is already up; executing also needs
 `ros2 launch g1_bringup activate_arm.launch.py`.
 """

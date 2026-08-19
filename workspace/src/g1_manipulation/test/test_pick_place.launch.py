@@ -143,7 +143,7 @@ class TestPickPlace(unittest.TestCase):
         A hanging hand sits about 21 cm in front of the pelvis and 1 cm UNDER the workbench
         slab, so it lands inside the bench's octomap. MoveIt's CheckStartStateCollision looks at
         the whole robot, not just the group being planned for, so one hanging arm refuses every
-        plan -- including opening the other hand. The mission tucks both arms for the same
+        plan, including opening the other hand. The mission tucks both arms for the same
         reason; a test that skips it is testing a pose the robot is never in.
         """
         for group in ("right_arm", "left_arm"):

@@ -4,7 +4,7 @@
 # is: ros2_control plugins only ever see parameters that arrive as <ros2_control><param> tags,
 # never controller_manager's own YAML.
 
-# Common to both hands. Gains are the hand's own -- roughly 300x smaller than the arm's,
+# Common to both hands. Gains are the hand's own, roughly 300x smaller than the arm's,
 # because these are finger motors. From Unitree's maintained teleop path; their SDK example
 # sweeps at 0.5/0.1 and grips at 1.5/0.1.
 system:

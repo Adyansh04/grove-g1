@@ -19,7 +19,7 @@ namespace
 {
 
 /// Reference interfaces start as NaN, meaning no upstream controller wrote them this tick. Also
-/// true for an infinity, which is not a value we can use either -- and which would otherwise
+/// true for an infinity, which is not a value we can use either, and which would otherwise
 /// reach the integrator, where `inf - inf` makes integrated_position_ NaN for the rest of the
 /// session. Note blend_ratio 0 is no protection: `0.0 * inf` is NaN, not zero.
 bool unwritten(double value) { return !std::isfinite(value); }
@@ -320,8 +320,8 @@ bool G1SafetyController::outOfDomain() const
         {
             continue;
         }
-        // Every comparison below is false against NaN -- std::max returns the accumulator and
-        // NaN > limit is false -- so without this a robot whose velocities have gone non-finite
+        // Every comparison below is false against NaN, since std::max returns the accumulator
+        // and NaN > limit is false, so without this a robot whose velocities have gone non-finite
         // reads as in-domain. This check fails closed on exactly the input it exists to catch.
         if (!std::isfinite(velocity.value()))
         {

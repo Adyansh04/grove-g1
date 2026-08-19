@@ -37,7 +37,7 @@ target_link_libraries(g1_odometry_publisher_node PUBLIC
 )
 
 # Hardware only: gives the rest of the stack its PointCloud2 while FAST-LIO takes the CustomMsg
-# the driver is running in. A library so it tests without a Mid360 -- nothing in simulation
+# the driver is running in. A library so it tests without a Mid360, since nothing in simulation
 # exercises this direction.
 add_library(livox_cloud src/livox_cloud.cpp)
 g1_target_defaults(livox_cloud)

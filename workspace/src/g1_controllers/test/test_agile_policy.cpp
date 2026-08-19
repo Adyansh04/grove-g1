@@ -1,3 +1,8 @@
+/**
+ * @file test_agile_policy.cpp
+ * @brief Loads the installed policy, pinning the ONNX contract and the joint tables together.
+ */
+
 #include <gmock/gmock.h>
 
 #include <ament_index_cpp/get_package_share_directory.hpp>

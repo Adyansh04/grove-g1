@@ -1,6 +1,11 @@
 #ifndef G1_ORCHESTRATION__SKILLS__PLACE_HPP_
 #define G1_ORCHESTRATION__SKILLS__PLACE_HPP_
 
+/**
+ * @file place.hpp
+ * @brief BT leaf for the Place skill.
+ */
+
 #include <g1_msgs/action/place.hpp>
 #include <string>
 
@@ -10,7 +15,9 @@
 namespace g1_orchestration
 {
 
-/// Puts down whatever the given arm holds, on a detected surface or at a fixed point.
+/**
+ * @brief Puts down whatever the given arm holds, on a detected surface or at a fixed point.
+ */
 class Place : public SkillActionNode<g1_msgs::action::Place>
 {
 public:

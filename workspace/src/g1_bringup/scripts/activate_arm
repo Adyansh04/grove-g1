@@ -27,10 +27,9 @@ CONTROLLER_NAME = "arm_trajectory_controller"
 # What holds the arms until the trajectory controller displaces it.
 ARM_FREEZE_CONTROLLER = "arm_freeze_controller"
 
-# The hands, acquired in the same order and by the same rules. Best-effort on purpose: a
-# Dex3 that is absent, unpowered or simply not publishing state must not stop the arm from
-# being usable, and G1Dex3System refuses to activate without fresh feedback precisely so
-# that shows up here rather than as fingers driven from a stale measurement.
+# The hands, acquired in the same order and by the same rules. Best-effort on purpose: a Dex3
+# that is absent, unpowered or not publishing state must not stop the arm from being usable,
+# and G1Dex3System refuses to activate without fresh feedback rather than drive from a stale one.
 HANDS = (
     ("G1Dex3SystemLeft", "left_hand_controller"),
     ("G1Dex3SystemRight", "right_hand_controller"),

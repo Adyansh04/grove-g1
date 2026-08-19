@@ -6,7 +6,7 @@
 #
 # Async rather than sync: the two ship byte-identical parameter files, so the choice is the
 # node binary and its threading model. Sync's advantage is fidelity when the mapper cannot
-# keep up with the scan rate, and it does keep up here with room to spare -- neither
+# keep up with the scan rate, and it does keep up here with room to spare, since neither
 # slam_toolbox nor the flatten reached the top twelve processes by CPU, against a simulator
 # at 139%. Async also degrades by dropping a scan rather than by lagging TF, which is the
 # safer failure on a stack where TF staleness is already a live concern.

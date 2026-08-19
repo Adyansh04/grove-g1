@@ -19,7 +19,9 @@
 namespace g1_sensor_relay
 {
 
-/// Why a frame was rejected. Anything but kOk means the bytes are not trustworthy.
+/**
+ * @brief Why a frame was rejected. Anything but kOk means the bytes are not trustworthy.
+ */
 enum class FrameStatus
 {
     kOk,
@@ -34,7 +36,9 @@ enum class FrameStatus
 /// scale that suits a hand-listed set of scene bodies.
 inline constexpr std::uint32_t kMaxObjects = 1024;
 
-/// What a validated frame turned out to be.
+/**
+ * @brief What a validated frame turned out to be.
+ */
 enum class FrameKind
 {
     kPointCloud,
@@ -44,9 +48,13 @@ enum class FrameKind
     kBaseState,
 };
 
-/// A validated frame. `kind` says which payload interpretation applies: `points` is xyz
-/// triples in the sensor frame, `depth` is metres, row-major, top-down, and `objects` is
-/// ground-truth body poses in the simulator's world frame.
+/**
+ * @brief A validated frame.
+ *
+ * `kind` says which payload interpretation applies: `points` is xyz triples in the sensor
+ * frame, `depth` is metres row-major top-down, and `objects` is ground-truth body poses in
+ * the simulator's world frame.
+ */
 struct CloudFrame
 {
     FrameKind          kind     = FrameKind::kPointCloud;
@@ -87,7 +95,9 @@ inline constexpr std::uint32_t kMaxPoints = 4'000'000;
  */
 FrameStatus tryReadFrame(std::vector<std::uint8_t>& buffer, CloudFrame& out);
 
-/// Human-readable status, for logging.
+/**
+ * @brief Human-readable status, for logging.
+ */
 const char* toString(FrameStatus status);
 
 }  // namespace g1_sensor_relay

@@ -1,5 +1,5 @@
 # FAST-LIO2 on the G1's Livox Mid360. HARDWARE. The simulator uses fastlio_mid360_sim.yaml,
-# which carries the SAME extrinsic -- it models an IMU inside the sensor too -- and differs only
+# which carries the same extrinsic, modelling an IMU inside the sensor too, and differs only
 # in scan density, voxel size and whether the extrinsic is estimated online. See that file.
 #
 # Derived from deepglint/FAST_LIO_LOCALIZATION_HUMANOID's mid360.yaml (humble branch), which is
@@ -44,7 +44,7 @@
       fov_degree: 360.0
       det_range: 100.0
       extrinsic_est_en: true
-      # The LiDAR's pose in the IMU's frame -- both inside the sensor housing, a few
+      # The LiDAR's pose in the IMU's frame, both inside the sensor housing, a few
       # centimetres apart. It does NOT change with the mount: the Mid360 is bolted to the G1
       # upside down, and its IMU is inverted along with it, so their relative pose is
       # unaffected. The mount itself lives in the URDF (mid360_joint carries roll pi), which

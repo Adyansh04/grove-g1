@@ -44,15 +44,15 @@ def test_the_table_covers_every_body_motor_exactly_once():
 
 def test_the_table_is_in_sdk_motor_index_order():
     # Position in this table IS the motor index the component packs LowCmd from, so the whole
-    # order is load-bearing, not just the leg/waist/arm boundaries. A swap inside one group --
-    # hip roll for hip yaw, say -- keeps the set, the counts and the boundaries intact and still
+    # order is load-bearing, not just the leg/waist/arm boundaries. A swap inside one group,
+    # hip roll for hip yaw say, keeps the set, the counts and the boundaries intact and still
     # sends every command to the wrong motor.
     assert _motor_order() == EXPECTED_BODY_JOINTS
 
 
 def test_every_name_is_a_joint_the_urdf_actually_has():
     # A name the URDF does not have is dropped when the component maps joints, so the motor is
-    # simply never driven -- no error anywhere, just a limb that does not move.
+    # simply never driven: no error anywhere, just a limb that does not move.
     urdf_joints = {j.get("name") for j in ET.parse(_URDF).getroot().findall("joint")}
     missing = [name for name in _motor_order() if name not in urdf_joints]
     assert not missing, f"not joints in {_URDF.name}: {missing}"

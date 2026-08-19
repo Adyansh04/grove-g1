@@ -38,10 +38,10 @@ g1_base_approach:
     settle_s: 1.0
     cmd_rate_hz: 20.0
 
-    # WHERE THE OBJECT HAS TO END UP, in the base frame, for the arm to reach it.
+    # Where the object has to end up, in the base frame, for the arm to reach it.
     #
-    # MEASURED, by asking /compute_ik for the grasp frame at the workbench cube's own height
-    # (pelvis z +0.0375) across a sweep of x, four attempts each: m9-checks/reach_sweep.py.
+    # Measured by asking /compute_ik for the grasp frame at the workbench cube's own height
+    # (pelvis z +0.0375) across a sweep of x, four attempts each.
     # Everything from x 0.16 to 0.36 solves 4/4; 0.38 and beyond solve none.
     #
     # target_y_m mirrors for the left arm, exactly as the grasp offset does.
@@ -54,8 +54,8 @@ g1_base_approach:
     standoff_object_ids: ["drop_pad"]
     standoff_target_x_m: [0.350]
 
-    # From a 2D grid run at the workbench with the arms tucked, at the PREGRASP height, checking
-    # each IK solution against /check_state_validity (m9-checks/reach_grid.py). Only the pregrasp
+    # From a 2D grid run at the workbench with the arms tucked, at the pregrasp height, checking
+    # each IK solution against /check_state_validity. Only the pregrasp
     # has to be collision-free: the grasp pose sits on the table and is inside its octomap by
     # construction, which is what the descent's collision exemption exists for.
     #
@@ -77,8 +77,8 @@ g1_base_approach:
     # as tight as the gait can hold, and it is the arm's tight axis rather than the gait's.
     lateral_tolerance_m: 0.040
 
-    # LOOSE on purpose, 20 degrees. Heading is not part of arriving -- reachability is judged in
-    # the base frame, where heading does not appear -- so this only decides how square the robot
+    # Loose on purpose, 20 degrees. Heading is not part of arriving, since reachability is
+    # judged in the base frame where heading does not appear, so this only decides how square
     # stands to the surface while it closes.
     heading_tolerance_rad: 0.350
 
@@ -89,8 +89,8 @@ g1_base_approach:
     object_timeout_ms: 1500.0
 
     # A missing object pose or base transform stops the robot and is re-read for this long before
-    # the goal fails. Both go briefly unavailable for reasons that are not this skill's problem --
-    # a TF buffer that has not caught up after the base moved, a sample arriving late -- and
+    # the goal fails. Both go briefly unavailable for reasons that are not this skill's problem,
+    # such as a TF buffer that has not caught up after the base moved, and
     # failing on the first miss threw away a healthy approach mid-mission.
     lookup_grace_s: 3.0
 

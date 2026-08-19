@@ -1,3 +1,8 @@
+/**
+ * @file frame_reader.cpp
+ * @brief Validates and unpacks one sensor frame from the socket byte stream.
+ */
+
 #include "g1_sensor_relay/frame_reader.hpp"
 
 #include <cstring>

@@ -2,21 +2,17 @@
  * @file g1_base_approach_node.cpp
  * @brief Walks the base into arm's reach of a measured object, and backs it out again.
  *
- * The missing step between navigation and manipulation. Nav2 parks the robot within 0.5 m of a
- * goal it chose from a map, and the arm's measured reach window is about 0.2 m wide, so
- * navigate-then-pick does not work without something to close the gap. This is that something.
+ * The missing step between navigation and manipulation. Nav2 parks within 0.5 m of a goal it
+ * chose from a map and the arm's measured reach window is about 0.2 m wide, so navigate-then-pick
+ * does not work without something to close the gap.
  *
- * Lives in g1_locomotion, not in g1_manipulation, on one principle: everything that writes a
- * velocity command belongs to the package that owns the velocity path. A manipulation package
- * publishing into locomotion's channel is the shape of bug the control-mode rules exists to
- * prevent, even when the topic itself is harmless.
+ * Lives here rather than in g1_manipulation because everything that writes a velocity command
+ * belongs to the package that owns the velocity path.
  *
- * Writes /cmd_vel directly, as Nav2 does. Nothing arbitrates between the two because the
- * mission tree runs NavigateToPose and ApproachObject in sequence, never together.
+ * Writes /cmd_vel directly, as Nav2 does. Nothing arbitrates between the two because the mission
+ * tree runs NavigateToPose and ApproachObject in sequence, never together.
  *
- * One closed loop, all three axes at once. The walking policy takes a velocity and returns a
- * proportional fraction of it, so there is nothing to sequence: the control law is in
- * approach_planner, and this file is the plumbing that feeds it fresh measurements.
+ * One closed loop over all three axes; the control law itself is in approach_planner.
  */
 
 #include <tf2/LinearMath/Quaternion.h>
@@ -64,8 +60,8 @@ namespace
 
 double wrap(double a) { return std::atan2(std::sin(a), std::cos(a)); }
 
-/// steady_clock's own rep, not the double-based one `now() + duration<double>` produces --
-/// otherwise every function that takes a deadline needs its own template parameter.
+/// steady_clock's own rep, not the double-based one `now() + duration<double>` produces, or
+/// every function taking a deadline needs its own template parameter.
 std::chrono::steady_clock::time_point deadlineIn(double seconds)
 {
     return std::chrono::steady_clock::now() +
@@ -111,8 +107,11 @@ public:
         limits_.heading_tolerance_rad =
             declare_parameter<double>("heading_tolerance_rad", d.heading_tolerance_rad);
 
-        standoff_ids_      = declare_parameter<std::vector<std::string>>("standoff_object_ids", {});
-        standoff_target_x_ = declare_parameter<std::vector<double>>("standoff_target_x_m", {});
+        standoff_ids_ = declare_parameter<std::vector<std::string>>(
+            "standoff_object_ids",
+            std::vector<std::string>{});
+        standoff_target_x_ =
+            declare_parameter<std::vector<double>>("standoff_target_x_m", std::vector<double>{});
         if (standoff_ids_.size() != standoff_target_x_.size())
         {
             throw std::runtime_error(
@@ -201,7 +200,7 @@ public:
     ~BaseApproachNode() override
     {
         // The goal threads are detached and dereference this node's members, so tearing down
-        // without waiting is a use-after-free -- and the twist left on /cmd_vel would be whatever
+        // without waiting is a use-after-free, and the twist left on /cmd_vel would be whatever
         // the loop last commanded. Ask them to stop, wait, then leave the wire at zero.
         stopping_.store(true);
         while (goals_running_.load() > 0)
@@ -485,9 +484,9 @@ private:
             if (!object || !here)
             {
                 // Stand still rather than walk on a measurement we no longer have. Both of
-                // these go briefly unavailable for reasons that are not this skill's problem --
-                // a TF buffer that has not caught up after the base moved, a sample arriving
-                // late -- so this is bounded rather than fatal on the first miss.
+                // these go briefly unavailable for reasons that are not this skill's problem,
+                // such as a TF buffer that has not caught up after the base moved, so this is
+                // bounded rather than fatal on the first miss.
                 publish(0.0, 0.0, 0.0);
                 if (blind_for() > lookup_grace_s_)
                 {
@@ -617,7 +616,7 @@ private:
         handle->publish_feedback(feedback);
 
         // nullopt, not 0.0. Reporting no progress on a TF outage would make the loop condition
-        // below unsatisfiable, so the robot reverses blind at retreat_speed until the deadline --
+        // below unsatisfiable, so the robot reverses blind at retreat_speed until the deadline,
         // which is 900 s whenever the goal leaves timeout_s at 0.
         const auto travelled = [&]() -> std::optional<double> {
             const auto here = basePose();
@@ -731,7 +730,7 @@ private:
     /// each other any more than they may overlap Nav2. rclcpp_action has no single-goal policy,
     /// so without this two accepted goals run on two threads and both publish at 20 Hz.
     std::atomic<bool> busy_{ false };
-    /// Set by the destructor so a running goal leaves its loop, and waited on before teardown --
+    /// Set by the destructor so a running goal leaves its loop, and waited on before teardown:
     /// the goal threads are detached and would otherwise outlive the members they dereference.
     std::atomic<bool> stopping_{ false };
     std::atomic<int>  goals_running_{ 0 };

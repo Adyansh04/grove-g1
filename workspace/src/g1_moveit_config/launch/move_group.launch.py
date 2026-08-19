@@ -1,7 +1,7 @@
 """move_group on its own: planning, no simulator.
 
 Nothing here is sim-specific, so this file carries to hardware unchanged; moveit_sim.launch.py
-composes it with the simulator. Starts whether or not the arm is acquired -- planning needs only
+composes it with the simulator. Starts whether or not the arm is acquired, since planning needs only
 joint states, and nothing here activates a controller.
 """
 
@@ -23,7 +23,7 @@ def _config(name):
 def _moveit_config():
     """Every path explicit: the builder otherwise guesses names from the robot name and
     silently carries on when one is missing, which surfaces later as an empty planning
-    pipeline. sensors_3d is worse -- it is guarded by an exists() check, so a wrong path is a
+    pipeline. sensors_3d is worse, being guarded by an exists() check, so a wrong path is a
     silent no-op with no octomap."""
     return (
         MoveItConfigsBuilder("g1", package_name="g1_moveit_config")

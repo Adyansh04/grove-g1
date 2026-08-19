@@ -16,7 +16,9 @@
 namespace g1_sensor_relay
 {
 
-/// Whether the cloud carries x, y and z as FLOAT32, which the iterators require.
+/**
+ * @brief Whether the cloud carries x, y and z as FLOAT32, which the iterators require.
+ */
 bool hasXyzFloatFields(const sensor_msgs::msg::PointCloud2& cloud);
 
 /**

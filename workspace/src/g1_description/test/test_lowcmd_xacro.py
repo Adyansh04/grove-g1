@@ -94,13 +94,12 @@ def test_each_hand_is_its_own_component_in_wire_order(expanded_urdf_path, side):
     params = {p.get("name"): p.text for p in hand.findall("hardware/param")}
     assert params["side"] == side
     assert {"kp", "kd", "command_publish_rate", "max_joint_velocity_rad_s"} <= params.keys()
-    # ChannelFactory::Init is mutex-guarded and the second and third calls are a silent no-op --
-    # no re-init, no throw, no log. So whichever of the three components activates first fixes
-    # both of these for the whole process, and a component that disagreed would be stranded on a
-    # channel that never carries traffic, with nothing to say so.
+    # ChannelFactory::Init is mutex-guarded and later calls are a silent no-op, so whichever of
+    # the three components activates first fixes both of these for the whole process and a
+    # component that disagreed would sit on a channel that never carries traffic.
     #
-    # network_interface is the more dangerous of the two: a non-empty value on the winner makes
-    # the SDK build an inline CycloneDDS config and discard CYCLONEDDS_URI for every component.
+    # network_interface is the more dangerous: a non-empty value on the winner makes the SDK
+    # build an inline CycloneDDS config and discard CYCLONEDDS_URI for every component.
     body = component(root, "G1LowCmdSystem")
     for shared in ("domain_id", "network_interface"):
         assert params[shared] == body.find(f"hardware/param[@name='{shared}']").text, shared

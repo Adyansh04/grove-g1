@@ -1,3 +1,8 @@
+/**
+ * @file agile_policy.cpp
+ * @brief Loads the AGILE ONNX, binds its tensors once, and runs one inference per tick.
+ */
+
 #include "g1_controllers/agile_policy.hpp"
 
 #include <algorithm>
@@ -244,7 +249,7 @@ bool AgilePolicy::run(const PolicyObservation& observation, PolicyAction& action
     catch (...)
     {
         // Not just Ort::Exception: ORT can throw std::bad_alloc and others, and this function is
-        // noexcept on the 200 Hz thread -- an escape is std::terminate, which takes down
+        // noexcept on the 200 Hz thread: an escape is std::terminate, which takes down
         // controller_manager and with it rt/lowcmd, on a robot with nothing holding it up.
         return false;
     }

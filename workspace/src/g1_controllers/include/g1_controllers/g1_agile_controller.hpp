@@ -55,9 +55,16 @@ public:
     update(const rclcpp::Time& time, const rclcpp::Duration& period) override;
 
 private:
-    /// Reads the state interfaces into `observation_` in the policy's own joint ordering.
+    /**
+     * @brief Reads the state interfaces into `observation_` in the policy's own joint ordering.
+     */
     void packObservation();
-    /// @return false, having logged, if a required interface was not claimed.
+
+    /**
+     * @brief Binds every command and state interface this controller needs.
+     *
+     * @return false, having logged, if a required interface was not claimed.
+     */
     [[nodiscard]] bool resolveInterfaces();
 
     /**

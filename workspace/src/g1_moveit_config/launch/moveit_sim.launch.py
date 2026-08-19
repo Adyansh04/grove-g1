@@ -1,6 +1,6 @@
 """The simulator plus move_group: one command for arm planning in sim.
 
-Includes g1_bringup rather than the other way round -- manipulation sits above bring-up. Every
+Includes g1_bringup rather than the other way round, because manipulation sits above bring-up. Every
 argument is forwarded explicitly: an included file inherits the parent's configurations, so a
 child's default never fires for a name declared here.
 """

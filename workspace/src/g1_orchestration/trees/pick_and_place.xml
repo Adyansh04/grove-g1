@@ -51,8 +51,7 @@
            Retried, because the failure that shows up here is per-attempt rather than
            structural: "Motion plan was found but it seems to be invalid", which is OMPL having
            sampled a path that clips the live octomap. The posture itself is verified
-           collision-free against the robot model (m9-checks/tuck_collision_sweep.py), so
-           another sample usually gets through. -->
+           collision-free against the robot model, so another sample usually gets through. -->
       <SubTree ID="TuckBothArms" name="tuck_to_travel"/>
 
       <RetryUntilSuccessful name="stage_at_workbench_with_retries" num_attempts="3">

@@ -1,6 +1,6 @@
 """Localization against the committed map: map_server serves it, AMCL owns map -> odom.
 
-The alternative to slam.launch.py, never run alongside it -- both would broadcast map -> odom.
+The alternative to slam.launch.py, never run alongside it: both would broadcast map -> odom.
 Does not include the scan pipeline; scan.launch.py does, and both modes need it.
 """
 

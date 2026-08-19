@@ -1,6 +1,11 @@
 #ifndef G1_ORCHESTRATION__SKILLS__APPROACH_OBJECT_HPP_
 #define G1_ORCHESTRATION__SKILLS__APPROACH_OBJECT_HPP_
 
+/**
+ * @file approach_object.hpp
+ * @brief BT leaf for the ApproachObject skill.
+ */
+
 #include <g1_msgs/action/approach_object.hpp>
 #include <string>
 
@@ -9,10 +14,12 @@
 namespace g1_orchestration
 {
 
-/// Walks the base the last half metre, until the object is somewhere the arm can reach it.
-///
-/// The step NavigateToPose cannot do: Nav2 arrives within 0.5 m of a pose it chose from a map,
-/// and the arm's whole usable window is about a quarter of that.
+/**
+ * @brief Walks the base the last half metre, until the object is where the arm can reach it.
+ *
+ * The step NavigateToPose cannot do: Nav2 arrives within 0.5 m of a pose it chose from a map,
+ * and the arm's whole usable window is about a quarter of that.
+ */
 class ApproachObject : public SkillActionNode<g1_msgs::action::ApproachObject>
 {
 public:

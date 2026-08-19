@@ -2,11 +2,10 @@
  * @file test_tree_loads.cpp
  * @brief Every shipped tree parses against the registered node set.
  *
- * The failure this catches is cheap to make and expensive to find: rename a leaf in C++ and
- * not in the XML, and nothing complains until a mission is launched against a real robot, at
- * which point the tree fails to load after the stack is already up.
+ * Catches a leaf renamed in C++ but not in the XML, which otherwise fails to load only once a
+ * mission is launched and the stack is already up.
  *
- * No ROS graph is needed. The leaves take a node to build their clients with, but building a
+ * No ROS graph is needed: the leaves take a node to build their clients with, but building a
  * client neither discovers nor connects.
  */
 
@@ -40,8 +39,8 @@ std::string readFile(const std::filesystem::path& path)
     return { std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>() };
 }
 
-/// Trees only. trees/ also holds the Groot2 palette and project file, which are XML but are not
-/// trees and must not be handed to createTreeFromFile.
+// Trees only. trees/ also holds the Groot2 palette and project file, which are XML but must
+// not be handed to createTreeFromFile.
 std::vector<std::filesystem::path> shippedTrees()
 {
     std::vector<std::filesystem::path> trees;
@@ -74,7 +73,7 @@ TEST(TreeLoads, EveryShippedTreeParses)
 
 TEST(TreeLoads, TheMissionTreeUsesTheLeavesItIsSupposedTo)
 {
-    // Pinned because the mission's shape is the milestone: navigate, pick, navigate, place.
+    // Pinned because the mission's shape is the contract: navigate, pick, navigate, place.
     // A tree that silently lost its Place would still parse.
     auto node    = std::make_shared<rclcpp::Node>("test_mission_shape");
     auto factory = makeFactory(node);
@@ -95,16 +94,14 @@ TEST(TreeLoads, TheMissionTreeUsesTheLeavesItIsSupposedTo)
     EXPECT_EQ(seen["Place"], 1);
     EXPECT_EQ(seen["AcquireArm"], 1);
     EXPECT_EQ(seen["ReleaseArm"], 1);
-    // Both stations are staging poses roughly 0.7 m short of the surface, so every arrival has
-    // to be followed by an approach. A tree that navigates straight to a working pose is one
-    // Nav2 cannot honour, and it would look correct here without this.
+    // Both stations are staging poses roughly 0.7 m short of the surface, so every arrival must
+    // be followed by an approach; Nav2 cannot honour a working pose directly.
     EXPECT_EQ(seen["ApproachObject"], 2) << "one per surface: the workbench and the drop pad";
     EXPECT_EQ(seen["Retreat"], 2) << "turning in place beside a surface drags the arm across it";
 
-    // BOTH arms tuck before travelling and both tuck again at the end, plus the carry between
-    // pick and place. A hanging hand sits 21 cm in front of the pelvis and 1 cm under the
-    // workbench slab, so it jams on the table edge and the base stops while the approach keeps
-    // commanding -- tucking only one arm moves the collision to the other and changes nothing.
+    // Both arms tuck, because a hanging hand sits 21 cm in front of the pelvis and 1 cm under
+    // the workbench slab and jams on the table edge. Tucking one arm moves the collision to the
+    // other.
     EXPECT_EQ(seen["SetArmPosture"], 5) << "two tucks out, one carry, two tucks back";
 
     // After manipulating beside a surface the costmaps hold the arm, the object and the surface
@@ -114,12 +111,8 @@ TEST(TreeLoads, TheMissionTreeUsesTheLeavesItIsSupposedTo)
 
 TEST(TreeLoads, EveryFallibleLeafInTheMissionIsRetried)
 {
-    // Pinned because losing a retry wrapper is invisible until it costs a whole mission: a
-    // single clipped waypoint near the very end can fail a run that had already done everything
-    // else.
-    //
-    // Counted rather than located: the count is what a careless edit drops, and asserting the
-    // exact tree shape here would make every legitimate restructure a test change.
+    // Counted rather than located, so a legitimate restructure is not a test change. Losing a
+    // retry wrapper is invisible until one clipped waypoint fails an otherwise finished run.
     auto node    = std::make_shared<rclcpp::Node>("test_mission_retries");
     auto factory = makeFactory(node);
 
@@ -134,9 +127,8 @@ TEST(TreeLoads, EveryFallibleLeafInTheMissionIsRetried)
         }
     }
 
-    // Five postures, two navigation goals, the object approach, the pick, and the
-    // approach-and-place pair, each wrapped because Nav2 aborts a plan transiently often enough
-    // to fail an otherwise-healthy mission if nothing retries it.
+    // Five postures, two navigation goals, the object approach, the pick and the
+    // approach-and-place pair, each wrapped because Nav2 aborts plans transiently.
     EXPECT_EQ(seen["RetryUntilSuccessful"], 10);
 }
 

@@ -1,3 +1,8 @@
+/**
+ * @file pick.cpp
+ * @brief Ports and goal for the Pick leaf.
+ */
+
 #include "g1_orchestration/skills/pick.hpp"
 
 #include <string>

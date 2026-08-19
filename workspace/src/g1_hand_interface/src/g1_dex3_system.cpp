@@ -98,12 +98,9 @@ G1Dex3System::on_init(const hardware_interface::HardwareComponentInterfaceParams
                 expected.c_str());
             return hardware_interface::CallbackReturn::ERROR;
         }
-        // Clamp to the URDF, which agrees with Unitree's published spec. Their SDK example
-        // disagrees on thumb_1 (0.724 vs 0.611) and its right hand says 0.742, which looks
-        // like a transposed digit. The conservative pair is the right one to trust.
-        //
-        // Required rather than defaulted: this is the backstop against a bad command, so a
-        // renamed param must fail here rather than silently widen it to the whole joint range.
+        // Clamp to the URDF, which agrees with the published spec; the SDK example disagrees on
+        // thumb_1 (0.724 vs 0.611) and the conservative pair is the one to trust. Required
+        // rather than defaulted, so a renamed param fails here instead of widening the range.
         const auto& limits = info.joints[i].parameters;
         if (!limits.contains("min") || !limits.contains("max"))
         {
@@ -373,17 +370,15 @@ G1Dex3System::write(const rclcpp::Time&, const rclcpp::Duration& period)
         return hardware_interface::return_type::OK;
     }
 
-    // Slew toward the commanded position. The first write takes full authority, so this ramp is
-    // the only thing between a large trajectory step and a finger moving as fast as the motor
-    // can manage.
-    // period is whatever controller_manager hands us, so a stalled update loop would make step
-    // big enough that the limiter stops limiting -- and a negative period would call std::clamp
-    // below with its bounds transposed, which is undefined. Cap it at 20 update ticks.
+    // Slew toward the commanded position: the only thing between a large trajectory step and a
+    // finger moving as fast as the motor can. period comes from controller_manager, so a stalled
+    // loop would widen step past limiting and a negative one would transpose std::clamp's
+    // bounds, which is undefined. Cap it at 20 update ticks.
     const double step = max_joint_velocity_ * std::clamp(period.seconds(), 0.0, 0.1);
     for (std::size_t i = 0; i < kNumHandJoints; ++i)
     {
         // std::clamp passes NaN straight through, and ramped_command_ carries state, so one NaN
-        // setpoint would latch this finger at NaN for good -- it never recovers, even once the
+        // setpoint would latch this finger at NaN for good: it never recovers, even once the
         // controller resumes sending valid targets. Hold the last good value instead.
         if (!std::isfinite(position_command_[i]))
         {

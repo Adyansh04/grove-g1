@@ -35,7 +35,9 @@ enum class JointControlMode : std::uint8_t
     kImpedance,
 };
 
-/// Which command interfaces a controller currently holds on one joint.
+/**
+ * @brief Which command interfaces a controller currently holds on one joint.
+ */
 struct InterfaceClaims
 {
     bool position = false;
@@ -56,7 +58,9 @@ struct InterfaceClaims
  */
 [[nodiscard]] JointControlMode resolveJointMode(const InterfaceClaims& claims) noexcept;
 
-/// One joint's commanded values, from whichever controller holds its interfaces.
+/**
+ * @brief One joint's commanded values, from whichever controller holds its interfaces.
+ */
 struct JointCommand
 {
     double position = 0.0;
@@ -66,7 +70,9 @@ struct JointCommand
     double kd       = 0.0;
 };
 
-/// Gains used in kPositionOnly, where the controller supplies none of its own.
+/**
+ * @brief Gains used in kPositionOnly, where the controller supplies none of its own.
+ */
 struct PositionOnlyGains
 {
     double kp = 0.0;

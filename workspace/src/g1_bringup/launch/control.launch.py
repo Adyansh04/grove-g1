@@ -37,10 +37,9 @@ _SIGNAL_FORWARDING_WRAPPER = (
 )
 
 # Every body joint must be claimed from the start: one the component sees unclaimed is one it
-# leaves unpowered. The policy and the safety controller it writes through activate in ONE
+# leaves unpowered. The policy and the safety controller it writes through activate in one
 # switch, because a chainable controller's reference interfaces only become claimable inside it.
-# The --inactive four are switched in later: the arm and hands by the arm bracket, the
-# locomotion freeze by the safety controller, which can only activate an already-loaded target.
+# The four loaded --inactive are switched in later, by the arm bracket and the safety controller.
 CONTROLLERS = (
     (["joint_state_broadcaster"], []),
     (["imu_sensor_broadcaster"], []),

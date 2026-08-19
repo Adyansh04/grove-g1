@@ -86,7 +86,7 @@ def generate_test_description():
                 )
             ),
             launch_arguments={
-                # The whole point: the policy is holding the robot up while the arms move.
+                # The policy is holding the robot up while the arms move.
                 "pin_pelvis": "false",
                 "headless": "true",
                 "sensors": "false",
@@ -224,7 +224,7 @@ class TestMoveItLowCmd(unittest.TestCase):
         # Seeded from the measured state with this group's joints clamped into their URDF
         # limits, the same thing g1_manipulation's setStartStateInBounds does for the arm.
         # A Dex3 finger rests at exactly 0, which IS its limit, so the simulator settling it a
-        # microradian past is enough for CheckStartStateBounds to abort the plan -- and Jazzy
+        # microradian past is enough for CheckStartStateBounds to abort the plan, and Jazzy
         # ships no adapter that clamps one back.
         goal.request.start_state = self._bounded_start_state(targets)
 

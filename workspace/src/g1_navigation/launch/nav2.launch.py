@@ -1,7 +1,7 @@
 """The Nav2 servers, plus the one G1-specific node that makes their output usable.
 
-Adapted from nav2_bringup's navigation_launch.py. Runs UNCOMPOSED: composition does not deliver
-the nested costmap parameters, so controller_server hangs forever in Activating.
+Runs uncomposed: composition does not deliver the nested costmap parameters, so
+controller_server hangs forever in Activating.
 """
 
 import os
@@ -25,8 +25,7 @@ TF_REMAPPINGS = [("/tf", "tf"), ("/tf_static", "tf_static")]
 
 
 def _reject_composition(context, *args, **kwargs):
-    """Refused rather than left available: composed, the nested costmap sections never reach
-    the ComposableNode, and the bring-up hangs instead of failing."""
+    """Fails fast on use_composition:=true, which otherwise hangs the bring-up."""
     if LaunchConfiguration("use_composition").perform(context).lower() == "true":
         raise RuntimeError(
             "use_composition:=true does not work for the Nav2 servers: the nested costmap "
@@ -85,10 +84,8 @@ def _servers():
         )
 
     return GroupAction(actions=[
-        # cmd_vel goes straight to /cmd_vel: the walking policy subscribes there, so there is
-        # nothing in between to name. odom is REMAPPED because controller_server declares no
-        # odom_topic parameter -- setting one is silently ignored, and Nav2 then believes the
-        # robot is permanently stationary.
+        # odom is remapped because controller_server declares no odom_topic parameter: setting
+        # one is silently ignored, and Nav2 then believes the robot is permanently stationary.
         server(
             "nav2_controller", "controller_server", "controller_server", [params],
             TF_REMAPPINGS + [("cmd_vel", "/cmd_vel"), ("odom", "/g1_odometry_publisher/odom")],
@@ -106,9 +103,10 @@ def _servers():
 
 
 def _base_approach():
-    """Reads /objects, so it does nothing useful without manipulation -- launched anyway,
-    because gating it on a navigation argument would couple the two packages. It writes
-    /cmd_vel directly; the mission tree keeps it and Nav2 strictly sequential."""
+    """Launched unconditionally: gating it on a navigation argument would couple the packages.
+
+    Writes /cmd_vel directly, so the mission tree keeps it and Nav2 strictly sequential.
+    """
     return Node(
         package="g1_locomotion",
         executable="g1_base_approach",

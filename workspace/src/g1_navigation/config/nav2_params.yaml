@@ -4,8 +4,8 @@
 # servers this stack launches and then changed only where this robot differs from a TurtleBot.
 # Upstream ordering and structure are kept so the two can be diffed.
 #
-# The three servers whose blocks are absent -- smoother_server, waypoint_follower,
-# velocity_smoother -- are not launched. See launch/nav2.launch.py for why each is out.
+# Three servers have no block here because they are not launched: smoother_server,
+# waypoint_follower and velocity_smoother. See launch/nav2.launch.py for why each is out.
 #
 # Every comment below marks a value as MEASURED or GUESS. A green test_navigate_to_pose does
 # not validate the guesses.
@@ -26,7 +26,7 @@ bt_navigator:
       plugin: "nav2_bt_navigator::NavigateToPoseNavigator"
     # default_nav_to_pose_bt_xml is set by nav2.launch.py, not here: a params file cannot name
     # its own package share. Do NOT write a find-pkg-share substitution into this file, not even
-    # inside a comment -- ParameterFile(allow_substs=True) expands substitutions in comments too,
+    # inside a comment: ParameterFile(allow_substs=True) expands substitutions in comments too,
     # and an illustrative one with a placeholder package name takes the whole launch down with
     # "'...' is not a valid package name".
     bt_loop_duration: 10
@@ -119,7 +119,7 @@ controller_server:
       allow_reversing: false
       rotate_to_heading_min_angle: 0.6    # GUESS
       rotate_to_heading_angular_accel: 10.0
-      lookahead_dist: 0.9                 # GUESS, and mostly inert -- see the note above
+      lookahead_dist: 0.9                 # GUESS, and mostly inert; see the note above
       use_velocity_scaled_lookahead_dist: false
       # Left at 1.0. This is the controller's own pose-transform tolerance, not a costmap's,
       # and tightening it is a separate question from the sensor-staleness one below.
@@ -256,7 +256,7 @@ global_costmap:
 planner_server:
   ros__parameters:
     # The BT's RateController replans at 1 Hz, so upstream's 20.0 logs "missed its desired
-    # rate" on essentially every cycle -- noise on the acceptance gate's own output.
+    # rate" on essentially every cycle, which is noise on the acceptance gate's own output.
     expected_planner_frequency: 1.0
     use_sim_time: false
     planner_plugins: ["GridBased"]
@@ -271,7 +271,7 @@ behavior_server:
     costmap_topic: local_costmap/costmap_raw
     footprint_topic: local_costmap/published_footprint
     cycle_frequency: 10.0
-    # backup and drive_on_heading are gone -- both command reverse, which this gait does not
+    # backup and drive_on_heading are gone because both command reverse, which this gait does not
     # produce; see config/navigate_to_pose.xml. Dropping the plugins as well as the tree nodes
     # means no action server exists to invoke even from a hand-edited tree. assisted_teleop has
     # no caller here.

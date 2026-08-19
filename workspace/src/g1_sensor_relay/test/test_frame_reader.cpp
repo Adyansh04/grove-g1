@@ -1,3 +1,8 @@
+/**
+ * @file test_frame_reader.cpp
+ * @brief Frame validation against truncated, oversized and malformed byte streams.
+ */
+
 #include <gmock/gmock.h>
 
 #include <cstring>

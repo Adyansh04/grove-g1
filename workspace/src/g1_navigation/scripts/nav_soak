@@ -8,12 +8,10 @@
 #   ros2 run g1_navigation nav_soak --rviz
 #   ros2 run g1_navigation nav_soak --goals "3.0 -3.0,-2.5 2.0"
 #
-# Default goals are ones an operator drove interactively in a session that completed all of
-# them with no falls and no recoveries. They cross the facility rather than nudging around the
-# origin, which is where costmap and localization problems actually show up.
+# The default goals cross the facility rather than nudging around the origin, which is where
+# costmap and localization problems actually show up.
 #
-# Three things this gets right, each of which produced a false "stack defect" when done the
-# obvious way.
+# Three things that are easy to get wrong here:
 #
 #   1. One goal at a time, allowed to finish. Wrapping the action client in a hard timeout
 #      kills it mid-goal and lets the next goal preempt the running one; abrupt replanning

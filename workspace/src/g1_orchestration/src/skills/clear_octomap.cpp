@@ -1,3 +1,8 @@
+/**
+ * @file clear_octomap.cpp
+ * @brief Ports and tick for the ClearOctomap leaf.
+ */
+
 #include "g1_orchestration/skills/clear_octomap.hpp"
 
 #include <memory>

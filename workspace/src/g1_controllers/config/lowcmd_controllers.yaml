@@ -21,13 +21,13 @@ controller_manager:
     update_rate: 200
 
     # SCHED_FIFO for the update loop. Without it the loop misses its 5 ms deadline by 2-3x as
-    # soon as the perception stack shares the machine -- measured at 14 ms on an otherwise idle
+    # soon as the perception stack shares the machine: measured at 14 ms on an otherwise idle
     # 32-core box, so it is scheduling latency rather than a shortage of cores. A balance policy
     # fed stale observations diverges, so this is a correctness setting, not a tuning one.
     thread_priority: 80
 
-    # Both hands wait for the arm bracket, the same as on the arm_sdk stack: a Dex3 that is
-    # absent or unpowered then fails at a point we control rather than during startup.
+    # Both hands wait for the arm bracket, so a Dex3 that is absent or unpowered fails at a
+    # point we control rather than during startup.
     hardware_components_initial_state:
       inactive:
         - "G1Dex3SystemLeft"
@@ -90,8 +90,8 @@ arm_freeze_controller:
   ros__parameters:
     # 40, not the 10 the other freezes use, so that swapping to arm_trajectory_controller does
     # not change the arms' stiffness: that controller claims position alone and so runs on the
-    # component's position_only_kp, which is 40 for these joints. 10 does hold the rest pose --
-    # the arms hang along gravity there and the torque is small -- but the handover would be a
+    # component's position_only_kp, which is 40 for these joints. 10 does hold the rest pose,
+    # where the arms hang along gravity and the torque is small, but the handover would be a
     # step change in stiffness, and MoveIt's first trajectory leaves that low-torque pose.
     kp: 40.0
     kd: 1.0
@@ -139,8 +139,8 @@ locomotion_freeze_controller:
 # layout, not the policy's own ordering, which the controller maps by name.
 locomotion_safety_controller:
   ros__parameters:
-    # 1.0 means "follow the policy". The controller's own code default is 0.0 -- hold the
-    # activation pose -- so the robot never follows a policy because a config file went missing.
+    # 1.0 means "follow the policy". The controller's own code default is 0.0, holding the
+    # activation pose, so the robot never follows a policy because a config file went missing.
     # Upstream ships 0.0 here and raises it to 1.0 for simulation only; first hardware bring-up
     # should start from 0.0 and raise it deliberately rather than inheriting this.
     blend_ratio: 1.0
@@ -194,10 +194,8 @@ agile_controller:
     max_linear_speed: 0.6
     max_angular_speed: 0.9
 
-# MoveIt's arm path. Same controller name, joint set and tuning as the arm_sdk stack runs, so
-# g1_moveit_config needs no per-stack controller config and a plan is executed identically on
-# either. Only the position interface is claimed, which puts these joints on the component's
-# position-only branch and its position_only_kp/kd from the URDF.
+# MoveIt's arm path. Only the position interface is claimed, which puts these joints on the
+# component's position-only branch and its position_only_kp/kd from the URDF.
 arm_trajectory_controller:
   ros__parameters:
     joints:
@@ -222,14 +220,14 @@ arm_trajectory_controller:
       - velocity
     state_publish_rate: 100.0
     action_monitor_rate: 20.0
-    # MoveIt plans one arm at a time -- left_arm and right_arm are 7 joints each -- and with
+    # MoveIt plans one arm at a time, left_arm and right_arm being 7 joints each, and with
     # this false the JTC rejects any goal that does not name all 14.
     allow_partial_joints_goal: true
     constraints:
       stopped_velocity_tolerance: 0.05
       goal_time: 5.0
 
-# Both hands, in Dex3 wire order. The order is for readers -- the JTC remaps by name -- but
+# Both hands, in Dex3 wire order. The order is for readers, since the JTC remaps by name, but
 # g1_moveit_config's drift test pins it against the SRDF group and the hardware component,
 # which does care: HandCmd.motor_cmd is a positional array.
 left_hand_controller:

@@ -2,11 +2,10 @@
  * @file test_action_leaf.cpp
  * @brief The action-leaf base against a real server, on the two threads the executor runs it on.
  *
- * Every other test here works without a graph. This one cannot: the base answers RUNNING across
- * ticks and reads its outcome from callbacks that arrive on a DIFFERENT thread from the one
- * ticking the tree, so neither the rejection path nor the success path exists until something
- * answers a goal. Both are driven in the shape g1_bt_executor uses -- tree on this thread,
- * executor on another -- because that split is the thing under test.
+ * The base answers RUNNING across ticks and reads its outcome from callbacks arriving on a
+ * different thread, so neither the rejection nor the success path exists until something
+ * answers a goal. Driven in the shape g1_bt_executor uses, tree on this thread and executor on
+ * another, because that split is the thing under test.
  */
 
 #include <behaviortree_cpp/bt_factory.h>
@@ -31,11 +30,9 @@ using GoalHandle = rclcpp_action::ServerGoalHandle<Retreat>;
 
 constexpr const char* kRetreatAction = "/g1_base_approach/retreat";
 
-/// How long an accepted goal stays in flight. Not zero, and that is the whole point: succeeding
-/// inside handle_accepted lands the result before the tree is ticked again, so the leaf jumps
-/// straight from "sent" to "judged" and never runs a tick in the accepted-but-unfinished state.
-/// That state is the only one in which mistaking "the server answered" for "the server refused"
-/// is visible, so an instant server makes the success case unable to fail on it.
+/// How long an accepted goal stays in flight. Must not be zero: an instant server lands the
+/// result before the next tick, so the leaf never runs a tick in the accepted-but-unfinished
+/// state, which is the only state where reading an accepted goal as refused is visible.
 constexpr auto kGoalDuration = std::chrono::milliseconds(300);
 
 /// Answers one goal the way the test asked, and finishes it on a timer.
@@ -121,18 +118,14 @@ BT::NodeStatus runRetreatLeaf(bool server_accepts)
 TEST(ActionLeaf, ARejectedGoalFailsTheLeafRatherThanRunningForever)
 {
     // A rejection arrives as a null goal handle and produces no result at all, so a leaf that
-    // only watched for a result would sit RUNNING until the mission was killed. Read from the
-    // handle rather than from the future async_send_goal returns: rclcpp_action satisfies that
-    // promise one statement BEFORE it calls the response callback, so a tick landing between
-    // the two sees a ready future with no handle and would fail an ACCEPTED goal.
+    // only watched for a result would sit RUNNING until the mission was killed.
     EXPECT_EQ(runRetreatLeaf(false), BT::NodeStatus::FAILURE);
 }
 
 TEST(ActionLeaf, AnAcceptedGoalThatSucceedsSucceedsTheLeaf)
 {
-    // The compensating half, twice over: a leaf wired to fail on everything would pass the test
-    // above, and a leaf that read "the server answered" as "the server refused" would fail this
-    // one during the ticks the goal spends accepted and unfinished.
+    // The compensating half: a leaf wired to fail on everything would pass the test above, and
+    // one that read an accepted goal as refused would fail here while the goal is unfinished.
     EXPECT_EQ(runRetreatLeaf(true), BT::NodeStatus::SUCCESS);
 }
 

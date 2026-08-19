@@ -6,7 +6,7 @@ looks successful. This file covers the half that one cannot.
 
 The split is forced, not stylistic. bringup's moveit branch calls
 get_package_share_directory("g1_moveit_config"), so those assertions cannot live in
-g1_navigation -- a workspace built without this package would hit the actionable RuntimeError
+g1_navigation, because a workspace built without this package would hit the actionable RuntimeError
 instead of the assertion. The reverse holds for the navigation branch, which is why that
 package keeps its own copy.
 
@@ -113,18 +113,15 @@ def test_moveit_gets_a_simulator_with_sensors(bringup):
 
 @pytest.mark.parametrize("mode", ["none", "localization"])
 def test_moveit_gets_the_loaded_start_delay(bringup, mode):
-    # move_group starts alongside the simulator, so even mode:=none is no longer a bare launch.
+    # move_group starts alongside the simulator, so even mode:=none is not a bare launch.
     sim = dict(_includes(_run_setup(bringup, mode=mode, moveit="true")))["sim.launch.py"]
     assert sim["sim_start_delay_s"] == "4.0"
 
 
 def test_moveit_rviz_wins_wherever_both_are_asked_for(bringup):
-    """Measured 2026-08-06, not chosen on taste.
-
-    Substituting g1_navigation.rviz into moveit_rviz.launch.py launches cleanly and leaves the
-    MotionPlanning panel absent -- the panel comes from the config's display list, and the nav
-    config has none. `ros2 node info` on that RViz showed no planning-scene subscription at
-    all. So MoveIt's own config is what runs, in every mode.
+    """Substituting g1_navigation.rviz into moveit_rviz.launch.py launches cleanly and leaves
+    the MotionPlanning panel absent, because that panel comes from the config's display list and
+    the nav config has none. So MoveIt's own config is what runs, in every mode.
     """
     for mode in ("none", "localization"):
         rviz = [

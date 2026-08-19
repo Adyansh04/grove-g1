@@ -45,7 +45,7 @@ TEST(ApproachPlanner, ObjectInTheWindowIsArrivedAndCommandsNothing)
 TEST(ApproachPlanner, AnErrorJustOutsideTheWindowStillClearsTheGaitDeadband)
 {
     // The property the whole law rests on. 0.001 m past the tolerance is a 0.111 m error, and a
-    // plain proportional term would ask for 0.111 m/s -- which this gait ignores entirely
+    // plain proportional term would ask for 0.111 m/s, which this gait ignores entirely
     // (measured 0.016 m/s delivered for a commanded 0.10). Without the floor the approach
     // stalls a centimetre outside the window and burns its whole timeout there.
     auto       limits = defaults();
@@ -134,7 +134,7 @@ TEST(ApproachPlanner, HeadingIsHeldWhileClosingButIsNotPartOfArriving)
 
 TEST(ApproachPlanner, SmallHeadingErrorsAreLeftAloneRatherThanFloored)
 {
-    // Yaw has no deadband and tracks near 1:1, so it needs no floor -- and flooring it would
+    // Yaw has no deadband and tracks near 1:1, so it needs no floor, and flooring it would
     // swing the robot past square for a couple of degrees of error.
     const auto limits = defaults();
     const auto command =

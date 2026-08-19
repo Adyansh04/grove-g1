@@ -1,7 +1,7 @@
 """Pick and place skills, and the object-pose source they read.
 
 No simulator and no move_group: g1_bringup composes both alongside this. Only the object source
-is simulation-specific, and it says so itself -- its `hardware` setting refuses to configure.
+is simulation-specific, and it says so itself: its `hardware` setting refuses to configure.
 """
 
 import os

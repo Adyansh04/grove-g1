@@ -31,11 +31,8 @@
           <Spin spin_dist="1.57"/>
           <Wait wait_duration="5"/>
           <!-- BackUp removed, same as navigate_to_pose.xml, and kept in step with it:
-               bt_navigator loads BOTH trees on activate, so editing only one leaves this
-               one calling a behaviour that no longer has an action server, and
-               bt_navigator fails to activate. The reason it went was a gait that would
-               not reverse; the current policy does, so this is worth revisiting with a
-               measurement rather than kept out on the old one. -->
+               bt_navigator loads both trees on activate, so editing only one leaves this
+               one calling a behaviour with no action server and activation fails. -->
         </RoundRobin>
       </ReactiveFallback>
     </RecoveryNode>

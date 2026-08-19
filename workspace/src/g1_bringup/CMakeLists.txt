@@ -34,8 +34,8 @@ if(BUILD_TESTING)
     message(WARNING "xmllint not found; skipping xmllint_scenes_${PROJECT_NAME}")
   endif()
 
-  # Simulator suites. They are CPU-time-sensitive -- MuJoCo syncs to CPU time and the walking
-  # policy uses wall timers -- so RESOURCE_LOCK serialises them and COST orders the heavy ones
+  # Simulator suites. MuJoCo syncs to CPU time and the walking policy uses wall timers, so these
+  # are CPU-time-sensitive: RESOURCE_LOCK serialises them and COST orders the heavy ones
   # first. The lock only serialises within one ctest invocation, so splitting these across
   # packages would silently drop it; g1_navigation's suites share this same lock name.
   #

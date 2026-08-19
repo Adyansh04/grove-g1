@@ -381,7 +381,7 @@ bool G1LowCmdSystem::initializeSdk()
 }
 
 /// Idempotent, and unguarded on purpose: a failed initializeSdk leaves channels open with
-/// sdk_initialized_ still false, and those have to go too -- the subscriber's handler captures
+/// sdk_initialized_ still false, and those have to go too: the subscriber's handler captures
 /// this, so an outliving channel writes into a destroyed component.
 void G1LowCmdSystem::shutdownSdk()
 {

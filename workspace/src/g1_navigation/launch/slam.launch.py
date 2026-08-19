@@ -1,7 +1,7 @@
 """slam_toolbox building a map, owning map -> odom while it does.
 
 Mapping only; localization is map_server + AMCL in localization.launch.py. Does not include the
-scan pipeline -- scan.launch.py does, and both modes need it.
+scan pipeline: scan.launch.py does, and both modes need it.
 """
 
 import json

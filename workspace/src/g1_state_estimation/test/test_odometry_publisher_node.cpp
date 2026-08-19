@@ -87,10 +87,8 @@ makeLidarOdometry(const rclcpp::Time& stamp, double x, double y, double z, doubl
 
 /// The simulator's ground-truth track: split chain, one source topic.
 ///
-/// The frames and the source mirror config/g1_odometry_publisher_converged.yaml deliberately;
-/// that the shipped file really loads is covered end to end by g1_navigation's
-/// test_scan_pipeline, which asserts the same chain against a live sim. The rates and timeouts
-/// are faster than the shipped ones on purpose, so these suites do not wait on real budgets.
+/// Frames and source mirror config/g1_odometry_publisher_converged.yaml; the rates and timeouts
+/// are faster than the shipped ones so these suites do not wait on real budgets.
 rclcpp::NodeOptions optionsForGroundTruth(double max_tilt_deg = 80.0)
 {
     rclcpp::NodeOptions options;
@@ -315,11 +313,8 @@ public:
         spinFor(nodes_, 200ms);
     }
 
-    /// One LiDAR sample under a level attitude, stamped now.
-    ///
-    /// The attitude goes first and is allowed to land before the pose, which is the ordering
-    /// the robot gives for free: the IMU broadcaster runs at the controller rate against 10 Hz
-    /// scans, so an attitude is always already in hand by the time a scan resolves.
+    /// One LiDAR sample under a level attitude, stamped now. The attitude lands first, the
+    /// ordering the robot gives for free: the IMU broadcaster runs far faster than 10 Hz scans.
     void feed(double x, double y, double z, double yaw, bool with_imu = true)
     {
         if (with_imu)
@@ -418,7 +413,7 @@ TEST(OdometryPublisherFastLio, LatchesTheOriginThenReportsMotionRelativeToIt)
     FastLioHarness harness(node, "fastlio_latch_helper");
 
     // A deliberately non-trivial start pose. In practice FAST-LIO's first sample is the
-    // identity, since its start frame IS the body frame at init -- which would let a broken
+    // identity, since its start frame is the body frame at init, which would let a broken
     // composition pass by doing nothing at all.
     const double start_x   = 0.4;
     const double start_y   = -0.2;
@@ -665,7 +660,7 @@ TEST(OdometryPublisherGroundTruth, OdometryDescribesTheFootprintNotTheBody)
 TEST(OdometryPublisherGroundTruth, TiltGuardHoldsTheLastGoodHeadingAndWarnsOnce)
 {
     // 10 degrees, so the "past the threshold" case is an ordinary attitude rather than a
-    // near-singular one -- this is testing the guard, not the arithmetic at 90 degrees.
+    // near-singular one: this tests the guard, not the arithmetic at 90 degrees.
     auto node = std::make_shared<G1OdometryPublisher>(optionsForGroundTruth(10.0));
     ASSERT_EQ(node->configure().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
     ASSERT_EQ(node->activate().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE);
@@ -695,7 +690,7 @@ TEST(OdometryPublisherGroundTruth, TiltGuardHoldsTheLastGoodHeadingAndWarnsOnce)
     EXPECT_NEAR(yawOf(tilted->transform.rotation), good_yaw, 1e-4)
         << "past the limit the last well-conditioned heading is held";
 
-    // The attitude itself keeps going out -- a fallen robot really is tilted, and hiding that
+    // The attitude itself keeps going out, because a fallen robot really is tilted and hiding it
     // would be its own lie.
     const auto body = harness.latest("base_footprint", "pelvis");
     ASSERT_TRUE(body.has_value());
@@ -703,11 +698,9 @@ TEST(OdometryPublisherGroundTruth, TiltGuardHoldsTheLastGoodHeadingAndWarnsOnce)
 
     // Throttled at 2 s, so 15 samples inside that window give one line rather than fifteen.
     //
-    // RCLCPP_WARN_THROTTLE keeps its last-logged timestamp in a static local at the CALL SITE,
-    // not per node, so every test in this binary shares one 2 s window. Any other test that
-    // drives this branch would silently zero this count. TiltGuardLatchesTheFirstSampleEvenMidFall
-    // is the only other tilted test and it deliberately stops at one sample, which never reaches
-    // the warn. Keep it that way, or this assertion becomes order-dependent.
+    // RCLCPP_WARN_THROTTLE keeps its timestamp in a static local at the call site, not per
+    // node, so every test in this binary shares one window. Only one other test tilts the
+    // robot and it stops at one sample; keep it that way or this assertion goes order-dependent.
     EXPECT_EQ(warns, 1) << "expected exactly one throttled warning, got " << warns;
 }
 
@@ -723,7 +716,7 @@ TEST(OdometryPublisherGroundTruth, TiltGuardLatchesTheFirstSampleEvenMidFall)
     GroundTruthHarness harness(node, "ground_truth_first_sample_helper");
     const double       yaw = -0.9;
     // Exactly one sample. A second would take the hold branch and trip the warning throttle
-    // that TiltGuardHoldsTheLastGoodHeadingAndWarnsOnce counts -- see the note there.
+    // that TiltGuardHoldsTheLastGoodHeadingAndWarnsOnce counts; see the note there.
     harness.feed(0.0, 0.0, 0.5, 0.0, 0.7, yaw, /*count=*/1);
 
     const auto foot = harness.latest("odom", "base_footprint");

@@ -1,3 +1,8 @@
+/**
+ * @file approach_planner.cpp
+ * @brief Turns an object pose and the reach window into a base velocity the gait will honour.
+ */
+
 #include "g1_locomotion/approach_planner.hpp"
 
 #include <algorithm>
@@ -52,7 +57,7 @@ ApproachCommand planApproach(
 
     // The only terminal state: the object under the robot's own shell, where no walk helps.
     // Merely being past the window is recoverable, because the gait reverses as readily as it
-    // advances -- measured -0.140 m/s at a commanded -0.20.
+    // advances: measured -0.140 m/s at a commanded -0.20.
     if (object_x_m < limits.min_forward_m)
     {
         command.state = ApproachState::kOvershot;

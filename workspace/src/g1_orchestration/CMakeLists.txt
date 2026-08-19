@@ -22,8 +22,7 @@ find_package(tf2_geometry_msgs REQUIRED)
 
 # --- library ---------------------------------------------------------------
 
-# One file per leaf, under src/skills, the layout nav2_behavior_tree uses. Listed rather than
-# globbed so a file that fails to get added fails the build instead of vanishing silently.
+# Listed rather than globbed, so a file nobody added fails the build instead of vanishing.
 add_library(g1_bt_nodes
   src/arm_authority.cpp
   src/port_types.cpp
@@ -104,8 +103,7 @@ if(BUILD_TESTING)
   target_compile_definitions(test_authority_drift PRIVATE
     G1_ACTIVATE_ARM_SCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/../g1_bringup/scripts/activate_arm")
 
-  # ament_cmake_xmllint only globs *.xml, so the Groot2 project file is not covered by it and
-  # a malformed comment in it reached a commit.
+  # ament_cmake_xmllint only globs *.xml, so the Groot2 project file needs its own check.
   find_program(XMLLINT_EXECUTABLE xmllint)
   if(XMLLINT_EXECUTABLE)
     add_test(

@@ -75,9 +75,9 @@ def _read_text(path):
 
 
 def _cyclonedds_problems(uri):
-    """CycloneDDS accepts a file:// URI, a bare path or inline XML. What matters is what the
-    config SAYS, not how it was named: a bare path to the hardware profile would otherwise walk
-    past this and put rt/lowcmd on the LAN."""
+    """Checks what the config says rather than how it was named: CycloneDDS accepts a file://
+    URI, a bare path or inline XML, and a bare path to the hardware profile would otherwise
+    walk past this and put rt/lowcmd on the LAN."""
     if not uri:
         return [
             "CYCLONEDDS_URI is unset -- expected the container-baked cyclonedds.xml pinning "

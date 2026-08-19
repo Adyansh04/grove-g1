@@ -1,16 +1,14 @@
 """FAST-LIO odometry against MuJoCo ground truth: precision standing, sanity walking.
 
 The unit suites prove the adapter math; this proves the pipeline. The full stack comes up with
-`odometry:=fast_lio` and the odom -> base_footprint the stack publishes is compared against the
-exact pelvis pose MuJoCo reports over the relay's sensor socket. A regression anywhere in the
-chain -- the Livox bridges, QoS, FAST-LIO config, the latch, the frame composition -- shows up
-here.
+`odometry:=fast_lio` and the odom -> base_footprint it publishes is compared against the exact
+pelvis pose MuJoCo reports over the relay's sensor socket, so a regression anywhere in the chain
+shows up here.
 
-Two phases with very different tolerances, deliberately. Standing is repeatable, so it gets a
-tight bound: measured drift is ~2 cm, asserted at 0.35 m. Walking is looser, because a stumble
-degrades any LIO and the bound has to survive one. scripts/lio_bench measures ~10 cm worst-case
-over 21 m on a clean run; this asserts 1.0 m, which still catches the failure class seen during
-bring-up (kilometres, when the extrinsic estimator was left on).
+Two phases with very different tolerances. Standing is repeatable and gets a tight bound:
+measured drift is ~2 cm, asserted at 0.35 m. Walking is looser, because a stumble degrades any
+LIO and the bound has to survive one. scripts/lio_bench measures ~10 cm worst case over 21 m on
+a clean run; this asserts 1.0 m, which still catches a divergence of kilometres.
 
 `odom` is latched wherever FAST-LIO first produced a pose and the robot does not settle on a
 repeatable heading, so the two frames are aligned by the headings measured at the first paired
@@ -166,7 +164,7 @@ class FastLioOdometryTest(unittest.TestCase):
             f"fast_lio wandered {lio_wander:.2f} m while the robot stood still",
         )
 
-        # Phase 2: walk. Nothing to put the robot into a walking mode first -- the policy is
+        # Phase 2: walk. Nothing puts the robot into a walking mode first, because the policy is
         # already balancing it and takes velocity directly. CMD_VX clears the gait's deadband,
         # below which the command produces no motion at all.
         cmd = Twist()

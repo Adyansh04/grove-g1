@@ -1,8 +1,8 @@
 """Numbers that must agree across packages, where neither package's own tests can see the pair.
 
-Same blind spot test_gait_coupling and test_rviz_configs exist for: MoveIt's idea of the arm
-lives here, the controller's lives in g1_bringup, and the bridge's speed clamp lives in
-g1_description. Nothing but a test that reads all three notices when they drift apart.
+The same blind spot test_rviz_configs exists for: MoveIt's idea of the arm lives here, the
+controller's lives in g1_controllers, and the hand's speed clamp lives in g1_description.
+Nothing but a test that reads all three notices when they drift apart.
 
 No simulator, no ROS graph.
 """
@@ -76,7 +76,7 @@ def test_the_srdf_is_well_formed_xml(srdf):
     """It has already been unparseable once.
 
     XML forbids a double hyphen inside a comment, the SRDF is comment-heavy, and no linter in
-    this workspace reads .srdf -- ament_xmllint only looks at .xml. The failure surfaces as
+    this workspace reads .srdf, since ament_xmllint only looks at .xml. The failure surfaces as
     move_group dying at launch with a column number.
     """
     assert srdf.tag == "robot"
@@ -249,11 +249,10 @@ def test_no_config_here_claims_simulated_time():
 
 # --- sensors_3d.yaml -------------------------------------------------------------------
 #
-# The octomap updater fails quietly in more ways than most MoveIt config. setParams() ANDs its
-# seven required keys and skips the sensor with only an error log if one is missing; a wrong
-# type throws out of the monitor constructor; and MoveItConfigsBuilder guards the whole file
-# with `if sensors_path.exists()`, so a rename is a silent no-op. None of that shows up as a
-# failed launch -- you get a stack that comes up healthy and never builds a map.
+# The octomap updater fails quietly. setParams() ANDs its seven required keys and skips the
+# sensor with only an error log if one is missing, a wrong type throws out of the monitor
+# constructor, and MoveItConfigsBuilder guards the whole file with an exists() check so a rename
+# is a no-op. The stack then comes up healthy and never builds a map.
 
 POINTCLOUD_PLUGIN = "occupancy_map_monitor/PointCloudOctomapUpdater"
 DEPTH_IMAGE_PLUGIN = "occupancy_map_monitor/DepthImageOctomapUpdater"

@@ -1,3 +1,8 @@
+/**
+ * @file service_leaf.cpp
+ * @brief The client node a blocking service call runs on.
+ */
+
 #include "g1_orchestration/service_leaf.hpp"
 
 #include <memory>

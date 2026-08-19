@@ -1,3 +1,8 @@
+/**
+ * @file g1_manipulation_server_node.cpp
+ * @brief The pick, place and posture action servers, planned and executed through MoveIt.
+ */
+
 #include "g1_manipulation/g1_manipulation_server_node.hpp"
 
 #include <moveit/robot_state/attached_body.h>
@@ -57,9 +62,8 @@ G1ManipulationServer::~G1ManipulationServer()
     }
 }
 
-/// The /objects array frame, read under the lock. Every caller used to reach around
-/// lookUpObject's locked snapshot and touch objects_.header directly from a detached thread,
-/// which is a plain data race on a std::string.
+/// The /objects array frame, read under the lock. Reaching around lookUpObject's snapshot to
+/// touch objects_.header from a detached thread is a data race on a std::string.
 std::string G1ManipulationServer::objectsFrame()
 {
     const std::lock_guard<std::mutex> lock(objects_mutex_);
@@ -92,14 +96,9 @@ G1ManipulationServer::G1ManipulationServer(const rclcpp::NodeOptions& options)
     velocity_scaling_ = declare_parameter<double>("velocity_scaling", 0.3);
     planning_time_s_  = declare_parameter<double>("planning_time_s", 5.0);
 
-    // How the hand is held at the grasp, for the RIGHT hand; the left mirrors its roll.
-    //
-    // WHERE the hand grips is not here: it is the {side}_hand_grasp_frame link in the URDF,
-    // which is a property of the Dex3's geometry rather than of this task. Goals are given for
-    // that frame, so nothing in this file adds an offset to a palm pose.
-    //
-    // The fingers close toward the palm's +y, so it is the ROLL that turns the closing axis
-    // downward for a grasp off a table, and the pitch that would be wrong.
+    // How the right hand is held at the grasp; the left mirrors its roll. Where it grips is the
+    // {side}_hand_grasp_frame link in the URDF, not here. The fingers close toward the palm's
+    // +y, so the roll is what turns the closing axis down for a grasp off a table.
     grasp_rpy_ = declare_parameter<std::vector<double>>("grasp_rpy", { -M_PI_2, 0.0, 0.0 });
 
     objects_sub_ = create_subscription<vision_msgs::msg::Detection3DArray>(
@@ -194,11 +193,9 @@ bool G1ManipulationServer::allowHandContact(
     {
         ensure_entry(touchable);
     }
-    // The exempted things also have to be allowed to touch EACH OTHER, not just the hand.
-    // Once the object is attached it stops being a world object and starts moving with the
-    // arm, and lifting it out of a surface drags it through the octomap voxels of that
-    // surface -- which is a collision between two things the hand is already allowed to
-    // touch, and would otherwise fail the lift with the grasp already made.
+    // The exempted things must also be allowed to touch each other, not just the hand: lifting
+    // an attached object out of a surface drags it through that surface's octomap voxels, which
+    // is a collision between two things the hand may already touch.
     for (std::size_t i = 0; i < touchables.size(); ++i)
     {
         for (std::size_t j = i + 1; j < touchables.size(); ++j)
@@ -284,10 +281,9 @@ void G1ManipulationServer::initialize()
 
     // both_arms included: the mission tree uses it to tuck both arms in one motion before
     // walking, and a group this node does not build is a goal it rejects outright. It is only
-    // ever driven to named postures here -- pose goals for it would need the subgroup IK map,
+    // ever driven to named postures here; pose goals for it would need the subgroup IK map,
     // which is why g1.srdf deliberately gives it no kinematics entry.
-    for (const std::string& name :
-         { "left_arm", "right_arm", "both_arms", "left_hand", "right_hand" })
+    for (const char* name : { "left_arm", "right_arm", "both_arms", "left_hand", "right_hand" })
     {
         auto group = std::make_shared<MoveGroup>(shared_from_this(), name);
         group->setMaxVelocityScalingFactor(velocity_scaling_);
@@ -432,12 +428,9 @@ geometry_msgs::msg::Pose G1ManipulationServer::graspFrameGoal(
     geometry_msgs::msg::Pose goal;
     goal.position = object_pose.position;
 
-    // Vertically it does NOT. Measured from the object's TOP FACE, not its centre.
-    //
-    // The roll points the closing axis at the floor and the fingertips sit about 24 mm beyond
-    // the grasp frame along it, so this offset decides where the fingers end up. Aiming at the
-    // centre would put them inside the octomap's 20 mm padding around the surface, closing
-    // through it rather than around the object's upper half.
+    // Vertically it does not: measured from the object's top face, not its centre. The
+    // fingertips sit ~24 mm beyond the grasp frame along the closing axis, so aiming at the
+    // centre puts them inside the octomap's 20 mm padding around the surface.
     const double top = object_pose.position.z + 0.5 * object_height_m;
     goal.position.z  = top + grasp_height_above_top_m_;
 
@@ -451,11 +444,9 @@ geometry_msgs::msg::Pose G1ManipulationServer::graspFrameGoal(
 
 void G1ManipulationServer::setStartStateInBounds(MoveGroup& group)
 {
-    // The planner aborts outright if a start joint sits outside its URDF limit by any margin,
-    // and there is no upstream adapter that clamps one back. Measured after a grasp:
-    // right_shoulder_yaw at -2.61874 against a -2.618 limit, 0.74 mrad of tracking error on a
-    // joint the IK solution put exactly on the stop. Falls back to the plain current state if
-    // the monitor has nothing yet, which fails later with a clearer message than a null deref.
+    // The planner aborts if a start joint sits outside its URDF limit by any margin, and no
+    // adapter clamps one back. Measured after a grasp: right_shoulder_yaw at -2.61874 against a
+    // -2.618 limit, 0.74 mrad of tracking error on a joint IK put exactly on the stop.
     const auto state = group.getCurrentState();
     if (!state)
     {
@@ -510,16 +501,9 @@ bool G1ManipulationServer::moveToNamed(MoveGroup& group, const std::string& name
         return false;
     }
 
-    // Plan then execute, NOT move(). They are not equivalent: move() runs through MoveIt's
-    // PlanExecution, which re-checks the whole remaining path against every planning-scene
-    // update and aborts the moment one invalidates it. Against a live octomap fed by a chest
-    // camera staring at the arm, the arm's own freshly integrated voxels invalidate it
-    // constantly, so a plan that started fine can die partway through against itself.
-    //
-    // execute() checks nothing during the motion, matching every other move in this file: Pick
-    // and Place plan and execute for the pregrasp, descent and lift, all fully collision-checked
-    // at PLAN time. This only drops a during-flight recheck that, on this stack, reports the
-    // robot's own arm.
+    // Plan then execute, not move(): move() re-checks the remaining path against every
+    // planning-scene update, and against a live octomap the arm's own freshly integrated voxels
+    // invalidate it constantly. Everything here is still fully collision-checked at plan time.
     MoveGroup::Plan plan;
     const auto      planned = group.plan(plan);
     if (planned != moveit::core::MoveItErrorCode::SUCCESS)
@@ -609,13 +593,9 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     }
     feedback->phase = Pick::Feedback::PHASE_PREGRASP;
     goal_handle->publish_feedback(feedback);
-    // Opened before the approach, not after: closing on the way in would knock the object off
-    // the table before the hand is around it.
-    //
-    // Reported separately from the arm move rather than sharing one message. They fail for
-    // completely different reasons -- a hand that will not open is usually an unacquired or
-    // unpowered Dex3, an arm that will not reach is geometry -- and collapsing both into
-    // "could not reach the pregrasp pose" sends anyone debugging it to the wrong place.
+    // Opened before the approach: closing on the way in would knock the object off the table.
+    // Reported separately from the arm move because the causes differ, a hand that will not open
+    // being an unpowered Dex3 where an arm that will not reach is geometry.
     if (!moveToNamed(*hand_group, "open"))
     {
         fail(Pick::Feedback::PHASE_PREGRASP, "the hand would not open");
@@ -635,19 +615,12 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     feedback->phase = Pick::Feedback::PHASE_APPROACH;
     goal_handle->publish_feedback(feedback);
 
-    // Only NOW is contact allowed, and only for the last few centimetres.
+    // Contact is allowed only now, for the last few centimetres. Exempting the hand for the
+    // whole skill costs a plan nothing to route straight through the table on the way in.
     //
-    // Turning it on earlier is what let a plan route the arm straight through the table on the
-    // way to the pregrasp pose: with the hand exempt from the octomap for the whole skill, a
-    // path through the surface costs the planner nothing. The transit above therefore runs
-    // fully collision-checked, and the exemption covers only the short descent that has to end
-    // in contact.
-    //
-    // The object's own collision geometry is REMOVED rather than exempted. It was added so the
-    // pregrasp plan would route around it; from here it is in the way, and MoveIt's documented
-    // pick sequence is remove, close, attach. Attaching re-adds it as an attached body, which
-    // is also what gets PointCloudOctomapUpdater's ShapeMask to stop feeding it back into the
-    // octomap -- world collision objects get no such filtering, attached bodies do.
+    // The object's geometry is removed rather than exempted, following MoveIt's pick sequence
+    // of remove, close, attach. Attaching re-adds it as an attached body, which is also what
+    // stops PointCloudOctomapUpdater feeding it back into the octomap.
     setHandContact(arm, { "<octomap>" }, true);
     planning_scene_.removeCollisionObjects({ goal->object_id });
 
@@ -669,26 +642,19 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
         fail(Pick::Feedback::PHASE_GRASP, "the hand did not close");
         return;
     }
-    // Attached AFTER the hand closes, so the planner starts treating the object as part of the
-    // arm at the same moment the hand does.
+    // Attached after the hand closes, so the planner treats the object as part of the arm from
+    // the same moment the hand does. Built explicitly rather than via attachObject(id, link),
+    // which promotes an object still in the world, and this one was already removed.
     //
-    // Built explicitly rather than via attachObject(id, link), which promotes an object that is
-    // still in the world -- and this one was removed before the approach, so there is nothing
-    // left to promote. An attached body carries its own geometry, so the shape and pose come
-    // from what publishCollisionObject built.
-    //
-    // touch_links is what tells the planner the fingers are SUPPOSED to be in contact with it.
-    // Without them the attach itself reads as a collision the moment it takes effect.
+    // touch_links tells the planner the fingers are supposed to be in contact with it; without
+    // them the attach itself reads as a collision the moment it takes effect.
     moveit_msgs::msg::AttachedCollisionObject attached;
     attached.link_name        = arm.palm_link;
     attached.object           = object;
     attached.object.operation = moveit_msgs::msg::CollisionObject::ADD;
-    // The hand's own links, plus the palm and the WRIST: a cube gripped just under its top face
-    // reaches past the fingers to touch it, and without the wrist in touch_links every later
-    // plan starts with the attached object already in collision.
-    //
-    // Same set allowHandContact() exempts, and for the same reason: these are the links that
-    // unavoidably touch what is being carried.
+    // The hand's links plus the palm and the wrist: a cube gripped just under its top face
+    // reaches past the fingers to touch the wrist, and without it every later plan starts with
+    // the attached object already in collision. Same set allowHandContact() exempts.
     attached.touch_links =
         hand_group->getRobotModel()->getJointModelGroup(arm.hand_group)->getLinkModelNames();
     attached.touch_links.push_back(arm.palm_link);
@@ -698,11 +664,9 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     attached.touch_links.push_back(touch_side + "_wrist_roll_link");
     planning_scene_.applyAttachedCollisionObject(attached);
 
-    // Extended to the object only now that it is attached and about to be lifted OUT of the
-    // surface it was resting on. Its own voxels, and the table's underneath it, are still in
-    // the octomap from before the grasp -- the ShapeMask stops new clouds re-adding it, but it
-    // does not erase what is already there. Without this exemption the lift starts with the
-    // attached cube already in collision against the table it is still sitting on.
+    // Extended to the object now that it is attached and about to be lifted out of the surface.
+    // The ShapeMask stops new clouds re-adding it but does not erase the voxels already there,
+    // so without this the lift starts in collision against the table it is still sitting on.
     setHandContact(arm, { "<octomap>", goal->object_id }, true);
 
     if (goal_handle->is_canceling())
@@ -743,13 +707,12 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
     MoveGroup* arm_group  = groupFor(arm.arm_group);
     MoveGroup* hand_group = groupFor(arm.hand_group);
 
-    // What is held, read from the scene rather than remembered, because the attachment is the
-    // authority on what the hand actually has. Needed BEFORE the exemption is applied: the
-    // object has to be named in it.
-    // Filtered by THIS arm's links. getAttachedObjects() covers the whole scene, so an unfiltered
-    // first-match would let a left-hand place pick up whatever the right hand is holding, use its
-    // height for the placement arithmetic and name it in the ACM exemptions. The detach below
-    // already filters by joint model group; these two have to agree.
+    // Read from the scene rather than remembered, because the attachment is the authority on
+    // what the hand has, and needed before the exemption because the object is named in it.
+    //
+    // Filtered by this arm: getAttachedObjects() covers the whole scene, so an unfiltered first
+    // match would let a left-hand place pick up whatever the right hand is holding. The detach
+    // below filters by joint model group and the two have to agree.
     std::string held_id;
     double      held_height = 0.0;
     MoveGroup*  held_group  = groupFor(arm.arm_group);
@@ -795,12 +758,9 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
     // the pick defers its exemption for; the descent below gets the full one.
     setHandContact(arm, touchables, true, /*include_links=*/false);
 
-    // Prefer a surface read from /objects over the caller's coordinate.
-    //
-    // A tree writes its drop point in the MAP frame, while the base approach that parked the
-    // robot drove against /objects, published in ODOM -- and those two frames are only as
-    // close as AMCL is right. A realistic map->odom drift is bigger than the arm's 0.04 m
-    // lateral window, so a target correct on the map can leave the preplace with no IK
+    // Prefer a surface read from /objects over the caller's coordinate. A tree writes its drop
+    // point in map, while the approach that parked the robot drove against /objects in odom, and
+    // a realistic map->odom drift exceeds the arm's 0.04 m lateral window, leaving no IK
     // solution at all. Resolving the surface from the stream the approach used makes the two
     // agree by construction, however far localization has drifted.
     std::optional<geometry_msgs::msg::Pose>      target;
@@ -859,13 +819,11 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
         return;
     }
 
-    // Re-resolve before descending. Everything above was computed in the pelvis frame before the
-    // arm reached out, and the reach moves the base: extending a loaded arm shifts the COM and
-    // the balancing gait steps to keep up, measured at 0.165 m.
+    // Re-resolve before descending: the reach itself moves the base, because extending a loaded
+    // arm shifts the COM and the balancing gait steps to keep up, measured at 0.165 m.
     //
     // `expected` is the same target in the /objects frame, for the accuracy check at the end.
-    // That check runs after a reach, a release and a retreat, so in the pelvis frame the base's
-    // own travel reads as placement error.
+    // In the pelvis frame the base's own travel would read as placement error.
     std::optional<geometry_msgs::msg::Point> expected;
     if (surface)
     {
@@ -926,13 +884,12 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
         fail(Place::Feedback::PHASE_RELEASE, "the hand did not open");
         return;
     }
-    // Detached only after the hand is open. Detaching first would let the planner route the
-    // arm through a volume the object is still occupying.
+    // Detached only after the hand is open: detaching first would let the planner route the arm
+    // through a volume the object still occupies. What is held is read from the scene rather
+    // than remembered, so a place works against a server that did not do the picking.
     //
-    // What is held is read from the scene rather than remembered from the pick, so a place
-    // still works against a server that did not do the picking.
-    // Null when the state monitor has nothing yet, which setStartStateInBounds already handles.
-    // Unguarded here it is a hard crash on a detached thread rather than a failed goal.
+    // Null when the state monitor has nothing yet; unguarded that is a hard crash on a detached
+    // thread rather than a failed goal.
     const moveit::core::RobotStatePtr state = arm_group->getCurrentState();
     if (!state)
     {

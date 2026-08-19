@@ -84,7 +84,7 @@ if(BUILD_TESTING)
 
   # test/test_pick_place.launch.py runs but does not pass, so it stays unregistered: a
   # permanently red test trains people to ignore the result. The failure is real and not a
-  # test defect -- the robot is staged AT the workbench with its arms hanging, a hanging hand
+  # test defect: the robot is staged at the workbench with its arms hanging, a hanging hand
   # sits ~1 cm under the bench slab and so inside its octomap, and CheckStartStateCollision
   # looks at the whole robot rather than the group being planned for, so every plan is refused.
   # Fixing it is a rest-pose question for the control stack. Run it by hand meanwhile:

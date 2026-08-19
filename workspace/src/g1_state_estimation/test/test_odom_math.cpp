@@ -1,3 +1,8 @@
+/**
+ * @file test_odom_math.cpp
+ * @brief The frame, staleness and source-parsing math, with no node or graph.
+ */
+
 #include <gmock/gmock.h>
 
 #include <cmath>
@@ -156,7 +161,7 @@ TEST(IsStale, NonPositiveTimeoutDisablesTheCheck)
 
 namespace
 {
-/// Roll-pitch-yaw to quaternion, ZYX order -- the convention quaternionToYaw()
+/// Roll-pitch-yaw to quaternion, ZYX order: the convention quaternionToYaw()
 /// inverts.
 Quaternion rpyToQuaternion(double roll, double pitch, double yaw)
 {

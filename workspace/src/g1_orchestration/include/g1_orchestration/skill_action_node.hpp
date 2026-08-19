@@ -24,11 +24,18 @@
 namespace g1_orchestration
 {
 
-/// Turns a skill result into a node status, logging the server's own reason.
-///
-/// An ABORTED goal still carries its result, and that message is the only place the reason
-/// exists. Logging a bare "did not complete" threw it away at exactly the moment it was wanted
-/// and cost a full mission re-run per diagnosis.
+/**
+ * @brief Turns a skill result into a node status, logging the server's own reason.
+ *
+ * An ABORTED goal still carries its result, and that message is the only place the reason
+ * exists; logging a bare "did not complete" throws it away.
+ *
+ * @tparam ResultT The action client's wrapped-result type.
+ * @param logger Where the outcome is reported.
+ * @param name Leaf name, used as the log prefix.
+ * @param wrapped The completed goal's wrapped result.
+ * @return SUCCESS only when the goal succeeded and the skill reported success.
+ */
 template <typename ResultT>
 BT::NodeStatus
 judgeSkillResult(const rclcpp::Logger& logger, const std::string& name, const ResultT& wrapped)
@@ -56,6 +63,11 @@ judgeSkillResult(const rclcpp::Logger& logger, const std::string& name, const Re
     return BT::NodeStatus::SUCCESS;
 }
 
+/**
+ * @brief Base for leaves whose action result carries `success` and `message`.
+ *
+ * @tparam ActionT The ROS action this leaf drives.
+ */
 template <typename ActionT>
 class SkillActionNode : public RosActionNode<ActionT>
 {

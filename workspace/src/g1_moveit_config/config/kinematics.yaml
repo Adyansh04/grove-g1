@@ -17,7 +17,7 @@ left_arm:
   kinematics_solver: pick_ik/PickIkPlugin
   kinematics_solver_timeout: 0.05
 
-  # global runs the memetic search, which finds a solution from a seed far from the goal --
+  # global runs the memetic search, which finds a solution from a seed far from the goal, and
   # the plan-to-pose case. local is gradient descent from the seed and is the right choice for
   # servoing or a Cartesian path, where the seed is already close.
   mode: global

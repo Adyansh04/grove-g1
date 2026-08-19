@@ -1,3 +1,8 @@
+/**
+ * @file registration.cpp
+ * @brief The one list binding every leaf class to the name a tree XML uses for it.
+ */
+
 #include "g1_orchestration/registration.hpp"
 
 #include <behaviortree_cpp/xml_parsing.h>

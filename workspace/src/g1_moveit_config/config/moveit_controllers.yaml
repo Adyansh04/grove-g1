@@ -14,7 +14,7 @@
 moveit_controller_manager: moveit_simple_controller_manager/MoveItSimpleControllerManager
 
 # MoveIt must never activate or switch controllers. Acquiring the arm is an ordered,
-# safety-critical step -- the hardware component first, then the controller -- and it lives in
+# safety-critical step, the hardware component first and then the controller, and it lives in
 # g1_bringup/scripts/activate_arm. Planning works whether or not the arm is active; execution
 # is refused by the JTC until it is, which is the intended failure.
 moveit_manage_controllers: false

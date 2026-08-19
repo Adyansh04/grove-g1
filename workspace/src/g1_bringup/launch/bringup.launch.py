@@ -103,9 +103,8 @@ def _validate(mode, want_nav, want_moveit, want_manipulation, pin_pelvis):
 
 
 def _simulator(sim_args):
-    """The one simulator this file stages, and the only place it is named. Two would be two
-    writers on rt/lowcmd. Swapping in a hardware bring-up later replaces this body and nothing
-    else -- the branches only decide what goes in sim_args."""
+    """The one simulator this file stages, and the only place it is named: two would be two
+    writers on rt/lowcmd. The branches only decide what goes in sim_args."""
     return _include(os.path.join(BRINGUP_SHARE, "launch", "sim.launch.py"), **sim_args)
 
 
@@ -116,8 +115,8 @@ def _sim_args(context, navigating, want_manipulation, want_moveit, pin_pelvis):
 
     return {
         # Forced on for navigation, which needs the sweep, the relay, the odom chain and the
-        # waist joint states; and for manipulation, whose object ground truth arrives over the
-        # relay's socket -- without it the pose source subscribes and never receives anything.
+        # waist joint states, and for manipulation, whose object ground truth arrives over the
+        # relay's socket.
         "sensors": (
             "true" if navigating or want_manipulation else LaunchConfiguration("sensors")
         ),

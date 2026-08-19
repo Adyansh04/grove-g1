@@ -11,7 +11,7 @@
  *
  * The gait takes a velocity and returns a proportional fraction of it, with one property that
  * shapes everything here: a deadband on both linear axes. Commanded 0.10 m/s the robot does not
- * move at all -- measured 0.016 forward and 0.007 lateral -- and from about 0.20 upward it
+ * move at all, measured 0.016 forward and 0.007 lateral, and from about 0.20 upward it
  * tracks at 70-80 % of command. So the law is **proportional with a floor**, not plain
  * proportional: a pure P term near the target asks for a speed the robot ignores, and the
  * approach stalls a few centimetres short of the window. Yaw has no deadband and tracks near
@@ -20,8 +20,8 @@
  * All three axes are driven at once, which is why there is no move sequencing here at all: the
  * skill is one closed loop, not a plan of primitives.
  *
- * HEADING IS NOT PART OF ARRIVING. Reachability is judged in the base frame -- where the object
- * sits relative to the robot -- and which way the room faces is not part of that. The heading
+ * Heading is not part of arriving. Reachability is judged in the base frame, by where the object
+ * sits relative to the robot, and which way the room faces is not part of that. The heading
  * term only keeps the robot square to the surface while it closes, and it is zeroed the moment
  * both linear axes are inside their tolerances.
  */
@@ -39,8 +39,11 @@ enum class ApproachState : std::uint8_t
     kInvalid,   ///< The limits themselves are unusable.
 };
 
-/// Where the object should end up. Distances are in the horizontal plane of the base frame; the
-/// base cannot influence height.
+/**
+ * @brief Where the object should end up.
+ *
+ * Distances are in the horizontal plane of the base frame; the base cannot influence height.
+ */
 struct ApproachLimits
 {
     /// MEASURED with /compute_ik at the workbench cube's height: x 0.16 to 0.36 all solve,
@@ -62,7 +65,9 @@ struct ApproachLimits
     double heading_tolerance_rad = 0.350;
 };
 
-/// What the gait will actually honour. Every number here is measured, not chosen.
+/**
+ * @brief What the gait will actually honour. Every number here is measured, not chosen.
+ */
 struct GaitLimits
 {
     /// Floors, not minimum-useful speeds: below these the gait delivers nothing at all.
@@ -80,7 +85,9 @@ struct GaitLimits
     double yaw_rate_per_rad = 1.0;
 };
 
-/// The decision, plus the numbers behind it so a caller can log or publish them.
+/**
+ * @brief The decision, plus the numbers behind it so a caller can log or publish them.
+ */
 struct ApproachCommand
 {
     ApproachState state = ApproachState::kInvalid;
@@ -96,16 +103,24 @@ struct ApproachCommand
     double yaw_rate_rps = 0.0;
 };
 
-/// @return true if these limits describe a window the planner can aim at.
+/**
+ * @brief Validates the reach window before the planner is asked to aim at it.
+ *
+ * @return true if these limits describe a window the planner can aim at.
+ */
 bool limitsAreUsable(const ApproachLimits& limits);
 
-/// @return true if these gait limits describe a velocity range the robot can be asked for.
+/**
+ * @brief Validates the gait envelope before a velocity is commanded from it.
+ *
+ * @return true if these gait limits describe a velocity range the robot can be asked for.
+ */
 bool gaitLimitsAreUsable(const GaitLimits& gait);
 
 /**
  * @brief Decide whether the robot has arrived and, if not, how fast to walk.
- * @param object_x_m,object_y_m The object's position in the CURRENT base frame -- the frame the
- *        arm works in, which is what makes the window mean reachability.
+ * @param object_x_m,object_y_m The object's position in the current base frame, the frame the
+ *        arm works in, so the window means reachability.
  * @param heading_error_rad Working heading minus the robot's, already wrapped to [-pi, pi].
  * @return The state and, when closing, the base-frame velocity to command.
  */

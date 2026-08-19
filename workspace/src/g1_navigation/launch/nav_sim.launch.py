@@ -1,7 +1,7 @@
 """Standalone wrapper: the simulator, the navigation stack, and optionally RViz.
 
-One command for running navigation on its own -- what the integration suites launch. The stack
-itself is nav_stack.launch.py; this file only stages a simulator under it and attaches a window.
+One command for running navigation on its own, and what the integration suites launch. The
+stack itself is nav_stack.launch.py; this file only stages a simulator under it.
 """
 
 import os

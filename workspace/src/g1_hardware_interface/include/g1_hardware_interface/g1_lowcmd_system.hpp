@@ -5,9 +5,9 @@
  * @file g1_lowcmd_system.hpp
  * @brief ros2_control SystemInterface owning all 29 G1 body motors over rt/lowcmd.
  *
- * Adapted from NVIDIA's unitree_g1_ros2_control (Apache-2.0): same joint mapping, same kp/kd
- * command interfaces, same mode branches, so their controllers bind unchanged. The deviations
- * are listed in the package README.
+ * The joint mapping, the kp/kd command interfaces and the mode branches follow the upstream
+ * component this is adapted from, so third-party controllers bind unchanged. Provenance and
+ * the deviations are in the package README.
  */
 
 #include <array>
@@ -45,7 +45,9 @@ inline constexpr std::string_view kHwIfKd{ "kd" };
 /// needs no per-joint motor_index param. g1_description's test_motor_order pins the order.
 extern const std::array<std::string, kNumBodyMotors> kG1JointNames;
 
-/// Everything the component tracks for one joint.
+/**
+ * @brief Everything the component tracks for one joint.
+ */
 struct JointData
 {
     std::string name;
@@ -76,7 +78,9 @@ struct JointData
     int sdk_index = -1;
 };
 
-/// Backing storage for the IMU sensor interfaces, named as imu_sensor_broadcaster expects.
+/**
+ * @brief Backing storage for the IMU sensor interfaces, named as the broadcaster expects.
+ */
 struct ImuData
 {
     std::string name;
@@ -133,24 +137,62 @@ public:
     write(const rclcpp::Time& time, const rclcpp::Duration& period) override;
 
 private:
-    /// LowState_ carries no timestamp, so freshness is judged from arrival.
+    /**
+     * @brief LowState_ carries no timestamp, so freshness is judged from arrival.
+     */
     struct StampedLowState
     {
         unitree_hg::msg::dds_::LowState_      state{};
         std::chrono::steady_clock::time_point arrival{};
     };
 
+    /**
+     * @brief Opens the SDK channels and waits for the first low state.
+     */
     bool initializeSdk();
+
+    /**
+     * @brief Closes the SDK channels.
+     */
     void shutdownSdk();
-    /// Releases whatever onboard mode holds the motors. Blocking, and only ever off the RT path.
+
+    /**
+     * @brief Releases whatever onboard mode holds the motors.
+     *
+     * Blocking, and only ever called off the real-time path.
+     */
     bool releaseOnboardMotionMode();
+
+    /**
+     * @brief Builds the joint table from the URDF, in the order the component was given.
+     */
     void registerJoints(const hardware_interface::HardwareInfo& info);
+
+    /**
+     * @brief Exports the pelvis IMU as a sensor, when the URDF declares one.
+     */
     void registerImuSensor(const hardware_interface::HardwareInfo& info);
+
+    /**
+     * @brief Maps each joint to its motor index on the wire.
+     */
     void buildJointSdkMapping();
+
+    /**
+     * @brief SDK subscription callback; stamps the state with its arrival time.
+     */
     void lowStateCallback(const void* message);
-    /// @return false if the DDS write was refused, which write() escalates to a component error.
+
+    /**
+     * @brief Packs and writes one command frame.
+     *
+     * @return false if the DDS write was refused, which write() escalates to a component error.
+     */
     bool publishLowCmd();
-    /// Ramps stiffness to zero over release_ramp_s, then stops publishing.
+
+    /**
+     * @brief Ramps stiffness to zero over release_ramp_s, then stops publishing.
+     */
     void releaseSynchronously();
 
     rclcpp::Logger logger_{ rclcpp::get_logger("g1_lowcmd_system") };
@@ -179,7 +221,7 @@ private:
     std::atomic<bool>                               active_{ false };
     /// Held for the body of write(). Clearing active_ does not stop a write() already past its
     /// check, and the release ramp runs on the executor thread while write() runs on the update
-    /// thread -- both fill low_cmd_ and both publish it, so one frame could carry half of each.
+    /// thread: both fill low_cmd_ and both publish it, so one frame could carry half of each.
     std::atomic<bool> in_write_{ false };
 
     unitree::robot::ChannelSubscriberPtr<unitree_hg::msg::dds_::LowState_> lowstate_subscriber_;

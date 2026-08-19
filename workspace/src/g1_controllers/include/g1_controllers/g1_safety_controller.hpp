@@ -48,7 +48,7 @@ namespace g1_controllers
  * Two ramps compose. The blend ratio moves the target from the activation pose to the policy's
  * command at `max_blend_ratio_speed` per second; the per-joint velocity clamp then limits how fast
  * the commanded position may actually move. The clamp holds regardless of how far the blend ratio
- * jumps, which is what makes a runtime parameter change safe.
+ * jumps, so a runtime parameter change stays safe.
  *
  * If joint velocities leave the range the policy was trained in, the blend is frozen at the last
  * safe pose and an emergency controller is switched in.
@@ -75,7 +75,9 @@ public:
     update_and_write_commands(const rclcpp::Time& time, const rclcpp::Duration& period) override;
 
 private:
-    /// Reference-interface slot order within one joint's block of kInterfacesPerJoint.
+    /**
+     * @brief Reference-interface slot order within one joint's block of kInterfacesPerJoint.
+     */
     enum Slot : std::size_t
     {
         kPosition = 0,
@@ -85,10 +87,22 @@ private:
         kKd       = 4,
     };
 
-    /// @return true if the tick's joint velocities are outside the trained range.
+    /**
+     * @brief Whether this tick's state has left the range the policy was trained on.
+     *
+     * @return true if the tick's joint velocities are outside the trained range.
+     */
     [[nodiscard]] bool outOfDomain() const;
-    void               latchEmergency(const char* reason);
-    void               requestEmergencySwitch();
+
+    /**
+     * @brief Latches the emergency state, which nothing but a reactivation clears.
+     */
+    void latchEmergency(const char* reason);
+
+    /**
+     * @brief Asks controller_manager for the emergency controller, off the update thread.
+     */
+    void requestEmergencySwitch();
 
     std::vector<std::string> joint_names_;
     std::vector<double>      fallback_kp_;

@@ -1,6 +1,6 @@
 """The lidar-to-IMU extrinsic is the same constant in simulation and on the robot.
 
-It is a constant only because the IMU is inside the sensor in both places -- the simulator models
+It is a constant only because the IMU is inside the sensor in both places, the simulator modelling
 one there rather than substituting the pelvis IMU, which is three actuated waist joints away. See
 g1_state_estimation's README. These tests hold the arrangement in place: where the simulator puts
 its IMU, what both configs say about it, and the joints that make the substitution wrong.
@@ -180,10 +180,8 @@ def test_the_mount_is_actually_upside_down():
 
 def test_the_imu_frame_inverts_the_livox_lever_arm():
     # mid360_imu is hand-written as the inverse of Livox's published lidar-in-IMU offset;
-    # check the two cancel instead of trusting the sign flip was done right.
-    #
-    # g1_common.xacro, not either stack's file: the frames both control stacks share live there,
-    # and reading one stack's would silently stop covering the other.
+    # check the two cancel instead of trusting the sign flip was done right. Read from
+    # g1_common.xacro, which is where the shared sensor frames live.
     xacro = (
         pathlib.Path(get_package_share_directory("g1_description")) / "urdf" / "g1_common.xacro"
     )

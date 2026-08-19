@@ -34,7 +34,7 @@ namespace g1_hand_interface
 {
 
 /// Seven joints per hand. HandCmd_::motor_cmd is an unbounded sequence, so it must be resized to
-/// this before publishing -- an empty sequence is accepted and silently does nothing.
+/// this before publishing; an empty sequence is accepted and silently does nothing.
 inline constexpr std::size_t kNumHandJoints = 7;
 
 /// Wire order, identical for both hands: thumb_0, thumb_1, thumb_2, middle_0, middle_1,
@@ -48,8 +48,11 @@ inline constexpr std::array<const char*, kNumHandJoints> kJointSuffixes = {
     "thumb_0", "thumb_1", "thumb_2", "middle_0", "middle_1", "index_0", "index_1",
 };
 
-/// The packed `mode` byte Unitree's motors expect: id in bits 0-3, status in 4-6, timeout in 7.
-/// `id` must equal the motor's own index; 15 would broadcast to every motor.
+/**
+ * @brief The packed `mode` byte the motors expect: id in bits 0-3, status in 4-6, timeout in 7.
+ *
+ * @param index Must equal the motor's own index; 15 would broadcast to every motor.
+ */
 inline constexpr std::uint8_t packMode(std::size_t index, std::uint8_t status, bool timeout)
 {
     return static_cast<std::uint8_t>(
@@ -98,8 +101,12 @@ public:
     hardware_interface::CallbackReturn on_activate(const rclcpp_lifecycle::State& previous) override;
     hardware_interface::CallbackReturn
     on_deactivate(const rclcpp_lifecycle::State& previous) override;
-    /// read() can error the component straight to a failed state without on_deactivate ever
-    /// running, and the release frame is the only one that arms the motor's own timeout.
+    /**
+     * @brief Releases the hand on the error path.
+     *
+     * read() can error the component straight to a failed state without on_deactivate ever
+     * running, and the release frame is the only one that arms the motor's own timeout.
+     */
     hardware_interface::CallbackReturn on_error(const rclcpp_lifecycle::State& previous) override;
     hardware_interface::CallbackReturn on_shutdown(const rclcpp_lifecycle::State& previous) override;
 
@@ -112,23 +119,44 @@ public:
     write(const rclcpp::Time& time, const rclcpp::Duration& period) override;
 
 private:
-    /// HandState_ carries no timestamp, so freshness is judged from arrival.
+    /**
+     * @brief HandState_ carries no timestamp, so freshness is judged from arrival.
+     */
     struct StampedHandState
     {
         unitree_hg::msg::dds_::HandState_     state{};
         std::chrono::steady_clock::time_point arrival{};
     };
 
-    /// @return false if the channels could not be opened or no state arrived in time.
+    /**
+     * @brief Opens the SDK channels and waits for the first hand state.
+     *
+     * @return false if the channels could not be opened or no state arrived in time.
+     */
     bool initializeSdk();
+
+    /**
+     * @brief Closes the SDK channels.
+     */
     void shutdownSdk();
-    /// The one teardown path: release frame, then channels. Shared by deactivate, error and
-    /// shutdown so an error can never skip the release.
+
+    /**
+     * @brief The one teardown path: release frame, then channels.
+     *
+     * Shared by deactivate, error and shutdown so an error can never skip the release.
+     */
     void releaseAndShutdown();
+
+    /**
+     * @brief SDK subscription callback; stamps the state with its arrival time.
+     */
     void handStateCallback(const void* message);
 
-    /// Fills every motor slot and writes. `driven` false emits the release command: status
-    /// Lock, timeout armed, zero gains.
+    /**
+     * @brief Fills every motor slot and writes.
+     *
+     * @param driven false emits the release command: status Lock, timeout armed, zero gains.
+     */
     void publish(bool driven);
 
     rclcpp::Logger logger_{ rclcpp::get_logger("g1_dex3_system") };
@@ -165,7 +193,7 @@ private:
     std::string network_interface_;
     int         domain_id_{ 0 };
 
-    /// The first write takes full authority -- unlike a blended interface, there is no weight to
+    /// The first write takes full authority: unlike a blended interface, there is no weight to
     /// bring up. So the ramp is ours, and it is the only thing between a large command step and
     /// a fast finger. Atomic because the lifecycle callbacks clear it from the executor thread
     /// while read() and write() are reading it on the update thread.

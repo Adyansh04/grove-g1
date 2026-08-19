@@ -10,10 +10,9 @@
  * goes active before its controller and inactive after it. `test_authority_drift` asserts the
  * names here still match those scripts.
  *
- * Owned by the executor rather than by a skill. control-mode rule 4 asks that a
- * skill release cleanly on success *or* failure, and at mission scope the only place that can
- * be guaranteed is around the whole tree -- a skill that acquired per goal would hand the
- * hands back between pick and place and drop what it was carrying.
+ * Owned by the executor rather than by a skill: a skill that acquired per goal would hand the
+ * hands back between pick and place and drop what it was carrying, so the release that must
+ * happen on success or failure alike is bracketed around the whole tree.
  */
 
 #include <memory>
@@ -24,7 +23,9 @@
 namespace g1_orchestration
 {
 
-/// A controller to activate, and what it has to displace to get there.
+/**
+ * @brief A controller to activate, and what it has to displace to get there.
+ */
 struct ControlledPart
 {
     /// Component to activate first. Empty when it is already active for other reasons.
@@ -35,34 +36,38 @@ struct ControlledPart
     std::string displaces;
 };
 
-/// The arm, then each hand. Order matters: see `acquireArm`.
+/**
+ * @brief The arm, then each hand.
+ *
+ * @return The parts in acquisition order; releasing walks them in reverse.
+ */
 const std::vector<ControlledPart>& controlledParts();
 
-/// What a paired switch should ask controller_manager for, given what it currently reports.
+/**
+ * @brief What a paired switch should ask controller_manager for, given what it reports now.
+ */
 struct ArmSwitchPlan
 {
     /// False when the incoming controller cannot take the joints. The outgoing one must then be
     /// left exactly where it is: the body component leaves an unclaimed joint unpowered.
     bool possible{ false };
-    /// The incoming controller already holds them; there is nothing to ask for.
-    bool already_held{ false };
-    /// The outgoing controller still has to be displaced, in the same switch.
-    bool displace{ false };
+    bool already_held{ false };  ///< Incoming already holds them; there is nothing to ask for.
+    bool displace{ false };      ///< Outgoing must be displaced, in the same switch.
 };
 
 /**
  * @brief Decides the paired arm switch from the two controllers' current states.
  *
- * Split out from the service calls because it is the whole safety argument: `BEST_EFFORT`
- * applies whichever half of a pair it can and still answers ok, so a switch that asks to
- * displace the freeze for a trajectory controller that is loaded but not yet configured
- * deactivates the freeze and drops the rest -- fifteen arm joints claimed by nobody. Deciding
- * here and switching `STRICT` removes that, and this way the decision is testable without a
+ * `BEST_EFFORT` applies whichever half of a paired switch it can and still answers ok, so
+ * asking to displace the freeze for a controller that is loaded but not yet configured
+ * deactivates the freeze and drops the rest: fifteen arm joints claimed by nobody. Deciding
+ * here and switching `STRICT` removes that, and makes the decision testable without a
  * controller_manager.
  *
  * @param incoming_state State of the controller that should end up holding the joints, as
  *        controller_manager reports it. Empty means it does not know the controller.
  * @param outgoing_state State of the controller currently holding them, same convention.
+ * @return The switch to request. `possible` is false when nothing may be asked for.
  */
 ArmSwitchPlan planArmSwitch(const std::string& incoming_state, const std::string& outgoing_state);
 

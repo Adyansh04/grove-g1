@@ -44,7 +44,7 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_launch_threading test/test_launch_threading.py ENV ${_pytest_env})
 
   # move_group plans against the expanded xacro, not a checked-in URDF, so the model test has
-  # to expand it too -- otherwise it validates a robot nobody runs.
+  # to expand it too, or it validates a robot nobody runs.
   set(_expanded_urdf "${CMAKE_CURRENT_BINARY_DIR}/g1_expanded.urdf")
   set(_description_dir "${CMAKE_CURRENT_SOURCE_DIR}/../g1_description")
   add_custom_command(
@@ -85,7 +85,7 @@ if(BUILD_TESTING)
 
   # Runs the sensor track on the perception scene: the octomap has to fill from the LiDAR
   # before anything can be asserted. SIM_SETTLE_S inside that file cannot be raised to cover
-  # the fill -- launch_testing's own startup timeout fires first.
+  # the fill; launch_testing's own startup timeout fires first.
   add_launch_test(test/test_octomap_blocks_a_plan.launch.py
     TARGET test_octomap_blocks_a_plan TIMEOUT 500)
   set_tests_properties(test_octomap_blocks_a_plan PROPERTIES

@@ -1,3 +1,8 @@
+/**
+ * @file test_safety_blend.cpp
+ * @brief The blend and slew arithmetic, tested without a controller_manager harness.
+ */
+
 #include <gmock/gmock.h>
 
 #include <cmath>

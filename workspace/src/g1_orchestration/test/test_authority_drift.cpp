@@ -2,14 +2,13 @@
  * @file test_authority_drift.cpp
  * @brief The BT's acquire sequence against g1_bringup's script, the other implementation of it.
  *
- * Two places know how to take the arm: this package, in C++, for a mission, and
- * g1_bringup/scripts/activate_arm, in Python, for an operator. They must name the same
- * components and controllers, because a rename that reaches only one of them leaves the other
- * timing out against a component that no longer exists -- and it would time out at exactly the
- * moment a mission tried to grasp something.
+ * Two places know how to take the arm: this package for a mission, and
+ * g1_bringup/scripts/activate_arm for an operator. They must name the same components and
+ * controllers, or a rename reaching only one leaves the other timing out against a component
+ * that no longer exists.
  *
  * The script is read as text rather than imported: importing it needs rclpy and a graph, and
- * what is being compared is the names it declares, which are literals.
+ * the names being compared are literals.
  */
 
 #include <gmock/gmock.h>
@@ -59,7 +58,7 @@ TEST(AuthorityDrift, EveryNameThisPackageUsesAppearsInTheScript)
 
 TEST(AuthorityDrift, TheArmComesFirstAndBothHandsFollow)
 {
-    // Order is not cosmetic. The arm is the part whose failure fails the whole acquire, and
+    // Order matters. The arm is the part whose failure fails the whole acquire, and
     // the hands are best-effort behind it, so the arm has to be parts.front().
     const auto& parts = g1_orchestration::controlledParts();
     ASSERT_EQ(parts.size(), 3U);
@@ -70,9 +69,8 @@ TEST(AuthorityDrift, TheArmComesFirstAndBothHandsFollow)
 
 TEST(AuthorityDrift, TheArmsAreNeverUnowned)
 {
-    // The whole reason the arm entry carries a `displaces`: the body component leaves any
-    // unclaimed joint unpowered, so the freeze has to leave in the same switch the trajectory
-    // controller arrives in. An empty `displaces` here would drop the arms.
+    // The body component leaves any unclaimed joint unpowered, so the freeze must leave in the
+    // same switch the trajectory controller arrives in. An empty `displaces` drops the arms.
     const auto& parts = g1_orchestration::controlledParts();
     EXPECT_TRUE(parts.front().component.empty())
         << "the body component is active from bring-up and must not be cycled";
@@ -81,19 +79,17 @@ TEST(AuthorityDrift, TheArmsAreNeverUnowned)
 
 TEST(ArmSwitch, AnIncomingControllerThatIsNotLoadedSwitchesNothingAtAll)
 {
-    // The one that drops the arms. controller_manager's BEST_EFFORT applies whichever half of a
-    // paired switch it can and still answers ok, so asking it to displace the freeze for a
-    // controller it cannot activate deactivates the freeze alone -- and the body component
-    // leaves the fifteen arm joints unclaimed, which on this robot means unpowered.
+    // BEST_EFFORT applies whichever half of a paired switch it can and still answers ok, so
+    // displacing the freeze for a controller it cannot activate deactivates the freeze alone,
+    // leaving fifteen arm joints unclaimed and so unpowered.
     const auto plan = g1_orchestration::planArmSwitch("", "active");
     EXPECT_FALSE(plan.possible) << "the holder must be left alone when nothing can replace it";
 }
 
 TEST(ArmSwitch, ALoadedButUnconfiguredControllerIsStillWorthTrying)
 {
-    // Distinct from the case above, and it is the bring-up race the mission's AcquireArm exists
-    // for: the controller is spawned --inactive, so between load and configure it is present but
-    // not usable. The switch is issued STRICT, which either performs both halves or neither.
+    // The bring-up race: the controller is spawned inactive, so between load and configure it
+    // is present but not usable. STRICT then performs both halves or neither.
     const auto plan = g1_orchestration::planArmSwitch("unconfigured", "active");
     EXPECT_TRUE(plan.possible);
     EXPECT_FALSE(plan.already_held);
@@ -102,9 +98,8 @@ TEST(ArmSwitch, ALoadedButUnconfiguredControllerIsStillWorthTrying)
 
 TEST(ArmSwitch, AnArmAlreadyHeldIsLeftAlone)
 {
-    // What BEST_EFFORT was originally chosen for. AcquireArm runs as a tree leaf and cannot
-    // assume it is first, and STRICT calls activating an already-active controller a failure --
-    // so the already-correct case is answered here rather than sent to the service.
+    // AcquireArm runs as a tree leaf and cannot assume it is first, and STRICT calls activating
+    // an already-active controller a failure, so this case is answered without the service.
     const auto plan = g1_orchestration::planArmSwitch("active", "inactive");
     EXPECT_TRUE(plan.possible);
     EXPECT_TRUE(plan.already_held);
