@@ -147,4 +147,32 @@ std::optional<double> maxVelocityRatio(
     return worst;
 }
 
+std::vector<double> trackingVelocity(
+    const trajectory_msgs::msg::JointTrajectory& chunk, const JointMap& measured, double t,
+    double min_dt)
+{
+    for (const trajectory_msgs::msg::JointTrajectoryPoint& point : chunk.points)
+    {
+        const double point_t = seconds(point.time_from_start);
+        if (t >= point_t)
+        {
+            continue;
+        }
+        const double        dt = std::max(point_t - t, min_dt);
+        std::vector<double> velocities;
+        velocities.reserve(chunk.joint_names.size());
+        for (std::size_t i = 0; i < chunk.joint_names.size(); ++i)
+        {
+            const auto it = measured.find(chunk.joint_names[i]);
+            if (it == measured.end())
+            {
+                return {};
+            }
+            velocities.push_back((point.positions[i] - it->second) / dt);
+        }
+        return velocities;
+    }
+    return {};
+}
+
 }  // namespace g1_vla

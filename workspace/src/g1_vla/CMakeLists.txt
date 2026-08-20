@@ -87,6 +87,10 @@ if(BUILD_TESTING)
   set_tests_properties(test_vla_grasp_mock PROPERTIES
     LABELS simulator RESOURCE_LOCK mujoco_sim COST 95)
 
+  add_launch_test(test/test_vla_grasp_servo.launch.py TARGET test_vla_grasp_servo TIMEOUT 500)
+  set_tests_properties(test_vla_grasp_servo PROPERTIES
+    LABELS simulator RESOURCE_LOCK mujoco_sim COST 90)
+
   g1_add_lint_tests()
 endif()
 

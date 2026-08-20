@@ -15,6 +15,7 @@
 
 #include <atomic>
 #include <control_msgs/action/follow_joint_trajectory.hpp>
+#include <control_msgs/msg/joint_jog.hpp>
 #include <cstdint>
 #include <g1_msgs/action/grasp.hpp>
 #include <g1_msgs/srv/get_action_chunk.hpp>
@@ -23,6 +24,7 @@
 #include <moveit_msgs/srv/apply_planning_scene.hpp>
 #include <moveit_msgs/srv/get_planning_scene.hpp>
 #include <moveit_msgs/srv/get_state_validity.hpp>
+#include <moveit_msgs/srv/servo_command_type.hpp>
 #include <mutex>
 #include <optional>
 #include <rclcpp/rclcpp.hpp>
@@ -115,6 +117,29 @@ private:
     /// Splits the chunk across the controllers, sends it, and waits for all of them.
     bool executeChunk(const JointTrajectory& chunk, std::string& why);
 
+    /**
+     * @brief Streams the arm's share of a chunk as jog commands instead of a trajectory.
+     *
+     * Servo re-checks proximity while the arm is moving and scales the command down, which the
+     * trajectory path cannot: a trajectory is validated once and then executed blind. Only the
+     * arm goes this way, because the hands are not in servo's group.
+     *
+     * @return false if the chunk names a joint that is not being measured.
+     */
+    bool streamArmServo(const JointTrajectory& arm_slice, std::string& why);
+
+    /**
+     * @brief Puts servo into joint-jog mode, once per goal.
+     *
+     * Servo starts with no command type selected and silently refuses every jog until one is
+     * chosen, which reads as a policy whose commands do nothing.
+     */
+    bool selectServoJointJog(std::string& why);
+
+    /// Caps a tracking correction at the same speed the chunk was validated against.
+    [[nodiscard]] std::vector<double> clampToLimits(
+        const std::vector<std::string>& joints, const std::vector<double>& velocities) const;
+
     /// Cancels anything still running on the controllers.
     void cancelAll();
 
@@ -142,6 +167,8 @@ private:
     rclcpp::Client<moveit_msgs::srv::GetPlanningScene>::SharedPtr   get_scene_;
     rclcpp::Client<moveit_msgs::srv::ApplyPlanningScene>::SharedPtr apply_scene_;
     rclcpp_action::Server<Grasp>::SharedPtr                         grasp_server_;
+    rclcpp::Publisher<control_msgs::msg::JointJog>::SharedPtr       servo_pub_;
+    rclcpp::Client<moveit_msgs::srv::ServoCommandType>::SharedPtr   servo_command_type_;
 
     robot_model_loader::RobotModelLoaderPtr model_loader_;
     moveit::core::RobotModelConstPtr        model_;
@@ -159,6 +186,9 @@ private:
     double      chunk_exec_timeout_s_{ 10.0 };
     double      success_lift_m_{ 0.05 };
     double      object_timeout_s_{ 1.0 };
+    /// "trajectory" or "servo".
+    std::string execution_mode_;
+    double      servo_publish_rate_{ 50.0 };
 
     /// One goal at a time: two would drive overlapping joints through the same controllers.
     std::atomic<bool> busy_{ false };
