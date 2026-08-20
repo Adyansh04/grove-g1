@@ -20,6 +20,7 @@ using g1_vla::maxSegmentStep;
 using g1_vla::maxVelocityRatio;
 using g1_vla::splitByController;
 using g1_vla::startJump;
+using g1_vla::trackingVelocity;
 using g1_vla::wellFormed;
 using trajectory_msgs::msg::JointTrajectory;
 using trajectory_msgs::msg::JointTrajectoryPoint;
@@ -185,4 +186,57 @@ TEST(VelocityRatio, FailsWhenAJointHasNoUsableLimit)
                      measured,
                      { { "right_elbow_joint", 1.0 }, { "right_shoulder_pitch_joint", 0.0 } })
                      .has_value());
+}
+
+TEST(TrackingVelocity, AimsAtTheNextWaypointFromWhereTheArmIs)
+{
+    const JointMap        measured = { { "right_elbow_joint", 0.0 },
+                                       { "right_shoulder_pitch_joint", 0.0 } };
+    const JointTrajectory chunk    = chunkOf(kArm, { { 0.02, 0.0 }, { 0.02, 0.05 } }, 0.1);
+
+    // 0.02 rad away, 0.1 s left to get there.
+    EXPECT_THAT(
+        trackingVelocity(chunk, measured, 0.0, 0.02),
+        testing::ElementsAre(testing::DoubleNear(0.2, 1e-9), testing::DoubleNear(0.0, 1e-9)));
+    // Half way through the segment the arm has not moved, so the command doubles to still make
+    // the waypoint on time. An open-loop velocity would have kept sending 0.2 and fallen short.
+    EXPECT_THAT(
+        trackingVelocity(chunk, measured, 0.05, 0.02),
+        testing::ElementsAre(testing::DoubleNear(0.4, 1e-9), testing::DoubleNear(0.0, 1e-9)));
+}
+
+TEST(TrackingVelocity, CorrectsAnArmThatHasDriftedPastTheWaypoint)
+{
+    // Overshot the first waypoint: the command has to point back.
+    const JointMap        measured = { { "right_elbow_joint", 0.05 },
+                                       { "right_shoulder_pitch_joint", 0.0 } };
+    const JointTrajectory chunk    = chunkOf(kArm, { { 0.02, 0.0 } }, 0.1);
+
+    EXPECT_LT(trackingVelocity(chunk, measured, 0.0, 0.02).front(), 0.0);
+}
+
+TEST(TrackingVelocity, FloorsTheTimeLeftSoALateTickDoesNotDivideByZero)
+{
+    const JointMap        measured = { { "right_elbow_joint", 0.0 },
+                                       { "right_shoulder_pitch_joint", 0.0 } };
+    const JointTrajectory chunk    = chunkOf(kArm, { { 0.02, 0.0 } }, 0.1);
+
+    const std::vector<double> velocities = trackingVelocity(chunk, measured, 0.0999, 0.02);
+    ASSERT_EQ(velocities.size(), 2U);
+    EXPECT_NEAR(velocities[0], 1.0, 1e-9);
+}
+
+TEST(TrackingVelocity, IsEmptyOnceTheChunkIsDone)
+{
+    const JointMap        measured = { { "right_elbow_joint", 0.0 },
+                                       { "right_shoulder_pitch_joint", 0.0 } };
+    const JointTrajectory chunk    = chunkOf(kArm, { { 0.02, 0.0 } }, 0.1);
+
+    EXPECT_TRUE(trackingVelocity(chunk, measured, 0.1, 0.02).empty());
+    EXPECT_TRUE(trackingVelocity(chunk, measured, 5.0, 0.02).empty());
+}
+
+TEST(TrackingVelocity, IsEmptyWhenAJointWasNotMeasured)
+{
+    EXPECT_TRUE(trackingVelocity(chunkOf(kArm, { { 0.02, 0.0 } }, 0.1), {}, 0.0, 0.02).empty());
 }

@@ -65,6 +65,23 @@ startJump(const trajectory_msgs::msg::JointTrajectory& chunk, const JointMap& me
     const trajectory_msgs::msg::JointTrajectory& chunk, const JointMap& measured,
     const JointMap& limits);
 
+/**
+ * @brief Velocity that carries the arm from where it is now to the waypoint due after @p t.
+ *
+ * Closed-loop on purpose. Jog commands are integrated by the servo, which tracks velocity and
+ * never looks at position, so a velocity computed once per chunk lets error accumulate and the
+ * arm ends up somewhere the gate never validated. Aiming at the next waypoint from the measured
+ * pose on every tick keeps the streamed motion on the path that was checked.
+ *
+ * @param measured Where the arm is right now, not where the chunk started.
+ * @param min_dt Floor on the time left to the waypoint, so a tick landing on one does not
+ *        divide by zero.
+ * @return Empty at or past the chunk's last waypoint, which is the caller's signal to stop.
+ */
+[[nodiscard]] std::vector<double> trackingVelocity(
+    const trajectory_msgs::msg::JointTrajectory& chunk, const JointMap& measured, double t,
+    double min_dt);
+
 }  // namespace g1_vla
 
 #endif  // G1_VLA__CHUNK_UTILS_HPP_
