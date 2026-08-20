@@ -22,6 +22,8 @@
 #include <utility>
 #include <vector>
 
+#include "g1_manipulation/hand_contact.hpp"
+
 namespace g1_manipulation
 {
 
@@ -131,104 +133,27 @@ bool G1ManipulationServer::allowHandContact(
     const ArmContext& arm, const std::vector<std::string>& touchables, bool allowed,
     bool include_links)
 {
-    // The links that unavoidably enter occupied space during a grasp: the hand itself, and
-    // the wrist that carries it. Taken from the robot model rather than listed, so a renamed
-    // link is a build-time problem rather than a silently ineffective exemption.
     MoveGroup* hand = groupFor(arm.hand_group);
     if (hand == nullptr)
     {
         return false;
     }
-    std::vector<std::string> links =
-        hand->getRobotModel()->getJointModelGroup(arm.hand_group)->getLinkModelNames();
-    const std::string side = arm.is_left ? "left" : "right";
-    links.push_back(arm.palm_link);
-    links.push_back(side + "_wrist_pitch_link");
-    links.push_back(side + "_wrist_yaw_link");
-    // All THREE wrist joints, matching the touch_links the pick attaches the object with. Roll
-    // is easy to miss but is the one that reaches during a grasp, so omitting it leaves the
-    // exemption silently incomplete.
-    links.push_back(side + "_wrist_roll_link");
-
-    // The current matrix has to be read first: ApplyPlanningScene replaces the whole ACM
-    // rather than merging into it, so sending only our entries would drop every
-    // self-collision rule the SRDF set up.
-    auto request = std::make_shared<moveit_msgs::srv::GetPlanningScene::Request>();
-    request->components.components =
-        moveit_msgs::msg::PlanningSceneComponents::ALLOWED_COLLISION_MATRIX;
-    auto future = get_scene_->async_send_request(request);
-    // Waited on WITHOUT spinning: the executor already owns this node, and spinning it from
-    // here would re-enter the executor from inside its own callback.
-    if (future.wait_for(std::chrono::seconds(5)) != std::future_status::ready)
+    const std::string              side  = arm.is_left ? "left" : "right";
+    const std::vector<std::string> links = handContactLinks(*hand->getRobotModel(), side);
+    if (links.empty())
     {
-        RCLCPP_ERROR(get_logger(), "/get_planning_scene did not answer");
         return false;
     }
 
-    moveit_msgs::msg::AllowedCollisionMatrix acm = future.get()->scene.allowed_collision_matrix;
-
-    // A name the matrix has never seen has to be added as a full row and column first,
-    // otherwise the indices below run off the end.
-    const auto ensure_entry = [&acm](const std::string& name) {
-        if (std::find(acm.entry_names.begin(), acm.entry_names.end(), name) != acm.entry_names.end())
-        {
-            return;
-        }
-        acm.entry_names.push_back(name);
-        for (moveit_msgs::msg::AllowedCollisionEntry& row : acm.entry_values)
-        {
-            row.enabled.push_back(false);
-        }
-        moveit_msgs::msg::AllowedCollisionEntry row;
-        row.enabled.assign(acm.entry_names.size(), false);
-        acm.entry_values.push_back(row);
-    };
-    const auto index_of = [&acm](const std::string& name) {
-        return static_cast<std::size_t>(
-            std::find(acm.entry_names.begin(), acm.entry_names.end(), name) -
-            acm.entry_names.begin());
-    };
-
-    for (const std::string& touchable : touchables)
+    if (!applyHandContact(
+            get_scene_,
+            apply_scene_,
+            get_logger(),
+            links,
+            touchables,
+            allowed,
+            include_links))
     {
-        ensure_entry(touchable);
-    }
-    // The exempted things must also be allowed to touch each other, not just the hand: lifting
-    // an attached object out of a surface drags it through that surface's octomap voxels, which
-    // is a collision between two things the hand may already touch.
-    for (std::size_t i = 0; i < touchables.size(); ++i)
-    {
-        for (std::size_t j = i + 1; j < touchables.size(); ++j)
-        {
-            const std::size_t a            = index_of(touchables[i]);
-            const std::size_t b            = index_of(touchables[j]);
-            acm.entry_values[a].enabled[b] = allowed;
-            acm.entry_values[b].enabled[a] = allowed;
-        }
-    }
-    for (const std::string& touchable : include_links ? touchables : std::vector<std::string>{})
-    {
-        const std::size_t other = index_of(touchable);
-        for (const std::string& link : links)
-        {
-            const auto it = std::find(acm.entry_names.begin(), acm.entry_names.end(), link);
-            if (it == acm.entry_names.end())
-            {
-                continue;
-            }
-            const auto index = static_cast<std::size_t>(it - acm.entry_names.begin());
-            acm.entry_values[index].enabled[other] = allowed;
-            acm.entry_values[other].enabled[index] = allowed;
-        }
-    }
-
-    auto apply           = std::make_shared<moveit_msgs::srv::ApplyPlanningScene::Request>();
-    apply->scene.is_diff = true;
-    apply->scene.allowed_collision_matrix = acm;
-    auto applied                          = apply_scene_->async_send_request(apply);
-    if (applied.wait_for(std::chrono::seconds(5)) != std::future_status::ready)
-    {
-        RCLCPP_ERROR(get_logger(), "/apply_planning_scene did not answer");
         return false;
     }
     RCLCPP_INFO(
@@ -237,7 +162,7 @@ bool G1ManipulationServer::allowHandContact(
         allowed ? "allowing" : "restoring",
         side.c_str(),
         touchables.size());
-    return applied.get()->success;
+    return true;
 }
 
 std::optional<geometry_msgs::msg::Pose> G1ManipulationServer::toPlanningFrame(
