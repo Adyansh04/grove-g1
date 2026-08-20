@@ -42,9 +42,11 @@ GOAL_TIMEOUT_S = 20.0
 MAX_REJECTED = 5
 
 WATCHED = ["right_shoulder_pitch_joint", "right_shoulder_roll_joint", "right_elbow_joint"]
-# Measured against this scene: the arm self-collides with the torso from about roll 0.1, so a
-# walk toward 0.6 is refused from the first chunk that reaches it.
+# Both targets turn on shoulder roll and nothing else, in opposite directions, so what decides
+# each case is self-collision geometry rather than how the octomap happened to fill in. Measured
+# against this scene: the arm meets the torso from about roll 0.1.
 BLOCKED_TARGET = [0.06, 0.6, 0.09]
+FREE_TARGET = [0.0, -0.55, 0.3]
 
 
 @launch_testing.ready_to_test_action_timeout(READY_TIMEOUT_S)
@@ -150,7 +152,12 @@ class TestVlaGraspMock(unittest.TestCase):
             ],
         )
 
-    def test_02_valid_chunks_reach_the_controllers(self):
+    def test_03_valid_chunks_reach_the_controllers(self):
+        self._set_params(
+            self.engine_params,
+            [Parameter("target_positions", Parameter.Type.DOUBLE_ARRAY, FREE_TARGET)],
+        )
+        self._spin(3.0)
         before = self._watched()
         result = self._run_grasp(GOAL_TIMEOUT_S + 60.0)
 
@@ -164,12 +171,16 @@ class TestVlaGraspMock(unittest.TestCase):
         moved = max(abs(a - b) for a, b in zip(self._watched(), before, strict=True))
         self.assertGreater(moved, 0.05, "the arm did not move for chunks that passed the gate")
 
-    def test_03_a_blocked_chunk_is_refused_before_the_arm_moves(self):
+    def test_02_a_blocked_chunk_is_refused_before_the_arm_moves(self):
+        # First, from the rest pose. The arm meets the torso a short way into the very first
+        # chunk from there, so nothing legitimate can run before the refusal; started from
+        # anywhere else the walk would cross clear ground first and one chunk would rightly
+        # execute, which is a weaker claim.
         self._set_params(
             self.engine_params,
             [Parameter("target_positions", Parameter.Type.DOUBLE_ARRAY, BLOCKED_TARGET)],
         )
-        self._spin(10.0)
+        self._spin(3.0)
         before = self._watched()
 
         result = self._run_grasp(GOAL_TIMEOUT_S + 60.0)

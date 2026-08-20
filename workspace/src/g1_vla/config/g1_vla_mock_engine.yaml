@@ -1,13 +1,15 @@
 g1_vla_mock_engine:
   ros__parameters:
-    # The right arm only, and a modest forward reach measured to be collision-free the whole way
-    # from the workbench rest pose. Point target_positions somewhere the arm cannot legally go
-    # and every chunk should be rejected with the robot still where it started.
+    # The right arm only, swung out to the side. Deliberately away from the bench rather than
+    # toward it: a forward reach clears the bench by a margin that moves with how the octomap
+    # happened to fill in, and a target whose validity depends on that is not a fixed point to
+    # test against. Point target_positions somewhere the arm cannot legally go and every chunk
+    # should be rejected with the robot still where it started.
     joint_names:
       - right_shoulder_pitch_joint
       - right_shoulder_roll_joint
       - right_elbow_joint
-    target_positions: [-0.6, -0.15, 0.3]
+    target_positions: [0.0, -0.55, 0.3]
 
     steps_per_chunk: 8
     action_dt_s: 0.1

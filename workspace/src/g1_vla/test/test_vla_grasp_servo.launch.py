@@ -44,9 +44,10 @@ GOAL_TIMEOUT_S = 8.0
 MAX_REJECTED = 5
 
 WATCHED = ["right_shoulder_pitch_joint", "right_shoulder_roll_joint", "right_elbow_joint"]
-# Same measured self-collision the trajectory suite uses: the arm meets the torso from about
-# roll 0.1, and that is unaffected by the hand's octomap exemption.
+# Same targets as the trajectory suite: shoulder roll in opposite directions, so each case
+# turns on self-collision geometry rather than on how the octomap filled in.
 BLOCKED_TARGET = [0.06, 0.6, 0.09]
+FREE_TARGET = [0.0, -0.55, 0.3]
 
 
 @launch_testing.ready_to_test_action_timeout(READY_TIMEOUT_S)
@@ -151,7 +152,12 @@ class TestVlaGraspServo(unittest.TestCase):
             ],
         )
 
-    def test_02_validated_chunks_are_streamed_as_jog_commands(self):
+    def test_03_validated_chunks_are_streamed_as_jog_commands(self):
+        self._set_params(
+            self.engine_params,
+            [Parameter("target_positions", Parameter.Type.DOUBLE_ARRAY, FREE_TARGET)],
+        )
+        self._spin(3.0)
         before = self._watched()
         self.__class__.jogs = 0
 
@@ -166,13 +172,14 @@ class TestVlaGraspServo(unittest.TestCase):
         moved = max(abs(a - b) for a, b in zip(self._watched(), before, strict=True))
         self.assertGreater(moved, 0.05, "the arm did not move for chunks that passed the gate")
 
-    def test_03_a_blocked_chunk_is_never_streamed(self):
+    def test_02_a_blocked_chunk_is_never_streamed(self):
+        # From the rest pose, where the very first chunk already reaches the torso, so nothing
+        # legitimate can run ahead of the refusal.
         self._set_params(
             self.engine_params,
             [Parameter("target_positions", Parameter.Type.DOUBLE_ARRAY, BLOCKED_TARGET)],
         )
-        # Long enough for the previous case's motion to stop entirely, servo included.
-        self._spin(10.0)
+        self._spin(3.0)
         self.__class__.jogs = 0
 
         result = self._run_grasp(GOAL_TIMEOUT_S + 60.0)
