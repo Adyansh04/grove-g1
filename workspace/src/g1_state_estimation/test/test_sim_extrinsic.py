@@ -1,6 +1,6 @@
 """The lidar-to-IMU extrinsic is the same constant in simulation and on the robot.
 
-It is a constant only because the IMU is inside the sensor in both places -- the simulator models
+It is a constant only because the IMU is inside the sensor in both places, the simulator modelling
 one there rather than substituting the pelvis IMU, which is three actuated waist joints away. See
 g1_state_estimation's README. These tests hold the arrangement in place: where the simulator puts
 its IMU, what both configs say about it, and the joints that make the substitution wrong.
@@ -81,7 +81,9 @@ def _chain_from_urdf(child_link, ancestor_link):
     while link != ancestor_link:
         assert link in joints, f"no joint leads to {link}"
         parent, xyz, joint_rotation, _ = joints[link]
-        translation = [c + v for c, v in zip(xyz, _mat_vec(joint_rotation, translation))]
+        translation = [
+            c + v for c, v in zip(xyz, _mat_vec(joint_rotation, translation), strict=True)
+        ]
         rotation = _mat_mul(joint_rotation, rotation)
         link = parent
     return translation, rotation
@@ -121,7 +123,9 @@ def test_the_mjcf_site_is_where_the_urdf_says_the_sensor_imu_is():
     # from the URDF mount composed with Livox's offset rather than copied.
     translation, rotation = _chain_from_urdf("mid360_link", "torso_link")
     imu_in_lidar = [-v for v in _LIVOX_LIDAR_IN_IMU]
-    expect = [t + v for t, v in zip(translation, _mat_vec(rotation, imu_in_lidar))]
+    expect = [
+        t + v for t, v in zip(translation, _mat_vec(rotation, imu_in_lidar), strict=True)
+    ]
 
     pos, quat = _mjcf_site()
     for axis in range(3):
@@ -176,17 +180,16 @@ def test_the_mount_is_actually_upside_down():
 
 def test_the_imu_frame_inverts_the_livox_lever_arm():
     # mid360_imu is hand-written as the inverse of Livox's published lidar-in-IMU offset;
-    # check the two cancel instead of trusting the sign flip was done right.
+    # check the two cancel instead of trusting the sign flip was done right. Read from
+    # g1_common.xacro, which is where the shared sensor frames live.
     xacro = (
-        pathlib.Path(get_package_share_directory("g1_description"))
-        / "urdf"
-        / "g1_arm_sdk.urdf.xacro"
+        pathlib.Path(get_package_share_directory("g1_description")) / "urdf" / "g1_common.xacro"
     )
     match = re.search(
         r'<child link="mid360_imu"/>\s*<origin xyz="([^"]+)"',
         xacro.read_text(),
     )
-    assert match, "mid360_imu joint not found in g1_arm_sdk.urdf.xacro"
+    assert match, "mid360_imu joint not found in g1_common.xacro"
     offset = [float(v) for v in match.group(1).split()]
     for axis in range(3):
         assert offset[axis] == pytest.approx(-_LIVOX_LIDAR_IN_IMU[axis], abs=1e-9)

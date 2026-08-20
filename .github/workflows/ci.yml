@@ -8,6 +8,7 @@ on:
   push:
     branches: [main]
   pull_request:
+    branches: [main]
   workflow_dispatch:
 
 concurrency:
@@ -20,19 +21,16 @@ permissions:
 
 defaults:
   run:
-    # Container jobs default to `sh`, where `source` does not exist and every ROS setup script
-    # fails with exit 127 before running anything.
+
     shell: bash
 
 env:
-  # Lowercase and literal: GHCR rejects uppercase, and this owner is `Adyansh04`.
   IMAGE: ghcr.io/adyansh04/grove-g1-ci
 
 jobs:
   # Tag is the Dockerfile's hash, so this is a registry probe unless the Dockerfile changed.
   image:
-    runs-on: ubuntu-22.04
-    # The only job that pushes; the other two pull with a read-only token.
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: write
@@ -73,7 +71,7 @@ jobs:
 
   build:
     needs: image
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     container:
       image: ${{ needs.image.outputs.ref }}
       credentials:
@@ -88,8 +86,7 @@ jobs:
       # the runner's host path, which does not exist here.
       - run: echo "CCACHE_DIR=$GITHUB_WORKSPACE/.ccache" >> "$GITHUB_ENV"
 
-      # A CI image on different versions than the dev image tests a configuration nobody ships.
-      - name: Check the two images pin the same versions
+      - name: Check the two images pin the same versions and middleware
         run: |
           fail=0
           for arg in UNITREE_SDK2_SHA LIVOX_SDK2_SHA ONNXRUNTIME_VERSION RUFF_VERSION LLVM_VERSION; do
@@ -100,11 +97,17 @@ jobs:
               fail=1
             fi
           done
+          # Two images on different RMWs would each pass while testing a different wire. Empty
+          # fails too: an unpinned RMW is the divergence, not a match.
+          dev=$(grep -oP '^ENV RMW_IMPLEMENTATION=\K\S+' .devcontainer/Dockerfile)
+          ci=$(grep -oP '^ENV RMW_IMPLEMENTATION=\K\S+' .github/ci.Dockerfile)
+          if [ -z "$dev" ] || [ "$dev" != "$ci" ]; then
+            echo "::error file=.github/ci.Dockerfile::RMW_IMPLEMENTATION differs: dev=${dev:-unset} ci=${ci:-unset}"
+            fail=1
+          fi
           exit $fail
 
       - name: Import externals
-        # safe.directory: the checkout is not owned by the container's uid, and git's refusal
-        # surfaces as a vcs error naming neither cause.
         run: |
           git config --global --add safe.directory '*'
           ./scripts/import-externals.sh
@@ -120,11 +123,8 @@ jobs:
 
       - name: Build
         working-directory: workspace
-        # Each package's lint check is guarded by find_program, so a missing clang-format or
-        # ruff does not fail the test -- it deletes it, and CI stays green with nothing linted.
-        # The grep is what notices.
         run: |
-          source /opt/ros/humble/setup.bash
+          source /opt/ros/jazzy/setup.bash
           colcon build --symlink-install \
             --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
             --event-handlers console_cohesion+ 2>&1 | tee build.log
@@ -139,7 +139,7 @@ jobs:
         # runs here as each package's own ctest target, which is why there is no lint job.
         # --return-code-on-test-failure: colcon test otherwise exits 0 over a failing suite.
         run: |
-          source /opt/ros/humble/setup.bash
+          source /opt/ros/jazzy/setup.bash
           source install/setup.bash
           colcon test \
             --packages-select-regex '^g1_' \
@@ -162,19 +162,14 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: test-results
-          # Testing/ as well: the lint targets are plain add_test()s and write no xunit file,
-          # so a formatting failure appears only in ctest's own log.
           path: |
             workspace/build/*/test_results/**/*.xml
             workspace/build/*/Testing/**/*.xml
           retention-days: 7
 
-  # Informational, and non-blocking. It reports only what the non-simulator tests reach, so the
-  # integration layer reads low by construction -- treat it as a per-package signal on the pure
-  # logic, not as a number for the repo. Deliberately no badge.
   coverage:
     needs: image
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     continue-on-error: true
     container:
       image: ${{ needs.image.outputs.ref }}
@@ -182,7 +177,6 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
     env:
-      # gcov reads .gcno next to the object file; a cache hit would not write one.
       CCACHE_DISABLE: "1"
     steps:
       - uses: actions/checkout@v7
@@ -194,10 +188,8 @@ jobs:
 
       - name: Build instrumented
         working-directory: workspace
-        # Everything, because our packages do not build without the vendored ones. gcovr's
-        # filter is what narrows the report back down to ours.
         run: |
-          source /opt/ros/humble/setup.bash
+          source /opt/ros/jazzy/setup.bash
           colcon build \
             --cmake-args -DCMAKE_BUILD_TYPE=Debug \
               -DCMAKE_CXX_FLAGS="--coverage -O0" -DCMAKE_EXE_LINKER_FLAGS="--coverage" \
@@ -206,15 +198,13 @@ jobs:
       - name: Test
         working-directory: workspace
         run: |
-          source /opt/ros/humble/setup.bash
+          source /opt/ros/jazzy/setup.bash
           source install/setup.bash
           colcon test --packages-select-regex '^g1_' --executor sequential \
             --ctest-args -LE simulator
 
       - name: Report
         working-directory: workspace
-        # tee, not plain redirection: written only to the step summary the numbers exist solely
-        # on the run's web page, and are not greppable from the log or `gh run view`.
         run: |
           {
             echo "## C++ coverage — non-simulator tests only"

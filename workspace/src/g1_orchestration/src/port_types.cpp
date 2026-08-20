@@ -1,3 +1,8 @@
+/**
+ * @file port_types.cpp
+ * @brief Parsers for the custom port types a tree writes as strings.
+ */
+
 #include "g1_orchestration/port_types.hpp"
 
 #include <string>

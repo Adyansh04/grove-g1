@@ -1,3 +1,8 @@
+/**
+ * @file clear_costmaps.cpp
+ * @brief Ports and tick for the ClearCostmaps leaf.
+ */
+
 #include "g1_orchestration/skills/clear_costmaps.hpp"
 
 #include <memory>

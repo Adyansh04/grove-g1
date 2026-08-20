@@ -2,10 +2,9 @@
  * @file test_livox_cloud.cpp
  * @brief The hardware CustomMsg -> PointCloud2 conversion.
  *
- * This path never runs in simulation -- the relay publishes /livox/lidar directly there -- so
- * the sim acceptance test cannot catch a regression in it. Everything reading /livox/lidar on
- * the robot (both Nav2 costmaps, MoveIt's octomap, pointcloud_to_laserscan) depends on this
- * producing the layout they expect.
+ * This path never runs in simulation, where the relay publishes /livox/lidar directly, so the
+ * sim acceptance test cannot catch a regression in it. Everything reading /livox/lidar on the
+ * robot depends on it producing the layout they expect.
  */
 
 #include <gmock/gmock.h>

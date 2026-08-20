@@ -5,7 +5,7 @@
   <version>0.1.0</version>
   <description>
     MoveIt 2 planning for the G1's two 7-DoF arms, layered on the arm_trajectory_controller
-    that already drives rt/arm_sdk. Configuration and launch only -- the nodes are upstream.
+    that already owns the arm joints. Configuration and launch only, the nodes are upstream.
   </description>
   <maintainer email="gupta.adyansh@gmail.com">Adyansh</maintainer>
   <license>BSD-3-Clause</license>
@@ -35,6 +35,10 @@
   <test_depend>ament_cmake_xmllint</test_depend>
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>control_msgs</test_depend>
+  <!-- test_moveit_lowcmd reads controller states around the arm bracket's switch. -->
+  <test_depend>controller_manager_msgs</test_depend>
+  <!-- test_moveit_config_drift reads g1_controllers' lowcmd controller config. -->
+  <test_depend>g1_controllers</test_depend>
   <!-- test_launch_threading asserts on g1_navigation's rviz config being
        substituted into moveit_rviz.launch.py, so that package has to be on the
        test environment's ament index. -->

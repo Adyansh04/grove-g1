@@ -30,12 +30,9 @@
           </Sequence>
           <Spin spin_dist="1.57"/>
           <Wait wait_duration="5"/>
-          <!-- BackUp removed. Same two reasons as navigate_to_pose.xml: the gait does
-               not reverse at anything a recovery would command (measured 0.000 at
-               -0.40 m/s), and g1_gait_shaper zeroes negative vx regardless. Kept in
-               step with that file: bt_navigator loads BOTH trees on activate, so
-               editing only one leaves this one calling a behaviour that no longer has
-               an action server, and bt_navigator fails to activate. -->
+          <!-- BackUp removed, same as navigate_to_pose.xml, and kept in step with it:
+               bt_navigator loads both trees on activate, so editing only one leaves this
+               one calling a behaviour with no action server and activation fails. -->
         </RoundRobin>
       </ReactiveFallback>
     </RecoveryNode>

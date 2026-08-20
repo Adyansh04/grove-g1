@@ -14,28 +14,29 @@ g1_odometry_publisher:
     pelvis_frame_id: "pelvis"
 
     # The frame FAST-LIO reports the pose OF, so this node can offset the estimate over to the
-    # pelvis through TF. It is the Mid360's own IMU on both tracks -- the simulator models one
-    # in the sensor housing too -- so unlike most of this stack there is no sim/hardware split
+    # pelvis through TF. It is the Mid360's own IMU on both tracks, the simulator modelling one
+    # in the sensor housing too, so unlike most of this stack there is no sim/hardware split
     # here.
     #
     # That chain crosses the three waist joints, so /joint_states must carry them or the lookup
-    # never resolves and this source publishes nothing. In simulation motion_service_sim does
-    # it; on the robot g1_hardware_interface's g1_lowstate_joint_states does.
+    # never resolves and this source publishes nothing. joint_state_broadcaster covers all 29
+    # from the body component, on both tracks.
     lidar_body_frame_id: "mid360_imu"
 
     # Pelvis height above the floor when odometry starts, which is what puts odom on the ground
     # plane. FAST-LIO measures height relative to wherever it initialised and cannot know where
     # the floor is.
     #
-    # MEASURED on the standing robot: /sportmodestate reports 0.7504 m over 23k samples, with a
-    # spread of 0.2 mm. Getting this even a few centimetres high is not cosmetic: the costmap's
-    # obstacle layer cuts the floor out at min_obstacle_height 0.08, so an inflated pelvis
-    # height pushes floor returns toward that cut before FAST-LIO's own drift is even counted,
-    # and the symptom is concentric rings of floor marked as obstacle with no path found.
+    # MEASURED on the standing robot, 5459 samples with no spread at all. Getting this even a
+    # few centimetres high has real consequences: the costmap's obstacle layer cuts the floor at
+    # min_obstacle_height 0.08, so an inflated pelvis height pushes floor returns toward that
+    # cut before the estimator's own tilt drift is even counted, and the symptom is rings of
+    # floor marked as obstacle with no path found.
     #
-    # Re-measure if the stance changes. It is a property of this robot's standing pose, not a
-    # constant of the G1.
-    start_height_m: 0.750
+    # Re-measure if the stance changes. It is a property of this robot's standing pose under the
+    # current balance policy, not a constant of the G1, and a value 21 mm too high puts a
+    # permanent bias under the floor.
+    start_height_m: 0.729
 
     max_tilt_deg: 80.0
 
@@ -43,7 +44,7 @@ g1_odometry_publisher:
     # fraction per LiDAR sample. At FAST-LIO's 10 Hz this is roughly a 2 s time constant:
     # slower than the gait, so scan-synchronised attitude passes through untouched, and faster
     # than FAST-LIO's gravity drift, which is the thing being removed. Raise it only with a
-    # measurement in hand -- too fast pins a fresh IMU sample onto an older scan and injects
+    # measurement in hand: too fast pins a fresh IMU sample onto an older scan and injects
     # gait-frequency error rather than removing drift. 0.0 turns the correction off.
     tilt_correction_gain: 0.05
 
@@ -55,7 +56,7 @@ g1_odometry_publisher:
 
     # Deliberately looser than the converged track's 1e-6. That source is exact MuJoCo state;
     # this one is a scan-matched estimate whose twist is a difference of two 10 Hz poses.
-    # Still a placeholder rather than a characterisation -- nothing here has measured FAST-LIO's
+    # Still a placeholder rather than a characterisation: nothing here has measured FAST-LIO's
     # actual covariance on this robot.
     pose_covariance: 1.0e-3
     twist_covariance: 1.0e-2

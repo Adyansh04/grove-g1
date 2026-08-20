@@ -24,8 +24,9 @@ from sensor_msgs.msg import PointCloud2
 SWEEP_S = 0.032        # measured cost of one full 360x32 sweep
 OBSTACLE_RANGE = 5.0   # obstacle_max_range in config/nav2_params.yaml
 FLOOR_CUT = 0.08       # min_obstacle_height
-FWD_ENGAGE = 0.45      # g1_locomotion/config/g1_gait_shaper.yaml
-YAW_ENGAGE = 1.20
+# Measured envelope of the walking policy: translation commands below this produce essentially
+# no motion. Yaw has no deadband and tracks near 1:1, so it only appears here as "is it turning".
+VEL_DEADBAND = 0.15
 
 
 def yaw_of(q):
@@ -49,7 +50,6 @@ class NavDiag(Node):
         self.pitch = []
         self.lethal = []
         self.odom_xy = []
-        self.shaped_nonzero = 0
         self.nav_cmd = 0
         self.nav_cmd_in_deadband = 0
 
@@ -62,19 +62,15 @@ class NavDiag(Node):
             QoSProfile(depth=1, reliability=QoSReliabilityPolicy.RELIABLE,
                        durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
                        history=QoSHistoryPolicy.KEEP_LAST))
-        self.create_subscription(Twist, "/g1_loco_bridge/cmd_vel", self.on_shaped, 10)
         self.create_subscription(Twist, "/cmd_vel", self.on_nav_cmd, 10)
         self.create_timer(0.05, self.on_tick)
         self.create_timer(20.0, self.snapshot)
 
-    def on_shaped(self, msg):
-        if abs(msg.linear.x) > 1e-6 or abs(msg.angular.z) > 1e-6:
-            self.shaped_nonzero += 1
-
     def on_nav_cmd(self, msg):
-        """Nav2's output, before the shaper. Anything inside the deadband becomes a stop."""
+        """Nav2's output. A command inside the deadband with no turn moves the robot nowhere."""
         self.nav_cmd += 1
-        if abs(msg.linear.x) < FWD_ENGAGE and abs(msg.angular.z) < YAW_ENGAGE:
+        if (abs(msg.linear.x) < VEL_DEADBAND and abs(msg.linear.y) < VEL_DEADBAND
+                and abs(msg.angular.z) < 1e-6):
             self.nav_cmd_in_deadband += 1
 
     def on_cloud(self, msg):
@@ -134,9 +130,9 @@ class NavDiag(Node):
 
     def snapshot(self):
         pct = (100.0 * self.nav_cmd_in_deadband / self.nav_cmd) if self.nav_cmd else 0.0
-        print("[snap] driven=%.2fm  nav2_cmds=%d (%.0f%% in deadband)  shaped_nonzero=%d  "
+        print("[snap] driven=%.2fm  nav2_cmds=%d (%.0f%% in deadband)  "
               "amcl_corrections=%d  lethal_now=%s"
-              % (self.distance(), self.nav_cmd, pct, self.shaped_nonzero, len(self.jumps),
+              % (self.distance(), self.nav_cmd, pct, len(self.jumps),
                  self.lethal[-1] if self.lethal else "n/a"))
         sys.stdout.flush()
 
@@ -151,10 +147,9 @@ class NavDiag(Node):
         print("\n================ NAV DIAGNOSTICS ================")
         print("distance driven       : %.2f m" % self.distance())
         if self.nav_cmd:
-            print("nav2 cmd_vel          : %d, of which %d (%.0f%%) inside the shaper deadband"
+            print("nav2 cmd_vel          : %d, of which %d (%.0f%%) inside the gait deadband"
                   % (self.nav_cmd, self.nav_cmd_in_deadband,
                      100.0 * self.nav_cmd_in_deadband / self.nav_cmd))
-        print("shaped non-zero       : %d" % self.shaped_nonzero)
         print("pelvis pitch          :", stats(self.pitch, 180 / math.pi, "deg"))
         if self.pitch:
             print("  swing               : %.2f deg peak to peak"

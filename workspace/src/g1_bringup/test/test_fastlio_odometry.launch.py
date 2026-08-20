@@ -1,16 +1,14 @@
 """FAST-LIO odometry against MuJoCo ground truth: precision standing, sanity walking.
 
 The unit suites prove the adapter math; this proves the pipeline. The full stack comes up with
-`odometry:=fast_lio` and the odom -> base_footprint the stack publishes is compared against
-the exact pelvis position MuJoCo reports. A regression anywhere in the chain -- bridge
-formats, QoS, FAST-LIO config, the latch, the frame composition -- shows up here.
+`odometry:=fast_lio` and the odom -> base_footprint it publishes is compared against the exact
+pelvis pose MuJoCo reports over the relay's sensor socket, so a regression anywhere in the chain
+shows up here.
 
-Two phases with very different tolerances, deliberately. Standing is repeatable, so it gets a
-tight bound: measured drift is ~2 cm, asserted at 0.35 m. Walking is looser, because the gait
-itself is not repeatable -- the same command can produce a smooth walk or a stumbling one, and
-a stumble degrades any LIO. scripts/lio_bench measures ~10 cm worst-case over 21 m on a clean
-run; this asserts 1.0 m, which still catches the failure class seen during bring-up (kilometres,
-when the extrinsic estimator was left on) with room for a bad gait.
+Two phases with very different tolerances. Standing is repeatable and gets a tight bound:
+measured drift is ~2 cm, asserted at 0.35 m. Walking is looser, because a stumble degrades any
+LIO and the bound has to survive one. scripts/lio_bench measures ~10 cm worst case over 21 m on
+a clean run; this asserts 1.0 m, which still catches a divergence of kilometres.
 
 `odom` is latched wherever FAST-LIO first produced a pose and the robot does not settle on a
 repeatable heading, so the two frames are aligned by the headings measured at the first paired
@@ -27,17 +25,14 @@ import launch_testing
 import pytest
 import rclpy
 from ament_index_python.packages import get_package_share_directory
-from g1_msgs.action import SetLocoMode
 from geometry_msgs.msg import Twist
 from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription, TimerAction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from rclpy.action import ActionClient
+from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from tf2_msgs.msg import TFMessage
-from unitree_go.msg import SportModeState
-from unitree_hg.msg import LowState
 
 LATCH_TIMEOUT_S = 120.0
 STAND_S = 12.0
@@ -85,25 +80,19 @@ class FastLioOdometryTest(unittest.TestCase):
         cls.truth = None
         cls.lio = None
         cls.truth_yaw = None
+        # Position and heading in one message, straight off the simulator's sensor socket.
         cls.node.create_subscription(
-            SportModeState, "/sportmodestate", cls._on_truth, qos_profile_sensor_data
-        )
-        # The true heading, which /sportmodestate does not carry: the simulator leaves its
-        # imu_state zeroed.
-        cls.node.create_subscription(
-            LowState, "/lowstate", cls._on_low_state, qos_profile_sensor_data
+            Odometry, "/g1_sensor_relay/base_state", cls._on_truth, qos_profile_sensor_data
         )
         cls.node.create_subscription(TFMessage, "/tf", cls._on_tf, 100)
-        cls.cmd_pub = cls.node.create_publisher(Twist, "/g1_loco_bridge/cmd_vel", 1)
+        cls.cmd_pub = cls.node.create_publisher(Twist, "/cmd_vel", 1)
 
     @classmethod
     def _on_truth(cls, msg):
-        cls.truth = (msg.position[0], msg.position[1])
-
-    @classmethod
-    def _on_low_state(cls, msg):
-        q = msg.imu_state.quaternion  # Unitree order the quaternion w-first.
-        cls.truth_yaw = yaw_of(q[1], q[2], q[3], q[0])
+        p = msg.pose.pose.position
+        q = msg.pose.pose.orientation
+        cls.truth = (p.x, p.y)
+        cls.truth_yaw = yaw_of(q.x, q.y, q.z, q.w)
 
     @classmethod
     def _on_tf(cls, msg):
@@ -128,20 +117,6 @@ class FastLioOdometryTest(unittest.TestCase):
             if predicate():
                 return
         self.fail(why)
-
-    def _set_mode(self, fsm_id):
-        client = ActionClient(self.node, SetLocoMode, "/g1_loco_bridge/set_mode")
-        self.assertTrue(client.wait_for_server(timeout_sec=30.0), "set_mode server missing")
-        goal = SetLocoMode.Goal()
-        goal.fsm_id = fsm_id
-        future = client.send_goal_async(goal)
-        rclpy.spin_until_future_complete(self.node, future, timeout_sec=20.0)
-        handle = future.result()
-        self.assertIsNotNone(handle, f"SetLocoMode({fsm_id}) never reached the server")
-        self.assertTrue(handle.accepted, f"SetLocoMode({fsm_id}) rejected")
-        result = handle.get_result_async()
-        rclpy.spin_until_future_complete(self.node, result, timeout_sec=30.0)
-        client.destroy()
 
     def _collect(self, duration_s, command=None):
         samples = []
@@ -189,12 +164,9 @@ class FastLioOdometryTest(unittest.TestCase):
             f"fast_lio wandered {lio_wander:.2f} m while the robot stood still",
         )
 
-        # Phase 2: walk. The gait is not repeatable (see module docstring), so this bound has
-        # room for a bad one; scripts/lio_bench is where the precision number comes from.
-        self._set_mode(4)  # StandUp
-        time.sleep(3.0)
-        self._set_mode(500)  # Start
-        time.sleep(2.0)
+        # Phase 2: walk. Nothing puts the robot into a walking mode first, because the policy is
+        # already balancing it and takes velocity directly. CMD_VX clears the gait's deadband,
+        # below which the command produces no motion at all.
         cmd = Twist()
         cmd.linear.x = CMD_VX
         samples = self._collect(WALK_S, command=cmd)

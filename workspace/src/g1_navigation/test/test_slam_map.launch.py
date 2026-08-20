@@ -1,9 +1,8 @@
 """slam_toolbox maps the room it is actually in, and owns map -> odom.
 
 Deliberately does not drive the robot. The perception room is 8 x 8 m of bare wall and the
-LiDAR reaches 25 m, so one stationary sweep sees all of it -- driving would buy no coverage
-and would drag in the gait, which is nondeterministic enough that the bringup README warns
-about it. What this checks is the SLAM wiring and the resulting geometry, not exploration.
+LiDAR reaches 25 m, so one stationary sweep sees all of it, and driving would only drag the
+nondeterministic gait in. This checks the SLAM wiring and the resulting geometry.
 
 Pinned pelvis for the same reason as test_lidar_geometry.
 """
@@ -28,9 +27,8 @@ from tf2_ros import Buffer, TransformListener
 
 # mjcf/g1_perception_pinned_scene.xml: inner wall faces at +/-4.0 m, so 8 x 8 m of interior.
 ROOM_SIDE_M = 8.0
-# Generous: the grid is padded past the walls, and slam_toolbox sizes it to the raytraced
-# extent rather than to the geometry. This is checking "it mapped a room of about this size",
-# not the wall positions -- test_lidar_geometry already pins those to the centimetre.
+# Generous: the grid is padded past the walls and slam_toolbox sizes it to the raytraced
+# extent, so this checks the room is about this size, not where the walls are.
 EXTENT_TOL_M = 4.0
 
 # config/slam_mapping.yaml
@@ -48,6 +46,9 @@ def generate_test_description():
         ),
         launch_arguments={
             "sensors": "true",
+            # Ground truth, not the stack default: this scores the map, and estimator drift
+            # would show up as map error that is not the mapper's.
+            "odometry": "ground_truth",
             "pin_pelvis": "true",
             "world": "perception",
         }.items(),
@@ -59,9 +60,8 @@ def generate_test_description():
     slam = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(nav_share, "launch", "slam.launch.py")),
         # The shipped config keyframes on travel and a pinned robot never travels, so
-        # slam_toolbox would integrate one scan and stop. min_pass_through: 2 then marks nothing
-        # occupied, giving a map with the right extents and no walls in it. Overridden rather
-        # than copied so every other value still comes from the config that ships.
+        # slam_toolbox would integrate one scan and stop, mapping the right extents with no
+        # walls. Overridden rather than copied so every other value still comes from the config.
         launch_arguments={
             "params_overrides": json.dumps({
                 "minimum_travel_distance": 0.0,
@@ -89,12 +89,12 @@ class SlamMapTest(unittest.TestCase):
         cls.buffer = Buffer()
         cls.listener = TransformListener(cls.buffer, cls.node)
         cls.maps = []
-        # slam_toolbox latches /map, so a subscriber that joins late still gets it -- but only
-        # with matching durability.
+        # slam_toolbox latches /map, so a late subscriber still gets it, but only with matching
+        # durability.
         cls.node.create_subscription(
             OccupancyGrid,
             "/map",
-            cls.maps.append,
+            lambda msg: cls.maps.append(msg),
             QoSProfile(
                 depth=1,
                 reliability=QoSReliabilityPolicy.RELIABLE,

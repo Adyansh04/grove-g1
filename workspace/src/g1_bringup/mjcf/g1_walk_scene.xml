@@ -1,0 +1,15 @@
+<mujoco model="g1_walk_scene">
+  <!-- Overlay for the rt/lowcmd stack, where a policy owns balance. Wraps whichever world the
+       launch staged as the base below, so the startup weld applies in the bare floor scene and
+       in every sensor world alike. Staged into the vendored model directory at launch time so
+       MuJoCo's relative meshdir and include paths resolve correctly. -->
+  <include file="g1_walk_base.staged.xml"/>
+
+  <equality>
+    <!-- Held only until the control stack has driven every motor for half a second, then
+         released by the bridge and never re-applied. The simulator has no balance controller of
+         its own, so without this the robot is already on the floor by the time a policy exists
+         to catch it. The name is the contract: the bridge releases this weld and no other. -->
+    <weld name="pelvis_startup_hold" body1="pelvis"/>
+  </equality>
+</mujoco>

@@ -1,6 +1,11 @@
 #ifndef G1_ORCHESTRATION__SKILLS__CLEAR_COSTMAPS_HPP_
 #define G1_ORCHESTRATION__SKILLS__CLEAR_COSTMAPS_HPP_
 
+/**
+ * @file clear_costmaps.hpp
+ * @brief BT leaf that wipes both Nav2 costmaps.
+ */
+
 #include <string>
 
 #include "g1_orchestration/service_leaf.hpp"
@@ -8,14 +13,13 @@
 namespace g1_orchestration
 {
 
-/// Wipes both Nav2 costmaps. Not a skill: housekeeping between one manipulation and the next
-/// navigation goal.
-///
-/// Manipulating beside a surface leaves the costmaps holding the robot's own arm, the object it
-/// lifted, and whatever the base swept past. None of it is where the map says obstacles are, so
-/// Nav2 plans around the robot's own recent history.
-///
-/// Succeeds even when a costmap does not clear: hygiene before a goal, not a precondition.
+/**
+ * @brief Wipes both Nav2 costmaps.
+ *
+ * Housekeeping between a manipulation and the next navigation goal: working beside a surface
+ * leaves the arm and the lifted object in the costmaps as obstacles that never were. Succeeds
+ * even when a clear fails; this is hygiene, not a precondition.
+ */
 class ClearCostmaps : public ServiceLeaf
 {
 public:

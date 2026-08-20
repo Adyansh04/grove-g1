@@ -1,0 +1,276 @@
+# controller_manager config for the whole-body rt/lowcmd stack.
+#
+# Ownership split across the component's 29 body motors. The sets are disjoint and together
+# cover all 29 at every instant, which matters because the component leaves any unclaimed joint
+# unpowered:
+#
+#   locomotion_safety_controller  12 legs + waist roll/pitch, fed by the AGILE policy   14
+#   waist_freeze_controller       waist yaw                                              1
+#   arm_freeze_controller  OR  arm_trajectory_controller   the 14 arm joints            14
+#
+# Exactly one of the last pair is ever active. The arm bracket swaps them in a single switch,
+# which ros2_control applies atomically, so the arms are never momentarily unowned.
+#
+# The two hands are their own components on their own DDS topics and are not part of this
+# arithmetic; they come up inactive and the same bracket activates them.
+
+controller_manager:
+  ros__parameters:
+    # 200 Hz. The policy runs at 50 Hz under it via decimation 4, so this rate is part of the
+    # policy's contract rather than a free choice.
+    update_rate: 200
+
+    # SCHED_FIFO for the update loop. Without it the loop misses its 5 ms deadline by 2-3x as
+    # soon as the perception stack shares the machine: measured at 14 ms on an otherwise idle
+    # 32-core box, so it is scheduling latency rather than a shortage of cores. A balance policy
+    # fed stale observations diverges, so this is a correctness setting, not a tuning one.
+    thread_priority: 80
+
+    # Both hands wait for the arm bracket, so a Dex3 that is absent or unpowered fails at a
+    # point we control rather than during startup.
+    hardware_components_initial_state:
+      inactive:
+        - "G1Dex3SystemLeft"
+        - "G1Dex3SystemRight"
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+    imu_sensor_broadcaster:
+      type: imu_sensor_broadcaster/IMUSensorBroadcaster
+
+    waist_freeze_controller:
+      type: g1_controllers/G1FreezeController
+
+    arm_freeze_controller:
+      type: g1_controllers/G1FreezeController
+
+    locomotion_freeze_controller:
+      type: g1_controllers/G1FreezeController
+
+    locomotion_safety_controller:
+      type: g1_controllers/G1SafetyController
+
+    agile_controller:
+      type: g1_controllers/G1AgileController
+
+    arm_trajectory_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+
+    left_hand_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+
+    right_hand_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+
+joint_state_broadcaster:
+  ros__parameters:
+    interfaces:
+      - position
+      - velocity
+      - effort
+
+imu_sensor_broadcaster:
+  ros__parameters:
+    sensor_name: imu
+    frame_id: pelvis
+
+# The one joint no other controller wants: the policy was not trained on it and MoveIt does not
+# plan it. Held for the whole session, so acquiring or releasing the arm never disturbs it.
+waist_freeze_controller:
+  ros__parameters:
+    kp: 10.0
+    kd: 1.0
+    joints:
+      - waist_yaw_joint
+
+# Holds the arms whenever MoveIt does not. Swapped against arm_trajectory_controller, which
+# claims exactly the same joints, so the pair is a straight 1:1 handover.
+arm_freeze_controller:
+  ros__parameters:
+    # 40, not the 10 the other freezes use, so that swapping to arm_trajectory_controller does
+    # not change the arms' stiffness: that controller claims position alone and so runs on the
+    # component's position_only_kp, which is 40 for these joints. 10 does hold the rest pose,
+    # where the arms hang along gravity and the torque is small, but the handover would be a
+    # step change in stiffness, and MoveIt's first trajectory leaves that low-torque pose.
+    kp: 40.0
+    kd: 1.0
+    joints:
+      - left_shoulder_pitch_joint
+      - left_shoulder_roll_joint
+      - left_shoulder_yaw_joint
+      - left_elbow_joint
+      - left_wrist_roll_joint
+      - left_wrist_pitch_joint
+      - left_wrist_yaw_joint
+      - right_shoulder_pitch_joint
+      - right_shoulder_roll_joint
+      - right_shoulder_yaw_joint
+      - right_elbow_joint
+      - right_wrist_roll_joint
+      - right_wrist_pitch_joint
+      - right_wrist_yaw_joint
+
+# The emergency target the safety controller hands over to, claiming exactly the joints the
+# safety controller was driving and no more. Anything wider could not activate at all: the arm
+# and waist joints already have owners, and a switch that cannot take its resources would leave
+# the legs with no controller in the one situation where that matters most.
+locomotion_freeze_controller:
+  ros__parameters:
+    kp: 10.0
+    kd: 1.0
+    joints:
+      - left_hip_pitch_joint
+      - left_hip_roll_joint
+      - left_hip_yaw_joint
+      - left_knee_joint
+      - left_ankle_pitch_joint
+      - left_ankle_roll_joint
+      - right_hip_pitch_joint
+      - right_hip_roll_joint
+      - right_hip_yaw_joint
+      - right_knee_joint
+      - right_ankle_pitch_joint
+      - right_ankle_roll_joint
+      - waist_roll_joint
+      - waist_pitch_joint
+
+# The blend stage the policy writes through. Joint order here fixes the reference-interface
+# layout, not the policy's own ordering, which the controller maps by name.
+locomotion_safety_controller:
+  ros__parameters:
+    # 1.0 means "follow the policy". The controller's own code default is 0.0, holding the
+    # activation pose, so the robot never follows a policy because a config file went missing.
+    # Upstream ships 0.0 here and raises it to 1.0 for simulation only; first hardware bring-up
+    # should start from 0.0 and raise it deliberately rather than inheriting this.
+    blend_ratio: 1.0
+    # Fast on purpose. The simulator releases its pelvis weld the moment every motor is driven,
+    # which is the same tick this controller starts writing, so authority has to be complete by
+    # then: a partial blend commands a static pose, and a static pose topples exactly the way an
+    # unbalanced statue does. Measured, a one-second ramp put the robot on its face every time.
+    # On hardware the robot is supported and an operator raises blend_ratio by hand, so the rate
+    # limit still does its job there.
+    max_blend_ratio_speed: 20.0
+    # Deliberately unclamped: a balance policy corrects faster than any rate limit worth setting,
+    # and throttling it is what makes the robot fall rather than what prevents it.
+    max_velocity: [-1.0]
+    # Only reached when the policy writes nothing, which is the ticks before its first inference.
+    kp: [100.0]
+    kd: [2.0]
+    # Measured joint speeds this far outside the trained range mean the policy has diverged.
+    mean_velocity_limit: 10.0
+    max_velocity_limit: 35.0
+    emergency_controller: locomotion_freeze_controller
+    joints:
+      - left_hip_pitch_joint
+      - left_hip_roll_joint
+      - left_hip_yaw_joint
+      - left_knee_joint
+      - left_ankle_pitch_joint
+      - left_ankle_roll_joint
+      - right_hip_pitch_joint
+      - right_hip_roll_joint
+      - right_hip_yaw_joint
+      - right_knee_joint
+      - right_ankle_pitch_joint
+      - right_ankle_roll_joint
+      - waist_roll_joint
+      - waist_pitch_joint
+
+agile_controller:
+  ros__parameters:
+    # Empty resolves to the policy shipped in this package's share directory.
+    model_path: ""
+    # Nav2's controller_server output, taken straight with no shaping in between.
+    cmd_vel_topic: /cmd_vel
+    imu_sensor_name: imu
+    decimation: 4
+    command_prefix: locomotion_safety_controller
+    command_suffix: _raw
+    # Zero the command if Nav2 stops publishing, so a dead planner halts the robot.
+    cmd_vel_timeout: 0.5
+    # Beyond the measured envelope the policy simply saturates, so clamping here keeps the
+    # commanded and achieved velocities in a sane relationship for Nav2's own feedback.
+    max_linear_speed: 0.6
+    max_angular_speed: 0.9
+
+# MoveIt's arm path. Only the position interface is claimed, which puts these joints on the
+# component's position-only branch and its position_only_kp/kd from the URDF.
+arm_trajectory_controller:
+  ros__parameters:
+    joints:
+      - left_shoulder_pitch_joint
+      - left_shoulder_roll_joint
+      - left_shoulder_yaw_joint
+      - left_elbow_joint
+      - left_wrist_roll_joint
+      - left_wrist_pitch_joint
+      - left_wrist_yaw_joint
+      - right_shoulder_pitch_joint
+      - right_shoulder_roll_joint
+      - right_shoulder_yaw_joint
+      - right_elbow_joint
+      - right_wrist_roll_joint
+      - right_wrist_pitch_joint
+      - right_wrist_yaw_joint
+    command_interfaces:
+      - position
+    state_interfaces:
+      - position
+      - velocity
+    state_publish_rate: 100.0
+    action_monitor_rate: 20.0
+    # MoveIt plans one arm at a time, left_arm and right_arm being 7 joints each, and with
+    # this false the JTC rejects any goal that does not name all 14.
+    allow_partial_joints_goal: true
+    constraints:
+      stopped_velocity_tolerance: 0.05
+      goal_time: 5.0
+
+# Both hands, in Dex3 wire order. The order is for readers, since the JTC remaps by name, but
+# g1_moveit_config's drift test pins it against the SRDF group and the hardware component,
+# which does care: HandCmd.motor_cmd is a positional array.
+left_hand_controller:
+  ros__parameters:
+    joints:
+      - left_hand_thumb_0_joint
+      - left_hand_thumb_1_joint
+      - left_hand_thumb_2_joint
+      - left_hand_middle_0_joint
+      - left_hand_middle_1_joint
+      - left_hand_index_0_joint
+      - left_hand_index_1_joint
+    command_interfaces:
+      - position
+    state_interfaces:
+      - position
+      - velocity
+    state_publish_rate: 100.0
+    action_monitor_rate: 20.0
+    # A grasp usually drives some fingers and leaves others where they are.
+    allow_partial_joints_goal: true
+    constraints:
+      stopped_velocity_tolerance: 0.05
+      goal_time: 5.0
+
+right_hand_controller:
+  ros__parameters:
+    joints:
+      - right_hand_thumb_0_joint
+      - right_hand_thumb_1_joint
+      - right_hand_thumb_2_joint
+      - right_hand_middle_0_joint
+      - right_hand_middle_1_joint
+      - right_hand_index_0_joint
+      - right_hand_index_1_joint
+    command_interfaces:
+      - position
+    state_interfaces:
+      - position
+      - velocity
+    state_publish_rate: 100.0
+    action_monitor_rate: 20.0
+    allow_partial_joints_goal: true
+    constraints:
+      stopped_velocity_tolerance: 0.05
+      goal_time: 5.0

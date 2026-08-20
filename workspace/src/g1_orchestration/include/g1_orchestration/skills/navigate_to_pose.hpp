@@ -1,6 +1,11 @@
 #ifndef G1_ORCHESTRATION__SKILLS__NAVIGATE_TO_POSE_HPP_
 #define G1_ORCHESTRATION__SKILLS__NAVIGATE_TO_POSE_HPP_
 
+/**
+ * @file navigate_to_pose.hpp
+ * @brief BT leaf that drives the base to a pose through Nav2.
+ */
+
 #include <nav2_msgs/action/navigate_to_pose.hpp>
 #include <string>
 
@@ -10,11 +15,13 @@
 namespace g1_orchestration
 {
 
-/// Drives the base to a pose. Nav2 is a black box here: the tree never sees a costmap, a
-/// planner or a recovery, only whether the goal was reached.
-///
-/// The one action leaf that is not a SkillActionNode. Nav2's result is empty, so the outcome is
-/// the result code alone.
+/**
+ * @brief Drives the base to a pose.
+ *
+ * Nav2 is a black box here: the tree never sees a costmap, a planner or a recovery, only
+ * whether the goal was reached. The one action leaf that is not a SkillActionNode, because
+ * Nav2's result is empty and the outcome is the result code alone.
+ */
 class NavigateToPose : public RosActionNode<nav2_msgs::action::NavigateToPose>
 {
 public:

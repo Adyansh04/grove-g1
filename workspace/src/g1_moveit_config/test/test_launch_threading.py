@@ -6,7 +6,7 @@ looks successful. This file covers the half that one cannot.
 
 The split is forced, not stylistic. bringup's moveit branch calls
 get_package_share_directory("g1_moveit_config"), so those assertions cannot live in
-g1_navigation -- a workspace built without this package would hit the actionable RuntimeError
+g1_navigation, because a workspace built without this package would hit the actionable RuntimeError
 instead of the assertion. The reverse holds for the navigation branch, which is why that
 package keeps its own copy.
 
@@ -97,34 +97,15 @@ def test_the_moveit_branch_stages_a_simulator_and_move_group(bringup):
     assert names == ["sim.launch.py", "move_group.launch.py"]
 
 
-def test_moveit_demands_non_arm_joint_states(bringup):
-    """The coupling pin.
+def test_moveit_gets_a_simulator_with_sensors(bringup):
+    """move_group refuses to plan until every active joint has a state.
 
-    move_group refuses to plan until every active joint has a state, and the arms hang off
-    three waist joints joint_state_broadcaster does not own. Without this the stack comes up
-    looking healthy and every plan fails.
+    joint_state_broadcaster covers all 29 body motors from the hardware component, so the
+    only thing MoveIt still needs staged for it is the simulator itself.
     """
-    sim = dict(_includes(_run_setup(bringup, mode="none", moveit="true")))["sim.launch.py"]
-    assert sim["non_arm_joint_states"] == "true"
-
-
-def test_the_flag_is_not_offered_to_the_operator(bringup):
-    """moveit:=true cannot be talked out of the joint states it needs.
-
-    Declaring the name here would allow moveit:=true non_arm_joint_states:=false, which is a
-    move_group that starts healthy and then never plans. A bare launch still leaves the
-    decision to sim.launch.py's own default.
-    """
-    declared = [
-        name
-        for name in (
-            getattr(entity, "name", None)
-            for entity in bringup.generate_launch_description().entities
-        )
-        if name
-    ]
-    assert "moveit" in declared, "sanity: this is how the other assertion reads the arguments"
-    assert "non_arm_joint_states" not in declared
+    includes = dict(_includes(_run_setup(bringup, mode="none", moveit="true")))
+    assert "sim.launch.py" in includes
+    assert "move_group.launch.py" in includes
 
     bare = dict(_includes(_run_setup(bringup, mode="none")))["sim.launch.py"]
     assert "non_arm_joint_states" not in bare
@@ -132,18 +113,15 @@ def test_the_flag_is_not_offered_to_the_operator(bringup):
 
 @pytest.mark.parametrize("mode", ["none", "localization"])
 def test_moveit_gets_the_loaded_start_delay(bringup, mode):
-    # move_group starts alongside the simulator, so even mode:=none is no longer a bare launch.
+    # move_group starts alongside the simulator, so even mode:=none is not a bare launch.
     sim = dict(_includes(_run_setup(bringup, mode=mode, moveit="true")))["sim.launch.py"]
     assert sim["sim_start_delay_s"] == "4.0"
 
 
 def test_moveit_rviz_wins_wherever_both_are_asked_for(bringup):
-    """Measured 2026-08-06, not chosen on taste.
-
-    Substituting g1_navigation.rviz into moveit_rviz.launch.py launches cleanly and leaves the
-    MotionPlanning panel absent -- the panel comes from the config's display list, and the nav
-    config has none. `ros2 node info` on that RViz showed no planning-scene subscription at
-    all. So MoveIt's own config is what runs, in every mode.
+    """Substituting g1_navigation.rviz into moveit_rviz.launch.py launches cleanly and leaves
+    the MotionPlanning panel absent, because that panel comes from the config's display list and
+    the nav config has none. So MoveIt's own config is what runs, in every mode.
     """
     for mode in ("none", "localization"):
         rviz = [
@@ -170,23 +148,14 @@ def test_the_arm_development_combination_is_not_blocked(bringup):
     """pin_pelvis is refused on the navigation modes but must stay available with MoveIt: a
     balancing robot sways, and the whole arm chain hangs off the pelvis."""
     sim = dict(
-        _includes(
-            _run_setup(
-                bringup,
-                mode="none",
-                moveit="true",
-                pin_pelvis="true",
-                waist_hold_rad="0.35,0.0,0.0",
-            )
-        )
+        _includes(_run_setup(bringup, mode="none", moveit="true", pin_pelvis="true"))
     )["sim.launch.py"]
     assert sim["pin_pelvis"] == "true"
-    assert sim["waist_hold_rad"] == "0.35,0.0,0.0"
 
 
 def test_no_moveit_means_g1_moveit_config_is_never_named(bringup):
     """Keeps a workspace without this package launchable, which is what the undeclared
-    dependency buys and what _moveit_share() would otherwise refuse."""
+    dependency buys and what _share() would otherwise refuse."""
     for mode in ("none", "localization"):
         actions, context = _run_setup(bringup, mode=mode, rviz="true")
         for action in actions:
@@ -200,7 +169,7 @@ def test_a_missing_package_is_reported_actionably(bringup, monkeypatch):
 
     monkeypatch.setattr(bringup, "get_package_share_directory", absent)
     with pytest.raises(RuntimeError, match="colcon build --packages-select g1_moveit_config"):
-        bringup._moveit_share()
+        bringup._share("g1_moveit_config")
 
 
 # --- the standalone wrapper, which this refactor must leave alone ---------------------
@@ -211,7 +180,6 @@ def test_moveit_sim_still_composes_the_same_two_pieces(moveit_sim):
     assert [name for name, _ in includes] == ["sim.launch.py", "move_group.launch.py"]
 
     sim = dict(includes)["sim.launch.py"]
-    assert sim["non_arm_joint_states"] == "true"
     # The other copy of each fact bringup states; if these drift, one path plans and the other
     # silently does not.
     assert sim["sensors"] == "false"

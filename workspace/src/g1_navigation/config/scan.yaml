@@ -3,13 +3,13 @@
 # Only slam_toolbox needs this. It is a 2D scan matcher and consumes LaserScan and nothing
 # else. The Nav2 costmaps take the PointCloud2 directly, which is deliberate: the height band
 # below throws away everything under 0.30 m, and that is exactly the obstacle class a walking
-# robot must not hit -- crates, the ramp, a pallet, a step.
+# robot must not hit: crates, the ramp, a pallet, a step.
 pointcloud_to_laserscan:
   ros__parameters:
     use_sim_time: false
 
     # Gravity-aligned, so the height band below is absolute above the floor. The measured
-    # alternative -- banding in a body-attached frame -- costs 13% more occupied cells and 6%
+    # alternative, banding in a body-attached frame, costs 13% more occupied cells and 6%
     # thicker walls while walking, because the pelvis pitches roughly 5 degrees with the gait.
     # More importantly the pelvis's own height moves (0.733-0.767 m walking, further across
     # FSM states), so a body-relative band would slide up and down the walls.
@@ -17,7 +17,7 @@ pointcloud_to_laserscan:
 
     # Measured on the navigation scene: this band puts a return in 360 of 360 one-degree
     # azimuth bins, keeps 6240 of 11520 points, and holds per-bin range to 0.14 cm across
-    # frames. A narrow band ([0.20, 0.60]) reaches only 261 of 360 bins -- the sensor's
+    # frames. A narrow band ([0.20, 0.60]) reaches only 261 of 360 bins, because the sensor's
     # 1.9-degree elevation steps are too coarse to fill a thin slice at range.
     min_height: 0.30
     max_height: 1.50
@@ -33,8 +33,8 @@ pointcloud_to_laserscan:
     # self-return to filter out.
     range_min: 0.1
     # The facility is 17.9 x 18.0 m, so this spans it corner to corner with margin. A shorter
-    # range would reduce the radial spoke artifacts in mapped free space -- at 15 m adjacent
-    # beams are 26 cm apart -- but those are an appearance problem, and cutting reach risks
+    # range would reduce the radial spoke artifacts in mapped free space, since at 15 m adjacent
+    # beams are 26 cm apart, but those are an appearance problem and cutting reach risks
     # real coverage gaps at the far wall. 25.0 is the value that produced a clean, complete
     # map end to end.
     range_max: 25.0

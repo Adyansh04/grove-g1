@@ -52,6 +52,9 @@ def generate_test_description():
         ),
         launch_arguments={
             "sensors": "true",
+            # Ground truth, not the stack default: the numbers here are sensor geometry against
+            # a known room, measured with the pelvis pinned.
+            "odometry": "ground_truth",
             "pin_pelvis": "true",
             # The small bare room this test's numbers come from, not the facility.
             "world": "perception",
@@ -89,7 +92,7 @@ class LidarGeometryTest(unittest.TestCase):
             PointCloud2, CLOUD_TOPIC, cls._on_cloud, qos_profile_sensor_data
         )
         cls.node.create_subscription(
-            PoseStamped, POSE_TOPIC, cls.poses.append, qos_profile_sensor_data
+            PoseStamped, POSE_TOPIC, lambda msg: cls.poses.append(msg), qos_profile_sensor_data
         )
         cls._wait(lambda: len(cls.clouds) > 0 and len(cls.poses) > 0, BRINGUP_TIMEOUT_S)
 

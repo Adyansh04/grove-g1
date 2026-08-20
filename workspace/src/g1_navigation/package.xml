@@ -5,7 +5,7 @@
   <version>0.1.0</version>
   <description>
     SLAM Toolbox mapping and Nav2 navigation for the G1 on the converged unitree_mujoco
-    track. Configuration, launch and maps only -- the nodes are upstream.
+    track. Configuration, launch and maps only; the nodes are upstream.
   </description>
   <maintainer email="gupta.adyansh@gmail.com">Adyansh</maintainer>
   <license>BSD-3-Clause</license>
@@ -44,6 +44,7 @@
   <test_depend>g1_msgs</test_depend>
   <test_depend>launch_testing</test_depend>
   <test_depend>launch_testing_ament_cmake</test_depend>
+  <test_depend>std_srvs</test_depend>
   <test_depend>lifecycle_msgs</test_depend>
   <test_depend>nav2_msgs</test_depend>
   <test_depend>nav_msgs</test_depend>

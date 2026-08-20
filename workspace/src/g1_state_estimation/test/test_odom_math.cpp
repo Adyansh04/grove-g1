@@ -1,3 +1,8 @@
+/**
+ * @file test_odom_math.cpp
+ * @brief The frame, staleness and source-parsing math, with no node or graph.
+ */
+
 #include <gmock/gmock.h>
 
 #include <cmath>
@@ -30,8 +35,8 @@ constexpr double kTol = 1e-12;
 TEST(ParseOdometrySource, AcceptsEveryKnownName)
 {
     OdometrySource source = OdometrySource::kHardware;
-    ASSERT_TRUE(parseOdometrySource("sim_sportmodestate", source));
-    EXPECT_EQ(source, OdometrySource::kSimSportModeState);
+    ASSERT_TRUE(parseOdometrySource("ground_truth", source));
+    EXPECT_EQ(source, OdometrySource::kGroundTruth);
 
     ASSERT_TRUE(parseOdometrySource("fast_lio", source));
     EXPECT_EQ(source, OdometrySource::kFastLio);
@@ -43,27 +48,28 @@ TEST(ParseOdometrySource, AcceptsEveryKnownName)
 TEST(ParseOdometrySource, RejectsAnythingElseAndLeavesTheOutputAlone)
 {
     // A typo must not silently become a working source, which would fabricate transforms.
-    // sim_ground_truth is in the list because it named a source this node no longer has: a
-    // stale config still naming it has to fail rather than quietly pick something else.
-    OdometrySource source = OdometrySource::kSimSportModeState;
+    // sim_ground_truth and sim_sportmodestate are in the list because each named a source this
+    // node no longer has: a stale config still naming one has to fail rather than quietly pick
+    // something else.
+    OdometrySource source = OdometrySource::kGroundTruth;
     for (const char* name : { "",
                               "sim",
                               "sim_ground_truth",
-                              "SIM_SPORTMODESTATE",
-                              "ground_truth",
+                              "sim_sportmodestate",
+                              "GROUND_TRUTH",
                               "hardware ",
                               "fastlio",
                               "sportmodestate",
                               "sim_sportmode" })
     {
         EXPECT_FALSE(parseOdometrySource(name, source)) << "accepted " << name;
-        EXPECT_EQ(source, OdometrySource::kSimSportModeState);
+        EXPECT_EQ(source, OdometrySource::kGroundTruth);
     }
 }
 
 TEST(YawQuaternion, RoundTripsOverTheFullCircle)
 {
-    for (int i = 0; - M_PI + 1e-6 + i * 0.1 < M_PI; ++i)
+    for (int i = 0; -M_PI + 1e-6 + i * 0.1 < M_PI; ++i)
     {
         const double yaw = -M_PI + 1e-6 + i * 0.1;
         EXPECT_NEAR(quaternionToYaw(yawToQuaternion(yaw)), yaw, 1e-9) << "yaw " << yaw;
@@ -131,7 +137,7 @@ TEST(ToBodyTwist, PreservesSpeedAndYawRate)
 {
     const PlanarTwist world{ 0.3, -0.7, 0.9 };
     const double      world_speed = std::hypot(world.vx, world.vy);
-    for (int i = 0; - 3.0 + i * 0.37 < 3.0; ++i)
+    for (int i = 0; -3.0 + i * 0.37 < 3.0; ++i)
     {
         const double      yaw  = -3.0 + i * 0.37;
         const PlanarTwist body = toBodyTwist(world, yaw);
@@ -155,7 +161,7 @@ TEST(IsStale, NonPositiveTimeoutDisablesTheCheck)
 
 namespace
 {
-/// Roll-pitch-yaw to quaternion, ZYX order -- the convention quaternionToYaw()
+/// Roll-pitch-yaw to quaternion, ZYX order: the convention quaternionToYaw()
 /// inverts.
 Quaternion rpyToQuaternion(double roll, double pitch, double yaw)
 {
@@ -190,7 +196,7 @@ TEST(QuaternionToYaw, IgnoresRollAndPitch)
     // The measured standing attitude on the converged track: a few degrees of
     // pitch under a real heading. The old 2*atan2(z, w) form was exact only at
     // zero tilt.
-    for (int i = 0; - 3.0 + i * 0.41 < 3.0; ++i)
+    for (int i = 0; -3.0 + i * 0.41 < 3.0; ++i)
     {
         const double     yaw = -3.0 + i * 0.41;
         const Quaternion q   = rpyToQuaternion(0.0, 0.0794, yaw);
@@ -225,13 +231,13 @@ TEST(SplitGroundProjection, FootprintIsGravityAlignedAndTheOffsetIsPurelyVertica
 
 TEST(SplitGroundProjection, RecomposesToTheOriginalPose)
 {
-    for (int ir = 0; - 0.4 + ir * 0.19 <= 0.4; ++ir)
+    for (int ir = 0; -0.4 + ir * 0.19 <= 0.4; ++ir)
     {
         const double roll = -0.4 + ir * 0.19;
-        for (int ip = 0; - 0.4 + ip * 0.19 <= 0.4; ++ip)
+        for (int ip = 0; -0.4 + ip * 0.19 <= 0.4; ++ip)
         {
             const double pitch = -0.4 + ip * 0.19;
-            for (int iy = 0; - 3.0 + iy * 0.91 < 3.0; ++iy)
+            for (int iy = 0; -3.0 + iy * 0.91 < 3.0; ++iy)
             {
                 const double      yaw = -3.0 + iy * 0.91;
                 const Quaternion  q   = rpyToQuaternion(roll, pitch, yaw);

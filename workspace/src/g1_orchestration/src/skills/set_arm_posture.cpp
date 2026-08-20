@@ -1,3 +1,8 @@
+/**
+ * @file set_arm_posture.cpp
+ * @brief Ports and goal for the SetArmPosture leaf.
+ */
+
 #include "g1_orchestration/skills/set_arm_posture.hpp"
 
 #include <string>

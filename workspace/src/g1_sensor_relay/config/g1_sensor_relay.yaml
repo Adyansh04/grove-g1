@@ -1,0 +1,31 @@
+# Publishes the simulator's sensor frames onto ROS. The socket path must match the one
+# unitree_mujoco reads from g1_bringup/config/sim_sensors.yaml.
+g1_sensor_relay:
+  ros__parameters:
+    socket_path: "/tmp/g1_sensors.sock"
+    # How often the socket is drained. Well above the 10 Hz sweep so a frame is never
+    # waiting on the poll.
+    poll_hz: 500.0
+
+    # LiDAR
+    topic: "/livox/lidar"
+    frame_id: "mid360_link"
+    # odom, not world: the cloud has to land in the frame the planners work in.
+    world_frame_id: "odom"
+
+    # IMU inside the Mid360
+    imu_topic: "/livox/imu"
+    imu_frame_id: "mid360_imu"
+
+    # Depth camera. Two namespaces for the same intrinsics, because rviz's DepthCloud looks
+    # for camera_info beside the depth image and a real D435i with align_depth publishes both.
+    depth_topic: "/camera/aligned_depth_to_color/image_raw"
+    depth_info_topic: "/camera/aligned_depth_to_color/camera_info"
+    depth_frame_id: "camera_depth_optical_frame"
+    color_topic: "/camera/color/image_raw"
+    info_topic: "/camera/color/camera_info"
+    color_frame_id: "camera_color_optical_frame"
+
+    # Ground-truth pelvis state, sim only.
+    base_state_frame_id: "pelvis"
+    base_state_odom_frame: "odom"

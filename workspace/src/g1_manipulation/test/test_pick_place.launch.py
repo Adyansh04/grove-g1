@@ -17,6 +17,7 @@ import os
 import time
 import unittest
 
+import launch_testing
 import launch_testing.actions
 import rclpy
 from ament_index_python.packages import get_package_share_directory
@@ -27,11 +28,16 @@ from rclpy.action import ActionClient
 from rclpy.node import Node
 from vision_msgs.msg import Detection3DArray
 
-from g1_msgs.action import Pick, Place
+from g1_msgs.action import Pick, Place, SetArmPosture
 
 # The stack needs longer here than the MoveIt suites do: this one brings up the simulator,
 # move_group, the skills AND the object pipeline, and the acquire is delayed behind all of it.
 STACK_SETTLE_S = 55.0
+# launch_testing waits only 15 s for ReadyToTest by default (loader.py), and a settle past that
+# aborts the run with "Timed out waiting for processes to start up" before a single test runs.
+# The MoveIt suites settle in 12-14 s and never hit it, which is why this is the only file that
+# needs the override.
+READY_TIMEOUT_S = STACK_SETTLE_S + 30.0
 
 OBJECT_ID = "red_cube"
 
@@ -39,7 +45,11 @@ OBJECT_ID = "red_cube"
 # OMPL is given 10 s per plan; this is a timeout, not an expectation.
 PICK_TIMEOUT_S = 240.0
 
+# A tuck is one planned motion per arm, so it needs nothing like a pick's budget.
+POSTURE_TIMEOUT_S = 90.0
 
+
+@launch_testing.ready_to_test_action_timeout(READY_TIMEOUT_S)
 def generate_test_description():
     bringup = get_package_share_directory("g1_bringup")
     stack = IncludeLaunchDescription(
@@ -47,6 +57,11 @@ def generate_test_description():
         launch_arguments={
             "moveit": "true",
             "manipulation": "true",
+            # Ground truth, not the stack default. FAST-LIO cannot work in this scene: the
+            # manipulation world is a bench at arm's length with the pelvis pinned, so the
+            # Mid360 returns nothing, fast_lio logs "No point, skip this scan!" forever and
+            # never publishes odom, leaving g1_object_pose_source with no frame to place into.
+            "odometry": "ground_truth",
             # The object is at arm's length here, so nothing has to drive anywhere and the
             # gait cannot make the test flaky. The facility mission is g1_orchestration's.
             "world": "manipulation",
@@ -75,6 +90,9 @@ class TestPickPlace(unittest.TestCase):
         cls.node.create_subscription(Detection3DArray, "/objects", _on_objects, 1)
         cls.pick = ActionClient(cls.node, Pick, "/g1_manipulation_server/pick")
         cls.place = ActionClient(cls.node, Place, "/g1_manipulation_server/place")
+        cls.posture = ActionClient(
+            cls.node, SetArmPosture, "/g1_manipulation_server/set_arm_posture"
+        )
 
     @classmethod
     def tearDownClass(cls):
@@ -119,7 +137,24 @@ class TestPickPlace(unittest.TestCase):
         # On the table, not on the floor and not at the origin. The scene puts it at 0.83.
         self.assertGreater(pose.position.z, 0.7, "the cube is not on the table")
 
-    def test_02_a_pick_lifts_the_object_for_real(self):
+    def test_02_the_arms_tuck_clear_of_the_workbench(self):
+        """Both arms, before anything is planned, exactly as the mission tree does it.
+
+        A hanging hand sits about 21 cm in front of the pelvis and 1 cm UNDER the workbench
+        slab, so it lands inside the bench's octomap. MoveIt's CheckStartStateCollision looks at
+        the whole robot, not just the group being planned for, so one hanging arm refuses every
+        plan, including opening the other hand. The mission tucks both arms for the same
+        reason; a test that skips it is testing a pose the robot is never in.
+        """
+        for group in ("right_arm", "left_arm"):
+            result = self._send(
+                self.posture,
+                SetArmPosture.Goal(group=group, named_target="tucked"),
+                POSTURE_TIMEOUT_S,
+            )
+            self.assertTrue(result.success, f"{group} would not tuck: {result.message}")
+
+    def test_03_a_pick_lifts_the_object_for_real(self):
         """Measures the OBJECT. A pick that only succeeds in the planning scene fails here."""
         before = self._object_pose()
         self.assertIsNotNone(before)
@@ -139,7 +174,7 @@ class TestPickPlace(unittest.TestCase):
             f"the cube did not leave the surface: {before.position.z} -> {after.position.z}",
         )
 
-    def test_03_a_place_puts_it_back_down(self):
+    def test_04_a_place_puts_it_back_down(self):
         """Runs after the pick, so the arm is holding the cube."""
         target = self._object_pose()
         self.assertIsNotNone(target)
@@ -154,7 +189,7 @@ class TestPickPlace(unittest.TestCase):
         result = self._send(self.place, goal, PICK_TIMEOUT_S)
         self.assertTrue(result.success, f"place failed: {result.message}")
 
-    def test_04_an_unknown_object_is_refused_not_guessed_at(self):
+    def test_05_an_unknown_object_is_refused_not_guessed_at(self):
         """The pose source has no such object, so the skill must decline rather than reach."""
         result = self._send(
             self.pick, Pick.Goal(object_id="no_such_object", arm="right"), 60.0
@@ -162,7 +197,7 @@ class TestPickPlace(unittest.TestCase):
         self.assertFalse(result.success)
         self.assertIn("locating", result.message)
 
-    def test_05_a_bad_arm_is_refused(self):
+    def test_06_a_bad_arm_is_refused(self):
         result = self._send(self.pick, Pick.Goal(object_id=OBJECT_ID, arm="middle"), 60.0)
         self.assertFalse(result.success)
         self.assertIn("left", result.message)

@@ -1,3 +1,8 @@
+/**
+ * @file navigate_to_pose.cpp
+ * @brief Ports, goal and result judgement for the NavigateToPose leaf.
+ */
+
 #include "g1_orchestration/skills/navigate_to_pose.hpp"
 
 #include <tf2/LinearMath/Quaternion.h>

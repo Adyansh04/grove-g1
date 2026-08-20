@@ -1,0 +1,39 @@
+<class_libraries>
+
+  <library path="g1_freeze_controller">
+    <class name="g1_controllers/G1FreezeController"
+           type="g1_controllers::G1FreezeController"
+           base_class_type="controller_interface::ControllerInterface">
+      <description>
+        Captures each claimed joint's position on activation and holds it there under
+        impedance control. The safe resting state for a robot whose balance policy is not
+        running.
+      </description>
+    </class>
+  </library>
+
+  <library path="g1_agile_controller">
+    <class name="g1_controllers/G1AgileController"
+           type="g1_controllers::G1AgileController"
+           base_class_type="controller_interface::ControllerInterface">
+      <description>
+        Runs the AGILE velocity policy on the 12 leg joints plus waist roll and pitch,
+        tracking a cmd_vel command. Leaves the arms and waist yaw unclaimed so a trajectory
+        controller can own them at the same time.
+      </description>
+    </class>
+  </library>
+
+  <library path="g1_safety_controller">
+    <class name="g1_controllers/G1SafetyController"
+           type="g1_controllers::G1SafetyController"
+           base_class_type="controller_interface::ChainableControllerInterface">
+      <description>
+        Chainable stage between a policy and the lowcmd component. Ramps the policy in from the
+        pose held at activation, clamps how fast each joint may move, and freezes onto the last
+        safe pose if joint velocities leave the trained range.
+      </description>
+    </class>
+  </library>
+
+</class_libraries>

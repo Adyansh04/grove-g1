@@ -3,20 +3,20 @@ name: ${COMPOSE_PROJECT_NAME:-ros2_project_template}
 services:
   ros-dev:
     # Derived development image (distinct from BASE_IMAGE)
-    image: ${DEV_IMAGE_REPO:-adyansh04/ros-dev-workspace}:${ROS_DISTRO:-humble}
+    image: ${DEV_IMAGE_REPO:-adyansh04/ros-dev-workspace}:${ROS_DISTRO:-jazzy}
     build:
       context: .
       dockerfile: .devcontainer/Dockerfile
       args:
         # Base image from your pre-built upstream images
-        BASE_IMAGE: ${BASE_IMAGE_REPO:-adyansh04/ros-dev}:${ROS_DISTRO:-humble}${BASE_IMAGE_TAG_SUFFIX:--latest}
+        BASE_IMAGE: ${BASE_IMAGE_REPO:-adyansh04/ros-dev}:${ROS_DISTRO:-jazzy}${BASE_IMAGE_TAG_SUFFIX:--latest}
 
     # Keep the container running and attachable
     tty: true
     stdin_open: true
 
     # Container name includes the ROS distro for clarity
-    container_name: ${CONTAINER_PREFIX:-ros_dev}_${ROS_DISTRO:-humble}
+    container_name: ${CONTAINER_PREFIX:-ros_dev}_${ROS_DISTRO:-jazzy}
 
     # Persistent host mounts using long (object) syntax
     volumes:
@@ -84,7 +84,7 @@ services:
       - GROVE_G1_ROBOT_NIC=${GROVE_G1_ROBOT_NIC:-eth0}
       - DISPLAY=${DISPLAY}
       - QT_X11_NO_MITSHM=1
-      - ROS_DISTRO=${ROS_DISTRO:-humble}
+      - ROS_DISTRO=${ROS_DISTRO:-jazzy}
       - NVIDIA_DRIVER_CAPABILITIES=all
       - __GLX_VENDOR_LIBRARY_NAME=nvidia
       - __EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/10_nvidia.json

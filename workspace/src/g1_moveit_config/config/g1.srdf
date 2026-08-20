@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <robot name="g1_29dof_with_hand_rev_1_0">
-  <!-- Hand-authored, against urdf/g1_arm_sdk.urdf.xacro in g1_description. Only the
+  <!-- Hand-authored, against urdf/g1_lowcmd.urdf.xacro in g1_description. Only the
        disable_collisions block at the bottom is generated; that block carries its own note
        on how, and README.md has the command.
 
@@ -14,10 +14,10 @@
        floating joint to `odom` instead: 6 more DoF and a TF dependency, so it is a decision to
        make when there is something to fix it against. -->
 
-  <!-- base_link is torso_link, not pelvis: the three waist joints belong to the onboard
-       controller, and a group that spans them would plan motion we
-       cannot command. Their state still matters, it is what places torso_link under pelvis,
-       which is why motion_service_sim has to publish it.
+  <!-- base_link is torso_link, not pelvis: waist_freeze_controller holds the three waist joints
+       for the whole session, and a group that spans them would plan motion nothing will
+       execute. Their state still matters, it is what places torso_link under pelvis, and
+       joint_state_broadcaster publishes it along with every other motor.
 
        tip_link is the palm rather than wrist_yaw_link. The palm joint is fixed, so both give
        the same 7 joints and differ only in where a pose goal is measured; the palm is where a
@@ -95,11 +95,9 @@
 
   <!-- Named postures. Every value below was collision-checked against a running move_group
        (/check_state_validity, both_arms) before being written here, not chosen on a diagram.
-       `home` is the posture the simulator holds the arms at, and the arrow points this way
-       round: g1_motion_service_sim's `arm_hold_rad` is set from these values, and the drift
-       test pins the pair, rather than the SRDF being derived from wherever the arms happen to
-       fall at startup: that direction leaves no margin against a heavier hand closing the
-       palm-to-thigh gap.
+       `home` is the posture the arms are measured at once the stack has them. It is written
+       here rather than derived from wherever the arms happen to fall at startup: that
+       direction leaves no margin against a heavier hand closing the palm-to-thigh gap.
 
        The small shoulder roll is what buys that margin: it swings each arm off the torso so
        neither the sag nor a heavier hand closes the gap.

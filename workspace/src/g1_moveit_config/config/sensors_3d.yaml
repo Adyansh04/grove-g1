@@ -1,6 +1,6 @@
 # The 3D LiDAR into the planning scene, so move_group plans around what the robot can see.
 #
-# octomap_resolution is read at the node root, not inside a sensor block -- move_group's
+# octomap_resolution is read at the node root, not inside a sensor block, because move_group's
 # to_dict() flat-merges this whole file into its parameters, which is the only reason a
 # top-level key here becomes a node parameter. Without it move_group logs "Resolution not
 # specified for Octomap. Assuming resolution = 0.1".
@@ -14,7 +14,7 @@
 octomap_resolution: 0.025
 
 # `sensors` is a flat list of names, each a sibling top-level key below. It is not a list of
-# dicts -- ROS 2 parameters cannot represent that, which is why the Humble perception tutorial
+# dicts, which ROS 2 parameters cannot represent, so the perception tutorial
 # (still an unmigrated ROS 1 page, its source begins ":moveit1:") cannot be copied.
 sensors:
   - mid360_cloud
@@ -22,12 +22,12 @@ sensors:
 # PointCloudOctomapUpdater rather than DepthImageOctomapUpdater, and not by preference.
 # On 2.5.9 the depth-image plugin's initialize() runs before setParams()
 # (occupancy_map_monitor.cpp L97 then L100), and initialize() is where the clipping planes,
-# shadow threshold and padding are pushed into the mesh filter -- so none of its YAML ever
+# shadow threshold and padding are pushed into the mesh filter, so none of its YAML ever
 # applies. Padding is the self-filter, and an untunable self-filter is not usable. That plugin
 # also links OpenGL, which a CPU-only machine cannot load.
 #
 # Every key below is mandatory: setParams() ANDs all seven, and dropping one skips the sensor
-# with nothing but an error log. Keep the decimal points -- an int where a double is expected
+# with nothing but an error log. Keep the decimal points: an int where a double is expected
 # throws out of the monitor constructor.
 mid360_cloud:
   sensor_plugin: occupancy_map_monitor/PointCloudOctomapUpdater
@@ -37,7 +37,7 @@ mid360_cloud:
   # would not receive from our relay: the relay publishes SensorDataQoS (best effort) and that
   # node's image_transport subscription is reliable, so it sat silent with the image publishing
   # at 10 Hz beside it. Remapping was correct (verified with `ros2 node info`) and a
-  # qos_overrides parameter did not take either -- the node does not enable QoS overriding on
+  # qos_overrides parameter did not take either, because the node does not enable overriding on
   # those subscriptions.
   #
   # The LiDAR sidesteps all of it: already a PointCloud2, and the octomap updater subscribes
@@ -54,7 +54,7 @@ mid360_cloud:
 
   # Self-filter padding, applied to the robot's own URDF collision geometry. Generous on the
   # multiplier because those meshes become convex hulls, and a hull of the rubber hand is
-  # already a fat blob -- nothing between the fingers will ever be mapped regardless.
+  # already a fat blob, so nothing between the fingers will ever be mapped regardless.
   padding_offset: 0.02
   padding_scale: 1.2
 

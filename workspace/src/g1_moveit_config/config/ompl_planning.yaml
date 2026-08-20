@@ -1,17 +1,23 @@
 # OMPL planning pipeline. Hand-authored and short, rather than the ~200-line dump the Setup
 # Assistant emits listing every planner OMPL ships.
 
-planning_plugin: ompl_interface/OMPLPlanner
+planning_plugins:
+  - ompl_interface/OMPLPlanner
 
-request_adapters: >-
-  default_planner_request_adapters/AddTimeOptimalParameterization
-  default_planner_request_adapters/ResolveConstraintFrames
-  default_planner_request_adapters/FixWorkspaceBounds
-  default_planner_request_adapters/FixStartStateBounds
-  default_planner_request_adapters/FixStartStateCollision
-  default_planner_request_adapters/FixStartStatePathConstraints
+request_adapters:
+  - default_planning_request_adapters/ResolveConstraintFrames
+  - default_planning_request_adapters/ValidateWorkspaceBounds
+  - default_planning_request_adapters/CheckStartStateBounds
+  - default_planning_request_adapters/CheckStartStateCollision
 
-start_state_max_bounds_error: 0.1
+response_adapters:
+  - default_planning_response_adapters/AddTimeOptimalParameterization
+  - default_planning_response_adapters/ValidateSolution
+  - default_planning_response_adapters/DisplayMotionPath
+
+# No start_state_max_bounds_error here, and do not add one back: CheckStartStateBounds only
+# checks. It reads no parameter and aborts on any excursion at all, however small, and there is
+# no adapter left that clamps one. g1_manipulation brings the start state into bounds itself.
 
 planner_configs:
   RRTConnect:

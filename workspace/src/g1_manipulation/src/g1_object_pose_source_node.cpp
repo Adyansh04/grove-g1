@@ -1,3 +1,8 @@
+/**
+ * @file g1_object_pose_source_node.cpp
+ * @brief Publishes /objects from the configured source, with no fallback between sources.
+ */
+
 #include "g1_manipulation/g1_object_pose_source_node.hpp"
 
 #include <geometry_msgs/msg/transform_stamped.hpp>
@@ -67,8 +72,8 @@ bool G1ObjectPoseSource::readParameters()
     if (source_ == ObjectSource::kHardware)
     {
         // Long on purpose. Anyone who reaches this is about to go looking for a perception
-        // stack that does not exist yet, and the alternative -- publishing nothing, quietly --
-        // reads as a broken topic rather than as an unbuilt milestone.
+        // stack that does not exist yet, and the alternative of publishing nothing quietly
+        // reads as a broken topic rather than as a subsystem that does not exist yet.
         RCLCPP_ERROR(
             get_logger(),
             "object_source='hardware' is not implemented: there is no object-detection "
@@ -232,7 +237,7 @@ void G1ObjectPoseSource::onGroundTruth(vision_msgs::msg::Detection3DArray::Share
 
     // Mutated in place and moved out rather than copied: the array carries a vector of
     // detections, each with its own vector of hypotheses and strings. Safe because this
-    // subscription is inter-process, so the callback owns the only reference -- if this node is
+    // subscription is inter-process, so the callback owns the only reference: if this node is
     // ever composed with intra-process comms on, the message becomes shared and this must go
     // back to a copy.
     vision_msgs::msg::Detection3DArray& out = *msg;

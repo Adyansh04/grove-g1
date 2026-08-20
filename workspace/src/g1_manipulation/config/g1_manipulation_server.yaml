@@ -1,22 +1,21 @@
 # Pick and place skills, loaded by g1_manipulation/launch/manipulation.launch.py.
 #
 # Everything here is real-robot code: the skills plan through move_group onto the controllers
-# that own rt/arm_sdk and the hand topics, exactly as they will on hardware. What is
-# simulation-only is where the object POSES come from, and that lives in
-# g1_object_pose_source.yaml.
+# that own the body motors and the hand topics, exactly as they will on hardware. What is
+# simulation-only is where the object poses come from, in g1_object_pose_source.yaml.
 g1_manipulation_server:
   ros__parameters:
     # How old a pose may be before a pick refuses to act on it. The source publishes at the
     # sensor rate (10 Hz), so this tolerates several missed samples while still catching a
-    # dead pipeline -- which matters, because the alternative is grasping at where an object
-    # used to be.
+    # dead pipeline, which matters because the alternative is grasping at where an object
+    # was last seen.
     object_timeout_ms: 1000.0
 
     # How far above the grasp the approach starts, and how far the object is lifted after the
     # hand closes. Both are along the planning frame's z, which is up while the robot stands.
     #
-    # MEASURED, not chosen: standing at the facility workbench, the hand only clears the table's
-    # octomap at pelvis z 0.22 and above (m9-checks/why_blocked.py sweeps it). The cube sits at
+    # Measured: standing at the facility workbench, the hand only clears the table's
+    # octomap at pelvis z 0.22 and above. The cube sits at
     # pelvis z 0.0375, so anything under 0.185 of approach height puts the pregrasp inside the
     # map.
     #
@@ -36,7 +35,7 @@ g1_manipulation_server:
     # ABOVE the top face, not below it. At 15 mm below, the grip held but did not look like one:
     # the palm sits level with the cube's top rather than clearing it, and the fingers reach past
     # the middle. Held 10 mm above the face the palm clears the object and the fingertips close
-    # about 14 mm down its sides -- fingers around the upper half, which is what a hand does and
+    # about 14 mm down its sides, fingers around the upper half, which is what a hand does and
     # is a shorter reach besides. Raise it further and the fingers grip less of the object;
     # much past 20 mm on a 60 mm cube they start to slip off the top.
     grasp_height_above_top_m: 0.010

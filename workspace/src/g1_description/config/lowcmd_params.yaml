@@ -1,0 +1,65 @@
+# Hardware parameters for g1_hardware_interface/G1LowCmdSystem.
+#
+# Consumed by urdf/g1_lowcmd.urdf.xacro at xacro-expansion time, not by controller_manager:
+# ros2_control plugins only ever see parameters that arrive as <ros2_control><param> tags.
+
+system:
+  # unitree_sdk2's ChannelFactory takes its own domain, which must match the simulator's
+  # (simulate/config.yaml) and ROS_DOMAIN_ID. Both are 1 in this image.
+  domain_id: 1
+
+  # MUST stay empty. A non-empty interface makes the SDK build an inline CycloneDDS config that
+  # replaces CYCLONEDDS_URI wholesale, losing MaxAutoParticipantIndex and crashing DDS init. That
+  # is the same fault patches/unitree_mujoco/002-sdk-honour-cyclonedds-uri.patch fixed for the
+  # simulator. The interface is pinned by CYCLONEDDS_URI instead.
+  network_interface: ""
+
+  lowstate_timeout_ms: 100     # ms; rt/lowstate older than this errors the component while active
+  release_ramp_s: 0.5          # s; stiffness fades to zero over this on deactivate
+  release_kd: 2.0              # damping held flat across the release, so it outlives the stiffness
+  motor_temp_warn_threshold: 120   # deg C; the upstream value, warns on /diagnostics
+
+  # Whether to ask the onboard motion service to hand over the motors. There is no such service
+  # in unitree_mujoco, so sim leaves it false; hardware must set it true or rt/lowcmd is ignored.
+  release_motion_mode: false
+
+# Gains used only when a controller claims position without kp/kd, i.e. the kPositionOnly branch.
+# 10/1 is the upstream value everywhere it has not been measured otherwise, and it is what the
+# legs and waist keep: nothing claims them position-only, so the number is never reached there.
+#
+# The 14 arm joints are the exception, because arm_trajectory_controller claims position alone
+# and so lands on this branch on every MoveIt execution. 10 is enough to hold the arms hanging
+# at rest, where they lie along gravity, but not to track a trajectory that lifts them: measured
+# under a controller commanding the arms forward, 10 left them sagging about 0.4 rad, resting on
+# the hips. 40 for shoulders and elbow, 25 for the lighter wrists, which are Unitree's own arm
+# example values, proven in this simulator.
+joints:
+  left_hip_pitch_joint:        { position_only_kp: 10.0, position_only_kd: 1.0 }
+  left_hip_roll_joint:         { position_only_kp: 10.0, position_only_kd: 1.0 }
+  left_hip_yaw_joint:          { position_only_kp: 10.0, position_only_kd: 1.0 }
+  left_knee_joint:             { position_only_kp: 10.0, position_only_kd: 1.0 }
+  left_ankle_pitch_joint:      { position_only_kp: 10.0, position_only_kd: 1.0 }
+  left_ankle_roll_joint:       { position_only_kp: 10.0, position_only_kd: 1.0 }
+  right_hip_pitch_joint:       { position_only_kp: 10.0, position_only_kd: 1.0 }
+  right_hip_roll_joint:        { position_only_kp: 10.0, position_only_kd: 1.0 }
+  right_hip_yaw_joint:         { position_only_kp: 10.0, position_only_kd: 1.0 }
+  right_knee_joint:            { position_only_kp: 10.0, position_only_kd: 1.0 }
+  right_ankle_pitch_joint:     { position_only_kp: 10.0, position_only_kd: 1.0 }
+  right_ankle_roll_joint:      { position_only_kp: 10.0, position_only_kd: 1.0 }
+  waist_yaw_joint:             { position_only_kp: 10.0, position_only_kd: 1.0 }
+  waist_roll_joint:            { position_only_kp: 10.0, position_only_kd: 1.0 }
+  waist_pitch_joint:           { position_only_kp: 10.0, position_only_kd: 1.0 }
+  left_shoulder_pitch_joint:   { position_only_kp: 40.0, position_only_kd: 1.0 }
+  left_shoulder_roll_joint:    { position_only_kp: 40.0, position_only_kd: 1.0 }
+  left_shoulder_yaw_joint:     { position_only_kp: 40.0, position_only_kd: 1.0 }
+  left_elbow_joint:            { position_only_kp: 40.0, position_only_kd: 1.0 }
+  left_wrist_roll_joint:       { position_only_kp: 25.0, position_only_kd: 1.0 }
+  left_wrist_pitch_joint:      { position_only_kp: 25.0, position_only_kd: 1.0 }
+  left_wrist_yaw_joint:        { position_only_kp: 25.0, position_only_kd: 1.0 }
+  right_shoulder_pitch_joint:  { position_only_kp: 40.0, position_only_kd: 1.0 }
+  right_shoulder_roll_joint:   { position_only_kp: 40.0, position_only_kd: 1.0 }
+  right_shoulder_yaw_joint:    { position_only_kp: 40.0, position_only_kd: 1.0 }
+  right_elbow_joint:           { position_only_kp: 40.0, position_only_kd: 1.0 }
+  right_wrist_roll_joint:      { position_only_kp: 25.0, position_only_kd: 1.0 }
+  right_wrist_pitch_joint:     { position_only_kp: 25.0, position_only_kd: 1.0 }
+  right_wrist_yaw_joint:       { position_only_kp: 25.0, position_only_kd: 1.0 }

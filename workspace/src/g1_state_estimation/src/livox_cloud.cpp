@@ -1,3 +1,8 @@
+/**
+ * @file livox_cloud.cpp
+ * @brief The hardware Livox CustomMsg -> PointCloud2 conversion.
+ */
+
 #include "g1_state_estimation/livox_cloud.hpp"
 
 #include <cstdint>
@@ -17,7 +22,7 @@ void toPointCloud2(
     cloud.is_bigendian = false;
 
     // Fields spelled out rather than setPointCloud2FieldsByString: that helper only knows
-    // "xyz", "rgb" and "rgba", and throws on anything else -- including "intensity", which is
+    // "xyz", "rgb" and "rgba", and throws on anything else, including "intensity", which is
     // the field every consumer of /livox/lidar reads.
     sensor_msgs::PointCloud2Modifier modifier(cloud);
     modifier.setPointCloud2Fields(

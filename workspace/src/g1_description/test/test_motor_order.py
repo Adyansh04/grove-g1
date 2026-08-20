@@ -1,68 +1,58 @@
 """
-The DDS motor order exists twice, and copies drift.
+The DDS motor order is a table of names, and a name that is not a joint fails silently.
 
-`g1_motion_service_sim` needs it to drive the walking policy; `g1_hardware_interface` needs it to
-publish the legs and waist to `/joint_states` on the robot, where no controller owns them. The
-two packages cannot share a header -- one is simulation only and the other is what ships -- so
-each carries its own table.
+`g1_hardware_interface` maps the URDF's joints onto LowCmd/LowState motor indices through one
+table, `kG1JointNames`. Index into it is the motor index on the wire, so permuting it lands a
+knee angle on a waist joint, which moves every sensor frame hanging off `torso_link` and reads
+downstream as an odometry or calibration fault rather than as what it is.
 
-Index into either table is the LowState motor index. Permute one and a knee angle lands on a
-waist joint, which moves every sensor frame hanging off `torso_link` and reads downstream as an
-odometry or calibration fault rather than as what it is.
+This lives in g1_description rather than beside the table because the URDF is the other half of
+the comparison, and the check is only meaningful across the two.
 """
 
 import pathlib
 import re
 import xml.etree.ElementTree as ET
 
+from test_lowcmd_xacro import EXPECTED_BODY_JOINTS
+
 _SRC = pathlib.Path(__file__).resolve().parents[2]
-_SIM_TABLE = _SRC / "g1_motion_service_sim" / "src" / "walk_policy.cpp"
-_HW_TABLE = (
-    _SRC / "g1_hardware_interface" / "include" / "g1_hardware_interface"
-    / "lowstate_joint_states.hpp"
-)
+_MOTOR_TABLE = _SRC / "g1_hardware_interface" / "src" / "g1_lowcmd_system.cpp"
 _URDF = (
     pathlib.Path(__file__).resolve().parent.parent
     / "urdf"
     / "g1_29dof_with_hand_rev_1_0.urdf"
 )
 
-# The lower body: legs 0-11 then waist 12-14. The arms follow in the simulator's table and are
-# deliberately absent from the hardware one, since joint_state_broadcaster publishes those.
-_NUM_LOWER = 15
+# 12 legs, 3 waist, 14 arms. The hands are a separate device on their own topics.
+_NUM_BODY_MOTORS = 29
 
 
-def _string_array(path, declaration):
-    """Pull the quoted strings out of the initialiser that follows `declaration`."""
-    text = path.read_text()
-    start = text.index(declaration)
+def _motor_order():
+    """Pull the quoted names out of the kG1JointNames initialiser."""
+    text = _MOTOR_TABLE.read_text()
+    start = text.index("kG1JointNames")
     body = text[start : text.index("};", start)]
     return re.findall(r'"([^"]+)"', body)
 
 
-def _sim_order():
-    return _string_array(_SIM_TABLE, "kDdsMotorOrder")
+def test_the_table_covers_every_body_motor_exactly_once():
+    order = _motor_order()
+    assert len(order) == _NUM_BODY_MOTORS
+    assert len(set(order)) == _NUM_BODY_MOTORS, "a name appears twice, so one motor is unreachable"
 
 
-def _hardware_order():
-    return _string_array(_HW_TABLE, "kLowerMotorJointNames")
-
-
-def test_the_hardware_table_matches_the_simulators_first_fifteen():
-    assert _hardware_order() == _sim_order()[:_NUM_LOWER]
-
-
-def test_the_hardware_table_stops_before_the_arms():
-    # Motor 15 is left_shoulder_pitch, which joint_state_broadcaster owns. Publishing it from
-    # both would put two sources on one joint at different rates.
-    hardware = _hardware_order()
-    assert len(hardware) == _NUM_LOWER
-    assert _sim_order()[_NUM_LOWER] not in hardware
+def test_the_table_is_in_sdk_motor_index_order():
+    # Position in this table IS the motor index the component packs LowCmd from, so the whole
+    # order is load-bearing, not just the leg/waist/arm boundaries. A swap inside one group,
+    # hip roll for hip yaw say, keeps the set, the counts and the boundaries intact and still
+    # sends every command to the wrong motor.
+    assert _motor_order() == EXPECTED_BODY_JOINTS
 
 
 def test_every_name_is_a_joint_the_urdf_actually_has():
-    # robot_state_publisher silently ignores a name it does not recognise, so a typo here costs
-    # a missing transform and no error anywhere.
+    # A name the URDF does not have is dropped when the component maps joints, so the motor is
+    # simply never driven: no error anywhere, just a limb that does not move.
     urdf_joints = {j.get("name") for j in ET.parse(_URDF).getroot().findall("joint")}
-    missing = [name for name in _hardware_order() if name not in urdf_joints]
+    missing = [name for name in _motor_order() if name not in urdf_joints]
     assert not missing, f"not joints in {_URDF.name}: {missing}"

@@ -4,8 +4,8 @@
 # servers this stack launches and then changed only where this robot differs from a TurtleBot.
 # Upstream ordering and structure are kept so the two can be diffed.
 #
-# The three servers whose blocks are absent -- smoother_server, waypoint_follower,
-# velocity_smoother -- are not launched. See launch/nav2.launch.py for why each is out.
+# Three servers have no block here because they are not launched: smoother_server,
+# waypoint_follower and velocity_smoother. See launch/nav2.launch.py for why each is out.
 #
 # Every comment below marks a value as MEASURED or GUESS. A green test_navigate_to_pose does
 # not validate the guesses.
@@ -21,67 +21,17 @@ bt_navigator:
     # bt_navigator DOES declare odom_topic (verified). controller_server does not, and is
     # remapped in the launch instead.
     odom_topic: /g1_odometry_publisher/odom
-    # Declared, but do NOT rely on it: Humble 1.1.20 accepts this parameter and ignores it.
-    # bt_navigator still loads every navigator's tree on activate, which is why BOTH trees are
-    # shipped edited (config/navigate_through_poses.xml as well). Deleting that second tree on
-    # the strength of this line will break bt_navigator's activation.
     navigators: ["navigate_to_pose"]
+    navigate_to_pose:
+      plugin: "nav2_bt_navigator::NavigateToPoseNavigator"
     # default_nav_to_pose_bt_xml is set by nav2.launch.py, not here: a params file cannot name
     # its own package share. Do NOT write a find-pkg-share substitution into this file, not even
-    # inside a comment -- ParameterFile(allow_substs=True) expands substitutions in comments too,
+    # inside a comment: ParameterFile(allow_substs=True) expands substitutions in comments too,
     # and an illustrative one with a placeholder package name takes the whole launch down with
     # "'...' is not a valid package name".
     bt_loop_duration: 10
     default_server_timeout: 20
     wait_for_service_timeout: 1000
-    plugin_lib_names:
-      - nav2_compute_path_to_pose_action_bt_node
-      - nav2_compute_path_through_poses_action_bt_node
-      - nav2_smooth_path_action_bt_node
-      - nav2_follow_path_action_bt_node
-      - nav2_spin_action_bt_node
-      - nav2_wait_action_bt_node
-      - nav2_assisted_teleop_action_bt_node
-      - nav2_back_up_action_bt_node
-      - nav2_drive_on_heading_bt_node
-      - nav2_clear_costmap_service_bt_node
-      - nav2_is_stuck_condition_bt_node
-      - nav2_goal_reached_condition_bt_node
-      - nav2_goal_updated_condition_bt_node
-      - nav2_globally_updated_goal_condition_bt_node
-      - nav2_is_path_valid_condition_bt_node
-      - nav2_initial_pose_received_condition_bt_node
-      - nav2_reinitialize_global_localization_service_bt_node
-      - nav2_rate_controller_bt_node
-      - nav2_distance_controller_bt_node
-      - nav2_speed_controller_bt_node
-      - nav2_truncate_path_action_bt_node
-      - nav2_truncate_path_local_action_bt_node
-      - nav2_goal_updater_node_bt_node
-      - nav2_recovery_node_bt_node
-      - nav2_pipeline_sequence_bt_node
-      - nav2_round_robin_node_bt_node
-      - nav2_transform_available_condition_bt_node
-      - nav2_time_expired_condition_bt_node
-      - nav2_path_expiring_timer_condition
-      - nav2_distance_traveled_condition_bt_node
-      - nav2_single_trigger_bt_node
-      - nav2_goal_updated_controller_bt_node
-      - nav2_is_battery_low_condition_bt_node
-      - nav2_navigate_through_poses_action_bt_node
-      - nav2_navigate_to_pose_action_bt_node
-      - nav2_remove_passed_goals_action_bt_node
-      - nav2_planner_selector_bt_node
-      - nav2_controller_selector_bt_node
-      - nav2_goal_checker_selector_bt_node
-      - nav2_controller_cancel_bt_node
-      - nav2_path_longer_on_approach_bt_node
-      - nav2_wait_cancel_bt_node
-      - nav2_spin_cancel_bt_node
-      - nav2_back_up_cancel_bt_node
-      - nav2_assisted_teleop_cancel_bt_node
-      - nav2_drive_on_heading_cancel_bt_node
-      - nav2_is_battery_charging_condition_bt_node
 
 bt_navigator_navigate_through_poses_rclcpp_node:
   ros__parameters:
@@ -94,23 +44,23 @@ bt_navigator_navigate_to_pose_rclcpp_node:
 controller_server:
   ros__parameters:
     use_sim_time: false
-    # Matched to g1_loco_bridge's validated velocity_reissue_hz of 5.0. Upstream's 20 Hz into
-    # a 5 Hz wire discards three commands in four and hides the real control latency.
-    controller_frequency: 5.0
+    # The walking policy runs at 50 Hz and reads /cmd_vel directly, so there is no slow wire
+    # to match any more. Back to upstream's rate.
+    controller_frequency: 20.0
     min_x_velocity_threshold: 0.001
     min_y_velocity_threshold: 0.5
     min_theta_velocity_threshold: 0.001
     failure_tolerance: 0.3
-    progress_checker_plugin: "progress_checker"
+    progress_checker_plugins: ["progress_checker"]
     goal_checker_plugins: ["general_goal_checker"] # "precise_goal_checker"
     controller_plugins: ["FollowPath"]
 
     # Progress checker parameters
     progress_checker:
       plugin: "nav2_controller::SimpleProgressChecker"
-      # Gait initiation takes seconds and the shaper's deadband-to-zero makes genuinely
-      # stationary intervals normal, so upstream's 10 s aborts healthy goals. 20 s still trips
-      # on the measured frozen-gait case, which moved 0.09 m in 30 s.
+      # Gait initiation takes seconds, and the policy ignores any command inside its 0.15 m/s
+      # deadband, so genuinely stationary intervals are normal and upstream's 10 s aborts
+      # healthy goals. 20 s still trips on the measured frozen-gait case, 0.09 m in 30 s.
       required_movement_radius: 0.5
       movement_time_allowance: 20.0
     # Goal checker parameters
@@ -138,10 +88,9 @@ controller_server:
     # The shim rotates in place on a large heading error, then hands to RPP for the straight
     # run, which is exactly the two-primitive decomposition the measurements demand.
     #
-    # Worth knowing when tuning: g1_gait_shaper zeroes any yaw below 1.20, and RPP's curvature
-    # steering (vyaw = vx * kappa) is usually well under that, so it rarely reaches the robot.
-    # The effective behaviour is bang-bang, which makes angular_dist_threshold the dominant
-    # knob here, NOT lookahead_dist.
+    # Worth knowing when tuning: the policy tracks yaw near 1:1 with no deadband, so RPP's
+    # curvature steering (vyaw = vx * kappa) now does reach the robot, unlike under the gait
+    # this was first tuned against. lookahead_dist matters again as a result.
     FollowPath:
       plugin: "nav2_rotation_shim_controller::RotationShimController"
       primary_controller: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
@@ -170,7 +119,7 @@ controller_server:
       allow_reversing: false
       rotate_to_heading_min_angle: 0.6    # GUESS
       rotate_to_heading_angular_accel: 10.0
-      lookahead_dist: 0.9                 # GUESS, and mostly inert -- see the note above
+      lookahead_dist: 0.9                 # GUESS, and mostly inert; see the note above
       use_velocity_scaled_lookahead_dist: false
       # Left at 1.0. This is the controller's own pose-transform tolerance, not a costmap's,
       # and tightening it is a separate question from the sensor-staleness one below.
@@ -208,13 +157,13 @@ local_costmap:
         enabled: True
         publish_voxel_map: True
         origin_z: 0.0
-        z_resolution: 0.05
-        # 40, not upstream's 16. The column has to CONTAIN THE SENSOR, not just the obstacles:
-        # the Mid360 sits at 1.22 m, and 16 voxels x 0.05 m = 0.8 m leaves it outside, so
-        # VoxelLayer rejects every cloud with "Sensor origin ... is out of map bounds" and the
-        # local costmap stays empty. Measured on this stack. 40 x 0.05 = 2.0 m clears both the
-        # sensor and max_obstacle_height.
-        z_voxels: 40
+        # The column has to CONTAIN THE SENSOR, not just the obstacles: the Mid360 sits at
+        # 1.22 m, and a column shorter than that makes VoxelLayer reject every cloud with
+        # "Sensor origin ... is out of map bounds", leaving the local costmap empty. Measured on
+        # this stack. Jazzy's voxel grid hard-caps z_voxels at 16, so the 2.0 m has to come from
+        # a coarser z instead: 16 x 0.125 = 2.0 m, clearing sensor and max_obstacle_height both.
+        z_resolution: 0.125
+        z_voxels: 16
         max_obstacle_height: 2.0
         mark_threshold: 0
         # The raw 3D sweep, NOT /scan. The flatten's 0.30 m floor cut is right for a 2D scan
@@ -307,12 +256,12 @@ global_costmap:
 planner_server:
   ros__parameters:
     # The BT's RateController replans at 1 Hz, so upstream's 20.0 logs "missed its desired
-    # rate" on essentially every cycle -- noise on the acceptance gate's own output.
+    # rate" on essentially every cycle, which is noise on the acceptance gate's own output.
     expected_planner_frequency: 1.0
     use_sim_time: false
     planner_plugins: ["GridBased"]
     GridBased:
-      plugin: "nav2_navfn_planner/NavfnPlanner"
+      plugin: "nav2_navfn_planner::NavfnPlanner"
       tolerance: 0.5
       use_astar: false
       allow_unknown: true
@@ -322,28 +271,31 @@ behavior_server:
     costmap_topic: local_costmap/costmap_raw
     footprint_topic: local_costmap/published_footprint
     cycle_frequency: 10.0
-    # backup and drive_on_heading are gone -- both command reverse, which this gait does not
+    # backup and drive_on_heading are gone because both command reverse, which this gait does not
     # produce; see config/navigate_to_pose.xml. Dropping the plugins as well as the tree nodes
     # means no action server exists to invoke even from a hand-edited tree. assisted_teleop has
     # no caller here.
     behavior_plugins: ["spin", "wait"]
     spin:
-      plugin: "nav2_behaviors/Spin"
+      plugin: "nav2_behaviors::Spin"
     wait:
-      plugin: "nav2_behaviors/Wait"
+      plugin: "nav2_behaviors::Wait"
     global_frame: odom
     robot_base_frame: base_footprint
     transform_tolerance: 1.0
     use_sim_time: false
     simulate_ahead_time: 2.0
-    # COUPLED TO g1_gait_shaper.yaml, and nothing enforces it. Spin clamps its command to
-    # max_rotational_vel, and the shaper zeroes anything below its yaw_engage (1.20) -- so
-    # upstream's 1.0 made every Spin command a guaranteed no-op before it reached the bridge.
-    # That is the same argument that deleted BackUp, and it applied to Spin as shipped.
-    #
-    # 1.57 matches the shaper's yaw_clamp. The floor is at yaw_engage rather than upstream's
-    # 0.4 so the deceleration tail near spin_dist does not drop back into the dead zone.
+    # Above upstream's 1.0 because the policy tracks yaw proportionally and has been swept to
+    # 0.8 rad/s without falling; Spin clamps its command to this.
     max_rotational_vel: 1.57
     min_rotational_vel: 1.2
     rotational_acc_lim: 3.2
+
+lifecycle_manager_navigation:
+  ros__parameters:
+    # No /clock on this track: the simulator links no ROS at all.
+    use_sim_time: false
+    autostart: true
+    # Upstream's list minus smoother_server, waypoint_follower and velocity_smoother.
+    node_names: ["controller_server", "planner_server", "behavior_server", "bt_navigator"]
 

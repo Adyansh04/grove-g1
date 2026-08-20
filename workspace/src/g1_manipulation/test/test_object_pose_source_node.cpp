@@ -209,9 +209,8 @@ TEST(ObjectSource, ParsesTheSourcesItKnowsAndRejectsTheRest)
 
 TEST(ObjectPoseSource, RefusesToConfigureOnHardware)
 {
-    // The whole point of the node. A hardware bring-up that reaches this must fail loudly
-    // rather than publish simulator ground truth a grasp planner cannot tell apart from a
-    // measurement.
+    // A hardware bring-up that reaches this must fail loudly rather than publish simulator
+    // ground truth a grasp planner cannot tell apart from a measurement.
     auto node = std::make_shared<G1ObjectPoseSource>(optionsWithSource("hardware"));
     EXPECT_EQ(node->configure().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_UNCONFIGURED);
 }

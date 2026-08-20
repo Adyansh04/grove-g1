@@ -1,11 +1,14 @@
-<library path="g1_arm_sdk_system">
-  <class name="g1_hardware_interface/G1ArmSdkSystem"
-         type="g1_hardware_interface::G1ArmSdkSystem"
-         base_class_type="hardware_interface::SystemInterface">
-    <description>
-      ros2_control System bridging the G1's 14 arm joints onto Unitree's
-      weight-blended rt/arm_sdk DDS channel; legs/waist/hands stay with the
-      onboard controller. See the package README for the safety/ramp model.
-    </description>
-  </class>
-</library>
+<class_libraries>
+
+  <library path="g1_lowcmd_system">
+    <class name="g1_hardware_interface/G1LowCmdSystem"
+           type="g1_hardware_interface::G1LowCmdSystem"
+           base_class_type="hardware_interface::SystemInterface">
+      <description>
+        ros2_control System owning all 29 G1 body motors over Unitree's rt/lowcmd, with no
+        onboard balance running underneath. See the package README for the authority model.
+      </description>
+    </class>
+  </library>
+
+</class_libraries>

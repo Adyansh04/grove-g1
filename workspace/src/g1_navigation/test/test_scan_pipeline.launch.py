@@ -1,9 +1,9 @@
 """The frame chain and the scan Nav2 and slam_toolbox will consume.
 
 Two things nothing else covers. First, that odom -> base_footprint really is gravity-aligned
-and that base_footprint -> pelvis carries the height and tilt it drops -- the math is unit
-tested, but the wiring between the odometry node, the launch and TF is not. Second, that the
-flatten produces a scan of the shape and density the SLAM config was tuned against.
+and base_footprint -> pelvis carries the height and tilt it drops: the math is unit tested, the
+wiring between the odometry node, the launch and TF is not. Second, that the flatten produces a
+scan of the shape and density the SLAM config was tuned against.
 
 Pinned pelvis, same reason as test_lidar_geometry: a free-standing G1 drifts and its waist
 leans, so the numbers would move under the test without anything being wrong.
@@ -36,8 +36,8 @@ RANGE_MAX = 25.0
 PELVIS_HEIGHT_M = 0.75
 PELVIS_HEIGHT_TOL = 0.12
 
-# A gravity-aligned frame is exactly gravity-aligned -- it is constructed, not estimated -- so
-# this tolerance only has to absorb quaternion round-tripping through the message.
+# A gravity-aligned frame is constructed, not estimated, so this tolerance only has to absorb
+# quaternion round-tripping through the message.
 FLAT_TOL = 1e-6
 
 BRINGUP_TIMEOUT_S = 120.0
@@ -51,6 +51,9 @@ def generate_test_description():
         ),
         launch_arguments={
             "sensors": "true",
+            # Ground truth, not the stack default: this asserts scan geometry through TF, so
+            # the odometry under it should contribute nothing.
+            "odometry": "ground_truth",
             "pin_pelvis": "true",
             "world": "perception",
         }.items(),
@@ -89,7 +92,7 @@ class ScanPipelineTest(unittest.TestCase):
         cls.listener = TransformListener(cls.buffer, cls.node)
         cls.scans = []
         cls.node.create_subscription(
-            LaserScan, "/scan", cls.scans.append, qos_profile_sensor_data
+            LaserScan, "/scan", lambda msg: cls.scans.append(msg), qos_profile_sensor_data
         )
 
         deadline = time.time() + BRINGUP_TIMEOUT_S
@@ -122,7 +125,7 @@ class ScanPipelineTest(unittest.TestCase):
         self.assertAlmostEqual(pitch, 0.0, delta=FLAT_TOL)
 
     def test_body_offset_is_purely_vertical(self):
-        # The whole point of the split: x and y are exactly zero because the footprint sits
+        # The split puts x and y at exactly zero, because the footprint sits
         # directly beneath the pelvis, and the height the footprint dropped lands here.
         t = self.lookup("base_footprint", "pelvis").transform
         self.assertAlmostEqual(t.translation.x, 0.0, delta=FLAT_TOL)

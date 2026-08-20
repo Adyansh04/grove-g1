@@ -1,3 +1,8 @@
+/**
+ * @file test_frame_reader.cpp
+ * @brief Frame validation against truncated, oversized and malformed byte streams.
+ */
+
 #include <gmock/gmock.h>
 
 #include <cstring>
@@ -119,6 +124,28 @@ std::vector<std::uint8_t> makeImuFrame()
     grove_g1::ImuSampleRecord sample{};
     sample.gyro[1] = 0.5;
     sample.acc[2]  = 9.81;
+
+    std::vector<std::uint8_t> bytes(sizeof(header) + sizeof(sample));
+    std::memcpy(bytes.data(), &header, sizeof(header));
+    std::memcpy(bytes.data() + sizeof(header), &sample, sizeof(sample));
+    return bytes;
+}
+
+// Same shape as the IMU frame: one fixed-size record of rates, with the pose in the header.
+std::vector<std::uint8_t> makeBaseStateFrame()
+{
+    SensorFrameHeader header{};
+    header.magic          = grove_g1::kSensorFrameMagic;
+    header.version        = grove_g1::kSensorFrameVersion;
+    header.kind           = static_cast<std::uint32_t>(grove_g1::SensorFrameKind::BaseState);
+    header.payload_bytes  = sizeof(grove_g1::BaseStateRecord);
+    header.sim_time_s     = 3.5;
+    header.sensor_quat[0] = 1.0;
+    header.sensor_pos[2]  = 0.73;
+
+    grove_g1::BaseStateRecord sample{};
+    sample.lin_vel[0] = 0.30;
+    sample.ang_vel[2] = -0.15;
 
     std::vector<std::uint8_t> bytes(sizeof(header) + sizeof(sample));
     std::memcpy(bytes.data(), &header, sizeof(header));
@@ -389,6 +416,36 @@ TEST(FrameReader, ReadsAnImuFrame)
 TEST(FrameReader, RefusesAnImuPayloadOfTheWrongSize)
 {
     auto              bytes = makeImuFrame();
+    SensorFrameHeader header{};
+    std::memcpy(&header, bytes.data(), sizeof(header));
+    header.payload_bytes += 8;
+    std::memcpy(bytes.data(), &header, sizeof(header));
+    bytes.resize(bytes.size() + 8);
+
+    CloudFrame frame;
+    EXPECT_EQ(tryReadFrame(bytes, frame), FrameStatus::kBadLength);
+}
+
+TEST(FrameReader, ReadsABaseStateFrame)
+{
+    auto       bytes = makeBaseStateFrame();
+    CloudFrame frame;
+    ASSERT_EQ(tryReadFrame(bytes, frame), FrameStatus::kOk);
+
+    EXPECT_EQ(frame.kind, FrameKind::kBaseState);
+    EXPECT_DOUBLE_EQ(frame.base.lin_vel[0], 0.30);
+    EXPECT_DOUBLE_EQ(frame.base.ang_vel[2], -0.15);
+    EXPECT_DOUBLE_EQ(frame.sensor_pos[2], 0.73);
+    EXPECT_DOUBLE_EQ(frame.sensor_quat[0], 1.0);
+    EXPECT_TRUE(frame.points.empty());
+    EXPECT_TRUE(frame.depth.empty());
+    EXPECT_TRUE(frame.objects.empty());
+    EXPECT_TRUE(bytes.empty());
+}
+
+TEST(FrameReader, RefusesABaseStatePayloadOfTheWrongSize)
+{
+    auto              bytes = makeBaseStateFrame();
     SensorFrameHeader header{};
     std::memcpy(&header, bytes.data(), sizeof(header));
     header.payload_bytes += 8;

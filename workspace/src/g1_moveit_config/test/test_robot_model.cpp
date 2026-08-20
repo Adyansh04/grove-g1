@@ -48,10 +48,9 @@ const std::vector<std::string> kReachingLinks = {
 
 /// How far every joint of a named posture must move before the robot self-collides.
 ///
-/// Merely valid is not usable. `carry` shipped valid with 4.6 degrees of room on
-/// right_shoulder_roll, and an arm carrying the cube through a walk droops more than that --
-/// 0.071 and 0.155 rad on two missions that then deadlocked, since MoveIt cannot plan out of a
-/// start state in collision. 0.20 clears the worst droop seen with room over.
+/// Valid is not the same as usable. A posture with only 4.6 degrees of room on
+/// right_shoulder_roll deadlocked twice, because an arm carrying the cube through a walk droops
+/// 0.071 to 0.155 rad and MoveIt cannot plan out of a start state in collision.
 constexpr double kPostureMarginRad = 0.20;
 constexpr double kMarginStepRad    = 0.02;
 
@@ -270,14 +269,10 @@ TEST_F(RobotModelTest, TheNamedPosesAgreeAcrossTheThreeGroups)
 
 TEST_F(RobotModelTest, EachHandIsExactlyItsSevenFingerJoints)
 {
-    // A set, not a sequence: a group declared as a joint list comes back sorted, not in
-    // document order, where a chain group keeps chain order. So left_hand reads index, middle,
-    // thumb here while the wire, the URDF component and the controller all say thumb, middle,
-    // index.
-    //
-    // Harmless as long as nothing lines a MoveIt trajectory up against HandCmd positionally:
-    // the JTC remaps by name, and G1Dex3System takes its order from the URDF. The wire order
-    // itself is pinned in g1_description's xacro test and in test_moveit_config_drift.
+    // A set, not a sequence: a group declared as a joint list comes back sorted rather than in
+    // document order, so left_hand reads index, middle, thumb here while the wire says thumb,
+    // middle, index. Harmless because the JTC remaps by name and G1Dex3System takes its order
+    // from the URDF; the wire order is pinned by g1_description's xacro test.
     for (const auto* side : { "left", "right" })
     {
         const auto* hand = model_->getJointModelGroup(std::string(side) + "_hand");
@@ -387,7 +382,7 @@ TEST_F(RobotModelTest, AdjacentLinksAreDisabled)
             continue;
         }
         // Only pairs that can actually collide need disabling. The sensor bodies added in
-        // g1_arm_sdk.urdf.xacro are visual-only on purpose, so they carry no collision shapes
+        // g1_common.xacro are visual-only on purpose, so they carry no collision shapes
         // and MoveIt never checks them; requiring them here would pad the matrix with entries
         // that mean nothing.
         const auto* parent_link = model_->getLinkModel(parent);

@@ -1,0 +1,86 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="g1_29dof_with_hand_rev_1_0">
+
+  <!-- The 29 body motors are owned by G1LowCmdSystem over rt/lowcmd, with no onboard balance
+       running underneath. This file holds only that ros2_control block; g1_common.xacro brings
+       the body, the sensor and grasp frames, and both Dex3 components. -->
+  <xacro:include filename="g1_common.xacro"/>
+
+  <xacro:property name="lowcmd" value="${xacro.load_yaml('../config/lowcmd_params.yaml')}"/>
+
+  <xacro:macro name="g1_lowcmd_joint" params="name">
+    <joint name="${name}">
+      <command_interface name="position"/>
+      <command_interface name="velocity"/>
+      <command_interface name="effort"/>
+      <!-- kp and kd as command interfaces is what lets a controller pick the joint's control
+           mode per tick, and what a policy controller needs. The names are the upstream ones. -->
+      <command_interface name="kp"/>
+      <command_interface name="kd"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+      <state_interface name="effort"/>
+      <param name="position_only_kp">${lowcmd.joints[name].position_only_kp}</param>
+      <param name="position_only_kd">${lowcmd.joints[name].position_only_kd}</param>
+    </joint>
+  </xacro:macro>
+
+  <ros2_control name="G1LowCmdSystem" type="system">
+    <hardware>
+      <plugin>g1_hardware_interface/G1LowCmdSystem</plugin>
+      <param name="domain_id">${lowcmd.system.domain_id}</param>
+      <param name="network_interface">${lowcmd.system.network_interface}</param>
+      <param name="lowstate_timeout_ms">${lowcmd.system.lowstate_timeout_ms}</param>
+      <param name="release_ramp_s">${lowcmd.system.release_ramp_s}</param>
+      <param name="release_kd">${lowcmd.system.release_kd}</param>
+      <param name="release_motion_mode">${lowcmd.system.release_motion_mode}</param>
+      <param name="motor_temp_warn_threshold">${lowcmd.system.motor_temp_warn_threshold}</param>
+    </hardware>
+
+    <xacro:g1_lowcmd_joint name="left_hip_pitch_joint"/>
+    <xacro:g1_lowcmd_joint name="left_hip_roll_joint"/>
+    <xacro:g1_lowcmd_joint name="left_hip_yaw_joint"/>
+    <xacro:g1_lowcmd_joint name="left_knee_joint"/>
+    <xacro:g1_lowcmd_joint name="left_ankle_pitch_joint"/>
+    <xacro:g1_lowcmd_joint name="left_ankle_roll_joint"/>
+    <xacro:g1_lowcmd_joint name="right_hip_pitch_joint"/>
+    <xacro:g1_lowcmd_joint name="right_hip_roll_joint"/>
+    <xacro:g1_lowcmd_joint name="right_hip_yaw_joint"/>
+    <xacro:g1_lowcmd_joint name="right_knee_joint"/>
+    <xacro:g1_lowcmd_joint name="right_ankle_pitch_joint"/>
+    <xacro:g1_lowcmd_joint name="right_ankle_roll_joint"/>
+    <xacro:g1_lowcmd_joint name="waist_yaw_joint"/>
+    <xacro:g1_lowcmd_joint name="waist_roll_joint"/>
+    <xacro:g1_lowcmd_joint name="waist_pitch_joint"/>
+    <xacro:g1_lowcmd_joint name="left_shoulder_pitch_joint"/>
+    <xacro:g1_lowcmd_joint name="left_shoulder_roll_joint"/>
+    <xacro:g1_lowcmd_joint name="left_shoulder_yaw_joint"/>
+    <xacro:g1_lowcmd_joint name="left_elbow_joint"/>
+    <xacro:g1_lowcmd_joint name="left_wrist_roll_joint"/>
+    <xacro:g1_lowcmd_joint name="left_wrist_pitch_joint"/>
+    <xacro:g1_lowcmd_joint name="left_wrist_yaw_joint"/>
+    <xacro:g1_lowcmd_joint name="right_shoulder_pitch_joint"/>
+    <xacro:g1_lowcmd_joint name="right_shoulder_roll_joint"/>
+    <xacro:g1_lowcmd_joint name="right_shoulder_yaw_joint"/>
+    <xacro:g1_lowcmd_joint name="right_elbow_joint"/>
+    <xacro:g1_lowcmd_joint name="right_wrist_roll_joint"/>
+    <xacro:g1_lowcmd_joint name="right_wrist_pitch_joint"/>
+    <xacro:g1_lowcmd_joint name="right_wrist_yaw_joint"/>
+
+    <!-- The pelvis IMU, exported under the names imu_sensor_broadcaster expects. The locomotion
+         policy reads root orientation and angular velocity from here. -->
+    <sensor name="imu">
+      <state_interface name="orientation.x"/>
+      <state_interface name="orientation.y"/>
+      <state_interface name="orientation.z"/>
+      <state_interface name="orientation.w"/>
+      <state_interface name="angular_velocity.x"/>
+      <state_interface name="angular_velocity.y"/>
+      <state_interface name="angular_velocity.z"/>
+      <state_interface name="linear_acceleration.x"/>
+      <state_interface name="linear_acceleration.y"/>
+      <state_interface name="linear_acceleration.z"/>
+    </sensor>
+  </ros2_control>
+
+</robot>

@@ -27,7 +27,9 @@
 namespace g1_manipulation
 {
 
-/// Where object poses come from. There is no "best available" fallback on purpose.
+/**
+ * @brief Where object poses come from. There is no "best available" fallback on purpose.
+ */
 enum class ObjectSource
 {
     /// MuJoCo body poses, sampled inside the simulator and carried by g1_sensor_relay.
@@ -36,7 +38,13 @@ enum class ObjectSource
     kHardware,
 };
 
-/// False if the name is not a known source, leaving `out` untouched.
+/**
+ * @brief Parses the `object_source` parameter.
+ *
+ * @param name Parameter value.
+ * @param[out] out Set only when the name is recognised.
+ * @return False if the name is not a known source, leaving @p out untouched.
+ */
 bool parseObjectSource(const std::string& name, ObjectSource& out);
 
 class G1ObjectPoseSource : public rclcpp_lifecycle::LifecycleNode
@@ -63,7 +71,7 @@ private:
     std::unique_ptr<tf2_ros::Buffer>            tf_buffer_;
     std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
 
-    rclcpp::Subscription<vision_msgs::msg::Detection3DArray>::SharedPtr                 source_sub_;
+    rclcpp::Subscription<vision_msgs::msg::Detection3DArray>::SharedPtr source_sub_;
     rclcpp_lifecycle::LifecyclePublisher<vision_msgs::msg::Detection3DArray>::SharedPtr objects_pub_;
     /// Only created when publish_markers is set: an rviz aid, not part of the interface, and
     /// nothing should grow a dependency on it.

@@ -2,18 +2,16 @@
  * @file g1_livox_pointcloud_node.cpp
  * @brief Republishes the Livox CustomMsg as a PointCloud2, so both formats exist at once.
  *
- * livox_ros_driver2 emits ONE format per run, chosen by its xfer_format parameter, and the two
- * consumers here disagree about which they want. FAST-LIO needs CustomMsg: it is the only
- * format carrying a per-point timestamp, without which there is nothing to undistort a scan
- * taken while the robot walks. Everything else -- both Nav2 costmaps, MoveIt's octomap, and
- * pointcloud_to_laserscan feeding AMCL -- takes the PointCloud2 on /livox/lidar. So the driver
- * runs in CustomMsg mode and this fills the gap.
+ * The driver emits one format per run, and the consumers disagree. FAST-LIO needs CustomMsg,
+ * the only format carrying the per-point timestamps a scan taken while walking is undistorted
+ * with; everything else reads the PointCloud2 on /livox/lidar. So the driver runs in CustomMsg
+ * mode and this fills the gap.
  *
- * Deliberately downstream of the driver rather than folded into it: the point cloud everything
- * else depends on then does not go through FAST-LIO, and cannot be taken down by it.
+ * Downstream of the driver rather than folded into it, so the cloud everything else depends on
+ * cannot be taken down by FAST-LIO.
  *
- * HARDWARE ONLY. In simulation the relay already publishes /livox/lidar and g1_livox_bridge
- * runs this conversion in the other direction.
+ * Hardware only. In simulation the relay publishes /livox/lidar and g1_livox_bridge runs this
+ * conversion in the other direction.
  */
 
 #include <livox_ros_driver2/msg/custom_msg.hpp>

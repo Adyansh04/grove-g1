@@ -4,9 +4,8 @@
   <name>g1_locomotion</name>
   <version>0.1.0</version>
   <description>
-    LocoClient bridge for the Unitree G1: async request/response correlation, a velocity
-    re-issue/authority state machine, and the lifecycle node that ties them to
-    /api/sport/request and /api/sport/response. See README for the safety/authority model.
+    Base approach for the Unitree G1: closes the last half metre to an object under velocity
+    control, as the ApproachObject and Retreat actions. See README for the control law.
   </description>
   <maintainer email="gupta.adyansh@gmail.com">Adyansh</maintainer>
   <license>BSD-3-Clause</license>
@@ -15,15 +14,12 @@
 
   <depend>rclcpp</depend>
   <depend>rclcpp_action</depend>
-  <depend>rclcpp_lifecycle</depend>
-  <depend>lifecycle_msgs</depend>
   <depend>geometry_msgs</depend>
-  <depend>unitree_api</depend>
   <depend>g1_msgs</depend>
 
-  <!-- g1_base_approach only. It closes the last half metre to an object it reads off /objects,
-       which is why a locomotion package depends on a perception message type: the alternative
-       is a manipulation package publishing velocity, and every /cmd_vel writer belongs here. -->
+  <!-- It closes on an object it reads off /objects, which is why a locomotion package depends
+       on a perception message type: the alternative is a manipulation package publishing
+       velocity, and every /cmd_vel writer belongs here. -->
   <depend>vision_msgs</depend>
   <depend>tf2</depend>
   <depend>tf2_ros</depend>
@@ -34,11 +30,6 @@
   <test_depend>ament_cmake_lint_cmake</test_depend>
   <test_depend>ament_cmake_xmllint</test_depend>
   <test_depend>ament_lint_auto</test_depend>
-  <test_depend>launch_testing</test_depend>
-  <test_depend>launch_testing_ament_cmake</test_depend>
-  <test_depend>lifecycle_msgs</test_depend>
-  <test_depend>rclpy</test_depend>
-  <test_depend>std_msgs</test_depend>
 
   <export>
     <build_type>ament_cmake</build_type>
