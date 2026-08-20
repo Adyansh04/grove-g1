@@ -54,7 +54,6 @@ is the `engine` launch argument.
 
 | Parameter | Default | Meaning |
 |---|---|---|
-| `engine_service` | `/g1_vla_engine/get_action_chunk` | Where the chunks come from |
 | `engine_timeout_s` | 10.0 | How long one chunk request may take |
 | `max_start_jump_rad` | 0.15 | Largest gap allowed between the measured pose and a chunk's first waypoint |
 | `max_segment_step_rad` | 0.20 | Largest move allowed between consecutive waypoints |
@@ -64,15 +63,38 @@ is the `engine` launch argument.
 | `chunk_exec_timeout_s` | 10.0 | Per-controller deadline for one chunk |
 | `success_lift_m` | 0.05 | Rise in the object's height that counts as a grasp |
 | `object_timeout_ms` | 1000.0 | How stale an `/objects` pose may be |
+| `servo_topic` | `/servo_node/delta_joint_cmds` | Where jog commands go in servo mode |
+| `servo_publish_rate` | 50.0 | Jog commands per second while streaming a chunk |
 
 These are re-read at the start of every goal, so changing one with `ros2 param set` takes effect
 on the next grasp rather than needing a restart.
+
+`engine_service` and `execution_mode` are launch arguments and are deliberately absent from that
+file: a key set there under this node's name would beat the launch's own override, which ROS
+writes under the `/**` wildcard, because node-specific always wins over a wildcard.
 
 `config/g1_vla_mock_engine.yaml`: `joint_names`, `target_positions`, `steps_per_chunk`,
 `action_dt_s`, `step_rad`.
 
 The server reads velocity limits from `robot_description_planning.joint_limits`, which the launch
 supplies from `g1_moveit_config`. It logs the resolved arm limit at startup.
+
+## Execution modes
+
+`execution_mode` is a launch argument, not a config key. `trajectory` sends each validated chunk
+to the controllers as a `FollowJointTrajectory` goal and waits. `servo` streams the arm's share
+as jog commands into a running `servo_node` instead, which adds proximity-based slowdown while
+the arm is moving; the hands keep the trajectory path either way, since they are outside servo's
+group. Validation is identical in both, and a refused chunk is never streamed.
+
+Servo mode needs `servo_node` running, which `g1_bringup` starts with
+`vla_execution_mode:=servo`.
+
+The two modes differ in what they guarantee about the path. Trajectory mode executes the
+validated waypoints. Servo mode steers toward them: jog commands are integrated by the servo,
+which tracks velocity rather than position, so the arm can end up a little off the checked path.
+Servo's own collision monitor covers that, decelerating and halting on proximity while the arm is
+moving. Prefer trajectory mode unless that reaction is what you want.
 
 ## Failure behaviour
 
@@ -107,3 +129,4 @@ every key the server reports and refuses to serve until each one is mapped.
 | `test_chunk_utils` | Chunk shape, the start-jump, segment-step and velocity checks, and the controller split |
 | `test_groot_adapter` | The adapter against a stub policy server: wire protocol, key mapping, and action integration. No simulator or GPU. |
 | `test_vla_grasp_mock` | Sim, `-L simulator`. Valid chunks reach the controllers and move the arm; a chunk aimed at a colliding pose is refused with the arm still where it started. |
+| `test_vla_grasp_servo` | Sim, `-L simulator`. The same two claims under the servo backend, plus servo halting for a collision while the arm is already moving. |

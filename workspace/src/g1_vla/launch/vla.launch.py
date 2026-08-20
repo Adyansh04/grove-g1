@@ -51,7 +51,10 @@ def _server():
         parameters=[
             _moveit_config().to_dict(),
             _config(SHARE, "g1_vla_server.yaml"),
-            {"engine_service": ENGINE_SERVICE},
+            {
+                "engine_service": ENGINE_SERVICE,
+                "execution_mode": LaunchConfiguration("execution_mode"),
+            },
         ],
     )
 
@@ -83,6 +86,13 @@ def _groot_engine():
 def generate_launch_description():
     return LaunchDescription(
         [
+            DeclareLaunchArgument(
+                "execution_mode",
+                default_value="trajectory",
+                choices=["trajectory", "servo"],
+                description="How a validated chunk is executed. 'servo' streams it as jog "
+                "commands and needs a servo_node running.",
+            ),
             DeclareLaunchArgument(
                 "engine",
                 default_value="mock",

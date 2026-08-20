@@ -53,6 +53,10 @@ G1VlaServer::G1VlaServer(const rclcpp::NodeOptions& options)
     declare_parameter<double>("chunk_exec_timeout_s", 10.0);
     declare_parameter<double>("success_lift_m", 0.05);
     declare_parameter<double>("object_timeout_ms", 1000.0);
+    // "servo" needs a servo_node running; move_group.launch.py starts one with servo:=true.
+    declare_parameter<std::string>("execution_mode", "trajectory");
+    declare_parameter<std::string>("servo_topic", "/servo_node/delta_joint_cmds");
+    declare_parameter<double>("servo_publish_rate", 50.0);
     refreshTunables();
 
     objects_sub_ = create_subscription<vision_msgs::msg::Detection3DArray>(
@@ -68,6 +72,11 @@ G1VlaServer::G1VlaServer(const rclcpp::NodeOptions& options)
     validity_    = create_client<moveit_msgs::srv::GetStateValidity>("/check_state_validity");
     get_scene_   = create_client<moveit_msgs::srv::GetPlanningScene>("/get_planning_scene");
     apply_scene_ = create_client<moveit_msgs::srv::ApplyPlanningScene>("/apply_planning_scene");
+    servo_pub_   = create_publisher<control_msgs::msg::JointJog>(
+        get_parameter("servo_topic").as_string(),
+        rclcpp::QoS(rclcpp::KeepLast(1)));
+    servo_command_type_ =
+        create_client<moveit_msgs::srv::ServoCommandType>("/servo_node/switch_command_type");
 }
 
 G1VlaServer::~G1VlaServer()
@@ -192,7 +201,8 @@ void G1VlaServer::initialize()
     // check means anything, and it has two very different plausible values.
     RCLCPP_INFO(
         get_logger(),
-        "grasp server ready, engine at '%s', arm velocity limit %.2f rad/s",
+        "grasp server ready in %s mode, engine at '%s', arm velocity limit %.2f rad/s",
+        execution_mode_.c_str(),
         engine_service_.c_str(),
         limits_.at("right_elbow_joint"));
 }
@@ -208,6 +218,8 @@ void G1VlaServer::refreshTunables()
     chunk_exec_timeout_s_ = get_parameter("chunk_exec_timeout_s").as_double();
     success_lift_m_       = get_parameter("success_lift_m").as_double();
     object_timeout_s_     = get_parameter("object_timeout_ms").as_double() / 1000.0;
+    execution_mode_       = get_parameter("execution_mode").as_string();
+    servo_publish_rate_   = get_parameter("servo_publish_rate").as_double();
 }
 
 bool G1VlaServer::acquire()
@@ -366,10 +378,19 @@ std::string G1VlaServer::checkWaypoints(const JointTrajectory& chunk, const std:
         {
             return "/check_state_validity did not answer";
         }
-        if (!future.get()->valid)
+        const auto response = future.get();
+        if (!response->valid)
         {
+            // Naming the pair matters: "waypoint 3 is in collision" gives an operator nothing to
+            // act on, and the two likely causes, the scene and the robot itself, want opposite
+            // responses.
+            const std::string what = response->contacts.empty() ?
+                                         "" :
+                                         " (" + response->contacts.front().contact_body_1 +
+                                             " against " +
+                                             response->contacts.front().contact_body_2 + ")";
             return "waypoint " + std::to_string(p) + " of " + std::to_string(chunk.points.size()) +
-                   " is in collision";
+                   " is in collision" + what;
         }
     }
     return {};
@@ -381,11 +402,21 @@ bool G1VlaServer::executeChunk(const JointTrajectory& chunk, std::string& why)
     std::vector<std::shared_future<GoalHandleFJT::WrappedResult>> results;
     std::vector<std::string>                                      sent_to;
 
+    const bool      servoing = execution_mode_ == "servo";
+    JointTrajectory arm_slice;
+
     for (const ControllerTarget& controller : controllers_)
     {
         const JointTrajectory slice = splitByController(chunk, controller.joints);
         if (slice.joint_names.empty())
         {
+            continue;
+        }
+        // Servo owns the arm group when it is running, so the arm's share is streamed below
+        // rather than sent as a trajectory. The hands are outside that group either way.
+        if (servoing && controller.name == "arm_trajectory_controller")
+        {
+            arm_slice = slice;
             continue;
         }
         if (!controller.client->action_server_is_ready())
@@ -406,9 +437,15 @@ bool G1VlaServer::executeChunk(const JointTrajectory& chunk, std::string& why)
         sent_to.push_back(controller.name);
     }
 
-    if (results.empty())
+    if (results.empty() && arm_slice.joint_names.empty())
     {
         why = "the chunk names no joint any controller owns";
+        return false;
+    }
+
+    // Streamed before the hand goals are awaited, so a chunk driving both moves them together.
+    if (!arm_slice.joint_names.empty() && !streamArmServo(arm_slice, why))
+    {
         return false;
     }
 
@@ -426,6 +463,83 @@ bool G1VlaServer::executeChunk(const JointTrajectory& chunk, std::string& why)
             return false;
         }
     }
+    return true;
+}
+
+std::vector<double> G1VlaServer::clampToLimits(
+    const std::vector<std::string>& joints, const std::vector<double>& velocities) const
+{
+    std::vector<double> clamped;
+    clamped.reserve(velocities.size());
+    for (std::size_t i = 0; i < velocities.size(); ++i)
+    {
+        // Correcting a large error would otherwise ask for a speed the chunk was never checked
+        // at, which is the one thing the gate exists to prevent.
+        const auto   limit_it = limits_.find(joints[i]);
+        const double cap = limit_it == limits_.end() ? 0.0 : limit_it->second * velocity_scaling_;
+        clamped.push_back(std::clamp(velocities[i], -cap, cap));
+    }
+    return clamped;
+}
+
+bool G1VlaServer::selectServoJointJog(std::string& why)
+{
+    if (!servo_command_type_->service_is_ready())
+    {
+        why = "servo is not running; execution_mode is 'servo' but nothing serves "
+              "/servo_node/switch_command_type";
+        return false;
+    }
+    auto request          = std::make_shared<moveit_msgs::srv::ServoCommandType::Request>();
+    request->command_type = moveit_msgs::srv::ServoCommandType::Request::JOINT_JOG;
+    auto future           = servo_command_type_->async_send_request(request);
+    if (!settled(future, 5.0) || !future.get()->success)
+    {
+        why = "servo refused to switch to joint-jog mode";
+        return false;
+    }
+    return true;
+}
+
+bool G1VlaServer::streamArmServo(const JointTrajectory& arm_slice, std::string& why)
+{
+    const double tick = 1.0 / servo_publish_rate_;
+    if (trackingVelocity(arm_slice, measuredJoints(), 0.0, tick).empty())
+    {
+        why = "the chunk names an arm joint that is not being measured";
+        return false;
+    }
+
+    const auto period = std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+        std::chrono::duration<double>(tick));
+    const auto start = std::chrono::steady_clock::now();
+
+    // Paced off the wall clock rather than a sleep per iteration: servo integrates however long
+    // each command was actually in force, so a loop that drifts late travels further.
+    for (auto next = start;; next += period)
+    {
+        // Re-read every tick. The velocity is a correction toward the next validated waypoint,
+        // so tracking error is cancelled rather than accumulated.
+        const std::vector<double> velocities = trackingVelocity(
+            arm_slice,
+            measuredJoints(),
+            std::chrono::duration<double>(next - start).count(),
+            tick);
+        if (velocities.empty())
+        {
+            break;
+        }
+        control_msgs::msg::JointJog jog;
+        jog.header.stamp = now();
+        jog.joint_names  = arm_slice.joint_names;
+        jog.velocities   = clampToLimits(arm_slice.joint_names, velocities);
+        jog.duration     = tick;
+        servo_pub_->publish(jog);
+        std::this_thread::sleep_until(next + period);
+    }
+
+    // Nothing is published to stop with. Servo halts on its own once incoming_command_timeout
+    // passes without a command, which is the same dead-man that covers this process dying.
     return true;
 }
 
@@ -447,6 +561,11 @@ G1VlaServer::Outcome G1VlaServer::runGrasp(
     Outcome                                  outcome;
     auto                                     feedback = std::make_shared<Grasp::Feedback>();
     feedback->phase                                   = Grasp::Feedback::PHASE_ACTING;
+
+    if (execution_mode_ == "servo" && !selectServoJointJog(outcome.message))
+    {
+        return outcome;
+    }
 
     const rclcpp::Time deadline            = now() + rclcpp::Duration::from_seconds(timeout_s_);
     int                consecutive_rejects = 0;
