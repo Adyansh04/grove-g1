@@ -5,8 +5,15 @@ g1_vla_groot_adapter:
     zmq_timeout_ms: 8000
 
     # Spacing between the chunk's waypoints, and how many of them to keep. The gate's
-    # max_segment_step_rad and velocity_scaling are both judged against this spacing.
-    action_dt_s: 0.05
+    # max_segment_step_rad and velocity_scaling are both judged against this spacing, so this
+    # is what decides whether a chunk is refused for speed.
+    #
+    # Measured against the real checkpoint from the workbench rest pose: the largest step in a
+    # chunk is about 0.059 rad, which at the 0.05 s this used to be is 1.18 rad/s against a
+    # 0.4 rad/s cap -- every chunk refused. 0.2 s puts it near 0.3 rad/s and leaves headroom for
+    # a chunk that moves further than the one measured. The model is being played slower than it
+    # was trained, which for a stationary cube costs nothing.
+    action_dt_s: 0.2
     max_horizon: 16
 
     # This checkpoint is trained on relative actions, but the server converts them back against

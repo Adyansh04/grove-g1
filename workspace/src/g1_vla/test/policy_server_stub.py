@@ -96,7 +96,9 @@ def main():
         elif endpoint == "reset":
             reply = {"status": "ok"}
         elif endpoint == "get_action":
-            data = request.get("data", {})
+            # The real server calls its handler with data as keyword arguments, so the
+            # observation arrives under "observation" rather than as the payload itself.
+            data = request.get("data", {}).get("observation", {})
             complaint = _complaint(data)
             if complaint:
                 reply = {"error": complaint}
@@ -104,12 +106,14 @@ def main():
                 # Absolute answers, one constant offset from the state that was sent, so the
                 # adapter's output is checkable by hand. The real server likewise resolves its
                 # relative training representation before replying.
-                reply = {}
+                actions = {}
                 for key, dim in STATE_DIMS.items():
                     base = np.asarray(data["state"][key], dtype=np.float64)[0, -1]
-                    reply[key] = np.broadcast_to(base + delta, (1, horizon, dim)).copy()
+                    actions[key] = np.broadcast_to(base + delta, (1, horizon, dim)).copy()
                 for key, dim in ACTION_ONLY_DIMS.items():
-                    reply[key] = np.zeros((1, horizon, dim), dtype=np.float64)
+                    actions[key] = np.zeros((1, horizon, dim), dtype=np.float64)
+                # The policy answers (action, info); msgpack delivers that as a list.
+                reply = [actions, {}]
         else:
             reply = {"error": f"unknown endpoint {endpoint}"}
         socket.send(msgpack.packb(reply, default=mnp.encode))

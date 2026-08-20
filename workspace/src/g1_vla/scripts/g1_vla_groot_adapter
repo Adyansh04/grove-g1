@@ -366,12 +366,16 @@ class GrootAdapter(Node):
         try:
             if request.instruction != self._instruction:
                 # A new instruction is a new episode, which is what clears the model's history.
-                self._client.call("reset", {})
+                self._client.call("reset", {"options": None})
                 self._instruction = request.instruction
                 self.get_logger().info(f"new episode: '{request.instruction}'")
 
-            observation = self._observation(request.instruction)
-            response.chunk = self._chunk(self._client.call("get_action", observation))
+            # A request's "data" is the handler's keyword arguments, not the observation itself,
+            # and the reply is the policy's (action, info) pair, which msgpack delivers as a list.
+            answer = self._client.call(
+                "get_action", {"observation": self._observation(request.instruction), "options": None}
+            )
+            response.chunk = self._chunk(answer[0] if isinstance(answer, list) else answer)
             response.ok = True
         except (RuntimeError, ValueError) as error:
             response.ok = False
