@@ -9,19 +9,84 @@ g1_vla_groot_adapter:
     action_dt_s: 0.05
     max_horizon: 16
 
-    # "relative_to_observation" adds each action to the joint position it was computed from;
-    # "absolute" passes the server's numbers through untouched.
-    action_mode: relative_to_observation
-    instruction_key: annotation.human.action.task_description
+    # This checkpoint is trained on relative actions, but the server converts them back against
+    # the state it was sent before replying, so what arrives is already absolute. Only a server
+    # that skips that conversion needs "relative_to_observation".
+    action_mode: absolute
+
+    # Wall time per step of frame history. The rate the model's frame offsets were recorded at
+    # is not on the wire, so this is the knob to turn if a run looks conditioned on the wrong
+    # moment rather than a quantity to derive.
+    history_step_s: 0.0333
 
     # The model's modality keys are its own and change with the checkpoint, so they are mapped
-    # here rather than guessed. Start the adapter once against the server: it logs every key the
-    # server reports and refuses to serve until each one appears below. The joint order in each
-    # list must match the order of that key's vector. Shape, with the names the server reported:
-    #
-    # state_joints:
-    #   state.right_arm: [right_shoulder_pitch_joint, right_shoulder_roll_joint, ...]
-    # action_joints:
-    #   action.right_arm: [right_shoulder_pitch_joint, right_shoulder_roll_joint, ...]
-    # video_topics:
-    #   video.ego_view: /camera/color/image_raw
+    # here rather than guessed. They are unprefixed, and the joint order in each list is the
+    # order of that key's vector. Start the adapter once against the server: it logs every key
+    # the server reports and refuses to serve until each state and video one appears below.
+    state_joints:
+      left_arm:
+        - left_shoulder_pitch_joint
+        - left_shoulder_roll_joint
+        - left_shoulder_yaw_joint
+        - left_elbow_joint
+        - left_wrist_roll_joint
+        - left_wrist_pitch_joint
+        - left_wrist_yaw_joint
+      right_arm:
+        - right_shoulder_pitch_joint
+        - right_shoulder_roll_joint
+        - right_shoulder_yaw_joint
+        - right_elbow_joint
+        - right_wrist_roll_joint
+        - right_wrist_pitch_joint
+        - right_wrist_yaw_joint
+      left_hand:
+        - left_hand_thumb_0_joint
+        - left_hand_thumb_1_joint
+        - left_hand_thumb_2_joint
+        - left_hand_index_0_joint
+        - left_hand_index_1_joint
+        - left_hand_middle_0_joint
+        - left_hand_middle_1_joint
+      right_hand:
+        - right_hand_thumb_0_joint
+        - right_hand_thumb_1_joint
+        - right_hand_thumb_2_joint
+        - right_hand_index_0_joint
+        - right_hand_index_1_joint
+        - right_hand_middle_0_joint
+        - right_hand_middle_1_joint
+      waist:
+        - waist_yaw_joint
+        - waist_roll_joint
+        - waist_pitch_joint
+
+    # Position and orientation of each wrist, read from TF rather than from joint angles. The
+    # parent frame is the recording rig's convention, not something the checkpoint states: if
+    # the policy reaches confidently to the wrong place, this is the first thing to vary.
+    state_eef_frames:
+      left_wrist_eef_9d: [pelvis, left_wrist_yaw_link]
+      right_wrist_eef_9d: [pelvis, right_wrist_yaw_link]
+
+    # Only what this skill drives. The server also offers a waist, a base height and a
+    # navigation command; those are someone else's to command and are ignored by name.
+    action_joints:
+      right_arm:
+        - right_shoulder_pitch_joint
+        - right_shoulder_roll_joint
+        - right_shoulder_yaw_joint
+        - right_elbow_joint
+        - right_wrist_roll_joint
+        - right_wrist_pitch_joint
+        - right_wrist_yaw_joint
+      right_hand:
+        - right_hand_thumb_0_joint
+        - right_hand_thumb_1_joint
+        - right_hand_thumb_2_joint
+        - right_hand_index_0_joint
+        - right_hand_index_1_joint
+        - right_hand_middle_0_joint
+        - right_hand_middle_1_joint
+
+    video_topics:
+      ego_view: /camera/color/image_raw

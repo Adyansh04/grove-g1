@@ -119,8 +119,9 @@ ros2 launch g1_vla vla.launch.py engine:=groot
 ```
 
 The model's modality keys belong to its checkpoint, so `config/g1_vla_groot_adapter.yaml` maps
-them to joint names rather than assuming them. Start the adapter once against the server: it logs
-every key the server reports and refuses to serve until each one is mapped.
+them to joint names, wrist frames and camera topics rather than assuming them. Start the adapter
+once against the server: it logs every key the server reports, refuses to serve until every state
+and video key is mapped, and names the action keys it is ignoring.
 
 ## Tests
 

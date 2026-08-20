@@ -35,10 +35,13 @@
   <exec_depend>python3-numpy</exec_depend>
   <exec_depend>python3-zmq</exec_depend>
   <exec_depend>python3-msgpack</exec_depend>
+  <!-- Wrist poses for the model's end-effector state; joint angles alone do not give it. -->
+  <exec_depend>tf2_ros</exec_depend>
 
   <!-- ament_lint_common intentionally not used to avoid clang-format conflicts. -->
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_cmake_gmock</test_depend>
+  <test_depend>geometry_msgs</test_depend>
   <test_depend>launch_testing</test_depend>
   <test_depend>launch_testing_ament_cmake</test_depend>
   <test_depend>ament_cmake_lint_cmake</test_depend>

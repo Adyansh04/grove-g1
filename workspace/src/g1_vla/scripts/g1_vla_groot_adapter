@@ -12,11 +12,14 @@ container free of its dependency tree.
 
 import io
 import json
+import math
+from collections import deque
 
 import msgpack
 import msgpack_numpy as mnp
 import numpy as np
 import rclpy
+import tf2_ros
 import zmq
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
@@ -27,6 +30,10 @@ from g1_msgs.srv import GetActionChunk
 
 # Endpoints that carry no request body. Sending one a "data" field is an error server-side.
 _NO_INPUT = ("ping", "kill", "get_modality_config")
+
+# The server nests the observation by modality and keys each one unprefixed, so "state" holds
+# "right_arm" rather than "state.right_arm". Only the annotation key is fully qualified.
+_STATE, _VIDEO, _LANGUAGE = "state", "video", "language"
 
 
 def _decode_hook(obj):
@@ -100,6 +107,28 @@ def _image_to_array(msg):
     return flat.reshape(msg.height, msg.step)[:, : msg.width * 3].reshape(msg.height, msg.width, 3)
 
 
+def _pose_to_eef_9d(transform):
+    """A transform as [x, y, z] + rot6d, the 9-vector the model's *_eef_9d state keys carry.
+
+    rot6d is the first two rows of the rotation matrix, row-major, matching the model's own
+    conversion. The third row is recoverable as their cross product, which is why it is dropped.
+    """
+    translation, q = transform.translation, transform.rotation
+    norm = math.sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w) or 1.0
+    x, y, z, w = q.x / norm, q.y / norm, q.z / norm, q.w / norm
+    return [
+        translation.x,
+        translation.y,
+        translation.z,
+        1.0 - 2.0 * (y * y + z * z),
+        2.0 * (x * y - z * w),
+        2.0 * (x * z + y * w),
+        2.0 * (x * y + z * w),
+        1.0 - 2.0 * (x * x + z * z),
+        2.0 * (y * z - x * w),
+    ]
+
+
 def _mapping_param(node, prefix):
     """A {modality key: value} map read from a nested parameter block."""
     return {
@@ -117,21 +146,30 @@ class GrootAdapter(Node):
         self._address = self._param("server_address", "tcp://127.0.0.1:5555")
         self._action_dt_s = float(self._param("action_dt_s", 0.05))
         self._max_horizon = int(self._param("max_horizon", 16))
-        # Relative actions are read as offsets from the observation, not from each other. Read
-        # the wrong way round that would compound into an overshoot; this way it under-reaches,
-        # and the gate's start-jump check catches the difference on a stationary robot.
-        self._action_mode = self._param("action_mode", "relative_to_observation")
-        self._instruction_key = self._param(
-            "instruction_key", "annotation.human.action.task_description"
-        )
+        # A checkpoint trained on relative actions still answers in absolute units: the server
+        # un-relativises against the state it was given before replying. Set this to
+        # "relative_to_observation" only for a server that does not.
+        self._action_mode = self._param("action_mode", "absolute")
+        # One inference step's worth of wall time, used to turn the server's frame-history
+        # offsets into timestamps. The recording rate that produced those offsets is not on the
+        # wire, so this is a tuning knob rather than a derived quantity.
+        self._history_step_s = float(self._param("history_step_s", 1.0 / 30.0))
 
         self._state_joints = _mapping_param(self, "state_joints")
+        self._state_eef_frames = _mapping_param(self, "state_eef_frames")
         self._action_joints = _mapping_param(self, "action_joints")
         self._video_topics = _mapping_param(self, "video_topics")
 
         self._measured = {}
-        self._images = {}
+        self._frames = {key: deque() for key in self._video_topics}
         self._instruction = None
+        self._instruction_key = None
+        self._state_deltas = [0]
+        self._video_deltas = [0]
+        self._history_span_s = 0.0
+
+        self._tf_buffer = tf2_ros.Buffer()
+        self._tf_listener = tf2_ros.TransformListener(self._tf_buffer, self)
 
         self.create_subscription(JointState, "/joint_states", self._on_joint_states, 1)
         for key, topic in self._video_topics.items():
@@ -140,7 +178,7 @@ class GrootAdapter(Node):
             self.create_subscription(
                 Image,
                 topic,
-                lambda msg, key=key: self._images.__setitem__(key, msg),
+                lambda msg, key=key: self._on_image(key, msg),
                 qos_profile_sensor_data,
             )
 
@@ -157,8 +195,24 @@ class GrootAdapter(Node):
         for name, position in zip(msg.name, msg.position, strict=False):
             self._measured[name] = position
 
+    def _on_image(self, key, msg):
+        frames = self._frames[key]
+        frames.append((rclpy.time.Time.from_msg(msg.header.stamp).nanoseconds / 1e9, msg))
+        # Only as much history as the furthest offset the server asked for; a frame at 848x480
+        # is a megabyte, so an unbounded buffer would cost more than the model.
+        while len(frames) > 2 and frames[-1][0] - frames[1][0] > self._history_span_s:
+            frames.popleft()
+
+    def _frame_at(self, key, offset_s):
+        """The buffered frame closest to `offset_s` before the newest one."""
+        frames = self._frames[key]
+        if not frames:
+            raise RuntimeError(f"no image yet on the topic for '{key}'")
+        wanted = frames[-1][0] + offset_s
+        return min(frames, key=lambda entry: abs(entry[0] - wanted))[1]
+
     def _handshake(self):
-        """Reads the server's modality keys and checks config accounts for every one.
+        """Reads the server's modality keys and checks config against them before serving.
 
         The keys are the model's, not ours, and they change with the checkpoint. Refusing here
         with the actual key list is what makes a mismatch a five-minute fix instead of a silently
@@ -171,52 +225,107 @@ class GrootAdapter(Node):
             self.get_logger().error(f"{error}. Is the policy server up at {self._address}?")
             return False
 
-        served = {}
+        served, deltas = {}, {}
         for modality, entry in config.items():
-            keys = entry.get("modality_keys", []) if isinstance(entry, dict) else []
-            served[modality] = keys
-            self.get_logger().info(f"server modality '{modality}': {keys}")
-
-        mapped = set(self._state_joints) | set(self._action_joints) | set(self._video_topics)
-        mapped.add(self._instruction_key)
-        missing = [
-            key
-            for modality, keys in served.items()
-            if modality in ("state", "action", "video")
-            for key in keys
-            if key not in mapped
-        ]
-        if missing:
-            self.get_logger().error(
-                f"no mapping configured for {missing}; fill state_joints, action_joints or "
-                "video_topics in the adapter's config and restart"
+            entry = entry if isinstance(entry, dict) else {}
+            served[modality] = entry.get("modality_keys", [])
+            deltas[modality] = entry.get("delta_indices", [0])
+            self.get_logger().info(
+                f"server modality '{modality}': {served[modality]} at {deltas[modality]}"
             )
+
+        # Observations are an obligation and actions are a menu: the model conditions on every
+        # state and video key it declares, so any one missing is a malformed request, while the
+        # action keys it offers include a mobile base and a waist this skill does not drive.
+        supplied = {
+            _STATE: set(self._state_joints) | set(self._state_eef_frames),
+            _VIDEO: set(self._video_topics),
+        }
+        for modality, mapped in supplied.items():
+            missing = [key for key in served.get(modality, []) if key not in mapped]
+            if missing:
+                self.get_logger().error(
+                    f"the server's '{modality}' keys {missing} are unmapped; every one must be "
+                    f"supplied. Fill them in the adapter's config and restart"
+                )
+                return False
+
+        unknown = [key for key in self._action_joints if key not in served.get("action", [])]
+        if unknown:
+            self.get_logger().error(f"action_joints names {unknown}, which the server never emits")
             return False
         if not self._action_joints:
             self.get_logger().error("action_joints is empty, so no chunk could name a joint")
             return False
+        ignored = [key for key in served.get("action", []) if key not in self._action_joints]
+        if ignored:
+            self.get_logger().info(f"ignoring the server's {ignored}: not this skill's to drive")
+
+        language = served.get(_LANGUAGE, [])
+        if len(language) != 1:
+            self.get_logger().error(f"expected one language key, the server reported {language}")
+            return False
+        self._instruction_key = language[0]
+
+        self._state_deltas = deltas.get(_STATE, [0])
+        if len(self._state_deltas) != 1:
+            self.get_logger().error(
+                f"the server wants state at {self._state_deltas}; only the current reading is "
+                "kept, so a checkpoint needing state history needs a buffer here first"
+            )
+            return False
+
+        self._video_deltas = deltas.get(_VIDEO, [0])
+        self._history_span_s = abs(min(self._video_deltas)) * self._history_step_s
+        if len(self._video_deltas) > 1:
+            self.get_logger().info(
+                f"buffering {self._history_span_s:.2f} s of frames for offsets "
+                f"{self._video_deltas} at {self._history_step_s:.3f} s per step"
+            )
         return True
 
+    def _eef_9d(self, key, frames):
+        if len(frames) != 2:
+            raise RuntimeError(f"state_eef_frames['{key}'] wants [parent, child], got {frames}")
+        parent, child = frames
+        try:
+            transform = self._tf_buffer.lookup_transform(parent, child, rclpy.time.Time())
+        except tf2_ros.TransformException as error:
+            raise RuntimeError(f"no transform {parent} to {child} for '{key}': {error}") from error
+        return _pose_to_eef_9d(transform.transform)
+
     def _observation(self, instruction):
-        """The request body, in the shapes the server expects: a leading batch axis of one."""
-        obs = {}
+        """The request body: nested per modality, every array batched (B, T, ...) with B of one."""
+        state = {}
         for key, joints in self._state_joints.items():
             missing = [joint for joint in joints if joint not in self._measured]
             if missing:
                 raise RuntimeError(f"no joint state yet for {missing[0]}")
-            obs[key] = np.array(
-                [[self._measured[joint] for joint in joints]], dtype=np.float64
-            )
+            state[key] = [self._measured[joint] for joint in joints]
+        for key, frames in self._state_eef_frames.items():
+            state[key] = self._eef_9d(key, frames)
+
+        video = {}
         for key in self._video_topics:
-            msg = self._images.get(key)
-            if msg is None:
-                raise RuntimeError(f"no image yet on the topic for '{key}'")
-            age = (self.get_clock().now() - rclpy.time.Time.from_msg(msg.header.stamp)).nanoseconds
+            newest = self._frame_at(key, 0.0)
+            stamp = rclpy.time.Time.from_msg(newest.header.stamp)
+            age = (self.get_clock().now() - stamp).nanoseconds
             if age > 1_000_000_000:
                 raise RuntimeError(f"the image for '{key}' is {age / 1e9:.1f} s old")
-            obs[key] = _image_to_array(msg)[np.newaxis, ...]
-        obs[self._instruction_key] = [instruction]
-        return obs
+            history = [
+                _image_to_array(self._frame_at(key, delta * self._history_step_s))
+                for delta in self._video_deltas
+            ]
+            video[key] = np.stack(history)[np.newaxis, ...]
+
+        return {
+            _STATE: {
+                key: np.asarray(values, dtype=np.float32)[np.newaxis, np.newaxis, ...]
+                for key, values in state.items()
+            },
+            _VIDEO: video,
+            _LANGUAGE: {self._instruction_key: [[instruction]]},
+        }
 
     def _chunk(self, action):
         """Turns the server's per-key action arrays into one trajectory of absolute positions."""
@@ -226,6 +335,9 @@ class GrootAdapter(Node):
             if key not in action:
                 raise RuntimeError(f"the server returned no '{key}'")
             values = np.atleast_2d(np.asarray(action[key], dtype=np.float64))
+            if values.ndim == 3:
+                # Answers come back batched the way observations go out.
+                values = values[0]
             if values.shape[1] != len(joints):
                 raise RuntimeError(
                     f"'{key}' is {values.shape[1]} wide but {len(joints)} joints are mapped to it"

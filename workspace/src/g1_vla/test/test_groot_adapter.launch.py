@@ -5,6 +5,11 @@ that reads like a model problem, and an action integrated the wrong way round pr
 plausible trajectory to the wrong place. So this runs the adapter against a stub server that
 answers the real wire format with numbers chosen so the arithmetic is checkable by hand.
 
+The stub declares the checkpoint's own key set and rejects an observation that does not match
+it, which is what carries the two halves of the handshake: the adapter only reaches an answer if
+it supplied every state and video key, and it only comes up at all if it tolerated the action
+keys it has no business driving.
+
 No simulator and no GPU: the stub is the point.
 """
 
@@ -15,6 +20,8 @@ import unittest
 import launch_testing
 import pytest
 import rclpy
+import tf2_ros
+from geometry_msgs.msg import TransformStamped
 from launch import LaunchDescription
 from launch.actions import ExecuteProcess, TimerAction
 from launch_ros.actions import Node
@@ -28,8 +35,37 @@ PORT = 5599
 HORIZON = 6
 DELTA = 0.02
 
-JOINTS = ["right_shoulder_pitch_joint", "right_elbow_joint"]
-MEASURED = {"right_shoulder_pitch_joint": 0.25, "right_elbow_joint": -0.10}
+ARMS = {
+    side: [
+        f"{side}_shoulder_pitch_joint",
+        f"{side}_shoulder_roll_joint",
+        f"{side}_shoulder_yaw_joint",
+        f"{side}_elbow_joint",
+        f"{side}_wrist_roll_joint",
+        f"{side}_wrist_pitch_joint",
+        f"{side}_wrist_yaw_joint",
+    ]
+    for side in ("left", "right")
+}
+HANDS = {
+    side: [
+        f"{side}_hand_thumb_0_joint",
+        f"{side}_hand_thumb_1_joint",
+        f"{side}_hand_thumb_2_joint",
+        f"{side}_hand_index_0_joint",
+        f"{side}_hand_index_1_joint",
+        f"{side}_hand_middle_0_joint",
+        f"{side}_hand_middle_1_joint",
+    ]
+    for side in ("left", "right")
+}
+WAIST = ["waist_yaw_joint", "waist_roll_joint", "waist_pitch_joint"]
+
+COMMANDED = ARMS["right"] + HANDS["right"]
+ALL_JOINTS = ARMS["left"] + ARMS["right"] + HANDS["left"] + HANDS["right"] + WAIST
+# A different number on every joint, so a mapping that is transposed within a key reads as a
+# wrong position rather than as a coincidence.
+MEASURED = {name: 0.01 * (index + 1) for index, name in enumerate(ALL_JOINTS)}
 CAMERA_TOPIC = "/camera/color/image_raw"
 
 STUB = os.path.join(os.path.dirname(__file__), "policy_server_stub.py")
@@ -48,10 +84,23 @@ def generate_test_description():
                 "zmq_timeout_ms": 5000,
                 "action_dt_s": 0.1,
                 "max_horizon": HORIZON,
-                "action_mode": "relative_to_observation",
-                "state_joints": {"state.test_arm": JOINTS},
-                "action_joints": {"action.test_arm": JOINTS},
-                "video_topics": {"video.test_cam": CAMERA_TOPIC},
+                "action_mode": "absolute",
+                # 20 steps of history at this spacing is a second of frames, which the probe
+                # below publishes well past before it asks for anything.
+                "history_step_s": 0.05,
+                "state_joints": {
+                    "left_arm": ARMS["left"],
+                    "right_arm": ARMS["right"],
+                    "left_hand": HANDS["left"],
+                    "right_hand": HANDS["right"],
+                    "waist": WAIST,
+                },
+                "state_eef_frames": {
+                    "left_wrist_eef_9d": ["pelvis", "left_wrist_yaw_link"],
+                    "right_wrist_eef_9d": ["pelvis", "right_wrist_yaw_link"],
+                },
+                "action_joints": {"right_arm": ARMS["right"], "right_hand": HANDS["right"]},
+                "video_topics": {"ego_view": CAMERA_TOPIC},
             }
         ],
     )
@@ -78,6 +127,20 @@ class TestGrootAdapter(unittest.TestCase):
         cls.client = cls.node.create_client(
             GetActionChunk, "/g1_vla_groot_adapter/get_action_chunk"
         )
+
+        # The wrist poses the adapter turns into the model's 9-D end-effector state. Static
+        # because where they are does not matter here; that they resolve at all does.
+        cls.tf = tf2_ros.StaticTransformBroadcaster(cls.node)
+        wrists = []
+        for side in ("left", "right"):
+            wrist = TransformStamped()
+            wrist.header.stamp = cls.node.get_clock().now().to_msg()
+            wrist.header.frame_id = "pelvis"
+            wrist.child_frame_id = f"{side}_wrist_yaw_link"
+            wrist.transform.translation.x = 0.2
+            wrist.transform.rotation.w = 1.0
+            wrists.append(wrist)
+        cls.tf.sendTransform(wrists)
 
     @classmethod
     def tearDownClass(cls):
@@ -121,24 +184,27 @@ class TestGrootAdapter(unittest.TestCase):
         result = self._call("pick up the red cube")
 
         self.assertTrue(result.ok, result.message)
-        self.assertEqual(list(result.chunk.joint_names), JOINTS)
+        # Only the joints this skill drives, even though the server offered a waist, a base
+        # height and a navigation command alongside them.
+        self.assertEqual(list(result.chunk.joint_names), COMMANDED)
         self.assertEqual(len(result.chunk.points), HORIZON)
         # Waypoint times advance, which is what the gate's shape check demands.
         times = [p.time_from_start.sec + p.time_from_start.nanosec / 1e9 for p in result.chunk.points]
         self.assertEqual(times, sorted(set(times)))
         self.assertAlmostEqual(times[0], 0.1, places=6)
 
-    def test_03_actions_are_offsets_from_the_observed_pose(self):
+    def test_03_absolute_actions_reach_the_chunk_unchanged(self):
         for _ in range(30):
             self._publish_observation()
             rclpy.spin_once(self.node, timeout_sec=0.1)
         result = self._call("pick up the red cube")
 
         self.assertTrue(result.ok, result.message)
-        # The stub returns the same delta at every step, so every waypoint sits one delta from
-        # the measured pose. Read as per-step deltas instead, they would compound.
+        # The stub answers one delta above the state it was sent, in absolute units. Anything
+        # that added the measured pose a second time would land at twice the angle, which is the
+        # failure this checkpoint's relative training representation invites.
         for point in result.chunk.points:
-            for index, joint in enumerate(JOINTS):
+            for index, joint in enumerate(COMMANDED):
                 self.assertAlmostEqual(point.positions[index], MEASURED[joint] + DELTA, places=6)
 
 
