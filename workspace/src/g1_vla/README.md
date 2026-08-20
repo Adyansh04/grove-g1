@@ -23,6 +23,13 @@ colcon build --symlink-install --packages-select g1_vla
 |---|---|
 | `g1_vla_server` | Serves `Grasp`. Queries the engine, validates, executes, and measures the lift. |
 | `g1_vla_mock_engine` | A stand-in engine that walks named joints toward a fixed target. No model needed. |
+| `g1_vla_groot_adapter` | An engine backed by a vision-language-action model served over ZMQ. |
+
+`g1_vla_groot_adapter` is the one Python node here. It is a request-response translator on a
+slow path with no timing or safety role, and its whole job is marshalling dictionaries and arrays
+against a schema discovered at runtime. It speaks the policy server's wire protocol directly
+rather than importing that server's package, which keeps this container free of the model's
+dependency tree. Everything with a timing or safety role is C++.
 
 ## Interfaces
 
@@ -80,8 +87,19 @@ composes. Standalone, against the mock engine:
 ros2 launch g1_vla vla.launch.py engine:=mock
 ```
 
+Against a real policy, with the model server already running outside the container:
+
+```bash
+ros2 launch g1_vla vla.launch.py engine:=groot
+```
+
+The model's modality keys belong to its checkpoint, so `config/g1_vla_groot_adapter.yaml` maps
+them to joint names rather than assuming them. Start the adapter once against the server: it logs
+every key the server reports and refuses to serve until each one is mapped.
+
 ## Tests
 
 | Test | Covers |
 |---|---|
 | `test_chunk_utils` | Chunk shape, the start-jump, segment-step and velocity checks, and the controller split |
+| `test_groot_adapter` | The adapter against a stub policy server: wire protocol, key mapping, and action integration. No simulator or GPU. |

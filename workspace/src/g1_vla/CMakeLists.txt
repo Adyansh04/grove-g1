@@ -65,6 +65,7 @@ install(DIRECTORY config launch DESTINATION share/${PROJECT_NAME})
 install(TARGETS g1_vla_chunk_utils g1_vla_server_node g1_vla_mock_engine_node
   EXPORT export_${PROJECT_NAME} DESTINATION lib)
 install(TARGETS g1_vla_server g1_vla_mock_engine DESTINATION lib/${PROJECT_NAME})
+install(PROGRAMS scripts/g1_vla_groot_adapter DESTINATION lib/${PROJECT_NAME})
 
 # --- tests -----------------------------------------------------------------
 
@@ -73,8 +74,14 @@ if(BUILD_TESTING)
   ament_lint_auto_find_test_dependencies()
   find_package(ament_cmake_gmock REQUIRED)
 
+  find_package(launch_testing_ament_cmake REQUIRED)
+
   ament_add_gmock(test_chunk_utils test/test_chunk_utils.cpp)
   target_link_libraries(test_chunk_utils g1_vla_chunk_utils)
+
+  # Not a simulator test: it runs the adapter against a stub policy server, so it needs neither
+  # MuJoCo nor a GPU and CI can run it.
+  add_launch_test(test/test_groot_adapter.launch.py TARGET test_groot_adapter TIMEOUT 180)
 
   g1_add_lint_tests()
 endif()
