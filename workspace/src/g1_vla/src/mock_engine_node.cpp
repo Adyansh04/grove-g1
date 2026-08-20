@@ -18,18 +18,12 @@ G1VlaMockEngine::G1VlaMockEngine(const rclcpp::NodeOptions& options)
 {
     joint_names_ =
         declare_parameter<std::vector<std::string>>("joint_names", std::vector<std::string>{});
-    target_positions_ =
-        declare_parameter<std::vector<double>>("target_positions", std::vector<double>{});
+    declare_parameter<std::vector<double>>("target_positions", std::vector<double>{});
     steps_per_chunk_ = static_cast<int>(declare_parameter<int64_t>("steps_per_chunk", 8));
     action_dt_s_     = declare_parameter<double>("action_dt_s", 0.1);
     // Small enough that consecutive waypoints stay inside the gate's segment-step budget, which
     // is what makes per-waypoint collision checking meaningful.
-    step_rad_ = declare_parameter<double>("step_rad", 0.05);
-
-    if (joint_names_.size() != target_positions_.size())
-    {
-        throw std::runtime_error("joint_names and target_positions must be the same length");
-    }
+    declare_parameter<double>("step_rad", 0.05);
 
     joint_states_sub_ = create_subscription<sensor_msgs::msg::JointState>(
         "/joint_states",
@@ -60,6 +54,17 @@ void G1VlaMockEngine::onGetActionChunk(
     const GetActionChunk::Request::SharedPtr&  request,
     const GetActionChunk::Response::SharedPtr& response)
 {
+    // Read per request, not cached: a test switches the target mid-run to point the walk
+    // somewhere the gate must refuse.
+    const std::vector<double> target   = get_parameter("target_positions").as_double_array();
+    const double              step_rad = get_parameter("step_rad").as_double();
+    if (target.size() != joint_names_.size())
+    {
+        response->ok      = false;
+        response->message = "target_positions is not as long as joint_names";
+        return;
+    }
+
     std::vector<double> current;
     current.reserve(joint_names_.size());
     {
@@ -83,8 +88,8 @@ void G1VlaMockEngine::onGetActionChunk(
         trajectory_msgs::msg::JointTrajectoryPoint point;
         for (std::size_t i = 0; i < joint_names_.size(); ++i)
         {
-            const double remaining = target_positions_[i] - current[i];
-            current[i] += std::clamp(remaining, -step_rad_, step_rad_);
+            const double remaining = target[i] - current[i];
+            current[i] += std::clamp(remaining, -step_rad, step_rad);
             point.positions.push_back(current[i]);
         }
         const double t                = action_dt_s_ * step;

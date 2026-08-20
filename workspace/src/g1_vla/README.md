@@ -65,6 +65,9 @@ is the `engine` launch argument.
 | `success_lift_m` | 0.05 | Rise in the object's height that counts as a grasp |
 | `object_timeout_ms` | 1000.0 | How stale an `/objects` pose may be |
 
+These are re-read at the start of every goal, so changing one with `ros2 param set` takes effect
+on the next grasp rather than needing a restart.
+
 `config/g1_vla_mock_engine.yaml`: `joint_names`, `target_positions`, `steps_per_chunk`,
 `action_dt_s`, `step_rad`.
 
@@ -103,3 +106,4 @@ every key the server reports and refuses to serve until each one is mapped.
 |---|---|
 | `test_chunk_utils` | Chunk shape, the start-jump, segment-step and velocity checks, and the controller split |
 | `test_groot_adapter` | The adapter against a stub policy server: wire protocol, key mapping, and action integration. No simulator or GPU. |
+| `test_vla_grasp_mock` | Sim, `-L simulator`. Valid chunks reach the controllers and move the arm; a chunk aimed at a colliding pose is refused with the arm still where it started. |

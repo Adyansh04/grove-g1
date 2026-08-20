@@ -80,6 +80,14 @@ private:
     /// Claims the arm for one goal.
     bool acquire();
 
+    /**
+     * @brief Re-reads the tunables so a change takes effect on the next goal.
+     *
+     * Caching them at construction would mean every threshold needed a restart to move, which
+     * is the wrong trade for numbers whose right value is found by watching the robot.
+     */
+    void refreshTunables();
+
     void executeGrasp(const std::shared_ptr<GoalHandle>& goal_handle);
 
     /**
