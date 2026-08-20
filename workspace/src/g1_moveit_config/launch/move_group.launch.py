@@ -107,6 +107,14 @@ def generate_launch_description():
                 # Puts the SRDF on a topic, so RViz's MotionPlanning display picks it up
                 # instead of every consumer being handed the same parameter.
                 {"publish_robot_description_semantic": True},
+                # Off by default in move_group, and servo is useless without it: a secondary
+                # scene monitor gets its world and its robot state from this topic alone, so
+                # without it servo waits on a state update that never arrives and silently
+                # never moves.
+                {"publish_planning_scene": True},
+                {"publish_geometry_updates": True},
+                {"publish_state_updates": True},
+                {"publish_transforms_updates": True},
             ],
         ),
         _servo(),
