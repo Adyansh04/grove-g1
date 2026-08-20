@@ -100,9 +100,8 @@ def _validate(mode, want_nav, want_moveit, want_manipulation, want_vla, pin_pelv
         )
     if pin_pelvis and mode != "none":
         raise RuntimeError(
-            "pin_pelvis:=true welds the pelvis to the world and disables the walking policy, "
-            "so the robot cannot drive anywhere. It is a bare-sim debugging aid; use it with "
-            "mode:=none."
+            "pin_pelvis:=true welds the pelvis and freezes the legs, so the robot cannot "
+            "drive anywhere. It is a bare-sim debugging aid; use it with mode:=none."
         )
 
 
