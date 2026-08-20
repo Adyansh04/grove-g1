@@ -32,6 +32,7 @@ add_library(g1_bt_nodes
   src/skills/arm_authority_leaves.cpp
   src/skills/clear_costmaps.cpp
   src/skills/clear_octomap.cpp
+  src/skills/grasp.cpp
   src/skills/navigate_to_pose.cpp
   src/skills/pick.cpp
   src/skills/place.cpp

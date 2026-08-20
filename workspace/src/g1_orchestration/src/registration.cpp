@@ -13,6 +13,7 @@
 #include "g1_orchestration/skills/arm_authority_leaves.hpp"
 #include "g1_orchestration/skills/clear_costmaps.hpp"
 #include "g1_orchestration/skills/clear_octomap.hpp"
+#include "g1_orchestration/skills/grasp.hpp"
 #include "g1_orchestration/skills/navigate_to_pose.hpp"
 #include "g1_orchestration/skills/pick.hpp"
 #include "g1_orchestration/skills/place.hpp"
@@ -29,6 +30,7 @@ void registerSkillNodes(BT::BehaviorTreeFactory& factory, const RosContext& cont
     registerLeaf<Retreat>(factory, "Retreat", context);
     registerLeaf<Pick>(factory, "Pick", context);
     registerLeaf<Place>(factory, "Place", context);
+    registerLeaf<Grasp>(factory, "Grasp", context);
     registerLeaf<SetArmPosture>(factory, "SetArmPosture", context);
     registerLeaf<ClearCostmaps>(factory, "ClearCostmaps", context);
     registerLeaf<ClearOctomap>(factory, "ClearOctomap", context);

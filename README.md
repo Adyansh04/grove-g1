@@ -79,11 +79,12 @@ Two rules shape the design, and both apply in simulation so the habits transfer:
 | [`g1_locomotion`](workspace/src/g1_locomotion) | Walks the base into arm's reach of a measured object, and backs it out again. |
 | [`g1_manipulation`](workspace/src/g1_manipulation) | Pick and place as actions, and the object-pose source behind them. |
 | [`g1_moveit_config`](workspace/src/g1_moveit_config) | MoveIt config: arm and hand planning groups, kinematics, the octomap. |
-| [`g1_msgs`](workspace/src/g1_msgs) | The mission's own actions: pick, place, approach, retreat, arm posture. |
+| [`g1_msgs`](workspace/src/g1_msgs) | The mission's own interfaces: pick, place, approach, retreat, arm posture, grasp. |
 | [`g1_navigation`](workspace/src/g1_navigation) | SLAM Toolbox mapping, AMCL localization and Nav2. |
 | [`g1_orchestration`](workspace/src/g1_orchestration) | The behaviour tree that sequences navigation and manipulation into a mission. |
 | [`g1_sensor_relay`](workspace/src/g1_sensor_relay) | Publishes LiDAR and depth frames sampled inside the simulator. |
 | [`g1_state_estimation`](workspace/src/g1_state_estimation) | Publishes `odom` to `base_footprint` and the TF chain Nav2 needs. |
+| [`g1_vla`](workspace/src/g1_vla) | Learned grasping: a policy's action chunks, checked against the planning scene before they run. |
 
 ## Quick start
 
@@ -169,6 +170,13 @@ Groot2 on the host can watch it tick at `localhost:1667`:
 
 ```bash
 ros2 launch g1_orchestration mission.launch.py tree:=pick_and_place_in_place.xml
+```
+
+The same scene has a learned-grasp variant. It needs `vla:=true` on the bringup above, and
+`vla_engine:=groot` additionally needs a policy server running on the host:
+
+```bash
+ros2 launch g1_orchestration mission.launch.py tree:=vla_grasp_in_place.xml
 ```
 
 The full navigate-pick-carry-place mission needs the facility world and a map:

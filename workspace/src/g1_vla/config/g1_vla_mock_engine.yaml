@@ -1,14 +1,16 @@
 g1_vla_mock_engine:
   ros__parameters:
-    # The right arm only. A target the gate can reach in free space, so a healthy stack executes
-    # every chunk; point it at a surface instead and every chunk should be rejected unmoved.
+    # The right arm only, and a modest forward reach measured to be collision-free the whole way
+    # from the workbench rest pose. Point target_positions somewhere the arm cannot legally go
+    # and every chunk should be rejected with the robot still where it started.
     joint_names:
       - right_shoulder_pitch_joint
       - right_shoulder_roll_joint
       - right_elbow_joint
-    target_positions: [-0.6, -0.2, 0.8]
+    target_positions: [-0.6, -0.15, 0.3]
 
     steps_per_chunk: 8
     action_dt_s: 0.1
-    # Under the server's max_segment_step_rad, so the walk itself never trips the gate.
-    step_rad: 0.05
+    # 0.03 rad per 0.1 s is 0.3 rad/s against the arm's 0.8 limit, inside the server's
+    # velocity_scaling of 0.5. At 0.05 the walk itself would be refused for speed.
+    step_rad: 0.03

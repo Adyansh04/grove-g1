@@ -44,10 +44,8 @@ private:
     std::map<std::string, double> measured_;
 
     std::vector<std::string> joint_names_;
-    std::vector<double>      target_positions_;
     int                      steps_per_chunk_{ 8 };
     double                   action_dt_s_{ 0.1 };
-    double                   step_rad_{ 0.05 };
 };
 
 }  // namespace g1_vla

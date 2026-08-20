@@ -42,17 +42,18 @@ G1VlaServer::G1VlaServer(const rclcpp::NodeOptions& options)
 {
     engine_service_ =
         declare_parameter<std::string>("engine_service", "/g1_vla_engine/get_action_chunk");
-    engine_timeout_s_ = declare_parameter<double>("engine_timeout_s", 10.0);
+    declare_parameter<double>("engine_timeout_s", 10.0);
     // A chunk that opens away from where the arm actually is means the policy misread the state.
-    max_start_jump_rad_ = declare_parameter<double>("max_start_jump_rad", 0.15);
+    declare_parameter<double>("max_start_jump_rad", 0.15);
     // Waypoints further apart than this sweep space no validity check ever looked at.
-    max_segment_step_rad_ = declare_parameter<double>("max_segment_step_rad", 0.20);
-    velocity_scaling_     = declare_parameter<double>("velocity_scaling", 0.5);
-    max_rejected_chunks_  = static_cast<int>(declare_parameter<int64_t>("max_rejected_chunks", 5));
-    timeout_s_            = declare_parameter<double>("timeout_s", 90.0);
-    chunk_exec_timeout_s_ = declare_parameter<double>("chunk_exec_timeout_s", 10.0);
-    success_lift_m_       = declare_parameter<double>("success_lift_m", 0.05);
-    object_timeout_s_     = declare_parameter<double>("object_timeout_ms", 1000.0) / 1000.0;
+    declare_parameter<double>("max_segment_step_rad", 0.20);
+    declare_parameter<double>("velocity_scaling", 0.5);
+    declare_parameter<int64_t>("max_rejected_chunks", 5);
+    declare_parameter<double>("timeout_s", 90.0);
+    declare_parameter<double>("chunk_exec_timeout_s", 10.0);
+    declare_parameter<double>("success_lift_m", 0.05);
+    declare_parameter<double>("object_timeout_ms", 1000.0);
+    refreshTunables();
 
     objects_sub_ = create_subscription<vision_msgs::msg::Detection3DArray>(
         "/objects",
@@ -194,6 +195,19 @@ void G1VlaServer::initialize()
         "grasp server ready, engine at '%s', arm velocity limit %.2f rad/s",
         engine_service_.c_str(),
         limits_.at("right_elbow_joint"));
+}
+
+void G1VlaServer::refreshTunables()
+{
+    engine_timeout_s_     = get_parameter("engine_timeout_s").as_double();
+    max_start_jump_rad_   = get_parameter("max_start_jump_rad").as_double();
+    max_segment_step_rad_ = get_parameter("max_segment_step_rad").as_double();
+    velocity_scaling_     = get_parameter("velocity_scaling").as_double();
+    max_rejected_chunks_  = static_cast<int>(get_parameter("max_rejected_chunks").as_int());
+    timeout_s_            = get_parameter("timeout_s").as_double();
+    chunk_exec_timeout_s_ = get_parameter("chunk_exec_timeout_s").as_double();
+    success_lift_m_       = get_parameter("success_lift_m").as_double();
+    object_timeout_s_     = get_parameter("object_timeout_ms").as_double() / 1000.0;
 }
 
 bool G1VlaServer::acquire()
@@ -510,6 +524,8 @@ void G1VlaServer::executeGrasp(const std::shared_ptr<GoalHandle>& goal_handle)
 {
     const std::shared_ptr<const Grasp::Goal> goal   = goal_handle->get_goal();
     auto                                     result = std::make_shared<Grasp::Result>();
+
+    refreshTunables();
 
     auto feedback   = std::make_shared<Grasp::Feedback>();
     feedback->phase = Grasp::Feedback::PHASE_PREPARING;
