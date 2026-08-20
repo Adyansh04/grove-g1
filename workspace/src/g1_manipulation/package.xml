@@ -20,6 +20,7 @@
   <depend>geometry_msgs</depend>
   <depend>vision_msgs</depend>
   <depend>visualization_msgs</depend>
+  <depend>moveit_core</depend>
   <depend>moveit_ros_planning_interface</depend>
   <depend>moveit_msgs</depend>
   <depend>shape_msgs</depend>

@@ -1,10 +1,7 @@
-# Extends your pre-built image (tag is provided by docker-compose.yml via BASE_IMAGE)
 
 ARG BASE_IMAGE=adyansh04/ros-dev:jazzy
 FROM ${BASE_IMAGE}
 
-# Pinned explicitly rather than inherited from the base image ENV: every `ros-${ROS_DISTRO}-*`
-# apt name below resolves through it, and an unset value would silently install nothing.
 ARG ROS_DISTRO=jazzy
 
 # Allow pip installs in distro-managed Python images (required on Ubuntu 24.04+/ROS Jazzy).
@@ -52,10 +49,6 @@ RUN apt-get update && apt-get install -y \
         xvfb \
     && rm -rf /var/lib/apt/lists/*
 
-# Compilation parallelism for every source build below. NOT $(nproc): heavy C++ here runs
-# 0.5-1 GB per cc1plus, so one job per core OOM-kills a 32-core/30 GB machine mid-build --
-# observed, twice, taking the desktop session with it. One job per ~2 GB of RAM is the rule.
-# Raise on a bigger box with --build-arg BUILD_JOBS=N.
 ARG BUILD_JOBS=8
 
 # --- unitree_sdk2 -----------------------------------------------------------
@@ -75,7 +68,6 @@ RUN git init -q /opt/unitree_robotics/unitree_sdk2 && \
     rm -rf /opt/unitree_robotics/unitree_sdk2
 
 # --- MuJoCo ------------------------------------------------------------------
-# The full tarball, not the wheel: unitree_mujoco compiles the viewer sources directly.
 ARG MUJOCO_VERSION=3.3.6
 RUN mkdir -p /opt/unitree_robotics/mujoco-${MUJOCO_VERSION} && \
     curl -fsSL "https://github.com/google-deepmind/mujoco/releases/download/${MUJOCO_VERSION}/mujoco-${MUJOCO_VERSION}-linux-x86_64.tar.gz" \
@@ -125,31 +117,23 @@ RUN cat > /etc/cyclonedds/cyclonedds.hardware.xml <<'EOF'
 </CycloneDDS>
 EOF
 
-# ROS runs fastrtps and never loads a CycloneDDS RMW: unitree_sdk2 links its own CycloneDDS
-# inside the hardware component, and two libddsc.so.0 of different ABIs corrupt the heap.
 ENV RMW_IMPLEMENTATION=rmw_fastrtps_cpp
-# Still set: the SDK and unitree_mujoco read it directly, which is what pins them to loopback.
 ENV CYCLONEDDS_URI=file:///etc/cyclonedds/cyclonedds.xml
-# Sim-only domain; the robot's is set through GROVE_G1_ROS_DOMAIN_ID below.
 ENV ROS_DOMAIN_ID=1
 
-# Puts back the ROS_DOMAIN_ID that the base image's 10-ros-env.sh overwrites with 0. Read from
-# the GROVE_G1_-prefixed copy: the unprefixed name would read the 0 just written.
 RUN cat > /etc/profile.d/99-grove-g1-env.sh <<'EOF'
 export ROS_DOMAIN_ID="${GROVE_G1_ROS_DOMAIN_ID:-1}"
 EOF
 
-# rosidl needs empy 3.3.4 (apt python3-empy); pip's `em` and `empy` 4.x both shadow it from
-# /usr/local, and 4.x's rewritten API throws TransientParseError while expanding templates.
 RUN python3 -m pip uninstall -y em empy
 
-# --- Milestone 2: LocoClient deps -------------------------------------------
+# ---LocoClient deps -------------------------------------------
 
 # nlohmann-json: used for the LocoClient wire format (matches vendor's client).
 RUN apt-get update && apt-get install -y nlohmann-json3-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# --- Milestone 3: walking-policy deps ---------------------------------------
+# --- walking-policy deps ---------------------------------------
 
 # ONNX Runtime CPU tarball. ldconfig (not RPATH) avoids LD_LIBRARY_PATH shadowing
 # by ROS's /opt/ros/${ROS_DISTRO}/lib.
@@ -164,7 +148,7 @@ RUN mkdir -p /opt/onnxruntime && \
 RUN apt-get update && apt-get install -y ros-${ROS_DISTRO}-teleop-twist-keyboard \
     && rm -rf /var/lib/apt/lists/*
 
-# --- Milestone 4: perception sim track ---------------------------------------
+# --- perception sim track ---------------------------------------
 
 # mujoco_ros2_control, the second simulation track (sensors + a simplified mobility body).
 # Pinned to main, not a release: only main has the 3D PointCloud2 lidar the Mid360 needs.
@@ -198,11 +182,8 @@ RUN mkdir -p /opt/mujoco_ros2_control_ws/src && \
 RUN printf '. /opt/mujoco_ros2_control_ws/install/setup.sh\n' \
       >> /etc/profile.d/99-grove-g1-env.sh
 
-# --- Milestone 6: SLAM + Nav2 -------------------------------------------------
+# --- SLAM + Nav2 -------------------------------------------------
 
-# Three of these four already ship in the base image; listed anyway, because the base tag
-# floats and a silent removal would surface as a missing launch file. pointcloud-to-laserscan
-# is the one genuinely absent -- slam_toolbox consumes LaserScan only.
 RUN apt-get update && apt-get install -y \
         ros-${ROS_DISTRO}-navigation2 \
         ros-${ROS_DISTRO}-nav2-bringup \
@@ -210,25 +191,23 @@ RUN apt-get update && apt-get install -y \
         ros-${ROS_DISTRO}-pointcloud-to-laserscan \
     && rm -rf /var/lib/apt/lists/*
 
-# --- Milestone 7: MoveIt 2 (structured manipulation) --------------------------
+# --- MoveIt 2 (structured manipulation) --------------------------
 
-# Humble's 2.5.9. Each extra past the metapackage is deliberate: pick-ik replaces KDL for the
+# Jazzy's 2.12.4. Each extra past the metapackage is deliberate: pick-ik replaces KDL for the
 # 7-DoF arms, moveit-ros-perception carries the octomap updater plugins the metapackage omits,
-# realsense2-description supplies the D435's real geometry. moveit-servo is deliberately absent.
+# realsense2-description supplies the D435's real geometry, moveit-servo streams the arms.
 RUN apt-get update && apt-get install -y \
         ros-${ROS_DISTRO}-moveit \
         ros-${ROS_DISTRO}-moveit-configs-utils \
         ros-${ROS_DISTRO}-moveit-setup-assistant \
+        ros-${ROS_DISTRO}-moveit-servo \
         ros-${ROS_DISTRO}-pick-ik \
         ros-${ROS_DISTRO}-moveit-ros-perception \
         ros-${ROS_DISTRO}-realsense2-description \
     && rm -rf /var/lib/apt/lists/*
 
-# --- Milestone 9: orchestration + manipulation skills -------------------------
+# --- orchestration + manipulation skills -------------------------
 
-# behaviortree-cpp is v4 and coexists with the v3 Nav2 pulls in: disjoint files, disjoint
-# include roots, and nothing links both. vision-msgs carries the Detection3DArray that
-# g1_manipulation publishes. twist-mux is deliberately absent -- its Humble build is broken.
 RUN apt-get update && apt-get install -y \
         ros-${ROS_DISTRO}-behaviortree-cpp \
         ros-${ROS_DISTRO}-vision-msgs \
@@ -240,7 +219,7 @@ RUN test -e /opt/ros/${ROS_DISTRO}/lib/libbehaviortree_cpp.so || \
     ln -s "$(dpkg-architecture -qDEB_HOST_MULTIARCH)/libbehaviortree_cpp.so" \
           /opt/ros/${ROS_DISTRO}/lib/libbehaviortree_cpp.so
 
-# --- Milestone 10: LiDAR-inertial odometry ------------------------------------
+# --- LiDAR-inertial odometry ------------------------------------
 
 # Livox-SDK2, the Mid360's transport library. livox_ros_driver2 does find_library(... REQUIRED)
 # for it, and that driver defines the CustomMsg both FAST-LIO and the sim bridge speak -- so it
@@ -258,12 +237,18 @@ RUN git init -q /tmp/Livox-SDK2 && \
     ldconfig && \
     rm -rf /tmp/Livox-SDK2
 
+# --- learned grasp ----------------------------------------------
+
+# The policy adapter speaks the wire protocol directly, so this is the whole dependency.
+# --no-deps: apt satisfies both, and pip would otherwise shadow python3-msgpack like empy.
+RUN apt-get update && apt-get install -y \
+        python3-zmq \
+        python3-msgpack \
+    && rm -rf /var/lib/apt/lists/* && \
+    (python3 -m pip install --no-cache-dir --no-deps --break-system-packages msgpack-numpy==0.4.8 || \
+     python3 -m pip install --no-cache-dir --no-deps msgpack-numpy==0.4.8)
+
 # --- unitree_mujoco (the `simulate` app) ------------------------------------
-# LAST on purpose: the only block consuming COPYed host files, and cache invalidation flows
-# forward, so a one-line sensor edit here must not re-run every apt block above it.
-#
-# The source tree stays in the image -- the binary resolves assets relative to its own
-# location. Only the `unitree_mujoco` target is built; jstest fails against the current SDK.
 COPY workspace/patches/unitree_mujoco/ /tmp/unitree_mujoco_patches/
 COPY workspace/vendor/unitree_mujoco/ /tmp/unitree_mujoco_src/
 ARG UNITREE_MUJOCO_SHA=ae6a8403e272733e9996ef59990880330496177f
@@ -288,14 +273,8 @@ RUN git init -q /opt/unitree_robotics/unitree_mujoco && \
     cmake --build . --target unitree_mujoco --parallel "${BUILD_JOBS}" && \
     rm -rf CMakeFiles && \
     rm -rf ../mujoco/sample ../mujoco/bin ../mujoco/doc ../mujoco/model
-# include/ and simulate/ are kept deliberately: we compile our own sensor source into this app
-# and CMakeLists globs simulate/*.cc, so stripping them costs a full rebuild per edit. The bulk
-# (model/bin/doc/sample) is still removed. Binary at simulate/build/unitree_mujoco.
 
 # --- editor configs -----------------------------------------------------------
-# At /root, NOT /root/workspace: the ./workspace bind mount replaces that directory wholesale
-# at runtime. These tools all search ancestor directories, so they are found from anywhere
-# under it. Symlinks dangle at build time -- /root/.host-repo is a runtime mount.
 RUN ln -sf /root/.host-repo/.clangd       /root/.clangd && \
     ln -sf /root/.host-repo/.clang-format /root/.clang-format && \
     ln -sf /root/.host-repo/.clang-tidy   /root/.clang-tidy && \

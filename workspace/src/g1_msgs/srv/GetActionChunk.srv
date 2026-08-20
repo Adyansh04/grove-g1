@@ -1,0 +1,13 @@
+# One turn of the policy loop: given the task, return the next chunk of joint targets.
+#
+# Every policy engine serves this and nothing else, which is what makes them interchangeable.
+# Chunk positions are absolute, may name any subset of the arm and hand joints, and
+# time_from_start must increase.
+
+# Natural-language task. Changing it starts a new episode at the engine.
+string instruction
+---
+bool ok
+# Why no chunk could be produced. Empty when ok.
+string message
+trajectory_msgs/JointTrajectory chunk
