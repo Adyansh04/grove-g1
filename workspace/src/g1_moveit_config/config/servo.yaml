@@ -1,0 +1,65 @@
+# MoveIt Servo: the streaming command path for the arms.
+#
+# A second way into the same arm_trajectory_controller move_group already drives, not a second
+# command path: servo publishes onto the controller's trajectory topic, so the ownership chain
+# is unchanged and only one thing streams at a time.
+#
+# What it adds over a planned trajectory is reaction. A plan is checked once and then executed
+# blind; servo re-checks proximity while the arm is moving and scales the command down, which is
+# what a learned policy driving into a scene that can change actually needs.
+
+# Both arms, matching arm_trajectory_controller's 14 joints. active_subgroup can narrow this to
+# one arm at runtime. Only joint commands are used, so the missing kinematics entry on this
+# group in g1.srdf does not matter -- Cartesian input is what would need a solver.
+move_group_name: both_arms
+
+publish_period: 0.01
+# A stale command must stop the arm rather than repeat. This is the dead-man for anything
+# streaming into servo, so it stays well under a second.
+incoming_command_timeout: 0.1
+max_expected_latency: 0.1
+
+# Commands arrive as real rad/s rather than joystick-style [-1, 1], so the numbers in a chunk
+# and the numbers on the wire are the same quantity.
+command_in_type: speed_units
+scale:
+  linear: 0.2
+  rotational: 0.8
+  joint: 0.5
+
+joint_command_in_topic: ~/delta_joint_cmds
+cartesian_command_in_topic: ~/delta_twist_cmds
+joint_topic: /joint_states
+status_topic: ~/status
+command_out_topic: /arm_trajectory_controller/joint_trajectory
+command_out_type: trajectory_msgs/JointTrajectory
+
+# The controller claims position alone.
+publish_joint_positions: true
+publish_joint_velocities: false
+publish_joint_accelerations: false
+
+use_smoothing: true
+smoothing_filter_plugin_name: online_signal_smoothing::AccelerationLimitedPlugin
+
+# move_group owns the primary scene; a second primary would advertise a competing
+# /get_planning_scene and the two would answer different callers differently.
+is_primary_planning_scene_monitor: false
+monitored_planning_scene_topic: /monitored_planning_scene
+
+check_collisions: true
+# NOT the default. The scene obstacle here is the octomap the depth camera builds, so leaving
+# this false would give a collision monitor that never sees the bench and never slows down.
+check_octomap_collisions: true
+collision_check_rate: 10.0
+self_collision_proximity_threshold: 0.01
+scene_collision_proximity_threshold: 0.02
+
+lower_singularity_threshold: 17.0
+hard_stop_singularity_threshold: 30.0
+leaving_singularity_threshold_multiplier: 2.0
+
+# Matches the arm's own margin habit elsewhere: the measured pose trails the commanded one on a
+# position-only joint, so a zero margin reads a joint at its limit as already past it.
+joint_limit_margins: [0.12]
+halt_all_joints_in_joint_mode: true
