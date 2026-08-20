@@ -68,17 +68,31 @@ def _mock_engine():
     )
 
 
+def _groot_engine():
+    return Node(
+        package="g1_vla",
+        executable="g1_vla_groot_adapter",
+        name="g1_vla_groot_adapter",
+        output="screen",
+        condition=IfCondition(EqualsSubstitution(LaunchConfiguration("engine"), "groot")),
+        parameters=[_config(SHARE, "g1_vla_groot_adapter.yaml")],
+        remappings=[("~/get_action_chunk", ENGINE_SERVICE)],
+    )
+
+
 def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument(
                 "engine",
                 default_value="mock",
-                choices=["mock"],
+                choices=["mock", "groot"],
                 description="Which policy engine answers the server. 'mock' walks the arm "
-                "toward a fixed target and needs no model.",
+                "toward a fixed target and needs no model; 'groot' talks to a policy server "
+                "running outside the container.",
             ),
             _server(),
             _mock_engine(),
+            _groot_engine(),
         ]
     )

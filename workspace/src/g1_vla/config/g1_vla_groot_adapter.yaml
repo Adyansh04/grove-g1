@@ -1,0 +1,27 @@
+g1_vla_groot_adapter:
+  ros__parameters:
+    # The server runs on the host, outside this container. Compose is host-networked.
+    server_address: tcp://127.0.0.1:5555
+    zmq_timeout_ms: 8000
+
+    # Spacing between the chunk's waypoints, and how many of them to keep. The gate's
+    # max_segment_step_rad and velocity_scaling are both judged against this spacing.
+    action_dt_s: 0.05
+    max_horizon: 16
+
+    # "relative_to_observation" adds each action to the joint position it was computed from;
+    # "absolute" passes the server's numbers through untouched.
+    action_mode: relative_to_observation
+    instruction_key: annotation.human.action.task_description
+
+    # The model's modality keys are its own and change with the checkpoint, so they are mapped
+    # here rather than guessed. Start the adapter once against the server: it logs every key the
+    # server reports and refuses to serve until each one appears below. The joint order in each
+    # list must match the order of that key's vector. Shape, with the names the server reported:
+    #
+    # state_joints:
+    #   state.right_arm: [right_shoulder_pitch_joint, right_shoulder_roll_joint, ...]
+    # action_joints:
+    #   action.right_arm: [right_shoulder_pitch_joint, right_shoulder_roll_joint, ...]
+    # video_topics:
+    #   video.ego_view: /camera/color/image_raw

@@ -1,0 +1,284 @@
+#!/usr/bin/env python3
+"""Policy engine backed by a vision-language-action model served over ZMQ.
+
+Serves the same GetActionChunk the mock engine does, so the gate cannot tell them apart. What is
+specific here is the wire protocol and the mapping between the model's modality keys and this
+robot's joint names, which is read from the server at startup and checked against config rather
+than assumed.
+
+Speaks the protocol directly instead of importing the model's own package, which keeps the ROS
+container free of its dependency tree.
+"""
+
+import io
+import json
+
+import msgpack
+import msgpack_numpy as mnp
+import numpy as np
+import rclpy
+import zmq
+from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
+from sensor_msgs.msg import Image, JointState
+from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
+
+from g1_msgs.srv import GetActionChunk
+
+# Endpoints that carry no request body. Sending one a "data" field is an error server-side.
+_NO_INPUT = ("ping", "kill", "get_modality_config")
+
+
+def _decode_hook(obj):
+    """Undo the server's array and config encodings.
+
+    Two array forms are in circulation: a raw .npy payload and msgpack_numpy's. Both are
+    accepted because both are shipped by the reference servers.
+    """
+    if isinstance(obj, dict):
+        if obj.get("__ndarray_class__") or obj.get(b"__ndarray_class__"):
+            payload = obj.get("as_npy", obj.get(b"as_npy"))
+            if payload is None:
+                raise ValueError("array payload marked but empty")
+            return np.load(io.BytesIO(payload), allow_pickle=False)
+        for marker in ("__ModalityConfig__", "__ModalityConfig_class__"):
+            if marker in obj or marker.encode() in obj:
+                as_json = obj.get("as_json", obj.get(b"as_json"))
+                if isinstance(as_json, bytes):
+                    as_json = as_json.decode()
+                return json.loads(as_json) if isinstance(as_json, str) else as_json
+    return mnp.decode(obj)
+
+
+class PolicyClient:
+    """A REQ socket to the policy server.
+
+    REQ sockets alternate send and recv strictly, so a timed-out request leaves the socket
+    unusable and it is rebuilt rather than reused.
+    """
+
+    def __init__(self, address, timeout_ms):
+        self._context = zmq.Context()
+        self._address = address
+        self._timeout_ms = timeout_ms
+        self._socket = None
+        self._connect()
+
+    def _connect(self):
+        if self._socket is not None:
+            self._socket.close(linger=0)
+        self._socket = self._context.socket(zmq.REQ)
+        self._socket.setsockopt(zmq.RCVTIMEO, self._timeout_ms)
+        self._socket.setsockopt(zmq.SNDTIMEO, self._timeout_ms)
+        self._socket.connect(self._address)
+
+    def call(self, endpoint, data=None):
+        request = {"endpoint": endpoint}
+        if endpoint not in _NO_INPUT:
+            request["data"] = data if data is not None else {}
+        try:
+            self._socket.send(msgpack.packb(request, default=mnp.encode))
+            reply = msgpack.unpackb(self._socket.recv(), object_hook=_decode_hook, raw=False)
+        except zmq.ZMQError as error:
+            self._connect()
+            raise RuntimeError(f"{endpoint} did not complete: {error}") from error
+        if isinstance(reply, dict) and "error" in reply:
+            raise RuntimeError(f"the policy server refused {endpoint}: {reply['error']}")
+        return reply
+
+    def close(self):
+        self._socket.close(linger=0)
+        self._context.term()
+
+
+def _image_to_array(msg):
+    """An rgb8 Image as (H, W, 3) uint8, without pulling in cv_bridge for one reshape."""
+    if msg.encoding != "rgb8":
+        raise ValueError(f"expected rgb8, the camera published {msg.encoding}")
+    flat = np.frombuffer(msg.data, dtype=np.uint8)
+    # step can exceed width*3 when rows are padded, so index by row rather than reshaping whole.
+    return flat.reshape(msg.height, msg.step)[:, : msg.width * 3].reshape(msg.height, msg.width, 3)
+
+
+def _mapping_param(node, prefix):
+    """A {modality key: value} map read from a nested parameter block."""
+    return {
+        name: parameter.value
+        for name, parameter in node.get_parameters_by_prefix(prefix).items()
+    }
+
+
+class GrootAdapter(Node):
+    def __init__(self):
+        super().__init__(
+            "g1_vla_groot_adapter", automatically_declare_parameters_from_overrides=True
+        )
+
+        self._address = self._param("server_address", "tcp://127.0.0.1:5555")
+        self._action_dt_s = float(self._param("action_dt_s", 0.05))
+        self._max_horizon = int(self._param("max_horizon", 16))
+        # Relative actions are read as offsets from the observation, not from each other. Read
+        # the wrong way round that would compound into an overshoot; this way it under-reaches,
+        # and the gate's start-jump check catches the difference on a stationary robot.
+        self._action_mode = self._param("action_mode", "relative_to_observation")
+        self._instruction_key = self._param(
+            "instruction_key", "annotation.human.action.task_description"
+        )
+
+        self._state_joints = _mapping_param(self, "state_joints")
+        self._action_joints = _mapping_param(self, "action_joints")
+        self._video_topics = _mapping_param(self, "video_topics")
+
+        self._measured = {}
+        self._images = {}
+        self._instruction = None
+
+        self.create_subscription(JointState, "/joint_states", self._on_joint_states, 1)
+        for key, topic in self._video_topics.items():
+            # Sensor QoS deliberately: the relay publishes best-effort, and a reliable
+            # subscriber silently never matches it.
+            self.create_subscription(
+                Image,
+                topic,
+                lambda msg, key=key: self._images.__setitem__(key, msg),
+                qos_profile_sensor_data,
+            )
+
+        self._client = PolicyClient(self._address, int(self._param("zmq_timeout_ms", 8000)))
+        self._ready = self._handshake()
+
+        self.create_service(GetActionChunk, "~/get_action_chunk", self._on_get_action_chunk)
+
+    def _param(self, name, default):
+        return self.get_parameter_or(name, rclpy.parameter.Parameter(name, value=default)).value
+
+    def _on_joint_states(self, msg):
+        # strict=False: a JointState may name joints it has no position for.
+        for name, position in zip(msg.name, msg.position, strict=False):
+            self._measured[name] = position
+
+    def _handshake(self):
+        """Reads the server's modality keys and checks config accounts for every one.
+
+        The keys are the model's, not ours, and they change with the checkpoint. Refusing here
+        with the actual key list is what makes a mismatch a five-minute fix instead of a silently
+        transposed joint vector.
+        """
+        try:
+            self._client.call("ping")
+            config = self._client.call("get_modality_config")
+        except RuntimeError as error:
+            self.get_logger().error(f"{error}. Is the policy server up at {self._address}?")
+            return False
+
+        served = {}
+        for modality, entry in config.items():
+            keys = entry.get("modality_keys", []) if isinstance(entry, dict) else []
+            served[modality] = keys
+            self.get_logger().info(f"server modality '{modality}': {keys}")
+
+        mapped = set(self._state_joints) | set(self._action_joints) | set(self._video_topics)
+        mapped.add(self._instruction_key)
+        missing = [
+            key
+            for modality, keys in served.items()
+            if modality in ("state", "action", "video")
+            for key in keys
+            if key not in mapped
+        ]
+        if missing:
+            self.get_logger().error(
+                f"no mapping configured for {missing}; fill state_joints, action_joints or "
+                "video_topics in the adapter's config and restart"
+            )
+            return False
+        if not self._action_joints:
+            self.get_logger().error("action_joints is empty, so no chunk could name a joint")
+            return False
+        return True
+
+    def _observation(self, instruction):
+        """The request body, in the shapes the server expects: a leading batch axis of one."""
+        obs = {}
+        for key, joints in self._state_joints.items():
+            missing = [joint for joint in joints if joint not in self._measured]
+            if missing:
+                raise RuntimeError(f"no joint state yet for {missing[0]}")
+            obs[key] = np.array(
+                [[self._measured[joint] for joint in joints]], dtype=np.float64
+            )
+        for key in self._video_topics:
+            msg = self._images.get(key)
+            if msg is None:
+                raise RuntimeError(f"no image yet on the topic for '{key}'")
+            age = (self.get_clock().now() - rclpy.time.Time.from_msg(msg.header.stamp)).nanoseconds
+            if age > 1_000_000_000:
+                raise RuntimeError(f"the image for '{key}' is {age / 1e9:.1f} s old")
+            obs[key] = _image_to_array(msg)[np.newaxis, ...]
+        obs[self._instruction_key] = [instruction]
+        return obs
+
+    def _chunk(self, action):
+        """Turns the server's per-key action arrays into one trajectory of absolute positions."""
+        chunk = JointTrajectory()
+        columns = []
+        for key, joints in self._action_joints.items():
+            if key not in action:
+                raise RuntimeError(f"the server returned no '{key}'")
+            values = np.atleast_2d(np.asarray(action[key], dtype=np.float64))
+            if values.shape[1] != len(joints):
+                raise RuntimeError(
+                    f"'{key}' is {values.shape[1]} wide but {len(joints)} joints are mapped to it"
+                )
+            for index, joint in enumerate(joints):
+                offset = self._measured[joint] if self._action_mode != "absolute" else 0.0
+                columns.append((joint, values[:, index] + offset))
+
+        horizon = min(min(len(column) for _, column in columns), self._max_horizon)
+        chunk.joint_names = [joint for joint, _ in columns]
+        for step in range(horizon):
+            point = JointTrajectoryPoint()
+            point.positions = [float(column[step]) for _, column in columns]
+            elapsed = self._action_dt_s * (step + 1)
+            point.time_from_start.sec = int(elapsed)
+            point.time_from_start.nanosec = int((elapsed % 1.0) * 1e9)
+            chunk.points.append(point)
+        return chunk
+
+    def _on_get_action_chunk(self, request, response):
+        if not self._ready:
+            response.ok = False
+            response.message = "the adapter did not complete its handshake; see its startup log"
+            return response
+
+        try:
+            if request.instruction != self._instruction:
+                # A new instruction is a new episode, which is what clears the model's history.
+                self._client.call("reset", {})
+                self._instruction = request.instruction
+                self.get_logger().info(f"new episode: '{request.instruction}'")
+
+            observation = self._observation(request.instruction)
+            response.chunk = self._chunk(self._client.call("get_action", observation))
+            response.ok = True
+        except (RuntimeError, ValueError) as error:
+            response.ok = False
+            response.message = str(error)
+        return response
+
+
+def main():
+    rclpy.init()
+    node = GrootAdapter()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node._client.close()
+        node.destroy_node()
+        rclpy.try_shutdown()
+
+
+if __name__ == "__main__":
+    main()

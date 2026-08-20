@@ -30,9 +30,17 @@
   <exec_depend>g1_moveit_config</exec_depend>
   <exec_depend>moveit_configs_utils</exec_depend>
 
+  <!-- The policy adapter's own; it speaks the server's protocol rather than importing it. -->
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-zmq</exec_depend>
+  <exec_depend>python3-msgpack</exec_depend>
+
   <!-- ament_lint_common intentionally not used to avoid clang-format conflicts. -->
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_cmake_gmock</test_depend>
+  <test_depend>launch_testing</test_depend>
+  <test_depend>launch_testing_ament_cmake</test_depend>
   <test_depend>ament_cmake_lint_cmake</test_depend>
   <test_depend>ament_cmake_xmllint</test_depend>
 
