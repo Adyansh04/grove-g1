@@ -8,13 +8,22 @@ g1_vla_groot_adapter:
     # max_segment_step_rad and velocity_scaling are both judged against this spacing, so this
     # is what decides whether a chunk is refused for speed.
     #
-    # Measured against the real checkpoint from the workbench rest pose: the largest step in a
-    # chunk is about 0.059 rad, which at the 0.05 s this used to be is 1.18 rad/s against a
-    # 0.4 rad/s cap -- every chunk refused. 0.2 s puts it near 0.3 rad/s and leaves headroom for
-    # a chunk that moves further than the one measured. The model is being played slower than it
-    # was trained, which for a stationary cube costs nothing.
-    action_dt_s: 0.2
-    max_horizon: 16
+    # Measured against the real checkpoint looking at the real bench: chunks ask for roughly
+    # 0.10 rad per step, which is 1.5 to 3 rad/s at the rate the model was trained. The arm's
+    # planning limit is 0.8 rad/s and the gate allows half of that, so the policy simply cannot
+    # be played at its native speed here and the chunk has to be stretched instead. At 0.4 s a
+    # step lands near a third of the limit, with room for a chunk that moves further than the
+    # ones measured. Stretching is the honest knob: raising the gate's velocity_scaling would
+    # buy the same acceptance by weakening the check that makes the gate worth having.
+    action_dt_s: 0.4
+    # A fifth of the model's 40-step horizon. The chunk executes open-loop before the next
+    # observation, so stretching each step is a reason to keep fewer of them, not more.
+    max_horizon: 8
+
+    # The policy's first waypoint was measured 0.18 to 0.42 rad from the arm's actual pose, well
+    # past the gate's 0.15 start-jump limit, so the chunk is led in from the measured pose in
+    # steps no larger than this. Set it to 0.0 to send the policy's first waypoint untouched.
+    approach_step_rad: 0.08
 
     # This checkpoint is trained on relative actions, but the server converts them back against
     # the state it was sent before replying, so what arrives is already absolute. Only a server

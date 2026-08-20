@@ -154,6 +154,9 @@ class GrootAdapter(Node):
         # offsets into timestamps. The recording rate that produced those offsets is not on the
         # wire, so this is a tuning knob rather than a derived quantity.
         self._history_step_s = float(self._param("history_step_s", 1.0 / 30.0))
+        # Largest step allowed while leading the chunk in from the measured pose. Zero disables
+        # the lead-in and hands the policy's first waypoint straight to the gate.
+        self._approach_step_rad = float(self._param("approach_step_rad", 0.08))
 
         self._state_joints = _mapping_param(self, "state_joints")
         self._state_eef_frames = _mapping_param(self, "state_eef_frames")
@@ -347,15 +350,41 @@ class GrootAdapter(Node):
                 columns.append((joint, values[:, index] + offset))
 
         horizon = min(min(len(column) for _, column in columns), self._max_horizon)
-        chunk.joint_names = [joint for joint, _ in columns]
-        for step in range(horizon):
+        names = [joint for joint, _ in columns]
+        rows = [[float(column[step]) for _, column in columns] for step in range(horizon)]
+        rows = self._walked_in(names, rows)
+
+        chunk.joint_names = names
+        for step, positions in enumerate(rows):
             point = JointTrajectoryPoint()
-            point.positions = [float(column[step]) for _, column in columns]
+            point.positions = positions
             elapsed = self._action_dt_s * (step + 1)
             point.time_from_start.sec = int(elapsed)
             point.time_from_start.nanosec = int((elapsed % 1.0) * 1e9)
             chunk.points.append(point)
         return chunk
+
+    def _walked_in(self, names, rows):
+        """Leads the chunk in from where the arm actually is.
+
+        The policy answers from the state it was given, but its first waypoint still lands a long
+        way off: one step of a model trained to move faster than this arm is allowed to move.
+        Sent as-is that reads as a discontinuity and the gate refuses the whole chunk. Interpolating
+        in costs a few waypoints and keeps the refusal meaningful, and the inserted points are
+        collision-checked with all the others.
+        """
+        if self._approach_step_rad <= 0.0 or not rows:
+            return rows
+        start = [self._measured[joint] for joint in names]
+        gap = max(abs(a - b) for a, b in zip(rows[0], start, strict=True))
+        inserts = math.ceil(gap / self._approach_step_rad) - 1
+        if inserts <= 0:
+            return rows
+        approach = [
+            [a + (index / (inserts + 1)) * (b - a) for a, b in zip(start, rows[0], strict=True)]
+            for index in range(1, inserts + 1)
+        ]
+        return approach + rows
 
     def _on_get_action_chunk(self, request, response):
         if not self._ready:
