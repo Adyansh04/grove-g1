@@ -83,6 +83,10 @@ if(BUILD_TESTING)
   # MuJoCo nor a GPU and CI can run it.
   add_launch_test(test/test_groot_adapter.launch.py TARGET test_groot_adapter TIMEOUT 180)
 
+  add_launch_test(test/test_vla_grasp_mock.launch.py TARGET test_vla_grasp_mock TIMEOUT 500)
+  set_tests_properties(test_vla_grasp_mock PROPERTIES
+    LABELS simulator RESOURCE_LOCK mujoco_sim COST 95)
+
   g1_add_lint_tests()
 endif()
 
