@@ -27,7 +27,7 @@ from launch.actions import (
     TimerAction,
 )
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import EqualsSubstitution, LaunchConfiguration
 
 BRINGUP_SHARE = get_package_share_directory("g1_bringup")
 
@@ -151,7 +151,10 @@ def _navigation(mode, want_nav):
 def _moveit():
     """Sim-free by design, and it activates nothing: executing a plan still needs the ordered
     acquire in scripts/activate_arm."""
-    return _include(os.path.join(_share("g1_moveit_config"), "launch", "move_group.launch.py"))
+    return _include(
+        os.path.join(_share("g1_moveit_config"), "launch", "move_group.launch.py"),
+        servo=EqualsSubstitution(LaunchConfiguration("vla_execution_mode"), "servo"),
+    )
 
 
 def _manipulation():
@@ -165,6 +168,7 @@ def _vla():
     return _include(
         os.path.join(_share("g1_vla"), "launch", "vla.launch.py"),
         engine=LaunchConfiguration("vla_engine"),
+        execution_mode=LaunchConfiguration("vla_execution_mode"),
     )
 
 
@@ -305,6 +309,14 @@ def generate_launch_description():
             default_value="mock",
             description="Which policy engine answers with vla:=true. 'mock' needs no model; "
             "'groot' talks to a policy server running outside the container.",
+        ),
+        DeclareLaunchArgument(
+            "vla_execution_mode",
+            default_value="trajectory",
+            choices=["trajectory", "servo"],
+            description="How the grasp skill executes a validated chunk. 'servo' streams it "
+            "through MoveIt Servo, which adds proximity slowdown while the arm is moving, and "
+            "starts a servo_node alongside move_group.",
         ),
         DeclareLaunchArgument(
             "object_source",
