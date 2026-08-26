@@ -1,0 +1,102 @@
+g1_vla_groot_adapter:
+  ros__parameters:
+    # The server runs on the host, outside this container. Compose is host-networked.
+    server_address: tcp://127.0.0.1:5555
+    zmq_timeout_ms: 8000
+
+    # Waypoint spacing. The chunk is a trajectory sampled at its training rate, which asks about
+    # 3 rad/s; this arm tracks 1.0, and 0.125 s is the closest spacing that stays inside that.
+    action_dt_s: 0.125
+
+    # Runway between re-plans, not the whole 40-step prediction. The gate replaces the running
+    # trajectory as fast as the engine answers, so validating all forty only refuses chunks for
+    # collisions the arm would never reach.
+    max_horizon: 8
+
+    # Ceiling used to time each segment rather than to reject it. Under the gate's own allowance
+    # so a chunk paced here is one the gate takes.
+    max_joint_speed: 0.7
+
+    # The simulated head camera runs near 2.6 Hz with 1.6 s gaps under load. Only catches a
+    # camera that has stopped.
+    max_image_age_s: 5.0
+
+    # The server un-relativises against the state it was sent, so what arrives is absolute.
+    # Only a server that skips that conversion needs "relative_to_observation".
+    action_mode: absolute
+
+    # Wall time per step of frame history; the rate the offsets were recorded at is not on the
+    # wire, so this is a tuning knob rather than a derived quantity.
+    history_step_s: 0.0333
+
+    # Keys belong to the checkpoint and are unprefixed; joint order is the order of that key's
+    # vector. The adapter logs every key the server reports and refuses to serve unmapped ones.
+    state_joints:
+      left_arm:
+        - left_shoulder_pitch_joint
+        - left_shoulder_roll_joint
+        - left_shoulder_yaw_joint
+        - left_elbow_joint
+        - left_wrist_roll_joint
+        - left_wrist_pitch_joint
+        - left_wrist_yaw_joint
+      right_arm:
+        - right_shoulder_pitch_joint
+        - right_shoulder_roll_joint
+        - right_shoulder_yaw_joint
+        - right_elbow_joint
+        - right_wrist_roll_joint
+        - right_wrist_pitch_joint
+        - right_wrist_yaw_joint
+      # Fingers first, thumb last: the checkpoint's dims 4-6 match thumb_0/1/2 by range and
+      # nothing else. Thumb-first, the finger commands land on the thumb and the thumb's land on
+      # joints that start at zero, so they clamp away and the hand never closes.
+      left_hand:
+        - left_hand_index_0_joint
+        - left_hand_index_1_joint
+        - left_hand_middle_0_joint
+        - left_hand_middle_1_joint
+        - left_hand_thumb_0_joint
+        - left_hand_thumb_1_joint
+        - left_hand_thumb_2_joint
+      right_hand:
+        - right_hand_index_0_joint
+        - right_hand_index_1_joint
+        - right_hand_middle_0_joint
+        - right_hand_middle_1_joint
+        - right_hand_thumb_0_joint
+        - right_hand_thumb_1_joint
+        - right_hand_thumb_2_joint
+      waist:
+        - waist_yaw_joint
+        - waist_roll_joint
+        - waist_pitch_joint
+
+    # Wrist pose from TF, not from joint angles. The parent frame is the recording rig's
+    # convention and the checkpoint does not state it, so vary this first if the reach is wrong.
+    state_eef_frames:
+      left_wrist_eef_9d: [pelvis, left_wrist_yaw_link]
+      right_wrist_eef_9d: [pelvis, right_wrist_yaw_link]
+
+    # Only what this skill drives. The server's waist, base height and navigate commands are
+    # ignored by name.
+    action_joints:
+      right_arm:
+        - right_shoulder_pitch_joint
+        - right_shoulder_roll_joint
+        - right_shoulder_yaw_joint
+        - right_elbow_joint
+        - right_wrist_roll_joint
+        - right_wrist_pitch_joint
+        - right_wrist_yaw_joint
+      right_hand:
+        - right_hand_index_0_joint
+        - right_hand_index_1_joint
+        - right_hand_middle_0_joint
+        - right_hand_middle_1_joint
+        - right_hand_thumb_0_joint
+        - right_hand_thumb_1_joint
+        - right_hand_thumb_2_joint
+
+    video_topics:
+      ego_view: /camera/color/image_raw

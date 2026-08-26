@@ -1,0 +1,151 @@
+# What the gate checks a policy chunk against. A copy of g1_moveit_config's, with the arms at
+# 1.0 rather than 0.8: a chunk is a trajectory sampled at the rate its training data was captured
+# at, so executing it slower is not a safe version of the same motion. 1.0 is the backstop the
+# hand clamp is already written against.
+#
+# Local to this package so a planned pick, place or posture keeps the shared clamp. Only chunk
+# validation and the servo jog clamp read this file, both through vla.launch.py.
+
+joint_limits:
+  left_shoulder_pitch_joint:
+    has_velocity_limits: true
+    max_velocity: 1.0
+    has_acceleration_limits: true
+    max_acceleration: 4.0
+  left_shoulder_roll_joint:
+    has_velocity_limits: true
+    max_velocity: 1.0
+    has_acceleration_limits: true
+    max_acceleration: 4.0
+  left_shoulder_yaw_joint:
+    has_velocity_limits: true
+    max_velocity: 1.0
+    has_acceleration_limits: true
+    max_acceleration: 4.0
+  left_elbow_joint:
+    has_velocity_limits: true
+    max_velocity: 1.0
+    has_acceleration_limits: true
+    max_acceleration: 4.0
+  left_wrist_roll_joint:
+    has_velocity_limits: true
+    max_velocity: 1.0
+    has_acceleration_limits: true
+    max_acceleration: 4.0
+  left_wrist_pitch_joint:
+    has_velocity_limits: true
+    max_velocity: 1.0
+    has_acceleration_limits: true
+    max_acceleration: 4.0
+  left_wrist_yaw_joint:
+    has_velocity_limits: true
+    max_velocity: 1.0
+    has_acceleration_limits: true
+    max_acceleration: 4.0
+  right_shoulder_pitch_joint:
+    has_velocity_limits: true
+    max_velocity: 1.0
+    has_acceleration_limits: true
+    max_acceleration: 4.0
+  right_shoulder_roll_joint:
+    has_velocity_limits: true
+    max_velocity: 1.0
+    has_acceleration_limits: true
+    max_acceleration: 4.0
+  right_shoulder_yaw_joint:
+    has_velocity_limits: true
+    max_velocity: 1.0
+    has_acceleration_limits: true
+    max_acceleration: 4.0
+  right_elbow_joint:
+    has_velocity_limits: true
+    max_velocity: 1.0
+    has_acceleration_limits: true
+    max_acceleration: 4.0
+  right_wrist_roll_joint:
+    has_velocity_limits: true
+    max_velocity: 1.0
+    has_acceleration_limits: true
+    max_acceleration: 4.0
+  right_wrist_pitch_joint:
+    has_velocity_limits: true
+    max_velocity: 1.0
+    has_acceleration_limits: true
+    max_acceleration: 4.0
+  right_wrist_yaw_joint:
+    has_velocity_limits: true
+    max_velocity: 1.0
+    has_acceleration_limits: true
+    max_acceleration: 4.0
+
+
+  left_hand_thumb_0_joint:
+    has_velocity_limits: true
+    max_velocity: 2.0
+    has_acceleration_limits: true
+    max_acceleration: 5.0
+  left_hand_thumb_1_joint:
+    has_velocity_limits: true
+    max_velocity: 2.0
+    has_acceleration_limits: true
+    max_acceleration: 5.0
+  left_hand_thumb_2_joint:
+    has_velocity_limits: true
+    max_velocity: 2.0
+    has_acceleration_limits: true
+    max_acceleration: 5.0
+  left_hand_middle_0_joint:
+    has_velocity_limits: true
+    max_velocity: 2.0
+    has_acceleration_limits: true
+    max_acceleration: 5.0
+  left_hand_middle_1_joint:
+    has_velocity_limits: true
+    max_velocity: 2.0
+    has_acceleration_limits: true
+    max_acceleration: 5.0
+  left_hand_index_0_joint:
+    has_velocity_limits: true
+    max_velocity: 2.0
+    has_acceleration_limits: true
+    max_acceleration: 5.0
+  left_hand_index_1_joint:
+    has_velocity_limits: true
+    max_velocity: 2.0
+    has_acceleration_limits: true
+    max_acceleration: 5.0
+  right_hand_thumb_0_joint:
+    has_velocity_limits: true
+    max_velocity: 2.0
+    has_acceleration_limits: true
+    max_acceleration: 5.0
+  right_hand_thumb_1_joint:
+    has_velocity_limits: true
+    max_velocity: 2.0
+    has_acceleration_limits: true
+    max_acceleration: 5.0
+  right_hand_thumb_2_joint:
+    has_velocity_limits: true
+    max_velocity: 2.0
+    has_acceleration_limits: true
+    max_acceleration: 5.0
+  right_hand_middle_0_joint:
+    has_velocity_limits: true
+    max_velocity: 2.0
+    has_acceleration_limits: true
+    max_acceleration: 5.0
+  right_hand_middle_1_joint:
+    has_velocity_limits: true
+    max_velocity: 2.0
+    has_acceleration_limits: true
+    max_acceleration: 5.0
+  right_hand_index_0_joint:
+    has_velocity_limits: true
+    max_velocity: 2.0
+    has_acceleration_limits: true
+    max_acceleration: 5.0
+  right_hand_index_1_joint:
+    has_velocity_limits: true
+    max_velocity: 2.0
+    has_acceleration_limits: true
+    max_acceleration: 5.0

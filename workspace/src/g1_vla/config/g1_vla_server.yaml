@@ -1,0 +1,34 @@
+g1_vla_server:
+  ros__parameters:
+    engine_timeout_s: 10.0
+
+    # A chunk opening this far from the measured pose means the policy misread the state, and
+    # executing it would snap the arm across space nothing has checked.
+    max_start_jump_rad: 0.15
+    # Per-waypoint validity only means something while consecutive waypoints stay close.
+    max_segment_step_rad: 0.20
+    # Fraction of each joint's model velocity limit a chunk may ask for. Larger than a planned
+    # trajectory would take: a policy chunk is a fixed shape, and slowing it breaks its feedback
+    # loop rather than making it safer.
+    velocity_scaling: 0.8
+
+    # Floor on how often the controller is handed a fresh plan. The gate replaces the running
+    # trajectory rather than waiting for it, so without this the loop runs at whatever rate the
+    # engine answers, which for the mock is no rate at all.
+    replan_period_s: 0.15
+
+    # A rejected chunk leaves the robot where it was, and the policy head is stochastic, so
+    # asking again is a real retry. This many in a row means the scene is genuinely blocking it.
+    max_rejected_chunks: 5
+    timeout_s: 90.0
+    chunk_exec_timeout_s: 10.0
+
+    # How far the object has to rise before the grasp counts. Measured off /objects, as a delta.
+    success_lift_m: 0.05
+    object_timeout_ms: 1000.0
+
+    # execution_mode is a launch argument, not a key here . "trajectory" sends each
+    # validated chunk to the controllers and waits; "servo" streams the arm's share as jog
+    # commands instead, which adds proximity slowdown while the arm is moving.
+    servo_topic: /servo_node/delta_joint_cmds
+    servo_publish_rate: 50.0

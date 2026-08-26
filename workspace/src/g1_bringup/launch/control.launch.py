@@ -10,6 +10,7 @@ import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (
+    DeclareLaunchArgument,
     EmitEvent,
     ExecuteProcess,
     OpaqueFunction,
@@ -17,7 +18,7 @@ from launch.actions import (
 )
 from launch.event_handlers import OnProcessExit
 from launch.events import Shutdown
-from launch.substitutions import Command, FindExecutable
+from launch.substitutions import Command, FindExecutable, LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
@@ -39,28 +40,41 @@ _SIGNAL_FORWARDING_WRAPPER = (
 # Every body joint must be claimed from the start: one the component sees unclaimed is one it
 # leaves unpowered. The policy and the safety controller it writes through activate in one
 # switch, because a chainable controller's reference interfaces only become claimable inside it.
-# The four loaded --inactive are switched in later, by the arm bracket and the safety controller.
-CONTROLLERS = (
-    (["joint_state_broadcaster"], []),
-    (["imu_sensor_broadcaster"], []),
-    (["waist_freeze_controller"], []),
-    (["arm_freeze_controller"], []),
-    (["locomotion_safety_controller", "agile_controller"], ["--activate-as-group"]),
-    (["locomotion_freeze_controller"], ["--inactive"]),
-    (["arm_trajectory_controller"], ["--inactive"]),
-    (["left_hand_controller"], ["--inactive"]),
-    (["right_hand_controller"], ["--inactive"]),
-)
+# The ones loaded --inactive are switched in later, by the arm bracket and the safety controller.
+def _controllers(pin_pelvis):
+    """The spawn set, differing only in what drives the legs. The freeze controller claims the
+    same 14 joints as the safety controller, so either choice leaves every joint claimed."""
+    legs = (
+        [
+            (["locomotion_freeze_controller"], []),
+            (["locomotion_safety_controller", "agile_controller"], ["--inactive"]),
+        ]
+        if pin_pelvis
+        else [
+            (["locomotion_safety_controller", "agile_controller"], ["--activate-as-group"]),
+            (["locomotion_freeze_controller"], ["--inactive"]),
+        ]
+    )
+    return [
+        (["joint_state_broadcaster"], []),
+        (["imu_sensor_broadcaster"], []),
+        (["waist_freeze_controller"], []),
+        (["arm_freeze_controller"], []),
+        *legs,
+        (["arm_trajectory_controller"], ["--inactive"]),
+        (["left_hand_controller"], ["--inactive"]),
+        (["right_hand_controller"], ["--inactive"]),
+    ]
 
 
-def _spawners():
+def _spawners(pin_pelvis):
     return [
         ExecuteProcess(
             cmd=["ros2", "run", "controller_manager", "spawner", *names, *extra],
             name=f"{names[0]}_spawner",
             output="screen",
         )
-        for names, extra in CONTROLLERS
+        for names, extra in _controllers(pin_pelvis)
     ]
 
 
@@ -91,11 +105,13 @@ def _control_node():
 
 
 def _launch_setup(context, *args, **kwargs):
+    # A welded pelvis gives the policy observations its own actions cannot move, so it diverges.
+    pin_pelvis = LaunchConfiguration("pin_pelvis").perform(context).lower() in ("true", "1")
     control_node = _control_node()
     return [
         _robot_state_publisher(),
         control_node,
-        *_spawners(),
+        *_spawners(pin_pelvis),
         # Tear down the whole launch if controller_manager dies.
         RegisterEventHandler(
             OnProcessExit(
@@ -107,4 +123,12 @@ def _launch_setup(context, *args, **kwargs):
 
 
 def generate_launch_description():
-    return LaunchDescription([OpaqueFunction(function=_launch_setup)])
+    return LaunchDescription([
+        DeclareLaunchArgument(
+            "pin_pelvis",
+            default_value="false",
+            description="SIM-ONLY, set by sim.launch.py: freeze the legs instead of running "
+            "the balance policy.",
+        ),
+        OpaqueFunction(function=_launch_setup),
+    ])

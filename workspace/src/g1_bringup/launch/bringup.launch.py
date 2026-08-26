@@ -27,7 +27,7 @@ from launch.actions import (
     TimerAction,
 )
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import EqualsSubstitution, LaunchConfiguration
 
 BRINGUP_SHARE = get_package_share_directory("g1_bringup")
 
@@ -44,6 +44,7 @@ _ENABLED_BY = {
     "g1_navigation": "mode:=mapping and mode:=localization",
     "g1_moveit_config": "moveit:=true",
     "g1_manipulation": "manipulation:=true",
+    "g1_vla": "vla:=true",
 }
 
 
@@ -73,7 +74,7 @@ def _include(path, **launch_args):
 # --- validation -----------------------------------------------------------------------------
 
 
-def _validate(mode, want_nav, want_moveit, want_manipulation, pin_pelvis):
+def _validate(mode, want_nav, want_moveit, want_manipulation, want_vla, pin_pelvis):
     if mode not in MODES:
         raise RuntimeError(
             f"mode:={mode!r} is not a mode. 'none' is the simulator on its own; 'mapping' "
@@ -91,11 +92,16 @@ def _validate(mode, want_nav, want_moveit, want_manipulation, pin_pelvis):
             "move_group, so without it every goal fails on a planning pipeline that is not "
             "there."
         )
+    if want_vla and not want_manipulation:
+        raise RuntimeError(
+            "vla:=true needs manipulation:=true. The grasp skill validates against "
+            "move_group's planning scene and measures its result off /objects, and the "
+            "object-pose source comes with manipulation."
+        )
     if pin_pelvis and mode != "none":
         raise RuntimeError(
-            "pin_pelvis:=true welds the pelvis to the world and disables the walking policy, "
-            "so the robot cannot drive anywhere. It is a bare-sim debugging aid; use it with "
-            "mode:=none."
+            "pin_pelvis:=true welds the pelvis and freezes the legs, so the robot cannot "
+            "drive anywhere. It is a bare-sim debugging aid; use it with mode:=none."
         )
 
 
@@ -144,13 +150,24 @@ def _navigation(mode, want_nav):
 def _moveit():
     """Sim-free by design, and it activates nothing: executing a plan still needs the ordered
     acquire in scripts/activate_arm."""
-    return _include(os.path.join(_share("g1_moveit_config"), "launch", "move_group.launch.py"))
+    return _include(
+        os.path.join(_share("g1_moveit_config"), "launch", "move_group.launch.py"),
+        servo=EqualsSubstitution(LaunchConfiguration("vla_execution_mode"), "servo"),
+    )
 
 
 def _manipulation():
     return _include(
         os.path.join(_share("g1_manipulation"), "launch", "manipulation.launch.py"),
         object_source=LaunchConfiguration("object_source"),
+    )
+
+
+def _vla():
+    return _include(
+        os.path.join(_share("g1_vla"), "launch", "vla.launch.py"),
+        engine=LaunchConfiguration("vla_engine"),
+        execution_mode=LaunchConfiguration("vla_execution_mode"),
     )
 
 
@@ -220,10 +237,11 @@ def _setup(context, *args, **kwargs):
     want_rviz = _flag(context, "rviz")
     want_moveit = _flag(context, "moveit")
     want_manipulation = _flag(context, "manipulation")
+    want_vla = _flag(context, "vla")
     pin_pelvis = _flag(context, "pin_pelvis")
     navigating = mode != "none"
 
-    _validate(mode, want_nav, want_moveit, want_manipulation, pin_pelvis)
+    _validate(mode, want_nav, want_moveit, want_manipulation, want_vla, pin_pelvis)
 
     actions = [
         _simulator(_sim_args(context, navigating, want_manipulation, want_moveit, pin_pelvis))
@@ -234,6 +252,8 @@ def _setup(context, *args, **kwargs):
         actions.append(_moveit())
     if want_manipulation:
         actions.append(_manipulation())
+    if want_vla:
+        actions.append(_vla())
     if want_moveit and _flag(context, "activate_arm"):
         actions.append(
             _activate_arm(float(LaunchConfiguration("activate_arm_delay_s").perform(context)))
@@ -276,6 +296,26 @@ def generate_launch_description():
             default_value="false",
             description="Start the pick and place skills and the object-pose source. Needs "
             "moveit:=true, since the skills plan through move_group.",
+        ),
+        DeclareLaunchArgument(
+            "vla",
+            default_value="false",
+            description="Start the learned-grasp skill and its policy engine. Needs "
+            "manipulation:=true.",
+        ),
+        DeclareLaunchArgument(
+            "vla_engine",
+            default_value="mock",
+            description="Which policy engine answers with vla:=true. 'mock' needs no model; "
+            "'groot' talks to a policy server running outside the container.",
+        ),
+        DeclareLaunchArgument(
+            "vla_execution_mode",
+            default_value="trajectory",
+            choices=["trajectory", "servo"],
+            description="How the grasp skill executes a validated chunk. 'servo' streams it "
+            "through MoveIt Servo, which adds proximity slowdown while the arm is moving, and "
+            "starts a servo_node alongside move_group.",
         ),
         DeclareLaunchArgument(
             "object_source",

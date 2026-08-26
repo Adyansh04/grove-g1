@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<!--
+  Grasp the cube with a learned policy instead of a planned pick, then carry and tuck. No
+  navigation.
+
+  Same shape as pick_and_place_in_place.xml and the same world, deliberately: the two trees
+  differ only in how the arm decides where to go, so running both against the same scene is
+  what makes the comparison mean anything.
+
+  The retry is worth having for a different reason than it is on Pick. A planned pick fails the
+  same way twice; a policy's action head is stochastic, so a second attempt genuinely resamples.
+
+  A failed Grasp leaves the arm wherever it stopped, holding whatever it was holding. The
+  postures after it are the recovery, and they run on the way out whether or not the grasp
+  worked, which is why they sit outside the retry.
+-->
+<root BTCPP_format="4" main_tree_to_execute="VlaGraspInPlace">
+  <BehaviorTree ID="VlaGraspInPlace">
+    <Sequence name="grasp_and_tuck">
+      <AcquireArm name="take_the_arm"/>
+
+      <RetryUntilSuccessful name="grasp_with_one_retry" num_attempts="2">
+        <Grasp name="grasp_the_cube" instruction="pick up the red cube" object_id="red_cube"
+               arm="right"/>
+      </RetryUntilSuccessful>
+
+      <SetArmPosture name="hold_it_close" group="right_arm" named_target="carry"/>
+      <SetArmPosture name="tuck_away" group="right_arm" named_target="tucked"/>
+      <ReleaseArm name="hand_the_arm_back"/>
+    </Sequence>
+  </BehaviorTree>
+</root>
