@@ -5,9 +5,10 @@
   <version>0.1.0</version>
   <description>
     Interfaces for the G1 stack: the ApproachObject and Retreat actions the base
-    approach serves (g1_locomotion), and the Pick, Place and SetArmPosture actions
-    the manipulation skills serve (g1_manipulation). See README for why each is an
-    action rather than a service.
+    approach serves (g1_locomotion), the Pick, Place and SetArmPosture actions
+    the manipulation skills serve (g1_manipulation), and the Grasp action and
+    GetActionChunk service the learned-grasp pipeline serves (g1_vla). See README
+    for why each is an action rather than a service.
   </description>
   <maintainer email="gupta.adyansh@gmail.com">Adyansh</maintainer>
   <license>BSD-3-Clause</license>
@@ -17,6 +18,7 @@
 
   <depend>builtin_interfaces</depend>
   <depend>geometry_msgs</depend>
+  <depend>trajectory_msgs</depend>
   <!-- Requires action_msgs to build. -->
   <depend>action_msgs</depend>
 

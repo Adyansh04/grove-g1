@@ -1,7 +1,8 @@
 # g1_msgs
 
-The stack's own interfaces: what `g1_locomotion` serves for the base approach, and what
-`g1_manipulation` serves to the behavior tree. Five actions, no messages.
+The stack's own interfaces: what `g1_locomotion` serves for the base approach, what
+`g1_manipulation` serves to the behavior tree, and what the learned-grasp pipeline in `g1_vla`
+serves. Six actions, one service, no messages.
 
 `ament_cmake` with `rosidl_default_generators`. No source of its own.
 
@@ -9,6 +10,8 @@ The stack's own interfaces: what `g1_locomotion` serves for the base approach, a
 flowchart LR
     BT["g1_bt_executor"] -- "Pick, Place,<br/>SetArmPosture" --> MS["g1_manipulation_server"]
     BT -- "ApproachObject, Retreat" --> BA["g1_base_approach"]
+    BT -- "Grasp" --> VS["g1_vla_server"]
+    VS -- "GetActionChunk" --> PE["policy engine"]
 ```
 
 ```bash
@@ -34,10 +37,23 @@ Served by `g1_base_approach` in `g1_locomotion`, called from the same tree.
 | `ApproachObject` | `object_id`, `arm`, `working_yaw`, `use_current_heading`, `timeout_s` | Walks the base until the object sits inside the arm's reach window, judged in the base frame. Nav2 parks within 0.5 m; the window is about 0.2 m wide. |
 | `Retreat` | `distance_m`, `timeout_s` | Reverses clear of a surface and stops. It does not turn, because a navigation goal normally follows. |
 
+## Learned grasp
+
+Served by `g1_vla_server` in `g1_vla`, called from the same tree.
+
+| Action | Goal | Notes |
+|---|---|---|
+| `Grasp` | `instruction`, `object_id`, `arm` | Runs a learned policy under a planning-scene check. `instruction` goes to the policy; `object_id` names the `/objects` entry whose lift decides success. Feedback carries chunks executed and rejected. |
+
+`GetActionChunk` is the service every policy engine implements: `instruction` in, one chunk of
+absolute joint positions out, plus `ok`/`message` when the engine cannot produce one. Positions may
+name any subset of the arm and hand joints and `time_from_start` must increase. `g1_vla_server`
+calls it; which engine answers is a launch argument.
+
 Every action except `SetArmPosture` publishes a phase as feedback and names that phase in the
 result message on failure. The phase strings are constants in the `.action` files, so each server
 and its tests share one definition instead of matching literals. `SetArmPosture` is one planned
 motion with nothing to report partway.
 
-All five are actions rather than services because each runs for seconds and has to be cancellable
+All six are actions rather than services because each runs for seconds and has to be cancellable
 while it runs.

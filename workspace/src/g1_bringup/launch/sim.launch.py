@@ -364,7 +364,8 @@ def _launch_setup(context, *args, **kwargs):
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(
                 os.path.join(BRINGUP_SHARE, "launch", "control.launch.py")
-            )
+            ),
+            launch_arguments={"pin_pelvis": "true" if pin_pelvis else "false"}.items(),
         )
     )
     return actions
@@ -407,8 +408,8 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "pin_pelvis",
             default_value="false",
-            description="SIM-ONLY: weld the pelvis AND disable the walking policy, so the arm "
-            "bridge can be exercised with nothing else driving the legs.",
+            description="SIM-ONLY: weld the pelvis and freeze the legs, so the arm bridge can "
+            "be exercised with nothing else driving them.",
         ),
         DeclareLaunchArgument(
             "sim_start_delay_s",

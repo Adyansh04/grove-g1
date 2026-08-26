@@ -68,6 +68,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ros-${ROS_DISTRO}-moveit \
         ros-${ROS_DISTRO}-moveit-configs-utils \
         ros-${ROS_DISTRO}-moveit-ros-perception \
+        ros-${ROS_DISTRO}-moveit-servo \
         ros-${ROS_DISTRO}-navigation2 \
         ros-${ROS_DISTRO}-nav2-bringup \
         ros-${ROS_DISTRO}-pcl-conversions \
@@ -82,6 +83,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ros-${ROS_DISTRO}-vision-msgs \
         ros-${ROS_DISTRO}-xacro \
     && rm -rf /var/lib/apt/lists/*
+
+# The policy adapter's runtime deps, mirrored from .devcontainer/Dockerfile.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3-zmq \
+        python3-msgpack \
+    && rm -rf /var/lib/apt/lists/* && \
+    python3 -m pip install --no-cache-dir --no-deps --break-system-packages msgpack-numpy==0.4.8
 
 # behaviortree_cpp 4.9.1 installs under lib/<triplet>/ while its own CMake export looks in
 # lib/, so dependants fail to configure. Guarded so a fixed release keeps its real file.

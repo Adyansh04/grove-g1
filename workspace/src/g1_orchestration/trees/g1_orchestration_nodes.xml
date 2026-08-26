@@ -20,6 +20,12 @@
             <input_port name="service" type="std::string" default="/clear_octomap">move_group's octomap clear service. Empty skips it.</input_port>
             <input_port name="timeout_s" type="double" default="5.000000">Service budget.</input_port>
         </Action>
+        <Action ID="Grasp">
+            <input_port name="server_timeout_s" type="double" default="10.000000">How long to wait for the action server to appear.</input_port>
+            <input_port name="object_id" type="std::string">Must match a class_id published on /objects.</input_port>
+            <input_port name="arm" type="std::string" default="right">'left' or 'right'.</input_port>
+            <input_port name="instruction" type="std::string">What the policy is asked to do, in plain language.</input_port>
+        </Action>
         <Action ID="NavigateToPose">
             <output_port name="goal_yaw" type="double">The goal's heading, for an ApproachObject that has to hold it.</output_port>
             <input_port name="behavior_tree" type="std::string" default="">Nav2 tree to drive with. Empty uses its default.</input_port>

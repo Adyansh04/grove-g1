@@ -251,11 +251,12 @@ private:
         bool include_links = true);
 
     /**
-     * @brief setHandContact() without the logging, for a caller that must see the failure.
+     * @brief setHandContact() without the error log, for a caller that must see the failure.
      *
-     * @return false if the planning-scene service did not answer, in which case the exemption
-     *         was neither applied nor restored. A silently failed restore leaves the scene
-     *         blinded, and a silently failed apply reads downstream as an unreachable pose.
+     * @return false if the arm has no hand group or a planning-scene service did not answer, in
+     *         which case the exemption was neither applied nor restored. A silently failed
+     *         restore leaves the scene blinded, and a silently failed apply reads downstream as
+     *         an unreachable pose.
      */
     [[nodiscard]] bool allowHandContact(
         const ArmContext& arm, const std::vector<std::string>& touchables, bool allowed,

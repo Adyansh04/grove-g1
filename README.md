@@ -38,7 +38,10 @@ Nav2 parks within 0.5 m of a goal and the arm's usable window is about 0.2 m wid
 approach skill closes the gap against the measured object rather than against the map. The tree
 is editable in Groot2 against a generated node palette.
 
-Learned manipulation for unstructured scenes is the next milestone and is not built yet.
+Learned manipulation is wired up on top of that: a vision-language-action policy proposes joint
+targets and every chunk is checked against the planning scene before it runs. The pipeline works;
+the pretrained policy does not grasp reliably, which needs fine-tuning on demonstrations from
+this robot.
 
 ## Nav2 Demo
 
@@ -79,11 +82,16 @@ Two rules shape the design, and both apply in simulation so the habits transfer:
 | [`g1_locomotion`](workspace/src/g1_locomotion) | Walks the base into arm's reach of a measured object, and backs it out again. |
 | [`g1_manipulation`](workspace/src/g1_manipulation) | Pick and place as actions, and the object-pose source behind them. |
 | [`g1_moveit_config`](workspace/src/g1_moveit_config) | MoveIt config: arm and hand planning groups, kinematics, the octomap. |
-| [`g1_msgs`](workspace/src/g1_msgs) | The mission's own actions: pick, place, approach, retreat, arm posture. |
+| [`g1_msgs`](workspace/src/g1_msgs) | The mission's own interfaces: pick, place, approach, retreat, arm posture, grasp. |
 | [`g1_navigation`](workspace/src/g1_navigation) | SLAM Toolbox mapping, AMCL localization and Nav2. |
 | [`g1_orchestration`](workspace/src/g1_orchestration) | The behaviour tree that sequences navigation and manipulation into a mission. |
 | [`g1_sensor_relay`](workspace/src/g1_sensor_relay) | Publishes LiDAR and depth frames sampled inside the simulator. |
 | [`g1_state_estimation`](workspace/src/g1_state_estimation) | Publishes `odom` to `base_footprint` and the TF chain Nav2 needs. |
+| [`g1_vla`](workspace/src/g1_vla) | Learned grasping: a policy's action chunks, checked against the planning scene before they run. |
+
+There is no demonstration recorder yet, so the learned-grasp path runs a pretrained policy and
+cannot be fine-tuned on this robot; a recorder, and the LeRobot dataset and policy tooling that
+would sit beside it, are both still open.
 
 ## Quick start
 
@@ -118,7 +126,7 @@ cp .env.example .env
 `workspace/src` and puts the two that ship a non-standard layout into a buildable one. Run it
 again whenever `workspace.repos` changes.
 
-### Build and run the stack
+### Build
 
 Inside the container:
 
@@ -128,81 +136,16 @@ colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo -D
 source install/setup.bash
 ```
 
-Then bring up the robot. One command covers every mode:
+Then pick a demo. The run commands live in their own guides so this page stays short:
 
-```bash
-# Simulator only, with the MuJoCo viewer
-ros2 launch g1_bringup bringup.launch.py headless:=false
+| Guide | What it covers |
+|---|---|
+| [Navigation and arm planning](docs/guides/navigation-and-moveit.md) | Mapping, localization, Nav2 goals, and MoveIt planning against the LiDAR octomap. |
+| [Pick and place](docs/guides/pick-and-place.md) | The manipulation skills and the behaviour tree that sequences them with navigation. |
+| [Learned grasping](docs/guides/learned-grasping.md) | A vision-language-action policy behind the planning-scene gate. Runs; does not grasp yet. |
 
-# Build a map, with RViz but without the MuJoCo viewer
-ros2 launch g1_bringup bringup.launch.py mode:=mapping rviz:=true headless:=true
-
-# Localize against the committed map and navigate, with RViz but without the MuJoCo viewer
-ros2 launch g1_bringup bringup.launch.py mode:=localization nav:=true rviz:=true headless:=true
-
-# Plan for the arms and hands, with the LiDAR octomap in the planning scene
-ros2 launch g1_bringup bringup.launch.py moveit:=true sensors:=true rviz:=true headless:=true
-
-# Pick and place skills, on the small test world where the object is already within reach
-ros2 launch g1_bringup bringup.launch.py \
-  moveit:=true manipulation:=true pin_pelvis:=true world:=manipulation \
-  activate_arm:=true activate_arm_delay_s:=40.0 headless:=true
-
-# Everything at once, including the MuJoCo viewer and RViz
-ros2 launch g1_bringup bringup.launch.py \
-  mode:=localization nav:=true moveit:=true manipulation:=true rviz:=true \
-  activate_arm:=true activate_arm_delay_s:=40.0 headless:=false
-```
-
-`headless:=true` is the default and suits any run without a display. Set `headless:=false` only
-when a local display is available to open the MuJoCo viewer, and do not use the viewer's Reload
-button while sensors are running.
-
-After launching a mode, confirm the ROS graph is up from a second container shell:
-
-```bash
-ros2 topic list -t
-```
-
-Run a mission. The tree drives navigation and manipulation; nothing else needs starting, and
-Groot2 on the host can watch it tick at `localhost:1667`:
-
-```bash
-ros2 launch g1_orchestration mission.launch.py tree:=pick_and_place_in_place.xml
-```
-
-The full navigate-pick-carry-place mission needs the facility world and a map:
-
-```bash
-ros2 launch g1_bringup bringup.launch.py \
-  mode:=localization nav:=true moveit:=true manipulation:=true world:=navigation \
-  rviz:=true activate_arm:=true activate_arm_delay_s:=55.0
-```
-
-```bash
-ros2 launch g1_orchestration mission.launch.py tree:=pick_and_place.xml
-```
-
-With `rviz:=true` and both MoveIt and Nav2 running, this opens two RViz windows: the MoveIt one
-for the arm and a second on the navigation config for the map and costmaps.
-
-Send it somewhere:
-
-```bash
-ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose \
-  "{pose: {header: {frame_id: map}, pose: {position: {x: 2.5, y: -2.5}, orientation: {w: 1.0}}}}"
-```
-
-Moving the arms or hands needs an explicit acquire step first, and a matching release. It takes
-the arm and both hands together; a hand that is absent or unpowered logs and leaves the arm
-usable.
-
-```bash
-ros2 launch g1_bringup activate_arm.launch.py
-# plan from RViz's MotionPlanning panel, or send FollowJointTrajectory goals to
-# arm_trajectory_controller, left_hand_controller or right_hand_controller
-ros2 launch g1_bringup deactivate_arm.launch.py
-```
+Each guide lists the launch arguments it uses and why, and
+`ros2 launch g1_bringup bringup.launch.py --show-args` prints the full set.
 
 ## Development environment
 
