@@ -49,10 +49,11 @@ RUN apt-get update && apt-get install -y \
         xvfb \
     && rm -rf /var/lib/apt/lists/*
 
+# 0.5-1 GB per cc1plus, so one job per core OOM-kills a 32-core/30 GB machine mid-build.
+# Raise on a bigger box with --build-arg BUILD_JOBS=N.
 ARG BUILD_JOBS=8
 
 # --- unitree_sdk2 -----------------------------------------------------------
-# Source tree discarded after install. Pinned with UNITREE_MUJOCO_SHA as a matched pair.
 ARG UNITREE_SDK2_SHA=21d0a3b2c46ee48c8fdf2783becb6be3beb0a59b
 RUN git init -q /opt/unitree_robotics/unitree_sdk2 && \
     cd /opt/unitree_robotics/unitree_sdk2 && \
@@ -75,8 +76,6 @@ RUN mkdir -p /opt/unitree_robotics/mujoco-${MUJOCO_VERSION} && \
 
 
 # --- CycloneDDS / ROS domain (unconditional -- required by Unitree SDK) -----
-# Pin the SDK's DDS discovery to loopback so the hardware component and unitree_mujoco find
-# each other. ROS itself is on fastrtps and ignores this file.
 RUN mkdir -p /etc/cyclonedds && \
     cat > /etc/cyclonedds/cyclonedds.xml <<'EOF'
 <?xml version="1.0" encoding="UTF-8" ?>
@@ -97,8 +96,6 @@ RUN mkdir -p /etc/cyclonedds && \
 </CycloneDDS>
 EOF
 
-# Second profile, for the robot. One difference: the interface. CycloneDDS expands
-# ${VAR:-default} itself. Loopback keeps the simulator's rt/lowcmd off the LAN.
 RUN cat > /etc/cyclonedds/cyclonedds.hardware.xml <<'EOF'
 <?xml version="1.0" encoding="UTF-8" ?>
 <CycloneDDS xmlns="https://cdds.io/config"
@@ -117,6 +114,8 @@ RUN cat > /etc/cyclonedds/cyclonedds.hardware.xml <<'EOF'
 </CycloneDDS>
 EOF
 
+# ROS runs fastrtps and never loads a CycloneDDS RMW: unitree_sdk2 links its own CycloneDDS
+# inside the hardware component, and two libddsc.so.0 of different ABIs corrupt the heap.
 ENV RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 ENV CYCLONEDDS_URI=file:///etc/cyclonedds/cyclonedds.xml
 ENV ROS_DOMAIN_ID=1
@@ -135,8 +134,6 @@ RUN apt-get update && apt-get install -y nlohmann-json3-dev \
 
 # --- walking-policy deps ---------------------------------------
 
-# ONNX Runtime CPU tarball. ldconfig (not RPATH) avoids LD_LIBRARY_PATH shadowing
-# by ROS's /opt/ros/${ROS_DISTRO}/lib.
 ARG ONNXRUNTIME_VERSION=1.20.1
 RUN mkdir -p /opt/onnxruntime && \
     curl -fsSL "https://github.com/microsoft/onnxruntime/releases/download/v${ONNXRUNTIME_VERSION}/onnxruntime-linux-x64-${ONNXRUNTIME_VERSION}.tgz" \
@@ -150,8 +147,6 @@ RUN apt-get update && apt-get install -y ros-${ROS_DISTRO}-teleop-twist-keyboard
 
 # --- perception sim track ---------------------------------------
 
-# mujoco_ros2_control, the second simulation track (sensors + a simplified mobility body).
-# Pinned to main, not a release: only main has the 3D PointCloud2 lidar the Mid360 needs.
 ARG MUJOCO_ROS2_CONTROL_SHA=ae0b235affe8792cf8584cb7074e10038f26f57b
 RUN apt-get update && apt-get install -y \
         ros-${ROS_DISTRO}-mujoco-vendor \
@@ -193,9 +188,6 @@ RUN apt-get update && apt-get install -y \
 
 # --- MoveIt 2 (structured manipulation) --------------------------
 
-# Jazzy's 2.12.4. Each extra past the metapackage is deliberate: pick-ik replaces KDL for the
-# 7-DoF arms, moveit-ros-perception carries the octomap updater plugins the metapackage omits,
-# realsense2-description supplies the D435's real geometry, moveit-servo streams the arms.
 RUN apt-get update && apt-get install -y \
         ros-${ROS_DISTRO}-moveit \
         ros-${ROS_DISTRO}-moveit-configs-utils \
@@ -213,17 +205,12 @@ RUN apt-get update && apt-get install -y \
         ros-${ROS_DISTRO}-vision-msgs \
     && rm -rf /var/lib/apt/lists/*
 
-# behaviortree_cpp 4.9.1 installs under lib/<triplet>/ while its own CMake export looks in
-# lib/, so dependants fail to configure. Guarded so a fixed release keeps its real file.
 RUN test -e /opt/ros/${ROS_DISTRO}/lib/libbehaviortree_cpp.so || \
     ln -s "$(dpkg-architecture -qDEB_HOST_MULTIARCH)/libbehaviortree_cpp.so" \
           /opt/ros/${ROS_DISTRO}/lib/libbehaviortree_cpp.so
 
 # --- LiDAR-inertial odometry ------------------------------------
 
-# Livox-SDK2, the Mid360's transport library. livox_ros_driver2 does find_library(... REQUIRED)
-# for it, and that driver defines the CustomMsg both FAST-LIO and the sim bridge speak -- so it
-# is needed even on the sim track, where no LiDAR is ever opened.
 ARG LIVOX_SDK2_SHA=08f523c930b2f0ba1e98a6afaa8d7476bf479908
 RUN git init -q /tmp/Livox-SDK2 && \
     cd /tmp/Livox-SDK2 && \
@@ -239,8 +226,6 @@ RUN git init -q /tmp/Livox-SDK2 && \
 
 # --- learned grasp ----------------------------------------------
 
-# The policy adapter speaks the wire protocol directly, so this is the whole dependency.
-# --no-deps: apt satisfies both, and pip would otherwise shadow python3-msgpack like empy.
 RUN apt-get update && apt-get install -y \
         python3-zmq \
         python3-msgpack \
