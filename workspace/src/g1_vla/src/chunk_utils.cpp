@@ -35,6 +35,14 @@ bool wellFormed(const trajectory_msgs::msg::JointTrajectory& chunk)
         {
             return false;
         }
+        // Every check downstream accumulates with std::max, and std::max(0.0, NaN) is 0.0, so a
+        // NaN position reads as a perfect score on all three of them and reaches the controller.
+        if (std::any_of(point.positions.begin(), point.positions.end(), [](double position) {
+                return !std::isfinite(position);
+            }))
+        {
+            return false;
+        }
         const double t = seconds(point.time_from_start);
         if (!(t > previous))
         {
