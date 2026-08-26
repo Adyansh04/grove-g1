@@ -7,8 +7,15 @@ g1_vla_server:
     max_start_jump_rad: 0.15
     # Per-waypoint validity only means something while consecutive waypoints stay close.
     max_segment_step_rad: 0.20
-    # Fraction of each joint's model velocity limit a chunk may ask for.
-    velocity_scaling: 0.5
+    # Fraction of each joint's model velocity limit a chunk may ask for. Larger than a planned
+    # trajectory would take: a policy chunk is a fixed shape, and slowing it breaks its feedback
+    # loop rather than making it safer.
+    velocity_scaling: 0.8
+
+    # Floor on how often the controller is handed a fresh plan. The gate replaces the running
+    # trajectory rather than waiting for it, so without this the loop runs at whatever rate the
+    # engine answers, which for the mock is no rate at all.
+    replan_period_s: 0.15
 
     # A rejected chunk leaves the robot where it was, and the policy head is stochastic, so
     # asking again is a real retry. This many in a row means the scene is genuinely blocking it.

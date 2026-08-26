@@ -98,8 +98,9 @@ moving. Prefer trajectory mode unless that reaction is what you want.
 
 ## Failure behaviour
 
-A rejected chunk is not executed at all, so the robot has not moved; the server asks the engine
-again. After `max_rejected_chunks` in a row the goal aborts with a message starting `blocked:`.
+A rejected chunk never reaches a controller, and the chunk still running from the previous turn
+is cancelled, so the arm stops where the refusal found it; the server then asks the engine again.
+After `max_rejected_chunks` in a row the goal aborts with a message starting `blocked:`.
 Any failure leaves the arm and hand where they are and restores the collision exemption. Moving
 away afterwards is the behavior tree's job.
 

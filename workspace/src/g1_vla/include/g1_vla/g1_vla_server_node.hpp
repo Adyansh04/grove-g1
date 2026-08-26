@@ -17,6 +17,8 @@
 #include <control_msgs/action/follow_joint_trajectory.hpp>
 #include <control_msgs/msg/joint_jog.hpp>
 #include <cstdint>
+#include <functional>
+#include <future>
 #include <g1_msgs/action/grasp.hpp>
 #include <g1_msgs/srv/get_action_chunk.hpp>
 #include <memory>
@@ -31,6 +33,7 @@
 #include <rclcpp_action/rclcpp_action.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
 #include <string>
+#include <utility>
 #include <vector>
 #include <vision_msgs/msg/detection3_d_array.hpp>
 
@@ -38,6 +41,9 @@
 
 namespace g1_vla
 {
+
+/// An engine request still in flight.
+using ChunkFuture = std::shared_future<g1_msgs::srv::GetActionChunk::Response::SharedPtr>;
 
 /// One trajectory controller the gate can hand a slice of a chunk to.
 struct ControllerTarget
@@ -100,8 +106,11 @@ private:
     Outcome runGrasp(
         const std::shared_ptr<GoalHandle>& goal_handle, const std::string& side, double start_z);
 
-    /// Asks the engine for the next chunk. @return nullopt with @p why set.
-    std::optional<JointTrajectory> requestChunk(const std::string& instruction, std::string& why);
+    /// The same request left in flight, so inference can run while the arm is still moving.
+    ChunkFuture sendChunkRequest(const std::string& instruction, bool new_episode);
+
+    /// Waits on a request from sendChunkRequest(). @return nullopt with @p why set.
+    std::optional<JointTrajectory> awaitChunk(ChunkFuture& pending, std::string& why) const;
 
     /**
      * @brief Every reason this chunk must not be executed.
@@ -112,10 +121,19 @@ private:
     std::string rejectionReason(const JointTrajectory& chunk, const std::string& side);
 
     /// Asks move_group whether each waypoint is a legal state. Uses its live scene and matrix.
-    std::string checkWaypoints(const JointTrajectory& chunk, const std::string& group);
+    std::string
+    checkWaypoints(const JointTrajectory& chunk, const std::string& group, const JointMap& measured);
 
-    /// Splits the chunk across the controllers, sends it, and waits for all of them.
-    bool executeChunk(const JointTrajectory& chunk, std::string& why);
+    /**
+     * @brief Splits the chunk across the controllers and sends it.
+     *
+     * @param await_completion Wait for every controller to finish. False leaves the trajectory
+     *                         running and returns, so the next chunk can replace it in flight.
+     */
+    bool executeChunk(const JointTrajectory& chunk, std::string& why, bool await_completion = true);
+
+    /// Reports a controller that refused a chunk dispatched without waiting for it.
+    bool dispatchFailed(std::string& why);
 
     /**
      * @brief Streams the arm's share of a chunk as jog commands instead of a trajectory.
@@ -173,11 +191,20 @@ private:
     robot_model_loader::RobotModelLoaderPtr model_loader_;
     moveit::core::RobotModelConstPtr        model_;
     std::vector<ControllerTarget>           controllers_;
+
+    using FjtResult =
+        std::shared_future<rclcpp_action::ClientGoalHandle<FollowJointTrajectory>::WrappedResult>;
+    /// Results of the chunk currently running, by controller, when it was not waited on.
+    std::vector<std::pair<std::string, FjtResult>> dispatched_;
+    /// The goal streamArmServo checks for cancellation; one goal runs at a time.
+    std::shared_ptr<GoalHandle> active_goal_;
+
     /// Velocity limits by joint, read from the model once.
     JointMap limits_;
 
     std::string engine_service_;
     double      engine_timeout_s_{ 10.0 };
+    double      replan_period_s_{ 0.15 };
     double      max_start_jump_rad_{ 0.15 };
     double      max_segment_step_rad_{ 0.20 };
     double      velocity_scaling_{ 0.5 };

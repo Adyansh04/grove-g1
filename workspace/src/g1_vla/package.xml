@@ -35,6 +35,8 @@
   <exec_depend>python3-numpy</exec_depend>
   <exec_depend>python3-zmq</exec_depend>
   <exec_depend>python3-msgpack</exec_depend>
+  <!-- msgpack-numpy has no rosdep key and no Ubuntu package; both images pip-install it. -->
+  <exec_depend>python3-pip</exec_depend>
   <!-- Wrist poses for the model's end-effector state; joint angles alone do not give it. -->
   <exec_depend>tf2_ros</exec_depend>
 

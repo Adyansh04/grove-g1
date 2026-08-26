@@ -23,6 +23,9 @@ namespace
 /// The one thing a grasping hand is always allowed to touch: space the sensor saw as occupied.
 const std::vector<std::string> kTouchables = { "<octomap>" };
 
+/// Scene and servo-mode services answer or they do not; this is not a tunable.
+constexpr double kServiceTimeoutS = 5.0;
+
 rclcpp::QoS objectsQos()
 {
     return rclcpp::QoS(rclcpp::KeepLast(1)).reliable().durability_volatile();
@@ -35,6 +38,23 @@ bool settled(FutureT& future, double timeout_s)
     return future.wait_for(std::chrono::duration<double>(timeout_s)) == std::future_status::ready;
 }
 
+/// Runs its callable on the way out, however the scope ends.
+class Restore
+{
+public:
+    explicit Restore(std::function<void()> on_exit)
+      : on_exit_(std::move(on_exit))
+    {}
+    Restore(const Restore&)            = delete;
+    Restore& operator=(const Restore&) = delete;
+    Restore(Restore&&)                 = delete;
+    Restore& operator=(Restore&&)      = delete;
+    ~Restore() { on_exit_(); }
+
+private:
+    std::function<void()> on_exit_;
+};
+
 }  // namespace
 
 G1VlaServer::G1VlaServer(const rclcpp::NodeOptions& options)
@@ -43,6 +63,8 @@ G1VlaServer::G1VlaServer(const rclcpp::NodeOptions& options)
     engine_service_ =
         declare_parameter<std::string>("engine_service", "/g1_vla_engine/get_action_chunk");
     declare_parameter<double>("engine_timeout_s", 10.0);
+    // Floor on how often a fresh plan is handed to the controller.
+    declare_parameter<double>("replan_period_s", 0.15);
     // A chunk that opens away from where the arm actually is means the policy misread the state.
     declare_parameter<double>("max_start_jump_rad", 0.15);
     // Waypoints further apart than this sweep space no validity check ever looked at.
@@ -130,8 +152,8 @@ void G1VlaServer::initialize()
     }
 
     // The URDF's velocity limits are what the motor can do, not what the arm tracks: 22 to 37
-    // rad/s against the 0.8 MoveIt actually times trajectories against. Checking a chunk against
-    // the motor spec would pass everything, so the planning limits win wherever they exist.
+    // rad/s against the 1.0 MoveIt times trajectories against. Checking a chunk against the motor
+    // spec would pass everything, so the planning limits win wherever they exist.
     std::vector<std::string> fell_back;
     for (const ControllerTarget& controller : controllers_)
     {
@@ -175,8 +197,10 @@ void G1VlaServer::initialize()
         },
         [](const std::shared_ptr<GoalHandle>&) { return rclcpp_action::CancelResponse::ACCEPT; },
         [this](const std::shared_ptr<GoalHandle>& handle) {
+            // Before the thread exists: the destructor drains on this and would otherwise read
+            // zero until the new thread is scheduled.
+            goals_running_.fetch_add(1);
             std::thread([this, handle] {
-                goals_running_.fetch_add(1);
                 try
                 {
                     executeGrasp(handle);
@@ -210,6 +234,7 @@ void G1VlaServer::initialize()
 void G1VlaServer::refreshTunables()
 {
     engine_timeout_s_     = get_parameter("engine_timeout_s").as_double();
+    replan_period_s_      = get_parameter("replan_period_s").as_double();
     max_start_jump_rad_   = get_parameter("max_start_jump_rad").as_double();
     max_segment_step_rad_ = get_parameter("max_segment_step_rad").as_double();
     velocity_scaling_     = get_parameter("velocity_scaling").as_double();
@@ -219,7 +244,8 @@ void G1VlaServer::refreshTunables()
     success_lift_m_       = get_parameter("success_lift_m").as_double();
     object_timeout_s_     = get_parameter("object_timeout_ms").as_double() / 1000.0;
     execution_mode_       = get_parameter("execution_mode").as_string();
-    servo_publish_rate_   = get_parameter("servo_publish_rate").as_double();
+    // Divisor: a non-positive rate gives an infinite tick and a loop with no exit.
+    servo_publish_rate_ = std::max(1.0, get_parameter("servo_publish_rate").as_double());
 }
 
 bool G1VlaServer::acquire()
@@ -294,18 +320,23 @@ bool G1VlaServer::setHandContact(const std::string& side, bool allowed)
         true);
 }
 
-std::optional<G1VlaServer::JointTrajectory>
-G1VlaServer::requestChunk(const std::string& instruction, std::string& why)
+ChunkFuture G1VlaServer::sendChunkRequest(const std::string& instruction, bool new_episode)
 {
     auto request         = std::make_shared<GetActionChunk::Request>();
     request->instruction = instruction;
-    auto future          = engine_->async_send_request(request);
-    if (!settled(future, engine_timeout_s_))
+    request->new_episode = new_episode;
+    return engine_->async_send_request(request).share();
+}
+
+std::optional<G1VlaServer::JointTrajectory>
+G1VlaServer::awaitChunk(ChunkFuture& pending, std::string& why) const
+{
+    if (!settled(pending, engine_timeout_s_))
     {
         why = "the policy engine did not answer within " + std::to_string(engine_timeout_s_) + " s";
         return std::nullopt;
     }
-    GetActionChunk::Response::SharedPtr response = future.get();
+    GetActionChunk::Response::SharedPtr response = pending.get();
     if (!response->ok)
     {
         why = "the policy engine refused: " + response->message;
@@ -349,13 +380,12 @@ std::string G1VlaServer::rejectionReason(const JointTrajectory& chunk, const std
         return "asks for " + std::to_string(*ratio * 100.0) + "% of a joint's velocity limit";
     }
 
-    return checkWaypoints(chunk, side + "_arm");
+    return checkWaypoints(chunk, side + "_arm", measured);
 }
 
-std::string G1VlaServer::checkWaypoints(const JointTrajectory& chunk, const std::string& group)
+std::string G1VlaServer::checkWaypoints(
+    const JointTrajectory& chunk, const std::string& group, const JointMap& measured)
 {
-    const JointMap measured = measuredJoints();
-
     for (std::size_t p = 0; p < chunk.points.size(); ++p)
     {
         JointMap state = measured;
@@ -374,7 +404,7 @@ std::string G1VlaServer::checkWaypoints(const JointTrajectory& chunk, const std:
         }
 
         auto future = validity_->async_send_request(request);
-        if (!settled(future, 5.0))
+        if (!settled(future, kServiceTimeoutS))
         {
             return "/check_state_validity did not answer";
         }
@@ -396,7 +426,27 @@ std::string G1VlaServer::checkWaypoints(const JointTrajectory& chunk, const std:
     return {};
 }
 
-bool G1VlaServer::executeChunk(const JointTrajectory& chunk, std::string& why)
+bool G1VlaServer::dispatchFailed(std::string& why)
+{
+    for (auto& [name, result] : dispatched_)
+    {
+        if (result.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+        {
+            continue;
+        }
+        // A chunk superseded by the next one comes back cancelled and carries no error code, so
+        // only a tolerance or validity complaint means the controller actually refused the plan.
+        const int32_t code = result.get().result->error_code;
+        if (code != control_msgs::action::FollowJointTrajectory::Result::SUCCESSFUL)
+        {
+            why = name + " aborted a chunk: " + std::to_string(code);
+            return true;
+        }
+    }
+    return false;
+}
+
+bool G1VlaServer::executeChunk(const JointTrajectory& chunk, std::string& why, bool await_completion)
 {
     using GoalHandleFJT = rclcpp_action::ClientGoalHandle<FollowJointTrajectory>;
     std::vector<std::shared_future<GoalHandleFJT::WrappedResult>> results;
@@ -449,6 +499,18 @@ bool G1VlaServer::executeChunk(const JointTrajectory& chunk, std::string& why)
         return false;
     }
 
+    if (!await_completion)
+    {
+        // Kept so the next iteration can see a controller that aborted this one; the trajectory
+        // itself keeps running until the following chunk supersedes it.
+        dispatched_.clear();
+        for (std::size_t i = 0; i < results.size(); ++i)
+        {
+            dispatched_.emplace_back(sent_to[i], results[i]);
+        }
+        return true;
+    }
+
     for (std::size_t i = 0; i < results.size(); ++i)
     {
         if (!settled(results[i], chunk_exec_timeout_s_))
@@ -493,7 +555,7 @@ bool G1VlaServer::selectServoJointJog(std::string& why)
     auto request          = std::make_shared<moveit_msgs::srv::ServoCommandType::Request>();
     request->command_type = moveit_msgs::srv::ServoCommandType::Request::JOINT_JOG;
     auto future           = servo_command_type_->async_send_request(request);
-    if (!settled(future, 5.0) || !future.get()->success)
+    if (!settled(future, kServiceTimeoutS) || !future.get()->success)
     {
         why = "servo refused to switch to joint-jog mode";
         return false;
@@ -518,6 +580,12 @@ bool G1VlaServer::streamArmServo(const JointTrajectory& arm_slice, std::string& 
     // each command was actually in force, so a loop that drifts late travels further.
     for (auto next = start;; next += period)
     {
+        // cancelAll() cannot reach servo: it drives the controller's topic interface, not a goal.
+        const std::shared_ptr<GoalHandle> goal = active_goal_;
+        if (!rclcpp::ok() || (goal != nullptr && goal->is_canceling()))
+        {
+            return true;
+        }
         // Re-read every tick. The velocity is a correction toward the next validated waypoint,
         // so tracking error is cancelled rather than accumulated.
         const std::vector<double> velocities = trackingVelocity(
@@ -569,6 +637,10 @@ G1VlaServer::Outcome G1VlaServer::runGrasp(
 
     const rclcpp::Time deadline            = now() + rclcpp::Duration::from_seconds(timeout_s_);
     int                consecutive_rejects = 0;
+    ChunkFuture        pending             = sendChunkRequest(goal->instruction, true);
+    active_goal_                           = goal_handle;
+    Restore      clear_goal{ [this] { active_goal_.reset(); } };
+    rclcpp::Time last_sent = now() - rclcpp::Duration::from_seconds(replan_period_s_);
 
     while (rclcpp::ok())
     {
@@ -585,7 +657,7 @@ G1VlaServer::Outcome G1VlaServer::runGrasp(
         }
 
         std::string                          why;
-        const std::optional<JointTrajectory> chunk = requestChunk(goal->instruction, why);
+        const std::optional<JointTrajectory> chunk = awaitChunk(pending, why);
         if (!chunk.has_value())
         {
             outcome.message = why;
@@ -595,6 +667,9 @@ G1VlaServer::Outcome G1VlaServer::runGrasp(
         const std::string rejected = rejectionReason(*chunk, side);
         if (!rejected.empty())
         {
+            // A streamed chunk is still running, and "rejected" has to mean the arm stopped.
+            cancelAll();
+            pending = sendChunkRequest(goal->instruction, false);
             ++outcome.rejected;
             ++consecutive_rejects;
             RCLCPP_WARN(
@@ -615,13 +690,38 @@ G1VlaServer::Outcome G1VlaServer::runGrasp(
         }
         consecutive_rejects = 0;
 
-        if (!executeChunk(*chunk, why))
+        // Trajectory mode replaces the running plan mid-motion rather than waiting for it, so
+        // the arm never stands still on inference and the policy sees states it can still act
+        // on. Servo mode streams from this thread and stays serial.
+        const bool streaming = execution_mode_ != "servo";
+        if (!executeChunk(*chunk, why, !streaming))
         {
             cancelAll();
             outcome.message = why;
             return outcome;
         }
+        pending = sendChunkRequest(goal->instruction, false);
         ++outcome.executed;
+
+        if (dispatchFailed(why))
+        {
+            cancelAll();
+            outcome.message = why;
+            return outcome;
+        }
+
+        // Without a floor the loop runs at whatever rate the engine answers, and a controller
+        // fed thousands of goals a second switches trajectories instead of following one.
+        if (streaming)
+        {
+            const double elapsed = (now() - last_sent).seconds();
+            if (elapsed < replan_period_s_)
+            {
+                std::this_thread::sleep_for(
+                    std::chrono::duration<double>(replan_period_s_ - elapsed));
+            }
+            last_sent = now();
+        }
         feedback->chunks_executed = outcome.executed;
         goal_handle->publish_feedback(feedback);
 
@@ -674,15 +774,19 @@ void G1VlaServer::executeGrasp(const std::shared_ptr<GoalHandle>& goal_handle)
         return;
     }
 
-    const Outcome outcome = runGrasp(goal_handle, goal->arm, *start_z);
+    // Scoped: runGrasp can throw, and an exemption left applied blinds every later plan too.
+    Restore release{ [this, side = goal->arm] {
+        cancelAll();
+        if (!setHandContact(side, false))
+        {
+            RCLCPP_ERROR(
+                get_logger(),
+                "the hand exemption was not restored; the scene is blinded to the "
+                "octomap until move_group restarts");
+        }
+    } };
 
-    if (!setHandContact(goal->arm, false))
-    {
-        RCLCPP_ERROR(
-            get_logger(),
-            "the hand exemption was not restored; the scene is blinded to the "
-            "octomap until move_group restarts");
-    }
+    const Outcome outcome = runGrasp(goal_handle, goal->arm, *start_z);
 
     result->success = outcome.success;
     // Counters on every path, not just the happy one: how much of a policy's output survived the

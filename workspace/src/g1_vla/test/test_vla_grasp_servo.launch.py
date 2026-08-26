@@ -217,7 +217,6 @@ class TestVlaGraspServo(unittest.TestCase):
         jog = self.node.create_publisher(JointJog, "/servo_node/delta_joint_cmds", 10)
 
         self._spin(1.0)
-        before = self.joints["right_shoulder_roll_joint"]
         end = time.time() + 14.0
         while time.time() < end:
             message = JointJog()
@@ -231,7 +230,7 @@ class TestVlaGraspServo(unittest.TestCase):
         self._spin(2.0)
 
         self.assertIn(ServoStatus.HALT_FOR_COLLISION, codes, f"servo never halted; saw {codes}")
-        # Stopped short of contact rather than at it: 14 s at 0.25 rad/s would be 3.5 rad if
-        # nothing intervened, and the collision starts at about 0.1.
-        travelled = self.joints["right_shoulder_roll_joint"] - before
-        self.assertLess(travelled, 0.12, f"servo let the arm travel {travelled:.3f} rad")
+        # Absolute, not a delta: the previous case leaves the joint wherever it stopped, and
+        # 14 s at 0.25 rad/s would reach 3.5 rad if nothing intervened.
+        reached = self.joints["right_shoulder_roll_joint"]
+        self.assertLess(reached, 0.12, f"servo let the arm reach {reached:.3f} rad")
