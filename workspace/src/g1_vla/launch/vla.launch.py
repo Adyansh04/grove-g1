@@ -27,15 +27,16 @@ def _config(share, name):
 
 def _moveit_config():
     """The server loads the robot model from its own parameters, for the groups and the hand
-    links it exempts; without them it builds against an empty model. joint_limits carries the
-    velocities it checks chunks against, which are not the URDF's."""
+    links it exempts; without them it builds against an empty model. joint_limits is this
+    package's own: the speed a policy chunk may ask for is not the speed a planned motion is
+    timed at."""
     return (
         MoveItConfigsBuilder("g1", package_name="g1_moveit_config")
         .robot_description(
             file_path=os.path.join(DESCRIPTION_SHARE, "urdf", "g1_lowcmd.urdf.xacro")
         )
         .robot_description_semantic(file_path=_config(MOVEIT_SHARE, "g1.srdf"))
-        .joint_limits(file_path=_config(MOVEIT_SHARE, "joint_limits.yaml"))
+        .joint_limits(file_path=_config(SHARE, "joint_limits.yaml"))
         # Named, or the builder assembles every pipeline it knows and pilz fails the launch.
         .planning_pipelines(pipelines=["ompl"], default_planning_pipeline="ompl")
         .to_moveit_configs()
