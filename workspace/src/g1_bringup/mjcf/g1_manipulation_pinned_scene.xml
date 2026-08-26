@@ -14,5 +14,15 @@
          pelvis instead fixes the base the arm reaches from, and the waist is then held by
          the walking policy's own stiff hold. -->
     <weld name="pelvis_world_pin" body1="pelvis"/>
+
+    <!-- The paragraph above was written when the balance policy still ran here and held the
+         waist stiff. It does not any more: pinning the pelvis now freezes the legs instead, and
+         a freeze controller captures whatever pose it finds at activation. Nothing commands the
+         waist before that, so the torso falls to its roll and pitch stops during startup and is
+         then held there -- measured at 30.0 and 29.9 degrees, which is exactly the joint limit.
+         A 34 degree torso tilts the head camera and the arm's whole reach frame with it.
+         Welding the torso as well locks the waist at its spawn zero and costs nothing here,
+         where an upright repeatable base is the entire point of pinning. -->
+    <weld name="torso_world_pin" body1="torso_link"/>
   </equality>
 </mujoco>
