@@ -1,5 +1,3 @@
-# Based on libfranka's .clang-tidy, adapted for this stack.
-# Rationale for every disable and deviation: docs/notes/clang-tidy-config.md
 Checks: '
   clang-diagnostic-*,
   clang-analyzer-*,
@@ -54,7 +52,6 @@ Checks: '
 # First-party headers only -- keeps vendored unitree_ros2 headers out.
 HeaderFilterRegex: '^.*/g1_[a-z_]+/(include|src)/.*$'
 
-# What makes clang_tidy_check_* a gate: run-clang-tidy only propagates the exit code.
 WarningsAsErrors: '*'
 
 CheckOptions:
@@ -124,13 +121,10 @@ CheckOptions:
     value:  lower_case
   - key:    readability-identifier-naming.ConstantMemberPrefix
     value:  ''
-  # A const member is still a member, so it keeps the trailing underscore its
-  # non-const siblings have. Without this it falls through to a rule that has
-  # no suffix expectation and every const member reads as misnamed.
+
   - key:    readability-identifier-naming.ConstantMemberSuffix
     value:  '_'
-  # Static data members (ClassMember) are their own category; unset, they land
-  # on the plain-variable rule instead of the member one.
+
   - key:    readability-identifier-naming.ClassMemberCase
     value:  lower_case
   - key:    readability-identifier-naming.ClassMemberSuffix
