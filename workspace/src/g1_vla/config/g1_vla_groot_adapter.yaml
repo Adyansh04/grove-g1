@@ -4,41 +4,33 @@ g1_vla_groot_adapter:
     server_address: tcp://127.0.0.1:5555
     zmq_timeout_ms: 8000
 
-    # Spacing between the chunk's waypoints, and how many of them to keep. The gate's
-    # max_segment_step_rad and velocity_scaling are both judged against this spacing, so this
-    # is what decides whether a chunk is refused for speed.
-    #
-    # Measured against the real checkpoint looking at the real bench: chunks ask for roughly
-    # 0.10 rad per step, which is 1.5 to 3 rad/s at the rate the model was trained. The arm's
-    # planning limit is 0.8 rad/s and the gate allows half of that, so the policy simply cannot
-    # be played at its native speed here and the chunk has to be stretched instead. At 0.4 s a
-    # step lands near a third of the limit, with room for a chunk that moves further than the
-    # ones measured. Stretching is the honest knob: raising the gate's velocity_scaling would
-    # buy the same acceptance by weakening the check that makes the gate worth having.
-    action_dt_s: 0.4
-    # A fifth of the model's 40-step horizon. The chunk executes open-loop before the next
-    # observation, so stretching each step is a reason to keep fewer of them, not more.
+    # Waypoint spacing. The chunk is a trajectory sampled at its training rate, which asks about
+    # 3 rad/s; this arm tracks 1.0, and 0.125 s is the closest spacing that stays inside that.
+    action_dt_s: 0.125
+
+    # Runway between re-plans, not the whole 40-step prediction. The gate replaces the running
+    # trajectory as fast as the engine answers, so validating all forty only refuses chunks for
+    # collisions the arm would never reach.
     max_horizon: 8
 
-    # The policy's first waypoint was measured 0.18 to 0.42 rad from the arm's actual pose, well
-    # past the gate's 0.15 start-jump limit, so the chunk is led in from the measured pose in
-    # steps no larger than this. Set it to 0.0 to send the policy's first waypoint untouched.
-    approach_step_rad: 0.08
+    # Ceiling used to time each segment rather than to reject it. Under the gate's own allowance
+    # so a chunk paced here is one the gate takes.
+    max_joint_speed: 0.7
 
-    # This checkpoint is trained on relative actions, but the server converts them back against
-    # the state it was sent before replying, so what arrives is already absolute. Only a server
-    # that skips that conversion needs "relative_to_observation".
+    # The simulated head camera runs near 2.6 Hz with 1.6 s gaps under load. Only catches a
+    # camera that has stopped.
+    max_image_age_s: 5.0
+
+    # The server un-relativises against the state it was sent, so what arrives is absolute.
+    # Only a server that skips that conversion needs "relative_to_observation".
     action_mode: absolute
 
-    # Wall time per step of frame history. The rate the model's frame offsets were recorded at
-    # is not on the wire, so this is the knob to turn if a run looks conditioned on the wrong
-    # moment rather than a quantity to derive.
+    # Wall time per step of frame history; the rate the offsets were recorded at is not on the
+    # wire, so this is a tuning knob rather than a derived quantity.
     history_step_s: 0.0333
 
-    # The model's modality keys are its own and change with the checkpoint, so they are mapped
-    # here rather than guessed. They are unprefixed, and the joint order in each list is the
-    # order of that key's vector. Start the adapter once against the server: it logs every key
-    # the server reports and refuses to serve until each state and video one appears below.
+    # Keys belong to the checkpoint and are unprefixed; joint order is the order of that key's
+    # vector. The adapter logs every key the server reports and refuses to serve unmapped ones.
     state_joints:
       left_arm:
         - left_shoulder_pitch_joint
@@ -56,36 +48,38 @@ g1_vla_groot_adapter:
         - right_wrist_roll_joint
         - right_wrist_pitch_joint
         - right_wrist_yaw_joint
+      # Fingers first, thumb last: the checkpoint's dims 4-6 match thumb_0/1/2 by range and
+      # nothing else. Thumb-first, the finger commands land on the thumb and the thumb's land on
+      # joints that start at zero, so they clamp away and the hand never closes.
       left_hand:
-        - left_hand_thumb_0_joint
-        - left_hand_thumb_1_joint
-        - left_hand_thumb_2_joint
         - left_hand_index_0_joint
         - left_hand_index_1_joint
         - left_hand_middle_0_joint
         - left_hand_middle_1_joint
+        - left_hand_thumb_0_joint
+        - left_hand_thumb_1_joint
+        - left_hand_thumb_2_joint
       right_hand:
-        - right_hand_thumb_0_joint
-        - right_hand_thumb_1_joint
-        - right_hand_thumb_2_joint
         - right_hand_index_0_joint
         - right_hand_index_1_joint
         - right_hand_middle_0_joint
         - right_hand_middle_1_joint
+        - right_hand_thumb_0_joint
+        - right_hand_thumb_1_joint
+        - right_hand_thumb_2_joint
       waist:
         - waist_yaw_joint
         - waist_roll_joint
         - waist_pitch_joint
 
-    # Position and orientation of each wrist, read from TF rather than from joint angles. The
-    # parent frame is the recording rig's convention, not something the checkpoint states: if
-    # the policy reaches confidently to the wrong place, this is the first thing to vary.
+    # Wrist pose from TF, not from joint angles. The parent frame is the recording rig's
+    # convention and the checkpoint does not state it, so vary this first if the reach is wrong.
     state_eef_frames:
       left_wrist_eef_9d: [pelvis, left_wrist_yaw_link]
       right_wrist_eef_9d: [pelvis, right_wrist_yaw_link]
 
-    # Only what this skill drives. The server also offers a waist, a base height and a
-    # navigation command; those are someone else's to command and are ignored by name.
+    # Only what this skill drives. The server's waist, base height and navigate commands are
+    # ignored by name.
     action_joints:
       right_arm:
         - right_shoulder_pitch_joint
@@ -96,13 +90,13 @@ g1_vla_groot_adapter:
         - right_wrist_pitch_joint
         - right_wrist_yaw_joint
       right_hand:
-        - right_hand_thumb_0_joint
-        - right_hand_thumb_1_joint
-        - right_hand_thumb_2_joint
         - right_hand_index_0_joint
         - right_hand_index_1_joint
         - right_hand_middle_0_joint
         - right_hand_middle_1_joint
+        - right_hand_thumb_0_joint
+        - right_hand_thumb_1_joint
+        - right_hand_thumb_2_joint
 
     video_topics:
       ego_view: /camera/color/image_raw

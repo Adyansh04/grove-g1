@@ -4,8 +4,11 @@
 # Chunk positions are absolute, may name any subset of the arm and hand joints, and
 # time_from_start must increase.
 
-# Natural-language task. Changing it starts a new episode at the engine.
+# Natural-language task.
 string instruction
+# First request of a goal. A retry repeats the instruction verbatim, so the engine cannot infer
+# the boundary from that alone, and a stochastic head only resamples once its history is cleared.
+bool new_episode
 ---
 bool ok
 # Why no chunk could be produced. Empty when ok.
