@@ -46,26 +46,28 @@
 
     <!-- Wider than the manipulation pedestal, because five objects have to sit apart without
          touching, and at the same 0.80 top so a grasp tuned on one scene transfers to the other.
-         The near edge must clear the spawned arm, for the reason the manipulation scene gives:
-         the right palm hangs at about odom (0.18, -0.18, 0.74), and a table whose voxels reach
-         it puts the whole robot in collision at its start state, which fails every plan
-         including the one that opens the hand. -->
-    <geom name="table_top" group="2" type="box" size="0.13 0.17 0.015" pos="0.39 -0.20 0.785"
+         Placed to miss the arms where they hang at spawn, which is the pose the model starts in
+         and the startup hold keeps until the control stack takes over: the right palm sits at
+         about odom (0.23, -0.15, 0.86) with the fingers reaching forward from there. Objects
+         under that land in the hand before anything has been commanded, and the robot then
+         starts in collision, which is a state MoveIt has no plan out of. Hence the whole layout
+         sits to the right of that line while staying inside the arm's reach. -->
+    <geom name="table_top" group="2" type="box" size="0.13 0.17 0.015" pos="0.39 -0.27 0.785"
       material="pedestal_mat" contype="1" conaffinity="1"/>
     <geom name="table_leg_near" group="2" type="box" size="0.02 0.02 0.385"
-      pos="0.50 -0.34 0.385" material="pedestal_mat" contype="1" conaffinity="1"/>
+      pos="0.50 -0.41 0.385" material="pedestal_mat" contype="1" conaffinity="1"/>
     <geom name="table_leg_far" group="2" type="box" size="0.02 0.02 0.385"
-      pos="0.50 -0.06 0.385" material="pedestal_mat" contype="1" conaffinity="1"/>
+      pos="0.50 -0.13 0.385" material="pedestal_mat" contype="1" conaffinity="1"/>
 
     <!-- Same size, mass and friction as the manipulation scene's cube, so a pick tuned there is
          tuned here. Nearest the robot, on the half the arm can reach. -->
-    <body name="red_cube" pos="0.30 -0.20 0.830">
+    <body name="red_cube" pos="0.30 -0.27 0.830">
       <freejoint name="red_cube_joint"/>
       <geom group="2" type="box" size="0.03 0.03 0.03" material="mat_red_obj" mass="0.15"
         contype="1" conaffinity="1" friction="1 0.005 0.0001"/>
     </body>
 
-    <body name="green_cylinder" pos="0.31 -0.10 0.845">
+    <body name="green_cylinder" pos="0.31 -0.17 0.845">
       <freejoint name="green_cylinder_joint"/>
       <geom group="2" type="cylinder" size="0.03 0.04" material="mat_green_obj" mass="0.15"
         contype="1" conaffinity="1" friction="1 0.005 0.0001"/>
@@ -73,7 +75,7 @@
 
     <!-- The shape the support plane matters most for: seen from above, its lowest visible point
          is its equator, so a fit that takes the object's own lowest point reports half a ball. -->
-    <body name="blue_sphere" pos="0.43 -0.27 0.837">
+    <body name="blue_sphere" pos="0.43 -0.34 0.837">
       <freejoint name="blue_sphere_joint"/>
       <geom group="2" type="sphere" size="0.037" material="mat_blue_obj" mass="0.1"
         contype="1" conaffinity="1" friction="0.8 0.005 0.0001"/>
@@ -81,13 +83,13 @@
 
     <!-- Rectangular rather than square, so its yaw is recoverable at all: a square top face has
          no principal direction to find. -->
-    <body name="yellow_box" pos="0.43 -0.14 0.825">
+    <body name="yellow_box" pos="0.43 -0.21 0.825">
       <freejoint name="yellow_box_joint"/>
       <geom group="2" type="box" size="0.04 0.025 0.025" material="mat_yellow_obj" mass="0.12"
         contype="1" conaffinity="1"/>
     </body>
 
-    <body name="white_cup" pos="0.32 -0.30 0.850">
+    <body name="white_cup" pos="0.32 -0.37 0.850">
       <freejoint name="white_cup_joint"/>
       <geom group="2" type="cylinder" size="0.035 0.045" material="mat_white_obj" mass="0.12"
         contype="1" conaffinity="1" friction="1 0.005 0.0001"/>
