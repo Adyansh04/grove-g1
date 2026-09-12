@@ -31,6 +31,13 @@ target_link_libraries(g1_hand_contact PUBLIC
   ${moveit_msgs_TARGETS}
 )
 
+add_library(g1_grasp_filter src/grasp_filter.cpp)
+g1_target_defaults(g1_grasp_filter)
+target_link_libraries(g1_grasp_filter PUBLIC
+  tf2_geometry_msgs::tf2_geometry_msgs
+  ${geometry_msgs_TARGETS}
+)
+
 add_library(g1_object_pose_source_node src/g1_object_pose_source_node.cpp)
 g1_target_defaults(g1_object_pose_source_node)
 target_link_libraries(g1_object_pose_source_node PUBLIC
@@ -47,6 +54,7 @@ target_link_libraries(g1_object_pose_source_node PUBLIC
 add_library(g1_manipulation_server_node src/g1_manipulation_server_node.cpp)
 g1_target_defaults(g1_manipulation_server_node)
 target_link_libraries(g1_manipulation_server_node PUBLIC
+  g1_grasp_filter
   g1_hand_contact
   rclcpp::rclcpp
   rclcpp_action::rclcpp_action
@@ -75,7 +83,11 @@ target_link_libraries(g1_manipulation_server PUBLIC g1_manipulation_server_node)
 
 install(DIRECTORY include/ DESTINATION include)
 install(DIRECTORY config launch DESTINATION share/${PROJECT_NAME})
-install(TARGETS g1_hand_contact g1_object_pose_source_node g1_manipulation_server_node
+install(TARGETS
+  g1_hand_contact
+  g1_grasp_filter
+  g1_object_pose_source_node
+  g1_manipulation_server_node
   EXPORT export_${PROJECT_NAME} DESTINATION lib)
 install(TARGETS g1_object_pose_source g1_manipulation_server DESTINATION lib/${PROJECT_NAME})
 
@@ -92,8 +104,18 @@ if(BUILD_TESTING)
   ament_add_gmock(test_grasp_geometry test/test_grasp_geometry.cpp)
   target_link_libraries(test_grasp_geometry g1_manipulation_server_node)
 
+  ament_add_gmock(test_grasp_filter test/test_grasp_filter.cpp)
+  target_link_libraries(test_grasp_filter g1_grasp_filter)
+
   ament_add_gmock(test_hand_contact test/test_hand_contact.cpp)
   target_link_libraries(test_hand_contact g1_hand_contact)
+
+  find_package(launch_testing_ament_cmake REQUIRED)
+
+  add_launch_test(test/test_generated_grasp_pick.launch.py TARGET test_generated_grasp_pick
+    TIMEOUT 600)
+  set_tests_properties(test_generated_grasp_pick PROPERTIES
+    LABELS simulator RESOURCE_LOCK mujoco_sim COST 95)
 
   # test/test_pick_place.launch.py runs but does not pass, so it stays unregistered:
   #   python3 -m launch_testing.launch_test src/g1_manipulation/test/test_pick_place.launch.py

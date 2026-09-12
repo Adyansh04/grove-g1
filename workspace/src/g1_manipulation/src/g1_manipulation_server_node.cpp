@@ -22,6 +22,7 @@
 #include <utility>
 #include <vector>
 
+#include "g1_manipulation/grasp_filter.hpp"
 #include "g1_manipulation/hand_contact.hpp"
 
 namespace g1_manipulation
@@ -103,6 +104,18 @@ G1ManipulationServer::G1ManipulationServer(const rclcpp::NodeOptions& options)
     // +y, so the roll is what turns the closing axis down for a grasp off a table.
     grasp_rpy_ = declare_parameter<std::vector<double>>("grasp_rpy", { -M_PI_2, 0.0, 0.0 });
 
+    grasp_source_         = declare_parameter<std::string>("grasp_source", "fixed_top_down");
+    grasp_timeout_s_      = declare_parameter<double>("grasp_timeout_s", 20.0);
+    min_grasp_score_      = declare_parameter<double>("min_grasp_score", 0.5);
+    max_grasp_candidates_ = static_cast<int>(declare_parameter<int>("max_grasp_candidates", 20));
+    max_approach_tilt_rad_ =
+        declare_parameter<double>("max_approach_tilt_deg", 75.0) * M_PI / 180.0;
+    approach_standoff_m_ = declare_parameter<double>("approach_standoff_m", 0.12);
+    ik_timeout_s_        = declare_parameter<double>("ik_timeout_s", 0.05);
+    graspgen_offset_     = declare_parameter<std::vector<double>>(
+        "graspgen_to_grasp_frame_xyz_rpy",
+        { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 });
+
     objects_sub_ = create_subscription<vision_msgs::msg::Detection3DArray>(
         "/objects",
         objectsQos(),
@@ -111,6 +124,8 @@ G1ManipulationServer::G1ManipulationServer(const rclcpp::NodeOptions& options)
     tf_buffer_   = std::make_unique<tf2_ros::Buffer>(get_clock());
     tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
+    grasps_ = create_client<g1_msgs::srv::GenerateGrasps>(
+        declare_parameter<std::string>("grasp_service", "/g1_grasp_engine/generate_grasps"));
     get_scene_   = create_client<moveit_msgs::srv::GetPlanningScene>("/get_planning_scene");
     apply_scene_ = create_client<moveit_msgs::srv::ApplyPlanningScene>("/apply_planning_scene");
 }
@@ -367,6 +382,141 @@ geometry_msgs::msg::Pose G1ManipulationServer::graspFrameGoal(
     return goal;
 }
 
+std::optional<g1_msgs::srv::GenerateGrasps::Response> G1ManipulationServer::requestGrasps(
+    const std::string& object_id, const ArmContext& arm, std::string& why)
+{
+    if (!grasps_->wait_for_service(std::chrono::milliseconds(500)))
+    {
+        why = std::string("no grasp generator is serving ") + grasps_->get_service_name();
+        return std::nullopt;
+    }
+    auto request       = std::make_shared<g1_msgs::srv::GenerateGrasps::Request>();
+    request->object_id = object_id;
+    request->hand      = arm.is_left ? "left" : "right";
+
+    // Waited on rather than spun: the executor owns this node and re-entering it from a goal
+    // thread deadlocks, which is the same reason the VLA gate waits on its futures.
+    auto future = grasps_->async_send_request(request);
+    if (future.wait_for(std::chrono::duration<double>(grasp_timeout_s_)) !=
+        std::future_status::ready)
+    {
+        why = "the grasp generator did not answer within " + std::to_string(grasp_timeout_s_) + "s";
+        return std::nullopt;
+    }
+    const auto response = future.get();
+    if (!response->ok)
+    {
+        why = "the grasp generator refused: " + response->message;
+        return std::nullopt;
+    }
+    if (response->grasps.empty())
+    {
+        why = "the grasp generator found no grasp on '" + object_id + "'";
+        return std::nullopt;
+    }
+    return *response;
+}
+
+std::optional<G1ManipulationServer::GraspPlan> G1ManipulationServer::chooseGrasp(
+    const vision_msgs::msg::Detection3D& detection, const geometry_msgs::msg::Pose& object_pose,
+    const ArmContext& arm, std::string& why)
+{
+    if (grasp_source_ != "generated")
+    {
+        GraspPlan plan;
+        plan.grasp    = graspFrameGoal(object_pose, detection.bbox.size.z, arm);
+        plan.pregrasp = plan.grasp;
+        plan.pregrasp.position.z += approach_height_m_;
+        plan.origin = "top-down";
+        return plan;
+    }
+
+    const std::string object_id =
+        detection.results.empty() ? std::string() : detection.results.front().hypothesis.class_id;
+    const auto response = requestGrasps(object_id, arm, why);
+    if (!response)
+    {
+        return std::nullopt;
+    }
+
+    MoveGroup* group = groupFor(arm.arm_group);
+    if (group == nullptr)
+    {
+        why = "no planning group called " + arm.arm_group;
+        return std::nullopt;
+    }
+    const moveit::core::RobotStatePtr state = group->getCurrentState();
+    if (state == nullptr)
+    {
+        why = "no current state to solve a grasp against";
+        return std::nullopt;
+    }
+    const moveit::core::JointModelGroup* jmg = state->getJointModelGroup(arm.arm_group);
+
+    std::array<double, 6> offset{};
+    for (std::size_t i = 0; i < offset.size() && i < graspgen_offset_.size(); ++i)
+    {
+        offset[i] = graspgen_offset_[i];
+    }
+
+    int considered = 0;
+    int reachable  = 0;
+    for (std::size_t i = 0; i < response->grasps.size(); ++i)
+    {
+        if (considered >= max_grasp_candidates_)
+        {
+            break;
+        }
+        if (i < response->scores.size() && response->scores[i] < min_grasp_score_)
+        {
+            // Sorted best first, so the first one under the bar ends the list.
+            break;
+        }
+        ++considered;
+
+        const auto in_planning_frame =
+            toPlanningFrame(response->grasps[i], response->header.frame_id);
+        if (!in_planning_frame)
+        {
+            continue;
+        }
+        // Judged on the generator's own pose: its +z is the direction the hand travels, and a
+        // grasp tilted past the limit is reaching up through whatever the object rests on.
+        if (approachTiltRad(*in_planning_frame) > max_approach_tilt_rad_)
+        {
+            continue;
+        }
+
+        const geometry_msgs::msg::Pose goal =
+            applyGripperOffset(*in_planning_frame, offset, arm.is_left);
+        moveit::core::RobotState attempt(*state);
+        if (!attempt.setFromIK(jmg, goal, arm.grasp_frame, ik_timeout_s_))
+        {
+            continue;
+        }
+        ++reachable;
+
+        const std::array<double, 3> axis = approachAxis(*in_planning_frame);
+        GraspPlan                   plan;
+        plan.grasp    = goal;
+        plan.pregrasp = goal;
+        // Back along the way the hand came in, not straight up: a grasp reaching in from the
+        // side has its clear approach along its own axis and a ceiling above it.
+        plan.pregrasp.position.x -= axis[0] * approach_standoff_m_;
+        plan.pregrasp.position.y -= axis[1] * approach_standoff_m_;
+        plan.pregrasp.position.z -= axis[2] * approach_standoff_m_;
+        plan.origin = "generated candidate " + std::to_string(i) + " of " +
+                      std::to_string(response->grasps.size()) + ", score " +
+                      std::to_string(i < response->scores.size() ? response->scores[i] : 0.0F);
+        return plan;
+    }
+
+    why = "none of the " + std::to_string(considered) + " candidates considered were usable (" +
+          std::to_string(reachable) + " reachable) out of " +
+          std::to_string(response->grasps.size()) + " offered";
+    return std::nullopt;
+}
+
 void G1ManipulationServer::setStartStateInBounds(MoveGroup& group)
 {
     // The planner aborts if a start joint sits outside its URDF limit by any margin, and no
@@ -469,6 +619,10 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
         moveToNamed(*hand_group, "open");
         arm_group->detachObject(goal->object_id);
         setHandContact(arm, { "<octomap>", goal->object_id }, false);
+        // And the object's own geometry, which the approach step would have removed had it got
+        // that far. Left behind it sits at a pose nothing refreshes, and the next plan for any
+        // goal starts in collision with an object that has since moved or been picked up.
+        planning_scene_.removeCollisionObjects({ goal->object_id });
         result->success = false;
         result->message = phase + ": " + why;
         goal_handle->abort(result);
@@ -478,6 +632,7 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
         moveToNamed(*hand_group, "open");
         arm_group->detachObject(goal->object_id);
         setHandContact(arm, { "<octomap>", goal->object_id }, false);
+        planning_scene_.removeCollisionObjects({ goal->object_id });
         result->success = false;
         result->message = phase + ": cancelled";
         goal_handle->canceled(result);
@@ -504,10 +659,22 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     const moveit_msgs::msg::CollisionObject object =
         publishCollisionObject(*detection, *object_pose);
 
-    const geometry_msgs::msg::Pose grasp_goal =
-        graspFrameGoal(*object_pose, detection->bbox.size.z, arm);
-    geometry_msgs::msg::Pose pregrasp_goal = grasp_goal;
-    pregrasp_goal.position.z += approach_height_m_;
+    std::string why;
+    const auto  chosen = chooseGrasp(*detection, *object_pose, arm, why);
+    if (!chosen)
+    {
+        // No falling back to the fixed grasp: a pick that quietly stops using the generator it
+        // was told to use is the failure the object-pose source's refusal exists to prevent.
+        fail(Pick::Feedback::PHASE_LOCATING, "no usable grasp: " + why);
+        return;
+    }
+    RCLCPP_INFO(
+        get_logger(),
+        "picking '%s' with the %s grasp",
+        goal->object_id.c_str(),
+        chosen->origin.c_str());
+    const geometry_msgs::msg::Pose grasp_goal    = chosen->grasp;
+    const geometry_msgs::msg::Pose pregrasp_goal = chosen->pregrasp;
 
     // A cancel is accepted by the server, so it has to be honoured somewhere: between phases is
     // the only safe place, because a trajectory already executing cannot be unwound here.

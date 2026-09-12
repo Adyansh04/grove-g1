@@ -35,7 +35,9 @@ private:
 
     vision_msgs::msg::Detection3DArray::ConstSharedPtr objects_;
     std::string                                        hand_{ "right" };
-    double                                             approach_height_m_{ 0.10 };
+    /// Offer nothing but the grasp from underneath, so a filter that accepts everything shows.
+    bool   only_from_below_{ false };
+    double approach_height_m_{ 0.10 };
 };
 
 }  // namespace g1_perception

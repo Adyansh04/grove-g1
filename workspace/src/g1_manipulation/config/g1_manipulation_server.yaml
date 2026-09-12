@@ -5,11 +5,9 @@
 # simulation-only is where the object poses come from, in g1_object_pose_source.yaml.
 g1_manipulation_server:
   ros__parameters:
-    # How old a pose may be before a pick refuses to act on it. The source publishes at the
-    # sensor rate (10 Hz), so this tolerates several missed samples while still catching a
-    # dead pipeline, which matters because the alternative is grasping at where an object
-    # was last seen.
-    object_timeout_ms: 1000.0
+    # `object_timeout_ms` is a launch argument, not a key here: a key named under this node
+    # beats the launch's override file whatever the order, and how old a pose may be depends on
+    # what is producing it. The simulator's stream is instant; a detector takes seconds.
 
     # How far above the grasp the approach starts, and how far the object is lifted after the
     # hand closes. Both are along the planning frame's z, which is up while the robot stands.
@@ -51,3 +49,38 @@ g1_manipulation_server:
     velocity_scaling: 0.3
     planning_time_s: 10.0
     grasp_rpy: [-1.5707963, 0.0, 0.0]
+
+    # Where a pick's grasp comes from. "fixed_top_down" is the one this server computes from the
+    # object's box: straight down, at its centre, held at grasp_rpy. "generated" asks whatever
+    # serves grasp_service and takes the best candidate the arm can reach.
+    #
+    # There is no fallback between them. A pick told to use a generator and quietly using the
+    # fixed pose instead would look like it worked.
+    #
+    # `grasp_source` is a launch argument for the same reason `object_timeout_ms` is.
+    grasp_service: "/g1_grasp_engine/generate_grasps"
+
+    # A generator draws samples and scores them on a GPU; this is what a stalled one costs
+    # before the pick gives up and says so.
+    grasp_timeout_s: 20.0
+
+    # Candidates come back best first. Below this score they are not worth the inverse
+    # kinematics call, and past this many the arm is not going to reach a better one.
+    min_grasp_score: 0.5
+    max_grasp_candidates: 20
+
+    # How far from straight down a grasp may come in. Past a right angle the hand is reaching up
+    # from underneath, which on a table means through it; the margin below that leaves room for
+    # a grasp that comes in across a corner.
+    max_approach_tilt_deg: 75.0
+
+    # Where the hand waits before the final move, measured back along the grasp's own approach
+    # axis rather than straight up: a grasp coming in from the side has its clear line along
+    # that axis and a ceiling above it.
+    approach_standoff_m: 0.12
+
+    # Per candidate, and there can be twenty of them, so this is a filter rather than a solve.
+    ik_timeout_s: 0.05
+
+    # `graspgen_to_grasp_frame_xyz_rpy` is a launch argument for the same reason: it describes
+    # whichever generator is answering, and the stand-in's frame is not the real one's.

@@ -187,12 +187,36 @@ the delay assumes, and the acquire otherwise fires before `/lowstate` flows.
 `grasp_rpy` is the only geometric tunable here. The *where* is the grasp frame in the URDF,
 because it is a property of the Dex3 rather than of a task.
 
+## Where a grasp comes from
+
+By default a pick computes its own: straight down at the object's centre, taken just under its
+top face, with the hand held at `grasp_rpy`. That works because the objects are boxes and
+cylinders standing on a table, and it is what every existing test exercises.
+
+With `grasp_source:=generated` the pick asks a grasp generator instead, and keeps the best
+candidate it can actually take. Candidates are filtered cheapest test first: below `min_grasp_score`
+they are not worth solving, past `max_approach_tilt_deg` from straight down the hand is coming up
+through whatever the object rests on, and what survives has to have an inverse-kinematics
+solution for the arm's grasp frame. The pre-grasp then sits back along the grasp's own approach
+axis rather than straight up, because a grasp reaching in from the side has its clear line along
+that axis.
+
+A generated grasp belongs to the generator's own gripper frame, which is not a link in this
+robot's URDF. `grasp_offset` is the measured transform to `<side>_hand_grasp_frame`; it defaults
+to zero, which is what assuming rather than measuring gets you, and
+`docs/guides/open-vocabulary-grasping.md` says how to read it off the candidates in RViz.
+
+There is no fallback between the two. A pick told to use a generator that answers with nothing
+usable aborts and says so, rather than quietly using the pose it would have computed itself.
+
 ## Tests
 
 | Test | Needs a simulator | Covers |
 |---|---|---|
 | `test_object_pose_source_node` | no | Source selection, the **hardware refusal**, the default being the refusing one, frame verification, stamp passthrough, and staying quiet until activated. |
 | `test_grasp_geometry` | no | Arm-to-group-and-frame resolution and its refusals; that the grasp goal passes position through untouched and points the closing axis at the floor; that the two hands mirror. |
+| `test_grasp_filter` | no | The two conversions between a generated grasp and a goal for this arm: the approach tilt a grasp comes in at, and the measured offset into the grasp frame, applied in the grasp's own frame and mirrored per hand. |
+| `test_generated_grasp_pick` | Sim, `-L simulator` | A pick with a generator behind it: a usable candidate is chosen and attempted, a candidate reaching up through the table is refused and named, and an unknown object is still refused. Nothing falls back to the fixed grasp. |
 
 ```bash
 colcon test --packages-select g1_manipulation

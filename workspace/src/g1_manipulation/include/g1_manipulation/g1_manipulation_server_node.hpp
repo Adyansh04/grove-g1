@@ -22,6 +22,7 @@
 #include <g1_msgs/action/pick.hpp>
 #include <g1_msgs/action/place.hpp>
 #include <g1_msgs/action/set_arm_posture.hpp>
+#include <g1_msgs/srv/generate_grasps.hpp>
 #include <geometry_msgs/msg/pose.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <memory>
@@ -190,6 +191,34 @@ private:
         const geometry_msgs::msg::Pose& object_pose, double object_height_m,
         const ArmContext& arm) const;
 
+    /// Where the hand goes and where it starts from, whichever source the grasp came from.
+    struct GraspPlan
+    {
+        geometry_msgs::msg::Pose grasp;
+        geometry_msgs::msg::Pose pregrasp;
+        /// What produced it, for the result message: a generated grasp is worth naming.
+        std::string origin;
+    };
+
+    /**
+     * @brief The grasp to attempt for one object, from whichever source is configured.
+     *
+     * With `grasp_source: fixed_top_down` this is the pose graspFrameGoal computes, reached from
+     * straight above. With `generated` it asks the grasp service and keeps the best candidate
+     * the arm can actually take: scored, not reaching up through the surface, and solvable.
+     *
+     * @param[out] why Why there is nothing to attempt, when it returns nothing. There is no
+     *             fallback to the fixed grasp on purpose: a pick that quietly stops using the
+     *             generator is a pick nobody knows is not using it.
+     */
+    std::optional<GraspPlan> chooseGrasp(
+        const vision_msgs::msg::Detection3D& detection, const geometry_msgs::msg::Pose& object_pose,
+        const ArmContext& arm, std::string& why);
+
+    /// Calls the grasp service, or nothing with the reason in @p why.
+    std::optional<g1_msgs::srv::GenerateGrasps::Response>
+    requestGrasps(const std::string& object_id, const ArmContext& arm, std::string& why);
+
     /**
      * @brief Seeds the plan from the measured state, clamped into the group's URDF limits.
      *
@@ -279,6 +308,7 @@ private:
     std::unique_ptr<tf2_ros::Buffer>            tf_buffer_;
     std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
 
+    rclcpp::Client<g1_msgs::srv::GenerateGrasps>::SharedPtr         grasps_;
     rclcpp::Client<moveit_msgs::srv::GetPlanningScene>::SharedPtr   get_scene_;
     rclcpp::Client<moveit_msgs::srv::ApplyPlanningScene>::SharedPtr apply_scene_;
 
@@ -298,6 +328,17 @@ private:
     // orientation is a choice, and it is the one thing that depends on the surface rather than
     // on the hand.
     std::vector<double> grasp_rpy_;
+
+    /// "fixed_top_down" or "generated". The default is what this server has always done.
+    std::string grasp_source_;
+    double      grasp_timeout_s_{ 20.0 };
+    double      min_grasp_score_{ 0.5 };
+    int         max_grasp_candidates_{ 20 };
+    double      max_approach_tilt_rad_{ 0.0 };
+    double      approach_standoff_m_{ 0.12 };
+    double      ik_timeout_s_{ 0.05 };
+    /// Generator gripper frame to `<side>_hand_grasp_frame`; see grasp_filter.hpp.
+    std::vector<double> graspgen_offset_;
 
     /// One goal at a time across ALL THREE servers. MoveGroupInterface is not thread-safe and
     /// carries mutable start-state and plan state, and two goals on different groups still drive

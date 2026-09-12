@@ -10,6 +10,9 @@ g1_mock_grasp_source:
     # answers the same way so a caller cannot pass here and fail there.
     hand: "right"
 
+    # `only_from_below` is a launch argument, not a key here: a key named under this node beats
+    # the launch's override file whatever the order.
+
     # How far above the object's top face the grasp frame sits. Roughly where a real generator
     # puts a pre-closed hand around something this size.
     approach_height_m: 0.10

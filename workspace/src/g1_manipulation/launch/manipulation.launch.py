@@ -5,6 +5,7 @@ is simulation-specific, and it says so itself: its `hardware` setting refuses to
 """
 
 import os
+from typing import List
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
@@ -14,6 +15,7 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import LifecycleNode, Node
 from launch_ros.event_handlers import OnStateTransition
 from launch_ros.events.lifecycle import ChangeState
+from launch_ros.parameter_descriptions import ParameterValue
 from lifecycle_msgs.msg import Transition
 from moveit_configs_utils import MoveItConfigsBuilder
 
@@ -97,7 +99,13 @@ def generate_launch_description():
         parameters=[
             _moveit_config().to_dict(),
             _config(SHARE, "g1_manipulation_server.yaml"),
-            {"object_timeout_ms": LaunchConfiguration("object_timeout_ms")},
+            {
+                "object_timeout_ms": LaunchConfiguration("object_timeout_ms"),
+                "grasp_source": LaunchConfiguration("grasp_source"),
+                "graspgen_to_grasp_frame_xyz_rpy": ParameterValue(
+                    LaunchConfiguration("grasp_offset"), value_type=List[float]
+                ),
+            },
         ],
     )
 
@@ -116,6 +124,20 @@ def generate_launch_description():
                 default_value="/g1_sensor_relay/object_poses",
                 description="Which stream the pose source republishes. Follows object_source: "
                 "the simulator's own poses, or g1_object_geometry's measured ones.",
+            ),
+            DeclareLaunchArgument(
+                "grasp_source",
+                default_value="fixed_top_down",
+                choices=["fixed_top_down", "generated"],
+                description="Where a pick's grasp comes from: the pose this server computes "
+                "from the object's box, or the best candidate a grasp generator offers.",
+            ),
+            DeclareLaunchArgument(
+                "grasp_offset",
+                default_value="[0.0, 0.0, 0.0, 0.0, 0.0, 0.0]",
+                description="The generator's gripper frame to <side>_hand_grasp_frame, as xyz "
+                "then rpy for the right hand. Zero says they coincide, which is what you get by "
+                "assuming rather than by measuring it against the candidates in RViz.",
             ),
             DeclareLaunchArgument(
                 "object_timeout_ms",

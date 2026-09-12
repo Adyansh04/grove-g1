@@ -38,6 +38,7 @@ G1MockGraspSource::G1MockGraspSource(const rclcpp::NodeOptions& options)
 {
     hand_              = declare_parameter<std::string>("hand", "right");
     approach_height_m_ = declare_parameter<double>("approach_height_m", 0.10);
+    only_from_below_   = declare_parameter<bool>("only_from_below", false);
 
     objects_sub_ = create_subscription<vision_msgs::msg::Detection3DArray>(
         "objects",
@@ -63,6 +64,11 @@ void G1MockGraspSource::onRequest(
     const std::shared_ptr<g1_msgs::srv::GenerateGrasps::Request>&  request,
     const std::shared_ptr<g1_msgs::srv::GenerateGrasps::Response>& response)
 {
+    // Re-read per request rather than held from construction: one simulator run has to be able
+    // to see this generator accepted and refused, and a restart between them costs a minute.
+    hand_            = get_parameter("hand").as_string();
+    only_from_below_ = get_parameter("only_from_below").as_bool();
+
     response->ok = false;
     if (!request->hand.empty() && request->hand != hand_)
     {
@@ -104,16 +110,26 @@ void G1MockGraspSource::onRequest(
     response->ok      = true;
     response->message = "stand-in grasps for '" + request->object_id + "'";
     response->header  = objects_->header;
-    response->grasps  = { approachFromAbove(centre, top + approach_height_m_, 0.0),
-                          approachFromAbove(centre, top + approach_height_m_, M_PI_4),
-                          approachFromAbove(centre, top + approach_height_m_, M_PI_2) };
+    response->grasps.clear();
+    if (!only_from_below_)
+    {
+        response->grasps = { approachFromAbove(centre, top + approach_height_m_, 0.0),
+                             approachFromAbove(centre, top + approach_height_m_, M_PI_4),
+                             approachFromAbove(centre, top + approach_height_m_, M_PI_2) };
+    }
     // Fourth and worst: the same grasp reached from underneath, which no arm can take through a
     // table. Whatever filters these has to reject it, and cannot be tested if it never arrives.
     geometry_msgs::msg::Pose from_below = approachFromAbove(centre, -top - approach_height_m_, 0.0);
     from_below.orientation              = geometry_msgs::msg::Quaternion();
     from_below.orientation.w            = 1.0;
     response->grasps.push_back(from_below);
-    response->scores = { 0.9F, 0.8F, 0.7F, 0.6F };
+    response->scores.assign(response->grasps.size(), 0.0F);
+    // Descending, because a generator answers best first and the filter stops at the first
+    // candidate under the bar.
+    for (std::size_t i = 0; i < response->scores.size(); ++i)
+    {
+        response->scores[i] = static_cast<float>(0.9 - (0.1 * static_cast<double>(i)));
+    }
 }
 
 }  // namespace g1_perception

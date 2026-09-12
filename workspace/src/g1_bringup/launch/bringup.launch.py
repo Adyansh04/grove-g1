@@ -177,6 +177,8 @@ def _manipulation(want_perception):
             else "/g1_sensor_relay/object_poses"
         ),
         object_timeout_ms="4000.0" if want_perception else "1000.0",
+        grasp_source=LaunchConfiguration("grasp_source"),
+        grasp_offset=LaunchConfiguration("grasp_offset"),
     )
 
 
@@ -185,6 +187,7 @@ def _perception():
         os.path.join(_share("g1_perception"), "launch", "perception.launch.py"),
         detector=LaunchConfiguration("detector"),
         grasp_engine=LaunchConfiguration("grasp_engine"),
+        only_from_below=LaunchConfiguration("only_from_below"),
         phrases=LaunchConfiguration("phrases"),
         mock_latency_s=LaunchConfiguration("mock_latency_s"),
         mock_rate_hz=LaunchConfiguration("mock_rate_hz"),
@@ -372,6 +375,25 @@ def generate_launch_description():
             choices=["mock", "vision"],
             description="Which detector perception runs: 'mock' cuts masks from simulator "
             "ground truth and needs no GPU, 'vision' asks the host vision server.",
+        ),
+        DeclareLaunchArgument(
+            "grasp_source",
+            default_value="fixed_top_down",
+            choices=["fixed_top_down", "generated"],
+            description="Where a pick's grasp comes from. 'generated' needs grasp_engine set to "
+            "something that answers.",
+        ),
+        DeclareLaunchArgument(
+            "only_from_below",
+            default_value="false",
+            description="Makes the stand-in grasp generator offer nothing but a grasp reaching "
+            "up through the table, for testing that the filter refuses it.",
+        ),
+        DeclareLaunchArgument(
+            "grasp_offset",
+            default_value="[0.0, 0.0, 0.0, 0.0, 0.0, 0.0]",
+            description="The grasp generator's gripper frame to this robot's grasp frame, xyz "
+            "then rpy. Measure it against the candidates in RViz before trusting it.",
         ),
         DeclareLaunchArgument(
             "grasp_engine",

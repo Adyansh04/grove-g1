@@ -95,7 +95,10 @@ def _nodes(context, *args, **kwargs):
         name="g1_mock_grasp_source",
         output="screen",
         condition=IfCondition(EqualsSubstitution(grasp_engine, "mock")),
-        parameters=[_config("g1_mock_grasp_source.yaml")],
+        parameters=[
+            _config("g1_mock_grasp_source.yaml"),
+            {"only_from_below": LaunchConfiguration("only_from_below")},
+        ],
         remappings=[("objects", "/objects"), ("~/generate_grasps", GRASP_SERVICE)],
     )
 
@@ -149,6 +152,12 @@ def generate_launch_description():
                 default_value="0.005",
                 description="How far past an object's own box the mock's mask may spill. "
                 "Positive simulates a sloppy segmenter.",
+            ),
+            DeclareLaunchArgument(
+                "only_from_below",
+                default_value="false",
+                description="Makes the stand-in generator offer nothing but the grasp reaching "
+                "up through the table, so a filter that accepts everything is visible.",
             ),
             DeclareLaunchArgument(
                 "grasp_engine",
