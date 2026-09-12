@@ -48,6 +48,11 @@ g1_manipulation_server:
     # joints, which bends the path itself.
     velocity_scaling: 0.3
     planning_time_s: 10.0
+
+    # Attempts per motion, not seconds. OMPL samples, and the solution it returns is then checked
+    # by a validation adapter that does reject paths the planner accepted; with one attempt that
+    # rejection is a failed skill rather than another sample.
+    planning_attempts: 5
     grasp_rpy: [-1.5707963, 0.0, 0.0]
 
     # Where a pick's grasp comes from. "fixed_top_down" is the one this server computes from the

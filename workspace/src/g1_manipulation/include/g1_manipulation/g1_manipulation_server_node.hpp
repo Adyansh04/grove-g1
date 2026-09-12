@@ -334,6 +334,7 @@ private:
     double      lift_height_m_{ 0.15 };
     double      velocity_scaling_{ 0.3 };
     double      planning_time_s_{ 5.0 };
+    int         planning_attempts_{ 5 };
     // How the hand is held at the grasp. Where it grips is the grasp frame in the URDF; only the
     // orientation is a choice, and it is the one thing that depends on the surface rather than
     // on the hand.

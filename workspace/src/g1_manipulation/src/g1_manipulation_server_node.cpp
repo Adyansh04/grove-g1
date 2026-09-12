@@ -96,8 +96,9 @@ G1ManipulationServer::G1ManipulationServer(const rclcpp::NodeOptions& options)
     // Well under the joint limits' own 0.8 rad/s cap. Arm motion disturbs a standing humanoid
     // measurably, and slowing the whole path is preferred over clamping joints, which would
     // bend the path itself.
-    velocity_scaling_ = declare_parameter<double>("velocity_scaling", 0.3);
-    planning_time_s_  = declare_parameter<double>("planning_time_s", 5.0);
+    velocity_scaling_  = declare_parameter<double>("velocity_scaling", 0.3);
+    planning_time_s_   = declare_parameter<double>("planning_time_s", 5.0);
+    planning_attempts_ = static_cast<int>(declare_parameter<int>("planning_attempts", 5));
 
     // How the right hand is held at the grasp; the left mirrors its roll. Where it grips is the
     // {side}_hand_grasp_frame link in the URDF, not here. The fingers close toward the palm's
@@ -233,6 +234,10 @@ void G1ManipulationServer::initialize()
         group->setMaxVelocityScalingFactor(velocity_scaling_);
         group->setMaxAccelerationScalingFactor(velocity_scaling_);
         group->setPlanningTime(planning_time_s_);
+        // More than one shot at it. OMPL samples, and its solution is then checked by a
+        // validation adapter that can reject a path the planner was happy with; a single
+        // attempt turns that into a failed skill rather than another sample.
+        group->setNumPlanningAttempts(planning_attempts_);
         groups_.emplace(name, group);
     }
     planning_frame_ = groups_.at("left_arm")->getPlanningFrame();
