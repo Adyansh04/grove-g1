@@ -143,6 +143,7 @@ Then pick a demo. The run commands live in their own guides so this page stays s
 | [Navigation and arm planning](docs/guides/navigation-and-moveit.md) | Mapping, localization, Nav2 goals, and MoveIt planning against the LiDAR octomap. |
 | [Pick and place](docs/guides/pick-and-place.md) | The manipulation skills and the behaviour tree that sequences them with navigation. |
 | [Learned grasping](docs/guides/learned-grasping.md) | A vision-language-action policy behind the planning-scene gate. Runs; does not grasp yet. |
+| [Open-vocabulary perception](docs/guides/open-vocabulary-grasping.md) | Naming objects in text to get instance masks, with no training. Host-side server only so far. |
 
 Each guide lists the launch arguments it uses and why, and
 `ros2 launch g1_bringup bringup.launch.py --show-args` prints the full set.
