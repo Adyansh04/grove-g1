@@ -5,14 +5,8 @@
 # stream, which is the whole reason the real detector exists.
 g1_mock_detector:
   ros__parameters:
-    # What it is willing to name. The same parameter name as the real detector, so a launch that
-    # sets one sets the other, and an empty list means idle in both.
-    phrases:
-      - "red cube"
-      - "green cylinder"
-      - "blue sphere"
-      - "yellow box"
-      - "white cup"
+    # `phrases` is a launch argument, not a key here: what the robot is looking for belongs to
+    # the command line that starts it, and the same argument feeds the real detector.
 
     # Zero is the honest default for a stand-in with nothing to compute. Raise it to 1.5 to make
     # the stack face the real detector's delay: masks then describe a frame from a second and a

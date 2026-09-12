@@ -56,7 +56,7 @@ def _object_source():
             {"object_source": LaunchConfiguration("object_source")},
         ],
         remappings=[
-            ("~/object_poses", "/g1_sensor_relay/object_poses"),
+            ("~/object_poses", LaunchConfiguration("object_poses_topic")),
             ("~/objects", "/objects"),
             ("~/object_markers", "/object_markers"),
         ],
@@ -97,6 +97,7 @@ def generate_launch_description():
         parameters=[
             _moveit_config().to_dict(),
             _config(SHARE, "g1_manipulation_server.yaml"),
+            {"object_timeout_ms": LaunchConfiguration("object_timeout_ms")},
         ],
     )
 
@@ -106,8 +107,21 @@ def generate_launch_description():
                 "object_source",
                 default_value="sim_ground_truth",
                 description="Where object poses come from. 'sim_ground_truth' reads MuJoCo "
-                "bodies through g1_sensor_relay; 'hardware' refuses to configure, because no "
-                "object-detection pipeline exists yet.",
+                "bodies through g1_sensor_relay; 'perception' takes what g1_perception "
+                "measured; 'hardware' refuses to configure, because the robot has no detector "
+                "of its own.",
+            ),
+            DeclareLaunchArgument(
+                "object_poses_topic",
+                default_value="/g1_sensor_relay/object_poses",
+                description="Which stream the pose source republishes. Follows object_source: "
+                "the simulator's own poses, or g1_object_geometry's measured ones.",
+            ),
+            DeclareLaunchArgument(
+                "object_timeout_ms",
+                default_value="1000.0",
+                description="How old a pose may be before a skill refuses to act on it. A real "
+                "detector needs seconds here, not the sub-second a simulator stream affords.",
             ),
             object_source,
         ]

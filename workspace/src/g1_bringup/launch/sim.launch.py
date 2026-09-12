@@ -56,7 +56,7 @@ SIM_START_DELAY_S = 2.0
 # an init that catches the drop bakes a wrong gravity in and the estimate diverges.
 FASTLIO_EXTRA_DELAY_S = 10.0
 
-WORLDS = ("navigation", "perception", "manipulation", "lio")
+WORLDS = ("navigation", "perception", "manipulation", "tabletop", "lio")
 ODOMETRY_SOURCES = ("ground_truth", "fast_lio")
 
 EXPECTED_RMW = "rmw_fastrtps_cpp"

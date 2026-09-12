@@ -40,6 +40,11 @@ bool parseObjectSource(const std::string& name, ObjectSource& out)
         out = ObjectSource::kSimGroundTruth;
         return true;
     }
+    if (name == "perception")
+    {
+        out = ObjectSource::kPerception;
+        return true;
+    }
     if (name == "hardware")
     {
         out = ObjectSource::kHardware;
@@ -64,7 +69,8 @@ bool G1ObjectPoseSource::readParameters()
     {
         RCLCPP_ERROR(
             get_logger(),
-            "object_source='%s' is not a known source. Use 'sim_ground_truth' or 'hardware'.",
+            "object_source='%s' is not a known source. Use 'sim_ground_truth', 'perception' or "
+            "'hardware'.",
             source_name.c_str());
         return false;
     }
@@ -76,11 +82,11 @@ bool G1ObjectPoseSource::readParameters()
         // reads as a broken topic rather than as a subsystem that does not exist yet.
         RCLCPP_ERROR(
             get_logger(),
-            "object_source='hardware' is not implemented: there is no object-detection "
-            "pipeline on this robot yet. Manipulation-perception (instance segmentation and "
-            "6D pose estimation, see the architecture notes Layer 3) is its own milestone. "
-            "Refusing to configure rather than let a grasp planner run on simulator ground "
-            "truth it cannot tell apart from a real measurement.");
+            "object_source='hardware' is not implemented: this robot has no detector of its "
+            "own. 'perception' runs g1_perception against whatever camera is publishing, in "
+            "simulation or on hardware, and is what a real measurement comes from. Refusing to "
+            "configure rather than let a grasp planner run on simulator ground truth it cannot "
+            "tell apart from a real measurement.");
         return false;
     }
 

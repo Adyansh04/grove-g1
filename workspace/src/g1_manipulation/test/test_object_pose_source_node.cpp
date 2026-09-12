@@ -198,6 +198,8 @@ TEST(ObjectSource, ParsesTheSourcesItKnowsAndRejectsTheRest)
     ObjectSource source = ObjectSource::kHardware;
     ASSERT_TRUE(parseObjectSource("sim_ground_truth", source));
     EXPECT_EQ(source, ObjectSource::kSimGroundTruth);
+    ASSERT_TRUE(parseObjectSource("perception", source));
+    EXPECT_EQ(source, ObjectSource::kPerception);
     ASSERT_TRUE(parseObjectSource("hardware", source));
     EXPECT_EQ(source, ObjectSource::kHardware);
 

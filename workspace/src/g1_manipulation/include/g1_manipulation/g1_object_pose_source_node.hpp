@@ -34,6 +34,8 @@ enum class ObjectSource
 {
     /// MuJoCo body poses, sampled inside the simulator and carried by g1_sensor_relay.
     kSimGroundTruth,
+    /// Measured by g1_perception from the camera, in simulation or on the robot.
+    kPerception,
     /// Not implemented. Refuses to configure; see the node's on_configure.
     kHardware,
 };

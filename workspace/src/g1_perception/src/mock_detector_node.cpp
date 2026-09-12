@@ -47,8 +47,11 @@ G1MockDetector::G1MockDetector(const rclcpp::NodeOptions& options)
     depth_sub_ = create_subscription<sensor_msgs::msg::Image>(
         "depth/image_raw", sensorQos(),
         [this](sensor_msgs::msg::Image::ConstSharedPtr depth) { onDepth(std::move(depth)); });
+    // The colour camera_info, not the depth one: its frame is what the real detector stamps its
+    // masks with, and the two optical frames are coincident in the URDF, so the depth pixels
+    // read below are valid in it. Intrinsics are identical for the same reason.
     info_sub_ = create_subscription<sensor_msgs::msg::CameraInfo>(
-        "depth/camera_info", sensorQos(),
+        "camera_info", sensorQos(),
         [this](sensor_msgs::msg::CameraInfo::ConstSharedPtr info) {
             camera_info_ = std::move(info);
         });
@@ -175,7 +178,8 @@ void G1MockDetector::publishMasks()
     }
 
     g1_msgs::msg::InstanceMaskArray masks;
-    masks.header = chosen->header;
+    masks.header.stamp = chosen->header.stamp;
+    masks.header.frame_id = camera_info_->header.frame_id;
     masks.image_width = chosen->width;
     masks.image_height = chosen->height;
     masks.model = "mock";

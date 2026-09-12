@@ -44,6 +44,7 @@ _ENABLED_BY = {
     "g1_navigation": "mode:=mapping and mode:=localization",
     "g1_moveit_config": "moveit:=true",
     "g1_manipulation": "manipulation:=true",
+    "g1_perception": "perception:=true",
     "g1_vla": "vla:=true",
 }
 
@@ -74,7 +75,8 @@ def _include(path, **launch_args):
 # --- validation -----------------------------------------------------------------------------
 
 
-def _validate(mode, want_nav, want_moveit, want_manipulation, want_vla, pin_pelvis):
+def _validate(mode, want_nav, want_moveit, want_manipulation, want_perception, want_vla,
+              pin_pelvis):
     if mode not in MODES:
         raise RuntimeError(
             f"mode:={mode!r} is not a mode. 'none' is the simulator on its own; 'mapping' "
@@ -91,6 +93,11 @@ def _validate(mode, want_nav, want_moveit, want_manipulation, want_vla, pin_pelv
             "manipulation:=true needs moveit:=true. The skills plan and execute through "
             "move_group, so without it every goal fails on a planning pipeline that is not "
             "there."
+        )
+    if want_perception and not want_manipulation:
+        raise RuntimeError(
+            "perception:=true needs manipulation:=true. What perception measures reaches the "
+            "skills through the object-pose source, and that comes with manipulation."
         )
     if want_vla and not want_manipulation:
         raise RuntimeError(
@@ -114,17 +121,19 @@ def _simulator(sim_args):
     return _include(os.path.join(BRINGUP_SHARE, "launch", "sim.launch.py"), **sim_args)
 
 
-def _sim_args(context, navigating, want_manipulation, want_moveit, pin_pelvis):
+def _sim_args(context, navigating, want_manipulation, want_perception, want_moveit, pin_pelvis):
     delay = LaunchConfiguration("sim_start_delay_s").perform(context)
     if not delay:
         delay = SIM_START_DELAY_S["loaded" if navigating or want_moveit else "bare"]
 
     return {
         # Forced on for navigation, which needs the sweep, the relay, the odom chain and the
-        # waist joint states, and for manipulation, whose object ground truth arrives over the
-        # relay's socket.
+        # waist joint states, for manipulation, whose object ground truth arrives over the
+        # relay's socket, and for perception, which has nothing to look at without the camera.
         "sensors": (
-            "true" if navigating or want_manipulation else LaunchConfiguration("sensors")
+            "true"
+            if navigating or want_manipulation or want_perception
+            else LaunchConfiguration("sensors")
         ),
         "world": LaunchConfiguration("world"),
         "odometry": LaunchConfiguration("odometry"),
@@ -156,10 +165,29 @@ def _moveit():
     )
 
 
-def _manipulation():
+def _manipulation(want_perception):
+    # Perception owns the object stream when it runs: its poses are measured, they are named by
+    # the detector, and they arrive seconds after the frame they describe rather than instantly.
     return _include(
         os.path.join(_share("g1_manipulation"), "launch", "manipulation.launch.py"),
-        object_source=LaunchConfiguration("object_source"),
+        object_source="perception" if want_perception else LaunchConfiguration("object_source"),
+        object_poses_topic=(
+            "/g1_object_geometry/object_poses"
+            if want_perception
+            else "/g1_sensor_relay/object_poses"
+        ),
+        object_timeout_ms="4000.0" if want_perception else "1000.0",
+    )
+
+
+def _perception():
+    return _include(
+        os.path.join(_share("g1_perception"), "launch", "perception.launch.py"),
+        detector=LaunchConfiguration("detector"),
+        phrases=LaunchConfiguration("phrases"),
+        mock_latency_s=LaunchConfiguration("mock_latency_s"),
+        mock_rate_hz=LaunchConfiguration("mock_rate_hz"),
+        mock_margin_m=LaunchConfiguration("mock_margin_m"),
     )
 
 
@@ -237,21 +265,28 @@ def _setup(context, *args, **kwargs):
     want_rviz = _flag(context, "rviz")
     want_moveit = _flag(context, "moveit")
     want_manipulation = _flag(context, "manipulation")
+    want_perception = _flag(context, "perception")
     want_vla = _flag(context, "vla")
     pin_pelvis = _flag(context, "pin_pelvis")
     navigating = mode != "none"
 
-    _validate(mode, want_nav, want_moveit, want_manipulation, want_vla, pin_pelvis)
+    _validate(mode, want_nav, want_moveit, want_manipulation, want_perception, want_vla,
+              pin_pelvis)
 
     actions = [
-        _simulator(_sim_args(context, navigating, want_manipulation, want_moveit, pin_pelvis))
+        _simulator(
+            _sim_args(context, navigating, want_manipulation, want_perception, want_moveit,
+                      pin_pelvis)
+        )
     ]
     if navigating:
         actions.append(_navigation(mode, want_nav))
     if want_moveit:
         actions.append(_moveit())
+    if want_perception:
+        actions.append(_perception())
     if want_manipulation:
-        actions.append(_manipulation())
+        actions.append(_manipulation(want_perception))
     if want_vla:
         actions.append(_vla())
     if want_moveit and _flag(context, "activate_arm"):
@@ -320,9 +355,44 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "object_source",
             default_value="sim_ground_truth",
-            description="Where object poses come from with manipulation:=true. "
-            "'sim_ground_truth' reads MuJoCo bodies; 'hardware' refuses to configure, because "
-            "no object-detection pipeline exists yet.",
+            description="Where object poses come from with manipulation:=true, when perception "
+            "is off. 'sim_ground_truth' reads MuJoCo bodies; 'hardware' refuses to configure, "
+            "because the robot has no detector of its own. perception:=true overrides this.",
+        ),
+        DeclareLaunchArgument(
+            "perception",
+            default_value="false",
+            description="Detect objects from the camera instead of reading them out of the "
+            "simulator. Requires manipulation:=true and forces sensors:=true.",
+        ),
+        DeclareLaunchArgument(
+            "detector",
+            default_value="mock",
+            choices=["mock", "vision"],
+            description="Which detector perception runs: 'mock' cuts masks from simulator "
+            "ground truth and needs no GPU, 'vision' asks the host vision server.",
+        ),
+        DeclareLaunchArgument(
+            "phrases",
+            default_value="red cube,green cylinder,blue sphere,yellow box,white cup",
+            description="Comma separated objects the detector looks for.",
+        ),
+        DeclareLaunchArgument(
+            "mock_latency_s",
+            default_value="0.0",
+            description="How far behind the camera the mock detector's masks are. 1.5 is what "
+            "the real one costs.",
+        ),
+        DeclareLaunchArgument(
+            "mock_rate_hz",
+            default_value="10.0",
+            description="How often the mock detector answers. The real one manages 0.7.",
+        ),
+        DeclareLaunchArgument(
+            "mock_margin_m",
+            default_value="0.0",
+            description="How far past an object's box the mock's mask may spill; positive "
+            "simulates a sloppy segmenter.",
         ),
         DeclareLaunchArgument(
             "activate_arm",
@@ -357,7 +427,7 @@ def generate_launch_description():
             description="Which scene to stage. 'navigation' is the facility the committed map "
             "was built from; localization against any other world will not converge. "
             "'manipulation' is one object at arm's length, for a pick without navigating "
-            "to the workbench first.",
+            "to the workbench first; 'tabletop' is five of different shapes, for perception.",
         ),
         DeclareLaunchArgument(
             "headless",

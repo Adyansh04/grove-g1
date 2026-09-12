@@ -16,9 +16,8 @@ g1_detector:
     # an answer the next question is asked. The models cannot beat about 0.7 Hz anyway.
     detect_rate_hz: 1.0
 
-    # Objects to report. Empty means idle, which is the state a bring-up that is not
-    # manipulating should sit in, and `ros2 param set` is how a tree or the grounder changes it.
-    phrases: []
+    # `phrases` is a launch argument, not a key here. Empty means idle, and `ros2 param set` is
+    # how a tree or the instruction grounder changes it while the node runs.
 
     # Asking about a frame older than this wastes a second and a half of GPU on a scene that has
     # moved. The camera publishes at 10 Hz, so anything past a second means it has stopped.

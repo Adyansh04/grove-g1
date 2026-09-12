@@ -66,7 +66,7 @@ target_link_libraries(g1_mock_detector PUBLIC g1_mock_detector_node)
 # --- install ---------------------------------------------------------------
 
 install(DIRECTORY include/ DESTINATION include)
-install(DIRECTORY config DESTINATION share/${PROJECT_NAME})
+install(DIRECTORY config launch DESTINATION share/${PROJECT_NAME})
 install(TARGETS
   g1_perception_object_geometry
   g1_perception_object_tracker
