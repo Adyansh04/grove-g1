@@ -3,20 +3,21 @@
 
 Three claims, none of which any other test covers:
 
-  1. Offered sensible grasps, the pick takes one and gets past locating, which is where every
-     generator-side failure lands: no service, no candidates, nothing solvable.
-  2. Offered only a grasp reaching up through the table, it refuses that one too, and says so.
-     A filter that never rejects anything has not been tested.
-  3. An object nobody is reporting is still refused, with the generator in the loop.
+  1. Offered only a grasp reaching up through the table, the pick refuses it and says so. A
+     filter that never rejects anything has not been tested.
+  2. An object nobody is reporting is still refused, with the generator in the loop.
+  3. Offered sensible grasps, the pick takes one and lifts the object off the table.
+
+The order is load-bearing, alphabetically as unittest runs them: the third case takes the object
+off the table, and the first two need it still on it.
 
 There is no fallback to the fixed top-down pose anywhere in those paths, which is the property
 worth the most here: a pick told to use a generator and quietly not using it would look like it
 worked.
 
-What this test deliberately does not assert is that the object ends up in the hand. The arm's
-rest pose in a scene with a table already fails MoveIt's start-state check before anything moves,
-which is why g1_manipulation's own pick suite is unregistered; that is a separate open problem
-and this pipeline does not fix it.
+This only works because two things happen first: activate_arm moves the arms clear of the table's
+octomap, since a start state in collision has no plan at all, and the approach runs as a straight
+line rather than a planned path.
 """
 
 import os
@@ -44,7 +45,10 @@ OBJECT_ID = "red_cube_0"
 # The stand-in generator answers in its own gripper frame, where +z is the approach direction.
 # This is what turns one of its poses into a goal for right_hand_grasp_frame, and it is exactly
 # the measurement the real generator needs before it can drive anything.
-GRASP_OFFSET = "[0.0, 0.0, 0.09, 1.5707963, 0.0, 0.0]"
+# The z is 4 cm rather than the 9 that would put the grasp frame a centimetre above the object:
+# the last centimetres by a table are where its inflated voxels are, and the Dex3's fingers close
+# over that gap. Against the real generator this whole vector is a measurement, not a choice.
+GRASP_OFFSET = "[0.0, 0.0, 0.04, 1.5707963, 0.0, 0.0]"
 
 
 def _bringup(**arguments):
@@ -126,18 +130,13 @@ class TestGeneratedGraspPick(unittest.TestCase):
         self.assertIsNotNone(future.result(), "the generator never answered set_parameters")
         self.assertTrue(future.result().results[0].successful)
 
-    def test_01_a_generated_grasp_is_chosen_and_attempted(self):
+    def test_03_a_generated_grasp_picks_the_object_up(self):
         result = self._pick()
 
-        # Locating covers the whole generator side: no service, no candidates, nothing usable.
-        # Getting past it means a candidate was transformed, filtered, solved and planned for.
-        self.assertNotIn(
-            "locating",
-            result.message,
-            f"the pick never got a usable grasp out of the generator: {result.message}",
-        )
+        self.assertTrue(result.success, result.message)
+        self.assertIn(OBJECT_ID, result.message)
 
-    def test_02_a_grasp_from_under_the_table_is_refused(self):
+    def test_01_a_grasp_from_under_the_table_is_refused(self):
         # The only candidate on offer now reaches up through the surface the object stands on.
         # Taking it would drive the hand through the table, so the pick has to end here.
         self._set_only_from_below(True)
@@ -150,7 +149,7 @@ class TestGeneratedGraspPick(unittest.TestCase):
         self.assertIn("locating", result.message)
         self.assertIn("candidates", result.message)
 
-    def test_03_an_unknown_object_is_still_refused(self):
+    def test_02_an_unknown_object_is_still_refused(self):
         result = self._pick(object_id="no_such_object")
 
         self.assertFalse(result.success)

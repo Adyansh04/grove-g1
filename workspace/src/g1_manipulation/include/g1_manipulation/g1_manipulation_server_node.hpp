@@ -191,6 +191,16 @@ private:
         const geometry_msgs::msg::Pose& object_pose, double object_height_m,
         const ArmContext& arm) const;
 
+    /**
+     * @brief Moves to @p pose in a straight line, falling back to a planned path.
+     *
+     * For the last stretch into a grasp, where the hand is inches from a surface and a sampling
+     * planner has almost no free space to sample.
+     */
+    bool moveAlongApproach(
+        MoveGroup& group, const geometry_msgs::msg::Pose& pose, const std::string& link,
+        const std::string& what);
+
     /// Where the hand goes and where it starts from, whichever source the grasp came from.
     struct GraspPlan
     {
@@ -337,6 +347,9 @@ private:
     double      max_approach_tilt_rad_{ 0.0 };
     double      approach_standoff_m_{ 0.12 };
     double      ik_timeout_s_{ 0.05 };
+    /// Interpolation step and how much of a straight line must be walkable to take it.
+    double cartesian_step_m_{ 0.005 };
+    double cartesian_min_fraction_{ 0.9 };
     /// Generator gripper frame to `<side>_hand_grasp_frame`; see grasp_filter.hpp.
     std::vector<double> graspgen_offset_;
 

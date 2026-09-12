@@ -209,6 +209,12 @@ to zero, which is what assuming rather than measuring gets you, and
 There is no fallback between the two. A pick told to use a generator that answers with nothing
 usable aborts and says so, rather than quietly using the pose it would have computed itself.
 
+The final approach is a straight line rather than a planned path. Those last centimetres run
+through a table's inflated octomap voxels with the hand exempted and the object removed, which is
+a corridor a sampling planner spends its whole budget failing to thread; `cartesian_min_fraction`
+is how much of the line has to be walkable before it is taken, and below that the pick falls back
+to planning around.
+
 ## Tests
 
 | Test | Needs a simulator | Covers |
@@ -216,7 +222,7 @@ usable aborts and says so, rather than quietly using the pose it would have comp
 | `test_object_pose_source_node` | no | Source selection, the **hardware refusal**, the default being the refusing one, frame verification, stamp passthrough, and staying quiet until activated. |
 | `test_grasp_geometry` | no | Arm-to-group-and-frame resolution and its refusals; that the grasp goal passes position through untouched and points the closing axis at the floor; that the two hands mirror. |
 | `test_grasp_filter` | no | The two conversions between a generated grasp and a goal for this arm: the approach tilt a grasp comes in at, and the measured offset into the grasp frame, applied in the grasp's own frame and mirrored per hand. |
-| `test_generated_grasp_pick` | Sim, `-L simulator` | A pick with a generator behind it: a usable candidate is chosen and attempted, a candidate reaching up through the table is refused and named, and an unknown object is still refused. Nothing falls back to the fixed grasp. |
+| `test_generated_grasp_pick` | Sim, `-L simulator` | A pick with a generator behind it: a candidate reaching up through the table is refused and named, an unknown object is still refused, and a usable candidate picks the object up off the table. Nothing falls back to the fixed grasp. |
 
 ```bash
 colcon test --packages-select g1_manipulation

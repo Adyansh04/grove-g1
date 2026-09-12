@@ -112,7 +112,11 @@ G1ManipulationServer::G1ManipulationServer(const rclcpp::NodeOptions& options)
         declare_parameter<double>("max_approach_tilt_deg", 75.0) * M_PI / 180.0;
     approach_standoff_m_ = declare_parameter<double>("approach_standoff_m", 0.12);
     ik_timeout_s_        = declare_parameter<double>("ik_timeout_s", 0.05);
-    graspgen_offset_     = declare_parameter<std::vector<double>>(
+    // The straight-line approach: how finely it is interpolated, and how much of the line has
+    // to be walkable before it is taken instead of a planned path.
+    cartesian_step_m_       = declare_parameter<double>("cartesian_step_m", 0.005);
+    cartesian_min_fraction_ = declare_parameter<double>("cartesian_min_fraction", 0.8);
+    graspgen_offset_        = declare_parameter<std::vector<double>>(
         "graspgen_to_grasp_frame_xyz_rpy",
         { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 });
 
@@ -533,6 +537,60 @@ void G1ManipulationServer::setStartStateInBounds(MoveGroup& group)
     group.setStartState(bounded);
 }
 
+bool G1ManipulationServer::moveAlongApproach(
+    MoveGroup& group, const geometry_msgs::msg::Pose& pose, const std::string& link,
+    const std::string& what)
+{
+    // A straight line rather than a planned path. The last stretch into a grasp runs a few
+    // centimetres above a table with the hand exempted from the octomap and the object removed,
+    // which is a corridor a sampling planner spends its whole budget failing to thread; a
+    // Cartesian interpolation walks it in one go. This is what MoveIt's own pick pipeline does
+    // for approach and retreat.
+    setStartStateInBounds(group);
+    const std::string previous_tip = group.getEndEffectorLink();
+    group.setEndEffectorLink(link);
+
+    moveit_msgs::msg::RobotTrajectory           path;
+    const std::vector<geometry_msgs::msg::Pose> waypoints{ pose };
+    const double                                fraction =
+        group.computeCartesianPath(waypoints, cartesian_step_m_, path, /*avoid_collisions=*/true);
+    group.setEndEffectorLink(previous_tip);
+
+    if (fraction < cartesian_min_fraction_)
+    {
+        RCLCPP_WARN(
+            get_logger(),
+            "%s: a straight line covered %.0f%% of the way, under the %.0f%% needed; planning "
+            "around instead",
+            what.c_str(),
+            fraction * 100.0,
+            cartesian_min_fraction_ * 100.0);
+        return moveTo(group, pose, link, what);
+    }
+    if (fraction < 1.0)
+    {
+        // Accepted short. The last centimetres into a grasp are the ones a table's inflated
+        // voxels sit in, and the grasp frame is where the fingers close rather than where they
+        // start: coming up a little high closes on the object anyway. Below the fraction above
+        // it is not a grasp any more, which is what that threshold is for.
+        RCLCPP_INFO(
+            get_logger(),
+            "%s: taking a straight line that covers %.0f%% of the way",
+            what.c_str(),
+            fraction * 100.0);
+    }
+
+    MoveGroup::Plan plan;
+    plan.trajectory     = path;
+    const auto executed = group.execute(plan);
+    if (executed != moveit::core::MoveItErrorCode::SUCCESS)
+    {
+        RCLCPP_ERROR(get_logger(), "%s: execution failed (%d)", what.c_str(), executed.val);
+        return false;
+    }
+    return true;
+}
+
 bool G1ManipulationServer::moveTo(
     MoveGroup& group, const geometry_msgs::msg::Pose& pose, const std::string& link,
     const std::string& what)
@@ -716,7 +774,7 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     setHandContact(arm, { "<octomap>" }, true);
     planning_scene_.removeCollisionObjects({ goal->object_id });
 
-    if (!moveTo(*arm_group, grasp_goal, arm.grasp_frame, "approach"))
+    if (!moveAlongApproach(*arm_group, grasp_goal, arm.grasp_frame, "approach"))
     {
         fail(Pick::Feedback::PHASE_APPROACH, "could not reach the grasp pose");
         return;
