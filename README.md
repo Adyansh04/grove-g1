@@ -30,9 +30,9 @@ the LiDAR, and each Dex3-1 hand is its own planning group with `open` and `close
 On top of that, pick and place are served as actions, and a BehaviorTree.CPP behaviour tree
 sequences them with navigation into a mission that runs end to end in the facility world: drive
 to a workbench, walk the last half metre under closed-loop control, pick a cube up, carry it
-across the building, and put it down on a bench. Object poses come from a source that refuses to
-run on hardware, because there is no object-detection pipeline yet; a real one replaces it
-without the skills changing.
+across the building, and put it down on a bench. Object poses are measured from the head camera:
+objects are named in plain text, segmented, and lifted into 3D with the aligned depth frame, so
+nothing in the skills depends on the simulator knowing where anything is.
 
 Nav2 parks within 0.5 m of a goal and the arm's usable window is about 0.2 m wide, so a base
 approach skill closes the gap against the measured object rather than against the map. The tree
@@ -143,7 +143,7 @@ Then pick a demo. The run commands live in their own guides so this page stays s
 | [Navigation and arm planning](docs/guides/navigation-and-moveit.md) | Mapping, localization, Nav2 goals, and MoveIt planning against the LiDAR octomap. |
 | [Pick and place](docs/guides/pick-and-place.md) | The manipulation skills and the behaviour tree that sequences them with navigation. |
 | [Learned grasping](docs/guides/learned-grasping.md) | A vision-language-action policy behind the planning-scene gate. Runs; does not grasp yet. |
-| [Open-vocabulary perception](docs/guides/open-vocabulary-grasping.md) | Naming objects in text to get instance masks, with no training. Host-side server only so far. |
+| [Open-vocabulary perception](docs/guides/open-vocabulary-grasping.md) | Naming objects in text and getting their 3D poses, with no dataset and no training. |
 
 Each guide lists the launch arguments it uses and why, and
 `ros2 launch g1_bringup bringup.launch.py --show-args` prints the full set.

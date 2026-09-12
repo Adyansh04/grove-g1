@@ -1,9 +1,38 @@
 # Open-vocabulary perception
 
-Name an object in plain text and get instance masks back, with no dataset and no training. This is
-the host-side half: a vision server that turns an RGB frame plus a list of noun phrases into one
-mask per object. The ROS side that lifts those masks into object poses and grasps is built on top
-of it.
+Name an object in plain text and get its 3D pose, with no dataset and no training. Two halves: a
+vision server on the host that turns an RGB frame plus a list of noun phrases into one mask per
+object, and `g1_perception` in the container, which lifts those masks into the object poses the
+manipulation skills consume.
+
+## Running it in the stack
+
+The stand-in detector cuts masks out of simulator ground truth, so the whole pipeline below the
+mask runs without a GPU or a server:
+
+```bash
+ros2 launch g1_bringup bringup.launch.py world:=tabletop pin_pelvis:=true \
+  odometry:=ground_truth moveit:=true manipulation:=true perception:=true detector:=mock
+```
+
+With the real models, once the server below is running:
+
+```bash
+ros2 launch g1_bringup bringup.launch.py world:=tabletop pin_pelvis:=true \
+  odometry:=ground_truth moveit:=true manipulation:=true perception:=true detector:=vision \
+  phrases:="red cube,white cup"
+```
+
+`perception:=true` makes the object-pose source take measured poses instead of the simulator's,
+and widens the staleness window the skills judge against, because a detector answers in seconds
+rather than milliseconds. Objects arrive on `/objects` as `red_cube_0`, plus a bare `red_cube`
+while only one of them is in view.
+
+Measured against the simulator's own poses in the tabletop world: four of the five objects land
+within 2 mm, and the sphere sits 1.2 cm short along the view direction, because no camera can see
+its far side. Sizes come back within 5 mm except the sphere's.
+
+## The host half
 
 ## Setup
 
