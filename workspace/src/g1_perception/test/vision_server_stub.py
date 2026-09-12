@@ -21,6 +21,13 @@ BOXES = {
     "blue sphere": (300, 200, 24, 24),
 }
 SCORE = 0.77
+# What a grounding model would answer for the instruction the test sends.
+GROUNDING = {
+    "model": "stub-vlm",
+    "phrases": ["red cube", "blue sphere"],
+    "target": "blue sphere",
+    "points": [{"phrase": "blue sphere", "x": 312, "y": 204}],
+}
 
 
 def _complaint(data):
@@ -61,6 +68,15 @@ def _segment(data):
     return {"model": "stub", "elapsed_ms": 1.0, "instances": instances}
 
 
+def _ground(data):
+    image = data.get("image")
+    if not isinstance(image, np.ndarray) or image.ndim != 3:
+        return {"error": "ValueError: image must be an (H, W, 3) array"}
+    if not str(data.get("instruction", "")).strip():
+        return {"error": "ValueError: an instruction is required"}
+    return dict(GROUNDING)
+
+
 def main():
     import zmq
 
@@ -75,6 +91,8 @@ def main():
                 reply = {"status": "ok", "backend": "stub", "device": "cpu"}
             elif endpoint == "segment":
                 reply = _segment(request.get("data") or {})
+            elif endpoint == "ground":
+                reply = _ground(request.get("data") or {})
             else:
                 reply = {"error": f"unknown endpoint {endpoint!r}"}
             socket.send(msgpack.packb(reply, default=mnp.encode))

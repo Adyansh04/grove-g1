@@ -1,0 +1,183 @@
+#!/usr/bin/env python3
+"""Turns an instruction into the noun phrases the detector can be asked for.
+
+"pick up the mug to the left of the bowl" is not something an open-vocabulary detector can take:
+it parses a short noun phrase with an attribute or two and nothing else. A model that can look at
+the scene can, so this asks the host vision server's grounding endpoint and installs the answer
+on the detector's `phrases` parameter, which is the detector's whole control interface.
+
+Python for the same reason the other two adapters are: it is a ZMQ and msgpack client.
+"""
+
+import msgpack
+import msgpack_numpy as mnp
+import numpy as np
+import rclpy
+import zmq
+from rcl_interfaces.srv import SetParameters
+from rclpy.node import Node
+from rclpy.parameter import Parameter
+from rclpy.qos import qos_profile_sensor_data
+from sensor_msgs.msg import Image
+
+from g1_msgs.msg import ExemplarPoint
+from g1_msgs.srv import GroundInstruction
+
+
+class VisionClient:
+    """One REQ socket to the vision server, rebuilt whenever a request does not complete."""
+
+    def __init__(self, address, timeout_ms):
+        self._address = address
+        self._timeout_ms = timeout_ms
+        self._context = zmq.Context()
+        self._socket = None
+        self._connect()
+
+    def _connect(self):
+        if self._socket is not None:
+            self._socket.close(linger=0)
+        self._socket = self._context.socket(zmq.REQ)
+        self._socket.setsockopt(zmq.RCVTIMEO, self._timeout_ms)
+        self._socket.setsockopt(zmq.SNDTIMEO, self._timeout_ms)
+        self._socket.connect(self._address)
+
+    def call(self, endpoint, data=None):
+        request = {"endpoint": endpoint}
+        if data is not None:
+            request["data"] = data
+        try:
+            self._socket.send(msgpack.packb(request, default=mnp.encode))
+            reply = msgpack.unpackb(self._socket.recv(), object_hook=mnp.decode, raw=False)
+        except zmq.ZMQError as error:
+            self._connect()
+            raise RuntimeError(f"{endpoint} did not complete: {error}") from error
+        if isinstance(reply, dict) and "error" in reply:
+            raise RuntimeError(f"the vision server refused {endpoint}: {reply['error']}")
+        return reply
+
+    def close(self):
+        if self._socket is not None:
+            self._socket.close(linger=0)
+        self._context.term()
+
+
+def image_to_array(msg):
+    """An rgb8 Image as (H, W, 3) uint8, without pulling in cv_bridge for one reshape."""
+    if msg.encoding != "rgb8":
+        raise ValueError(f"expected rgb8, got {msg.encoding}")
+    frame = np.frombuffer(msg.data, dtype=np.uint8)
+    return frame.reshape(msg.height, msg.step // 3, 3)[:, : msg.width, :]
+
+
+class InstructionGrounder(Node):
+    def __init__(self):
+        super().__init__(
+            "g1_instruction_grounder", automatically_declare_parameters_from_overrides=True
+        )
+        self._address = self._param("server_address", "tcp://127.0.0.1:5560")
+        self._max_phrases = int(self._param("max_phrases", 6))
+        self._max_image_age_s = float(self._param("max_image_age_s", 2.0))
+        self._apply_phrases = bool(self._param("apply_phrases", True))
+        self._detector_node = str(self._param("detector_node", "/g1_detector"))
+
+        self._image = None
+        # Sensor QoS deliberately: the relay publishes best-effort, and a reliable subscriber
+        # against it silently never matches.
+        self.create_subscription(Image, "color/image_raw", self._on_image, qos_profile_sensor_data)
+        self._set_parameters = self.create_client(
+            SetParameters, f"{self._detector_node}/set_parameters"
+        )
+        self._client = VisionClient(self._address, int(self._param("zmq_timeout_ms", 30000)))
+        self.create_service(GroundInstruction, "~/ground", self._on_request)
+
+    def _param(self, name, default):
+        return self.get_parameter_or(name, rclpy.parameter.Parameter(name, value=default)).value
+
+    def _on_image(self, msg):
+        self._image = msg
+
+    def _install(self, phrases):
+        """Writes the phrases onto the detector, which is how it is told what to look for."""
+        if not self._set_parameters.wait_for_service(timeout_sec=5.0):
+            raise RuntimeError(f"{self._detector_node} is not accepting parameters")
+        request = SetParameters.Request()
+        request.parameters = [
+            Parameter("phrases", Parameter.Type.STRING_ARRAY, phrases).to_parameter_msg()
+        ]
+        future = self._set_parameters.call_async(request)
+        # Spun by the executor, not here: this runs inside a service callback.
+        future.result()
+
+    def _on_request(self, request, response):
+        response.ok = False
+        image = self._image
+        if image is None:
+            response.message = "no camera frame yet"
+            return response
+        age = (
+            self.get_clock().now() - rclpy.time.Time.from_msg(image.header.stamp)
+        ).nanoseconds / 1e9
+        if age > self._max_image_age_s:
+            response.message = f"the newest camera frame is {age:.1f} s old"
+            return response
+        if not request.instruction.strip():
+            response.message = "an instruction is required"
+            return response
+
+        try:
+            reply = self._client.call(
+                "ground",
+                {"image": image_to_array(image), "instruction": request.instruction},
+            )
+        except (RuntimeError, ValueError) as error:
+            response.message = str(error)
+            return response
+
+        phrases = [str(phrase) for phrase in reply.get("phrases", [])][: self._max_phrases]
+        if not phrases:
+            response.message = "the model named no objects in this scene"
+            return response
+        target = str(reply.get("target", phrases[0]))
+        if target not in phrases:
+            phrases.append(target)
+
+        response.ok = True
+        response.message = f"{reply.get('model', 'the model')} named {phrases}"
+        response.phrases = phrases
+        response.target_phrase = target
+        response.header = image.header
+        for point in reply.get("points", []):
+            exemplar = ExemplarPoint()
+            exemplar.phrase = str(point.get("phrase", target))
+            exemplar.x = int(point.get("x", 0))
+            exemplar.y = int(point.get("y", 0))
+            response.exemplars.append(exemplar)
+
+        if self._apply_phrases:
+            try:
+                self._install(phrases)
+            except RuntimeError as error:
+                # The phrases are still the answer; the caller can set them itself.
+                response.message += f" (not installed: {error})"
+        return response
+
+    def close(self):
+        self._client.close()
+
+
+def main():
+    rclpy.init()
+    node = InstructionGrounder()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.close()
+        node.destroy_node()
+        rclpy.try_shutdown()
+
+
+if __name__ == "__main__":
+    main()

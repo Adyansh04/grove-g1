@@ -90,7 +90,10 @@ install(TARGETS
   EXPORT export_${PROJECT_NAME} DESTINATION lib)
 install(TARGETS g1_object_geometry g1_mock_detector g1_mock_grasp_source
   DESTINATION lib/${PROJECT_NAME})
-install(PROGRAMS scripts/g1_detector scripts/g1_graspgen_adapter
+install(PROGRAMS
+  scripts/g1_detector
+  scripts/g1_graspgen_adapter
+  scripts/g1_instruction_grounder
   DESTINATION lib/${PROJECT_NAME})
 
 # --- tests -----------------------------------------------------------------
@@ -116,6 +119,8 @@ if(BUILD_TESTING)
   add_launch_test(test/test_detector.launch.py TARGET test_detector TIMEOUT 240)
 
   add_launch_test(test/test_graspgen_adapter.launch.py TARGET test_graspgen_adapter TIMEOUT 240)
+
+  add_launch_test(test/test_grounder.launch.py TARGET test_grounder TIMEOUT 240)
 
   add_launch_test(test/test_perception_objects.launch.py TARGET test_perception_objects
     TIMEOUT 500)

@@ -145,3 +145,32 @@ closing direction. That is not a link in this robot's URDF. Look at the arrows i
 known object, read off the offset to `right_hand_grasp_frame`, and that number is what the arm
 side applies. Left-hand requests are refused rather than mirrored: a mirrored sweep volume is a
 different gripper, and the model was never asked about it.
+
+## Instructions
+
+A detector takes a noun phrase. Turning "pick up the mug to the left of the bowl" into one is a
+different job, and a vision-language model does it. Start the server with one:
+
+```bash
+~/ref/grove-vision/.venv/bin/python scripts/vision_server.py \
+  --vlm Qwen/Qwen3-VL-2B-Instruct --port 5560
+```
+
+It loads on the first grounding request rather than at startup, so segmentation is unaffected
+until something asks. Then run the grounder beside the detector:
+
+```bash
+ros2 launch g1_bringup bringup.launch.py world:=tabletop pin_pelvis:=true \
+  odometry:=ground_truth moveit:=true manipulation:=true perception:=true \
+  detector:=vision grounding:=true
+```
+
+```bash
+ros2 service call /ground_instruction g1_msgs/srv/GroundInstruction \
+  "{instruction: 'pick up the white cup next to the green cylinder'}"
+```
+
+The answer is the phrases, which of them the instruction was about, and points where the model
+could give them. Those phrases are written straight onto the detector, so the next detection
+looks for them. Ask for the target's object id on `/objects` a second or two later: the detector
+needs one pass to find it.

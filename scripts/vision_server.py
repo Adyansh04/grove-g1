@@ -5,7 +5,7 @@ Same split as scripts/groot_server.py and for the same reason: the segmentation 
 and CUDA, the ROS image deliberately has neither, and g1_detector speaks this server's ZMQ protocol
 instead of importing a model package.
 
-Two backends, chosen with --backend, behind one reply format:
+Two segmentation backends, chosen with --backend, behind one reply format:
 
   grounded-sam2  Grounding DINO boxes refined into masks by SAM 2.1. Apache-2.0 and ungated, so it
                  is the default and the only one that works out of the box.
@@ -15,6 +15,11 @@ Two backends, chosen with --backend, behind one reply format:
 
     ./scripts/vision_server.py --port 5560
     ./scripts/vision_server.py --backend sam3 --port 5560
+    ./scripts/vision_server.py --vlm Qwen/Qwen3-VL-2B-Instruct --port 5560
+
+A vision-language model is loaded only when --vlm names one, and only on the first `ground`
+request, because it answers a different question: which objects an instruction is about. The
+detector cannot parse "the mug left of the bowl"; this turns that into noun phrases it can.
 
 Run scripts/setup-vision.sh first.
 
@@ -32,6 +37,7 @@ and a missing reply strands it until its timeout.
 """
 
 import argparse
+import json
 import sys
 import time
 
@@ -195,6 +201,119 @@ class Sam3Backend:
         return instances
 
 
+GROUNDING_PROMPT = """Look at this image and read this instruction: "{instruction}"
+
+Answer with JSON only, no prose:
+{{"phrases": ["short noun phrase", ...], "target": "the phrase the instruction is about",
+ "points": [{{"phrase": "...", "x": <pixel>, "y": <pixel>}}]}}
+
+Each phrase names one kind of object in at most three words, with a colour or size if that tells
+two apart. No relations between objects and no sentences: a detector will be asked for each
+phrase on its own. Point at the target's centre if you can; leave "points" empty if you cannot.
+"""
+
+
+class GroundingBackend:
+    """A vision-language model, loaded on the first request rather than at startup."""
+
+    def __init__(self, model_id, device, dtype, max_new_tokens):
+        self._model_id = model_id
+        self._device = device
+        self._dtype = dtype
+        self._max_new_tokens = max_new_tokens
+        self._model = None
+        self._processor = None
+
+    @property
+    def name(self):
+        return self._model_id
+
+    def _load(self):
+        if self._model is not None:
+            return
+        from transformers import AutoModelForImageTextToText, AutoProcessor
+
+        print(f"loading {self._model_id} for grounding", flush=True)
+        self._processor = AutoProcessor.from_pretrained(self._model_id)
+        self._model = (
+            AutoModelForImageTextToText.from_pretrained(self._model_id, dtype=self._dtype)
+            .to(self._device)
+            .eval()
+        )
+
+    def ground(self, image, instruction):
+        self._load()
+        from PIL import Image
+
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": Image.fromarray(image)},
+                    {"type": "text", "text": GROUNDING_PROMPT.format(instruction=instruction)},
+                ],
+            }
+        ]
+        inputs = self._processor.apply_chat_template(
+            messages,
+            add_generation_prompt=True,
+            tokenize=True,
+            return_dict=True,
+            return_tensors="pt",
+        ).to(self._device)
+        with torch.inference_mode():
+            generated = self._model.generate(**inputs, max_new_tokens=self._max_new_tokens)
+        answer = self._processor.batch_decode(
+            generated[:, inputs["input_ids"].shape[1] :], skip_special_tokens=True
+        )[0]
+        return parse_grounding(answer)
+
+
+def parse_grounding(answer):
+    """The JSON out of a model's answer, however much prose it wrapped around it."""
+    start = answer.find("{")
+    end = answer.rfind("}")
+    if start < 0 or end <= start:
+        raise ValueError(f"no JSON in the model's answer: {answer[:200]!r}")
+    parsed = json.loads(answer[start : end + 1])
+    phrases = [str(phrase).strip() for phrase in parsed.get("phrases", []) if str(phrase).strip()]
+    if not phrases:
+        raise ValueError("the model named no objects")
+    target = str(parsed.get("target", "")).strip() or phrases[0]
+    if target not in phrases:
+        # A target nobody can be asked for is worse than a guess: the detector takes phrases.
+        phrases.append(target)
+    points = []
+    for point in parsed.get("points", []):
+        try:
+            points.append(
+                {
+                    "phrase": str(point["phrase"]),
+                    "x": int(round(float(point["x"]))),
+                    "y": int(round(float(point["y"]))),
+                }
+            )
+        except (KeyError, TypeError, ValueError):
+            continue
+    return {"phrases": phrases, "target": target, "points": points}
+
+
+def _ground_request(grounding, payload):
+    if grounding is None:
+        raise ValueError("this server was started without --vlm, so it cannot ground anything")
+    image = payload.get("image")
+    instruction = str(payload.get("instruction", "")).strip()
+    if not isinstance(image, np.ndarray) or image.ndim != 3 or image.shape[2] != 3:
+        raise ValueError("image must be an (H, W, 3) uint8 array")
+    if not instruction:
+        return {"error": "ValueError: an instruction is required"}
+    started = time.perf_counter()
+    result = grounding.ground(image, instruction)
+    result["model"] = grounding.name
+    result["elapsed_ms"] = (time.perf_counter() - started) * 1000.0
+    return result
+
+
 def _build_backend(args):
     device = args.device if args.device != "auto" else ("cuda" if torch.cuda.is_available() else "cpu")
     dtype = {"float32": torch.float32, "bfloat16": torch.bfloat16, "float16": torch.float16}[
@@ -230,11 +349,13 @@ def _segment_request(backend, payload, args):
     }
 
 
-def serve(backend, device, args):
+def serve(backend, device, args, grounding=None):
     context = zmq.Context()
     socket = context.socket(zmq.REP)
     socket.bind(f"tcp://{args.host}:{args.port}")
     print(f"serving {backend.name} on {device} at tcp://{args.host}:{args.port}", flush=True)
+    if grounding is not None:
+        print(f"  grounding with {grounding.name}, loaded on the first request", flush=True)
     try:
         while True:
             request = msgpack.unpackb(socket.recv(), object_hook=mnp.decode, raw=False)
@@ -244,6 +365,8 @@ def serve(backend, device, args):
                     reply = {"status": "ok", "backend": backend.name, "device": device}
                 elif endpoint == "segment":
                     reply = _segment_request(backend, request.get("data") or {}, args)
+                elif endpoint == "ground":
+                    reply = _ground_request(grounding, request.get("data") or {})
                 else:
                     raise ValueError(f"unknown endpoint {endpoint!r}")
             except Exception as error:  # noqa: BLE001 - the client gets every failure as a reply
@@ -294,6 +417,13 @@ def main():
     parser.add_argument("--detector-model", default=DEFAULT_DETECTOR)
     parser.add_argument("--segmenter-model", default=DEFAULT_SEGMENTER)
     parser.add_argument("--sam3-model", default=DEFAULT_SAM3)
+    parser.add_argument(
+        "--vlm",
+        default="",
+        help="a vision-language model for the ground endpoint, e.g. Qwen/Qwen3-VL-2B-Instruct. "
+        "Loaded on the first request; without it the endpoint says so.",
+    )
+    parser.add_argument("--vlm-max-new-tokens", type=int, default=256)
     parser.add_argument("--device", default="auto")
     parser.add_argument("--dtype", choices=["float32", "bfloat16", "float16"], default="float32")
     parser.add_argument("--box-threshold", type=float, default=0.30)
@@ -319,7 +449,13 @@ def main():
 
     if args.self_test:
         return self_test(backend, args)
-    serve(backend, device, args)
+    grounding = None
+    if args.vlm:
+        dtype = {"float32": torch.float32, "bfloat16": torch.bfloat16, "float16": torch.float16}[
+            args.dtype
+        ]
+        grounding = GroundingBackend(args.vlm, device, dtype, args.vlm_max_new_tokens)
+    serve(backend, device, args, grounding)
     return 0
 
 

@@ -88,6 +88,16 @@ def _nodes(context, *args, **kwargs):
             ("depth/camera_info", DEPTH_INFO),
         ],
     )
+    grounder = Node(
+        package="g1_perception",
+        executable="g1_instruction_grounder",
+        name="g1_instruction_grounder",
+        output="screen",
+        condition=IfCondition(LaunchConfiguration("grounding")),
+        parameters=[_config("g1_instruction_grounder.yaml")],
+        remappings=[("color/image_raw", COLOR_IMAGE), ("~/ground", "/ground_instruction")],
+    )
+
     grasp_engine = LaunchConfiguration("grasp_engine")
     mock_grasps = Node(
         package="g1_perception",
@@ -117,7 +127,7 @@ def _nodes(context, *args, **kwargs):
             ("~/grasp_candidates", "/grasp_candidates"),
         ],
     )
-    return [mock, vision, geometry, mock_grasps, graspgen]
+    return [mock, vision, geometry, grounder, mock_grasps, graspgen]
 
 
 def generate_launch_description():
@@ -152,6 +162,12 @@ def generate_launch_description():
                 default_value="0.005",
                 description="How far past an object's own box the mock's mask may spill. "
                 "Positive simulates a sloppy segmenter.",
+            ),
+            DeclareLaunchArgument(
+                "grounding",
+                default_value="false",
+                description="Runs the instruction grounder, which turns a sentence into the "
+                "phrases the detector looks for. Needs the vision server started with --vlm.",
             ),
             DeclareLaunchArgument(
                 "only_from_below",

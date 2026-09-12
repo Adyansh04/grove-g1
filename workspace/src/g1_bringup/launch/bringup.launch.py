@@ -188,6 +188,7 @@ def _perception():
         detector=LaunchConfiguration("detector"),
         grasp_engine=LaunchConfiguration("grasp_engine"),
         only_from_below=LaunchConfiguration("only_from_below"),
+        grounding=LaunchConfiguration("grounding"),
         phrases=LaunchConfiguration("phrases"),
         mock_latency_s=LaunchConfiguration("mock_latency_s"),
         mock_rate_hz=LaunchConfiguration("mock_rate_hz"),
@@ -382,6 +383,12 @@ def generate_launch_description():
             choices=["fixed_top_down", "generated"],
             description="Where a pick's grasp comes from. 'generated' needs grasp_engine set to "
             "something that answers.",
+        ),
+        DeclareLaunchArgument(
+            "grounding",
+            default_value="false",
+            description="Runs the instruction grounder beside the detector. Needs the host "
+            "vision server started with --vlm.",
         ),
         DeclareLaunchArgument(
             "only_from_below",

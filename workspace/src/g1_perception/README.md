@@ -29,6 +29,7 @@ colcon build --symlink-install --packages-select g1_perception
 | `g1_object_geometry` | Deprojects each mask, finds the surface the object stands on, fits a box, and tracks it across frames so an id keeps naming one object. |
 | `g1_graspgen_adapter` | Sends the depth frame, its intrinsics and one object's mask to the host grasp generator and serves the grasps it answers with. Python, see below. |
 | `g1_mock_grasp_source` | Answers the same service from `/objects` alone: three sensible grasps and one reaching up through the table. No GPU. |
+| `g1_instruction_grounder` | Turns an instruction into the noun phrases the detector can be asked for, and writes them onto it. Python, see below. |
 
 ## Interfaces
 
@@ -41,6 +42,7 @@ colcon build --symlink-install --packages-select g1_perception
 | Pub | `~/object_poses` (geometry) | `vision_msgs/Detection3DArray`, reliable |
 | Pub | `~/tracked_masks` (geometry) | `g1_msgs/InstanceMaskArray`, the input masks relabelled with object ids |
 | Srv | `~/generate_grasps` (both grasp sources) | `g1_msgs/GenerateGrasps` |
+| Srv | `~/ground` (grounder) | `g1_msgs/GroundInstruction` |
 | Pub | `~/grasp_candidates` (graspgen) | `visualization_msgs/MarkerArray`, one arrow per candidate along its approach axis |
 
 Images come in at sensor QoS because the relay publishes best-effort and a reliable subscriber
@@ -74,13 +76,21 @@ many of them there turned out to be.
 `phrases` is a launch argument rather than a file key, and `ros2 param set` changes it while the
 node runs.
 
-## Why two nodes are Python
+## Why three nodes are Python
 
-`g1_detector` and `g1_graspgen_adapter` are ZMQ and msgpack clients. The models they talk to need
+`g1_detector`, `g1_graspgen_adapter` and `g1_instruction_grounder` are ZMQ and msgpack clients. The models they talk to need
 torch and CUDA, which this image deliberately does not have, so they run on the host and these
 nodes speak their wire
 protocol, exactly as `g1_vla`'s policy adapter does. Everything the masks are then used for is
 C++: the geometry, the tracking, and both stand-ins.
+
+## Instructions
+
+A detector takes "red cube". It does not take "the mug to the left of the bowl": no relations, no
+sentences, and no notion of which object a sentence is about. `g1_instruction_grounder` asks a
+vision-language model on the host to name the objects in the scene and say which one the
+instruction means, then writes those phrases onto the detector's `phrases` parameter. That is the
+detector's whole control interface, so nothing else had to be built to steer it.
 
 ## Grasps
 
@@ -131,5 +141,6 @@ ros2 topic echo /objects --field detections[0].results[0].hypothesis
 | `test_object_tracker` | No | Ids that survive jitter, a second instance getting its own index, two neighbours that must not swap, index reuse after a timeout, and the sole-instance alias. |
 | `test_depth_history` | No | Pairing a late mask with its own depth frame, refusing one outside the tolerance, and dropping frames past the window. |
 | `test_detector` | No | The detector client against a stub vision server: the request encoding, the mask message, the image's own stamp, and a phrase list that is re-read rather than cached. |
+| `test_grounder` | No | The grounder against a stub: an instruction becomes phrases, the target is one of them, the phrases actually reach the detector's parameter, exemplar points survive, and an empty instruction is refused. |
 | `test_graspgen_adapter` | No | The grasp adapter against a stub generator: the request encoding the real server would reject, the frame and stamp of the answer, ordering by confidence, an unknown object, and a left-hand request refused rather than mirrored. |
 | `test_perception_objects` | Sim, `-L simulator` | Measured poses against the simulator's own, for all five tabletop objects: position within 2 cm, size within 2.5 cm, both names published, and the stamp being the measurement's rather than the publisher's. |
