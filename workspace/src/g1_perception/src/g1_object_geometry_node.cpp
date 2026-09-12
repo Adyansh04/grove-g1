@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 #include <tf2/LinearMath/Matrix3x3.hpp>
 #include <tf2/LinearMath/Quaternion.hpp>
@@ -14,9 +15,12 @@ namespace
 {
 
 /// Best-effort in, matching the relay's sensor QoS: a reliable subscriber never matches it.
+///
+/// Deeper than the usual one: a mask names the frame it was cut from, and a depth frame dropped
+/// on arrival cannot be recovered later. At 2.9 MB a frame, two arriving together lose one.
 rclcpp::QoS sensorQos()
 {
-    return rclcpp::QoS(rclcpp::KeepLast(1)).best_effort().durability_volatile();
+    return rclcpp::QoS(rclcpp::KeepLast(8)).best_effort().durability_volatile();
 }
 
 /// Reliable out and in for masks: 13 kB at under a hertz, and a dropped frame is seconds blind.
@@ -71,6 +75,7 @@ G1ObjectGeometry::G1ObjectGeometry(const rclcpp::NodeOptions& options)
     depth_gate_m_ = declare_parameter<double>("depth_gate_m", 0.05);
     min_points_ = static_cast<int>(declare_parameter<int>("min_points", 150));
     min_support_points_ = static_cast<int>(declare_parameter<int>("min_support_points", 50));
+    support_band_m_ = declare_parameter<double>("support_band_m", 0.06);
     min_extent_m_ = declare_parameter<double>("min_extent_m", 0.01);
     max_extent_m_ = declare_parameter<double>("max_extent_m", 0.40);
     min_score_ = declare_parameter<double>("min_score", 0.30);
@@ -141,17 +146,30 @@ std::optional<OrientedBox> G1ObjectGeometry::measure(
     }
     gateByMedianDepth(points, depth_gate_m_);
 
+    double lowest = std::numeric_limits<double>::max();
+    for (const Point3& point : points)
+    {
+        lowest = std::min(lowest, dot(point, up));
+    }
+
     std::optional<double>     support;
     const std::vector<Point3> ring =
         supportRing(view, mask, intrinsics, support_ring_px_, min_depth_m_, max_depth_m_);
-    if (static_cast<int>(ring.size()) >= min_support_points_)
+    std::vector<double> heights;
+    heights.reserve(ring.size());
+    for (const Point3& point : ring)
     {
-        std::vector<double> heights;
-        heights.reserve(ring.size());
-        for (const Point3& point : ring)
+        // Only what could be the surface this object stands on. Without the band the median is
+        // dragged by the floor beyond the table on one side and by a taller neighbour on the
+        // other, and either one puts the object's base somewhere it is not.
+        const double height = dot(point, up);
+        if (std::abs(height - lowest) <= support_band_m_)
         {
-            heights.push_back(dot(point, up));
+            heights.push_back(height);
         }
+    }
+    if (static_cast<int>(heights.size()) >= min_support_points_)
+    {
         const std::size_t middle = heights.size() / 2;
         std::nth_element(heights.begin(), heights.begin() + static_cast<std::ptrdiff_t>(middle),
                          heights.end());

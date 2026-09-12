@@ -18,15 +18,22 @@ g1_object_geometry:
     # Below this the ring is mostly background and its median is not the table; the fit then
     # falls back to the object's own lowest visible point, which underestimates anything rounded.
     min_support_points: 50
+    # How far from the object's own lowest visible point a ring pixel may be and still count as
+    # the surface it stands on. Wide enough to reach the table under a sphere resting on its
+    # equator, narrow enough to exclude the floor past the table edge and the top of whatever is
+    # standing next to it.
+    support_band_m: 0.06
 
     # The D435i's usable band, and what MuJoCo's render is clipped to. Also the cheapest guard
     # against a mask that ran onto the floor behind the table.
     min_depth_m: 0.15
     max_depth_m: 2.5
 
-    # A mask that leaks a few pixels past the object drags the box toward the background. Half a
-    # decimetre is wider than any object here is deep and narrower than the gap to the floor.
-    depth_gate_m: 0.05
+    # A mask that leaks past the object drags the box toward whatever is behind it. Sized to the
+    # deepest object worth grasping, not tighter: an 8 cm object seen from 45 degrees above
+    # spans about 10 cm in range, and a gate inside that quietly cuts its top face off and
+    # reports it half as tall.
+    depth_gate_m: 0.15
 
     # Under this the fit is being asked to describe a handful of pixels. A 6 cm object at 0.6 m
     # covers about 3500 px, so this rejects an object that is mostly occluded rather than a
@@ -46,7 +53,10 @@ g1_object_geometry:
     # Frames are kept this long and matched by stamp: the relay stamps depth and colour
     # identically from one render, so the match is exact rather than nearest.
     depth_history_s: 3.0
-    stamp_tolerance_ms: 5.0
+    # Half a frame period at the camera's 10 Hz. The relay stamps depth and colour identically
+    # from one render, so the match is normally exact; the slack is for the frame the depth
+    # subscription dropped, where the neighbouring frame is a better answer than no answer.
+    stamp_tolerance_ms: 50.0
 
     # How far an object may move between detections and still be itself. Objects on a table do
     # not move on their own; this covers the estimate's own jitter and a hand nudging one.

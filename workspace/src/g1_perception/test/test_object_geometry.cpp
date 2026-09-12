@@ -234,6 +234,19 @@ TEST(FitOrientedBox, RecoversYawOfATiltedFace)
     EXPECT_NEAR(std::fmod(recovered + 180.0, 180.0), 30.0, 1.0);
 }
 
+TEST(FitOrientedBox, DoesNotInflateASquareFootprint)
+{
+    // A square has no principal direction, so a covariance fit lands at 45 degrees and reports a
+    // 6 cm cube as 8.5 cm across, which then becomes a collision box half again too wide.
+    const std::vector<Point3> points = rotatedTopFace(0.06, 0.06, 0.83, 0.0);
+
+    const auto box = fitOrientedBox(points, kUp, 0.80, 0.01, 0.40);
+
+    ASSERT_TRUE(box.has_value());
+    EXPECT_NEAR(box->size_x, 0.06, 2e-3);
+    EXPECT_NEAR(box->size_y, 0.06, 2e-3);
+}
+
 TEST(FitOrientedBox, UsesTheSupportHeightForTheVerticalExtent)
 {
     // The visible cap of a sphere resting on a table: everything from its equator up.

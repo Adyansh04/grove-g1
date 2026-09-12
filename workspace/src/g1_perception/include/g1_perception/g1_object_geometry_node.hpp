@@ -82,6 +82,7 @@ private:
     double      depth_gate_m_{ 0.05 };
     int         min_points_{ 150 };
     int         min_support_points_{ 50 };
+    double      support_band_m_{ 0.06 };
     double      min_extent_m_{ 0.01 };
     double      max_extent_m_{ 0.40 };
     double      min_score_{ 0.30 };

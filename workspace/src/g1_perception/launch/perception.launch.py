@@ -117,7 +117,7 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "mock_margin_m",
-                default_value="0.0",
+                default_value="0.005",
                 description="How far past an object's own box the mock's mask may spill. "
                 "Positive simulates a sloppy segmenter.",
             ),

@@ -16,9 +16,11 @@ g1_mock_detector:
     # one manages about 0.7.
     mock_rate_hz: 10.0
 
-    # How far past the object's own box a pixel may sit and still be called part of it. Zero is a
-    # perfect segmenter. Positive is a sloppy one, which is what the loose-mask test asks for.
-    mock_margin_m: 0.0
+    # How far past the object's own box a pixel may sit and still be called part of it. It
+    # cannot be zero: a flat face's pixels lie exactly on the face, so a strict test returns an
+    # almost empty mask. Well past a few millimetres it becomes a deliberately sloppy segmenter,
+    # which is what the loose-mask test asks for.
+    mock_margin_m: 0.005
 
     # An object smaller than this in the image is reported as not seen rather than as a mask the
     # geometry cannot use. Roughly a 7 mm object at half a metre.

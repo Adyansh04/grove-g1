@@ -33,8 +33,10 @@ G1MockDetector::G1MockDetector(const rclcpp::NodeOptions& options)
 {
     phrases_ = declare_parameter<std::vector<std::string>>("phrases", std::vector<std::string>{});
     latency_s_ = declare_parameter<double>("mock_latency_s", 0.0);
-    // Positive loosens the mask beyond the object, which is how a sloppy segmenter is simulated.
-    margin_m_ = declare_parameter<double>("mock_margin_m", 0.0);
+    // Slack on the box test below. It cannot be zero: the pixels of a flat face lie exactly on
+    // the face, so a strict test keeps only the ones rounding happens to push inward. Beyond a
+    // few millimetres it becomes what it is also useful as, a sloppy segmenter.
+    margin_m_ = declare_parameter<double>("mock_margin_m", 0.005);
     min_pixels_ = static_cast<int>(declare_parameter<int>("min_pixels", 50));
     const double rate_hz = declare_parameter<double>("mock_rate_hz", 10.0);
 
@@ -119,15 +121,15 @@ bool G1MockDetector::maskFor(
         return false;
     }
 
-    out.label = phrase;
-    out.score = detection.results.empty() ? 1.0F : detection.results.front().hypothesis.score;
-    out.roi.x_offset = x0;
-    out.roi.y_offset = y0;
-    out.roi.width = x1 - x0;
-    out.roi.height = y1 - y0;
-    out.data.assign(static_cast<std::size_t>(out.roi.width) * out.roi.height, 0);
-
-    int filled = 0;
+    // Searched over the object's bounding sphere, then cropped to what was actually found: a
+    // real segmenter returns a tight region, and a loose one would hand the geometry node a
+    // support ring that samples the neighbouring object instead of the table.
+    std::vector<std::uint8_t> found(static_cast<std::size_t>(x1 - x0) * (y1 - y0), 0);
+    std::uint32_t             hit_x0 = x1;
+    std::uint32_t             hit_y0 = y1;
+    std::uint32_t             hit_x1 = x0;
+    std::uint32_t             hit_y1 = y0;
+    int                       filled = 0;
     for (std::uint32_t v = y0; v < y1; ++v)
     {
         for (std::uint32_t u = x0; u < x1; ++u)
@@ -147,11 +149,35 @@ bool G1MockDetector::maskFor(
             {
                 continue;
             }
-            out.data[(static_cast<std::size_t>(v - y0) * out.roi.width) + (u - x0)] = 255;
+            found[(static_cast<std::size_t>(v - y0) * (x1 - x0)) + (u - x0)] = 255;
+            hit_x0 = std::min(hit_x0, u);
+            hit_y0 = std::min(hit_y0, v);
+            hit_x1 = std::max(hit_x1, u);
+            hit_y1 = std::max(hit_y1, v);
             ++filled;
         }
     }
-    return filled >= min_pixels_;
+    if (filled < min_pixels_)
+    {
+        return false;
+    }
+
+    out.label = phrase;
+    out.score = detection.results.empty() ? 1.0F : detection.results.front().hypothesis.score;
+    out.roi.x_offset = hit_x0;
+    out.roi.y_offset = hit_y0;
+    out.roi.width = hit_x1 - hit_x0 + 1;
+    out.roi.height = hit_y1 - hit_y0 + 1;
+    out.data.assign(static_cast<std::size_t>(out.roi.width) * out.roi.height, 0);
+    for (std::uint32_t v = 0; v < out.roi.height; ++v)
+    {
+        for (std::uint32_t u = 0; u < out.roi.width; ++u)
+        {
+            out.data[(static_cast<std::size_t>(v) * out.roi.width) + u] =
+                found[(static_cast<std::size_t>(v + hit_y0 - y0) * (x1 - x0)) + (u + hit_x0 - x0)];
+        }
+    }
+    return true;
 }
 
 void G1MockDetector::publishMasks()

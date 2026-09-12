@@ -6,6 +6,7 @@
 #include <cstring>
 #include <limits>
 #include <numeric>
+#include <utility>
 
 namespace g1_perception
 {
@@ -31,6 +32,67 @@ Point3 normalised(const Point3& v)
 {
     const double length = std::sqrt(dot(v, v));
     return length > 0.0 ? scaled(v, 1.0 / length) : Point3{ 1.0, 0.0, 0.0 };
+}
+
+/// Extent of @p values rotated into the axis pair at @p angle, as (major, minor) widths.
+std::pair<double, double> extentsAt(
+    const std::vector<double>& first, const std::vector<double>& second, double angle)
+{
+    const double cosine = std::cos(angle);
+    const double sine = std::sin(angle);
+    double       min_major = std::numeric_limits<double>::max();
+    double       max_major = std::numeric_limits<double>::lowest();
+    double       min_minor = std::numeric_limits<double>::max();
+    double       max_minor = std::numeric_limits<double>::lowest();
+    for (std::size_t i = 0; i < first.size(); ++i)
+    {
+        const double major = (first[i] * cosine) + (second[i] * sine);
+        const double minor = -(first[i] * sine) + (second[i] * cosine);
+        min_major = std::min(min_major, major);
+        max_major = std::max(max_major, major);
+        min_minor = std::min(min_minor, minor);
+        max_minor = std::max(max_minor, minor);
+    }
+    return { max_major - min_major, max_minor - min_minor };
+}
+
+/**
+ * @brief The angle whose bounding rectangle has the least area.
+ *
+ * A degree of resolution, then a tenth of a degree around the winner. Rotating calipers would be
+ * exact and needs a convex hull; at a few thousand points once a second this is cheaper to run
+ * and much cheaper to read.
+ */
+double minimumAreaAngle(const std::vector<double>& first, const std::vector<double>& second)
+{
+    const auto area = [&first, &second](double angle) {
+        const auto [major, minor] = extentsAt(first, second, angle);
+        return major * minor;
+    };
+    // A rectangle repeats every quarter turn, so a quadrant covers every distinct orientation.
+    double best = 0.0;
+    double best_area = area(0.0);
+    for (int step = 1; step < 90; ++step)
+    {
+        const double angle = step * M_PI / 180.0;
+        const double value = area(angle);
+        if (value < best_area)
+        {
+            best_area = value;
+            best = angle;
+        }
+    }
+    for (int step = -9; step <= 9; ++step)
+    {
+        const double angle = best + (step * M_PI / 1800.0);
+        const double value = area(angle);
+        if (value < best_area)
+        {
+            best_area = value;
+            best = angle;
+        }
+    }
+    return best;
 }
 
 double median(std::vector<double>& values)
@@ -261,25 +323,10 @@ std::optional<OrientedBox> fitOrientedBox(
         along_first.push_back(dot(point, first));
         along_second.push_back(dot(point, second));
     }
-    const auto   count = static_cast<double>(points.size());
-    const double mean_first =
-        std::accumulate(along_first.begin(), along_first.end(), 0.0) / count;
-    const double mean_second =
-        std::accumulate(along_second.begin(), along_second.end(), 0.0) / count;
-
-    double sxx = 0.0;
-    double sxy = 0.0;
-    double syy = 0.0;
-    for (std::size_t i = 0; i < points.size(); ++i)
-    {
-        const double da = along_first[i] - mean_first;
-        const double db = along_second[i] - mean_second;
-        sxx += da * da;
-        sxy += da * db;
-        syy += db * db;
-    }
-    // The principal direction of a 2x2 symmetric covariance, without an eigen solver.
-    const double angle = 0.5 * std::atan2(2.0 * sxy, sxx - syy);
+    // The rectangle of least area, searched over its own angle. A covariance would be one line
+    // instead, and wrong on exactly the objects here: a square footprint has no principal
+    // direction, so the fit lands at 45 degrees and reports a 6 cm cube as 8.5 cm across.
+    const double angle = minimumAreaAngle(along_first, along_second);
     const double cosine = std::cos(angle);
     const double sine   = std::sin(angle);
 
