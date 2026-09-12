@@ -29,7 +29,7 @@ using g1_perception::Point3;
 using g1_perception::slugify;
 using g1_perception::supportRing;
 
-constexpr double kFocal = 432.98;
+constexpr double kFocal   = 432.98;
 constexpr double kCentreX = 424.0;
 constexpr double kCentreY = 240.0;
 const Intrinsics kIntrinsics{ kFocal, kFocal, kCentreX, kCentreY };
@@ -40,7 +40,9 @@ class DepthImage
 {
 public:
     DepthImage(std::uint32_t width, std::uint32_t height, double value, std::uint32_t padding = 0)
-        : width_(width), height_(height), step_((width * sizeof(float)) + padding)
+      : width_(width)
+      , height_(height)
+      , step_((width * sizeof(float)) + padding)
     {
         bytes_.assign(static_cast<std::size_t>(step_) * height_, 0);
         for (std::uint32_t v = 0; v < height_; ++v)
@@ -69,11 +71,8 @@ private:
 };
 
 MaskView filledMask(
-    std::vector<std::uint8_t>& storage,
-    std::uint32_t              x,
-    std::uint32_t              y,
-    std::uint32_t              width,
-    std::uint32_t              height)
+    std::vector<std::uint8_t>& storage, std::uint32_t x, std::uint32_t y, std::uint32_t width,
+    std::uint32_t height)
 {
     storage.assign(static_cast<std::size_t>(width) * height, 255);
     return { storage, x, y, width, height };
@@ -103,7 +102,7 @@ TEST(Erode, ShrinksASquareByOneRing)
 
 TEST(Erode, RemovesAOnePixelLine)
 {
-    std::vector<std::uint8_t> storage(5 * 5, 0);
+    std::vector<std::uint8_t> storage(25, 0);
     for (std::uint32_t row = 0; row < 5; ++row)
     {
         storage[(row * 5) + 2] = 255;
@@ -188,6 +187,7 @@ TEST(SupportRing, TakesPixelsOutsideTheMaskOnly)
 TEST(GateByMedianDepth, KeepsTheNearMode)
 {
     std::vector<Point3> points;
+    points.reserve(25);
     for (int i = 0; i < 20; ++i)
     {
         points.push_back({ 0.0, 0.0, 0.50 });
@@ -222,7 +222,7 @@ std::vector<Point3> rotatedTopFace(double size_x, double size_y, double height, 
 
 TEST(FitOrientedBox, RecoversYawOfATiltedFace)
 {
-    const double              yaw = 30.0 * M_PI / 180.0;
+    const double              yaw    = 30.0 * M_PI / 180.0;
     const std::vector<Point3> points = rotatedTopFace(0.10, 0.04, 0.83, yaw);
 
     const auto box = fitOrientedBox(points, kUp, 0.80, 0.01, 0.40);
@@ -251,13 +251,13 @@ TEST(FitOrientedBox, UsesTheSupportHeightForTheVerticalExtent)
 {
     // The visible cap of a sphere resting on a table: everything from its equator up.
     const double        radius = 0.037;
-    const double        table = 0.80;
+    const double        table  = 0.80;
     std::vector<Point3> points;
     for (int i = 0; i <= 20; ++i)
     {
         for (int j = 0; j <= 20; ++j)
         {
-            const double polar = (M_PI / 2.0) * (i / 20.0);
+            const double polar   = (M_PI / 2.0) * (i / 20.0);
             const double azimuth = 2.0 * M_PI * (j / 20.0);
             points.push_back({ radius * std::sin(polar) * std::cos(azimuth),
                                radius * std::sin(polar) * std::sin(azimuth),
@@ -266,7 +266,7 @@ TEST(FitOrientedBox, UsesTheSupportHeightForTheVerticalExtent)
     }
 
     const auto with_support = fitOrientedBox(points, kUp, table, 0.01, 0.40);
-    const auto without = fitOrientedBox(points, kUp, std::nullopt, 0.01, 0.40);
+    const auto without      = fitOrientedBox(points, kUp, std::nullopt, 0.01, 0.40);
 
     ASSERT_TRUE(with_support.has_value());
     ASSERT_TRUE(without.has_value());

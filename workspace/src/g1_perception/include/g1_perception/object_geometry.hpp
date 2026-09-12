@@ -102,12 +102,8 @@ void planeBasis(const Point3& up, Point3& first, Point3& second);
  *                  view. Must hold `mask.width * mask.height` bytes.
  */
 [[nodiscard]] std::vector<Point3> deproject(
-    const DepthView&              depth,
-    const MaskView&               mask,
-    std::span<const std::uint8_t> mask_data,
-    const Intrinsics&             intrinsics,
-    double                        min_depth_m,
-    double                        max_depth_m);
+    const DepthView& depth, const MaskView& mask, std::span<const std::uint8_t> mask_data,
+    const Intrinsics& intrinsics, double min_depth_m, double max_depth_m);
 
 /**
  * @brief Deprojects the pixels in a ring just outside the mask: the surface the object stands on.
@@ -116,12 +112,8 @@ void planeBasis(const Point3& up, Point3& first, Point3& second);
  * its own base: the lowest visible point of a sphere is its equator.
  */
 [[nodiscard]] std::vector<Point3> supportRing(
-    const DepthView&  depth,
-    const MaskView&   mask,
-    const Intrinsics& intrinsics,
-    int               ring_px,
-    double            min_depth_m,
-    double            max_depth_m);
+    const DepthView& depth, const MaskView& mask, const Intrinsics& intrinsics, int ring_px,
+    double min_depth_m, double max_depth_m);
 
 /**
  * @brief Drops points further than @p gate_m from the median depth, in place.
@@ -144,11 +136,8 @@ void gateByMedianDepth(std::vector<Point3>& points, double gate_m);
  *         what a mask that ran onto the table looks like.
  */
 [[nodiscard]] std::optional<OrientedBox> fitOrientedBox(
-    std::span<const Point3> points,
-    const Point3&           up,
-    std::optional<double>   support_height,
-    double                  min_extent_m,
-    double                  max_extent_m);
+    std::span<const Point3> points, const Point3& up, std::optional<double> support_height,
+    double min_extent_m, double max_extent_m);
 
 }  // namespace g1_perception
 

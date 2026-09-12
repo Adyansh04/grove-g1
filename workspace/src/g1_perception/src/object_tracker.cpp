@@ -20,9 +20,9 @@ double distance(const Point3& a, const Point3& b)
 }  // namespace
 
 ObjectTracker::ObjectTracker(double match_radius_m, double timeout_s)
-    : match_radius_m_(match_radius_m), timeout_s_(timeout_s)
-{
-}
+  : match_radius_m_(match_radius_m)
+  , timeout_s_(timeout_s)
+{}
 
 std::string ObjectTracker::idFor(std::string_view phrase, std::uint32_t index)
 {
@@ -40,10 +40,10 @@ std::uint32_t ObjectTracker::lowestFreeIndex(std::string_view phrase) const
 {
     for (std::uint32_t candidate = 0;; ++candidate)
     {
-        const bool taken = std::any_of(tracks_.begin(), tracks_.end(),
-                                       [&phrase, candidate](const Track& track) {
-                                           return track.index == candidate && track.phrase == phrase;
-                                       });
+        const bool taken =
+            std::any_of(tracks_.begin(), tracks_.end(), [&phrase, candidate](const Track& track) {
+                return track.index == candidate && track.phrase == phrase;
+            });
         if (!taken)
         {
             return candidate;
@@ -51,8 +51,8 @@ std::uint32_t ObjectTracker::lowestFreeIndex(std::string_view phrase) const
     }
 }
 
-std::vector<std::string> ObjectTracker::update(
-    std::span<const Observation> observations, double now_s)
+std::vector<std::string>
+ObjectTracker::update(std::span<const Observation> observations, double now_s)
 {
     retireStale(now_s);
 
@@ -63,9 +63,9 @@ std::vector<std::string> ObjectTracker::update(
     // Closest pair first, so a confident match cannot be stolen by a worse one considered earlier.
     while (true)
     {
-        double      best = match_radius_m_;
+        double      best             = match_radius_m_;
         std::size_t best_observation = observations.size();
-        std::size_t best_track = tracks_.size();
+        std::size_t best_track       = tracks_.size();
         for (std::size_t o = 0; o < observations.size(); ++o)
         {
             if (named[o])
@@ -81,9 +81,9 @@ std::vector<std::string> ObjectTracker::update(
                 const double gap = distance(observations[o].position, tracks_[t].position);
                 if (gap <= best)
                 {
-                    best = gap;
+                    best             = gap;
                     best_observation = o;
-                    best_track = t;
+                    best_track       = t;
                 }
             }
         }
@@ -91,12 +91,12 @@ std::vector<std::string> ObjectTracker::update(
         {
             break;
         }
-        Track& track = tracks_[best_track];
-        track.position = observations[best_observation].position;
-        track.last_seen_s = now_s;
-        ids[best_observation] = idFor(track.phrase, track.index);
+        Track& track            = tracks_[best_track];
+        track.position          = observations[best_observation].position;
+        track.last_seen_s       = now_s;
+        ids[best_observation]   = idFor(track.phrase, track.index);
         named[best_observation] = true;
-        matched[best_track] = true;
+        matched[best_track]     = true;
     }
 
     for (std::size_t o = 0; o < observations.size(); ++o)
@@ -106,11 +106,11 @@ std::vector<std::string> ObjectTracker::update(
             continue;
         }
         Track track;
-        track.phrase = observations[o].phrase;
-        track.index = lowestFreeIndex(track.phrase);
-        track.position = observations[o].position;
+        track.phrase      = observations[o].phrase;
+        track.index       = lowestFreeIndex(track.phrase);
+        track.position    = observations[o].position;
         track.last_seen_s = now_s;
-        ids[o] = idFor(track.phrase, track.index);
+        ids[o]            = idFor(track.phrase, track.index);
         tracks_.push_back(std::move(track));
     }
     return ids;

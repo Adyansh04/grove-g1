@@ -14,14 +14,13 @@
  */
 
 #include <deque>
-#include <memory>
-#include <string>
-#include <vector>
-
 #include <g1_msgs/msg/instance_mask_array.hpp>
+#include <memory>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/camera_info.hpp>
 #include <sensor_msgs/msg/image.hpp>
+#include <string>
+#include <vector>
 #include <vision_msgs/msg/detection3_d_array.hpp>
 
 namespace g1_perception
@@ -40,10 +39,8 @@ private:
 
     /// The pixels of @p detection in @p depth, as an InstanceMask, or nothing when it is hidden.
     bool maskFor(
-        const vision_msgs::msg::Detection3D& detection,
-        const sensor_msgs::msg::Image&       depth,
-        const std::string&                   phrase,
-        g1_msgs::msg::InstanceMask&          out) const;
+        const vision_msgs::msg::Detection3D& detection, const sensor_msgs::msg::Image& depth,
+        const std::string& phrase, g1_msgs::msg::InstanceMask& out) const;
 
     rclcpp::Subscription<vision_msgs::msg::Detection3DArray>::SharedPtr truth_sub_;
     rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr            depth_sub_;

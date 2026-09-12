@@ -16,11 +16,11 @@ using g1_perception::DepthHistory;
 
 sensor_msgs::msg::Image::SharedPtr frameAt(double stamp_s)
 {
-    auto frame = std::make_shared<sensor_msgs::msg::Image>();
+    auto frame              = std::make_shared<sensor_msgs::msg::Image>();
     frame->header.stamp.sec = static_cast<std::int32_t>(stamp_s);
     frame->header.stamp.nanosec =
         static_cast<std::uint32_t>((stamp_s - static_cast<std::int32_t>(stamp_s)) * 1e9);
-    frame->width = 848;
+    frame->width  = 848;
     frame->height = 480;
     return frame;
 }

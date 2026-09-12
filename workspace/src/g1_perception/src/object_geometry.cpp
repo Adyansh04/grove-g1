@@ -13,10 +13,7 @@ namespace g1_perception
 namespace
 {
 
-double dot(const Point3& a, const Point3& b)
-{
-    return (a.x * b.x) + (a.y * b.y) + (a.z * b.z);
-}
+double dot(const Point3& a, const Point3& b) { return (a.x * b.x) + (a.y * b.y) + (a.z * b.z); }
 
 Point3 cross(const Point3& a, const Point3& b)
 {
@@ -35,11 +32,11 @@ Point3 normalised(const Point3& v)
 }
 
 /// Extent of @p values rotated into the axis pair at @p angle, as (major, minor) widths.
-std::pair<double, double> extentsAt(
-    const std::vector<double>& first, const std::vector<double>& second, double angle)
+std::pair<double, double>
+extentsAt(const std::vector<double>& first, const std::vector<double>& second, double angle)
 {
-    const double cosine = std::cos(angle);
-    const double sine = std::sin(angle);
+    const double cosine    = std::cos(angle);
+    const double sine      = std::sin(angle);
     double       min_major = std::numeric_limits<double>::max();
     double       max_major = std::numeric_limits<double>::lowest();
     double       min_minor = std::numeric_limits<double>::max();
@@ -48,10 +45,10 @@ std::pair<double, double> extentsAt(
     {
         const double major = (first[i] * cosine) + (second[i] * sine);
         const double minor = -(first[i] * sine) + (second[i] * cosine);
-        min_major = std::min(min_major, major);
-        max_major = std::max(max_major, major);
-        min_minor = std::min(min_minor, minor);
-        max_minor = std::max(max_minor, minor);
+        min_major          = std::min(min_major, major);
+        max_major          = std::max(max_major, major);
+        min_minor          = std::min(min_minor, minor);
+        max_minor          = std::max(max_minor, minor);
     }
     return { max_major - min_major, max_minor - min_minor };
 }
@@ -70,7 +67,7 @@ double minimumAreaAngle(const std::vector<double>& first, const std::vector<doub
         return major * minor;
     };
     // A rectangle repeats every quarter turn, so a quadrant covers every distinct orientation.
-    double best = 0.0;
+    double best      = 0.0;
     double best_area = area(0.0);
     for (int step = 1; step < 90; ++step)
     {
@@ -79,7 +76,7 @@ double minimumAreaAngle(const std::vector<double>& first, const std::vector<doub
         if (value < best_area)
         {
             best_area = value;
-            best = angle;
+            best      = angle;
         }
     }
     for (int step = -9; step <= 9; ++step)
@@ -89,7 +86,7 @@ double minimumAreaAngle(const std::vector<double>& first, const std::vector<doub
         if (value < best_area)
         {
             best_area = value;
-            best = angle;
+            best      = angle;
         }
     }
     return best;
@@ -98,8 +95,10 @@ double minimumAreaAngle(const std::vector<double>& first, const std::vector<doub
 double median(std::vector<double>& values)
 {
     const std::size_t middle = values.size() / 2;
-    std::nth_element(values.begin(), values.begin() + static_cast<std::ptrdiff_t>(middle),
-                     values.end());
+    std::nth_element(
+        values.begin(),
+        values.begin() + static_cast<std::ptrdiff_t>(middle),
+        values.end());
     return values[middle];
 }
 
@@ -164,8 +163,8 @@ std::vector<std::uint8_t> erodeMask(const MaskView& mask, int iterations)
                         const auto nx = static_cast<std::int64_t>(col) + dx;
                         // Outside the crop counts as background: the mask ends at the ROI, and a
                         // border pixel is exactly the case erosion exists to drop.
-                        keep = ny >= 0 && nx >= 0 && ny < mask.height && nx < mask.width
-                               && current[(static_cast<std::size_t>(ny) * mask.width) + nx] != 0;
+                        keep = ny >= 0 && nx >= 0 && ny < mask.height && nx < mask.width &&
+                               current[(static_cast<std::size_t>(ny) * mask.width) + nx] != 0;
                     }
                 }
                 next[(static_cast<std::size_t>(row) * mask.width) + col] = keep ? 255 : 0;
@@ -180,19 +179,16 @@ void planeBasis(const Point3& up, Point3& first, Point3& second)
 {
     // Any axis that is not nearly parallel to up works; picking by component keeps it stable as
     // the camera tilts rather than flipping the basis at some threshold crossing.
-    const Point3 seed = std::abs(up.z) < 0.9 ? Point3{ 0.0, 0.0, 1.0 } : Point3{ 1.0, 0.0, 0.0 };
+    const Point3 seed  = std::abs(up.z) < 0.9 ? Point3{ 0.0, 0.0, 1.0 } : Point3{ 1.0, 0.0, 0.0 };
     const double along = dot(seed, up);
-    first  = normalised({ seed.x - (up.x * along), seed.y - (up.y * along), seed.z - (up.z * along) });
+    first =
+        normalised({ seed.x - (up.x * along), seed.y - (up.y * along), seed.z - (up.z * along) });
     second = cross(up, first);
 }
 
 std::vector<Point3> deproject(
-    const DepthView&              depth,
-    const MaskView&               mask,
-    std::span<const std::uint8_t> mask_data,
-    const Intrinsics&             intrinsics,
-    double                        min_depth_m,
-    double                        max_depth_m)
+    const DepthView& depth, const MaskView& mask, std::span<const std::uint8_t> mask_data,
+    const Intrinsics& intrinsics, double min_depth_m, double max_depth_m)
 {
     std::vector<Point3> points;
     if (intrinsics.fx <= 0.0 || intrinsics.fy <= 0.0)
@@ -225,12 +221,8 @@ std::vector<Point3> deproject(
 }
 
 std::vector<Point3> supportRing(
-    const DepthView&  depth,
-    const MaskView&   mask,
-    const Intrinsics& intrinsics,
-    int               ring_px,
-    double            min_depth_m,
-    double            max_depth_m)
+    const DepthView& depth, const MaskView& mask, const Intrinsics& intrinsics, int ring_px,
+    double min_depth_m, double max_depth_m)
 {
     std::vector<Point3> points;
     if (ring_px <= 0 || intrinsics.fx <= 0.0 || intrinsics.fy <= 0.0)
@@ -243,17 +235,17 @@ std::vector<Point3> supportRing(
     const auto bottom = static_cast<std::int64_t>(mask.y + mask.height) + ring_px;
 
     for (std::int64_t v = std::max<std::int64_t>(top, 0);
-         v < std::min<std::int64_t>(bottom, depth.height); ++v)
+         v < std::min<std::int64_t>(bottom, depth.height);
+         ++v)
     {
         for (std::int64_t u = std::max<std::int64_t>(left, 0);
-             u < std::min<std::int64_t>(right, depth.width); ++u)
+             u < std::min<std::int64_t>(right, depth.width);
+             ++u)
         {
             const std::int64_t col = u - mask.x;
             const std::int64_t row = v - mask.y;
-            const bool         inside_roi =
-                col >= 0 && row >= 0 && col < mask.width && row < mask.height;
-            if (inside_roi
-                && mask.data[(static_cast<std::size_t>(row) * mask.width) + col] != 0)
+            const bool inside_roi  = col >= 0 && row >= 0 && col < mask.width && row < mask.height;
+            if (inside_roi && mask.data[(static_cast<std::size_t>(row) * mask.width) + col] != 0)
             {
                 continue;
             }
@@ -289,11 +281,8 @@ void gateByMedianDepth(std::vector<Point3>& points, double gate_m)
 }
 
 std::optional<OrientedBox> fitOrientedBox(
-    std::span<const Point3> points,
-    const Point3&           up,
-    std::optional<double>   support_height,
-    double                  min_extent_m,
-    double                  max_extent_m)
+    std::span<const Point3> points, const Point3& up, std::optional<double> support_height,
+    double min_extent_m, double max_extent_m)
 {
     if (points.size() < 3)
     {
@@ -310,9 +299,10 @@ std::optional<OrientedBox> fitOrientedBox(
     {
         heights.push_back(dot(point, vertical));
     }
-    const double top     = *std::max_element(heights.begin(), heights.end());
-    const double support = support_height.value_or(*std::min_element(heights.begin(), heights.end()));
-    const double size_z  = top - support;
+    const double top = *std::max_element(heights.begin(), heights.end());
+    const double support =
+        support_height.value_or(*std::min_element(heights.begin(), heights.end()));
+    const double size_z = top - support;
 
     std::vector<double> along_first;
     std::vector<double> along_second;
@@ -326,7 +316,7 @@ std::optional<OrientedBox> fitOrientedBox(
     // The rectangle of least area, searched over its own angle. A covariance would be one line
     // instead, and wrong on exactly the objects here: a square footprint has no principal
     // direction, so the fit lands at 45 degrees and reports a 6 cm cube as 8.5 cm across.
-    const double angle = minimumAreaAngle(along_first, along_second);
+    const double angle  = minimumAreaAngle(along_first, along_second);
     const double cosine = std::cos(angle);
     const double sine   = std::sin(angle);
 
@@ -348,25 +338,25 @@ std::optional<OrientedBox> fitOrientedBox(
     box.size_x = max_major - min_major;
     box.size_y = max_minor - min_minor;
     box.size_z = size_z;
-    if (std::min({ box.size_x, box.size_y, box.size_z }) < min_extent_m
-        || std::max({ box.size_x, box.size_y, box.size_z }) > max_extent_m)
+    if (std::min({ box.size_x, box.size_y, box.size_z }) < min_extent_m ||
+        std::max({ box.size_x, box.size_y, box.size_z }) > max_extent_m)
     {
         return std::nullopt;
     }
 
-    box.axis_x = { (first.x * cosine) + (second.x * sine), (first.y * cosine) + (second.y * sine),
+    box.axis_x = { (first.x * cosine) + (second.x * sine),
+                   (first.y * cosine) + (second.y * sine),
                    (first.z * cosine) + (second.z * sine) };
     box.axis_y = cross(vertical, box.axis_x);
 
     const double centre_major = 0.5 * (min_major + max_major);
     const double centre_minor = 0.5 * (min_minor + max_minor);
     const double centre_up    = support + (0.5 * size_z);
-    box.centre                = { (box.axis_x.x * centre_major) + (box.axis_y.x * centre_minor)
-                                      + (vertical.x * centre_up),
-                                  (box.axis_x.y * centre_major) + (box.axis_y.y * centre_minor)
-                                      + (vertical.y * centre_up),
-                                  (box.axis_x.z * centre_major) + (box.axis_y.z * centre_minor)
-                                      + (vertical.z * centre_up) };
+    box.centre                = {
+        (box.axis_x.x * centre_major) + (box.axis_y.x * centre_minor) + (vertical.x * centre_up),
+        (box.axis_x.y * centre_major) + (box.axis_y.y * centre_minor) + (vertical.y * centre_up),
+        (box.axis_x.z * centre_major) + (box.axis_y.z * centre_minor) + (vertical.z * centre_up)
+    };
     return box;
 }
 

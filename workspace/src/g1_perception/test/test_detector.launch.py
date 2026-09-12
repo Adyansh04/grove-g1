@@ -69,6 +69,7 @@ class TestDetector(unittest.TestCase):
         cls.node = RclpyNode("detector_probe")
         cls.camera = cls.node.create_publisher(Image, CAMERA_TOPIC, qos_profile_sensor_data)
         cls.received = []
+        cls.sent_stamps = set()
         cls.node.create_subscription(
             InstanceMaskArray, MASK_TOPIC, lambda msg: cls.received.append(msg), 2
         )
@@ -87,6 +88,7 @@ class TestDetector(unittest.TestCase):
         image.step = image.width * 3
         image.data = bytes(image.height * image.step)
         self.camera.publish(image)
+        self.sent_stamps.add((image.header.stamp.sec, image.header.stamp.nanosec))
         return image
 
     def _await_mask(self, timeout_s=20.0, republish=True):
@@ -127,17 +129,14 @@ class TestDetector(unittest.TestCase):
         # The geometry node pairs masks with depth on this stamp, so a publish-time stamp would
         # quietly deproject an outline onto whatever has moved under it since. Which frame the
         # detector picked is its own business; that the stamp is one of theirs is not.
-        self.received.clear()
-        sent = set()
-        deadline = self.node.get_clock().now().nanoseconds + int(30e9)
-        while self.node.get_clock().now().nanoseconds < deadline and not self.received:
-            frame = self._publish_frame()
-            sent.add((frame.header.stamp.sec, frame.header.stamp.nanosec))
-            rclpy.spin_once(self.node, timeout_sec=0.2)
+        masks = self._await_mask(timeout_s=30.0)
 
-        self.assertTrue(self.received, "no masks for the frames that were published")
-        answered = (self.received[-1].header.stamp.sec, self.received[-1].header.stamp.nanosec)
-        self.assertIn(answered, sent, "the masks are stamped with something other than a frame")
+        self.assertIsNotNone(masks, "no masks for the frames that were published")
+        answered = (masks.header.stamp.sec, masks.header.stamp.nanosec)
+        # Against every frame this test case has published, not only the last few: which frame
+        # the detector was holding when it asked is its own business.
+        self.assertIn(answered, self.sent_stamps,
+                      "the masks are stamped with something other than a frame")
 
     def test_04_an_empty_phrase_list_stops_the_stream(self):
         client = self.node.create_client(SetParameters, "/g1_detector/set_parameters")

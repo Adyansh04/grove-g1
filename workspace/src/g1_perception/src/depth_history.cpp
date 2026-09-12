@@ -7,14 +7,14 @@ namespace g1_perception
 {
 
 DepthHistory::DepthHistory(double history_s, double tolerance_s)
-    : history_s_(history_s), tolerance_s_(tolerance_s)
-{
-}
+  : history_s_(history_s)
+  , tolerance_s_(tolerance_s)
+{}
 
 double DepthHistory::stampSeconds(const std_msgs::msg::Header& header)
 {
-    return static_cast<double>(header.stamp.sec)
-           + (static_cast<double>(header.stamp.nanosec) * 1e-9);
+    return static_cast<double>(header.stamp.sec) +
+           (static_cast<double>(header.stamp.nanosec) * 1e-9);
 }
 
 void DepthHistory::push(sensor_msgs::msg::Image::ConstSharedPtr frame)

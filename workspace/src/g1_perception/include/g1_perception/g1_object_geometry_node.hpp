@@ -9,17 +9,17 @@
  * in metres and frames, and nothing above it knows which model drew the masks.
  */
 
-#include <memory>
-#include <optional>
-#include <string>
-#include <vector>
+#include <tf2_ros/buffer.h>
+#include <tf2_ros/transform_listener.h>
 
 #include <g1_msgs/msg/instance_mask_array.hpp>
+#include <memory>
+#include <optional>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/camera_info.hpp>
 #include <sensor_msgs/msg/image.hpp>
-#include <tf2_ros/buffer.h>
-#include <tf2_ros/transform_listener.h>
+#include <string>
+#include <vector>
 #include <vision_msgs/msg/detection3_d_array.hpp>
 
 #include "g1_perception/depth_history.hpp"
@@ -51,15 +51,12 @@ private:
 
     /// Geometry for one instance, or nothing when it is too small, too far or off the surface.
     std::optional<OrientedBox> measure(
-        const g1_msgs::msg::InstanceMask& instance,
-        const sensor_msgs::msg::Image&    depth,
-        const Intrinsics&                 intrinsics,
-        const Point3&                     up) const;
+        const g1_msgs::msg::InstanceMask& instance, const sensor_msgs::msg::Image& depth,
+        const Intrinsics& intrinsics, const Point3& up) const;
 
     void publish(
-        const g1_msgs::msg::InstanceMaskArray& masks,
-        const std::vector<Measured>&           measured,
-        const std::vector<std::string>&        ids);
+        const g1_msgs::msg::InstanceMaskArray& masks, const std::vector<Measured>& measured,
+        const std::vector<std::string>& ids);
 
     rclcpp::Subscription<g1_msgs::msg::InstanceMaskArray>::SharedPtr masks_sub_;
     rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr         depth_sub_;
@@ -70,8 +67,8 @@ private:
     std::unique_ptr<tf2_ros::Buffer>            tf_buffer_;
     std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
 
-    DepthHistory                            depth_history_;
-    ObjectTracker                           tracker_;
+    DepthHistory                                 depth_history_;
+    ObjectTracker                                tracker_;
     sensor_msgs::msg::CameraInfo::ConstSharedPtr camera_info_;
 
     std::string up_frame_;

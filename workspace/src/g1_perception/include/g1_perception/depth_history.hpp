@@ -12,7 +12,6 @@
 
 #include <cstddef>
 #include <deque>
-
 #include <sensor_msgs/msg/camera_info.hpp>
 #include <sensor_msgs/msg/image.hpp>
 
@@ -41,8 +40,8 @@ public:
     [[nodiscard]] static double stampSeconds(const std_msgs::msg::Header& header);
 
 private:
-    double                                            history_s_;
-    double                                            tolerance_s_;
+    double                                              history_s_;
+    double                                              tolerance_s_;
     std::deque<sensor_msgs::msg::Image::ConstSharedPtr> frames_;
 };
 
