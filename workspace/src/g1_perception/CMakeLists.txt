@@ -20,10 +20,14 @@ find_package(vision_msgs REQUIRED)
 add_library(g1_perception_object_geometry src/object_geometry.cpp)
 g1_target_defaults(g1_perception_object_geometry)
 
+add_library(g1_perception_object_tracker src/object_tracker.cpp)
+g1_target_defaults(g1_perception_object_tracker)
+target_link_libraries(g1_perception_object_tracker PUBLIC g1_perception_object_geometry)
+
 # --- install ---------------------------------------------------------------
 
 install(DIRECTORY include/ DESTINATION include)
-install(TARGETS g1_perception_object_geometry
+install(TARGETS g1_perception_object_geometry g1_perception_object_tracker
   EXPORT export_${PROJECT_NAME} DESTINATION lib)
 
 # --- tests -----------------------------------------------------------------
@@ -35,6 +39,9 @@ if(BUILD_TESTING)
 
   ament_add_gmock(test_object_geometry test/test_object_geometry.cpp)
   target_link_libraries(test_object_geometry g1_perception_object_geometry)
+
+  ament_add_gmock(test_object_tracker test/test_object_tracker.cpp)
+  target_link_libraries(test_object_tracker g1_perception_object_tracker)
 
   g1_add_lint_tests()
 endif()
