@@ -1,0 +1,64 @@
+# The node that turns instance masks into object poses, loaded by
+# g1_perception/launch/perception.launch.py.
+g1_object_geometry:
+  ros__parameters:
+    # Where "up" comes from, and the frame tracking is done in. It has to be a frame the camera
+    # moves within, or every step of the gait would look like the objects moving.
+    up_frame: "odom"
+
+    # Depth at an object's edge is a blend of the object and what is behind it, and the relay's
+    # depth is bilinear-filtered from the render. Two pixels is the thinnest ring that removes
+    # the blend on a 6 cm object at half a metre, which is about 70 px across.
+    mask_erosion_px: 2
+
+    # How far outside the mask to look for the surface the object stands on. Wide enough to clear
+    # the erosion and the mask's own error, narrow enough to stay on the table rather than
+    # finding the floor behind it.
+    support_ring_px: 6
+    # Below this the ring is mostly background and its median is not the table; the fit then
+    # falls back to the object's own lowest visible point, which underestimates anything rounded.
+    min_support_points: 50
+
+    # The D435i's usable band, and what MuJoCo's render is clipped to. Also the cheapest guard
+    # against a mask that ran onto the floor behind the table.
+    min_depth_m: 0.15
+    max_depth_m: 2.5
+
+    # A mask that leaks a few pixels past the object drags the box toward the background. Half a
+    # decimetre is wider than any object here is deep and narrower than the gap to the floor.
+    depth_gate_m: 0.05
+
+    # Under this the fit is being asked to describe a handful of pixels. A 6 cm object at 0.6 m
+    # covers about 3500 px, so this rejects an object that is mostly occluded rather than a
+    # small one.
+    min_points: 150
+
+    # A box outside these is not an object: the small end is noise, the large end is the mask
+    # having run onto the table.
+    min_extent_m: 0.01
+    max_extent_m: 0.40
+
+    # The detector's own confidence. Grounded-SAM-2 reports 0.8 or better on these objects and
+    # its false positives sit well under 0.5, so this is deliberately loose.
+    min_score: 0.30
+
+    # The detector takes over a second, so its masks arrive long after the frame they describe.
+    # Frames are kept this long and matched by stamp: the relay stamps depth and colour
+    # identically from one render, so the match is exact rather than nearest.
+    depth_history_s: 3.0
+    stamp_tolerance_ms: 5.0
+
+    # How far an object may move between detections and still be itself. Objects on a table do
+    # not move on their own; this covers the estimate's own jitter and a hand nudging one.
+    track_match_radius_m: 0.08
+    # Long enough to survive a few missed detections, short enough that an object carried away
+    # stops reserving its index.
+    track_timeout_s: 2.0
+
+    # TF at the mask's own stamp, not the latest: the camera moves with the torso, and a pose
+    # from 1.5 s ago transformed by today's TF lands wherever the robot has since leaned.
+    transform_timeout_s: 0.2
+
+    # Publish a second copy of a detection named by the bare phrase while only one object answers
+    # to it, so a tree can ask for "red_cube" without knowing the index.
+    publish_bare_phrase_alias: true

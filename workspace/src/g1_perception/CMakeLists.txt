@@ -24,11 +24,40 @@ add_library(g1_perception_object_tracker src/object_tracker.cpp)
 g1_target_defaults(g1_perception_object_tracker)
 target_link_libraries(g1_perception_object_tracker PUBLIC g1_perception_object_geometry)
 
+add_library(g1_perception_depth_history src/depth_history.cpp)
+g1_target_defaults(g1_perception_depth_history)
+target_link_libraries(g1_perception_depth_history PUBLIC ${sensor_msgs_TARGETS})
+
+add_library(g1_object_geometry_node src/g1_object_geometry_node.cpp)
+g1_target_defaults(g1_object_geometry_node)
+target_link_libraries(g1_object_geometry_node PUBLIC
+  g1_perception_depth_history
+  g1_perception_object_tracker
+  rclcpp::rclcpp
+  tf2_ros::tf2_ros
+  tf2_geometry_msgs::tf2_geometry_msgs
+  ${g1_msgs_TARGETS}
+  ${sensor_msgs_TARGETS}
+  ${vision_msgs_TARGETS}
+)
+
+# --- executables -----------------------------------------------------------
+
+add_executable(g1_object_geometry src/g1_object_geometry_main.cpp)
+g1_target_defaults(g1_object_geometry)
+target_link_libraries(g1_object_geometry PUBLIC g1_object_geometry_node)
+
 # --- install ---------------------------------------------------------------
 
 install(DIRECTORY include/ DESTINATION include)
-install(TARGETS g1_perception_object_geometry g1_perception_object_tracker
+install(DIRECTORY config DESTINATION share/${PROJECT_NAME})
+install(TARGETS
+  g1_perception_object_geometry
+  g1_perception_object_tracker
+  g1_perception_depth_history
+  g1_object_geometry_node
   EXPORT export_${PROJECT_NAME} DESTINATION lib)
+install(TARGETS g1_object_geometry DESTINATION lib/${PROJECT_NAME})
 
 # --- tests -----------------------------------------------------------------
 
@@ -42,6 +71,9 @@ if(BUILD_TESTING)
 
   ament_add_gmock(test_object_tracker test/test_object_tracker.cpp)
   target_link_libraries(test_object_tracker g1_perception_object_tracker)
+
+  ament_add_gmock(test_depth_history test/test_depth_history.cpp)
+  target_link_libraries(test_depth_history g1_perception_depth_history)
 
   g1_add_lint_tests()
 endif()
