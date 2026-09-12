@@ -50,6 +50,16 @@ absolute joint positions out, plus `ok`/`message` when the engine cannot produce
 name any subset of the arm and hand joints and `time_from_start` must increase. `g1_vla_server`
 calls it; which engine answers is a launch argument.
 
+## Perception
+
+Published by the detector in `g1_perception`, consumed by the node that turns masks into object
+poses.
+
+| Message | Carries | Notes |
+|---|---|---|
+| `InstanceMask` | `label`, `score`, `roi`, `data` | One object. `data` is a 0-or-255 crop of `roi`, not a full frame. `label` is the noun phrase the detector was asked for, so the object id downstream does not move when the model rewords its answer. |
+| `InstanceMaskArray` | `header`, `image_width`, `image_height`, `model`, `instances` | `header` is the image's stamp and frame, not the publish time: the geometry node pairs on it to find the depth frame these masks were computed from. Nothing reads `model`, which is what keeps the segmentation model swappable. |
+
 Every action except `SetArmPosture` publishes a phase as feedback and names that phase in the
 result message on failure. The phase strings are constants in the `.action` files, so each server
 and its tests share one definition instead of matching literals. `SetArmPosture` is one planned
