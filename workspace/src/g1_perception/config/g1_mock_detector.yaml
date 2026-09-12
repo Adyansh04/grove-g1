@@ -1,0 +1,31 @@
+# The stand-in detector, loaded by g1_perception/launch/perception.launch.py with
+# detector:=mock.
+#
+# SIMULATION ONLY: it cuts masks from the simulator's object poses. The robot has no such
+# stream, which is the whole reason the real detector exists.
+g1_mock_detector:
+  ros__parameters:
+    # What it is willing to name. The same parameter name as the real detector, so a launch that
+    # sets one sets the other, and an empty list means idle in both.
+    phrases:
+      - "red cube"
+      - "green cylinder"
+      - "blue sphere"
+      - "yellow box"
+      - "white cup"
+
+    # Zero is the honest default for a stand-in with nothing to compute. Raise it to 1.5 to make
+    # the stack face the real detector's delay: masks then describe a frame from a second and a
+    # half ago, which is what every stamp and staleness window downstream has to survive.
+    mock_latency_s: 0.0
+    # The camera publishes at 10 Hz, so that is the fastest a per-frame detector can go. The real
+    # one manages about 0.7.
+    mock_rate_hz: 10.0
+
+    # How far past the object's own box a pixel may sit and still be called part of it. Zero is a
+    # perfect segmenter. Positive is a sloppy one, which is what the loose-mask test asks for.
+    mock_margin_m: 0.0
+
+    # An object smaller than this in the image is reported as not seen rather than as a mask the
+    # geometry cannot use. Roughly a 7 mm object at half a metre.
+    min_pixels: 50

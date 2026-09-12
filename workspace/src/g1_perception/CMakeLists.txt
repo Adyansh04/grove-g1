@@ -41,11 +41,27 @@ target_link_libraries(g1_object_geometry_node PUBLIC
   ${vision_msgs_TARGETS}
 )
 
+add_library(g1_mock_detector_node src/mock_detector_node.cpp)
+g1_target_defaults(g1_mock_detector_node)
+target_link_libraries(g1_mock_detector_node PUBLIC
+  g1_perception_depth_history
+  g1_perception_object_geometry
+  rclcpp::rclcpp
+  tf2_geometry_msgs::tf2_geometry_msgs
+  ${g1_msgs_TARGETS}
+  ${sensor_msgs_TARGETS}
+  ${vision_msgs_TARGETS}
+)
+
 # --- executables -----------------------------------------------------------
 
 add_executable(g1_object_geometry src/g1_object_geometry_main.cpp)
 g1_target_defaults(g1_object_geometry)
 target_link_libraries(g1_object_geometry PUBLIC g1_object_geometry_node)
+
+add_executable(g1_mock_detector src/mock_detector_main.cpp)
+g1_target_defaults(g1_mock_detector)
+target_link_libraries(g1_mock_detector PUBLIC g1_mock_detector_node)
 
 # --- install ---------------------------------------------------------------
 
@@ -56,8 +72,9 @@ install(TARGETS
   g1_perception_object_tracker
   g1_perception_depth_history
   g1_object_geometry_node
+  g1_mock_detector_node
   EXPORT export_${PROJECT_NAME} DESTINATION lib)
-install(TARGETS g1_object_geometry DESTINATION lib/${PROJECT_NAME})
+install(TARGETS g1_object_geometry g1_mock_detector DESTINATION lib/${PROJECT_NAME})
 
 # --- tests -----------------------------------------------------------------
 
