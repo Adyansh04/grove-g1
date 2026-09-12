@@ -99,6 +99,11 @@ if(BUILD_TESTING)
   # MuJoCo nor a GPU and CI can run it.
   add_launch_test(test/test_detector.launch.py TARGET test_detector TIMEOUT 240)
 
+  add_launch_test(test/test_perception_objects.launch.py TARGET test_perception_objects
+    TIMEOUT 500)
+  set_tests_properties(test_perception_objects PROPERTIES
+    LABELS simulator RESOURCE_LOCK mujoco_sim COST 85)
+
   g1_add_lint_tests()
 endif()
 

@@ -35,6 +35,7 @@
   <!-- ament_lint_common intentionally not used to avoid clang-format conflicts. -->
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_cmake_gmock</test_depend>
+  <test_depend>g1_bringup</test_depend>
   <test_depend>launch_testing</test_depend>
   <test_depend>launch_testing_ament_cmake</test_depend>
   <test_depend>ament_cmake_lint_cmake</test_depend>
