@@ -31,6 +31,8 @@
   <depend>launch_ros</depend>
 
   <exec_depend>ament_index_python</exec_depend>
+  <!-- activate_arm's clear-posture move goes out as a trajectory goal of its own. -->
+  <exec_depend>control_msgs</exec_depend>
   <exec_depend>xvfb</exec_depend>
   <exec_depend>rviz2</exec_depend>
 
@@ -51,7 +53,6 @@
   <!-- The launch suites are Python and import these directly. -->
   <test_depend>nav_msgs</test_depend>
   <test_depend>sensor_msgs</test_depend>
-  <test_depend>control_msgs</test_depend>
   <test_depend>trajectory_msgs</test_depend>
   <test_depend>builtin_interfaces</test_depend>
   <test_depend>geometry_msgs</test_depend>

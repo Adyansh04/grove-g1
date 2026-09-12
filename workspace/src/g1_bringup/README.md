@@ -136,6 +136,17 @@ compensating check. Neither suite can live here, for the same reason the depende
 Controller configuration is not here. It lives in `g1_controllers/config/lowcmd_controllers.yaml`,
 which `control.launch.py` loads.
 
+## Acquiring the arms
+
+`activate_arm` trades the arm freeze for `arm_trajectory_controller`, activates both hands, and
+then moves the arms straight out to the sides.
+
+That last step is not cosmetic. A hand beside its own hip is in nothing's way, whatever the robot
+is standing at; where the arms hang at bring-up is inside the octomap of any table in front of
+it, and MoveIt refuses to plan from a start state in collision. A start state in collision has no
+plan out of it, so the first motion has to be one that needs no planning: it goes straight to the
+controller, ramped over four seconds.
+
 ## Tests
 
 ```bash
