@@ -1,0 +1,15 @@
+# The stand-in grasp generator, loaded by g1_perception/launch/perception.launch.py with
+# grasp_engine:=mock.
+#
+# Answers from /objects alone, so it needs no depth, no model and no GPU. What it is for is the
+# filtering above it: three sensible grasps and one from under the table, so a filter that
+# accepts everything fails a test rather than a robot.
+g1_mock_grasp_source:
+  ros__parameters:
+    # The real adapter carries a description of the right hand and refuses the left; this
+    # answers the same way so a caller cannot pass here and fail there.
+    hand: "right"
+
+    # How far above the object's top face the grasp frame sits. Roughly where a real generator
+    # puts a pre-closed hand around something this size.
+    approach_height_m: 0.10

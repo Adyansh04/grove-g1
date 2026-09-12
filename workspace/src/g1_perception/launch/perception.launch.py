@@ -24,6 +24,9 @@ COLOR_INFO = "/camera/color/camera_info"
 DEPTH_IMAGE = "/camera/aligned_depth_to_color/image_raw"
 DEPTH_INFO = "/camera/aligned_depth_to_color/camera_info"
 GROUND_TRUTH = "/g1_sensor_relay/object_poses"
+TRACKED_MASKS = "/g1_object_geometry/tracked_masks"
+# One service name whichever generator answers it, so a caller is written once.
+GRASP_SERVICE = "/g1_grasp_engine/generate_grasps"
 
 
 def _config(name):
@@ -85,7 +88,33 @@ def _nodes(context, *args, **kwargs):
             ("depth/camera_info", DEPTH_INFO),
         ],
     )
-    return [mock, vision, geometry]
+    grasp_engine = LaunchConfiguration("grasp_engine")
+    mock_grasps = Node(
+        package="g1_perception",
+        executable="g1_mock_grasp_source",
+        name="g1_mock_grasp_source",
+        output="screen",
+        condition=IfCondition(EqualsSubstitution(grasp_engine, "mock")),
+        parameters=[_config("g1_mock_grasp_source.yaml")],
+        remappings=[("objects", "/objects"), ("~/generate_grasps", GRASP_SERVICE)],
+    )
+
+    graspgen = Node(
+        package="g1_perception",
+        executable="g1_graspgen_adapter",
+        name="g1_graspgen_adapter",
+        output="screen",
+        condition=IfCondition(EqualsSubstitution(grasp_engine, "graspgen")),
+        parameters=[_config("g1_graspgen_adapter.yaml")],
+        remappings=[
+            ("tracked_masks", TRACKED_MASKS),
+            ("depth/image_raw", DEPTH_IMAGE),
+            ("depth/camera_info", DEPTH_INFO),
+            ("~/generate_grasps", GRASP_SERVICE),
+            ("~/grasp_candidates", "/grasp_candidates"),
+        ],
+    )
+    return [mock, vision, geometry, mock_grasps, graspgen]
 
 
 def generate_launch_description():
@@ -120,6 +149,13 @@ def generate_launch_description():
                 default_value="0.005",
                 description="How far past an object's own box the mock's mask may spill. "
                 "Positive simulates a sloppy segmenter.",
+            ),
+            DeclareLaunchArgument(
+                "grasp_engine",
+                default_value="none",
+                choices=["none", "mock", "graspgen"],
+                description="Who answers for six-degree-of-freedom grasps: nobody, a stand-in "
+                "that needs no GPU, or the GraspGenX server on the host.",
             ),
             OpaqueFunction(function=_nodes),
         ]

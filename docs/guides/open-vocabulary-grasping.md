@@ -32,9 +32,7 @@ Measured against the simulator's own poses in the tabletop world: four of the fi
 within 2 mm, and the sphere sits 1.2 cm short along the view direction, because no camera can see
 its far side. Sizes come back within 5 mm except the sphere's.
 
-## The host half
-
-## Setup
+## The vision server
 
 ```bash
 ./scripts/setup-vision.sh
@@ -44,7 +42,7 @@ Creates a virtualenv at `~/ref/grove-vision/.venv`, reusing the torch wheels tha
 `scripts/setup-groot.sh` caches. The model weights download on first run: about 900 MB for
 Grounding DINO base and 180 MB for SAM 2.1 small.
 
-## Running it
+Run it:
 
 ```bash
 ~/ref/grove-vision/.venv/bin/python scripts/vision_server.py --port 5560
@@ -106,3 +104,44 @@ https://huggingface.co/facebook/sam3, then sign in with
 
 Nothing in the ROS workspace changes when the backend does. The instance-mask message is the same
 either way, which is the point of putting the model behind a socket.
+
+## Grasps
+
+A second host server turns the same masks into six-degree-of-freedom grasps for the Dex3-1, with
+no CAD model of anything. It is [GraspGenX](https://github.com/NVlabs/GraspGenX), whose released
+model conditions on a gripper's *sweep volume*: two boxes describing the finger volume open and
+half closed. That is why a hand it has never trained on works, and it ships the description of
+this one, `unitree_g1`, which is the Dex3-1's seven joints.
+
+```bash
+./scripts/setup-graspgen.sh
+```
+
+Run the server it prints, then ask for candidates:
+
+```bash
+ros2 launch g1_bringup bringup.launch.py world:=tabletop pin_pelvis:=true \
+  odometry:=ground_truth moveit:=true manipulation:=true perception:=true \
+  detector:=mock grasp_engine:=graspgen
+```
+
+```bash
+ros2 service call /g1_grasp_engine/generate_grasps g1_msgs/srv/GenerateGrasps \
+  "{object_id: red_cube_0, hand: right}"
+```
+
+Candidates are published as arrows on `/grasp_candidates`, coloured red to green by confidence and
+drawn along each grasp's approach axis. Nothing moves: this stage produces candidates, and what
+filters and executes them is the arm side.
+
+`grasp_engine:=mock` answers the same service from `/objects` alone, with three sensible grasps and
+one deliberately reaching up through the table, so the filtering above it can be tested without a
+GPU.
+
+### The one calibration
+
+GraspGenX returns poses of its own gripper frame, where +Z is the approach direction and +X the
+closing direction. That is not a link in this robot's URDF. Look at the arrows in RViz against a
+known object, read off the offset to `right_hand_grasp_frame`, and that number is what the arm
+side applies. Left-hand requests are refused rather than mirrored: a mirrored sweep volume is a
+different gripper, and the model was never asked about it.

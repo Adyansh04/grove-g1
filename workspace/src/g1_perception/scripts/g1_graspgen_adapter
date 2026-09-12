@@ -1,0 +1,321 @@
+#!/usr/bin/env python3
+"""Asks the host grasp generator for six-degree-of-freedom grasps on an object perception found.
+
+Python for the same reason g1_detector is: this is a ZMQ and msgpack client, the model behind it
+needs torch and CUDA, and this image has neither. The generator is NVlabs/GraspGenX, whose server
+takes a depth frame, its intrinsics and an instance mask, and answers with grasps per instance in
+the camera frame.
+
+The gripper reaches the model as twelve numbers, its sweep volume, rather than as a name: two
+boxes in the gripper's own frame enclosing the finger volume open and half closed. That is what
+makes a hand it has never seen work, and it is how the Dex3-1 is described here.
+"""
+
+import msgpack
+import msgpack_numpy as mnp
+import numpy as np
+import rclpy
+import zmq
+from geometry_msgs.msg import Point, Pose
+from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
+from sensor_msgs.msg import CameraInfo, Image
+from std_msgs.msg import ColorRGBA
+from visualization_msgs.msg import Marker, MarkerArray
+
+from g1_msgs.msg import InstanceMaskArray
+from g1_msgs.srv import GenerateGrasps
+
+MASK_QOS = 2
+# Long enough to see an arrow, short enough not to hide the object behind a thicket of them.
+MARKER_LIFETIME_S = 20.0
+MARKER_LENGTH_M = 0.06
+
+
+class GraspClient:
+    """One REQ socket to the generator, rebuilt whenever a request does not complete.
+
+    REQ sockets alternate send and recv strictly, so a timed-out request leaves the socket
+    unusable and it is replaced rather than retried.
+    """
+
+    def __init__(self, address, timeout_ms):
+        self._address = address
+        self._timeout_ms = timeout_ms
+        self._context = zmq.Context()
+        self._socket = None
+        self._connect()
+
+    def _connect(self):
+        if self._socket is not None:
+            self._socket.close(linger=0)
+        self._socket = self._context.socket(zmq.REQ)
+        self._socket.setsockopt(zmq.RCVTIMEO, self._timeout_ms)
+        self._socket.setsockopt(zmq.SNDTIMEO, self._timeout_ms)
+        self._socket.connect(self._address)
+
+    def call(self, action, payload=None):
+        request = {"action": action}
+        request.update(payload or {})
+        try:
+            self._socket.send(msgpack.packb(request, default=mnp.encode))
+            reply = msgpack.unpackb(self._socket.recv(), object_hook=mnp.decode, raw=False)
+        except zmq.ZMQError as error:
+            self._connect()
+            raise RuntimeError(f"{action} did not complete: {error}") from error
+        if isinstance(reply, dict) and "error" in reply:
+            raise RuntimeError(f"the grasp generator refused {action}: {reply['error']}")
+        return reply
+
+    def close(self):
+        if self._socket is not None:
+            self._socket.close(linger=0)
+        self._context.term()
+
+
+def pose_from_matrix(matrix):
+    """A 4x4 SE(3) matrix as a Pose, with the quaternion taken from the rotation block."""
+    rotation = np.asarray(matrix, dtype=np.float64)[:3, :3]
+    trace = float(np.trace(rotation))
+    if trace > 0.0:
+        scale = np.sqrt(trace + 1.0) * 2.0
+        w = 0.25 * scale
+        x = (rotation[2, 1] - rotation[1, 2]) / scale
+        y = (rotation[0, 2] - rotation[2, 0]) / scale
+        z = (rotation[1, 0] - rotation[0, 1]) / scale
+    else:
+        # The largest diagonal term decides which branch stays numerically well conditioned.
+        axis = int(np.argmax(np.diag(rotation)))
+        first, second = (axis + 1) % 3, (axis + 2) % 3
+        scale = (
+            np.sqrt(1.0 + rotation[axis, axis] - rotation[first, first] - rotation[second, second])
+            * 2.0
+        )
+        components = [0.0, 0.0, 0.0]
+        components[axis] = 0.25 * scale
+        components[first] = (rotation[first, axis] + rotation[axis, first]) / scale
+        components[second] = (rotation[second, axis] + rotation[axis, second]) / scale
+        x, y, z = components
+        w = (rotation[second, first] - rotation[first, second]) / scale
+
+    pose = Pose()
+    pose.position.x = float(matrix[0][3])
+    pose.position.y = float(matrix[1][3])
+    pose.position.z = float(matrix[2][3])
+    norm = np.linalg.norm([x, y, z, w]) or 1.0
+    pose.orientation.x = float(x / norm)
+    pose.orientation.y = float(y / norm)
+    pose.orientation.z = float(z / norm)
+    pose.orientation.w = float(w / norm)
+    return pose
+
+
+class GraspGenAdapter(Node):
+    def __init__(self):
+        super().__init__("g1_graspgen_adapter", automatically_declare_parameters_from_overrides=True)
+        self._address = self._param("server_address", "tcp://127.0.0.1:5556")
+        self._hand = str(self._param("hand", "right"))
+        self._max_grasps = int(self._param("max_grasps", 100))
+        self._num_samples = int(self._param("num_grasps_sampled", 200))
+        self._min_object_points = int(self._param("min_object_points", 100))
+        self._sweep = [float(value) for value in self._param("sweep_volume", [])]
+        self._gripper_type = int(self._param("gripper_type", 2))
+        self._fingertip_depth = float(self._param("fingertip_depth_m", 0.07))
+
+        self._depth = {}
+        self._info = None
+        self._masks = None
+
+        self._markers = self.create_publisher(MarkerArray, "~/grasp_candidates", 1)
+        self.create_subscription(InstanceMaskArray, "tracked_masks", self._on_masks, MASK_QOS)
+        # Sensor QoS deliberately: the relay publishes best-effort, and a reliable subscriber
+        # against it silently never matches.
+        self.create_subscription(Image, "depth/image_raw", self._on_depth, qos_profile_sensor_data)
+        self.create_subscription(
+            CameraInfo, "depth/camera_info", self._on_info, qos_profile_sensor_data
+        )
+
+        self._client = GraspClient(self._address, int(self._param("zmq_timeout_ms", 30000)))
+        self._handshake()
+        self.create_service(GenerateGrasps, "~/generate_grasps", self._on_request)
+
+    def _param(self, name, default):
+        return self.get_parameter_or(name, rclpy.parameter.Parameter(name, value=default)).value
+
+    def _handshake(self):
+        try:
+            self._client.call("health")
+        except RuntimeError as error:
+            self.get_logger().warning(
+                f"the grasp generator at {self._address} did not answer: {error}. "
+                "Requests will retry; start it with scripts/setup-graspgen.sh's instructions."
+            )
+            return
+        try:
+            metadata = self._client.call("metadata")
+        except RuntimeError:
+            metadata = {}
+        self.get_logger().info(
+            f"grasp generator at {self._address}: {metadata.get('model', {})}"
+        )
+
+    def _on_depth(self, msg):
+        key = (msg.header.stamp.sec, msg.header.stamp.nanosec)
+        self._depth[key] = msg
+        while len(self._depth) > 40:
+            self._depth.pop(next(iter(self._depth)))
+
+    def _on_info(self, msg):
+        self._info = msg
+
+    def _on_masks(self, msg):
+        self._masks = msg
+
+    def _sweep_params(self):
+        if len(self._sweep) != 12:
+            raise ValueError(
+                f"sweep_volume has {len(self._sweep)} numbers; the model wants twelve, "
+                "two boxes of extents and offsets in the gripper's own frame"
+            )
+        return {
+            "extents_open": self._sweep[0:3],
+            "offset_open": self._sweep[3:6],
+            "extents_mid": self._sweep[6:9],
+            "offset_mid": self._sweep[9:12],
+            "gripper_type": self._gripper_type,
+            "fingertip_depth": self._fingertip_depth,
+        }
+
+    def _frame_for(self, masks):
+        """The depth frame these masks were cut from, or None."""
+        return self._depth.get((masks.header.stamp.sec, masks.header.stamp.nanosec))
+
+    def _instance_mask(self, masks, depth, wanted):
+        """A full-frame integer mask holding a single instance, numbered 1."""
+        full = np.zeros((depth.height, depth.width), dtype=np.int32)
+        found = False
+        for instance in masks.instances:
+            if instance.label != wanted:
+                continue
+            roi = instance.roi
+            crop = np.asarray(instance.data, dtype=np.uint8).reshape(roi.height, roi.width)
+            full[roi.y_offset : roi.y_offset + roi.height, roi.x_offset : roi.x_offset + roi.width][
+                crop > 0
+            ] = 1
+            found = True
+        return full if found else None
+
+    def _on_request(self, request, response):
+        response.ok = False
+        if request.hand and request.hand != self._hand:
+            response.message = (
+                f"grasps are generated for the {self._hand} hand only: the sweep volume this "
+                f"adapter carries describes that hand, and mirroring it is not the same gripper"
+            )
+            return response
+
+        masks = self._masks
+        if masks is None or self._info is None:
+            response.message = "no tracked masks or camera_info yet; is perception running?"
+            return response
+        depth = self._frame_for(masks)
+        if depth is None:
+            response.message = "the depth frame those masks were cut from is no longer held"
+            return response
+
+        wanted = request.object_id
+        instance_mask = self._instance_mask(masks, depth, wanted)
+        if instance_mask is None:
+            known = sorted({instance.label for instance in masks.instances})
+            response.message = f"nothing called '{wanted}' is being tracked; there is {known}"
+            return response
+
+        frame = np.frombuffer(depth.data, dtype=np.float32).reshape(depth.height, depth.step // 4)
+        frame = np.nan_to_num(frame[:, : depth.width], nan=0.0, posinf=0.0, neginf=0.0)
+        intrinsics = np.asarray(self._info.k, dtype=np.float32).reshape(3, 3)
+
+        try:
+            reply = self._client.call(
+                "infer_scene_depth",
+                {
+                    "depth": frame.astype(np.float32),
+                    "intrinsics": intrinsics,
+                    "instance_mask": instance_mask,
+                    "sweep_volume_params": self._sweep_params(),
+                    "min_object_points": self._min_object_points,
+                    "num_grasps": self._num_samples,
+                },
+            )
+        except (RuntimeError, ValueError) as error:
+            response.message = str(error)
+            return response
+
+        instance_ids = list(np.asarray(reply.get("instance_ids", [])).reshape(-1))
+        if 1 not in [int(value) for value in instance_ids]:
+            response.message = (
+                f"the generator found no grasp on '{wanted}'; it skipped "
+                f"{list(np.asarray(reply.get('skipped_instance_ids', [])).reshape(-1))}"
+            )
+            return response
+        index = [int(value) for value in instance_ids].index(1)
+        grasps = np.asarray(reply["grasps"][index], dtype=np.float64).reshape(-1, 4, 4)
+        scores = np.asarray(reply["confidences"][index], dtype=np.float64).reshape(-1)
+
+        order = np.argsort(-scores)[: self._max_grasps]
+        response.ok = True
+        response.message = f"{len(order)} grasps on '{wanted}'"
+        response.header = depth.header
+        response.grasps = [pose_from_matrix(grasps[i]) for i in order]
+        response.scores = [float(scores[i]) for i in order]
+        self._publish_markers(depth.header, [grasps[i] for i in order], response.scores)
+        return response
+
+    def _publish_markers(self, header, matrices, scores):
+        """Raw candidates, unfiltered: this is what you look at to measure the frame offset."""
+        markers = MarkerArray()
+        clear = Marker()
+        clear.header = header
+        clear.action = Marker.DELETEALL
+        markers.markers.append(clear)
+        for index, (matrix, score) in enumerate(zip(matrices, scores, strict=True)):
+            origin = np.asarray(matrix, dtype=np.float64)[:3, 3]
+            # Drawn along the gripper's approach axis, which the generator defines as +Z, so a
+            # wrong convention shows up as arrows lying across the object rather than into it.
+            tip = origin + (np.asarray(matrix, dtype=np.float64)[:3, 2] * MARKER_LENGTH_M)
+            marker = Marker()
+            marker.header = header
+            marker.ns = "grasp_candidates"
+            marker.id = index
+            marker.type = Marker.ARROW
+            marker.action = Marker.ADD
+            marker.points = [
+                Point(x=float(origin[0]), y=float(origin[1]), z=float(origin[2])),
+                Point(x=float(tip[0]), y=float(tip[1]), z=float(tip[2])),
+            ]
+            marker.scale.x = 0.004
+            marker.scale.y = 0.010
+            marker.scale.z = 0.012
+            marker.color = ColorRGBA(r=float(1.0 - score), g=float(score), b=0.2, a=0.8)
+            marker.lifetime.sec = int(MARKER_LIFETIME_S)
+            markers.markers.append(marker)
+        self._markers.publish(markers)
+
+    def close(self):
+        self._client.close()
+
+
+def main():
+    rclpy.init()
+    node = GraspGenAdapter()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.close()
+        node.destroy_node()
+        rclpy.try_shutdown()
+
+
+if __name__ == "__main__":
+    main()

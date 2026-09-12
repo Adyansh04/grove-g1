@@ -184,6 +184,7 @@ def _perception():
     return _include(
         os.path.join(_share("g1_perception"), "launch", "perception.launch.py"),
         detector=LaunchConfiguration("detector"),
+        grasp_engine=LaunchConfiguration("grasp_engine"),
         phrases=LaunchConfiguration("phrases"),
         mock_latency_s=LaunchConfiguration("mock_latency_s"),
         mock_rate_hz=LaunchConfiguration("mock_rate_hz"),
@@ -371,6 +372,13 @@ def generate_launch_description():
             choices=["mock", "vision"],
             description="Which detector perception runs: 'mock' cuts masks from simulator "
             "ground truth and needs no GPU, 'vision' asks the host vision server.",
+        ),
+        DeclareLaunchArgument(
+            "grasp_engine",
+            default_value="none",
+            choices=["none", "mock", "graspgen"],
+            description="Who answers for six-degree-of-freedom grasps: nobody, a stand-in that "
+            "needs no GPU, or the GraspGenX server on the host.",
         ),
         DeclareLaunchArgument(
             "phrases",

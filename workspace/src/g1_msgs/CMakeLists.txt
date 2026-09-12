@@ -22,6 +22,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "action/SetArmPosture.action"
   "msg/InstanceMask.msg"
   "msg/InstanceMaskArray.msg"
+  "srv/GenerateGrasps.srv"
   "srv/GetActionChunk.srv"
   DEPENDENCIES builtin_interfaces geometry_msgs sensor_msgs std_msgs trajectory_msgs
 )

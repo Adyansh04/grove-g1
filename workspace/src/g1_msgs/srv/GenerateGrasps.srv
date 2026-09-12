@@ -1,0 +1,24 @@
+# Six-degree-of-freedom grasps for one object that perception is already reporting.
+#
+# The request carries no imagery. Only the server knows which mask belongs to which tracked
+# object, and sending a depth frame through a service call to have it sent straight back out
+# again would double the traffic for nothing.
+
+# A class_id currently on /objects, indexed ("red_cube_0") or the bare phrase ("red_cube").
+string object_id
+# Which hand the grasps are for. A gripper's grasps are not interchangeable between hands.
+string HAND_LEFT=left
+string HAND_RIGHT=right
+string hand
+---
+bool ok
+# Why there are none: an unknown object names what is being reported instead, and an
+# unsupported hand says so rather than mirroring a pose that was never generated for it.
+string message
+# The frame every pose below is in, and the stamp of the depth frame they were generated from.
+std_msgs/Header header
+# Best first. These are poses of the GENERATOR's gripper frame, which is not a frame in this
+# robot's URDF: the consumer applies the measured offset to reach its own grasp frame.
+geometry_msgs/Pose[] grasps
+# Discriminator confidence in [0, 1], one per grasp.
+float32[] scores
