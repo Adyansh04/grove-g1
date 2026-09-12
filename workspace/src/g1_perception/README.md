@@ -27,6 +27,8 @@ colcon build --symlink-install --packages-select g1_perception
 | `g1_detector` | Sends camera frames and the phrase list to the host vision server and publishes the instance masks it answers with. Python, see below. |
 | `g1_mock_detector` | Cuts the same masks out of simulator ground truth against the real rendered depth. No GPU, no server, no network. Simulation only. |
 | `g1_object_geometry` | Deprojects each mask, finds the surface the object stands on, fits a box, and tracks it across frames so an id keeps naming one object. |
+| `g1_graspgen_adapter` | Sends the depth frame, its intrinsics and one object's mask to the host grasp generator and serves the grasps it answers with. Python, see below. |
+| `g1_mock_grasp_source` | Answers the same service from `/objects` alone: three sensible grasps and one reaching up through the table. No GPU. |
 
 ## Interfaces
 
@@ -38,6 +40,8 @@ colcon build --symlink-install --packages-select g1_perception
 | Pub | `~/instance_masks` (both detectors) | `g1_msgs/InstanceMaskArray`, reliable |
 | Pub | `~/object_poses` (geometry) | `vision_msgs/Detection3DArray`, reliable |
 | Pub | `~/tracked_masks` (geometry) | `g1_msgs/InstanceMaskArray`, the input masks relabelled with object ids |
+| Srv | `~/generate_grasps` (both grasp sources) | `g1_msgs/GenerateGrasps` |
+| Pub | `~/grasp_candidates` (graspgen) | `visualization_msgs/MarkerArray`, one arrow per candidate along its approach axis |
 
 Images come in at sensor QoS because the relay publishes best-effort and a reliable subscriber
 against it silently never matches. Masks and poses go out reliable: they are what a skill decides
@@ -70,12 +74,21 @@ many of them there turned out to be.
 `phrases` is a launch argument rather than a file key, and `ros2 param set` changes it while the
 node runs.
 
-## Why one node is Python
+## Why two nodes are Python
 
-`g1_detector` is a ZMQ and msgpack client. The models it talks to need torch and CUDA, which this
-image deliberately does not have, so they run on the host and this node speaks their wire
+`g1_detector` and `g1_graspgen_adapter` are ZMQ and msgpack clients. The models it talks to need torch and CUDA, which this
+image deliberately does not have, so they run on the host and these nodes speak their wire
 protocol, exactly as `g1_vla`'s policy adapter does. Everything the masks are then used for is
-C++: the geometry, the tracking, and the stand-in detector.
+C++: the geometry, the tracking, and both stand-ins.
+
+## Grasps
+
+`g1_graspgen_adapter` asks NVIDIA's GraspGenX for six-degree-of-freedom grasps on one tracked
+object. The hand travels as twelve numbers, its sweep volume, rather than as a name, which is why
+a model that never trained on a Dex3-1 produces grasps for one. Poses come back in the camera
+frame, belonging to the generator's own gripper frame rather than to any link here, so the arm
+side applies one measured offset. Left-hand requests are refused: mirroring a sweep volume
+describes a different gripper.
 
 ## What the geometry assumes
 
@@ -117,4 +130,5 @@ ros2 topic echo /objects --field detections[0].results[0].hypothesis
 | `test_object_tracker` | No | Ids that survive jitter, a second instance getting its own index, two neighbours that must not swap, index reuse after a timeout, and the sole-instance alias. |
 | `test_depth_history` | No | Pairing a late mask with its own depth frame, refusing one outside the tolerance, and dropping frames past the window. |
 | `test_detector` | No | The detector client against a stub vision server: the request encoding, the mask message, the image's own stamp, and a phrase list that is re-read rather than cached. |
+| `test_graspgen_adapter` | No | The grasp adapter against a stub generator: the request encoding the real server would reject, the frame and stamp of the answer, ordering by confidence, an unknown object, and a left-hand request refused rather than mirrored. |
 | `test_perception_objects` | Sim, `-L simulator` | Measured poses against the simulator's own, for all five tabletop objects: position within 2 cm, size within 2.5 cm, both names published, and the stamp being the measurement's rather than the publisher's. |
