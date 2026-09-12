@@ -75,6 +75,7 @@ install(TARGETS
   g1_mock_detector_node
   EXPORT export_${PROJECT_NAME} DESTINATION lib)
 install(TARGETS g1_object_geometry g1_mock_detector DESTINATION lib/${PROJECT_NAME})
+install(PROGRAMS scripts/g1_detector DESTINATION lib/${PROJECT_NAME})
 
 # --- tests -----------------------------------------------------------------
 
@@ -91,6 +92,12 @@ if(BUILD_TESTING)
 
   ament_add_gmock(test_depth_history test/test_depth_history.cpp)
   target_link_libraries(test_depth_history g1_perception_depth_history)
+
+  find_package(launch_testing_ament_cmake REQUIRED)
+
+  # Not a simulator test: it runs the detector against a stub vision server, so it needs neither
+  # MuJoCo nor a GPU and CI can run it.
+  add_launch_test(test/test_detector.launch.py TARGET test_detector TIMEOUT 240)
 
   g1_add_lint_tests()
 endif()

@@ -1,0 +1,201 @@
+#!/usr/bin/env python3
+"""Asks the host vision server what is in the camera image, and publishes the masks it answers with.
+
+Python for one reason: this is a ZMQ and msgpack client. The models it talks to need torch and
+CUDA, which this image deliberately does not have, so the server runs on the host and the wire
+format is msgpack_numpy's, a Python convention. Everything the masks are then used for, the
+geometry and the tracking, is C++ in this same package.
+
+The phrases to look for are a plain string-array parameter. An empty list is idle, so
+
+    ros2 param set /g1_detector phrases "['red cube', 'blue sphere']"
+
+is the whole control interface, and the instruction grounder writes the same parameter rather
+than inventing a service of its own.
+"""
+
+import msgpack
+import msgpack_numpy as mnp
+import numpy as np
+import rclpy
+import zmq
+from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
+from sensor_msgs.msg import Image
+
+from g1_msgs.msg import InstanceMask, InstanceMaskArray
+
+# Reliable with a short queue, not sensor QoS: masks are 13 kB at under a hertz, and a dropped
+# one is a second and a half of blindness rather than a skipped frame.
+MASK_QOS = 2
+
+
+class VisionClient:
+    """One REQ socket to the vision server, rebuilt whenever a request does not complete.
+
+    REQ sockets alternate send and recv strictly, so a timed-out request leaves the socket
+    unusable: the next send raises rather than retrying.
+    """
+
+    def __init__(self, address, timeout_ms):
+        self._address = address
+        self._timeout_ms = timeout_ms
+        self._context = zmq.Context()
+        self._socket = None
+        self._connect()
+
+    def _connect(self):
+        if self._socket is not None:
+            self._socket.close(linger=0)
+        self._socket = self._context.socket(zmq.REQ)
+        self._socket.setsockopt(zmq.RCVTIMEO, self._timeout_ms)
+        self._socket.setsockopt(zmq.SNDTIMEO, self._timeout_ms)
+        self._socket.connect(self._address)
+
+    def call(self, endpoint, data=None):
+        request = {"endpoint": endpoint}
+        if data is not None:
+            request["data"] = data
+        try:
+            self._socket.send(msgpack.packb(request, default=mnp.encode))
+            reply = msgpack.unpackb(self._socket.recv(), object_hook=mnp.decode, raw=False)
+        except zmq.ZMQError as error:
+            self._connect()
+            raise RuntimeError(f"{endpoint} did not complete: {error}") from error
+        if isinstance(reply, dict) and "error" in reply:
+            raise RuntimeError(f"the vision server refused {endpoint}: {reply['error']}")
+        return reply
+
+    def close(self):
+        if self._socket is not None:
+            self._socket.close(linger=0)
+        self._context.term()
+
+
+def image_to_array(msg):
+    """An rgb8 Image as (H, W, 3) uint8, without pulling in cv_bridge for one reshape."""
+    if msg.encoding != "rgb8":
+        raise ValueError(f"expected rgb8, got {msg.encoding}")
+    frame = np.frombuffer(msg.data, dtype=np.uint8)
+    return frame.reshape(msg.height, msg.step // 3, 3)[:, : msg.width, :]
+
+
+class Detector(Node):
+    def __init__(self):
+        super().__init__("g1_detector", automatically_declare_parameters_from_overrides=True)
+        self._address = self._param("server_address", "tcp://127.0.0.1:5560")
+        self._max_image_age_s = float(self._param("max_image_age_s", 1.0))
+        self._box_threshold = float(self._param("box_threshold", 0.30))
+        self._text_threshold = float(self._param("text_threshold", 0.25))
+        rate_hz = float(self._param("detect_rate_hz", 1.0))
+        if not self.has_parameter("phrases"):
+            self.declare_parameter("phrases", [])
+
+        self._image = None
+        self._publisher = self.create_publisher(InstanceMaskArray, "~/instance_masks", MASK_QOS)
+        # Sensor QoS deliberately: the relay publishes best-effort, and a reliable subscriber
+        # against it silently never matches.
+        self.create_subscription(Image, "color/image_raw", self._on_image, qos_profile_sensor_data)
+
+        self._client = VisionClient(self._address, int(self._param("zmq_timeout_ms", 20000)))
+        self._ready = self._handshake()
+        self.create_timer(1.0 / max(rate_hz, 0.01), self._tick)
+
+    def _param(self, name, default):
+        return self.get_parameter_or(name, rclpy.parameter.Parameter(name, value=default)).value
+
+    def _handshake(self):
+        try:
+            reply = self._client.call("ping")
+        except RuntimeError as error:
+            self.get_logger().warning(
+                f"the vision server at {self._address} did not answer: {error}. "
+                "Retrying on each detection; start it with scripts/vision_server.py."
+            )
+            return False
+        self.get_logger().info(
+            f"vision server at {self._address}: {reply.get('backend')} on {reply.get('device')}"
+        )
+        return True
+
+    def _on_image(self, msg):
+        self._image = msg
+
+    def _phrases(self):
+        return [str(phrase) for phrase in self.get_parameter("phrases").value or [] if str(phrase).strip()]
+
+    def _tick(self):
+        phrases = self._phrases()
+        image = self._image
+        if not phrases or image is None:
+            return
+        age = (self.get_clock().now() - rclpy.time.Time.from_msg(image.header.stamp)).nanoseconds / 1e9
+        if age > self._max_image_age_s:
+            self.get_logger().warning(
+                f"the newest camera frame is {age:.1f} s old; not asking about it", throttle_duration_sec=5.0
+            )
+            return
+
+        try:
+            reply = self._client.call(
+                "segment",
+                {
+                    "image": image_to_array(image),
+                    "phrases": phrases,
+                    "box_threshold": self._box_threshold,
+                    "text_threshold": self._text_threshold,
+                },
+            )
+        except (RuntimeError, ValueError) as error:
+            self.get_logger().warning(str(error), throttle_duration_sec=5.0)
+            return
+        self._ready = True
+        self._publish(image, reply)
+
+    def close(self):
+        self._client.close()
+
+    def _publish(self, image, reply):
+        masks = InstanceMaskArray()
+        # The image's own header: the geometry node pairs on this stamp to find the depth frame
+        # these masks were cut from, which is not the newest one by the time they arrive.
+        masks.header = image.header
+        masks.image_width = image.width
+        masks.image_height = image.height
+        masks.model = str(reply.get("model", ""))
+        for instance in reply.get("instances", []):
+            mask = np.asarray(instance["mask"], dtype=np.uint8)
+            x, y, width, height = (int(value) for value in instance["roi"])
+            if mask.shape != (height, width):
+                self.get_logger().warning(
+                    f"instance '{instance.get('label')}' has a {mask.shape} mask for a "
+                    f"{height}x{width} region; dropping it"
+                )
+                continue
+            out = InstanceMask()
+            out.label = str(instance["label"])
+            out.score = float(instance["score"])
+            out.roi.x_offset = x
+            out.roi.y_offset = y
+            out.roi.width = width
+            out.roi.height = height
+            out.data = mask.reshape(-1).tolist()
+            masks.instances.append(out)
+        self._publisher.publish(masks)
+
+
+def main():
+    rclpy.init()
+    node = Detector()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.close()
+        node.destroy_node()
+        rclpy.try_shutdown()
+
+
+if __name__ == "__main__":
+    main()

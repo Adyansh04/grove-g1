@@ -1,0 +1,31 @@
+# The detector client, loaded by g1_perception/launch/perception.launch.py with
+# detector:=vision.
+g1_detector:
+  ros__parameters:
+    # The vision server runs on the host, outside this container, because it needs torch and
+    # CUDA. Compose is host-networked, so localhost reaches it. Start it with
+    # scripts/vision_server.py; scripts/setup-vision.sh installs it.
+    server_address: "tcp://127.0.0.1:5560"
+
+    # Grounded-SAM-2 takes about 1.5 s per frame on the laptop GPU and SAM 3 is slower on a
+    # Jetson. The timeout is what a stalled server costs before the node complains and rebuilds
+    # its socket, so it sits well past the slowest sensible inference rather than near it.
+    zmq_timeout_ms: 20000
+
+    # One request at a time regardless, since the call blocks: this only decides how soon after
+    # an answer the next question is asked. The models cannot beat about 0.7 Hz anyway.
+    detect_rate_hz: 1.0
+
+    # Objects to report. Empty means idle, which is the state a bring-up that is not
+    # manipulating should sit in, and `ros2 param set` is how a tree or the grounder changes it.
+    phrases: []
+
+    # Asking about a frame older than this wastes a second and a half of GPU on a scene that has
+    # moved. The camera publishes at 10 Hz, so anything past a second means it has stopped.
+    max_image_age_s: 1.0
+
+    # Grounding DINO's two thresholds. Its scores on these objects sit above 0.8 and its false
+    # positives well below 0.5, so these are the upstream defaults rather than tuned numbers.
+    # SAM 3 ignores the second: it has one calibrated score.
+    box_threshold: 0.30
+    text_threshold: 0.25
