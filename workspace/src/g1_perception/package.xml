@@ -13,6 +13,8 @@
   <license>BSD-3-Clause</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
+  <!-- Installs g1_perception/, the module the three adapter scripts import. -->
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
 
   <depend>g1_msgs</depend>
   <depend>geometry_msgs</depend>
@@ -22,15 +24,19 @@
   <depend>tf2_geometry_msgs</depend>
   <depend>tf2_ros</depend>
   <depend>vision_msgs</depend>
-  <depend>visualization_msgs</depend>
 
-  <!-- The detector client's own; it speaks the vision server's protocol rather than importing
-       the models, which is what keeps torch out of this image. -->
+  <!-- The three adapter scripts' own; they speak the host servers' protocol rather than
+       importing the models, which is what keeps torch out of this image. Nothing here compiles
+       against them. -->
   <exec_depend>rclpy</exec_depend>
   <exec_depend>python3-numpy</exec_depend>
   <exec_depend>python3-zmq</exec_depend>
   <exec_depend>python3-msgpack</exec_depend>
-  <!-- msgpack-numpy has no rosdep key and no Ubuntu package; both images pip-install it. -->
+  <!-- Only the grasp adapter's RViz arrows. -->
+  <exec_depend>visualization_msgs</exec_depend>
+  <!-- msgpack-numpy has no rosdep key and no Ubuntu package, so rosdep cannot install it and
+       .devcontainer/Dockerfile pip-installs it into the image instead. A workspace set up by
+       rosdep alone will fail on import here. -->
   <exec_depend>python3-pip</exec_depend>
 
   <!-- ament_lint_common intentionally not used to avoid clang-format conflicts. -->

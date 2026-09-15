@@ -1,19 +1,13 @@
 #!/usr/bin/env python3
 """Turns an instruction into the noun phrases the detector can be asked for.
 
-"pick up the mug to the left of the bowl" is not something an open-vocabulary detector can take:
-it parses a short noun phrase with an attribute or two and nothing else. A model that can look at
-the scene can, so this asks the host vision server's grounding endpoint and installs the answer
-on the detector's `phrases` parameter, which is the detector's whole control interface.
+An open-vocabulary detector takes "red cube", not "the mug to the left of the bowl". This asks the
+host vision server's grounding endpoint and installs the answer on the detector's `phrases`.
 
-Python for the same reason the other two adapters are: it is a ZMQ and msgpack client.
+Python because it is a ZMQ and msgpack client; see the package README.
 """
 
-import msgpack
-import msgpack_numpy as mnp
-import numpy as np
 import rclpy
-import zmq
 from rcl_interfaces.srv import SetParameters
 from rclpy.node import Node
 from rclpy.parameter import Parameter
@@ -22,52 +16,7 @@ from sensor_msgs.msg import Image
 
 from g1_msgs.msg import ExemplarPoint
 from g1_msgs.srv import GroundInstruction
-
-
-class VisionClient:
-    """One REQ socket to the vision server, rebuilt whenever a request does not complete."""
-
-    def __init__(self, address, timeout_ms):
-        self._address = address
-        self._timeout_ms = timeout_ms
-        self._context = zmq.Context()
-        self._socket = None
-        self._connect()
-
-    def _connect(self):
-        if self._socket is not None:
-            self._socket.close(linger=0)
-        self._socket = self._context.socket(zmq.REQ)
-        self._socket.setsockopt(zmq.RCVTIMEO, self._timeout_ms)
-        self._socket.setsockopt(zmq.SNDTIMEO, self._timeout_ms)
-        self._socket.connect(self._address)
-
-    def call(self, endpoint, data=None):
-        request = {"endpoint": endpoint}
-        if data is not None:
-            request["data"] = data
-        try:
-            self._socket.send(msgpack.packb(request, default=mnp.encode))
-            reply = msgpack.unpackb(self._socket.recv(), object_hook=mnp.decode, raw=False)
-        except zmq.ZMQError as error:
-            self._connect()
-            raise RuntimeError(f"{endpoint} did not complete: {error}") from error
-        if isinstance(reply, dict) and "error" in reply:
-            raise RuntimeError(f"the vision server refused {endpoint}: {reply['error']}")
-        return reply
-
-    def close(self):
-        if self._socket is not None:
-            self._socket.close(linger=0)
-        self._context.term()
-
-
-def image_to_array(msg):
-    """An rgb8 Image as (H, W, 3) uint8, without pulling in cv_bridge for one reshape."""
-    if msg.encoding != "rgb8":
-        raise ValueError(f"expected rgb8, got {msg.encoding}")
-    frame = np.frombuffer(msg.data, dtype=np.uint8)
-    return frame.reshape(msg.height, msg.step // 3, 3)[:, : msg.width, :]
+from g1_perception.host_clients import VisionClient, image_to_array
 
 
 class InstructionGrounder(Node):

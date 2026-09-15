@@ -6,6 +6,7 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/g1_common.cmake)
 # --- dependencies ----------------------------------------------------------
 
 find_package(ament_cmake REQUIRED)
+find_package(ament_cmake_python REQUIRED)
 find_package(g1_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
@@ -90,6 +91,8 @@ install(TARGETS
   EXPORT export_${PROJECT_NAME} DESTINATION lib)
 install(TARGETS g1_object_geometry g1_mock_detector g1_mock_grasp_source
   DESTINATION lib/${PROJECT_NAME})
+# The three scripts below import this; it is the host-server protocol they share.
+ament_python_install_package(${PROJECT_NAME})
 install(PROGRAMS
   scripts/g1_detector
   scripts/g1_graspgen_adapter

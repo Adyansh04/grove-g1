@@ -78,11 +78,12 @@ node runs.
 
 ## Why three nodes are Python
 
-`g1_detector`, `g1_graspgen_adapter` and `g1_instruction_grounder` are ZMQ and msgpack clients. The models they talk to need
-torch and CUDA, which this image deliberately does not have, so they run on the host and these
-nodes speak their wire
-protocol, exactly as `g1_vla`'s policy adapter does. Everything the masks are then used for is
-C++: the geometry, the tracking, and both stand-ins.
+`g1_detector`, `g1_graspgen_adapter` and `g1_instruction_grounder` are ZMQ and msgpack clients.
+The models they talk to need torch and CUDA, which this image deliberately does not have, so they
+run on the host and these nodes speak their wire protocol, as `g1_vla`'s policy adapter does.
+Everything the masks are used for is C++: the geometry, the tracking, and both stand-ins.
+
+The socket handling the three share lives in `g1_perception/host_clients.py`.
 
 ## Instructions
 
