@@ -11,7 +11,7 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, EmitEvent, RegisterEventHandler
 from launch.events import matches_action
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import LifecycleNode, Node
 from launch_ros.event_handlers import OnStateTransition
 from launch_ros.events.lifecycle import ChangeState
@@ -58,7 +58,18 @@ def _object_source():
             {"object_source": LaunchConfiguration("object_source")},
         ],
         remappings=[
-            ("~/object_poses", LaunchConfiguration("object_poses_topic")),
+            # Derived from object_source, not set beside it: two free arguments let
+            # object_source:=perception read the simulator's own poses.
+            (
+                "~/object_poses",
+                PythonExpression(
+                    [
+                        "'/g1_object_geometry/object_poses' if '",
+                        LaunchConfiguration("object_source"),
+                        "' == 'perception' else '/g1_sensor_relay/object_poses'",
+                    ]
+                ),
+            ),
             ("~/objects", "/objects"),
             ("~/object_markers", "/object_markers"),
         ],
@@ -118,12 +129,6 @@ def generate_launch_description():
                 "bodies through g1_sensor_relay; 'perception' takes what g1_perception "
                 "measured; 'hardware' refuses to configure, because the robot has no detector "
                 "of its own.",
-            ),
-            DeclareLaunchArgument(
-                "object_poses_topic",
-                default_value="/g1_sensor_relay/object_poses",
-                description="Which stream the pose source republishes. Follows object_source: "
-                "the simulator's own poses, or g1_object_geometry's measured ones.",
             ),
             DeclareLaunchArgument(
                 "grasp_source",

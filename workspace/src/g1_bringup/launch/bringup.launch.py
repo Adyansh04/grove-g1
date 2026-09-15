@@ -166,16 +166,10 @@ def _moveit():
 
 
 def _manipulation(want_perception):
-    # Perception owns the object stream when it runs: its poses are measured, they are named by
-    # the detector, and they arrive seconds after the frame they describe rather than instantly.
+    # Perception owns the object stream when it runs, and its poses arrive seconds late.
     return _include(
         os.path.join(_share("g1_manipulation"), "launch", "manipulation.launch.py"),
         object_source="perception" if want_perception else LaunchConfiguration("object_source"),
-        object_poses_topic=(
-            "/g1_object_geometry/object_poses"
-            if want_perception
-            else "/g1_sensor_relay/object_poses"
-        ),
         object_timeout_ms="4000.0" if want_perception else "1000.0",
         grasp_source=LaunchConfiguration("grasp_source"),
         grasp_offset=LaunchConfiguration("grasp_offset"),

@@ -6,12 +6,11 @@
  * @brief Publishes the poses of manipulable objects, and owns where they are allowed to come
  *        from.
  *
- * The boundary between manipulation and perception. Skills consume `/objects` and never learn
- * which source filled it, so a real detector replaces this node without touching them.
+ * The boundary between manipulation and perception: skills consume `/objects` and never learn
+ * which source filled it.
  *
- * Shaped after g1_state_estimation's odometry publisher, down to `hardware` being the default
- * and refusing to configure: a bring-up that forgets to say which source it has must fail
- * visibly rather than feed a grasp planner simulator ground truth.
+ * `hardware` is the default and refuses to configure, as in g1_state_estimation's odometry
+ * publisher: a bring-up that forgets to name its source must fail visibly.
  */
 
 #include <tf2_ros/buffer.h>
@@ -62,7 +61,7 @@ public:
 
 private:
     bool readParameters();
-    void onGroundTruth(vision_msgs::msg::Detection3DArray::SharedPtr msg);
+    void onObjectPoses(vision_msgs::msg::Detection3DArray::SharedPtr msg);
     void publishMarkers(const vision_msgs::msg::Detection3DArray& objects);
 
     ObjectSource source_{ ObjectSource::kHardware };

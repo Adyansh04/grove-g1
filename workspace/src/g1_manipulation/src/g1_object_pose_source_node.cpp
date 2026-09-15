@@ -77,9 +77,8 @@ bool G1ObjectPoseSource::readParameters()
 
     if (source_ == ObjectSource::kHardware)
     {
-        // Long on purpose. Anyone who reaches this is about to go looking for a perception
-        // stack that does not exist yet, and the alternative of publishing nothing quietly
-        // reads as a broken topic rather than as a subsystem that does not exist yet.
+        // Long on purpose: publishing nothing quietly would read as a broken topic, not as a
+        // source that does not exist.
         RCLCPP_ERROR(
             get_logger(),
             "object_source='hardware' is not implemented: this robot has no detector of its "
@@ -126,14 +125,15 @@ G1ObjectPoseSource::CallbackReturn G1ObjectPoseSource::on_configure(const rclcpp
         "~/object_poses",
         sourceQos(),
         [this](vision_msgs::msg::Detection3DArray::SharedPtr msg) {
-            onGroundTruth(std::move(msg));
+            onObjectPoses(std::move(msg));
         });
 
     RCLCPP_INFO(
         get_logger(),
-        "Configured on simulator ground truth: %s in '%s' -> %s in '%s'. These are exact "
-        "MuJoCo body poses, not measurements -- no noise, no occlusion, no misdetection, and "
-        "every listed object is always visible.",
+        "Configured on %s: %s in '%s' -> %s in '%s'.",
+        source_ == ObjectSource::kPerception ?
+            "measured poses from g1_perception" :
+            "simulator ground truth, exact MuJoCo body poses rather than measurements",
         source_sub_->get_topic_name(),
         source_frame_id_.c_str(),
         objects_pub_->get_topic_name(),
@@ -196,7 +196,7 @@ void G1ObjectPoseSource::publishMarkers(const vision_msgs::msg::Detection3DArray
 // By value, not const-ref: this mutates the message in place, and rclcpp has no const-ref
 // dispatch for a mutable pointee.
 // NOLINTNEXTLINE(performance-unnecessary-value-param)
-void G1ObjectPoseSource::onGroundTruth(vision_msgs::msg::Detection3DArray::SharedPtr msg)
+void G1ObjectPoseSource::onObjectPoses(vision_msgs::msg::Detection3DArray::SharedPtr msg)
 {
     if (!objects_pub_->is_activated())
     {
