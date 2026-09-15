@@ -65,6 +65,23 @@ TEST(DepthHistory, IsEmptyUntilSomethingArrives)
     const DepthHistory history(3.0, 0.005);
 
     EXPECT_EQ(history.at(100.0), nullptr);
+    EXPECT_EQ(history.atOrBefore(100.0), nullptr);
+}
+
+TEST(DepthHistory, ReachesBackToTheNewestFrameNoLaterThanAsked)
+{
+    DepthHistory history(3.0, 0.005);
+    history.push(frameAt(100.0));
+    history.push(frameAt(100.5));
+    history.push(frameAt(101.0));
+
+    // Unlike at(), no tolerance: a stamp between two frames takes the earlier one.
+    EXPECT_EQ(DepthHistory::stampSeconds(history.atOrBefore(100.7)->header), 100.5);
+    EXPECT_EQ(DepthHistory::stampSeconds(history.atOrBefore(101.0)->header), 101.0);
+    EXPECT_EQ(DepthHistory::stampSeconds(history.atOrBefore(400.0)->header), 101.0);
+    // Older than everything held: the oldest stands in rather than nothing, so a mock asked for
+    // a latency longer than it has been running still answers.
+    EXPECT_EQ(DepthHistory::stampSeconds(history.atOrBefore(1.0)->header), 100.0);
 }
 
 }  // namespace

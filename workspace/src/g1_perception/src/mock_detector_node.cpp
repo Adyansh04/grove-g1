@@ -22,16 +22,23 @@ rclcpp::QoS sensorQos()
 
 rclcpp::QoS maskQos() { return rclcpp::QoS(rclcpp::KeepLast(2)).reliable().durability_volatile(); }
 
+/// Headroom over the configured latency, so timer and camera drift cannot lose the frame.
+constexpr double kDepthHistoryHeadroomS = 2.0;
+
 }  // namespace
 
 G1MockDetector::G1MockDetector(const rclcpp::NodeOptions& options)
   : rclcpp::Node("g1_mock_detector", options)
+  // Derived from the latency, not configured beside it: a shorter window silently hands out the
+  // oldest frame held instead of the one asked for.
+  , depth_frames_(
+        declare_parameter<double>("mock_latency_s", 0.0) + kDepthHistoryHeadroomS,
+        /*tolerance_s=*/0.0)
 {
     phrases_   = declare_parameter<std::vector<std::string>>("phrases", std::vector<std::string>{});
-    latency_s_ = declare_parameter<double>("mock_latency_s", 0.0);
-    // Slack on the box test below. It cannot be zero: the pixels of a flat face lie exactly on
-    // the face, so a strict test keeps only the ones rounding happens to push inward. Beyond a
-    // few millimetres it becomes what it is also useful as, a sloppy segmenter.
+    latency_s_ = get_parameter("mock_latency_s").as_double();
+    // Slack on the box test below. Zero keeps only the pixels rounding pushed inward; past a few
+    // millimetres it becomes a deliberately sloppy segmenter.
     margin_m_            = declare_parameter<double>("mock_margin_m", 0.005);
     min_pixels_          = static_cast<int>(declare_parameter<int>("min_pixels", 50));
     const double rate_hz = declare_parameter<double>("mock_rate_hz", 10.0);
@@ -47,9 +54,8 @@ G1MockDetector::G1MockDetector(const rclcpp::NodeOptions& options)
         "depth/image_raw",
         sensorQos(),
         [this](sensor_msgs::msg::Image::ConstSharedPtr depth) { onDepth(std::move(depth)); });
-    // The colour camera_info, not the depth one: its frame is what the real detector stamps its
-    // masks with, and the two optical frames are coincident in the URDF, so the depth pixels
-    // read below are valid in it. Intrinsics are identical for the same reason.
+    // The colour camera_info: its frame is what the real detector stamps masks with, and the two
+    // optical frames are coincident in the URDF.
     info_sub_ = create_subscription<sensor_msgs::msg::CameraInfo>(
         "camera_info",
         sensorQos(),
@@ -70,16 +76,12 @@ void G1MockDetector::onTruth(vision_msgs::msg::Detection3DArray::ConstSharedPtr 
 
 void G1MockDetector::onDepth(sensor_msgs::msg::Image::ConstSharedPtr depth)
 {
-    depth_frames_.push_back(std::move(depth));
-    while (depth_frames_.size() > 64)
-    {
-        depth_frames_.pop_front();
-    }
+    depth_frames_.push(std::move(depth));
 }
 
-bool G1MockDetector::maskFor(
+std::optional<g1_msgs::msg::InstanceMask> G1MockDetector::maskFor(
     const vision_msgs::msg::Detection3D& detection, const sensor_msgs::msg::Image& depth,
-    const std::string& phrase, g1_msgs::msg::InstanceMask& out) const
+    const std::string& phrase) const
 {
     const Intrinsics intrinsics{ camera_info_->k[0],
                                  camera_info_->k[4],
@@ -97,12 +99,11 @@ bool G1MockDetector::maskFor(
                              (0.5 * detection.bbox.size.z) + margin_m_ };
     const tf2::Quaternion into_object = orientation.inverse();
 
-    // The object's own extent decides which pixels are worth testing; everything beyond its
-    // bounding sphere cannot belong to it whatever its depth says.
+    // Nothing beyond the object's bounding sphere can belong to it, whatever its depth says.
     const double radius = half.length();
     if (centre.z() <= 0.0)
     {
-        return false;
+        return std::nullopt;
     }
     const double spread_x = (radius / centre.z()) * intrinsics.fx;
     const double spread_y = (radius / centre.z()) * intrinsics.fy;
@@ -120,12 +121,11 @@ bool G1MockDetector::maskFor(
     const auto y1 = static_cast<std::uint32_t>(std::min<std::int64_t>(bottom + 1, depth.height));
     if (x1 <= x0 || y1 <= y0)
     {
-        return false;
+        return std::nullopt;
     }
 
-    // Searched over the object's bounding sphere, then cropped to what was actually found: a
-    // real segmenter returns a tight region, and a loose one would hand the geometry node a
-    // support ring that samples the neighbouring object instead of the table.
+    // Cropped to what was found: a loose region would hand the geometry node a support ring
+    // sampling the neighbouring object instead of the table.
     std::vector<std::uint8_t> found(static_cast<std::size_t>(x1 - x0) * (y1 - y0), 0);
     std::uint32_t             hit_x0 = x1;
     std::uint32_t             hit_y0 = y1;
@@ -141,8 +141,7 @@ bool G1MockDetector::maskFor(
             {
                 continue;
             }
-            // What the camera actually measured at this pixel, tested against where the object
-            // is: a pixel belongs to it only if the surface the sensor saw lies inside its box.
+            // A pixel belongs to the object only if the surface the sensor saw is inside its box.
             const tf2::Vector3 point{ (u - intrinsics.cx) * z / intrinsics.fx,
                                       (v - intrinsics.cy) * z / intrinsics.fy,
                                       z };
@@ -162,9 +161,10 @@ bool G1MockDetector::maskFor(
     }
     if (filled < min_pixels_)
     {
-        return false;
+        return std::nullopt;
     }
 
+    g1_msgs::msg::InstanceMask out;
     out.label        = phrase;
     out.score        = detection.results.empty() ?
                            1.0F :
@@ -182,27 +182,19 @@ bool G1MockDetector::maskFor(
                 found[(static_cast<std::size_t>(v + hit_y0 - y0) * (x1 - x0)) + (u + hit_x0 - x0)];
         }
     }
-    return true;
+    return out;
 }
 
 void G1MockDetector::publishMasks()
 {
-    if (truth_ == nullptr || camera_info_ == nullptr || depth_frames_.empty() || phrases_.empty())
+    if (truth_ == nullptr || camera_info_ == nullptr || phrases_.empty())
     {
         return;
     }
 
-    // The frame the detector would just have finished chewing on, so a configured latency shows
-    // up downstream as it would in the real thing: old masks against their own old depth.
-    const double                            target = now().seconds() - latency_s_;
-    sensor_msgs::msg::Image::ConstSharedPtr chosen;
-    for (const sensor_msgs::msg::Image::ConstSharedPtr& frame : depth_frames_)
-    {
-        if (DepthHistory::stampSeconds(frame->header) <= target || chosen == nullptr)
-        {
-            chosen = frame;
-        }
-    }
+    // The frame a detector with this latency would just have finished: old masks, old depth.
+    const sensor_msgs::msg::Image::ConstSharedPtr chosen =
+        depth_frames_.atOrBefore(now().seconds() - latency_s_);
     if (chosen == nullptr || chosen->encoding != "32FC1")
     {
         return;
@@ -230,10 +222,10 @@ void G1MockDetector::publishMasks()
         {
             continue;
         }
-        g1_msgs::msg::InstanceMask instance;
-        if (maskFor(detection, *chosen, *match, instance))
+        std::optional<g1_msgs::msg::InstanceMask> instance = maskFor(detection, *chosen, *match);
+        if (instance)
         {
-            masks.instances.push_back(std::move(instance));
+            masks.instances.push_back(std::move(*instance));
         }
     }
     masks_pub_->publish(masks);

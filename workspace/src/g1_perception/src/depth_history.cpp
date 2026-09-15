@@ -47,4 +47,17 @@ sensor_msgs::msg::Image::ConstSharedPtr DepthHistory::at(double stamp_s) const
     return best_gap <= tolerance_s_ ? best : nullptr;
 }
 
+sensor_msgs::msg::Image::ConstSharedPtr DepthHistory::atOrBefore(double stamp_s) const
+{
+    sensor_msgs::msg::Image::ConstSharedPtr chosen;
+    for (const sensor_msgs::msg::Image::ConstSharedPtr& frame : frames_)
+    {
+        if (chosen == nullptr || stampSeconds(frame->header) <= stamp_s)
+        {
+            chosen = frame;
+        }
+    }
+    return chosen;
+}
+
 }  // namespace g1_perception

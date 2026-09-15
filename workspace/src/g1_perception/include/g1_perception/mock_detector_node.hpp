@@ -5,23 +5,23 @@
  * @file mock_detector_node.hpp
  * @brief A detector stand-in that needs no GPU, no model and no network.
  *
- * Masks are cut from the simulator's own object poses against the real rendered depth, so
- * everything downstream of the mask runs for real: deprojection, the support ring, the box fit,
- * tracking and the object poses the skills read. What it does not test is the detector, which is
- * the one part that cannot run in CI at all.
+ * Masks are cut from simulator object poses against the real rendered depth, so everything
+ * downstream of the mask runs for real. Only the detector itself goes untested.
  *
  * SIMULATION ONLY. It subscribes to ground truth, which the robot does not have.
  */
 
-#include <deque>
 #include <g1_msgs/msg/instance_mask_array.hpp>
 #include <memory>
+#include <optional>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/camera_info.hpp>
 #include <sensor_msgs/msg/image.hpp>
 #include <string>
 #include <vector>
 #include <vision_msgs/msg/detection3_d_array.hpp>
+
+#include "g1_perception/depth_history.hpp"
 
 namespace g1_perception
 {
@@ -34,13 +34,12 @@ public:
 private:
     void onTruth(vision_msgs::msg::Detection3DArray::ConstSharedPtr truth);
     void onDepth(sensor_msgs::msg::Image::ConstSharedPtr depth);
-    void onCameraInfo(sensor_msgs::msg::CameraInfo::ConstSharedPtr info);
     void publishMasks();
 
     /// The pixels of @p detection in @p depth, as an InstanceMask, or nothing when it is hidden.
-    bool maskFor(
+    [[nodiscard]] std::optional<g1_msgs::msg::InstanceMask> maskFor(
         const vision_msgs::msg::Detection3D& detection, const sensor_msgs::msg::Image& depth,
-        const std::string& phrase, g1_msgs::msg::InstanceMask& out) const;
+        const std::string& phrase) const;
 
     rclcpp::Subscription<vision_msgs::msg::Detection3DArray>::SharedPtr truth_sub_;
     rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr            depth_sub_;
@@ -48,9 +47,9 @@ private:
     rclcpp::Publisher<g1_msgs::msg::InstanceMaskArray>::SharedPtr       masks_pub_;
     rclcpp::TimerBase::SharedPtr                                        timer_;
 
-    std::deque<sensor_msgs::msg::Image::ConstSharedPtr> depth_frames_;
-    vision_msgs::msg::Detection3DArray::ConstSharedPtr  truth_;
-    sensor_msgs::msg::CameraInfo::ConstSharedPtr        camera_info_;
+    DepthHistory                                       depth_frames_;
+    vision_msgs::msg::Detection3DArray::ConstSharedPtr truth_;
+    sensor_msgs::msg::CameraInfo::ConstSharedPtr       camera_info_;
 
     std::vector<std::string> phrases_;
     double                   latency_s_{ 0.0 };
