@@ -15,6 +15,7 @@
 #include <g1_msgs/msg/instance_mask_array.hpp>
 #include <geometry_msgs/msg/pose.hpp>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/camera_info.hpp>
@@ -67,9 +68,14 @@ private:
     rclcpp::Publisher<vision_msgs::msg::Detection3DArray>::SharedPtr objects_pub_;
     rclcpp::Publisher<g1_msgs::msg::InstanceMaskArray>::SharedPtr    tracked_pub_;
 
+    /// Masks run on their own group so their TF wait cannot stall depth ingest.
+    rclcpp::CallbackGroup::SharedPtr masks_group_;
+
     std::unique_ptr<tf2_ros::Buffer>            tf_buffer_;
     std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
 
+    /// Guards depth_history_ and camera_info_: onMasks reads them while onDepth writes.
+    std::mutex                                   frames_mutex_;
     DepthHistory                                 depth_history_;
     ObjectTracker                                tracker_;
     sensor_msgs::msg::CameraInfo::ConstSharedPtr camera_info_;

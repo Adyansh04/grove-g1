@@ -86,10 +86,16 @@ G1ObjectGeometry::G1ObjectGeometry(const rclcpp::NodeOptions& options)
         create_publisher<vision_msgs::msg::Detection3DArray>("~/object_poses", objectsQos());
     tracked_pub_ = create_publisher<g1_msgs::msg::InstanceMaskArray>("~/tracked_masks", maskQos());
 
-    masks_sub_ = create_subscription<g1_msgs::msg::InstanceMaskArray>(
+    // Its own group, run by main's multi-threaded executor: onMasks waits on TF and fits every
+    // instance, which on one thread stalls depth ingest long enough to lose frames.
+    masks_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    rclcpp::SubscriptionOptions mask_options;
+    mask_options.callback_group = masks_group_;
+    masks_sub_                  = create_subscription<g1_msgs::msg::InstanceMaskArray>(
         "~/instance_masks",
         maskQos(),
-        [this](const g1_msgs::msg::InstanceMaskArray::ConstSharedPtr& masks) { onMasks(masks); });
+        [this](const g1_msgs::msg::InstanceMaskArray::ConstSharedPtr& masks) { onMasks(masks); },
+        mask_options);
     depth_sub_ = create_subscription<sensor_msgs::msg::Image>(
         "depth/image_raw",
         sensorQos(),
@@ -114,11 +120,13 @@ void G1ObjectGeometry::onDepth(sensor_msgs::msg::Image::ConstSharedPtr depth)
             depth->encoding.c_str());
         return;
     }
+    const std::lock_guard<std::mutex> lock(frames_mutex_);
     depth_history_.push(std::move(depth));
 }
 
 void G1ObjectGeometry::onCameraInfo(sensor_msgs::msg::CameraInfo::ConstSharedPtr info)
 {
+    const std::lock_guard<std::mutex> lock(frames_mutex_);
     camera_info_ = std::move(info);
 }
 
@@ -181,7 +189,15 @@ void G1ObjectGeometry::onMasks(const g1_msgs::msg::InstanceMaskArray::ConstShare
     // An empty answer is still an answer: it is how the stream says the objects are gone.
     if (!masks->instances.empty())
     {
-        const sensor_msgs::msg::Image::ConstSharedPtr depth = depth_history_.at(stamp_s);
+        // Snapshot, then let the lock go: the TF wait below must not hold up depth ingest.
+        sensor_msgs::msg::Image::ConstSharedPtr      depth;
+        sensor_msgs::msg::CameraInfo::ConstSharedPtr camera_info;
+        {
+            const std::lock_guard<std::mutex> lock(frames_mutex_);
+            depth       = depth_history_.at(stamp_s);
+            camera_info = camera_info_;
+        }
+
         if (depth == nullptr)
         {
             RCLCPP_WARN_THROTTLE(
@@ -192,12 +208,12 @@ void G1ObjectGeometry::onMasks(const g1_msgs::msg::InstanceMaskArray::ConstShare
                 stamp_s);
             return;
         }
-        if (camera_info_ == nullptr)
+        if (camera_info == nullptr)
         {
             RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000, "no camera_info yet");
             return;
         }
-        if (camera_info_->width != masks->image_width || camera_info_->height != masks->image_height)
+        if (camera_info->width != masks->image_width || camera_info->height != masks->image_height)
         {
             RCLCPP_ERROR_THROTTLE(
                 get_logger(),
@@ -206,8 +222,8 @@ void G1ObjectGeometry::onMasks(const g1_msgs::msg::InstanceMaskArray::ConstShare
                 "masks are indexed against %ux%u but camera_info says %ux%u",
                 masks->image_width,
                 masks->image_height,
-                camera_info_->width,
-                camera_info_->height);
+                camera_info->width,
+                camera_info->height);
             return;
         }
 
@@ -232,10 +248,10 @@ void G1ObjectGeometry::onMasks(const g1_msgs::msg::InstanceMaskArray::ConstShare
         const tf2::Vector3 up_in_camera = tf2::quatRotate(rotation.inverse(), { 0.0, 0.0, 1.0 });
         const Point3       up{ up_in_camera.x(), up_in_camera.y(), up_in_camera.z() };
 
-        const Intrinsics intrinsics{ camera_info_->k[0],
-                                     camera_info_->k[4],
-                                     camera_info_->k[2],
-                                     camera_info_->k[5] };
+        const Intrinsics intrinsics{ camera_info->k[0],
+                                     camera_info->k[4],
+                                     camera_info->k[2],
+                                     camera_info->k[5] };
 
         for (std::size_t index = 0; index < masks->instances.size(); ++index)
         {
