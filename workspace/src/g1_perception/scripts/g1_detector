@@ -32,7 +32,9 @@ class Detector(Node):
         self._text_threshold = float(self._param("text_threshold", 0.25))
         rate_hz = float(self._param("detect_rate_hz", 1.0))
         if not self.has_parameter("phrases"):
-            self.declare_parameter("phrases", [])
+            # Typed, not inferred: rclpy reads a bare [] as BYTE_ARRAY, and Jazzy then refuses
+            # every STRING_ARRAY written to it.
+            self.declare_parameter("phrases", rclpy.Parameter.Type.STRING_ARRAY)
 
         self._image = None
         self._publisher = self.create_publisher(InstanceMaskArray, "~/instance_masks", MASK_QOS)
@@ -65,7 +67,9 @@ class Detector(Node):
         self._image = msg
 
     def _phrases(self):
-        return [str(phrase) for phrase in self.get_parameter("phrases").value or [] if str(phrase).strip()]
+        # get_parameter_or, because a type-only declaration leaves the parameter uninitialized
+        # until something writes it, and get_parameter raises on that.
+        return [str(phrase) for phrase in self._param("phrases", []) or [] if str(phrase).strip()]
 
     def _tick(self):
         phrases = self._phrases()

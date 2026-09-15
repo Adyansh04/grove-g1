@@ -1,12 +1,8 @@
 #!/usr/bin/env python3
 """Runs the detector client against a stub vision server.
 
-What fails quietly without this: an image encoded the wrong way round, a mask published against
-the publish time instead of the frame's own stamp, or a phrase list that is read once at startup
-and never again. None of those look broken from outside; they look like a detector that is bad
-at its job.
-
-No simulator and no GPU: the stub is the point, and CI runs this.
+Covers what fails quietly: an image encoded the wrong way round, a mask stamped with the publish
+time instead of the frame's, or a phrase list read once at startup. No simulator and no GPU.
 """
 
 import os
@@ -31,6 +27,7 @@ PORT = 5591
 STUB = os.path.join(os.path.dirname(__file__), "vision_server_stub.py")
 CAMERA_TOPIC = "/camera/color/image_raw"
 MASK_TOPIC = "/g1_detector/instance_masks"
+UNDIRECTED_NAME = "g1_detector_undirected"
 WIDTH, HEIGHT = 640, 480
 
 
@@ -52,11 +49,21 @@ def generate_test_description():
             }
         ],
     )
+    # A second one with no phrases: it stays idle, and it is the only way to reach the node's own
+    # declaration, which an override would hide.
+    undirected = Node(
+        package="g1_perception",
+        executable="g1_detector",
+        name=UNDIRECTED_NAME,
+        output="screen",
+        remappings=[("color/image_raw", CAMERA_TOPIC)],
+        parameters=[{"server_address": f"tcp://127.0.0.1:{PORT}", "zmq_timeout_ms": 5000}],
+    )
     return LaunchDescription(
         [
             ExecuteProcess(cmd=[sys.executable, STUB, str(PORT)], output="screen"),
             # The client pings in its constructor, so the stub has to be bound first.
-            TimerAction(period=3.0, actions=[detector]),
+            TimerAction(period=3.0, actions=[detector, undirected]),
             launch_testing.actions.ReadyToTest(),
         ]
     )
@@ -155,6 +162,23 @@ class TestDetector(unittest.TestCase):
         masks = self._await_mask(timeout_s=30.0)
         self.assertIsNotNone(masks, "the detector did not resume after the phrases were set")
         self.assertEqual(masks.instances[0].label, "blue sphere")
+
+    def test_05_a_detector_started_with_no_phrases_still_takes_them(self):
+        # rclpy reads a bare [] as BYTE_ARRAY and Jazzy then refuses a STRING_ARRAY onto it,
+        # which from outside looks exactly like an idle detector.
+        client = self.node.create_client(SetParameters, f"/{UNDIRECTED_NAME}/set_parameters")
+        self.assertTrue(client.wait_for_service(timeout_sec=20.0))
+
+        request = SetParameters.Request()
+        request.parameters = [
+            Parameter("phrases", Parameter.Type.STRING_ARRAY, ["red cube"]).to_parameter_msg()
+        ]
+        future = client.call_async(request)
+        rclpy.spin_until_future_complete(self.node, future, timeout_sec=10.0)
+        result = future.result()
+
+        self.assertIsNotNone(result, f"{UNDIRECTED_NAME} did not answer set_parameters")
+        self.assertTrue(result.results[0].successful, result.results[0].reason)
 
     def _set_phrases(self, client, phrases):
         request = SetParameters.Request()
