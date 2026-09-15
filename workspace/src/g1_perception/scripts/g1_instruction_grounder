@@ -54,9 +54,21 @@ class InstructionGrounder(Node):
         request.parameters = [
             Parameter("phrases", Parameter.Type.STRING_ARRAY, phrases).to_parameter_msg()
         ]
-        future = self._set_parameters.call_async(request)
-        # Spun by the executor, not here: this runs inside a service callback.
-        future.result()
+        # Not waited on: spinning the executor from inside a service callback deadlocks, and
+        # rclpy's Future.result() does not block, so the outcome arrives by callback.
+        self._set_parameters.call_async(request).add_done_callback(self._installed)
+
+    def _installed(self, future):
+        """A refused write leaves the detector on the old phrases, which downstream cannot tell
+        apart from a detector that sees nothing."""
+        try:
+            results = future.result().results
+        except Exception as error:  # noqa: BLE001 - whatever rclpy raises here is worth logging
+            self.get_logger().error(f"{self._detector_node} did not take the phrases: {error}")
+            return
+        refused = [result.reason for result in results if not result.successful]
+        if refused:
+            self.get_logger().error(f"{self._detector_node} refused the phrases: {refused}")
 
     def _on_request(self, request, response):
         response.ok = False
