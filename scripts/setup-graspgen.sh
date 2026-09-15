@@ -19,9 +19,10 @@
 # design; this script only gets you to the point where that import works.
 set -euo pipefail
 
-# Pinned rather than tracking main: the wire protocol the adapter speaks is documented in this
-# repo's client-server README and is not versioned anywhere else.
+# Tracks main. Nothing upstream versions the wire protocol the adapter speaks, so a change to it
+# arrives as a msgpack error; set GRASPGEN_REF to a commit that worked once you have one.
 GRASPGEN_REPO="https://github.com/NVlabs/GraspGenX.git"
+GRASPGEN_REF="${GRASPGEN_REF:-main}"
 GRASPGEN_HOME="${GRASPGEN_HOME:-${HOME}/ref/GraspGenX}"
 
 command -v uv >/dev/null || {
@@ -34,6 +35,14 @@ if [ ! -d "${GRASPGEN_HOME}/.git" ]; then
     mkdir -p "$(dirname "${GRASPGEN_HOME}")"
     git clone "${GRASPGEN_REPO}" "${GRASPGEN_HOME}"
 fi
+git -C "${GRASPGEN_HOME}" fetch --quiet origin
+# origin/<ref> for a branch, the ref itself for a commit: plain `checkout <branch>` on an
+# existing clone sits on whatever it was cloned at.
+target="$(git -C "${GRASPGEN_HOME}" rev-parse --verify --quiet "origin/${GRASPGEN_REF}" ||
+    echo "${GRASPGEN_REF}")"
+git -C "${GRASPGEN_HOME}" checkout --quiet --detach "${target}"
+# Printed so a working setup can be reproduced: this is the value to put in GRASPGEN_REF.
+echo "    at $(git -C "${GRASPGEN_HOME}" rev-parse --short HEAD)"
 
 echo "==> dependencies, including the serving extra the ZMQ server needs"
 (cd "${GRASPGEN_HOME}" && uv sync --extra serve)

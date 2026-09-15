@@ -117,6 +117,10 @@ this one, `unitree_g1`, which is the Dex3-1's seven joints.
 ./scripts/setup-graspgen.sh
 ```
 
+It tracks upstream `main` and prints the commit it checked out. Nothing upstream versions the
+wire protocol the adapter speaks, so once a commit works, pin it: `GRASPGEN_REF=<sha>
+./scripts/setup-graspgen.sh`.
+
 Run the server it prints, then ask for candidates:
 
 ```bash
