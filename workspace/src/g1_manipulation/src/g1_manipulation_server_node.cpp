@@ -243,9 +243,6 @@ void G1ManipulationServer::initialize()
         group->setMaxVelocityScalingFactor(velocity_scaling_);
         group->setMaxAccelerationScalingFactor(velocity_scaling_);
         group->setPlanningTime(planning_time_s_);
-        // OMPL samples, and a validation adapter can reject a path the planner accepted; one
-        // attempt turns that into a failed skill rather than another sample.
-        group->setNumPlanningAttempts(planning_attempts_);
         groups_.emplace(name, group);
     }
     planning_frame_ = groups_.at("left_arm")->getPlanningFrame();
@@ -605,7 +602,7 @@ bool G1ManipulationServer::moveTo(
     group.setPoseTarget(pose, link);
 
     MoveGroup::Plan plan;
-    const auto      planned = group.plan(plan);
+    const auto      planned = planWithinBudget(group, plan);
     if (planned != moveit::core::MoveItErrorCode::SUCCESS)
     {
         RCLCPP_ERROR(get_logger(), "%s: planning failed (%d)", what.c_str(), planned.val);
@@ -642,13 +639,44 @@ bool G1ManipulationServer::moveToNamed(MoveGroup& group, const std::string& name
     // planning-scene update, and against a live octomap the arm's own freshly integrated voxels
     // invalidate it constantly. Everything here is still fully collision-checked at plan time.
     MoveGroup::Plan plan;
-    const auto      planned = group.plan(plan);
+    const auto      planned = planWithinBudget(group, plan);
     if (planned != moveit::core::MoveItErrorCode::SUCCESS)
     {
         RCLCPP_ERROR(get_logger(), "'%s': planning failed (%d)", named_target.c_str(), planned.val);
         return false;
     }
     return group.execute(plan) == moveit::core::MoveItErrorCode::SUCCESS;
+}
+
+moveit::core::MoveItErrorCode
+G1ManipulationServer::planWithinBudget(MoveGroup& group, MoveGroup::Plan& plan)
+{
+    using Clock         = std::chrono::steady_clock;
+    const auto deadline = Clock::now() + std::chrono::duration<double>(planning_time_s_);
+    moveit::core::MoveItErrorCode result = moveit::core::MoveItErrorCode::FAILURE;
+    for (int attempt = 1; attempt <= planning_attempts_; ++attempt)
+    {
+        const double remaining_s = std::chrono::duration<double>(deadline - Clock::now()).count();
+        if (remaining_s <= 0.0)
+        {
+            break;
+        }
+        group.setPlanningTime(remaining_s);
+        result = group.plan(plan);
+        if (result == moveit::core::MoveItErrorCode::SUCCESS)
+        {
+            break;
+        }
+        RCLCPP_WARN(
+            get_logger(),
+            "%s: plan %d of %d failed with %.1f s of budget left",
+            group.getName().c_str(),
+            attempt,
+            planning_attempts_,
+            std::chrono::duration<double>(deadline - Clock::now()).count());
+    }
+    group.setPlanningTime(planning_time_s_);
+    return result;
 }
 
 G1ManipulationServer::MoveGroup* G1ManipulationServer::groupFor(const std::string& name)

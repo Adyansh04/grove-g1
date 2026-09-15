@@ -25,8 +25,8 @@ g1_manipulation_server:
     velocity_scaling: 0.3
     planning_time_s: 10.0
 
-    # Attempts per motion, not seconds: a validation adapter does reject paths OMPL accepted, and
-    # one attempt turns that into a failed skill.
+    # Samples per motion, all inside planning_time_s: ValidateSolution rejects paths OMPL accepted,
+    # and that rejection returns fast enough to sample again.
     planning_attempts: 5
     grasp_rpy: [-1.5707963, 0.0, 0.0]
 

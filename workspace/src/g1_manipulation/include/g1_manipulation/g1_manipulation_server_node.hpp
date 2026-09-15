@@ -249,6 +249,15 @@ private:
         const std::string& what);
 
     /**
+     * @brief Plans for the group's current target, sampling again within one planning_time_s.
+     *
+     * A path OMPL accepts can still be rejected by the ValidateSolution adapter once it is time
+     * parameterised. That rejection comes back fast, so there is budget left for another sample;
+     * a planner that finds nothing spends the whole budget once and stops.
+     */
+    moveit::core::MoveItErrorCode planWithinBudget(MoveGroup& group, MoveGroup::Plan& plan);
+
+    /**
      * @brief Plans and executes to a named SRDF pose.
      *
      * @return False on either a planning or an execution failure, logged.
