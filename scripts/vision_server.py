@@ -87,8 +87,13 @@ def _match_phrase(label, phrases):
         if cleaned == phrase.lower():
             return phrase
     scored = [(len(set(cleaned.split()) & set(p.lower().split())), p) for p in phrases]
-    overlap, best = max(scored, key=lambda pair: pair[0])
-    return best if overlap else label
+    best = max(overlap for overlap, _ in scored)
+    winners = [phrase for overlap, phrase in scored if overlap == best]
+    # Not resolved by list order: "blue" overlaps "blue sphere" and "blue cup" equally, and
+    # guessing names the object confidently wrong.
+    if best == 0 or len(winners) > 1:
+        return label
+    return winners[0]
 
 
 class GroundedSam2Backend:
