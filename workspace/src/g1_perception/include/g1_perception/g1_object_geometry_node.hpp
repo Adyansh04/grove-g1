@@ -13,6 +13,7 @@
 #include <tf2_ros/transform_listener.h>
 
 #include <g1_msgs/msg/instance_mask_array.hpp>
+#include <geometry_msgs/msg/pose.hpp>
 #include <memory>
 #include <optional>
 #include <rclcpp/rclcpp.hpp>
@@ -41,8 +42,10 @@ private:
         std::string phrase;
         float       score{ 0.0F };
         OrientedBox box;
-        Point3      position_in_up_frame;
-        std::size_t instance_index{ 0 };
+        /// The box's centre and axes as a pose, in the camera frame the masks were stamped with.
+        geometry_msgs::msg::Pose pose_in_camera;
+        Point3                   position_in_up_frame;
+        std::size_t              instance_index{ 0 };
     };
 
     void onMasks(const g1_msgs::msg::InstanceMaskArray::ConstSharedPtr& masks);
@@ -76,7 +79,7 @@ private:
     int         support_ring_px_{ 6 };
     double      min_depth_m_{ 0.15 };
     double      max_depth_m_{ 2.5 };
-    double      depth_gate_m_{ 0.05 };
+    double      depth_gate_m_{ 0.15 };
     int         min_points_{ 150 };
     int         min_support_points_{ 50 };
     double      support_band_m_{ 0.06 };

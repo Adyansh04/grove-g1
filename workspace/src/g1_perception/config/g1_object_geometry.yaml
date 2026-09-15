@@ -18,10 +18,8 @@ g1_object_geometry:
     # Below this the ring is mostly background and its median is not the table; the fit then
     # falls back to the object's own lowest visible point, which underestimates anything rounded.
     min_support_points: 50
-    # How far from the object's own lowest visible point a ring pixel may be and still count as
-    # the surface it stands on. Wide enough to reach the table under a sphere resting on its
-    # equator, narrow enough to exclude the floor past the table edge and the top of whatever is
-    # standing next to it.
+    # How far from the object's lowest visible point a ring pixel may be and still be its surface:
+    # wide enough for a sphere resting on its equator, narrow enough to exclude the floor.
     support_band_m: 0.06
 
     # The D435i's usable band, and what MuJoCo's render is clipped to. Also the cheapest guard
@@ -29,15 +27,12 @@ g1_object_geometry:
     min_depth_m: 0.15
     max_depth_m: 2.5
 
-    # A mask that leaks past the object drags the box toward whatever is behind it. Sized to the
-    # deepest object worth grasping, not tighter: an 8 cm object seen from 45 degrees above
-    # spans about 10 cm in range, and a gate inside that quietly cuts its top face off and
-    # reports it half as tall.
+    # A mask that leaks past the object drags the box toward what is behind it. Sized to the
+    # deepest object worth grasping: an 8 cm one seen from 45 degrees spans about 10 cm in range.
     depth_gate_m: 0.15
 
-    # Under this the fit is being asked to describe a handful of pixels. A 6 cm object at 0.6 m
-    # covers about 3500 px, so this rejects an object that is mostly occluded rather than a
-    # small one.
+    # A 6 cm object at 0.6 m covers about 3500 px, so this rejects one mostly occluded rather
+    # than one merely small.
     min_points: 150
 
     # A box outside these is not an object: the small end is noise, the large end is the mask
@@ -45,17 +40,13 @@ g1_object_geometry:
     min_extent_m: 0.01
     max_extent_m: 0.40
 
-    # The detector's own confidence. Grounded-SAM-2 reports 0.8 or better on these objects and
-    # its false positives sit well under 0.5, so this is deliberately loose.
+    # Grounded-SAM-2 reports 0.8+ on these objects and its false positives sit well under 0.5.
     min_score: 0.30
 
-    # The detector takes over a second, so its masks arrive long after the frame they describe.
-    # Frames are kept this long and matched by stamp: the relay stamps depth and colour
-    # identically from one render, so the match is exact rather than nearest.
+    # The detector takes over a second, so masks arrive long after the frame they describe.
     depth_history_s: 3.0
-    # Half a frame period at the camera's 10 Hz. The relay stamps depth and colour identically
-    # from one render, so the match is normally exact; the slack is for the frame the depth
-    # subscription dropped, where the neighbouring frame is a better answer than no answer.
+    # Half a frame period at 10 Hz, so it can never reach a neighbour: a dropped frame stays
+    # reported as one. The slack covers stamp rounding, not a missing frame.
     stamp_tolerance_ms: 50.0
 
     # How far an object may move between detections and still be itself. Objects on a table do
@@ -65,8 +56,8 @@ g1_object_geometry:
     # stops reserving its index.
     track_timeout_s: 2.0
 
-    # TF at the mask's own stamp, not the latest: the camera moves with the torso, and a pose
-    # from 1.5 s ago transformed by today's TF lands wherever the robot has since leaned.
+    # TF at the mask's own stamp: the camera moves with the torso, and a 1.5 s-old pose under
+    # today's TF lands wherever the robot has since leaned.
     transform_timeout_s: 0.2
 
     # Publish a second copy of a detection named by the bare phrase while only one object answers

@@ -11,6 +11,7 @@
 #include <cmath>
 #include <cstring>
 #include <limits>
+#include <optional>
 #include <vector>
 
 #include "g1_perception/object_geometry.hpp"
@@ -27,6 +28,7 @@ using g1_perception::Intrinsics;
 using g1_perception::MaskView;
 using g1_perception::Point3;
 using g1_perception::slugify;
+using g1_perception::supportHeight;
 using g1_perception::supportRing;
 
 constexpr double kFocal   = 432.98;
@@ -273,6 +275,33 @@ TEST(FitOrientedBox, UsesTheSupportHeightForTheVerticalExtent)
     EXPECT_NEAR(with_support->size_z, 2.0 * radius, 2e-3);
     EXPECT_NEAR(with_support->centre.z, table + radius, 2e-3);
     EXPECT_NEAR(without->size_z, radius, 2e-3) << "without the table only the visible cap counts";
+}
+
+TEST(SupportHeight, IgnoresRingPointsOffTheSurfaceTheObjectStandsOn)
+{
+    // A cube resting at 0.80 on a table, with a ring that catches the table, the floor a long
+    // way below it, and a neighbour standing on it. Only the table may reach the median.
+    const std::vector<Point3> object{ { 0.0, 0.0, 0.80 }, { 0.01, 0.0, 0.82 } };
+    std::vector<Point3>       ring{ { 0.05, 0.0, 0.40 }, { 0.06, 0.0, 0.40 } };
+    for (int i = 0; i < 8; ++i)
+    {
+        ring.push_back({ 0.05 + (0.001 * i), 0.0, 0.799 });
+        ring.push_back({ 0.10, 0.001 * i, 0.95 });
+    }
+
+    const std::optional<double> height = supportHeight(ring, object, kUp, 0.06, 4);
+
+    ASSERT_TRUE(height.has_value());
+    EXPECT_NEAR(*height, 0.799, 1e-9);
+}
+
+TEST(SupportHeight, RefusesARingThatLandedOnNothingFlat)
+{
+    const std::vector<Point3> object{ { 0.0, 0.0, 0.80 } };
+    const std::vector<Point3> ring{ { 0.05, 0.0, 0.40 }, { 0.06, 0.0, 0.95 } };
+
+    EXPECT_FALSE(supportHeight(ring, object, kUp, 0.06, 4).has_value());
+    EXPECT_FALSE(supportHeight({}, object, kUp, 0.06, 0).has_value());
 }
 
 TEST(FitOrientedBox, RejectsAMaskThatRanOntoTheTable)

@@ -68,7 +68,7 @@ many of them there turned out to be.
 | `support_ring_px` | 6 | How far outside the mask to look for the surface the object stands on. |
 | `support_band_m` | 0.06 | How far from the object's lowest visible point that surface may be, which keeps the floor and a taller neighbour out of the estimate. |
 | `depth_gate_m` | 0.15 | How deep an object may be before points are treated as leakage. Tighter than this cuts the top off something tall seen from above. |
-| `min_points` | 150 | Below this an instance is reported as unusable rather than fitted. |
+| `min_points` | 150 | Below this, counted after the depth gate, an instance is reported as unusable rather than fitted. |
 | `stamp_tolerance_ms` | 50 | How closely a mask's stamp must match a depth frame's. |
 | `track_match_radius_m` | 0.08 | How far an object may move between detections and still be itself. |
 

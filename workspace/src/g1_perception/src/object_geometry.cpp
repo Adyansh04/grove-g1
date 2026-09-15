@@ -5,20 +5,11 @@
 #include <cmath>
 #include <cstring>
 #include <limits>
-#include <numeric>
-#include <utility>
 
 namespace g1_perception
 {
 namespace
 {
-
-double dot(const Point3& a, const Point3& b) { return (a.x * b.x) + (a.y * b.y) + (a.z * b.z); }
-
-Point3 cross(const Point3& a, const Point3& b)
-{
-    return { (a.y * b.z) - (a.z * b.y), (a.z * b.x) - (a.x * b.z), (a.x * b.y) - (a.y * b.x) };
-}
 
 Point3 scaled(const Point3& v, double factor)
 {
@@ -31,40 +22,57 @@ Point3 normalised(const Point3& v)
     return length > 0.0 ? scaled(v, 1.0 / length) : Point3{ 1.0, 0.0, 0.0 };
 }
 
-/// Extent of @p values rotated into the axis pair at @p angle, as (major, minor) widths.
-std::pair<double, double>
-extentsAt(const std::vector<double>& first, const std::vector<double>& second, double angle)
+/// Extent of a point set rotated into the axis pair at some angle.
+struct Bounds
 {
-    const double cosine    = std::cos(angle);
-    const double sine      = std::sin(angle);
-    double       min_major = std::numeric_limits<double>::max();
-    double       max_major = std::numeric_limits<double>::lowest();
-    double       min_minor = std::numeric_limits<double>::max();
-    double       max_minor = std::numeric_limits<double>::lowest();
+    double min_major{ std::numeric_limits<double>::max() };
+    double max_major{ std::numeric_limits<double>::lowest() };
+    double min_minor{ std::numeric_limits<double>::max() };
+    double max_minor{ std::numeric_limits<double>::lowest() };
+
+    [[nodiscard]] double major() const { return max_major - min_major; }
+    [[nodiscard]] double minor() const { return max_minor - min_minor; }
+};
+
+Bounds boundsAt(const std::vector<double>& first, const std::vector<double>& second, double angle)
+{
+    const double cosine = std::cos(angle);
+    const double sine   = std::sin(angle);
+    Bounds       bounds;
     for (std::size_t i = 0; i < first.size(); ++i)
     {
         const double major = (first[i] * cosine) + (second[i] * sine);
         const double minor = -(first[i] * sine) + (second[i] * cosine);
-        min_major          = std::min(min_major, major);
-        max_major          = std::max(max_major, major);
-        min_minor          = std::min(min_minor, minor);
-        max_minor          = std::max(max_minor, minor);
+        bounds.min_major   = std::min(bounds.min_major, major);
+        bounds.max_major   = std::max(bounds.max_major, major);
+        bounds.min_minor   = std::min(bounds.min_minor, minor);
+        bounds.max_minor   = std::max(bounds.max_minor, minor);
     }
-    return { max_major - min_major, max_minor - min_minor };
+    return bounds;
 }
 
-/**
- * @brief The angle whose bounding rectangle has the least area.
- *
- * A degree of resolution, then a tenth of a degree around the winner. Rotating calipers would be
- * exact and needs a convex hull; at a few thousand points once a second this is cheaper to run
- * and much cheaper to read.
- */
+/// The one deprojection, shared by the mask and its support ring.
+std::optional<Point3> deprojectPixel(
+    const DepthView& depth, std::uint32_t u, std::uint32_t v, const Intrinsics& intrinsics,
+    double min_depth_m, double max_depth_m)
+{
+    const double z = depth.at(u, v);
+    if (!std::isfinite(z) || z < min_depth_m || z > max_depth_m)
+    {
+        return std::nullopt;
+    }
+    return Point3{ (static_cast<double>(u) - intrinsics.cx) * z / intrinsics.fx,
+                   (static_cast<double>(v) - intrinsics.cy) * z / intrinsics.fy,
+                   z };
+}
+
+/// The angle whose bounding rectangle has the least area: a degree, then a tenth around the
+/// winner. Rotating calipers would be exact but needs a convex hull, for no gain at this size.
 double minimumAreaAngle(const std::vector<double>& first, const std::vector<double>& second)
 {
     const auto area = [&first, &second](double angle) {
-        const auto [major, minor] = extentsAt(first, second, angle);
-        return major * minor;
+        const Bounds bounds = boundsAt(first, second, angle);
+        return bounds.major() * bounds.minor();
     };
     // A rectangle repeats every quarter turn, so a quadrant covers every distinct orientation.
     double best      = 0.0;
@@ -161,8 +169,7 @@ std::vector<std::uint8_t> erodeMask(const MaskView& mask, int iterations)
                     {
                         const auto ny = static_cast<std::int64_t>(row) + dy;
                         const auto nx = static_cast<std::int64_t>(col) + dx;
-                        // Outside the crop counts as background: the mask ends at the ROI, and a
-                        // border pixel is exactly the case erosion exists to drop.
+                        // Outside the crop is background: a border pixel is what erosion drops.
                         keep = ny >= 0 && nx >= 0 && ny < mask.height && nx < mask.width &&
                                current[(static_cast<std::size_t>(ny) * mask.width) + nx] != 0;
                     }
@@ -177,8 +184,8 @@ std::vector<std::uint8_t> erodeMask(const MaskView& mask, int iterations)
 
 void planeBasis(const Point3& up, Point3& first, Point3& second)
 {
-    // Any axis that is not nearly parallel to up works; picking by component keeps it stable as
-    // the camera tilts rather than flipping the basis at some threshold crossing.
+    // Picked by component rather than by a threshold, so the basis does not flip as the camera
+    // tilts.
     const Point3 seed  = std::abs(up.z) < 0.9 ? Point3{ 0.0, 0.0, 1.0 } : Point3{ 1.0, 0.0, 0.0 };
     const double along = dot(seed, up);
     first =
@@ -205,16 +212,17 @@ std::vector<Point3> deproject(
             {
                 continue;
             }
-            const std::uint32_t u = mask.x + col;
-            const std::uint32_t v = mask.y + row;
-            const double        z = depth.at(u, v);
-            if (!std::isfinite(z) || z < min_depth_m || z > max_depth_m)
+            const std::optional<Point3> point = deprojectPixel(
+                depth,
+                mask.x + col,
+                mask.y + row,
+                intrinsics,
+                min_depth_m,
+                max_depth_m);
+            if (point)
             {
-                continue;
+                points.push_back(*point);
             }
-            points.push_back({ (static_cast<double>(u) - intrinsics.cx) * z / intrinsics.fx,
-                               (static_cast<double>(v) - intrinsics.cy) * z / intrinsics.fy,
-                               z });
         }
     }
     return points;
@@ -249,14 +257,17 @@ std::vector<Point3> supportRing(
             {
                 continue;
             }
-            const double z = depth.at(static_cast<std::uint32_t>(u), static_cast<std::uint32_t>(v));
-            if (!std::isfinite(z) || z < min_depth_m || z > max_depth_m)
+            const std::optional<Point3> point = deprojectPixel(
+                depth,
+                static_cast<std::uint32_t>(u),
+                static_cast<std::uint32_t>(v),
+                intrinsics,
+                min_depth_m,
+                max_depth_m);
+            if (point)
             {
-                continue;
+                points.push_back(*point);
             }
-            points.push_back({ (static_cast<double>(u) - intrinsics.cx) * z / intrinsics.fx,
-                               (static_cast<double>(v) - intrinsics.cy) * z / intrinsics.fy,
-                               z });
         }
     }
     return points;
@@ -278,6 +289,33 @@ void gateByMedianDepth(std::vector<Point3>& points, double gate_m)
     std::erase_if(points, [middle, gate_m](const Point3& point) {
         return std::abs(point.z - middle) > gate_m;
     });
+}
+
+std::optional<double> supportHeight(
+    std::span<const Point3> ring, std::span<const Point3> object_points, const Point3& up,
+    double band_m, int min_points)
+{
+    double lowest = std::numeric_limits<double>::max();
+    for (const Point3& point : object_points)
+    {
+        lowest = std::min(lowest, dot(point, up));
+    }
+
+    std::vector<double> heights;
+    heights.reserve(ring.size());
+    for (const Point3& point : ring)
+    {
+        const double height = dot(point, up);
+        if (std::abs(height - lowest) <= band_m)
+        {
+            heights.push_back(height);
+        }
+    }
+    if (heights.empty() || static_cast<int>(heights.size()) < min_points)
+    {
+        return std::nullopt;
+    }
+    return median(heights);
 }
 
 std::optional<OrientedBox> fitOrientedBox(
@@ -313,30 +351,16 @@ std::optional<OrientedBox> fitOrientedBox(
         along_first.push_back(dot(point, first));
         along_second.push_back(dot(point, second));
     }
-    // The rectangle of least area, searched over its own angle. A covariance would be one line
-    // instead, and wrong on exactly the objects here: a square footprint has no principal
-    // direction, so the fit lands at 45 degrees and reports a 6 cm cube as 8.5 cm across.
+    // Least area, not covariance: a square footprint has no principal direction, so a covariance
+    // fit lands at 45 degrees and reports a 6 cm cube as 8.5 cm across.
     const double angle  = minimumAreaAngle(along_first, along_second);
     const double cosine = std::cos(angle);
     const double sine   = std::sin(angle);
-
-    double min_major = std::numeric_limits<double>::max();
-    double max_major = std::numeric_limits<double>::lowest();
-    double min_minor = std::numeric_limits<double>::max();
-    double max_minor = std::numeric_limits<double>::lowest();
-    for (std::size_t i = 0; i < points.size(); ++i)
-    {
-        const double major = (along_first[i] * cosine) + (along_second[i] * sine);
-        const double minor = -(along_first[i] * sine) + (along_second[i] * cosine);
-        min_major          = std::min(min_major, major);
-        max_major          = std::max(max_major, major);
-        min_minor          = std::min(min_minor, minor);
-        max_minor          = std::max(max_minor, minor);
-    }
+    const Bounds bounds = boundsAt(along_first, along_second, angle);
 
     OrientedBox box;
-    box.size_x = max_major - min_major;
-    box.size_y = max_minor - min_minor;
+    box.size_x = bounds.major();
+    box.size_y = bounds.minor();
     box.size_z = size_z;
     if (std::min({ box.size_x, box.size_y, box.size_z }) < min_extent_m ||
         std::max({ box.size_x, box.size_y, box.size_z }) > max_extent_m)
@@ -349,8 +373,8 @@ std::optional<OrientedBox> fitOrientedBox(
                    (first.z * cosine) + (second.z * sine) };
     box.axis_y = cross(vertical, box.axis_x);
 
-    const double centre_major = 0.5 * (min_major + max_major);
-    const double centre_minor = 0.5 * (min_minor + max_minor);
+    const double centre_major = 0.5 * (bounds.min_major + bounds.max_major);
+    const double centre_minor = 0.5 * (bounds.min_minor + bounds.max_minor);
     const double centre_up    = support + (0.5 * size_z);
     box.centre                = {
         (box.axis_x.x * centre_major) + (box.axis_y.x * centre_minor) + (vertical.x * centre_up),

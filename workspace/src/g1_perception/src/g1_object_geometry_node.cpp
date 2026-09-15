@@ -13,10 +13,8 @@ namespace g1_perception
 namespace
 {
 
-/// Best-effort in, matching the relay's sensor QoS: a reliable subscriber never matches it.
-///
-/// Deeper than the usual one: a mask names the frame it was cut from, and a depth frame dropped
-/// on arrival cannot be recovered later. At 2.9 MB a frame, two arriving together lose one.
+/// Best-effort, matching the relay: a reliable subscriber never matches it. Deeper than usual
+/// because a mask names the frame it was cut from, and a dropped 2.9 MB frame cannot come back.
 rclcpp::QoS sensorQos()
 {
     return rclcpp::QoS(rclcpp::KeepLast(8)).best_effort().durability_volatile();
@@ -31,13 +29,9 @@ rclcpp::QoS objectsQos()
     return rclcpp::QoS(rclcpp::KeepLast(1)).reliable().durability_volatile();
 }
 
-double dot(const Point3& a, const Point3& b) { return (a.x * b.x) + (a.y * b.y) + (a.z * b.z); }
-
 geometry_msgs::msg::Pose poseFrom(const OrientedBox& box)
 {
-    const Point3         up{ (box.axis_x.y * box.axis_y.z) - (box.axis_x.z * box.axis_y.y),
-                     (box.axis_x.z * box.axis_y.x) - (box.axis_x.x * box.axis_y.z),
-                     (box.axis_x.x * box.axis_y.y) - (box.axis_x.y * box.axis_y.x) };
+    const Point3         up = cross(box.axis_x, box.axis_y);
     const tf2::Matrix3x3 rotation(
         box.axis_x.x,
         box.axis_y.x,
@@ -65,7 +59,7 @@ G1ObjectGeometry::G1ObjectGeometry(const rclcpp::NodeOptions& options)
   : rclcpp::Node("g1_object_geometry", options)
   , depth_history_(
         declare_parameter<double>("depth_history_s", 3.0),
-        declare_parameter<double>("stamp_tolerance_ms", 5.0) / 1000.0)
+        declare_parameter<double>("stamp_tolerance_ms", 50.0) / 1000.0)
   , tracker_(
         declare_parameter<double>("track_match_radius_m", 0.08),
         declare_parameter<double>("track_timeout_s", 2.0))
@@ -75,7 +69,7 @@ G1ObjectGeometry::G1ObjectGeometry(const rclcpp::NodeOptions& options)
     support_ring_px_           = static_cast<int>(declare_parameter<int>("support_ring_px", 6));
     min_depth_m_               = declare_parameter<double>("min_depth_m", 0.15);
     max_depth_m_               = declare_parameter<double>("max_depth_m", 2.5);
-    depth_gate_m_              = declare_parameter<double>("depth_gate_m", 0.05);
+    depth_gate_m_              = declare_parameter<double>("depth_gate_m", 0.15);
     min_points_                = static_cast<int>(declare_parameter<int>("min_points", 150));
     min_support_points_        = static_cast<int>(declare_parameter<int>("min_support_points", 50));
     support_band_m_            = declare_parameter<double>("support_band_m", 0.06);
@@ -155,51 +149,26 @@ std::optional<OrientedBox> G1ObjectGeometry::measure(
     const std::vector<std::uint8_t> eroded = erodeMask(mask, mask_erosion_px_);
     std::vector<Point3>             points =
         deproject(view, mask, eroded, intrinsics, min_depth_m_, max_depth_m_);
+    // After the gate, not before: a mask half on the background clears the floor on the way in
+    // and is then fitted on whatever the gate leaves.
+    gateByMedianDepth(points, depth_gate_m_);
     if (static_cast<int>(points.size()) < min_points_)
     {
         RCLCPP_WARN_THROTTLE(
             get_logger(),
             *get_clock(),
             5000,
-            "instance '%s' left %zu points with usable depth, under the %d needed",
+            "instance '%s' left %zu points at one depth, under the %d needed",
             instance.label.c_str(),
             points.size(),
             min_points_);
         return std::nullopt;
     }
-    gateByMedianDepth(points, depth_gate_m_);
 
-    double lowest = std::numeric_limits<double>::max();
-    for (const Point3& point : points)
-    {
-        lowest = std::min(lowest, dot(point, up));
-    }
-
-    std::optional<double>     support;
     const std::vector<Point3> ring =
         supportRing(view, mask, intrinsics, support_ring_px_, min_depth_m_, max_depth_m_);
-    std::vector<double> heights;
-    heights.reserve(ring.size());
-    for (const Point3& point : ring)
-    {
-        // Only what could be the surface this object stands on. Without the band the median is
-        // dragged by the floor beyond the table on one side and by a taller neighbour on the
-        // other, and either one puts the object's base somewhere it is not.
-        const double height = dot(point, up);
-        if (std::abs(height - lowest) <= support_band_m_)
-        {
-            heights.push_back(height);
-        }
-    }
-    if (static_cast<int>(heights.size()) >= min_support_points_)
-    {
-        const std::size_t middle = heights.size() / 2;
-        std::nth_element(
-            heights.begin(),
-            heights.begin() + static_cast<std::ptrdiff_t>(middle),
-            heights.end());
-        support = heights[middle];
-    }
+    const std::optional<double> support =
+        supportHeight(ring, points, up, support_band_m_, min_support_points_);
 
     return fitOrientedBox(points, up, support, min_extent_m_, max_extent_m_);
 }
@@ -209,8 +178,7 @@ void G1ObjectGeometry::onMasks(const g1_msgs::msg::InstanceMaskArray::ConstShare
     const double          stamp_s = DepthHistory::stampSeconds(masks->header);
     std::vector<Measured> measured;
 
-    // An empty answer is still an answer: it is how the stream says the objects are gone, and a
-    // consumer that kept the last non-empty one would act on an object nobody can see.
+    // An empty answer is still an answer: it is how the stream says the objects are gone.
     if (!masks->instances.empty())
     {
         const sensor_msgs::msg::Image::ConstSharedPtr depth = depth_history_.at(stamp_s);
@@ -258,7 +226,7 @@ void G1ObjectGeometry::onMasks(const g1_msgs::msg::InstanceMaskArray::ConstShare
             return;
         }
 
-        // Up in the camera's own frame, so the fit knows which way the surface holds the object.
+        // Up in the camera's own frame, which is what the fit needs.
         tf2::Quaternion rotation;
         tf2::fromMsg(to_up_frame.transform.rotation, rotation);
         const tf2::Vector3 up_in_camera = tf2::quatRotate(rotation.inverse(), { 0.0, 0.0, 1.0 });
@@ -281,13 +249,14 @@ void G1ObjectGeometry::onMasks(const g1_msgs::msg::InstanceMaskArray::ConstShare
             {
                 continue;
             }
-            geometry_msgs::msg::Pose in_camera = poseFrom(*box);
-            geometry_msgs::msg::Pose in_up_frame;
+            const geometry_msgs::msg::Pose in_camera = poseFrom(*box);
+            geometry_msgs::msg::Pose       in_up_frame;
             tf2::doTransform(in_camera, in_up_frame, to_up_frame);
             measured.push_back(
                 { instance.label,
                   instance.score,
                   *box,
+                  in_camera,
                   { in_up_frame.position.x, in_up_frame.position.y, in_up_frame.position.z },
                   index });
         }
@@ -308,8 +277,8 @@ void G1ObjectGeometry::publish(
     const std::vector<std::string>& ids)
 {
     vision_msgs::msg::Detection3DArray objects;
-    // The image's stamp, not now(): a consumer judging staleness has to see the age of the
-    // measurement, and the detector spends over a second of it.
+    // The image's stamp, not now(): the detector spends over a second, and a consumer judging
+    // staleness has to see that.
     objects.header = masks.header;
 
     g1_msgs::msg::InstanceMaskArray tracked = masks;
@@ -320,7 +289,7 @@ void G1ObjectGeometry::publish(
         vision_msgs::msg::Detection3D detection;
         detection.header      = masks.header;
         detection.id          = ids[i];
-        detection.bbox.center = poseFrom(object.box);
+        detection.bbox.center = object.pose_in_camera;
         detection.bbox.size.x = object.box.size_x;
         detection.bbox.size.y = object.box.size_y;
         detection.bbox.size.z = object.box.size_z;
@@ -332,9 +301,8 @@ void G1ObjectGeometry::publish(
         detection.results.push_back(hypothesis);
         objects.detections.push_back(detection);
 
-        // A second copy under the bare phrase while only one object answers to it. The skills
-        // and the trees name objects by phrase, and an index they cannot predict would make
-        // every existing goal unreachable.
+        // A second copy under the bare phrase while one object answers to it: skills name
+        // objects by phrase and cannot predict the index.
         if (publish_bare_phrase_alias_ && tracker_.isSoleTrackFor(object.phrase))
         {
             vision_msgs::msg::Detection3D alias       = detection;

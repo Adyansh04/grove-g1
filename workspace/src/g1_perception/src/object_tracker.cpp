@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <limits>
 
 namespace g1_perception
 {
@@ -11,10 +10,8 @@ namespace
 
 double distance(const Point3& a, const Point3& b)
 {
-    const double dx = a.x - b.x;
-    const double dy = a.y - b.y;
-    const double dz = a.z - b.z;
-    return std::sqrt((dx * dx) + (dy * dy) + (dz * dz));
+    const Point3 gap{ a.x - b.x, a.y - b.y, a.z - b.z };
+    return std::sqrt(dot(gap, gap));
 }
 
 }  // namespace

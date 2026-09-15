@@ -3,10 +3,9 @@
 
 /**
  * @file object_geometry.hpp
- * @brief Turns an instance mask plus the depth frame it was computed from into an oriented box.
+ * @brief Turns an instance mask plus the depth frame it was cut from into an oriented box.
  *
- * ROS-free on purpose, so every step is driven directly by a unit test. The node above it only
- * pairs messages, applies parameters and publishes.
+ * ROS-free, so a unit test drives every step directly.
  */
 
 #include <cstdint>
@@ -26,6 +25,16 @@ struct Point3
     double y{ 0.0 };
     double z{ 0.0 };
 };
+
+[[nodiscard]] inline double dot(const Point3& a, const Point3& b)
+{
+    return (a.x * b.x) + (a.y * b.y) + (a.z * b.z);
+}
+
+[[nodiscard]] inline Point3 cross(const Point3& a, const Point3& b)
+{
+    return { (a.y * b.z) - (a.z * b.y), (a.z * b.x) - (a.x * b.z), (a.x * b.y) - (a.y * b.x) };
+}
 
 /// Pinhole parameters, read from CameraInfo::k rather than assumed.
 struct Intrinsics
@@ -75,18 +84,13 @@ struct OrientedBox
     Point3 axis_y;
 };
 
-/**
- * @brief Turns a noun phrase into the object id it is published under.
- *
- * Shared with the mock detector so the two agree on what "red cube" becomes without a table.
- */
+/// Turns a noun phrase into the object id it is published under. Shared with the mock detector.
 [[nodiscard]] std::string slugify(std::string_view phrase);
 
 /**
  * @brief Shrinks a mask by @p iterations passes of a 3x3 minimum filter.
  *
- * Depth at an object's edge is a blend of the object and whatever is behind it, so the outermost
- * ring of a mask reads as points that are neither.
+ * Depth at an object's edge blends the object with what is behind it.
  *
  * @return A crop of the same dimensions as @p mask.
  */
@@ -108,8 +112,7 @@ void planeBasis(const Point3& up, Point3& first, Point3& second);
 /**
  * @brief Deprojects the pixels in a ring just outside the mask: the surface the object stands on.
  *
- * The alternative, taking the lowest point of the object itself, is wrong for anything that hides
- * its own base: the lowest visible point of a sphere is its equator.
+ * The object's own lowest visible point will not do: for a sphere that is its equator.
  */
 [[nodiscard]] std::vector<Point3> supportRing(
     const DepthView& depth, const MaskView& mask, const Intrinsics& intrinsics, int ring_px,
@@ -123,17 +126,25 @@ void planeBasis(const Point3& up, Point3& first, Point3& second);
 void gateByMedianDepth(std::vector<Point3>& points, double gate_m);
 
 /**
+ * @brief Median height of the ring points that could be the surface @p object_points stand on.
+ *
+ * @param band_m Half-width of the band around the object's lowest point, which keeps the floor
+ *               and a taller neighbour out of the median.
+ * @return Nothing when fewer than @p min_points survive the band.
+ */
+[[nodiscard]] std::optional<double> supportHeight(
+    std::span<const Point3> ring, std::span<const Point3> object_points, const Point3& up,
+    double band_m, int min_points);
+
+/**
  * @brief Fits a box standing on a support surface to points seen from one side.
  *
- * The vertical extent runs from the support height to the highest visible point, which is the one
- * assumption that makes a single view enough: we see the top of an object, and we know what it
- * rests on.
+ * Height runs from the support to the highest visible point, which is what makes one view enough.
  *
  * @param up             Unit up vector, in the same frame as @p points.
- * @param support_height Height of the supporting surface along @p up. Without it the lowest
- *                       points of the object stand in, which underestimates anything rounded.
- * @return Nothing when the points are too few or the box is outside the extent bounds, which is
- *         what a mask that ran onto the table looks like.
+ * @param support_height Height of the supporting surface along @p up. Without it the object's own
+ *                       lowest points stand in, which underestimates anything rounded.
+ * @return Nothing when the points are too few or the box is outside the extent bounds.
  */
 [[nodiscard]] std::optional<OrientedBox> fitOrientedBox(
     std::span<const Point3> points, const Point3& up, std::optional<double> support_height,
