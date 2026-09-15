@@ -45,11 +45,13 @@ TRUE_SIZE = {
     "white_cup": (0.07, 0.07, 0.09),
 }
 
-# Measured on this scene: four of the five land within 2 mm, and the sphere sits 1.2 cm short
-# along the view direction because its far side is not visible from anywhere. The thresholds
-# admit that much and no more.
-POSITION_TOLERANCE_M = 0.02
-SIZE_TOLERANCE_M = 0.025
+# Per object, from measurement on this layout: four land within 2.5 mm in position and 4.7 mm in
+# size. The cylinder is an open error, not a limit of the method: one side reads 37 mm of 60, the
+# same on the code before and after the 2026-09 review, so its bound only stops it getting worse.
+POSITION_TOLERANCE_M = {"green_cylinder": 0.015}
+SIZE_TOLERANCE_M = {"green_cylinder": 0.03}
+DEFAULT_POSITION_TOLERANCE_M = 0.008
+DEFAULT_SIZE_TOLERANCE_M = 0.008
 
 
 @pytest.mark.launch_test
@@ -177,12 +179,13 @@ class TestPerceptionObjects(unittest.TestCase):
             with self.subTest(object=name):
                 position, _, _ = self._average(f"{name}_0")
                 true = self.truth[name]
+                tolerance = POSITION_TOLERANCE_M.get(name, DEFAULT_POSITION_TOLERANCE_M)
                 for axis, measured, expected in zip(
                     "xyz", position, (true.x, true.y, true.z), strict=True
                 ):
                     self.assertLess(
                         abs(measured - expected),
-                        POSITION_TOLERANCE_M,
+                        tolerance,
                         f"{name} {axis} is {measured:.3f} against {expected:.3f}",
                     )
 
@@ -190,12 +193,13 @@ class TestPerceptionObjects(unittest.TestCase):
         for name, expected in TRUE_SIZE.items():
             with self.subTest(object=name):
                 _, size, _ = self._average(f"{name}_0")
+                tolerance = SIZE_TOLERANCE_M.get(name, DEFAULT_SIZE_TOLERANCE_M)
                 # Sorted: which axis is which depends on the fitted yaw, and for a cylinder or a
                 # sphere the two horizontal axes are interchangeable by construction.
                 for measured, true in zip(sorted(size), sorted(expected), strict=True):
                     self.assertLess(
                         abs(measured - true),
-                        SIZE_TOLERANCE_M,
+                        tolerance,
                         f"{name} measured {[round(v, 3) for v in size]} against {expected}",
                     )
 

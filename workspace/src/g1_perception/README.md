@@ -108,9 +108,9 @@ An object stands on a surface, and the camera sees its top. The vertical extent 
 that surface up to the highest visible point, which is what makes one view enough: the lowest
 visible point of a sphere is its equator, not its base.
 
-The horizontal extent comes from the visible points only, so a shape that hides its own far side
-reads slightly small and slightly close. Measured on the tabletop world: four of the five objects
-land within 2 mm of truth, and the sphere sits 1.2 cm short along the view direction.
+Width comes from the visible points only, so a shape hiding its far side reads slightly small and
+slightly close. On the tabletop world four of the five land within 2.5 mm in position and 5 mm in
+size. The green cylinder does not: one side reads 37 mm of 60, an open error still to explain.
 
 ## Running
 
@@ -144,4 +144,4 @@ ros2 topic echo /objects --field detections[0].results[0].hypothesis
 | `test_detector` | No | The detector client against a stub vision server: the request encoding, the mask message, the image's own stamp, and a phrase list that is re-read rather than cached. |
 | `test_grounder` | No | The grounder against a stub: an instruction becomes phrases, the target is one of them, the phrases actually reach the detector's parameter, exemplar points survive, and an empty instruction is refused. |
 | `test_graspgen_adapter` | No | The grasp adapter against a stub generator: the request encoding the real server would reject, the frame and stamp of the answer, ordering by confidence, an unknown object, and a left-hand request refused rather than mirrored. |
-| `test_perception_objects` | Sim, `-L simulator` | Measured poses against the simulator's own, for all five tabletop objects: position within 2 cm, size within 2.5 cm, both names published, and the stamp being the measurement's rather than the publisher's. |
+| `test_perception_objects` | Sim, `-L simulator` | Measured poses against the simulator's own, for all five tabletop objects: position and size per object, both names published, and the stamp being the measurement's rather than the publisher's. |

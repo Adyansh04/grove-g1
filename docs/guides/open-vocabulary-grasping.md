@@ -29,8 +29,9 @@ rather than milliseconds. Objects arrive on `/objects` as `red_cube_0`, plus a b
 while only one of them is in view.
 
 Measured against the simulator's own poses in the tabletop world: four of the five objects land
-within 2 mm, and the sphere sits 1.2 cm short along the view direction, because no camera can see
-its far side. Sizes come back within 5 mm except the sphere's.
+within 2.5 mm and sizes within 5 mm. The green cylinder is the exception: one horizontal side
+reads 37 mm of its 60 and the pose sits 1 cm off, which is an open error rather than a limit of
+single-view geometry.
 
 ## The vision server
 
