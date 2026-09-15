@@ -100,6 +100,10 @@ The same step acquires both Dex3 hands, best-effort: a hand that is absent, unpo
 publishing state logs a warning and leaves the arm usable. The arm is the part that fails the whole
 acquire.
 
+Last, it moves both arms straight out to the sides over four seconds, unplanned. Where they hang
+at bring-up is inside the octomap of any table in front of the robot, and MoveIt refuses to plan
+from a start state in collision. If that move fails the step exits non-zero.
+
 ## Walking by hand
 
 No mode change is needed, because the policy is already balancing the robot and takes velocity
