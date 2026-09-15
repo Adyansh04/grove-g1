@@ -1,5 +1,6 @@
 #include "g1_manipulation/grasp_filter.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <tf2/LinearMath/Matrix3x3.hpp>
 #include <tf2/LinearMath/Quaternion.hpp>

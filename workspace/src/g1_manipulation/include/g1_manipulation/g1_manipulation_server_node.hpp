@@ -18,6 +18,7 @@
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
 
+#include <array>
 #include <atomic>
 #include <g1_msgs/action/pick.hpp>
 #include <g1_msgs/action/place.hpp>
@@ -350,14 +351,12 @@ private:
     double      ik_timeout_s_{ 0.05 };
     /// Interpolation step and how much of a straight line must be walkable to take it.
     double cartesian_step_m_{ 0.005 };
-    double cartesian_min_fraction_{ 0.9 };
+    double cartesian_min_fraction_{ 0.8 };
     /// Generator gripper frame to `<side>_hand_grasp_frame`; see grasp_filter.hpp.
-    std::vector<double> graspgen_offset_;
+    std::array<double, 6> graspgen_offset_{};
 
-    /// One goal at a time across ALL THREE servers. MoveGroupInterface is not thread-safe and
-    /// carries mutable start-state and plan state, and two goals on different groups still drive
-    /// overlapping joints through the one arm_trajectory_controller, so the second trajectory
-    /// preempts the first mid-motion, possibly with an object in the hand.
+    /// One goal at a time across ALL THREE servers: MoveGroupInterface is not thread-safe, and two
+    /// goals share one arm_trajectory_controller, so the second preempts the first mid-motion.
     std::atomic<bool> busy_{ false };
     std::atomic<int>  goals_running_{ 0 };
 };

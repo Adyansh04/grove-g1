@@ -1,91 +1,63 @@
 # Pick and place skills, loaded by g1_manipulation/launch/manipulation.launch.py.
 #
-# Everything here is real-robot code: the skills plan through move_group onto the controllers
-# that own the body motors and the hand topics, exactly as they will on hardware. What is
-# simulation-only is where the object poses come from, in g1_object_pose_source.yaml.
+# Real-robot code throughout; only where the object poses come from is simulation-specific, and
+# that lives in g1_object_pose_source.yaml.
 g1_manipulation_server:
   ros__parameters:
-    # `object_timeout_ms` is a launch argument, not a key here: a key named under this node
-    # beats the launch's override file whatever the order, and how old a pose may be depends on
-    # what is producing it. The simulator's stream is instant; a detector takes seconds.
+    # `object_timeout_ms` is a launch argument, not a key here: a node-named key beats the
+    # launch override file, and how old a pose may be depends on what produces it.
 
-    # How far above the grasp the approach starts, and how far the object is lifted after the
-    # hand closes. Both are along the planning frame's z, which is up while the robot stands.
-    #
-    # Measured: standing at the facility workbench, the hand only clears the table's
-    # octomap at pelvis z 0.22 and above. The cube sits at
-    # pelvis z 0.0375, so anything under 0.185 of approach height puts the pregrasp inside the
-    # map.
-    #
-    # This cannot be fixed by exempting the octomap instead. The pregrasp transit is deliberately
-    # collision-checked so the planner cannot route the arm through the table on the way in; the
-    # exemption exists for the descent that follows and nothing else.
+    # Where the approach starts, along the planning frame's z. Measured: the hand clears the
+    # workbench octomap only at 0.185 and above, and the pregrasp stays collision-checked so the
+    # planner cannot route through the table on the way in.
     approach_height_m: 0.22
 
-    # How far ABOVE the object's top face the grasp frame is aimed, using the height the
-    # object pose source reports, not its centre.
-    #
-    # The roll points the hand's closing axis at the floor and the fingertips sit about 24 mm
-    # beyond the grasp frame along it, so this offset is what decides where the fingers land.
-    # Aim at the middle of a 60 mm cube and they reach to 6 mm above the table, inside the
-    # octomap's own 20 mm padding, so the hand is asked to close through the surface.
-    #
-    # ABOVE the top face, not below it. At 15 mm below, the grip held but did not look like one:
-    # the palm sits level with the cube's top rather than clearing it, and the fingers reach past
-    # the middle. Held 10 mm above the face the palm clears the object and the fingertips close
-    # about 14 mm down its sides, fingers around the upper half, which is what a hand does and
-    # is a shorter reach besides. Raise it further and the fingers grip less of the object;
-    # much past 20 mm on a 60 mm cube they start to slip off the top.
+    # Above the object's TOP face, not its centre. The fingertips sit about 24 mm beyond the
+    # grasp frame, so at 10 mm the palm clears the object and the fingers close down its sides;
+    # past 20 mm on a 60 mm cube they start to slip off the top.
     grasp_height_above_top_m: 0.010
-    # Has to clear the same 0.185 the pregrasp does, and for a sharper reason: the collision
-    # exemption is restored at the end of the lift, so wherever the lift finishes becomes the
-    # START state of the next collision-checked plan. Finishing inside the octomap leaves the
-    # carry posture unplannable from a state that is already in collision.
+    # Clears the same 0.185: the exemption is restored at the end of the lift, so wherever it
+    # finishes becomes the start state of the next collision-checked plan.
     lift_height_m: 0.20
 
-    # Well under joint_limits.yaml's own 0.8 rad/s per-joint cap. Arm motion measurably
-    # disturbs a standing humanoid, and scaling the whole trajectory is preferred to clamping
-    # joints, which bends the path itself.
+    # Well under joint_limits.yaml's 0.8 rad/s cap: arm motion disturbs a standing humanoid, and
+    # scaling the trajectory beats clamping joints, which bends the path.
     velocity_scaling: 0.3
     planning_time_s: 10.0
 
-    # Attempts per motion, not seconds. OMPL samples, and the solution it returns is then checked
-    # by a validation adapter that does reject paths the planner accepted; with one attempt that
-    # rejection is a failed skill rather than another sample.
+    # Attempts per motion, not seconds: a validation adapter does reject paths OMPL accepted, and
+    # one attempt turns that into a failed skill.
     planning_attempts: 5
     grasp_rpy: [-1.5707963, 0.0, 0.0]
 
-    # Where a pick's grasp comes from. "fixed_top_down" is the one this server computes from the
-    # object's box: straight down, at its centre, held at grasp_rpy. "generated" asks whatever
-    # serves grasp_service and takes the best candidate the arm can reach.
-    #
-    # There is no fallback between them. A pick told to use a generator and quietly using the
-    # fixed pose instead would look like it worked.
-    #
-    # `grasp_source` is a launch argument for the same reason `object_timeout_ms` is.
+    # `grasp_source` is a launch argument, for the same reason `object_timeout_ms` is. There is
+    # no fallback between the two: a pick quietly using the fixed pose would look like it worked.
     grasp_service: "/g1_grasp_engine/generate_grasps"
 
-    # A generator draws samples and scores them on a GPU; this is what a stalled one costs
-    # before the pick gives up and says so.
-    grasp_timeout_s: 20.0
+    # Must stay longer than the adapter's own zmq_timeout_ms (30 s in g1_graspgen_adapter.yaml):
+    # give up first and a slow generator is reported silent while it is still working.
+    grasp_timeout_s: 35.0
 
     # Candidates come back best first. Below this score they are not worth the inverse
     # kinematics call, and past this many the arm is not going to reach a better one.
     min_grasp_score: 0.5
     max_grasp_candidates: 20
 
-    # How far from straight down a grasp may come in. Past a right angle the hand is reaching up
-    # from underneath, which on a table means through it; the margin below that leaves room for
-    # a grasp that comes in across a corner.
+    # How far from straight down a grasp may come in. Past a right angle it reaches up through
+    # the table; the margin below leaves room for one across a corner.
     max_approach_tilt_deg: 75.0
 
-    # Where the hand waits before the final move, measured back along the grasp's own approach
-    # axis rather than straight up: a grasp coming in from the side has its clear line along
-    # that axis and a ceiling above it.
+    # Where the hand waits, back along the grasp's own approach axis rather than straight up: a
+    # side grasp has its clear line along that axis and a ceiling above it.
     approach_standoff_m: 0.12
 
     # Per candidate, and there can be twenty of them, so this is a filter rather than a solve.
     ik_timeout_s: 0.05
+
+    # The last move into a grasp is a straight line, as MoveIt's own pick pipeline does: how
+    # finely it is walked, and how much must be clear before it is taken instead of planned.
+    cartesian_step_m: 0.005
+    cartesian_min_fraction: 0.8
 
     # `graspgen_to_grasp_frame_xyz_rpy` is a launch argument for the same reason: it describes
     # whichever generator is answering, and the stand-in's frame is not the real one's.
