@@ -34,9 +34,7 @@ private:
     rclcpp::Service<g1_msgs::srv::GenerateGrasps>::SharedPtr            service_;
 
     vision_msgs::msg::Detection3DArray::ConstSharedPtr objects_;
-    std::string                                        hand_{ "right" };
-    /// Offer nothing but the grasp from underneath, so a filter that accepts everything shows.
-    bool   only_from_below_{ false };
+    /// `hand` and `only_from_below` are deliberately not held here; onRequest reads them live.
     double approach_height_m_{ 0.10 };
 };
 

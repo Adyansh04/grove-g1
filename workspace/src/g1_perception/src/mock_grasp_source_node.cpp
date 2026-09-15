@@ -23,8 +23,8 @@ approachFromAbove(const geometry_msgs::msg::Point& centre, double height, double
     geometry_msgs::msg::Pose pose;
     pose.position = centre;
     pose.position.z += height;
-    // The generator's convention: +z of the grasp frame is the approach direction, so a grasp
-    // reaching down has its z axis pointing at the floor.
+    // Generator convention: +z is the approach direction, so a downward grasp points z at the
+    // floor.
     tf2::Quaternion rotation;
     rotation.setRPY(M_PI, 0.0, yaw);
     pose.orientation = tf2::toMsg(rotation);
@@ -36,9 +36,10 @@ approachFromAbove(const geometry_msgs::msg::Point& centre, double height, double
 G1MockGraspSource::G1MockGraspSource(const rclcpp::NodeOptions& options)
   : rclcpp::Node("g1_mock_grasp_source", options)
 {
-    hand_              = declare_parameter<std::string>("hand", "right");
+    // Declared here, read per request: see onRequest.
+    declare_parameter<std::string>("hand", "right");
+    declare_parameter<bool>("only_from_below", false);
     approach_height_m_ = declare_parameter<double>("approach_height_m", 0.10);
-    only_from_below_   = declare_parameter<bool>("only_from_below", false);
 
     objects_sub_ = create_subscription<vision_msgs::msg::Detection3DArray>(
         "objects",
@@ -64,15 +65,14 @@ void G1MockGraspSource::onRequest(
     const std::shared_ptr<g1_msgs::srv::GenerateGrasps::Request>&  request,
     const std::shared_ptr<g1_msgs::srv::GenerateGrasps::Response>& response)
 {
-    // Re-read per request rather than held from construction: one simulator run has to be able
-    // to see this generator accepted and refused, and a restart between them costs a minute.
-    hand_            = get_parameter("hand").as_string();
-    only_from_below_ = get_parameter("only_from_below").as_bool();
+    // Re-read per request: one simulator run has to see this generator both accepted and refused.
+    const std::string hand            = get_parameter("hand").as_string();
+    const bool        only_from_below = get_parameter("only_from_below").as_bool();
 
     response->ok = false;
-    if (!request->hand.empty() && request->hand != hand_)
+    if (!request->hand.empty() && request->hand != hand)
     {
-        response->message = "this stand-in generates grasps for the " + hand_ + " hand only";
+        response->message = "this stand-in generates grasps for the " + hand + " hand only";
         return;
     }
     if (objects_ == nullptr || objects_->detections.empty())
@@ -111,24 +111,23 @@ void G1MockGraspSource::onRequest(
     response->message = "stand-in grasps for '" + request->object_id + "'";
     response->header  = objects_->header;
     response->grasps.clear();
-    if (!only_from_below_)
+    if (!only_from_below)
     {
         response->grasps = { approachFromAbove(centre, top + approach_height_m_, 0.0),
                              approachFromAbove(centre, top + approach_height_m_, M_PI_4),
                              approachFromAbove(centre, top + approach_height_m_, M_PI_2) };
     }
-    // Fourth and worst: the same grasp reached from underneath, which no arm can take through a
-    // table. Whatever filters these has to reject it, and cannot be tested if it never arrives.
+    // Fourth and worst: from underneath, through the table. The filter cannot be tested on a
+    // candidate that never arrives.
     geometry_msgs::msg::Pose from_below = approachFromAbove(centre, -top - approach_height_m_, 0.0);
     from_below.orientation              = geometry_msgs::msg::Quaternion();
     from_below.orientation.w            = 1.0;
     response->grasps.push_back(from_below);
-    response->scores.assign(response->grasps.size(), 0.0F);
-    // Descending, because a generator answers best first and the filter stops at the first
-    // candidate under the bar.
+    // Descending: a generator answers best first and the filter stops at the first under the bar.
+    response->scores.resize(response->grasps.size());
     for (std::size_t i = 0; i < response->scores.size(); ++i)
     {
-        response->scores[i] = static_cast<float>(0.9 - (0.1 * static_cast<double>(i)));
+        response->scores[i] = 0.9F - (0.1F * static_cast<float>(i));
     }
 }
 
