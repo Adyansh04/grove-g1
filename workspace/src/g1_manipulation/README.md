@@ -26,20 +26,18 @@ between pick and place and drop what it was carrying.
 ## Where object poses come from
 
 `g1_object_pose_source` is the boundary between manipulation and perception. Skills consume
-`/objects` and never learn which source filled it, so a real detector replaces this node without
-touching them.
+`/objects` and never learn which source filled it.
 
 | `object_source` | Behaviour |
 |---|---|
-| `sim_ground_truth` | MuJoCo body poses, sampled inside the simulator and carried out by `g1_sensor_relay`. |
-| `hardware` (default) | **Refuses to configure.** There is no object-detection pipeline on this robot yet. |
+| `sim_ground_truth` | MuJoCo body poses, sampled inside the simulator and carried out by `g1_sensor_relay`. Exact: no noise, no occlusion, no misdetection. |
+| `perception` | Poses measured by `g1_perception` from the camera, in simulation or on hardware. `bringup.launch.py perception:=true` selects it. |
+| `hardware` (default) | **Refuses to configure.** The robot has no detector of its own; use `perception`. |
 
 `hardware` is the default deliberately, matching `g1_state_estimation`'s odometry source: a
 bring-up that forgets to say what it has must fail visibly rather than feed a grasp planner
-simulator ground truth it cannot tell from a measurement.
-
-These poses are exact: no noise, no occlusion, no misdetection, and every listed object always
-visible. Nothing here validates behaviour under a detector that is wrong.
+simulator ground truth it cannot tell from a measurement. The stream the node reads follows
+`object_source` in `manipulation.launch.py`, so the two cannot disagree.
 
 `/objects` is `vision_msgs/Detection3DArray` in `odom`, carrying a pose and a bounding box per
 object. The box is what the server builds its collision geometry from, so replacing the source
@@ -189,31 +187,24 @@ because it is a property of the Dex3 rather than of a task.
 
 ## Where a grasp comes from
 
-By default a pick computes its own: straight down at the object's centre, taken just under its
-top face, with the hand held at `grasp_rpy`. That works because the objects are boxes and
-cylinders standing on a table, and it is what every existing test exercises.
+By default a pick computes its own: straight down at the object's centre, just under its top
+face, with the hand at `grasp_rpy`. That works for boxes and cylinders on a table.
 
-With `grasp_source:=generated` the pick asks a grasp generator instead, and keeps the best
-candidate it can actually take. Candidates are filtered cheapest test first: below `min_grasp_score`
-they are not worth solving, past `max_approach_tilt_deg` from straight down the hand is coming up
-through whatever the object rests on, and what survives has to have an inverse-kinematics
-solution for the arm's grasp frame. The pre-grasp then sits back along the grasp's own approach
-axis rather than straight up, because a grasp reaching in from the side has its clear line along
-that axis.
+With `grasp_source:=generated` it asks a grasp generator and keeps the best candidate it can
+take. Filtering runs cheapest test first: `min_grasp_score`, then `max_approach_tilt_deg` from
+straight down, then inverse kinematics for the arm's grasp frame. The pre-grasp sits back along
+the grasp's own approach axis rather than straight up, so a side grasp keeps its clear line.
 
-A generated grasp belongs to the generator's own gripper frame, which is not a link in this
-robot's URDF. `grasp_offset` is the measured transform to `<side>_hand_grasp_frame`; it defaults
-to zero, which is what assuming rather than measuring gets you, and
+A generated grasp belongs to the generator's gripper frame, which is not a link in this URDF.
+`grasp_offset` is the measured transform to `<side>_hand_grasp_frame`, and it defaults to zero;
 `docs/guides/open-vocabulary-grasping.md` says how to read it off the candidates in RViz.
 
-There is no fallback between the two. A pick told to use a generator that answers with nothing
-usable aborts and says so, rather than quietly using the pose it would have computed itself.
+There is no fallback between the two: a pick whose generator answers with nothing usable aborts
+and says so.
 
-The final approach is a straight line rather than a planned path. Those last centimetres run
-through a table's inflated octomap voxels with the hand exempted and the object removed, which is
-a corridor a sampling planner spends its whole budget failing to thread; `cartesian_min_fraction`
-is how much of the line has to be walkable before it is taken, and below that the pick falls back
-to planning around.
+The final approach is a straight line, as MoveIt's own pick pipeline does, because those last
+centimetres are a corridor a sampling planner cannot thread. `cartesian_min_fraction` is how much
+of it must be clear before it is taken; below that the pick plans around instead.
 
 ## Tests
 

@@ -10,13 +10,9 @@ g1_graspgen_adapter:
     # with TensorRT, so this is generous rather than tight.
     zmq_timeout_ms: 30000
 
-    # The Dex3-1's sweep volume: two boxes in the gripper's own frame, in metres, enclosing the
-    # finger volume open and half closed, as extents then offset for each. Copied from
-    # GraspGenX's own `unitree_g1` gripper description, which is this hand: seven joints named
-    # right_zero through right_six, of type revolute_3f.
-    #
-    # These twelve numbers are the entire description of the hand the model gets, which is why a
-    # gripper it has never seen works at all.
+    # The Dex3-1's sweep volume: two boxes in the gripper's frame enclosing the finger volume open
+    # and half closed, extents then offset. Copied from GraspGenX's own `unitree_g1` description,
+    # and the entire description of the hand the model gets.
     sweep_volume: [0.10, 0.06, 0.04, 0.0, 0.0, 0.07, 0.04, 0.06, 0.04, 0.007, 0.0, 0.06]
     # 0 parallel two-finger, 1 revolute two-finger, 2 revolute three-finger.
     gripper_type: 2

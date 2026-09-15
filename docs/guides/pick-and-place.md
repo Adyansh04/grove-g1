@@ -82,9 +82,10 @@ its default of 10 Hz.
 
 ## Where object poses come from
 
-`object_source` defaults to `sim_ground_truth`, which reads MuJoCo bodies directly. There is no
-object-detection pipeline yet, and `object_source:=hardware` deliberately refuses to configure
-rather than pretending otherwise. A real detector replaces it without the skills changing.
+`object_source` defaults to `sim_ground_truth`, which reads MuJoCo bodies directly.
+`perception:=true` measures them from the camera instead; see
+[Open-vocabulary perception](open-vocabulary-grasping.md). `object_source:=hardware` refuses to
+configure, because the robot has no detector of its own.
 
 ## Arm authority
 

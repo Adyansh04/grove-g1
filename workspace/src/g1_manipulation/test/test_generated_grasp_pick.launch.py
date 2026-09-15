@@ -42,12 +42,10 @@ READY_TIMEOUT_S = 85.0
 PICK_TIMEOUT_S = 240.0
 OBJECT_ID = "red_cube_0"
 
-# The stand-in generator answers in its own gripper frame, where +z is the approach direction.
-# This is what turns one of its poses into a goal for right_hand_grasp_frame, and it is exactly
-# the measurement the real generator needs before it can drive anything.
-# The z is 4 cm rather than the 9 that would put the grasp frame a centimetre above the object:
-# the last centimetres by a table are where its inflated voxels are, and the Dex3's fingers close
-# over that gap. Against the real generator this whole vector is a measurement, not a choice.
+# The stand-in generator's gripper frame to right_hand_grasp_frame. The z is 4 cm rather than the
+# 9 that would land a centimetre above the object: the table's inflated voxels sit in the last
+# centimetres and the Dex3's fingers close over that gap. Against the real generator this whole
+# vector is a measurement, not a choice.
 GRASP_OFFSET = "[0.0, 0.0, 0.04, 1.5707963, 0.0, 0.0]"
 
 

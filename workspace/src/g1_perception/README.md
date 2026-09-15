@@ -87,26 +87,24 @@ The socket handling the three share lives in `g1_perception/host_clients.py`.
 
 ## Instructions
 
-A detector takes "red cube". It does not take "the mug to the left of the bowl": no relations, no
-sentences, and no notion of which object a sentence is about. `g1_instruction_grounder` asks a
-vision-language model on the host to name the objects in the scene and say which one the
-instruction means, then writes those phrases onto the detector's `phrases` parameter. That is the
-detector's whole control interface, so nothing else had to be built to steer it.
+A detector takes "red cube", not "the mug to the left of the bowl". `g1_instruction_grounder`
+asks a vision-language model on the host to name the objects and say which one the instruction
+means, then writes those phrases onto the detector's `phrases` parameter, which is its whole
+control interface.
 
 ## Grasps
 
 `g1_graspgen_adapter` asks NVIDIA's GraspGenX for six-degree-of-freedom grasps on one tracked
 object. The hand travels as twelve numbers, its sweep volume, rather than as a name, which is why
 a model that never trained on a Dex3-1 produces grasps for one. Poses come back in the camera
-frame, belonging to the generator's own gripper frame rather than to any link here, so the arm
-side applies one measured offset. Left-hand requests are refused: mirroring a sweep volume
-describes a different gripper.
+frame and in the generator's own gripper frame, so the arm side applies one measured offset.
+Left-hand requests are refused: mirroring a sweep volume describes a different gripper.
 
 ## What the geometry assumes
 
-An object stands on a surface, and the camera sees its top. The vertical extent is measured from
-that surface up to the highest visible point, which is what makes one view enough: the lowest
-visible point of a sphere is its equator, not its base.
+An object stands on a surface and the camera sees its top. Height runs from that surface to the
+highest visible point, which is what makes one view enough: a sphere's lowest visible point is its
+equator, not its base.
 
 Width comes from the visible points only, so a shape hiding its far side reads slightly small and
 slightly close. On the tabletop world four of the five land within 2.5 mm in position and 5 mm in

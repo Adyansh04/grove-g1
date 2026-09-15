@@ -3,21 +3,13 @@
 # SIMULATION ONLY as configured. See g1_manipulation/README.md.
 g1_object_pose_source:
   ros__parameters:
-    # `object_source` is a launch argument, not a key here: a key named under this node beats
-    # the launch's override file whatever the order, so a key here would pin the source and the
-    # argument would silently do nothing. The node's own default is "hardware", which refuses to
-    # configure, so a bring-up that sets neither fails visibly.
+    # `object_source` is a launch argument, not a key here: a node-named key beats the launch
+    # override file, so a key here would pin the source. The node defaults to "hardware", which
+    # refuses to configure, so a bring-up that sets neither fails visibly.
 
-    # In: the frame the detector measures from. Out: the frame /objects is published in, and
-    # the node transforms between them through TF.
-    #
-    # The camera frame is what a real 6D-pose detector reports, so this is the same pair the
-    # robot will use. It also has to be a measured frame rather than a fixed one: an object
-    # announced directly in odom is only correct while odom IS the world, which stops being
-    # true as soon as odometry is an estimate.
-    #
-    # Out stays odom, not a frame on the robot. MoveIt's collision objects need somewhere
-    # fixed to sit; expressed in pelvis they would slide along with every step.
+    # In, the frame the detector measures from; out, the frame /objects is published in. In has to
+    # be measured rather than fixed: an object announced in odom is only right while odom IS the
+    # world. Out stays odom because MoveIt's collision objects need somewhere fixed to sit.
     source_frame_id: "camera_color_optical_frame"
     output_frame_id: "odom"
 

@@ -30,9 +30,10 @@ the LiDAR, and each Dex3-1 hand is its own planning group with `open` and `close
 On top of that, pick and place are served as actions, and a BehaviorTree.CPP behaviour tree
 sequences them with navigation into a mission that runs end to end in the facility world: drive
 to a workbench, walk the last half metre under closed-loop control, pick a cube up, carry it
-across the building, and put it down on a bench. Object poses are measured from the head camera:
-objects are named in plain text, segmented, and lifted into 3D with the aligned depth frame, so
-nothing in the skills depends on the simulator knowing where anything is.
+across the building, and put it down on a bench. That mission reads object poses from the
+simulator. With `perception:=true` they are measured from the head camera instead: objects are
+named in plain text, segmented, and lifted into 3D with the aligned depth frame, and the skills
+take them without changing.
 
 Nav2 parks within 0.5 m of a goal and the arm's usable window is about 0.2 m wide, so a base
 approach skill closes the gap against the measured object rather than against the map. The tree

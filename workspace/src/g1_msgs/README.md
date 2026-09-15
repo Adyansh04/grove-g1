@@ -57,13 +57,12 @@ poses.
 
 | Message | Carries | Notes |
 |---|---|---|
-| `InstanceMask` | `label`, `score`, `roi`, `data` | One object. `data` is a 0-or-255 crop of `roi`, not a full frame. `label` is the noun phrase the detector was asked for, so the object id downstream does not move when the model rewords its answer. |
-| `InstanceMaskArray` | `header`, `image_width`, `image_height`, `model`, `instances` | `header` is the image's stamp and frame, not the publish time: the geometry node pairs on it to find the depth frame these masks were computed from. Nothing reads `model`, which is what keeps the segmentation model swappable. |
+| `InstanceMask` | `label`, `score`, `roi`, `data` | One object. `data` is a 0-or-255 crop of `roi`, not a full frame. `label` is the phrase the detector was asked for, so the object id does not move when the model rewords its answer. |
+| `InstanceMaskArray` | `header`, `image_width`, `image_height`, `model`, `instances` | `header` is the image's stamp and frame, not the publish time: the geometry node pairs on it. Nothing reads `model`, which is what keeps the segmenter swappable. |
 
-`GenerateGrasps` is what a grasp generator implements: an object id already on `/objects` and a
-hand in, poses and confidences out, best first, in the frame the generator measured them in. The
-poses belong to the generator's own gripper frame rather than to a link of this robot, so the
-caller applies one measured offset; that is the only thing it has to know about the model.
+`GenerateGrasps` is what a grasp generator implements: an object id on `/objects` and a hand in,
+poses and confidences out, best first. The poses belong to the generator's own gripper frame, so
+the caller applies one measured offset; that is all it has to know about the model.
 
 Every action except `SetArmPosture` publishes a phase as feedback and names that phase in the
 result message on failure. The phase strings are constants in the `.action` files, so each server
