@@ -46,12 +46,8 @@
 
     <!-- Wider than the manipulation pedestal, because five objects have to sit apart without
          touching, and at the same 0.80 top so a grasp tuned on one scene transfers to the other.
-         Placed to miss the arms where they hang at spawn, which is the pose the model starts in
-         and the startup hold keeps until the control stack takes over: the right palm sits at
-         about odom (0.23, -0.15, 0.86) with the fingers reaching forward from there. Objects
-         under that land in the hand before anything has been commanded, and the robot then
-         starts in collision, which is a state MoveIt has no plan out of. Hence the whole layout
-         sits to the right of that line while staying inside the arm's reach. -->
+         The hanging right hand reaches into the green cylinder, so the pinned variant spawns the
+         arms out of the way; this unpinned scene still spawns them hanging. -->
     <geom name="table_top" group="2" type="box" size="0.13 0.17 0.015" pos="0.39 -0.27 0.785"
       material="pedestal_mat" contype="1" conaffinity="1"/>
     <geom name="table_leg_near" group="2" type="box" size="0.02 0.02 0.385"

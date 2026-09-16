@@ -1,11 +1,49 @@
 <mujoco model="g1_tabletop_pinned_scene">
   <include file="g1_tabletop_scene.staged.xml"/>
 
+  <visual>
+    <!-- From the robot's right, where the gap between the held-out hand and the table shows. From
+         the base scene's angle the hand projects onto the objects and looks like a collision. -->
+    <global azimuth="90" elevation="-15"/>
+  </visual>
+
   <equality>
     <!-- Same pair and the same reason as g1_manipulation_pinned_scene: the pelvis weld fixes the
          base the arm reaches from, and the torso weld holds the head camera still, which is what
          a perception measurement is compared against. -->
     <weld name="pelvis_world_pin" body1="pelvis"/>
     <weld name="torso_world_pin" body1="torso_link"/>
+
+    <!-- Spawn with the arms out of the table, at activate_arm's CLEAR_POSTURE. Held from the first
+         physics step; patch 007 hands each one to its motor's hold and releases it. Softened so
+         the arms swing out in about a quarter of a second rather than snap. -->
+    <joint name="startup_hold_left_shoulder_pitch" joint1="left_shoulder_pitch_joint"
+      polycoef="0.9 0 0 0 0" solref="0.05 1"/>
+    <joint name="startup_hold_left_shoulder_roll" joint1="left_shoulder_roll_joint"
+      polycoef="1.1 0 0 0 0" solref="0.05 1"/>
+    <joint name="startup_hold_left_shoulder_yaw" joint1="left_shoulder_yaw_joint"
+      polycoef="0 0 0 0 0" solref="0.05 1"/>
+    <joint name="startup_hold_left_elbow" joint1="left_elbow_joint"
+      polycoef="0 0 0 0 0" solref="0.05 1"/>
+    <joint name="startup_hold_left_wrist_roll" joint1="left_wrist_roll_joint"
+      polycoef="0 0 0 0 0" solref="0.05 1"/>
+    <joint name="startup_hold_left_wrist_pitch" joint1="left_wrist_pitch_joint"
+      polycoef="0 0 0 0 0" solref="0.05 1"/>
+    <joint name="startup_hold_left_wrist_yaw" joint1="left_wrist_yaw_joint"
+      polycoef="0 0 0 0 0" solref="0.05 1"/>
+    <joint name="startup_hold_right_shoulder_pitch" joint1="right_shoulder_pitch_joint"
+      polycoef="0.9 0 0 0 0" solref="0.05 1"/>
+    <joint name="startup_hold_right_shoulder_roll" joint1="right_shoulder_roll_joint"
+      polycoef="-1.1 0 0 0 0" solref="0.05 1"/>
+    <joint name="startup_hold_right_shoulder_yaw" joint1="right_shoulder_yaw_joint"
+      polycoef="0 0 0 0 0" solref="0.05 1"/>
+    <joint name="startup_hold_right_elbow" joint1="right_elbow_joint"
+      polycoef="0 0 0 0 0" solref="0.05 1"/>
+    <joint name="startup_hold_right_wrist_roll" joint1="right_wrist_roll_joint"
+      polycoef="0 0 0 0 0" solref="0.05 1"/>
+    <joint name="startup_hold_right_wrist_pitch" joint1="right_wrist_pitch_joint"
+      polycoef="0 0 0 0 0" solref="0.05 1"/>
+    <joint name="startup_hold_right_wrist_yaw" joint1="right_wrist_yaw_joint"
+      polycoef="0 0 0 0 0" solref="0.05 1"/>
   </equality>
 </mujoco>
