@@ -47,6 +47,7 @@ TURN_S = 8.0
 # through a good fraction of a radian, so an order of magnitude separates them.
 GAIT_KNEE_STDDEV_RAD = 0.03
 GAIT_JOINT = "left_knee_joint"
+STANDING_S = 3.0
 
 
 def generate_test_description():
@@ -95,6 +96,11 @@ class TestAgileWalk(unittest.TestCase):
         cls.cmd_vel = cls.node.create_publisher(Twist, "/cmd_vel", 10)
 
         cls._spin_for(SIM_SETTLE_S)
+        # Before any case drives the robot: the turn case runs first, and the steps it ends on
+        # would count as standing.
+        standing_from = len(cls.joint_states)
+        cls._spin_for(STANDING_S)
+        cls.standing = cls._joint_series(GAIT_JOINT, standing_from)
 
     @classmethod
     def tearDownClass(cls):
@@ -123,9 +129,10 @@ class TestAgileWalk(unittest.TestCase):
         """World z-component of the body z-axis, from the rotation matrix's lower-right term."""
         return 1.0 - (2.0 * ((orientation.x * orientation.x) + (orientation.y * orientation.y)))
 
-    def _joint_series(self, joint, since_index):
+    @classmethod
+    def _joint_series(cls, joint, since_index):
         values = []
-        for msg in self.joint_states[since_index:]:
+        for msg in cls.joint_states[since_index:]:
             if joint in msg.name:
                 values.append(msg.position[msg.name.index(joint)])
         return values
@@ -176,18 +183,14 @@ class TestAgileWalk(unittest.TestCase):
         )
 
     def test_walks_on_command_and_stays_up(self):
-        standing_from = len(self.joint_states)
-        self._spin_for(3.0)
-        standing = self._joint_series(GAIT_JOINT, standing_from)
-
         walking_from = len(self.joint_states)
         self._drive(DRIVE_S, vx=DRIVE_VX)
         walking = self._joint_series(GAIT_JOINT, walking_from)
 
-        self.assertGreater(len(standing), 10, "too few standing samples")
+        self.assertGreater(len(self.standing), 10, "too few standing samples")
         self.assertGreater(len(walking), 10, "too few walking samples")
 
-        standing_spread = statistics.pstdev(standing)
+        standing_spread = statistics.pstdev(self.standing)
         walking_spread = statistics.pstdev(walking)
         self.assertGreater(
             walking_spread,
