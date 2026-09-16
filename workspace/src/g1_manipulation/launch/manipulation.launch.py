@@ -55,7 +55,10 @@ def _object_source():
         output="screen",
         parameters=[
             _config(SHARE, "g1_object_pose_source.yaml"),
-            {"object_source": LaunchConfiguration("object_source")},
+            {
+                "object_source": LaunchConfiguration("object_source"),
+                "publish_markers": LaunchConfiguration("visualization"),
+            },
         ],
         remappings=[
             # Derived from object_source, not set beside it: two free arguments let
@@ -113,6 +116,7 @@ def generate_launch_description():
             {
                 "object_timeout_ms": LaunchConfiguration("object_timeout_ms"),
                 "grasp_source": LaunchConfiguration("grasp_source"),
+                "publish_markers": LaunchConfiguration("visualization"),
                 "graspgen_to_grasp_frame_xyz_rpy": ParameterValue(
                     LaunchConfiguration("grasp_offset"), value_type=List[float]
                 ),
@@ -149,6 +153,12 @@ def generate_launch_description():
                 default_value="1000.0",
                 description="How old a pose may be before a skill refuses to act on it. A real "
                 "detector needs seconds here, not the sub-second a simulator stream affords.",
+            ),
+            DeclareLaunchArgument(
+                "visualization",
+                default_value="false",
+                description="Publishes /object_markers and the manipulation server's grasp_plan "
+                "for RViz. false creates neither publisher.",
             ),
             object_source,
         ]

@@ -25,6 +25,7 @@ DEPTH_IMAGE = "/camera/aligned_depth_to_color/image_raw"
 DEPTH_INFO = "/camera/aligned_depth_to_color/camera_info"
 GROUND_TRUTH = "/g1_sensor_relay/object_poses"
 TRACKED_MASKS = "/g1_object_geometry/tracked_masks"
+OBJECT_POSES = "/g1_object_geometry/object_poses"
 # One service name whichever generator answers it, so a caller is written once.
 GRASP_SERVICE = "/g1_grasp_engine/generate_grasps"
 
@@ -126,7 +127,23 @@ def _nodes(context, *args, **kwargs):
             ("~/generate_grasps", GRASP_SERVICE),
         ],
     )
-    return [mock, vision, geometry, grounder, mock_grasps, graspgen]
+
+    visualizer = Node(
+        package="g1_perception",
+        executable="g1_perception_visualizer",
+        name="g1_perception_visualizer",
+        output="screen",
+        condition=IfCondition(LaunchConfiguration("visualization")),
+        # Perception only runs in simulation today, so the relay's ground truth is always there.
+        parameters=[_config("g1_perception_visualizer.yaml"), {"ground_truth_topic": GROUND_TRUTH}],
+        remappings=[
+            ("color/image_raw", COLOR_IMAGE),
+            ("color/camera_info", COLOR_INFO),
+            ("tracked_masks", TRACKED_MASKS),
+            ("object_poses", OBJECT_POSES),
+        ],
+    )
+    return [mock, vision, geometry, grounder, mock_grasps, graspgen, visualizer]
 
 
 def generate_launch_description():
@@ -180,6 +197,12 @@ def generate_launch_description():
                 choices=["none", "mock", "graspgen"],
                 description="Who answers for six-degree-of-freedom grasps: nobody, a stand-in "
                 "that needs no GPU, or the GraspGenX server on the host.",
+            ),
+            DeclareLaunchArgument(
+                "visualization",
+                default_value="false",
+                description="Runs g1_perception_visualizer, which draws the masks and boxes on "
+                "the camera image and ground truth for RViz. false starts nothing.",
             ),
             OpaqueFunction(function=_nodes),
         ]

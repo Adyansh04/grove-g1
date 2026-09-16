@@ -70,6 +70,39 @@ Visualization Manager:
       Reliability Policy: Reliable
       Value: /object_markers
     Value: true
+  - Class: rviz_default_plugins/MarkerArray
+    Enabled: true
+    Name: Ground truth
+    Namespaces: {}
+    Topic:
+      Depth: 1
+      Durability Policy: Transient Local
+      History Policy: Keep Last
+      Reliability Policy: Reliable
+      Value: /g1_perception_visualizer/ground_truth
+    Value: true
+  - Class: rviz_default_plugins/MarkerArray
+    Enabled: true
+    Name: Grasp plan
+    Namespaces: {}
+    Topic:
+      Depth: 1
+      Durability Policy: Transient Local
+      History Policy: Keep Last
+      Reliability Policy: Reliable
+      Value: /g1_manipulation_server/grasp_plan
+    Value: true
+  - Class: rviz_default_plugins/Image
+    Enabled: true
+    Name: Perception image
+    Normalize Range: true
+    Topic:
+      Depth: 1
+      Durability Policy: Volatile
+      History Policy: Keep Last
+      Reliability Policy: Best Effort
+      Value: /g1_perception_visualizer/annotated_image
+    Value: true
   Global Options:
     Background Color: 48; 48; 48
     Fixed Frame: pelvis

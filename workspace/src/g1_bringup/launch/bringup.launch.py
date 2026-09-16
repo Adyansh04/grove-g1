@@ -165,7 +165,7 @@ def _moveit():
     )
 
 
-def _manipulation(want_perception):
+def _manipulation(want_perception, visualization):
     # Perception owns the object stream when it runs, and its poses arrive seconds late.
     return _include(
         os.path.join(_share("g1_manipulation"), "launch", "manipulation.launch.py"),
@@ -173,12 +173,14 @@ def _manipulation(want_perception):
         object_timeout_ms="4000.0" if want_perception else "1000.0",
         grasp_source=LaunchConfiguration("grasp_source"),
         grasp_offset=LaunchConfiguration("grasp_offset"),
+        visualization=visualization,
     )
 
 
-def _perception():
+def _perception(visualization):
     return _include(
         os.path.join(_share("g1_perception"), "launch", "perception.launch.py"),
+        visualization=visualization,
         detector=LaunchConfiguration("detector"),
         grasp_engine=LaunchConfiguration("grasp_engine"),
         only_from_below=LaunchConfiguration("only_from_below"),
@@ -258,6 +260,14 @@ def _flag(context, name):
     return LaunchConfiguration(name).perform(context).lower() == "true"
 
 
+def _visualization(context, want_rviz):
+    """Resolved here and forwarded as a literal: the children read it as a bool, and launch
+    configurations are shared, so the empty default would reach them unresolved."""
+    value = LaunchConfiguration("visualization").perform(context)
+    shown = value.lower() == "true" if value else want_rviz
+    return "true" if shown else "false"
+
+
 def _setup(context, *args, **kwargs):
     mode = LaunchConfiguration("mode").perform(context)
     want_nav = _flag(context, "nav")
@@ -267,6 +277,7 @@ def _setup(context, *args, **kwargs):
     want_perception = _flag(context, "perception")
     want_vla = _flag(context, "vla")
     pin_pelvis = _flag(context, "pin_pelvis")
+    visualization = _visualization(context, want_rviz)
     navigating = mode != "none"
 
     _validate(mode, want_nav, want_moveit, want_manipulation, want_perception, want_vla,
@@ -283,9 +294,9 @@ def _setup(context, *args, **kwargs):
     if want_moveit:
         actions.append(_moveit())
     if want_perception:
-        actions.append(_perception())
+        actions.append(_perception(visualization))
     if want_manipulation:
-        actions.append(_manipulation(want_perception))
+        actions.append(_manipulation(want_perception, visualization))
     if want_vla:
         actions.append(_vla())
     if want_moveit and _flag(context, "activate_arm"):
@@ -318,6 +329,13 @@ def generate_launch_description():
             description="Open RViz. mode:=none uses g1_bringup's sensor config (fixed frame "
             "odom); the navigation modes use g1_navigation's, which adds the Nav2 display "
             "group and is fixed on map.",
+        ),
+        DeclareLaunchArgument(
+            "visualization",
+            default_value="",
+            description="Everything drawn only for RViz: the annotated camera image, ground "
+            "truth, /object_markers and the grasp plan. false starts none of it. Empty follows "
+            "rviz, so an RViz opened by hand later needs visualization:=true.",
         ),
         DeclareLaunchArgument(
             "moveit",
