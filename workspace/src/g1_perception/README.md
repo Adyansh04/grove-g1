@@ -107,8 +107,9 @@ highest visible point, which is what makes one view enough: a sphere's lowest vi
 equator, not its base.
 
 Width comes from the visible points only, so a shape hiding its far side reads slightly small and
-slightly close. On the tabletop world four of the five land within 2.5 mm in position and 5 mm in
-size. The green cylinder does not: one side reads 37 mm of 60, an open error still to explain.
+slightly close. On the tabletop world all five land within 1.5 mm in position and 4.4 mm in size.
+Anything else inside a mask is measured as the object: a hand in the green cylinder once made it
+read 37 mm of 60, which is why the pinned tabletop spawns the arms clear.
 
 ## Running
 

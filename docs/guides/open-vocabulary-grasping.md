@@ -28,10 +28,8 @@ and widens the staleness window the skills judge against, because a detector ans
 rather than milliseconds. Objects arrive on `/objects` as `red_cube_0`, plus a bare `red_cube`
 while only one of them is in view.
 
-Measured against the simulator's own poses in the tabletop world: four of the five objects land
-within 2.5 mm and sizes within 5 mm. The green cylinder is the exception: one horizontal side
-reads 37 mm of its 60 and the pose sits 1 cm off, which is an open error rather than a limit of
-single-view geometry.
+Measured against the simulator's own poses in the tabletop world: all five objects land within
+1.5 mm, and their sizes within 4.4 mm.
 
 ## The vision server
 
