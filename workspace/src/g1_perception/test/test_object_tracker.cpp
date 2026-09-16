@@ -94,4 +94,16 @@ TEST(Tracker, OnlyAliasesASoleInstance)
     EXPECT_FALSE(tracker.isSoleTrackFor("green cylinder"));
 }
 
+TEST(Tracker, RecoversThePhraseFromAnId)
+{
+    EXPECT_EQ(ObjectTracker::phraseOf(ObjectTracker::idFor("red cube", 3)), "red_cube");
+    EXPECT_EQ(ObjectTracker::phraseOf("white_cup_12"), "white_cup");
+    // Not an id: a bare phrase, a word that happens to contain an underscore, a raw label.
+    EXPECT_EQ(ObjectTracker::phraseOf("red_cube"), "red_cube");
+    EXPECT_EQ(ObjectTracker::phraseOf("cube_top"), "cube_top");
+    EXPECT_EQ(ObjectTracker::phraseOf("green cylinder"), "green cylinder");
+    EXPECT_EQ(ObjectTracker::phraseOf("_0"), "_0");
+    EXPECT_EQ(ObjectTracker::phraseOf("cube_"), "cube_");
+}
+
 }  // namespace

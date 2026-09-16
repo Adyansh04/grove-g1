@@ -22,10 +22,12 @@ public:
     /**
      * @param history_s   How far back frames are kept. Sized by the detector's worst latency.
      * @param tolerance_s How closely a frame's stamp must match the mask's.
+     * @param max_frames  Upper bound on frames held whatever the window, 0 for none. A 30 Hz
+     *                    colour camera fills a few seconds with hundreds of megabytes.
      */
-    DepthHistory(double history_s, double tolerance_s);
+    DepthHistory(double history_s, double tolerance_s, std::size_t max_frames = 0);
 
-    /// Stores a frame and drops anything older than @p history_s behind the newest one.
+    /// Stores a frame, then drops the oldest past @p history_s behind it or past @p max_frames.
     void push(sensor_msgs::msg::Image::ConstSharedPtr frame);
 
     /// The frame captured at @p stamp_s, or nullptr when none is within the tolerance.
@@ -43,6 +45,7 @@ public:
 private:
     double                                              history_s_;
     double                                              tolerance_s_;
+    std::size_t                                         max_frames_;
     std::deque<sensor_msgs::msg::Image::ConstSharedPtr> frames_;
 };
 

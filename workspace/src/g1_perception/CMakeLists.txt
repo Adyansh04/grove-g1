@@ -7,14 +7,17 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/g1_common.cmake)
 
 find_package(ament_cmake REQUIRED)
 find_package(ament_cmake_python REQUIRED)
+find_package(cv_bridge REQUIRED)
 find_package(g1_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(OpenCV REQUIRED COMPONENTS core imgproc)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(vision_msgs REQUIRED)
+find_package(visualization_msgs REQUIRED)
 
 # --- libraries -------------------------------------------------------------
 
@@ -63,6 +66,23 @@ target_link_libraries(g1_mock_grasp_source_node PUBLIC
   ${vision_msgs_TARGETS}
 )
 
+add_library(g1_perception_visualizer_node src/perception_visualizer_node.cpp)
+g1_target_defaults(g1_perception_visualizer_node)
+target_link_libraries(g1_perception_visualizer_node PUBLIC
+  g1_perception_depth_history
+  g1_perception_object_tracker
+  cv_bridge::cv_bridge
+  opencv_core
+  opencv_imgproc
+  rclcpp::rclcpp
+  tf2_ros::tf2_ros
+  tf2_geometry_msgs::tf2_geometry_msgs
+  ${g1_msgs_TARGETS}
+  ${sensor_msgs_TARGETS}
+  ${vision_msgs_TARGETS}
+  ${visualization_msgs_TARGETS}
+)
+
 # --- executables -----------------------------------------------------------
 
 add_executable(g1_object_geometry src/g1_object_geometry_main.cpp)
@@ -77,6 +97,10 @@ add_executable(g1_mock_grasp_source src/mock_grasp_source_main.cpp)
 g1_target_defaults(g1_mock_grasp_source)
 target_link_libraries(g1_mock_grasp_source PUBLIC g1_mock_grasp_source_node)
 
+add_executable(g1_perception_visualizer src/perception_visualizer_main.cpp)
+g1_target_defaults(g1_perception_visualizer)
+target_link_libraries(g1_perception_visualizer PUBLIC g1_perception_visualizer_node)
+
 # --- install ---------------------------------------------------------------
 
 install(DIRECTORY include/ DESTINATION include)
@@ -88,8 +112,13 @@ install(TARGETS
   g1_object_geometry_node
   g1_mock_detector_node
   g1_mock_grasp_source_node
+  g1_perception_visualizer_node
   EXPORT export_${PROJECT_NAME} DESTINATION lib)
-install(TARGETS g1_object_geometry g1_mock_detector g1_mock_grasp_source
+install(TARGETS
+  g1_object_geometry
+  g1_mock_detector
+  g1_mock_grasp_source
+  g1_perception_visualizer
   DESTINATION lib/${PROJECT_NAME})
 # The three scripts below import this; it is the host-server protocol they share.
 ament_python_install_package(${PROJECT_NAME})
@@ -115,6 +144,9 @@ if(BUILD_TESTING)
   ament_add_gmock(test_depth_history test/test_depth_history.cpp)
   target_link_libraries(test_depth_history g1_perception_depth_history)
 
+  ament_add_gmock(test_perception_visualizer test/test_perception_visualizer.cpp)
+  target_link_libraries(test_perception_visualizer g1_perception_visualizer_node)
+
   find_package(launch_testing_ament_cmake REQUIRED)
 
   # Not a simulator test: it runs the detector against a stub vision server, so it needs neither
@@ -138,14 +170,17 @@ endif()
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
 ament_export_include_directories(include)
 ament_export_dependencies(
+  cv_bridge
   g1_msgs
   geometry_msgs
+  OpenCV
   rclcpp
   sensor_msgs
   tf2
   tf2_geometry_msgs
   tf2_ros
   vision_msgs
+  visualization_msgs
 )
 
 ament_package()

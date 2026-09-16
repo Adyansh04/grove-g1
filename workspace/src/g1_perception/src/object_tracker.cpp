@@ -1,6 +1,7 @@
 #include "g1_perception/object_tracker.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 
 namespace g1_perception
@@ -24,6 +25,20 @@ ObjectTracker::ObjectTracker(double match_radius_m, double timeout_s)
 std::string ObjectTracker::idFor(std::string_view phrase, std::uint32_t index)
 {
     return slugify(phrase) + "_" + std::to_string(index);
+}
+
+std::string_view ObjectTracker::phraseOf(std::string_view id)
+{
+    const std::size_t underscore = id.rfind('_');
+    if (underscore == std::string_view::npos || underscore == 0 || underscore + 1 == id.size())
+    {
+        return id;
+    }
+    const std::string_view index   = id.substr(underscore + 1);
+    const bool             numeric = std::all_of(index.begin(), index.end(), [](unsigned char c) {
+        return std::isdigit(c) != 0;
+    });
+    return numeric ? id.substr(0, underscore) : id;
 }
 
 void ObjectTracker::retireStale(double now_s)

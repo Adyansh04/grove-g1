@@ -60,6 +60,18 @@ TEST(DepthHistory, DropsFramesPastTheWindow)
     EXPECT_NE(history.at(102.0), nullptr);
 }
 
+TEST(DepthHistory, HoldsNoMoreThanItsFrameCapInsideTheWindow)
+{
+    DepthHistory history(10.0, 0.005, 2);
+    history.push(frameAt(100.0));
+    history.push(frameAt(100.1));
+    history.push(frameAt(100.2));
+
+    EXPECT_EQ(history.size(), 2U);
+    EXPECT_EQ(history.at(100.0), nullptr) << "the oldest frame goes first";
+    EXPECT_NE(history.at(100.2), nullptr);
+}
+
 TEST(DepthHistory, IsEmptyUntilSomethingArrives)
 {
     const DepthHistory history(3.0, 0.005);

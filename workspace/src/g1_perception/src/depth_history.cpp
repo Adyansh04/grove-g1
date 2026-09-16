@@ -6,9 +6,10 @@
 namespace g1_perception
 {
 
-DepthHistory::DepthHistory(double history_s, double tolerance_s)
+DepthHistory::DepthHistory(double history_s, double tolerance_s, std::size_t max_frames)
   : history_s_(history_s)
   , tolerance_s_(tolerance_s)
+  , max_frames_(max_frames)
 {}
 
 double DepthHistory::stampSeconds(const std_msgs::msg::Header& header)
@@ -25,7 +26,8 @@ void DepthHistory::push(sensor_msgs::msg::Image::ConstSharedPtr frame)
     }
     const double newest = stampSeconds(frame->header);
     frames_.push_back(std::move(frame));
-    while (!frames_.empty() && newest - stampSeconds(frames_.front()->header) > history_s_)
+    while (!frames_.empty() && (newest - stampSeconds(frames_.front()->header) > history_s_ ||
+                                (max_frames_ > 0 && frames_.size() > max_frames_)))
     {
         frames_.pop_front();
     }

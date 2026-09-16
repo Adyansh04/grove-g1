@@ -56,6 +56,9 @@ public:
     /// Id of a track, as `<slug>_<index>`.
     [[nodiscard]] static std::string idFor(std::string_view phrase, std::uint32_t index);
 
+    /// The slug an id was made from: `red_cube_3` gives `red_cube`; anything else comes back whole.
+    [[nodiscard]] static std::string_view phraseOf(std::string_view id);
+
 private:
     struct Track
     {

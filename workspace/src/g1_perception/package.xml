@@ -16,14 +16,18 @@
   <!-- Installs g1_perception/, the module the three adapter scripts import. -->
   <buildtool_depend>ament_cmake_python</buildtool_depend>
 
+  <depend>cv_bridge</depend>
   <depend>g1_msgs</depend>
   <depend>geometry_msgs</depend>
+  <!-- The visualizer's drawing only; nothing in the measurement path uses OpenCV. -->
+  <depend>libopencv-dev</depend>
   <depend>rclcpp</depend>
   <depend>sensor_msgs</depend>
   <depend>tf2</depend>
   <depend>tf2_geometry_msgs</depend>
   <depend>tf2_ros</depend>
   <depend>vision_msgs</depend>
+  <depend>visualization_msgs</depend>
 
   <!-- The three adapter scripts' own; they speak the host servers' protocol rather than
        importing the models, which is what keeps torch out of this image. Nothing here compiles

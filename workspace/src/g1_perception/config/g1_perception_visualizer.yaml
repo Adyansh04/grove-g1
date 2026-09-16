@@ -1,0 +1,17 @@
+# The node that draws perception's output for RViz, loaded by
+# g1_perception/launch/perception.launch.py only with visualization:=true.
+g1_perception_visualizer:
+  ros__parameters:
+    # `ground_truth_topic` comes from the launch file, which knows whether a simulator runs.
+
+    # Colour frames kept for late masks to be drawn on. The real detector answers up to 2.5 s
+    # after its frame, and the geometry node waits on TF before publishing.
+    image_history_s: 4.0
+    # Both detectors copy the frame's own stamp, so this only has to absorb float rounding.
+    stamp_tolerance_ms: 50.0
+    # Four seconds of 720p at 30 Hz is 330 MB. This caps it and still covers three seconds.
+    image_history_max_frames: 90
+
+    # Where ground truth and perceived poses are compared: a frame the objects stay put in while
+    # the camera moves.
+    fixed_frame: "odom"
