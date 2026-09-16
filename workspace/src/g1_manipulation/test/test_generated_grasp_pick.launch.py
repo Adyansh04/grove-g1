@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """Checks what a pick does with a grasp generator behind it.
 
-Three claims, none of which any other test covers:
+Four claims, none of which any other test covers:
 
   1. Offered only a grasp reaching up through the table, the pick refuses it and says so. A
      filter that never rejects anything has not been tested.
   2. An object nobody is reporting is still refused, with the generator in the loop.
   3. Offered sensible grasps, the pick takes one and lifts the object off the table.
+  4. With RViz off, nothing is drawn: no visualizer runs and no marker publisher exists.
 
-The order is load-bearing, alphabetically as unittest runs them: the third case takes the object
-off the table, and the first two need it still on it.
+The order is load-bearing, alphabetically as unittest runs them: test_03 takes the object off the
+table, and test_01 and test_02 need it still on it.
 
 There is no fallback to the fixed top-down pose anywhere in those paths, which is the property
 worth the most here: a pick told to use a generator and quietly not using it would look like it
@@ -41,6 +42,12 @@ STACK_SETTLE_S = 55.0
 READY_TIMEOUT_S = 85.0
 PICK_TIMEOUT_S = 240.0
 OBJECT_ID = "red_cube_0"
+DRAWN_TOPICS = [
+    "/g1_perception_visualizer/annotated_image",
+    "/g1_perception_visualizer/ground_truth",
+    "/g1_manipulation_server/grasp_plan",
+    "/object_markers",
+]
 
 # The stand-in generator's gripper frame to right_hand_grasp_frame. The z is 4 cm rather than the
 # 9 that would land a centimetre above the object: the table's inflated voxels sit in the last
@@ -127,6 +134,15 @@ class TestGeneratedGraspPick(unittest.TestCase):
         rclpy.spin_until_future_complete(self.node, future, timeout_sec=20.0)
         self.assertIsNotNone(future.result(), "the generator never answered set_parameters")
         self.assertTrue(future.result().results[0].successful)
+
+    def test_00_nothing_is_drawn_with_rviz_off(self):
+        # After wait_for_server, and against topics that must exist, so an unfinished discovery
+        # cannot pass this.
+        for topic in ("/g1_object_geometry/object_poses", "/objects"):
+            self.assertNotEqual(self.node.get_publishers_info_by_topic(topic), [], topic)
+        self.assertNotIn("g1_perception_visualizer", self.node.get_node_names())
+        for topic in DRAWN_TOPICS:
+            self.assertEqual(self.node.get_publishers_info_by_topic(topic), [], topic)
 
     def test_03_a_generated_grasp_picks_the_object_up(self):
         result = self._pick()

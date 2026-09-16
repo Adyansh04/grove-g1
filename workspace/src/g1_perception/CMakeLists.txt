@@ -157,6 +157,8 @@ if(BUILD_TESTING)
 
   add_launch_test(test/test_grounder.launch.py TARGET test_grounder TIMEOUT 240)
 
+  add_launch_test(test/test_visualizer.launch.py TARGET test_visualizer TIMEOUT 180)
+
   add_launch_test(test/test_perception_objects.launch.py TARGET test_perception_objects
     TIMEOUT 500)
   set_tests_properties(test_perception_objects PROPERTIES
