@@ -5,6 +5,8 @@
 
 #include "g1_manipulation/g1_object_pose_source_node.hpp"
 
+#include <algorithm>
+#include <cctype>
 #include <geometry_msgs/msg/transform_stamped.hpp>
 #include <memory>
 #include <string>
@@ -51,6 +53,21 @@ bool parseObjectSource(const std::string& name, ObjectSource& out)
         return true;
     }
     return false;
+}
+
+bool isBarePhraseAlias(const std::string& id, const vision_msgs::msg::Detection3DArray& objects)
+{
+    const std::string prefix = id + "_";
+    return std::any_of(
+        objects.detections.begin(),
+        objects.detections.end(),
+        [&prefix](const vision_msgs::msg::Detection3D& other) {
+            return other.id.size() > prefix.size() && other.id.starts_with(prefix) &&
+                   std::all_of(
+                       other.id.begin() + static_cast<std::ptrdiff_t>(prefix.size()),
+                       other.id.end(),
+                       [](unsigned char c) { return std::isdigit(c) != 0; });
+        });
 }
 
 G1ObjectPoseSource::G1ObjectPoseSource(const rclcpp::NodeOptions& options)
@@ -165,6 +182,10 @@ void G1ObjectPoseSource::publishMarkers(const vision_msgs::msg::Detection3DArray
     int id = 0;
     for (const vision_msgs::msg::Detection3D& detection : objects.detections)
     {
+        if (isBarePhraseAlias(detection.id, objects))
+        {
+            continue;
+        }
         visualization_msgs::msg::Marker box;
         box.header  = objects.header;
         box.ns      = "objects";

@@ -22,6 +22,7 @@
 #include "vision_msgs/msg/detection3_d_array.hpp"
 
 using g1_manipulation::G1ObjectPoseSource;
+using g1_manipulation::isBarePhraseAlias;
 using g1_manipulation::ObjectSource;
 using g1_manipulation::parseObjectSource;
 using namespace std::chrono_literals;
@@ -207,6 +208,23 @@ TEST(ObjectSource, ParsesTheSourcesItKnowsAndRejectsTheRest)
     EXPECT_FALSE(parseObjectSource("ground_truth", untouched));
     EXPECT_FALSE(parseObjectSource("", untouched));
     EXPECT_EQ(untouched, ObjectSource::kSimGroundTruth) << "a rejected name must not assign";
+}
+
+TEST(ObjectMarkers, SkipsOnlyTheBarePhraseAliasOfATrack)
+{
+    vision_msgs::msg::Detection3DArray objects;
+    for (const char* id : { "red_cube_0", "red_cube", "red_cube_top", "blue_sphere" })
+    {
+        objects.detections.emplace_back().id = id;
+    }
+
+    EXPECT_TRUE(isBarePhraseAlias("red_cube", objects));
+    EXPECT_FALSE(isBarePhraseAlias("red_cube_0", objects));
+    // A track of its own, not an alias: nothing named blue_sphere_<n> is present.
+    EXPECT_FALSE(isBarePhraseAlias("blue_sphere", objects));
+    // Only a numeric suffix makes an index; red_cube_top does not make red_cube an alias of it.
+    objects.detections.erase(objects.detections.begin());
+    EXPECT_FALSE(isBarePhraseAlias("red_cube", objects));
 }
 
 TEST(ObjectPoseSource, RefusesToConfigureOnHardware)
