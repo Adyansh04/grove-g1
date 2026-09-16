@@ -14,6 +14,7 @@ flowchart LR
     P[/aligned depth + camera_info/] --> G
     G -- Detection3DArray --> S[g1_object_pose_source]
     S -- /objects --> K[skills]
+    G -. "visualization:=true" .-> V[g1_perception_visualizer]
 ```
 
 ```bash
@@ -30,6 +31,7 @@ colcon build --symlink-install --packages-select g1_perception
 | `g1_graspgen_adapter` | Sends the depth frame, its intrinsics and one object's mask to the host grasp generator and serves the grasps it answers with. Python, see below. |
 | `g1_mock_grasp_source` | Answers the same service from `/objects` alone: three sensible grasps and one reaching up through the table. No GPU. |
 | `g1_instruction_grounder` | Turns an instruction into the noun phrases the detector can be asked for, and writes them onto it. Python, see below. |
+| `g1_perception_visualizer` | Draws each detection on the frame it was cut from, and the simulator's ground truth labelled with how far off perception is. Only runs with `visualization:=true`. |
 
 ## Interfaces
 
@@ -43,7 +45,9 @@ colcon build --symlink-install --packages-select g1_perception
 | Pub | `~/tracked_masks` (geometry) | `g1_msgs/InstanceMaskArray`, the input masks relabelled with object ids |
 | Srv | `~/generate_grasps` (both grasp sources) | `g1_msgs/GenerateGrasps` |
 | Srv | `~/ground` (grounder) | `g1_msgs/GroundInstruction` |
-| Pub | `~/grasp_candidates` (graspgen) | `visualization_msgs/MarkerArray`, one arrow per candidate along its approach axis |
+| Sub | `color/image_raw`, `color/camera_info`, `tracked_masks`, `object_poses`, `ground_truth_topic` (visualizer) | as above; nothing is drawn until a frame's masks, poses and image are all in |
+| Pub | `~/annotated_image` (visualizer) | `sensor_msgs/Image`, rgb8, best effort: masks tinted per object, fitted boxes, `id score` labels, and `unmeasured` on an instance the geometry rejected |
+| Pub | `~/ground_truth` (visualizer) | `visualization_msgs/MarkerArray`, transient local, in `fixed_frame`: a box per object labelled `<n> mm off` or `not seen` |
 
 Images come in at sensor QoS because the relay publishes best-effort and a reliable subscriber
 against it silently never matches. Masks and poses go out reliable: they are what a skill decides
@@ -75,6 +79,9 @@ many of them there turned out to be.
 `config/g1_detector.yaml` carries the server address, the request timeout and the detection rate.
 `phrases` is a launch argument rather than a file key, and `ros2 param set` changes it while the
 node runs.
+
+`config/g1_perception_visualizer.yaml` sizes the colour history the visualizer draws on, which has
+to outlast the detector's latency, and names the frame ground truth is compared in.
 
 ## Why three nodes are Python
 
@@ -133,13 +140,18 @@ ros2 launch g1_bringup bringup.launch.py world:=tabletop pin_pelvis:=true \
 ros2 topic echo /objects --field detections[0].results[0].hypothesis
 ```
 
+Add `rviz:=true` to watch it: the MoveIt window shows the annotated image, the ground truth and
+the grasp plan. The flag behind them is `visualization`, which follows `rviz`.
+
 ## Tests
 
 | Test | Needs a simulator | Covers |
 |---|---|---|
 | `test_object_geometry` | No | Slugs, erosion, deprojection including the NaN and padded-row cases the simulator never produces, the depth gate, and the box fit: a tilted rectangle's yaw, a square that must not inflate, a sphere's height from its support plane, and a mask that ran onto the table. |
-| `test_object_tracker` | No | Ids that survive jitter, a second instance getting its own index, two neighbours that must not swap, index reuse after a timeout, and the sole-instance alias. |
-| `test_depth_history` | No | Pairing a late mask with its own depth frame, refusing one outside the tolerance, and dropping frames past the window. |
+| `test_object_tracker` | No | Ids that survive jitter, a second instance getting its own index, two neighbours that must not swap, index reuse after a timeout, the sole-instance alias, and the phrase recovered from an id. |
+| `test_depth_history` | No | Pairing a late mask with its own depth frame, refusing one outside the tolerance, and dropping frames past the window or the frame cap. |
+| `test_perception_visualizer` | No | Which drawn instance counts as measured, including a rejected one whose raw label equals an alias. |
+| `test_visualizer` | No | The visualizer on synthetic frames: the annotated image, ground truth moved into `odom` and labelled with the error, an empty frame left untouched, and masks that arrive before their frame. |
 | `test_detector` | No | The detector client against a stub vision server: the request encoding, the mask message, the image's own stamp, and a phrase list that is re-read rather than cached. |
 | `test_grounder` | No | The grounder against a stub: an instruction becomes phrases, the target is one of them, the phrases actually reach the detector's parameter, exemplar points survive, and an empty instruction is refused. |
 | `test_graspgen_adapter` | No | The grasp adapter against a stub generator: the request encoding the real server would reject, the frame and stamp of the answer, ordering by confidence, an unknown object, and a left-hand request refused rather than mirrored. |

@@ -202,6 +202,11 @@ A generated grasp belongs to the generator's gripper frame, which is not a link 
 There is no fallback between the two: a pick whose generator answers with nothing usable aborts
 and says so.
 
+With `visualization:=true` every pick draws its decision on `~/grasp_plan`, latched. Each
+generated candidate it weighed is an arrow along its approach: green taken, red too tilted,
+orange out of reach. The goal it sent follows as axes, after `grasp_offset`, with the approach
+from the pre-grasp and a label saying where the grasp came from.
+
 The final approach is a straight line, as MoveIt's own pick pipeline does, because those last
 centimetres are a corridor a sampling planner cannot thread. `cartesian_min_fraction` is how much
 of it must be clear before it is taken; below that the pick plans around instead.
@@ -241,12 +246,13 @@ It transforms rather than relabelling. Announcing an object directly in a fixed 
 only while that frame IS the world, which stops being true the moment odometry is an estimate:
 with `odometry:=fast_lio` the base approach chased a point 2 m from the cube until this was fixed.
 
-`publish_markers` (default true) adds `~/object_markers`, a box and a label per object built from
-the same message `/objects` carries, so rviz shows what a skill acts on. Both shipped rviz
-configs display it.
+`publish_markers` adds `~/object_markers`, a box and a label per object built from the same
+message `/objects` carries, so rviz shows what a skill acts on. Both shipped rviz configs display
+it. `manipulation.launch.py` sets it from `visualization`, which bringup ties to `rviz`, so a
+headless run publishes no markers.
 
 | Parameter | Default | |
 |---|---|---|
 | `source_frame_id` | `camera_color_optical_frame` | The frame the detector measures in. |
 | `output_frame_id` | `odom` | Fixed, so MoveIt collision objects do not move with the robot. |
-| `publish_markers` | `true` | `~/object_markers` for rviz. |
+| `publish_markers` | from launch | `~/object_markers` for rviz. |

@@ -31,6 +31,20 @@ while only one of them is in view.
 Measured against the simulator's own poses in the tabletop world: all five objects land within
 1.5 mm, and their sizes within 4.4 mm.
 
+## Watching it in RViz
+
+`rviz:=true` opens MoveIt's window with these displays, and starts what feeds them:
+
+| Display | Topic | Shows |
+|---|---|---|
+| Perception image | `/g1_perception_visualizer/annotated_image` | The frame each detection was cut from: masks tinted per object, fitted boxes, `id score` labels. An instance the geometry rejected reads `unmeasured` and has no box. |
+| Object poses | `/object_markers` | What the skills act on: a box and a label per object. |
+| Ground truth | `/g1_perception_visualizer/ground_truth` | The simulator's own boxes, each labelled with how far the perceived object is from it. |
+| Grasp plan | `/g1_manipulation_server/grasp_plan` | During a pick, every candidate weighed and the grasp taken. |
+
+The switch behind all four is `visualization`, which follows `rviz`. `visualization:=false` keeps
+them off with RViz open, and nothing of them runs: no node, no publisher.
+
 ## The vision server
 
 ```bash
@@ -133,9 +147,10 @@ ros2 service call /g1_grasp_engine/generate_grasps g1_msgs/srv/GenerateGrasps \
   "{object_id: red_cube_0, hand: right}"
 ```
 
-Candidates are published as arrows on `/grasp_candidates`, coloured red to green by confidence and
-drawn along each grasp's approach axis. Nothing moves: this stage produces candidates, and what
-filters and executes them is the arm side.
+Nothing moves and nothing is drawn: this stage produces candidates, and what filters and executes
+them is the arm side. A pick with `grasp_source:=generated` and `rviz:=true` draws them on
+`/g1_manipulation_server/grasp_plan`, each as an arrow along its approach: green for the one taken,
+red for too tilted, orange for out of reach.
 
 `grasp_engine:=mock` answers the same service from `/objects` alone, with three sensible grasps and
 one deliberately reaching up through the table, so the filtering above it can be tested without a
@@ -144,9 +159,10 @@ GPU.
 ### The one calibration
 
 GraspGenX returns poses of its own gripper frame, where +Z is the approach direction and +X the
-closing direction. That is not a link in this robot's URDF. Look at the arrows in RViz against a
-known object, read off the offset to `right_hand_grasp_frame`, and that number is what the arm
-side applies. Left-hand requests are refused rather than mirrored: a mirrored sweep volume is a
+closing direction. That is not a link in this robot's URDF. Run a pick against a known object:
+`grasp_plan` draws the candidates in the generator's frame and the goal's axes after the offset.
+Read the offset to `right_hand_grasp_frame` off the two and pass it as `grasp_offset`; that
+number is what the arm side applies. Left-hand requests are refused rather than mirrored: a mirrored sweep volume is a
 different gripper, and the model was never asked about it.
 
 ## Instructions

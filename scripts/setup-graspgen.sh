@@ -76,9 +76,11 @@ Then bring the stack up against it:
 
   ros2 launch g1_bringup bringup.launch.py world:=tabletop pin_pelvis:=true \\
       odometry:=ground_truth moveit:=true manipulation:=true perception:=true \\
-      grasp_engine:=graspgen
+      grasp_engine:=graspgen grasp_source:=generated activate_arm:=true \\
+      activate_arm_delay_s:=40.0 rviz:=true
 
-and look at /grasp_candidates in RViz. The hand this robot carries is GraspGenX's own
+and send a pick: RViz draws every candidate it weighed from
+/g1_manipulation_server/grasp_plan. The hand this robot carries is GraspGenX's own
 \`unitree_g1\` gripper, the Dex3-1, and g1_perception sends its sweep volume rather than its name,
 so the server needs no assets for it.
 

@@ -45,9 +45,10 @@ All of these belong to `bringup.launch.py`.
 | `activate_arm` | `false` | Run the ordered acquire automatically once the stack is up, instead of by hand. |
 | `activate_arm_delay_s` | `25.0` | How long to wait before that acquire. Raise it for a world that takes longer to come up, or the acquire fires before state flows. |
 | `rviz` | `false` | Open RViz on the config that matches what is running. `moveit:=true` wins, because only MoveIt's launcher passes the panel its parameters. |
+| `visualization` | follows `rviz` | Everything drawn only for RViz: the annotated camera image, ground truth, `/object_markers` and the grasp plan. `false` starts none of it, even with RViz open; an RViz opened by hand needs `true`. |
 | `sensors` | `false` | LiDAR, the relay and the `odom` to `base_footprint` chain. The navigation modes turn this on themselves. |
 | `odometry` | `fast_lio` | What publishes `odom` to `base_footprint`. `fast_lio` runs the LiDAR-inertial pipeline the robot uses, over the simulated Mid360, and drifts like the estimate it is. `ground_truth` is the simulator's exact pelvis pose, for isolating a fault to "not the odometry". |
-| `world` | `navigation` | Which scene to stage: `navigation`, `perception`, `manipulation` or `lio`. `navigation` is the facility the committed map was built from. |
+| `world` | `navigation` | Which scene to stage: `navigation`, `perception`, `manipulation`, `tabletop` or `lio`. `navigation` is the facility the committed map was built from. |
 | `headless` | `true` | `false` shows the MuJoCo viewer. |
 | `pin_pelvis` | `false` | Welds the pelvis and disables the walking policy, for exercising the arms alone. `mode:=none` only. |
 | `sim_start_delay_s` | branch default | Seconds to delay the simulator. Empty means 2.0 bare, 4.0 whenever navigation or MoveIt starts alongside it. |
@@ -79,6 +80,11 @@ same process corrupts the heap.
 `pin_pelvis` is not needed for the simulator to stand. It holds the robot up only until the control
 stack drives every motor, then releases the pelvis weld its scene declares, and the policy
 balances.
+
+`world:=tabletop pin_pelvis:=true` also spawns the arms held out, clear of the table and the
+objects. The walkable tabletop still spawns them hanging, with the right hand inside the green
+cylinder. The viewer's reset (Backspace) re-applies the spawn holds and nothing releases them, so
+restart the simulator instead.
 
 ## Arms and hands
 
@@ -135,7 +141,7 @@ compensating check. Neither suite can live here, for the same reason the depende
 |---|---|
 | `config/sim_sensors.yaml` | LiDAR, camera and IMU parameters read by the patched simulator, plus which bodies publish ground-truth poses and the grasp weld that stands in for finger contact. |
 | `config/g1_sensors.rviz` | RViz for `mode:=none`. Fixed frame `odom`. |
-| `mjcf/*.xml` | Ten scene overlays, one per world plus a pinned variant. Staged next to the vendored model at launch and removed on shutdown. |
+| `mjcf/*.xml` | The scene overlays, one per world plus a pinned variant. Staged next to the vendored model at launch and removed on shutdown. |
 
 Controller configuration is not here. It lives in `g1_controllers/config/lowcmd_controllers.yaml`,
 which `control.launch.py` loads.
