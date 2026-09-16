@@ -124,7 +124,6 @@ def _nodes(context, *args, **kwargs):
             ("depth/image_raw", DEPTH_IMAGE),
             ("depth/camera_info", DEPTH_INFO),
             ("~/generate_grasps", GRASP_SERVICE),
-            ("~/grasp_candidates", "/grasp_candidates"),
         ],
     )
     return [mock, vision, geometry, grounder, mock_grasps, graspgen]

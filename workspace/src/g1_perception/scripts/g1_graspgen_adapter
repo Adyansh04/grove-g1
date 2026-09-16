@@ -10,21 +10,16 @@ Python because it is a ZMQ and msgpack client; see the package README.
 
 import numpy as np
 import rclpy
-from geometry_msgs.msg import Point, Pose
+from geometry_msgs.msg import Pose
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import CameraInfo, Image
-from std_msgs.msg import ColorRGBA
-from visualization_msgs.msg import Marker, MarkerArray
 
 from g1_msgs.msg import InstanceMaskArray
 from g1_msgs.srv import GenerateGrasps
 from g1_perception.host_clients import GraspClient
 
 MASK_QOS = 2
-# Long enough to see an arrow, short enough not to hide the object behind a thicket of them.
-MARKER_LIFETIME_S = 20.0
-MARKER_LENGTH_M = 0.06
 
 
 def pose_from_matrix(matrix):
@@ -80,7 +75,6 @@ class GraspGenAdapter(Node):
         self._info = None
         self._masks = None
 
-        self._markers = self.create_publisher(MarkerArray, "~/grasp_candidates", 1)
         self.create_subscription(InstanceMaskArray, "tracked_masks", self._on_masks, MASK_QOS)
         # Sensor QoS deliberately: the relay publishes best-effort, and a reliable subscriber
         # against it silently never matches.
@@ -239,38 +233,7 @@ class GraspGenAdapter(Node):
         response.header = depth.header
         response.grasps = [pose_from_matrix(grasps[i]) for i in order]
         response.scores = [float(scores[i]) for i in order]
-        self._publish_markers(depth.header, [grasps[i] for i in order], response.scores)
         return response
-
-    def _publish_markers(self, header, matrices, scores):
-        """Raw candidates, unfiltered: this is what you look at to measure the frame offset."""
-        markers = MarkerArray()
-        clear = Marker()
-        clear.header = header
-        clear.action = Marker.DELETEALL
-        markers.markers.append(clear)
-        for index, (matrix, score) in enumerate(zip(matrices, scores, strict=True)):
-            origin = np.asarray(matrix, dtype=np.float64)[:3, 3]
-            # Drawn along the gripper's approach axis, which the generator defines as +Z, so a
-            # wrong convention shows up as arrows lying across the object rather than into it.
-            tip = origin + (np.asarray(matrix, dtype=np.float64)[:3, 2] * MARKER_LENGTH_M)
-            marker = Marker()
-            marker.header = header
-            marker.ns = "grasp_candidates"
-            marker.id = index
-            marker.type = Marker.ARROW
-            marker.action = Marker.ADD
-            marker.points = [
-                Point(x=float(origin[0]), y=float(origin[1]), z=float(origin[2])),
-                Point(x=float(tip[0]), y=float(tip[1]), z=float(tip[2])),
-            ]
-            marker.scale.x = 0.004
-            marker.scale.y = 0.010
-            marker.scale.z = 0.012
-            marker.color = ColorRGBA(r=float(1.0 - score), g=float(score), b=0.2, a=0.8)
-            marker.lifetime.sec = int(MARKER_LIFETIME_S)
-            markers.markers.append(marker)
-        self._markers.publish(markers)
 
     def close(self):
         self._client.close()

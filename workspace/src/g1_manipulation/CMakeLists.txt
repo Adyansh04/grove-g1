@@ -67,6 +67,7 @@ target_link_libraries(g1_manipulation_server_node PUBLIC
   ${moveit_msgs_TARGETS}
   ${shape_msgs_TARGETS}
   ${vision_msgs_TARGETS}
+  ${visualization_msgs_TARGETS}
 )
 
 # --- executables -----------------------------------------------------------

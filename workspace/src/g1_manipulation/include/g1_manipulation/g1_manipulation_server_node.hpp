@@ -38,6 +38,7 @@
 #include <string>
 #include <vector>
 #include <vision_msgs/msg/detection3_d_array.hpp>
+#include <visualization_msgs/msg/marker_array.hpp>
 
 namespace g1_manipulation
 {
@@ -211,6 +212,19 @@ private:
         std::string origin;
     };
 
+    /// A generated candidate the filter looked at, in the planning frame, and what it decided.
+    struct ConsideredGrasp
+    {
+        enum class Verdict : std::uint8_t
+        {
+            kTilted,
+            kUnreachable,
+            kChosen,
+        };
+        geometry_msgs::msg::Pose pose;
+        Verdict                  verdict{ Verdict::kTilted };
+    };
+
     /**
      * @brief The grasp to attempt for one object, from whichever source is configured.
      *
@@ -221,10 +235,14 @@ private:
      * @param[out] why Why there is nothing to attempt, when it returns nothing. There is no
      *             fallback to the fixed grasp on purpose: a pick that quietly stops using the
      *             generator is a pick nobody knows is not using it.
+     * @param[out] verdicts Every candidate the filter judged, for drawing; null skips the record.
      */
     std::optional<GraspPlan> chooseGrasp(
         const vision_msgs::msg::Detection3D& detection, const geometry_msgs::msg::Pose& object_pose,
-        const ArmContext& arm, std::string& why);
+        const ArmContext& arm, std::string& why, std::vector<ConsideredGrasp>* verdicts);
+
+    /// Draws the candidates and the chosen grasp on ~/grasp_plan; @p plan is null when none was.
+    void publishGraspPlan(const GraspPlan* plan, const std::vector<ConsideredGrasp>& verdicts);
 
     /// Calls the grasp service, or nothing with the reason in @p why.
     std::optional<g1_msgs::srv::GenerateGrasps::Response>
@@ -327,6 +345,9 @@ private:
 
     std::unique_ptr<tf2_ros::Buffer>            tf_buffer_;
     std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
+
+    /// Null unless publish_markers is set, so a run without visualization pays nothing for it.
+    rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr grasp_plan_pub_;
 
     rclcpp::Client<g1_msgs::srv::GenerateGrasps>::SharedPtr         grasps_;
     rclcpp::Client<moveit_msgs::srv::GetPlanningScene>::SharedPtr   get_scene_;

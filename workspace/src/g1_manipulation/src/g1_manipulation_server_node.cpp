@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <format>
 #include <memory>
 #include <moveit_msgs/msg/collision_object.hpp>
 #include <shape_msgs/msg/solid_primitive.hpp>
@@ -40,6 +41,42 @@ constexpr double kMinPrimitiveExtent = 0.005;
 rclcpp::QoS objectsQos()
 {
     return rclcpp::QoS(rclcpp::KeepLast(1)).reliable().durability_volatile();
+}
+
+constexpr double kCandidateArrowLengthM = 0.06;
+constexpr double kGraspAxisLengthM      = 0.05;
+constexpr double kLabelHeightM          = 0.02;
+constexpr double kLabelLiftM            = 0.03;
+
+geometry_msgs::msg::Point offsetBy(const geometry_msgs::msg::Point& from, const tf2::Vector3& by)
+{
+    geometry_msgs::msg::Point to;
+    to.x = from.x + by.x();
+    to.y = from.y + by.y();
+    to.z = from.z + by.z();
+    return to;
+}
+
+visualization_msgs::msg::Marker arrow(
+    const std::string& frame, const std::string& ns, int id, const geometry_msgs::msg::Point& tail,
+    const geometry_msgs::msg::Point& head, float r, float g, float b)
+{
+    visualization_msgs::msg::Marker marker;
+    // Unstamped, so RViz draws it at the latest transform rather than one it may not have yet.
+    marker.header.frame_id = frame;
+    marker.ns              = ns;
+    marker.id              = id;
+    marker.type            = visualization_msgs::msg::Marker::ARROW;
+    marker.action          = visualization_msgs::msg::Marker::ADD;
+    marker.points          = { tail, head };
+    marker.scale.x         = 0.004;
+    marker.scale.y         = 0.010;
+    marker.scale.z         = 0.012;
+    marker.color.r         = r;
+    marker.color.g         = g;
+    marker.color.b         = b;
+    marker.color.a         = 0.9F;
+    return marker;
 }
 
 }  // namespace
@@ -142,6 +179,13 @@ G1ManipulationServer::G1ManipulationServer(const rclcpp::NodeOptions& options)
 
     grasps_ = create_client<g1_msgs::srv::GenerateGrasps>(
         declare_parameter<std::string>("grasp_service", "/g1_grasp_engine/generate_grasps"));
+    if (declare_parameter<bool>("publish_markers", false))
+    {
+        // Transient local: it is published once per pick, and RViz may connect after that.
+        grasp_plan_pub_ = create_publisher<visualization_msgs::msg::MarkerArray>(
+            "~/grasp_plan",
+            rclcpp::QoS(rclcpp::KeepLast(1)).reliable().transient_local());
+    }
     get_scene_   = create_client<moveit_msgs::srv::GetPlanningScene>("/get_planning_scene");
     apply_scene_ = create_client<moveit_msgs::srv::ApplyPlanningScene>("/apply_planning_scene");
 }
@@ -433,8 +477,15 @@ std::optional<g1_msgs::srv::GenerateGrasps::Response> G1ManipulationServer::requ
 
 std::optional<G1ManipulationServer::GraspPlan> G1ManipulationServer::chooseGrasp(
     const vision_msgs::msg::Detection3D& detection, const geometry_msgs::msg::Pose& object_pose,
-    const ArmContext& arm, std::string& why)
+    const ArmContext& arm, std::string& why, std::vector<ConsideredGrasp>* verdicts)
 {
+    const auto record =
+        [verdicts](const geometry_msgs::msg::Pose& pose, ConsideredGrasp::Verdict verdict) {
+            if (verdicts != nullptr)
+            {
+                verdicts->push_back({ pose, verdict });
+            }
+        };
     if (grasp_source_ != "generated")
     {
         GraspPlan plan;
@@ -494,6 +545,7 @@ std::optional<G1ManipulationServer::GraspPlan> G1ManipulationServer::chooseGrasp
         // reaching up through whatever the object rests on.
         if (approachTiltRad(*in_planning_frame) > max_approach_tilt_rad_)
         {
+            record(*in_planning_frame, ConsideredGrasp::Verdict::kTilted);
             continue;
         }
 
@@ -503,9 +555,11 @@ std::optional<G1ManipulationServer::GraspPlan> G1ManipulationServer::chooseGrasp
         attempt = *state;
         if (!attempt.setFromIK(jmg, goal, arm.grasp_frame, ik_timeout_s_))
         {
+            record(*in_planning_frame, ConsideredGrasp::Verdict::kUnreachable);
             continue;
         }
         ++reachable;
+        record(*in_planning_frame, ConsideredGrasp::Verdict::kChosen);
 
         const std::array<double, 3> axis = approachAxis(*in_planning_frame);
         GraspPlan                   plan;
@@ -515,9 +569,11 @@ std::optional<G1ManipulationServer::GraspPlan> G1ManipulationServer::chooseGrasp
         plan.pregrasp.position.x -= axis[0] * approach_standoff_m_;
         plan.pregrasp.position.y -= axis[1] * approach_standoff_m_;
         plan.pregrasp.position.z -= axis[2] * approach_standoff_m_;
-        plan.origin = "generated candidate " + std::to_string(i) + " of " +
-                      std::to_string(response->grasps.size()) + ", score " +
-                      std::to_string(i < response->scores.size() ? response->scores[i] : 0.0F);
+        plan.origin = std::format(
+            "generated candidate {} of {}, score {:.2f}",
+            i,
+            response->grasps.size(),
+            i < response->scores.size() ? response->scores[i] : 0.0F);
         return plan;
     }
 
@@ -525,6 +581,81 @@ std::optional<G1ManipulationServer::GraspPlan> G1ManipulationServer::chooseGrasp
           std::to_string(reachable) + " reachable) out of " +
           std::to_string(response->grasps.size()) + " offered";
     return std::nullopt;
+}
+
+void G1ManipulationServer::publishGraspPlan(
+    const GraspPlan* plan, const std::vector<ConsideredGrasp>& verdicts)
+{
+    using Marker = visualization_msgs::msg::Marker;
+    visualization_msgs::msg::MarkerArray markers;
+    Marker                               clear;
+    clear.action = Marker::DELETEALL;
+    markers.markers.push_back(clear);
+
+    // Each candidate ends where its gripper frame is, along the direction the hand travels in.
+    int id = 0;
+    for (const ConsideredGrasp& candidate : verdicts)
+    {
+        const std::array<double, 3> axis = approachAxis(candidate.pose);
+        const tf2::Vector3          back(
+            -axis[0] * kCandidateArrowLengthM,
+            -axis[1] * kCandidateArrowLengthM,
+            -axis[2] * kCandidateArrowLengthM);
+        const bool chosen = candidate.verdict == ConsideredGrasp::Verdict::kChosen;
+        const bool tilted = candidate.verdict == ConsideredGrasp::Verdict::kTilted;
+        markers.markers.push_back(arrow(
+            planning_frame_,
+            "candidates",
+            id++,
+            offsetBy(candidate.pose.position, back),
+            candidate.pose.position,
+            chosen ? 0.1F : 1.0F,
+            chosen ? 0.9F : (tilted ? 0.15F : 0.6F),
+            0.15F));
+    }
+
+    if (plan != nullptr)
+    {
+        // The goal after the gripper offset: this is where the grasp frame is actually sent.
+        tf2::Quaternion orientation;
+        tf2::fromMsg(plan->grasp.orientation, orientation);
+        const tf2::Matrix3x3 rotation(orientation);
+        for (int column = 0; column < 3; ++column)
+        {
+            const tf2::Vector3 axis = rotation.getColumn(column) * kGraspAxisLengthM;
+            markers.markers.push_back(arrow(
+                planning_frame_,
+                "grasp",
+                column,
+                plan->grasp.position,
+                offsetBy(plan->grasp.position, axis),
+                column == 0 ? 1.0F : 0.0F,
+                column == 1 ? 1.0F : 0.0F,
+                column == 2 ? 1.0F : 0.0F));
+        }
+        markers.markers.push_back(arrow(
+            planning_frame_,
+            "approach",
+            0,
+            plan->pregrasp.position,
+            plan->grasp.position,
+            0.1F,
+            0.8F,
+            1.0F));
+
+        Marker& label         = markers.markers.emplace_back();
+        label.header.frame_id = planning_frame_;
+        label.ns              = "label";
+        label.type            = Marker::TEXT_VIEW_FACING;
+        label.action          = Marker::ADD;
+        label.text            = plan->origin;
+        label.scale.z         = kLabelHeightM;
+        label.pose.position   = plan->pregrasp.position;
+        label.pose.position.z += kLabelLiftM;
+        label.pose.orientation.w = 1.0;
+        label.color.r = label.color.g = label.color.b = label.color.a = 1.0F;
+    }
+    grasp_plan_pub_->publish(markers);
 }
 
 void G1ManipulationServer::setStartStateInBounds(MoveGroup& group)
@@ -748,8 +879,14 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     const moveit_msgs::msg::CollisionObject object =
         publishCollisionObject(*detection, *object_pose);
 
-    std::string why;
-    const auto  chosen = chooseGrasp(*detection, *object_pose, arm, why);
+    std::string                  why;
+    std::vector<ConsideredGrasp> verdicts;
+    const auto                   chosen =
+        chooseGrasp(*detection, *object_pose, arm, why, grasp_plan_pub_ ? &verdicts : nullptr);
+    if (grasp_plan_pub_)
+    {
+        publishGraspPlan(chosen ? &*chosen : nullptr, verdicts);
+    }
     if (!chosen)
     {
         // No fallback to the fixed grasp: quietly not using the generator it was told to use is

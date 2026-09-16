@@ -32,8 +32,6 @@
   <exec_depend>python3-numpy</exec_depend>
   <exec_depend>python3-zmq</exec_depend>
   <exec_depend>python3-msgpack</exec_depend>
-  <!-- Only the grasp adapter's RViz arrows. -->
-  <exec_depend>visualization_msgs</exec_depend>
   <!-- msgpack-numpy has no rosdep key and no Ubuntu package, so rosdep cannot install it and
        .devcontainer/Dockerfile pip-installs it into the image instead. A workspace set up by
        rosdep alone will fail on import here. -->
