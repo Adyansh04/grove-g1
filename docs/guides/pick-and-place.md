@@ -40,6 +40,23 @@ Then run the tree. It drives the skills itself; nothing else needs starting:
 ros2 launch g1_orchestration mission.launch.py tree:=pick_and_place_in_place.xml
 ```
 
+## The hand really grips
+
+The Dex3's palm and fingers have collision geometry, and the object is held by friction between
+them. Nothing attaches it to the arm, so if the grasp is wrong the object stays on the table or
+slips out, and the skill says so rather than reporting a pick it did not make.
+
+Two consequences worth knowing before you swap in your own props:
+
+- The hand sets the size. It grips objects 20 to 75 mm across, and they have to be at least 70 mm
+  tall, because the thumb hangs 63 mm below the point the fingers close on and reaches the table
+  first on anything shorter. The scene's cube is 70 mm and its cylinder 60 by 90.
+- A pick takes a few seconds longer than it used to. The arm is position-controlled with no
+  gravity feed-forward and settles about 40 mm short of where it is sent, so the skill measures
+  the hand in TF and descends again until it is actually there.
+
+`g1_manipulation/README.md` has the measurements behind both.
+
 ## The full mission
 
 The facility world, a map, and Nav2. The robot drives to a workbench, closes the last stretch

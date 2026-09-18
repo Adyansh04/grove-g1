@@ -12,7 +12,11 @@ flowchart LR
     BT["g1_bt_executor"] -- "Pick, Place,<br/>SetArmPosture" --> SRV
     SRV["g1_manipulation_server"] -- "plan + execute" --> MG["move_group"]
     MG --> JTC["arm_trajectory_controller<br/>left/right_hand_controller"]
+    JTC -- "/joint_states<br/>(position + effort)" --> SRV
 ```
+
+That last edge is the grip check: the fingers hold an object by friction, and their own positions
+and efforts are the only evidence that they have one.
 
 The server adds no command path. It is another client of `move_group`, which is another client
 of the controllers that already own the arm joints and the hand channels, so every low-level
@@ -61,10 +65,10 @@ meaningful rather than a replay.
 Not a number in this package. `{side}_hand_grasp_frame` is a link in `g1_description`, and pose
 goals are given for that frame, so nothing here does offset arithmetic.
 
-The palm link's origin is not the point the fingers close on: at the SRDF's `closed` posture the
-Dex3's fingers curl toward the palm's **+y**, and the grip lands about 1 cm forward of the origin
-and 4.4 cm to the side. Planning to the palm puts the object through the fingers. Because it is a
-frame, checking it is a matter of looking at it in RViz:
+The palm link's origin is not the point the fingers close on. At the SRDF's `closed` posture the
+Dex3's fingers curl toward the palm's **+y**, and the frame sits at palm (0.090, ±0.050, 0).
+Planning to the palm origin puts the object through the fingers. Because it is a frame, checking it
+is a matter of looking at it in RViz:
 
 ```bash
 ros2 run tf2_ros tf2_echo right_hand_palm_link right_hand_grasp_frame
@@ -74,19 +78,68 @@ That the fingers close toward +y is also why `grasp_rpy` is a **roll**: it is th
 the closing axis toward the floor for a grasp off a table, and pitching the palm instead produces
 poses with no IK anywhere useful.
 
-### Vertically it grips near the top face, not the centre
+### The hand's own envelope decides what it can pick up
 
-Horizontally the grasp frame goes straight to the object. Vertically it does not, and aiming at the
-centre was wrong. With the closing axis pointing at the floor the fingertips sit about 24 mm beyond
-the grasp frame along it, so targeting the middle of a 60 mm cube puts them 6 mm above the table,
-inside the octomap's own 20 mm self-filter padding. The hand was being asked to close *through* the
-surface, and the descent failed every time with `GOAL_STATE_INVALID`.
+Both of the frame's coordinates are bounded on two sides, measured in MuJoCo by sweeping the thumb
+over its whole joint box rather than estimated:
 
-`grasp_height_above_top_m` (0.010) is measured up from the object's top face, using the height the
-pose source reports in its bounding box. Held above the face, the palm clears the object and the
-fingers close around its upper half. `Place` mirrors it, reading the held object's height back out
-of the attached collision object, so an object is released at the same relative height it was
-grasped at.
+| bound | value | what sets it |
+|---|---|---|
+| nearest the object may sit | palm x 0.046 | the retracted thumb's own surface at `pinch_ready`; nearer than this and the hand descends through the object |
+| furthest it may sit | palm x 0.091 | how far the thumb swings out at `closed`; further and it never reaches |
+| how far below the frame the hand hangs | 63 mm | the retracted thumb again, which is the lowest point of the whole hand |
+
+So this frame takes objects **20 to 75 mm across**, and only at least **70 mm tall** — below that
+the thumb arrives at the table before the object. A cube has to satisfy both at once, which is why
+the props are 70 mm and not the 60 they were.
+
+### Vertically it grips below the top face
+
+Horizontally the grasp frame goes straight to the object. Vertically it aims below the top face, so
+the fingers close around the object instead of on top of it, and the two parameters are the two
+bounds above turned into numbers:
+
+- `grasp_depth_below_top_m` (0.020), down from the top face, using the height the pose source
+  reports in its bounding box. Capped by the palm: the frame is only 26 mm clear of the palm's own
+  face, so a deeper grip drives the palm into the top of the object.
+- `min_grip_height_m` (0.068), up from whatever the object stands on, and it wins when the two
+  disagree. This is the 63 mm hang plus a margin.
+
+`Place` mirrors the same function, reading the held object's height back out of the attached
+collision object, so an object is released at the same relative height it was grasped at.
+
+### The arm does not stop where it is told
+
+Position-only, no gravity feed-forward: at the `lowcmd_params.yaml` gain of kp 40 the right
+shoulder settles about 0.09 rad short of its target under the arm's own weight, which is roughly
+40 mm at the hand. That is wider than the whole grip, and it is why a weld-based pick could look
+like it worked while the hand was never near the object.
+
+Rather than raise a gain the balance controller shares, the pick measures and corrects:
+
+- `settleOnPose` at the **pregrasp**, in clear air, re-commanding the residual TF reports until the
+  frame is within `settle_tolerance_m`.
+- `descendOnto` at the **grasp**, which is not the same correction: the error changes with the
+  arm's configuration, so descending 22 cm introduces a fresh 50 mm of it. Each retry backs up
+  `reaim_clearance_m` (0.08) along the approach axis and descends again.
+
+Three rules make that work, and each of them is a failure that was measured:
+
+- **Straight lines only**, no planned fallback. A planner free to route around arrives from a
+  direction that sweeps the object away; it knocked a 60 mm cylinder off the table.
+- **Re-aim from above**, never sideways in place. Same failure, same cylinder.
+- **Overshoot only a line that finished.** The correction assumes the shortfall is droop, which is
+  proportional and cancels when you aim past it. When the Cartesian path instead ran out part way,
+  that shortfall is unwalked path, and adding it to the target aims the hand *through the table* —
+  the next descent then stops in the same place and the loop chases its own tail.
+
+Backing up 8 cm rather than to the pregrasp is what makes a retry worth taking: the full descent is
+22 cm and sometimes runs out of straight line part way, so repeating it repeats that, while 8 cm
+clears the top of anything this hand can grip and is short enough to walk.
+
+The residual floors out around 8 mm, which is why `settle_tolerance_m` is 0.010: a tighter figure
+only spends another descent failing to beat it, and the grip check is what actually decides whether
+the pick worked.
 
 ## Grasping is contact
 
@@ -155,6 +208,45 @@ through an already-valid plan. Everything here now plans and executes as `Pick` 
 Both are fully collision-checked at plan time; only the in-flight recheck is gone, and on this
 stack it was reporting the robot's own arm.
 
+### The fingers are asked whether they are holding anything
+
+The hand's `JointTrajectoryController` has no per-joint goal tolerances, so a finger stalled
+against an object reports SUCCEEDED exactly as one that reached its target in free air does. Closing
+the hand therefore proves nothing, and `moveToNamed(hand, "closed")` returning true is not evidence
+of a grasp.
+
+`grip_check.hpp` answers it from `/joint_states` instead. A joint counts as **loaded** when it
+stalls at least `grip_min_position_error_rad` (0.08) short of the `closed` posture it was commanded
+to **and** pushes with at least `grip_min_effort_nm` (0.10). AND, not OR: on hardware a finger can
+be short with a slack drive, or at target under gravity, and neither is a grip. The hand is holding
+when two distinct fingers are pressing; `thumb_0` is ignored, being abduction rather than flexion.
+
+Targets come from `getNamedTargetValues("closed")`, so the SRDF numbers are never duplicated here.
+The check runs twice in a pick, after the close and again after the lift, and both route into the
+same failure path that reopens the hand, detaches, restores the ACM and removes the collision
+object. It earns its keep immediately: a pick that misses now fails with "the hand closed on
+nothing" or "the object was dropped during the lift" instead of reporting success.
+
+## What transfers to the real robot
+
+The point of doing this by contact rather than by welding is that most of it is then a property of
+the hand rather than of the simulator. Worth keeping the two apart:
+
+**Carries unchanged.** The grip check and both its call sites — `tau_est` arrives identically on
+hardware. The grasp frame, the depth and the minimum grip height, which are measurements of the
+Dex3's meshes. The `pinch_ready` posture and the reason for it. The settle and re-aim loops, since
+the real arm has the same gravity droop and the same shared gains. The object-size window, which is
+a requirement on whatever perception feeds this.
+
+**Simulator crutches, and they are all in the model, not in this package.** Everything in the
+pinned scenes' `<option>` block (`impratio`, `cone`, `noslip_iterations`). The finger geoms'
+`solref`/`solimp`/`condim`/`friction`, which stand in for silicone pads; μ = 1.0 is a guess that
+wants a pull test. The `contype 2/2` firewall, which exists only because the walking policy was
+trained against a hand with no contact. The navigation world's welds, still a documented stand-in
+for carrying during a gait. And ground truth on `/g1_sensor_relay/object_poses`: on hardware the
+in-hand measurement has no source at all, which is the argument for wiring the Dex3's tactile array
+(`press_sensor_state`, deliberately empty today) before hardware bring-up.
+
 ## Running
 
 Comes up with the operator entry point:
@@ -218,21 +310,19 @@ of it must be clear before it is taken; below that the pick plans around instead
 | `test_object_pose_source_node` | no | Source selection, the **hardware refusal**, the default being the refusing one, frame verification, stamp passthrough, and staying quiet until activated. |
 | `test_grasp_geometry` | no | Arm-to-group-and-frame resolution and its refusals; that the grasp goal passes position through untouched and points the closing axis at the floor; that the two hands mirror. |
 | `test_grasp_filter` | no | The two conversions between a generated grasp and a goal for this arm: the approach tilt a grasp comes in at, and the measured offset into the grasp frame, applied in the grasp's own frame and mirrored per hand. |
-| `test_generated_grasp_pick` | Sim, `-L simulator` | A pick with a generator behind it: a candidate reaching up through the table is refused and named, an unknown object is still refused, and a usable candidate picks the object up off the table. Nothing falls back to the fixed grasp. |
+| `test_grip_check` | no | What counts as a finger pressing: free-air close, thumb plus one finger, the two side-by-side fingers alone, short with no torque, at target under torque, the left hand's negative targets, a missing joint, NaN. |
+| `test_generated_grasp_pick` | Sim, `-L simulator` | A pick with a generator behind it: a candidate reaching up through the table is refused and named, an unknown object is still refused, and a usable candidate takes the object off the table and still has it three seconds later. Nothing falls back to the fixed grasp. |
+| `test_pick_place` | Sim, `-L simulator` | The package's acceptance gate. Ground truth reaches `/objects`, a pick lifts and **holds** the cube, a place puts it back, and — the one that matters — a grasp aimed 30 cm above the cube is reported as a miss rather than a pick. |
 
 ```bash
 colcon test --packages-select g1_manipulation
 ```
 
-`test/test_pick_place.launch.py` is a full sim mission and is deliberately **not** registered,
-because it does not currently pass. The failure is real rather than a test defect: the robot is
-staged at the workbench with its arms hanging, a hanging hand sits about 1 cm under the bench slab
-and so inside its octomap, and `CheckStartStateCollision` looks at the whole robot rather than the
-group being planned for, so every plan is refused. Fixing it is a rest-pose question for the
-control stack. Run it by hand meanwhile:
+The two simulator suites only run with every `g1_` package selected, because the bring-up launch
+files refuse to half-start when a package they need is off the ament prefix path:
 
 ```bash
-python3 -m launch_testing.launch_test src/g1_manipulation/test/test_pick_place.launch.py
+colcon test --packages-select-regex '^g1_' --executor sequential --ctest-args -L simulator
 ```
 
 ### Object poses and frames
