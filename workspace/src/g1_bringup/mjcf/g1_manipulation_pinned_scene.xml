@@ -1,6 +1,10 @@
 <mujoco model="g1_manipulation_pinned_scene">
   <include file="g1_manipulation_scene.staged.xml"/>
 
+  <!-- Grasping settings, in the pinned overlay because these are the only scenes loaded with no
+       walking policy running. Same reasoning as g1_tabletop_pinned_scene. -->
+  <option impratio="10" cone="elliptic" noslip_iterations="3"/>
+
   <equality>
     <!-- pelvis, not torso_link, which is what g1_navigation_pinned_scene welds.
          That scene wants the waist free so the torso pitches the way it does when walking,

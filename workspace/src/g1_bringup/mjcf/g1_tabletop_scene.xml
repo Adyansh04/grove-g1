@@ -46,49 +46,60 @@
 
     <!-- Wider than the manipulation pedestal, because five objects have to sit apart without
          touching, and at the same 0.80 top so a grasp tuned on one scene transfers to the other.
-         The hanging right hand reaches into the green cylinder, so the pinned variant spawns the
-         arms out of the way; this unpinned scene still spawns them hanging. -->
-    <geom name="table_top" group="2" type="box" size="0.13 0.17 0.015" pos="0.39 -0.27 0.785"
-      material="pedestal_mat" contype="1" conaffinity="1"/>
+         Widened again when the fingers gained contact geometry: the objects grew with it, and
+         five of them need the room. The near edge stays at x 0.26, which is the reach the arm
+         was measured against. -->
+    <!-- Bit 1 on the top and on every object is what the Dex3's contact geometry pairs with: the
+         hand is contype 2 and meets nothing until a scene opts in. The legs keep bit 0 alone,
+         since nothing reaches them. -->
+    <geom name="table_top" group="2" type="box" size="0.16 0.22 0.015" pos="0.42 -0.27 0.785"
+      material="pedestal_mat" contype="3" conaffinity="3"/>
     <geom name="table_leg_near" group="2" type="box" size="0.02 0.02 0.385"
-      pos="0.50 -0.41 0.385" material="pedestal_mat" contype="1" conaffinity="1"/>
+      pos="0.54 -0.46 0.385" material="pedestal_mat" contype="1" conaffinity="1"/>
     <geom name="table_leg_far" group="2" type="box" size="0.02 0.02 0.385"
-      pos="0.50 -0.13 0.385" material="pedestal_mat" contype="1" conaffinity="1"/>
+      pos="0.54 -0.08 0.385" material="pedestal_mat" contype="1" conaffinity="1"/>
 
     <!-- Same size, mass and friction as the manipulation scene's cube, so a pick tuned there is
-         tuned here. Nearest the robot, on the half the arm can reach. -->
-    <body name="red_cube" pos="0.30 -0.27 0.830">
+         tuned here. Nearest the robot, on the half the arm can reach.
+
+         70 mm, not the 60 it was. Now the fingers really grip, the Dex3 sets the size from both
+         sides: shorter than 68 mm and the retracted thumb reaches the table before the object,
+         wider than 75 mm and it cannot clear the near face on the way down. 70 is the only cube
+         that satisfies both; see g1_common.xacro. -->
+    <body name="red_cube" pos="0.32 -0.20 0.837">
       <freejoint name="red_cube_joint"/>
-      <geom group="2" type="box" size="0.03 0.03 0.03" material="mat_red_obj" mass="0.15"
-        contype="1" conaffinity="1" friction="1 0.005 0.0001"/>
+      <geom group="2" type="box" size="0.035 0.035 0.035" material="mat_red_obj" mass="0.22"
+        contype="3" conaffinity="3" friction="1 0.005 0.0001"/>
     </body>
 
-    <body name="green_cylinder" pos="0.31 -0.17 0.845">
+    <!-- 60 x 90, which is the comfortable middle of that window rather than its edge: the same
+         pick should work on a shape whose gripped face is curved, not only on the flat one. -->
+    <body name="green_cylinder" pos="0.32 -0.35 0.847">
       <freejoint name="green_cylinder_joint"/>
-      <geom group="2" type="cylinder" size="0.03 0.04" material="mat_green_obj" mass="0.15"
-        contype="1" conaffinity="1" friction="1 0.005 0.0001"/>
+      <geom group="2" type="cylinder" size="0.03 0.045" material="mat_green_obj" mass="0.15"
+        contype="3" conaffinity="3" friction="1 0.005 0.0001"/>
     </body>
 
     <!-- The shape the support plane matters most for: seen from above, its lowest visible point
          is its equator, so a fit that takes the object's own lowest point reports half a ball. -->
-    <body name="blue_sphere" pos="0.43 -0.34 0.837">
+    <body name="blue_sphere" pos="0.48 -0.25 0.839">
       <freejoint name="blue_sphere_joint"/>
       <geom group="2" type="sphere" size="0.037" material="mat_blue_obj" mass="0.1"
-        contype="1" conaffinity="1" friction="0.8 0.005 0.0001"/>
+        contype="3" conaffinity="3" friction="0.8 0.005 0.0001"/>
     </body>
 
     <!-- Rectangular rather than square, so its yaw is recoverable at all: a square top face has
          no principal direction to find. -->
-    <body name="yellow_box" pos="0.43 -0.21 0.825">
+    <body name="yellow_box" pos="0.46 -0.11 0.827">
       <freejoint name="yellow_box_joint"/>
       <geom group="2" type="box" size="0.04 0.025 0.025" material="mat_yellow_obj" mass="0.12"
-        contype="1" conaffinity="1"/>
+        contype="3" conaffinity="3"/>
     </body>
 
-    <body name="white_cup" pos="0.32 -0.37 0.850">
+    <body name="white_cup" pos="0.47 -0.42 0.847">
       <freejoint name="white_cup_joint"/>
       <geom group="2" type="cylinder" size="0.035 0.045" material="mat_white_obj" mass="0.12"
-        contype="1" conaffinity="1" friction="1 0.005 0.0001"/>
+        contype="3" conaffinity="3" friction="1 0.005 0.0001"/>
     </body>
 
     <!-- The depth camera element the sensor sampler renders through, exactly as the other scenes
@@ -97,12 +108,42 @@
     <camera name="d435i" mode="fixed" fovy="58" resolution="848 480" pos="0 0 1"/>
   </worldbody>
 
+  <!-- No grasp_* welds: the fingers have contact geometry (patch 008) and hold the object by
+       gripping it. grasp_weld finds nothing to manage here and says so at startup. -->
+
   <equality>
-    <!-- Inactive, and only grove-g1's grasp_weld manager ever turns one on. SIMULATION ONLY: the
-         Dex3 fingers carry no contact geometry, so without these a closed hand passes through an
-         object and nothing is ever picked up. -->
-    <weld name="grasp_left_red_cube" body1="left_hand_palm_link" body2="red_cube" active="false"/>
-    <weld name="grasp_right_red_cube" body1="right_hand_palm_link" body2="red_cube"
-      active="false"/>
+    <!-- Spawn the arms at activate_arm's CLEAR_POSTURE, clear of the table and the objects. In the
+         base scene rather than the pinned overlay because it is the layout that demands it: at the
+         URDF zero the right hand is inside the green cylinder, whichever variant is staged.
+         ApplyStartupPose puts the joints here before the first step, so these start satisfied and
+         only hold against gravity; patch 007 then hands each to its motor and releases it. -->
+    <joint name="startup_hold_left_shoulder_pitch" joint1="left_shoulder_pitch_joint"
+      polycoef="0.9 0 0 0 0" solref="0.05 1"/>
+    <joint name="startup_hold_left_shoulder_roll" joint1="left_shoulder_roll_joint"
+      polycoef="1.1 0 0 0 0" solref="0.05 1"/>
+    <joint name="startup_hold_left_shoulder_yaw" joint1="left_shoulder_yaw_joint"
+      polycoef="0 0 0 0 0" solref="0.05 1"/>
+    <joint name="startup_hold_left_elbow" joint1="left_elbow_joint"
+      polycoef="0 0 0 0 0" solref="0.05 1"/>
+    <joint name="startup_hold_left_wrist_roll" joint1="left_wrist_roll_joint"
+      polycoef="0 0 0 0 0" solref="0.05 1"/>
+    <joint name="startup_hold_left_wrist_pitch" joint1="left_wrist_pitch_joint"
+      polycoef="0 0 0 0 0" solref="0.05 1"/>
+    <joint name="startup_hold_left_wrist_yaw" joint1="left_wrist_yaw_joint"
+      polycoef="0 0 0 0 0" solref="0.05 1"/>
+    <joint name="startup_hold_right_shoulder_pitch" joint1="right_shoulder_pitch_joint"
+      polycoef="0.9 0 0 0 0" solref="0.05 1"/>
+    <joint name="startup_hold_right_shoulder_roll" joint1="right_shoulder_roll_joint"
+      polycoef="-1.1 0 0 0 0" solref="0.05 1"/>
+    <joint name="startup_hold_right_shoulder_yaw" joint1="right_shoulder_yaw_joint"
+      polycoef="0 0 0 0 0" solref="0.05 1"/>
+    <joint name="startup_hold_right_elbow" joint1="right_elbow_joint"
+      polycoef="0 0 0 0 0" solref="0.05 1"/>
+    <joint name="startup_hold_right_wrist_roll" joint1="right_wrist_roll_joint"
+      polycoef="0 0 0 0 0" solref="0.05 1"/>
+    <joint name="startup_hold_right_wrist_pitch" joint1="right_wrist_pitch_joint"
+      polycoef="0 0 0 0 0" solref="0.05 1"/>
+    <joint name="startup_hold_right_wrist_yaw" joint1="right_wrist_yaw_joint"
+      polycoef="0 0 0 0 0" solref="0.05 1"/>
   </equality>
 </mujoco>

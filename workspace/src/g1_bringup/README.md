@@ -81,10 +81,11 @@ same process corrupts the heap.
 stack drives every motor, then releases the pelvis weld its scene declares, and the policy
 balances.
 
-`world:=tabletop pin_pelvis:=true` also spawns the arms held out, clear of the table and the
-objects. The walkable tabletop still spawns them hanging, with the right hand inside the green
-cylinder. The viewer's reset (Backspace) re-applies the spawn holds and nothing releases them, so
-restart the simulator instead.
+The `tabletop` and `manipulation` scenes spawn the arms held out, clear of the table and the
+objects, pinned or not. That is not cosmetic now the fingers have contact geometry: at the URDF
+zero the right hand is inside the green cylinder, and a hand that collides would throw it across
+the room on the first step. The viewer's reset (Backspace) re-applies the spawn holds and nothing
+releases them, so restart the simulator instead.
 
 ## Arms and hands
 
@@ -139,7 +140,7 @@ compensating check. Neither suite can live here, for the same reason the depende
 
 | Path | Contents |
 |---|---|
-| `config/sim_sensors.yaml` | LiDAR, camera and IMU parameters read by the patched simulator, plus which bodies publish ground-truth poses and the grasp weld that stands in for finger contact. |
+| `config/sim_sensors.yaml` | LiDAR, camera and IMU parameters read by the patched simulator, plus which bodies publish ground-truth poses and the grasp weld the navigation world still uses to carry during a gait. |
 | `config/g1_sensors.rviz` | RViz for `mode:=none`. Fixed frame `odom`. |
 | `mjcf/*.xml` | The scene overlays, one per world plus a pinned variant. Staged next to the vendored model at launch and removed on shutdown. |
 
