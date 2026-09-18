@@ -6,7 +6,8 @@ Four claims, none of which any other test covers:
   1. Offered only a grasp reaching up through the table, the pick refuses it and says so. A
      filter that never rejects anything has not been tested.
   2. An object nobody is reporting is still refused, with the generator in the loop.
-  3. Offered sensible grasps, the pick takes one and lifts the object off the table.
+  3. Offered sensible grasps, the pick takes one and the object comes off the table and stays in
+     the hand. The fingers hold it by friction, so the hold is worth more than the lift.
   4. With RViz off, nothing is drawn: no visualizer runs and no marker publisher exists.
 
 The order is load-bearing, alphabetically as unittest runs them: test_03 takes the object off the
@@ -21,7 +22,9 @@ octomap, since a start state in collision has no plan at all, and the approach r
 line rather than a planned path.
 """
 
+import math
 import os
+import time
 import unittest
 
 import launch_testing
@@ -35,12 +38,15 @@ from rcl_interfaces.srv import SetParameters
 from rclpy.action import ActionClient
 from rclpy.node import Node as RclpyNode
 from rclpy.parameter import Parameter
+from vision_msgs.msg import Detection3DArray
 
 from g1_msgs.action import Pick
 
 STACK_SETTLE_S = 55.0
 READY_TIMEOUT_S = 85.0
 PICK_TIMEOUT_S = 240.0
+# Long enough for a grip that is going to slip to have done it: 1500 physics steps at 2 ms.
+HOLD_S = 3.0
 OBJECT_ID = "red_cube_0"
 DRAWN_TOPICS = [
     "/g1_perception_visualizer/annotated_image",
@@ -49,11 +55,12 @@ DRAWN_TOPICS = [
     "/object_markers",
 ]
 
-# The stand-in generator's gripper frame to right_hand_grasp_frame. The z is 4 cm rather than the
-# 9 that would land a centimetre above the object: the table's inflated voxels sit in the last
-# centimetres and the Dex3's fingers close over that gap. Against the real generator this whole
-# vector is a measurement, not a choice.
-GRASP_OFFSET = "[0.0, 0.0, 0.04, 1.5707963, 0.0, 0.0]"
+# The stand-in generator's gripper frame to right_hand_grasp_frame. It reports a pose 10 cm above
+# the object's top face, and the grasp frame has to arrive just under that face: on a 7 cm cube
+# min_grip_height_m wins over grasp_depth_below_top_m and puts it 2 mm down, so 0.102 along the
+# generator's own approach axis. Against the real generator this whole vector is a measurement,
+# not a choice.
+GRASP_OFFSET = "[0.0, 0.0, 0.102, 1.5707963, 0.0, 0.0]"
 
 
 def _bringup(**arguments):
@@ -98,6 +105,10 @@ class TestGeneratedGraspPick(unittest.TestCase):
         rclpy.init()
         cls.node = RclpyNode("generated_grasp_probe")
         cls.pick = ActionClient(cls.node, Pick, "/g1_manipulation_server/pick")
+        cls.objects = None
+        cls.node.create_subscription(
+            Detection3DArray, "/objects", lambda msg: setattr(cls, "objects", msg), 1
+        )
         if not cls.pick.wait_for_server(timeout_sec=90.0):
             raise AssertionError("the manipulation server never came up")
 
@@ -119,6 +130,25 @@ class TestGeneratedGraspPick(unittest.TestCase):
         rclpy.spin_until_future_complete(self.node, result_future, timeout_sec=PICK_TIMEOUT_S)
         self.assertIsNotNone(result_future.result(), "the pick never finished")
         return result_future.result().result
+
+    def _object_pose(self, timeout_s=20.0):
+        """The object's ground-truth pose, or None. Fresh each call: it moves."""
+        self.__class__.objects = None
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            rclpy.spin_once(self.node, timeout_sec=0.2)
+            msg = self.__class__.objects
+            if msg is None:
+                continue
+            for detection in msg.detections:
+                if detection.results and detection.results[0].hypothesis.class_id == OBJECT_ID:
+                    return detection.results[0].pose.pose
+        return None
+
+    def _spin(self, seconds):
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline and rclpy.ok():
+            rclpy.spin_once(self.node, timeout_sec=0.1)
 
     def _set_only_from_below(self, value):
         """Switches the stand-in generator to offering nothing but the grasp from underneath."""
@@ -145,10 +175,35 @@ class TestGeneratedGraspPick(unittest.TestCase):
             self.assertEqual(self.node.get_publishers_info_by_topic(topic), [], topic)
 
     def test_03_a_generated_grasp_picks_the_object_up(self):
-        result = self._pick()
+        """Measures the object, not the result: the fingers hold it by friction now."""
+        before = self._object_pose()
+        self.assertIsNotNone(before)
 
+        result = self._pick()
         self.assertTrue(result.success, result.message)
         self.assertIn(OBJECT_ID, result.message)
+
+        lifted = self._object_pose()
+        self.assertIsNotNone(lifted)
+        self.assertGreater(
+            lifted.position.z - before.position.z,
+            0.12,
+            f"the cube did not come up: {before.position.z} -> {lifted.position.z}",
+        )
+
+        # A grip that is going to fail does it in the seconds after the lift, not at the moment
+        # of it, so the hold is the assertion that means something.
+        self._spin(HOLD_S)
+        held = self._object_pose()
+        self.assertIsNotNone(held)
+        self.assertGreater(
+            held.position.z - before.position.z, 0.12, "the cube was dropped while held"
+        )
+        slip = math.dist(
+            (held.position.x, held.position.y, held.position.z),
+            (lifted.position.x, lifted.position.y, lifted.position.z),
+        )
+        self.assertLess(slip, 0.02, f"the cube slipped {slip * 1000:.0f} mm in the hand")
 
     def test_01_a_grasp_from_under_the_table_is_refused(self):
         # The only candidate on offer now reaches up through the surface the object stands on.

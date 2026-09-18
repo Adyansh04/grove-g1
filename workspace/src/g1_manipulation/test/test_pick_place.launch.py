@@ -7,12 +7,13 @@ skill refuses a goal it cannot see, and that the collision exemption it opens ar
 is closed again afterwards.
 
 Deliberately measures the OBJECT, not the action result. A skill that reports success while the
-cube never moved is exactly the failure worth catching, and the sim-only grasp weld is what
-makes the object's own pose meaningful evidence.
+cube never moved is exactly the failure worth catching. The fingers grip by contact and friction
+here, with no weld behind them, so the cube's own pose is the only evidence that means anything.
 
 Run via `colcon test --packages-select g1_manipulation`.
 """
 
+import math
 import os
 import time
 import unittest
@@ -24,6 +25,8 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription, TimerAction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
+from rcl_interfaces.msg import Parameter, ParameterType
+from rcl_interfaces.srv import SetParameters
 from rclpy.action import ActionClient
 from rclpy.node import Node
 from vision_msgs.msg import Detection3DArray
@@ -47,6 +50,10 @@ PICK_TIMEOUT_S = 240.0
 
 # A tuck is one planned motion per arm, so it needs nothing like a pick's budget.
 POSTURE_TIMEOUT_S = 90.0
+
+# How long a lifted object has to stay in the hand. 1500 physics steps at 2 ms, which is long
+# enough for a grip that is going to slip to have done it.
+HOLD_S = 3.0
 
 
 @launch_testing.ready_to_test_action_timeout(READY_TIMEOUT_S)
@@ -101,7 +108,7 @@ class TestPickPlace(unittest.TestCase):
 
     def _spin(self, seconds):
         deadline = time.monotonic() + seconds
-        while time.monotonic() < deadline and rclcpp_ok():
+        while time.monotonic() < deadline and rclpy.ok():
             rclpy.spin_once(self.node, timeout_sec=0.1)
 
     def _object_pose(self, timeout_s=20.0):
@@ -117,6 +124,23 @@ class TestPickPlace(unittest.TestCase):
                 if detection.results and detection.results[0].hypothesis.class_id == OBJECT_ID:
                     return detection.results[0].pose.pose
         return None
+
+    def _set_server_parameter(self, name, value):
+        """Retunes the running skill server, so a negative case needs no second bring-up."""
+        client = self.node.create_client(
+            SetParameters, "/g1_manipulation_server/set_parameters"
+        )
+        self.assertTrue(client.wait_for_service(timeout_sec=20.0), "no parameter service")
+        request = SetParameters.Request()
+        parameter = Parameter()
+        parameter.name = name
+        parameter.value.type = ParameterType.PARAMETER_DOUBLE
+        parameter.value.double_value = value
+        request.parameters = [parameter]
+        future = client.call_async(request)
+        rclpy.spin_until_future_complete(self.node, future, timeout_sec=20.0)
+        self.assertIsNotNone(future.result(), "the server never answered set_parameters")
+        return all(result.successful for result in future.result().results)
 
     def _send(self, client, goal, timeout_s):
         self.assertTrue(client.wait_for_server(timeout_sec=30.0), "no action server")
@@ -164,15 +188,33 @@ class TestPickPlace(unittest.TestCase):
         )
         self.assertTrue(result.success, f"pick failed: {result.message}")
 
-        after = self._object_pose()
-        self.assertIsNotNone(after)
-        # The grasp weld is what makes this meaningful: without it the planning scene would say
-        # the object is held while it sat on the table untouched.
+        lifted = self._object_pose()
+        self.assertIsNotNone(lifted)
+        # Well clear of the table, not a nudge. lift_height_m asks for 0.20 and the arm delivers
+        # about 0.14 of it, because a position-only arm settles short under the cube's weight;
+        # what matters here is that the cube is more than its own height off the surface, so it
+        # cannot be resting on anything.
         self.assertGreater(
-            after.position.z - before.position.z,
-            0.02,
-            f"the cube did not leave the surface: {before.position.z} -> {after.position.z}",
+            lifted.position.z - before.position.z,
+            0.12,
+            f"the cube did not come up with the hand: {before.position.z} -> {lifted.position.z}",
         )
+
+        # Held, not just lifted. The fingers grip by friction, so a grasp that is going to fail
+        # does it during the seconds after the lift rather than at the moment of it.
+        self._spin(HOLD_S)
+        held = self._object_pose()
+        self.assertIsNotNone(held)
+        self.assertGreater(
+            held.position.z - before.position.z,
+            0.12,
+            f"the cube was dropped while held: {held.position.z}",
+        )
+        slip = math.dist(
+            (held.position.x, held.position.y, held.position.z),
+            (lifted.position.x, lifted.position.y, lifted.position.z),
+        )
+        self.assertLess(slip, 0.02, f"the cube slipped {slip * 1000:.0f} mm in the hand")
 
     def test_04_a_place_puts_it_back_down(self):
         """Runs after the pick, so the arm is holding the cube."""
@@ -183,13 +225,42 @@ class TestPickPlace(unittest.TestCase):
         goal.pose.header.frame_id = "odom"
         goal.pose.pose.position.x = target.position.x
         goal.pose.pose.position.y = target.position.y - 0.06
-        goal.pose.pose.position.z = 0.83
+        # Where a 7 cm cube's centre reports when it is sitting on this table, so the place puts
+        # it back down rather than pressing it through the top.
+        goal.pose.pose.position.z = 0.825
         goal.pose.pose.orientation.w = 1.0
 
         result = self._send(self.place, goal, PICK_TIMEOUT_S)
         self.assertTrue(result.success, f"place failed: {result.message}")
 
-    def test_05_an_unknown_object_is_refused_not_guessed_at(self):
+    def test_05_a_grasp_that_misses_is_reported_as_a_miss(self):
+        """The one that proves the grip check can say no.
+
+        Every other failure mode here is the skill refusing before it moves. This one lets it
+        run the whole pick with the grip point put 30 cm up, where the fingers close on air, and
+        asks whether it notices. Without the check the trajectory controller reports the close
+        as success and the pick claims a cube it never touched.
+        """
+        self.assertTrue(self._set_server_parameter("min_grip_height_m", 0.30))
+        try:
+            before = self._object_pose()
+            self.assertIsNotNone(before)
+            result = self._send(
+                self.pick, Pick.Goal(object_id=OBJECT_ID, arm="right"), PICK_TIMEOUT_S
+            )
+            self.assertFalse(result.success, "a grasp above the cube was reported as a pick")
+            self.assertIn("grasp", result.message)
+            after = self._object_pose()
+            self.assertIsNotNone(after)
+            self.assertLess(
+                abs(after.position.z - before.position.z),
+                0.02,
+                "the cube moved, so this failed for the wrong reason",
+            )
+        finally:
+            self.assertTrue(self._set_server_parameter("min_grip_height_m", 0.068))
+
+    def test_06_an_unknown_object_is_refused_not_guessed_at(self):
         """The pose source has no such object, so the skill must decline rather than reach."""
         result = self._send(
             self.pick, Pick.Goal(object_id="no_such_object", arm="right"), 60.0
@@ -197,11 +268,8 @@ class TestPickPlace(unittest.TestCase):
         self.assertFalse(result.success)
         self.assertIn("locating", result.message)
 
-    def test_06_a_bad_arm_is_refused(self):
+    def test_07_a_bad_arm_is_refused(self):
         result = self._send(self.pick, Pick.Goal(object_id=OBJECT_ID, arm="middle"), 60.0)
         self.assertFalse(result.success)
         self.assertIn("left", result.message)
 
-
-def rclcpp_ok():
-    return rclpy.ok()

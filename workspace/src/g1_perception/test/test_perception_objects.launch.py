@@ -38,8 +38,8 @@ SAMPLES = 10
 
 # Every object in the tabletop world, with its true size in metres.
 TRUE_SIZE = {
-    "red_cube": (0.06, 0.06, 0.06),
-    "green_cylinder": (0.06, 0.06, 0.08),
+    "red_cube": (0.07, 0.07, 0.07),
+    "green_cylinder": (0.06, 0.06, 0.09),
     "blue_sphere": (0.074, 0.074, 0.074),
     "yellow_box": (0.08, 0.05, 0.05),
     "white_cup": (0.07, 0.07, 0.09),
