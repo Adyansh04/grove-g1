@@ -183,13 +183,17 @@ def test_the_hand_is_driven_as_a_trajectory_not_a_gripper_command(side, moveit_c
 
 @pytest.mark.parametrize("side", ["left", "right"])
 def test_each_hand_has_an_open_and_a_closed_posture(side, srdf):
-    """The whole vocabulary a pick and place needs, and both must name all seven joints."""
+    """The whole vocabulary a pick and place needs, and all three must name all seven joints.
+
+    pinch_ready is not optional dressing: a pick descends in it, because the thumb at `open`
+    hangs below the palm and reaches the table before the object does.
+    """
     states = {
         s.get("name"): s
         for s in srdf.findall("group_state")
         if s.get("group") == f"{side}_hand"
     }
-    assert set(states) == {"open", "closed"}
+    assert set(states) == {"open", "closed", "pinch_ready"}
     for name, state in states.items():
         named = {j.get("name") for j in state.findall("joint")}
         assert named == set(HAND_JOINTS[side]), f"{side} {name} does not cover the hand"

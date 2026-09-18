@@ -83,16 +83,29 @@ SRDF, and `test_robot_model` pins them: the three per-group copies must agree, a
 inside the joint limits. Poses are a convenience, not a safety mechanism, and MoveIt still plans
 and collision-checks the path to one.
 
-The hands have two postures each, on `left_hand` and `right_hand`:
+The hands have three postures each, on `left_hand` and `right_hand`:
 
 | Pose | What it is |
 |---|---|
 | `open` | Every finger joint at 0. Fingers straight, thumb mid-range. |
-| `closed` | A power grasp, curled short of the end stops so the fingers can press into an object. |
+| `pinch_ready` | What a pick descends in: fingers open, thumb pulled back behind the object's near face. |
+| `closed` | A power grasp, the thumb swung forward to oppose the curled fingers, short of the end stops so both can press into an object. |
 
-That is the whole vocabulary a pick and place needs: reach open, close, `attachObject`, move,
-place, open, `detachObject`. Contact physics is not simulated, so in sim the object is held by
-the attachment rather than by friction. On hardware it is held by both.
+That is the whole vocabulary a pick and place needs: reach in `pinch_ready`, close, `attachObject`,
+move, place, open, `detachObject`.
+
+`pinch_ready` is not convenience. The thumb is long, and at the grasp pose the palm's closing axis
+points straight down: at `open` the thumb reaches the table well before the object does. Swept over
+the thumb's whole joint box in MuJoCo, the least it can hang is 113 mm below the palm origin while
+still keeping its surface clear of the object's near face, and that number is what sets
+`g1_manipulation`'s `min_grip_height_m`.
+
+`closed` moves only the thumb's two flexion joints; its abduction stays at zero. At `thumb_0 = 0.30`
+the thumb grazes the middle finger at 80-90 % of the close, which would stall a finger with nothing
+held and read as a grasp to the grip check.
+
+The fingers hold an object by friction and contact, in sim as on hardware. MoveIt's attachment is
+bookkeeping for the planner, not what carries the load.
 
 `tucked` is worth knowing about beyond convenience. Arm pose measurably disturbs a walking
 humanoid, and the standing recommendation is to manipulate stationary and navigate with the arms

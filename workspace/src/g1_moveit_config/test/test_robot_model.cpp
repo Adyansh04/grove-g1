@@ -311,8 +311,9 @@ TEST_F(RobotModelTest, EachHandIsItsArmsEndEffector)
 
 TEST_F(RobotModelTest, EachHandHasAnOpenAndAClosedPosture)
 {
-    // Two per hand, and each must name all seven joints: a posture that leaves a finger out
-    // moves the rest and leaves that one wherever it happened to be.
+    // Three per hand, and each must name all seven joints: a posture that leaves a finger out
+    // moves the rest and leaves that one wherever it happened to be. pinch_ready is the one a
+    // pick descends in, with the thumb retracted so it does not reach the table first.
     std::map<std::string, std::set<std::string>> poses_by_group;
     for (const auto& state : srdf_->getGroupStates())
     {
@@ -327,7 +328,7 @@ TEST_F(RobotModelTest, EachHandHasAnOpenAndAClosedPosture)
     {
         EXPECT_EQ(
             poses_by_group[std::string(side) + "_hand"],
-            (std::set<std::string>{ "open", "closed" }));
+            (std::set<std::string>{ "open", "closed", "pinch_ready" }));
     }
 }
 
