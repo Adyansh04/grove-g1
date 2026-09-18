@@ -38,6 +38,9 @@ target_link_libraries(g1_grasp_filter PUBLIC
   ${geometry_msgs_TARGETS}
 )
 
+add_library(g1_grip_check src/grip_check.cpp)
+g1_target_defaults(g1_grip_check)
+
 add_library(g1_object_pose_source_node src/g1_object_pose_source_node.cpp)
 g1_target_defaults(g1_object_pose_source_node)
 target_link_libraries(g1_object_pose_source_node PUBLIC
@@ -55,6 +58,7 @@ add_library(g1_manipulation_server_node src/g1_manipulation_server_node.cpp)
 g1_target_defaults(g1_manipulation_server_node)
 target_link_libraries(g1_manipulation_server_node PUBLIC
   g1_grasp_filter
+  g1_grip_check
   g1_hand_contact
   rclcpp::rclcpp
   rclcpp_action::rclcpp_action
@@ -87,6 +91,7 @@ install(DIRECTORY config launch DESTINATION share/${PROJECT_NAME})
 install(TARGETS
   g1_hand_contact
   g1_grasp_filter
+  g1_grip_check
   g1_object_pose_source_node
   g1_manipulation_server_node
   EXPORT export_${PROJECT_NAME} DESTINATION lib)
@@ -110,6 +115,9 @@ if(BUILD_TESTING)
 
   ament_add_gmock(test_hand_contact test/test_hand_contact.cpp)
   target_link_libraries(test_hand_contact g1_hand_contact)
+
+  ament_add_gmock(test_grip_check test/test_grip_check.cpp)
+  target_link_libraries(test_grip_check g1_grip_check)
 
   find_package(launch_testing_ament_cmake REQUIRED)
 
