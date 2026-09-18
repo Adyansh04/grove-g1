@@ -25,6 +25,7 @@
 #include <vector>
 
 #include "g1_manipulation/grasp_filter.hpp"
+#include "g1_manipulation/grip_check.hpp"
 #include "g1_manipulation/hand_contact.hpp"
 
 namespace g1_manipulation
@@ -125,10 +126,20 @@ bool G1ManipulationServer::acquire()
 G1ManipulationServer::G1ManipulationServer(const rclcpp::NodeOptions& options)
   : rclcpp::Node("g1_manipulation_server", options)
 {
-    object_timeout_s_         = declare_parameter<double>("object_timeout_ms", 1000.0) / 1000.0;
-    approach_height_m_        = declare_parameter<double>("approach_height_m", 0.22);
-    grasp_height_above_top_m_ = declare_parameter<double>("grasp_height_above_top_m", 0.010);
-    lift_height_m_            = declare_parameter<double>("lift_height_m", 0.15);
+    object_timeout_s_        = declare_parameter<double>("object_timeout_ms", 1000.0) / 1000.0;
+    approach_height_m_       = declare_parameter<double>("approach_height_m", 0.22);
+    grasp_depth_below_top_m_ = declare_parameter<double>("grasp_depth_below_top_m", 0.020);
+    min_grip_height_m_       = declare_parameter<double>("min_grip_height_m", 0.068);
+    settle_tolerance_m_      = declare_parameter<double>("settle_tolerance_m", 0.010);
+    settle_attempts_         = static_cast<int>(declare_parameter<int>("settle_attempts", 2));
+    reaim_clearance_m_       = declare_parameter<double>("reaim_clearance_m", 0.08);
+    lift_height_m_           = declare_parameter<double>("lift_height_m", 0.15);
+    // What counts as a grip: how far short of the commanded posture a finger must stall, and how
+    // hard it must push while short. Parameters because the real hand's tau_est carries noise
+    // these thresholds have to clear.
+    grip_check_enabled_          = declare_parameter<bool>("grip_check_enabled", true);
+    grip_min_position_error_rad_ = declare_parameter<double>("grip_min_position_error_rad", 0.08);
+    grip_min_effort_nm_          = declare_parameter<double>("grip_min_effort_nm", 0.10);
     // How far a released object may be from where it was aimed before the place is a failure.
     place_tolerance_m_ = declare_parameter<double>("place_tolerance_m", 0.08);
     // Well under the joint limits' own 0.8 rad/s cap. Arm motion disturbs a standing humanoid
@@ -169,10 +180,65 @@ G1ManipulationServer::G1ManipulationServer(const rclcpp::NodeOptions& options)
     }
     std::copy(offset.begin(), offset.end(), graspgen_offset_.begin());
 
+    // The grasp numbers are all measurements of a particular hand against a particular object,
+    // so they get retuned between goals rather than between launches -- on hardware by hand, in
+    // the suites by the test that has to make a grasp miss on purpose. Nothing structural is
+    // here: only values a running goal already finished reading.
+    parameters_ =
+        add_on_set_parameters_callback([this](const std::vector<rclcpp::Parameter>& updated) {
+            rcl_interfaces::msg::SetParametersResult result;
+            result.successful = true;
+            for (const auto& parameter : updated)
+            {
+                const std::string& name = parameter.get_name();
+                if (name == "grasp_depth_below_top_m")
+                {
+                    grasp_depth_below_top_m_ = parameter.as_double();
+                }
+                else if (name == "min_grip_height_m")
+                {
+                    min_grip_height_m_ = parameter.as_double();
+                }
+                else if (name == "settle_tolerance_m")
+                {
+                    settle_tolerance_m_ = parameter.as_double();
+                }
+                else if (name == "settle_attempts")
+                {
+                    settle_attempts_ = static_cast<int>(parameter.as_int());
+                }
+                else if (name == "reaim_clearance_m")
+                {
+                    reaim_clearance_m_ = parameter.as_double();
+                }
+                else if (name == "grip_check_enabled")
+                {
+                    grip_check_enabled_ = parameter.as_bool();
+                }
+                else if (name == "grip_min_position_error_rad")
+                {
+                    grip_min_position_error_rad_ = parameter.as_double();
+                }
+                else if (name == "grip_min_effort_nm")
+                {
+                    grip_min_effort_nm_ = parameter.as_double();
+                }
+            }
+            return result;
+        });
+
     objects_sub_ = create_subscription<vision_msgs::msg::Detection3DArray>(
         "/objects",
         objectsQos(),
         [this](const vision_msgs::msg::Detection3DArray::ConstSharedPtr& msg) { onObjects(msg); });
+
+    joint_states_sub_ = create_subscription<sensor_msgs::msg::JointState>(
+        "/joint_states",
+        rclcpp::SensorDataQoS(),
+        [this](const sensor_msgs::msg::JointState::ConstSharedPtr& msg) {
+            std::lock_guard<std::mutex> lock(joint_states_mutex_);
+            joint_states_ = *msg;
+        });
 
     tf_buffer_   = std::make_unique<tf2_ros::Buffer>(get_clock());
     tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
@@ -354,6 +420,60 @@ void G1ManipulationServer::onObjects(const vision_msgs::msg::Detection3DArray::C
     objects_ = *msg;
 }
 
+bool G1ManipulationServer::isHolding(const ArmContext& arm, std::string& why)
+{
+    if (!grip_check_enabled_)
+    {
+        why = "grip check disabled";
+        return true;
+    }
+    MoveGroup* hand = groupFor(arm.hand_group);
+    if (hand == nullptr)
+    {
+        why = "no hand group called " + arm.hand_group;
+        return false;
+    }
+    // The posture the close was planned to, so the targets and the command cannot drift apart.
+    const std::map<std::string, double> targets = hand->getNamedTargetValues("closed");
+
+    sensor_msgs::msg::JointState measured;
+    {
+        std::lock_guard<std::mutex> lock(joint_states_mutex_);
+        measured = joint_states_;
+    }
+    if (measured.name.size() != measured.position.size() ||
+        measured.name.size() != measured.effort.size())
+    {
+        why = "joint states carry no effort, so a grip cannot be told from an empty hand";
+        return false;
+    }
+
+    std::vector<JointGrip> fingers;
+    fingers.reserve(targets.size());
+    for (std::size_t i = 0; i < measured.name.size(); ++i)
+    {
+        const auto target = targets.find(measured.name[i]);
+        if (target != targets.end())
+        {
+            fingers.push_back(
+                { measured.name[i], target->second, measured.position[i], measured.effort[i] });
+        }
+    }
+    if (fingers.size() != targets.size())
+    {
+        why = std::format(
+            "only {} of the hand's {} joints are being reported",
+            fingers.size(),
+            targets.size());
+        return false;
+    }
+
+    const GripVerdict verdict =
+        verifyGrip(fingers, grip_min_position_error_rad_, grip_min_effort_nm_);
+    why = verdict.why;
+    return verdict.holding;
+}
+
 std::optional<vision_msgs::msg::Detection3D>
 G1ManipulationServer::lookUpObject(const std::string& object_id)
 {
@@ -426,11 +546,13 @@ geometry_msgs::msg::Pose G1ManipulationServer::graspFrameGoal(
     geometry_msgs::msg::Pose goal;
     goal.position = object_pose.position;
 
-    // Vertically it does not: measured from the object's top face, not its centre. The
-    // fingertips sit ~24 mm beyond the grasp frame along the closing axis, so aiming at the
-    // centre puts them inside the octomap's 20 mm padding around the surface.
-    const double top = object_pose.position.z + 0.5 * object_height_m;
-    goal.position.z  = top + grasp_height_above_top_m_;
+    // Vertically it aims below the top face, so the fingers close around the object rather than
+    // on top of it, but never lower than the hand itself can reach: measured in MuJoCo, the Dex3
+    // hangs 63 mm below its grasp frame even with the thumb retracted, so a grip point below
+    // that rests the thumb on the surface instead of on the object.
+    const double top    = object_pose.position.z + 0.5 * object_height_m;
+    const double bottom = object_pose.position.z - 0.5 * object_height_m;
+    goal.position.z     = std::max(top - grasp_depth_below_top_m_, bottom + min_grip_height_m_);
 
     // Only the orientation is a choice, and it mirrors: the two hands close in opposite
     // directions, so the roll that points the closing axis at the floor flips sign.
@@ -680,16 +802,7 @@ bool G1ManipulationServer::moveAlongApproach(
 {
     // A straight line, not a plan: the last centimetres above a table are a corridor a sampling
     // planner burns its budget failing to thread. MoveIt's own pick pipeline does the same.
-    setStartStateInBounds(group);
-    const std::string previous_tip = group.getEndEffectorLink();
-    group.setEndEffectorLink(link);
-
-    moveit_msgs::msg::RobotTrajectory           path;
-    const std::vector<geometry_msgs::msg::Pose> waypoints{ pose };
-    const double                                fraction =
-        group.computeCartesianPath(waypoints, cartesian_step_m_, path, /*avoid_collisions=*/true);
-    group.setEndEffectorLink(previous_tip);
-
+    const double fraction = moveStraight(group, pose, link, what, cartesian_min_fraction_);
     if (fraction < cartesian_min_fraction_)
     {
         RCLCPP_WARN(
@@ -711,15 +824,231 @@ bool G1ManipulationServer::moveAlongApproach(
             what.c_str(),
             (1.0 - fraction) * approach_standoff_m_ * 100.0);
     }
+    return true;
+}
 
-    MoveGroup::Plan plan;
-    plan.trajectory     = path;
-    const auto executed = group.execute(plan);
-    if (executed != moveit::core::MoveItErrorCode::SUCCESS)
+std::optional<geometry_msgs::msg::Point> G1ManipulationServer::residualTo(
+    MoveGroup& group, const geometry_msgs::msg::Pose& pose, const std::string& link,
+    const std::string& what)
+{
+    geometry_msgs::msg::TransformStamped here;
+    try
     {
-        RCLCPP_ERROR(get_logger(), "%s: execution failed (%d)", what.c_str(), executed.val);
+        here = tf_buffer_->lookupTransform(
+            group.getPlanningFrame(),
+            link,
+            tf2::TimePointZero,
+            tf2::durationFromSec(0.5));
+    }
+    catch (const tf2::TransformException& e)
+    {
+        RCLCPP_WARN(get_logger(), "%s: cannot measure %s: %s", what.c_str(), link.c_str(), e.what());
+        return std::nullopt;
+    }
+    geometry_msgs::msg::Point residual;
+    residual.x = pose.position.x - here.transform.translation.x;
+    residual.y = pose.position.y - here.transform.translation.y;
+    residual.z = pose.position.z - here.transform.translation.z;
+    return residual;
+}
+
+double G1ManipulationServer::moveStraight(
+    MoveGroup& group, const geometry_msgs::msg::Pose& pose, const std::string& link,
+    const std::string& what, double min_fraction)
+{
+    setStartStateInBounds(group);
+    const std::string previous_tip = group.getEndEffectorLink();
+    group.setEndEffectorLink(link);
+    moveit_msgs::msg::RobotTrajectory           path;
+    const std::vector<geometry_msgs::msg::Pose> waypoints{ pose };
+    const double                                fraction =
+        group.computeCartesianPath(waypoints, cartesian_step_m_, path, /*avoid_collisions=*/true);
+    group.setEndEffectorLink(previous_tip);
+    // Reported rather than executed when it falls short, so a caller with somewhere else to go
+    // still has the arm where it left it.
+    if (fraction <= 0.0 || fraction < min_fraction)
+    {
+        return fraction;
+    }
+    MoveGroup::Plan plan;
+    plan.trajectory = path;
+    if (group.execute(plan) != moveit::core::MoveItErrorCode::SUCCESS)
+    {
+        RCLCPP_WARN(get_logger(), "%s: the straight line would not execute", what.c_str());
+        return 0.0;
+    }
+    return fraction;
+}
+
+bool G1ManipulationServer::descendOnto(
+    MoveGroup& group, const geometry_msgs::msg::Pose& pregrasp,
+    const geometry_msgs::msg::Pose& grasp, const std::string& link)
+{
+    // Re-aim from above rather than nudging sideways at the grasp. Correcting in place would be
+    // fewer moves, but a hand already down at object height sweeps through the object on the way
+    // to its correction -- measured: it knocked a 60 mm cylinder off the table.
+    //
+    // Back up only reaim_clearance_m, not all the way to the pregrasp. That is far enough to be
+    // over the top of anything this hand can grip, and it makes every retry a short line: the
+    // full descent is 22 cm and sometimes runs out of straight line part way, which retrying the
+    // same 22 cm would simply repeat.
+    const double axis_length = std::sqrt(
+        std::pow(pregrasp.position.x - grasp.position.x, 2) +
+        std::pow(pregrasp.position.y - grasp.position.y, 2) +
+        std::pow(pregrasp.position.z - grasp.position.z, 2));
+    if (axis_length <= 0.0)
+    {
+        RCLCPP_ERROR(get_logger(), "approach: the pregrasp and the grasp are the same pose");
         return false;
     }
+    const double scale  = reaim_clearance_m_ / axis_length;
+    const double back_x = (pregrasp.position.x - grasp.position.x) * scale;
+    const double back_y = (pregrasp.position.y - grasp.position.y) * scale;
+    const double back_z = (pregrasp.position.z - grasp.position.z) * scale;
+
+    geometry_msgs::msg::Pose commanded = grasp;
+    for (int attempt = 0; attempt <= settle_attempts_; ++attempt)
+    {
+        // Straight down, and short is fine: this loop measures what it got and comes back for
+        // the rest. Planning around, which moveAlongApproach would do, is what must not happen
+        // here -- a planned detour arrives sideways at object height.
+        const double walked = moveStraight(group, commanded, link, "approach", 0.0);
+        if (walked <= 0.0)
+        {
+            RCLCPP_WARN(get_logger(), "approach: no straight line down at all; closing from here");
+            return true;
+        }
+        const auto residual = residualTo(group, grasp, link, "approach");
+        if (!residual)
+        {
+            return false;
+        }
+        const double error = std::sqrt(
+            residual->x * residual->x + residual->y * residual->y + residual->z * residual->z);
+        if (error <= settle_tolerance_m_)
+        {
+            RCLCPP_INFO(
+                get_logger(),
+                "approach: on the grasp pose to %.0f mm after %d descent(s)",
+                error * 1000.0,
+                attempt + 1);
+            return true;
+        }
+        if (attempt == settle_attempts_)
+        {
+            RCLCPP_WARN(
+                get_logger(),
+                "approach: still %.0f mm off after %d descents; closing from there",
+                error * 1000.0,
+                attempt + 1);
+            return true;
+        }
+        // Overshoot only what the arm failed to hold. A line that ran out early left the rest of
+        // itself unwalked, and adding THAT to the target aims the hand through the table: the
+        // second descent then stops in the same place and the loop chases its own tail.
+        if (walked >= 1.0)
+        {
+            RCLCPP_INFO(
+                get_logger(),
+                "approach: %.0f mm off, re-aiming by (%+.0f %+.0f %+.0f) mm",
+                error * 1000.0,
+                residual->x * 1000.0,
+                residual->y * 1000.0,
+                residual->z * 1000.0);
+            commanded.position.x += residual->x;
+            commanded.position.y += residual->y;
+            commanded.position.z += residual->z;
+        }
+        else
+        {
+            RCLCPP_WARN(
+                get_logger(),
+                "approach: the straight line ran out %.0f%% in, %.0f mm short; going back up to "
+                "start it again rather than aiming lower",
+                walked * 100.0,
+                error * 1000.0);
+        }
+
+        geometry_msgs::msg::Pose above = commanded;
+        above.position.x += back_x;
+        above.position.y += back_y;
+        above.position.z += back_z;
+        if (moveStraight(group, above, link, "re-aim", 0.0) <= 0.0)
+        {
+            RCLCPP_WARN(get_logger(), "re-aim: no straight line back up; closing from here");
+            return true;
+        }
+    }
+    return true;
+}
+
+bool G1ManipulationServer::settleOnPose(
+    MoveGroup& group, const geometry_msgs::msg::Pose& pose, const std::string& link,
+    const std::string& what)
+{
+    // A position-only arm does not stop where it was told. Against gravity the G1's shoulder
+    // settles about 0.09 rad short at kp 40, which is 40 mm at the hand -- more than the whole
+    // grip. Re-command the residual instead of raising gains, which the balance controller
+    // shares. The same error exists on hardware, so this stays in the real pipeline.
+    geometry_msgs::msg::Pose commanded = pose;
+    // One more measurement than nudges: the last nudge has to be checked too, or a hand that
+    // arrived is reported as one that gave up.
+    for (int attempt = 0; attempt <= settle_attempts_; ++attempt)
+    {
+        const auto residual = residualTo(group, pose, link, what);
+        if (!residual)
+        {
+            return false;
+        }
+        const double dx    = residual->x;
+        const double dy    = residual->y;
+        const double dz    = residual->z;
+        const double error = std::sqrt(dx * dx + dy * dy + dz * dz);
+        if (error <= settle_tolerance_m_)
+        {
+            RCLCPP_INFO(
+                get_logger(),
+                "%s: settled %.0f mm from the grasp pose after %d nudge(s)",
+                what.c_str(),
+                error * 1000.0,
+                attempt);
+            return true;
+        }
+        if (attempt == settle_attempts_)
+        {
+            break;
+        }
+        // Overshoot by the residual: the next target droops by roughly the same amount, so the
+        // settled pose lands on the one that was asked for.
+        commanded.position.x += dx;
+        commanded.position.y += dy;
+        commanded.position.z += dz;
+        RCLCPP_INFO(
+            get_logger(),
+            "%s: %.0f mm short, nudging (%+.0f %+.0f %+.0f) mm",
+            what.c_str(),
+            error * 1000.0,
+            dx * 1000.0,
+            dy * 1000.0,
+            dz * 1000.0);
+        // A straight line only. Re-planning a two-centimetre correction throws away the
+        // configuration the arm is already in, and the planner needs a budget it does not have
+        // left by this point; a nudge that cannot be walked in a line is a nudge not worth
+        // making.
+        if (moveStraight(group, commanded, link, what + " settle", 0.0) <= 0.0)
+        {
+            RCLCPP_WARN(
+                get_logger(),
+                "%s: no straight line to the correction; carrying on",
+                what.c_str());
+            return true;
+        }
+    }
+    RCLCPP_WARN(
+        get_logger(),
+        "%s: gave up nudging after %d attempts; closing from where it is",
+        what.c_str(),
+        settle_attempts_);
     return true;
 }
 
@@ -837,7 +1166,7 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     // defined state rather than part-way into a grasp. That is what makes the behavior tree's
     // retry meaningful rather than a replay.
     const auto fail = [&](const std::string& phase, const std::string& why) {
-        moveToNamed(*hand_group, "open");
+        moveToNamed(*hand_group, "pinch_ready");
         arm_group->detachObject(goal->object_id);
         setHandContact(arm, { "<octomap>", goal->object_id }, false);
         // And its collision object, which the approach would have removed. Left behind, it sits
@@ -849,7 +1178,7 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     };
     // Same cleanup as a failure, but reported as a cancel so the tree can tell the two apart.
     const auto cancelled = [&](const std::string& phase) {
-        moveToNamed(*hand_group, "open");
+        moveToNamed(*hand_group, "pinch_ready");
         arm_group->detachObject(goal->object_id);
         setHandContact(arm, { "<octomap>", goal->object_id }, false);
         planning_scene_.removeCollisionObjects({ goal->object_id });
@@ -911,17 +1240,25 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     }
     feedback->phase = Pick::Feedback::PHASE_PREGRASP;
     goal_handle->publish_feedback(feedback);
-    // Opened before the approach: closing on the way in would knock the object off the table.
-    // Reported separately from the arm move because the causes differ, a hand that will not open
-    // being an unpowered Dex3 where an arm that will not reach is geometry.
-    if (!moveToNamed(*hand_group, "open"))
+    // pinch_ready, not open: the fingers have to be out of the way before the approach, but an
+    // open thumb hangs 127 mm below the palm and grounds out on the table before the hand
+    // arrives. Reported separately from the arm move because the causes differ, a hand that will
+    // not open being an unpowered Dex3 where an arm that will not reach is geometry.
+    if (!moveToNamed(*hand_group, "pinch_ready"))
     {
-        fail(Pick::Feedback::PHASE_PREGRASP, "the hand would not open");
+        fail(Pick::Feedback::PHASE_PREGRASP, "the hand would not open to pinch_ready");
         return;
     }
     if (!moveTo(*arm_group, pregrasp_goal, arm.grasp_frame, "pregrasp"))
     {
         fail(Pick::Feedback::PHASE_PREGRASP, "could not reach the pregrasp pose");
+        return;
+    }
+    // Take the arm's droop out up here, in clear air. Correcting it down at the grasp instead
+    // means dragging the hand sideways through the object it is about to pick up.
+    if (!settleOnPose(*arm_group, pregrasp_goal, arm.grasp_frame, "pregrasp"))
+    {
+        fail(Pick::Feedback::PHASE_PREGRASP, "the hand would not settle on the pregrasp pose");
         return;
     }
 
@@ -939,7 +1276,7 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     setHandContact(arm, { "<octomap>" }, true);
     planning_scene_.removeCollisionObjects({ goal->object_id });
 
-    if (!moveAlongApproach(*arm_group, grasp_goal, arm.grasp_frame, "approach"))
+    if (!descendOnto(*arm_group, pregrasp_goal, grasp_goal, arm.grasp_frame))
     {
         fail(Pick::Feedback::PHASE_APPROACH, "could not reach the grasp pose");
         return;
@@ -955,6 +1292,14 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     if (!moveToNamed(*hand_group, "closed"))
     {
         fail(Pick::Feedback::PHASE_GRASP, "the hand did not close");
+        return;
+    }
+    // The controller reports a finger blocked by the object as success, so ask the fingers
+    // themselves before telling the planner it is held.
+    std::string grip;
+    if (!isHolding(arm, grip))
+    {
+        fail(Pick::Feedback::PHASE_GRASP, "the hand closed on nothing: " + grip);
         return;
     }
     // Built explicitly, not attachObject(id, link), which promotes an object still in the world;
@@ -994,10 +1339,17 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
         fail(Pick::Feedback::PHASE_LIFT, "could not lift clear of the surface");
         return;
     }
+    // Again after the lift: an object can be raked out of the hand on the way up, and the
+    // planning scene would carry on believing it is held.
+    if (!isHolding(arm, grip))
+    {
+        fail(Pick::Feedback::PHASE_LIFT, "the object was dropped during the lift: " + grip);
+        return;
+    }
 
     setHandContact(arm, { "<octomap>", goal->object_id }, false);
     result->success = true;
-    result->message = "picked " + goal->object_id + " with the " + goal->arm + " hand";
+    result->message = "picked " + goal->object_id + " with the " + goal->arm + " hand, " + grip;
     goal_handle->succeed(result);
 }
 
@@ -1176,9 +1528,9 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
     }
     feedback->phase = Place::Feedback::PHASE_RELEASE;
     goal_handle->publish_feedback(feedback);
-    if (!moveToNamed(*hand_group, "open"))
+    if (!moveToNamed(*hand_group, "pinch_ready"))
     {
-        fail(Place::Feedback::PHASE_RELEASE, "the hand did not open");
+        fail(Place::Feedback::PHASE_RELEASE, "the hand did not let go");
         return;
     }
     // Detached only after the hand is open, or the planner routes the arm through a volume the

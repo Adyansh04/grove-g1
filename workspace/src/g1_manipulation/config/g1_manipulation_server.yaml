@@ -12,10 +12,33 @@ g1_manipulation_server:
     # planner cannot route through the table on the way in.
     approach_height_m: 0.22
 
-    # Above the object's TOP face, not its centre. The fingertips sit about 24 mm beyond the
-    # grasp frame, so at 10 mm the palm clears the object and the fingers close down its sides;
-    # past 20 mm on a 60 mm cube they start to slip off the top.
-    grasp_height_above_top_m: 0.010
+    # Below the object's TOP face, so the fingers close around it rather than on top of it.
+    # Capped by the palm: the grasp frame is 26 mm clear of the palm's own face, so a deeper
+    # grip drives the palm into the top of the object. See g1_common.xacro for both numbers.
+    grasp_depth_below_top_m: 0.020
+
+    # And never lower than this above whatever the object stands on, which wins when the two
+    # disagree. Measured in MuJoCo: even with the thumb retracted the hand hangs 63 mm below the
+    # grasp frame, so a grip lower than this puts the thumb on the table instead of the object.
+    # It is also why the props are 70-90 mm tall; a 60 mm cube cannot be gripped by this hand.
+    min_grip_height_m: 0.068
+
+    # How close the grasp frame must MEASURE to its target before the fingers close, and how many
+    # corrections it gets. The arm is position-only: at kp 40 the shoulder settles about 0.09 rad
+    # short under gravity, 40 mm at the hand, which is wider than the grip. Correcting is
+    # preferred to raising the gain, which the balance controller shares.
+    #
+    # 10 mm because that is the floor: measured, the descent repeats to about 8 mm and a tighter
+    # tolerance only spends another descent failing to beat it. The grip is 25 mm wider than that
+    # on either side, and the grip check is what actually decides whether it worked.
+    settle_tolerance_m: 0.010
+    settle_attempts: 2
+
+    # Where a retry starts from, back up the approach axis. Not the pregrasp: the full 22 cm
+    # descent sometimes runs out of straight line part way, and repeating the same 22 cm repeats
+    # that. 8 cm clears the top of anything this hand can grip and is short enough to walk.
+    reaim_clearance_m: 0.08
+
     # Clears the same 0.185: the exemption is restored at the end of the lift, so wherever it
     # finishes becomes the start state of the next collision-checked plan.
     lift_height_m: 0.20

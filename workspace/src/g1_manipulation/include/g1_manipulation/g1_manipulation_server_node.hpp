@@ -35,6 +35,7 @@
 #include <optional>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
+#include <sensor_msgs/msg/joint_state.hpp>
 #include <string>
 #include <vector>
 #include <vision_msgs/msg/detection3_d_array.hpp>
@@ -170,6 +171,17 @@ private:
     void onObjects(const vision_msgs::msg::Detection3DArray::ConstSharedPtr& msg);
 
     /**
+     * @brief Whether the hand is holding something, from the fingers' own positions and efforts.
+     *
+     * The trajectory controller reports a blocked finger as success, so closing the hand proves
+     * nothing on its own. Targets come from the SRDF `closed` posture the close was planned to.
+     *
+     * @param[out] why What the fingers are doing, for the result message either way.
+     * @return true when the check is disabled, so a robot with no effort feedback still picks.
+     */
+    [[nodiscard]] bool isHolding(const ArmContext& arm, std::string& why);
+
+    /**
      * @brief Transforms a pose into the planning frame.
      *
      * Everything a goal carries goes through here: /objects is in odom, the planner works in
@@ -187,7 +199,8 @@ private:
      * only the orientation is chosen here. The two hands hold at mirrored rolls.
      *
      * @param object_height_m The object's full height. The grasp is taken just under its top
-     *        face, not at its centre, or the fingers close through whatever it stands on.
+     *        face, and never nearer its base than min_grip_height_m, which is as far past the
+     *        grasp frame as the hand itself reaches.
      */
     geometry_msgs::msg::Pose graspFrameGoal(
         const geometry_msgs::msg::Pose& object_pose, double object_height_m,
@@ -200,6 +213,56 @@ private:
      * planner has almost no free space to sample.
      */
     bool moveAlongApproach(
+        MoveGroup& group, const geometry_msgs::msg::Pose& pose, const std::string& link,
+        const std::string& what);
+
+    /**
+     * @brief Walks @p link toward @p pose in a straight line, however far it gets.
+     *
+     * Never plans around, deliberately: the correction callers pass 0 and take whatever the line
+     * gives, because a planner free to route around arrives from a direction that sweeps the
+     * object away.
+     *
+     * @param min_fraction Below this the line is measured and reported but not executed, leaving
+     *        the arm where it was for a caller that has a fallback.
+     * @return The fraction the line covered, or 0 if it could not be walked or executed.
+     */
+    double moveStraight(
+        MoveGroup& group, const geometry_msgs::msg::Pose& pose, const std::string& link,
+        const std::string& what, double min_fraction);
+
+    /**
+     * @brief How far @p link is from @p pose right now, in the planning frame.
+     *
+     * @return nullopt if TF cannot answer, which is a stale or unpublished frame rather than a
+     *         missed target.
+     */
+    std::optional<geometry_msgs::msg::Point> residualTo(
+        MoveGroup& group, const geometry_msgs::msg::Pose& pose, const std::string& link,
+        const std::string& what);
+
+    /**
+     * @brief Descends onto @p grasp, re-aiming from above until the hand measures there.
+     *
+     * The arm settles short of its target, and by a different amount in every configuration, so
+     * the error after the descent is not the error that was corrected at @p pregrasp. Each retry
+     * lifts back up before re-aiming: a sideways correction at object height pushes the object
+     * away instead of reaching it.
+     */
+    bool descendOnto(
+        MoveGroup& group, const geometry_msgs::msg::Pose& pregrasp,
+        const geometry_msgs::msg::Pose& grasp, const std::string& link);
+
+    /**
+     * @brief Nudges @p link onto @p pose until TF says it is there.
+     *
+     * The arm is position-only and settles short of its target under gravity, by more than the
+     * grip is wide. Each pass re-commands the measured residual on top of the last target.
+     *
+     * @return false only if the arm cannot be measured or a nudge fails to execute; running out
+     *         of attempts closes from wherever it got to, which the grip check then judges.
+     */
+    bool settleOnPose(
         MoveGroup& group, const geometry_msgs::msg::Pose& pose, const std::string& link,
         const std::string& what);
 
@@ -343,6 +406,13 @@ private:
     std::mutex                                                          objects_mutex_;
     vision_msgs::msg::Detection3DArray                                  objects_;
 
+    rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_states_sub_;
+    std::mutex                                                    joint_states_mutex_;
+    sensor_msgs::msg::JointState                                  joint_states_;
+
+    /// Kept alive for as long as the node is: dropping the handle removes the callback.
+    rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr parameters_;
+
     std::unique_ptr<tf2_ros::Buffer>            tf_buffer_;
     std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
 
@@ -359,13 +429,26 @@ private:
 
     std::string planning_frame_;
     double      object_timeout_s_{ 1.0 };
-    double      grasp_height_above_top_m_{ 0.010 };
-    double      place_tolerance_m_{ 0.08 };
-    double      approach_height_m_{ 0.22 };
-    double      lift_height_m_{ 0.15 };
-    double      velocity_scaling_{ 0.3 };
-    double      planning_time_s_{ 5.0 };
-    int         planning_attempts_{ 5 };
+    double      grasp_depth_below_top_m_{ 0.020 };
+    /// How far above its own support surface an object must be gripped: the hand hangs 63 mm
+    /// below its grasp frame, so below this the thumb rests on the surface, not the object.
+    double min_grip_height_m_{ 0.068 };
+    /// How close the grasp frame must measure to its target before the hand closes, and how many
+    /// corrective nudges it gets to get there.
+    double settle_tolerance_m_{ 0.010 };
+    int    settle_attempts_{ 2 };
+    /// How far back up the approach axis a retry starts from. Above the top of anything this hand
+    /// can grip, and short enough that the retry is a line the arm can actually walk.
+    double reaim_clearance_m_{ 0.08 };
+    bool   grip_check_enabled_{ true };
+    double grip_min_position_error_rad_{ 0.08 };
+    double grip_min_effort_nm_{ 0.10 };
+    double place_tolerance_m_{ 0.08 };
+    double approach_height_m_{ 0.22 };
+    double lift_height_m_{ 0.15 };
+    double velocity_scaling_{ 0.3 };
+    double planning_time_s_{ 5.0 };
+    int    planning_attempts_{ 5 };
     // How the hand is held at the grasp. Where it grips is the grasp frame in the URDF; only the
     // orientation is a choice, and it is the one thing that depends on the surface rather than
     // on the hand.
