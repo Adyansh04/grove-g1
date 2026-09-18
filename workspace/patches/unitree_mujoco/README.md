@@ -26,12 +26,30 @@ Full reasoning is kept in the maintainer's local engineering notes.
 - Each patch names the upstream SHA it was generated against, in its header.
 - Patches apply in filename order.
 
+## The contact firewall (008)
+
+008 gives the Dex3's palm and fingers collision capsules so a grasp is friction rather than a weld.
+They are `contype="2" conaffinity="2"`, and every other geom in the robot and in every scene is
+`1/1`: `(2 & 1) || (1 & 2)` is zero, so the hand pairs with **nothing** until a scene opts a prop in
+by setting bit 1 on it. That is deliberate. The walking policy was trained against a hand with no
+contact, and the flat, navigation, LiDAR and perception worlds must keep the contact count and mass
+they had; only the two manipulation scenes set their props and table to `3/3`.
+
+They are also `group="3"`, which keeps the primitives out of the viewer and out of the rendered
+camera image — both draw groups 0-2 — so perception still sees the meshes and nothing else.
+
+`priority="1"` on the finger geoms means their friction and solver parameters win outright instead
+of being averaged with the object's, so no prop needs contact tuning to be pickable.
+
 ## Scene hooks
 
 - `pelvis_startup_hold`: a weld 007 releases once every motor has been driven for half a second.
 - `startup_hold_<joint>`: a single-joint equality holding a spawn angle from the first physics step.
-  007 makes that angle the motor's hold target and releases the equality on its first tick. The
-  pinned tabletop scene uses these to spawn with the arms clear of the table.
+  007 makes that angle the motor's hold target and releases the equality on its first tick, and 009
+  writes the angle straight into `qpos` at load so the equality holds from rest rather than dragging
+  the arm there through whatever is in the way. The manipulation scenes use these to spawn with the
+  arms clear of the table, which matters now the hand has contact: without them the right hand
+  spawns inside a prop and throws it across the room.
 
 The viewer's reset restores both kinds and nothing releases them again.
 
