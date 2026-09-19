@@ -2,14 +2,14 @@
 
 A vision-language-action policy proposes joint targets, and every chunk it proposes is checked
 against MoveIt's live planning scene before any of it reaches a controller. The instruction is
-plain text: "pick up the red cube".
+plain text: "pick up the red block".
 
 ## What works and what does not
 
 The pipeline works end to end. A real 3B model drives the arm, the gate validates and refuses,
 and refusals are enforced before the arm moves rather than after.
 
-**The base checkpoint does not actually grasp the cube.** It reaches toward it, converges to
+**The base checkpoint does not actually grasp the block.** It reaches toward it, converges to
 roughly 8 cm, then drifts back without ever closing the hand. This is expected and is not an
 integration fault: NVIDIA's own FAQ states that no true zero-shot cross-embodiment VLA exists, and
 their smooth G1 demos are post-trained on collected demonstrations, not the base model. Getting a

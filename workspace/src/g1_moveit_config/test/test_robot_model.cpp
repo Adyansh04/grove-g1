@@ -49,7 +49,7 @@ const std::vector<std::string> kReachingLinks = {
 /// How far every joint of a named posture must move before the robot self-collides.
 ///
 /// Valid is not the same as usable. A posture with only 4.6 degrees of room on
-/// right_shoulder_roll deadlocked twice, because an arm carrying the cube through a walk droops
+/// right_shoulder_roll deadlocked twice, because an arm carrying the block through a walk droops
 /// 0.071 to 0.155 rad and MoveIt cannot plan out of a start state in collision.
 constexpr double kPostureMarginRad = 0.20;
 constexpr double kMarginStepRad    = 0.02;

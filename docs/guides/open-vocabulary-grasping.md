@@ -20,12 +20,12 @@ With the real models, once the server below is running:
 ```bash
 ros2 launch g1_bringup bringup.launch.py world:=tabletop pin_pelvis:=true \
   odometry:=ground_truth moveit:=true manipulation:=true perception:=true detector:=vision \
-  phrases:="red cube,white cup"
+  phrases:="red block,white cup"
 ```
 
 `perception:=true` makes the object-pose source take measured poses instead of the simulator's,
 and widens the staleness window the skills judge against, because a detector answers in seconds
-rather than milliseconds. Objects arrive on `/objects` as `red_cube_0`, plus a bare `red_cube`
+rather than milliseconds. Objects arrive on `/objects` as `red_block_0`, plus a bare `red_block`
 while only one of them is in view.
 
 Measured against the simulator's own poses in the tabletop world: all five objects land within
@@ -67,7 +67,7 @@ To check it against saved frames without binding a socket:
 
 ```bash
 ~/ref/grove-vision/.venv/bin/python scripts/vision_server.py \
-  --self-test frame.png --phrases "red cube,green cylinder"
+  --self-test frame.png --phrases "red block,green cylinder"
 ```
 
 The self-test prints one line per instance with its score, region of interest and pixel count, then
@@ -144,7 +144,7 @@ ros2 launch g1_bringup bringup.launch.py world:=tabletop pin_pelvis:=true \
 
 ```bash
 ros2 service call /g1_grasp_engine/generate_grasps g1_msgs/srv/GenerateGrasps \
-  "{object_id: red_cube_0, hand: right}"
+  "{object_id: red_block_0, hand: right}"
 ```
 
 Nothing moves and nothing is drawn: this stage produces candidates, and what filters and executes

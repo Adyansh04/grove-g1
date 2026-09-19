@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <!--
-  Pick the cube up, hold it, put it down beside where it was. No navigation.
+  Pick the block up, hold it, put it down beside where it was. No navigation.
 
   This is the tree to run against the `manipulation` world, where the object is already at
   arm's length and there is nowhere to drive to. pick_and_place.xml is the full mission and
@@ -8,7 +8,7 @@
   the orchestration layer (and Groot2) testable while the manipulation work is being tuned.
 
   Coordinates are odom, which is the frame /objects publishes in. The place target is 6 cm to
-  the robot's left of where the cube starts, on the same table top.
+  the robot's left of where the block starts, on the same table top.
 
   Assumes the arm is already acquired, which activate_arm:=true does. AcquireArm is here
   anyway: it is idempotent, and a tree that only works when something else happened first is a
@@ -20,7 +20,7 @@
       <AcquireArm name="take_the_arm"/>
 
       <RetryUntilSuccessful name="pick_with_one_retry" num_attempts="2">
-        <Pick name="pick_the_cube" object_id="red_cube" arm="right"/>
+        <Pick name="pick_the_block" object_id="red_block" arm="right"/>
       </RetryUntilSuccessful>
 
       <SetArmPosture name="hold_it_close" group="right_arm" named_target="carry"/>

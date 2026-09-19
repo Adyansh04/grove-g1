@@ -82,7 +82,7 @@ growing it, because it carries on in the direction the loop was driving.
 `standoff_object_ids` and `standoff_target_x_m` name objects that need a different `target_x_m`
 from the default. Reaching over a surface to set something down sweeps the palm and wrist across
 its face, which reaching onto one for an object does not, so `drop_pad` is approached to 0.350
-where the cube uses 0.270.
+where the block uses 0.270.
 
 A missing object pose or base transform stops the robot and is re-read for `lookup_grace_s` (3.0 s)
 before the goal fails. Both go briefly unavailable for reasons that are not this skill's problem,

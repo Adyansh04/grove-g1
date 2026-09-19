@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <!--
-  Grasp the cube with a learned policy instead of a planned pick, then carry and tuck. No
+  Grasp the block with a learned policy instead of a planned pick, then carry and tuck. No
   navigation.
 
   Same shape as pick_and_place_in_place.xml and the same world, deliberately: the two trees
@@ -20,7 +20,7 @@
       <AcquireArm name="take_the_arm"/>
 
       <RetryUntilSuccessful name="grasp_with_one_retry" num_attempts="2">
-        <Grasp name="grasp_the_cube" instruction="pick up the red cube" object_id="red_cube"
+        <Grasp name="grasp_the_block" instruction="pick up the red block" object_id="red_block"
                arm="right"/>
       </RetryUntilSuccessful>
 

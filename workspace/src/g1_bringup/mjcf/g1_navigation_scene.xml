@@ -110,15 +110,15 @@
     <!-- Pick and Place Target Objects on Workbench (Worldbody Top Level) -->
 
     <!-- The mission's target, on the desk's SOUTH edge (y -5.05) rather than its middle. The
-         robot approaches from the south and has to end up with the cube 0.28 m in front of the
+         robot approaches from the south and has to end up with the block 0.28 m in front of the
          pelvis and 0.20 m to its right; an object in the middle of a 1.1 m deep desk cannot be
          reached from any legal standing position, whatever the approach does.
 
-         0.05 m in from the edge, not 0.10. Every centimetre the cube sits further in is a
+         0.05 m in from the edge, not 0.10. Every centimetre the block sits further in is a
          centimetre closer the robot's pelvis has to come to the table edge, and at pelvis
          height the edge is what the hips foul. The 6 cm cube still has 2 cm of top under it. -->
-    <body name="red_cube" pos="4.5 -5.00 0.83">
-      <freejoint name="red_cube_joint"/>
+    <body name="red_block" pos="4.5 -5.00 0.83">
+      <freejoint name="red_block_joint"/>
       <geom group="2" type="box" size="0.03 0.03 0.03" material="mat_red_obj" mass="0.15" contype="1" conaffinity="1" friction="1 0.005 0.0001"/>
     </body>
 
@@ -199,7 +199,7 @@
     <!-- What the base approach aims at before placing. A place target is a fixed point in the
          planning frame, so something has to put the robot within reach of it first, and the
          approach skill ranges to a tracked object rather than to a coordinate. Static and
-         deliberately thin: the cube is released on top of it. -->
+         deliberately thin: the block is released on top of it. -->
     <body name="drop_pad" pos="6.5 6.25 0.812">
       <geom group="2" type="box" size="0.08 0.08 0.012" material="mat_tray" contype="1" conaffinity="1"/>
     </body>
@@ -276,20 +276,20 @@
        They exist because the Dex3 fingers carry no contact geometry (patch 003, deliberate:
        grasping is modelled by attaching the object in MoveIt's planning scene, and tuned
        multi-finger contact is its own project). Without them a closed hand passes straight
-       through the cube and the demo carries nothing.
+       through the block and the demo carries nothing.
 
        Discovered by the `grasp_` name prefix rather than listed in config, so this file stays
        the single source of truth for what is graspable. body1 is the palm, body2 the object.
        On hardware friction does this job and none of it runs. -->
   <equality>
-    <weld name="grasp_left_red_cube" body1="left_hand_palm_link" body2="red_cube" active="false"/>
+    <weld name="grasp_left_red_block" body1="left_hand_palm_link" body2="red_block" active="false"/>
     <weld name="grasp_left_green_cylinder" body1="left_hand_palm_link" body2="green_cylinder"
           active="false"/>
     <weld name="grasp_left_blue_sphere" body1="left_hand_palm_link" body2="blue_sphere"
           active="false"/>
     <weld name="grasp_left_yellow_box" body1="left_hand_palm_link" body2="yellow_box"
           active="false"/>
-    <weld name="grasp_right_red_cube" body1="right_hand_palm_link" body2="red_cube"
+    <weld name="grasp_right_red_block" body1="right_hand_palm_link" body2="red_block"
           active="false"/>
     <weld name="grasp_right_green_cylinder" body1="right_hand_palm_link" body2="green_cylinder"
           active="false"/>

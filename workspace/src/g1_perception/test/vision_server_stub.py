@@ -17,14 +17,14 @@ import numpy as np
 # Where each phrase's rectangle sits, as x, y, width, height. Distinct per phrase so a test can
 # tell which answer it got.
 BOXES = {
-    "red cube": (100, 60, 40, 30),
+    "red block": (100, 60, 40, 30),
     "blue sphere": (300, 200, 24, 24),
 }
 SCORE = 0.77
 # What a grounding model would answer for the instruction the test sends.
 GROUNDING = {
     "model": "stub-vlm",
-    "phrases": ["red cube", "blue sphere"],
+    "phrases": ["red block", "blue sphere"],
     "target": "blue sphere",
     "points": [{"phrase": "blue sphere", "x": 312, "y": 204}],
 }

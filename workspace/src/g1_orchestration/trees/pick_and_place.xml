@@ -62,13 +62,13 @@
         </Sequence>
       </RetryUntilSuccessful>
 
-      <!-- Walks in pulses and re-reads the cube between each one. Retried once: an approach
+      <!-- Walks in pulses and re-reads the block between each one. Retried once: an approach
            that stops short is recoverable by running it again, and the commonest reason to stop
            short is the pulse budget rather than anything about the geometry. An approach that
            OVERSHOOTS is not retryable and fails the mission, which is correct, because this
            gait has no reverse. -->
       <RetryUntilSuccessful name="approach_with_one_retry" num_attempts="2">
-        <ApproachObject name="close_on_the_cube" object_id="red_cube" arm="right"
+        <ApproachObject name="close_on_the_block" object_id="red_block" arm="right"
                         working_yaw="{workbench_yaw}"/>
       </RetryUntilSuccessful>
 
@@ -78,14 +78,14 @@
            The count itself is a convention, not a measurement: nothing has yet established the
            per-attempt success rate at this workbench. -->
       <RetryUntilSuccessful name="pick_with_one_retry" num_attempts="2">
-        <Pick name="pick_the_cube" object_id="red_cube" arm="right"/>
+        <Pick name="pick_the_block" object_id="red_block" arm="right"/>
       </RetryUntilSuccessful>
 
       <!-- Reverse clear of the desk BEFORE rearranging the arm. Two separate reasons, both
            measured.
 
            Reverse rather than turn: the approach leaves the robot close enough that turning on
-           the spot sweeps the robot and the carried cube across the desk. It backs straight out
+           the spot sweeps the robot and the carried block across the desk. It backs straight out
            and stops; the navigation goal below does the turning, which Nav2 does properly.
 
            Before the carry posture: moving the arm to `carry` while still at the desk failed
@@ -102,7 +102,7 @@
 
       <!-- The 3D counterpart, and a different subsystem: ClearCostmaps wipes Nav2's grids, which
            the base plans over, and leaves the planning scene the ARM plans against untouched.
-           Reaching over the workbench leaves the octomap holding the arm and the cube where they
+           Reaching over the workbench leaves the octomap holding the arm and the block where they
            were, and those voxels do not decay: a later plan can collide with a ghost of
            something that was cleared out of the world minutes ago. -->
       <ClearOctomap name="forget_the_workbench_in_3d"/>

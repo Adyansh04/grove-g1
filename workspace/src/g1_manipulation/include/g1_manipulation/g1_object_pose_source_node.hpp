@@ -51,7 +51,7 @@ bool parseObjectSource(const std::string& name, ObjectSource& out);
 /**
  * @brief Whether @p id is the bare-phrase alias of a tracked id in @p objects.
  *
- * Perception publishes a sole track twice, as `red_cube_0` and as `red_cube`, so a tree can name
+ * Perception publishes a sole track twice, as `red_block_0` and as `red_block`, so a tree can name
  * it either way; drawn both times, the two labels stack into one unreadable one.
  */
 [[nodiscard]] bool

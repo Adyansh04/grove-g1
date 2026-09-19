@@ -61,7 +61,7 @@ failure reads `did not complete: could not reach 'tucked'` rather than just fail
 
 ```xml
 <NavigateToPose goal="4.30;-5.60;1.5708" goal_yaw="{workbench_yaw}"/>
-<ApproachObject object_id="red_cube" working_yaw="{workbench_yaw}"/>
+<ApproachObject object_id="red_block" working_yaw="{workbench_yaw}"/>
 ```
 
 ## Adding a skill

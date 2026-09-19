@@ -123,8 +123,8 @@ class TestVlaGraspServo(unittest.TestCase):
 
     def _run_grasp(self, timeout_s):
         goal = Grasp.Goal()
-        goal.instruction = "pick up the red cube"
-        goal.object_id = "red_cube"
+        goal.instruction = "pick up the red block"
+        goal.object_id = "red_block"
         goal.arm = "right"
         handle_future = self.grasp.send_goal_async(goal)
         rclpy.spin_until_future_complete(self.node, handle_future, timeout_sec=30.0)

@@ -61,5 +61,5 @@ g1_object_geometry:
     transform_timeout_s: 0.2
 
     # Publish a second copy of a detection named by the bare phrase while only one object answers
-    # to it, so a tree can ask for "red_cube" without knowing the index.
+    # to it, so a tree can ask for "red_block" without knowing the index.
     publish_bare_phrase_alias: true

@@ -296,7 +296,7 @@
        same hand-versus-hip clearance problem met elsewhere, from the other side.
 
        0.40 fixed that and was left there, valid but with 4.6 degrees of margin. The arm droops
-       more than that carrying the cube through a walk, and a start state in collision cannot be
+       more than that carrying the block through a walk, and a start state in collision cannot be
        planned out of: fix_start_state_collision jitters the start, plans from the jitter, and
        the path check rejects the result against the original.
 

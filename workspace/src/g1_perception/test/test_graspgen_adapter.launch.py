@@ -32,7 +32,7 @@ INFO_TOPIC = "/camera/aligned_depth_to_color/camera_info"
 MASK_TOPIC = "/g1_object_geometry/tracked_masks"
 SERVICE = "/g1_graspgen_adapter/generate_grasps"
 WIDTH, HEIGHT = 64, 48
-OBJECT_ID = "red_cube_0"
+OBJECT_ID = "red_block_0"
 
 
 @pytest.mark.launch_test

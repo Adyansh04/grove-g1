@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Turns an instruction into the noun phrases the detector can be asked for.
 
-An open-vocabulary detector takes "red cube", not "the mug to the left of the bowl". This asks the
+An open-vocabulary detector takes "red block", not "the mug to the left of the bowl". This asks the
 host vision server's grounding endpoint and installs the answer on the detector's `phrases`.
 
 Python because it is a ZMQ and msgpack client; see the package README.

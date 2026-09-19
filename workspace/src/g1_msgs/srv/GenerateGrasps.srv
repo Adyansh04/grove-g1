@@ -4,7 +4,7 @@
 # object, and sending a depth frame through a service call to have it sent straight back out
 # again would double the traffic for nothing.
 
-# A class_id currently on /objects, indexed ("red_cube_0") or the bare phrase ("red_cube").
+# A class_id currently on /objects, indexed ("red_block_0") or the bare phrase ("red_block").
 string object_id
 # Which hand the grasps are for. A gripper's grasps are not interchangeable between hands.
 string HAND_LEFT=left

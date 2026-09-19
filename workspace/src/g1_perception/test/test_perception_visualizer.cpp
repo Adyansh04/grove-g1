@@ -26,12 +26,12 @@ vision_msgs::msg::Detection3DArray withIds(std::initializer_list<const char*> id
 
 TEST(MeasuredFor, FindsTheTrackAnInstanceIsLabelledWith)
 {
-    const vision_msgs::msg::Detection3DArray objects = withIds({ "red_cube_0", "red_cube" });
+    const vision_msgs::msg::Detection3DArray objects = withIds({ "red_block_0", "red_block" });
 
-    const vision_msgs::msg::Detection3D* measured = measuredFor("red_cube_0", objects);
+    const vision_msgs::msg::Detection3D* measured = measuredFor("red_block_0", objects);
 
     ASSERT_NE(measured, nullptr);
-    EXPECT_EQ(measured->id, "red_cube_0");
+    EXPECT_EQ(measured->id, "red_block_0");
 }
 
 TEST(MeasuredFor, RejectsARawLabelThatEqualsAnAlias)
@@ -42,7 +42,7 @@ TEST(MeasuredFor, RejectsARawLabelThatEqualsAnAlias)
 
 TEST(MeasuredFor, RejectsARawPhrase)
 {
-    EXPECT_EQ(measuredFor("red cube", withIds({ "red_cube_0", "red_cube" })), nullptr);
+    EXPECT_EQ(measuredFor("red block", withIds({ "red_block_0", "red_block" })), nullptr);
 }
 
 }  // namespace

@@ -158,7 +158,7 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "phrases",
-                default_value="red cube,green cylinder,blue sphere,yellow box,white cup",
+                default_value="red block,green cylinder,blue sphere,yellow box,white cup",
                 description="Comma separated objects to look for. Empty means idle, and "
                 "`ros2 param set` on the detector changes it while running.",
             ),

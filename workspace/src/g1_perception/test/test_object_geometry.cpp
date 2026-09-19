@@ -82,8 +82,8 @@ MaskView filledMask(
 
 TEST(Slugify, MakesAPhraseIntoAnObjectId)
 {
-    EXPECT_EQ(slugify("Red Cube"), "red_cube");
-    EXPECT_EQ(slugify("red  cube!"), "red_cube");
+    EXPECT_EQ(slugify("Red Block"), "red_block");
+    EXPECT_EQ(slugify("red  block!"), "red_block");
     EXPECT_EQ(slugify("  "), "");
 }
 

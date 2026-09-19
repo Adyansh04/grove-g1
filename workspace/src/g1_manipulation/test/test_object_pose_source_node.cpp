@@ -164,7 +164,7 @@ TEST(ObjectPoseSource, TransformsThePoseRatherThanRelabellingTheFrame)
     spinFor({ tf_node->get_node_base_interface() }, 300ms);
 
     harness.publishAndSpin(
-        makeGroundTruth("camera_color_optical_frame", "red_cube", 1.0, 0.5, 0.25));
+        makeGroundTruth("camera_color_optical_frame", "red_block", 1.0, 0.5, 0.25));
 
     ASSERT_TRUE(harness.last().has_value());
     const auto& out = *harness.last();
@@ -189,7 +189,7 @@ TEST(ObjectPoseSource, PublishesNothingWhenTheTransformIsMissing)
     ASSERT_EQ(harness.configure(), lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
     ASSERT_EQ(harness.activate(), lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE);
 
-    harness.publishAndSpin(makeGroundTruth("unbroadcast_sensor_frame", "red_cube", 1.0, 0.5, 0.25));
+    harness.publishAndSpin(makeGroundTruth("unbroadcast_sensor_frame", "red_block", 1.0, 0.5, 0.25));
 
     EXPECT_FALSE(harness.last().has_value());
 }
@@ -213,18 +213,18 @@ TEST(ObjectSource, ParsesTheSourcesItKnowsAndRejectsTheRest)
 TEST(ObjectMarkers, SkipsOnlyTheBarePhraseAliasOfATrack)
 {
     vision_msgs::msg::Detection3DArray objects;
-    for (const char* id : { "red_cube_0", "red_cube", "red_cube_top", "blue_sphere" })
+    for (const char* id : { "red_block_0", "red_block", "red_block_top", "blue_sphere" })
     {
         objects.detections.emplace_back().id = id;
     }
 
-    EXPECT_TRUE(isBarePhraseAlias("red_cube", objects));
-    EXPECT_FALSE(isBarePhraseAlias("red_cube_0", objects));
+    EXPECT_TRUE(isBarePhraseAlias("red_block", objects));
+    EXPECT_FALSE(isBarePhraseAlias("red_block_0", objects));
     // A track of its own, not an alias: nothing named blue_sphere_<n> is present.
     EXPECT_FALSE(isBarePhraseAlias("blue_sphere", objects));
-    // Only a numeric suffix makes an index; red_cube_top does not make red_cube an alias of it.
+    // Only a numeric suffix makes an index; red_block_top does not make red_block an alias of it.
     objects.detections.erase(objects.detections.begin());
-    EXPECT_FALSE(isBarePhraseAlias("red_cube", objects));
+    EXPECT_FALSE(isBarePhraseAlias("red_block", objects));
 }
 
 TEST(ObjectPoseSource, RefusesToConfigureOnHardware)
@@ -254,7 +254,7 @@ TEST(ObjectPoseSource, RepublishesGroundTruthInTheOutputFrame)
     ASSERT_EQ(harness.configure(), lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
     ASSERT_EQ(harness.activate(), lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE);
 
-    harness.publishAndSpin(makeGroundTruth("odom", "red_cube", 4.1, -4.65, 0.78));
+    harness.publishAndSpin(makeGroundTruth("odom", "red_block", 4.1, -4.65, 0.78));
 
     ASSERT_TRUE(harness.last().has_value());
     const auto& out = *harness.last();
@@ -264,7 +264,7 @@ TEST(ObjectPoseSource, RepublishesGroundTruthInTheOutputFrame)
     // the array's would otherwise be told the pose is in a frame that is not in the TF tree.
     EXPECT_EQ(out.detections[0].header.frame_id, "odom");
     ASSERT_EQ(out.detections[0].results.size(), 1U);
-    EXPECT_EQ(out.detections[0].results[0].hypothesis.class_id, "red_cube");
+    EXPECT_EQ(out.detections[0].results[0].hypothesis.class_id, "red_block");
     EXPECT_DOUBLE_EQ(out.detections[0].results[0].pose.pose.position.x, 4.1);
     EXPECT_DOUBLE_EQ(out.detections[0].results[0].pose.pose.position.z, 0.78);
 }
@@ -277,7 +277,7 @@ TEST(ObjectPoseSource, CarriesTheSourceStampRatherThanRestampingIt)
     ASSERT_EQ(harness.configure(), lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
     ASSERT_EQ(harness.activate(), lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE);
 
-    harness.publishAndSpin(makeGroundTruth("odom", "red_cube", 1.0, 2.0, 0.75));
+    harness.publishAndSpin(makeGroundTruth("odom", "red_block", 1.0, 2.0, 0.75));
 
     ASSERT_TRUE(harness.last().has_value());
     // Compared field by field rather than as rclcpp::Time: a stamp that has been through a
@@ -295,7 +295,8 @@ TEST(ObjectPoseSource, DropsPosesStampedWithAFrameItWasNotConfiguredFor)
     ASSERT_EQ(harness.configure(), lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
     ASSERT_EQ(harness.activate(), lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE);
 
-    harness.publishAndSpin(makeGroundTruth("camera_color_optical_frame", "red_cube", 0.3, 0.0, 0.5));
+    harness.publishAndSpin(
+        makeGroundTruth("camera_color_optical_frame", "red_block", 0.3, 0.0, 0.5));
 
     EXPECT_FALSE(harness.last().has_value());
 }
@@ -305,7 +306,7 @@ TEST(ObjectPoseSource, StaysQuietUntilActivated)
     Harness harness{ optionsWithSource("sim_ground_truth") };
     ASSERT_EQ(harness.configure(), lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
 
-    harness.publishAndSpin(makeGroundTruth("odom", "red_cube", 4.1, -4.65, 0.78));
+    harness.publishAndSpin(makeGroundTruth("odom", "red_block", 4.1, -4.65, 0.78));
 
     EXPECT_FALSE(harness.last().has_value());
 }

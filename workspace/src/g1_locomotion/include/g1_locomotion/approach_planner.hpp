@@ -46,7 +46,7 @@ enum class ApproachState : std::uint8_t
  */
 struct ApproachLimits
 {
-    /// MEASURED with /compute_ik at the workbench cube's height: x 0.16 to 0.36 all solve,
+    /// MEASURED with /compute_ik at the workbench block's height: x 0.16 to 0.36 all solve,
     /// 0.38 does not. target_y_m mirrors for the left arm, exactly as the grasp offset does.
     double target_x_m = 0.270;
     double target_y_m = -0.220;

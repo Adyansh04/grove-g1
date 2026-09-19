@@ -36,7 +36,7 @@ from g1_msgs.action import Grasp
 STACK_SETTLE_S = 55.0
 READY_TIMEOUT_S = STACK_SETTLE_S + 30.0
 
-# Short on purpose. Nothing here should ever grasp the cube, so both cases end on this or on the
+# Short on purpose. Nothing here should ever grasp the block, so both cases end on this or on the
 # rejection limit, and the server's 90 s default would only make the suite slow.
 GOAL_TIMEOUT_S = 20.0
 MAX_REJECTED = 5
@@ -120,8 +120,8 @@ class TestVlaGraspMock(unittest.TestCase):
 
     def _run_grasp(self, timeout_s):
         goal = Grasp.Goal()
-        goal.instruction = "pick up the red cube"
-        goal.object_id = "red_cube"
+        goal.instruction = "pick up the red block"
+        goal.object_id = "red_block"
         goal.arm = "right"
         handle_future = self.grasp.send_goal_async(goal)
         rclpy.spin_until_future_complete(self.node, handle_future, timeout_sec=30.0)

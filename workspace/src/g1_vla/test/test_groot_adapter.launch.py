@@ -181,7 +181,7 @@ class TestGrootAdapter(unittest.TestCase):
         for _ in range(30):
             self._publish_observation()
             rclpy.spin_once(self.node, timeout_sec=0.1)
-        result = self._call("pick up the red cube")
+        result = self._call("pick up the red block")
 
         self.assertTrue(result.ok, result.message)
         # Only the joints this skill drives, even though the server offered a waist, a base
@@ -197,7 +197,7 @@ class TestGrootAdapter(unittest.TestCase):
         for _ in range(30):
             self._publish_observation()
             rclpy.spin_once(self.node, timeout_sec=0.1)
-        result = self._call("pick up the red cube")
+        result = self._call("pick up the red block")
 
         self.assertTrue(result.ok, result.message)
         # The stub answers one delta above the state it was sent, in absolute units. Anything

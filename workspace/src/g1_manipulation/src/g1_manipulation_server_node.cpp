@@ -1436,7 +1436,7 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     // Straight up, not planned. The octomap holding the table is exempted for the hand at this
     // point, so a free planner is free to route the lift sideways THROUGH the table, which drags
     // the object along the surface and off it: measured, 43 mm, which was enough to leave the
-    // cube overhanging the near edge. Partial is fine, every millimetre of it is away from the
+    // block overhanging the near edge. Partial is fine, every millimetre of it is away from the
     // surface; only a line that cannot start at all falls back to planning.
     if (moveStraight(*arm_group, lifted, arm.grasp_frame, "lift", 0.0) <= 0.0 &&
         !moveTo(*arm_group, lifted, arm.grasp_frame, "lift"))
@@ -1692,7 +1692,7 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
     setHandContact(arm, touchables, false);
 
     // A successful plan says nothing about where the object landed: one release short dropped the
-    // cube on the floor with every leaf reporting success. Checked against `expected` where a
+    // block on the floor with every leaf reporting success. Checked against `expected` where a
     // surface gave one, so both sides come from /objects and the walking base cancels.
     if (!held_id.empty())
     {

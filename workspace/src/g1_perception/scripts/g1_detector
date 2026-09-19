@@ -5,7 +5,7 @@ Python because it is a ZMQ and msgpack client; see the package README.
 
 `phrases` is the whole control interface: an empty list is idle, and
 
-    ros2 param set /g1_detector phrases "['red cube', 'blue sphere']"
+    ros2 param set /g1_detector phrases "['red block', 'blue sphere']"
 
 is what the instruction grounder writes too.
 """

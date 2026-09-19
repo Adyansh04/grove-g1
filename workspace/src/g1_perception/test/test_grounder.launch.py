@@ -124,10 +124,10 @@ class TestGrounder(unittest.TestCase):
     def test_01_an_instruction_becomes_phrases(self):
         self._publish_frames()
 
-        result = self._ground("pick up the blue sphere next to the red cube")
+        result = self._ground("pick up the blue sphere next to the red block")
 
         self.assertTrue(result.ok, result.message)
-        self.assertEqual(list(result.phrases), ["red cube", "blue sphere"])
+        self.assertEqual(list(result.phrases), ["red block", "blue sphere"])
         self.assertEqual(result.target_phrase, "blue sphere")
         self.assertIn(result.target_phrase, result.phrases, "the target must be askable for")
 
@@ -136,7 +136,7 @@ class TestGrounder(unittest.TestCase):
 
         self._ground("pick up the blue sphere")
 
-        self.assertEqual(self._detector_phrases(), ["red cube", "blue sphere"])
+        self.assertEqual(self._detector_phrases(), ["red block", "blue sphere"])
 
     def test_03_exemplar_points_are_carried_through(self):
         self._publish_frames()

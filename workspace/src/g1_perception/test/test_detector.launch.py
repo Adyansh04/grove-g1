@@ -44,7 +44,7 @@ def generate_test_description():
                 "server_address": f"tcp://127.0.0.1:{PORT}",
                 "zmq_timeout_ms": 5000,
                 "detect_rate_hz": 4.0,
-                "phrases": ["red cube"],
+                "phrases": ["red block"],
                 "max_image_age_s": 5.0,
             }
         ],
@@ -125,7 +125,7 @@ class TestDetector(unittest.TestCase):
 
         self.assertIsNotNone(masks)
         instance = masks.instances[0]
-        self.assertEqual(instance.label, "red cube")
+        self.assertEqual(instance.label, "red block")
         self.assertAlmostEqual(instance.score, 0.77, places=5)
         self.assertEqual((instance.roi.x_offset, instance.roi.y_offset), (100, 60))
         self.assertEqual((instance.roi.width, instance.roi.height), (40, 30))
@@ -171,7 +171,7 @@ class TestDetector(unittest.TestCase):
 
         request = SetParameters.Request()
         request.parameters = [
-            Parameter("phrases", Parameter.Type.STRING_ARRAY, ["red cube"]).to_parameter_msg()
+            Parameter("phrases", Parameter.Type.STRING_ARRAY, ["red block"]).to_parameter_msg()
         ]
         future = client.call_async(request)
         rclpy.spin_until_future_complete(self.node, future, timeout_sec=10.0)

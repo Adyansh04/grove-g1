@@ -5,8 +5,8 @@
  * @file object_tracker.hpp
  * @brief Keeps one object id pointing at one physical object across frames.
  *
- * A detector answers "red cube" with however many instances it sees, in whatever order it found
- * them. Skills address objects by id, so the id has to outlive the frame: `red_cube_0` must be
+ * A detector answers "red block" with however many instances it sees, in whatever order it found
+ * them. Skills address objects by id, so the id has to outlive the frame: `red_block_0` must be
  * the same cube next second, or a place step re-aims at the wrong one.
  */
 
@@ -56,7 +56,7 @@ public:
     /// Id of a track, as `<slug>_<index>`.
     [[nodiscard]] static std::string idFor(std::string_view phrase, std::uint32_t index);
 
-    /// The slug an id was made from: `red_cube_3` gives `red_cube`; anything else comes back whole.
+    /// The slug an id was made from: `red_block_3` gives `red_block`; anything else comes back whole.
     [[nodiscard]] static std::string_view phraseOf(std::string_view id);
 
 private:

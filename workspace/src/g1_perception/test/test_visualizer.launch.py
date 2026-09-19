@@ -101,12 +101,12 @@ def _pixel(image, x, y):
 
 # One tracked cube 5 mm from its truth, its bare-phrase alias, and a sphere the geometry node
 # rejected, which keeps its raw label. The cup is never seen.
-SCENE_INSTANCES = [_instance("red_cube_0", MEASURED_ROI), _instance("blue sphere", REJECTED_ROI)]
+SCENE_INSTANCES = [_instance("red_block_0", MEASURED_ROI), _instance("blue sphere", REJECTED_ROI)]
 SCENE_DETECTIONS = [
-    _detection("red_cube_0", 0.003, 0.004, 0.6, 0.06),
-    _detection("red_cube", 0.003, 0.004, 0.6, 0.06),
+    _detection("red_block_0", 0.003, 0.004, 0.6, 0.06),
+    _detection("red_block", 0.003, 0.004, 0.6, 0.06),
 ]
-TRUTH = [_detection("red_cube", 0.0, 0.0, 0.6, 0.06), _detection("white_cup", 0.1, 0.0, 0.6, 0.08)]
+TRUTH = [_detection("red_block", 0.0, 0.0, 0.6, 0.06), _detection("white_cup", 0.1, 0.0, 0.6, 0.08)]
 
 
 class TestVisualizer(unittest.TestCase):
@@ -252,7 +252,7 @@ class TestVisualizer(unittest.TestCase):
         labels = {
             marker.text for marker in markers.markers if marker.type == Marker.TEXT_VIEW_FACING
         }
-        self.assertEqual(labels, {"red_cube 5 mm off", "white_cup not seen"})
+        self.assertEqual(labels, {"red_block 5 mm off", "white_cup not seen"})
 
     def test_05_a_frame_with_nothing_found_comes_back_untouched(self):
         drawn = self._render_until_drawn([], [])
