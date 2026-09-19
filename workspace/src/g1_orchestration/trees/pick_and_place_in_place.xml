@@ -25,7 +25,10 @@
 
       <SetArmPosture name="hold_it_close" group="right_arm" named_target="carry"/>
 
-      <Place name="put_it_down" target="0.28;-0.14;0.83" frame_id="odom" arm="right"/>
+      <!-- On the pedestal, which is narrower than it looks from here: its near edge is at
+           x 0.26 and the block is 60 mm across, so anything under x 0.29 hangs over the edge and
+           falls. 0.845 is where a 90 mm block's centre sits on the 0.80 top. -->
+      <Place name="put_it_down" target="0.31;-0.17;0.845" frame_id="odom" arm="right"/>
 
       <SetArmPosture name="tuck_away" group="right_arm" named_target="tucked"/>
       <ReleaseArm name="hand_the_arm_back"/>
