@@ -423,7 +423,7 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument(
             "phrases",
-            default_value="red cube,green cylinder,blue sphere,yellow box,white cup",
+            default_value="red block,blue block,green cylinder,blue sphere,yellow box,white cup",
             description="Comma separated objects the detector looks for.",
         ),
         DeclareLaunchArgument(

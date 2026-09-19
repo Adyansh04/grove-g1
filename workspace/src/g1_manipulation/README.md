@@ -178,7 +178,7 @@ collision-checked and must be genuinely clear. Measured at the facility workbenc
 | +0.1575 | `<octomap> <-> right_hand_thumb_2_link` |
 | +0.22 and above | clear |
 
-The cube sits at pelvis z +0.0375, so `approach_height_m` has to exceed 0.185. It is 0.22.
+The block sits at pelvis z +0.0375, so `approach_height_m` has to exceed 0.185. It is 0.22.
 `lift_height_m` is 0.20 for a sharper reason: the exemption is restored at the end of the lift, so
 wherever the lift finishes becomes the START state of the next collision-checked plan, and finishing
 inside the octomap leaves the carry posture unplannable.
@@ -270,7 +270,7 @@ up healthy and never receives anything.
 
 ```bash
 ros2 action send_goal /g1_manipulation_server/pick g1_msgs/action/Pick \
-  "{object_id: red_cube, arm: right}" --feedback
+  "{object_id: red_block, arm: right}" --feedback
 ```
 
 `activate_arm_delay_s` is raised from its default because this world takes longer to come up than
@@ -321,7 +321,7 @@ of it must be clear before it is taken; below that the pick plans around instead
 | `test_grasp_filter` | no | The two conversions between a generated grasp and a goal for this arm: the approach tilt a grasp comes in at, and the measured offset into the grasp frame, applied in the grasp's own frame and mirrored per hand. |
 | `test_grip_check` | no | What counts as a finger pressing: free-air close, thumb plus one finger, the two side-by-side fingers alone, short with no torque, at target under torque, the left hand's negative targets, a missing joint, NaN. |
 | `test_generated_grasp_pick` | Sim, `-L simulator` | A pick with a generator behind it: a candidate reaching up through the table is refused and named, an unknown object is still refused, and a usable candidate takes the object off the table and still has it three seconds later. Nothing falls back to the fixed grasp. |
-| `test_pick_place` | Sim, `-L simulator` | The package's acceptance gate. Ground truth reaches `/objects`, a pick lifts and **holds** the cube, a place puts it back, and — the one that matters — a grasp aimed 30 cm above the cube is reported as a miss rather than a pick. |
+| `test_pick_place` | Sim, `-L simulator` | The package's acceptance gate. Ground truth reaches `/objects`, a pick lifts and **holds** the block, a place puts it back, and — the one that matters — a grasp aimed 30 cm above the block is reported as a miss rather than a pick. |
 
 ```bash
 colcon test --packages-select g1_manipulation
@@ -343,7 +343,7 @@ same path runs on the robot.
 
 It transforms rather than relabelling. Announcing an object directly in a fixed frame is correct
 only while that frame IS the world, which stops being true the moment odometry is an estimate:
-with `odometry:=fast_lio` the base approach chased a point 2 m from the cube until this was fixed.
+with `odometry:=fast_lio` the base approach chased a point 2 m from the block until this was fixed.
 
 `publish_markers` adds `~/object_markers`, a box and a label per object built from the same
 message `/objects` carries, so rviz shows what a skill acts on. Both shipped rviz configs display

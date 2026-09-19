@@ -46,7 +46,7 @@
 
          Height is chosen to match the facility workbench (0.75) as closely as the arm's reach
          allows, so a grasp tuned here transfers. -->
-    <!-- Bit 1 on the top and on the cube is what the Dex3's contact geometry pairs with: the hand
+    <!-- Bit 1 on the top and on the block is what the Dex3's contact geometry pairs with: the hand
          is contype 2 and meets nothing until a scene opts in. The legs keep bit 0 alone. -->
     <geom name="table_top" group="2" type="box" size="0.19 0.17 0.015" pos="0.45 -0.20 0.785"
       material="pedestal_mat" contype="3" conaffinity="3"/>
@@ -66,8 +66,8 @@
          cannot take anything wider than 75 mm. A cube therefore has at most 75 - 63 = 12 mm, and
          the descent lands within 6-10 mm, so a cube scrapes the surface on the way in. At 90 mm
          tall the grip point goes to 80 and the clearance is 17 mm. See g1_common.xacro. -->
-    <body name="red_cube" pos="0.32 -0.20 0.847">
-      <freejoint name="red_cube_joint"/>
+    <body name="red_block" pos="0.32 -0.20 0.847">
+      <freejoint name="red_block_joint"/>
       <geom group="2" type="box" size="0.03 0.03 0.045" material="mat_red_obj" mass="0.22"
         contype="3" conaffinity="3" friction="1 0.005 0.0001"/>
     </body>
@@ -78,12 +78,12 @@
     <camera name="d435i" mode="fixed" fovy="58" resolution="848 480" pos="0 0 1"/>
   </worldbody>
 
-  <!-- No grasp_* welds: the fingers have contact geometry (patch 008) and hold the cube by
+  <!-- No grasp_* welds: the fingers have contact geometry (patch 008) and hold the block by
        gripping it. grasp_weld finds nothing to manage here and says so at startup. -->
 
   <equality>
     <!-- Spawn the arms at activate_arm's CLEAR_POSTURE. Same reason as the tabletop scene: at the
-         URDF zero the right hand is inside the cube, and a hand with contact geometry would throw
+         URDF zero the right hand is inside the block, and a hand with contact geometry would throw
          it. ApplyStartupPose puts the joints here before the first step, so these hold rather than
          pull, and patch 007 hands each to its motor. -->
     <joint name="startup_hold_left_shoulder_pitch" joint1="left_shoulder_pitch_joint"

@@ -38,7 +38,8 @@ camera_enabled: true
 # Bodies absent from the staged scene are reported once and skipped, so the flat and
 # perception worlds cost nothing here.
 object_bodies:
-  - red_cube
+  - red_block
+  - blue_block
   - green_cylinder
   - blue_sphere
   - yellow_box
@@ -46,7 +47,7 @@ object_bodies:
   - white_cup
   # Not manipulable, and tracked anyway: g1_base_approach ranges to something on /objects to
   # decide where to stand, and the place leg needs a landmark on the drop-off bench the way the
-  # pick leg has the cube itself. Static, so its pose never changes.
+  # pick leg has the block itself. Static, so its pose never changes.
   - drop_pad
 
 # SIMULATION ONLY, and a stand-in rather than a model of anything. The Dex3 fingers carry no

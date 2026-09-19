@@ -8,7 +8,7 @@ is closed again afterwards.
 
 Deliberately measures the OBJECT, not the action result. A skill that reports success while the
 cube never moved is exactly the failure worth catching. The fingers grip by contact and friction
-here, with no weld behind them, so the cube's own pose is the only evidence that means anything.
+here, with no weld behind them, so the block's own pose is the only evidence that means anything.
 
 Run via `colcon test --packages-select g1_manipulation`.
 """
@@ -42,7 +42,7 @@ STACK_SETTLE_S = 55.0
 # needs the override.
 READY_TIMEOUT_S = STACK_SETTLE_S + 30.0
 
-OBJECT_ID = "red_cube"
+OBJECT_ID = "red_block"
 
 # Generous. A pick is four planned motions plus two hand closes at 0.3 velocity scaling, and
 # OMPL is given 10 s per plan; this is a timeout, not an expectation.
@@ -112,7 +112,7 @@ class TestPickPlace(unittest.TestCase):
             rclpy.spin_once(self.node, timeout_sec=0.1)
 
     def _object_pose(self, timeout_s=20.0):
-        """The cube's ground-truth pose, or None. Fresh each call: it moves."""
+        """The block's ground-truth pose, or None. Fresh each call: it moves."""
         self.__class__.objects = None
         deadline = time.monotonic() + timeout_s
         while time.monotonic() < deadline:
@@ -157,9 +157,9 @@ class TestPickPlace(unittest.TestCase):
     def test_01_ground_truth_reaches_objects(self):
         """The whole sim-side chain: sampler, socket, relay, pose source, all in one check."""
         pose = self._object_pose()
-        self.assertIsNotNone(pose, "/objects never carried the cube; is the pose source active?")
+        self.assertIsNotNone(pose, "/objects never carried the block; is the pose source active?")
         # On the table, not on the floor and not at the origin. The scene puts it at 0.83.
-        self.assertGreater(pose.position.z, 0.7, "the cube is not on the table")
+        self.assertGreater(pose.position.z, 0.7, "the block is not on the table")
 
     def test_02_the_arms_tuck_clear_of_the_workbench(self):
         """Both arms, before anything is planned, exactly as the mission tree does it.
@@ -191,13 +191,13 @@ class TestPickPlace(unittest.TestCase):
         lifted = self._object_pose()
         self.assertIsNotNone(lifted)
         # Well clear of the table, not a nudge. lift_height_m asks for 0.20 and the arm delivers
-        # 0.11 to 0.15 of it, because a position-only arm settles short under the cube's weight.
-        # What matters is that the cube is more than its own height off the surface, so it cannot
+        # 0.11 to 0.15 of it, because a position-only arm settles short under the block's weight.
+        # What matters is that the block is more than its own height off the surface, so it cannot
         # be resting on anything; the threshold is under the low end of that measured range.
         self.assertGreater(
             lifted.position.z - before.position.z,
             0.08,
-            f"the cube did not come up with the hand: {before.position.z} -> {lifted.position.z}",
+            f"the block did not come up with the hand: {before.position.z} -> {lifted.position.z}",
         )
 
         # Held, not just lifted. The fingers grip by friction, so a grasp that is going to fail
@@ -208,13 +208,13 @@ class TestPickPlace(unittest.TestCase):
         self.assertGreater(
             held.position.z - before.position.z,
             0.08,
-            f"the cube was dropped while held: {held.position.z}",
+            f"the block was dropped while held: {held.position.z}",
         )
         slip = math.dist(
             (held.position.x, held.position.y, held.position.z),
             (lifted.position.x, lifted.position.y, lifted.position.z),
         )
-        self.assertLess(slip, 0.02, f"the cube slipped {slip * 1000:.0f} mm in the hand")
+        self.assertLess(slip, 0.02, f"the block slipped {slip * 1000:.0f} mm in the hand")
 
     def test_04_a_place_puts_it_back_down(self):
         """Runs after the pick, so the arm is holding the block.
@@ -255,14 +255,14 @@ class TestPickPlace(unittest.TestCase):
             result = self._send(
                 self.pick, Pick.Goal(object_id=OBJECT_ID, arm="right"), PICK_TIMEOUT_S
             )
-            self.assertFalse(result.success, "a grasp above the cube was reported as a pick")
+            self.assertFalse(result.success, "a grasp above the block was reported as a pick")
             self.assertIn("grasp", result.message)
             after = self._object_pose()
             self.assertIsNotNone(after)
             self.assertLess(
                 abs(after.position.z - before.position.z),
                 0.02,
-                "the cube moved, so this failed for the wrong reason",
+                "the block moved, so this failed for the wrong reason",
             )
         finally:
             self.assertTrue(self._set_server_parameter("min_grip_height_m", 0.068))

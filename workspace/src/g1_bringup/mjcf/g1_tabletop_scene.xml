@@ -1,15 +1,22 @@
 <mujoco model="g1_tabletop_scene">
-  <!-- The perception scene: five objects on one pedestal, at arm's length in front of the robot.
+  <!-- The perception scene: six objects and a basket on one pedestal, at arm's length in front of
+       the robot.
 
-       g1_manipulation_scene is deliberately one cube, because a pick test wants one answer. This
+       g1_manipulation_scene is deliberately one block, because a pick test wants one answer. This
        is the other half of the question: several objects a detector has to tell apart, close
        enough together that a mask which runs onto its neighbour shows up as a wrong pose rather
        than as a missing one.
 
-       Shapes are as different as the pedestal allows on purpose. A box the detector can name by
-       colour, a cylinder whose silhouette hides its own base, a sphere whose lowest visible point
-       is its equator, and a cup that is a cylinder of another colour. Whether the geometry
-       recovers a sphere's height is the thing the support-plane fit exists to get right.
+       Laid out in two rows for a reason. The near row is what the arm can reach, and it holds two
+       blocks of identical shape in different colours, so "pick up the red block" can only be
+       answered by choosing correctly rather than by finding the one graspable thing. The far row
+       is out of reach on purpose: a selection test wants more candidates than the arm can
+       service.
+
+       Shapes are otherwise as different as the pedestal allows. A cylinder whose silhouette hides
+       its own base, a sphere whose lowest visible point is its equator, and a cup that is a
+       cylinder of another colour. Whether the geometry recovers a sphere's height is the thing
+       the support-plane fit exists to get right.
 
        Every geom is group 2, for the reason g1_perception_scene explains: the sweep masks to that
        group, or every ray returns the robot's own shell.
@@ -33,6 +40,7 @@
     <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5"
       reflectance="0.2"/>
     <material name="pedestal_mat" rgba="0.35 0.38 0.42 1"/>
+    <material name="basket_mat" rgba="0.55 0.40 0.22 1" specular="0.2" shininess="0.2"/>
     <material name="mat_red_obj" rgba="0.9 0.15 0.15 1" specular="0.6" shininess="0.8"/>
     <material name="mat_green_obj" rgba="0.15 0.8 0.2 1" specular="0.6" shininess="0.8"/>
     <material name="mat_blue_obj" rgba="0.15 0.3 0.9 1" specular="0.6" shininess="0.8"/>
@@ -44,38 +52,68 @@
     <light pos="0 0 1.5" dir="0 0 -1" directional="true"/>
     <geom name="floor" group="2" size="0 0 0.05" type="plane" material="groundplane"/>
 
-    <!-- Wider than the manipulation pedestal, because five objects have to sit apart without
-         touching, and at the same 0.80 top so a grasp tuned on one scene transfers to the other.
-         Widened again when the fingers gained contact geometry: the objects grew with it, and
-         five of them need the room. The near edge stays at x 0.26, which is the reach the arm
-         was measured against. -->
+    <!-- Wider than the manipulation pedestal, because six objects and a basket have to sit apart
+         without touching, and at the same 0.80 top so a grasp tuned on one scene transfers to the
+         other. Widened again for the basket and the far row. The near edge stays at x 0.24, which
+         is as close as the pedestal can come without fouling the arm at spawn. -->
     <!-- Bit 1 on the top and on every object is what the Dex3's contact geometry pairs with: the
          hand is contype 2 and meets nothing until a scene opts in. The legs keep bit 0 alone,
          since nothing reaches them. -->
-    <geom name="table_top" group="2" type="box" size="0.16 0.22 0.015" pos="0.42 -0.27 0.785"
+    <geom name="table_top" group="2" type="box" size="0.19 0.28 0.015" pos="0.43 -0.32 0.785"
       material="pedestal_mat" contype="3" conaffinity="3"/>
     <geom name="table_leg_near" group="2" type="box" size="0.02 0.02 0.385"
-      pos="0.54 -0.46 0.385" material="pedestal_mat" contype="1" conaffinity="1"/>
+      pos="0.58 -0.56 0.385" material="pedestal_mat" contype="1" conaffinity="1"/>
     <geom name="table_leg_far" group="2" type="box" size="0.02 0.02 0.385"
-      pos="0.54 -0.08 0.385" material="pedestal_mat" contype="1" conaffinity="1"/>
+      pos="0.58 -0.08 0.385" material="pedestal_mat" contype="1" conaffinity="1"/>
 
-    <!-- Same size, mass and friction as the manipulation scene's cube, so a pick tuned there is
-         tuned here. Nearest the robot, on the half the arm can reach.
+    <!-- Somewhere to put an object down, because releasing one onto open table is the hard half
+         of a place: it has to be resting and stable before the fingers open, and a basket makes
+         that a matter of getting inside the rim instead. Static geoms, not a body: a target that
+         slides when nudged is not a target.
 
-         60 x 60 x 90, taller than it is wide, and no longer a cube because no cube works. The
+         120 mm inside 10 mm walls, so a 60 mm object has 30 mm of clearance either side, and the
+         rim is 50 mm so the object clears it on the way in while the closed fingers, which hang
+         34 mm below the grip point, stay above it. -->
+    <geom name="basket_floor" group="2" type="box" size="0.07 0.07 0.005" pos="0.32 -0.34 0.805"
+      material="basket_mat" contype="3" conaffinity="3"/>
+    <geom name="basket_wall_near" group="2" type="box" size="0.07 0.005 0.025"
+      pos="0.32 -0.415 0.825" material="basket_mat" contype="3" conaffinity="3"/>
+    <geom name="basket_wall_far" group="2" type="box" size="0.07 0.005 0.025"
+      pos="0.32 -0.265 0.825" material="basket_mat" contype="3" conaffinity="3"/>
+    <geom name="basket_wall_right" group="2" type="box" size="0.005 0.08 0.025"
+      pos="0.245 -0.34 0.825" material="basket_mat" contype="3" conaffinity="3"/>
+    <geom name="basket_wall_left" group="2" type="box" size="0.005 0.08 0.025"
+      pos="0.395 -0.34 0.825" material="basket_mat" contype="3" conaffinity="3"/>
+
+    <!-- The graspable row, nearest the robot on the band the arm can actually reach, and the
+         basket beside them. Same size, mass and friction as the manipulation scene's block, so a
+         pick tuned there is tuned here.
+
+         60 x 60 x 90, taller than it is wide, and not a cube because no cube works. The
          descending thumb hangs 63 mm below the grip point, so its clearance over the table is
          (grip height - 63); the grip point cannot be above the object, and the hand takes nothing
-         wider than 75 mm. That caps a cube at 12 mm of clearance against a descent that lands
-         within 6-10 mm, which is how the thumb came to scrape the table. See g1_common.xacro. -->
-    <body name="red_cube" pos="0.32 -0.20 0.847">
-      <freejoint name="red_cube_joint"/>
+         wider than 75 mm. That caps a cube at 12 mm against a descent that lands within 6-10 mm,
+         which is how the thumb came to scrape the table. See g1_common.xacro. -->
+    <body name="red_block" pos="0.30 -0.10 0.847">
+      <freejoint name="red_block_joint"/>
       <geom group="2" type="box" size="0.03 0.03 0.045" material="mat_red_obj" mass="0.22"
         contype="3" conaffinity="3" friction="1 0.005 0.0001"/>
     </body>
 
-    <!-- 60 x 90, which is the comfortable middle of that window rather than its edge: the same
-         pick should work on a shape whose gripped face is curved, not only on the flat one. -->
-    <body name="green_cylinder" pos="0.32 -0.35 0.847">
+    <!-- The same block in another colour, and the point of it: every other object here differs
+         in shape as well, so a detector could be right about them by silhouette alone. Telling
+         this one from the red block is only possible on colour, which is what makes "pick up the
+         red block" a test of selection rather than of detection. -->
+    <body name="blue_block" pos="0.30 -0.20 0.847">
+      <freejoint name="blue_block_joint"/>
+      <geom group="2" type="box" size="0.03 0.03 0.045" material="mat_blue_obj" mass="0.22"
+        contype="3" conaffinity="3" friction="1 0.005 0.0001"/>
+    </body>
+
+    <!-- The far row, out past the arm's reach on purpose. These are here to be told apart, not
+         picked up: a selection test needs more candidates than the arm can service, or the
+         grounder never has to choose. -->
+    <body name="green_cylinder" pos="0.50 -0.10 0.847">
       <freejoint name="green_cylinder_joint"/>
       <geom group="2" type="cylinder" size="0.03 0.045" material="mat_green_obj" mass="0.15"
         contype="3" conaffinity="3" friction="1 0.005 0.0001"/>
@@ -83,7 +121,7 @@
 
     <!-- The shape the support plane matters most for: seen from above, its lowest visible point
          is its equator, so a fit that takes the object's own lowest point reports half a ball. -->
-    <body name="blue_sphere" pos="0.48 -0.25 0.839">
+    <body name="blue_sphere" pos="0.50 -0.24 0.839">
       <freejoint name="blue_sphere_joint"/>
       <geom group="2" type="sphere" size="0.037" material="mat_blue_obj" mass="0.1"
         contype="3" conaffinity="3" friction="0.8 0.005 0.0001"/>
@@ -91,13 +129,13 @@
 
     <!-- Rectangular rather than square, so its yaw is recoverable at all: a square top face has
          no principal direction to find. -->
-    <body name="yellow_box" pos="0.46 -0.11 0.827">
+    <body name="yellow_box" pos="0.50 -0.38 0.827">
       <freejoint name="yellow_box_joint"/>
       <geom group="2" type="box" size="0.04 0.025 0.025" material="mat_yellow_obj" mass="0.12"
         contype="3" conaffinity="3"/>
     </body>
 
-    <body name="white_cup" pos="0.47 -0.42 0.847">
+    <body name="white_cup" pos="0.50 -0.52 0.847">
       <freejoint name="white_cup_joint"/>
       <geom group="2" type="cylinder" size="0.035 0.045" material="mat_white_obj" mass="0.12"
         contype="3" conaffinity="3" friction="1 0.005 0.0001"/>

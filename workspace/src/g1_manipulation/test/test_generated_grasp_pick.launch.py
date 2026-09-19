@@ -43,7 +43,7 @@ from g1_msgs.action import Pick
 STACK_SETTLE_S = 55.0
 READY_TIMEOUT_S = 85.0
 PICK_TIMEOUT_S = 240.0
-OBJECT_ID = "red_cube_0"
+OBJECT_ID = "red_block_0"
 DRAWN_TOPICS = [
     "/g1_perception_visualizer/annotated_image",
     "/g1_perception_visualizer/ground_truth",
@@ -52,7 +52,7 @@ DRAWN_TOPICS = [
 ]
 
 # The stand-in generator's gripper frame to right_hand_grasp_frame. It reports a pose 10 cm above
-# the object's top face, and the grasp frame has to arrive just under that face: on a 7 cm cube
+# the object's top face, and the grasp frame has to arrive just under that face: on a 9 cm block
 # min_grip_height_m wins over grasp_depth_below_top_m and puts it 2 mm down, so 0.102 along the
 # generator's own approach axis. Against the real generator this whole vector is a measurement,
 # not a choice.

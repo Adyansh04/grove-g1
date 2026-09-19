@@ -55,10 +55,10 @@ a grasp from, and a dropped one is seconds of blindness rather than a skipped fr
 
 ## Object ids
 
-An object is published as `<phrase>_<index>`, so `red cube` becomes `red_cube_0`. The index
+An object is published as `<phrase>_<index>`, so `red block` becomes `red_block_0`. The index
 belongs to a track, not to a frame: it follows the object while it is seen and is freed a couple
 of seconds after it is not. While exactly one object answers to a phrase, a second copy of the
-detection is published under the bare `red_cube`, so a tree can name an object without knowing how
+detection is published under the bare `red_block`, so a tree can name an object without knowing how
 many of them there turned out to be.
 
 ## Parameters
@@ -94,7 +94,7 @@ The socket handling the three share lives in `g1_perception/host_clients.py`.
 
 ## Instructions
 
-A detector takes "red cube", not "the mug to the left of the bowl". `g1_instruction_grounder`
+A detector takes "red block", not "the mug to the left of the bowl". `g1_instruction_grounder`
 asks a vision-language model on the host to name the objects and say which one the instruction
 means, then writes those phrases onto the detector's `phrases` parameter, which is its whole
 control interface.
@@ -133,7 +133,7 @@ Against the real models, after starting the host server (see
 ```bash
 ros2 launch g1_bringup bringup.launch.py world:=tabletop pin_pelvis:=true \
   odometry:=ground_truth moveit:=true manipulation:=true perception:=true detector:=vision \
-  phrases:="red cube,white cup"
+  phrases:="red block,white cup"
 ```
 
 ```bash

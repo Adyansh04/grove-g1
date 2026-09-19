@@ -14,7 +14,7 @@ cd /root/workspace && source install/setup.bash
 
 ## The short version
 
-The `manipulation` world puts one cube on a bench at arm's length, so nothing has to walk
+The `manipulation` world puts one block on a bench at arm's length, so nothing has to walk
 anywhere. This is the quickest way to see a grasp.
 
 ```bash
@@ -50,7 +50,8 @@ Two consequences worth knowing before you swap in your own props:
 
 - The hand sets the size. It grips objects 20 to 75 mm across, and they have to be at least 70 mm
   tall, because the thumb hangs 63 mm below the point the fingers close on and reaches the table
-  first on anything shorter. The scene's cube is 70 mm and its cylinder 60 by 90.
+  first on anything shorter. The scene's props are 60 by 90, taller than they are wide, because no
+  cube satisfies both bounds at once.
 - A pick takes a few seconds longer than it used to. The arm is position-controlled with no
   gravity feed-forward and settles about 40 mm short of where it is sent, so the skill measures
   the hand in TF and descends again until it is actually there.
@@ -60,7 +61,7 @@ Two consequences worth knowing before you swap in your own props:
 ## The full mission
 
 The facility world, a map, and Nav2. The robot drives to a workbench, closes the last stretch
-under closed-loop control, picks the cube up, carries it across the building and puts it down.
+under closed-loop control, picks the block up, carries it across the building and puts it down.
 
 ```bash
 ros2 launch g1_bringup bringup.launch.py \
