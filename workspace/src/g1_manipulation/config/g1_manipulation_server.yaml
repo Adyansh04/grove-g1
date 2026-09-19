@@ -34,10 +34,17 @@ g1_manipulation_server:
     settle_tolerance_m: 0.010
     settle_attempts: 2
 
-    # Where a retry starts from, back up the approach axis. Not the pregrasp: the full 22 cm
-    # descent sometimes runs out of straight line part way, and repeating the same 22 cm repeats
-    # that. 8 cm clears the top of anything this hand can grip and is short enough to walk.
+    # Where every descent starts from, back up the approach axis, with only the stretch below it
+    # taken as a straight line. Not the pregrasp: the full approach is 12 to 22 cm and runs out of
+    # straight line part way often enough that retrying the whole thing repeats that. 8 cm clears
+    # the top of anything this hand can grip and is short enough to walk.
     reaim_clearance_m: 0.08
+
+    # How long to let the arm stop before measuring it. MoveIt's execute() returns when the
+    # controller says the trajectory is done, which is about a second before a position-only arm
+    # has finished sagging into its steady-state error. Measured too early it reads a pose the arm
+    # never reached, and the corrections then chase a residual that is not there.
+    settle_wait_s: 0.8
 
     # Clears the same 0.185: the exemption is restored at the end of the lift, so wherever it
     # finishes becomes the start state of the next collision-checked plan.

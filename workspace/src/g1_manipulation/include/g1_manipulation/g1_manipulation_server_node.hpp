@@ -36,6 +36,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
+#include <std_srvs/srv/empty.hpp>
 #include <string>
 #include <vector>
 #include <vision_msgs/msg/detection3_d_array.hpp>
@@ -112,6 +113,15 @@ private:
      * @brief Moves one planning group to a named SRDF pose.
      */
     void executeSetArmPosture(const std::shared_ptr<GoalHandle<SetArmPosture>>& goal_handle);
+
+    /**
+     * @brief Drives the hand to a named SRDF posture by executing it, not by planning to it.
+     *
+     * Closing on an object is deliberate contact, and the planner refuses a start state that is
+     * already inside the octomap, which at the grasp it always is. MoveIt's pick pipeline treats
+     * the gripper posture the same way, as a trajectory rather than a goal.
+     */
+    bool moveHandTo(MoveGroup& hand, const std::string& named_target);
 
     /**
      * @brief Claims the arm for one goal.
@@ -232,6 +242,16 @@ private:
         const std::string& what, double min_fraction);
 
     /**
+     * @brief Drops the octomap so the descent plans against what the camera can see now.
+     *
+     * The camera cannot see behind the arm, so voxels the arm itself put there survive until
+     * something looks through them, and the next descent plans into that ghost. Measured: the
+     * straight line down fell to 8-22 % of its length, and to nothing at all on the third try,
+     * where a cleared map walks all of it. MoveIt's own pick demos clear between stages too.
+     */
+    void clearOctomap();
+
+    /**
      * @brief How far @p link is from @p pose right now, in the planning frame.
      *
      * @return nullopt if TF cannot answer, which is a stale or unpublished frame rather than a
@@ -245,9 +265,9 @@ private:
      * @brief Descends onto @p grasp, re-aiming from above until the hand measures there.
      *
      * The arm settles short of its target, and by a different amount in every configuration, so
-     * the error after the descent is not the error that was corrected at @p pregrasp. Each retry
-     * lifts back up before re-aiming: a sideways correction at object height pushes the object
-     * away instead of reaching it.
+     * the error after the descent is not the error that was corrected at @p pregrasp. Every
+     * descent starts from a staging point back up the @p pregrasp axis: a sideways correction at
+     * object height pushes the object away instead of reaching it.
      */
     bool descendOnto(
         MoveGroup& group, const geometry_msgs::msg::Pose& pregrasp,
@@ -422,6 +442,7 @@ private:
     rclcpp::Client<g1_msgs::srv::GenerateGrasps>::SharedPtr         grasps_;
     rclcpp::Client<moveit_msgs::srv::GetPlanningScene>::SharedPtr   get_scene_;
     rclcpp::Client<moveit_msgs::srv::ApplyPlanningScene>::SharedPtr apply_scene_;
+    rclcpp::Client<std_srvs::srv::Empty>::SharedPtr                 clear_octomap_;
 
     rclcpp_action::Server<Pick>::SharedPtr          pick_server_;
     rclcpp_action::Server<Place>::SharedPtr         place_server_;
@@ -430,16 +451,21 @@ private:
     std::string planning_frame_;
     double      object_timeout_s_{ 1.0 };
     double      grasp_depth_below_top_m_{ 0.020 };
-    /// How far above its own support surface an object must be gripped: the hand hangs 63 mm
-    /// below its grasp frame, so below this the thumb rests on the surface, not the object.
-    double min_grip_height_m_{ 0.068 };
+    /// How far above its own support surface an object must be gripped. The descending hand
+    /// hangs 63 mm below its grasp frame, so this less 63 mm is the thumb's clearance.
+    double min_grip_height_m_{ 0.080 };
     /// How close the grasp frame must measure to its target before the hand closes, and how many
     /// corrective nudges it gets to get there.
     double settle_tolerance_m_{ 0.010 };
     int    settle_attempts_{ 2 };
-    /// How far back up the approach axis a retry starts from. Above the top of anything this hand
-    /// can grip, and short enough that the retry is a line the arm can actually walk.
+    /// Where every descent onto a grasp starts from, back up the approach axis. Above the top of
+    /// anything this hand can grip, and short enough to be a line the arm can actually walk.
     double reaim_clearance_m_{ 0.08 };
+    /// How long to let the arm stop after a corrective move before measuring it. The controller
+    /// reports done before the arm has finished sagging into its steady-state error.
+    double settle_wait_s_{ 0.8 };
+    /// How long the fingers take to reach a commanded posture.
+    double hand_close_s_{ 1.5 };
     bool   grip_check_enabled_{ true };
     double grip_min_position_error_rad_{ 0.08 };
     double grip_min_effort_nm_{ 0.10 };

@@ -15,6 +15,7 @@ find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
 find_package(shape_msgs REQUIRED)
+find_package(std_srvs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
@@ -70,6 +71,7 @@ target_link_libraries(g1_manipulation_server_node PUBLIC
   ${geometry_msgs_TARGETS}
   ${moveit_msgs_TARGETS}
   ${shape_msgs_TARGETS}
+  ${std_srvs_TARGETS}
   ${vision_msgs_TARGETS}
   ${visualization_msgs_TARGETS}
 )
@@ -150,6 +152,7 @@ ament_export_dependencies(
   rclcpp_action
   rclcpp_lifecycle
   shape_msgs
+  std_srvs
   tf2
   tf2_geometry_msgs
   tf2_ros
