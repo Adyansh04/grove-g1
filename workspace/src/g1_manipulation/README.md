@@ -115,27 +115,36 @@ shoulder settles about 0.09 rad short of its target under the arm's own weight, 
 40 mm at the hand. That is wider than the whole grip, and it is why a weld-based pick could look
 like it worked while the hand was never near the object.
 
-Rather than raise a gain the balance controller shares, the pick measures and corrects:
+Rather than raise a gain the balance controller shares, the skill measures and corrects:
 
-- `settleOnPose` at the **pregrasp**, in clear air, re-commanding the residual TF reports until the
-  frame is within `settle_tolerance_m`.
-- `descendOnto` at the **grasp**, which is not the same correction: the error changes with the
-  arm's configuration, so descending 22 cm introduces a fresh 50 mm of it. Each retry backs up
-  `reaim_clearance_m` (0.08) along the approach axis and descends again.
+- `settleOnPose` at the **pregrasp** and at the **preplace**, in clear air, re-commanding the
+  residual TF reports until the frame is within `settle_tolerance_m`.
+- `descendOnto` onto the **grasp** and onto the **place** target, which is not the same
+  correction: the error changes with the arm's configuration, so descending the full approach
+  introduces a fresh 50 mm of it.
 
-Three rules make that work, and each of them is a failure that was measured:
+`Place` needs both as much as `Pick` does. Releasing 40 mm off target does not set an object down,
+it drops it, and the place also re-checks the grip before committing — carried by friction, an
+object can be gone before it is ever released, and saying so at the preplace beats reporting it
+later as a place that landed a metre away.
 
-- **Straight lines only**, no planned fallback. A planner free to route around arrives from a
-  direction that sweeps the object away; it knocked a 60 mm cylinder off the table.
-- **Re-aim from above**, never sideways in place. Same failure, same cylinder.
+Every descent there goes through a staging point `reaim_clearance_m` (0.08) back up the approach
+axis, and only the short stretch from staging to the grasp is a straight line. Three rules, each
+of them a failure that was measured:
+
+- **The last stretch is a straight line, never planned.** A planner free to route around arrives
+  from a direction that sweeps the object away; it knocked a 60 mm cylinder off the table.
+- **Getting to staging may be planned**, because staging is above the top of anything this hand
+  can grip, so a detour up there cannot reach the object.
 - **Overshoot only a line that finished.** The correction assumes the shortfall is droop, which is
   proportional and cancels when you aim past it. When the Cartesian path instead ran out part way,
   that shortfall is unwalked path, and adding it to the target aims the hand *through the table* —
   the next descent then stops in the same place and the loop chases its own tail.
 
-Backing up 8 cm rather than to the pregrasp is what makes a retry worth taking: the full descent is
-22 cm and sometimes runs out of straight line part way, so repeating it repeats that, while 8 cm
-clears the top of anything this hand can grip and is short enough to walk.
+Staging at 8 cm rather than at the pregrasp is what makes a retry worth taking. The full approach
+is 12 cm for a generated grasp and 22 cm for the fixed one, and it runs out of straight line part
+way often enough that retrying the whole thing just repeats itself; 8 cm clears the props and is
+short enough to walk.
 
 The residual floors out around 8 mm, which is why `settle_tolerance_m` is 0.010: a tighter figure
 only spends another descent failing to beat it, and the grip check is what actually decides whether
