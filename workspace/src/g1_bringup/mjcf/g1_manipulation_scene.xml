@@ -3,7 +3,7 @@
 
        Exists so a pick can be exercised without navigating to the facility workbench first,
        and without waiting on the gait to hold still once it has. The pedestal top is at the
-       workbench's own 0.75 m and the object is the same 7 cm cube, so a grasp tuned here is
+       workbench's own 0.75 m and the object is the same 6 x 9 cm block, so a grasp tuned here is
        tuned for there.
 
        Deliberately measured against by nothing else. g1_perception_scene is what the LiDAR
@@ -60,11 +60,15 @@
          rest height (half-height above the 0.80 surface) rather than a few mm above it, so it
          settles instead of bouncing.
 
-         70 mm, matching the tabletop scene: gripping by contact needs the grip point 68 mm above
-         the surface and the object no wider than 75 mm, and 70 is the only cube that is both. -->
-    <body name="red_cube" pos="0.32 -0.20 0.837">
+         60 x 60 x 90, and taller than it is wide for a reason no tuning gets around. The thumb
+         hangs 63 mm below the grip point while the hand descends, so its clearance over the table
+         is (grip height - 63); the grip point can never be above the object itself, and the hand
+         cannot take anything wider than 75 mm. A cube therefore has at most 75 - 63 = 12 mm, and
+         the descent lands within 6-10 mm, so a cube scrapes the surface on the way in. At 90 mm
+         tall the grip point goes to 80 and the clearance is 17 mm. See g1_common.xacro. -->
+    <body name="red_cube" pos="0.32 -0.20 0.847">
       <freejoint name="red_cube_joint"/>
-      <geom group="2" type="box" size="0.035 0.035 0.035" material="mat_red_obj" mass="0.22"
+      <geom group="2" type="box" size="0.03 0.03 0.045" material="mat_red_obj" mass="0.22"
         contype="3" conaffinity="3" friction="1 0.005 0.0001"/>
     </body>
 

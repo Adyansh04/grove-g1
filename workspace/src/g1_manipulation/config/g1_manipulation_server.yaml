@@ -18,10 +18,15 @@ g1_manipulation_server:
     grasp_depth_below_top_m: 0.020
 
     # And never lower than this above whatever the object stands on, which wins when the two
-    # disagree. Measured in MuJoCo: even with the thumb retracted the hand hangs 63 mm below the
-    # grasp frame, so a grip lower than this puts the thumb on the table instead of the object.
-    # It is also why the props are 70-90 mm tall; a 60 mm cube cannot be gripped by this hand.
-    min_grip_height_m: 0.068
+    # disagree. Measured in MuJoCo: while it descends the hand hangs 63 mm below the grasp frame,
+    # so the thumb's clearance over the surface is this minus 63 mm. At the old 0.068 that left
+    # 5 mm against a descent that lands within 6-10 mm, and the thumb scraped the table and
+    # dragged the object 44 mm before the fingers closed. 80 mm leaves 17.
+    #
+    # It also decides the props. The grip point can never be above the object, so an object has
+    # to be at least this tall, and the hand takes nothing wider than 75 mm: no cube satisfies
+    # both, which is why they are 60 wide and 90 tall.
+    min_grip_height_m: 0.080
 
     # How close the grasp frame must MEASURE to its target before the fingers close, and how many
     # corrections it gets. The arm is position-only: at kp 40 the shoulder settles about 0.09 rad
