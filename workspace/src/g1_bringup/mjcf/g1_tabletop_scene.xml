@@ -71,7 +71,7 @@
          that a matter of getting inside the rim instead. Static geoms, not a body: a target that
          slides when nudged is not a target.
 
-         120 mm inside 10 mm walls, so a 60 mm object has 30 mm of clearance either side, and the
+         120 mm inside 10 mm walls, so a 45 mm object has 37 mm of clearance either side, and the
          rim is 50 mm so the object clears it on the way in while the closed fingers, which hang
          34 mm below the grip point, stay above it. -->
     <!-- A body, not loose geoms, and with no freejoint: static, but named. The simulator reports
@@ -96,14 +96,20 @@
          basket beside them. Same size, mass and friction as the manipulation scene's block, so a
          pick tuned there is tuned here.
 
-         60 x 60 x 90, taller than it is wide, and not a cube because no cube works. The
+         45 x 45 x 90, taller than it is wide, and not a cube because no cube works. The
          descending thumb hangs 63 mm below the grip point, so its clearance over the table is
-         (grip height - 63); the grip point cannot be above the object, and the hand takes nothing
-         wider than 75 mm. That caps a cube at 12 mm against a descent that lands within 6-10 mm,
-         which is how the thumb came to scrape the table. See g1_common.xacro. -->
+         (grip height - 63); the grip point cannot be above the object, and min_grip_height_m puts
+         the grip 80 mm up, so the object has to be at least that tall. A cube satisfying both
+         does not exist, which is why this is tall and narrow.
+
+         Narrowed from 60 mm across. The hand takes nothing wider than 75, so at 60 the fingers
+         closed barely 8 mm each side and held it on a shallow pinch: enough to lift with the base
+         pinned, not enough to keep while the robot walked, where it was measured dropping during
+         the retreat. At 45 they close 15 mm each side and wrap the block rather than pinching it.
+         The height is untouched on purpose, because that is what the top grasp needs. -->
     <body name="red_block" pos="0.30 -0.08 0.847">
       <freejoint name="red_block_joint"/>
-      <geom group="2" type="box" size="0.03 0.03 0.045" material="mat_red_obj" mass="0.22"
+      <geom group="2" type="box" size="0.0225 0.0225 0.045" material="mat_red_obj" mass="0.124"
         contype="3" conaffinity="3" friction="1 0.005 0.0001"/>
     </body>
 
@@ -112,14 +118,14 @@
          this one from the red block is only possible on colour, which is what makes "pick up the
          red block" a test of selection rather than of detection.
 
-         140 mm from the red one, not 100. The hand's envelope around a 60 mm block is about
+         140 mm from the red one, not 100. The hand's envelope around a block this size is about
          100 mm across, so at 100 mm centres it cannot descend between the two: measured, the
          fingers shoved this block 46 to 48 mm on the way in to the red one, in every run that
          got as far as the grasp. 140 mm leaves an 80 mm face gap, about 20 mm of clearance per
          finger. Closer spacing than this needs a grasp yaw chosen per object, not a fixed one. -->
     <body name="blue_block" pos="0.30 -0.22 0.847">
       <freejoint name="blue_block_joint"/>
-      <geom group="2" type="box" size="0.03 0.03 0.045" material="mat_blue_obj" mass="0.22"
+      <geom group="2" type="box" size="0.0225 0.0225 0.045" material="mat_blue_obj" mass="0.124"
         contype="3" conaffinity="3" friction="1 0.005 0.0001"/>
     </body>
 

@@ -119,7 +119,7 @@
          centimetre closer the robot's pelvis has to come to the table edge, and at pelvis
          height the edge is what the hips foul. The block still has 2 cm of top under it.
 
-         60 x 60 x 90, the same prop the tabletop scene uses, and no longer a cube. The hand
+         45 x 45 x 90, the same prop the tabletop scene uses, and no longer a cube. The hand
          grips by contact here rather than by a weld, and a cube cannot be gripped: the thumb
          hangs 63 mm below the grip point, the grip point cannot be above the object, and the
          hand takes nothing wider than 75 mm, which leaves a 60 mm cube about 12 mm of clearance
@@ -130,7 +130,7 @@
          through this block. -->
     <body name="red_block" pos="4.5 -5.00 0.845">
       <freejoint name="red_block_joint"/>
-      <geom group="2" type="box" size="0.03 0.03 0.045" material="mat_red_obj" mass="0.22"
+      <geom group="2" type="box" size="0.0225 0.0225 0.045" material="mat_red_obj" mass="0.124"
         contype="3" conaffinity="3" friction="1 0.005 0.0001"/>
     </body>
 
