@@ -1567,12 +1567,16 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
         goal_handle->canceled(result);
     };
 
-    // Deliberately NOT exempting anything yet. The octomap is one collision entity, so letting
-    // the carried object through it lets that object through everything mapped, not only the
-    // surface it is aimed at: the bench, the neighbouring blocks, the far row. Applied from here
-    // it covered the whole place, which is how a carried block came to sweep the table on its way
-    // across. The lower re-applies it, because a set-down does end in contact, and that is the
-    // only stretch that needs it.
+    // The carried object, and only it: include_links stays false so the ARM is still checked
+    // against everything mapped. The object has to be exempt because it maps ITSELF -- held up in
+    // the air it is the clearest thing the LiDAR can see, nothing excludes an attached body from
+    // the octomap, and it then collides with its own voxels. Measured: without this every
+    // preplace plan was refused in 4.5 ms with its whole budget untouched.
+    //
+    // This was removed once, on the theory that it was what let a carried block sweep the table.
+    // It was not: that was the arm missing its path by 33 mm on the median and 394 at worst, and
+    // it went away when the arm was stiffened, not when this was taken out.
+    setHandContact(arm, touchables, true, /*include_links=*/false);
 
     // A surface from /objects beats the caller's coordinate: a tree writes its drop point in map,
     // and map->odom drift alone exceeds the arm's 0.04 m lateral window.
