@@ -1564,9 +1564,12 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
         goal_handle->canceled(result);
     };
 
-    // The carried object may pass through the surface's voxels; the ARM may not. Exempting the
-    // hand this early routed the arm into the bench and shoved the base off its stance.
-    setHandContact(arm, touchables, true, /*include_links=*/false);
+    // Deliberately NOT exempting anything yet. The octomap is one collision entity, so letting
+    // the carried object through it lets that object through everything mapped, not only the
+    // surface it is aimed at: the bench, the neighbouring blocks, the far row. Applied from here
+    // it covered the whole place, which is how a carried block came to sweep the table on its way
+    // across. The lower re-applies it, because a set-down does end in contact, and that is the
+    // only stretch that needs it.
 
     // A surface from /objects beats the caller's coordinate: a tree writes its drop point in map,
     // and map->odom drift alone exceeds the arm's 0.04 m lateral window.
