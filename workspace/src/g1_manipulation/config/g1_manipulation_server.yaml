@@ -83,7 +83,15 @@ g1_manipulation_server:
 
     # Well under joint_limits.yaml's 0.8 rad/s cap: arm motion disturbs a standing humanoid, and
     # scaling the trajectory beats clamping joints, which bends the path.
-    velocity_scaling: 0.3
+    #
+    # Halved from 0.3 because the arm does not follow what the planner draws. Measured off
+    # arm_trajectory_controller's own error field, while moving: 57 mm at the hand on the median,
+    # 74 mm at the 90th, 171 mm at worst, against a scene whose gaps are tens of millimetres.
+    # MoveIt guarantees clearance along the trajectory, so whatever the arm lags by is clearance
+    # the real link never had, and no amount of octomap or planner work can close that. Slower
+    # trades cycle time for the part of the lag that is dynamic; the rest is gain, in
+    # g1_description/config/lowcmd_params.yaml.
+    velocity_scaling: 0.15
     planning_time_s: 10.0
 
     # Samples per motion, all inside planning_time_s: ValidateSolution rejects paths OMPL accepted,
