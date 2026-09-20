@@ -1577,7 +1577,17 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
     std::optional<vision_msgs::msg::Detection3D> surface;
     if (!goal->surface_object_id.empty())
     {
-        surface = lookUpObject(goal->surface_object_id);
+        // Given the same moment the landing check gets. The surface is scored against a phrase
+        // like anything else, and the arm carrying the object across the table is standing in
+        // front of it: measured on the bench here, 0.60 to 0.67 against a 0.50 threshold, so a
+        // partial occlusion drops it under, and a phrase with no track has no bare-phrase alias
+        // for this to resolve. It comes back on its own within a frame or two.
+        const rclcpp::Time surface_deadline =
+            now() + rclcpp::Duration::from_seconds(place_confirm_timeout_s_);
+        while (!(surface = lookUpObject(goal->surface_object_id)) && now() < surface_deadline)
+        {
+            rclcpp::sleep_for(std::chrono::milliseconds(200));
+        }
         if (!surface)
         {
             fail(

@@ -54,7 +54,15 @@ g1_object_geometry:
     track_match_radius_m: 0.08
     # Long enough to survive a few missed detections, short enough that an object carried away
     # stops reserving its index.
-    track_timeout_s: 2.0
+    #
+    # 6.0, because 2.0 was shorter than one detection cycle and so survived nothing. Measured in
+    # sim, where the detector shares its GPU with MuJoCo's rendering: /objects came out at
+    # 0.38 Hz, a cycle every 2.6 s. The bench, which scores 0.60 to 0.67 against a 0.50 threshold,
+    # lost its track on its first miss and stayed gone for the last 97 s of the run, taking the
+    # bare-phrase alias Place resolves it by with it. 6 s covers two cycles at the rate actually
+    # observed. The cost is the other half of the comment above: an object carried off keeps its
+    # old track for that long, so it briefly answers to two and has no bare alias either.
+    track_timeout_s: 6.0
 
     # TF at the mask's own stamp: the camera moves with the torso, and a 1.5 s-old pose under
     # today's TF lands wherever the robot has since leaned.
