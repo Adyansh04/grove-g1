@@ -172,6 +172,11 @@ G1ManipulationServer::G1ManipulationServer(const rclcpp::NodeOptions& options)
     // {side}_hand_grasp_frame link in the URDF, not here. The fingers close toward the palm's
     // +y, so the roll is what turns the closing axis down for a grasp off a table.
     grasp_rpy_ = declare_parameter<std::vector<double>>("grasp_rpy", { -M_PI_2, 0.0, 0.0 });
+    front_grasp_rpy_ =
+        declare_parameter<std::vector<double>>("front_grasp_rpy", { -M_PI_2, 0.0, M_PI_4 });
+    grasp_approach_ = graspApproachFrom(declare_parameter<std::string>("grasp_approach", "top"));
+    front_approach_standoff_m_ = declare_parameter<double>("front_approach_standoff_m", 0.18);
+    front_grip_height_m_       = declare_parameter<double>("front_grip_height_m", 0.045);
 
     grasp_source_         = declare_parameter<std::string>("grasp_source", "fixed_top_down");
     grasp_timeout_s_      = declare_parameter<double>("grasp_timeout_s", 20.0);
@@ -378,6 +383,10 @@ std::optional<geometry_msgs::msg::Pose> G1ManipulationServer::toPlanningFrame(
 
 void G1ManipulationServer::initialize()
 {
+    if (front_grasp_rpy_.size() != 3)
+    {
+        throw std::runtime_error("front_grasp_rpy needs exactly 3 entries");
+    }
     if (grasp_rpy_.size() != 3)
     {
         throw std::runtime_error("grasp_rpy needs exactly 3 entries");
@@ -1978,7 +1987,19 @@ void G1ManipulationServer::executeSetArmPosture(
     const bool is_arm_group =
         resolveArm(goal->group.rfind("left", 0) == 0 ? "left" : "right", arm) &&
         goal->group == arm.arm_group;
-    if (is_arm_group && !planning_scene_.getAttachedObjects().empty())
+    // Read from the monitored robot state, not from PlanningSceneInterface. The interface answers
+    // over a service and lagged the release: after a place that genuinely worked it still listed
+    // the block, so the tuck that ends the mission reported a drop and failed a run whose block
+    // was already in the bench. executePlace detaches through this same state.
+    std::vector<const moveit::core::AttachedBody*> carried;
+    if (is_arm_group)
+    {
+        if (const moveit::core::RobotStatePtr state = group->getCurrentState())
+        {
+            state->getAttachedBodies(carried, state->getJointModelGroup(arm.arm_group));
+        }
+    }
+    if (is_arm_group && !carried.empty())
     {
         if (std::string grip; !isHolding(arm, grip))
         {
