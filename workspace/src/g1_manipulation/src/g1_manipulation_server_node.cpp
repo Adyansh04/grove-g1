@@ -1391,11 +1391,14 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     // Contact allowed only now, for the last few centimetres: an exemption held all skill long
     // lets a plan route straight through the table. The object is removed rather than exempted,
     // following MoveIt's remove-close-attach.
-    setHandContact(arm, { "<octomap>" }, true);
     planning_scene_.removeCollisionObjects({ goal->object_id });
-    // And drop the map itself: the exemption covers the hand, but the ghosts the arm left behind
-    // block the forearm, and that is what the descent keeps running into.
+    // Drop the map first, THEN exempt the hand from it. Clearing removes the octomap as a world
+    // object and takes its allowed-collision entries with it, so an exemption set beforehand is
+    // gone by the time the rebuilt map exists. Measured: the descent's own Cartesian line died
+    // 3 % in on `<octomap> <-> right_hand_thumb_2_link`, which is the thumb passing the object it
+    // is reaching for, the one contact this exemption is entirely about.
     clearOctomap();
+    setHandContact(arm, { "<octomap>" }, true);
 
     if (!descendOnto(*arm_group, pregrasp_goal, grasp_goal, arm.grasp_frame))
     {
@@ -1701,9 +1704,11 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
     }
     feedback->phase = Place::Feedback::PHASE_LOWER;
     goal_handle->publish_feedback(feedback);
-    // Now the hand may touch the surface: the descent ends in contact by definition.
-    setHandContact(arm, touchables, true);
+    // Now the hand may touch the surface: the descent ends in contact by definition. Cleared
+    // first, for the reason the pick's descent gives: the clear drops the octomap's allowed
+    // collisions along with the octomap.
     clearOctomap();
+    setHandContact(arm, touchables, true);
     if (!descendOnto(*arm_group, preplace, place_goal, arm.grasp_frame))
     {
         fail(Place::Feedback::PHASE_LOWER, "could not lower onto the target");
