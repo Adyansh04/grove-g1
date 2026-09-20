@@ -53,12 +53,21 @@ g1_manipulation_server:
 
     # Clears the same 0.185: the exemption is restored at the end of the lift, so wherever it
     # finishes becomes the start state of the next collision-checked plan.
+    # The arm never quite gets here: position-only, it settles about 39 mm low under the load of
+    # a held block, and that gap is the same 39 mm whether this is 0.20 or 0.15, so it is sag
+    # rather than reach. Asked for 0.20 to leave about 160 mm of real clearance for the carry.
     lift_height_m: 0.20
 
-    # Straight-line lift tries. One is not enough: a Cartesian path that stops early is usually
-    # blocked by something under the hand, so the next line, started higher, gets further. A carry
-    # begun from a short lift drags the held object over the table, because the planner clears
-    # MoveIt's attached box rather than where the object really sits in the fingers.
+    # The same standoff for a place. Smaller than the pick's on purpose: a place target is
+    # already elevated by whatever it is going onto, so the same 0.22 put the preplace at 1.155 m
+    # where the pregrasp that works sits at 1.090. Measured, every one of the five plans to it
+    # failed in 5 ms, which is an unreachable goal rather than a search that ran out of road.
+    place_approach_height_m: 0.15
+
+    # Straight-line lift tries. One is not enough when the line is genuinely blocked: whatever
+    # truncates it is usually below the hand, so the next line, started higher, gets further.
+    # Retried on the Cartesian fraction alone; the 39 mm of sag is not a short line and retrying
+    # it just spends every attempt.
     lift_attempts: 3
 
     # How far the object may end up from where it was aimed before the place is called a failure.

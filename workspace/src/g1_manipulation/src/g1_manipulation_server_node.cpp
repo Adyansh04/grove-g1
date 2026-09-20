@@ -130,6 +130,8 @@ G1ManipulationServer::G1ManipulationServer(const rclcpp::NodeOptions& options)
 {
     object_timeout_s_        = declare_parameter<double>("object_timeout_ms", 1000.0) / 1000.0;
     approach_height_m_       = declare_parameter<double>("approach_height_m", 0.22);
+    place_approach_height_m_ =
+        declare_parameter<double>("place_approach_height_m", 0.15);
     grasp_depth_below_top_m_ = declare_parameter<double>("grasp_depth_below_top_m", 0.020);
     min_grip_height_m_       = declare_parameter<double>("min_grip_height_m", 0.080);
     settle_tolerance_m_      = declare_parameter<double>("settle_tolerance_m", 0.010);
@@ -1458,18 +1460,19 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     // the object along the surface and off it: measured, 43 mm, which was enough to leave the
     // block overhanging the near edge.
     //
-    // Repeated, because one partial line is not enough. What truncates the first attempt is
-    // usually below the hand, so a second line started from the new height gets further, and a
-    // carry begun from a short lift drags the held object across the table: the planner clears
-    // MoveIt's attached box, not the object's real pose in the hand, and the two differ by
-    // whatever the fingers raked on the way closed.
+    // Repeated only while the LINE itself is short. What truncates an attempt is usually below
+    // the hand, so a second line started from the new height gets further, and a carry begun from
+    // a short lift drags the held object across the table.
+    //
+    // Judged on the Cartesian fraction, not on where the arm ends up. Measured: the arm finishes
+    // 39 mm below the target whether the target is 200 mm or 150 mm, because this arm is
+    // position-only and sags about 0.09 rad at the shoulder under load. That sag is not a short
+    // line and cannot be retried away; reading it as one spent every attempt, every run.
     double lift_fraction = 0.0;
     for (int attempt = 0; attempt < lift_attempts_; ++attempt)
     {
         lift_fraction = moveStraight(*arm_group, lifted, arm.grasp_frame, "lift", 0.0);
-        const auto residual = residualTo(*arm_group, lifted, arm.grasp_frame, "lift");
-        if (lift_fraction <= 0.0 || !residual.has_value() ||
-            std::abs(residual->z) <= settle_tolerance_m_)
+        if (lift_fraction <= 0.0 || lift_fraction >= 0.99)
         {
             break;
         }
@@ -1479,14 +1482,16 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
         fail(Pick::Feedback::PHASE_LIFT, "could not lift clear of the surface");
         return;
     }
-    // Reported either way: a lift that stops short is the thing to look at first when a carry
-    // knocks the scene about, and it is otherwise invisible.
+    // Both numbers, because they mean different things and only one is actionable: a short line
+    // is an obstacle the carry will meet again, while the gap to the target is mostly the arm's
+    // own sag and is the same 39 mm whatever the target.
     if (const auto residual = residualTo(*arm_group, lifted, arm.grasp_frame, "lift");
-        residual.has_value() && std::abs(residual->z) > settle_tolerance_m_)
+        residual.has_value())
     {
-        RCLCPP_WARN(
+        RCLCPP_INFO(
             get_logger(),
-            "lift: stopped %.0f mm below the %.0f mm target; the carry starts low",
+            "lift: walked %.0f%% of the line, ended %.0f mm below the %.0f mm target",
+            lift_fraction * 100.0,
             std::abs(residual->z) * 1000.0,
             lift_height_m_ * 1000.0);
     }
@@ -1604,7 +1609,7 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
 
     geometry_msgs::msg::Pose place_goal = graspFrameGoal(*target, held_height, arm);
     geometry_msgs::msg::Pose preplace   = place_goal;
-    preplace.position.z += approach_height_m_;
+    preplace.position.z += place_approach_height_m_;
 
     // A cancel is accepted by the server, so it has to be honoured somewhere: between phases is
     // the only safe place, because a trajectory already executing cannot be unwound here.
@@ -1671,7 +1676,7 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
                 // The retreat returns here, so it moves with the re-aim. Left stale, the lift is
                 // diagonal by however far the base walked.
                 preplace = place_goal;
-                preplace.position.z += approach_height_m_;
+                preplace.position.z += place_approach_height_m_;
             }
         }
     }
@@ -1803,7 +1808,28 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
             }
             {
                 const double off = std::hypot(where->x - aim.x, where->y - aim.y, where->z - aim.z);
-                if (off > place_tolerance_m_)
+                // On a named surface the question is whether the object is ON it, which is a
+                // footprint test rather than a distance one. A radius cannot answer it: an object
+                // inside a container reads up to the container's own half-width off centre,
+                // because the walls occlude it and the clipped mask drags the centroid toward the
+                // rim. Measured, a block resting correctly on the box floor reported 83 mm out,
+                // while a block abandoned on the table beside it was 258 mm out in y alone, so
+                // the footprint separates them where a radius put both on the same side.
+                bool landed_on_target = off <= place_tolerance_m_;
+                if (!landed_on_target && surface)
+                {
+                    // Sideways only. The occlusion that biases the reading is the container's own
+                    // walls cutting the mask, which moves the centroid across, not down, and the
+                    // block stands 37 mm proud of this box so its top face is never hidden.
+                    // Allowing the same slack in z let a block abandoned on the tabletop pass,
+                    // 12 mm being all that separates the tabletop from the box floor.
+                    const auto& extent = surface->bbox.size;
+                    landed_on_target =
+                        std::abs(where->x - aim.x) <= 0.5 * extent.x + place_tolerance_m_ &&
+                        std::abs(where->y - aim.y) <= 0.5 * extent.y + place_tolerance_m_ &&
+                        std::abs(where->z - aim.z) <= place_tolerance_m_;
+                }
+                if (!landed_on_target)
                 {
                     result->success = false;
                     // Both positions, not just the gap: where it went says whether it was set

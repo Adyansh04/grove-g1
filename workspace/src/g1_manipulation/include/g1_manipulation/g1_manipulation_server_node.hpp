@@ -475,6 +475,8 @@ private:
     /// Settle time after a clear, for the sweep to put the real surfaces back.
     double octomap_rebuild_wait_s_{ 0.8 };
     double approach_height_m_{ 0.22 };
+    /// The same standoff for a place, which starts from an already-elevated target.
+    double place_approach_height_m_{ 0.15 };
     double lift_height_m_{ 0.15 };
     /// Straight-line lift tries, since what truncates one attempt is usually below the next.
     int    lift_attempts_{ 3 };
