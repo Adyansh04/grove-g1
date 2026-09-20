@@ -125,7 +125,15 @@ g1_manipulation_server:
 
     # The same for a front grasp, and a separate number because it is a different wrist pose
     # rather than a tweak of the one above. Mirrors for the left arm exactly as grasp_rpy does.
-    front_grasp_rpy: [-1.5707963, 0.0, 1.5707963]
+    #
+    # The yaw is 45 degrees because that is the only one that works, swept against IK and
+    # /check_state_validity at the tabletop block, octomap contacts discounted since the descent
+    # exempts the hand from the map:
+    #   yaw   0: the grasp is reachable, the standoff behind it drives the arm into the torso
+    #   yaw  45: both reachable and clear, at every grip height tried
+    #   yaw  90: no IK at the grasp at all
+    #   yaw -45, -90, 180: blocked on the shoulder, or no IK
+    front_grasp_rpy: [-1.5707963, 0.0, 0.7853982]
 
     # A front grasp's equivalent of approach_height_m: how far back along its own approach axis
     # it stages. The axis points at the robot, so this is clearance in front of the object rather
