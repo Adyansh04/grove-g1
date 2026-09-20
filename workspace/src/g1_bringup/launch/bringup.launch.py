@@ -167,10 +167,17 @@ def _moveit():
 
 def _manipulation(want_perception, visualization):
     # Perception owns the object stream when it runs, and its poses arrive seconds late.
+    #
+    # 8 s, not 4. Measured in sim, where the detector shares a GPU with MuJoCo's rendering:
+    # /objects comes out at 0.39 Hz, a cycle every 2.6 s, and stretches past 4 s once the arm is
+    # planning too. Every lookup was then refused on age with "No usable object poses ... 4.17 s
+    # old", which surfaces to a tree as the surface having vanished. The scenes this runs on are
+    # static, so an 8 s old pose of a bench is still exactly where the bench is; a moving object
+    # on hardware, off its own camera, wants the shorter number back.
     return _include(
         os.path.join(_share("g1_manipulation"), "launch", "manipulation.launch.py"),
         object_source="perception" if want_perception else LaunchConfiguration("object_source"),
-        object_timeout_ms="4000.0" if want_perception else "1000.0",
+        object_timeout_ms="8000.0" if want_perception else "1000.0",
         grasp_source=LaunchConfiguration("grasp_source"),
         grasp_offset=LaunchConfiguration("grasp_offset"),
         visualization=visualization,
