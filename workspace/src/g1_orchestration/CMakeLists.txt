@@ -14,11 +14,13 @@ find_package(g1_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(lifecycle_msgs REQUIRED)
 find_package(nav2_msgs REQUIRED)
+find_package(rcl_interfaces REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(std_srvs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
+find_package(vision_msgs REQUIRED)
 
 # --- library ---------------------------------------------------------------
 
@@ -33,6 +35,7 @@ add_library(g1_bt_nodes
   src/skills/clear_costmaps.cpp
   src/skills/clear_octomap.cpp
   src/skills/grasp.cpp
+  src/skills/look_for.cpp
   src/skills/navigate_to_pose.cpp
   src/skills/pick.cpp
   src/skills/place.cpp
@@ -51,7 +54,9 @@ target_link_libraries(g1_bt_nodes PUBLIC
   ${geometry_msgs_TARGETS}
   ${lifecycle_msgs_TARGETS}
   ${nav2_msgs_TARGETS}
+  ${rcl_interfaces_TARGETS}
   ${std_srvs_TARGETS}
+  ${vision_msgs_TARGETS}
 )
 
 # --- executables -----------------------------------------------------------
