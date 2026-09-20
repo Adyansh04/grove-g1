@@ -23,8 +23,12 @@ g1_detector:
     # moved. The camera publishes at 10 Hz, so anything past a second means it has stopped.
     max_image_age_s: 1.0
 
-    # Grounding DINO's two thresholds. Its scores on these objects sit above 0.8 and its false
-    # positives well below 0.5, so these are the upstream defaults rather than tuned numbers.
+    # Grounding DINO scores every object against every phrase, so this is what decides how many
+    # of the also-rans become tracks of their own. Measured over 25 tabletop frames: the right
+    # object never scored below 0.62 and the best wrong one never above 0.43, and a phrase
+    # carrying two tracks loses the bare-phrase alias the skills resolve objects by. 0.50 sits in
+    # that gap. Raise the wording before raising this: a longer phrase widens the same gap from
+    # 0.25 to 0.55 without costing a detection.
     # SAM 3 ignores the second: it has one calibrated score.
-    box_threshold: 0.30
+    box_threshold: 0.50
     text_threshold: 0.25

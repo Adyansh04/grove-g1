@@ -29,11 +29,11 @@ rclcpp::QoS objectsQos()
     return rclcpp::QoS(rclcpp::KeepLast(1)).reliable().durability_volatile();
 }
 
-/// `red_block` is the slug of the phrase `red block`, so the inverse recovers what to ask for.
-std::string phraseOf(std::string id)
+/// The id a tree says, out of an `id=phrase` entry or, without one, out of the phrase's own slug.
+std::string idOf(const std::string& entry)
 {
-    std::replace(id.begin(), id.end(), '_', ' ');
-    return id;
+    const std::size_t split = entry.find('=');
+    return split == std::string::npos ? entry : entry.substr(0, split);
 }
 
 }  // namespace
@@ -47,8 +47,9 @@ BT::PortsList LookFor::providedPorts()
     return {
         BT::InputPort<std::string>(
             "objects",
-            "Comma-separated object ids to look for, e.g. 'red_block,brown_box'. Each is also "
-            "the phrase the detector is asked for, with underscores as spaces."),
+            "Comma-separated objects to look for. Each is an id the detector is asked for and "
+            "waited on by name, or 'id=phrase' when the wording that finds it reliably is not "
+            "the name the tree uses, e.g. 'red_block=bright red plastic block'."),
         BT::InputPort<std::string>(
             "detector",
             "/g1_detector",
@@ -69,14 +70,19 @@ BT::NodeStatus LookFor::tick()
         return BT::NodeStatus::FAILURE;
     }
 
+    // The entries go to the detector as written; only the ids are waited on. A detector needs a
+    // wordier phrase than a tree wants to say, and "id=phrase" lets each have its own.
+    std::vector<std::string> entries;
     std::vector<std::string> wanted;
     for (const auto& part : BT::splitString(objects.value(), ','))
     {
-        std::string id = BT::convertFromString<std::string>(part);
-        if (!id.empty())
+        std::string entry = BT::convertFromString<std::string>(part);
+        if (entry.empty())
         {
-            wanted.push_back(std::move(id));
+            continue;
         }
+        wanted.push_back(idOf(entry));
+        entries.push_back(std::move(entry));
     }
 
     const double      timeout_s   = getInput<double>("timeout_s").value_or(20.0);
@@ -90,10 +96,7 @@ BT::NodeStatus LookFor::tick()
     if (!detector.empty())
     {
         auto request = std::make_shared<rcl_interfaces::srv::SetParameters::Request>();
-        std::vector<std::string> phrases;
-        phrases.reserve(wanted.size());
-        std::transform(wanted.begin(), wanted.end(), std::back_inserter(phrases), phraseOf);
-        request->parameters.push_back(rclcpp::Parameter("phrases", phrases).to_parameter_msg());
+        request->parameters.push_back(rclcpp::Parameter("phrases", entries).to_parameter_msg());
 
         const auto response = callService<rcl_interfaces::srv::SetParameters>(
             client_node,

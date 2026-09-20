@@ -29,7 +29,7 @@
         <Action ID="LookFor">
             <input_port name="timeout_s" type="double" default="20.000000">Budget for the write and for the objects to appear. A detector pass is ~0.5 s per phrase and the tracker needs a few before it trusts a track.</input_port>
             <input_port name="detector" type="std::string" default="/g1_detector">Node whose `phrases` to write. Empty waits without narrowing anything.</input_port>
-            <input_port name="objects" type="std::string">Comma-separated object ids to look for, e.g. 'red_block,brown_box'. Each is also the phrase the detector is asked for, with underscores as spaces.</input_port>
+            <input_port name="objects" type="std::string">Comma-separated objects to look for. Each is an id the detector is asked for and waited on by name, or 'id=phrase' when the wording that finds it reliably is not the name the tree uses, e.g. 'red_block=bright red plastic block'.</input_port>
         </Action>
         <Action ID="NavigateToPose">
             <output_port name="goal_yaw" type="double">The goal's heading, for an ApproachObject that has to hold it.</output_port>

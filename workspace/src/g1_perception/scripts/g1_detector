@@ -69,13 +69,29 @@ class Detector(Node):
     def _phrases(self):
         # get_parameter_or, because a type-only declaration leaves the parameter uninitialized
         # until something writes it, and get_parameter raises on that.
-        return [str(phrase) for phrase in self._param("phrases", []) or [] if str(phrase).strip()]
+        #
+        # An entry may be "name=phrase". The wording that separates an object from its neighbours
+        # is not the name a tree wants to say: measured on the tabletop, "red block" beats the
+        # blue one by 0.25 while "bright red plastic block" beats it by 0.55, and the id built
+        # from that phrase would be bright_red_plastic_block. Asking for the long one and
+        # publishing the short one keeps the margin without renaming the object.
+        pairs = []
+        for raw in self._param("phrases", []) or []:
+            entry = str(raw).strip()
+            if not entry:
+                continue
+            name, _, phrase = entry.partition("=")
+            name, phrase = name.strip(), phrase.strip()
+            pairs.append((name, phrase or name))
+        return pairs
 
     def _tick(self):
-        phrases = self._phrases()
+        pairs = self._phrases()
         image = self._image
-        if not phrases or image is None:
+        if not pairs or image is None:
             return
+        phrases = [phrase for _, phrase in pairs]
+        names = {phrase: name for name, phrase in pairs}
         age = (self.get_clock().now() - rclpy.time.Time.from_msg(image.header.stamp)).nanoseconds / 1e9
         if age > self._max_image_age_s:
             self.get_logger().warning(
@@ -97,12 +113,12 @@ class Detector(Node):
             self.get_logger().warning(str(error), throttle_duration_sec=5.0)
             return
         self._ready = True
-        self._publish(image, reply)
+        self._publish(image, reply, names)
 
     def close(self):
         self._client.close()
 
-    def _publish(self, image, reply):
+    def _publish(self, image, reply, names):
         masks = InstanceMaskArray()
         # The image's own header: the geometry node pairs on this stamp to find the depth frame
         # these masks were cut from, which is not the newest one by the time they arrive.
@@ -120,7 +136,8 @@ class Detector(Node):
                 )
                 continue
             out = InstanceMask()
-            out.label = str(instance["label"])
+            label = str(instance["label"])
+            out.label = names.get(label, label)
             out.score = float(instance["score"])
             out.roi.x_offset = x
             out.roi.y_offset = y

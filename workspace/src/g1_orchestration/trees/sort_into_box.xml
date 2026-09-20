@@ -30,11 +30,16 @@
 
       <!-- Ask for these two and nothing else, which is what makes the camera path work at all.
            Grounding DINO runs a backbone pass per phrase: measured, seven phrases take 1.67 s
-           against g1_detector's max_image_age_s of 1.0, so every frame is already stale when
-           the answer arrives and /objects never fills. Two phrases take 0.51 s and fit. The
-           second reason is naming: "yellow box" also scores 0.56 on the brown box, and a phrase
-           holding two tracks loses the bare-phrase alias that Pick and Place resolve by. -->
-      <LookFor name="find_the_block_and_the_box" objects="red_block,brown_box"/>
+           against g1_detector's max_image_age_s of 1.0, so every frame is already stale when the
+           answer arrives and /objects never fills. Two phrases take 0.51 s and fit.
+
+           The wording is long on purpose. The model scores every object against every phrase, so
+           what matters is the gap to the runner-up, and measured on this table "red block" beats
+           the blue one by 0.25 where "bright red plastic block" beats it by 0.55. Both find the
+           same box; only the margin changes. The short name before the '=' is what stays on
+           /objects, so Pick and Place keep saying red_block. -->
+      <LookFor name="find_the_block_and_the_box"
+        objects="red_block=bright red plastic block,brown_box=brown box container"/>
 
       <ClearOctomap name="forget_where_the_arm_has_been"/>
 
