@@ -101,7 +101,7 @@
          (grip height - 63); the grip point cannot be above the object, and the hand takes nothing
          wider than 75 mm. That caps a cube at 12 mm against a descent that lands within 6-10 mm,
          which is how the thumb came to scrape the table. See g1_common.xacro. -->
-    <body name="red_block" pos="0.30 -0.10 0.847">
+    <body name="red_block" pos="0.30 -0.08 0.847">
       <freejoint name="red_block_joint"/>
       <geom group="2" type="box" size="0.03 0.03 0.045" material="mat_red_obj" mass="0.22"
         contype="3" conaffinity="3" friction="1 0.005 0.0001"/>
@@ -110,8 +110,14 @@
     <!-- The same block in another colour, and the point of it: every other object here differs
          in shape as well, so a detector could be right about them by silhouette alone. Telling
          this one from the red block is only possible on colour, which is what makes "pick up the
-         red block" a test of selection rather than of detection. -->
-    <body name="blue_block" pos="0.30 -0.20 0.847">
+         red block" a test of selection rather than of detection.
+
+         140 mm from the red one, not 100. The hand's envelope around a 60 mm block is about
+         100 mm across, so at 100 mm centres it cannot descend between the two: measured, the
+         fingers shoved this block 46 to 48 mm on the way in to the red one, in every run that
+         got as far as the grasp. 140 mm leaves an 80 mm face gap, about 20 mm of clearance per
+         finger. Closer spacing than this needs a grasp yaw chosen per object, not a fixed one. -->
+    <body name="blue_block" pos="0.30 -0.22 0.847">
       <freejoint name="blue_block_joint"/>
       <geom group="2" type="box" size="0.03 0.03 0.045" material="mat_blue_obj" mass="0.22"
         contype="3" conaffinity="3" friction="1 0.005 0.0001"/>
