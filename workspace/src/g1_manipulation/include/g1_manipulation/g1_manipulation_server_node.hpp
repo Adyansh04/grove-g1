@@ -457,6 +457,8 @@ private:
     /// How close the grasp frame must measure to its target before the hand closes, and how many
     /// corrective nudges it gets to get there.
     double settle_tolerance_m_{ 0.010 };
+    /// Past this the object cannot be between the fingers, so closing is closing on air.
+    double max_grasp_offset_m_{ 0.020 };
     int    settle_attempts_{ 2 };
     /// Where every descent onto a grasp starts from, back up the approach axis. Above the top of
     /// anything this hand can grip, and short enough to be a line the arm can actually walk.

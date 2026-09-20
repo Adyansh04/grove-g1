@@ -135,6 +135,7 @@ G1ManipulationServer::G1ManipulationServer(const rclcpp::NodeOptions& options)
     grasp_depth_below_top_m_ = declare_parameter<double>("grasp_depth_below_top_m", 0.020);
     min_grip_height_m_       = declare_parameter<double>("min_grip_height_m", 0.080);
     settle_tolerance_m_      = declare_parameter<double>("settle_tolerance_m", 0.010);
+    max_grasp_offset_m_      = declare_parameter<double>("max_grasp_offset_m", 0.020);
     settle_attempts_         = static_cast<int>(declare_parameter<int>("settle_attempts", 2));
     reaim_clearance_m_       = declare_parameter<double>("reaim_clearance_m", 0.08);
     settle_wait_s_           = declare_parameter<double>("settle_wait_s", 0.8);
@@ -987,6 +988,22 @@ bool G1ManipulationServer::descendOnto(
         }
         if (attempt == settle_attempts_)
         {
+            // Close from here only if the object could still be between the fingers. The hand
+            // takes nothing wider than 75 mm and the blocks are 60, so a few millimetres is
+            // slack and anything more is air: measured on a failed pick, the descent ended with
+            // the block 115 mm away in the palm's own frame and the fingers swept shut through
+            // nothing, which costs an attempt and tells the tree the grasp was tried.
+            if (error > max_grasp_offset_m_)
+            {
+                RCLCPP_ERROR(
+                    get_logger(),
+                    "approach: %.0f mm off after %d descents, past the %.0f mm the hand can still "
+                    "close over; not closing on air",
+                    error * 1000.0,
+                    attempt + 1,
+                    max_grasp_offset_m_ * 1000.0);
+                return false;
+            }
             RCLCPP_WARN(
                 get_logger(),
                 "approach: still %.0f mm off after %d descents; closing from there",

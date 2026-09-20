@@ -29,15 +29,24 @@ g1_manipulation_server:
     min_grip_height_m: 0.080
 
     # How close the grasp frame must MEASURE to its target before the fingers close, and how many
-    # corrections it gets. The arm is position-only: at kp 40 the shoulder settles about 0.09 rad
-    # short under gravity, 40 mm at the hand, which is wider than the grip. Correcting is
-    # preferred to raising the gain, which the balance controller shares.
+    # corrections it gets. The arm is position-only and has no gravity compensation, so it always
+    # settles somewhere short; the corrections are what close that gap.
     #
-    # 10 mm because that is the floor: measured, the descent repeats to about 8 mm and a tighter
-    # tolerance only spends another descent failing to beat it. The grip is 25 mm wider than that
-    # on either side, and the grip check is what actually decides whether it worked.
+    # 10 mm was chosen when the arm sagged 40 mm at kp 40 and the descent could only repeat to
+    # about 8. At kp 300 the pregrasp now settles to 4 mm in one go, so this is no longer the
+    # binding constraint and could be tightened if anything ever needs it to be. The grip check
+    # is what actually decides whether the grasp worked.
     settle_tolerance_m: 0.010
     settle_attempts: 2
+
+    # How far off the grasp pose the descent may end and still be worth closing on. The hand takes
+    # nothing wider than 75 mm and these blocks are 60, so a couple of millimetres is slack and
+    # anything past that is air. Measured on a failed pick: the descent ended with the block 115 mm
+    # away in the palm's frame, the fingers swept shut through nothing, and the grip check then
+    # reported every finger unloaded -- a true answer to the wrong question, since the arm had
+    # never arrived. Refusing here says that instead, and leaves the object untouched for the
+    # retry.
+    max_grasp_offset_m: 0.020
 
     # Where every descent starts from, back up the approach axis, with only the stretch below it
     # taken as a straight line. Not the pregrasp: the full approach is 12 to 22 cm and runs out of
@@ -51,8 +60,9 @@ g1_manipulation_server:
     # never reached, and the corrections then chase a residual that is not there.
     settle_wait_s: 0.8
 
-    # Clears the same 0.185: the exemption is restored at the end of the lift, so wherever it
-    # finishes becomes the start state of the next collision-checked plan.
+    # Clears the workbench, and the exemption is restored at the end of the lift, so wherever the
+    # lift finishes becomes the start state of the next collision-checked plan.
+    #
     # The arm never quite gets here: position-only, it settles about 39 mm low under the load of
     # a held block, and that gap is the same 39 mm whether this is 0.20 or 0.15, so it is sag
     # rather than reach. Asked for 0.20 to leave about 160 mm of real clearance for the carry.
