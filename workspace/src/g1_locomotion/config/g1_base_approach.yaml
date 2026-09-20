@@ -49,9 +49,13 @@ g1_base_approach:
     target_y_m: -0.220
 
     # Objects the robot must stand FURTHER BACK from than target_x_m. Reaching over a surface to
-    # set something down sweeps the palm and wrist across its face; reaching onto one for a cube
-    # does not. From the block's 0.270 the drop pad's preplace has no collision-free path at all.
-    standoff_object_ids: ["drop_pad"]
+    # set something down sweeps the palm and wrist across its face; reaching onto one for a block
+    # does not. From the block's 0.270 the bench's preplace has no collision-free path at all.
+    #
+    # Named brown_box since the navigation scene's flat drop pad became the same container the
+    # tabletop scene uses; the standoff it needs is the same, and its rim makes the reach no
+    # shallower.
+    standoff_object_ids: ["brown_box"]
     standoff_target_x_m: [0.350]
 
     # From a 2D grid run at the workbench with the arms tucked, at the pregrasp height, checking

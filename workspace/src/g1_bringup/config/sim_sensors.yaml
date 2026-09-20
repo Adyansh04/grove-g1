@@ -45,13 +45,12 @@ object_bodies:
   - yellow_box
   # Only in the tabletop world, where perception is measured against these poses.
   - white_cup
-  # Static, and reported anyway: a place needs a surface to aim at, and the basket is the
-  # only thing in this scene that is one.
+  # Static, and reported anyway, in both worlds that have one. A place needs a surface to aim
+  # at, and g1_base_approach ranges to something on /objects to decide where to stand, so the
+  # place leg needs a landmark on the drop-off bench the way the pick leg has the block itself.
+  # The navigation scene's flat drop_pad was replaced by this same container, so one entry now
+  # covers both.
   - brown_box
-  # Not manipulable, and tracked anyway: g1_base_approach ranges to something on /objects to
-  # decide where to stand, and the place leg needs a landmark on the drop-off bench the way the
-  # pick leg has the block itself. Static, so its pose never changes.
-  - drop_pad
 
 # SIMULATION ONLY, and a stand-in rather than a model of anything. The Dex3 fingers carry no
 # contact geometry (patch 003, deliberate), so a closed hand passes through an object and

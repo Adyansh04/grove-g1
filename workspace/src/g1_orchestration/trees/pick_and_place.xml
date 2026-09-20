@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!--
   Navigate to the workbench, walk the last half metre, pick an object off it, carry it to the
-  storage room, put it down.
+  storage room, put it in the bench there.
 
   Coordinates are the g1_navigation_scene facility, in the `map` frame the committed map was
   built in.
@@ -60,6 +60,16 @@
           <NavigateToPose name="stage_at_workbench" goal="4.30;-5.60;1.5708"
                           goal_yaw="{workbench_yaw}"/>
         </Sequence>
+      </RetryUntilSuccessful>
+
+      <!-- Only now, with the workbench in front of the camera. The detector cannot be asked for
+           something the robot cannot see, and at the start of the mission it is across the
+           building: LookFor waits for the object on /objects, so asking early just spends the
+           timeout. The wording is long on purpose, the same wording the tabletop demo proved:
+           the model scores every object against every phrase and what matters is the gap to the
+           runner-up, which "bright red plastic block" widens from 0.25 to 0.55. -->
+      <RetryUntilSuccessful name="find_the_block_with_retries" num_attempts="2">
+        <LookFor name="find_the_block" objects="red_block=bright red plastic block"/>
       </RetryUntilSuccessful>
 
       <!-- Walks in pulses and re-reads the block between each one. Retried once: an approach
@@ -136,9 +146,16 @@
            surface has left the arm's band entirely and no arm motion can recover it: the BASE
            has to move, which means approaching again. Retrying the place alone would re-plan
            forever against a target that is simply out of range. -->
+      <!-- And again for the bench, which only comes into view here. This also narrows the
+           detector away from the block it is still carrying: a phrase list is global, and the
+           block in the hand is the closest thing to the camera. -->
+      <RetryUntilSuccessful name="find_the_bench_with_retries" num_attempts="2">
+        <LookFor name="find_the_bench" objects="brown_box=brown box container"/>
+      </RetryUntilSuccessful>
+
       <RetryUntilSuccessful name="place_with_retries" num_attempts="3">
         <Sequence name="close_in_and_place">
-          <ApproachObject name="close_on_the_pad" object_id="drop_pad" arm="right"
+          <ApproachObject name="close_on_the_bench" object_id="brown_box" arm="right"
                           working_yaw="{storage_yaw}"/>
 
           <!-- Named, not a coordinate: a coordinate here is in the MAP frame, while the
@@ -147,7 +164,7 @@
                window, so a map coordinate can land the target outside anything the arm can
                reach. Naming the surface makes the place and the approach read the same stream,
                so they cannot disagree. -->
-          <Place name="put_it_on_the_pad" surface="drop_pad" arm="right"/>
+          <Place name="put_it_in_the_bench" surface="brown_box" arm="right"/>
         </Sequence>
       </RetryUntilSuccessful>
 
