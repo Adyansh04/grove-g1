@@ -55,6 +55,12 @@ g1_manipulation_server:
     # finishes becomes the start state of the next collision-checked plan.
     lift_height_m: 0.20
 
+    # Straight-line lift tries. One is not enough: a Cartesian path that stops early is usually
+    # blocked by something under the hand, so the next line, started higher, gets further. A carry
+    # begun from a short lift drags the held object over the table, because the planner clears
+    # MoveIt's attached box rather than where the object really sits in the fingers.
+    lift_attempts: 3
+
     # Well under joint_limits.yaml's 0.8 rad/s cap: arm motion disturbs a standing humanoid, and
     # scaling the trajectory beats clamping joints, which bends the path.
     velocity_scaling: 0.3

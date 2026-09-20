@@ -137,6 +137,7 @@ G1ManipulationServer::G1ManipulationServer(const rclcpp::NodeOptions& options)
     reaim_clearance_m_       = declare_parameter<double>("reaim_clearance_m", 0.08);
     settle_wait_s_           = declare_parameter<double>("settle_wait_s", 0.8);
     lift_height_m_           = declare_parameter<double>("lift_height_m", 0.15);
+    lift_attempts_           = static_cast<int>(declare_parameter<int>("lift_attempts", 3));
     // What counts as a grip: how far short of the commanded posture a finger must stall, and how
     // hard it must push while short. Parameters because the real hand's tau_est carries noise
     // these thresholds have to clear.
@@ -1263,6 +1264,13 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     // retry meaningful rather than a replay.
     const auto fail = [&](const std::string& phase, const std::string& why) {
         moveHandTo(*hand_group, "pinch_ready");
+        // Back out before the exemptions go, not after. A grasp that fails leaves the hand at
+        // table level with the octomap exempted for it; restoring the ACM there leaves the arm
+        // standing in collision, and every plan the retry asks for then fails on its start state
+        // in milliseconds rather than for anything a second attempt could fix.
+        geometry_msgs::msg::Pose clear = arm_group->getCurrentPose(arm.grasp_frame).pose;
+        clear.position.z += reaim_clearance_m_;
+        moveStraight(*arm_group, clear, arm.grasp_frame, "abort retreat", 0.0);
         arm_group->detachObject(goal->object_id);
         setHandContact(arm, { "<octomap>", goal->object_id }, false);
         // And its collision object, which the approach would have removed. Left behind, it sits
@@ -1436,13 +1444,39 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     // Straight up, not planned. The octomap holding the table is exempted for the hand at this
     // point, so a free planner is free to route the lift sideways THROUGH the table, which drags
     // the object along the surface and off it: measured, 43 mm, which was enough to leave the
-    // block overhanging the near edge. Partial is fine, every millimetre of it is away from the
-    // surface; only a line that cannot start at all falls back to planning.
-    if (moveStraight(*arm_group, lifted, arm.grasp_frame, "lift", 0.0) <= 0.0 &&
-        !moveTo(*arm_group, lifted, arm.grasp_frame, "lift"))
+    // block overhanging the near edge.
+    //
+    // Repeated, because one partial line is not enough. What truncates the first attempt is
+    // usually below the hand, so a second line started from the new height gets further, and a
+    // carry begun from a short lift drags the held object across the table: the planner clears
+    // MoveIt's attached box, not the object's real pose in the hand, and the two differ by
+    // whatever the fingers raked on the way closed.
+    double lift_fraction = 0.0;
+    for (int attempt = 0; attempt < lift_attempts_; ++attempt)
+    {
+        lift_fraction = moveStraight(*arm_group, lifted, arm.grasp_frame, "lift", 0.0);
+        const auto residual = residualTo(*arm_group, lifted, arm.grasp_frame, "lift");
+        if (lift_fraction <= 0.0 || !residual.has_value() ||
+            std::abs(residual->z) <= settle_tolerance_m_)
+        {
+            break;
+        }
+    }
+    if (lift_fraction <= 0.0 && !moveTo(*arm_group, lifted, arm.grasp_frame, "lift"))
     {
         fail(Pick::Feedback::PHASE_LIFT, "could not lift clear of the surface");
         return;
+    }
+    // Reported either way: a lift that stops short is the thing to look at first when a carry
+    // knocks the scene about, and it is otherwise invisible.
+    if (const auto residual = residualTo(*arm_group, lifted, arm.grasp_frame, "lift");
+        residual.has_value() && std::abs(residual->z) > settle_tolerance_m_)
+    {
+        RCLCPP_WARN(
+            get_logger(),
+            "lift: stopped %.0f mm below the %.0f mm target; the carry starts low",
+            std::abs(residual->z) * 1000.0,
+            lift_height_m_ * 1000.0);
     }
     // Again after the lift: an object can be raked out of the hand on the way up, and the
     // planning scene would carry on believing it is held.

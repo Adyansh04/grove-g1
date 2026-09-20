@@ -472,6 +472,8 @@ private:
     double place_tolerance_m_{ 0.08 };
     double approach_height_m_{ 0.22 };
     double lift_height_m_{ 0.15 };
+    /// Straight-line lift tries, since what truncates one attempt is usually below the next.
+    int    lift_attempts_{ 3 };
     double velocity_scaling_{ 0.3 };
     double planning_time_s_{ 5.0 };
     int    planning_attempts_{ 5 };
