@@ -40,7 +40,7 @@
     <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5"
       reflectance="0.2"/>
     <material name="pedestal_mat" rgba="0.35 0.38 0.42 1"/>
-    <material name="basket_mat" rgba="0.55 0.40 0.22 1" specular="0.2" shininess="0.2"/>
+    <material name="brown_box_mat" rgba="0.72 0.53 0.31 1" specular="0.1" shininess="0.1"/>
     <material name="mat_red_obj" rgba="0.9 0.15 0.15 1" specular="0.6" shininess="0.8"/>
     <material name="mat_green_obj" rgba="0.15 0.8 0.2 1" specular="0.6" shininess="0.8"/>
     <material name="mat_blue_obj" rgba="0.15 0.3 0.9 1" specular="0.6" shininess="0.8"/>
@@ -74,16 +74,23 @@
          120 mm inside 10 mm walls, so a 60 mm object has 30 mm of clearance either side, and the
          rim is 50 mm so the object clears it on the way in while the closed fingers, which hang
          34 mm below the grip point, stay above it. -->
-    <geom name="basket_floor" group="2" type="box" size="0.07 0.07 0.005" pos="0.32 -0.34 0.805"
-      material="basket_mat" contype="3" conaffinity="3"/>
-    <geom name="basket_wall_near" group="2" type="box" size="0.07 0.005 0.025"
-      pos="0.32 -0.415 0.825" material="basket_mat" contype="3" conaffinity="3"/>
-    <geom name="basket_wall_far" group="2" type="box" size="0.07 0.005 0.025"
-      pos="0.32 -0.265 0.825" material="basket_mat" contype="3" conaffinity="3"/>
-    <geom name="basket_wall_right" group="2" type="box" size="0.005 0.08 0.025"
-      pos="0.245 -0.34 0.825" material="basket_mat" contype="3" conaffinity="3"/>
-    <geom name="basket_wall_left" group="2" type="box" size="0.005 0.08 0.025"
-      pos="0.395 -0.34 0.825" material="basket_mat" contype="3" conaffinity="3"/>
+    <!-- A body, not loose geoms, and with no freejoint: static, but named. The simulator reports
+         a pose and an axis-aligned size for every body it is asked about, taken over all of that
+         body's geoms, so being a body is what lets perception and the ground-truth relay both
+         see the basket at all. Loose geoms are invisible to both, and a place aimed at one has
+         to be given typed-in coordinates. -->
+    <body name="brown_box" pos="0.32 -0.34 0.80">
+      <geom name="brown_box_floor" group="2" type="box" size="0.08 0.08 0.006" pos="0 0 0.006"
+        material="brown_box_mat" contype="3" conaffinity="3"/>
+      <geom name="brown_box_wall_near" group="2" type="box" size="0.08 0.008 0.032"
+        pos="0 -0.072 0.032" material="brown_box_mat" contype="3" conaffinity="3"/>
+      <geom name="brown_box_wall_far" group="2" type="box" size="0.08 0.008 0.032"
+        pos="0 0.072 0.032" material="brown_box_mat" contype="3" conaffinity="3"/>
+      <geom name="brown_box_wall_right" group="2" type="box" size="0.008 0.064 0.032"
+        pos="-0.072 0 0.032" material="brown_box_mat" contype="3" conaffinity="3"/>
+      <geom name="brown_box_wall_left" group="2" type="box" size="0.008 0.064 0.032"
+        pos="0.072 0 0.032" material="brown_box_mat" contype="3" conaffinity="3"/>
+    </body>
 
     <!-- The graspable row, nearest the robot on the band the arm can actually reach, and the
          basket beside them. Same size, mass and friction as the manipulation scene's block, so a

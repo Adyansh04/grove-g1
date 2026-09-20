@@ -45,6 +45,9 @@ object_bodies:
   - yellow_box
   # Only in the tabletop world, where perception is measured against these poses.
   - white_cup
+  # Static, and reported anyway: a place needs a surface to aim at, and the basket is the
+  # only thing in this scene that is one.
+  - brown_box
   # Not manipulable, and tracked anyway: g1_base_approach ranges to something on /objects to
   # decide where to stand, and the place leg needs a landmark on the drop-off bench the way the
   # pick leg has the block itself. Static, so its pose never changes.
