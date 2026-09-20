@@ -31,10 +31,18 @@ left_arm:
   position_threshold: 0.001
   orientation_threshold: 0.01
 
-  # Left at zero until there is a measurement to tune against: the cost terms are additive, so
-  # raising this also moves what cost_threshold means. This is the knob for elbow-flip
-  # continuity between nearby targets if that shows up.
-  minimal_displacement_weight: 0.0
+  # The measurement this was waiting for. A Cartesian descent solves IK every 5 mm, seeded from
+  # the previous waypoint, and at zero weight the solver is free to answer each step from a
+  # different part of the null space. Measured: about half of all descents stopped 10 to 12 % in
+  # and never got closer than 50 mm, and the state at the stopping point had the arm folded into
+  # its own chest -- right_elbow_link, right_shoulder_yaw_link and right_shoulder_roll_link all
+  # against torso_link. The pose itself was reachable; the elbow simply swung through the torso
+  # between one waypoint and the next.
+  #
+  # Weighting displacement from the seed makes consecutive solutions resemble each other, which
+  # is what a Cartesian path needs. Kept small: the cost terms are additive, so this also moves
+  # what cost_threshold means.
+  minimal_displacement_weight: 0.1
 
 right_arm:
   kinematics_solver: pick_ik/PickIkPlugin
@@ -43,4 +51,6 @@ right_arm:
   stop_optimization_on_valid_solution: true
   position_threshold: 0.001
   orientation_threshold: 0.01
-  minimal_displacement_weight: 0.0
+
+  # Matches left_arm; see the note there for what the number is for.
+  minimal_displacement_weight: 0.1
