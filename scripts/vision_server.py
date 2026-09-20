@@ -75,6 +75,43 @@ def _roi_and_crop(mask):
     return [x0, y0, x1 - x0, y1 - y0], crop
 
 
+def _iou(a, b):
+    """Intersection over union of two xyxy boxes."""
+    x0, y0 = max(a[0], b[0]), max(a[1], b[1])
+    x1, y1 = min(a[2], b[2]), min(a[3], b[3])
+    overlap = max(0.0, x1 - x0) * max(0.0, y1 - y0)
+    if overlap <= 0.0:
+        return 0.0
+    area_a = max(0.0, a[2] - a[0]) * max(0.0, a[3] - a[1])
+    area_b = max(0.0, b[2] - b[0]) * max(0.0, b[3] - b[1])
+    union = area_a + area_b - overlap
+    return overlap / union if union > 0.0 else 0.0
+
+
+def _drop_cross_phrase_duplicates(boxes, labels, scores, iou_threshold=0.5):
+    """Keeps one phrase per region: a patch of image is one object, whatever it is called.
+
+    Each phrase is prompted separately, so nothing stops two of them claiming the same pixels.
+    Observed on the tabletop: "brown box container" matched the red block at 0.41 on exactly the
+    ROI "bright red plastic block" had at 0.82. Downstream that is two tracks answering to one
+    phrase, which costs the phrase its bare-phrase alias, and the alias is the name the skills
+    resolve an object by, so the bench simply stops existing for them.
+
+    Scores from different prompts are not strictly comparable, but the case this exists for is
+    not close: the phrase that actually names the thing wins by a wide margin.
+    """
+    order = sorted(range(len(boxes)), key=lambda i: scores[i], reverse=True)
+    kept = []
+    for i in order:
+        if any(
+            labels[i] != labels[j] and _iou(boxes[i], boxes[j]) > iou_threshold for j in kept
+        ):
+            continue
+        kept.append(i)
+    kept.sort()
+    return ([boxes[i] for i in kept], [labels[i] for i in kept], [scores[i] for i in kept])
+
+
 class GroundedSam2Backend:
     """Grounding DINO boxes, refined into masks by SAM 2.1."""
 
@@ -131,6 +168,8 @@ class GroundedSam2Backend:
                 scores.append(float(score))
         if not boxes:
             return []
+
+        boxes, labels, scores = _drop_cross_phrase_duplicates(boxes, labels, scores)
 
         prompted = self._segmenter_processor(
             images=image, input_boxes=[boxes], return_tensors="pt"
