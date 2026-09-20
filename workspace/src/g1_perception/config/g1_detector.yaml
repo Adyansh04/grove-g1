@@ -21,7 +21,14 @@ g1_detector:
 
     # Asking about a frame older than this wastes a second and a half of GPU on a scene that has
     # moved. The camera publishes at 10 Hz, so anything past a second means it has stopped.
-    max_image_age_s: 1.0
+    #
+    # 2.5, not 1.0, because in simulation the camera and the detector share one GPU. Measured with
+    # the vision server loaded: MuJoCo's offscreen render goes from 7.2 to 13.4 ms a frame and the
+    # newest frame reaching the detector is 1.4 to 1.9 s old, so a 1.0 s gate refused every frame
+    # and /objects stayed empty for the whole run. It reads as a dead camera and is not one. The
+    # scenes this runs on are static, so acting on a 2 s old view of them costs nothing; a moving
+    # scene on hardware, with its own camera, wants the tighter number back.
+    max_image_age_s: 2.5
 
     # Grounding DINO scores every object against every phrase, so this is what decides how many
     # of the also-rans become tracks of their own. Measured over 25 tabletop frames: the right
