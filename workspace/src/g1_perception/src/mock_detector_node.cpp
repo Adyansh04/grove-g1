@@ -14,6 +14,12 @@ namespace g1_perception
 {
 namespace
 {
+/// Closer than this to the camera plane and the projection is not worth trusting.
+constexpr double kMinProjectionDepthM = 0.01;
+}  // namespace
+
+namespace
+{
 
 rclcpp::QoS sensorQos()
 {
@@ -101,7 +107,15 @@ std::optional<g1_msgs::msg::InstanceMask> G1MockDetector::maskFor(
 
     // Nothing beyond the object's bounding sphere can belong to it, whatever its depth says.
     const double radius = half.length();
-    if (centre.z() <= 0.0)
+    // An object level with the camera plane projects to infinity, and one behind it projects
+    // backwards. Both used to pass the z > 0 test and then cast a nonsense double to an integer,
+    // which is undefined and in practice wrapped to a huge unsigned extent: the bounds check
+    // below saw x1 far above x0, agreed, and the allocation that followed threw length_error and
+    // took the node down at startup. Seen the first time this ran in the navigation world, where
+    // the robot begins a building away from the props; a tabletop scene always has them a
+    // comfortable distance in front.
+    if (!(centre.z() > kMinProjectionDepthM) || !std::isfinite(intrinsics.fx) ||
+        !std::isfinite(intrinsics.fy))
     {
         return std::nullopt;
     }
@@ -109,16 +123,26 @@ std::optional<g1_msgs::msg::InstanceMask> G1MockDetector::maskFor(
     const double spread_y = (radius / centre.z()) * intrinsics.fy;
     const double centre_u = ((centre.x() / centre.z()) * intrinsics.fx) + intrinsics.cx;
     const double centre_v = ((centre.y() / centre.z()) * intrinsics.fy) + intrinsics.cy;
+    if (!std::isfinite(centre_u) || !std::isfinite(centre_v) || !std::isfinite(spread_x) ||
+        !std::isfinite(spread_y))
+    {
+        return std::nullopt;
+    }
 
-    const auto left   = static_cast<std::int64_t>(std::floor(centre_u - spread_x));
-    const auto right  = static_cast<std::int64_t>(std::ceil(centre_u + spread_x));
-    const auto top    = static_cast<std::int64_t>(std::floor(centre_v - spread_y));
-    const auto bottom = static_cast<std::int64_t>(std::ceil(centre_v + spread_y));
+    // Clamped as doubles, before anything is narrowed. Casting first is what made the extent
+    // wrap.
+    const auto clamp = [](double value, double lo, double hi) {
+        return static_cast<std::int64_t>(std::clamp(value, lo, hi));
+    };
+    const auto width  = static_cast<double>(depth.width);
+    const auto height = static_cast<double>(depth.height);
 
-    const auto x0 = static_cast<std::uint32_t>(std::max<std::int64_t>(left, 0));
-    const auto y0 = static_cast<std::uint32_t>(std::max<std::int64_t>(top, 0));
-    const auto x1 = static_cast<std::uint32_t>(std::min<std::int64_t>(right + 1, depth.width));
-    const auto y1 = static_cast<std::uint32_t>(std::min<std::int64_t>(bottom + 1, depth.height));
+    const auto x0 = static_cast<std::uint32_t>(clamp(std::floor(centre_u - spread_x), 0.0, width));
+    const auto y0 = static_cast<std::uint32_t>(clamp(std::floor(centre_v - spread_y), 0.0, height));
+    const auto x1 =
+        static_cast<std::uint32_t>(clamp(std::ceil(centre_u + spread_x) + 1.0, 0.0, width));
+    const auto y1 =
+        static_cast<std::uint32_t>(clamp(std::ceil(centre_v + spread_y) + 1.0, 0.0, height));
     if (x1 <= x0 || y1 <= y0)
     {
         return std::nullopt;
