@@ -23,6 +23,9 @@ namespace g1_orchestration
 namespace
 {
 
+/// How long a parameter write gets before the wait for the objects starts.
+constexpr double kServiceBudgetS = 5.0;
+
 /// Reliable, keep-last-1: what g1_object_geometry publishes and every skill above it expects.
 rclcpp::QoS objectsQos()
 {
@@ -89,9 +92,14 @@ BT::NodeStatus LookFor::tick()
     const std::string detector    = getInput<std::string>("detector").value_or("");
     auto              client_node = makeClientNode("g1_look_for_client");
 
-    using Clock         = std::chrono::steady_clock;
-    const auto deadline = Clock::now() + std::chrono::duration_cast<Clock::duration>(
-                                             std::chrono::duration<double>(timeout_s));
+    // Two budgets, not one. The write either lands or the service is not there, which is a
+    // question answered in seconds; the objects then need the rest. Sharing a deadline meant a
+    // detector under another name burned the whole allowance before the wait began, and the wait
+    // is the part that matters: measured, it exited 2 ms after the write gave up.
+    using Clock = std::chrono::steady_clock;
+    const auto service_deadline =
+        Clock::now() + std::chrono::duration_cast<Clock::duration>(
+                           std::chrono::duration<double>(std::min(timeout_s, kServiceBudgetS)));
 
     if (!detector.empty())
     {
@@ -102,19 +110,27 @@ BT::NodeStatus LookFor::tick()
             client_node,
             detector + "/set_parameters",
             request,
-            std::chrono::duration<double>(std::max(deadline - Clock::now(), Clock::duration::zero()))
+            std::chrono::duration<double>(
+                std::max(service_deadline - Clock::now(), Clock::duration::zero()))
                 .count());
         if (response == nullptr || response->results.empty() ||
             !response->results.front().successful)
         {
-            RCLCPP_ERROR(
+            // Warned, not failed. What this leaf promises is that the objects are on /objects,
+            // and the write is only one way of getting them there: a stand-in detector is a
+            // different node under a different name, and one already asking for the right things
+            // needs no write at all. The wait below is the real check and says so with the
+            // object's own name if the phrases never took.
+            RCLCPP_WARN(
                 node_->get_logger(),
-                "[%s] %s would not take the phrases",
+                "[%s] %s would not take the phrases; waiting on /objects anyway",
                 name().c_str(),
                 detector.c_str());
-            return BT::NodeStatus::FAILURE;
         }
     }
+
+    const auto deadline = Clock::now() + std::chrono::duration_cast<Clock::duration>(
+                                             std::chrono::duration<double>(timeout_s));
 
     // Wait for the objects rather than trusting the write: the detector only narrows on its next
     // pass, and until the tracker settles a phrase can hold two tracks, which costs it the bare
