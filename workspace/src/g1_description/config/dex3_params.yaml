@@ -13,8 +13,18 @@ system:
   domain_id: 1
   network_interface: ""
 
-  kp: 1.5
-  kd: 0.2
+  # 2.3, not Unitree's 1.5. Their number is the teleop grip and it leaves the motor working well
+  # inside itself: torque here is kp times the finger's position error, the thumb stalls about
+  # 0.60 rad short of its closed target on a held block, and 1.5 x 0.60 is 0.90 Nm against the
+  # 1.4 Nm the joint is rated for. Measured through a carry, the block was held for 110 s and
+  # then lost during the walk to the far bench, which is a grip that is close but not enough.
+  #
+  # 2.3 x 0.60 is 1.38, so the squeeze is bounded by the motor rather than by a gain chosen for
+  # sweeping fingers around. dex3_handler clamps at the URDF effort limit regardless, so this
+  # cannot show a grasp the real hand could not hold. kd rises with the square root of kp, as
+  # the arm's did.
+  kp: 2.3
+  kd: 0.25
   command_publish_rate: 100.0    # Hz; what Unitree's own teleop publishes at
   max_joint_velocity_rad_s: 3.0  # rad/s; slew clamp. There is no blend weight on this
                                  # interface, so this is the only thing between a large
