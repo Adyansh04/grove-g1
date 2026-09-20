@@ -61,6 +61,17 @@ g1_manipulation_server:
     # MoveIt's attached box rather than where the object really sits in the fingers.
     lift_attempts: 3
 
+    # How far the object may end up from where it was aimed before the place is called a failure.
+    # 0.08 could not tell the two outcomes apart that matter here: the box floor and the tabletop
+    # beside it are 12 mm apart, and a block left on the table measured 68 mm from the aim point,
+    # which passed. Sized instead to the box's 120 mm cavity, so landing outside it fails.
+    place_tolerance_m: 0.05
+
+    # The hand covers the object until it lets go, so the detector needs a frame or two before the
+    # landing can be confirmed at all. Running out is a failure: not being able to see where the
+    # object went is exactly the state a dropped one leaves behind.
+    place_confirm_timeout_s: 4.0
+
     # Well under joint_limits.yaml's 0.8 rad/s cap: arm motion disturbs a standing humanoid, and
     # scaling the trajectory beats clamping joints, which bends the path.
     velocity_scaling: 0.3

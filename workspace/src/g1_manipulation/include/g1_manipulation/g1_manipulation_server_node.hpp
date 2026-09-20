@@ -470,6 +470,8 @@ private:
     double grip_min_position_error_rad_{ 0.08 };
     double grip_min_effort_nm_{ 0.10 };
     double place_tolerance_m_{ 0.08 };
+    /// How long the detector is given to re-find the object once the hand is out of its way.
+    double place_confirm_timeout_s_{ 4.0 };
     double approach_height_m_{ 0.22 };
     double lift_height_m_{ 0.15 };
     /// Straight-line lift tries, since what truncates one attempt is usually below the next.

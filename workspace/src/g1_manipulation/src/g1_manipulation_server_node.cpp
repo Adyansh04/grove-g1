@@ -147,6 +147,8 @@ G1ManipulationServer::G1ManipulationServer(const rclcpp::NodeOptions& options)
     grip_min_effort_nm_          = declare_parameter<double>("grip_min_effort_nm", 0.10);
     // How far a released object may be from where it was aimed before the place is a failure.
     place_tolerance_m_ = declare_parameter<double>("place_tolerance_m", 0.08);
+    place_confirm_timeout_s_ =
+        declare_parameter<double>("place_confirm_timeout_s", 4.0);
     // Well under the joint limits' own 0.8 rad/s cap. Arm motion disturbs a standing humanoid
     // measurably, and slowing the whole path is preferred over clamping joints, which would
     // bend the path itself.
@@ -1739,7 +1741,31 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
     // surface gave one, so both sides come from /objects and the walking base cancels.
     if (!held_id.empty())
     {
-        if (const auto landed = lookUpObject(held_id))
+        // Given a moment, because the object was occluded by the hand until it let go and the
+        // detector needs a frame or two to pick it up again.
+        std::optional<vision_msgs::msg::Detection3D> landed;
+        const rclcpp::Time confirm_deadline = now() + rclcpp::Duration::from_seconds(
+                                                          place_confirm_timeout_s_);
+        while (!(landed = lookUpObject(held_id)) && now() < confirm_deadline)
+        {
+            rclcpp::sleep_for(std::chrono::milliseconds(200));
+        }
+        // Not finding it is a failure, not a pass. The two ways this check used to be skipped,
+        // an object missing from /objects and a pose that will not transform, are the exact
+        // states a dropped object leaves behind: measured, a block on the floor is out of the
+        // camera's view, so every leaf reported success on a block that never reached the box.
+        if (!landed)
+        {
+            result->success = false;
+            result->message = std::format(
+                "{}: {} is not on /objects after the release, so where it landed cannot be "
+                "confirmed",
+                Place::Feedback::PHASE_RETREAT,
+                held_id);
+            RCLCPP_ERROR(get_logger(), "%s", result->message.c_str());
+            goal_handle->abort(result);
+            return;
+        }
         {
             const geometry_msgs::msg::Pose& pose = landed->results.front().pose.pose;
             // Binds without a temporary; `target` was already checked engaged above.
@@ -1753,7 +1779,18 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
                 const auto in_planning = toPlanningFrame(pose, frame);
                 where = in_planning ? std::optional(in_planning->position) : std::nullopt;
             }
-            if (where)
+            if (!where)
+            {
+                result->success = false;
+                result->message = std::format(
+                    "{}: {} was found but its pose will not transform, so where it landed "
+                    "cannot be confirmed",
+                    Place::Feedback::PHASE_RETREAT,
+                    held_id);
+                RCLCPP_ERROR(get_logger(), "%s", result->message.c_str());
+                goal_handle->abort(result);
+                return;
+            }
             {
                 const double off = std::hypot(where->x - aim.x, where->y - aim.y, where->z - aim.z);
                 if (off > place_tolerance_m_)
