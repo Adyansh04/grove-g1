@@ -149,6 +149,8 @@ G1ManipulationServer::G1ManipulationServer(const rclcpp::NodeOptions& options)
     place_tolerance_m_ = declare_parameter<double>("place_tolerance_m", 0.08);
     place_confirm_timeout_s_ =
         declare_parameter<double>("place_confirm_timeout_s", 4.0);
+    octomap_rebuild_wait_s_ =
+        declare_parameter<double>("octomap_rebuild_wait_s", 0.8);
     // Well under the joint limits' own 0.8 rad/s cap. Arm motion disturbs a standing humanoid
     // measurably, and slowing the whole path is preferred over clamping joints, which would
     // bend the path itself.
@@ -856,6 +858,14 @@ void G1ManipulationServer::clearOctomap()
     {
         RCLCPP_WARN(get_logger(), "/clear_octomap did not answer; the map may still hold voxels");
     }
+    // Then wait for the sweep to put the world back. Nothing in this scene is a collision object:
+    // measured, the planning scene holds zero of them and 3.6 MB of octomap, so the clear takes
+    // the table and the bench with it, not just the arm's own stale voxels. Planning in that
+    // window is planning blind, and the arm drives through whatever was there. One update at the
+    // updater's 5 Hz is enough to get the visible surfaces back, and the stale voxels do not
+    // return because nothing is looking at where the arm used to be.
+    rclcpp::sleep_for(std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::duration<double>(octomap_rebuild_wait_s_)));
 }
 
 std::optional<geometry_msgs::msg::Point> G1ManipulationServer::residualTo(

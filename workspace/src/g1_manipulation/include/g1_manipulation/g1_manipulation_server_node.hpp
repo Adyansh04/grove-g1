@@ -472,6 +472,8 @@ private:
     double place_tolerance_m_{ 0.08 };
     /// How long the detector is given to re-find the object once the hand is out of its way.
     double place_confirm_timeout_s_{ 4.0 };
+    /// Settle time after a clear, for the sweep to put the real surfaces back.
+    double octomap_rebuild_wait_s_{ 0.8 };
     double approach_height_m_{ 0.22 };
     double lift_height_m_{ 0.15 };
     /// Straight-line lift tries, since what truncates one attempt is usually below the next.

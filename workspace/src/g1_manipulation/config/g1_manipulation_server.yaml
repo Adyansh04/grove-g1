@@ -113,3 +113,13 @@ g1_manipulation_server:
 
     # `graspgen_to_grasp_frame_xyz_rpy` is a launch argument for the same reason: it describes
     # whichever generator is answering, and the stand-in's frame is not the real one's.
+
+    # Settle time after /clear_octomap, before anything plans against the map again.
+    #
+    # The clear is not selective and the planning scene holds no collision objects at all, so it
+    # takes the table and the bench with it, not just the arm's own stale voxels. Measured on the
+    # tabletop world: the map is at 18 % of its old size 0.2 s after a clear, 72 % by 0.4 s and
+    # peaks at 0.8 s. Planning inside that window is planning blind, which is how the arm came to
+    # drive into the bench. It settles back at 72 %, and the 28 % that never returns is the stale
+    # part nothing can currently see, which is the whole point of clearing.
+    octomap_rebuild_wait_s: 0.8
