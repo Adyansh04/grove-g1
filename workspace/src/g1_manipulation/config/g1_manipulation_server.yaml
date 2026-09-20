@@ -119,6 +119,13 @@ g1_manipulation_server:
     # Front comes in horizontally onto the face turned towards the robot. Same closing width, but
     # the object's long axis lies across the fingers rather than along them, so there is more of
     # it between them to hold.
+    #
+    # Measured head to head on the tabletop, four runs, the approach confirmed in the log each
+    # time: top put the block in the bench 2 of 2, front managed 0 of 2. Front either could not
+    # reach the grasp pose at all or dropped the block during the lift, and knocked it off the
+    # bench doing so. It is kept because the plumbing is sound and the failure is in THIS tuning
+    # of it -- the yaw is right but the grip height and the path in from the standoff are not --
+    # and because a real scene will have objects that cannot be taken from above.
     grasp_approach: "top"
 
     grasp_rpy: [-1.5707963, 0.0, 0.0]
