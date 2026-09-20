@@ -16,6 +16,13 @@ namespace
 {
 /// Closer than this to the camera plane and the projection is not worth trusting.
 constexpr double kMinProjectionDepthM = 0.01;
+
+/// The name half of a "name=phrase" entry, or the whole thing when it carries no phrase.
+std::string nameOf(const std::string& entry)
+{
+    const std::size_t split = entry.find('=');
+    return split == std::string::npos ? entry : entry.substr(0, split);
+}
 }  // namespace
 
 namespace
@@ -238,15 +245,21 @@ void G1MockDetector::publishMasks()
             continue;
         }
         const std::string& class_id = detection.results.front().hypothesis.class_id;
-        const auto         match =
-            std::find_if(phrases_.begin(), phrases_.end(), [&class_id](const std::string& phrase) {
-                return slugify(phrase) == class_id;
+        // An entry may be "name=phrase", as the real detector accepts: there the long phrase is
+        // what the model is asked for and the short name is what gets published, so a tree can
+        // say red_block while the detector is asked for a bright red plastic block. Nothing here
+        // asks a model anything, so only the name half matters -- but the two detectors have to
+        // take the same phrase list or swapping one for the other silently detects nothing.
+        const auto match =
+            std::find_if(phrases_.begin(), phrases_.end(), [&class_id](const std::string& entry) {
+                return slugify(nameOf(entry)) == class_id;
             });
         if (match == phrases_.end())
         {
             continue;
         }
-        std::optional<g1_msgs::msg::InstanceMask> instance = maskFor(detection, *chosen, *match);
+        std::optional<g1_msgs::msg::InstanceMask> instance =
+            maskFor(detection, *chosen, nameOf(*match));
         if (instance)
         {
             masks.instances.push_back(std::move(*instance));
