@@ -40,10 +40,22 @@ system:
 # along the trajectory it drew, so every millimetre of that lag is clearance the real link never
 # had, and it is why the arm kept striking props the planner had routed it around.
 #
-# Doubled, with kd raised alongside so the stiffer step stays about as damped. Only
-# arm_trajectory_controller and arm_freeze_controller ever reach these joints, and the freeze
-# holds the same number deliberately so the handover is not a step in stiffness; both moved
-# together. Hardware has its own torque limits and wants this re-measured before it is trusted.
+# 300/150, because doubling to 80 was not enough. This loop has no gravity compensation, so the
+# only restoring torque it has is kp times error: the error IS how it holds the arm up, and a
+# soft joint simply sits wherever that balances. Measured off the controller's own error field
+# while carrying a block, commanded velocity zero: the shoulder drifted 184 mm at the hand over
+# 5.4 s, and sat at 33 mm the rest of the time. 0.33 rad on a 0.55 m arm at kp 80 is about 27 Nm
+# of load, which needs roughly four times the stiffness to hold inside 30 mm.
+#
+# kd rises with the SQUARE ROOT of kp, not with kp: damping a stiffer spring the same way needs
+# 2*sqrt(kp*I), so 40->300 is kd 1 -> about 2.7, taken to 4 to stay on the damped side. Getting
+# this wrong rings the joint, and a ringing joint is the 2.33 rad/s the arm was measured doing
+# while it was told to hold still.
+#
+# Only arm_trajectory_controller and arm_freeze_controller ever reach these joints, and the
+# freeze holds the same number deliberately so the handover is not a step in stiffness; both
+# moved together. Real motors have torque limits this does not know about: 300 x 0.1 rad is
+# 30 Nm, which wants checking against the datasheet before any of this reaches hardware.
 joints:
   left_hip_pitch_joint:        { position_only_kp: 10.0, position_only_kd: 1.0 }
   left_hip_roll_joint:         { position_only_kp: 10.0, position_only_kd: 1.0 }
@@ -60,17 +72,17 @@ joints:
   waist_yaw_joint:             { position_only_kp: 10.0, position_only_kd: 1.0 }
   waist_roll_joint:            { position_only_kp: 10.0, position_only_kd: 1.0 }
   waist_pitch_joint:           { position_only_kp: 10.0, position_only_kd: 1.0 }
-  left_shoulder_pitch_joint:   { position_only_kp: 80.0, position_only_kd: 2.0 }
-  left_shoulder_roll_joint:    { position_only_kp: 80.0, position_only_kd: 2.0 }
-  left_shoulder_yaw_joint:     { position_only_kp: 80.0, position_only_kd: 2.0 }
-  left_elbow_joint:            { position_only_kp: 80.0, position_only_kd: 2.0 }
-  left_wrist_roll_joint:       { position_only_kp: 50.0, position_only_kd: 1.5 }
-  left_wrist_pitch_joint:      { position_only_kp: 50.0, position_only_kd: 1.5 }
-  left_wrist_yaw_joint:        { position_only_kp: 50.0, position_only_kd: 1.5 }
-  right_shoulder_pitch_joint:  { position_only_kp: 80.0, position_only_kd: 2.0 }
-  right_shoulder_roll_joint:   { position_only_kp: 80.0, position_only_kd: 2.0 }
-  right_shoulder_yaw_joint:    { position_only_kp: 80.0, position_only_kd: 2.0 }
-  right_elbow_joint:           { position_only_kp: 80.0, position_only_kd: 2.0 }
-  right_wrist_roll_joint:      { position_only_kp: 50.0, position_only_kd: 1.5 }
-  right_wrist_pitch_joint:     { position_only_kp: 50.0, position_only_kd: 1.5 }
-  right_wrist_yaw_joint:       { position_only_kp: 50.0, position_only_kd: 1.5 }
+  left_shoulder_pitch_joint:   { position_only_kp: 300.0, position_only_kd: 4.0 }
+  left_shoulder_roll_joint:    { position_only_kp: 300.0, position_only_kd: 4.0 }
+  left_shoulder_yaw_joint:     { position_only_kp: 300.0, position_only_kd: 4.0 }
+  left_elbow_joint:            { position_only_kp: 300.0, position_only_kd: 4.0 }
+  left_wrist_roll_joint:       { position_only_kp: 150.0, position_only_kd: 3.0 }
+  left_wrist_pitch_joint:      { position_only_kp: 150.0, position_only_kd: 3.0 }
+  left_wrist_yaw_joint:        { position_only_kp: 150.0, position_only_kd: 3.0 }
+  right_shoulder_pitch_joint:  { position_only_kp: 300.0, position_only_kd: 4.0 }
+  right_shoulder_roll_joint:   { position_only_kp: 300.0, position_only_kd: 4.0 }
+  right_shoulder_yaw_joint:    { position_only_kp: 300.0, position_only_kd: 4.0 }
+  right_elbow_joint:           { position_only_kp: 300.0, position_only_kd: 4.0 }
+  right_wrist_roll_joint:      { position_only_kp: 150.0, position_only_kd: 3.0 }
+  right_wrist_pitch_joint:     { position_only_kp: 150.0, position_only_kd: 3.0 }
+  right_wrist_yaw_joint:       { position_only_kp: 150.0, position_only_kd: 3.0 }
