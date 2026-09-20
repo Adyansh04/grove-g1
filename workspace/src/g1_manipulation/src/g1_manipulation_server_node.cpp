@@ -1603,6 +1603,10 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
     }
     feedback->phase = Place::Feedback::PHASE_PREPLACE;
     goal_handle->publish_feedback(feedback);
+    // The map has rebuilt around the carry pose by now, and the arm's own links are not exempt
+    // here, so the plan starts inside a ghost of the arm and fails on its start state in
+    // milliseconds rather than for want of a route. Same clear the pick does before it approaches.
+    clearOctomap();
     if (!moveTo(*arm_group, preplace, arm.grasp_frame, "preplace"))
     {
         fail(Place::Feedback::PHASE_PREPLACE, "could not reach the pose above the target");
@@ -1716,6 +1720,11 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
     // invalid and nothing can be planned or walked from it at all. A vertical line cannot route
     // through what is below it, which is the only thing restoring it early was protecting
     // against, so the restore waits until the hand is clear.
+    //
+    // The map is cleared first for the same reason the preplace clears it: the exemption covers
+    // the hand, not the forearm, and by now the map has filled in around an arm that has been
+    // holding still over the surface through the lower and the release.
+    clearOctomap();
     if (moveStraight(*arm_group, preplace, arm.grasp_frame, "retreat", 0.0) <= 0.0 &&
         !moveTo(*arm_group, preplace, arm.grasp_frame, "retreat"))
     {
