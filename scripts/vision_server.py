@@ -75,27 +75,6 @@ def _roi_and_crop(mask):
     return [x0, y0, x1 - x0, y1 - y0], crop
 
 
-def _match_phrase(label, phrases):
-    """Maps a backend's own label back onto the phrase that was asked for.
-
-    Grounding DINO answers with the span of the prompt it matched, which is often a prefix
-    ("red" for "a red cube"). The object id downstream is built from the phrase, so a drifting
-    label would rename the object every time the match changed.
-    """
-    cleaned = label.strip().lower().removeprefix("a ").removeprefix("an ").removeprefix("the ")
-    for phrase in phrases:
-        if cleaned == phrase.lower():
-            return phrase
-    scored = [(len(set(cleaned.split()) & set(p.lower().split())), p) for p in phrases]
-    best = max(overlap for overlap, _ in scored)
-    winners = [phrase for overlap, phrase in scored if overlap == best]
-    # Not resolved by list order: "blue" overlaps "blue sphere" and "blue cup" equally, and
-    # guessing names the object confidently wrong.
-    if best == 0 or len(winners) > 1:
-        return label
-    return winners[0]
-
-
 class GroundedSam2Backend:
     """Grounding DINO boxes, refined into masks by SAM 2.1."""
 
@@ -120,26 +99,38 @@ class GroundedSam2Backend:
         self._segmenter = Sam2Model.from_pretrained(segmenter_id, dtype=dtype).to(device).eval()
 
     def segment(self, image, phrases, box_threshold, text_threshold):
-        # One prompt holding every phrase: the detector runs its backbone once either way, and
-        # asking per phrase costs a pass each.
-        prompt = " ".join(f"a {phrase}." for phrase in phrases)
-        inputs = self._detector_processor(images=image, text=prompt, return_tensors="pt").to(
-            self._device
-        )
-        with torch.inference_mode():
-            detections = self._detector_processor.post_process_grounded_object_detection(
-                self._detector(**inputs),
-                inputs.input_ids,
-                threshold=box_threshold,
-                text_threshold=text_threshold,
-                target_sizes=[image.shape[:2]],
-            )[0]
-
-        boxes = detections["boxes"].float().cpu().numpy().tolist()
+        # A prompt per phrase, run one at a time. Grounding DINO answers with the span of the
+        # prompt it matched, and in a joint prompt that span can cross a phrase boundary:
+        # "a red block a brown box" names two objects and matches neither, so the object id it
+        # becomes is one nothing can address. A prompt per phrase makes the label exact by
+        # construction rather than inferred from the returned text.
+        #
+        # Sequential, not batched: batching every phrase against its own copy of the image wants
+        # 2.3 GB more than a 12 GB card has spare while the simulator renders on it too, and the
+        # out-of-memory error loses the whole frame.
+        boxes, labels, scores = [], [], []
+        for phrase in phrases:
+            inputs = self._detector_processor(
+                images=image, text=f"a {phrase}.", return_tensors="pt"
+            ).to(self._device)
+            with torch.inference_mode():
+                detection = self._detector_processor.post_process_grounded_object_detection(
+                    self._detector(**inputs),
+                    inputs.input_ids,
+                    threshold=box_threshold,
+                    text_threshold=text_threshold,
+                    target_sizes=[image.shape[:2]],
+                )[0]
+            for box, score in zip(
+                detection["boxes"].float().cpu().numpy().tolist(),
+                detection["scores"].float().cpu().numpy().tolist(),
+                strict=True,
+            ):
+                boxes.append(box)
+                labels.append(phrase)
+                scores.append(float(score))
         if not boxes:
             return []
-        labels = detections.get("text_labels", detections.get("labels"))
-        scores = detections["scores"].float().cpu().numpy().tolist()
 
         prompted = self._segmenter_processor(
             images=image, input_boxes=[boxes], return_tensors="pt"
@@ -159,7 +150,7 @@ class GroundedSam2Backend:
             roi, data = cropped
             instances.append(
                 {
-                    "label": _match_phrase(str(label), phrases),
+                    "label": label,
                     "score": float(score),
                     "roi": roi,
                     "mask": data,
