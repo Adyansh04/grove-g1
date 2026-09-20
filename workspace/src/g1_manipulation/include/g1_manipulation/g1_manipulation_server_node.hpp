@@ -61,6 +61,27 @@ struct ArmContext
 };
 
 /**
+ * @brief Which face of the object the hand comes in on.
+ *
+ * Top is the hand descending onto the object's top face and closing across its width. Front is
+ * the hand coming in horizontally onto the face turned towards the robot. They differ in more
+ * than orientation: where along the object's height the grip lands, which way the pregrasp is
+ * offset, and which of the object's dimensions has to fit between the fingers.
+ */
+enum class GraspApproach
+{
+    Top,
+    Front,
+};
+
+/**
+ * @brief Reads the approach out of a parameter string.
+ *
+ * @return Top for anything unrecognised, which is the behaviour every scene was tuned against.
+ */
+GraspApproach graspApproachFrom(const std::string& name);
+
+/**
  * @brief Resolves an arm name to its group, frames and handedness.
  *
  * @param[out] out Set only when the name is recognised.
@@ -208,13 +229,16 @@ private:
      * Position passes straight through, since the grasp frame is where the object goes, and
      * only the orientation is chosen here. The two hands hold at mirrored rolls.
      *
-     * @param object_height_m The object's full height. The grasp is taken just under its top
-     *        face, and never nearer its base than min_grip_height_m, which is as far past the
-     *        grasp frame as the hand itself reaches.
+     * @param object_height_m The object's full height. A top grasp is taken just under the top
+     *        face and never nearer the base than min_grip_height_m, which is as far past the
+     *        grasp frame as the hand itself reaches; a front grasp lands front_grip_height_m up
+     *        from the base instead.
+     * @param approach Which face the hand comes in on, which sets both the height and the
+     *        orientation.
      */
     geometry_msgs::msg::Pose graspFrameGoal(
-        const geometry_msgs::msg::Pose& object_pose, double object_height_m,
-        const ArmContext& arm) const;
+        const geometry_msgs::msg::Pose& object_pose, double object_height_m, const ArmContext& arm,
+        GraspApproach approach) const;
 
     /**
      * @brief Moves to @p pose in a straight line, falling back to a planned path.
@@ -489,6 +513,15 @@ private:
     // orientation is a choice, and it is the one thing that depends on the surface rather than
     // on the hand.
     std::vector<double> grasp_rpy_;
+    /// The hand's orientation coming in on the object's front face, as the top grasp's rpy is.
+    std::vector<double> front_grasp_rpy_;
+    /// Which face the fixed grasp comes in on; the generator answers for itself.
+    GraspApproach grasp_approach_{ GraspApproach::Top };
+    /// How far back along its own approach axis a front grasp stages, as approach_height_m is
+    /// for a top one.
+    double front_approach_standoff_m_{ 0.18 };
+    /// Where a front grip lands up the object, measured from its base.
+    double front_grip_height_m_{ 0.045 };
 
     /// "fixed_top_down" or "generated". The default is what this server has always done.
     std::string grasp_source_;

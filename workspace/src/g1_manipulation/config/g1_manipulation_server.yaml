@@ -107,7 +107,34 @@ g1_manipulation_server:
     # Samples per motion, all inside planning_time_s: ValidateSolution rejects paths OMPL accepted,
     # and that rejection returns fast enough to sample again.
     planning_attempts: 5
+
+    # Which face the fixed grasp comes in on: "top" or "front". The generator, when one is
+    # running, answers this for itself and ignores both.
+    #
+    # Top descends onto the top face and closes across the object's width. It is what every
+    # scene here was tuned against, and it is marginal on these props: the block is 60 mm across
+    # and the hand takes 75, so the fingers barely span it and a grip that survives a pinned-base
+    # lift has been seen to shake loose while the robot walks.
+    #
+    # Front comes in horizontally onto the face turned towards the robot. Same closing width, but
+    # the object's long axis lies across the fingers rather than along them, so there is more of
+    # it between them to hold.
+    grasp_approach: "top"
+
     grasp_rpy: [-1.5707963, 0.0, 0.0]
+
+    # The same for a front grasp, and a separate number because it is a different wrist pose
+    # rather than a tweak of the one above. Mirrors for the left arm exactly as grasp_rpy does.
+    front_grasp_rpy: [-1.5707963, 0.0, 1.5707963]
+
+    # A front grasp's equivalent of approach_height_m: how far back along its own approach axis
+    # it stages. The axis points at the robot, so this is clearance in front of the object rather
+    # than above it.
+    front_approach_standoff_m: 0.18
+
+    # Where a front grip lands, measured up from the object's base. Half of a 90 mm block, so the
+    # fingers take it across the middle with equal amounts above and below.
+    front_grip_height_m: 0.045
 
     # `grasp_source` is a launch argument, for the same reason `object_timeout_ms` is. There is
     # no fallback between the two: a pick quietly using the fixed pose would look like it worked.

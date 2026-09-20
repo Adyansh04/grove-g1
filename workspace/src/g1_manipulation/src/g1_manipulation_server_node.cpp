@@ -84,6 +84,13 @@ visualization_msgs::msg::Marker arrow(
 
 }  // namespace
 
+GraspApproach graspApproachFrom(const std::string& name)
+{
+    // Anything unrecognised is Top, which is what every scene here was tuned against. A typo
+    // should not silently change which face the hand comes in on.
+    return name == "front" ? GraspApproach::Front : GraspApproach::Top;
+}
+
 bool resolveArm(const std::string& arm, ArmContext& out)
 {
     if (arm != "left" && arm != "right")
@@ -218,6 +225,20 @@ G1ManipulationServer::G1ManipulationServer(const rclcpp::NodeOptions& options)
                 else if (name == "settle_attempts")
                 {
                     settle_attempts_ = static_cast<int>(parameter.as_int());
+                }
+                else if (name == "grasp_approach")
+                {
+                    // Settable while the node runs, so the two approaches can be compared in one
+                    // session against the same scene rather than across two rebuilds.
+                    grasp_approach_ = graspApproachFrom(parameter.as_string());
+                }
+                else if (name == "front_grip_height_m")
+                {
+                    front_grip_height_m_ = parameter.as_double();
+                }
+                else if (name == "front_approach_standoff_m")
+                {
+                    front_approach_standoff_m_ = parameter.as_double();
                 }
                 else if (name == "reaim_clearance_m")
                 {
@@ -556,25 +577,36 @@ moveit_msgs::msg::CollisionObject G1ManipulationServer::publishCollisionObject(
 }
 
 geometry_msgs::msg::Pose G1ManipulationServer::graspFrameGoal(
-    const geometry_msgs::msg::Pose& object_pose, double object_height_m, const ArmContext& arm) const
+    const geometry_msgs::msg::Pose& object_pose, double object_height_m, const ArmContext& arm,
+    GraspApproach approach) const
 {
     // Horizontally the grasp frame goes straight to the object: that frame is defined as the
     // point the hand closes on, so putting it at the object IS the grasp.
     geometry_msgs::msg::Pose goal;
     goal.position = object_pose.position;
 
-    // Vertically it aims below the top face, so the fingers close around the object rather than
-    // on top of it, but never lower than the hand itself can reach: measured in MuJoCo, the Dex3
-    // hangs 63 mm below its grasp frame even with the thumb retracted, so a grip point below
-    // that rests the thumb on the surface instead of on the object.
     const double top    = object_pose.position.z + 0.5 * object_height_m;
     const double bottom = object_pose.position.z - 0.5 * object_height_m;
-    goal.position.z     = std::max(top - grasp_depth_below_top_m_, bottom + min_grip_height_m_);
 
-    // Only the orientation is a choice, and it mirrors: the two hands close in opposite
-    // directions, so the roll that points the closing axis at the floor flips sign.
+    // Where up the object the grip lands, which is not the same question for the two approaches.
+    //
+    // Coming down on the top face, it aims just under that face so the fingers close around the
+    // object rather than on top of it, but never nearer the base than the hand itself reaches:
+    // measured in MuJoCo, the Dex3 hangs 63 mm below its grasp frame even with the thumb
+    // retracted, so a grip point below that rests the thumb on the surface instead of the object.
+    //
+    // Coming in on the front face there is no top face to stay under, and the useful height is
+    // simply a stated distance up from the base. Held on its side the object is gripped across
+    // its width with its long axis across the fingers rather than along them.
+    const auto& rpy = approach == GraspApproach::Front ? front_grasp_rpy_ : grasp_rpy_;
+    goal.position.z = approach == GraspApproach::Front ?
+                          bottom + front_grip_height_m_ :
+                          std::max(top - grasp_depth_below_top_m_, bottom + min_grip_height_m_);
+
+    // The orientation mirrors either way: the two hands close in opposite directions, so the
+    // roll that points the closing axis flips sign.
     tf2::Quaternion rotation;
-    rotation.setRPY((arm.is_left ? -1.0 : 1.0) * grasp_rpy_[0], grasp_rpy_[1], grasp_rpy_[2]);
+    rotation.setRPY((arm.is_left ? -1.0 : 1.0) * rpy[0], rpy[1], rpy[2]);
     goal.orientation = tf2::toMsg(rotation);
     return goal;
 }
@@ -628,10 +660,20 @@ std::optional<G1ManipulationServer::GraspPlan> G1ManipulationServer::chooseGrasp
     if (grasp_source_ != "generated")
     {
         GraspPlan plan;
-        plan.grasp    = graspFrameGoal(object_pose, detection.bbox.size.z, arm);
+        plan.grasp    = graspFrameGoal(object_pose, detection.bbox.size.z, arm, grasp_approach_);
         plan.pregrasp = plan.grasp;
-        plan.pregrasp.position.z += approach_height_m_;
-        plan.origin = "top-down";
+        if (grasp_approach_ == GraspApproach::Front)
+        {
+            // Staged back along the axis the hand comes in on, which for a front grasp is the
+            // one pointing at the robot. The planning frame is the pelvis, so that is -x.
+            plan.pregrasp.position.x -= front_approach_standoff_m_;
+            plan.origin = "front";
+        }
+        else
+        {
+            plan.pregrasp.position.z += approach_height_m_;
+            plan.origin = "top-down";
+        }
         return plan;
     }
 
@@ -1644,7 +1686,9 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
         target->position.z += 0.5 * (surface->bbox.size.z + held_height);
     }
 
-    geometry_msgs::msg::Pose place_goal = graspFrameGoal(*target, held_height, arm);
+    // A set-down is always from above, whichever face the object was picked up by.
+    geometry_msgs::msg::Pose place_goal =
+        graspFrameGoal(*target, held_height, arm, GraspApproach::Top);
     geometry_msgs::msg::Pose preplace   = place_goal;
     preplace.position.z += place_approach_height_m_;
 
@@ -1698,7 +1742,7 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
             {
                 moved->position.z += 0.5 * (fresh->bbox.size.z + held_height);
                 target               = moved;
-                const auto   regrasp = graspFrameGoal(*moved, held_height, arm);
+                const auto   regrasp = graspFrameGoal(*moved, held_height, arm, GraspApproach::Top);
                 const double shift   = std::hypot(
                     regrasp.position.x - place_goal.position.x,
                     regrasp.position.y - place_goal.position.y);
@@ -1923,6 +1967,29 @@ void G1ManipulationServer::executeSetArmPosture(
         result->message = "could not reach '" + goal->named_target + "'";
         goal_handle->abort(result);
         return;
+    }
+
+    // If this arm was carrying something, say whether it still is. Nothing between the pick and
+    // the place looked, so a block shaken loose while the robot walked away from the bench was
+    // reported three legs later as a place that could not start, and the mission had by then
+    // crossed the building with an empty hand. Wherever it is lost, this is the first arm action
+    // afterwards.
+    ArmContext arm;
+    const bool is_arm_group =
+        resolveArm(goal->group.rfind("left", 0) == 0 ? "left" : "right", arm) &&
+        goal->group == arm.arm_group;
+    if (is_arm_group && !planning_scene_.getAttachedObjects().empty())
+    {
+        if (std::string grip; !isHolding(arm, grip))
+        {
+            result->success = false;
+            result->message =
+                goal->group + " reached " + goal->named_target + " but dropped what it held: " +
+                grip;
+            RCLCPP_ERROR(get_logger(), "%s", result->message.c_str());
+            goal_handle->abort(result);
+            return;
+        }
     }
 
     result->success = true;
