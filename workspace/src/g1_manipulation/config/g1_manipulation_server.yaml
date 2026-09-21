@@ -65,6 +65,37 @@ g1_manipulation_server:
     # retry.
     max_grasp_offset_m: 0.020
 
+    # How far the shoulder yaw may wander from where a Cartesian line started.
+    #
+    # A 7-joint arm reaching a 6-DoF pose has one redundant degree of freedom, and a Cartesian
+    # path re-solves IK every cartesian_step_m along the way. Under pick_ik's global mode the
+    # solver is free to spend that redundancy differently at each waypoint, and it does: on one
+    # 12 cm line, ten identical requests, the yaw travelled a median of 1.27 rad and up to 1.73,
+    # wandering until the arm met something and the line stopped there. That drift IS the
+    # flakiness behind descents ending 25 to 207 mm short.
+    #
+    # It is drift and not a jump. The returned trajectories are continuous, largest single step
+    # 0.08 to 0.15 rad, so this is the solver strolling through the null space rather than
+    # flipping between branches, and a jump_threshold would not catch it.
+    #
+    # Measured, median and worst fraction over ten lines each:
+    #   unconstrained  yaw travel 1.27   fraction 0.80 / 0.68
+    #   yaw 0.25       yaw travel 0.24   fraction 0.60 / 0.56   over-constrained
+    #   yaw 0.40       yaw travel 0.35   fraction 0.92 / 0.84   <-- best on both
+    #   yaw 0.55       yaw travel 0.35   fraction 0.92 / 0.76
+    #   yaw 0.70       yaw travel 0.35   fraction 0.88 / 0.76
+    # Pinning roll as well is worse at every tolerance: 0.84 worst becomes 0.64 at 0.40.
+    #
+    # MoveIt hands path constraints to IK as a solution callback rather than checking them
+    # afterwards, so this steers the solver instead of rejecting what it returned. Verified: an
+    # impossible constraint returns fraction 0.000 rather than the unconstrained answer.
+    #
+    # pick_ik's `local` mode fixes the drift outright, 0.28 to 0.32 rad every time, but it cannot
+    # be switched on in kinematics.yaml: plan-to-pose needs a seed-independent search and with
+    # local on both arms the pregrasp failed 3 runs of 3. Setting it per call around the
+    # Cartesian line is the better fix and is still open. Zero disables this constraint.
+    descent_shoulder_tolerance_rad: 0.40
+
     # Where every descent starts from, back up the approach axis, with only the stretch below it
     # taken as a straight line. Not the pregrasp: the full approach is 12 to 22 cm and runs out of
     # straight line part way often enough that retrying the whole thing repeats that. 8 cm clears

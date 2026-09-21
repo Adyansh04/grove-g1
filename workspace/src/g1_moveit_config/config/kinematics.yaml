@@ -20,6 +20,17 @@ left_arm:
   # global runs the memetic search, which finds a solution from a seed far from the goal, and
   # the plan-to-pose case. local is gradient descent from the seed and is the right choice for
   # servoing or a Cartesian path, where the seed is already close.
+  #
+  # Tried as local here, because the descent's flakiness IS null-space drift and local removes
+  # it: measured on a 12 cm Cartesian line, six identical requests, global let the shoulder yaw
+  # wander 0.33 to 2.09 rad and returned 24 to 118 trajectory points, where local travels 0.28
+  # to 0.32 every time and returns 15 to 17. Near deterministic.
+  #
+  # It cannot go here, though, and the warning above is exactly right: with local on both arms
+  # the pregrasp could not be reached in 3 runs of 3, every one failing before the descent, so
+  # plan-to-pose really does need a seed-independent search. Setting it per call around the
+  # Cartesian line is the open option; the drift measurement is in docs and worth keeping either
+  # way.
   mode: global
 
   # Stop at the first solution that satisfies the thresholds rather than polishing it. Planning

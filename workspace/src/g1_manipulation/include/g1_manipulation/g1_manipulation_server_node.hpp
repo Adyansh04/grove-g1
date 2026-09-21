@@ -263,7 +263,20 @@ private:
      */
     double moveStraight(
         MoveGroup& group, const geometry_msgs::msg::Pose& pose, const std::string& link,
-        const std::string& what, double min_fraction);
+        const std::string& what, double min_fraction,
+        const moveit_msgs::msg::Constraints& along_the_way = moveit_msgs::msg::Constraints());
+
+    /**
+     * @brief Pins the shoulder near where it is now, for the length of one Cartesian line.
+     *
+     * A 7-joint arm reaching a 6-DoF pose has one redundant degree of freedom, and a Cartesian
+     * path solves IK afresh at every waypoint. Nothing stops the solver answering consecutive
+     * waypoints from opposite sides of that null space, and the swing between them puts the
+     * elbow through the torso.
+     *
+     * @return An empty constraint set when the tolerance is not positive, which disables this.
+     */
+    moveit_msgs::msg::Constraints shoulderHold(MoveGroup& group) const;
 
     /**
      * @brief Drops the octomap so the descent plans against what the camera can see now.
@@ -483,6 +496,9 @@ private:
     double settle_tolerance_m_{ 0.010 };
     /// Past this the object cannot be between the fingers, so closing is closing on air.
     double max_grasp_offset_m_{ 0.020 };
+    /// How far the shoulder may wander from where a Cartesian line started. Wide enough for the
+    /// real motion, far narrower than a null-space flip. Zero switches the constraint off.
+    double descent_shoulder_tolerance_rad_{ 0.40 };
     /// How far the object may have moved between being located and being descended on for the
     /// descent to follow it. Sized for the body sway of a robot standing on its legs, so a
     /// larger jump reads as a different object and is refused.

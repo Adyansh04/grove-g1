@@ -143,11 +143,13 @@ G1ManipulationServer::G1ManipulationServer(const rclcpp::NodeOptions& options)
     settle_tolerance_m_        = declare_parameter<double>("settle_tolerance_m", 0.010);
     max_grasp_offset_m_        = declare_parameter<double>("max_grasp_offset_m", 0.020);
     grasp_refresh_max_shift_m_ = declare_parameter<double>("grasp_refresh_max_shift_m", 0.050);
-    settle_attempts_           = static_cast<int>(declare_parameter<int>("settle_attempts", 2));
-    reaim_clearance_m_         = declare_parameter<double>("reaim_clearance_m", 0.08);
-    settle_wait_s_             = declare_parameter<double>("settle_wait_s", 0.8);
-    lift_height_m_             = declare_parameter<double>("lift_height_m", 0.15);
-    lift_attempts_             = static_cast<int>(declare_parameter<int>("lift_attempts", 3));
+    descent_shoulder_tolerance_rad_ =
+        declare_parameter<double>("descent_shoulder_tolerance_rad", 0.40);
+    settle_attempts_   = static_cast<int>(declare_parameter<int>("settle_attempts", 2));
+    reaim_clearance_m_ = declare_parameter<double>("reaim_clearance_m", 0.08);
+    settle_wait_s_     = declare_parameter<double>("settle_wait_s", 0.8);
+    lift_height_m_     = declare_parameter<double>("lift_height_m", 0.15);
+    lift_attempts_     = static_cast<int>(declare_parameter<int>("lift_attempts", 3));
     // What counts as a grip: how far short of the commanded posture a finger must stall, and how
     // hard it must push while short. Parameters because the real hand's tau_est carries noise
     // these thresholds have to clear.
@@ -952,17 +954,58 @@ std::optional<geometry_msgs::msg::Point> G1ManipulationServer::residualTo(
     return residual;
 }
 
+moveit_msgs::msg::Constraints G1ManipulationServer::shoulderHold(MoveGroup& group) const
+{
+    moveit_msgs::msg::Constraints hold;
+    if (descent_shoulder_tolerance_rad_ <= 0.0)
+    {
+        return hold;
+    }
+    // Yaw alone. It is the joint the drift runs away on, and pinning roll with it measured worse
+    // at the same tolerance: the worst fraction over ten lines fell from 0.840 to 0.640, because
+    // roll is part of how the arm reaches down and taking it away costs more than the extra
+    // steadiness buys. Pitch and elbow are what a vertical line moves, so they stay free.
+    const std::string                 side  = group.getName().substr(0, group.getName().find('_'));
+    const moveit::core::RobotStatePtr state = group.getCurrentState(1.0);
+    if (!state)
+    {
+        return hold;
+    }
+    const std::string joint    = side + "_shoulder_yaw_joint";
+    const double*     position = state->getJointPositions(joint);
+    if (position == nullptr)
+    {
+        return hold;
+    }
+    moveit_msgs::msg::JointConstraint pin;
+    pin.joint_name      = joint;
+    pin.position        = *position;
+    pin.tolerance_above = descent_shoulder_tolerance_rad_;
+    pin.tolerance_below = descent_shoulder_tolerance_rad_;
+    pin.weight          = 1.0;
+    hold.joint_constraints.push_back(pin);
+    return hold;
+}
+
 double G1ManipulationServer::moveStraight(
     MoveGroup& group, const geometry_msgs::msg::Pose& pose, const std::string& link,
-    const std::string& what, double min_fraction)
+    const std::string& what, double min_fraction,
+    const moveit_msgs::msg::Constraints& along_the_way)
 {
     setStartStateInBounds(group);
     const std::string previous_tip = group.getEndEffectorLink();
     group.setEndEffectorLink(link);
     moveit_msgs::msg::RobotTrajectory           path;
     const std::vector<geometry_msgs::msg::Pose> waypoints{ pose };
-    const double                                fraction =
-        group.computeCartesianPath(waypoints, cartesian_step_m_, path, /*avoid_collisions=*/true);
+    // MoveIt hands path constraints to IK as a solution callback rather than checking them
+    // afterwards, so a constrained line steers the solver instead of just rejecting what it
+    // returned.
+    const double fraction = group.computeCartesianPath(
+        waypoints,
+        cartesian_step_m_,
+        path,
+        along_the_way,
+        /*avoid_collisions=*/true);
     group.setEndEffectorLink(previous_tip);
     // Reported rather than executed when it falls short, so a caller with somewhere else to go
     // still has the arm where it left it.
@@ -1025,7 +1068,10 @@ bool G1ManipulationServer::descendOnto(
         // runs out the descent below just starts from higher up, which is where it started
         // before there was a staging point at all.
         moveStraight(group, staging, link, "stage", 0.0);
-        const double walked   = moveStraight(group, commanded, link, "approach", 0.0);
+        // Pinned from staging, not from wherever the arm was before it: staging is the state the
+        // line about to be walked starts from, and it is the one the solver must not wander off.
+        const moveit_msgs::msg::Constraints hold = shoulderHold(group);
+        const double walked   = moveStraight(group, commanded, link, "approach", 0.0, hold);
         const auto   residual = residualTo(group, grasp, link, "approach");
         if (!residual)
         {
