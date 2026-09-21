@@ -286,52 +286,61 @@
     <joint name="right_wrist_yaw_joint" value="0.00"/>
   </group_state>
 
-  <!-- `carry` is `tucked` with the forearm level and the wrist flat, so a held object stays
-       upright and close to the chest while the robot walks. tucked itself is the smallest
-       swept volume, but its wrist pitch would tip whatever the hand is holding.
+  <!-- `carry` holds an object through a walk: forearm level, wrist flat so the load stays
+       upright. tucked is a smaller swept volume but its wrist pitch would tip what is held.
 
-       The shoulder roll is 0.60, and it is the one value in this pose with a measurement behind
-       it. Rolling the shoulder away from the body is what buys the thumb room off the hip: at
-       0.25 the pose is invalid outright (right_hand_thumb_2_link <-> right_hip_roll_link), the
-       same hand-versus-hip clearance problem met elsewhere, from the other side.
+       The pose is pulled in against the body, because the gait shakes the block out of the hand
+       at arm's length. It was pitch -0.20 / roll 0.60 / elbow 1.40, which put the grasp frame at
+       pelvis (0.157, -0.383, -0.122): 383 mm outboard, the far end of the lever the body swings
+       through at every step. Sweeping the three joints for poses legal with the block attached,
+       nothing legal sits higher: everything above -0.122 puts palm or index links into the
+       torso, so the only axis left is inboard. -0.55 / 0.45 / 1.80 gives
+       (0.207, -0.307, -0.130): 76 mm closer to the body for 8 mm of height.
 
-       0.40 fixed that and was left there, valid but with 4.6 degrees of margin. The arm droops
-       more than that carrying the block through a walk, and a start state in collision cannot be
-       planned out of: fix_start_state_collision jitters the start, plans from the jitter, and
-       the path check rejects the result against the original.
+       Elbow stays at 1.80 and not the 2.10 the sweep preferred, because the elbow's upper limit
+       is 2.0944 and satisfiesBounds is a hard test, not a margin one. 1.80 keeps 0.29 rad under
+       it. Collision-legal and reachable are different questions and the sweep only answers the
+       first.
 
-       Margin against roll, others held: 0.40 -> 4.6 deg, 0.50 -> 10.3, 0.55 -> 12.6,
-       0.60 -> 16.0, 0.65 -> 18.3. test_robot_model holds the line at 0.20 rad. -->
+       Shoulder roll is still the one value with a measurement behind it. Rolling away from the
+       body buys the thumb room off the hip: at 0.25 the pose is invalid outright
+       (right_hand_thumb_2_link <-> right_hip_roll_link). Margin against roll, others held:
+       0.40 -> 4.6 deg, 0.50 -> 10.3, 0.55 -> 12.6, 0.60 -> 16.0, 0.65 -> 18.3.
+
+       0.60 was picked when the arm tracked to 40 mm under kp 40 and needed the whole margin for
+       droop; at kp 300 it tracks to 6 mm, which is what makes 0.45 (~7 deg) affordable. Raising
+       kp is therefore a precondition of this pose, not an unrelated tuning change. 0.40 would
+       buy another 23 mm inboard and is not worth spending the margin on. -->
   <group_state name="carry" group="left_arm">
-    <joint name="left_shoulder_pitch_joint" value="-0.20"/>
-    <joint name="left_shoulder_roll_joint" value="0.60"/>
+    <joint name="left_shoulder_pitch_joint" value="-0.55"/>
+    <joint name="left_shoulder_roll_joint" value="0.45"/>
     <joint name="left_shoulder_yaw_joint" value="0.00"/>
-    <joint name="left_elbow_joint" value="1.40"/>
+    <joint name="left_elbow_joint" value="1.80"/>
     <joint name="left_wrist_roll_joint" value="0.00"/>
     <joint name="left_wrist_pitch_joint" value="0.00"/>
     <joint name="left_wrist_yaw_joint" value="0.00"/>
   </group_state>
   <group_state name="carry" group="right_arm">
-    <joint name="right_shoulder_pitch_joint" value="-0.20"/>
-    <joint name="right_shoulder_roll_joint" value="-0.60"/>
+    <joint name="right_shoulder_pitch_joint" value="-0.55"/>
+    <joint name="right_shoulder_roll_joint" value="-0.45"/>
     <joint name="right_shoulder_yaw_joint" value="0.00"/>
-    <joint name="right_elbow_joint" value="1.40"/>
+    <joint name="right_elbow_joint" value="1.80"/>
     <joint name="right_wrist_roll_joint" value="0.00"/>
     <joint name="right_wrist_pitch_joint" value="0.00"/>
     <joint name="right_wrist_yaw_joint" value="0.00"/>
   </group_state>
   <group_state name="carry" group="both_arms">
-    <joint name="left_shoulder_pitch_joint" value="-0.20"/>
-    <joint name="left_shoulder_roll_joint" value="0.60"/>
+    <joint name="left_shoulder_pitch_joint" value="-0.55"/>
+    <joint name="left_shoulder_roll_joint" value="0.45"/>
     <joint name="left_shoulder_yaw_joint" value="0.00"/>
-    <joint name="left_elbow_joint" value="1.40"/>
+    <joint name="left_elbow_joint" value="1.80"/>
     <joint name="left_wrist_roll_joint" value="0.00"/>
     <joint name="left_wrist_pitch_joint" value="0.00"/>
     <joint name="left_wrist_yaw_joint" value="0.00"/>
-    <joint name="right_shoulder_pitch_joint" value="-0.20"/>
-    <joint name="right_shoulder_roll_joint" value="-0.60"/>
+    <joint name="right_shoulder_pitch_joint" value="-0.55"/>
+    <joint name="right_shoulder_roll_joint" value="-0.45"/>
     <joint name="right_shoulder_yaw_joint" value="0.00"/>
-    <joint name="right_elbow_joint" value="1.40"/>
+    <joint name="right_elbow_joint" value="1.80"/>
     <joint name="right_wrist_roll_joint" value="0.00"/>
     <joint name="right_wrist_pitch_joint" value="0.00"/>
     <joint name="right_wrist_yaw_joint" value="0.00"/>
