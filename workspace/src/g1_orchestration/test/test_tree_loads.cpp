@@ -128,8 +128,10 @@ TEST(TreeLoads, EveryFallibleLeafInTheMissionIsRetried)
     }
 
     // Five postures, two navigation goals, the object approach, the pick and the
-    // approach-and-place pair, each wrapped because Nav2 aborts plans transiently.
-    EXPECT_EQ(seen["RetryUntilSuccessful"], 10);
+    // approach-and-place pair, each wrapped because Nav2 aborts plans transiently, plus the two
+    // LookFor leaves: the detector needs a frame or two after the base stops moving, so the
+    // first look at either station can legitimately find nothing.
+    EXPECT_EQ(seen["RetryUntilSuccessful"], 12);
 }
 
 TEST(TreeLoads, RejectsALeafNobodyRegistered)
