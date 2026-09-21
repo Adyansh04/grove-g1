@@ -146,12 +146,19 @@ g1_manipulation_server:
     # holds a top grasp. That is the failure a carry keeps dying of, so front was worth another
     # look on its own merits rather than as a fallback.
     #
-    # Still 0 of 3, and the failure is now specific: the hand reaches the block and the lift
-    # starts, but the approach along the object's own axis pushes it before the fingers close.
-    # The block went from x 0.300 to 0.360-0.396 and ended at z 0.767, below the 0.802 bench, in
-    # all three runs. A front grasp needs something to stop the object moving away, whether that
-    # is coming in high and dropping onto the grip height, or the other hand as a backstop.
-    # Neither exists yet, so top stays the default.
+    # Still 0 of 3, and the failure moved twice, which is progress worth writing down.
+    #
+    # Staging back along the object's own axis pushed the block before the fingers closed: it
+    # went from x 0.300 to 0.360-0.396 and ended at z 0.767, below the 0.802 bench, in all three
+    # runs. Staging ABOVE the grip instead fixed that completely, since the fingers close
+    # horizontally and do not need the approach to share their axis: the block now finishes at
+    # x 0.306-0.323 and z 0.7899, which is where it started, and the fingers load to 0.27-0.42.
+    #
+    # What is left is a descent that stops 26, 26 and 27 mm short, the same distance every run.
+    # A systematic stop is something in the way rather than a solver that missed, and it is not
+    # yet known what: the candidates are the fingers meeting the bench at that height, since a
+    # front wrist puts them lower than a top one, or the block's own top face. Until that is
+    # measured, top stays the default.
     grasp_approach: "top"
 
     grasp_rpy: [-1.5707963, 0.0, 0.0]
@@ -168,10 +175,13 @@ g1_manipulation_server:
     #   yaw -45, -90, 180: blocked on the shoulder, or no IK
     front_grasp_rpy: [-1.5707963, 0.0, 0.7853982]
 
-    # A front grasp's equivalent of approach_height_m: how far back along its own approach axis
-    # it stages. The axis points at the robot, so this is clearance in front of the object rather
-    # than above it.
-    front_approach_standoff_m: 0.18
+    # A front grasp's equivalent of approach_height_m: how far ABOVE the grip it stages. It used
+    # to stage back along the object's own axis, at 0.18, which is what a front grasp means
+    # geometrically and is also what pushed the block off the bench before the fingers closed.
+    # The fingers close horizontally either way, so the hand can come down past the object
+    # instead of in at it. Smaller than the top grasp's 0.22 because the grip is at mid-height,
+    # so there is less room above it before the arm runs out of reach.
+    front_approach_standoff_m: 0.12
 
     # Where a front grip lands, measured up from the object's base. Half of a 90 mm block, so the
     # fingers take it across the middle with equal amounts above and below.

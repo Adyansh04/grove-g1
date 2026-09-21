@@ -671,9 +671,16 @@ std::optional<G1ManipulationServer::GraspPlan> G1ManipulationServer::chooseGrasp
         plan.pregrasp = plan.grasp;
         if (grasp_approach_ == GraspApproach::kFront)
         {
-            // Staged back along the axis the hand comes in on, which for a front grasp is the
-            // one pointing at the robot. The planning frame is the pelvis, so that is -x.
-            plan.pregrasp.position.x -= front_approach_standoff_m_;
+            // Staged ABOVE the grip, not back from it, even though the fingers close
+            // horizontally. Coming in along the object's own axis is what a front grasp means
+            // geometrically, and it pushes the object away before the fingers reach it: the
+            // block travelled 60 to 96 mm and ended off the bench in all three runs.
+            //
+            // Nothing about the wrist pose needs the approach to share its closing axis. The
+            // fingers straddle the object front and back, so the hand can descend past it and
+            // close at mid-height, which is the whole point of a front grip: front_grip_height_m
+            // puts the grasp on the object's centre of mass, where min_grip_height_m cannot.
+            plan.pregrasp.position.z += front_approach_standoff_m_;
             plan.origin = "front";
         }
         else
