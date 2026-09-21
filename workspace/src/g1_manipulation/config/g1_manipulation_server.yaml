@@ -137,12 +137,21 @@ g1_manipulation_server:
     # the object's long axis lies across the fingers rather than along them, so there is more of
     # it between them to hold.
     #
-    # Measured head to head on the tabletop, four runs, the approach confirmed in the log each
-    # time: top put the block in the bench 2 of 2, front managed 0 of 2. Front either could not
-    # reach the grasp pose at all or dropped the block during the lift, and knocked it off the
-    # bench doing so. It is kept because the plumbing is sound and the failure is in THIS tuning
-    # of it -- the yaw is right but the grip height and the path in from the standoff are not --
-    # and because a real scene will have objects that cannot be taken from above.
+    # Measured head to head on the tabletop, the approach confirmed in the log each time: top
+    # put the block in the bench 2 of 2, front managed 0 of 2.
+    #
+    # Retried later, once top picked reliably, because front is the only approach that can grip
+    # an object through its middle: it has no thumb hanging below it, so front_grip_height_m
+    # sets the grip directly and is not held above the centre of mass the way min_grip_height_m
+    # holds a top grasp. That is the failure a carry keeps dying of, so front was worth another
+    # look on its own merits rather than as a fallback.
+    #
+    # Still 0 of 3, and the failure is now specific: the hand reaches the block and the lift
+    # starts, but the approach along the object's own axis pushes it before the fingers close.
+    # The block went from x 0.300 to 0.360-0.396 and ended at z 0.767, below the 0.802 bench, in
+    # all three runs. A front grasp needs something to stop the object moving away, whether that
+    # is coming in high and dropping onto the grip height, or the other hand as a backstop.
+    # Neither exists yet, so top stays the default.
     grasp_approach: "top"
 
     grasp_rpy: [-1.5707963, 0.0, 0.0]
