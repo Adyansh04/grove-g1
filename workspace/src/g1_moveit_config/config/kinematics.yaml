@@ -39,12 +39,21 @@ left_arm:
   # against torso_link. The pose itself was reachable; the elbow simply swung through the torso
   # between one waypoint and the next.
   #
-  # Left at zero anyway, for now. Weighting displacement is the right idea and 0.1 made things
-  # strictly worse: pregrasp IK, which settles to 4 mm at zero weight, stopped returning any
-  # solution at all and four runs out of four failed before the descent. The cost terms are
-  # additive and `stop_optimization_on_valid_solution` accepts a solution only under
-  # cost_threshold, so weighting displacement pushes ordinary solutions over that threshold.
-  # Raising this needs cost_threshold raised with it, measured together, not on its own.
+  # Left at zero, and the obvious rescue has now been tried and does not work. The theory was
+  # that the cost terms are additive and `stop_optimization_on_valid_solution` accepts nothing
+  # over cost_threshold, so weighting displacement pushed ordinary solutions past the default
+  # 0.001 and pregrasp IK returned nothing. Raising the two together was the suggested fix.
+  #
+  # Measured: 0.1 with cost_threshold 0.5, both arms, and the pregrasp failed 3 runs out of 3,
+  # exactly as it did at the default threshold. `ros2 param dump` confirms both values reached
+  # the plugin, so this is pick_ik's behaviour and not a config that was ignored. Whatever
+  # breaks the pregrasp here is not the acceptance threshold.
+  #
+  # The remaining candidate is `mode`, not weight: global runs a memetic search that is free to
+  # answer each Cartesian waypoint from a different part of the null space, which is precisely
+  # the elbow-through-torso failure below. local is gradient descent from the seed. It cannot
+  # simply be switched, because the same entry serves plan-to-pose from a far seed, where
+  # global is right; it would have to be set per call around the descent.
   minimal_displacement_weight: 0.0
 
 right_arm:
