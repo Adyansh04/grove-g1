@@ -160,29 +160,36 @@
        and the thumb only swings out to x = 0.091 at `closed`, so anything further and it never
        reaches the object at all. Between them this frame takes objects 20 to 75 mm across.
 
-       y = 0.085 is where a held object actually ends up, which is not where the thumb and
-       finger LINK ORIGINS meet. That midpoint is y = 0.050 and this frame used to sit on it,
-       but the collision capsules run 50 to 62 mm out along each link, so the volume the hand
-       closes on is much further out than its joint origins suggest.
+       y = 0.050 is where the fingers and thumb meet, and it is also what fixes how tall an
+       object has to be: the hand hangs 113 mm below the palm even with the thumb retracted, so
+       63 mm below this frame, and an object shorter than that gets the thumb on the table
+       instead. See g1_manipulation's grasp_depth_below_top_m and min_grip_height_m.
 
-       Measured rather than derived: with ground truth for the block and TF for the palm, a
-       block held through a carry sits at palm (0.086, 0.089, 0.002) while the frame claimed
-       (0.090, 0.050, 0.000). x and z agree to 4 mm and y is out by 39 mm, which is a frame
-       error along the closing axis and not scatter. Every finger was at or near its 1.4 N.m
-       torque clamp at the time, so the hand was gripping hard, just 39 mm too far out, where
-       the object levers itself free: it rotated from 14 to 33 degrees during the lift and slid
-       19 mm while the hand rose 184 mm.
+       KNOWN WRONG BY ABOUT 39 mm, and deliberately left. 0.050 is the midpoint of the thumb and
+       finger LINK ORIGINS, but their collision capsules run 50 to 62 mm out along each link, so
+       the volume the hand actually closes on is further out than the joint origins suggest.
+       Measured against ground truth: a block held through a carry sits at palm
+       (0.086, 0.089, 0.002) while this frame claims (0.090, 0.050, 0.000). x and z agree to
+       4 mm; y is out by 39 mm, along the closing axis, consistently rather than as scatter.
 
-       It also fixes how tall an object has to be: the hand hangs 113 mm below the palm even
-       with the thumb retracted, so 28 mm below this frame, and an object shorter than that gets
-       the thumb on the table instead. See g1_manipulation's grasp_depth_below_top_m and
-       min_grip_height_m. -->
+       Moving it to 0.085 does seat the object properly: the block starts a carry 7 mm from the
+       frame instead of 52 to 88, and the fingers load to 0.817 N.m where they read 0.003 here.
+       It also breaks the descent. A Cartesian path is planned for THIS link, so pushing it
+       35 mm further from the wrist lengthens the lever that wrist rotation acts through, and
+       the straight line in truncates 31 to 38 % short: the pinned tabletop pick went from 3/3
+       to 0/3 across four configurations, including compensating min_grip_height_m,
+       grasp_depth_below_top_m and approach_height_m to hold the palm at the same height.
+
+       So the number is wrong and everything downstream is tuned around it being wrong. Fixing
+       it properly means making the descent tolerant of a frame this far out, which is the same
+       elbow-through-torso problem kinematics.yaml describes, not a one-line change. -->
+
   <xacro:macro name="g1_grasp_frame" params="side mirror">
     <link name="${side}_hand_grasp_frame"/>
     <joint name="${side}_hand_grasp_frame_joint" type="fixed">
       <parent link="${side}_hand_palm_link"/>
       <child link="${side}_hand_grasp_frame"/>
-      <origin xyz="0.090 ${mirror * 0.085} 0" rpy="0 0 0"/>
+      <origin xyz="0.090 ${mirror * 0.050} 0" rpy="0 0 0"/>
     </joint>
   </xacro:macro>
 
