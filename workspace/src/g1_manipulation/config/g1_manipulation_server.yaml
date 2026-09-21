@@ -154,11 +154,15 @@ g1_manipulation_server:
     # horizontally and do not need the approach to share their axis: the block now finishes at
     # x 0.306-0.323 and z 0.7899, which is where it started, and the fingers load to 0.27-0.42.
     #
-    # What is left is a descent that stops 26, 26 and 27 mm short, the same distance every run.
-    # A systematic stop is something in the way rather than a solver that missed, and it is not
-    # yet known what: the candidates are the fingers meeting the bench at that height, since a
-    # front wrist puts them lower than a top one, or the block's own top face. Until that is
-    # measured, top stays the default.
+    # What is left is a descent that stops 26, 26 and 27 mm short, the same distance every run,
+    # and it is NOT a collision. Asked directly, every contact at the front grasp pose and at
+    # the height it stops at is a hand-versus-octomap pair, which the descent already exempts,
+    # and 50 mm higher is clear outright. IK solves at every height tried.
+    #
+    # So the target is reachable and legal, and what fails is the straight line to it: the same
+    # null-space discontinuity kinematics.yaml describes, where the solver answers successive
+    # Cartesian waypoints from different parts of the null space and the path stops partway.
+    # Front is blocked on that, not on anything of its own. Top stays the default meanwhile.
     grasp_approach: "top"
 
     grasp_rpy: [-1.5707963, 0.0, 0.0]
