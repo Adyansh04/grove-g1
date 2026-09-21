@@ -1067,7 +1067,16 @@ bool G1ManipulationServer::descendOnto(
         // Best effort. Staging only has to get the hand near the top of the object; if the line
         // runs out the descent below just starts from higher up, which is where it started
         // before there was a staging point at all.
-        moveStraight(group, staging, link, "stage", 0.0);
+        // Planned, not a straight line, which is what the note above says staging is for. As a
+        // Cartesian line it was the actual failure: measured over ten picks, staging ran out at
+        // 60.7 % and left the hand about 135 mm above the grasp in a pose the approach could not
+        // start from at all, reporting "ran out 0% in, 130 mm short" three descents running.
+        // Planning is safe here for the reason already given, that staging clears the top of
+        // anything this hand can grip, so a planner routing around cannot sweep the object away.
+        if (!moveTo(group, staging, link, "stage"))
+        {
+            RCLCPP_WARN(get_logger(), "approach: could not stage; descending from where it is");
+        }
         // Pinned from staging, not from wherever the arm was before it: staging is the state the
         // line about to be walked starts from, and it is the one the solver must not wander off.
         const moveit_msgs::msg::Constraints hold = shoulderHold(group);
