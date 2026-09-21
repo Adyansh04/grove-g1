@@ -359,11 +359,32 @@
        leaves the object's near face free. That 113 mm is where g1_manipulation's
        min_grip_height_m comes from.
 
-       `closed` swings the thumb forward to palm x = 0.091 and curls the fingers, so the two
-       oppose across the object with the palm capping it. Chosen off the same sweep, then
-       checked through the whole close in free air: at thumb_0 = 0.30 the thumb grazes the
-       middle finger at 80-90 % of travel, which would stall a finger with nothing held, so the
-       abduction stays at zero and only the two flexion joints move.
+       `closed` swings the thumb forward and curls the fingers, so the two oppose across the
+       object with the palm capping it. Chosen off the same sweep, then checked through the
+       whole close in free air: at thumb_0 = 0.30 the thumb grazes the middle finger at 80-90 %
+       of travel, which would stall a finger with nothing held, so the abduction stays at zero
+       and only the two flexion joints move.
+
+       thumb_1 is 0.55 and not the 0.00 it was, which is the difference between holding a block
+       and resting one. Measured from the thumb and index link origins in the palm frame, the
+       closing span at thumb_1 = 0.00 is 80 mm; the blocks this hand picks are 45 mm, so the
+       hand reached `closed` with 35 mm of slack, never loaded a finger, and the object sat in
+       the fingertips and crept out during a carry at about 2.5 mm/s.
+
+       Span against thumb_1, from MoveIt's model: 0.00 -> 80 mm, 0.40 -> 64, 0.50 -> 60,
+       0.60 -> 56, 0.70 -> 52, 0.80 -> 49 but invalid on thumb_2 against the palm.
+
+       0.55 and not the 0.70 that sweep allows, because MoveIt is the wrong authority for this
+       one. Its meshes say 0.70 is clear; MuJoCo's collision capsules are what the fingers
+       actually run against, and with an empty hand the thumb stalls there at 0.58, 0.12 rad
+       short of a 0.70 target. That matters more than the extra span: the grip check reads a
+       finger stopping 0.08 rad short of `closed` as an object, so a `closed` an empty hand
+       cannot reach makes the thumb read as loaded permanently, and every pick then reports
+       "only the thumb is pressing". 0.55 clears the stall.
+
+       thumb_0 stays at zero for a second reason now, besides the graze: it does not close
+       anything. Moving it either way by 0.5 changes the span by under a millimetre, and it
+       measured 7 % of its torque clamp while every other finger ran to 84 %.
 
        The two hands mirror by sign, as the URDF's own limits do on all seven joints. -->
   <group_state name="open" group="left_hand">
@@ -386,7 +407,7 @@
   </group_state>
   <group_state name="closed" group="left_hand">
     <joint name="left_hand_thumb_0_joint" value="0.00"/>
-    <joint name="left_hand_thumb_1_joint" value="0.00"/>
+    <joint name="left_hand_thumb_1_joint" value="0.55"/>
     <joint name="left_hand_thumb_2_joint" value="1.40"/>
     <joint name="left_hand_middle_0_joint" value="-1.20"/>
     <joint name="left_hand_middle_1_joint" value="-1.40"/>
@@ -413,7 +434,7 @@
   </group_state>
   <group_state name="closed" group="right_hand">
     <joint name="right_hand_thumb_0_joint" value="0.00"/>
-    <joint name="right_hand_thumb_1_joint" value="0.00"/>
+    <joint name="right_hand_thumb_1_joint" value="-0.55"/>
     <joint name="right_hand_thumb_2_joint" value="-1.40"/>
     <joint name="right_hand_middle_0_joint" value="1.20"/>
     <joint name="right_hand_middle_1_joint" value="1.40"/>
