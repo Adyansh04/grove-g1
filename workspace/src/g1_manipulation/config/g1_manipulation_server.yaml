@@ -7,26 +7,38 @@ g1_manipulation_server:
     # `object_timeout_ms` is a launch argument, not a key here: a node-named key beats the
     # launch override file, and how old a pose may be depends on what produces it.
 
-    # Where the approach starts, along the planning frame's z. Measured: the hand clears the
-    # workbench octomap only at 0.185 and above, and the pregrasp stays collision-checked so the
-    # planner cannot route through the table on the way in.
-    approach_height_m: 0.22
+    # Where the approach starts, along the planning frame's z. The 0.185 floor this used to sit
+    # above was the height at which the hand cleared the workbench octomap, measured with the
+    # grasp frame at palm y = 0.050. Moving that frame out to 0.085 lifts the whole hand 35 mm
+    # for the same frame height, so the clearance floor comes down with it and this can too.
+    #
+    # It has to: the extra 35 mm is 35 mm further for the arm to reach, and at 0.22 the pregrasp
+    # went out of reach on the navigation route, where the base pose is wherever AMCL stopped
+    # rather than pinned. 0.185 restores the old palm height and keeps the old clearance.
+    approach_height_m: 0.185
 
     # Below the object's TOP face, so the fingers close around it rather than on top of it.
-    # Capped by the palm: the grasp frame is 26 mm clear of the palm's own face, so a deeper
+    # Capped by the palm: the grasp frame is 61 mm clear of the palm's own face, so a deeper
     # grip drives the palm into the top of the object. See g1_common.xacro for both numbers.
-    grasp_depth_below_top_m: 0.020
+    #
+    # 45 mm grips the 90 mm blocks through their middle. It was 20 mm, which gripped 25 mm above
+    # centre and gave the block a lever to rotate out on: it tipped 14 to 33 degrees during the
+    # lift and slid 19 mm while the hand rose 184 mm. The old cap was 26 mm, which is why this
+    # could not simply be set deeper before the grasp frame moved out to 0.085.
+    grasp_depth_below_top_m: 0.045
 
     # And never lower than this above whatever the object stands on, which wins when the two
-    # disagree. Measured in MuJoCo: while it descends the hand hangs 63 mm below the grasp frame,
-    # so the thumb's clearance over the surface is this minus 63 mm. At the old 0.068 that left
-    # 5 mm against a descent that lands within 6-10 mm, and the thumb scraped the table and
-    # dragged the object 44 mm before the fingers closed. 80 mm leaves 17.
+    # disagree. It is the thumb's clearance over the surface: while it descends the hand hangs
+    # 113 mm below the palm, and the grasp frame is now 85 mm out along the closing axis, so the
+    # thumb reaches 28 mm below the frame rather than the 63 mm it did when the frame sat at
+    # 0.050. 45 mm therefore leaves 17 mm of clearance, the same margin 0.080 bought before the
+    # frame moved, against a descent that lands within 6-10 mm.
     #
-    # It also decides the props. The grip point can never be above the object, so an object has
-    # to be at least this tall, and the hand takes nothing wider than 75 mm: no cube satisfies
-    # both, which is why they are 60 wide and 90 tall.
-    min_grip_height_m: 0.080
+    # Getting this wrong in either direction is visible. Too low and the thumb scrapes the
+    # surface and drags the object before the fingers close, measured at 44 mm. Too high and it
+    # overrides grasp_depth_below_top_m: at 0.080 on a 90 mm block it put the grip 80 mm up, a
+    # bare 10 mm below the top edge, and the block levered out of the hand during the lift.
+    min_grip_height_m: 0.045
 
     # How close the grasp frame must MEASURE to its target before the fingers close, and how many
     # corrections it gets. The arm is position-only and has no gravity compensation, so it always
@@ -47,6 +59,16 @@ g1_manipulation_server:
     # never arrived. Refusing here says that instead, and leaves the object untouched for the
     # retry.
     max_grasp_offset_m: 0.020
+
+    # How far the object may have moved between being located and being descended on, for the
+    # descent to follow it there. This exists because the planner works in the pelvis frame and
+    # the pelvis is not still: standing on its legs the balance controller shifts the body while
+    # the arm reaches the pregrasp, and a target frozen before that move points at where the
+    # object used to be. Pinned, the correction measures ~0 and changes nothing.
+    #
+    # 50 mm is body sway with room to spare. A jump larger than that is a different object or a
+    # bad transform, and chasing it would drag the hand across the table.
+    grasp_refresh_max_shift_m: 0.050
 
     # Where every descent starts from, back up the approach axis, with only the stretch below it
     # taken as a straight line. Not the pregrasp: the full approach is 12 to 22 cm and runs out of

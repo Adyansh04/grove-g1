@@ -160,16 +160,29 @@
        and the thumb only swings out to x = 0.091 at `closed`, so anything further and it never
        reaches the object at all. Between them this frame takes objects 20 to 75 mm across.
 
-       y = 0.050 is where the fingers and thumb meet, and it is also what fixes how tall an
-       object has to be: the hand hangs 113 mm below the palm even with the thumb retracted, so
-       63 mm below this frame, and an object shorter than that gets the thumb on the table
-       instead. See g1_manipulation's grasp_depth_below_top_m and min_grip_height_m. -->
+       y = 0.085 is where a held object actually ends up, which is not where the thumb and
+       finger LINK ORIGINS meet. That midpoint is y = 0.050 and this frame used to sit on it,
+       but the collision capsules run 50 to 62 mm out along each link, so the volume the hand
+       closes on is much further out than its joint origins suggest.
+
+       Measured rather than derived: with ground truth for the block and TF for the palm, a
+       block held through a carry sits at palm (0.086, 0.089, 0.002) while the frame claimed
+       (0.090, 0.050, 0.000). x and z agree to 4 mm and y is out by 39 mm, which is a frame
+       error along the closing axis and not scatter. Every finger was at or near its 1.4 N.m
+       torque clamp at the time, so the hand was gripping hard, just 39 mm too far out, where
+       the object levers itself free: it rotated from 14 to 33 degrees during the lift and slid
+       19 mm while the hand rose 184 mm.
+
+       It also fixes how tall an object has to be: the hand hangs 113 mm below the palm even
+       with the thumb retracted, so 28 mm below this frame, and an object shorter than that gets
+       the thumb on the table instead. See g1_manipulation's grasp_depth_below_top_m and
+       min_grip_height_m. -->
   <xacro:macro name="g1_grasp_frame" params="side mirror">
     <link name="${side}_hand_grasp_frame"/>
     <joint name="${side}_hand_grasp_frame_joint" type="fixed">
       <parent link="${side}_hand_palm_link"/>
       <child link="${side}_hand_grasp_frame"/>
-      <origin xyz="0.090 ${mirror * 0.050} 0" rpy="0 0 0"/>
+      <origin xyz="0.090 ${mirror * 0.085} 0" rpy="0 0 0"/>
     </joint>
   </xacro:macro>
 
