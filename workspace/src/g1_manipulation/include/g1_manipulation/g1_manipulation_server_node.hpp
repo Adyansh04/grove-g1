@@ -70,14 +70,14 @@ struct ArmContext
  */
 enum class GraspApproach
 {
-    Top,
-    Front,
+    kTop,
+    kFront,
 };
 
 /**
  * @brief Reads the approach out of a parameter string.
  *
- * @return Top for anything unrecognised, which is the behaviour every scene was tuned against.
+ * @return kTop for anything unrecognised, which is the behaviour every scene was tuned against.
  */
 GraspApproach graspApproachFrom(const std::string& name);
 
@@ -483,6 +483,10 @@ private:
     double settle_tolerance_m_{ 0.010 };
     /// Past this the object cannot be between the fingers, so closing is closing on air.
     double max_grasp_offset_m_{ 0.020 };
+    /// How far the object may have moved between being located and being descended on for the
+    /// descent to follow it. Sized for the body sway of a robot standing on its legs, so a
+    /// larger jump reads as a different object and is refused.
+    double grasp_refresh_max_shift_m_{ 0.050 };
     int    settle_attempts_{ 2 };
     /// Where every descent onto a grasp starts from, back up the approach axis. Above the top of
     /// anything this hand can grip, and short enough to be a line the arm can actually walk.
@@ -516,7 +520,7 @@ private:
     /// The hand's orientation coming in on the object's front face, as the top grasp's rpy is.
     std::vector<double> front_grasp_rpy_;
     /// Which face the fixed grasp comes in on; the generator answers for itself.
-    GraspApproach grasp_approach_{ GraspApproach::Top };
+    GraspApproach grasp_approach_{ GraspApproach::kTop };
     /// How far back along its own approach axis a front grasp stages, as approach_height_m is
     /// for a top one.
     double front_approach_standoff_m_{ 0.18 };

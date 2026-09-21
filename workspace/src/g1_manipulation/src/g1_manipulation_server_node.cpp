@@ -88,7 +88,7 @@ GraspApproach graspApproachFrom(const std::string& name)
 {
     // Anything unrecognised is Top, which is what every scene here was tuned against. A typo
     // should not silently change which face the hand comes in on.
-    return name == "front" ? GraspApproach::Front : GraspApproach::Top;
+    return name == "front" ? GraspApproach::kFront : GraspApproach::kTop;
 }
 
 bool resolveArm(const std::string& arm, ArmContext& out)
@@ -135,19 +135,19 @@ bool G1ManipulationServer::acquire()
 G1ManipulationServer::G1ManipulationServer(const rclcpp::NodeOptions& options)
   : rclcpp::Node("g1_manipulation_server", options)
 {
-    object_timeout_s_        = declare_parameter<double>("object_timeout_ms", 1000.0) / 1000.0;
-    approach_height_m_       = declare_parameter<double>("approach_height_m", 0.22);
-    place_approach_height_m_ =
-        declare_parameter<double>("place_approach_height_m", 0.15);
-    grasp_depth_below_top_m_ = declare_parameter<double>("grasp_depth_below_top_m", 0.020);
-    min_grip_height_m_       = declare_parameter<double>("min_grip_height_m", 0.080);
-    settle_tolerance_m_      = declare_parameter<double>("settle_tolerance_m", 0.010);
-    max_grasp_offset_m_      = declare_parameter<double>("max_grasp_offset_m", 0.020);
-    settle_attempts_         = static_cast<int>(declare_parameter<int>("settle_attempts", 2));
-    reaim_clearance_m_       = declare_parameter<double>("reaim_clearance_m", 0.08);
-    settle_wait_s_           = declare_parameter<double>("settle_wait_s", 0.8);
-    lift_height_m_           = declare_parameter<double>("lift_height_m", 0.15);
-    lift_attempts_           = static_cast<int>(declare_parameter<int>("lift_attempts", 3));
+    object_timeout_s_          = declare_parameter<double>("object_timeout_ms", 1000.0) / 1000.0;
+    approach_height_m_         = declare_parameter<double>("approach_height_m", 0.22);
+    place_approach_height_m_   = declare_parameter<double>("place_approach_height_m", 0.15);
+    grasp_depth_below_top_m_   = declare_parameter<double>("grasp_depth_below_top_m", 0.020);
+    min_grip_height_m_         = declare_parameter<double>("min_grip_height_m", 0.080);
+    settle_tolerance_m_        = declare_parameter<double>("settle_tolerance_m", 0.010);
+    max_grasp_offset_m_        = declare_parameter<double>("max_grasp_offset_m", 0.020);
+    grasp_refresh_max_shift_m_ = declare_parameter<double>("grasp_refresh_max_shift_m", 0.050);
+    settle_attempts_           = static_cast<int>(declare_parameter<int>("settle_attempts", 2));
+    reaim_clearance_m_         = declare_parameter<double>("reaim_clearance_m", 0.08);
+    settle_wait_s_             = declare_parameter<double>("settle_wait_s", 0.8);
+    lift_height_m_             = declare_parameter<double>("lift_height_m", 0.15);
+    lift_attempts_             = static_cast<int>(declare_parameter<int>("lift_attempts", 3));
     // What counts as a grip: how far short of the commanded posture a finger must stall, and how
     // hard it must push while short. Parameters because the real hand's tau_est carries noise
     // these thresholds have to clear.
@@ -156,11 +156,9 @@ G1ManipulationServer::G1ManipulationServer(const rclcpp::NodeOptions& options)
     grip_min_position_error_rad_ = declare_parameter<double>("grip_min_position_error_rad", 0.08);
     grip_min_effort_nm_          = declare_parameter<double>("grip_min_effort_nm", 0.10);
     // How far a released object may be from where it was aimed before the place is a failure.
-    place_tolerance_m_ = declare_parameter<double>("place_tolerance_m", 0.08);
-    place_confirm_timeout_s_ =
-        declare_parameter<double>("place_confirm_timeout_s", 4.0);
-    octomap_rebuild_wait_s_ =
-        declare_parameter<double>("octomap_rebuild_wait_s", 0.8);
+    place_tolerance_m_       = declare_parameter<double>("place_tolerance_m", 0.08);
+    place_confirm_timeout_s_ = declare_parameter<double>("place_confirm_timeout_s", 4.0);
+    octomap_rebuild_wait_s_  = declare_parameter<double>("octomap_rebuild_wait_s", 0.8);
     // Well under the joint limits' own 0.8 rad/s cap. Arm motion disturbs a standing humanoid
     // measurably, and slowing the whole path is preferred over clamping joints, which would
     // bend the path itself.
@@ -607,8 +605,8 @@ geometry_msgs::msg::Pose G1ManipulationServer::graspFrameGoal(
     // Coming in on the front face there is no top face to stay under, and the useful height is
     // simply a stated distance up from the base. Held on its side the object is gripped across
     // its width with its long axis across the fingers rather than along them.
-    const auto& rpy = approach == GraspApproach::Front ? front_grasp_rpy_ : grasp_rpy_;
-    goal.position.z = approach == GraspApproach::Front ?
+    const auto& rpy = approach == GraspApproach::kFront ? front_grasp_rpy_ : grasp_rpy_;
+    goal.position.z = approach == GraspApproach::kFront ?
                           bottom + front_grip_height_m_ :
                           std::max(top - grasp_depth_below_top_m_, bottom + min_grip_height_m_);
 
@@ -671,7 +669,7 @@ std::optional<G1ManipulationServer::GraspPlan> G1ManipulationServer::chooseGrasp
         GraspPlan plan;
         plan.grasp    = graspFrameGoal(object_pose, detection.bbox.size.z, arm, grasp_approach_);
         plan.pregrasp = plan.grasp;
-        if (grasp_approach_ == GraspApproach::Front)
+        if (grasp_approach_ == GraspApproach::kFront)
         {
             // Staged back along the axis the hand comes in on, which for a front grasp is the
             // one pointing at the robot. The planning frame is the pelvis, so that is -x.
@@ -1456,6 +1454,53 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     feedback->phase = Pick::Feedback::PHASE_APPROACH;
     goal_handle->publish_feedback(feedback);
 
+    // The grasp pose was measured before the arm moved and is expressed in the pelvis. Pinned,
+    // it is still true when the descent starts. Standing on its legs it is not: the balance
+    // controller moves the pelvis under the robot while the arm reaches the pregrasp, and a
+    // frozen pelvis-frame target then points at where the object used to be. Measured on the
+    // navigation route, the descent landed 6 mm from its commanded pose and closed on nothing,
+    // having swept the block off the desk on the way down.
+    //
+    // Re-measuring in clear air at the pregrasp costs one detection and corrects the drift. Only
+    // the grasp moves, by the object's own shift: the chosen grasp's orientation and strategy
+    // are still the right ones, and the approach axis should tilt to aim from where the hand is
+    // at where the object now is.
+    geometry_msgs::msg::Pose descent_goal = grasp_goal;
+    if (const auto fresh = lookUpObject(goal->object_id))
+    {
+        const std::string fresh_frame =
+            fresh->header.frame_id.empty() ? objectsFrame() : fresh->header.frame_id;
+        if (const auto fresh_pose = toPlanningFrame(fresh->results.front().pose.pose, fresh_frame))
+        {
+            const double dx    = fresh_pose->position.x - object_pose->position.x;
+            const double dy    = fresh_pose->position.y - object_pose->position.y;
+            const double dz    = fresh_pose->position.z - object_pose->position.z;
+            const double shift = std::sqrt(dx * dx + dy * dy + dz * dz);
+            // A shift this large is a different object or a bad frame, not body sway, and
+            // following it would fling the hand across the table.
+            if (shift > grasp_refresh_max_shift_m_)
+            {
+                RCLCPP_WARN(
+                    get_logger(),
+                    "approach: '%s' moved %.0f mm since it was located, past the %.0f mm this "
+                    "correction trusts; descending on the original pose",
+                    goal->object_id.c_str(),
+                    shift * 1000.0,
+                    grasp_refresh_max_shift_m_ * 1000.0);
+            }
+            else
+            {
+                descent_goal.position.x += dx;
+                descent_goal.position.y += dy;
+                descent_goal.position.z += dz;
+                RCLCPP_INFO(
+                    get_logger(),
+                    "approach: re-aimed %.0f mm for body sway since the object was located",
+                    shift * 1000.0);
+            }
+        }
+    }
+
     // Contact allowed only now, for the last few centimetres: an exemption held all skill long
     // lets a plan route straight through the table. The object is removed rather than exempted,
     // following MoveIt's remove-close-attach.
@@ -1468,7 +1513,7 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     clearOctomap();
     setHandContact(arm, { "<octomap>" }, true);
 
-    if (!descendOnto(*arm_group, pregrasp_goal, grasp_goal, arm.grasp_frame))
+    if (!descendOnto(*arm_group, pregrasp_goal, descent_goal, arm.grasp_frame))
     {
         fail(Pick::Feedback::PHASE_APPROACH, "could not reach the grasp pose");
         return;
@@ -1697,8 +1742,8 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
 
     // A set-down is always from above, whichever face the object was picked up by.
     geometry_msgs::msg::Pose place_goal =
-        graspFrameGoal(*target, held_height, arm, GraspApproach::Top);
-    geometry_msgs::msg::Pose preplace   = place_goal;
+        graspFrameGoal(*target, held_height, arm, GraspApproach::kTop);
+    geometry_msgs::msg::Pose preplace = place_goal;
     preplace.position.z += place_approach_height_m_;
 
     // A cancel is accepted by the server, so it has to be honoured somewhere: between phases is
@@ -1750,9 +1795,9 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
             if (auto moved = toPlanningFrame(fresh->results.front().pose.pose, frame))
             {
                 moved->position.z += 0.5 * (fresh->bbox.size.z + held_height);
-                target               = moved;
-                const auto   regrasp = graspFrameGoal(*moved, held_height, arm, GraspApproach::Top);
-                const double shift   = std::hypot(
+                target             = moved;
+                const auto regrasp = graspFrameGoal(*moved, held_height, arm, GraspApproach::kTop);
+                const double shift = std::hypot(
                     regrasp.position.x - place_goal.position.x,
                     regrasp.position.y - place_goal.position.y);
                 if (shift > 0.01)
@@ -1851,8 +1896,8 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
         // Given a moment, because the object was occluded by the hand until it let go and the
         // detector needs a frame or two to pick it up again.
         std::optional<vision_msgs::msg::Detection3D> landed;
-        const rclcpp::Time confirm_deadline = now() + rclcpp::Duration::from_seconds(
-                                                          place_confirm_timeout_s_);
+        const rclcpp::Time                           confirm_deadline =
+            now() + rclcpp::Duration::from_seconds(place_confirm_timeout_s_);
         while (!(landed = lookUpObject(held_id)) && now() < confirm_deadline)
         {
             rclcpp::sleep_for(std::chrono::milliseconds(200));
@@ -2004,9 +2049,8 @@ void G1ManipulationServer::executeSetArmPosture(
         if (std::string grip; !isHolding(arm, grip))
         {
             result->success = false;
-            result->message =
-                goal->group + " reached " + goal->named_target + " but dropped what it held: " +
-                grip;
+            result->message = goal->group + " reached " + goal->named_target +
+                              " but dropped what it held: " + grip;
             RCLCPP_ERROR(get_logger(), "%s", result->message.c_str());
             goal_handle->abort(result);
             return;
