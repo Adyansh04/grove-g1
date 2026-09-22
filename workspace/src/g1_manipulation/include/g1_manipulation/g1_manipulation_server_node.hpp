@@ -145,6 +145,26 @@ private:
     bool moveHandTo(MoveGroup& hand, const std::string& named_target);
 
     /**
+     * @brief Closes the hand onto an object of a given width rather than onto a fixed posture.
+     *
+     * `closed` is a pose, not a grip. Commanded at an object the fingers stall short of it and a
+     * position controller then pushes at kp times the error it can never close, which squeezes
+     * the object out toward the fingertips.
+     *
+     * @param width_m The object's width across the closing axis, from its measured bounding box.
+     * @return False on the same grounds moveHandTo fails on; a width it cannot reach is clamped
+     *         rather than refused.
+     */
+    bool closeHandOn(MoveGroup& hand, double width_m);
+
+    /**
+     * @brief Drives the hand to a fraction of the way from `open` to `closed`.
+     *
+     * @param fraction Clamped to [0, 1]. 1 is the `closed` posture itself.
+     */
+    bool moveHandToFraction(MoveGroup& hand, double fraction, const std::string& what);
+
+    /**
      * @brief Claims the arm for one goal.
      *
      * @return true if this goal may run, false if another one already holds the arm.
@@ -492,6 +512,16 @@ private:
     double settle_tolerance_m_{ 0.010 };
     /// Past this the object cannot be between the fingers, so closing is closing on air.
     double max_grasp_offset_m_{ 0.020 };
+    /// How much narrower than the object the hand aims, which is what loads the fingers.
+    double grip_preload_m_{ 0.002 };
+    /// The hand's span in metres at `open` and at `closed`, measured by forward kinematics
+    /// between the thumb and index links. Closure is linear between them to within a millimetre.
+    double hand_span_open_m_{ 0.124 };
+    double hand_span_closed_m_{ 0.058 };
+    /// Where the last close was actually commanded to, as a fraction of open-to-closed. The grip
+    /// check measures against this rather than against `closed`, which the hand no longer aims at
+    /// when it is closing onto a measured width.
+    double last_close_fraction_{ 1.0 };
     /// How far the object may have moved between being located and being descended on for the
     /// descent to follow it. Sized for the body sway of a robot standing on its legs, so a
     /// larger jump reads as a different object and is refused.

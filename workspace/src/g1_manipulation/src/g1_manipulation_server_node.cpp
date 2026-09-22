@@ -142,6 +142,7 @@ G1ManipulationServer::G1ManipulationServer(const rclcpp::NodeOptions& options)
     min_grip_height_m_         = declare_parameter<double>("min_grip_height_m", 0.080);
     settle_tolerance_m_        = declare_parameter<double>("settle_tolerance_m", 0.010);
     max_grasp_offset_m_        = declare_parameter<double>("max_grasp_offset_m", 0.020);
+    grip_preload_m_            = declare_parameter<double>("grip_preload_m", 0.002);
     grasp_refresh_max_shift_m_ = declare_parameter<double>("grasp_refresh_max_shift_m", 0.050);
     settle_attempts_           = static_cast<int>(declare_parameter<int>("settle_attempts", 2));
     reaim_clearance_m_         = declare_parameter<double>("reaim_clearance_m", 0.08);
@@ -478,8 +479,19 @@ bool G1ManipulationServer::isHolding(const ArmContext& arm, std::string& why)
         why = "no hand group called " + arm.hand_group;
         return false;
     }
-    // The posture the close was planned to, so the targets and the command cannot drift apart.
-    const std::map<std::string, double> targets = hand->getNamedTargetValues("closed");
+    // What the close was actually commanded to, so the targets and the command cannot drift
+    // apart. Closing onto a measured width stops short of `closed` on purpose, and measuring a
+    // stall against `closed` would then read every finger as loaded whether or not anything is
+    // held.
+    std::map<std::string, double>       targets;
+    const std::map<std::string, double> open_pose   = hand->getNamedTargetValues("open");
+    const std::map<std::string, double> closed_pose = hand->getNamedTargetValues("closed");
+    for (const auto& [joint, closed_value] : closed_pose)
+    {
+        const auto   o         = open_pose.find(joint);
+        const double from_open = o == open_pose.end() ? 0.0 : o->second;
+        targets[joint]         = from_open + last_close_fraction_ * (closed_value - from_open);
+    }
 
     sensor_msgs::msg::JointState measured;
     {
@@ -1278,7 +1290,80 @@ bool G1ManipulationServer::moveHandTo(MoveGroup& hand, const std::string& named_
         RCLCPP_ERROR(get_logger(), "'%s': the hand would not execute", named_target.c_str());
         return false;
     }
+    last_close_fraction_ = 1.0;
     return true;
+}
+
+bool G1ManipulationServer::moveHandToFraction(
+    MoveGroup& hand, double fraction, const std::string& what)
+{
+    const double                        f           = std::clamp(fraction, 0.0, 1.0);
+    const std::map<std::string, double> open_pose   = hand.getNamedTargetValues("open");
+    const std::map<std::string, double> closed_pose = hand.getNamedTargetValues("closed");
+    if (open_pose.empty() || closed_pose.empty())
+    {
+        RCLCPP_ERROR(get_logger(), "%s needs both 'open' and 'closed'", hand.getName().c_str());
+        return false;
+    }
+
+    const std::vector<std::string> joints  = hand.getActiveJoints();
+    const std::vector<double>      current = hand.getCurrentJointValues();
+    if (joints.size() != current.size())
+    {
+        RCLCPP_ERROR(get_logger(), "%s joint count mismatch", hand.getName().c_str());
+        return false;
+    }
+
+    // Same two-point trajectory moveHandTo builds, and for the same reason: this is commanded
+    // contact, not a plan, and the first point has to be where the fingers already are.
+    trajectory_msgs::msg::JointTrajectoryPoint from;
+    trajectory_msgs::msg::JointTrajectoryPoint to;
+    moveit_msgs::msg::RobotTrajectory          path;
+    for (std::size_t i = 0; i < joints.size(); ++i)
+    {
+        const auto o = open_pose.find(joints[i]);
+        const auto c = closed_pose.find(joints[i]);
+        if (o == open_pose.end() || c == closed_pose.end())
+        {
+            RCLCPP_ERROR(get_logger(), "%s is in neither pose", joints[i].c_str());
+            return false;
+        }
+        path.joint_trajectory.joint_names.push_back(joints[i]);
+        from.positions.push_back(current[i]);
+        to.positions.push_back(o->second + f * (c->second - o->second));
+    }
+    from.velocities.assign(from.positions.size(), 0.0);
+    to.velocities.assign(to.positions.size(), 0.0);
+    from.time_from_start         = rclcpp::Duration::from_seconds(0.0);
+    to.time_from_start           = rclcpp::Duration::from_seconds(hand_close_s_);
+    path.joint_trajectory.points = { from, to };
+
+    MoveGroup::Plan plan;
+    plan.trajectory = path;
+    if (hand.execute(plan) != moveit::core::MoveItErrorCode::SUCCESS)
+    {
+        RCLCPP_ERROR(get_logger(), "%s: the hand would not execute", what.c_str());
+        return false;
+    }
+    last_close_fraction_ = f;
+    return true;
+}
+
+bool G1ManipulationServer::closeHandOn(MoveGroup& hand, double width_m)
+{
+    // The hand's span runs from hand_span_open_m_ to hand_span_closed_m_ as the fingers travel
+    // from `open` to `closed`, and it is linear between them to within a millimetre over the
+    // whole range. So the fraction that just meets an object of a given width is arithmetic.
+    const double span  = width_m - grip_preload_m_;
+    const double range = hand_span_open_m_ - hand_span_closed_m_;
+    const double f = range > 0.0 ? std::clamp((hand_span_open_m_ - span) / range, 0.0, 1.0) : 1.0;
+    RCLCPP_INFO(
+        get_logger(),
+        "closing to %.0f mm for a %.0f mm object, %.0f%% of the way to closed",
+        1000.0 * span,
+        1000.0 * width_m,
+        100.0 * f);
+    return moveHandToFraction(hand, f, "grasp");
 }
 
 bool G1ManipulationServer::moveToNamed(MoveGroup& group, const std::string& named_target)
@@ -1558,7 +1643,16 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     }
     feedback->phase = Pick::Feedback::PHASE_GRASP;
     goal_handle->publish_feedback(feedback);
-    if (!moveHandTo(*hand_group, "closed"))
+    // Close onto the object's measured width, not onto the `closed` posture. `closed` is a pose
+    // and not a grip: commanded at an object the fingers stall short of it and then keep pushing
+    // at kp times an error they can never close, and that squeeze is what ejects the object
+    // toward the fingertips. Measured on a 70 mm ball, `closed` over-closes by about 11 mm of
+    // span; on a 45 mm block the hand cannot reach the width at all, since it shuts to 58 mm.
+    //
+    // The width is the narrower of the two horizontal sides of the measured box, which is what
+    // the fingers actually span.
+    const double object_width_m = std::min(detection->bbox.size.x, detection->bbox.size.y);
+    if (!closeHandOn(*hand_group, object_width_m))
     {
         fail(Pick::Feedback::PHASE_GRASP, "the hand did not close");
         return;

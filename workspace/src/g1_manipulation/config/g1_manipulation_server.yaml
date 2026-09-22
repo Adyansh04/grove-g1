@@ -70,6 +70,31 @@ g1_manipulation_server:
     # retry.
     max_grasp_offset_m: 0.020
 
+    # How much narrower than the object the hand closes, which is what loads the fingers against
+    # it. Small, because this is a squeeze and not a grip: the fingers reach their target and
+    # keep pushing at kp times whatever error remains, and everything past the object's surface
+    # goes into driving it out of the hand.
+    #
+    # Watched on a 70 mm ball, traced through the close: the fingers met it at 71 mm of span,
+    # carried on to the 67 mm they had been told to, and the ball was gone two samples later.
+    # 8 mm of preload ejected it. A flat-sided block tolerates more, because the contact normal
+    # points straight back at the finger; on a curved surface it angles outward and the squeeze
+    # acts like a wedge.
+    grip_preload_m: 0.002
+
+    # How far the object may have moved between being located and being descended on, for the
+    # descent to follow it there rather than aim where it used to be. The planner works in the
+    # pelvis frame and the pelvis is not still: on its legs the balance controller shifts the
+    # body while the arm reaches the pregrasp.
+    #
+    # 50 mm is body sway with room to spare. Past this it is a different object or a bad frame,
+    # and following it would drag the hand across the surface.
+    #
+    # A rolling object wants more than this, and a sphere was tried: it needed 120 mm. That
+    # experiment is not the reason to raise it though, because the rolling turned out to be a
+    # scene fault, a ball spawned 10.5 mm inside the bench and ejected by the contact solver.
+    grasp_refresh_max_shift_m: 0.050
+
     # Where every descent starts from, back up the approach axis, with only the stretch below it
     # taken as a straight line. Not the pregrasp: the full approach is 12 to 22 cm and runs out of
     # straight line part way often enough that retrying the whole thing repeats that. 8 cm clears
