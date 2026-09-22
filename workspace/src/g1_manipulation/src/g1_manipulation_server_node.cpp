@@ -987,6 +987,25 @@ double G1ManipulationServer::moveStraight(
     return fraction;
 }
 
+geometry_msgs::msg::Pose G1ManipulationServer::stagingPose(
+    const geometry_msgs::msg::Pose& pregrasp, const geometry_msgs::msg::Pose& grasp) const
+{
+    const double axis_length = std::sqrt(
+        std::pow(pregrasp.position.x - grasp.position.x, 2) +
+        std::pow(pregrasp.position.y - grasp.position.y, 2) +
+        std::pow(pregrasp.position.z - grasp.position.z, 2));
+    if (axis_length <= 0.0)
+    {
+        return grasp;
+    }
+    const double             scale   = reaim_clearance_m_ / axis_length;
+    geometry_msgs::msg::Pose staging = grasp;
+    staging.position.x += (pregrasp.position.x - grasp.position.x) * scale;
+    staging.position.y += (pregrasp.position.y - grasp.position.y) * scale;
+    staging.position.z += (pregrasp.position.z - grasp.position.z) * scale;
+    return staging;
+}
+
 bool G1ManipulationServer::descendOnto(
     MoveGroup& group, const geometry_msgs::msg::Pose& pregrasp,
     const geometry_msgs::msg::Pose& grasp, const std::string& link)
@@ -1000,27 +1019,16 @@ bool G1ManipulationServer::descendOnto(
     // did to a 60 mm cylinder. And the straight line is short, so it tends to walk: the full
     // approach is 12 to 22 cm and runs out part way often enough that retrying it just repeats
     // itself.
-    const double axis_length = std::sqrt(
-        std::pow(pregrasp.position.x - grasp.position.x, 2) +
-        std::pow(pregrasp.position.y - grasp.position.y, 2) +
-        std::pow(pregrasp.position.z - grasp.position.z, 2));
-    if (axis_length <= 0.0)
+    if (stagingPose(pregrasp, grasp).position == grasp.position)
     {
         RCLCPP_ERROR(get_logger(), "approach: the pregrasp and the grasp are the same pose");
         return false;
     }
-    const double scale  = reaim_clearance_m_ / axis_length;
-    const double back_x = (pregrasp.position.x - grasp.position.x) * scale;
-    const double back_y = (pregrasp.position.y - grasp.position.y) * scale;
-    const double back_z = (pregrasp.position.z - grasp.position.z) * scale;
 
     geometry_msgs::msg::Pose commanded = grasp;
     for (int attempt = 0; attempt <= settle_attempts_; ++attempt)
     {
-        geometry_msgs::msg::Pose staging = commanded;
-        staging.position.x += back_x;
-        staging.position.y += back_y;
-        staging.position.z += back_z;
+        const geometry_msgs::msg::Pose staging = stagingPose(pregrasp, commanded);
         // Best effort. Staging only has to get the hand near the top of the object; if the line
         // runs out the descent below just starts from higher up, which is where it started
         // before there was a staging point at all.
@@ -1520,6 +1528,16 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     // Contact allowed only now, for the last few centimetres: an exemption held all skill long
     // lets a plan route straight through the table. The object is removed rather than exempted,
     // following MoveIt's remove-close-attach.
+    // Stage BEFORE the object leaves the planning scene. Staging is planned, and a planner only
+    // avoids what the scene contains: removed first, the path is free to route straight through
+    // the object it is reaching for. Measured on the deliberate-miss test, which checks that a
+    // grasp aimed wrongly is reported without disturbing anything: the block was shifted 181 mm.
+    // descendOnto stages again on each attempt, by then a short move from close by.
+    if (!moveTo(*arm_group, stagingPose(pregrasp_goal, descent_goal), arm.grasp_frame, "stage"))
+    {
+        RCLCPP_WARN(get_logger(), "approach: could not stage above the object; descending anyway");
+    }
+
     planning_scene_.removeCollisionObjects({ goal->object_id });
     // Drop the map first, THEN exempt the hand from it. Clearing removes the octomap as a world
     // object and takes its allowed-collision entries with it, so an exemption set beforehand is

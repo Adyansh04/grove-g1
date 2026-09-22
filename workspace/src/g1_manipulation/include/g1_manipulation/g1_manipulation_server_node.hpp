@@ -266,6 +266,15 @@ private:
         const std::string& what, double min_fraction);
 
     /**
+     * @brief The point a descent starts from, reaim_clearance_m back up the approach axis.
+     *
+     * @return The grasp pose itself when the two poses coincide, which a caller should treat as
+     *         nothing to stage to.
+     */
+    geometry_msgs::msg::Pose stagingPose(
+        const geometry_msgs::msg::Pose& pregrasp, const geometry_msgs::msg::Pose& grasp) const;
+
+    /**
      * @brief Drops the octomap so the descent plans against what the camera can see now.
      *
      * The camera cannot see behind the arm, so voxels the arm itself put there survive until
