@@ -1029,19 +1029,16 @@ bool G1ManipulationServer::descendOnto(
     for (int attempt = 0; attempt <= settle_attempts_; ++attempt)
     {
         const geometry_msgs::msg::Pose staging = stagingPose(pregrasp, commanded);
-        // Best effort. Staging only has to get the hand near the top of the object; if the line
-        // runs out the descent below just starts from higher up, which is where it started
-        // before there was a staging point at all.
-        // Planned, not a straight line, which is what the note above says staging is for. As a
-        // Cartesian line it was the actual failure: measured over ten picks, staging ran out at
-        // 60.7 % and left the hand about 135 mm above the grasp in a pose the approach could not
-        // start from at all, reporting "ran out 0% in, 130 mm short" three descents running.
-        // Planning is safe here for the reason already given, that staging clears the top of
-        // anything this hand can grip, so a planner routing around cannot sweep the object away.
-        if (!moveTo(group, staging, link, "stage"))
-        {
-            RCLCPP_WARN(get_logger(), "approach: could not stage; descending from where it is");
-        }
+        // A straight line, deliberately, and only for the retries. executePick already made the
+        // long trip to staging as a plan, while the object was still in the planning scene. By
+        // the time this runs the object has been removed, so a planner here is free to route
+        // through it, which shifted the block 181 mm on the deliberate-miss test. A line cannot
+        // route around anything, and from part way down a failed descent it only has to walk a
+        // few centimetres back up the axis it came in on.
+        //
+        // Best effort either way. If the line runs out the descent below starts from higher up,
+        // which is where it started before there was a staging point at all.
+        moveStraight(group, staging, link, "re-stage", 0.0);
         const double walked   = moveStraight(group, commanded, link, "approach", 0.0);
         const auto   residual = residualTo(group, grasp, link, "approach");
         if (!residual)
