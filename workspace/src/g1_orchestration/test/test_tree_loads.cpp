@@ -102,7 +102,7 @@ TEST(TreeLoads, TheMissionTreeUsesTheLeavesItIsSupposedTo)
     // Both arms tuck, because a hanging hand sits 21 cm in front of the pelvis and 1 cm under
     // the workbench slab and jams on the table edge. Tucking one arm moves the collision to the
     // other.
-    EXPECT_EQ(seen["SetArmPosture"], 5) << "two tucks out, one carry, two tucks back";
+    EXPECT_EQ(seen["SetArmPosture"], 6) << "two tucks out, carry then cup, two tucks back";
 
     // After manipulating beside a surface the costmaps hold the arm, the object and the surface
     // the base pressed against, none of it where the map says obstacles are.
@@ -127,11 +127,11 @@ TEST(TreeLoads, EveryFallibleLeafInTheMissionIsRetried)
         }
     }
 
-    // Five postures, two navigation goals, the object approach, the pick and the
+    // Six postures, two navigation goals, the object approach, the pick and the
     // approach-and-place pair, each wrapped because Nav2 aborts plans transiently, plus the two
     // LookFor leaves: the detector needs a frame or two after the base stops moving, so the
     // first look at either station can legitimately find nothing.
-    EXPECT_EQ(seen["RetryUntilSuccessful"], 12);
+    EXPECT_EQ(seen["RetryUntilSuccessful"], 13);
 }
 
 TEST(TreeLoads, RejectsALeafNobodyRegistered)

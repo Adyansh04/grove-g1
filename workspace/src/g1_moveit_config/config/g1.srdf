@@ -286,31 +286,38 @@
     <joint name="right_wrist_yaw_joint" value="0.00"/>
   </group_state>
 
-  <!-- `carry` holds an object through a walk: forearm level, wrist flat so the load stays
-       upright. tucked is a smaller swept volume but its wrist pitch would tip what is held.
+  <!-- `carry` holds an object through a walk, PALM UNDERNEATH it rather than hanging it from
+       the fingertips. A curl: the shoulder lifts and the elbow closes so the forearm points up,
+       and the wrist pitches so the fingers do too.
 
-       The pose is pulled in against the body, because the gait shakes the block out of the hand
-       at arm's length. It was pitch -0.20 / roll 0.60 / elbow 1.40, which put the grasp frame at
-       pelvis (0.157, -0.383, -0.122): 383 mm outboard, the far end of the lever the body swings
-       through at every step. Sweeping the three joints for poses legal with the block attached,
-       nothing legal sits higher: everything above -0.122 puts palm or index links into the
-       torso, so the only axis left is inboard. -0.55 / 0.45 / 1.80 gives
-       (0.207, -0.307, -0.130): 76 mm closer to the body for 8 mm of height.
+       That direction is the whole point. A held object sits out along the palm's +y axis, so +y
+       is the direction it escapes along, and where +y points decides whether gravity holds the
+       object in or pulls it out. Flat, the old posture pointed +y almost straight down: 0.95 g
+       pulling the block out of a grip that only had its fingertips on it. Fingers up, this one
+       is 0.37 g pressing it back toward the palm. A sign change, not a reduction.
 
-       Elbow stays at 1.80 and not the 2.10 the sweep preferred, because the elbow's upper limit
-       is 2.0944 and satisfiesBounds is a hard test, not a margin one. 1.80 keeps 0.29 rad under
-       it. Collision-legal and reachable are different questions and the sweep only answers the
-       first.
+       Getting there needs the arm, not the wrist. Wrist roll does not reorient the closing axis
+       at all, it runs along it, and wrist pitch stops at 1.614 rad. Swept 270 arm postures with a
+       block attached: 221 legal, and only 22 of those point the fingers up at all.
 
-       Shoulder roll is still the one value with a measurement behind it. Rolling away from the
-       body buys the thumb room off the hip: at 0.25 the pose is invalid outright
-       (right_hand_thumb_2_link <-> right_hip_roll_link). Margin against roll, others held:
-       0.40 -> 4.6 deg, 0.50 -> 10.3, 0.55 -> 12.6, 0.60 -> 16.0, 0.65 -> 18.3.
+       Elbow 1.90 and not the 2.05 that scores slightly better, because the limit is 2.0944 and
+       satisfiesBounds is a hard test. Roll 0.45 and not the 0.25 that also scores better, for the
+       thumb-versus-hip margin recorded below.
 
-       0.60 was picked when the arm tracked to 40 mm under kp 40 and needed the whole margin for
-       droop; at kp 300 it tracks to 6 mm, which is what makes 0.45 (~7 deg) affordable. Raising
-       kp is therefore a precondition of this pose, not an unrelated tuning change. 0.40 would
-       buy another 23 mm inboard and is not worth spending the margin on. -->
+       What the old flat posture was tuned for, and what replaced it:
+       -  It was pulled inboard, from 383 mm out to 307, because the gait swings a held object
+          through a lever and the far end of that lever is where it comes loose.
+       -  Tipping the wrist alone was tried, pitch 1.40 at 0.6 g, and changed the creep not at
+          all: 3.5 to 3.7 mm/s against 3.1 to 5.0 flat, dropped 3 missions of 3.
+       -  That, with a block at a third of the mass creeping at a third of the rate, says the load
+          that matters is gait acceleration rather than static weight. Acceleration acts in every
+          direction through a step and cannot be pointed away from, which is why holding the
+          object in the palm rather than in the fingertips is the thing worth changing.
+
+       Shoulder roll margin against the hip, others held, from the flat posture:
+       0.40 -> 4.6 deg, 0.50 -> 10.3, 0.55 -> 12.6, 0.60 -> 16.0, 0.65 -> 18.3. At 0.25 the flat
+       posture was invalid outright on thumb against hip; this one raises the hand clear of it,
+       and the sweep confirms 0.45 legal with a block. -->
   <group_state name="carry" group="left_arm">
     <joint name="left_shoulder_pitch_joint" value="-0.55"/>
     <joint name="left_shoulder_roll_joint" value="0.45"/>
@@ -343,6 +350,61 @@
     <joint name="right_elbow_joint" value="1.80"/>
     <joint name="right_wrist_roll_joint" value="0.00"/>
     <joint name="right_wrist_pitch_joint" value="0.00"/>
+    <joint name="right_wrist_yaw_joint" value="0.00"/>
+  </group_state>
+
+  <!-- `carry_cupped` turns the hand over so the palm ends up UNDER the object and it rests there
+       instead of hanging from the fingertips.
+
+       Why it is worth the trouble: a held object sits out along the palm's +y axis, so +y is the
+       direction it escapes along. Flat, +y points almost straight down, 0.95 g pulling the block
+       out of a grip that only has fingertips on it. Here the forearm and fingers point up and it
+       is 0.37 g pressing the block back toward the palm. A sign change, not a reduction.
+
+       The wrist cannot do this. Roll runs along the closing axis so it does not reorient it, and
+       pitch stops at 1.614 rad. It takes the arm: a curl, shoulder lifted and elbow closed.
+       Swept 270 arm postures with a block attached, 221 were legal and only 22 pointed the
+       fingers up at all.
+
+       Reached in two steps, via `carry`, and that is not optional. Planning to it straight from
+       where a lift leaves the arm is about 130 degrees of rotation and failed outright, "could
+       not reach carry". A static collision check says a pose is legal; it says nothing about
+       whether a planner can get to it from a particular start while holding something.
+
+       Elbow 1.90 and not the 2.05 that scores slightly better, because the limit is 2.0944 and
+       satisfiesBounds is a hard test. -->
+  <group_state name="carry_cupped" group="left_arm">
+    <joint name="left_shoulder_pitch_joint" value="0.60"/>
+    <joint name="left_shoulder_roll_joint" value="0.45"/>
+    <joint name="left_shoulder_yaw_joint" value="0.00"/>
+    <joint name="left_elbow_joint" value="1.90"/>
+    <joint name="left_wrist_roll_joint" value="0.00"/>
+    <joint name="left_wrist_pitch_joint" value="1.40"/>
+    <joint name="left_wrist_yaw_joint" value="0.00"/>
+  </group_state>
+  <group_state name="carry_cupped" group="right_arm">
+    <joint name="right_shoulder_pitch_joint" value="0.60"/>
+    <joint name="right_shoulder_roll_joint" value="-0.45"/>
+    <joint name="right_shoulder_yaw_joint" value="0.00"/>
+    <joint name="right_elbow_joint" value="1.90"/>
+    <joint name="right_wrist_roll_joint" value="0.00"/>
+    <joint name="right_wrist_pitch_joint" value="1.40"/>
+    <joint name="right_wrist_yaw_joint" value="0.00"/>
+  </group_state>
+  <group_state name="carry_cupped" group="both_arms">
+    <joint name="left_shoulder_pitch_joint" value="0.60"/>
+    <joint name="left_shoulder_roll_joint" value="0.45"/>
+    <joint name="left_shoulder_yaw_joint" value="0.00"/>
+    <joint name="left_elbow_joint" value="1.90"/>
+    <joint name="left_wrist_roll_joint" value="0.00"/>
+    <joint name="left_wrist_pitch_joint" value="1.40"/>
+    <joint name="left_wrist_yaw_joint" value="0.00"/>
+    <joint name="right_shoulder_pitch_joint" value="0.60"/>
+    <joint name="right_shoulder_roll_joint" value="-0.45"/>
+    <joint name="right_shoulder_yaw_joint" value="0.00"/>
+    <joint name="right_elbow_joint" value="1.90"/>
+    <joint name="right_wrist_roll_joint" value="0.00"/>
+    <joint name="right_wrist_pitch_joint" value="1.40"/>
     <joint name="right_wrist_yaw_joint" value="0.00"/>
   </group_state>
 

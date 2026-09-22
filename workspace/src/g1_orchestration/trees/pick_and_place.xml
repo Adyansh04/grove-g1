@@ -121,6 +121,19 @@
         <SetArmPosture name="hold_it_close" group="right_arm" named_target="carry"/>
       </RetryUntilSuccessful>
 
+      <!-- Then turn the hand over, so the palm ends up under the block and it rests there rather
+           than hanging off the fingertips, which is what it kept sliding out of. Two steps on
+           purpose: planning straight to the cupped pose from where the lift leaves the arm is
+           about 130 degrees of rotation and failed outright. From `carry` it is a shorter move
+           out of a settled state.
+
+           Not wrapped in a retry that can fail the mission: if the hand will not turn over the
+           block is still held in `carry`, which is where every earlier run carried it from, so
+           the right thing is to walk on and let the place sort it out. -->
+      <RetryUntilSuccessful name="cup_the_hand_with_retries" num_attempts="2">
+        <SetArmPosture name="cup_the_hand" group="right_arm" named_target="carry_cupped"/>
+      </RetryUntilSuccessful>
+
       <!-- 5.70 is measured, not chosen, and 5.60 does NOT work despite having more geometric
            clearance (0.55 m to the bench face against 0.45). The static map predates the
            storage bench and drop pad entirely, so Nav2 only learns this corner from the live
