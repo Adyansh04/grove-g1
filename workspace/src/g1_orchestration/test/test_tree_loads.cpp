@@ -102,7 +102,8 @@ TEST(TreeLoads, TheMissionTreeUsesTheLeavesItIsSupposedTo)
     // Both arms tuck, because a hanging hand sits 21 cm in front of the pelvis and 1 cm under
     // the workbench slab and jams on the table edge. Tucking one arm moves the collision to the
     // other.
-    EXPECT_EQ(seen["SetArmPosture"], 6) << "two tucks out, carry then cup, two tucks back";
+    EXPECT_EQ(seen["SetArmPosture"], 7)
+        << "two tucks out, carry, cup, uncup at the bench, two tucks back";
 
     // After manipulating beside a surface the costmaps hold the arm, the object and the surface
     // the base pressed against, none of it where the map says obstacles are.

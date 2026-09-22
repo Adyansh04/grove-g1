@@ -171,6 +171,20 @@
           <ApproachObject name="close_on_the_bench" object_id="brown_box" arm="right"
                           working_yaw="{storage_yaw}"/>
 
+          <!-- Turn the hand back over, now that the robot is standing at the bench.
+               The carry holds the block with the palm underneath it, which is what finally got
+               it through the walk, but a set-down is from above and the hand has to come back.
+               That turn puts the block on its fingertips again for as long as it lasts, and it
+               is where the block was being lost.
+               So do it HERE, after the approach, rather than leaving it to the place's own move
+               to the pose above the target. If the block survives the turn the place proceeds
+               normally; if it does not, it is dropped at the bench the robot is standing at
+               instead of somewhere along the route.
+               Reaching the pose above the target while still cupped was tried instead and does
+               not work: that pose is not reachable in the carried orientation, "could not reach
+               the pose above the target". -->
+          <SetArmPosture name="turn_the_hand_back" group="right_arm" named_target="carry"/>
+
           <!-- Named, not a coordinate: a coordinate here is in the MAP frame, while the
                approach immediately above parks the base against /objects in ODOM. AMCL was
                measured 0.23 m from odom at this bench, well outside the arm's 0.04 m lateral

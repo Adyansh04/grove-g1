@@ -1563,6 +1563,7 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
         fail(Pick::Feedback::PHASE_GRASP, "the hand did not close");
         return;
     }
+
     // The controller reports a finger blocked by the object as success, so ask the fingers
     // themselves before telling the planner it is held.
     std::string grip;
