@@ -405,6 +405,20 @@
     <joint name="left_hand_index_0_joint" value="0.00"/>
     <joint name="left_hand_index_1_joint" value="0.00"/>
   </group_state>
+
+  <!-- No thumb-first posture here, and the attempt is worth recording so it is not made again.
+ 
+       Closing the hand sweeps the object outward: ground truth puts a held block about 36 mm
+       beyond the grasp frame along the closing axis, and it stays about 30 mm beyond when the
+       frame itself is moved out, which is what says the object is being pushed rather than
+       aimed at wrongly. The fingers reach it at about 59 % of their travel and the thumb only
+       at 72 %, so the obvious reading is that the fingers do the pushing and setting the thumb
+       first would give them something to close onto.
+ 
+       Measured, and it is the wrong reading. A `thumb_set` posture, thumb closed and fingers
+       open, took the block from 36 mm beyond the frame to 87 mm and the pick then could not
+       lift clear of the surface at all. The thumb sweeps further than the fingers do, so
+       ordering the close does not remove the sweep, it only picks which digit causes it. -->
   <group_state name="closed" group="left_hand">
     <joint name="left_hand_thumb_0_joint" value="0.00"/>
     <joint name="left_hand_thumb_1_joint" value="0.55"/>
