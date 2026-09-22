@@ -1636,6 +1636,14 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     }
 
     setHandContact(arm, { "<octomap>", goal->object_id }, false);
+    // The hand goes back to respecting the map, but the object it is still holding does not,
+    // because it maps itself: held in the air it is the clearest thing the sensor sees, nothing
+    // excludes an attached body from the octomap, and it then collides with its own voxels. Place
+    // already knew this; the pick handed the problem to whatever ran next, which is the posture
+    // change before a walk. Measured: two navigation missions of three failed "could not reach
+    // carry", and a plan from a post-lift state was refused on START_STATE_IN_COLLISION with
+    // <octomap> against the carried block and three finger links.
+    setHandContact(arm, { "<octomap>", goal->object_id }, true, /*include_links=*/false);
     result->success = true;
     result->message = "picked " + goal->object_id + " with the " + goal->arm + " hand, " + grip;
     goal_handle->succeed(result);
