@@ -1029,16 +1029,17 @@ bool G1ManipulationServer::descendOnto(
     for (int attempt = 0; attempt <= settle_attempts_; ++attempt)
     {
         const geometry_msgs::msg::Pose staging = stagingPose(pregrasp, commanded);
-        // A straight line, deliberately, and only for the retries. executePick already made the
-        // long trip to staging as a plan, while the object was still in the planning scene. By
-        // the time this runs the object has been removed, so a planner here is free to route
-        // through it, which shifted the block 181 mm on the deliberate-miss test. A line cannot
-        // route around anything, and from part way down a failed descent it only has to walk a
-        // few centimetres back up the axis it came in on.
+        // Planned, like the first trip executePick makes. Tried as a straight line on the
+        // argument that it cannot route through the object, which by this point has been removed
+        // from the scene: that took the tabletop pick from 10 of 10 to 6 of 10, the truncation
+        // coming straight back on the retries. The correctness argument lost to the measurement.
         //
-        // Best effort either way. If the line runs out the descent below starts from higher up,
-        // which is where it started before there was a staging point at all.
-        moveStraight(group, staging, link, "re-stage", 0.0);
+        // Best effort. If it cannot get there the descent below starts from higher up, which is
+        // where it started before there was a staging point at all.
+        if (!moveTo(group, staging, link, "re-stage"))
+        {
+            RCLCPP_WARN(get_logger(), "approach: could not re-stage; descending from here");
+        }
         const double walked   = moveStraight(group, commanded, link, "approach", 0.0);
         const auto   residual = residualTo(group, grasp, link, "approach");
         if (!residual)
