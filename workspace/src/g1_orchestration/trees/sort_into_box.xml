@@ -1,26 +1,12 @@
 <?xml version="1.0"?>
 <!--
-  Pick the red block out of a cluttered table and drop it in the box. No navigation.
+  Pick the red block off a cluttered table and drop it in the box. No navigation; run against the
+  `tabletop` world, where the red and blue blocks differ only in colour.
 
-  Run against the `tabletop` world, which is laid out to make this a choice rather than a
-  formality: the red and blue blocks are the same shape and size and differ only in colour, so
-  naming the wrong one gets the wrong object, and four more objects sit past the arm's reach so
-  the candidate list is longer than the reachable list.
+  Nothing here carries a coordinate: the block and the box are named and resolved from /objects,
+  whichever source fills it, so the same tree runs on hardware.
 
-  Nothing here carries a coordinate. The block and the box are both named, and both are resolved
-  from /objects, which is filled either by the camera (perception:=true) or by the simulator's
-  own poses (object_source:=sim_ground_truth). The tree cannot tell which, and that is the point:
-  the same tree runs on hardware, where only the camera exists.
-
-  ClearOctomap before the pick is not housekeeping. The depth camera cannot see behind the arm,
-  so voxels the arm left behind survive in the map until something looks through them, and the
-  descent plans into that ghost: measured, a straight line down walked 8 % of its length instead
-  of all of it. The skill clears it again internally before it descends; this one covers the
-  approach as well.
-
-  Assumes the arm is already acquired, which activate_arm:=true does. AcquireArm is here anyway:
-  it is idempotent, and a tree that only works when something else happened first is a tree that
-  fails confusingly.
+  The arm is normally acquired by activate_arm:=true already; AcquireArm is idempotent.
 -->
 <root BTCPP_format="4" main_tree_to_execute="SortIntoBox">
   <BehaviorTree ID="SortIntoBox">
@@ -28,43 +14,22 @@
       <AcquireArm name="take_the_arm"/>
       <SetArmPosture name="start_clear" group="right_arm" named_target="tucked"/>
 
-      <!-- Ask for these two and nothing else, which is what makes the camera path work at all.
-           Grounding DINO runs a backbone pass per phrase: measured, seven phrases take 1.67 s
-           against g1_detector's max_image_age_s of 1.0, so every frame is already stale when the
-           answer arrives and /objects never fills. Two phrases take 0.51 s and fit.
-
-           The wording is long on purpose. The model scores every object against every phrase, so
-           what matters is the gap to the runner-up, and measured on this table "red block" beats
-           the blue one by 0.25 where "bright red plastic block" beats it by 0.55. Both find the
-           same box; only the margin changes. The short name before the '=' is what stays on
-           /objects, so Pick and Place keep saying red_block. -->
+      <!-- Only these two: the detector runs a pass per phrase, and seven phrases outrun its
+           freshness limit. The long wording widens each object's margin over the runner-up. -->
       <LookFor name="find_the_block_and_the_box"
         objects="red_block=bright red plastic block,brown_box=brown box container"/>
 
+      <!-- The camera cannot see behind the arm, so voxels it left behind survive until cleared.
+           Pick clears again before its descent; this one also covers the pregrasp. -->
       <ClearOctomap name="forget_where_the_arm_has_been"/>
 
-      <!-- Two attempts, because a grasp that lands a centimetre off closes on nothing and says
-           so rather than pretending: the second attempt re-reads the block's pose, which by then
-           has settled from whatever the first one nudged. -->
+      <!-- A missed grasp fails cleanly, so one retry re-reads the pose and tries again. -->
       <RetryUntilSuccessful name="pick_with_one_retry" num_attempts="2">
         <Pick name="pick_the_red_block" object_id="red_block" arm="right"/>
       </RetryUntilSuccessful>
 
-      <!-- No `carry` posture between the pick and the place, and that is the point. `carry` tucks
-           the arm against the chest for walking: measured by forward kinematics, it puts the grasp
-           frame at z -0.122 in pelvis, while the lift leaves it at +0.278 and the tabletop is
-           about 0.000. Commanding it while holding something drives the hand 120 mm THROUGH the
-           table, so the block is dragged down and across whatever is in the way, and the place
-           then has to plan out of that. The lift already ends high; going straight to the pose
-           above the box is a move across at height, which is the whole idea.
-
-           Cleared here because the map has rebuilt around wherever the arm went to lift, and the
-           preplace is planned fully collision-checked. -->
-      <ClearOctomap name="forget_the_lift"/>
-
-      <!-- `surface`, not `target`: Place resolves the box from /objects and works out the drop
-           height from its own measured size, so the tree never learns a number that would go
-           stale the moment the box is moved. -->
+      <!-- Straight from the lift to above the box: the `carry` posture would drive the held
+           block down through the table. Place clears the octomap before it plans. -->
       <Place name="drop_it_in_the_box" surface="brown_box" arm="right"/>
 
       <SetArmPosture name="tuck_away" group="right_arm" named_target="tucked"/>
