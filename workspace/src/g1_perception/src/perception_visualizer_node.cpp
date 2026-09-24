@@ -1,3 +1,8 @@
+/**
+ * @file perception_visualizer_node.cpp
+ * @brief Annotates the colour frame with masks, boxes and labels, and marks ground truth for RViz.
+ */
+
 #include "g1_perception/perception_visualizer_node.hpp"
 
 #include <algorithm>
@@ -227,7 +232,7 @@ measuredFor(const std::string& label, const vision_msgs::msg::Detection3DArray& 
 G1PerceptionVisualizer::G1PerceptionVisualizer(const rclcpp::NodeOptions& options)
   : rclcpp::Node("g1_perception_visualizer", options)
   , images_(
-        declare_parameter<double>("image_history_s", 4.0),
+        declare_parameter<double>("image_history_s", 5.0),
         declare_parameter<double>("stamp_tolerance_ms", 50.0) / 1000.0,
         static_cast<std::size_t>(declare_parameter<int>("image_history_max_frames", 90)))
 {
@@ -294,8 +299,8 @@ void G1PerceptionVisualizer::renderIfPaired()
     const sensor_msgs::msg::Image::ConstSharedPtr frame = images_.at(stamp_s);
     if (frame == nullptr)
     {
-        // Colour can land after masks cut from its depth twin, so the next image retries. Only
-        // nothing at or before the stamp means the frame is gone for good.
+        // Colour can land after masks cut from its depth twin, so the next image retries. The
+        // frame is gone only when every held frame is newer than the stamp.
         const sensor_msgs::msg::Image::ConstSharedPtr before = images_.atOrBefore(stamp_s);
         if (before == nullptr || DepthHistory::stampSeconds(before->header) > stamp_s)
         {
