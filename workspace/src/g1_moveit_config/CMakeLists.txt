@@ -23,9 +23,8 @@ if(BUILD_TESTING)
   find_package(srdfdom REQUIRED)
   find_package(urdf REQUIRED)
 
-  # One env block for every pytest test, not one per test: pytest 8+ imports every module in
-  # the directory while collecting any single file, so a sibling's missing variable becomes a
-  # collection error for tests that never read it.
+  # One env block for every pytest test: pytest 8+ imports every module in the directory while
+  # collecting any single file, so a sibling's missing variable breaks collection.
   set(_pytest_env
     "G1_MOVEIT_CONFIG_DIR=${CMAKE_CURRENT_SOURCE_DIR}/config"
     "G1_MOVEIT_LAUNCH_DIR=${CMAKE_CURRENT_SOURCE_DIR}/launch"
@@ -34,8 +33,8 @@ if(BUILD_TESTING)
     "G1_CONTROLLERS_CONFIG_DIR=${CMAKE_CURRENT_SOURCE_DIR}/../g1_controllers/config"
   )
 
-  # Reads three packages' config at once: MoveIt's arm, the controller's arm and the bridge's
-  # speed clamp all have to agree, and no single package's tests can see the disagreement.
+  # Reads three packages' config at once: MoveIt's arm, the controllers' arm and the hand
+  # component's speed clamp have to agree, and no single package's tests can see that.
   ament_add_pytest_test(test_moveit_config_drift test/test_moveit_config_drift.py
     ENV ${_pytest_env})
 
@@ -43,8 +42,7 @@ if(BUILD_TESTING)
   # in g1_navigation alongside the navigation ones.
   ament_add_pytest_test(test_launch_threading test/test_launch_threading.py ENV ${_pytest_env})
 
-  # move_group plans against the expanded xacro, not a checked-in URDF, so the model test has
-  # to expand it too, or it validates a robot nobody runs.
+  # move_group plans against the expanded xacro, so the model test expands it too.
   set(_expanded_urdf "${CMAKE_CURRENT_BINARY_DIR}/g1_expanded.urdf")
   set(_description_dir "${CMAKE_CURRENT_SOURCE_DIR}/../g1_description")
   add_custom_command(
@@ -54,6 +52,7 @@ if(BUILD_TESTING)
             ${_description_dir}/urdf/g1_common.xacro
             ${_description_dir}/urdf/g1_29dof_with_hand_rev_1_0.urdf
             ${_description_dir}/config/lowcmd_params.yaml
+            ${_description_dir}/config/dex3_params.yaml
     COMMENT "Expanding g1_lowcmd.urdf.xacro for test_robot_model"
     VERBATIM
   )
@@ -74,18 +73,16 @@ if(BUILD_TESTING)
       srdfdom::srdfdom)
   endif()
 
-  # Simulator suites. Same RESOURCE_LOCK name as g1_bringup's: two suites on one DDS graph and
-  # one simulator is what makes them flaky.
+  # Simulator suites share g1_bringup's RESOURCE_LOCK: two on one DDS graph and one simulator
+  # are flaky.
   #
-  # The whole path, with the balance policy holding the robot up rather than a pinned pelvis.
-  # Long budget: the policy has to settle before the arms are touched.
+  # The balance policy holds the robot up, not a pinned pelvis, and has to settle first.
   add_launch_test(test/test_moveit_lowcmd.launch.py TARGET test_moveit_lowcmd TIMEOUT 500)
   set_tests_properties(test_moveit_lowcmd PROPERTIES
     RESOURCE_LOCK mujoco_sim LABELS simulator COST 95)
 
-  # Runs the sensor track on the perception scene: the octomap has to fill from the LiDAR
-  # before anything can be asserted. SIM_SETTLE_S inside that file cannot be raised to cover
-  # the fill; launch_testing's own startup timeout fires first.
+  # The octomap has to fill from the LiDAR before anything is asserted, and the tests wait for
+  # it themselves: launch_testing's startup timeout caps SIM_SETTLE_S.
   add_launch_test(test/test_octomap_blocks_a_plan.launch.py
     TARGET test_octomap_blocks_a_plan TIMEOUT 500)
   set_tests_properties(test_octomap_blocks_a_plan PROPERTIES
