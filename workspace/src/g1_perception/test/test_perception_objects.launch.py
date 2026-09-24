@@ -1,13 +1,9 @@
 #!/usr/bin/env python3
-"""Measures perceived object poses against the simulator's own.
+"""Checks the poses and sizes on /objects against the simulator's ground truth.
 
-The claim under test is the one everything above this depends on: that what /objects carries is
-close enough to where the objects are to grasp them. Nothing else in the stack can check that,
-because every other consumer takes /objects as the truth.
-
-The mock detector supplies the masks, so this needs no GPU and no vision server. What it does
-exercise for real is every step after the mask: deprojection against MuJoCo's own depth render,
-the support plane, the box fit, tracking, the frame chain into odom, and the pose source.
+Every other consumer takes /objects as the truth, so this is the only check on it. The mock
+detector supplies masks (no GPU); everything after the mask runs for real: deprojection of
+MuJoCo's depth, the support plane, the box fit, tracking, the odom frame chain and the pose source.
 """
 
 import os
@@ -29,14 +25,13 @@ from rclpy.qos import qos_profile_sensor_data
 from rclpy.time import Time
 from vision_msgs.msg import Detection3DArray
 
-# The stack needs the simulator, the control stack and MoveIt up before the camera is worth
-# looking at. Matches what the manipulation suites wait for.
+# The sim, control stack and MoveIt must be up first; matches the manipulation suites.
 STACK_SETTLE_S = 55.0
 READY_TIMEOUT_S = 85.0
 OBJECTS_TIMEOUT_S = 90.0
 SAMPLES = 10
 
-# Every object in the tabletop world, with its true size in metres.
+# The tabletop props this test measures, with their true sizes in metres.
 TRUE_SIZE = {
     "red_block": (0.045, 0.045, 0.09),
     "blue_block": (0.045, 0.045, 0.09),
@@ -46,9 +41,8 @@ TRUE_SIZE = {
     "white_cup": (0.07, 0.07, 0.09),
 }
 
-# Measured on this layout. The green cylinder sets the position figure at about 9 mm: it is the
-# tall round one, and a round object seen from a single viewpoint has only its near surface to fit
-# a centre to, which biases that centre toward the camera. The flat-faced props come in far tighter.
+# Set by the green cylinder at about 9 mm: a round object seen from one side has only its near
+# surface to fit, which biases the centre toward the camera.
 POSITION_TOLERANCE_M = 0.012
 SIZE_TOLERANCE_M = 0.008
 
@@ -112,17 +106,17 @@ class TestPerceptionObjects(unittest.TestCase):
 
     @classmethod
     def _on_truth(cls, msg):
-        # Ground truth arrives in the camera frame, the same frame perception measures in, so
-        # both go through the same transform and a TF error cannot flatter either one.
+        # Truth arrives in the camera frame, like perception, so one transform serves both and a
+        # TF error cannot flatter either.
         for detection in msg.detections:
-            if not detection.results:
+            # Only the props in TRUE_SIZE; the scene reports others too, such as the drop box.
+            if not detection.results or detection.results[0].hypothesis.class_id not in TRUE_SIZE:
                 continue
             pose = PoseStamped()
             pose.header = msg.header
             pose.pose = detection.bbox.center
-            # At the latest transform rather than the message's own: ground truth is stamped as
-            # it is published, which is routinely a millisecond ahead of TF. The robot is pinned
-            # and the objects do not move, so the newest transform is the same transform.
+            # Latest transform, not the stamp: truth is stamped ~1 ms ahead of TF, and with the
+            # robot pinned the two are the same.
             pose.header.stamp = Time().to_msg()
             try:
                 in_odom = cls.buffer.transform(pose, "odom", timeout=Duration(seconds=0.3))
@@ -191,8 +185,7 @@ class TestPerceptionObjects(unittest.TestCase):
         for name, expected in TRUE_SIZE.items():
             with self.subTest(object=name):
                 _, size, _ = self._average(f"{name}_0")
-                # Sorted: which axis is which depends on the fitted yaw, and for a cylinder or a
-                # sphere the two horizontal axes are interchangeable by construction.
+                # Sorted: which axis is which depends on the fitted yaw.
                 for measured, true in zip(sorted(size), sorted(expected), strict=True):
                     self.assertLess(
                         abs(measured - true),
@@ -201,8 +194,7 @@ class TestPerceptionObjects(unittest.TestCase):
                     )
 
     def test_05_poses_are_stamped_when_they_were_measured(self):
-        # The pose source carries the capture stamp rather than restamping, so a skill can tell
-        # how old a measurement is. Perception's answers are seconds old by design.
+        # The pose source keeps the capture stamp, so a skill can judge a measurement's age.
         frames = [frame for frame in self.measured if frame]
         self.assertTrue(frames)
         detection = next(iter(frames[-1].values()))
