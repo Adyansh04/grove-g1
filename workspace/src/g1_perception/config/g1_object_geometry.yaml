@@ -1,73 +1,60 @@
-# The node that turns instance masks into object poses, loaded by
-# g1_perception/launch/perception.launch.py.
+# Turns instance masks into object poses; loaded by g1_perception/launch/perception.launch.py.
 g1_object_geometry:
   ros__parameters:
-    # Where "up" comes from, and the frame tracking is done in. It has to be a frame the camera
-    # moves within, or every step of the gait would look like the objects moving.
+    # Frame for "up" and for tracking. Must be one the camera moves within, or the gait would
+    # look like the objects moving.
     up_frame: "odom"
 
-    # Depth at an object's edge is a blend of the object and what is behind it, and the relay's
-    # depth is bilinear-filtered from the render. Two pixels is the thinnest ring that removes
-    # the blend on a 6 cm object at half a metre, which is about 70 px across.
+    # Edge depth blends object and background, and the relay's depth is bilinear-filtered. 2 px
+    # is the thinnest erosion that removes it on a 6 cm object at 0.5 m.
     mask_erosion_px: 2
 
-    # How far outside the mask to look for the surface the object stands on. Wide enough to clear
-    # the erosion and the mask's own error, narrow enough to stay on the table rather than
-    # finding the floor behind it.
+    # Ring outside the mask sampled for the support surface: clear of the erosion and the mask's
+    # error, close enough to stay on the table.
     support_ring_px: 6
-    # Below this the ring is mostly background and its median is not the table; the fit then
-    # falls back to the object's own lowest visible point, which underestimates anything rounded.
+    # Fewer ring points and the fit falls back to the object's lowest visible point, which
+    # underestimates anything rounded.
     min_support_points: 50
-    # How far from the object's lowest visible point a ring pixel may be and still be its surface:
-    # wide enough for a sphere resting on its equator, narrow enough to exclude the floor.
+    # Ring points within this of the object's lowest point count as its surface: wide enough for
+    # a sphere on its equator, narrow enough to exclude the floor.
     support_band_m: 0.06
 
-    # The D435i's usable band, and what MuJoCo's render is clipped to. Also the cheapest guard
-    # against a mask that ran onto the floor behind the table.
+    # The D435i's usable band and MuJoCo's render clip; also drops a mask run onto the floor.
     min_depth_m: 0.15
     max_depth_m: 2.5
 
-    # A mask that leaks past the object drags the box toward what is behind it. Sized to the
-    # deepest object worth grasping: an 8 cm one seen from 45 degrees spans about 10 cm in range.
+    # Points further than this from the median depth are dropped. Sized to the deepest object
+    # worth grasping: 8 cm seen at 45 degrees spans about 10 cm in range.
     depth_gate_m: 0.15
 
-    # A 6 cm object at 0.6 m covers about 3500 px, so this rejects one mostly occluded rather
-    # than one merely small.
+    # A 6 cm object at 0.6 m covers about 3500 px, so this rejects one mostly occluded, not one
+    # merely small.
     min_points: 150
 
-    # A box outside these is not an object: the small end is noise, the large end is the mask
-    # having run onto the table.
+    # Box extents outside these are noise (small) or a mask run onto the table (large).
     min_extent_m: 0.01
     max_extent_m: 0.40
 
-    # Grounded-SAM-2 reports 0.8+ on these objects and its false positives sit well under 0.5.
+    # Grounded-SAM-2 scores these objects 0.8+ and its false positives well under 0.5.
     min_score: 0.30
 
-    # The detector takes over a second, so masks arrive long after the frame they describe.
-    depth_history_s: 3.0
-    # Half a frame period at 10 Hz, so it can never reach a neighbour: a dropped frame stays
-    # reported as one. The slack covers stamp rounding, not a missing frame.
-    stamp_tolerance_ms: 50.0
+    # Masks can lag their frame by nearly 4 s when the detector shares the GPU with the sim.
+    depth_history_s: 5.0
+    # And never more frames than this, which bounds memory at a fast depth rate: 5 s at 30 Hz.
+    depth_history_max_frames: 150
+    # Just over one depth period with the detector loaded, when depth runs near 8 Hz and out of
+    # step with colour. The nearest frame wins, so this only rescues masks with no exact partner.
+    stamp_tolerance_ms: 130.0
 
-    # How far an object may move between detections and still be itself. Objects on a table do
-    # not move on their own; this covers the estimate's own jitter and a hand nudging one.
+    # How far an object may move between detections and still be itself, when its phrase names
+    # more than one object. A phrase seen once with one track keeps that track at any distance.
     track_match_radius_m: 0.08
-    # Long enough to survive a few missed detections, short enough that an object carried away
-    # stops reserving its index.
-    #
-    # 6.0, because 2.0 was shorter than one detection cycle and so survived nothing. Measured in
-    # sim, where the detector shares its GPU with MuJoCo's rendering: /objects came out at
-    # 0.38 Hz, a cycle every 2.6 s. The bench, which scores 0.60 to 0.67 against a 0.50 threshold,
-    # lost its track on its first miss and stayed gone for the last 97 s of the run, taking the
-    # bare-phrase alias Place resolves it by with it. 6 s covers two cycles at the rate actually
-    # observed. The cost is the other half of the comment above: an object carried off keeps its
-    # old track for that long, so it briefly answers to two and has no bare alias either.
+    # How long an unseen track keeps its id and alias: two detection cycles at the slow sim rate.
     track_timeout_s: 6.0
 
-    # TF at the mask's own stamp: the camera moves with the torso, and a 1.5 s-old pose under
-    # today's TF lands wherever the robot has since leaned.
+    # How long to wait for TF at the mask's own stamp; the camera moves with the torso.
     transform_timeout_s: 0.2
 
-    # Publish a second copy of a detection named by the bare phrase while only one object answers
-    # to it, so a tree can ask for "red_block" without knowing the index.
+    # Also publish each detection under its bare phrase while it is the phrase's one object in
+    # view, so a tree can ask for "red_block" without knowing the index.
     publish_bare_phrase_alias: true

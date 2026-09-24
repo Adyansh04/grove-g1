@@ -5,6 +5,7 @@
 
 #include <gmock/gmock.h>
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -88,10 +89,45 @@ TEST(Tracker, OnlyAliasesASoleInstance)
                                         seen("red block", 0.42, -0.20) };
 
     tracker.update(one, 0.0);
-    EXPECT_TRUE(tracker.isSoleTrackFor("red block"));
+    EXPECT_EQ(tracker.aliasFor("red block"), "red_block_0");
     tracker.update(two, 0.5);
-    EXPECT_FALSE(tracker.isSoleTrackFor("red block"));
-    EXPECT_FALSE(tracker.isSoleTrackFor("green cylinder"));
+    EXPECT_EQ(tracker.aliasFor("red block"), std::nullopt);
+    EXPECT_EQ(tracker.aliasFor("green cylinder"), std::nullopt);
+}
+
+TEST(Tracker, FollowsALoneObjectPastTheMatchRadius)
+{
+    // One object under its phrase, whose pose jumped further than the radius between frames.
+    ObjectTracker                  tracker(0.08, 6.0);
+    const std::vector<Observation> here{ seen("red block", 0.30, -0.20) };
+    const std::vector<Observation> jumped{ seen("red block", 0.42, -0.20) };
+
+    tracker.update(here, 0.0);
+    EXPECT_THAT(tracker.update(jumped, 1.0), testing::ElementsAre("red_block_0"));
+    EXPECT_EQ(tracker.aliasFor("red block"), "red_block_0");
+}
+
+TEST(Tracker, KeepsTheAliasOnOneObject)
+{
+    ObjectTracker                  tracker(0.05, 2.0);
+    const std::vector<Observation> first{ seen("red block", 0.30, -0.20) };
+    const std::vector<Observation> both{ seen("red block", 0.30, -0.20),
+                                         seen("red block", 0.60, 0.10) };
+    const std::vector<Observation> second{ seen("red block", 0.60, 0.10) };
+
+    tracker.update(first, 0.0);
+    ASSERT_EQ(tracker.aliasFor("red block"), "red_block_0");
+    tracker.update(both, 0.5);
+    EXPECT_EQ(tracker.aliasFor("red block"), std::nullopt) << "two in view is ambiguous";
+    tracker.update(second, 1.0);
+    EXPECT_EQ(tracker.aliasFor("red block"), std::nullopt)
+        << "the other object seen alone must not take the alias";
+    tracker.update(first, 1.5);
+    EXPECT_EQ(tracker.aliasFor("red block"), "red_block_0");
+    // Once the first object's track retires, the alias can move.
+    tracker.update(second, 3.0);
+    tracker.update(second, 4.0);
+    EXPECT_EQ(tracker.aliasFor("red block"), "red_block_1");
 }
 
 TEST(Tracker, RecoversThePhraseFromAnId)

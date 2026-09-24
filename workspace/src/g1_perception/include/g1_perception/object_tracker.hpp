@@ -5,12 +5,14 @@
  * @file object_tracker.hpp
  * @brief Keeps one object id pointing at one physical object across frames.
  *
- * A detector answers "red block" with however many instances it sees, in whatever order it found
- * them. Skills address objects by id, so the id has to outlive the frame: `red_block_0` must be
- * the same cube next second, or a place step re-aims at the wrong one.
+ * A detector answers a phrase with however many instances it sees, in any order. Skills address
+ * objects by id, so `red_block_0` has to be the same object next second.
  */
 
 #include <cstdint>
+#include <functional>
+#include <map>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -32,9 +34,8 @@ class ObjectTracker
 {
 public:
     /**
-     * @param match_radius_m How far an object may move between frames and still be itself. Too
-     *                       large and two neighbours swap; too small and every frame invents a
-     *                       new id.
+     * @param match_radius_m How far an object may move between frames and still be itself, when
+     *                       more than one object answers to its phrase.
      * @param timeout_s      How long an unseen track keeps its index reserved.
      */
     ObjectTracker(double match_radius_m, double timeout_s);
@@ -42,16 +43,22 @@ public:
     /**
      * @brief Names every observation, creating and retiring tracks as needed.
      *
-     * Greedy nearest neighbour: the closest pair inside the radius wins, then the next, which is
-     * enough for a handful of objects on a table and has no failure mode worth a Hungarian solver.
+     * A phrase seen once with one track is that track at any distance, so a jittery pose cannot
+     * split one object in two. Otherwise closest pairs within the radius match first.
      *
      * @param now_s Monotonic seconds; only differences matter.
      * @return One id per observation, in the order they were given.
      */
     std::vector<std::string> update(std::span<const Observation> observations, double now_s);
 
-    /// True when exactly one live track answers to @p phrase, so the bare phrase is unambiguous.
-    [[nodiscard]] bool isSoleTrackFor(std::string_view phrase) const;
+    /**
+     * @brief The id the bare phrase stands for in the latest update, if any.
+     *
+     * The alias belongs to the first track that was seen alone under its phrase, until that track
+     * retires, so it never jumps between objects. It is withheld from any frame where that track
+     * is unseen or another track of the phrase is seen too.
+     */
+    [[nodiscard]] std::optional<std::string> aliasFor(std::string_view phrase) const;
 
     /// Id of a track, as `<slug>_<index>`.
     [[nodiscard]] static std::string idFor(std::string_view phrase, std::uint32_t index);
@@ -66,6 +73,7 @@ private:
         std::uint32_t index{ 0 };
         Point3        position;
         double        last_seen_s{ 0.0 };
+        bool          seen_in_latest{ false };  ///< Matched or created by the latest update.
     };
 
     void          retireStale(double now_s);
@@ -74,6 +82,8 @@ private:
     double             match_radius_m_;
     double             timeout_s_;
     std::vector<Track> tracks_;
+    /// Phrase to the index of the track its bare alias belongs to.
+    std::map<std::string, std::uint32_t, std::less<>> alias_;
 };
 
 }  // namespace g1_perception

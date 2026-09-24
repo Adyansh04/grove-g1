@@ -1,8 +1,14 @@
+/**
+ * @file object_tracker.cpp
+ * @brief Frame-to-frame association and the bare-phrase alias.
+ */
+
 #include "g1_perception/object_tracker.hpp"
 
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <iterator>
 
 namespace g1_perception
 {
@@ -46,6 +52,11 @@ void ObjectTracker::retireStale(double now_s)
     std::erase_if(tracks_, [this, now_s](const Track& track) {
         return now_s - track.last_seen_s > timeout_s_;
     });
+    std::erase_if(alias_, [this](const auto& holder) {
+        return std::ranges::none_of(tracks_, [&holder](const Track& track) {
+            return track.phrase == holder.first && track.index == holder.second;
+        });
+    });
 }
 
 std::uint32_t ObjectTracker::lowestFreeIndex(std::string_view phrase) const
@@ -67,10 +78,38 @@ std::vector<std::string>
 ObjectTracker::update(std::span<const Observation> observations, double now_s)
 {
     retireStale(now_s);
+    for (Track& track : tracks_)
+    {
+        track.seen_in_latest = false;
+    }
 
     std::vector<std::string> ids(observations.size());
     std::vector<bool>        named(observations.size(), false);
     std::vector<bool>        matched(tracks_.size(), false);
+    const auto               claim = [&](std::size_t o, std::size_t t) {
+        Track& track         = tracks_[t];
+        track.position       = observations[o].position;
+        track.last_seen_s    = now_s;
+        track.seen_in_latest = true;
+        ids[o]               = idFor(track.phrase, track.index);
+        named[o]             = true;
+        matched[t]           = true;
+    };
+
+    for (std::size_t o = 0; o < observations.size(); ++o)
+    {
+        const auto same = [&phrase = observations[o].phrase](const auto& item) {
+            return item.phrase == phrase;
+        };
+        if (std::ranges::count_if(observations, same) == 1 &&
+            std::ranges::count_if(tracks_, same) == 1)
+        {
+            claim(
+                o,
+                static_cast<std::size_t>(
+                    std::distance(tracks_.begin(), std::ranges::find_if(tracks_, same))));
+        }
+    }
 
     // Closest pair first, so a confident match cannot be stolen by a worse one considered earlier.
     while (true)
@@ -103,12 +142,7 @@ ObjectTracker::update(std::span<const Observation> observations, double now_s)
         {
             break;
         }
-        Track& track            = tracks_[best_track];
-        track.position          = observations[best_observation].position;
-        track.last_seen_s       = now_s;
-        ids[best_observation]   = idFor(track.phrase, track.index);
-        named[best_observation] = true;
-        matched[best_track]     = true;
+        claim(best_observation, best_track);
     }
 
     for (std::size_t o = 0; o < observations.size(); ++o)
@@ -118,21 +152,49 @@ ObjectTracker::update(std::span<const Observation> observations, double now_s)
             continue;
         }
         Track track;
-        track.phrase      = observations[o].phrase;
-        track.index       = lowestFreeIndex(track.phrase);
-        track.position    = observations[o].position;
-        track.last_seen_s = now_s;
-        ids[o]            = idFor(track.phrase, track.index);
+        track.phrase         = observations[o].phrase;
+        track.index          = lowestFreeIndex(track.phrase);
+        track.position       = observations[o].position;
+        track.last_seen_s    = now_s;
+        track.seen_in_latest = true;
+        ids[o]               = idFor(track.phrase, track.index);
         tracks_.push_back(std::move(track));
+    }
+
+    for (const Track& track : tracks_)
+    {
+        const bool alone = std::ranges::count_if(tracks_, [&track](const Track& other) {
+                               return other.seen_in_latest && other.phrase == track.phrase;
+                           }) == 1;
+        if (track.seen_in_latest && alone && !alias_.contains(track.phrase))
+        {
+            alias_.emplace(track.phrase, track.index);
+        }
     }
     return ids;
 }
 
-bool ObjectTracker::isSoleTrackFor(std::string_view phrase) const
+std::optional<std::string> ObjectTracker::aliasFor(std::string_view phrase) const
 {
-    return std::count_if(tracks_.begin(), tracks_.end(), [&phrase](const Track& track) {
-               return track.phrase == phrase;
-           }) == 1;
+    const auto holder = alias_.find(phrase);
+    if (holder == alias_.end())
+    {
+        return std::nullopt;
+    }
+    std::optional<std::string> id;
+    for (const Track& track : tracks_)
+    {
+        if (!track.seen_in_latest || track.phrase != phrase)
+        {
+            continue;
+        }
+        if (track.index != holder->second || id.has_value())
+        {
+            return std::nullopt;
+        }
+        id = idFor(track.phrase, track.index);
+    }
+    return id;
 }
 
 }  // namespace g1_perception

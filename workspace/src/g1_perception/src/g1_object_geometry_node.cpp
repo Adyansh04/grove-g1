@@ -1,3 +1,8 @@
+/**
+ * @file g1_object_geometry_node.cpp
+ * @brief Pairs each mask array with its depth frame, fits boxes, tracks them and publishes poses.
+ */
+
 #include "g1_perception/g1_object_geometry_node.hpp"
 
 #include <algorithm>
@@ -13,14 +18,14 @@ namespace g1_perception
 namespace
 {
 
-/// Best-effort, matching the relay: a reliable subscriber never matches it. Deeper than usual
-/// because a mask names the frame it was cut from, and a dropped 2.9 MB frame cannot come back.
+/// Best effort, as the relay publishes; a reliable reader never matches it. Deep, since a mask
+/// needs the exact frame it was cut from.
 rclcpp::QoS sensorQos()
 {
     return rclcpp::QoS(rclcpp::KeepLast(8)).best_effort().durability_volatile();
 }
 
-/// Reliable out and in for masks: 13 kB at under a hertz, and a dropped frame is seconds blind.
+/// Reliable: masks are small and under 1 Hz, so a dropped one is seconds blind.
 rclcpp::QoS maskQos() { return rclcpp::QoS(rclcpp::KeepLast(2)).reliable().durability_volatile(); }
 
 /// Reliable, matching what g1_object_pose_source and the skills above it expect.
@@ -58,11 +63,12 @@ geometry_msgs::msg::Pose poseFrom(const OrientedBox& box)
 G1ObjectGeometry::G1ObjectGeometry(const rclcpp::NodeOptions& options)
   : rclcpp::Node("g1_object_geometry", options)
   , depth_history_(
-        declare_parameter<double>("depth_history_s", 3.0),
-        declare_parameter<double>("stamp_tolerance_ms", 50.0) / 1000.0)
+        declare_parameter<double>("depth_history_s", 5.0),
+        declare_parameter<double>("stamp_tolerance_ms", 130.0) / 1000.0,
+        static_cast<std::size_t>(declare_parameter<int>("depth_history_max_frames", 150)))
   , tracker_(
         declare_parameter<double>("track_match_radius_m", 0.08),
-        declare_parameter<double>("track_timeout_s", 2.0))
+        declare_parameter<double>("track_timeout_s", 6.0))
 {
     up_frame_                  = declare_parameter<std::string>("up_frame", "odom");
     mask_erosion_px_           = static_cast<int>(declare_parameter<int>("mask_erosion_px", 2));
@@ -86,8 +92,6 @@ G1ObjectGeometry::G1ObjectGeometry(const rclcpp::NodeOptions& options)
         create_publisher<vision_msgs::msg::Detection3DArray>("~/object_poses", objectsQos());
     tracked_pub_ = create_publisher<g1_msgs::msg::InstanceMaskArray>("~/tracked_masks", maskQos());
 
-    // Its own group, run by main's multi-threaded executor: onMasks waits on TF and fits every
-    // instance, which on one thread stalls depth ingest long enough to lose frames.
     masks_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
     rclcpp::SubscriptionOptions mask_options;
     mask_options.callback_group = masks_group_;
@@ -157,8 +161,7 @@ std::optional<OrientedBox> G1ObjectGeometry::measure(
     const std::vector<std::uint8_t> eroded = erodeMask(mask, mask_erosion_px_);
     std::vector<Point3>             points =
         deproject(view, mask, eroded, intrinsics, min_depth_m_, max_depth_m_);
-    // After the gate, not before: a mask half on the background clears the floor on the way in
-    // and is then fitted on whatever the gate leaves.
+    // Counted after the gate, so a mask half on the background cannot pass on points it drops.
     gateByMedianDepth(points, depth_gate_m_);
     if (static_cast<int>(points.size()) < min_points_)
     {
@@ -186,7 +189,7 @@ void G1ObjectGeometry::onMasks(const g1_msgs::msg::InstanceMaskArray::ConstShare
     const double          stamp_s = DepthHistory::stampSeconds(masks->header);
     std::vector<Measured> measured;
 
-    // An empty answer is still an answer: it is how the stream says the objects are gone.
+    // An empty array still reaches the tracker: it is how objects disappear.
     if (!masks->instances.empty())
     {
         // Snapshot, then let the lock go: the TF wait below must not hold up depth ingest.
@@ -293,8 +296,7 @@ void G1ObjectGeometry::publish(
     const std::vector<std::string>& ids)
 {
     vision_msgs::msg::Detection3DArray objects;
-    // The image's stamp, not now(): the detector spends over a second, and a consumer judging
-    // staleness has to see that.
+    // The image's stamp, not now(), so consumers see the detector's latency.
     objects.header = masks.header;
 
     g1_msgs::msg::InstanceMaskArray tracked = masks;
@@ -317,9 +319,8 @@ void G1ObjectGeometry::publish(
         detection.results.push_back(hypothesis);
         objects.detections.push_back(detection);
 
-        // A second copy under the bare phrase while one object answers to it: skills name
-        // objects by phrase and cannot predict the index.
-        if (publish_bare_phrase_alias_ && tracker_.isSoleTrackFor(object.phrase))
+        // Also under the bare phrase while it names this object: skills address objects by phrase.
+        if (publish_bare_phrase_alias_ && tracker_.aliasFor(object.phrase) == ids[i])
         {
             vision_msgs::msg::Detection3D alias       = detection;
             alias.id                                  = slugify(object.phrase);
