@@ -3,18 +3,11 @@
 
 /**
  * @file ros_action_node.hpp
- * @brief The one pattern every action leaf in this package uses.
+ * @brief Base for BT leaves that drive one ROS action without blocking a tick.
  *
- * Hand-rolled because BehaviorTree.ROS2 is not in this image.
- *
- * A tick must return promptly, so a leaf cannot block on an action: it sends the goal on the
- * first tick, answers RUNNING while the goal is in flight, and reports the outcome on whichever
- * tick sees the result. Halting cancels rather than abandons, so a halted skill cannot leave an
- * arm mid-trajectory.
- *
- * Two threads meet here: the tree ticks on one, the executor serves this client's callbacks on
- * the other. Only `result_` is shared and it is under `mutex_`; the goal handle is reached
- * through the future, which is its own synchronisation.
+ * Hand-rolled because BehaviorTree.ROS2 is not in this image. Halting cancels the goal, so a
+ * halted skill does not leave an arm mid-trajectory. The tree ticks on one thread and the
+ * executor runs the client callbacks on another; only `result_` is shared, under `mutex_`.
  */
 
 #include <behaviortree_cpp/action_node.h>
@@ -43,8 +36,7 @@ struct RosContext
 /**
  * @brief A BT leaf wrapping one ROS action client.
  *
- * Derived classes supply the action name, fill the goal, and judge the result. Everything
- * about goal handling, cancellation and timeouts lives here.
+ * Derived classes supply the action name, fillGoal() and judgeResult().
  *
  * @tparam ActionT The ROS action this leaf drives.
  */
@@ -93,8 +85,7 @@ protected:
     /**
      * @brief Turns a finished goal into a node status.
      *
-     * An action can succeed at the protocol level while the skill it ran reports failure in its
-     * own result fields, so the outcome is judged rather than assumed.
+     * A SUCCEEDED goal can still carry a failed skill in its result fields.
      *
      * @param result The completed goal's wrapped result.
      * @return SUCCESS or FAILURE for the leaf.
@@ -148,9 +139,8 @@ private:
     /**
      * @brief The server's answer to the goal that was sent.
      *
-     * Read from the future rather than a goal_response_callback: rclcpp_action satisfies the
-     * future one statement before it would invoke that callback, so a tick landing between the
-     * two reads an accepted goal as refused.
+     * From the future, not goal_response_callback: rclcpp_action sets the future first, so a
+     * tick between the two would see an accepted goal as refused.
      *
      * @return The handle if the server accepted, null if it refused, nullopt while in flight.
      */
@@ -166,8 +156,7 @@ private:
 
     BT::NodeStatus onRunning() override
     {
-        // Nothing is spun here: the executor owns this node, and a leaf spinning it from
-        // inside a tick would re-enter the executor from its own callback.
+        // Never spin here: an executor owns this node.
         std::optional<WrappedResult> result;
         {
             const std::lock_guard<std::mutex> lock(mutex_);
@@ -176,8 +165,7 @@ private:
 
         if (!result.has_value())
         {
-            // A refused goal never produces a result, so it has to be caught here or the leaf
-            // runs forever.
+            // A refused goal never produces a result, so it is caught here.
             const auto answer = serverAnswer();
             if (answer.has_value() && *answer == nullptr)
             {
@@ -186,14 +174,12 @@ private:
             }
             return BT::NodeStatus::RUNNING;
         }
-        // Judged outside the lock: it logs, and a derived judgeResult is arbitrary code.
+        // Outside the lock: judgeResult is derived code, and it logs.
         return judgeResult(*result);
     }
 
     void onHalted() override
     {
-        // The tree has moved on; the robot has not. Cancelling is what keeps a halted skill
-        // from leaving an arm mid-trajectory.
         bool have_result = false;
         {
             const std::lock_guard<std::mutex> lock(mutex_);
@@ -201,12 +187,11 @@ private:
             result_.reset();
         }
 
-        // Must not throw: BT.CPP halts from ~Tree(), so an escape here is std::terminate before
-        // the executor's arm bracket runs, leaving the arm acquired by a dead process.
+        // Must not throw: BT.CPP halts from ~Tree(), and terminating there skips the arm release.
         try
         {
-            // Skipped once the result is in: rclcpp_action forgets a goal the moment its result
-            // lands, and cancelling one it has forgotten throws rather than returning.
+            // Not once the result is in: rclcpp_action forgets a finished goal, and cancelling
+            // a forgotten goal throws.
             const auto answer = serverAnswer();
             if (!have_result && answer.has_value() && *answer != nullptr)
             {
@@ -216,8 +201,7 @@ private:
         }
         catch (const std::exception& e)
         {
-            // The result raced us by a tick, or the request could not be published. Either way
-            // the goal is no longer ours to stop.
+            // The result raced the cancel, or the request could not be published.
             RCLCPP_WARN(node_->get_logger(), "[%s] cancel not sent: %s", name().c_str(), e.what());
         }
         goal_future_ = {};

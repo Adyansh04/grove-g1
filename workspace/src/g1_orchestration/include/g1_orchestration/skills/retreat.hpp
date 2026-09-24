@@ -15,9 +15,9 @@ namespace g1_orchestration
 {
 
 /**
- * @brief Reverses the base away from a surface and stops.
+ * @brief Reverses the base straight back from a surface and stops.
  *
- * No turn, no walk: a navigation goal normally follows and does that far better.
+ * Turning is left to the navigation goal that normally follows.
  */
 class Retreat : public SkillActionNode<g1_msgs::action::Retreat>
 {

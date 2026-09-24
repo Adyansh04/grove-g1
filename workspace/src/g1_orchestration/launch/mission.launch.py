@@ -1,7 +1,7 @@
 """Runs a behavior tree against a stack that is already up.
 
-Starts nothing else on purpose: staging the sim, Nav2 or MoveIt here would put a second writer
-on a low-level channel the moment someone ran both. Compose them with g1_bringup instead.
+Starts nothing else: the sim, Nav2 and MoveIt come from g1_bringup, and launching them here too
+would put two writers on one low-level channel.
 """
 
 import os

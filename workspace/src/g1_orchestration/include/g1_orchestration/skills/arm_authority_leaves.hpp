@@ -14,9 +14,9 @@ namespace g1_orchestration
 {
 
 /**
- * @brief Activates the arm component and controller, then each hand.
+ * @brief Swaps the arm from its freeze to its trajectory controller, then activates each hand.
  *
- * Idempotent: the arm is very often already acquired, so finding it so costs nothing.
+ * Idempotent: an arm already held by its trajectory controller is not switched again.
  */
 class AcquireArm : public ServiceLeaf
 {
@@ -29,8 +29,7 @@ public:
 /**
  * @brief Hands the arm and hands back.
  *
- * Always SUCCESS: a release that reported failure would fail the tree it is cleaning up after,
- * and the executor releases again on its way out regardless.
+ * Always SUCCESS, so cleanup cannot fail the tree; the executor releases again on exit anyway.
  */
 class ReleaseArm : public ServiceLeaf
 {

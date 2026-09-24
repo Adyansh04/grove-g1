@@ -10,17 +10,15 @@ flowchart LR
     EXE -- "ClearOctomap" --> MG["move_group"]
     EXE -- "ApproachObject, Retreat" --> BA["g1_locomotion"]
     EXE -- "Pick, Place,<br/>SetArmPosture" --> MAN["g1_manipulation"]
+    EXE -- "LookFor, StopLooking" --> DET["g1_detector"]
+    EXE -- "Grasp" --> VLA["g1_vla"]
     EXE -- "acquire / release" --> CM["controller_manager"]
     EXE -. "ZeroMQ 1667" .-> G["Groot2 (on the host)"]
 ```
 
-The tree decides *what* happens and in what order; the skills decide *how*. Nothing here plans,
-moves a joint, or drives a costmap.
-
-Nav2's own navigator links the same `libbehaviortree_cpp.so` this package does: there is one
-BehaviorTree.CPP in the image and no v3 package, so a leaf here and a Nav2 BT node are the same
-version. `behaviortree_ros2` is not in the image, which is why this package has its own
-action-client base.
+The tree decides what happens and in what order; the skills decide how. Nothing here plans or
+moves a joint. Nav2 links the same BehaviorTree.CPP library, and `behaviortree_ros2` is not in the
+image, which is why this package has its own action-client base.
 
 ## Layout
 
@@ -48,6 +46,9 @@ One file per leaf, the layout `nav2_behavior_tree` uses.
 | `ClearCostmaps` | Nav2 costmap clear services | `timeout_s`, `global_service`, `local_service` |
 | `ClearOctomap` | MoveIt `/clear_octomap` | `timeout_s`, `service` |
 | `AcquireArm` / `ReleaseArm` | `controller_manager` services | `timeout_s` |
+| `LookFor` | the detector's `phrases`, then `/objects` | `objects` (`id` or `id=phrase`, comma-separated, waited on), `also` (asked for, not waited on), `detector`, `timeout_s`. Answers RUNNING while it waits. |
+| `StopLooking` | the detector's `phrases` | `detector`, `timeout_s`; empties the list, which idles the detector |
+| `Grasp` | `/g1_vla_server/grasp` | `instruction`, `object_id`, `arm` |
 
 Every action leaf also takes `server_timeout_s` (default 10.0), how long to wait for the server to
 appear.
@@ -93,49 +94,37 @@ fails if the palette drifts, and `test_tree_loads` fails if a tree names a leaf 
 
 | Tree | Needs | What it does |
 |---|---|---|
-| `pick_and_place.xml` | Nav2, `world:=navigation`, a map | Acquire, tuck, drive to a staging pose, close the last gap, pick, carry, drive to storage, close again, place, tuck, release. |
+| `pick_and_place.xml` | Nav2, `world:=navigation`, perception | Acquire, tuck, drive to a staging pose, look, close the last gap, pick, carry, drive to storage, look, close again, place, tuck, release. |
 | `pick_and_place_in_place.xml` | `world:=manipulation` | The same skills with no driving. |
-| `TuckBothArms` | subtree of the above | Both arms to `tucked`, each retried. |
+| `sort_into_box.xml` | `world:=tabletop`, perception | Pick the red block from a cluttered table and drop it in the box. |
+| `vla_grasp_in_place.xml` | `world:=manipulation`, `vla:=true` | The learned grasp in place of a planned pick. |
+| `TuckBothArms` | subtree of `pick_and_place.xml` | Both arms to `tucked`, each retried. |
 
-The stations are **staging poses, not working poses**. Nav2 cannot park the robot where the arm
-can reach anything: `xy_goal_tolerance` is 0.5 m and `robot_radius` 0.45, against an arm window
-about 0.2 m wide. Each `NavigateToPose` goal is a pose Nav2 can legally reach, short of the
-surface, and `ApproachObject` closes the rest against the measured object.
-
-Named postures are driven per arm: `both_arms` currently fails to execute a named posture on this
-stack while either arm alone succeeds; the cause is not yet found.
+The navigation stations are staging poses, not working poses: Nav2's goal tolerance is 0.5 m
+against an arm window about 0.11 m wide, so `ApproachObject` closes the rest against the measured
+object. Named postures are driven per arm, because `both_arms` fails to execute a named posture on
+this stack while either arm alone succeeds.
 
 ## The arm bracket belongs to the executor
 
-A skill must release control authority cleanly on success or failure alike. At mission scope the
-only place that can be guaranteed is around the whole tree, so the executor releases the arm and
-hands on every exit path: success, tree failure, an exception while loading, and SIGINT. It is an
-RAII guard rather than a call at the end, so the guarantee is a property of the type.
+The executor releases the arm and hands on every exit path (success, tree failure, an exception
+while loading, SIGINT) through an RAII guard around the whole tree. `ReleaseArm` also exists as a
+leaf for handing the arm back early, and always reports SUCCESS.
 
-`ReleaseArm` exists as a leaf too, for a tree that wants to hand the arm back early. It always
-reports SUCCESS: a release that failed the tree it is cleaning up after would be worse than
-useless.
-
-Acquiring is one `switch_controller` call. The always-active component owns all 29 body motors and
-is already holding the arms through `arm_freeze_controller`, so the bracket trades that freeze for
-`arm_trajectory_controller` in a single call. It has to be one, because the component leaves any
-unclaimed joint unpowered and two calls would drop the arms in between. The hands are separate
-component activations: a Dex3 is its own device on its own channels.
-
-That one call is `STRICT`, and only the arm's is. `BEST_EFFORT` drops whichever controller it
-cannot switch and applies the rest, still answering `ok`, so a trajectory controller that is loaded
-but not yet configured leaves the request as a bare deactivation of the freeze and the arms fall. `STRICT` is all-or-nothing but refuses a switch that is already done, so the two controllers'
-states are read first and an arm already in the wanted state is left alone. The hands keep
-`BEST_EFFORT`: nothing is displaced there, so there is no half of a pair to apply on its own, and a
-hand that will not come up must still leave the arm usable. `planArmSwitch` is that decision on its
-own, with no service calls in it, so `test_authority_drift` can assert it directly.
+Acquiring trades `arm_freeze_controller` for `arm_trajectory_controller` in one `STRICT`
+`switch_controller` call: the component leaves unclaimed joints unpowered, so two calls would drop
+the arms in between, and `BEST_EFFORT` can silently apply only the deactivation. Because `STRICT`
+refuses a switch that is already done, both controllers' states are read first; `planArmSwitch`
+makes that decision without service calls, so it is unit-tested. The hands are separate component
+activations and keep `BEST_EFFORT`, so a hand that will not come up still leaves the arm usable.
 
 ## Running
 
 The mission starts nothing else. The simulator, Nav2, MoveIt and the skills must already be up.
 
 ```bash
-ros2 launch g1_bringup bringup.launch.py moveit:=true manipulation:=true pin_pelvis:=true world:=manipulation activate_arm:=true activate_arm_delay_s:=40.0
+ros2 launch g1_bringup bringup.launch.py moveit:=true manipulation:=true pin_pelvis:=true \
+  world:=manipulation odometry:=ground_truth activate_arm:=true activate_arm_delay_s:=40.0
 ```
 
 ```bash
@@ -173,7 +162,7 @@ None need a simulator.
 | Test | Covers |
 |---|---|
 | `test_tree_loads` | Every shipped tree parses against the registered node set; the mission tree still has the leaves and retry wrappers it is supposed to; an unknown leaf is rejected; the port string conversions and their refusals. |
-| `test_action_leaf` | A leaf ticked against a real server on the two threads the executor uses: a rejected goal fails the leaf instead of leaving it RUNNING, and an accepted one that succeeds reaches SUCCESS. |
+| `test_action_leaf` | A leaf ticked against a real server on the two threads the executor uses: a rejected goal fails the leaf, an accepted one that succeeds reaches SUCCESS. `LookFor` against a stand-in detector: what it writes, the ids it waits on, and that it does not block a tick. |
 | `test_node_model` | The checked-in Groot2 palette matches the registered nodes and their ports. |
 | `test_authority_drift` | The acquire sequence against `g1_bringup`'s `activate_arm`: the same names, the arm first with the hands behind it, and the freeze controller still displaced in the same switch. Plus `planArmSwitch`, including that an incoming controller which is not loaded switches nothing at all. |
 

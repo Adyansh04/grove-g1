@@ -6,8 +6,7 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/g1_common.cmake)
 # --- dependencies ----------------------------------------------------------
 
 find_package(ament_cmake REQUIRED)
-# v4, and the same library Nav2's own navigator links: there is one libbehaviortree_cpp.so in
-# this image and no v3 package at all, so a leaf here and a Nav2 BT node share a version.
+# v4, the same libbehaviortree_cpp Nav2's navigator links, so leaves here and Nav2's share it.
 find_package(behaviortree_cpp REQUIRED)
 find_package(controller_manager_msgs REQUIRED)
 find_package(g1_msgs REQUIRED)
@@ -24,7 +23,6 @@ find_package(vision_msgs REQUIRED)
 
 # --- library ---------------------------------------------------------------
 
-# Listed rather than globbed, so a file nobody added fails the build instead of vanishing.
 add_library(g1_bt_nodes
   src/arm_authority.cpp
   src/port_types.cpp
@@ -65,8 +63,7 @@ add_executable(g1_bt_executor src/g1_bt_executor_main.cpp)
 g1_target_defaults(g1_bt_executor)
 target_link_libraries(g1_bt_executor PUBLIC g1_bt_nodes)
 
-# Regenerates the Groot2 palette. Not run by the build: the model is checked in so Groot2 can
-# open the project straight from a clone, and test_node_model fails if the two drift.
+# Regenerates the checked-in Groot2 palette. Not run by the build; test_node_model catches drift.
 add_executable(g1_bt_node_model src/g1_bt_node_model_main.cpp)
 g1_target_defaults(g1_bt_node_model)
 target_link_libraries(g1_bt_node_model PUBLIC g1_bt_nodes)
@@ -85,25 +82,23 @@ if(BUILD_TESTING)
   ament_lint_auto_find_test_dependencies()
   find_package(ament_cmake_gmock REQUIRED)
 
-  # Every shipped tree parses with every node type registered. Catches a leaf renamed in C++
-  # but not in XML, which otherwise surfaces only when the mission is run.
+  # Every shipped tree parses against the registered leaves.
   ament_add_gmock(test_tree_loads test/test_tree_loads.cpp)
   target_link_libraries(test_tree_loads g1_bt_nodes)
   target_compile_definitions(test_tree_loads PRIVATE
     G1_TREES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/trees")
 
-  # The leaf base against a real server. Needs a graph, unlike everything else here, because
-  # the goal handling it owns only exists once something answers a goal.
+  # The action leaf base against a real server; the only test here that needs a ROS graph.
   ament_add_gmock(test_action_leaf test/test_action_leaf.cpp TIMEOUT 120)
   target_link_libraries(test_action_leaf g1_bt_nodes)
 
-  # A stale Groot2 palette invites trees that cannot load.
+  # The checked-in Groot2 palette matches the registered leaves.
   ament_add_gmock(test_node_model test/test_node_model.cpp)
   target_link_libraries(test_node_model g1_bt_nodes)
   target_compile_definitions(test_node_model PRIVATE
     G1_TREES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/trees")
 
-  # The acquire sequence against g1_bringup's script, the other implementation of it.
+  # controlledParts() against g1_bringup's activate_arm script, the other implementation.
   ament_add_gmock(test_authority_drift test/test_authority_drift.cpp)
   target_link_libraries(test_authority_drift g1_bt_nodes)
   target_compile_definitions(test_authority_drift PRIVATE

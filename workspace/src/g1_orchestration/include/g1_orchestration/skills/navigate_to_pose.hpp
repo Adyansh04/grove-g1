@@ -16,11 +16,9 @@ namespace g1_orchestration
 {
 
 /**
- * @brief Drives the base to a pose.
+ * @brief Drives the base to a pose through Nav2.
  *
- * Nav2 is a black box here: the tree never sees a costmap, a planner or a recovery, only
- * whether the goal was reached. The one action leaf that is not a SkillActionNode, because
- * Nav2's result is empty and the outcome is the result code alone.
+ * Not a SkillActionNode: Nav2's result is empty, so the result code is the outcome.
  */
 class NavigateToPose : public RosActionNode<nav2_msgs::action::NavigateToPose>
 {
