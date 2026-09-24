@@ -60,20 +60,15 @@ bool NavigateToPose::fillGoal(Goal& goal)
         RCLCPP_ERROR(node_->get_logger(), "[%s] %s", name().c_str(), station.error().c_str());
         return false;
     }
-    goal.pose = toPose(*station, getInput<std::string>("frame_id").value_or("map"));
-    // Nav2 picks its own default when this is empty, so a tree that does not care says nothing.
+    goal.pose          = toPose(*station, getInput<std::string>("frame_id").value_or("map"));
     goal.behavior_tree = getInput<std::string>("behavior_tree").value_or("");
 
-    // Published so the approach that follows can hold the heading this goal arrived on, rather
-    // than needing a matching literal typed by hand in both places.
     setOutput("goal_yaw", station->yaw);
     return true;
 }
 
 BT::NodeStatus NavigateToPose::judgeResult(const WrappedResult& result)
 {
-    // Nav2's result is empty: reaching the goal is reported by the result CODE and nothing else,
-    // unlike this stack's own skills.
     if (result.code != rclcpp_action::ResultCode::SUCCEEDED)
     {
         RCLCPP_ERROR(node_->get_logger(), "[%s] did not reach the goal", name().c_str());

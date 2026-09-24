@@ -1,0 +1,12 @@
+# The stand-in grasp generator, loaded by perception.launch.py with grasp_engine:=mock. Three
+# top-down grasps and one from under the table, so a filter that accepts everything fails a test.
+g1_mock_grasp_source:
+  ros__parameters:
+    # Refuses other hands, as the real adapter does.
+    hand: "right"
+
+    # `only_from_below` comes from the launch file: a key here, under the node's name, would
+    # override it.
+
+    # Grasp frame height above the object's top face, m.
+    approach_height_m: 0.10

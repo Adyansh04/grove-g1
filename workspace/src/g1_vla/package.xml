@@ -6,7 +6,7 @@
   <description>
     The learned-grasp skill: a policy engine emits chunks of joint targets, and this
     package validates each one against the MoveIt planning scene before any of it
-    reaches a controller. Ships the gate, a stand-in engine for testing it, and the
+    reaches a controller. Ships the gate, a stand-in engine, a GR00T adapter, and the
     launch that pairs them.
   </description>
   <maintainer email="gupta.adyansh@gmail.com">Adyansh</maintainer>

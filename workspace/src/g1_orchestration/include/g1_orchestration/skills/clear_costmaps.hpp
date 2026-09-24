@@ -16,9 +16,8 @@ namespace g1_orchestration
 /**
  * @brief Wipes both Nav2 costmaps.
  *
- * Housekeeping between a manipulation and the next navigation goal: working beside a surface
- * leaves the arm and the lifted object in the costmaps as obstacles that never were. Succeeds
- * even when a clear fails; this is hygiene, not a precondition.
+ * Run after manipulating beside a surface, which leaves the arm and a lifted object in the
+ * costmaps as phantom obstacles. Succeeds even if a clear fails: Nav2 plans on a stale costmap.
  */
 class ClearCostmaps : public ServiceLeaf
 {

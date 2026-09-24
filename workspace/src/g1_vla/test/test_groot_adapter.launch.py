@@ -1,16 +1,9 @@
-"""The adapter has to speak the policy server's protocol and integrate its actions correctly.
+"""The adapter against a stub policy server: wire protocol, key mapping and action integration.
 
-Both halves fail quietly if they are wrong. A mis-encoded request comes back as a server error
-that reads like a model problem, and an action integrated the wrong way round produces a
-plausible trajectory to the wrong place. So this runs the adapter against a stub server that
-answers the real wire format with numbers chosen so the arithmetic is checkable by hand.
-
-The stub declares the checkpoint's own key set and rejects an observation that does not match
-it, which is what carries the two halves of the handshake: the adapter only reaches an answer if
-it supplied every state and video key, and it only comes up at all if it tolerated the action
-keys it has no business driving.
-
-No simulator and no GPU: the stub is the point.
+Each fails quietly when wrong, so the stub answers the real wire format with numbers checkable by
+hand. It declares the checkpoint's own key set and rejects an observation that does not match,
+so the adapter only answers if it mapped every state and video key and ignored the action keys it
+does not drive. No simulator and no GPU.
 """
 
 import os
@@ -86,7 +79,7 @@ def generate_test_description():
                 "max_horizon": HORIZON,
                 "action_mode": "absolute",
                 # 20 steps of history at this spacing is a second of frames, which the probe
-                # below publishes well past before it asks for anything.
+                # publishes well before it asks for anything.
                 "history_step_s": 0.05,
                 "state_joints": {
                     "left_arm": ARMS["left"],
@@ -128,8 +121,7 @@ class TestGrootAdapter(unittest.TestCase):
             GetActionChunk, "/g1_vla_groot_adapter/get_action_chunk"
         )
 
-        # The wrist poses the adapter turns into the model's 9-D end-effector state. Static
-        # because where they are does not matter here; that they resolve at all does.
+        # Wrist poses for the model's 9-D end-effector state. Only that they resolve matters here.
         cls.tf = tf2_ros.StaticTransformBroadcaster(cls.node)
         wrists = []
         for side in ("left", "right"):
@@ -181,15 +173,16 @@ class TestGrootAdapter(unittest.TestCase):
         for _ in range(30):
             self._publish_observation()
             rclpy.spin_once(self.node, timeout_sec=0.1)
-        result = self._call("pick up the red cube")
+        result = self._call("pick up the red block")
 
         self.assertTrue(result.ok, result.message)
-        # Only the joints this skill drives, even though the server offered a waist, a base
-        # height and a navigation command alongside them.
+        # Only the joints this skill drives, not the waist, base height or navigation keys.
         self.assertEqual(list(result.chunk.joint_names), COMMANDED)
         self.assertEqual(len(result.chunk.points), HORIZON)
-        # Waypoint times advance, which is what the gate's shape check demands.
-        times = [p.time_from_start.sec + p.time_from_start.nanosec / 1e9 for p in result.chunk.points]
+        # Waypoint times advance, as the gate's shape check demands.
+        times = [
+            p.time_from_start.sec + p.time_from_start.nanosec / 1e9 for p in result.chunk.points
+        ]
         self.assertEqual(times, sorted(set(times)))
         self.assertAlmostEqual(times[0], 0.1, places=6)
 
@@ -197,12 +190,11 @@ class TestGrootAdapter(unittest.TestCase):
         for _ in range(30):
             self._publish_observation()
             rclpy.spin_once(self.node, timeout_sec=0.1)
-        result = self._call("pick up the red cube")
+        result = self._call("pick up the red block")
 
         self.assertTrue(result.ok, result.message)
-        # The stub answers one delta above the state it was sent, in absolute units. Anything
-        # that added the measured pose a second time would land at twice the angle, which is the
-        # failure this checkpoint's relative training representation invites.
+        # The stub answers DELTA above the state it was sent, in absolute units; adding the
+        # measured pose again would double the angle.
         for point in result.chunk.points:
             for index, joint in enumerate(COMMANDED):
                 self.assertAlmostEqual(point.positions[index], MEASURED[joint] + DELTA, places=6)

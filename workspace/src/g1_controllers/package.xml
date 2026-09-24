@@ -4,9 +4,8 @@
   <name>g1_controllers</name>
   <version>0.1.0</version>
   <description>
-    ros2_control controllers for the G1's whole-body rt/lowcmd component. Holds
-    G1FreezeController, the capture-and-hold fallback the lowcmd component deliberately
-    does not implement itself. The policy and safety controllers land here too.
+    ros2_control controllers for the G1's whole-body rt/lowcmd component: the AGILE
+    locomotion policy, its chainable safety stage, and a capture-and-hold freeze controller.
   </description>
   <maintainer email="gupta.adyansh@gmail.com">Adyansh</maintainer>
   <license>BSD-3-Clause</license>

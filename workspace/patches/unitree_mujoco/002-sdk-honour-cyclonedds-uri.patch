@@ -1,33 +1,10 @@
-Let the SDK honour CYCLONEDDS_URI instead of building its own config
+Let the SDK honour CYCLONEDDS_URI instead of building its own config.
 
-With a non-empty `interface`, unitree_sdk2's ChannelFactory::Init builds an inline
-CycloneDDS config for that interface and creates the domain with it. That inline config
-replaces CYCLONEDDS_URI wholesale, so the container's /etc/cyclonedds/cyclonedds.xml never
-applies to the simulator -- including its MaxAutoParticipantIndex of 60. The simulator
-therefore fell back to Cyclone's default of 9.
-
-The simulator starts last in g1_bringup's sim.launch.py, after the relay, odometry,
-motion_service, robot_state_publisher, ros2_control_node and its controller spawners. When
-enough of those are still alive it finds indices 0-9 taken, and dies on startup with:
-
-    Failed to find a free participant index for domain 1
-    terminate called after throwing an instance of 'unitree::common::DdsException'
-
-It is a race, so it looks intermittent: the spawners are short-lived and usually gone
-before the simulator reaches DDS init.
-
-Leaving `interface` empty makes the SDK create the domain with the default config, which
-reads CYCLONEDDS_URI. The container's file pins the same `lo` interface, so the network
-behaviour is unchanged and only the index ceiling moves.
-
-What guarantees CYCLONEDDS_URI is present is `ENV CYCLONEDDS_URI` in .devcontainer/
-Dockerfile, set at image level, so it also covers running the simulator by hand outside
-sim.launch.py -- which is how the DDS failure was isolated in the first place. The launch
-file additionally checks that the URI names a file that exists, because CycloneDDS treats
-an unreadable URI as a stderr warning and falls back to defaults; with the compose file's
-network_mode: host that would bind the real NIC instead of lo and put rt/lowcmd on the
-LAN. Removing the code-level `interface: "lo"` fence is only safe with that check in
-place.
+Generated against unitree_mujoco ae6a8403e272733e9996ef59990880330496177f.
+A non-empty `interface` makes ChannelFactory::Init replace CYCLONEDDS_URI with an inline config,
+which drops the participant-index ceiling from the container's 60 to Cyclone's 9, and the
+simulator then fails to start while enough ROS nodes are up. The container's file pins the same
+`lo` interface, and sim.launch.py checks that the file exists.
 
 diff --git a/simulate/config.yaml b/simulate/config.yaml
 index 468a66b..a2db543 100644

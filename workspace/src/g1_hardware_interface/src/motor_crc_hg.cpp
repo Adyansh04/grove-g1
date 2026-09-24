@@ -24,7 +24,7 @@ std::uint32_t crc32Core(const std::uint32_t* ptr, std::uint32_t len)
             {
                 crc32 ^= kPolynomial;
             }
-            // Kept byte-for-byte as upstream writes it; see the file header.
+            // Upstream's condition, kept as written.
             // NOLINTNEXTLINE(readability-implicit-bool-conversion)
             if (data & xbit)
             {

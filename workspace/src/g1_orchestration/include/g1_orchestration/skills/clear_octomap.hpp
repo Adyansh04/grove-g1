@@ -14,10 +14,9 @@ namespace g1_orchestration
 {
 
 /**
- * @brief Wipes MoveIt's octomap, the planning scene the arm plans against.
+ * @brief Wipes the octomap in MoveIt's planning scene; ClearCostmaps does not touch it.
  *
- * ClearCostmaps is the 2D counterpart and does not touch it. Stale voxels never decay, so a
- * later plan routes around a ghost of an object that has since moved. Succeeds even when the
+ * Its voxels never decay, so a later plan avoids things no longer there. Succeeds even if the
  * clear fails.
  */
 class ClearOctomap : public ServiceLeaf

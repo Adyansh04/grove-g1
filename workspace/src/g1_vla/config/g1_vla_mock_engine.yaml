@@ -1,10 +1,7 @@
 g1_vla_mock_engine:
   ros__parameters:
-    # The right arm only, swung out to the side. Deliberately away from the bench rather than
-    # toward it: a forward reach clears the bench by a margin that moves with how the octomap
-    # happened to fill in, and a target whose validity depends on that is not a fixed point to
-    # test against. Point target_positions somewhere the arm cannot legally go and every chunk
-    # should be rejected with the robot still where it started.
+    # Right arm swung out to the side, away from the bench, so validity does not depend on how the
+    # octomap filled in. Retarget into a collision and every chunk should be rejected.
     joint_names:
       - right_shoulder_pitch_joint
       - right_shoulder_roll_joint
@@ -13,6 +10,5 @@ g1_vla_mock_engine:
 
     steps_per_chunk: 8
     action_dt_s: 0.1
-    # 0.03 rad per 0.1 s is 0.3 rad/s against the arm's 0.8 limit, inside the server's
-    # velocity_scaling of 0.5. At 0.05 the walk itself would be refused for speed.
+    # rad per waypoint: 0.3 rad/s, well inside the gate's velocity_scaling of the 1.0 rad/s limit.
     step_rad: 0.03

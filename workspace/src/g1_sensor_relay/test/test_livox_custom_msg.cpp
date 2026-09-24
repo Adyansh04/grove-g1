@@ -1,11 +1,9 @@
 /**
  * @file test_livox_custom_msg.cpp
- * @brief The sweep as FAST-LIO's Livox handler will read it.
+ * @brief The sweep as FAST-LIO's Livox handler (preprocess.cpp, avia_handler) will read it.
  *
- * Every assertion here is a gate in that handler (preprocess.cpp, avia_handler): a point with
- * `line >= scan_line` is skipped, a point whose tag bits 4-5 are not 00 or 01 is skipped, and
- * `offset_time` is read as milliseconds-since-scan-start into the undistortion. Get one wrong
- * and FAST-LIO silently registers against a fraction of the cloud, or none of it.
+ * Each assertion is one of its gates: points with `line >= scan_line` or tag bits 4-5 outside
+ * {00, 01} are silently skipped, and `offset_time` feeds undistortion in ms since scan start.
  */
 #include <gmock/gmock.h>
 

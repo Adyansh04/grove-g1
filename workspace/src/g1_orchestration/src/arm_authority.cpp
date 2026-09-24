@@ -34,12 +34,12 @@ constexpr const char* kListService      = "/controller_manager/list_controllers"
 /// The one controller_manager state that means a controller is holding its joints.
 constexpr const char* kActiveState = "active";
 
-/// Shorter than the arm's budget so an absent hand is reported quickly rather than waited out
-/// twice. Mirrors activate_arm's HAND_ACTIVATE_TIMEOUT_S.
+/// Shorter than the arm's budget so an absent hand fails fast. Mirrors activate_arm's
+/// HAND_ACTIVATE_TIMEOUT_S.
 constexpr double kHandTimeoutS = 5.0;
 
-/// Settle after the switch before the arm can be commanded. Measured: 0.051 rad of elbow drift
-/// 176 ms after the switch, against MoveIt's allowed_start_tolerance of 0.05.
+/// Settle after the switch: the handover moves the joints, and MoveIt rejects a plan whose start
+/// state is off by more than allowed_start_tolerance.
 constexpr double kAcquireSettleS = 3.0;
 
 bool setComponentState(
@@ -71,8 +71,7 @@ bool switchController(
     return response != nullptr && response->ok;
 }
 
-// Every controller controller_manager knows, by name. Empty when it did not answer, which is
-// treated the same as knowing nothing: no controller able to take the arms.
+// Controller states by name; empty if controller_manager did not answer.
 std::map<std::string, std::string>
 controllerStates(const rclcpp::Node::SharedPtr& node, double timeout_s)
 {
@@ -98,8 +97,7 @@ bool swapArmController(
     const rclcpp::Node::SharedPtr& node, const std::string& incoming, const std::string& outgoing,
     const rclcpp::Logger& logger, double timeout_s)
 {
-    // One listing for both, not one call each: this runs inside a tick with the interrupt
-    // unchecked, and the arm's budget is 15 s.
+    // One listing for both, to keep this blocking, uninterruptible step short.
     const std::map<std::string, std::string> states = controllerStates(node, timeout_s);
     if (states.empty())
     {
@@ -139,8 +137,7 @@ bool swapArmController(
 ArmSwitchPlan planArmSwitch(const std::string& incoming_state, const std::string& outgoing_state)
 {
     ArmSwitchPlan plan;
-    // An unknown incoming controller is the dangerous case: the switch must then ask for
-    // nothing, because deactivating the holder on its own is what drops the arms.
+    // Unknown incoming controller: ask for nothing; deactivating the holder alone drops the arms.
     if (incoming_state.empty())
     {
         return plan;
@@ -153,12 +150,8 @@ ArmSwitchPlan planArmSwitch(const std::string& incoming_state, const std::string
 
 const std::vector<ControlledPart>& controlledParts()
 {
-    // Mirrors g1_bringup/scripts/activate_arm; test_authority_drift fails if the two diverge.
-    //
-    // The arm has no component to activate: the body component owns all 29 motors and is
-    // already active, so acquiring is one atomic switch trading the freeze for the trajectory
-    // controller. It must be one switch, because both claim the same joints and a joint this
-    // component sees unclaimed is a joint it leaves unpowered.
+    // Mirrors g1_bringup/scripts/activate_arm (test_authority_drift). The arm's motors belong to
+    // the always-active body component, so the arm is acquired by a controller switch alone.
     static const std::vector<ControlledPart> parts = {
         { "", "arm_trajectory_controller", "arm_freeze_controller" },
         { "G1Dex3SystemLeft", "left_hand_controller", "" },
@@ -172,9 +165,7 @@ bool acquireArm(const rclcpp::Logger& logger, double timeout_s)
     const rclcpp::Node::SharedPtr      node  = makeClientNode("g1_arm_authority_client");
     const std::vector<ControlledPart>& parts = controlledParts();
 
-    // Component before controller wherever there is one: command-interface availability is tied
-    // to component state, so switching first strands a controller claiming interfaces that do
-    // not exist yet.
+    // Component before controller: its command interfaces exist only while it is active.
     const ControlledPart& arm = parts.front();
     RCLCPP_INFO(logger, "acquiring %s", arm.controller.c_str());
 
@@ -196,8 +187,7 @@ bool acquireArm(const rclcpp::Logger& logger, double timeout_s)
     for (std::size_t i = 1; i < parts.size(); ++i)
     {
         const ControlledPart& hand = parts[i];
-        // BEST_EFFORT, unlike the arm: nothing is displaced here, so there is no half of a pair
-        // to apply on its own, and a hand that will not come up must leave the arm usable.
+        // BEST_EFFORT is safe here: nothing is displaced, so there is no pair to half-apply.
         if (!setComponentState(
                 node,
                 hand.component,
@@ -218,8 +208,6 @@ bool acquireArm(const rclcpp::Logger& logger, double timeout_s)
         }
     }
 
-    // The switch itself moves the joints as the trajectory controller takes over at its own
-    // stiffness, and MoveIt validates a plan's start state against where the robot is now.
     rclcpp::sleep_for(std::chrono::duration_cast<std::chrono::nanoseconds>(
         std::chrono::duration<double>(kAcquireSettleS)));
     return true;
@@ -227,8 +215,6 @@ bool acquireArm(const rclcpp::Logger& logger, double timeout_s)
 
 void releaseArm(const rclcpp::Logger& logger, double timeout_s)
 {
-    // Reverse of acquire: controllers first, then components. Deactivating a component while
-    // its controller still claims its interfaces is the failure this order avoids.
     const rclcpp::Node::SharedPtr      node  = makeClientNode("g1_arm_authority_client");
     const std::vector<ControlledPart>& parts = controlledParts();
     // std::ranges::reverse_view breaks clang-tidy's Clang-14 parser against libstdc++ here.
@@ -246,9 +232,8 @@ void releaseArm(const rclcpp::Logger& logger, double timeout_s)
         }
         else
         {
-            // Whatever was displaced comes back in the same switch, so the joints are never
-            // momentarily unowned, which here means unpowered. If it cannot come back the
-            // switch is not made and this controller keeps them, still powered.
+            // The displaced controller returns in the same switch, or no switch is made: an
+            // unowned joint is unpowered.
             swapArmController(node, it->displaces, it->controller, logger, timeout_s);
         }
         if (!it->component.empty())

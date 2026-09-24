@@ -55,9 +55,7 @@ ApproachCommand planApproach(
     command.forward_error_m = object_x_m - limits.target_x_m;
     command.lateral_error_m = object_y_m - limits.target_y_m;
 
-    // The only terminal state: the object under the robot's own shell, where no walk helps.
-    // Merely being past the window is recoverable, because the gait reverses as readily as it
-    // advances: measured -0.140 m/s at a commanded -0.20.
+    // The only terminal state. Merely past the window is recoverable: the gait reverses.
     if (object_x_m < limits.min_forward_m)
     {
         command.state = ApproachState::kOvershot;
@@ -84,8 +82,7 @@ ApproachCommand planApproach(
     }
     command.state = ApproachState::kClosing;
 
-    // No floor here: yaw has no deadband, so a small correction actually lands, and flooring it
-    // would swing the robot past square for a couple of degrees of error.
+    // No floor: yaw has no deadband, and a floor would swing the robot past square.
     if (std::abs(heading_error_rad) > limits.heading_tolerance_rad)
     {
         command.yaw_rate_rps = std::clamp(

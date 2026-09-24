@@ -1,18 +1,14 @@
 """Headless sim gate: MoveIt on the rt/lowcmd stack, with the balance policy running.
 
-The counterpart to test_moveit_plan_execute, and it exists for the property the walk gate cannot
-see: two controllers writing the same component every tick, one balancing the robot on 14 joints
-and one executing a MoveIt trajectory on 14 others.
-The pelvis is NOT pinned, so if acquiring the arms or moving them disturbed the policy the robot
-would simply fall, and every assertion after that point would fail.
+Two controllers write the same component every tick, the policy on 14 joints and a MoveIt
+trajectory on 14 others. The pelvis is NOT pinned, so if the arms disturbed the policy the robot
+would fall and every later assertion would fail.
 
-Also covers the ownership invariant that makes the split safe: the component leaves any
-unclaimed joint unpowered, so the arm freeze and the trajectory controller have to trade places
-in a single switch, never both out at once.
+Also covers the ownership invariant: the component leaves any unclaimed joint unpowered, so the
+arm freeze and the trajectory controller trade places in a single switch.
 
-The hands are asserted here too, on the same acquire: three components now share one process and
-one ChannelFactory, so "the hand activated and its fingers moved" is the only proof that the
-body component's SDK init did not shut the other two out.
+The hands share one process and one ChannelFactory with the body, so a hand that activates and
+moves is the proof the body's SDK init did not shut them out.
 """
 
 import os
@@ -40,8 +36,8 @@ from std_msgs.msg import String
 # asked of the arms, and move_group starts alongside.
 SIM_SETTLE_S = 14.0
 
-# Tilt, never the quaternion's w: yawing drives w down while the robot stands perfectly
-# straight. This is the world z-component of the body z-axis, 1.0 upright and 0.0 on its side.
+# World z of the body z-axis, 1.0 upright and 0.0 on its side. Not the quaternion's w, which
+# yaw alone drives down.
 MIN_UPRIGHT_Z = 0.64
 
 LEFT_ARM = [
@@ -52,10 +48,8 @@ LEFT_ARM = [
 RIGHT_ARM = [name.replace("left_", "right_") for name in LEFT_ARM]
 BOTH_ARMS = LEFT_ARM + RIGHT_ARM
 
-# The nudge test_06 plans. Shoulder pitch and elbow only, and mirrored in sign, because both
-# arms rest hanging straight down: the same offset on every joint would take one shoulder roll
-# outward and the other straight into the torso. These two lift the arms slightly forward, which
-# is unambiguously away from the body on both sides.
+# The nudge test_06 plans. Pitch and elbow only: they do not flip sign between the arms, so one
+# offset moves both the same way, where a roll offset would swing one arm into the torso.
 ARM_NUDGE = {f"{side}_shoulder_pitch_joint": -0.20 for side in ("left", "right")} | {
     f"{side}_elbow_joint": 0.20 for side in ("left", "right")
 }
@@ -68,10 +62,10 @@ LEFT_HAND = [
     f"left_hand_{suffix}_joint"
     for suffix in ("thumb_0", "thumb_1", "thumb_2", "middle_0", "middle_1", "index_0", "index_1")
 ]
-# The `closed` group state from g1.srdf, restated rather than read out of it: a test that took
-# its expectation from the file under test would pass no matter what that file said.
+# A closed hand, written out rather than read from g1.srdf, so the expectation does not come
+# from a file under test.
 LEFT_HAND_CLOSED = dict(
-    zip(LEFT_HAND, [-0.30, -0.50, 1.20, -1.20, -1.40, -1.20, -1.40], strict=True)
+    zip(LEFT_HAND, [0.00, 0.55, 1.40, -1.20, -1.40, -1.20, -1.40], strict=True)
 )
 
 
@@ -221,11 +215,8 @@ class TestMoveItLowCmd(unittest.TestCase):
         goal.request.allowed_planning_time = 10.0
         goal.request.max_velocity_scaling_factor = 0.5
         goal.request.max_acceleration_scaling_factor = 0.5
-        # Seeded from the measured state with this group's joints clamped into their URDF
-        # limits, the same thing g1_manipulation's setStartStateInBounds does for the arm.
-        # A Dex3 finger rests at exactly 0, which IS its limit, so the simulator settling it a
-        # microradian past is enough for CheckStartStateBounds to abort the plan, and Jazzy
-        # ships no adapter that clamps one back.
+        # The measured state clamped into the URDF limits, as g1_manipulation does. A Dex3
+        # finger rests exactly at its limit, and a microradian past aborts the plan.
         goal.request.start_state = self._bounded_start_state(targets)
 
         constraints = Constraints()
@@ -253,12 +244,8 @@ class TestMoveItLowCmd(unittest.TestCase):
     def _send_move_goal(self, goal, timeout_s=90.0):
         """Plans, then executes what was planned.
 
-        Two steps rather than one combined request, because move_group DISCARDS the start
-        state of a plan-and-execute goal ("Ignoring the state supplied as start state") and
-        re-reads the current one. Only the plan-only form honours it, and this test needs it
-        honoured: a Dex3 finger rests at exactly 0, which is its own limit, so the simulator
-        settling it a microradian past aborts the plan on CheckStartStateBounds. Planning and
-        executing separately is what MoveGroupInterface does, so this matches g1_manipulation.
+        Two requests, because move_group discards the start state of a plan-and-execute goal,
+        and the clamped start state is what keeps a finger at its limit plannable.
         """
         goal.planning_options.plan_only = True
         planned = self._await_goal(self.move_client, goal, timeout_s, "move_group")
@@ -284,8 +271,7 @@ class TestMoveItLowCmd(unittest.TestCase):
 
     def test_02_the_robot_is_standing_on_the_policy(self):
         """Everything below is only meaningful while the policy is holding the robot up."""
-        # The arm freeze ramps to its rest pose at 0.5 rad/s from wherever the model dropped
-        # the arms, so give it time to arrive before anything asks MoveIt to plan.
+        # Let the stand settle before anything asks MoveIt to plan.
         self._spin(6.0)
         self._assert_still_standing("before anything touched the arms")
 
@@ -332,9 +318,8 @@ class TestMoveItLowCmd(unittest.TestCase):
         # waist_yaw is deliberately not part of the trade, so acquiring must not disturb it.
         self.assertEqual(states.get("waist_freeze_controller"), "active")
 
-        # The hands come up in the same acquire, each on its own component and its own SDK
-        # channel pair. A component stuck inactive here means it never saw HandState, which on
-        # one shared ChannelFactory is how a domain or init-order fault presents.
+        # The hands come up in the same acquire. One stuck inactive never saw HandState, which is
+        # how a domain or init-order fault on the shared ChannelFactory presents.
         components = self._component_states()
         for name in ("G1Dex3SystemLeft", "G1Dex3SystemRight"):
             self.assertEqual(components.get(name), "active", f"{name} did not activate")

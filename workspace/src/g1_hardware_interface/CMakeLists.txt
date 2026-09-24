@@ -28,13 +28,11 @@ string(APPEND CMAKE_EXE_LINKER_FLAGS " -Wl,--disable-new-dtags")
 
 # --- libraries -------------------------------------------------------------
 
-# Separately compiled because the bit loop is vendored under an external licence, and keeping
-# it its own library keeps that boundary visible.
+# Its own library, so the vendored code's licence boundary stays visible.
 add_library(motor_crc_hg src/motor_crc_hg.cpp)
 g1_target_defaults(motor_crc_hg)
 
-# The rt/lowcmd mode table and per-motor packing, split out because it is the part worth
-# asserting without a live component.
+# Mode table and per-motor packing, split out so they unit-test without a live component.
 add_library(lowcmd_assembly src/lowcmd_assembly.cpp)
 g1_target_defaults(lowcmd_assembly)
 target_link_libraries(lowcmd_assembly PUBLIC unitree_sdk2 motor_crc_hg)
@@ -55,9 +53,8 @@ target_link_libraries(g1_lowcmd_system PUBLIC
   realtime_tools::realtime_tools
   ${diagnostic_msgs_TARGETS}
 )
-# unitree_sdk2's dds_entity.hpp still builds its queue thread through std::result_of, which
-# InitChannel instantiates unconditionally. Scoped to this target so the rest of the package
-# keeps the strict gate; drop it when the SDK is bumped past the deprecation.
+# unitree_sdk2's dds_entity.hpp uses the deprecated std::result_of, which InitChannel
+# instantiates. Scoped to this target; drop it once the SDK stops using it.
 target_compile_options(g1_lowcmd_system PRIVATE -Wno-deprecated-declarations)
 
 # Makes the plugin discoverable through pluginlib's ament-index lookup, the same path

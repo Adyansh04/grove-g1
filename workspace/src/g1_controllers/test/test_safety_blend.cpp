@@ -100,9 +100,8 @@ TEST(BlendAndSlew, OutputIsFiniteForAFiniteCommand)
 
 TEST(BlendAndSlew, AnInfiniteCommandPoisonsTheIntegratorEvenAtBlendRatioZero)
 {
-    // Documents why the caller filters non-finite references rather than relying on the blend.
-    // At ratio 0 the blend is meant to ignore the command entirely, but `0.0 * inf` is NaN, so
-    // even "ignore the policy" does not survive one infinite reference.
+    // Why the caller filters non-finite references: `0.0 * inf` is NaN, so even ratio 0 does not
+    // ignore an infinite command.
     const double inf = std::numeric_limits<double>::infinity();
     EXPECT_FALSE(std::isfinite(blendAndSlew(0.5, inf, 0.0, 0.5, -1.0, kDt)));
     EXPECT_FALSE(std::isfinite(blendAndSlew(0.5, inf, 1.0, 0.5, -1.0, kDt)));

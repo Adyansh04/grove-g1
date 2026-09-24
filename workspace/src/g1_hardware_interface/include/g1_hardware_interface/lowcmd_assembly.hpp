@@ -3,8 +3,7 @@
 
 /**
  * @file lowcmd_assembly.hpp
- * @brief Per-motor LowCmd packing for rt/lowcmd, on unitree_sdk2's own DDS structs. Split out
- *        from the component so the mode table and the checksum are assertable without one.
+ * @brief rt/lowcmd mode table, per-motor packing and checksum, testable without the component.
  */
 
 #include <array>
@@ -21,8 +20,7 @@ inline constexpr std::size_t kNumBodyMotors = 29;
 /**
  * @brief Per-joint branch of the firmware law `tau = tau_ff + kp*(q - q_meas) + kd*(dq - dq_meas)`.
  *
- * Mirrors the upstream motor-command fill, so controllers written against it behave identically
- * here.
+ * Mirrors the upstream motor-command fill, so controllers written against it behave the same.
  */
 enum class JointControlMode : std::uint8_t
 {
@@ -80,14 +78,13 @@ struct PositionOnlyGains
 };
 
 /**
- * @brief Fills one motor_cmd slot for `mode`.
+ * @brief Fills one motor_cmd slot for `mode`. Any non-finite input disables the motor instead.
  *
  * @param motor             Slot filled in place.
  * @param mode              Which branch of the firmware law to command.
  * @param command           Values written by the claiming controller.
  * @param fallback          Gains applied in kPositionOnly.
- * @param measured_position Read only in kEffort, where q sits on the measurement so the position
- *                          term contributes nothing.
+ * @param measured_position Commanded as q in kEffort, so the position term contributes nothing.
  */
 void fillMotorCmd(
     unitree_hg::msg::dds_::MotorCmd_& motor, JointControlMode mode, const JointCommand& command,
@@ -102,6 +99,7 @@ void fillMotorCmd(
  * @param kp_at_release   The joint's stiffness on its last commanded tick.
  * @param stiffness_scale 1.0 at the start of the ramp, 0.0 at its end.
  * @param release_kd      Damping held flat across the ramp, so it survives kp reaching zero.
+ * @note A non-finite hold position, gain or scale commands damping alone.
  */
 void fillReleaseCmd(
     unitree_hg::msg::dds_::MotorCmd_& motor, double hold_position, double kp_at_release,

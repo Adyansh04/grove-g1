@@ -1,0 +1,19 @@
+# The instruction grounder, loaded by g1_perception/launch/perception.launch.py with
+# grounding:=true.
+g1_instruction_grounder:
+  ros__parameters:
+    # The detector's host vision server, which answers `ground` only when started with --vlm.
+    server_address: "tcp://127.0.0.1:5560"
+
+    # A VLM answer takes seconds; this is what a stalled server costs before the caller hears.
+    zmq_timeout_ms: 30000
+
+    # Past this the model is describing the room, and each phrase costs a detector pass per frame.
+    max_phrases: 6
+
+    # Older frames are refused: the phrases would name objects no longer in view.
+    max_image_age_s: 2.0
+
+    # Write the phrases onto detector_node. Off only answers, for a caller choosing between several.
+    apply_phrases: true
+    detector_node: "/g1_detector"

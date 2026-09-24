@@ -1,17 +1,9 @@
-# Localization against the committed map: nav2_map_server serves it, AMCL owns map -> odom.
+# nav2_map_server serves the committed map and AMCL owns map -> odom. Not slam_toolbox's
+# localization mode, whose serialized pose graph is too large to commit (see maps/README.md).
 #
-# Not slam_toolbox's localization mode, which would reuse the same scan matcher that built the
-# map. That mode loads a serialized pose graph, and for this map that is 33 MB against 130 KB
-# for the occupancy grid; see maps/README.md.
-#
-# Which odometry source is running changes what these values mean. Under
-# `odometry:=ground_truth` the input is exact MuJoCo state, map -> odom converges to identity
-# and the noise model is degenerate. Under `odometry:=fast_lio`, which is what the robot runs, it
-# drifts, and every value below is load-bearing. Tuned for the latter, because a filter that
-# only works against ground truth is not localization.
-#
-# Every parameter nav2_amcl accepts is listed, defaults included, so changing one is an edit
-# rather than a search. `ros2 param dump /amcl` against a running node regenerates the list.
+# Values assume odometry:=fast_lio, which drifts; under ground_truth map -> odom sits at identity.
+# Every nav2_amcl parameter is listed, defaults included; `ros2 param dump /amcl` regenerates it.
+# use_sim_time is false throughout: there is no /clock on this track.
 map_server:
   ros__parameters:
     use_sim_time: false
@@ -25,14 +17,12 @@ amcl:
     global_frame_id: "map"
     odom_frame_id: "odom"
     map_topic: "map"
-    # Default. True would ignore map updates after the first, which matters only if something
-    # republishes the map mid-run; nothing here does.
     first_map_only: false
-    # Gravity-aligned and on the ground. Nav2's default of base_footprint happens to be right
-    # here, but only because g1_state_estimation publishes one; the URDF root is pelvis.
+    # Published by g1_state_estimation; the URDF root is pelvis.
     base_frame_id: "base_footprint"
     scan_topic: /scan
 
+    # The robot strafes: g1_base_approach commands lateral velocity and the gait drifts sideways.
     robot_model_type: "nav2_amcl::OmniMotionModel"
     alpha1: 0.2
     alpha2: 0.2
@@ -55,8 +45,7 @@ amcl:
     recovery_alpha_fast: 0.0
     recovery_alpha_slow: 0.0
 
-    # Nav2's defaults. Correcting this often matters more now that the odometry drifts: at
-    # 0.25 m the correction batched up and landed as one visible step.
+    # Below Nav2's 0.25 m / 0.2 rad, so drift is corrected in small steps, not one visible jump.
     update_min_d: 0.10
     update_min_a: 0.10
 
@@ -73,16 +62,12 @@ amcl:
 
     save_pose_rate: 0.5
     tf_broadcast: true
-    # Generous relative to the 50 Hz odometry and 10 Hz scan. TF timing, not localization
-    # quality, is the recurring failure on this stack.
+    # Generous against 50 Hz odometry and 10 Hz scans; TF timing is this stack's usual failure.
     transform_tolerance: 1.0
 
-    # The simulator always spawns the robot at the origin, and the map was built from there,
-    # so the initial pose is known rather than guessed. Without this AMCL waits for a manual
-    # 2D Pose Estimate in RViz, which a launch test cannot give it.
+    # The simulator spawns the robot at the map origin. Without this AMCL waits for a manual
+    # 2D Pose Estimate, which a launch test cannot give it.
     set_initial_pose: true
-    # Default. True re-seeds the filter from initial_pose on every activation, which would
-    # discard a good estimate every time the lifecycle cycles.
     always_reset_initial_pose: false
     initial_pose:
       x: 0.0
@@ -92,7 +77,6 @@ amcl:
 
 lifecycle_manager_localization:
   ros__parameters:
-    # No /clock on this track: the simulator links no ROS at all.
     use_sim_time: false
     autostart: true
     node_names: ["map_server", "amcl"]

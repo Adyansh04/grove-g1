@@ -1,0 +1,15 @@
+# Turns an instruction into phrases an open-vocabulary detector can take. The detector wants a
+# short noun phrase and cannot parse "the mug left of the bowl"; a model that sees the scene can.
+
+string instruction
+---
+bool ok
+string message
+# Short noun phrases, one or two attributes each, no relations.
+string[] phrases
+# The phrase the instruction is about, i.e. what to pick up.
+string target_phrase
+# Frame and capture time of the image the points below index into.
+std_msgs/Header header
+# Optional: a backend that cannot point returns none.
+ExemplarPoint[] exemplars

@@ -1,36 +1,34 @@
 g1_vla_groot_adapter:
   ros__parameters:
-    # The server runs on the host, outside this container. Compose is host-networked.
+    # The server runs on the host; the container is host-networked.
     server_address: tcp://127.0.0.1:5555
     zmq_timeout_ms: 8000
 
-    # Waypoint spacing. The chunk is a trajectory sampled at its training rate, which asks about
-    # 3 rad/s; this arm tracks 1.0, and 0.125 s is the closest spacing that stays inside that.
+    # Minimum waypoint spacing, s. The training rate's spacing asks for about 3 rad/s; 0.125 s
+    # keeps a chunk inside the 1.0 rad/s the arm tracks.
     action_dt_s: 0.125
 
-    # Runway between re-plans, not the whole 40-step prediction. The gate replaces the running
-    # trajectory as fast as the engine answers, so validating all forty only refuses chunks for
-    # collisions the arm would never reach.
+    # Waypoints kept per prediction. The gate replaces the running trajectory on every answer, so
+    # validating the whole prediction only refuses collisions the arm would never reach.
     max_horizon: 8
 
-    # Ceiling used to time each segment rather than to reject it. Under the gate's own allowance
-    # so a chunk paced here is one the gate takes.
+    # rad/s used to stretch too-fast segments, not to reject them. Under the gate's allowance, so
+    # a chunk paced here passes.
     max_joint_speed: 0.7
 
-    # The simulated head camera runs near 2.6 Hz with 1.6 s gaps under load. Only catches a
-    # camera that has stopped.
+    # Only catches a stopped camera: the simulated one can go over a second between frames.
     max_image_age_s: 5.0
 
-    # The server un-relativises against the state it was sent, so what arrives is absolute.
-    # Only a server that skips that conversion needs "relative_to_observation".
+    # The server converts relative predictions back to absolute before replying. Use
+    # "relative_to_observation" only for a server that does not.
     action_mode: absolute
 
-    # Wall time per step of frame history; the rate the offsets were recorded at is not on the
-    # wire, so this is a tuning knob rather than a derived quantity.
+    # Wall time per step of frame history. The recording rate is not on the wire, so this is
+    # tuned rather than derived.
     history_step_s: 0.0333
 
     # Keys belong to the checkpoint and are unprefixed; joint order is the order of that key's
-    # vector. The adapter logs every key the server reports and refuses to serve unmapped ones.
+    # vector. The adapter refuses to serve while any state or video key is unmapped.
     state_joints:
       left_arm:
         - left_shoulder_pitch_joint
@@ -48,9 +46,8 @@ g1_vla_groot_adapter:
         - right_wrist_roll_joint
         - right_wrist_pitch_joint
         - right_wrist_yaw_joint
-      # Fingers first, thumb last: the checkpoint's dims 4-6 match thumb_0/1/2 by range and
-      # nothing else. Thumb-first, the finger commands land on the thumb and the thumb's land on
-      # joints that start at zero, so they clamp away and the hand never closes.
+      # Fingers first, thumb last, matching the checkpoint (its dims 4-6 are thumb_0/1/2 by
+      # range). Thumb-first sends the finger commands to the thumb and the hand never closes.
       left_hand:
         - left_hand_index_0_joint
         - left_hand_index_1_joint
@@ -72,14 +69,13 @@ g1_vla_groot_adapter:
         - waist_roll_joint
         - waist_pitch_joint
 
-    # Wrist pose from TF, not from joint angles. The parent frame is the recording rig's
-    # convention and the checkpoint does not state it, so vary this first if the reach is wrong.
+    # Wrist pose from TF. The parent frame is the recording rig's convention, which the
+    # checkpoint does not state; vary it first if the reach is wrong.
     state_eef_frames:
       left_wrist_eef_9d: [pelvis, left_wrist_yaw_link]
       right_wrist_eef_9d: [pelvis, right_wrist_yaw_link]
 
-    # Only what this skill drives. The server's waist, base height and navigate commands are
-    # ignored by name.
+    # Only what this skill drives; the server's waist, base height and navigate keys are ignored.
     action_joints:
       right_arm:
         - right_shoulder_pitch_joint

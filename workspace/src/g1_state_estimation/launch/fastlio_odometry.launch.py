@@ -57,9 +57,8 @@ def _hardware_front_end():
                 # Only the launch file can resolve this package's share directory.
                 {"user_config_path": _config(SHARE, "mid360_hardware.json")},
             ],
-            # xfer_format picks the message TYPE, never the topic NAME: with multi_topic 0 the
-            # driver always publishes on livox/lidar, where g1_livox_pointcloud puts
-            # PointCloud2. Two types on one name without this.
+            # xfer_format picks the type, not the name: the driver always publishes livox/lidar,
+            # where g1_livox_pointcloud puts the PointCloud2.
             remappings=[("livox/lidar", "/livox/custom_msg")],
         ),
         Node(

@@ -2,10 +2,8 @@
  * @file g1_sensor_relay_node.cpp
  * @brief Turns sensor frames sampled inside unitree_mujoco into ROS 2 messages.
  *
- * The simulator computes the sweep against its own mjData, because that is the only place
- * the scene exists, and hands finished frames over a local socket. This node owns the ROS
- * side. The split is forced: unitree_sdk2 already calls dds_create_domain in that process
- * and rmw_cyclonedds does the same unconditionally, so only one of them can live there.
+ * The simulator samples against its own mjData and sends finished frames over a local socket.
+ * It links no ROS: unitree_sdk2 owns CycloneDDS there, and rmw_cyclonedds cannot share it.
  */
 
 #include <sys/socket.h>
@@ -51,22 +49,16 @@ public:
         frame_id_       = declare_parameter<std::string>("frame_id", "mid360_link");
         world_frame_id_ = declare_parameter<std::string>("world_frame_id", "world");
         const std::string topic = declare_parameter<std::string>("topic", "/livox/lidar");
-        // 500 Hz rather than 200 as margin for the simulator's fallback path: without a forced
-        // send buffer a ~2.9 MB depth+colour frame arrives one receive buffer per wakeup, and at
-        // 200 Hz the sender hit its retry deadline mid-frame. An idle poll costs one EAGAIN.
+        // 500 Hz drains a ~2.9 MB depth+colour frame within the sender's retry deadline even
+        // without a forced send buffer. An idle poll costs one EAGAIN.
         poll_hz_ = declare_parameter<double>("poll_hz", 500.0);
 
-        // Sensor QoS: only the newest cloud matters, and a reliable publisher against a
-        // best-effort subscriber is the usual reason nothing shows up in rviz.
+        // Sensor QoS: only the newest cloud matters. A reliable subscriber receives nothing.
         cloud_pub_ =
             create_publisher<sensor_msgs::msg::PointCloud2>(topic, rclcpp::SensorDataQoS());
 
-        // Diagnostic data rather than TF: mid360_link already has a parent through
-        // robot_state_publisher and a second one would make the tree ambiguous. It lets a test
-        // check cloud geometry against the room before odom -> pelvis exists.
-        //
-        // REP-145 optical frames, not d435_link: depth consumers assume z forward, x right,
-        // y down, and handed the body frame they project the cloud rotated 90 degrees.
+        // REP-145 optical frames, not d435_link: depth consumers assume z forward, and the body
+        // frame would rotate the cloud 90 degrees.
         depth_frame_id_ =
             declare_parameter<std::string>("depth_frame_id", "camera_depth_optical_frame");
         color_frame_id_ =
@@ -88,28 +80,27 @@ public:
             declare_parameter<std::string>("info_topic", "/camera/color/camera_info"),
             rclcpp::SensorDataQoS());
 
+        // A topic, not TF: mid360_link already has a parent. Lets a test check cloud geometry
+        // before odom -> pelvis exists.
         pose_pub_ = create_publisher<geometry_msgs::msg::PoseStamped>(
             "~/sensor_pose",
             rclcpp::SensorDataQoS());
 
-        // RELIABLE like the real driver: FAST-LIO subscribes reliably, and a best-effort
-        // publisher against it is silently unmatched. Deeper than the driver's 10 because these
-        // 200 Hz frames share a timer callback with a 2.9 MB depth pair and arrive in bursts.
+        // Reliable like the real driver, since FAST-LIO subscribes reliably. Depth 400, not the
+        // driver's 10: these 200 Hz samples arrive in bursts behind 2.9 MB depth frames.
         imu_frame_id_ = declare_parameter<std::string>("imu_frame_id", "mid360_imu");
         imu_pub_      = create_publisher<sensor_msgs::msg::Imu>(
             declare_parameter<std::string>("imu_topic", "/livox/imu"),
             rclcpp::QoS(400));
 
-        // Node-relative and raw: this is the simulator's world frame with no staleness
-        // policy applied. g1_object_pose_source is what turns it into /objects, and naming
-        // it apart keeps a consumer from subscribing to ground truth by accident.
+        // Raw ground truth in the camera frame; g1_object_pose_source turns it into /objects.
+        // Node-relative so nothing subscribes to ground truth by accident.
         objects_pub_ = create_publisher<vision_msgs::msg::Detection3DArray>(
             "~/object_poses",
             rclcpp::SensorDataQoS());
 
-        // Exact pelvis state out of MuJoCo, for the odometry publisher's sim source. Named
-        // ~/base_state and not /odom for the same reason as above: this is truth, not an
-        // estimate, and nothing on the robot publishes it.
+        // Exact pelvis state for the odometry publisher's ground-truth source. Not /odom: it is
+        // truth, and nothing on the robot publishes it.
         base_frame_id_   = declare_parameter<std::string>("base_state_frame_id", "pelvis");
         base_odom_frame_ = declare_parameter<std::string>("base_state_odom_frame", "odom");
         base_state_pub_ =
@@ -120,8 +111,7 @@ public:
             throw std::runtime_error("could not open " + socket_path_);
         }
 
-        // Polled rather than event-driven on purpose: one node, one thread, no executor
-        // surprises, and the cost is a nonblocking accept plus a read at 500 Hz.
+        // Polled on one thread: a nonblocking accept plus a read per tick.
         timer_ =
             create_wall_timer(std::chrono::duration<double>(1.0 / poll_hz_), [this]() { poll(); });
 
@@ -145,14 +135,12 @@ public:
     }
 
 private:
-    /// std::strerror() keeps its message in a shared static buffer and is not thread-safe;
-    /// system_category().message() allocates a fresh std::string per call instead.
+    /// Thread-safe, unlike std::strerror().
     static std::string lastErrorMessage() { return std::system_category().message(errno); }
 
     bool openListener()
     {
-        // A leftover socket file from a crashed run makes bind() fail with EADDRINUSE, and
-        // the launch would look broken for a reason that has nothing to do with this run.
+        // A socket file left by a crashed run makes bind() fail with EADDRINUSE.
         ::unlink(socket_path_.c_str());
 
         listen_fd_ = ::socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0);
@@ -189,10 +177,8 @@ private:
             client_fd_ = -1;
         }
         buffer_.clear();
-        // The clock offset belongs to the connection, not to the node. A restarted simulator
-        // begins near sim_time 0 again, so every later delta is ~1.7e9 and can never beat the
-        // running minimum from the old session, leaving every stamp pinned a few tens of
-        // milliseconds after the Unix epoch, which tf2 refuses without saying why.
+        // The clock offset belongs to the connection: after a simulator restart sim_time is near
+        // zero, and the old running minimum would pin every new stamp near the Unix epoch.
         have_clock_offset_ = false;
     }
 
@@ -209,9 +195,7 @@ private:
             RCLCPP_INFO(get_logger(), "Simulator connected.");
         }
 
-        // Drain whatever is available, then publish every complete frame in it. Draining
-        // fully matters: at 500 Hz polling against 10 Hz frames the socket is usually
-        // empty, but after any hiccup several frames can be queued.
+        // Drain fully, then publish every complete frame: after a hiccup several can be queued.
         std::array<std::uint8_t, 65536> chunk;
         for (;;)
         {
@@ -236,9 +220,7 @@ private:
             return;
         }
 
-        // Hoisted out of the loop deliberately: tryReadFrame fills via resize(), so reusing
-        // one frame reuses its capacity while draining a burst. A cloud can reach tens of MB
-        // and, as above, several can be queued behind one poll().
+        // Hoisted so a burst reuses one frame's capacity; tryReadFrame fills by resize().
         CloudFrame frame;
         for (;;)
         {
@@ -249,8 +231,7 @@ private:
             }
             if (status != FrameStatus::kOk)
             {
-                // Unrecoverable by design: a desynchronised stream cannot be realigned, and
-                // guessing would publish plausible-looking nonsense.
+                // A desynchronised stream cannot be realigned; guessing publishes nonsense.
                 RCLCPP_ERROR(get_logger(), "Dropping connection: %s", toString(status));
                 closeClient();
                 return;
@@ -276,9 +257,7 @@ private:
         }
     }
 
-    /// The Mid360's own IMU, in the sensor's frame, stamped from the same clock mapping as the
-    /// sweep. Both come off one socket from one simulator, so the pair FAST-LIO fuses is
-    /// consistent by construction rather than by two nodes agreeing about wall time.
+    /// The Mid360's IMU, stamped through the same clock mapping as the sweep it is fused with.
     void publishImu(const CloudFrame& frame)
     {
         auto imu             = std::make_unique<sensor_msgs::msg::Imu>();
@@ -295,9 +274,8 @@ private:
         imu->angular_velocity.y = frame.imu.gyro[1];
         imu->angular_velocity.z = frame.imu.gyro[2];
 
-        // Proper acceleration, gravity included, which is what MuJoCo's accelerometer sensor
-        // reports and what a real IMU reads. FAST-LIO normalises by the measured magnitude
-        // during its init, so the units only have to be self-consistent.
+        // Proper acceleration, gravity included, as a real IMU reads. FAST-LIO rescales by the
+        // magnitude at init, so units only need to be consistent.
         imu->linear_acceleration.x = frame.imu.acc[0];
         imu->linear_acceleration.y = frame.imu.acc[1];
         imu->linear_acceleration.z = frame.imu.acc[2];
@@ -305,9 +283,7 @@ private:
         imu_pub_->publish(std::move(imu));
     }
 
-    /// The simulator's exact pelvis pose and twist. This is what stands in for the robot's
-    /// own odometry in sim: the real G1 publishes none, and the estimator that replaces it on
-    /// hardware is FAST-LIO. Twist is body-frame, so this is an ordinary nav_msgs/Odometry.
+    /// The simulator's exact pelvis pose and twist, the twist body-frame as nav_msgs expects.
     void publishBaseState(const CloudFrame& frame)
     {
         auto odom             = std::make_unique<nav_msgs::msg::Odometry>();
@@ -332,14 +308,12 @@ private:
         odom->twist.twist.angular.y = frame.base.ang_vel[1];
         odom->twist.twist.angular.z = frame.base.ang_vel[2];
 
-        // Covariance left at zero: this is exact state, and a consumer that fuses it against
-        // anything else should be reading the estimator instead.
+        // Zero covariance: exact state, not something to fuse.
         base_state_pub_->publish(std::move(odom));
     }
 
-    /// Ground truth, re-expressed as the camera would have measured it. Converting here keeps
-    /// the difference inside the sim-only boundary, so g1_object_pose_source and the skills
-    /// below it run the same code on the robot.
+    /// Ground truth as the camera would see it, converted sim-side so g1_object_pose_source
+    /// runs the same code on the robot.
     void publishObjects(const CloudFrame& frame)
     {
         geometry_msgs::msg::TransformStamped world_to_camera;
@@ -361,8 +335,7 @@ private:
 
             vision_msgs::msg::ObjectHypothesisWithPose hypothesis;
             hypothesis.hypothesis.class_id = record.name;
-            // Ground truth: there is nothing to be uncertain about. A real detector fills
-            // this with its own confidence and the consumer can threshold on it.
+            // Ground truth; a real detector fills in its own confidence.
             hypothesis.hypothesis.score = 1.0;
             geometry_msgs::msg::Pose in_world;
             in_world.position.x    = record.pos[0];
@@ -375,10 +348,8 @@ private:
             tf2::doTransform(in_world, hypothesis.pose.pose, world_to_camera);
 
             detection.bbox.center = hypothesis.pose.pose;
-            // Full widths, which is what BoundingBox3D means by size. A consumer builds its
-            // collision geometry from this rather than from its own table of object
-            // dimensions, so replacing this source with a real detector changes nothing
-            // downstream.
+            // Full widths, as BoundingBox3D means size; consumers build collision geometry
+            // from it.
             detection.bbox.size.x = record.size[0];
             detection.bbox.size.y = record.size[1];
             detection.bbox.size.z = record.size[2];
@@ -388,12 +359,8 @@ private:
         objects_pub_->publish(std::move(msg));
     }
 
-    /// Inverse of the camera's world pose, built from the LiDAR's ground-truth pose and the
-    /// rigid LiDAR-to-camera transform in the URDF. False until the first sweep, and while TF
-    /// has not yet published the robot's own links.
-    ///
-    /// One sweep stale, a few centimetres at walking pace, which models a real detector better
-    /// than an exact answer would.
+    /// camera_T_world from the LiDAR's ground-truth pose and the URDF's LiDAR-to-camera
+    /// transform, one sweep stale. False until the first sweep and the robot's TF have arrived.
     bool worldToCamera(geometry_msgs::msg::TransformStamped& out)
     {
         if (!sensor_in_world_)
@@ -419,9 +386,7 @@ private:
             return false;
         }
 
-        // sensor_to_world, not the reverse: sensor_in_world_ is the sensor's pose expressed in
-        // world, which maps sensor points into world. Inverting it is what makes the product
-        // camera_T_world, so the inverse is load-bearing rather than redundant.
+        // sensor_in_world_ maps sensor points into world; its inverse makes camera_T_world.
         tf2::Transform sensor_to_world;
         tf2::fromMsg(*sensor_in_world_, sensor_to_world);
         tf2::Transform to_camera;
@@ -437,8 +402,7 @@ private:
         img->header.frame_id = depth_frame_id_;
         img->height          = frame.height;
         img->width           = frame.width;
-        // 32FC1 metres. The simulator linearises MuJoCo's non-linear depth buffer before
-        // sending, so nothing downstream has to know about znear/zfar.
+        // 32FC1 metres, already linearised from MuJoCo's depth buffer by the simulator.
         img->encoding     = "32FC1";
         img->is_bigendian = 0;
         img->step         = frame.width * sizeof(float);
@@ -451,8 +415,7 @@ private:
         info.width            = frame.width;
         info.distortion_model = "plumb_bob";
         info.d.assign(5, 0.0);
-        // fovy is vertical in MuJoCo, and is carried in the frame rather than assumed so
-        // camera_info cannot drift from what the render actually used.
+        // MuJoCo's fovy is vertical; carried in the frame so camera_info matches the render.
         const double f  = frame.height / (2.0 * std::tan(frame.fovy_deg * M_PI / 180.0 / 2.0));
         const double cx = frame.width / 2.0;
         const double cy = frame.height / 2.0;
@@ -489,21 +452,13 @@ private:
     /**
      * @brief The wall-clock stamp for a frame captured at @p sim_time_s.
      *
-     * Stamping on arrival is ~35 ms late: the simulator snapshots mjData, then raycasts for
-     * ~32 ms outside the lock before shipping the frame. Everything transforming the cloud then
-     * uses a pose from the wrong moment, and a pelvis swinging ~9 degrees per gait cycle turns
-     * that into degrees on the floor plane.
-     *
-     * sim_time_s is MuJoCo's clock at the snapshot, so the only unknown is a constant offset.
-     * Latency is never negative, so the smallest (arrival - sim_time) seen is the best estimate;
-     * the slow upward leak stops one early sample pinning it once the clocks drift apart.
+     * A sweep arrives ~35 ms after capture, long enough for the gait to tilt the pose. The clock
+     * offset is the smallest arrival lag seen, leaking upward slowly to follow clock drift.
      */
     rclcpp::Time stampFor(double sim_time_s)
     {
         const rclcpp::Time arrival = now();
-        // A non-finite sim_time_s would latch clock_offset_ at NaN for good: every later
-        // comparison against it is false, so the running minimum never recovers, and the cast
-        // below turns NaN into an arbitrary nanosecond count.
+        // A NaN would latch clock_offset_ for good, since every comparison against it is false.
         if (!std::isfinite(sim_time_s))
         {
             return arrival;
@@ -517,17 +472,13 @@ private:
         }
         else
         {
-            // Roughly 20 ms per second at the IMU rate this now runs at, which is fast enough
-            // to follow a drifting sim clock and still far slower than the latency being
-            // removed. The IMU frames also pin the estimate harder than the sweep ever did:
-            // they are sampled and sent in microseconds, so their arrival lag is close to the
-            // true clock offset, and the sweep gets back-dated by the right amount as a result.
+            // ~20 ms/s at the 200 Hz IMU rate: follows clock drift, far slower than the latency.
+            // IMU frames arrive within microseconds, so they pin the offset near the true one.
             clock_offset_ += 1.0e-4;
         }
 
         const double stamped = sim_time_s + clock_offset_;
-        // A frame cannot have been captured after it arrived. Clamping keeps a bad offset from
-        // putting stamps in the future, where tf2 refuses them outright.
+        // Never stamp after arrival: tf2 refuses future stamps.
         if (stamped >= arrival.seconds())
         {
             return arrival;
@@ -575,9 +526,7 @@ private:
         pose.pose.orientation.z = frame.sensor_quat[3];
         pose_pub_->publish(pose);
 
-        // The only ground-truth world pose of anything on the robot that reaches this node.
-        // publishObjects needs it to work out what the camera would have seen, and the object
-        // frame arrives with no sensor pose of its own (sensor_publisher.cc says so).
+        // publishObjects needs the sensor's world pose; object frames carry none of their own.
         sensor_in_world_ = pose.pose;
 
         cloud_pub_->publish(std::move(msg));

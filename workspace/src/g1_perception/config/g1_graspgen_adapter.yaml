@@ -1,0 +1,28 @@
+# The grasp-generator client, loaded by g1_perception/launch/perception.launch.py with
+# grasp_engine:=graspgen.
+g1_graspgen_adapter:
+  ros__parameters:
+    # GraspGenX runs on the host, since it needs torch and CUDA; compose is host-networked.
+    server_address: "tcp://127.0.0.1:5556"
+
+    # Generous: one request per pick attempt, and without TensorRT the model runs eager fp32.
+    zmq_timeout_ms: 30000
+
+    # Dex3-1 sweep volume from GraspGenX's `unitree_g1` description, and all the model knows of
+    # the hand: gripper-frame boxes, fingers open then half closed, each extents then offset.
+    sweep_volume: [0.10, 0.06, 0.04, 0.0, 0.0, 0.07, 0.04, 0.06, 0.04, 0.007, 0.0, 0.06]
+    # 0 parallel two-finger, 1 revolute two-finger, 2 revolute three-finger.
+    gripper_type: 2
+    # Gripper base to fingertips along the approach axis, from the same description.
+    fingertip_depth_m: 0.07
+
+    # Right only: the description above is the right hand, so a left-hand request is refused.
+    hand: "right"
+
+    # Grasps sampled, then the best returned. The caller thresholds scores, so the cap only
+    # bounds message size and per-candidate work.
+    num_grasps_sampled: 200
+    max_grasps: 100
+
+    # Instances with fewer points than this are skipped by the server rather than guessed at.
+    min_object_points: 100

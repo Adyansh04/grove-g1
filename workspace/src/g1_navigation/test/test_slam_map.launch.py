@@ -59,9 +59,8 @@ def generate_test_description():
     )
     slam = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(nav_share, "launch", "slam.launch.py")),
-        # The shipped config keyframes on travel and a pinned robot never travels, so
-        # slam_toolbox would integrate one scan and stop, mapping the right extents with no
-        # walls. Overridden rather than copied so every other value still comes from the config.
+        # A pinned robot never travels, so the shipped keyframe thresholds would stop at one
+        # scan. Overridden rather than copied, so every other value stays the shipped one.
         launch_arguments={
             "params_overrides": json.dumps({
                 "minimum_travel_distance": 0.0,
@@ -138,9 +137,8 @@ class SlamMapTest(unittest.TestCase):
         self.assertAlmostEqual(height_m, ROOM_SIDE_M, delta=EXTENT_TOL_M, msg=f"{height_m:.1f} m")
 
     def test_walls_were_actually_marked(self):
-        # A map that is all unknown, or all free, still has the right extent. The room's
-        # perimeter is roughly 4 * 8 m of wall at 5 cm, so hundreds of occupied cells is the
-        # floor for "it saw something", not a tuned number.
+        # An all-unknown or all-free map still has the right extent. About 32 m of wall at 5 cm
+        # makes hundreds of occupied cells a floor, not a tuned number.
         data = np.array(self.maps[-1].data)
         occupied = int((data > 50).sum())
         unknown = int((data < 0).sum())

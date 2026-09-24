@@ -248,14 +248,12 @@ bool AgilePolicy::run(const PolicyObservation& observation, PolicyAction& action
     }
     catch (...)
     {
-        // Not just Ort::Exception: ORT can throw std::bad_alloc and others, and this function is
-        // noexcept on the 200 Hz thread: an escape is std::terminate, which takes down
-        // controller_manager and with it rt/lowcmd, on a robot with nothing holding it up.
+        // Everything, not just Ort::Exception: an escape from this noexcept function terminates
+        // controller_manager, and rt/lowcmd with it.
         return false;
     }
 
-    // Feed the history back for the next tick. One ~1 KB copy at 50 Hz, which buys a single set of
-    // bound tensors instead of alternating between two.
+    // Feed the history back. One ~1 KB copy keeps a single set of bound tensors.
     state_in_ = state_out_;
 
     action.joint_position = action_position_;

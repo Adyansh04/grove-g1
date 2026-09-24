@@ -50,11 +50,8 @@ void fillMotorCmd(
     unitree_hg::msg::dds_::MotorCmd_& motor, JointControlMode mode, const JointCommand& command,
     const PositionOnlyGains& fallback, double measured_position)
 {
-    // The only funnel between a controller and rt/lowcmd: every controller, both arm states, the
-    // freeze paths and the release ramp come through here. A non-finite value from any of them
-    // would otherwise reach the motors as a float cast that is undefined for anything outside
-    // float range, so the joint goes unpowered instead: garbage on the wire is worse than a
-    // joint that stops being driven, and the caller finds out from the joint not moving.
+    // Every controller command funnels through here. A non-finite value would reach the wire as
+    // an undefined float cast, so the motor is disabled instead.
     if (!std::isfinite(command.position) || !std::isfinite(command.velocity) ||
         !std::isfinite(command.effort) || !std::isfinite(command.kp) ||
         !std::isfinite(command.kd) || !std::isfinite(measured_position))
@@ -106,11 +103,14 @@ void fillReleaseCmd(
     unitree_hg::msg::dds_::MotorCmd_& motor, double hold_position, double kp_at_release,
     double stiffness_scale, double release_kd)
 {
+    // A non-finite hold or gain leaves only the damping, rather than an undefined float cast.
+    const bool holdable = std::isfinite(hold_position) && std::isfinite(kp_at_release) &&
+                          std::isfinite(stiffness_scale);
     motor.mode() = kMotorEnabled;
-    motor.q()    = static_cast<float>(hold_position);
+    motor.q()    = holdable ? static_cast<float>(hold_position) : 0.0F;
     motor.dq()   = 0.0F;
     motor.tau()  = 0.0F;
-    motor.kp()   = static_cast<float>(kp_at_release * stiffness_scale);
+    motor.kp()   = holdable ? static_cast<float>(kp_at_release * stiffness_scale) : 0.0F;
     motor.kd()   = static_cast<float>(release_kd);
 }
 

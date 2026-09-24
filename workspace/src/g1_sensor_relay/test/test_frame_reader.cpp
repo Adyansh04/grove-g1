@@ -336,13 +336,13 @@ TEST(FrameReader, RefusesAnAbsurdImageSizeBeforeAllocating)
 
 TEST(FrameReader, ReadsAnObjectPoseFrame)
 {
-    auto       bytes = makeObjectFrame({ "red_cube", "green_cylinder" });
+    auto       bytes = makeObjectFrame({ "red_block", "green_cylinder" });
     CloudFrame frame;
     ASSERT_EQ(tryReadFrame(bytes, frame), FrameStatus::kOk);
 
     EXPECT_EQ(frame.kind, FrameKind::kObjectPoses);
     ASSERT_EQ(frame.objects.size(), 2U);
-    EXPECT_STREQ(frame.objects[0].name, "red_cube");
+    EXPECT_STREQ(frame.objects[0].name, "red_block");
     EXPECT_STREQ(frame.objects[1].name, "green_cylinder");
     EXPECT_DOUBLE_EQ(frame.objects[1].pos[0], 2.0);
     EXPECT_DOUBLE_EQ(frame.objects[0].quat[0], 1.0);
@@ -355,7 +355,7 @@ TEST(FrameReader, ReadsAnObjectPoseFrame)
 
 TEST(FrameReader, RefusesAnObjectPayloadThatIsNotAWholeNumberOfRecords)
 {
-    auto              bytes = makeObjectFrame({ "red_cube" });
+    auto              bytes = makeObjectFrame({ "red_block" });
     SensorFrameHeader header{};
     std::memcpy(&header, bytes.data(), sizeof(header));
     header.payload_bytes -= 1;
@@ -368,7 +368,7 @@ TEST(FrameReader, RefusesAnObjectPayloadThatIsNotAWholeNumberOfRecords)
 
 TEST(FrameReader, RefusesAnAbsurdObjectCountBeforeAllocating)
 {
-    auto              bytes = makeObjectFrame({ "red_cube" });
+    auto              bytes = makeObjectFrame({ "red_block" });
     SensorFrameHeader header{};
     std::memcpy(&header, bytes.data(), sizeof(header));
     header.payload_bytes =
@@ -383,7 +383,7 @@ TEST(FrameReader, TerminatesAnObjectNameThatArrivesUnterminated)
 {
     // A producer that filled all 32 bytes would otherwise leave the name running into the
     // pose that follows it, and the relay copies that name straight into a message field.
-    auto bytes = makeObjectFrame({ "red_cube" });
+    auto bytes = makeObjectFrame({ "red_block" });
     std::memset(
         bytes.data() + sizeof(SensorFrameHeader),
         'x',

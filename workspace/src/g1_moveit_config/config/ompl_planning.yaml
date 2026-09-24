@@ -1,5 +1,4 @@
-# OMPL planning pipeline. Hand-authored and short, rather than the ~200-line dump the Setup
-# Assistant emits listing every planner OMPL ships.
+# OMPL pipeline, hand-written: only the planner this config uses.
 
 planning_plugins:
   - ompl_interface/OMPLPlanner
@@ -15,9 +14,8 @@ response_adapters:
   - default_planning_response_adapters/ValidateSolution
   - default_planning_response_adapters/DisplayMotionPath
 
-# No start_state_max_bounds_error here, and do not add one back: CheckStartStateBounds only
-# checks. It reads no parameter and aborts on any excursion at all, however small, and there is
-# no adapter left that clamps one. g1_manipulation brings the start state into bounds itself.
+# No start_state_max_bounds_error: CheckStartStateBounds reads no parameter and aborts on any
+# excursion, and no adapter clamps one. g1_manipulation brings the start state into bounds itself.
 
 planner_configs:
   RRTConnect:
@@ -40,7 +38,5 @@ both_arms:
   planner_configs:
     - RRTConnect
   longest_valid_segment_fraction: 0.005
-  # One joint from each arm. RRTConnect does not use the projection, but OMPL warns and
-  # substitutes a random one when it is missing, and every published dual-arm config that
-  # skipped this ended up with a projection naming only one of the two arms.
+  # One joint from each arm. RRTConnect ignores it, but OMPL warns and picks its own without one.
   projection_evaluator: joints(left_shoulder_pitch_joint,right_shoulder_pitch_joint)

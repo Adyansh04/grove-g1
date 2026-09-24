@@ -1,12 +1,8 @@
 /**
  * @file test_tree_loads.cpp
- * @brief Every shipped tree parses against the registered node set.
+ * @brief Shipped trees parse against the registered leaves, and the mission keeps its shape.
  *
- * Catches a leaf renamed in C++ but not in the XML, which otherwise fails to load only once a
- * mission is launched and the stack is already up.
- *
- * No ROS graph is needed: the leaves take a node to build their clients with, but building a
- * client neither discovers nor connects.
+ * Needs no ROS graph: building a client neither discovers nor connects.
  */
 
 #include <behaviortree_cpp/bt_factory.h>
@@ -15,6 +11,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <map>
 #include <memory>
 #include <rclcpp/rclcpp.hpp>
 #include <string>
@@ -39,8 +36,7 @@ std::string readFile(const std::filesystem::path& path)
     return { std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>() };
 }
 
-// Trees only. trees/ also holds the Groot2 palette and project file, which are XML but must
-// not be handed to createTreeFromFile.
+// Trees only: skips the Groot2 palette, which is XML but not a tree.
 std::vector<std::filesystem::path> shippedTrees()
 {
     std::vector<std::filesystem::path> trees;
@@ -73,8 +69,7 @@ TEST(TreeLoads, EveryShippedTreeParses)
 
 TEST(TreeLoads, TheMissionTreeUsesTheLeavesItIsSupposedTo)
 {
-    // Pinned because the mission's shape is the contract: navigate, pick, navigate, place.
-    // A tree that silently lost its Place would still parse.
+    // The mission's shape is the contract; a tree that lost its Place would still parse.
     auto node    = std::make_shared<rclcpp::Node>("test_mission_shape");
     auto factory = makeFactory(node);
 
@@ -94,25 +89,25 @@ TEST(TreeLoads, TheMissionTreeUsesTheLeavesItIsSupposedTo)
     EXPECT_EQ(seen["Place"], 1);
     EXPECT_EQ(seen["AcquireArm"], 1);
     EXPECT_EQ(seen["ReleaseArm"], 1);
-    // Both stations are staging poses roughly 0.7 m short of the surface, so every arrival must
-    // be followed by an approach; Nav2 cannot honour a working pose directly.
+    // Both stations are staging poses short of the surface, so every arrival needs an approach.
     EXPECT_EQ(seen["ApproachObject"], 2) << "one per surface: the workbench and the drop pad";
     EXPECT_EQ(seen["Retreat"], 2) << "turning in place beside a surface drags the arm across it";
 
-    // Both arms tuck, because a hanging hand sits 21 cm in front of the pelvis and 1 cm under
-    // the workbench slab and jams on the table edge. Tucking one arm moves the collision to the
-    // other.
-    EXPECT_EQ(seen["SetArmPosture"], 5) << "two tucks out, one carry, two tucks back";
+    // Both arms tuck: either hand left hanging jams on the workbench edge.
+    EXPECT_EQ(seen["SetArmPosture"], 4)
+        << "two tucks out and two back: the object rides at the lift pose, with no carry posture";
 
-    // After manipulating beside a surface the costmaps hold the arm, the object and the surface
-    // the base pressed against, none of it where the map says obstacles are.
+    // The detector runs only at the benches: it shares the GPU with the sim camera, and would
+    // track the carried object.
+    EXPECT_EQ(seen["StopLooking"], 3) << "off for the walk out, for the carry, and at the end";
+
+    // Manipulating beside a surface leaves phantom obstacles in the costmaps.
     EXPECT_EQ(seen["ClearCostmaps"], 4) << "after each manipulation, and before each nav goal";
 }
 
 TEST(TreeLoads, EveryFallibleLeafInTheMissionIsRetried)
 {
-    // Counted rather than located, so a legitimate restructure is not a test change. Losing a
-    // retry wrapper is invisible until one clipped waypoint fails an otherwise finished run.
+    // Counted, not located, so a restructure needs no test change.
     auto node    = std::make_shared<rclcpp::Node>("test_mission_retries");
     auto factory = makeFactory(node);
 
@@ -127,15 +122,14 @@ TEST(TreeLoads, EveryFallibleLeafInTheMissionIsRetried)
         }
     }
 
-    // Five postures, two navigation goals, the object approach, the pick and the
-    // approach-and-place pair, each wrapped because Nav2 aborts plans transiently.
-    EXPECT_EQ(seen["RetryUntilSuccessful"], 10);
+    // Four tucks, two navigation goals, the object approach, the pick, the approach-and-place
+    // pair and the two LookFors.
+    EXPECT_EQ(seen["RetryUntilSuccessful"], 11);
 }
 
 TEST(TreeLoads, RejectsALeafNobodyRegistered)
 {
-    // The compensating check for the one above: proves createTreeFromText really does fail on
-    // an unknown node, so EXPECT_NO_THROW passing means something.
+    // Proves an unknown leaf throws, so EveryShippedTreeParses passing means something.
     auto node    = std::make_shared<rclcpp::Node>("test_unknown_leaf");
     auto factory = makeFactory(node);
 
@@ -156,8 +150,7 @@ TEST(Ports, AStationParsesAsThreeNumbers)
     EXPECT_DOUBLE_EQ(station.y, -4.5);
     EXPECT_DOUBLE_EQ(station.yaw, 1.57);
 
-    // Rejected rather than silently zero-filled: a goal short one number would drive the base
-    // somewhere nobody asked for.
+    // A goal short one number must throw, not zero-fill.
     EXPECT_THROW(
         (void)BT::convertFromString<g1_orchestration::Station>("4.5;-4.5"),
         BT::RuntimeError);
@@ -175,7 +168,7 @@ TEST(Ports, APointParsesAsThreeNumbers)
 
 int main(int argc, char** argv)
 {
-    // Before any node or thread exists, so the thread-safety this warns about does not apply.
+    // No other thread exists yet.
     // NOLINTNEXTLINE(concurrency-mt-unsafe)
     setenv("ROS_DOMAIN_ID", "79", 1);
     ::testing::InitGoogleMock(&argc, argv);

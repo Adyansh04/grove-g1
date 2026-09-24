@@ -24,8 +24,8 @@ BT::PortsList ApproachObject::providedPorts()
         ports::arm(),
         BT::InputPort<double>(
             "working_yaw",
-            "Heading to hold while approaching, usually the staging goal's goal_yaw. Ignored "
-            "when use_current_heading is true."),
+            "Heading to hold while approaching, usually NavigateToPose's goal_yaw; unused with "
+            "use_current_heading."),
         BT::InputPort<bool>(
             "use_current_heading",
             false,
@@ -45,8 +45,7 @@ bool ApproachObject::fillGoal(Goal& goal)
 
     goal.use_current_heading = getInput<bool>("use_current_heading").value_or(false);
 
-    // Required unless the caller keeps the current heading. Defaulting it would silently mean
-    // "face +x", and the failure would then read as bad geometry rather than a missing port.
+    // Required unless use_current_heading: a default would silently mean "face +x".
     const auto working_yaw = getInput<double>("working_yaw");
     if (!goal.use_current_heading && !working_yaw)
     {

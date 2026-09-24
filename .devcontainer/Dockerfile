@@ -9,7 +9,6 @@ ENV PIP_BREAK_SYSTEM_PACKAGES=1
 
 # ============================================================================
 # EDITOR TOOLING
-# These are pre-configured tools for C++ and Python development.
 # ============================================================================
 # ruff and clang-format are PINNED and .github/ci.Dockerfile pins the same versions; ci.yml
 # fails if they drift. Neither tool's rule set is stable across versions.
@@ -49,7 +48,7 @@ RUN apt-get update && apt-get install -y \
         xvfb \
     && rm -rf /var/lib/apt/lists/*
 
-# 0.5-1 GB per cc1plus, so one job per core OOM-kills a 32-core/30 GB machine mid-build.
+# cc1plus takes 0.5-1 GB, so one job per core OOM-kills a 32-core, 30 GB machine mid-build.
 # Raise on a bigger box with --build-arg BUILD_JOBS=N.
 ARG BUILD_JOBS=8
 
@@ -75,7 +74,7 @@ RUN mkdir -p /opt/unitree_robotics/mujoco-${MUJOCO_VERSION} && \
       | tar -xz --strip-components=1 -C /opt/unitree_robotics/mujoco-${MUJOCO_VERSION}
 
 
-# --- CycloneDDS / ROS domain (unconditional -- required by Unitree SDK) -----
+# --- CycloneDDS / ROS domain (required by unitree_sdk2) ---------------------
 RUN mkdir -p /etc/cyclonedds && \
     cat > /etc/cyclonedds/cyclonedds.xml <<'EOF'
 <?xml version="1.0" encoding="UTF-8" ?>

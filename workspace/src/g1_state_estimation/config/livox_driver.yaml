@@ -1,9 +1,7 @@
-# The Mid360 driver, hardware only. user_config_path is filled in by the launch file, which
-# is the only place that can resolve this package's share directory.
+# The Mid360 driver, hardware only. The launch file sets user_config_path.
 livox_lidar_publisher:
   ros__parameters:
-    # CustomMsg: FAST-LIO needs the per-point timestamps. g1_livox_pointcloud covers
-    # everyone who wants PointCloud2.
+    # CustomMsg for FAST-LIO; g1_livox_pointcloud republishes it as PointCloud2.
     xfer_format: 1
     multi_topic: 0
     data_src: 0

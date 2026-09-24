@@ -14,6 +14,7 @@
 #include "g1_orchestration/skills/clear_costmaps.hpp"
 #include "g1_orchestration/skills/clear_octomap.hpp"
 #include "g1_orchestration/skills/grasp.hpp"
+#include "g1_orchestration/skills/look_for.hpp"
 #include "g1_orchestration/skills/navigate_to_pose.hpp"
 #include "g1_orchestration/skills/pick.hpp"
 #include "g1_orchestration/skills/place.hpp"
@@ -25,6 +26,8 @@ namespace g1_orchestration
 
 void registerSkillNodes(BT::BehaviorTreeFactory& factory, const RosContext& context)
 {
+    registerLeaf<LookFor>(factory, "LookFor", context);
+    registerLeaf<StopLooking>(factory, "StopLooking", context);
     registerLeaf<NavigateToPose>(factory, "NavigateToPose", context);
     registerLeaf<ApproachObject>(factory, "ApproachObject", context);
     registerLeaf<Retreat>(factory, "Retreat", context);

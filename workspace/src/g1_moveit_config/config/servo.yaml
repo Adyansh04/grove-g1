@@ -8,8 +8,7 @@ publish_period: 0.01
 incoming_command_timeout: 0.1
 max_expected_latency: 0.1
 
-# Commands arrive as real rad/s rather than joystick-style [-1, 1], so the numbers in a chunk
-# and the numbers on the wire are the same quantity.
+# Real units rather than joystick-style [-1, 1], so what a client streams is what goes out.
 command_in_type: speed_units
 scale:
   linear: 0.2
@@ -37,8 +36,7 @@ is_primary_planning_scene_monitor: false
 monitored_planning_scene_topic: /monitored_planning_scene
 
 check_collisions: true
-# NOT the default. The scene obstacle here is the octomap the depth camera builds, so leaving
-# this false would give a collision monitor that never sees the bench and never slows down.
+# Not the default; false leaves the collision monitor blind to the octomap the LiDAR builds.
 check_octomap_collisions: true
 collision_check_rate: 10.0
 self_collision_proximity_threshold: 0.01
@@ -48,7 +46,7 @@ lower_singularity_threshold: 17.0
 hard_stop_singularity_threshold: 30.0
 leaving_singularity_threshold_multiplier: 2.0
 
-# Matches the arm's own margin habit elsewhere: the measured pose trails the commanded one on a
-# position-only joint, so a zero margin reads a joint at its limit as already past it.
+# The measured pose trails the command on a position-only joint, so with no margin a joint at
+# its limit reads as past it.
 joint_limit_margins: [0.12]
 halt_all_joints_in_joint_mode: true

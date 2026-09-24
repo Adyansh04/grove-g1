@@ -3,10 +3,7 @@
 
 /**
  * @file ports.hpp
- * @brief Ports shared by more than one leaf, declared once.
- *
- * Declaring them once keeps their descriptions identical across leaves, which matters because
- * those descriptions are what Groot2 shows a tree author as tooltips.
+ * @brief Ports shared by more than one leaf, declared once so Groot2 shows one description.
  */
 
 #include <behaviortree_cpp/basic_types.h>
@@ -34,10 +31,7 @@ inline Port objectId()
 }
 
 /**
- * @brief The `timeout_s` port, sent to the server as part of the goal.
- *
- * Bounds the skill, where serviceTimeout() bounds a local call. Kept apart so a tree author
- * does not confuse the two.
+ * @brief The `timeout_s` port sent in the goal, bounding the skill on its server.
  */
 inline Port goalTimeout()
 {

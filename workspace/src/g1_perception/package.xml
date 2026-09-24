@@ -1,0 +1,53 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>g1_perception</name>
+  <version>0.1.0</version>
+  <description>
+    Open-vocabulary object perception for manipulation: turns detector masks and depth
+    into the object poses the manipulation skills consume. Ships the geometry node,
+    clients for the host model servers, and GPU-free mock detector and grasp source.
+  </description>
+  <maintainer email="gupta.adyansh@gmail.com">Adyansh</maintainer>
+  <license>BSD-3-Clause</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <!-- Installs g1_perception/, the module the three adapter scripts import. -->
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
+
+  <depend>cv_bridge</depend>
+  <depend>g1_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <!-- The visualizer's drawing only; nothing in the measurement path uses OpenCV. -->
+  <depend>libopencv-dev</depend>
+  <depend>rclcpp</depend>
+  <depend>sensor_msgs</depend>
+  <depend>tf2</depend>
+  <depend>tf2_geometry_msgs</depend>
+  <depend>tf2_ros</depend>
+  <depend>vision_msgs</depend>
+  <depend>visualization_msgs</depend>
+
+  <!-- For the adapter scripts, which talk to the host model servers so torch stays out of
+       this image. -->
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-zmq</exec_depend>
+  <exec_depend>python3-msgpack</exec_depend>
+  <!-- msgpack-numpy has no rosdep key or Ubuntu package; .devcontainer/Dockerfile pip-installs
+       it, so rosdep alone leaves the scripts failing on import. -->
+  <exec_depend>python3-pip</exec_depend>
+
+  <!-- ament_lint_common intentionally not used to avoid clang-format conflicts. -->
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_cmake_gmock</test_depend>
+  <test_depend>g1_bringup</test_depend>
+  <test_depend>launch_testing</test_depend>
+  <test_depend>launch_testing_ament_cmake</test_depend>
+  <test_depend>ament_cmake_lint_cmake</test_depend>
+  <test_depend>ament_cmake_xmllint</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

@@ -3,9 +3,8 @@
 
 /**
  * @file chunk_utils.hpp
- * @brief Kinematic checks and the controller split, over one chunk of policy output.
- *
- * Free functions with no node behind them, so the gate's arithmetic is testable on its own.
+ * @brief Kinematic checks and the controller split over one chunk of policy output, as free
+ *        functions so the gate's arithmetic is unit-testable.
  */
 
 #include <map>
@@ -21,10 +20,9 @@ namespace g1_vla
 using JointMap = std::map<std::string, double>;
 
 /**
- * @brief Whether a chunk is shaped like a trajectory at all.
- *
- * Names and points non-empty, every point as wide as the name list, and time_from_start
- * positive and strictly increasing. Everything below assumes this passed.
+ * @brief Whether a chunk is shaped like a trajectory: names and points non-empty, every point as
+ *        wide as the names, positions finite, and time_from_start positive and strictly
+ *        increasing. The other checks assume this passed.
  */
 [[nodiscard]] bool wellFormed(const trajectory_msgs::msg::JointTrajectory& chunk);
 
@@ -37,10 +35,8 @@ using JointMap = std::map<std::string, double>;
     const trajectory_msgs::msg::JointTrajectory& chunk, const std::vector<std::string>& joints);
 
 /**
- * @brief Largest per-joint gap between the measured pose and the chunk's first waypoint.
- *
- * A policy that misread the state opens its chunk somewhere the arm is not, and executing that
- * snaps the arm across space nothing has collision-checked.
+ * @brief Largest per-joint gap between the measured pose and the chunk's first waypoint, which
+ *        catches a policy that misread the state.
  *
  * @return nullopt if a joint in the chunk was not measured.
  */
@@ -48,18 +44,15 @@ using JointMap = std::map<std::string, double>;
 startJump(const trajectory_msgs::msg::JointTrajectory& chunk, const JointMap& measured);
 
 /**
- * @brief Largest per-joint move between consecutive waypoints.
- *
- * Per-waypoint collision checking only means something while consecutive waypoints stay close:
- * the space swept between two far-apart ones is never looked at.
+ * @brief Largest per-joint move between consecutive waypoints. Bounds the swept space that
+ *        per-waypoint collision checks never see.
  */
 [[nodiscard]] double maxSegmentStep(const trajectory_msgs::msg::JointTrajectory& chunk);
 
 /**
  * @brief Fastest segment as a fraction of that joint's limit, counting measured to first point.
  *
- * @return nullopt if a chunk joint has no positive limit, meaning the model and the chunk
- *         disagree about what the robot is.
+ * @return nullopt if a chunk joint is unmeasured or has no positive limit.
  */
 [[nodiscard]] std::optional<double> maxVelocityRatio(
     const trajectory_msgs::msg::JointTrajectory& chunk, const JointMap& measured,
@@ -68,15 +61,14 @@ startJump(const trajectory_msgs::msg::JointTrajectory& chunk, const JointMap& me
 /**
  * @brief Velocity that carries the arm from where it is now to the waypoint due after @p t.
  *
- * Closed-loop on purpose. Jog commands are integrated by the servo, which tracks velocity and
- * never looks at position, so a velocity computed once per chunk lets error accumulate and the
- * arm ends up somewhere the gate never validated. Aiming at the next waypoint from the measured
- * pose on every tick keeps the streamed motion on the path that was checked.
+ * Closed-loop because servo integrates velocity and never looks at position: aiming from the
+ * measured pose every tick keeps the arm on the validated path instead of accumulating error.
  *
  * @param measured Where the arm is right now, not where the chunk started.
  * @param min_dt Floor on the time left to the waypoint, so a tick landing on one does not
  *        divide by zero.
- * @return Empty at or past the chunk's last waypoint, which is the caller's signal to stop.
+ * @return Empty at or past the last waypoint, which is the caller's signal to stop, or when a
+ *         joint is unmeasured.
  */
 [[nodiscard]] std::vector<double> trackingVelocity(
     const trajectory_msgs::msg::JointTrajectory& chunk, const JointMap& measured, double t,

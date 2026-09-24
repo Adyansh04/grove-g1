@@ -1,0 +1,14 @@
+# Draws perception's output for RViz; loaded by perception.launch.py with visualization:=true.
+g1_perception_visualizer:
+  ros__parameters:
+    # `ground_truth_topic` comes from the launch file, which knows whether a simulator runs.
+
+    # Colour frames kept for late masks to be drawn on; must cover the detector's latency.
+    image_history_s: 5.0
+    # Both detectors copy the frame's own stamp, so this only absorbs float rounding.
+    stamp_tolerance_ms: 50.0
+    # Memory cap: 90 frames is 3 s of 720p at 30 Hz, about 250 MB.
+    image_history_max_frames: 90
+
+    # Frame where ground truth and perceived poses are compared: the objects stay put in it.
+    fixed_frame: "odom"

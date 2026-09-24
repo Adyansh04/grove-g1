@@ -5,17 +5,10 @@
  * @file motor_crc_hg.hpp
  * @brief Vendored CRC32 bit loop for checksumming LowCmd frames before publishing.
  *
- * Vendored from unitreerobotics/unitree_ros2, commit
- * 668d1ec5a05d1c38d3306bdca7d59f2ba3581a88, paths
- * example/src/include/common/motor_crc_hg.h and
- * example/src/src/common/motor_crc_hg.cpp. BSD-3-Clause (see the repository
- * LICENSE). Wrapped in this package's namespace, because upstream uses the global
- * namespace, which risks colliding with another shared library's symbols of
- * the same name if both end up dlopen'd into the same controller_manager
- * process via pluginlib, and renamed to this package's camelBack function
- * convention; the algorithm is otherwise unmodified.
- *
- * What gets checksummed lives in lowcmd_assembly: this is only the sum.
+ * From unitreerobotics/unitree_ros2 @ 668d1ec5a05d1c38d3306bdca7d59f2ba3581a88,
+ * example/src/{include,src}/common/motor_crc_hg.{h,cpp}, BSD-3-Clause. Moved out of the global
+ * namespace, where it could collide inside controller_manager, and renamed; the algorithm is
+ * unchanged. Which bytes are summed is lowcmd_assembly's job.
  */
 
 #include <cstdint>

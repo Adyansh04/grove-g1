@@ -1,19 +1,20 @@
 """Pick and place skills, and the object-pose source they read.
 
-No simulator and no move_group: g1_bringup composes both alongside this. Only the object source
-is simulation-specific, and it says so itself: its `hardware` setting refuses to configure.
+Starts neither the simulator nor move_group; g1_bringup launches both alongside this.
 """
 
 import os
+from typing import List
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, EmitEvent, RegisterEventHandler
 from launch.events import matches_action
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import LifecycleNode, Node
 from launch_ros.event_handlers import OnStateTransition
 from launch_ros.events.lifecycle import ChangeState
+from launch_ros.parameter_descriptions import ParameterValue
 from lifecycle_msgs.msg import Transition
 from moveit_configs_utils import MoveItConfigsBuilder
 
@@ -27,9 +28,9 @@ def _config(share, name):
 
 
 def _moveit_config():
-    """MoveGroupInterface needs the description, its semantics and the kinematics solvers in
-    its own node's parameters; without them it builds against an empty model and every plan
-    fails for a reason that names neither this file nor the missing parameter."""
+    """MoveGroupInterface reads the description, semantics and kinematics from its own node's
+    parameters; without them every plan fails against an empty model, and the error does not
+    say so."""
     return (
         MoveItConfigsBuilder("g1", package_name="g1_moveit_config")
         .robot_description(
@@ -53,10 +54,24 @@ def _object_source():
         output="screen",
         parameters=[
             _config(SHARE, "g1_object_pose_source.yaml"),
-            {"object_source": LaunchConfiguration("object_source")},
+            {
+                "object_source": LaunchConfiguration("object_source"),
+                "publish_markers": LaunchConfiguration("visualization"),
+            },
         ],
         remappings=[
-            ("~/object_poses", "/g1_sensor_relay/object_poses"),
+            # Derived from object_source rather than a second argument, so perception can never
+            # read the simulator's poses.
+            (
+                "~/object_poses",
+                PythonExpression(
+                    [
+                        "'/g1_object_geometry/object_poses' if '",
+                        LaunchConfiguration("object_source"),
+                        "' == 'perception' else '/g1_sensor_relay/object_poses'",
+                    ]
+                ),
+            ),
             ("~/objects", "/objects"),
             ("~/object_markers", "/object_markers"),
         ],
@@ -64,8 +79,7 @@ def _object_source():
 
 
 def _bring_up(node):
-    """Launch event handlers rather than a lifecycle manager: there is one node here, and a
-    manager would be more moving parts than the thing it manages."""
+    """Configures, then activates, through launch events: one node needs no lifecycle manager."""
 
     def _transition(transition_id):
         return EmitEvent(
@@ -97,6 +111,15 @@ def generate_launch_description():
         parameters=[
             _moveit_config().to_dict(),
             _config(SHARE, "g1_manipulation_server.yaml"),
+            {
+                "object_timeout_ms": LaunchConfiguration("object_timeout_ms"),
+                "min_grip_height_m": LaunchConfiguration("min_grip_height_m"),
+                "grasp_source": LaunchConfiguration("grasp_source"),
+                "publish_markers": LaunchConfiguration("visualization"),
+                "graspgen_to_grasp_frame_xyz_rpy": ParameterValue(
+                    LaunchConfiguration("grasp_offset"), value_type=List[float]
+                ),
+            },
         ],
     )
 
@@ -106,8 +129,42 @@ def generate_launch_description():
                 "object_source",
                 default_value="sim_ground_truth",
                 description="Where object poses come from. 'sim_ground_truth' reads MuJoCo "
-                "bodies through g1_sensor_relay; 'hardware' refuses to configure, because no "
-                "object-detection pipeline exists yet.",
+                "bodies through g1_sensor_relay; 'perception' takes what g1_perception "
+                "measured; 'hardware' refuses to configure, because the robot has no detector "
+                "of its own.",
+            ),
+            DeclareLaunchArgument(
+                "grasp_source",
+                default_value="fixed_top_down",
+                choices=["fixed_top_down", "generated"],
+                description="Where a pick's grasp comes from: the pose this server computes "
+                "from the object's box, or the best candidate a grasp generator offers.",
+            ),
+            DeclareLaunchArgument(
+                "grasp_offset",
+                default_value="[0.0, 0.0, 0.0, 0.0, 0.0, 0.0]",
+                description="The generator's gripper frame to <side>_hand_grasp_frame, xyz then "
+                "rpy, measured for the hand the generator serves. Zero says they coincide, which "
+                "is an assumption until it is measured against the candidates in RViz.",
+            ),
+            DeclareLaunchArgument(
+                "object_timeout_ms",
+                default_value="1000.0",
+                description="How old a pose may be before a skill refuses to act on it. A real "
+                "detector needs seconds here, not the sub-second a simulator stream affords.",
+            ),
+            DeclareLaunchArgument(
+                "min_grip_height_m",
+                default_value="0.080",
+                description="Lowest grip above the surface an object stands on. The thumb hangs "
+                "63 mm below the grasp frame, so lower only where it can hang past the surface's "
+                "edge.",
+            ),
+            DeclareLaunchArgument(
+                "visualization",
+                default_value="false",
+                description="Publishes /object_markers and the manipulation server's grasp_plan "
+                "for RViz. false creates neither publisher.",
             ),
             object_source,
         ]

@@ -60,8 +60,7 @@ Visualization Manager:
       Alpha: 0.6
       Color Scheme: costmap
       Value: false
-    # The raw sweep, in the frame the costmap marks from. If the floor here sits above the
-    # 0.08 m obstacle cut, that is the floor-marked-as-obstacle failure, visible directly.
+    # The raw sweep. Floor above the costmap's 0.08 m cut is floor being marked as obstacle.
     - Alpha: 1
       Autocompute Intensity Bounds: true
       Class: rviz_default_plugins/PointCloud2
@@ -81,15 +80,15 @@ Visualization Manager:
         Reliability Policy: Best Effort
         Value: /livox/lidar
       Value: true
-    # FAST-LIO's own registered cloud. Where this disagrees with the map walls is where the
-    # scan match is losing it -- the most direct view of LIO health there is.
+    # FAST-LIO's registered scan, map and path are in camera_init, which exists only on
+    # /fastlio/tf, so they are off here; see the README for viewing them in that frame.
     - Alpha: 1
       Autocompute Intensity Bounds: true
       Class: rviz_default_plugins/PointCloud2
       Color: 255; 120; 0
       Color Transformer: FlatColor
       Decay Time: 0
-      Enabled: true
+      Enabled: false
       Name: FastLioRegistered
       Size (Pixels): 2
       Size (m): 0.02
@@ -100,10 +99,8 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /cloud_registered_1
-      Value: true
-    # FAST-LIO's accumulated map, in its own camera_init frame. That frame is off the main
-    # tree and its transform is remapped to /fastlio/tf, so this display cannot resolve against
-    # the odom fixed frame -- it needs a second RViz subscribed to that topic.
+      Value: false
+    # FAST-LIO's accumulated map; published only with publish.map_en.
     - Alpha: 1
       Autocompute Intensity Bounds: true
       Class: rviz_default_plugins/PointCloud2
@@ -122,13 +119,12 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /Laser_map_1
       Value: false
-    # FAST-LIO's raw trajectory. Compare its shape against the 5 m square: a loop that does
-    # not close is drift you can see without a probe.
+    # FAST-LIO's trajectory; published only with publish.path_en.
     - Alpha: 1
       Buffer Length: 1
       Class: rviz_default_plugins/Path
       Color: 255; 0; 255
-      Enabled: true
+      Enabled: false
       Line Style: Lines
       Name: FastLioPath
       Topic:
@@ -137,7 +133,7 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /path_1
-      Value: true
+      Value: false
     - Angle Tolerance: 0.1
       Class: rviz_default_plugins/Odometry
       Covariance:
@@ -161,9 +157,8 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /g1_odometry_publisher/odom
       Value: true
-    # Ground truth, straight from the simulator. Frame is `world`, which is not connected to
-    # odom -- so it will sit apart from the robot. That separation is the reading: it is the
-    # accumulated LIO error, and it grows as the robot drives.
+    # The simulator's true sensor pose, which the relay stamps odom. Its offset from mid360_link
+    # is the LIO error, plus any spawn-heading difference between world and odom.
     - Alpha: 1
       Axes Length: 0.6
       Axes Radius: 0.06

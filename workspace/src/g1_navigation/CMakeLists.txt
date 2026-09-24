@@ -17,16 +17,14 @@ install(
 # --- tests -----------------------------------------------------------------
 
 if(BUILD_TESTING)
-  # No pep257: its D213 wants the docstring summary on the second line and every launch file
-  # here puts it on the first. ament_lint_auto offers no way to pass an ignore.
+  # No pep257: its D213 wants docstring summaries on the second line and cannot be ignored.
   find_package(ament_lint_auto REQUIRED)
   ament_lint_auto_find_test_dependencies()
   find_package(ament_cmake_pytest REQUIRED)
   find_package(launch_testing_ament_cmake REQUIRED)
 
-  # One env block for every pytest test, not one per test: pytest 8+ imports every module in
-  # the directory while collecting any single file, so a sibling's missing variable becomes a
-  # collection error for tests that never read it.
+  # One env block for every pytest test: pytest 8+ imports the whole directory while collecting
+  # any one file, so a sibling's missing variable breaks collection.
   set(_pytest_env
     "G1_NAVIGATION_CONFIG_DIR=${CMAKE_CURRENT_SOURCE_DIR}/config"
     "G1_NAVIGATION_LAUNCH_DIR=${CMAKE_CURRENT_SOURCE_DIR}/launch"
@@ -34,21 +32,18 @@ if(BUILD_TESTING)
     "G1_BRINGUP_LAUNCH_DIR=${CMAKE_CURRENT_SOURCE_DIR}/../g1_bringup/launch"
   )
 
-  # There is no /clock on this track. Every upstream config this package adapts ships
-  # use_sim_time: True, and a single missed block gives that node a clock that never advances,
-  # which surfaces as TF lookups failing somewhere unrelated.
+  # No /clock on this track, and every upstream config adapted here ships use_sim_time: True.
   ament_add_pytest_test(test_no_sim_time test/test_no_sim_time.py ENV ${_pytest_env})
 
-  # Arguments crossing bringup -> nav_sim -> sim. Lives here rather than in g1_bringup because
-  # it reads both packages' launch files, and g1_bringup cannot depend on this one.
+  # Arguments crossing bringup.launch.py and nav_sim.launch.py into their includes. Lives here
+  # because it reads both packages' launch files, and g1_bringup cannot depend on this one.
   ament_add_pytest_test(test_launch_threading test/test_launch_threading.py ENV ${_pytest_env})
 
-  # The sensor display group is duplicated across two RViz configs in two packages, so neither
-  # package's own tests can see the pair.
+  # The Sensors group is duplicated in two packages' RViz configs, so neither can check it alone.
   ament_add_pytest_test(test_rviz_configs test/test_rviz_configs.py ENV ${_pytest_env})
 
-  # Simulator suites. Same RESOURCE_LOCK name as g1_bringup's: two of these sharing a DDS
-  # graph and a simulator is what makes them flaky. COST descending is execution order.
+  # Simulator suites share g1_bringup's RESOURCE_LOCK, since two sharing a DDS graph and a
+  # simulator flake. Higher COST runs first.
   add_launch_test(test/test_scan_pipeline.launch.py TARGET test_scan_pipeline TIMEOUT 200)
   set_tests_properties(test_scan_pipeline PROPERTIES
     RESOURCE_LOCK mujoco_sim LABELS simulator COST 50)
@@ -57,8 +52,7 @@ if(BUILD_TESTING)
   set_tests_properties(test_slam_map PROPERTIES
     RESOURCE_LOCK mujoco_sim LABELS simulator COST 60)
 
-  # The acceptance gate, and the only suite that drives the robot. Highest COST so it runs
-  # first, while the machine is quietest.
+  # The acceptance gate and the only suite that drives the robot; first, on the quietest machine.
   add_launch_test(test/test_navigate_to_pose.launch.py TARGET test_navigate_to_pose TIMEOUT 500)
   set_tests_properties(test_navigate_to_pose PROPERTIES
     RESOURCE_LOCK mujoco_sim LABELS simulator COST 100)

@@ -1,7 +1,6 @@
 
 <!--
-  This Behavior Tree replans the global path periodically at 1 Hz through an array of poses continuously
-   and it also has recovery actions specific to planning / control as well as general system issues.
+  Replans through the remaining poses every 3 s, with planning, control and general recoveries.
 -->
 <root main_tree_to_execute="MainTree">
   <BehaviorTree ID="MainTree">
@@ -30,9 +29,8 @@
           </Sequence>
           <Spin spin_dist="1.57"/>
           <Wait wait_duration="5"/>
-          <!-- BackUp removed, same as navigate_to_pose.xml, and kept in step with it:
-               bt_navigator loads both trees on activate, so editing only one leaves this
-               one calling a behaviour with no action server and activation fails. -->
+          <!-- BackUp removed as in navigate_to_pose.xml. Keep the two in step: bt_navigator
+               loads both trees on activate, and a BackUp here fails activation. -->
         </RoundRobin>
       </ReactiveFallback>
     </RecoveryNode>

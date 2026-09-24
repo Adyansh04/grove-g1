@@ -1,8 +1,7 @@
-"""Composition-pure control stack: robot_state_publisher + controller_manager.
+"""robot_state_publisher, ros2_control_node and the controller spawners.
 
-No simulator, so this is the file that carries to hardware bring-up unchanged. G1LowCmdSystem
-owns all 29 body motors with no onboard balance underneath: the policy spawned here IS the
-balance controller.
+No simulator, so this carries to hardware unchanged. G1LowCmdSystem owns all 29 body motors with
+no onboard balance underneath: the policy spawned here is the balance controller.
 """
 
 import os
@@ -37,13 +36,13 @@ _SIGNAL_FORWARDING_WRAPPER = (
     "wait $child"
 )
 
-# Every body joint must be claimed from the start: one the component sees unclaimed is one it
-# leaves unpowered. The policy and the safety controller it writes through activate in one
-# switch, because a chainable controller's reference interfaces only become claimable inside it.
-# The ones loaded --inactive are switched in later, by the arm bracket and the safety controller.
+# Every body joint is claimed from the start: one the component sees unclaimed is left unpowered.
+# The policy and the safety controller it chains into activate as one group, because chained
+# reference interfaces only become claimable inside the switch that activates them.
 def _controllers(pin_pelvis):
-    """The spawn set, differing only in what drives the legs. The freeze controller claims the
-    same 14 joints as the safety controller, so either choice leaves every joint claimed."""
+    """The spawn set, differing only in what drives the legs; the freeze and safety controllers
+    claim the same 14 joints. The --inactive ones stay loaded for a later switch, such as
+    activate_arm's or the safety controller's emergency."""
     legs = (
         [
             (["locomotion_freeze_controller"], []),

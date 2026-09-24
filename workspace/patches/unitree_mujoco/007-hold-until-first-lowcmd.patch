@@ -1,48 +1,28 @@
-Hold the robot standing until the control stack drives the motors
+Hold the robot until the control stack drives the motors, and hold scene spawn postures.
 
-The bridge applies `ctrl[i] = tau + kp*(q - q_meas) + kd*(dq - dq_meas)` straight from the
-last received lowcmd. That message is default-constructed until one arrives, so every term
-is zero and every motor is dead from the moment the simulator starts.
+Generated against unitree_mujoco ae6a8403e272733e9996ef59990880330496177f, with 001-006 applied.
+Until a lowcmd drives a motor its command is zero, so the robot would fall before a balance
+policy exists. Each motor holds its initial angle until its first non-zero command, and the
+scene's pelvis_startup_hold weld releases 0.5 s after every motor is driven. Equalities are
+switched only from mjcb_control, on the physics thread.
 
-On the arm_sdk stack that was invisible, because the onboard-controller stand-in owned the
-legs and lowcmd was never used. On the lowcmd stack it drops the robot. The simulator starts
-stepping physics roughly six seconds before `G1LowCmdSystem` initialises and ten before any
-controller claims a joint, so the robot is already prone by the time a balance policy exists.
-The policy then gets a prone observation, diverges, and the safety controller latches its
-out-of-domain emergency. `pin_pelvis` existed to paper over exactly this.
-
-The hold has two parts, because a joint PD alone cannot balance a humanoid: measured, it
-holds the joint angles perfectly well and the robot topples about its feet anyway, ending at
-a pelvis height of 0.094 m. So the pose comes from a per-motor PD at the model's initial
-configuration, and the balance comes from a weld the scene declares by name,
-`pelvis_startup_hold`. Both are released together and never re-applied.
-
-That is the parity-correct behaviour rather than a simulator convenience. On a real G1 the
-onboard controller holds the robot standing until `MotionSwitcherClient::ReleaseMode()`
-returns, and only then do the motors become ours. The simulator having no equivalent was the
-gap.
-
-Three details worth stating, each of which was a failed attempt first:
-
-Handover triggers on a non-zero kp, kd or tau rather than on the arrival of a frame. The
-hardware component publishes continuously from the moment it activates, and until a
-controller claims a joint it sends that joint kp=kd=tau=0, so "a frame arrived" fires several
-seconds before anything is actually holding the robot up.
-
-The hold is tracked per motor rather than globally, so controllers spawning in any order hand
-over one group at a time. Globally, the first controller to activate released every joint the
-others had not claimed yet.
-
-The weld is released only once every motor has been driven for half a second, so the robot is
-never left balancing on a half-claimed body or on a policy that has not reached its stance.
-Which controller activates last is a spawner race, so without that settle the weld sometimes
-released on the very tick a balance policy first wrote, while its blend was still at zero and
-its command was therefore a static pose. Measured, that dropped the robot about half the time. A scene that declares no such weld simply has nothing to release, which
-is what keeps the arm_sdk scenes and the permanently-pinned test scene unchanged.
-
+diff --git a/simulate/src/unitree_sdk2_bridge.h b/simulate/src/unitree_sdk2_bridge.h
+index 7c13289..ae05462 100644
 --- a/simulate/src/unitree_sdk2_bridge.h
 +++ b/simulate/src/unitree_sdk2_bridge.h
-@@ -90,6 +90,66 @@
+@@ -9,7 +9,11 @@
+ #include <unitree/idl/hg/BmsState_.hpp>
+ #include <unitree/idl/hg/IMUState_.hpp>
+ 
++#include <algorithm>
++#include <atomic>
++#include <cstring>
+ #include <iostream>
++#include <memory>
+ 
+ #include "param.h"
+ #include "physics_joystick.h"
+@@ -90,6 +94,115 @@ protected:
  
      std::shared_ptr<unitree::common::UnitreeJoystick> joystick = nullptr;
  
@@ -55,6 +35,10 @@ is what keeps the arm_sdk scenes and the permanently-pinned test scene unchanged
 +    // the robot topples about its feet. The pose comes from the PD, the balance from a weld the
 +    // scene declares by name.
 +    static constexpr const char* kStartupWeldName = "pelvis_startup_hold";
++    // Joint equalities named with this prefix hold a posture from the first physics step, before
++    // this bridge exists. On the first tick the PD takes their angles as targets and they go.
++    static constexpr const char* kStartupJointHoldPrefix = "startup_hold_";
++    static constexpr std::size_t kStartupJointHoldPrefixLength = 13;
 +    static constexpr double kStartupHoldKp = 200.0;
 +    static constexpr double kStartupHoldKd = 5.0;
 +    // Bridge ticks at 1 kHz, so half a second for a balance policy to reach its stance while the
@@ -68,6 +52,20 @@ is what keeps the arm_sdk scenes and the permanently-pinned test scene unchanged
 +    int startup_weld_id_ = -1;
 +    int startup_settle_ticks_ = 0;
 +
++    // Equalities waiting to be switched off. eq_active is written only here, from mjcb_control on
++    // the physics thread: flipped from this thread it races mj_makeConstraint, which counts the
++    // active equalities before building them and exits the simulator on a mismatch.
++    static inline std::unique_ptr<std::atomic<char>[]> pending_release_;
++    static inline std::atomic<int> pending_release_count_{0};
++
++    static void _apply_pending_releases(const mjModel* m, mjData* d)
++    {
++        const int count = std::min(pending_release_count_.load(), m->neq);
++        for (int e = 0; e < count; e++) {
++            if (pending_release_[e].exchange(0)) { d->eq_active[e] = 0; }
++        }
++    }
++
 +    void _capture_startup_hold()
 +    {
 +        startup_hold_.assign(num_motor_, 1);
@@ -79,6 +77,37 @@ is what keeps the arm_sdk scenes and the permanently-pinned test scene unchanged
 +                                     : 0.0;
 +        }
 +        startup_weld_id_ = mj_name2id(mj_model_, mjOBJ_EQUALITY, kStartupWeldName);
++
++        // The queue exists before the callback that drains it.
++        pending_release_ = std::make_unique<std::atomic<char>[]>(mj_model_->neq);
++        pending_release_count_ = mj_model_->neq;
++        mjcb_control = _apply_pending_releases;
++        _take_over_startup_joint_holds();
++    }
++
++    // Only equalities on a joint a motor drives are released: the PD has to take the posture over.
++    void _take_over_startup_joint_holds()
++    {
++        for (int e = 0; e < mj_model_->neq; e++) {
++            const char* name = mj_id2name(mj_model_, mjOBJ_EQUALITY, e);
++            if (mj_model_->eq_type[e] != mjEQ_JOINT || mj_model_->eq_obj2id[e] >= 0 ||
++                name == nullptr ||
++                std::strncmp(name, kStartupJointHoldPrefix, kStartupJointHoldPrefixLength) != 0) {
++                continue;
++            }
++            const int joint_id = mj_model_->eq_obj1id[e];
++            bool driven = false;
++            for (int i = 0; i < num_motor_; i++) {
++                if (mj_model_->actuator_trntype[i] == mjTRN_JOINT &&
++                    mj_model_->actuator_trnid[2 * i] == joint_id) {
++                    // A single-joint equality holds qpos at qpos0 + polycoef[0].
++                    startup_hold_q_[i] = mj_model_->qpos0[mj_model_->jnt_qposadr[joint_id]] +
++                                         mj_model_->eq_data[e * mjNEQDATA];
++                    driven = true;
++                }
++            }
++            if (driven) { pending_release_[e] = 1; }
++        }
 +    }
 +
 +    void _hold_motor(int i)
@@ -102,14 +131,14 @@ is what keeps the arm_sdk scenes and the permanently-pinned test scene unchanged
 +            if (startup_hold_[i]) { return; }
 +        }
 +        if (++startup_settle_ticks_ < kStartupSettleTicks) { return; }
-+        mj_data_->eq_active[startup_weld_id_] = 0;
++        pending_release_[startup_weld_id_] = 1;
 +        startup_weld_id_ = -1;
 +    }
 +
      void _check_sensor()
      {
          num_motor_ = mj_model_->nu;
-@@ -178,12 +238,29 @@
+@@ -178,12 +291,29 @@ public:
          // lowcmd
          {
              std::lock_guard<std::mutex> lock(lowcmd->mutex_);

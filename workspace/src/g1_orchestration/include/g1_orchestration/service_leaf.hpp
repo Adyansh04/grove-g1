@@ -3,10 +3,9 @@
 
 /**
  * @file service_leaf.hpp
- * @brief Blocking service calls from a leaf, on a node the executor does not own.
+ * @brief Blocking service calls from a leaf, on a short-lived node of their own.
  *
- * spin_until_future_complete on a node an executor already holds throws rather than waiting, so
- * these calls need a node of their own. It is created for the call and destroyed with it.
+ * spin_until_future_complete throws on a node an executor already holds.
  */
 
 #include <behaviortree_cpp/action_node.h>
@@ -46,8 +45,7 @@ typename ServiceT::Response::SharedPtr callService(
     const rclcpp::Node::SharedPtr& node, const std::string& service,
     const typename ServiceT::Request::SharedPtr& request, double timeout_s)
 {
-    // One budget across both waits, not one each: a full timeout apiece makes a leaf that says
-    // it will take 15 s take 30, and an acquire runs five of them inside one tick.
+    // One deadline across discovery and the call, so timeout_s is the real bound.
     using Clock         = std::chrono::steady_clock;
     const auto deadline = Clock::now() + std::chrono::duration_cast<Clock::duration>(
                                              std::chrono::duration<double>(timeout_s));

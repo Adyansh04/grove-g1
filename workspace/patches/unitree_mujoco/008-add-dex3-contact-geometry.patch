@@ -1,0 +1,156 @@
+Give the Dex3's palm and fingers contact geometry, so a grasp is contact rather than a weld.
+
+Generated against unitree_mujoco ae6a8403e272733e9996ef59990880330496177f, on top of 001-007.
+Capsules and boxes sized from the meshes, plus excludes for intra-hand pairs. contype 2 pairs
+with nothing until a scene sets bit 1 on a prop, so worlds the walking policy knows keep their
+contact count. Group 3 keeps them out of the viewer and the camera.
+
+diff --git a/unitree_robots/g1/g1_29dof.xml b/unitree_robots/g1/g1_29dof.xml
+index 2ed4e3a..9b917ea 100644
+--- a/unitree_robots/g1/g1_29dof.xml
++++ b/unitree_robots/g1/g1_29dof.xml
+@@ -28,14 +28,26 @@
+     <default class="dex3_motor">
+       <joint damping="0.01" armature="0.001" frictionloss="0.01"/>
+     </default>
+-    <!-- Visual only, exactly like the rubber hand these replace. Grasping is modelled by
+-         attaching the object to the arm in MoveIt's planning scene, so finger contact
+-         would cost solver time every step and buy nothing until grasp physics itself is
+-         under test. -->
++    <!-- The meshes, for looking at. They carry no contact: a 15k-triangle hull per fingertip
++         is slow and numerically noisy at a 2 ms step, so the gripping is done by the capsules
++         in dex3_collision below. -->
+     <default class="dex3_visual">
+       <geom type="mesh" contype="0" conaffinity="0" group="1" density="0"
+         rgba="0.7 0.7 0.7 1"/>
+     </default>
++    <!-- Contact geometry for the fingers and palm, sized from the meshes. Capsules rather than
++         the visual meshes: a 15k-triangle fingertip hull is slow and noisy at a 2 ms step.
++         contype/conaffinity 2 pairs with nothing else in the robot or in any scene, so a world
++         that wants gripping opts its props in with bit 1 and every other world's contact set is
++         unchanged. Group 3 keeps the primitives out of the viewer and the camera render, which
++         show groups 0-2. priority beats the object's own contact parameters rather than averaging
++         with them, so no prop needs tuning. condim 4 adds the torsional friction a rubber pad
++         has and a held box needs. -->
++    <default class="dex3_collision">
++      <geom type="capsule" contype="2" conaffinity="2" group="3" density="0"
++        condim="4" priority="1" friction="1 0.02 0.0001"
++        solref="0.006 1" solimp="0.95 0.99 0.001"/>
++    </default>
+   </default>
+ 
+   <asset>
+@@ -334,18 +346,22 @@
+                           <body name="left_hand_palm_link" pos="0.0415 0.003 0">
+                             <inertial pos="0.0621463484 -0.00050869656 -0.00058171093" mass="0.0909955017" fullinertia="6.72027525e-05 0.000131675593 9.67054086e-05 -3.89404738e-06 -5.91023736e-07 -1.03187787e-07" />
+                             <geom class="dex3_visual" mesh="left_hand_palm_link" />
++                            <geom class="dex3_collision" type="box" pos="0.055 0 0" size="0.055 0.0243 0.043"/>
+                             <body name="left_hand_thumb_0_link" pos="0.0255 0 0">
+                               <inertial pos="-0.0008842458 -0.00863407079 0.00094429336" mass="0.0210470193" fullinertia="3.91210738e-06 3.54327145e-06 3.9974274e-06 2.6073513e-08 4.08287291e-08 -1.24702575e-07" />
+                               <joint name="left_hand_thumb_0_joint" axis="0 1 0" range="-1.04719755 1.04719755" class="dex3_motor" />
+                               <geom class="dex3_visual" mesh="left_hand_thumb_0_link" />
++                              <geom class="dex3_collision" fromto="0 -0.004 0 0 -0.026 0" size="0.013"/>
+                               <body name="left_hand_thumb_1_link" pos="-0.0025 -0.0193 0">
+                                 <inertial pos="-0.00082788768 -0.0354743577 -0.0003808996" mass="0.0143631851" fullinertia="3.11105072e-06 1.46820989e-06 3.01304454e-06 -1.23911894e-07 3.9266675e-08 -6.79442647e-08" />
+                                 <joint name="left_hand_thumb_1_joint" axis="0 0 1" range="-0.61086523 1.04719755" class="dex3_motor" />
+                                 <geom class="dex3_visual" mesh="left_hand_thumb_1_link" />
++                                <geom class="dex3_collision" fromto="0.006 -0.005 0 0.006 -0.050 0" size="0.011"/>
+                                 <body name="left_hand_thumb_2_link" pos="0 -0.0458 0">
+                                   <inertial pos="-0.00171735242 -0.0262819294 0.00010778879" mass="0.00495597455" fullinertia="1.12577676e-06 3.74784048e-07 9.4360434e-07 -8.3520989e-09 -2.01077563e-09 -6.22328541e-09" />
+                                   <joint name="left_hand_thumb_2_joint" axis="0 0 1" range="0 1.74532925" class="dex3_motor" />
+                                   <geom class="dex3_visual" mesh="left_hand_thumb_2_link" />
++                                  <geom class="dex3_collision" fromto="0.001 -0.008 0 0.001 -0.062 0" size="0.009"/>
+                                 </body>
+                               </body>
+                             </body>
+@@ -353,20 +369,24 @@
+                               <inertial pos="0.0354743577 0.00082788768 0.0003808996" mass="0.0143631851" fullinertia="1.46820989e-06 3.11105072e-06 3.01304454e-06 -1.23911894e-07 -6.79442647e-08 3.9266675e-08" />
+                               <joint name="left_hand_middle_0_joint" axis="0 0 1" range="-1.57079632 0" class="dex3_motor" />
+                               <geom class="dex3_visual" mesh="left_hand_middle_0_link" />
++                              <geom class="dex3_collision" fromto="0.005 -0.006 0 0.050 -0.006 0" size="0.011"/>
+                               <body name="left_hand_middle_1_link" pos="0.0458 0 0">
+                                 <inertial pos="0.0262819294 0.00171735242 -0.00010778879" mass="0.00495597455" fullinertia="3.74784048e-07 1.12577676e-06 9.4360434e-07 -8.3520989e-09 -6.22328541e-09 -2.01077563e-09" />
+                                 <joint name="left_hand_middle_1_joint" axis="0 0 1" range="-1.74532925 0" class="dex3_motor" />
+                                 <geom class="dex3_visual" mesh="left_hand_middle_1_link" />
++                                <geom class="dex3_collision" fromto="0.008 -0.001 0 0.062 -0.001 0" size="0.009"/>
+                               </body>
+                             </body>
+                             <body name="left_hand_index_0_link" pos="0.0777 0.0016 0.0285">
+                               <inertial pos="0.0354743577 0.00082788768 0.0003808996" mass="0.0143631851" fullinertia="1.46820989e-06 3.11105072e-06 3.01304454e-06 -1.23911894e-07 -6.79442647e-08 3.9266675e-08" />
+                               <joint name="left_hand_index_0_joint" axis="0 0 1" range="-1.57079632 0" class="dex3_motor" />
+                               <geom class="dex3_visual" mesh="left_hand_index_0_link" />
++                              <geom class="dex3_collision" fromto="0.005 -0.006 0 0.050 -0.006 0" size="0.011"/>
+                               <body name="left_hand_index_1_link" pos="0.0458 0 0">
+                                 <inertial pos="0.0262819294 0.00171735242 -0.00010778879" mass="0.00495597455" fullinertia="3.74784048e-07 1.12577676e-06 9.4360434e-07 -8.3520989e-09 -6.22328541e-09 -2.01077563e-09" />
+                                 <joint name="left_hand_index_1_joint" axis="0 0 1" range="-1.74532925 0" class="dex3_motor" />
+                                 <geom class="dex3_visual" mesh="left_hand_index_1_link" />
++                                <geom class="dex3_collision" fromto="0.008 -0.001 0 0.062 -0.001 0" size="0.009"/>
+                               </body>
+                             </body>
+                           </body>
+@@ -448,18 +468,22 @@
+                           <body name="right_hand_palm_link" pos="0.0415 -0.003 0">
+                             <inertial pos="0.0621463484 0.00050869656 -0.00058171093" mass="0.0909955017" fullinertia="6.72027525e-05 0.000131675593 9.67054086e-05 3.89404738e-06 -5.91023736e-07 1.03187787e-07" />
+                             <geom class="dex3_visual" mesh="right_hand_palm_link" />
++                            <geom class="dex3_collision" type="box" pos="0.055 0 0" size="0.055 0.0243 0.043"/>
+                             <body name="right_hand_thumb_0_link" pos="0.0255 0 0">
+                               <inertial pos="-0.0008842458 0.00863407079 0.00094429336" mass="0.0210470193" fullinertia="3.91210738e-06 3.54327145e-06 3.9974274e-06 -2.6073513e-08 4.08287291e-08 1.24702575e-07" />
+                               <joint name="right_hand_thumb_0_joint" axis="0 1 0" range="-1.04719755 1.04719755" class="dex3_motor" />
+                               <geom class="dex3_visual" mesh="right_hand_thumb_0_link" />
++                              <geom class="dex3_collision" fromto="0 0.004 0 0 0.026 0" size="0.013"/>
+                               <body name="right_hand_thumb_1_link" pos="-0.0025 0.0193 0">
+                                 <inertial pos="-0.00082788768 0.0354743577 -0.0003808996" mass="0.0143631851" fullinertia="3.11105072e-06 1.46820989e-06 3.01304454e-06 1.23911894e-07 3.9266675e-08 6.79442647e-08" />
+                                 <joint name="right_hand_thumb_1_joint" axis="0 0 1" range="-1.04719755 0.61086523" class="dex3_motor" />
+                                 <geom class="dex3_visual" mesh="right_hand_thumb_1_link" />
++                                <geom class="dex3_collision" fromto="0.006 0.005 0 0.006 0.050 0" size="0.011"/>
+                                 <body name="right_hand_thumb_2_link" pos="0 0.0458 0">
+                                   <inertial pos="-0.00171735242 0.0262819294 0.00010778879" mass="0.00495597455" fullinertia="1.12577676e-06 3.74784048e-07 9.4360434e-07 8.3520989e-09 -2.01077563e-09 6.22328541e-09" />
+                                   <joint name="right_hand_thumb_2_joint" axis="0 0 1" range="-1.74532925 0" class="dex3_motor" />
+                                   <geom class="dex3_visual" mesh="right_hand_thumb_2_link" />
++                                  <geom class="dex3_collision" fromto="0.001 0.008 0 0.001 0.062 0" size="0.009"/>
+                                 </body>
+                               </body>
+                             </body>
+@@ -467,20 +491,24 @@
+                               <inertial pos="0.0354743577 -0.00082788768 0.0003808996" mass="0.0143631851" fullinertia="1.46820989e-06 3.11105072e-06 3.01304454e-06 1.23911894e-07 -6.79442647e-08 -3.9266675e-08" />
+                               <joint name="right_hand_middle_0_joint" axis="0 0 1" range="0 1.57079632" class="dex3_motor" />
+                               <geom class="dex3_visual" mesh="right_hand_middle_0_link" />
++                              <geom class="dex3_collision" fromto="0.005 0.006 0 0.050 0.006 0" size="0.011"/>
+                               <body name="right_hand_middle_1_link" pos="0.0458 0 0">
+                                 <inertial pos="0.0262819294 -0.00171735242 -0.00010778879" mass="0.00495597455" fullinertia="3.74784048e-07 1.12577676e-06 9.4360434e-07 8.3520989e-09 -6.22328541e-09 2.01077563e-09" />
+                                 <joint name="right_hand_middle_1_joint" axis="0 0 1" range="0 1.74532925" class="dex3_motor" />
+                                 <geom class="dex3_visual" mesh="right_hand_middle_1_link" />
++                                <geom class="dex3_collision" fromto="0.008 0.001 0 0.062 0.001 0" size="0.009"/>
+                               </body>
+                             </body>
+                             <body name="right_hand_index_0_link" pos="0.0777 -0.0016 0.0285">
+                               <inertial pos="0.0354743577 -0.00082788768 0.0003808996" mass="0.0143631851" fullinertia="1.46820989e-06 3.11105072e-06 3.01304454e-06 1.23911894e-07 -6.79442647e-08 -3.9266675e-08" />
+                               <joint name="right_hand_index_0_joint" axis="0 0 1" range="0 1.57079632" class="dex3_motor" />
+                               <geom class="dex3_visual" mesh="right_hand_index_0_link" />
++                              <geom class="dex3_collision" fromto="0.005 0.006 0 0.050 0.006 0" size="0.011"/>
+                               <body name="right_hand_index_1_link" pos="0.0458 0 0">
+                                 <inertial pos="0.0262819294 -0.00171735242 -0.00010778879" mass="0.00495597455" fullinertia="3.74784048e-07 1.12577676e-06 9.4360434e-07 8.3520989e-09 -6.22328541e-09 2.01077563e-09" />
+                                 <joint name="right_hand_index_1_joint" axis="0 0 1" range="0 1.74532925" class="dex3_motor" />
+                                 <geom class="dex3_visual" mesh="right_hand_index_1_link" />
++                                <geom class="dex3_collision" fromto="0.008 0.001 0 0.062 0.001 0" size="0.009"/>
+                               </body>
+                             </body>
+                           </body>
+@@ -640,4 +668,16 @@
+     <accelerometer name="mid360_imu_acc" site="mid360_imu" />
+   </sensor>
+ 
++  <contact>
++    <!-- thumb_1 sits inside the palm's own envelope, and the two fingertips pass within 1.4 mm of
++         it mid-close. Nothing else in the hand comes within 16 mm, so the thumb still reaches the
++         fingers in free air and a stalled finger means an object. -->
++    <exclude body1="left_hand_palm_link" body2="left_hand_thumb_1_link"/>
++    <exclude body1="left_hand_palm_link" body2="left_hand_index_1_link"/>
++    <exclude body1="left_hand_palm_link" body2="left_hand_middle_1_link"/>
++    <exclude body1="right_hand_palm_link" body2="right_hand_thumb_1_link"/>
++    <exclude body1="right_hand_palm_link" body2="right_hand_index_1_link"/>
++    <exclude body1="right_hand_palm_link" body2="right_hand_middle_1_link"/>
++  </contact>
++
+ </mujoco>
+\ No newline at end of file

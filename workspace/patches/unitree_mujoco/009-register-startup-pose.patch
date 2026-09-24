@@ -1,0 +1,65 @@
+Apply a scene's startup hold angles at load, before the first physics step.
+
+Generated against unitree_mujoco ae6a8403e272733e9996ef59990880330496177f, on top of 001-008.
+Writes each startup_hold_<joint> angle into qpos at load, so a hand spawned inside a prop does
+not sweep through it. Registers vendor/startup_pose in main.cc's three model-load paths and the
+build.
+
+diff --git a/simulate/CMakeLists.txt b/simulate/CMakeLists.txt
+index ea0a597..2c4d92b 100644
+--- a/simulate/CMakeLists.txt
++++ b/simulate/CMakeLists.txt
+@@ -42,6 +42,6 @@ link_libraries(
+   fmt
+ )
+ 
+-add_executable(unitree_mujoco ${SIM_SRC} src/main.cc src/sensor_publisher.cc src/dex3_handler.cc src/grasp_weld.cc)
++add_executable(unitree_mujoco ${SIM_SRC} src/main.cc src/sensor_publisher.cc src/dex3_handler.cc src/grasp_weld.cc src/startup_pose.cc)
+ 
+ add_executable(jstest src/joystick/jstest.cc src/joystick/joystick.cc)
+\ No newline at end of file
+diff --git a/simulate/src/main.cc b/simulate/src/main.cc
+index a7a85fa..55263f3 100755
+--- a/simulate/src/main.cc
++++ b/simulate/src/main.cc
+@@ -35,6 +35,7 @@
+ #include "unitree_sdk2_bridge.h"
+ #include "sensor_publisher.h"
+ #include "dex3_handler.h"
++#include "startup_pose.h"
+ #include "grasp_weld.h"
+ #include "param.h"
+ 
+@@ -348,7 +349,10 @@ namespace
+ 
+         mjData *dnew = nullptr;
+         if (mnew)
++        {
+           dnew = mj_makeData(mnew);
++          grove_g1::ApplyStartupPose(mnew, dnew);
++        }
+         if (dnew)
+         {
+           sim.Load(mnew, dnew, sim.dropfilename);
+@@ -384,7 +388,10 @@ namespace
+         mjModel *mnew = LoadModel(sim.filename, sim);
+         mjData *dnew = nullptr;
+         if (mnew)
++        {
+           dnew = mj_makeData(mnew);
++          grove_g1::ApplyStartupPose(mnew, dnew);
++        }
+         if (dnew)
+         {
+           sim.Load(mnew, dnew, sim.filename);
+@@ -559,7 +566,10 @@ void PhysicsThread(mj::Simulate *sim, const char *filename)
+     sim->LoadMessage(filename);
+     m = LoadModel(filename, *sim);
+     if (m)
++    {
+       d = mj_makeData(m);
++      grove_g1::ApplyStartupPose(m, d);
++    }
+     if (d)
+     {
+       sim->Load(m, d, filename);

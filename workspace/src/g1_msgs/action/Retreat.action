@@ -1,17 +1,12 @@
-# Reverse away from a surface, far enough that whatever happens next does not drag the arm across
-# it.
+# Reverse away from a surface far enough that the next motion does not drag the arm across it.
 #
-# It reverses and stops. It does not turn, and it does not walk anywhere: a navigation goal
-# normally follows, and Nav2 is far better at going somewhere than a hand-rolled controller. The
-# only job here is to get the base clear.
-#
-# Reverse tracks about as well as forward, the policy measuring -0.140 m/s at a commanded -0.20
-# and -0.236 at -0.30, and shares the same deadband, so the server drives it above that floor.
+# Reverses and stops, without turning: a navigation goal normally follows. Reverse shares the
+# gait's forward deadband, so the server commands it above that floor.
 
-# How far to end up from where it started, in metres. The gait coasts a little after the command
-# stops, so expect to land slightly beyond it.
+# Distance to end up from the start, m. The gait coasts a little after the command stops, so
+# expect slightly more.
 float64 distance_m
-# Give up after this many seconds. 0 uses the server's own default.
+# Seconds before giving up. 0 uses the server's default.
 float64 timeout_s
 ---
 bool success

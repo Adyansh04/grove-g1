@@ -1,20 +1,11 @@
 {
   "_comment": [
-    "Livox-SDK2 device config for the Mid360 on the G1. HARDWARE ONLY -- nothing in",
-    "simulation reads it.",
-    "",
-    "Ours rather than the driver's own config/MID360_config.json, because that file lives in",
-    "the vcs-imported checkout: it is gitignored, and scripts/import-externals.sh overwrites",
-    "it. A robot-specific IP address cannot live somewhere that a re-import silently reverts.",
-    "",
-    "The addresses are the G1's onboard network. The host is the computer running this driver;",
-    "on the robot's own Orin that is 192.168.123.164, and the Mid360 ships from Unitree at",
-    "192.168.123.120. Both are worth checking with `livox_viewer` or a ping before blaming the",
-    "driver -- Livox's own default subnet is 192.168.1.x, which is what upstream ships.",
-    "",
-    "extrinsic_parameter stays identity ON PURPOSE, even though the sensor is mounted upside",
-    "down. The mount belongs in the URDF (mid360_joint, rpy pi 0.0511 0), where TF, RViz and",
-    "MoveIt all already read it; baking it in here too would apply the inversion twice."
+    "Livox-SDK2 config for the Mid360 on the G1. Hardware only.",
+    "Ours, not the driver's config/MID360_config.json, which scripts/import-externals.sh",
+    "overwrites. Host 192.168.123.164 is the robot's Orin; Unitree ships the Mid360 at",
+    "192.168.123.120, not Livox's default 192.168.1.x. Ping both before blaming the driver.",
+    "extrinsic_parameter stays identity: the upside-down mount is in the URDF (mid360_joint),",
+    "and applying it here too would invert the cloud twice."
   ],
   "lidar_summary_info": {
     "lidar_type": 8

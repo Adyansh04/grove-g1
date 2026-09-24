@@ -1,21 +1,11 @@
 """Arguments must survive the include boundary bringup.launch.py's moveit branch introduces.
 
-The same failure mode g1_navigation's test_launch_threading exists for: an included launch
-file inherits the parent's configurations, so a wrong value arrives quietly and the launch
-looks successful. This file covers the half that one cannot.
+An included launch file inherits the parent's configurations, so a wrong value arrives quietly.
+These assertions live here rather than beside g1_navigation's, because the moveit branch needs
+this package installed.
 
-The split is forced, not stylistic. bringup's moveit branch calls
-get_package_share_directory("g1_moveit_config"), so those assertions cannot live in
-g1_navigation, because a workspace built without this package would hit the actionable RuntimeError
-instead of the assertion. The reverse holds for the navigation branch, which is why that
-package keeps its own copy.
-
-_run_setup / _includes / _included_path below are copied from
-g1_navigation/test/test_launch_threading.py rather than shared. They are test-only, they reach
-into launch internals that move only on a distro bump, and each file uses its own copy, so a
-drift between them cannot mislead anyone. Extracting them would mean giving g1_bringup a
-Python package it does not otherwise have, to save sixty lines once. If a third consumer
-appears, that trade flips: move them into an installed module in g1_bringup then.
+_run_setup, _includes and _included_path are copied from g1_navigation's test_launch_threading.py
+rather than shared; move them into g1_bringup if a third copy is ever needed.
 """
 
 import importlib.util
@@ -100,8 +90,7 @@ def test_the_moveit_branch_stages_a_simulator_and_move_group(bringup):
 def test_moveit_gets_a_simulator_with_sensors(bringup):
     """move_group refuses to plan until every active joint has a state.
 
-    joint_state_broadcaster covers all 29 body motors from the hardware component, so the
-    only thing MoveIt still needs staged for it is the simulator itself.
+    joint_state_broadcaster covers every motor, so MoveIt needs only the simulator staged.
     """
     includes = dict(_includes(_run_setup(bringup, mode="none", moveit="true")))
     assert "sim.launch.py" in includes
@@ -119,10 +108,8 @@ def test_moveit_gets_the_loaded_start_delay(bringup, mode):
 
 
 def test_moveit_rviz_wins_wherever_both_are_asked_for(bringup):
-    """Substituting g1_navigation.rviz into moveit_rviz.launch.py launches cleanly and leaves
-    the MotionPlanning panel absent, because that panel comes from the config's display list and
-    the nav config has none. So MoveIt's own config is what runs, in every mode.
-    """
+    """g1_navigation.rviz has no MotionPlanning display, so MoveIt's own config runs in every
+    mode."""
     for mode in ("none", "localization"):
         rviz = [
             (name, args)
@@ -172,7 +159,7 @@ def test_a_missing_package_is_reported_actionably(bringup, monkeypatch):
         bringup._share("g1_moveit_config")
 
 
-# --- the standalone wrapper, which this refactor must leave alone ---------------------
+# --- the standalone wrapper -----------------------------------------------------------
 
 
 def test_moveit_sim_still_composes_the_same_two_pieces(moveit_sim):

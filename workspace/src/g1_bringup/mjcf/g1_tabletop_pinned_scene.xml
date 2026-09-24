@@ -1,0 +1,20 @@
+<mujoco model="g1_tabletop_pinned_scene">
+  <include file="g1_tabletop_scene.staged.xml"/>
+
+  <visual>
+    <!-- From the robot's right, where the gap between the held-out hand and the table shows. -->
+    <global azimuth="90" elevation="-15"/>
+  </visual>
+
+  <!-- Grasp contact settings, only in pinned overlays where no walking policy runs: elliptic
+       cones, impratio against creep and a noslip pass. Timestep and integrator stay at the 2 ms
+       Euler the bridge and finger PD are tuned for. -->
+  <option impratio="10" cone="elliptic" noslip_iterations="3"/>
+
+  <equality>
+    <!-- The same pair as g1_manipulation_pinned_scene: a repeatable arm base, and a head camera
+         held still for the perception measurements. -->
+    <weld name="pelvis_world_pin" body1="pelvis"/>
+    <weld name="torso_world_pin" body1="torso_link"/>
+  </equality>
+</mujoco>

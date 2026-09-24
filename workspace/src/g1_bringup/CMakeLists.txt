@@ -20,9 +20,8 @@ if(BUILD_TESTING)
   ament_lint_auto_find_test_dependencies()
   find_package(launch_testing_ament_cmake REQUIRED)
 
-  # ament_cmake_xmllint only covers package.xml, and MuJoCo's parser accepts files xmllint
-  # rejects -- a "--" inside a comment is illegal XML but loads fine, so it survives until
-  # something else reads the file. Caught that exact mistake twice.
+  # ament_cmake_xmllint only covers package.xml, and MuJoCo loads scenes that are not valid XML,
+  # such as a "--" inside a comment.
   find_program(XMLLINT_EXECUTABLE xmllint)
   if(XMLLINT_EXECUTABLE)
     file(GLOB _scene_files "${CMAKE_CURRENT_SOURCE_DIR}/mjcf/*.xml")
@@ -34,19 +33,14 @@ if(BUILD_TESTING)
     message(WARNING "xmllint not found; skipping xmllint_scenes_${PROJECT_NAME}")
   endif()
 
-  # Simulator suites. MuJoCo syncs to CPU time and the walking policy uses wall timers, so these
-  # are CPU-time-sensitive: RESOURCE_LOCK serialises them and COST orders the heavy ones
-  # first. The lock only serialises within one ctest invocation, so splitting these across
-  # packages would silently drop it; g1_navigation's suites share this same lock name.
-  #
-  # LABELS simulator is what lets CI skip them: on two shared cores they measure the runner
-  # rather than the stack, and `ctest -LE simulator` excludes any suite that carries the label
-  # without anyone having to maintain a list in a workflow file.
+  # MuJoCo syncs to CPU time and the policy runs on wall timers, so the simulator suites are load
+  # sensitive: RESOURCE_LOCK serialises them within this ctest run and COST starts the heavy ones
+  # first. CI skips the `simulator` label, since on shared cores they measure the runner.
   add_launch_test(test/test_lidar_geometry.launch.py TARGET test_lidar_geometry TIMEOUT 300)
   set_tests_properties(test_lidar_geometry PROPERTIES RESOURCE_LOCK mujoco_sim LABELS simulator)
 
-  # FAST-LIO against MuJoCo ground truth on a real walk. Lives here rather than in
-  # g1_state_estimation because it launches sim.launch.py, which would be a cycle from there.
+  # Here rather than in g1_state_estimation, which this package depends on: launching
+  # sim.launch.py from there would be a cycle.
   add_launch_test(test/test_fastlio_odometry.launch.py TARGET test_fastlio_odometry TIMEOUT 300)
   set_tests_properties(test_fastlio_odometry PROPERTIES
     RESOURCE_LOCK mujoco_sim LABELS simulator COST 90)

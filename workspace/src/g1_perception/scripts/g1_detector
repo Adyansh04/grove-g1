@@ -1,0 +1,173 @@
+#!/usr/bin/env python3
+"""Asks the host vision server what is in the camera image and publishes the masks it answers with.
+
+Python because it is a ZMQ and msgpack client. `phrases` is the whole control interface: an empty
+list is idle, and `ros2 param set /g1_detector phrases "['red block', 'blue sphere']"` is what the
+behavior tree and the instruction grounder write.
+"""
+
+import numpy as np
+import rclpy
+from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
+from sensor_msgs.msg import Image
+
+from g1_msgs.msg import InstanceMask, InstanceMaskArray
+from g1_perception.host_clients import VisionClient, image_to_array
+
+# Reliable: masks are small and slow, and a dropped one is seconds blind.
+MASK_QOS = 2
+
+# Best effort to match the relay. Depth 1, because the segment call blocks the only thread and a
+# deeper queue would hand the next tick its oldest frame.
+IMAGE_QOS = QoSProfile(
+    history=HistoryPolicy.KEEP_LAST,
+    depth=1,
+    reliability=ReliabilityPolicy.BEST_EFFORT,
+    durability=DurabilityPolicy.VOLATILE,
+)
+
+
+class Detector(Node):
+    def __init__(self):
+        super().__init__("g1_detector", automatically_declare_parameters_from_overrides=True)
+        self._address = self._param("server_address", "tcp://127.0.0.1:5560")
+        self._max_image_age_s = float(self._param("max_image_age_s", 1.0))
+        self._box_threshold = float(self._param("box_threshold", 0.30))
+        self._text_threshold = float(self._param("text_threshold", 0.25))
+        rate_hz = float(self._param("detect_rate_hz", 1.0))
+        if not self.has_parameter("phrases"):
+            # Typed: rclpy reads a bare [] as BYTE_ARRAY and then refuses every STRING_ARRAY.
+            self.declare_parameter("phrases", rclpy.Parameter.Type.STRING_ARRAY)
+
+        self._image = None
+        self._publisher = self.create_publisher(InstanceMaskArray, "~/instance_masks", MASK_QOS)
+        self.create_subscription(Image, "color/image_raw", self._on_image, IMAGE_QOS)
+
+        self._client = VisionClient(self._address, int(self._param("zmq_timeout_ms", 20000)))
+        self._ready = self._handshake()
+        self.create_timer(1.0 / max(rate_hz, 0.01), self._tick)
+
+    def _param(self, name, default):
+        # get_parameter_or: a type-only declaration stays unset until written, and get_parameter
+        # raises on it.
+        return self.get_parameter_or(name, rclpy.parameter.Parameter(name, value=default)).value
+
+    def _handshake(self):
+        try:
+            reply = self._client.call("ping")
+        except RuntimeError as error:
+            self.get_logger().warning(
+                f"the vision server at {self._address} did not answer: {error}. "
+                "Retrying on each detection; start it with scripts/vision_server.py."
+            )
+            return False
+        self.get_logger().info(
+            f"vision server at {self._address}: {reply.get('backend')} on {reply.get('device')}"
+        )
+        return True
+
+    def _on_image(self, msg):
+        self._image = msg
+
+    def _phrases(self):
+        """(name, phrase) pairs, one per distinct phrase, in the order they were asked for.
+
+        An entry may be "name=phrase": the wording that best separates an object from its
+        neighbours is asked for, and the short name is what gets published.
+        """
+        pairs = []
+        asked = set()
+        for raw in self._param("phrases", []) or []:
+            entry = str(raw).strip()
+            if not entry:
+                continue
+            name, _, phrase = entry.partition("=")
+            name, phrase = name.strip(), phrase.strip() or name.strip()
+            # The server runs a pass per phrase, so a repeated one only costs time.
+            if phrase in asked:
+                continue
+            asked.add(phrase)
+            pairs.append((name, phrase))
+        return pairs
+
+    def _tick(self):
+        pairs = self._phrases()
+        image = self._image
+        if not pairs or image is None:
+            return
+        phrases = [phrase for _, phrase in pairs]
+        names = {phrase: name for name, phrase in pairs}
+        age = (
+            self.get_clock().now() - rclpy.time.Time.from_msg(image.header.stamp)
+        ).nanoseconds / 1e9
+        if age > self._max_image_age_s:
+            self.get_logger().warning(
+                f"the newest camera frame is {age:.1f} s old; not asking about it",
+                throttle_duration_sec=5.0,
+            )
+            return
+
+        try:
+            reply = self._client.call(
+                "segment",
+                {
+                    "image": image_to_array(image),
+                    "phrases": phrases,
+                    "box_threshold": self._box_threshold,
+                    "text_threshold": self._text_threshold,
+                },
+            )
+        except (RuntimeError, ValueError) as error:
+            self.get_logger().warning(str(error), throttle_duration_sec=5.0)
+            return
+        self._ready = True
+        self._publish(image, reply, names)
+
+    def close(self):
+        self._client.close()
+
+    def _publish(self, image, reply, names):
+        masks = InstanceMaskArray()
+        # The image's own header: the geometry node pairs on it to find the matching depth frame.
+        masks.header = image.header
+        masks.image_width = image.width
+        masks.image_height = image.height
+        masks.model = str(reply.get("model", ""))
+        for instance in reply.get("instances", []):
+            mask = np.asarray(instance["mask"], dtype=np.uint8)
+            x, y, width, height = (int(value) for value in instance["roi"])
+            if mask.shape != (height, width):
+                self.get_logger().warning(
+                    f"instance '{instance.get('label')}' has a {mask.shape} mask for a "
+                    f"{height}x{width} region; dropping it"
+                )
+                continue
+            out = InstanceMask()
+            label = str(instance["label"])
+            out.label = names.get(label, label)
+            out.score = float(instance["score"])
+            out.roi.x_offset = x
+            out.roi.y_offset = y
+            out.roi.width = width
+            out.roi.height = height
+            out.data = mask.reshape(-1).tolist()
+            masks.instances.append(out)
+        self._publisher.publish(masks)
+
+
+def main():
+    rclpy.init()
+    node = Detector()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.close()
+        node.destroy_node()
+        rclpy.try_shutdown()
+
+
+if __name__ == "__main__":
+    main()

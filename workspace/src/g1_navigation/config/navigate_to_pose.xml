@@ -1,8 +1,6 @@
 
 <!--
-  This Behavior Tree replans the global path periodically at 1 Hz and it also has
-  recovery actions specific to planning / control as well as general system issues.
-  This will be continuous if a kinematically valid planner is selected.
+  Replans at 1 Hz, with planning, control and general recoveries. Upstream's tree minus BackUp.
 -->
 <root main_tree_to_execute="MainTree">
   <BehaviorTree ID="MainTree">
@@ -29,12 +27,8 @@
           <Spin spin_dist="1.57"/>
           <Wait wait_duration="5"/>
           <!--
-            Upstream also has <BackUp backup_dist="0.30" backup_speed="0.05"/> here. Removed
-            because 0.05 m/s sits inside the walking policy's 0.15 m/s deadband, so BackUp
-            burns its whole time_allowance producing no motion and consumes the round-robin
-            slot Spin could have used. Worth revisiting with a backup_speed above the deadband.
-
-            Spin stays: in-place rotation at 1.5 rad/s is a proven primitive here.
+            Upstream's BackUp (0.05 m/s) sits inside the gait's 0.15 m/s deadband and produces
+            no motion, so it is removed here and from behavior_server's plugins.
           -->
         </RoundRobin>
       </ReactiveFallback>

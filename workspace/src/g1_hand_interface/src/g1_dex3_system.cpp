@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
 #include <stdexcept>
 #include <thread>
 #include <unitree/robot/channel/channel_factory.hpp>
@@ -21,24 +22,45 @@ namespace
 /// Long enough for the hand's firmware to come up after the body component has claimed the wire.
 constexpr auto kFirstStateTimeout = std::chrono::seconds(5);
 
-/// Falls back on an absent, empty or unparseable value: std::stod throws, and on_init reports
-/// failure through its return value rather than by letting an exception escape a lifecycle call.
-double paramOr(const hardware_interface::HardwareInfo& info, const std::string& key, double fallback)
+/// @p text as a number, or nullopt, so a bad parameter cannot throw out of on_init.
+std::optional<double> toDouble(const std::string& text)
 {
-    const auto it = info.hardware_parameters.find(key);
-    if (it == info.hardware_parameters.end())
-    {
-        return fallback;
-    }
     try
     {
-        return std::stod(it->second);
+        return std::stod(text);
     }
     catch (const std::exception&)
     {
-        return fallback;
+        return std::nullopt;
     }
 }
+
+std::optional<int> toInt(const std::string& text)
+{
+    try
+    {
+        return std::stoi(text);
+    }
+    catch (const std::exception&)
+    {
+        return std::nullopt;
+    }
+}
+
+/// Falls back on an absent, empty or unparseable value.
+double paramOr(const hardware_interface::HardwareInfo& info, const std::string& key, double fallback)
+{
+    const auto it = info.hardware_parameters.find(key);
+    return it == info.hardware_parameters.end() ? fallback :
+                                                  toDouble(it->second).value_or(fallback);
+}
+
+/// Clears the flag on every exit from write().
+struct InWriteGuard
+{
+    std::atomic<bool>* flag;
+    ~InWriteGuard() { flag->store(false); }
+};
 
 std::string paramOr(
     const hardware_interface::HardwareInfo& info, const std::string& key,
@@ -82,9 +104,7 @@ G1Dex3System::on_init(const hardware_interface::HardwareComponentInterfaceParams
         return hardware_interface::CallbackReturn::ERROR;
     }
 
-    // The wire is a positional array, so the joints must be declared in wire order. Checked
-    // rather than assumed: a reordered URDF would otherwise close the wrong fingers, and that
-    // is exactly the failure Unitree's own mislabelled enum causes.
+    // The wire is positional, so a URDF in any other order would close the wrong fingers.
     for (std::size_t i = 0; i < kNumHandJoints; ++i)
     {
         const std::string expected = side_ + "_hand_" + kJointSuffixes[i] + "_joint";
@@ -98,19 +118,26 @@ G1Dex3System::on_init(const hardware_interface::HardwareComponentInterfaceParams
                 expected.c_str());
             return hardware_interface::CallbackReturn::ERROR;
         }
-        // Clamp to the URDF, which agrees with the published spec; the SDK example disagrees on
-        // thumb_1 (0.724 vs 0.611) and the conservative pair is the one to trust. Required
-        // rather than defaulted, so a renamed param fails here instead of widening the range.
+        // Required, not defaulted, so a renamed param fails here instead of widening the range.
         const auto& limits = info.joints[i].parameters;
         if (!limits.contains("min") || !limits.contains("max"))
         {
             RCLCPP_FATAL(logger_, "joint '%s' needs min and max params", info.joints[i].name.c_str());
             return hardware_interface::CallbackReturn::ERROR;
         }
-        lower_limit_[i] = std::stod(limits.at("min"));
-        upper_limit_[i] = std::stod(limits.at("max"));
-        // std::clamp is undefined when the bounds are transposed, and libstdc++ answers a
-        // transposed pair by snapping every command to max rather than clamping.
+        const std::optional<double> lower = toDouble(limits.at("min"));
+        const std::optional<double> upper = toDouble(limits.at("max"));
+        if (!lower || !upper)
+        {
+            RCLCPP_FATAL(
+                logger_,
+                "joint '%s' has a non-numeric min or max",
+                info.joints[i].name.c_str());
+            return hardware_interface::CallbackReturn::ERROR;
+        }
+        lower_limit_[i] = *lower;
+        upper_limit_[i] = *upper;
+        // std::clamp is undefined for transposed bounds.
         if (!(lower_limit_[i] < upper_limit_[i]))
         {
             RCLCPP_FATAL(logger_, "joint '%s' has min >= max", info.joints[i].name.c_str());
@@ -126,21 +153,24 @@ G1Dex3System::on_init(const hardware_interface::HardwareComponentInterfaceParams
     state_topic_          = paramOr(info, "state_topic", "rt/dex3/" + side_ + "/state");
     cmd_topic_            = "rt/dex3/" + side_ + "/cmd";
 
-    // Deliberately empty by default: a non-empty interface makes the SDK build its own inline
-    // CycloneDDS config and discard CYCLONEDDS_URI, which is what pins us to loopback.
+    // Keep empty: a non-empty interface makes the SDK discard CYCLONEDDS_URI, which pins loopback.
     network_interface_ = paramOr(info, "network_interface", std::string{});
 
-    // Required, not defaulted: it has to agree with the body component's, and a wrong domain
-    // shows up as a hand that never reports state rather than as anything nameable.
+    // Required: a wrong domain shows up only as a hand that never reports state.
     if (!info.hardware_parameters.contains("domain_id"))
     {
         RCLCPP_FATAL(logger_, "<hardware> needs a domain_id param");
         return hardware_interface::CallbackReturn::ERROR;
     }
-    domain_id_ = std::stoi(info.hardware_parameters.at("domain_id"));
+    const std::optional<int> domain_id = toInt(info.hardware_parameters.at("domain_id"));
+    if (!domain_id)
+    {
+        RCLCPP_FATAL(logger_, "domain_id must be an integer");
+        return hardware_interface::CallbackReturn::ERROR;
+    }
+    domain_id_ = *domain_id;
 
-    // kp and kd are in here for the same reason the rest are: kp 0 is fingers that report as
-    // driven and hold nothing.
+    // kp 0 would be fingers that report as driven and hold nothing.
     if (command_publish_rate_ <= 0.0 || max_joint_velocity_ <= 0.0 || state_timeout_s_ <= 0.0 ||
         kp_ <= 0.0 || kd_ <= 0.0)
     {
@@ -151,8 +181,7 @@ G1Dex3System::on_init(const hardware_interface::HardwareComponentInterfaceParams
         return hardware_interface::CallbackReturn::ERROR;
     }
 
-    // motor_cmd is an unbounded sequence, not a fixed array. Writing it unresized is accepted by
-    // DDS and silently moves nothing, which is a miserable thing to debug.
+    // motor_cmd is an unbounded sequence; unresized, DDS accepts it and nothing moves.
     hand_cmd_.motor_cmd().resize(kNumHandJoints);
     return hardware_interface::CallbackReturn::SUCCESS;
 }
@@ -163,8 +192,7 @@ bool G1Dex3System::initializeSdk()
 {
     try
     {
-        // Third caller in this process, after the body component and the other hand. The SDK
-        // guards with its own mInited flag, so only the first domain_id/interface pair applies.
+        // A no-op if the body component or the other hand already initialised the factory.
         unitree::robot::ChannelFactory::Instance()->Init(domain_id_, network_interface_);
 
         handstate_subscriber_ =
@@ -207,8 +235,7 @@ bool G1Dex3System::initializeSdk()
     }
 }
 
-/// Idempotent, and unguarded on purpose: a failed initializeSdk leaves channels open with
-/// sdk_initialized_ still false, and those have to go too.
+/// Idempotent and unguarded: a failed initializeSdk() can leave channels open.
 void G1Dex3System::shutdownSdk()
 {
     handstate_subscriber_.reset();
@@ -276,10 +303,13 @@ hardware_interface::CallbackReturn G1Dex3System::on_shutdown(const rclcpp_lifecy
 
 void G1Dex3System::releaseAndShutdown()
 {
-    // Release: Lock status with zero gains, and timeout armed so the motor stops on its own if
-    // anything downstream keeps the last frame alive. Clearing seeded_ first stops write()
-    // assembling a driven frame into the same buffer.
+    // Cleared first so write() stops, then any write() already inside is waited out before the
+    // publisher it uses is reset.
     seeded_ = false;
+    while (in_write_.load())
+    {
+        std::this_thread::yield();
+    }
     publish(false);
     shutdownSdk();
 }
@@ -329,9 +359,7 @@ hardware_interface::return_type G1Dex3System::read(const rclcpp::Time&, const rc
 
     const StampedHandState* sample = state_buffer_.readFromRT();
 
-    // Ahead of the size check on purpose. The callback stamps arrival for every frame, short ones
-    // included, so a hand that regresses to short frames would keep this reading fresh for ever
-    // while write() drove on from a frozen position_state_.
+    // Before the size check, so a stream that stops on a short frame still trips the timeout.
     const auto age = std::chrono::steady_clock::now() - sample->arrival;
     if (seeded_ && age > std::chrono::duration_cast<std::chrono::steady_clock::duration>(
                              std::chrono::duration<double>(state_timeout_s_)))
@@ -365,21 +393,22 @@ hardware_interface::return_type G1Dex3System::read(const rclcpp::Time&, const rc
 hardware_interface::return_type
 G1Dex3System::write(const rclcpp::Time&, const rclcpp::Duration& period)
 {
-    if (!seeded_)
+    // Raised before seeded_ is read, both sequentially consistent: either a release sees this and
+    // waits, or this sees seeded_ cleared and stays out.
+    in_write_.store(true);
+    const InWriteGuard guard{ &in_write_ };
+    if (!seeded_.load())
     {
         return hardware_interface::return_type::OK;
     }
 
-    // Slew toward the commanded position: the only thing between a large trajectory step and a
-    // finger moving as fast as the motor can. period comes from controller_manager, so a stalled
-    // loop would widen step past limiting and a negative one would transpose std::clamp's
-    // bounds, which is undefined. Cap it at 20 update ticks.
+    // The slew is the only limit on finger speed. period is clamped because a stalled loop would
+    // widen the step and a negative one would transpose std::clamp's bounds.
     const double step = max_joint_velocity_ * std::clamp(period.seconds(), 0.0, 0.1);
     for (std::size_t i = 0; i < kNumHandJoints; ++i)
     {
-        // std::clamp passes NaN straight through, and ramped_command_ carries state, so one NaN
-        // setpoint would latch this finger at NaN for good: it never recovers, even once the
-        // controller resumes sending valid targets. Hold the last good value instead.
+        // Hold on a non-finite target: std::clamp passes NaN through and ramped_command_ would
+        // never recover.
         if (!std::isfinite(position_command_[i]))
         {
             continue;

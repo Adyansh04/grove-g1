@@ -21,8 +21,7 @@ G1VlaMockEngine::G1VlaMockEngine(const rclcpp::NodeOptions& options)
     declare_parameter<std::vector<double>>("target_positions", std::vector<double>{});
     steps_per_chunk_ = static_cast<int>(declare_parameter<int64_t>("steps_per_chunk", 8));
     action_dt_s_     = declare_parameter<double>("action_dt_s", 0.1);
-    // Small enough that consecutive waypoints stay inside the gate's segment-step budget, which
-    // is what makes per-waypoint collision checking meaningful.
+    // Per waypoint; must stay inside the gate's max_segment_step_rad.
     declare_parameter<double>("step_rad", 0.05);
 
     joint_states_sub_ = create_subscription<sensor_msgs::msg::JointState>(

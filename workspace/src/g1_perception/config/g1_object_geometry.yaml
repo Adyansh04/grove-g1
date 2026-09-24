@@ -1,0 +1,60 @@
+# Turns instance masks into object poses; loaded by g1_perception/launch/perception.launch.py.
+g1_object_geometry:
+  ros__parameters:
+    # Frame for "up" and for tracking. Must be one the camera moves within, or the gait would
+    # look like the objects moving.
+    up_frame: "odom"
+
+    # Edge depth blends object and background, and the relay's depth is bilinear-filtered. 2 px
+    # is the thinnest erosion that removes it on a 6 cm object at 0.5 m.
+    mask_erosion_px: 2
+
+    # Ring outside the mask sampled for the support surface: clear of the erosion and the mask's
+    # error, close enough to stay on the table.
+    support_ring_px: 6
+    # Fewer ring points and the fit falls back to the object's lowest visible point, which
+    # underestimates anything rounded.
+    min_support_points: 50
+    # Ring points within this of the object's lowest point count as its surface: wide enough for
+    # a sphere on its equator, narrow enough to exclude the floor.
+    support_band_m: 0.06
+
+    # The D435i's usable band and MuJoCo's render clip; also drops a mask run onto the floor.
+    min_depth_m: 0.15
+    max_depth_m: 2.5
+
+    # Points further than this from the median depth are dropped. Sized to the deepest object
+    # worth grasping: 8 cm seen at 45 degrees spans about 10 cm in range.
+    depth_gate_m: 0.15
+
+    # A 6 cm object at 0.6 m covers about 3500 px, so this rejects one mostly occluded, not one
+    # merely small.
+    min_points: 150
+
+    # Box extents outside these are noise (small) or a mask run onto the table (large).
+    min_extent_m: 0.01
+    max_extent_m: 0.40
+
+    # Grounded-SAM-2 scores these objects 0.8+ and its false positives well under 0.5.
+    min_score: 0.30
+
+    # Masks can lag their frame by nearly 4 s when the detector shares the GPU with the sim.
+    depth_history_s: 5.0
+    # And never more frames than this, which bounds memory at a fast depth rate: 5 s at 30 Hz.
+    depth_history_max_frames: 150
+    # Just over one depth period with the detector loaded, when depth runs near 8 Hz and out of
+    # step with colour. The nearest frame wins, so this only rescues masks with no exact partner.
+    stamp_tolerance_ms: 130.0
+
+    # How far an object may move between detections and still be itself, when its phrase names
+    # more than one object. A phrase seen once with one track keeps that track at any distance.
+    track_match_radius_m: 0.08
+    # How long an unseen track keeps its id and alias: two detection cycles at the slow sim rate.
+    track_timeout_s: 6.0
+
+    # How long to wait for TF at the mask's own stamp; the camera moves with the torso.
+    transform_timeout_s: 0.2
+
+    # Also publish each detection under its bare phrase while it is the phrase's one object in
+    # view, so a tree can ask for "red_block" without knowing the index.
+    publish_bare_phrase_alias: true

@@ -1,31 +1,10 @@
 Gives the simulated Mid360 the IMU the real one has inside it.
 
 Generated against unitree_mujoco ae6a8403e272733e9996ef59990880330496177f.
-
-FAST-LIO fuses the IMU that shares a housing with the laser, and until this patch the
-simulator had none there, so the pelvis IMU stood in for it. That does not work on this
-robot: waist_yaw, waist_roll and waist_pitch lie between pelvis and torso_link, the
-walking policy owns all three (walk_policy.hpp: "legs 0-11 plus waist 12-14"), and they
-move through 25, 9 and 16 degrees respectively while walking. FAST-LIO takes ONE constant
-lidar-to-IMU extrinsic, so across that chain no value is right and the scan match came
-apart whenever the robot turned.
-
-The site sits where g1_description puts mid360_imu -- the mid360_joint mount composed with
-Livox's published lidar-in-IMU offset [-0.011, -0.02329, 0.04412] -- and carries the same
-orientation as mid360_link, because both sensors sit in one housing and flip together with
-the upside-down mount. That makes the simulator's extrinsic Livox's own constant, the same
-number the hardware config uses.
-
-SENSORS APPENDED AT THE END of the block, which is load-bearing: unitree_sdk2_bridge reads
-motor state as three contiguous nu-sized blocks of sensordata and everything after by
-resolved address, so appending shifts nothing it indexes. Nothing new is actuated and nu is
-untouched, so RobotBridge's fixed 35-motor arrays are unaffected -- same constraint the
-Dex3 patch works under.
-
-NO NOISE MODEL, deliberately. The pelvis IMU the model already carries has none either, so
-adding it here would make the two sensors incomparable and would change what a drift
-measurement means in the same commit that changes where the IMU is. Livox specify the
-ICM40609's noise; adding it is a separate, measurable change.
+FAST-LIO needs the IMU in the laser's housing: the pelvis IMU sits below three waist joints the
+gait swings, which no fixed extrinsic absorbs. The site uses Livox's published lidar-in-IMU
+offset. The sensors are appended, so the bridge's nu-sized blocks do not shift. No noise model,
+matching the pelvis IMU.
 
 diff --git a/unitree_robots/g1/g1_29dof.xml b/unitree_robots/g1/g1_29dof.xml
 index 2aa7600..2ed4e3a 100644

@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
-"""Releases control authority over the G1 arms.
+"""Releases the G1 hands and arms, the reverse of activate_arm.
 
-Reverse of activate_arm. The arms cannot simply be let go: a joint the body
-component sees unclaimed is a joint it leaves unpowered. So
-arm_freeze_controller comes back in the same switch that takes
-arm_trajectory_controller out.
+The arms cannot simply be let go: a joint the component sees unclaimed is left unpowered, so
+arm_freeze_controller comes back in the same switch that takes arm_trajectory_controller out.
 
-Python for the same reason as activate_arm: one-shot administrative
-sequencing, not a control loop.
+Python for the same reason as activate_arm: one-shot sequencing, not a control loop.
 """
 
 import sys
@@ -21,12 +18,12 @@ CONTROLLER_NAME = "arm_trajectory_controller"
 ARM_FREEZE_CONTROLLER = "arm_freeze_controller"
 SERVICE_CALL_TIMEOUT_S = 5.0
 
-# Released before the arm and best-effort, mirroring activate_arm: a hand that never came up
-# must not stand between the arm and its ramp-down, which is the release that matters.
+# Released first and best-effort: a hand that never came up must not block the arm's release.
 HANDS = (
     ("G1Dex3SystemLeft", "left_hand_controller"),
     ("G1Dex3SystemRight", "right_hand_controller"),
 )
+
 
 def switch_controller(node, client, activate, deactivate, timeout_s):
     if not client.wait_for_service(timeout_sec=timeout_s):
