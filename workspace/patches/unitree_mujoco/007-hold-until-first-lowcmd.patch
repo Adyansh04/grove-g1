@@ -1,28 +1,10 @@
-Hold the robot until the control stack drives the motors, and hold scene spawn postures
-
-The bridge applies `ctrl = tau + kp*(q - q_meas) + kd*(dq - dq_meas)` from the last lowcmd, and
-that message is all zeros until one arrives, so every motor is dead from the first physics step.
-The simulator steps about six seconds before G1LowCmdSystem initialises and ten before any
-controller claims a joint, which drops the robot before a balance policy exists. A real G1's
-onboard controller holds the robot until ReleaseMode(); this is the simulator's equivalent.
-
-The hold is a per-motor PD at the model's initial configuration, plus a weld the scene declares as
-`pelvis_startup_hold`: measured, a joint PD alone keeps the angles while the robot topples about
-its feet. A motor is handed over on the first frame that would actually drive it (non-zero kp, kd
-or tau), because the hardware component publishes zeros for joints no controller has claimed. The
-weld goes once every motor has been driven for half a second; without that settle it sometimes
-released while a balance policy's blend was still at zero, and the robot fell.
-
-A scene can also hold a joint at another angle from the first physics step, with a single-joint
-equality named `startup_hold_<joint>`. That covers the second or so before this bridge exists,
-when every motor has zero torque. On its first tick the bridge makes each such angle its motor's
-hold target and releases the equality.
-
-Equalities are only ever switched off from `mjcb_control`, on the physics thread. Flipping
-`eq_active` from the bridge thread races `mj_makeConstraint`, which counts the active equalities
-before building them and exits the simulator on a mismatch.
+Hold the robot until the control stack drives the motors, and hold scene spawn postures.
 
 Generated against unitree_mujoco ae6a8403e272733e9996ef59990880330496177f, with 001-006 applied.
+Until a lowcmd drives a motor its command is zero, so the robot would fall before a balance
+policy exists. Each motor holds its initial angle until its first non-zero command, and the
+scene's pelvis_startup_hold weld releases 0.5 s after every motor is driven. Equalities are
+switched only from mjcb_control, on the physics thread.
 
 diff --git a/simulate/src/unitree_sdk2_bridge.h b/simulate/src/unitree_sdk2_bridge.h
 index 7c13289..ae05462 100644

@@ -1,16 +1,9 @@
 Apply a scene's startup hold angles at load, before the first physics step.
 
 Generated against unitree_mujoco ae6a8403e272733e9996ef59990880330496177f, on top of 001-008.
-
-007 added `startup_hold_<joint>` equalities and hands each to its motor on the first tick, but the
-joints still SPAWN at the URDF zero and the equality drags them to the held angle over the first
-few steps. Since 008 gave the fingers contact geometry that drag is a hand sweeping through
-whatever it spawned inside: in the tabletop world the right hand starts inside the green cylinder
-and throws it across the room.
-
-ApplyStartupPose writes the angle into qpos at load, so the equality is satisfied at t=0 and
-nothing swings. Its own source is COPYed in by the Dockerfile from workspace/vendor and is NOT
-part of this patch; this registers it in main.cc's three model-load paths and in the build.
+Writes each startup_hold_<joint> angle into qpos at load, so a hand spawned inside a prop does
+not sweep through it. Registers vendor/startup_pose in main.cc's three model-load paths and the
+build.
 
 diff --git a/simulate/CMakeLists.txt b/simulate/CMakeLists.txt
 index ea0a597..2c4d92b 100644

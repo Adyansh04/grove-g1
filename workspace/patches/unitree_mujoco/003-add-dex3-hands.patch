@@ -1,40 +1,10 @@
 Gives the simulated G1 the Dex3-1 hands the real robot has.
 
 Generated against unitree_mujoco ae6a8403e272733e9996ef59990880330496177f.
-
-The stock g1_29dof.xml ends each arm in a fixed rubber-hand geom with no joints, so the
-URDF (7 finger joints per side) and the simulator disagreed about what is on the end of
-the wrist. This replaces both geoms with the real 8-body subtree, generated from
-g1_description/urdf/g1_29dof_with_hand_rev_1_0.urdf so the two cannot drift. The meshes
-were already vendored and unused.
-
-NO ACTUATORS AND NO SENSORS, which is not an oversight. RobotBridge sets
-num_motor_ = mj_model_->nu and then indexes lowcmd->msg_.motor_cmd()[i], a fixed
-std::array<MotorCmd_, 35>; it also reads motor state as three contiguous nu-sized blocks
-of sensordata. Adding 14 actuators would take nu to 43 and run both loops off the end of
-those arrays. Keeping nu at 29 leaves the vendored bridge byte-identical and correct, and
-the hand is a separate device on its own DDS topics anyway, so it
-is driven through qfrc_applied by dex3_handler instead.
-
-HAND MASS IS SCALED TO 0.170 kg PER HAND, not the real 0.697 kg, and that is a deliberate
-simulator-only deviation. 0.170 kg is what the stock model lumped into each wrist_yaw_link
-for the rubber hand, so the model's total mass and its distribution come out exactly where
-they were: 35.112143 kg against the stock 35.112142 kg. Each wrist_yaw_link inertial goes
-back to the URDF's own value, since the hand is now a body of its own and the lumped mass
-would double-count.
-
-Why: the walking policy in g1_motion_service_sim is a third-party RL checkpoint, and it is
-this stack's stand-in for a controller the real robot has and the simulator does not. Under
-the true hand mass it loses its balance, measured: 6 of 12 balance tests failing, the robot
-sinking to 0.10 m and reaching 1.9 rad of roll and pitch while merely standing. On hardware
-locomotion goes through LocoClient to Unitree's own onboard controller, which never sees this
-policy and is tuned for the robot Unitree ships, Dex3 hands included. So the instability is
-structurally simulator-only.
-
-What it costs: the simulated arm carries less inertia than the real one, so arm motion under
-arm_sdk will track better here than on hardware. Revisit when the locomotion policy is
-retrained or replaced. The real per-link masses are in the URDF and this file is generated
-from it, so restoring them is a one-line change to the generator.
+Replaces each arm's fixed rubber-hand geom with the 8-body subtree generated from the URDF. No
+actuators or sensors: the bridge sizes fixed arrays by nu, so dex3_handler drives the fingers
+through qfrc_applied. Hand mass is scaled to the 0.170 kg the stock model lumped into each wrist,
+because the walking policy loses its balance under the real 0.697 kg.
 
 --- a/unitree_robots/g1/g1_29dof.xml
 +++ b/unitree_robots/g1/g1_29dof.xml

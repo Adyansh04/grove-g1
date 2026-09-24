@@ -1,23 +1,9 @@
-Give the Dex3's palm and fingers contact geometry, so a grasp is friction rather than a weld.
+Give the Dex3's palm and fingers contact geometry, so a grasp is contact rather than a weld.
 
 Generated against unitree_mujoco ae6a8403e272733e9996ef59990880330496177f, on top of 001-007.
-
-Sixteen capsules and two boxes beside the existing visual meshes, sized from the meshes rather
-than guessed, plus six excludes for the intra-hand pairs MuJoCo does not drop on its own. Capsules
-and not the meshes themselves: a 15k-triangle fingertip hull is slow and numerically noisy at the
-2 ms step this simulator runs.
-
-contype/conaffinity 2 is a firewall. Every other geom in the robot and in every scene is 1, and
-(2 & 1) || (1 & 2) is zero, so the hand pairs with NOTHING until a scene opts a prop in by setting
-bit 1 on it. The walking policy was trained against a hand with no contact, so the flat,
-navigation, LiDAR and perception worlds must keep the contact count they had; only the two
-manipulation scenes set their props and table to 3.
-
-group 3 keeps the primitives out of the viewer and out of the rendered camera image, both of which
-draw groups 0-2, so perception still sees the meshes and nothing else. priority 1 makes the finger
-parameters win outright instead of averaging with the object's, so no prop needs contact tuning.
-
-Also rewrites dex3_visual's comment, which claimed finger contact would buy nothing.
+Capsules and boxes sized from the meshes, plus excludes for intra-hand pairs. contype 2 pairs
+with nothing until a scene sets bit 1 on a prop, so worlds the walking policy knows keep their
+contact count. Group 3 keeps them out of the viewer and the camera.
 
 diff --git a/unitree_robots/g1/g1_29dof.xml b/unitree_robots/g1/g1_29dof.xml
 index 2ed4e3a..9b917ea 100644

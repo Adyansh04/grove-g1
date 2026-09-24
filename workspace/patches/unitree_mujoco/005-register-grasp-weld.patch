@@ -1,24 +1,9 @@
-Registers grove-g1's SIMULATION-ONLY grasp weld in the vendored unitree_mujoco.
+Registers grove-g1's simulation-only grasp weld in the vendored unitree_mujoco.
 
-Generated against unitree_mujoco ae6a8403e272733e9996ef59990880330496177f, on top of
-001 and 004 (whose main.cc context this diff includes).
-
-The weld manager's own source is COPYed in by the Dockerfile and is NOT part of this patch,
-so this stays a registration hook: an include, a start, two stops, and one source file added
-to the target. simulate/src/unitree_sdk2_bridge.h is untouched.
-
-Started from main() rather than from the bridge thread, unlike 004: this needs sim->mtx and
-opens no DDS channels, so it belongs beside the sensor sampler that has the same requirement.
-
-Stopped at both model-replacement paths (the viewer's Reload button and drag-and-drop) with
-a blocking join, before mj_deleteModel, because it caches equality and body ids resolved
-against the old model. It is not restarted afterwards, so a reload ends with nothing held.
-
-What it exists for: patch 003 gives the fingers no contact geometry on purpose, so a closed
-hand passes through an object and the scene never sees a grasp. This welds the object to the
-palm once the fingers have measurably closed near it. On hardware that job belongs to
-friction, and this file never runs -- its thresholds are properties of the weld, not of the
-Dex3's grip, and are on the hardware re-validation list rather than being carried over.
+Generated against unitree_mujoco ae6a8403e272733e9996ef59990880330496177f, on top of 001 and 004.
+Started from main() beside the sensor sampler, since it needs sim->mtx, and stopped with a
+blocking join before either model-replacement path frees the model. Scenes opt in with grasp_*
+welds.
 
 diff --git a/simulate/CMakeLists.txt b/simulate/CMakeLists.txt
 index ee78cc9..ea0a597 100644
