@@ -1,7 +1,6 @@
-"""Sim bring-up: unitree_mujoco + control.launch.py.
+"""Starts unitree_mujoco and control.launch.py, plus the relay and odometry with sensors:=true.
 
-See README.md for the operating procedure, the domain/DDS story and the sim-bridge safety
-banner.
+Refuses to start outside the container's DDS environment; see README.md.
 """
 
 import os
@@ -33,27 +32,27 @@ STATE_SHARE = get_package_share_directory("g1_state_estimation")
 RELAY_SHARE = get_package_share_directory("g1_sensor_relay")
 
 UNITREE_MUJOCO_BIN = "/opt/unitree_robotics/unitree_mujoco/simulate/build/unitree_mujoco"
-# Vendored G1 model directory, derived from the binary location. MuJoCo resolves <include>
-# relative to the staged file, so scenes are copied in here rather than read from the share.
+# MuJoCo resolves <include> relative to the scene file, so scenes are staged next to the vendored
+# model rather than read from the share.
 G1_MODEL_DIR = os.path.normpath(
     os.path.join(os.path.dirname(UNITREE_MUJOCO_BIN), "..", "..", "unitree_robots", "g1")
 )
 STAGED_SCENE_NAME = "g1_grove_scene.staged.xml"
 STAGED_WALK_BASE = "g1_walk_base.staged.xml"
 
-# So the simulator loads its own CycloneDDS build, not ROS's ABI-incompatible one.
+# Prepended to LD_LIBRARY_PATH, so the simulator loads unitree_sdk2's CycloneDDS and no other.
 UNITREE_ROBOTICS_LIB = "/opt/unitree_robotics/lib"
 
 # Managed as a launch action: xvfb-run orphans its children, leaving the sim running after
 # launch exits.
 XVFB_DISPLAY = ":133"
 
-# Delays only the simulator, so the bridge and controller_manager are DDS-ready before the
-# first physics tick. Too short also crashes headless GLFW startup; do not set to 0.
+# Delays only the simulator, so controller_manager is DDS-ready before the first physics tick.
+# Too short also crashes headless GLFW startup; do not set to 0.
 SIM_START_DELAY_S = 2.0
 
-# FAST-LIO estimates gravity from its first ten IMU samples and the robot free-falls at spawn:
-# an init that catches the drop bakes a wrong gravity in and the estimate diverges.
+# FAST-LIO takes gravity from its first IMU samples; started while the robot is still settling
+# after spawn, it bakes in a wrong gravity and diverges.
 FASTLIO_EXTRA_DELAY_S = 10.0
 
 WORLDS = ("navigation", "perception", "manipulation", "tabletop", "lio")
@@ -75,9 +74,8 @@ def _read_text(path):
 
 
 def _cyclonedds_problems(uri):
-    """Checks what the config says rather than how it was named: CycloneDDS accepts a file://
-    URI, a bare path or inline XML, and a bare path to the hardware profile would otherwise
-    walk past this and put rt/lowcmd on the LAN."""
+    """Reads the config itself: CycloneDDS accepts a file:// URI, a bare path or inline XML, and a
+    check on the name alone would pass the hardware profile and put rt/lowcmd on the LAN."""
     if not uri:
         return [
             "CYCLONEDDS_URI is unset -- expected the container-baked cyclonedds.xml pinning "
@@ -106,8 +104,8 @@ def _cyclonedds_problems(uri):
 
 
 def _check_environment(context, *args, **kwargs):
-    """Fails the launch before anything starts. An empty ROS graph from a silent RMW/domain
-    mismatch is much harder to debug than an explicit error."""
+    """Fails the launch before anything starts; an RMW or domain mismatch otherwise shows up only
+    as an empty graph."""
     problems = []
 
     # ROS must not load a second CycloneDDS: the hardware component reaches the wire through
@@ -121,8 +119,8 @@ def _check_environment(context, *args, **kwargs):
     domain_id = os.environ.get("ROS_DOMAIN_ID")
     if domain_id != EXPECTED_DOMAIN_ID:
         problems.append(
-            f"ROS_DOMAIN_ID={domain_id!r}, expected {EXPECTED_DOMAIN_ID!r} -- the sim-first "
-            "milestone's dedicated domain (see README.md)."
+            f"ROS_DOMAIN_ID={domain_id!r}, expected {EXPECTED_DOMAIN_ID!r}, the simulator's "
+            "dedicated domain (see README.md)."
         )
 
     if problems:
@@ -140,12 +138,8 @@ def _check_environment(context, *args, **kwargs):
 
 
 def _scene_files(world, sensors, pin_pelvis):
-    """The overlay to stage, and the base it <include>s, if any.
-
-    Unpinned always wraps the chosen world in the walk overlay: its pelvis weld is what holds
-    the robot up until the control stack has driven every motor, and an unwrapped scene leaves
-    it prone by the time the policy activates.
-    """
+    """The overlay to stage and the bases it <include>s. Unpinned always wraps the world in the
+    walk overlay, whose startup weld holds the robot up until the control stack drives it."""
     if not pin_pelvis:
         base = f"g1_{world}_scene.xml" if sensors else "g1_flat_scene.xml"
         return "g1_walk_scene.xml", [(base, STAGED_WALK_BASE)]
@@ -158,8 +152,7 @@ def _scene_files(world, sensors, pin_pelvis):
 
 
 def _stage_scene(world, sensors, pin_pelvis):
-    """Copies the scene and its base into the model directory. Returns every staged path so
-    shutdown can remove them."""
+    """Copies the scene and its bases into the model directory; returns the paths for cleanup."""
     mjcf_dir = os.path.join(BRINGUP_SHARE, "mjcf")
     overlay, bases = _scene_files(world, sensors, pin_pelvis)
 
@@ -190,10 +183,9 @@ def _cleanup_on_shutdown(staged_paths):
 
 
 def _sensor_nodes(sim_env, want_rviz):
-    """The relay owns the ROS side. Start order does not matter: it listens whenever it comes
-    up and the simulator retries connecting every cycle."""
-    # The patched unitree_mujoco starts its sensor thread only when this names a config, so
-    # the stock code path is what runs unless sensors are asked for explicitly.
+    """Start order does not matter: the relay listens once up, and the simulator retries its
+    connection every cycle."""
+    # The patched simulator starts its sensor thread only when this names a config.
     sensor_config = os.path.join(BRINGUP_SHARE, "config", "sim_sensors.yaml")
     sim_env["GROVE_G1_SENSOR_CONFIG"] = sensor_config
     with open(sensor_config) as handle:
@@ -207,15 +199,14 @@ def _sensor_nodes(sim_env, want_rviz):
             output="both",
             parameters=[
                 os.path.join(RELAY_SHARE, "config", "g1_sensor_relay.yaml"),
-                # One source of truth for the socket: the simulator reads it from the file
-                # above, so the relay is told what that file said.
+                # The simulator reads the socket path from the same file.
                 {"socket_path": socket_path},
             ],
         )
     ]
 
     if want_rviz:
-        # Inside this branch because the shipped config's displays are all sensor topics.
+        # Only with sensors: every display in the shipped config is a sensor topic.
         actions.append(
             Node(
                 package="rviz2",
@@ -255,8 +246,8 @@ def _bring_up(node):
 
 
 def _odometry_actions(odometry, sim_start_delay_s):
-    """Exactly one branch runs. Two writers on odom -> base_footprint is the failure the
-    `odometry` argument exists to make impossible."""
+    """Exactly one branch runs: two writers on odom -> base_footprint is what `odometry` exists
+    to prevent."""
     if odometry == "fast_lio":
         return [
             TimerAction(
@@ -339,11 +330,13 @@ def _launch_setup(context, *args, **kwargs):
         raise RuntimeError(
             f"world:={world!r} is not a scene. Use 'navigation' (the multi-room facility), "
             "'perception' (the small room the geometry test measures against), "
-            "'manipulation' (one object on a pedestal at arm's length, for the skill tests) "
-            "or 'lio' (the walled, asymmetric room for scoring LiDAR-inertial odometry)."
+            "'manipulation' (one object on a pedestal at arm's length, for the skill tests), "
+            "'tabletop' (several objects on a table, for perception) or 'lio' (the walled, "
+            "asymmetric room for scoring LiDAR-inertial odometry)."
         )
-    # Checked even when sensors are off, so a typo is caught where it was made rather than
-    # silently selecting the other source.
+    if world == "lio" and pin_pelvis and sensors:
+        raise RuntimeError("world:=lio has no pinned scene; drop pin_pelvis:=true.")
+    # Checked even with sensors off, so a typo fails here rather than selecting the other source.
     if odometry not in ODOMETRY_SOURCES:
         raise RuntimeError(
             f"odometry:={odometry!r} is not an odometry source. Use 'ground_truth' (exact "
@@ -383,8 +376,9 @@ def generate_launch_description():
             default_value="navigation",
             description="Which room to stage, when sensors are on. 'navigation' is the "
             "multi-room facility; 'perception' is the bare room test_lidar_geometry measures "
-            "against; 'manipulation' is one object at arm's length; 'lio' is the walled room "
-            "for scoring odometry.",
+            "against; 'manipulation' is one object at arm's length; 'tabletop' is several "
+            "objects on a pedestal, for perception; 'lio' is the walled room for scoring "
+            "odometry.",
         ),
         DeclareLaunchArgument(
             "rviz",
@@ -394,9 +388,8 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "sensors",
             default_value="false",
-            description="Stage the sensor scene, run the LiDAR sweep inside the simulator and "
-            "start g1_sensor_relay. Off by default, provisionally: one timing-sensitive test "
-            "regressed with sensors on, measured on a throttled CPU and never re-measured.",
+            description="Stage the world's sensor scene, run the LiDAR, IMU and camera inside "
+            "the simulator, and start g1_sensor_relay and the odometry source.",
         ),
         DeclareLaunchArgument(
             "odometry",
@@ -408,15 +401,15 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "pin_pelvis",
             default_value="false",
-            description="SIM-ONLY: weld the pelvis and freeze the legs, so the arm bridge can "
-            "be exercised with nothing else driving them.",
+            description="SIM-ONLY: weld the robot in place and freeze the legs instead of "
+            "running the policy, to exercise the arms alone.",
         ),
         DeclareLaunchArgument(
             "sim_start_delay_s",
             default_value=str(SIM_START_DELAY_S),
             description="Seconds to delay unitree_mujoco relative to the rest of the launch, "
-            "so the bridge and controller_manager are DDS-ready before the first physics "
-            "tick. Raise it if the robot topples on startup; do not set to 0.",
+            "so controller_manager is DDS-ready before the first physics tick. Raise it if the "
+            "robot topples on startup; do not set to 0.",
         ),
         OpaqueFunction(function=_check_environment),
         OpaqueFunction(function=_launch_setup),
