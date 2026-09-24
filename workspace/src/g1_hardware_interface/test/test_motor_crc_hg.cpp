@@ -1,7 +1,6 @@
 /**
  * @file test_motor_crc_hg.cpp
- * @brief Which bytes the LowCmd checksum covers, and whether the mirror struct's padding is
- *        deterministic. The bit loop itself is vendored, so it is not re-derived here.
+ * @brief Which bytes the LowCmd checksum covers, and that the struct's padding is deterministic.
  */
 #include <gmock/gmock.h>
 
@@ -53,8 +52,7 @@ void expectCovered(const char* what, const std::function<void(LowCmd&)>& perturb
 
 TEST(MotorCrcHg, EveryLowCmdHeaderFieldIsCovered)
 {
-    // mode_pr and mode_machine are the two the strict-aliasing bug silently dropped, and
-    // mode_machine carries 5 on this robot, so every frame would have been rejected.
+    // mode_pr and mode_machine are what a uint32_t* aliasing cast lets GCC drop from the sum.
     expectCovered("mode_pr", [](auto& cmd) { cmd.mode_pr() = 1; });
     expectCovered("mode_machine", [](auto& cmd) { cmd.mode_machine() = 4; });
     expectCovered("reserve", [](auto& cmd) { cmd.reserve()[0] = 0xABCDEF01; });
