@@ -4,11 +4,6 @@
 /**
  * @file g1_safety_controller.hpp
  * @brief Chainable blend and slew stage between a policy and the rt/lowcmd component.
- *
- * Keeps the upstream reference-interface layout and naming so a third-party controller chains onto
- * this unchanged. The upstream strategy registry and gravity compensation are left out: one
- * implementation needs no registry, and there is no inverse-dynamics solver here. See the package
- * README.
  */
 
 #include <atomic>
@@ -26,9 +21,8 @@ namespace g1_controllers
 /**
  * @brief One joint's blend-and-slew step.
  *
- * Blends from the activation pose toward the commanded one, then limits how far the output may
- * move from where it currently sits. The clamp is applied to the blended target rather than to the
- * command, so it bounds joint speed however far the blend ratio jumps in one tick.
+ * Blends from the activation pose toward the command, then rate-limits the result against last
+ * tick's output, so joint speed stays bounded however far the blend ratio jumps.
  *
  * @param activation   Pose captured when the controller activated.
  * @param commanded    Position the upstream policy asked for.
@@ -45,13 +39,10 @@ namespace g1_controllers
 /**
  * @brief Ramps a policy's joint targets in from the pose held at activation, and clamps their rate.
  *
- * Two ramps compose. The blend ratio moves the target from the activation pose to the policy's
- * command at `max_blend_ratio_speed` per second; the per-joint velocity clamp then limits how fast
- * the commanded position may actually move. The clamp holds regardless of how far the blend ratio
- * jumps, so a runtime parameter change stays safe.
- *
- * If joint velocities leave the range the policy was trained in, the blend is frozen at the last
- * safe pose and an emergency controller is switched in.
+ * The blend ratio moves toward `blend_ratio` at `max_blend_ratio_speed` per second, and each
+ * joint's output is then rate-limited by `max_velocity`. Reference interfaces follow upstream's
+ * `<controller>/<joint>/<type>_raw` naming. If joint velocities leave the trained range, the last
+ * safe pose is held on the fallback gains and `emergency_controller` is switched in.
  */
 class G1SafetyController : public controller_interface::ChainableControllerInterface
 {
@@ -96,6 +87,8 @@ private:
 
     /**
      * @brief Latches the emergency state, which nothing but a reactivation clears.
+     *
+     * @param reason Logged once. `const char*` so the update thread allocates no std::string.
      */
     void latchEmergency(const char* reason);
 
@@ -107,8 +100,7 @@ private:
     std::vector<std::string> joint_names_;
     std::vector<double>      fallback_kp_;
     std::vector<double>      fallback_kd_;
-    /// Non-positive disables the clamp for that joint, which is what the whole lower body wants:
-    /// a balance policy needs its fast corrections unthrottled.
+    /// rad/s per joint; non-positive leaves that joint unclamped.
     std::vector<double> max_velocity_;
 
     /// Settable at runtime. Read once per tick, so a change mid-tick cannot tear.
@@ -123,8 +115,7 @@ private:
 
     /// Pose the blend starts from, captured at activation.
     std::vector<double> activation_position_;
-    /// The slew reference, carried tick to tick so the velocity clamp integrates rather than
-    /// tracking the measurement and inheriting its noise.
+    /// The slew reference, carried tick to tick rather than taken from the noisy measurement.
     std::vector<double> integrated_position_;
 
     std::atomic<bool> emergency_latched_{ false };
@@ -142,8 +133,7 @@ private:
     rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr parameter_callback_;
 
     rclcpp::Client<controller_manager_msgs::srv::SwitchController>::SharedPtr switch_client_;
-    /// Runs on the controller_manager executor rather than the update thread, so the blocking
-    /// parts of a service call stay off the control loop.
+    /// Sends the emergency switch from the executor thread, keeping the service call off the loop.
     rclcpp::TimerBase::SharedPtr emergency_timer_;
 };
 

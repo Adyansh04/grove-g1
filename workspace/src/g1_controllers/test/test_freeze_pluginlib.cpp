@@ -1,9 +1,6 @@
 /**
  * @file test_freeze_pluginlib.cpp
  * @brief Verifies this package's controllers are discoverable via pluginlib.
- *
- * Discovery is necessary but not sufficient: it exercises the plugin XML and its export, not
- * on_configure or on_activate. Those need a live controller_manager, which test_agile_walk covers.
  */
 
 #include <gmock/gmock.h>
@@ -25,8 +22,7 @@ TEST(G1ControllersPluginlib, PlainControllersResolveAndInstantiate)
          { "g1_controllers/G1FreezeController", "g1_controllers/G1AgileController" })
     {
         ASSERT_TRUE(loader.isClassAvailable(name)) << name;
-        // Shared rather than unique: pluginlib's unique-instance deleter calls a virtual during
-        // its own teardown, which the static analyser flags and we have no way to fix.
+        // Shared, not unique: the unique-instance deleter trips clang-analyzer inside pluginlib.
         EXPECT_NE(loader.createSharedInstance(name), nullptr) << name;
     }
 }

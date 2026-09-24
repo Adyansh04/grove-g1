@@ -30,7 +30,7 @@ std::string policyPath()
            "/policy/unitree_g1_velocity_e2e.onnx";
 }
 
-/// Nominal standing pose, in the observation ordering. Matches the descriptor's default_joint_pos.
+/// Nominal standing pose, in the observation ordering.
 PolicyObservation standingObservation()
 {
     PolicyObservation obs;
@@ -103,7 +103,7 @@ TEST(AgilePolicyModel, StandingObservationProducesTheNominalPose)
     EXPECT_NEAR(action.joint_position.at(*agileActionIndex("left_knee_joint")), 0.3F, 0.25F);
     EXPECT_NEAR(action.joint_position.at(*agileActionIndex("left_hip_pitch_joint")), -0.1F, 0.25F);
 
-    // Gains come out of the graph; these are the descriptor's stiffness values for those joints.
+    // Gains come out of the graph; these pin its trained stiffness and damping for those joints.
     EXPECT_NEAR(action.kp.at(*agileActionIndex("left_knee_joint")), 200.0F, 1.0F);
     EXPECT_NEAR(action.kp.at(*agileActionIndex("waist_roll_joint")), 300.0F, 1.0F);
     EXPECT_NEAR(action.kd.at(*agileActionIndex("left_ankle_roll_joint")), 0.1F, 0.01F);
