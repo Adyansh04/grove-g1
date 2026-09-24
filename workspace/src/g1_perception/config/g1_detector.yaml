@@ -1,47 +1,25 @@
-# The detector client, loaded by g1_perception/launch/perception.launch.py with
-# detector:=vision.
+# The detector client, loaded by g1_perception/launch/perception.launch.py with detector:=vision.
 g1_detector:
   ros__parameters:
-    # The vision server runs on the host, outside this container, because it needs torch and
-    # CUDA. Compose is host-networked, so localhost reaches it. Start it with
-    # scripts/vision_server.py; scripts/setup-vision.sh installs it.
+    # The vision server runs on the host, since it needs torch and CUDA; compose is host-networked.
+    # Start it with scripts/vision_server.py.
     server_address: "tcp://127.0.0.1:5560"
 
-    # Grounded-SAM-2 takes about 1.5 s per frame on the laptop GPU and SAM 3 is slower on a
-    # Jetson. The timeout is what a stalled server costs before the node complains and rebuilds
-    # its socket, so it sits well past the slowest sensible inference rather than near it.
+    # Well past the slowest inference: this is what a stalled server costs before the node
+    # rebuilds its socket.
     zmq_timeout_ms: 20000
 
-    # One request at a time regardless, since the call blocks: this only decides how soon after
-    # an answer the next question is asked. The models cannot beat about 0.7 Hz anyway.
+    # How soon after an answer the next question is asked; the call itself blocks.
     detect_rate_hz: 1.0
 
-    # `phrases` is a launch argument, not a key here. Empty means idle, and `ros2 param set` is
-    # how a tree or the instruction grounder changes it while the node runs.
+    # `phrases` is a launch argument; empty means idle, and trees change it with ros2 param set.
 
-    # Asking about a frame older than this wastes a second and a half of GPU on a scene that has
-    # moved. The camera publishes at 10 Hz, so anything past a second means it has stopped.
-    #
-    # 2.5, not 1.0, because in simulation the camera and the detector share one GPU. Measured with
-    # the vision server loaded: MuJoCo's offscreen render goes from 7.2 to 13.4 ms a frame and the
-    # newest frame reaching the detector is 1.4 to 1.9 s old, so a 1.0 s gate refused every frame
-    # and /objects stayed empty for the whole run. It reads as a dead camera and is not one. The
-    # scenes this runs on are static, so acting on a 2 s old view of them costs nothing; a moving
-    # scene on hardware, with its own camera, wants the tighter number back.
+    # Frames older than this are not asked about. 2.5 s because in simulation the camera and the
+    # detector share one GPU and frames arrive 1.4 to 1.9 s old; a moving scene wants less.
     max_image_age_s: 2.5
 
-    # Grounding DINO scores every object against every phrase, so this is what decides how many
-    # of the also-rans become tracks of their own, and a phrase carrying two tracks loses the
-    # bare-phrase alias the skills resolve objects by.
-    #
-    # 0.40, not 0.50. The 0.62-and-above the earlier 25-frame measurement saw was the bench with
-    # nothing in front of it; once the arm is working over the table the same phrase scores 0.47,
-    # and a 0.50 gate dropped it for the last 135 s of a run, which reads as a vanished object and
-    # is a threshold. Its best wrong match in that frame was 0.34, so 0.40 separates them.
-    #
-    # It costs the other objects nothing, because the wording carries the specificity instead:
-    # "bright red plastic block" returns exactly one detection even with the gate at 0.15. Widen
-    # the wording before touching this.
-    # SAM 3 ignores the second: it has one calibrated score.
+    # Grounding DINO scores every object against every phrase, so this decides how many
+    # runners-up become tracks of their own. Widen the wording before lowering it. SAM 3 uses
+    # only box_threshold.
     box_threshold: 0.40
     text_threshold: 0.25

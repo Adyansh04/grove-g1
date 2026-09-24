@@ -2,22 +2,19 @@
 #
 # Sets up the host-side vision server that g1_perception's detector talks to.
 #
-# Optional. Nothing else in the stack needs it: the mock detector publishes the same instance
-# masks from simulator ground truth, so every sim test runs without a GPU.
+# Optional: the mock detector publishes the same instance masks from simulator ground truth, so
+# every sim test runs without a GPU.
 #
 #   ./scripts/setup-vision.sh
 #   VISION_HOME=/opt/grove-vision ./scripts/setup-vision.sh
 #
 # Idempotent. Safe to re-run to repair a half-finished install.
 #
-# WHY THIS IS NOT A ROS PACKAGE. Same reason as scripts/setup-groot.sh: the models need torch and
-# CUDA and the container deliberately has neither, so the server lives on the host and the ROS
-# node speaks its wire protocol.
+# Not a ROS package: the models need torch and CUDA, which the container deliberately lacks, so
+# the server runs on the host and the ROS detector speaks its wire protocol.
 #
-# WHY THE TORCH WHEELS COME FROM A CACHE. `uv pip install torch` re-downloads 901 MB from
-# download.pytorch.org and the connection drops partway through, repeatably. curl with -C -
-# resumes; uv does not. scripts/setup-groot.sh fills the same cache, so a machine that has run
-# that one already has these.
+# The torch wheels are fetched with curl into a cache shared with scripts/setup-groot.sh, because
+# the ~900 MB download drops partway through and curl -C - resumes where uv cannot.
 set -euo pipefail
 
 VISION_HOME="${VISION_HOME:-${HOME}/ref/grove-vision}"
@@ -28,8 +25,8 @@ TORCH_INDEX="https://download.pytorch.org/whl/cu128"
 TORCH_WHEEL="torch-2.9.0%2Bcu128-cp312-cp312-manylinux_2_28_x86_64.whl"
 VISION_WHEEL="torchvision-0.24.0%2Bcu128-cp312-cp312-manylinux_2_28_x86_64.whl"
 
-# transformers 5.x for Sam3Model: the SAM 3 classes do not exist in 4.x, and the Grounding DINO
-# and SAM 2.1 classes this ships with today are unchanged across the boundary.
+# transformers 5.x for Sam3Model, which 4.x lacks; the Grounding DINO and SAM 2.1 classes are the
+# same in both.
 DEPS=(
     "transformers==5.17.0"
     "accelerate==1.14.0"
@@ -66,7 +63,7 @@ VIRTUAL_ENV="${VISION_HOME}/.venv" uv pip install --quiet \
     "${WHEEL_CACHE}/${TORCH_WHEEL//%2B/+}" "${WHEEL_CACHE}/${VISION_WHEEL//%2B/+}"
 VIRTUAL_ENV="${VISION_HOME}/.venv" uv pip install --quiet \
     --index-url https://pypi.org/simple "${DEPS[@]}"
-# --no-deps: it wants an old numpy, and the encoding it provides is a handful of functions.
+# --no-deps: it pins an old numpy, and only a handful of its functions are used.
 VIRTUAL_ENV="${VISION_HOME}/.venv" uv pip install --quiet --no-deps msgpack-numpy==0.4.8
 
 echo "==> checking the install"
@@ -100,7 +97,7 @@ Serve the default backend:
 Check it against saved frames instead of serving:
 
   ${VISION_HOME}/.venv/bin/python scripts/vision_server.py --self-test frame.png \\
-      --phrases "red cube,green cylinder"
+      --phrases "red block,green cylinder"
 
 SAM 3 is the better model and its weights are gated. Request access at
 https://huggingface.co/facebook/sam3, sign in with

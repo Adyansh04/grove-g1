@@ -1,26 +1,31 @@
 #!/usr/bin/env python3
 """Asks the host vision server what is in the camera image and publishes the masks it answers with.
 
-Python because it is a ZMQ and msgpack client; see the package README.
-
-`phrases` is the whole control interface: an empty list is idle, and
-
-    ros2 param set /g1_detector phrases "['red block', 'blue sphere']"
-
-is what the instruction grounder writes too.
+Python because it is a ZMQ and msgpack client. `phrases` is the whole control interface: an empty
+list is idle, and `ros2 param set /g1_detector phrases "['red block', 'blue sphere']"` is what the
+behavior tree and the instruction grounder write.
 """
 
 import numpy as np
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import Image
 
 from g1_msgs.msg import InstanceMask, InstanceMaskArray
 from g1_perception.host_clients import VisionClient, image_to_array
 
-# Reliable, not sensor QoS: masks are 13 kB at under a hertz and a dropped one is seconds blind.
+# Reliable: masks are small and slow, and a dropped one is seconds blind.
 MASK_QOS = 2
+
+# Best effort to match the relay. Depth 1, because the segment call blocks the only thread and a
+# deeper queue would hand the next tick its oldest frame.
+IMAGE_QOS = QoSProfile(
+    history=HistoryPolicy.KEEP_LAST,
+    depth=1,
+    reliability=ReliabilityPolicy.BEST_EFFORT,
+    durability=DurabilityPolicy.VOLATILE,
+)
 
 
 class Detector(Node):
@@ -32,21 +37,20 @@ class Detector(Node):
         self._text_threshold = float(self._param("text_threshold", 0.25))
         rate_hz = float(self._param("detect_rate_hz", 1.0))
         if not self.has_parameter("phrases"):
-            # Typed, not inferred: rclpy reads a bare [] as BYTE_ARRAY, and Jazzy then refuses
-            # every STRING_ARRAY written to it.
+            # Typed: rclpy reads a bare [] as BYTE_ARRAY and then refuses every STRING_ARRAY.
             self.declare_parameter("phrases", rclpy.Parameter.Type.STRING_ARRAY)
 
         self._image = None
         self._publisher = self.create_publisher(InstanceMaskArray, "~/instance_masks", MASK_QOS)
-        # Sensor QoS deliberately: the relay publishes best-effort, and a reliable subscriber
-        # against it silently never matches.
-        self.create_subscription(Image, "color/image_raw", self._on_image, qos_profile_sensor_data)
+        self.create_subscription(Image, "color/image_raw", self._on_image, IMAGE_QOS)
 
         self._client = VisionClient(self._address, int(self._param("zmq_timeout_ms", 20000)))
         self._ready = self._handshake()
         self.create_timer(1.0 / max(rate_hz, 0.01), self._tick)
 
     def _param(self, name, default):
+        # get_parameter_or: a type-only declaration stays unset until written, and get_parameter
+        # raises on it.
         return self.get_parameter_or(name, rclpy.parameter.Parameter(name, value=default)).value
 
     def _handshake(self):
@@ -67,22 +71,24 @@ class Detector(Node):
         self._image = msg
 
     def _phrases(self):
-        # get_parameter_or, because a type-only declaration leaves the parameter uninitialized
-        # until something writes it, and get_parameter raises on that.
-        #
-        # An entry may be "name=phrase". The wording that separates an object from its neighbours
-        # is not the name a tree wants to say: measured on the tabletop, "red block" beats the
-        # blue one by 0.25 while "bright red plastic block" beats it by 0.55, and the id built
-        # from that phrase would be bright_red_plastic_block. Asking for the long one and
-        # publishing the short one keeps the margin without renaming the object.
+        """(name, phrase) pairs, one per distinct phrase, in the order they were asked for.
+
+        An entry may be "name=phrase": the wording that best separates an object from its
+        neighbours is asked for, and the short name is what gets published.
+        """
         pairs = []
+        asked = set()
         for raw in self._param("phrases", []) or []:
             entry = str(raw).strip()
             if not entry:
                 continue
             name, _, phrase = entry.partition("=")
-            name, phrase = name.strip(), phrase.strip()
-            pairs.append((name, phrase or name))
+            name, phrase = name.strip(), phrase.strip() or name.strip()
+            # The server runs a pass per phrase, so a repeated one only costs time.
+            if phrase in asked:
+                continue
+            asked.add(phrase)
+            pairs.append((name, phrase))
         return pairs
 
     def _tick(self):
@@ -92,10 +98,13 @@ class Detector(Node):
             return
         phrases = [phrase for _, phrase in pairs]
         names = {phrase: name for name, phrase in pairs}
-        age = (self.get_clock().now() - rclpy.time.Time.from_msg(image.header.stamp)).nanoseconds / 1e9
+        age = (
+            self.get_clock().now() - rclpy.time.Time.from_msg(image.header.stamp)
+        ).nanoseconds / 1e9
         if age > self._max_image_age_s:
             self.get_logger().warning(
-                f"the newest camera frame is {age:.1f} s old; not asking about it", throttle_duration_sec=5.0
+                f"the newest camera frame is {age:.1f} s old; not asking about it",
+                throttle_duration_sec=5.0,
             )
             return
 
@@ -120,8 +129,7 @@ class Detector(Node):
 
     def _publish(self, image, reply, names):
         masks = InstanceMaskArray()
-        # The image's own header: the geometry node pairs on this stamp to find the depth frame
-        # these masks were cut from, which is not the newest one by the time they arrive.
+        # The image's own header: the geometry node pairs on it to find the matching depth frame.
         masks.header = image.header
         masks.image_width = image.width
         masks.image_height = image.height

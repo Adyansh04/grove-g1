@@ -1,25 +1,20 @@
 #!/usr/bin/env python3
 """Serves open-vocabulary instance masks to g1_perception, on the host rather than in the container.
 
-Same split as scripts/groot_server.py and for the same reason: the segmentation models need torch
-and CUDA, the ROS image deliberately has neither, and g1_detector speaks this server's ZMQ protocol
-instead of importing a model package.
+The models need torch and CUDA, which the ROS image does not carry, so g1_detector talks to this
+server over ZMQ, as scripts/groot_server.py does for the policy.
 
-Two segmentation backends, chosen with --backend, behind one reply format:
+Two backends, chosen with --backend, behind one reply format:
 
-  grounded-sam2  Grounding DINO boxes refined into masks by SAM 2.1. Apache-2.0 and ungated, so it
-                 is the default and the only one that works out of the box.
-  sam3           One model, text straight to instance masks. Better on everything measured, and
-                 gated: request access on the model page first. Once the weights are there this is
-                 a flag, because the reply format below is all g1_perception ever sees.
+  grounded-sam2  Grounding DINO boxes refined into masks by SAM 2.1. Ungated; the default.
+  sam3           One model from text to instance masks. Better, but the weights are gated.
 
     ./scripts/vision_server.py --port 5560
     ./scripts/vision_server.py --backend sam3 --port 5560
     ./scripts/vision_server.py --vlm Qwen/Qwen3-VL-2B-Instruct --port 5560
 
-A vision-language model is loaded only when --vlm names one, and only on the first `ground`
-request, because it answers a different question: which objects an instruction is about. The
-detector cannot parse "the mug left of the bowl"; this turns that into noun phrases it can.
+With --vlm, a vision-language model is loaded on the first `ground` request. It turns an
+instruction such as "the mug left of the bowl" into noun phrases the detector can take.
 
 Run scripts/setup-vision.sh first.
 
@@ -27,13 +22,13 @@ Wire protocol, msgpack with msgpack_numpy for the arrays:
 
     {"endpoint": "ping"}
       -> {"status": "ok", "backend": "grounded-sam2", "device": "cuda"}
-    {"endpoint": "segment", "data": {"image": uint8 (H, W, 3), "phrases": ["red cube", ...]}}
+    {"endpoint": "segment", "data": {"image": uint8 (H, W, 3), "phrases": ["red block", ...]}}
       -> {"model": "grounded-sam2",
-          "instances": [{"label": "red cube", "score": 0.71, "roi": [x, y, w, h],
+          "instances": [{"label": "red block", "score": 0.71, "roi": [x, y, w, h],
                          "mask": uint8 (h, w), 0 or 255}]}
 
-A failure of any endpoint is {"error": "..."}, never a dropped reply: the client is a REQ socket
-and a missing reply strands it until its timeout.
+A failure of any endpoint is {"error": "..."}, never a dropped reply, which would strand the
+client's REQ socket until its timeout.
 """
 
 import argparse
@@ -62,8 +57,7 @@ DEFAULT_SAM3 = "facebook/sam3"
 def _roi_and_crop(mask):
     """Full-frame boolean mask to (roi, cropped uint8 mask), or None when it is empty.
 
-    The crop is what goes on the wire: a full frame at 848x480 is 407 kB per instance against
-    about 3 kB for a 6 cm object at half a metre, and the consumer walks a rectangle either way.
+    The crop is what goes on the wire: a few kB per object instead of a full frame.
     """
     rows = np.flatnonzero(mask.any(axis=1))
     cols = np.flatnonzero(mask.any(axis=0))
@@ -91,14 +85,9 @@ def _iou(a, b):
 def _drop_cross_phrase_duplicates(boxes, labels, scores, iou_threshold=0.5):
     """Keeps one phrase per region: a patch of image is one object, whatever it is called.
 
-    Each phrase is prompted separately, so nothing stops two of them claiming the same pixels.
-    Observed on the tabletop: "brown box container" matched the red block at 0.41 on exactly the
-    ROI "bright red plastic block" had at 0.82. Downstream that is two tracks answering to one
-    phrase, which costs the phrase its bare-phrase alias, and the alias is the name the skills
-    resolve an object by, so the bench simply stops existing for them.
-
-    Scores from different prompts are not strictly comparable, but the case this exists for is
-    not close: the phrase that actually names the thing wins by a wide margin.
+    Phrases are prompted separately, so two can claim the same pixels, and the runner-up would
+    become a second track. The higher score keeps the region; scores from different prompts are
+    not strictly comparable, but the right phrase wins by a wide margin.
     """
     order = sorted(range(len(boxes)), key=lambda i: scores[i], reverse=True)
     kept = []
@@ -136,15 +125,9 @@ class GroundedSam2Backend:
         self._segmenter = Sam2Model.from_pretrained(segmenter_id, dtype=dtype).to(device).eval()
 
     def segment(self, image, phrases, box_threshold, text_threshold):
-        # A prompt per phrase, run one at a time. Grounding DINO answers with the span of the
-        # prompt it matched, and in a joint prompt that span can cross a phrase boundary:
-        # "a red block a brown box" names two objects and matches neither, so the object id it
-        # becomes is one nothing can address. A prompt per phrase makes the label exact by
-        # construction rather than inferred from the returned text.
-        #
-        # Sequential, not batched: batching every phrase against its own copy of the image wants
-        # 2.3 GB more than a 12 GB card has spare while the simulator renders on it too, and the
-        # out-of-memory error loses the whole frame.
+        # A prompt per phrase: in a joint prompt the matched span can cross a phrase boundary and
+        # name nothing. Sequential, because a batch of image copies does not fit in VRAM beside
+        # the simulator.
         boxes, labels, scores = [], [], []
         for phrase in phrases:
             inputs = self._detector_processor(
@@ -366,7 +349,8 @@ def _segment_request(backend, payload, args):
         raise ValueError("image must be an (H, W, 3) uint8 array")
     if image.dtype != np.uint8:
         raise ValueError(f"image must be uint8, got {image.dtype}")
-    phrases = [str(phrase) for phrase in phrases if str(phrase).strip()]
+    # Each phrase costs a model pass, so a repeat is dropped.
+    phrases = list(dict.fromkeys(str(phrase) for phrase in phrases if str(phrase).strip()))
     if not phrases:
         raise ValueError("at least one phrase is required")
 
@@ -471,7 +455,7 @@ def main():
     )
     parser.add_argument(
         "--phrases",
-        default="red cube,green cylinder,blue sphere,yellow box,white cup",
+        default="red block,green cylinder,blue sphere,yellow box,white cup",
         help="comma separated, used by --self-test",
     )
     args = parser.parse_args()
