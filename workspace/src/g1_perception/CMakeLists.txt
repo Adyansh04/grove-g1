@@ -120,7 +120,7 @@ install(TARGETS
   g1_mock_grasp_source
   g1_perception_visualizer
   DESTINATION lib/${PROJECT_NAME})
-# The three scripts below import this; it is the host-server protocol they share.
+# The host-server client module the scripts below import.
 ament_python_install_package(${PROJECT_NAME})
 install(PROGRAMS
   scripts/g1_detector
@@ -149,8 +149,7 @@ if(BUILD_TESTING)
 
   find_package(launch_testing_ament_cmake REQUIRED)
 
-  # Not a simulator test: it runs the detector against a stub vision server, so it needs neither
-  # MuJoCo nor a GPU and CI can run it.
+  # Against a stub vision server: needs neither MuJoCo nor a GPU.
   add_launch_test(test/test_detector.launch.py TARGET test_detector TIMEOUT 240)
 
   add_launch_test(test/test_graspgen_adapter.launch.py TARGET test_graspgen_adapter TIMEOUT 240)

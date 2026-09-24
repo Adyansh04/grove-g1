@@ -4,10 +4,9 @@
   <name>g1_perception</name>
   <version>0.1.0</version>
   <description>
-    Open-vocabulary object detection for manipulation: a detector names objects from
-    text, and this package turns the masks it returns into the object poses the
-    manipulation skills already consume. Ships the geometry, a detector client, and a
-    stand-in detector that needs no GPU.
+    Open-vocabulary object perception for manipulation: turns detector masks and depth
+    into the object poses the manipulation skills consume. Ships the geometry node,
+    clients for the host model servers, and GPU-free mock detector and grasp source.
   </description>
   <maintainer email="gupta.adyansh@gmail.com">Adyansh</maintainer>
   <license>BSD-3-Clause</license>
@@ -29,16 +28,14 @@
   <depend>vision_msgs</depend>
   <depend>visualization_msgs</depend>
 
-  <!-- The three adapter scripts' own; they speak the host servers' protocol rather than
-       importing the models, which is what keeps torch out of this image. Nothing here compiles
-       against them. -->
+  <!-- For the adapter scripts, which talk to the host model servers so torch stays out of
+       this image. -->
   <exec_depend>rclpy</exec_depend>
   <exec_depend>python3-numpy</exec_depend>
   <exec_depend>python3-zmq</exec_depend>
   <exec_depend>python3-msgpack</exec_depend>
-  <!-- msgpack-numpy has no rosdep key and no Ubuntu package, so rosdep cannot install it and
-       .devcontainer/Dockerfile pip-installs it into the image instead. A workspace set up by
-       rosdep alone will fail on import here. -->
+  <!-- msgpack-numpy has no rosdep key or Ubuntu package; .devcontainer/Dockerfile pip-installs
+       it, so rosdep alone leaves the scripts failing on import. -->
   <exec_depend>python3-pip</exec_depend>
 
   <!-- ament_lint_common intentionally not used to avoid clang-format conflicts. -->

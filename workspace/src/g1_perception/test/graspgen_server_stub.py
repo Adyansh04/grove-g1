@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
-"""A grasp generator that answers GraspGenX's wire protocol with fixed poses.
+"""Answers GraspGenX's wire protocol with fixed grasps.
 
-Written from the protocol reference in NVlabs/GraspGenX's client-server README, and as strict
-about the request as the real server: a depth frame in the wrong dtype, intrinsics that do not
-match, a mask with no instances or sweep params that are not twelve numbers all come back as an
-error, so a client that gets those wrong fails here rather than reading as a bad model.
+As strict about requests as the real server (per NVlabs/GraspGenX's client-server README), so a
+malformed request fails here rather than reading as a bad model.
 
 Usage: graspgen_server_stub.py <port>
 """

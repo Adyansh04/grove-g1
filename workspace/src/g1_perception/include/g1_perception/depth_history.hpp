@@ -3,10 +3,9 @@
 
 /**
  * @file depth_history.hpp
- * @brief Keeps recent depth frames so a late mask can be paired with the frame it was cut from.
+ * @brief Keeps recent frames so a late mask can be paired with the frame it was cut from.
  *
- * The detector takes over a second. Pairing its masks with the newest depth would deproject an
- * outline onto whatever has moved under it, which reads as a confident pose in the wrong place.
+ * The detector takes seconds; the newest frame would put the object where it no longer is.
  */
 
 #include <cstddef>
@@ -22,8 +21,8 @@ public:
     /**
      * @param history_s   How far back frames are kept. Sized by the detector's worst latency.
      * @param tolerance_s How closely a frame's stamp must match the mask's.
-     * @param max_frames  Upper bound on frames held whatever the window, 0 for none. A 30 Hz
-     *                    colour camera fills a few seconds with hundreds of megabytes.
+     * @param max_frames  Cap on frames held regardless of the window, 0 for none. Bounds memory
+     *                    on a fast colour stream.
      */
     DepthHistory(double history_s, double tolerance_s, std::size_t max_frames = 0);
 
@@ -33,13 +32,12 @@ public:
     /// The frame captured at @p stamp_s, or nullptr when none is within the tolerance.
     [[nodiscard]] sensor_msgs::msg::Image::ConstSharedPtr at(double stamp_s) const;
 
-    /// The newest frame no later than @p stamp_s, or the oldest held when all are later. What a
-    /// detector with a known latency would just have finished; at() answers by stamp instead.
+    /// The newest frame no later than @p stamp_s, or the oldest held when all are later.
     [[nodiscard]] sensor_msgs::msg::Image::ConstSharedPtr atOrBefore(double stamp_s) const;
 
     [[nodiscard]] std::size_t size() const { return frames_.size(); }
 
-    /// Seconds in a message stamp, which is all this class compares.
+    /// A header stamp in seconds.
     [[nodiscard]] static double stampSeconds(const std_msgs::msg::Header& header);
 
 private:

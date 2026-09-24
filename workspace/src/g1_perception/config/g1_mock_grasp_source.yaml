@@ -1,16 +1,12 @@
-# The stand-in grasp generator, loaded by perception.launch.py with grasp_engine:=mock.
-#
-# Answers from /objects alone: three sensible grasps and one from under the table, so a filter
-# that accepts everything fails a test rather than a robot.
+# The stand-in grasp generator, loaded by perception.launch.py with grasp_engine:=mock. Three
+# top-down grasps and one from under the table, so a filter that accepts everything fails a test.
 g1_mock_grasp_source:
   ros__parameters:
-    # The real adapter carries a description of the right hand and refuses the left; this
-    # answers the same way so a caller cannot pass here and fail there.
+    # Refuses other hands, as the real adapter does.
     hand: "right"
 
-    # `only_from_below` is a launch argument, not a key here: a key named under this node beats
-    # the launch's override file whatever the order.
+    # `only_from_below` comes from the launch file: a key here, under the node's name, would
+    # override it.
 
-    # How far above the object's top face the grasp frame sits. Roughly where a real generator
-    # puts a pre-closed hand around something this size.
+    # Grasp frame height above the object's top face, m.
     approach_height_m: 0.10

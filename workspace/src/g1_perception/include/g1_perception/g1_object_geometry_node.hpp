@@ -5,8 +5,7 @@
  * @file g1_object_geometry_node.hpp
  * @brief Turns instance masks plus aligned depth into the object poses the skills consume.
  *
- * The boundary between "which pixels" and "where in the world". Everything above this node works
- * in metres and frames, and nothing above it knows which model drew the masks.
+ * Downstream sees metres and frames only, never which model drew the masks.
  */
 
 #include <tf2_ros/buffer.h>
@@ -53,7 +52,8 @@ private:
     void onDepth(sensor_msgs::msg::Image::ConstSharedPtr depth);
     void onCameraInfo(sensor_msgs::msg::CameraInfo::ConstSharedPtr info);
 
-    /// Geometry for one instance, or nothing when it is too small, too far or off the surface.
+    /// Box for one instance, or nothing when its mask is malformed, too few points survive the
+    /// depth checks, or the extents are out of bounds.
     std::optional<OrientedBox> measure(
         const g1_msgs::msg::InstanceMask& instance, const sensor_msgs::msg::Image& depth,
         const Intrinsics& intrinsics, const Point3& up) const;

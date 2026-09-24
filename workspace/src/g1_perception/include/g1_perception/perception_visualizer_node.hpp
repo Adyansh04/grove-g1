@@ -3,9 +3,9 @@
 
 /**
  * @file perception_visualizer_node.hpp
- * @brief Draws what perception measured, for a person: the annotated frame and ground truth.
+ * @brief Draws perception's output for a person: the annotated frame and ground-truth boxes.
  *
- * Started only with visualization on, and nothing downstream reads what it publishes.
+ * Nothing downstream reads what it publishes.
  */
 
 #include <tf2_ros/buffer.h>
@@ -29,9 +29,10 @@ namespace g1_perception
 {
 
 /**
- * The detection the geometry node measured for the instance labelled @p label, or null when it
- * rejected that instance. A rejected instance keeps its raw label, which a one-word phrase makes
- * equal to the bare-phrase alias.
+ * @brief The detection the geometry node measured for the instance labelled @p label.
+ *
+ * @return Null when that instance was rejected. A rejected instance keeps its raw label, which
+ *         for a one-word phrase equals another track's bare-phrase alias; that is not a match.
  */
 [[nodiscard]] const vision_msgs::msg::Detection3D*
 measuredFor(const std::string& label, const vision_msgs::msg::Detection3DArray& objects);

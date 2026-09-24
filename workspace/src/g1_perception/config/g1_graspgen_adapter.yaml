@@ -2,30 +2,25 @@
 # grasp_engine:=graspgen.
 g1_graspgen_adapter:
   ros__parameters:
-    # GraspGenX runs on the host, for the same reason the vision server does. Its own default
-    # port is 5556; compose is host-networked, so localhost reaches it.
+    # GraspGenX runs on the host, since it needs torch and CUDA; compose is host-networked.
     server_address: "tcp://127.0.0.1:5556"
 
-    # One request per pick attempt, and the model runs eager fp32 unless the server was started
-    # with TensorRT, so this is generous rather than tight.
+    # Generous: one request per pick attempt, and without TensorRT the model runs eager fp32.
     zmq_timeout_ms: 30000
 
-    # The Dex3-1's sweep volume: two boxes in the gripper's frame enclosing the finger volume open
-    # and half closed, extents then offset. Copied from GraspGenX's own `unitree_g1` description,
-    # and the entire description of the hand the model gets.
+    # Dex3-1 sweep volume from GraspGenX's `unitree_g1` description, and all the model knows of
+    # the hand: gripper-frame boxes, fingers open then half closed, each extents then offset.
     sweep_volume: [0.10, 0.06, 0.04, 0.0, 0.0, 0.07, 0.04, 0.06, 0.04, 0.007, 0.0, 0.06]
     # 0 parallel two-finger, 1 revolute two-finger, 2 revolute three-finger.
     gripper_type: 2
     # Gripper base to fingertips along the approach axis, from the same description.
     fingertip_depth_m: 0.07
 
-    # Right only. The description above is the right hand, and mirroring a sweep volume does not
-    # describe the left one: a request for the left hand is refused rather than answered wrongly.
+    # Right only: the description above is the right hand, so a left-hand request is refused.
     hand: "right"
 
-    # How many the model draws, and how many of the best come back. Everything it generates is
-    # returned with a score and thresholded on this side, so the cap is about message size and
-    # the work the caller does per candidate, not about quality.
+    # Grasps sampled, then the best returned. The caller thresholds scores, so the cap only
+    # bounds message size and per-candidate work.
     num_grasps_sampled: 200
     max_grasps: 100
 

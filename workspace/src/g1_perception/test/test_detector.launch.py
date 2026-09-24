@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Runs the detector client against a stub vision server.
+"""Runs the detector client against a stub vision server; no simulator or GPU.
 
-Covers what fails quietly: an image encoded the wrong way round, a mask stamped with the publish
-time instead of the frame's, or a phrase list read once at startup. No simulator and no GPU.
+Covers silent failures: wrong image encoding, masks stamped at publish time rather than with the
+frame's stamp, and a phrase list read only at startup.
 """
 
 import os
@@ -49,8 +49,7 @@ def generate_test_description():
             }
         ],
     )
-    # A second one with no phrases: it stays idle, and it is the only way to reach the node's own
-    # declaration, which an override would hide.
+    # A second detector with no `phrases` override, to exercise the node's own declaration.
     undirected = Node(
         package="g1_perception",
         executable="g1_detector",
@@ -133,15 +132,13 @@ class TestDetector(unittest.TestCase):
         self.assertEqual(set(instance.data), {255})
 
     def test_03_the_stamp_is_a_frame_that_was_looked_at(self):
-        # The geometry node pairs masks with depth on this stamp, so a publish-time stamp would
-        # quietly deproject an outline onto whatever has moved under it since. Which frame the
-        # detector picked is its own business; that the stamp is one of theirs is not.
+        # The geometry node pairs masks with depth by this stamp, so it must be a frame's stamp,
+        # not the publish time.
         masks = self._await_mask(timeout_s=30.0)
 
         self.assertIsNotNone(masks, "no masks for the frames that were published")
         answered = (masks.header.stamp.sec, masks.header.stamp.nanosec)
-        # Against every frame this test case has published, not only the last few: which frame
-        # the detector was holding when it asked is its own business.
+        # Any frame published so far counts; which one the detector held is up to it.
         self.assertIn(answered, self.sent_stamps,
                       "the masks are stamped with something other than a frame")
 
@@ -182,8 +179,7 @@ class TestDetector(unittest.TestCase):
 
     def _set_phrases(self, client, phrases):
         request = SetParameters.Request()
-        # The type is spelled out because rclpy infers BYTE_ARRAY from an empty list, and the
-        # node's parameter is a string array; the mismatch is refused rather than coerced.
+        # Explicit type: rclpy infers BYTE_ARRAY from an empty list, which the node refuses.
         request.parameters = [
             Parameter("phrases", Parameter.Type.STRING_ARRAY, phrases).to_parameter_msg()
         ]

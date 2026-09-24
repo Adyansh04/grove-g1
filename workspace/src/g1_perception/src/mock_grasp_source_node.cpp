@@ -1,3 +1,8 @@
+/**
+ * @file mock_grasp_source_node.cpp
+ * @brief Fixed grasp candidates around an object on /objects, one of them deliberately bad.
+ */
+
 #include "g1_perception/mock_grasp_source_node.hpp"
 
 #include <algorithm>
@@ -36,7 +41,6 @@ approachFromAbove(const geometry_msgs::msg::Point& centre, double height, double
 G1MockGraspSource::G1MockGraspSource(const rclcpp::NodeOptions& options)
   : rclcpp::Node("g1_mock_grasp_source", options)
 {
-    // Declared here, read per request: see onRequest.
     declare_parameter<std::string>("hand", "right");
     declare_parameter<bool>("only_from_below", false);
     approach_height_m_ = declare_parameter<double>("approach_height_m", 0.10);
@@ -65,7 +69,7 @@ void G1MockGraspSource::onRequest(
     const std::shared_ptr<g1_msgs::srv::GenerateGrasps::Request>&  request,
     const std::shared_ptr<g1_msgs::srv::GenerateGrasps::Response>& response)
 {
-    // Re-read per request: one simulator run has to see this generator both accepted and refused.
+    // Read per request, so one run can switch them between calls.
     const std::string hand            = get_parameter("hand").as_string();
     const bool        only_from_below = get_parameter("only_from_below").as_bool();
 
@@ -117,8 +121,7 @@ void G1MockGraspSource::onRequest(
                              approachFromAbove(centre, top + approach_height_m_, M_PI_4),
                              approachFromAbove(centre, top + approach_height_m_, M_PI_2) };
     }
-    // Fourth and worst: from underneath, through the table. The filter cannot be tested on a
-    // candidate that never arrives.
+    // Last and worst: from underneath, through the table, for the filter to refuse.
     geometry_msgs::msg::Pose from_below = approachFromAbove(centre, -top - approach_height_m_, 0.0);
     from_below.orientation              = geometry_msgs::msg::Quaternion();
     from_below.orientation.w            = 1.0;

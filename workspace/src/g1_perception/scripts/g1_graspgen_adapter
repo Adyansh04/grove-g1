@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Asks the host grasp generator for six-degree-of-freedom grasps on an object perception found.
+"""Asks the host GraspGenX server for 6-DoF grasps on a tracked object.
 
-The generator is NVlabs/GraspGenX: it takes a depth frame, its intrinsics and an instance mask,
-and answers with grasps per instance in the camera frame. The gripper reaches it as twelve
-numbers -- its sweep volume -- rather than as a name, which is how the Dex3-1 is described here.
+Sends a depth frame, its intrinsics and an instance mask; grasps come back per instance in the
+camera frame. The Dex3-1 reaches the model only as its 12-number sweep volume.
 
 Python because it is a ZMQ and msgpack client; see the package README.
 """
@@ -76,8 +75,7 @@ class GraspGenAdapter(Node):
         self._masks = None
 
         self.create_subscription(InstanceMaskArray, "tracked_masks", self._on_masks, MASK_QOS)
-        # Sensor QoS deliberately: the relay publishes best-effort, and a reliable subscriber
-        # against it silently never matches.
+        # Best effort, as the relay publishes: a reliable subscriber would never match.
         self.create_subscription(Image, "depth/image_raw", self._on_depth, qos_profile_sensor_data)
         self.create_subscription(
             CameraInfo, "depth/camera_info", self._on_info, qos_profile_sensor_data
@@ -139,10 +137,9 @@ class GraspGenAdapter(Node):
         return self._depth.get((masks.header.stamp.sec, masks.header.stamp.nanosec))
 
     def _instance_mask(self, masks, depth, wanted):
-        """A full-frame integer mask holding a single instance, numbered 1.
+        """A full-frame int32 mask with the wanted instance as 1, or None if it is absent.
 
-        Raises ValueError on a mask that does not fit the frame; numpy would clip the slice
-        silently and then fail on the shape, inside a callback that never answers.
+        Raises ValueError on a mask that does not fit the frame, which numpy would clip silently.
         """
         full = np.zeros((depth.height, depth.width), dtype=np.int32)
         found = False

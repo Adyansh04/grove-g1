@@ -1,8 +1,6 @@
-"""Shared client for the two host servers this package talks to, and the one conversion it needs.
+"""ZMQ clients for the host model servers, which run outside the container for torch and CUDA.
 
-Both servers are outside the container for the same reason: they need torch and CUDA, which this
-image deliberately does not have. Both speak ZMQ REQ/REP with msgpack_numpy bodies. They differ
-only in how a request names what it wants, which is the one thing the two subclasses below carry.
+Both speak REQ/REP with msgpack_numpy bodies and differ only in how a request is named.
 """
 
 import msgpack
@@ -12,11 +10,7 @@ import zmq
 
 
 class ReqClient:
-    """One REQ socket, rebuilt whenever a request does not complete.
-
-    REQ sockets alternate send and recv strictly, so a timed-out request leaves the socket
-    unusable: the next send raises rather than retrying.
-    """
+    """One REQ socket, rebuilt after a failed request: a timed-out REQ socket cannot send again."""
 
     def __init__(self, address, timeout_ms, server_name):
         self._address = address

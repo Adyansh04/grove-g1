@@ -1,11 +1,7 @@
 #!/usr/bin/env python3
-"""Runs the instruction grounder against a stub vision server.
+"""Runs the instruction grounder against a stub vision server; no simulator, GPU or VLM.
 
-What fails quietly without this: phrases that come back but are never installed, so the detector
-keeps looking for whatever it was looking for before; or a target the detector cannot be asked
-for, which reads as an object that is simply never found.
-
-No simulator, no GPU and no vision-language model: the stub is the point, and CI runs this.
+Checks the phrases reach the detector and include the target.
 """
 
 import os
@@ -34,8 +30,7 @@ WIDTH, HEIGHT = 64, 48
 
 @pytest.mark.launch_test
 def generate_test_description():
-    # A detector against the same stub, because what the grounder does with its answer is write
-    # it onto that node: without one there is nothing to check the install against.
+    # A real detector, so the grounder's write to its `phrases` can be checked.
     detector = Node(
         package="g1_perception",
         executable="g1_detector",

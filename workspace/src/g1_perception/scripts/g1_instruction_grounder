@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
-"""Turns an instruction into the noun phrases the detector can be asked for.
+"""Turns an instruction into noun phrases the detector can be asked for.
 
-An open-vocabulary detector takes "red block", not "the mug to the left of the bowl". This asks the
-host vision server's grounding endpoint and installs the answer on the detector's `phrases`.
-
-Python because it is a ZMQ and msgpack client; see the package README.
+Asks the host vision server's `ground` endpoint and writes the answer onto the detector's
+`phrases`. Python because it is a ZMQ and msgpack client; see the package README.
 """
 
 import rclpy
@@ -31,8 +29,7 @@ class InstructionGrounder(Node):
         self._detector_node = str(self._param("detector_node", "/g1_detector"))
 
         self._image = None
-        # Sensor QoS deliberately: the relay publishes best-effort, and a reliable subscriber
-        # against it silently never matches.
+        # Best effort, as the relay publishes: a reliable subscriber would never match.
         self.create_subscription(Image, "color/image_raw", self._on_image, qos_profile_sensor_data)
         self._set_parameters = self.create_client(
             SetParameters, f"{self._detector_node}/set_parameters"
@@ -47,20 +44,18 @@ class InstructionGrounder(Node):
         self._image = msg
 
     def _install(self, phrases):
-        """Writes the phrases onto the detector, which is how it is told what to look for."""
+        """Writes the phrases onto the detector's `phrases` parameter."""
         if not self._set_parameters.wait_for_service(timeout_sec=5.0):
             raise RuntimeError(f"{self._detector_node} is not accepting parameters")
         request = SetParameters.Request()
         request.parameters = [
             Parameter("phrases", Parameter.Type.STRING_ARRAY, phrases).to_parameter_msg()
         ]
-        # Not waited on: spinning the executor from inside a service callback deadlocks, and
-        # rclpy's Future.result() does not block, so the outcome arrives by callback.
+        # Not awaited: spinning in a service callback deadlocks, so the result comes by callback.
         self._set_parameters.call_async(request).add_done_callback(self._installed)
 
     def _installed(self, future):
-        """A refused write leaves the detector on the old phrases, which downstream cannot tell
-        apart from a detector that sees nothing."""
+        """Logs a refused write, which downstream would otherwise mistake for seeing nothing."""
         try:
             results = future.result().results
         except Exception as error:  # noqa: BLE001 - whatever rclpy raises here is worth logging

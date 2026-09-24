@@ -2,8 +2,8 @@
  * @file test_object_geometry.cpp
  * @brief Drives the mask-to-box arithmetic directly, without a camera or a simulator.
  *
- * Two of these cover cases the simulator cannot produce at all: MuJoCo's depth is exact, so the
- * dropout handling a real D435i needs every frame is only ever exercised here.
+ * MuJoCo depth has no dropouts, so the NaN and zero handling a real D435i needs is only
+ * exercised here.
  */
 
 #include <gmock/gmock.h>
@@ -238,8 +238,7 @@ TEST(FitOrientedBox, RecoversYawOfATiltedFace)
 
 TEST(FitOrientedBox, DoesNotInflateASquareFootprint)
 {
-    // A square has no principal direction, so a covariance fit lands at 45 degrees and reports a
-    // 6 cm cube as 8.5 cm across, which then becomes a collision box half again too wide.
+    // A covariance fit lands a square at 45 degrees and reports a 6 cm cube as 8.5 cm across.
     const std::vector<Point3> points = rotatedTopFace(0.06, 0.06, 0.83, 0.0);
 
     const auto box = fitOrientedBox(points, kUp, 0.80, 0.01, 0.40);

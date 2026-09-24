@@ -1,3 +1,8 @@
+/**
+ * @file depth_history.cpp
+ * @brief The stamp-matched frame history.
+ */
+
 #include "g1_perception/depth_history.hpp"
 
 #include <cmath>

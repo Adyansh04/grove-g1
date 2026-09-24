@@ -1,3 +1,8 @@
+/**
+ * @file object_geometry.cpp
+ * @brief Mask erosion, deprojection, support-plane estimation and the oriented box fit.
+ */
+
 #include "g1_perception/object_geometry.hpp"
 
 #include <algorithm>
@@ -184,8 +189,8 @@ std::vector<std::uint8_t> erodeMask(const MaskView& mask, int iterations)
 
 void planeBasis(const Point3& up, Point3& first, Point3& second)
 {
-    // Picked by component rather than by a threshold, so the basis does not flip as the camera
-    // tilts.
+    // Seeded from z unless `up` is within ~25 degrees of it, so ordinary camera tilt never flips
+    // the basis.
     const Point3 seed  = std::abs(up.z) < 0.9 ? Point3{ 0.0, 0.0, 1.0 } : Point3{ 1.0, 0.0, 0.0 };
     const double along = dot(seed, up);
     first =

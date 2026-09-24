@@ -26,7 +26,7 @@ colcon build --symlink-install --packages-select g1_perception
 | Node | Does |
 |---|---|
 | `g1_detector` | Sends camera frames and the phrase list to the host vision server and publishes the instance masks it answers with. Python, see below. |
-| `g1_mock_detector` | Cuts the same masks out of simulator ground truth against the real rendered depth. No GPU, no server, no network. Simulation only. |
+| `g1_mock_detector` | Cuts the same masks out of simulator ground truth against the real rendered depth. No GPU, no server, no network. Simulation only. Launched under the name `g1_detector`, so a tree writes the same `phrases` whichever detector runs. |
 | `g1_object_geometry` | Deprojects each mask, finds the surface the object stands on, fits a box, and tracks it across frames so an id keeps naming one object. |
 | `g1_graspgen_adapter` | Sends the depth frame, its intrinsics and one object's mask to the host grasp generator and serves the grasps it answers with. Python, see below. |
 | `g1_mock_grasp_source` | Answers the same service from `/objects` alone: three sensible grasps and one reaching up through the table. No GPU. |
@@ -37,7 +37,7 @@ colcon build --symlink-install --packages-select g1_perception
 
 | Direction | Name | Type |
 |---|---|---|
-| Sub | `color/image_raw` (detector) | `sensor_msgs/Image`, `SensorDataQoS` |
+| Sub | `color/image_raw` (detector) | `sensor_msgs/Image`, best effort, depth 1 |
 | Sub | `object_poses`, `depth/image_raw`, `camera_info` (mock) | `vision_msgs/Detection3DArray`, `sensor_msgs/Image`, `sensor_msgs/CameraInfo` |
 | Sub | `~/instance_masks`, `depth/image_raw`, `depth/camera_info` (geometry) | `g1_msgs/InstanceMaskArray`, `sensor_msgs/Image`, `sensor_msgs/CameraInfo` |
 | Pub | `~/instance_masks` (both detectors) | `g1_msgs/InstanceMaskArray`, reliable |
@@ -49,17 +49,21 @@ colcon build --symlink-install --packages-select g1_perception
 | Pub | `~/annotated_image` (visualizer) | `sensor_msgs/Image`, rgb8, best effort: masks tinted per object, fitted boxes, `id score` labels, and `unmeasured` on an instance the geometry rejected |
 | Pub | `~/ground_truth` (visualizer) | `visualization_msgs/MarkerArray`, transient local, in `fixed_frame`: a box per object labelled `<n> mm off` or `not seen` |
 
-Images come in at sensor QoS because the relay publishes best-effort and a reliable subscriber
-against it silently never matches. Masks and poses go out reliable: they are what a skill decides
-a grasp from, and a dropped one is seconds of blindness rather than a skipped frame.
+Images come in best effort, because the relay publishes that way and a reliable subscriber would
+never match; the detector keeps only the newest frame, since its request blocks for a second.
+Masks and poses go out reliable: a dropped one is seconds of blindness, not a skipped frame.
 
 ## Object ids
 
 An object is published as `<phrase>_<index>`, so `red block` becomes `red_block_0`. The index
-belongs to a track, not to a frame: it follows the object while it is seen and is freed a couple
-of seconds after it is not. While exactly one object answers to a phrase, a second copy of the
-detection is published under the bare `red_block`, so a tree can name an object without knowing how
-many of them there turned out to be.
+belongs to a track: it follows the object while it is seen and is freed `track_timeout_s` after it
+is not. A phrase seen once with one track keeps that track however far the pose jumps; with more
+than one object under a phrase, tracks match within `track_match_radius_m`.
+
+A second copy of a detection is published under the bare phrase, `red_block`, so a tree can name an
+object without knowing its index. The alias belongs to the first object seen alone under its phrase
+until that track retires, and is withheld from any frame where that object is unseen or another
+one with the same phrase is seen too, so it never jumps between objects.
 
 ## Parameters
 
@@ -73,12 +77,16 @@ many of them there turned out to be.
 | `support_band_m` | 0.06 | How far from the object's lowest visible point that surface may be, which keeps the floor and a taller neighbour out of the estimate. |
 | `depth_gate_m` | 0.15 | How deep an object may be before points are treated as leakage. Tighter than this cuts the top off something tall seen from above. |
 | `min_points` | 150 | Below this, counted after the depth gate, an instance is reported as unusable rather than fitted. |
-| `stamp_tolerance_ms` | 50 | How closely a mask's stamp must match a depth frame's. |
-| `track_match_radius_m` | 0.08 | How far an object may move between detections and still be itself. |
+| `depth_history_s` | 5.0 | How long depth frames are kept for a mask to be paired with; has to outlast the detector's latency, up to about 4 s. |
+| `depth_history_max_frames` | 150 | Frame cap on that history, which bounds its memory at a fast depth rate. |
+| `stamp_tolerance_ms` | 130 | How closely a mask's stamp must match a depth frame's. The nearest frame is taken, so this only has to cover the camera's frame gap under load. |
+| `track_match_radius_m` | 0.08 | How far an object may move between detections and still be itself, when its phrase names more than one. |
+| `track_timeout_s` | 6.0 | How long an unseen track keeps its id and its alias. |
 
 `config/g1_detector.yaml` carries the server address, the request timeout and the detection rate.
 `phrases` is a launch argument rather than a file key, and `ros2 param set` changes it while the
-node runs.
+node runs. Both detectors re-read it every pass and ask once per distinct phrase; an empty list
+idles them, and the mission tree switches perception on only for the steps that need it.
 
 `config/g1_perception_visualizer.yaml` sizes the colour history the visualizer draws on, which has
 to outlast the detector's latency, and names the frame ground truth is compared in.
@@ -114,9 +122,8 @@ highest visible point, which is what makes one view enough: a sphere's lowest vi
 equator, not its base.
 
 Width comes from the visible points only, so a shape hiding its far side reads slightly small and
-slightly close. On the tabletop world all five land within 1.5 mm in position and 4.4 mm in size.
-Anything else inside a mask is measured as the object: a hand in the green cylinder once made it
-read 37 mm of 60, which is why the pinned tabletop spawns the arms clear.
+slightly close. Anything else inside a mask is measured as the object, which is why the pinned
+tabletop spawns the arms clear.
 
 ## Running
 
@@ -148,11 +155,11 @@ the grasp plan. The flag behind them is `visualization`, which follows `rviz`.
 | Test | Needs a simulator | Covers |
 |---|---|---|
 | `test_object_geometry` | No | Slugs, erosion, deprojection including the NaN and padded-row cases the simulator never produces, the depth gate, and the box fit: a tilted rectangle's yaw, a square that must not inflate, a sphere's height from its support plane, and a mask that ran onto the table. |
-| `test_object_tracker` | No | Ids that survive jitter, a second instance getting its own index, two neighbours that must not swap, index reuse after a timeout, the sole-instance alias, and the phrase recovered from an id. |
+| `test_object_tracker` | No | Ids that survive jitter, a lone object followed past the match radius, a second instance getting its own index, two neighbours that must not swap, index reuse after a timeout, an alias that never jumps between objects, and the phrase recovered from an id. |
 | `test_depth_history` | No | Pairing a late mask with its own depth frame, refusing one outside the tolerance, and dropping frames past the window or the frame cap. |
 | `test_perception_visualizer` | No | Which drawn instance counts as measured, including a rejected one whose raw label equals an alias. |
 | `test_visualizer` | No | The visualizer on synthetic frames: the annotated image, ground truth moved into `odom` and labelled with the error, an empty frame left untouched, and masks that arrive before their frame. |
 | `test_detector` | No | The detector client against a stub vision server: the request encoding, the mask message, the image's own stamp, and a phrase list that is re-read rather than cached. |
 | `test_grounder` | No | The grounder against a stub: an instruction becomes phrases, the target is one of them, the phrases actually reach the detector's parameter, exemplar points survive, and an empty instruction is refused. |
 | `test_graspgen_adapter` | No | The grasp adapter against a stub generator: the request encoding the real server would reject, the frame and stamp of the answer, ordering by confidence, an unknown object, and a left-hand request refused rather than mirrored. |
-| `test_perception_objects` | Sim, `-L simulator` | Measured poses against the simulator's own, for all five tabletop objects: position and size per object, both names published, and the stamp being the measurement's rather than the publisher's. |
+| `test_perception_objects` | Sim, `-L simulator` | Measured poses against the simulator's own for every tabletop prop: position and size, both names published, and the stamp being the measurement's rather than the publisher's. |

@@ -1,11 +1,7 @@
 #!/usr/bin/env python3
-"""Runs the grasp adapter against a stub generator.
+"""Runs the grasp adapter against a stub GraspGenX server; no simulator or GPU.
 
-What fails quietly without this: a depth frame sent with NaNs the server rejects, an instance
-mask built at the wrong scale, sweep params in the wrong order, or grasps returned in a frame
-nobody can transform. All of those look like a generator that produces bad grasps.
-
-No simulator and no GPU: the stub is the point, and CI runs this.
+Catches request and frame errors that would otherwise look like a model producing bad grasps.
 """
 
 import os
@@ -86,7 +82,7 @@ class TestGraspGenAdapter(unittest.TestCase):
         rclpy.shutdown()
 
     def _await_subscribers(self, timeout_s=30.0):
-        """Publishing before the adapter has matched is a message nobody receives."""
+        """Waits for the adapter to match all three publishers; earlier messages are lost."""
         deadline = self.node.get_clock().now().nanoseconds + int(timeout_s * 1e9)
         while self.node.get_clock().now().nanoseconds < deadline:
             if all(
@@ -98,10 +94,9 @@ class TestGraspGenAdapter(unittest.TestCase):
         return False
 
     def _publish_scene(self, label=OBJECT_ID, rounds=5):
-        """A depth frame, its intrinsics and one mask, all sharing a stamp as the relay does.
+        """Publishes depth, intrinsics and one mask on one stamp, several times over.
 
-        Sent several times: a subscription that has just matched can still drop the first
-        best-effort message, and a test that fails on that is testing the middleware.
+        A freshly matched best-effort subscription can drop the first message.
         """
         self.assertTrue(self._await_subscribers(), "the adapter never subscribed")
         for _ in range(rounds):
@@ -172,8 +167,7 @@ class TestGraspGenAdapter(unittest.TestCase):
         self.assertTrue(result.ok, result.message)
         self.assertEqual(list(result.scores), sorted(result.scores, reverse=True))
         self.assertAlmostEqual(result.scores[0], 0.91, places=5)
-        # The stub reaches straight down, so the grasp's approach axis is the world's -z. A
-        # client that dropped the rotation would hand back an identity orientation instead.
+        # The stub grasps straight down; a client that dropped the rotation would return identity.
         self.assertAlmostEqual(abs(result.grasps[0].orientation.x), 1.0, places=5)
 
     def test_03_an_unknown_object_is_refused_and_says_what_is_there(self):

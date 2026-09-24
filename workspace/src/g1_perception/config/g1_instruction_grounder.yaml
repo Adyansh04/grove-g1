@@ -2,23 +2,18 @@
 # grounding:=true.
 g1_instruction_grounder:
   ros__parameters:
-    # The same host server the detector talks to, started with --vlm so it can answer `ground`.
-    # Without that flag the endpoint says so rather than guessing.
+    # The detector's host vision server, which answers `ground` only when started with --vlm.
     server_address: "tcp://127.0.0.1:5560"
 
-    # A vision-language model answers in tokens, and a couple of hundred of them take seconds on
-    # this card. This is what a stalled one costs before the caller is told.
+    # A VLM answer takes seconds; this is what a stalled server costs before the caller hears.
     zmq_timeout_ms: 30000
 
-    # More than a handful of phrases is the model describing the room rather than answering the
-    # instruction, and each one costs the detector a decoder pass per frame.
+    # Past this the model is describing the room, and each phrase costs a detector pass per frame.
     max_phrases: 6
 
-    # Grounding a scene the robot has since left is worse than refusing: the phrases would name
-    # objects that are no longer in front of it.
+    # Older frames are refused: the phrases would name objects no longer in view.
     max_image_age_s: 2.0
 
-    # Write the phrases straight onto the detector. Off makes this a question rather than an
-    # instruction, which is what a caller wants when it is choosing between several answers.
+    # Write the phrases onto detector_node. Off only answers, for a caller choosing between several.
     apply_phrases: true
     detector_node: "/g1_detector"

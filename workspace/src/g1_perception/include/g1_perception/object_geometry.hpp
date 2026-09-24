@@ -57,7 +57,7 @@ struct DepthView
     std::uint32_t                 height{ 0 };
     std::uint32_t                 step{ 0 };
 
-    /// Depth at a pixel, or NaN where the sensor reported nothing and where the pixel is outside.
+    /// Depth at a pixel, or NaN where the sensor reported nothing or the pixel is out of bounds.
     [[nodiscard]] double at(std::uint32_t u, std::uint32_t v) const;
 };
 

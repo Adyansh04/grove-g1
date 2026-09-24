@@ -3,11 +3,10 @@
 
 /**
  * @file mock_grasp_source_node.hpp
- * @brief A grasp generator stand-in that needs no GPU and no model.
+ * @brief A grasp generator stand-in that needs no GPU or model.
  *
- * Answers the same service the real adapter does, from /objects alone: a top-down grasp, two
- * rotations of it, and one deliberately coming up from under the table. The last one is the
- * point. A filter that never sees a candidate it must refuse has not been tested.
+ * Serves the real adapter's service from /objects alone: three top-down grasps and one from
+ * under the table, so a grasp filter that refuses nothing fails a test.
  */
 
 #include <g1_msgs/srv/generate_grasps.hpp>
@@ -34,8 +33,7 @@ private:
     rclcpp::Service<g1_msgs::srv::GenerateGrasps>::SharedPtr            service_;
 
     vision_msgs::msg::Detection3DArray::ConstSharedPtr objects_;
-    /// `hand` and `only_from_below` are deliberately not held here; onRequest reads them live.
-    double approach_height_m_{ 0.10 };
+    double                                             approach_height_m_{ 0.10 };
 };
 
 }  // namespace g1_perception
