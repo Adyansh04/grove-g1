@@ -2,25 +2,21 @@
 #
 # Sets up the host-side grasp generator that g1_perception's graspgen engine talks to.
 #
-# Optional. Nothing else in the stack needs it: the stand-in grasp source answers the same
-# GenerateGrasps service from /objects alone, and every simulator test uses that one.
+# Optional: the mock grasp source answers the same GenerateGrasps service from /objects, and
+# every simulator test uses it.
 #
 #   ./scripts/setup-graspgen.sh
 #   GRASPGEN_HOME=/opt/GraspGenX ./scripts/setup-graspgen.sh
 #
 # Idempotent. Safe to re-run to repair a half-finished install.
 #
-# WHY THIS IS NOT A ROS PACKAGE. Same reason as scripts/setup-groot.sh and setup-vision.sh: the
-# model needs torch and CUDA and the container has neither, so it runs on the host and the ROS
-# node speaks its ZMQ protocol.
-#
-# WHAT THIS DOES NOT DO. The checkpoints and the gripper descriptions download themselves on the
-# first import, several gigabytes of them, into ext/ inside the checkout. That is upstream's
-# design; this script only gets you to the point where that import works.
+# Not a ROS package: the model needs torch and CUDA, which the container lacks, so it runs on the
+# host and g1_graspgen_adapter speaks its ZMQ protocol. The checkpoints and gripper descriptions,
+# several GB, download into ext/ on the first import; this script stops where that import works.
 set -euo pipefail
 
-# Tracks main. Nothing upstream versions the wire protocol the adapter speaks, so a change to it
-# arrives as a msgpack error; set GRASPGEN_REF to a commit that worked once you have one.
+# Tracks main. Upstream does not version the wire protocol, so a change arrives as a msgpack
+# error; set GRASPGEN_REF to a commit that worked once you have one.
 GRASPGEN_REPO="https://github.com/NVlabs/GraspGenX.git"
 GRASPGEN_REF="${GRASPGEN_REF:-main}"
 GRASPGEN_HOME="${GRASPGEN_HOME:-${HOME}/ref/GraspGenX}"
