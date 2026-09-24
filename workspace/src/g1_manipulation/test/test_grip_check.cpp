@@ -64,18 +64,21 @@ TEST(GripCheck, ThumbAgainstAFingerIsHolding)
     const auto verdict = verifyGrip(hand, kMinError, kMinEffort);
 
     EXPECT_TRUE(verdict.holding);
+    EXPECT_TRUE(verdict.opposed);
     EXPECT_THAT(verdict.why, testing::HasSubstr("2 fingers are pressing"));
 }
 
 TEST(GripCheck, IndexAndMiddleAgainstThePalmAreHolding)
 {
-    // Not the grip the tuned pose gives, which loads the thumb too, but a real one: the two
-    // fingers pressing the object against the palm still holds it, so it must not read as empty.
+    // Two fingers pressing an object against the palm still hold it.
     std::vector<JointGrip> hand = emptyHand();
     load(hand, "index_1", 0.5, 0.8);
     load(hand, "middle_1", 0.5, 0.8);
 
-    EXPECT_TRUE(verifyGrip(hand, kMinError, kMinEffort).holding);
+    const auto verdict = verifyGrip(hand, kMinError, kMinEffort);
+    EXPECT_TRUE(verdict.holding);
+    // Not opposed, though: without the thumb, a close still creeping in keeps going.
+    EXPECT_FALSE(verdict.opposed);
 }
 
 TEST(GripCheck, OneFingerAloneIsNotHolding)
@@ -110,8 +113,7 @@ TEST(GripCheck, TorqueAtTheTargetIsNotAGrip)
 
 TEST(GripCheck, ThumbRollDoesNotCountAsAFinger)
 {
-    // thumb_0 rolls the thumb across the palm and can stall on its own travel with an empty hand,
-    // so it must not stand in for the thumb pressing.
+    // thumb_0 rolls the thumb and can stall on its own travel with the hand empty.
     std::vector<JointGrip> hand = emptyHand();
     load(hand, "thumb_0", 0.5, 1.0);
     load(hand, "index_1", 0.5, 1.0);

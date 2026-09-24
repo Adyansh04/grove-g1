@@ -5,11 +5,8 @@
  * @file grip_check.hpp
  * @brief Whether a closed hand is holding something, from what the fingers report.
  *
- * A hand that closed on nothing reaches its commanded posture with no torque; a hand holding an
- * object stalls short of it and pushes. The trajectory controller cannot tell the two apart (it
- * has no per-joint goal tolerances, so a blocked finger still reports success), so the skill asks
- * here. Kept free of ROS so it can be tested without a node, and the same arithmetic runs on the
- * robot: the Dex3 reports tau_est the same way the simulator does.
+ * An empty hand reaches its posture unloaded; a holding one stalls short and pushes, which the
+ * trajectory controller also reports as success. The Dex3 reports tau_est as the simulator does.
  */
 
 #include <string>
@@ -30,21 +27,19 @@ struct JointGrip
 struct GripVerdict
 {
     bool holding{ false };
-    /// Which fingers are pressing, or why the hand is judged empty. Goes into the action result.
+    /// Holding with the thumb among the pressing fingers. Index and middle alone, side by side,
+    /// push a free-standing object away.
+    bool opposed{ false };
+    /// How many fingers press and how hard, or why the hand reads empty. Goes into the result.
     std::string why;
 };
 
 /**
  * @brief Whether at least two of the hand's three fingers are pressing on something.
  *
- * A joint counts as loaded when it stalls at least @p min_error_rad short of its target *and*
- * pushes with at least @p min_effort_nm. Both, not either: a slack drive is short without
- * pushing, and a finger resting against its own end stop pushes without being short.
- *
- * Two distinct fingers rather than one, and named rather than counted by joint: a grip is an
- * object squeezed between surfaces, and one finger jammed against the table stalls and pushes
- * exactly like one holding something. In practice a good grasp loads all three, the thumb
- * opposing index and middle across the object.
+ * A joint is loaded when it is at least @p min_error_rad short of its target and pushing at least
+ * @p min_effort_nm: short alone is a slack drive, pushing alone a finger holding at its target.
+ * Two distinct fingers, not two joints: one finger jammed against the table reads like a grip.
  *
  * @param joints Every joint of one hand, in any order. thumb_0 is ignored: it rolls the thumb
  *               rather than closing it.
