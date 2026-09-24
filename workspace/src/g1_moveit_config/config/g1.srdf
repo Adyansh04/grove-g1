@@ -1,27 +1,16 @@
 <?xml version="1.0"?>
 <robot name="g1_29dof_with_hand_rev_1_0">
-  <!-- Hand-authored, against urdf/g1_lowcmd.urdf.xacro in g1_description. Only the
-       disable_collisions block at the bottom is generated; that block carries its own note
-       on how, and README.md has the command.
+  <!-- Hand-written against g1_description's g1_lowcmd.urdf.xacro, except the generated
+       disable_collisions block at the bottom. XML comments cannot contain a double hyphen: one
+       makes move_group fail at launch.
 
-       Note for editors: XML forbids a double hyphen inside a comment, so the prose here uses
-       commas and colons where the rest of this repo would use a dash. A stray double hyphen
-       makes the whole file unparseable and move_group fails at launch, not at lint.
+       No virtual joint: the vendored URDF's floating base is commented out, so MoveIt plans in
+       `pelvis`. Scene objects fixed in `odom`, or reaching while walking, need a floating
+       virtual joint to `odom`. -->
 
-       No virtual joint. The vendored URDF's floating_base_joint is commented out upstream, so
-       the model root is `pelvis` and MoveIt plans in that frame. Correct while the robot stands
-       still to manipulate. Scene objects fixed in `odom`, or reaching while walking, need a
-       floating joint to `odom` instead: 6 more DoF and a TF dependency, so it is a decision to
-       make when there is something to fix it against. -->
-
-  <!-- base_link is torso_link, not pelvis: waist_freeze_controller holds the three waist joints
-       for the whole session, and a group that spans them would plan motion nothing will
-       execute. Their state still matters, it is what places torso_link under pelvis, and
-       joint_state_broadcaster publishes it along with every other motor.
-
-       tip_link is the palm rather than wrist_yaw_link. The palm joint is fixed, so both give
-       the same 7 joints and differ only in where a pose goal is measured; the palm is where a
-       grasp is naturally expressed, and it keeps the finger joints outside the group. -->
+  <!-- Rooted at torso_link: the waist joints belong to waist_freeze_controller and the balance
+       policy, so a group spanning them would plan motion nothing executes. Tipped at the palm,
+       where a grasp is expressed, which keeps the finger joints out of the group. -->
   <group name="left_arm">
     <chain base_link="torso_link" tip_link="left_hand_palm_link"/>
   </group>
@@ -29,34 +18,19 @@
     <chain base_link="torso_link" tip_link="right_hand_palm_link"/>
   </group>
 
-  <!-- Both arms as one 14-joint group, which is what makes coordinated two-handed motion a
-       plan rather than two plans run side by side. Only this group collision-checks the left
-       arm against the right one, and only this group can time a motion so the two hands arrive
-       together; sequencing the per-arm groups does neither.
+  <!-- Both arms as one 14-joint group: the only group that collision-checks one arm against the
+       other and times a motion so both hands arrive together.
 
-       Composed from the two subgroups rather than restating the joints, so there is one
-       definition of what an arm is. That is also what every published dual-arm config does
-       (PR2, Baxter, Talos, TIAGo++). The per-arm groups stay because single-arm motion is
-       still the common case and a 7-DoF search is much cheaper than a 14-DoF one.
-
-       This group deliberately has NO kinematics.yaml entry, and adding one breaks it. pick_ik,
-       like KDL and TRAC-IK, rejects any group that is not a chain, and two arms off one torso
-       is a two-branch tree. MoveIt's answer is the subgroup solver map: it is built only for
-       groups that have no solver of their own, and it routes a pose goal per hand to that
-       arm's own pick_ik. Naming this group in kinematics.yaml suppresses that map and leaves
-       nothing to solve with, which is the single most-copied mistake in dual-arm configs. -->
+       No kinematics.yaml entry, on purpose. Chain solvers reject this two-branch group, and
+       MoveIt builds the per-arm subgroup solver map only for a group without a solver of its
+       own. -->
   <group name="both_arms">
     <group name="left_arm"/>
     <group name="right_arm"/>
   </group>
 
-  <!-- The Dex3 hands, one group each. Joints and not a chain, because the three fingers branch
-       off the palm and a chain cannot express that. Order is the Dex3 wire order, which is what
-       g1_bringup's controllers and the hardware component both use.
-
-       Kept out of every arm group on purpose, and test_robot_model pins that: an arm plan must
-       never command the fingers, because the arm and the hand are separate devices with
-       separate authority reached over separate topics. -->
+  <!-- One group per Dex3 hand, in Dex3 wire order. Never part of an arm group: the hand is a
+       separate device with its own topics and controller. -->
   <group name="left_hand">
     <joint name="left_hand_thumb_0_joint"/>
     <joint name="left_hand_thumb_1_joint"/>
@@ -76,38 +50,24 @@
     <joint name="right_hand_index_1_joint"/>
   </group>
 
-  <!-- What makes attachObject/detachObject work without naming touch links by hand, and what
-       lets RViz offer the hand as the arm's end effector rather than as an unrelated group.
-
-       both_arms still has none: SRDF has no notion of a two-tip end effector. A two-handed
-       grasp attaches to one arm and lists the other hand's links as touch links. -->
+  <!-- Lets attachObject derive its touch links and RViz offer the hand as the arm's gripper.
+       SRDF has no two-tip end effector, so a two-handed grasp attaches to one arm and lists the
+       other hand's links as touch links. -->
   <end_effector name="left_gripper" parent_link="left_hand_palm_link"
                 group="left_hand" parent_group="left_arm"/>
   <end_effector name="right_gripper" parent_link="right_hand_palm_link"
                 group="right_hand" parent_group="right_arm"/>
 
-  <!-- Deliberately absent, so the next reader does not think it was forgotten:
+  <!-- No passive_joint for the legs and waist: CurrentStateMonitor still waits on every active
+       joint, so the flag would imply an exemption it does not give. -->
 
-       passive_joint. It would document that the legs and waist are not ours, but it reads as
-       if it does more: MoveIt's CurrentStateMonitor counts every active joint, and the flag
-       does not exempt one. This comment carries the same information honestly. -->
+  <!-- Arm postures, each declared for left_arm, right_arm and both_arms because a group state
+       belongs to one group; test_robot_model asserts the copies agree. Shoulder roll and yaw flip
+       sign between the arms (positive left roll and negative right roll both swing outward);
+       pitch and elbow do not.
 
-
-  <!-- Named postures. Every value below was collision-checked against a running move_group
-       (/check_state_validity, both_arms) before being written here, not chosen on a diagram.
-       `home` is the posture the arms are measured at once the stack has them. It is written
-       here rather than derived from wherever the arms happen to fall at startup: that
-       direction leaves no margin against a heavier hand closing the palm-to-thigh gap.
-
-       The small shoulder roll is what buys that margin: it swings each arm off the torso so
-       neither the sag nor a heavier hand closes the gap.
-
-       roll and yaw mirror between the arms so a positive value swings each arm away from the
-       torso on its own side; pitch and elbow do not mirror.
-
-       Each pose is declared three times because SRDF group states belong to one group, and a
-       skill may drive either arm alone or both together. test_robot_model asserts the three
-       copies agree, so they cannot drift apart. -->
+       `home` is the arms' resting posture. Its small shoulder roll keeps the palm off the
+       thigh. -->
 
   <group_state name="home" group="left_arm">
     <joint name="left_shoulder_pitch_joint" value="-0.70"/>
@@ -179,8 +139,8 @@
     <joint name="right_wrist_yaw_joint" value="0.00"/>
   </group_state>
 
-  <!-- Shoulder roll is 0.55 for the same reason carry's is 0.60: at 0.40 the thumb sits 0.10 rad
-       from the hip. Nothing walks narrower for it, since the carry leg is already at 0.60. -->
+  <!-- Shoulder roll 0.55 swings the thumb clear of the hip, by the 0.20 rad test_robot_model
+       requires. -->
   <group_state name="tucked" group="left_arm">
     <joint name="left_shoulder_pitch_joint" value="0.25"/>
     <joint name="left_shoulder_roll_joint" value="0.55"/>
@@ -286,38 +246,8 @@
     <joint name="right_wrist_yaw_joint" value="0.00"/>
   </group_state>
 
-  <!-- `carry` holds an object through a walk, PALM UNDERNEATH it rather than hanging it from
-       the fingertips. A curl: the shoulder lifts and the elbow closes so the forearm points up,
-       and the wrist pitches so the fingers do too.
-
-       That direction is the whole point. A held object sits out along the palm's +y axis, so +y
-       is the direction it escapes along, and where +y points decides whether gravity holds the
-       object in or pulls it out. Flat, the old posture pointed +y almost straight down: 0.95 g
-       pulling the block out of a grip that only had its fingertips on it. Fingers up, this one
-       is 0.37 g pressing it back toward the palm. A sign change, not a reduction.
-
-       Getting there needs the arm, not the wrist. Wrist roll does not reorient the closing axis
-       at all, it runs along it, and wrist pitch stops at 1.614 rad. Swept 270 arm postures with a
-       block attached: 221 legal, and only 22 of those point the fingers up at all.
-
-       Elbow 1.90 and not the 2.05 that scores slightly better, because the limit is 2.0944 and
-       satisfiesBounds is a hard test. Roll 0.45 and not the 0.25 that also scores better, for the
-       thumb-versus-hip margin recorded below.
-
-       What the old flat posture was tuned for, and what replaced it:
-       -  It was pulled inboard, from 383 mm out to 307, because the gait swings a held object
-          through a lever and the far end of that lever is where it comes loose.
-       -  Tipping the wrist alone was tried, pitch 1.40 at 0.6 g, and changed the creep not at
-          all: 3.5 to 3.7 mm/s against 3.1 to 5.0 flat, dropped 3 missions of 3.
-       -  That, with a block at a third of the mass creeping at a third of the rate, says the load
-          that matters is gait acceleration rather than static weight. Acceleration acts in every
-          direction through a step and cannot be pointed away from, which is why holding the
-          object in the palm rather than in the fingertips is the thing worth changing.
-
-       Shoulder roll margin against the hip, others held, from the flat posture:
-       0.40 -> 4.6 deg, 0.50 -> 10.3, 0.55 -> 12.6, 0.60 -> 16.0, 0.65 -> 18.3. At 0.25 the flat
-       posture was invalid outright on thumb against hip; this one raises the hand clear of it,
-       and the sweep confirms 0.45 legal with a block. -->
+  <!-- `carry` holds a picked object low beside the body: arm nearly straight, angled down and
+       forward, wrist flat. Shoulder roll 0.45 keeps the thumb off the hip. -->
   <group_state name="carry" group="left_arm">
     <joint name="left_shoulder_pitch_joint" value="-0.55"/>
     <joint name="left_shoulder_roll_joint" value="0.45"/>
@@ -353,102 +283,20 @@
     <joint name="right_wrist_yaw_joint" value="0.00"/>
   </group_state>
 
-  <!-- `carry_cupped` turns the hand over so the palm ends up UNDER the object and it rests there
-       instead of hanging from the fingertips.
+  <!-- Hand postures: reach in pinch_ready, close, attach, move, place, open, detach. The hands
+       mirror by sign, as the URDF limits do.
 
-       Why it is worth the trouble: a held object sits out along the palm's +y axis, so +y is the
-       direction it escapes along. Flat, +y points almost straight down, 0.95 g pulling the block
-       out of a grip that only has fingertips on it. Here the forearm and fingers point up and it
-       is 0.37 g pressing the block back toward the palm. A sign change, not a reduction.
+       `open` is the URDF zero: fingers straight, thumb mid-range.
 
-       The wrist cannot do this. Roll runs along the closing axis so it does not reorient it, and
-       pitch stops at 1.614 rad. It takes the arm: a curl, shoulder lifted and elbow closed.
-       Swept 270 arm postures with a block attached, 221 were legal and only 22 pointed the
-       fingers up at all.
+       `pinch_ready` pulls the thumb back behind the object's near face (palm x 0.046). At the
+       grasp pose the closing axis points down, and at `open` the thumb meets the surface before
+       the object does. Retracted it still hangs 113 mm below the palm origin, the clearance
+       g1_manipulation's min_grip_height_m exists for.
 
-       Reached in two steps, via `carry`, and that is not optional. Planning to it straight from
-       where a lift leaves the arm is about 130 degrees of rotation and failed outright, "could
-       not reach carry". A static collision check says a pose is legal; it says nothing about
-       whether a planner can get to it from a particular start while holding something.
-
-       Elbow 1.90 and not the 2.05 that scores slightly better, because the limit is 2.0944 and
-       satisfiesBounds is a hard test. -->
-  <group_state name="carry_cupped" group="left_arm">
-    <joint name="left_shoulder_pitch_joint" value="0.60"/>
-    <joint name="left_shoulder_roll_joint" value="0.45"/>
-    <joint name="left_shoulder_yaw_joint" value="0.00"/>
-    <joint name="left_elbow_joint" value="1.90"/>
-    <joint name="left_wrist_roll_joint" value="0.00"/>
-    <joint name="left_wrist_pitch_joint" value="1.40"/>
-    <joint name="left_wrist_yaw_joint" value="0.00"/>
-  </group_state>
-  <group_state name="carry_cupped" group="right_arm">
-    <joint name="right_shoulder_pitch_joint" value="0.60"/>
-    <joint name="right_shoulder_roll_joint" value="-0.45"/>
-    <joint name="right_shoulder_yaw_joint" value="0.00"/>
-    <joint name="right_elbow_joint" value="1.90"/>
-    <joint name="right_wrist_roll_joint" value="0.00"/>
-    <joint name="right_wrist_pitch_joint" value="1.40"/>
-    <joint name="right_wrist_yaw_joint" value="0.00"/>
-  </group_state>
-  <group_state name="carry_cupped" group="both_arms">
-    <joint name="left_shoulder_pitch_joint" value="0.60"/>
-    <joint name="left_shoulder_roll_joint" value="0.45"/>
-    <joint name="left_shoulder_yaw_joint" value="0.00"/>
-    <joint name="left_elbow_joint" value="1.90"/>
-    <joint name="left_wrist_roll_joint" value="0.00"/>
-    <joint name="left_wrist_pitch_joint" value="1.40"/>
-    <joint name="left_wrist_yaw_joint" value="0.00"/>
-    <joint name="right_shoulder_pitch_joint" value="0.60"/>
-    <joint name="right_shoulder_roll_joint" value="-0.45"/>
-    <joint name="right_shoulder_yaw_joint" value="0.00"/>
-    <joint name="right_elbow_joint" value="1.90"/>
-    <joint name="right_wrist_roll_joint" value="0.00"/>
-    <joint name="right_wrist_pitch_joint" value="1.40"/>
-    <joint name="right_wrist_yaw_joint" value="0.00"/>
-  </group_state>
-
-  <!-- Hand postures. Three per hand: reach in pinch_ready, close on the object, attach it, move,
-       place, open the fingers again, detach.
-
-       `open` is the URDF zero, which puts the fingers straight and the thumb mid-range. Not an
-       arbitrary choice: every finger joint's range ends at zero on the extended side.
-
-       `pinch_ready` is the posture the hand descends in, and the thumb is the whole problem:
-       it is long, and at the grasp pose the palm's closing axis points straight down. Swept
-       over the thumb's entire joint box in MuJoCo, the least it can hang is 113 mm below the
-       palm origin while still keeping its own surface behind palm x = 0.046, which is what
-       leaves the object's near face free. That 113 mm is where g1_manipulation's
-       min_grip_height_m comes from.
-
-       `closed` swings the thumb forward and curls the fingers, so the two oppose across the
-       object with the palm capping it. Chosen off the same sweep, then checked through the
-       whole close in free air: at thumb_0 = 0.30 the thumb grazes the middle finger at 80-90 %
-       of travel, which would stall a finger with nothing held, so the abduction stays at zero
-       and only the two flexion joints move.
-
-       thumb_1 is 0.55 and not the 0.00 it was, which is the difference between holding a block
-       and resting one. Measured from the thumb and index link origins in the palm frame, the
-       closing span at thumb_1 = 0.00 is 80 mm; the blocks this hand picks are 45 mm, so the
-       hand reached `closed` with 35 mm of slack, never loaded a finger, and the object sat in
-       the fingertips and crept out during a carry at about 2.5 mm/s.
-
-       Span against thumb_1, from MoveIt's model: 0.00 -> 80 mm, 0.40 -> 64, 0.50 -> 60,
-       0.60 -> 56, 0.70 -> 52, 0.80 -> 49 but invalid on thumb_2 against the palm.
-
-       0.55 and not the 0.70 that sweep allows, because MoveIt is the wrong authority for this
-       one. Its meshes say 0.70 is clear; MuJoCo's collision capsules are what the fingers
-       actually run against, and with an empty hand the thumb stalls there at 0.58, 0.12 rad
-       short of a 0.70 target. That matters more than the extra span: the grip check reads a
-       finger stopping 0.08 rad short of `closed` as an object, so a `closed` an empty hand
-       cannot reach makes the thumb read as loaded permanently, and every pick then reports
-       "only the thumb is pressing". 0.55 clears the stall.
-
-       thumb_0 stays at zero for a second reason now, besides the graze: it does not close
-       anything. Moving it either way by 0.5 changes the span by under a millimetre, and it
-       measured 7 % of its torque clamp while every other finger ran to 84 %.
-
-       The two hands mirror by sign, as the URDF's own limits do on all seven joints. -->
+       `closed` opposes the thumb to the curled fingers. thumb_0 stays at zero: abducted, the
+       thumb grazes the middle finger late in the close and stalls it with nothing held. thumb_1
+       0.55 stays under the 0.58 where MuJoCo's capsules stall an empty hand's thumb, since the
+       grip check reads a finger stopped short of `closed` as holding something. -->
   <group_state name="open" group="left_hand">
     <joint name="left_hand_thumb_0_joint" value="0.00"/>
     <joint name="left_hand_thumb_1_joint" value="0.00"/>
@@ -468,19 +316,6 @@
     <joint name="left_hand_index_1_joint" value="0.00"/>
   </group_state>
 
-  <!-- No thumb-first posture here, and the attempt is worth recording so it is not made again.
- 
-       Closing the hand sweeps the object outward: ground truth puts a held block about 36 mm
-       beyond the grasp frame along the closing axis, and it stays about 30 mm beyond when the
-       frame itself is moved out, which is what says the object is being pushed rather than
-       aimed at wrongly. The fingers reach it at about 59 % of their travel and the thumb only
-       at 72 %, so the obvious reading is that the fingers do the pushing and setting the thumb
-       first would give them something to close onto.
- 
-       Measured, and it is the wrong reading. A `thumb_set` posture, thumb closed and fingers
-       open, took the block from 36 mm beyond the frame to 87 mm and the pick then could not
-       lift clear of the surface at all. The thumb sweeps further than the fingers do, so
-       ordering the close does not remove the sweep, it only picks which digit causes it. -->
   <group_state name="closed" group="left_hand">
     <joint name="left_hand_thumb_0_joint" value="0.00"/>
     <joint name="left_hand_thumb_1_joint" value="0.55"/>
@@ -518,24 +353,11 @@
     <joint name="right_hand_index_1_joint" value="1.40"/>
   </group_state>
 
-  <!-- Generated, 2026-08-05. Everything above is hand-written; this block is not.
-
-       Two categories, both safe to disable and nothing beyond them: links joined by a joint
-       (reason Adjacent), and links found touching in the robot's own rest pose (reason
-       Default), read from move_group's /check_state_validity contacts. Without these, MoveIt
-       reports the robot as colliding with itself before it has moved, and RRTConnect refuses
-       to seed its tree: "Skipping invalid start state".
-
-       Deliberately not generated: the "never in collision" pairs the Setup Assistant's
-       collisions_updater finds by random sampling. Those are a planning-speed optimisation,
-       not a correctness requirement, and on this model the sampling does not finish in a
-       usable time: the URDF's collision geometry is its full visual meshes, about 525k
-       triangles, and runs at 10000, 1000 and 1 trials all failed to complete in over an hour.
-       Simplifying the collision geometry is the fix, and it is its own change. README.md has
-       the regeneration command for when that lands.
-
-       No cross-arm pair appears here, and none should: both_arms exists to collision-check one
-       arm against the other, and test_robot_model asserts the reaching links stay checked. -->
+  <!-- Generated: links joined by a joint (Adjacent) and links touching at rest per
+       /check_state_validity (Default). Without them the start state is in collision and
+       RRTConnect refuses to seed. No sampled "never in collision" pairs: collisions_updater does
+       not finish on the URDF's full-mesh collision geometry. No cross-arm pair either, since
+       both_arms exists to check one arm against the other. -->
   <disable_collisions link1="d435_link" link2="camera_color_optical_frame" reason="Adjacent"/>
   <disable_collisions link1="d435_link" link2="camera_depth_optical_frame" reason="Adjacent"/>
   <disable_collisions link1="head_link" link2="torso_link" reason="Default"/>
@@ -551,12 +373,8 @@
   <disable_collisions link1="left_hand_palm_link" link2="left_wrist_yaw_link" reason="Default"/>
   <disable_collisions link1="left_hand_thumb_0_link" link2="left_hand_thumb_1_link" reason="Adjacent"/>
   <disable_collisions link1="left_hand_thumb_1_link" link2="left_hand_thumb_2_link" reason="Adjacent"/>
-  <!-- The thumb reaches back over the wrist as the hand closes, which the setup
-       assistant never saw: it samples around the default pose, where the thumb is
-       mid-range and clear. Measured through /check_state_validity during a pick, the
-       closed hand reports 344 contact points on this one pair, and a state in collision
-       is refused outright, so every plan made while holding something failed in about
-       4 ms with its whole budget untouched. That is the carry and the preplace. -->
+  <!-- Added by hand, with its right-hand twin: the closing thumb reaches back over the wrist,
+       so left checked, every plan made with a closed hand starts in collision. -->
   <disable_collisions link1="left_hand_thumb_1_link" link2="left_wrist_roll_link" reason="Never"/>
   <disable_collisions link1="left_hip_pitch_link" link2="left_hip_roll_link" reason="Adjacent"/>
   <disable_collisions link1="left_hip_roll_link" link2="left_hip_yaw_link" reason="Adjacent"/>
