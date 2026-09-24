@@ -1,10 +1,9 @@
 # g1_msgs
 
-The stack's own interfaces: what `g1_locomotion` serves for the base approach, what
-`g1_manipulation` serves to the behavior tree, and what the learned-grasp pipeline in `g1_vla`
-serves. Six actions, one service, no messages.
-
-`ament_cmake` with `rosidl_default_generators`. No source of its own.
+The stack's own interfaces: the actions the behavior tree calls on `g1_locomotion`,
+`g1_manipulation` and `g1_vla`, the services behind the learned grasp and open-vocabulary
+perception, and the instance masks a detector publishes. `ament_cmake` with
+`rosidl_default_generators`, no source of its own.
 
 ```mermaid
 flowchart LR
@@ -12,62 +11,42 @@ flowchart LR
     BT -- "ApproachObject, Retreat" --> BA["g1_base_approach"]
     BT -- "Grasp" --> VS["g1_vla_server"]
     VS -- "GetActionChunk" --> PE["policy engine"]
+    MS -- "GenerateGrasps" --> GS["grasp source"]
+    D["detector"] -- "InstanceMaskArray" --> G["g1_object_geometry"]
 ```
 
 ```bash
 colcon build --symlink-install --packages-select g1_msgs
 ```
 
-## Manipulation
+## Actions
 
-Served by `g1_manipulation_server`, called from `g1_orchestration`.
+All six are actions because each runs for seconds and must be cancellable. Every one except
+`SetArmPosture` publishes its phase as feedback, and `Pick`, `Place`, `ApproachObject` and
+`Retreat` prefix a failure message with it. The phase strings are constants in the `.action`
+files, so servers and tests share one definition.
 
-| Action | Goal | Notes |
+| Action | Server | Goal | Notes |
+|---|---|---|---|
+| `Pick` | `g1_manipulation_server` | `object_id`, `arm` | The pose is read from `/objects` when the goal starts, so a retry re-reads it. An object not seen recently fails the goal. |
+| `Place` | `g1_manipulation_server` | `surface_object_id` or `pose`, `arm` | `pose` is where the object ends up, not the palm, and is transformed into the planning frame on arrival. Prefer the surface: it comes from `/objects`, the stream the approach drove against. |
+| `SetArmPosture` | `g1_manipulation_server` | `group`, `named_target` | Named SRDF poses only; an unknown name fails the goal. |
+| `ApproachObject` | `g1_base_approach` | `object_id`, `arm`, `working_yaw`, `use_current_heading`, `timeout_s` | Walks the base until the object is inside the arm's reach window, judged in the base frame. Nav2 only parks within 0.5 m. |
+| `Retreat` | `g1_base_approach` | `distance_m`, `timeout_s` | Reverses clear of a surface and stops, without turning. |
+| `Grasp` | `g1_vla_server` | `instruction`, `object_id`, `arm` | Runs a learned policy under a planning-scene check. Success is the measured lift of `object_id`. Feedback counts chunks executed and rejected. |
+
+## Services
+
+| Service | Server | Notes |
 |---|---|---|
-| `Pick` | `object_id`, `arm` | The pose is not a goal field. The server reads it from `/objects` when the goal starts, so a retry re-reads rather than replaying a stale one. An object missing or stale there is a rejected goal. |
-| `Place` | `surface_object_id` or `pose`, `arm` | `pose` is where the object ends up, not where the palm goes, and is transformed into the planning frame on arrival. Prefer the surface: it comes from `/objects`, the stream the approach drove against. |
-| `SetArmPosture` | `group`, `named_target` | Named SRDF poses only. A name the SRDF does not have is rejected rather than silently held. |
+| `GetActionChunk` | a `g1_vla` policy engine | `instruction` in, one chunk of absolute joint positions out. Positions may name any subset of the arm and hand joints; `time_from_start` must increase. `new_episode` marks a goal's first request. |
+| `GenerateGrasps` | a `g1_perception` grasp source | Object id and hand in, poses and scores out, best first. Poses are in the generator's own gripper frame; the caller applies one measured offset. |
+| `GroundInstruction` | `g1_instruction_grounder` | Instruction in, detector phrases and the target phrase out, plus optional exemplar pixels. |
 
-## Locomotion
-
-Served by `g1_base_approach` in `g1_locomotion`, called from the same tree.
-
-| Action | Goal | Notes |
-|---|---|---|
-| `ApproachObject` | `object_id`, `arm`, `working_yaw`, `use_current_heading`, `timeout_s` | Walks the base until the object sits inside the arm's reach window, judged in the base frame. Nav2 parks within 0.5 m; the window is about 0.2 m wide. |
-| `Retreat` | `distance_m`, `timeout_s` | Reverses clear of a surface and stops. It does not turn, because a navigation goal normally follows. |
-
-## Learned grasp
-
-Served by `g1_vla_server` in `g1_vla`, called from the same tree.
-
-| Action | Goal | Notes |
-|---|---|---|
-| `Grasp` | `instruction`, `object_id`, `arm` | Runs a learned policy under a planning-scene check. `instruction` goes to the policy; `object_id` names the `/objects` entry whose lift decides success. Feedback carries chunks executed and rejected. |
-
-`GetActionChunk` is the service every policy engine implements: `instruction` in, one chunk of
-absolute joint positions out, plus `ok`/`message` when the engine cannot produce one. Positions may
-name any subset of the arm and hand joints and `time_from_start` must increase. `g1_vla_server`
-calls it; which engine answers is a launch argument.
-
-## Perception
-
-Published by the detector in `g1_perception`, consumed by the node that turns masks into object
-poses.
+## Messages
 
 | Message | Carries | Notes |
 |---|---|---|
-| `InstanceMask` | `label`, `score`, `roi`, `data` | One object. `data` is a 0-or-255 crop of `roi`, not a full frame. `label` is the phrase the detector was asked for, so the object id does not move when the model rewords its answer. |
-| `InstanceMaskArray` | `header`, `image_width`, `image_height`, `model`, `instances` | `header` is the image's stamp and frame, not the publish time: the geometry node pairs on it. Nothing reads `model`, which is what keeps the segmenter swappable. |
-
-`GenerateGrasps` is what a grasp generator implements: an object id on `/objects` and a hand in,
-poses and confidences out, best first. The poses belong to the generator's own gripper frame, so
-the caller applies one measured offset; that is all it has to know about the model.
-
-Every action except `SetArmPosture` publishes a phase as feedback and names that phase in the
-result message on failure. The phase strings are constants in the `.action` files, so each server
-and its tests share one definition instead of matching literals. `SetArmPosture` is one planned
-motion with nothing to report partway.
-
-All six are actions rather than services because each runs for seconds and has to be cancellable
-while it runs.
+| `InstanceMask` | `label`, `score`, `roi`, `data` | One object. `data` is a 0-or-255 crop of `roi`, not a full frame. `label` is the phrase the detector was asked for, so the object id holds when the model rewords its answer. |
+| `InstanceMaskArray` | `header`, `image_width`, `image_height`, `model`, `instances` | `header` is the image's stamp and frame, not the publish time: the geometry node pairs on it. Nothing reads `model`, which keeps the segmenter swappable. |
+| `ExemplarPoint` | `phrase`, `x`, `y` | A pixel on one object, returned by `GroundInstruction` to tell instances of a phrase apart. |

@@ -1,18 +1,15 @@
-# Turns an instruction into something a detector can be asked for.
-#
-# An open-vocabulary detector takes a short noun phrase with an attribute or two. It cannot parse
-# "the mug to the left of the bowl", and it has no notion of which object a sentence is about.
-# This is where that gap is closed, by a model that can look at the scene.
+# Turns an instruction into phrases an open-vocabulary detector can take. The detector wants a
+# short noun phrase and cannot parse "the mug left of the bowl"; a model that sees the scene can.
 
 string instruction
 ---
 bool ok
 string message
-# Short noun phrases, one or two attributes each, no relations: what the detector can take.
+# Short noun phrases, one or two attributes each, no relations.
 string[] phrases
-# Which of them the instruction is about, so a caller knows what to pick up.
+# The phrase the instruction is about, i.e. what to pick up.
 string target_phrase
-# The frame the points below index into, and the moment it was captured.
+# Frame and capture time of the image the points below index into.
 std_msgs/Header header
-# Optional, and only as good as the backend: a model that cannot point returns none.
+# Optional: a backend that cannot point returns none.
 ExemplarPoint[] exemplars

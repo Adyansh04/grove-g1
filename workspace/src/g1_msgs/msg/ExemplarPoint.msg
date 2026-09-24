@@ -1,9 +1,9 @@
-# A pixel the caller says belongs to one object, in the frame the grounder was looking at.
-#
-# What it is for: a detector asked for "the cup" cannot tell which cup, and a model that can
-# reason about "the one left of the bowl" can point at it. Backends that take points as an input
-# use it directly; the rest use it to pick which of their own boxes to keep.
+# A pixel on one object, in the image the grounder looked at. A detector asked for "the cup"
+# cannot tell which cup; this says which. Backends that take points use it directly, the rest
+# use it to choose among their own boxes.
 
+# The grounded phrase this point belongs to.
 string phrase
+# Pixel column and row.
 uint32 x
 uint32 y

@@ -1,23 +1,22 @@
-# Grasp an object with one arm by running a learned policy, validating every chunk of its
-# output against the planning scene before any of it executes.
+# Grasp an object with one arm by running a learned policy, validating every chunk of its output
+# against the planning scene before any of it executes.
 
-# Natural-language task, handed to whichever policy engine is running.
+# Natural-language task for the policy engine.
 string instruction
-# Must match a class_id published on /objects. Its lift is the success test, so the outcome is
-# measured rather than taken from the policy.
+# A class_id on /objects. Success is its measured lift, not the policy's say-so.
 string object_id
-# "left" or "right". Selects the arm group and the hand whose contact is exempted while grasping.
+# Selects the arm group and the hand allowed to touch the octomap while grasping.
 string ARM_LEFT=left
 string ARM_RIGHT=right
 string arm
 ---
 bool success
-# Chunk counters and the measured lift; on failure, what stopped the skill. Not meant to be parsed.
+# Chunk counters and the measured lift, or what stopped the skill. Not meant to be parsed.
 string message
 ---
 string PHASE_PREPARING=preparing
 string PHASE_ACTING=acting
 string phase
-# Executed and rejected-before-moving. How much of the policy's output was usable.
+# Chunks executed, and chunks rejected before the arm moved.
 uint16 chunks_executed
 uint16 chunks_rejected

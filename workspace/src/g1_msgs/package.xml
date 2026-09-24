@@ -4,12 +4,10 @@
   <name>g1_msgs</name>
   <version>0.1.0</version>
   <description>
-    Interfaces for the G1 stack: the ApproachObject and Retreat actions the base
-    approach serves (g1_locomotion), the Pick, Place and SetArmPosture actions
-    the manipulation skills serve (g1_manipulation), the Grasp action and
-    GetActionChunk service the learned-grasp pipeline serves (g1_vla), and the
-    instance masks a detector publishes (g1_perception). See README for why each
-    is an action rather than a service.
+    Interfaces for the G1 stack: the base-approach (g1_locomotion), manipulation
+    (g1_manipulation) and learned-grasp (g1_vla) actions, the policy-engine,
+    grasp-generation and grounding services, and the instance masks a detector
+    publishes (g1_perception).
   </description>
   <maintainer email="gupta.adyansh@gmail.com">Adyansh</maintainer>
   <license>BSD-3-Clause</license>

@@ -1,16 +1,14 @@
-# One turn of the policy loop: given the task, return the next chunk of joint targets.
-#
-# Every policy engine serves this and nothing else, which is what makes them interchangeable.
-# Chunk positions are absolute, may name any subset of the arm and hand joints, and
-# time_from_start must increase.
+# One turn of the policy loop: the task in, the next chunk of joint targets out. Every policy
+# engine serves this and nothing else, which keeps them interchangeable.
 
 # Natural-language task.
 string instruction
 # First request of a goal. A retry repeats the instruction verbatim, so the engine cannot infer
-# the boundary from that alone, and a stochastic head only resamples once its history is cleared.
+# the boundary, and a stochastic head only resamples once its history is cleared.
 bool new_episode
 ---
 bool ok
 # Why no chunk could be produced. Empty when ok.
 string message
+# Absolute positions for any subset of the arm and hand joints; time_from_start must increase.
 trajectory_msgs/JointTrajectory chunk
