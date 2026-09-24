@@ -128,8 +128,8 @@ if(BUILD_TESTING)
   set_tests_properties(test_generated_grasp_pick PROPERTIES
     LABELS simulator RESOURCE_LOCK mujoco_sim COST 95)
 
-  # Longer than the generated-grasp suite: this one adds a place and a deliberate miss, and the
-  # miss runs a whole pick before the grip check turns it down.
+  # Longer than the generated-grasp suite: it adds a place, and a deliberate miss that runs a
+  # whole pick before the grip check turns it down.
   add_launch_test(test/test_pick_place.launch.py TARGET test_pick_place TIMEOUT 900)
   set_tests_properties(test_pick_place PROPERTIES
     LABELS simulator RESOURCE_LOCK mujoco_sim COST 99)

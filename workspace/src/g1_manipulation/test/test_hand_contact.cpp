@@ -2,9 +2,8 @@
  * @file test_hand_contact.cpp
  * @brief The allowed-collision-matrix arithmetic, without a planning scene.
  *
- * The matrix is square and index-addressed, so the failures worth pinning are a grown name list
- * with an ungrown row, and a half-written symmetric pair. Both read as an exemption that did
- * nothing.
+ * The matrix is square and index-addressed: the failures pinned are a name added without its
+ * row, and a symmetric pair written on one side only.
  */
 
 #include <gmock/gmock.h>
