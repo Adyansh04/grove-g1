@@ -42,8 +42,8 @@ target_link_libraries(g1_dex3_system PUBLIC
   rclcpp_lifecycle::rclcpp_lifecycle
   realtime_tools::realtime_tools
 )
-# unitree_sdk2's dds_entity.hpp still builds its queue thread through std::result_of, which
-# InitChannel instantiates unconditionally.
+# unitree_sdk2's dds_entity.hpp uses the deprecated std::result_of, which InitChannel
+# instantiates.
 target_compile_options(g1_dex3_system PRIVATE -Wno-deprecated-declarations)
 
 pluginlib_export_plugin_description_file(hardware_interface g1_hand_interface.xml)

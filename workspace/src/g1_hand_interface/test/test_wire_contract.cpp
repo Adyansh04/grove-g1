@@ -1,7 +1,6 @@
 /**
  * @file test_wire_contract.cpp
- * @brief The parts of the Dex3 wire format that are easy to get wrong and expensive to discover
- * on hardware: the packed mode byte, the joint order, and what a command frame carries.
+ * @brief The Dex3 wire contract: packed mode byte, joint order, driven and release frames.
  */
 
 #include <gmock/gmock.h>
@@ -40,9 +39,7 @@ TEST(Dex3WireContract, EveryMotorCarriesItsOwnIndex)
 
 TEST(Dex3WireContract, JointOrderIsThumbThenMiddleThenIndex)
 {
-    // Unitree's own Dex3_1_Right_JointIndex enum lists index before middle, contradicting
-    // their documented order. It is inert in their code, but transcribing it here would
-    // close the wrong fingers, so this order is pinned rather than trusted.
+    // Pinned because Unitree's Dex3_1_Right_JointIndex enum lists index before middle.
     EXPECT_THAT(
         kJointSuffixes,
         ::testing::ElementsAre(
@@ -84,8 +81,7 @@ TEST(Dex3WireContract, DrivenCarriesTheGainsAndLeavesTheTimeoutDisarmed)
 }
 
 /**
- * @brief Confirms g1_hand_interface/G1Dex3System is discoverable through pluginlib's
- * ament-index lookup, the same path controller_manager uses, rather than merely compiling.
+ * @brief G1Dex3System resolves through the pluginlib lookup controller_manager uses.
  */
 TEST(G1Dex3SystemPluginlib, DiscoversAndInstantiates)
 {
