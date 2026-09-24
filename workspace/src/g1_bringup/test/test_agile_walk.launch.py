@@ -1,12 +1,6 @@
-"""Headless sim gate for the AGILE policy on the rt/lowcmd stack: stand, then walk.
+"""The AGILE policy on the rt/lowcmd stack stands the robot unpinned, then walks and turns it.
 
-The pelvis is not pinned: the robot stands because the policy is balancing it. The simulator
-holds it up only until the control stack drives every motor, then releases its weld and never
-re-applies it.
-
-Displacement is deliberately not asserted here, because this runs with sensors:=false and the
-relay carrying the simulator's ground truth into ROS is not up. The gait envelope is measured
-separately against MuJoCo; see the g1_controllers README.
+Displacement is not asserted: with sensors:=false no simulator ground truth reaches ROS.
 """
 
 import os
@@ -30,10 +24,8 @@ from std_msgs.msg import Bool
 # Kept under launch_testing's 15 s startup deadline, then the policy needs a moment to settle.
 SIM_SETTLE_S = 12.0
 
-# Upright is measured as tilt, never as the quaternion's w: yawing drives w down while the robot
-# stands perfectly straight, so a w threshold fails the moment anything turns. This is the world
-# z-component of the body's own z-axis, 1.0 straight up and 0.0 on its side. 0.64 is about 50
-# degrees of lean, far more than walking needs and far less than a fall.
+# World z of the body's z-axis (1 upright, 0 on its side), not quaternion w, which yaw alone drives
+# down. 0.64 is about 50 degrees of lean.
 MIN_UPRIGHT_Z = 0.64
 
 DRIVE_VX = 0.3
@@ -43,8 +35,7 @@ DRIVE_S = 10.0
 TURN_WZ = 0.5
 TURN_S = 8.0
 
-# Knee travel while walking versus standing. Standing is near-static, a gait swings the knee
-# through a good fraction of a radian, so an order of magnitude separates them.
+# Knee spread that separates a gait (a good fraction of a radian) from near-static standing.
 GAIT_KNEE_STDDEV_RAD = 0.03
 GAIT_JOINT = "left_knee_joint"
 STANDING_S = 3.0
@@ -213,8 +204,7 @@ class TestAgileWalk(unittest.TestCase):
         )
 
     def test_turns_on_command_and_stays_up(self):
-        """Also the case that catches a yaw-blind uprightness check: turning drives the
-        quaternion's w right down while the robot stands perfectly straight."""
+        """Also catches an uprightness check that reads quaternion w, which turning drives down."""
         before = self.imu[-1].orientation
         self._drive(TURN_S, wz=TURN_WZ)
         after = self.imu[-1].orientation

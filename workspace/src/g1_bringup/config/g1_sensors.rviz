@@ -1,13 +1,8 @@
-# RViz for the converged sensor track, without navigation.
+# RViz without navigation:
 #   ros2 launch g1_bringup bringup.launch.py sensors:=true rviz:=true
 #
-# The nav-enabled counterpart is g1_navigation/config/g1_navigation.rviz. Two static files
-# rather than one generated at launch: they differ in Fixed Frame as well as in which groups
-# exist, and this stack has already been burned once by rewriting config at launch time (see
-# g1_navigation/launch/nav2.launch.py's docstring).
-#
-# The sensor group below must stay byte-identical to that file's, apart from the group's own
-# Enabled flag. test_rviz_configs in g1_navigation enforces it.
+# The Sensors group must match g1_navigation/config/g1_navigation.rviz's apart from its Enabled
+# flag; g1_navigation's test_rviz_configs checks it.
 Panels:
   - Class: rviz_common/Displays
     Name: Displays
@@ -33,8 +28,6 @@ Visualization Manager:
       Alpha: 0.3
       Reference Frame: <Fixed Frame>
 
-    # The robot. Needs pelvis -> torso_link, which joint_state_broadcaster covers along with
-    # every other motor the hardware component exports.
     - Class: rviz_default_plugins/RobotModel
       Name: Robot
       Enabled: true
@@ -73,13 +66,12 @@ Visualization Manager:
         Head Length: 0.1
         Head Radius: 0.06
 
-    # BEGIN SENSOR GROUP -- kept identical to g1_navigation/config/g1_navigation.rviz
+    # BEGIN SENSOR GROUP: must match g1_navigation/config/g1_navigation.rviz
     - Class: rviz_common/Group
       Name: Sensors
       Enabled: true
       Displays:
-        # Sampled inside unitree_mujoco, published by g1_sensor_relay. Best-effort to match
-        # the publisher: a Reliable subscriber here shows nothing at all.
+        # Best-effort to match g1_sensor_relay: a Reliable subscription receives nothing.
         - Class: rviz_default_plugins/PointCloud2
           Name: LiDAR
           Enabled: true
@@ -98,9 +90,8 @@ Visualization Manager:
           Autocompute Intensity Bounds: true
           Invert Rainbow: false
 
-        # Depth as a 3D cloud, projected through camera_info. This is the camera's own view
-        # of the world, so it should overlap the LiDAR returns where the two see the same
-        # surfaces; if it floats away from them, the mount or the depth scale is wrong.
+        # Should overlap the LiDAR returns; if it floats away, the camera mount or depth scale
+        # is wrong.
         - Class: rviz_default_plugins/DepthCloud
           Name: Depth cloud
           Enabled: true
@@ -119,8 +110,6 @@ Visualization Manager:
             Occlusion Time-Out: 30
             Enabled: false
 
-        # The same data as a 2D panel, which is the quickest way to see that the camera is
-        # pointed where you think and is not returning a blank frame.
         - Class: rviz_default_plugins/Image
           Name: Depth image
           Enabled: true
@@ -145,8 +134,7 @@ Visualization Manager:
             Reliability Policy: Best Effort
           Normalize Range: true
 
-        # Where the simulator says the sensor is. Diagnostic: it is the ground truth the
-        # cloud was swept from, so it should sit exactly on the robot's Mid360.
+        # The simulator's ground truth for the sweep origin; it should sit exactly on the Mid360.
         - Class: rviz_default_plugins/Pose
           Name: Sensor pose
           Enabled: false
@@ -161,9 +149,7 @@ Visualization Manager:
     # END SENSOR GROUP
 
   Global Options:
-    # odom, not mid360_link: the cloud is published in the sensor frame and RViz transforms
-    # it here, which only works because odom -> pelvis -> torso_link -> mid360_link is now
-    # complete. The nav config uses map, which does not exist without SLAM or AMCL.
+    # odom, since map exists only under SLAM or AMCL.
     Fixed Frame: odom
     Background Color: 48; 48; 48
     Frame Rate: 30

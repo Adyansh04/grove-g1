@@ -1,13 +1,8 @@
-"""The converged track's LiDAR measures the room it is actually in.
+"""The simulated LiDAR measures the room it is in.
 
-Geometry, not plumbing. The cloud is published in the sensor frame, and the simulator
-also publishes the sensor's exact world pose, so the points can be put into world
-coordinates and checked against facts of g1_perception_pinned_scene.xml: floor at z=0,
-inner wall faces at +/-4.0 m.
-
-Runs with the pelvis pinned: a free-standing G1 drifts and its waist leans (the torso
-pitches tens of degrees), so the numbers would move under the test without anything
-being wrong.
+The cloud is put into world coordinates with the simulator's own sensor pose and checked against
+g1_perception_scene.xml: floor at z=0, inner wall faces at +/-4.0 m. Runs pinned, because a
+free-standing G1 drifts and leans and would move the numbers with nothing wrong.
 """
 
 import os
@@ -31,13 +26,13 @@ from sensor_msgs.msg import PointCloud2
 CLOUD_TOPIC = "/livox/lidar"
 POSE_TOPIC = "/g1_sensor_relay/sensor_pose"
 
-# config/sim_sensors.yaml
+# config/sim_sensors.yaml; RANGE_MIN is the simulator's built-in minimum.
 EXPECTED_POINTS = 360 * 32
 CONFIGURED_RATE_HZ = 10.0
 RANGE_MIN = 0.1
 RANGE_MAX = 40.0
 
-# mjcf/g1_perception_pinned_scene.xml: inner wall faces at +/-4.0, floor at z=0, walls 2.5 tall.
+# mjcf/g1_perception_scene.xml: inner wall faces at +/-4.0, floor at z=0, walls 2.5 tall.
 ROOM_HALF = 4.0
 WALL_TOP = 2.5
 
@@ -83,8 +78,7 @@ class LidarGeometryTest(unittest.TestCase):
     def setUpClass(cls):
         rclpy.init()
         cls.node = Node("test_lidar_geometry")
-        # Bounded: 11520-point clouds at 10 Hz over a long bring-up would otherwise
-        # accumulate to hundreds of megabytes.
+        # Bounded: 11520-point clouds at 10 Hz would otherwise pile up through a long bring-up.
         cls.clouds = deque(maxlen=4)
         cls.poses = deque(maxlen=4)
         cls.stamps = deque(maxlen=512)
@@ -174,11 +168,7 @@ class LidarGeometryTest(unittest.TestCase):
         self.assertLessEqual(ranges[hit].max(), RANGE_MAX)
 
     def test_04_the_sensor_is_where_the_mount_puts_it(self):
-        """Height above the floor, from the vendored URDF mount on a pinned pelvis.
-
-        The waist chain plus mid360_joint's own offset, so a wrong mount or a wrong torso
-        pose moves it.
-        """
+        """Sensor height from the URDF mount chain; a wrong mount or torso pose moves it."""
         _, origin = self.world_returns()
         self.assertAlmostEqual(
             origin[2],
@@ -216,10 +206,8 @@ class LidarGeometryTest(unittest.TestCase):
             int(floor.sum()), 200, f"only {floor.sum()} returns on the floor plane"
         )
 
-        # Three walls, so a sweep that lost a sector fails rather than averaging out. The +x
-        # wall is deliberately absent: reach_obstacle sits 0.18 m in front of the sensor at its
-        # own height and occludes that whole direction, so it is the only obstacle
-        # g1_moveit_config's octomap test sees in +x. Measured, the cloud stops at x = 1.60.
+        # Per wall, so a lost sector fails rather than averaging out. Not +x, which
+        # reach_obstacle occludes from 0.18 m in front of the sensor.
         for axis, sign, name in ((0, -1, "-x"), (1, 1, "+y"), (1, -1, "-y")):
             on_wall = np.abs(world[:, axis] - sign * ROOM_HALF) < 0.05
             self.assertGreater(

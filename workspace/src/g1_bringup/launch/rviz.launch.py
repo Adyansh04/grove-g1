@@ -1,8 +1,4 @@
-"""RViz on a caller-supplied config.
-
-Knows nothing about navigation: the caller picks the config, so only the caller needs to know
-which mode it is in.
-"""
+"""RViz on a caller-supplied config; the caller knows which mode is running."""
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
@@ -14,14 +10,12 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument(
             "rviz_config",
-            description="Absolute path to an .rviz file. Required: the right one depends on "
-            "whether navigation is running, which this file cannot know.",
+            description="Absolute path to an .rviz file. Required.",
         ),
         DeclareLaunchArgument(
             "node_name",
             default_value="rviz2",
-            description="Node name. A second window needs its own, so it does not collide "
-            "with MoveIt's.",
+            description="Node name. A second window next to MoveIt's needs its own.",
         ),
         Node(
             package="rviz2",

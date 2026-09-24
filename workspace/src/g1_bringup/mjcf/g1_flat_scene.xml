@@ -1,7 +1,6 @@
 <mujoco model="g1_flat_scene">
-  <!-- Bare floor scene for the free-standing (no pelvis pin) walking policy.
-       Staged into the vendored model directory at launch time so MuJoCo's
-       relative meshdir and include paths resolve correctly. -->
+  <!-- Bare floor, the base for every unpinned run without sensors. Staged next to the vendored
+       g1_29dof.xml at launch, so the include resolves. -->
   <include file="g1_29dof.xml"/>
 
   <statistic center="0 0 0.5" extent="2.0"/>

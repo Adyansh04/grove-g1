@@ -1,28 +1,16 @@
 <mujoco model="g1_manipulation_pinned_scene">
   <include file="g1_manipulation_scene.staged.xml"/>
 
-  <!-- Grasping settings, in the pinned overlay because these are the only scenes loaded with no
-       walking policy running. Same reasoning as g1_tabletop_pinned_scene. -->
+  <!-- Grasp contact settings, as in g1_tabletop_pinned_scene. -->
   <option impratio="10" cone="elliptic" noslip_iterations="3"/>
 
   <equality>
-    <!-- pelvis, not torso_link, which is what g1_navigation_pinned_scene welds.
-         That scene wants the waist free so the torso pitches the way it does when walking,
-         because its sensor mounts hang off the torso and the geometry checks measure them.
-         This scene wants the opposite: a repeatable arm base.
-
-         Welding the torso leaves the waist free, so the torso settles under gravity to a
-         slightly different place every launch. Measured across three: the odom origin landed
-         at pelvis x +0.039, +0.070 and +0.078. Five centimetres of that is the difference
-         between a grasp being inside the arm's reach and having no IK at all. Welding the
-         pelvis instead fixes the base the arm reaches from, and the waist is then held by
-         the walking policy's own stiff hold. -->
+    <!-- The pelvis, so the frame the arm plans in is the same every launch: with only the torso
+         welded, the pelvis settles centimetres differently each time, enough to lose IK. -->
     <weld name="pelvis_world_pin" body1="pelvis"/>
 
-    <!-- Pinning the pelvis freezes the legs rather than running the balance policy, so nothing
-         commands the waist during startup and the torso falls to its roll and pitch stops before
-         the freeze controller captures it: 30 degrees on both, tilting the head camera and the
-         arm's reach frame with it. This locks the waist at its spawn zero. -->
+    <!-- Nothing commands the waist until the freeze controller captures it, by which time the
+         torso has fallen to its roll and pitch stops. This holds it at its spawn pose. -->
     <weld name="torso_world_pin" body1="torso_link"/>
   </equality>
 </mujoco>

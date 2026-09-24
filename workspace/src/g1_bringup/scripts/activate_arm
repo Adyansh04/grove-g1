@@ -1,17 +1,14 @@
 #!/usr/bin/env python3
-"""Acquires control authority over the G1 arms, and moves them somewhere a planner can work from.
+"""Acquires the G1 arms and hands, then moves the arms somewhere a planner can work from.
 
-There is no arm component to activate: G1LowCmdSystem owns all 29 body motors and is active from
-bring-up, holding the arms through arm_freeze_controller. Acquiring is one switch that trades that
-freeze for arm_trajectory_controller, and it must be one switch, because a joint this component
-sees unclaimed is a joint it leaves unpowered. The hands follow, as separate components.
+G1LowCmdSystem is active from bring-up and holds the arms through arm_freeze_controller. Acquiring
+swaps that for arm_trajectory_controller in one switch, because a joint the component sees
+unclaimed is left unpowered. The hands are separate components and follow, best-effort.
 
-The arms are then moved out to the sides, unplanned: where they hang at bring-up is inside the
-octomap of any table the robot is standing at, and a start state in collision has no plan out of
-it.
+The arms then move out to the sides unplanned: where they hang at bring-up is inside the octomap
+of any table in front, and MoveIt cannot plan from a start state in collision.
 
-Python, not C++: one-shot administrative sequencing well under 1 Hz, the same category as the
-launch files it sits beside.
+Python, not C++: one-shot sequencing well under 1 Hz.
 """
 
 import sys
@@ -30,9 +27,8 @@ CONTROLLER_NAME = "arm_trajectory_controller"
 # What holds the arms until the trajectory controller displaces it.
 ARM_FREEZE_CONTROLLER = "arm_freeze_controller"
 
-# The hands, acquired in the same order and by the same rules. Best-effort on purpose: a Dex3
-# that is absent, unpowered or not publishing state must not stop the arm from being usable,
-# and G1Dex3System refuses to activate without fresh feedback rather than drive from a stale one.
+# Best-effort: a Dex3 that is absent or not publishing state must not cost the arm, and
+# G1Dex3System refuses to activate without fresh feedback.
 HANDS = (
     ("G1Dex3SystemLeft", "left_hand_controller"),
     ("G1Dex3SystemRight", "right_hand_controller"),
@@ -40,9 +36,8 @@ HANDS = (
 # Shorter than the arm's: an absent hand should be reported quickly, not waited out twice.
 HAND_ACTIVATE_TIMEOUT_S = 5.0
 
-# Straight and wide to the sides: a hand beside its own hip is in nothing's way, whatever the
-# table. Measured, the palm ends near (0.04, 0.35, 0.86) in odom. Symmetric so the two arms'
-# mass cancels laterally, and mirrored per arm the way the SRDF mirrors its states.
+# Out to the sides with the palms near hip height, clear of any table. Left arm values; the pose
+# is symmetric, so the arms' mass cancels laterally.
 CLEAR_POSTURE = {
     "shoulder_pitch_joint": 0.90,
     "shoulder_roll_joint": 1.10,

@@ -2,22 +2,18 @@
   <include file="g1_tabletop_scene.staged.xml"/>
 
   <visual>
-    <!-- From the robot's right, where the gap between the held-out hand and the table shows. From
-         the base scene's angle the hand projects onto the objects and looks like a collision. -->
+    <!-- From the robot's right, where the gap between the held-out hand and the table shows. -->
     <global azimuth="90" elevation="-15"/>
   </visual>
 
-  <!-- Grasping settings, in the pinned overlay because these are the only scenes loaded with no
-       walking policy running. The elliptic cone stops effective friction exceeding the nominal
-       along a diagonal, impratio keeps a held object from creeping, and the noslip pass removes
-       what is left. Timestep and integrator are untouched: the bridge and the finger PD are both
-       tuned against 2 ms Euler. -->
+  <!-- Grasp contact settings, only in pinned overlays where no walking policy runs: elliptic
+       cones, impratio against creep and a noslip pass. Timestep and integrator stay at the 2 ms
+       Euler the bridge and finger PD are tuned for. -->
   <option impratio="10" cone="elliptic" noslip_iterations="3"/>
 
   <equality>
-    <!-- Same pair and the same reason as g1_manipulation_pinned_scene: the pelvis weld fixes the
-         base the arm reaches from, and the torso weld holds the head camera still, which is what
-         a perception measurement is compared against. -->
+    <!-- The same pair as g1_manipulation_pinned_scene: a repeatable arm base, and a head camera
+         held still for the perception measurements. -->
     <weld name="pelvis_world_pin" body1="pelvis"/>
     <weld name="torso_world_pin" body1="torso_link"/>
   </equality>

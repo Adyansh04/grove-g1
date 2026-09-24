@@ -1,27 +1,8 @@
 <mujoco model="g1_tabletop_scene">
-  <!-- The perception scene: six objects and a basket on one pedestal, at arm's length in front of
-       the robot.
-
-       g1_manipulation_scene is deliberately one block, because a pick test wants one answer. This
-       is the other half of the question: several objects a detector has to tell apart, close
-       enough together that a mask which runs onto its neighbour shows up as a wrong pose rather
-       than as a missing one.
-
-       Laid out in two rows for a reason. The near row is what the arm can reach, and it holds two
-       blocks of identical shape in different colours, so "pick up the red block" can only be
-       answered by choosing correctly rather than by finding the one graspable thing. The far row
-       is out of reach on purpose: a selection test wants more candidates than the arm can
-       service.
-
-       Shapes are otherwise as different as the pedestal allows. A cylinder whose silhouette hides
-       its own base, a sphere whose lowest visible point is its equator, and a cup that is a
-       cylinder of another colour. Whether the geometry recovers a sphere's height is the thing
-       the support-plane fit exists to get right.
-
-       Every geom is group 2, for the reason g1_perception_scene explains: the sweep masks to that
-       group, or every ray returns the robot's own shell.
-
-       Staged into the vendored model directory at launch, so relative includes resolve. -->
+  <!-- The perception scene: six objects and a box on one pedestal. The near row is in reach and
+       holds two blocks that differ only in colour, so "the red block" is a choice; the far row is
+       out of reach on purpose, to give a selector more candidates than the arm can take. Every
+       geom is group 2, the only group the LiDAR sweep sees. -->
   <include file="g1_29dof.xml"/>
 
   <statistic center="0 0 0.5" extent="2.0"/>
@@ -52,13 +33,8 @@
     <light pos="0 0 1.5" dir="0 0 -1" directional="true"/>
     <geom name="floor" group="2" size="0 0 0.05" type="plane" material="groundplane"/>
 
-    <!-- Wider than the manipulation pedestal, because six objects and a basket have to sit apart
-         without touching, and at the same 0.80 top so a grasp tuned on one scene transfers to the
-         other. Widened again for the basket and the far row. The near edge stays at x 0.24, which
-         is as close as the pedestal can come without fouling the arm at spawn. -->
-    <!-- Bit 1 on the top and on every object is what the Dex3's contact geometry pairs with: the
-         hand is contype 2 and meets nothing until a scene opts in. The legs keep bit 0 alone,
-         since nothing reaches them. -->
+    <!-- Same 0.80 m top as the manipulation pedestal, wider for the extra objects. Contype bit 1
+         on the top and the objects is what the Dex3's contact geometry (contype 2) pairs with. -->
     <geom name="table_top" group="2" type="box" size="0.19 0.28 0.015" pos="0.43 -0.32 0.785"
       material="pedestal_mat" contype="3" conaffinity="3"/>
     <geom name="table_leg_near" group="2" type="box" size="0.02 0.02 0.385"
@@ -66,19 +42,8 @@
     <geom name="table_leg_far" group="2" type="box" size="0.02 0.02 0.385"
       pos="0.58 -0.08 0.385" material="pedestal_mat" contype="1" conaffinity="1"/>
 
-    <!-- Somewhere to put an object down, because releasing one onto open table is the hard half
-         of a place: it has to be resting and stable before the fingers open, and a basket makes
-         that a matter of getting inside the rim instead. Static geoms, not a body: a target that
-         slides when nudged is not a target.
-
-         120 mm inside 10 mm walls, so a 45 mm object has 37 mm of clearance either side, and the
-         rim is 50 mm so the object clears it on the way in while the closed fingers, which hang
-         34 mm below the grip point, stay above it. -->
-    <!-- A body, not loose geoms, and with no freejoint: static, but named. The simulator reports
-         a pose and an axis-aligned size for every body it is asked about, taken over all of that
-         body's geoms, so being a body is what lets perception and the ground-truth relay both
-         see the basket at all. Loose geoms are invisible to both, and a place aimed at one has
-         to be given typed-in coordinates. -->
+    <!-- Somewhere to put an object down. A named body without a joint: static, but reported by
+         the simulator's pose relay, so perception and a place can both find it by name. -->
     <body name="brown_box" pos="0.32 -0.34 0.80">
       <geom name="brown_box_floor" group="2" type="box" size="0.08 0.08 0.006" pos="0 0 0.006"
         material="brown_box_mat" contype="3" conaffinity="3"/>
@@ -92,62 +57,38 @@
         pos="0.072 0 0.032" material="brown_box_mat" contype="3" conaffinity="3"/>
     </body>
 
-    <!-- The graspable row, nearest the robot on the band the arm can actually reach, and the
-         basket beside them. Same size, mass and friction as the manipulation scene's block, so a
-         pick tuned there is tuned here.
-
-         45 x 45 x 90, taller than it is wide, and not a cube because no cube works. The
-         descending thumb hangs 63 mm below the grip point, so its clearance over the table is
-         (grip height - 63); the grip point cannot be above the object, and min_grip_height_m puts
-         the grip 80 mm up, so the object has to be at least that tall. A cube satisfying both
-         does not exist, which is why this is tall and narrow.
-
-         Narrowed from 60 mm across. The hand takes nothing wider than 75, so at 60 the fingers
-         closed barely 8 mm each side and held it on a shallow pinch: enough to lift with the base
-         pinned, not enough to keep while the robot walked, where it was measured dropping during
-         the retreat. At 45 they close 15 mm each side and wrap the block rather than pinching it.
-         The height is untouched on purpose, because that is what the top grasp needs. -->
+    <!-- 45 x 45 x 90. Taller than wide because the thumb hangs 63 mm below the grip point, and
+         narrow enough for the fingers to wrap rather than pinch it. -->
     <body name="red_block" pos="0.30 -0.08 0.847">
       <freejoint name="red_block_joint"/>
       <geom group="2" type="box" size="0.0225 0.0225 0.045" material="mat_red_obj" mass="0.124"
         contype="3" conaffinity="3" friction="1 0.005 0.0001"/>
     </body>
 
-    <!-- The same block in another colour, and the point of it: every other object here differs
-         in shape as well, so a detector could be right about them by silhouette alone. Telling
-         this one from the red block is only possible on colour, which is what makes "pick up the
-         red block" a test of selection rather than of detection.
-
-         140 mm from the red one, not 100. The hand's envelope around a block this size is about
-         100 mm across, so at 100 mm centres it cannot descend between the two: measured, the
-         fingers shoved this block 46 to 48 mm on the way in to the red one, in every run that
-         got as far as the grasp. 140 mm leaves an 80 mm face gap, about 20 mm of clearance per
-         finger. Closer spacing than this needs a grasp yaw chosen per object, not a fixed one. -->
+    <!-- The red block in blue: only colour tells them apart. 140 mm apart, so the hand can
+         descend on either without shoving the other. -->
     <body name="blue_block" pos="0.30 -0.22 0.847">
       <freejoint name="blue_block_joint"/>
       <geom group="2" type="box" size="0.0225 0.0225 0.045" material="mat_blue_obj" mass="0.124"
         contype="3" conaffinity="3" friction="1 0.005 0.0001"/>
     </body>
 
-    <!-- The far row, out past the arm's reach on purpose. These are here to be told apart, not
-         picked up: a selection test needs more candidates than the arm can service, or the
-         grounder never has to choose. -->
+    <!-- The far row, out of reach: here to be told apart, not picked. -->
     <body name="green_cylinder" pos="0.50 -0.10 0.847">
       <freejoint name="green_cylinder_joint"/>
       <geom group="2" type="cylinder" size="0.03 0.045" material="mat_green_obj" mass="0.15"
         contype="3" conaffinity="3" friction="1 0.005 0.0001"/>
     </body>
 
-    <!-- The shape the support plane matters most for: seen from above, its lowest visible point
-         is its equator, so a fit that takes the object's own lowest point reports half a ball. -->
+    <!-- Seen from above its lowest visible point is its equator, which is what the support-plane
+         fit has to get right. -->
     <body name="blue_sphere" pos="0.50 -0.24 0.839">
       <freejoint name="blue_sphere_joint"/>
       <geom group="2" type="sphere" size="0.037" material="mat_blue_obj" mass="0.1"
         contype="3" conaffinity="3" friction="0.8 0.005 0.0001"/>
     </body>
 
-    <!-- Rectangular rather than square, so its yaw is recoverable at all: a square top face has
-         no principal direction to find. -->
+    <!-- Rectangular, so its yaw is recoverable. -->
     <body name="yellow_box" pos="0.50 -0.38 0.827">
       <freejoint name="yellow_box_joint"/>
       <geom group="2" type="box" size="0.04 0.025 0.025" material="mat_yellow_obj" mass="0.12"
@@ -160,21 +101,16 @@
         contype="3" conaffinity="3" friction="1 0.005 0.0001"/>
     </body>
 
-    <!-- The depth camera element the sensor sampler renders through, exactly as the other scenes
-         carry it: the mount belongs to the vendored robot and cannot host a camera, so the
-         sampler writes this one's pose from torso_link every frame. -->
+    <!-- The depth camera the sensor sampler renders through; it moves the camera to the torso
+         mount every frame. -->
     <camera name="d435i" mode="fixed" fovy="58" resolution="848 480" pos="0 0 1"/>
   </worldbody>
 
-  <!-- No grasp_* welds: the fingers have contact geometry (patch 008) and hold the object by
-       gripping it. grasp_weld finds nothing to manage here and says so at startup. -->
+  <!-- No grasp_* welds: the fingers hold objects by contact (patch 008). -->
 
   <equality>
-    <!-- Spawn the arms at activate_arm's CLEAR_POSTURE, clear of the table and the objects. In the
-         base scene rather than the pinned overlay because it is the layout that demands it: at the
-         URDF zero the right hand is inside the green cylinder, whichever variant is staged.
-         ApplyStartupPose puts the joints here before the first step, so these start satisfied and
-         only hold against gravity; patch 007 then hands each to its motor and releases it. -->
+    <!-- Spawn the arms at activate_arm's CLEAR_POSTURE: at the URDF zero the right hand is inside
+         the green cylinder. These hold the pose until patch 007 hands each joint to its motor. -->
     <joint name="startup_hold_left_shoulder_pitch" joint1="left_shoulder_pitch_joint"
       polycoef="0.9 0 0 0 0" solref="0.05 1"/>
     <joint name="startup_hold_left_shoulder_roll" joint1="left_shoulder_roll_joint"

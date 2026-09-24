@@ -1,19 +1,7 @@
 <mujoco model="g1_manipulation_scene">
-  <!-- The fast skill scene: one object, on a pedestal, at arm's length in front of the robot.
-
-       Exists so a pick can be exercised without navigating to the facility workbench first,
-       and without waiting on the gait to hold still once it has. The pedestal top is at the
-       workbench's own 0.75 m and the object is the same 6 x 9 cm block, so a grasp tuned here is
-       tuned for there.
-
-       Deliberately measured against by nothing else. g1_perception_scene is what the LiDAR
-       and octomap tests assert geometry from, and adding a pedestal to it would move numbers
-       those tests were written against.
-
-       Every geom is group 2, for the reason g1_perception_scene explains: the sweep masks to
-       that group, or every ray returns the robot's own shell.
-
-       Staged into the vendored model directory at launch, so relative includes resolve. -->
+  <!-- The skill scene: one block on a pedestal at arm's length, so a pick runs without
+       navigating first. Every geom is group 2, the only group the LiDAR sweep sees. Staged into
+       the vendored model directory at launch, so relative includes resolve. -->
   <include file="g1_29dof.xml"/>
 
   <statistic center="0 0 0.5" extent="2.0"/>
@@ -39,15 +27,8 @@
     <light pos="0 0 1.5" dir="0 0 -1" directional="true"/>
     <geom name="floor" group="2" size="0 0 0.05" type="plane" material="groundplane"/>
 
-    <!-- The near edge must clear the spawned arm. The right palm hangs at about odom
-         (0.18, -0.18, 0.74) at spawn: arms down, elbows bent forward by the pose
-         arm_freeze_controller captures. So the top starts at x 0.26, 8 cm clear of it, and
-         sits at 0.80, above where the palm hangs rather than around it.
-
-         Height is chosen to match the facility workbench (0.75) as closely as the arm's reach
-         allows, so a grasp tuned here transfers. -->
-    <!-- Bit 1 on the top and on the block is what the Dex3's contact geometry pairs with: the hand
-         is contype 2 and meets nothing until a scene opts in. The legs keep bit 0 alone. -->
+    <!-- Top at 0.80 m, its near edge 8 cm clear of the spawned right palm. Contype bit 1 on the
+         top and the block is what the Dex3's contact geometry (contype 2) pairs with. -->
     <geom name="table_top" group="2" type="box" size="0.19 0.17 0.015" pos="0.45 -0.20 0.785"
       material="pedestal_mat" contype="3" conaffinity="3"/>
     <geom name="table_leg_near" group="2" type="box" size="0.02 0.02 0.385"
@@ -55,37 +36,24 @@
     <geom name="table_leg_far" group="2" type="box" size="0.02 0.02 0.385"
       pos="0.60 -0.05 0.385" material="pedestal_mat" contype="1" conaffinity="1"/>
 
-    <!-- Same size, mass and friction as the facility scene's, so the two are the same problem.
-         On the near half of the top, which is the part the arm can reach, and spawned at
-         rest height (half-height above the 0.80 surface) rather than a few mm above it, so it
-         settles instead of bouncing.
-
-         60 x 60 x 90, and taller than it is wide for a reason no tuning gets around. The thumb
-         hangs 63 mm below the grip point while the hand descends, so its clearance over the table
-         is (grip height - 63); the grip point can never be above the object itself, and the hand
-         cannot take anything wider than 75 mm. A cube therefore has at most 75 - 63 = 12 mm, and
-         the descent lands within 6-10 mm, so a cube scrapes the surface on the way in. At 90 mm
-         tall the grip point goes to 80 and the clearance is 17 mm. See g1_common.xacro. -->
+    <!-- 60 x 60 x 90, spawned at rest height. Taller than wide because the thumb hangs 63 mm
+         below the grip point: gripped at min_grip_height_m (80 mm) it clears the table by 17. -->
     <body name="red_block" pos="0.32 -0.20 0.847">
       <freejoint name="red_block_joint"/>
       <geom group="2" type="box" size="0.03 0.03 0.045" material="mat_red_obj" mass="0.22"
         contype="3" conaffinity="3" friction="1 0.005 0.0001"/>
     </body>
 
-    <!-- The depth camera element the sensor sampler renders through, exactly as the other
-         scenes carry it: the mount belongs to the vendored robot and cannot host a camera, so
-         the sampler writes this one's pose from torso_link every frame. -->
+    <!-- The depth camera the sensor sampler renders through; it moves the camera to the torso
+         mount every frame. -->
     <camera name="d435i" mode="fixed" fovy="58" resolution="848 480" pos="0 0 1"/>
   </worldbody>
 
-  <!-- No grasp_* welds: the fingers have contact geometry (patch 008) and hold the block by
-       gripping it. grasp_weld finds nothing to manage here and says so at startup. -->
+  <!-- No grasp_* welds: the fingers hold the block by contact (patch 008). -->
 
   <equality>
-    <!-- Spawn the arms at activate_arm's CLEAR_POSTURE. Same reason as the tabletop scene: at the
-         URDF zero the right hand is inside the block, and a hand with contact geometry would throw
-         it. ApplyStartupPose puts the joints here before the first step, so these hold rather than
-         pull, and patch 007 hands each to its motor. -->
+    <!-- Spawn the arms at activate_arm's CLEAR_POSTURE: at the URDF zero the right hand is inside
+         the block. These hold the pose until patch 007 hands each joint to its motor. -->
     <joint name="startup_hold_left_shoulder_pitch" joint1="left_shoulder_pitch_joint"
       polycoef="0.9 0 0 0 0" solref="0.05 1"/>
     <joint name="startup_hold_left_shoulder_roll" joint1="left_shoulder_roll_joint"
