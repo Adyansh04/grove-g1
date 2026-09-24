@@ -1,9 +1,6 @@
 /**
  * @file test_robot_model.cpp
- * @brief Loads the URDF and SRDF the way move_group does and asserts what the groups came out as.
- *
- * No simulator, no ROS graph. The SRDF is prose plus a generated block, and both are easy to
- * break in ways that only show up as a plan quietly failing much later.
+ * @brief Loads the URDF and SRDF the way move_group does and checks the resulting model.
  */
 
 #include <gmock/gmock.h>
@@ -40,17 +37,13 @@ const std::vector<std::string> kRightArm = {
     "right_wrist_yaw_joint",
 };
 
-/// The links that can actually reach each other. Their cross-arm collision pairs are the whole
-/// reason the both_arms group exists, so they must never end up disabled.
+/// Links that can reach the other arm; their cross-arm pairs must stay enabled for both_arms.
 const std::vector<std::string> kReachingLinks = {
     "elbow_link", "wrist_roll_link", "wrist_pitch_link", "wrist_yaw_link", "hand_palm_link",
 };
 
-/// How far every joint of a named posture must move before the robot self-collides.
-///
-/// Valid is not the same as usable. A posture with only 4.6 degrees of room on
-/// right_shoulder_roll deadlocked twice, because an arm carrying the block through a walk droops
-/// 0.071 to 0.155 rad and MoveIt cannot plan out of a start state in collision.
+/// Room every joint of a named posture needs before self-collision: an arm drooping under load
+/// into a colliding start state cannot be planned out of.
 constexpr double kPostureMarginRad = 0.20;
 constexpr double kMarginStepRad    = 0.02;
 
@@ -144,9 +137,8 @@ TEST_F(RobotModelTest, NamedPosturesKeepRoomBeforeSelfCollision)
 
 TEST_F(RobotModelTest, PlansInThePelvisFrame)
 {
-    // The vendored URDF's floating_base_joint is commented out and g1.srdf declares no virtual
-    // joint, so the model root is the pelvis. Pinned because adding a virtual joint later moves
-    // every pose goal without any other visible change.
+    // No floating base and no virtual joint. Pinned because adding one moves every pose goal
+    // without any other visible change.
     EXPECT_EQ(model_->getModelFrame(), "pelvis");
 }
 
@@ -167,9 +159,8 @@ TEST_F(RobotModelTest, TheDualArmGroupIsBothArmsTogether)
 
     std::vector<std::string> expected = kLeftArm;
     expected.insert(expected.end(), kRightArm.begin(), kRightArm.end());
-    // Order is the URDF's depth-first joint order, which puts the left arm first. Asserted
-    // rather than assumed: a trajectory is matched to the controller by name, but anything
-    // reading joint values positionally depends on this.
+    // The URDF's depth-first order, left arm first. Trajectories match by name, but anything
+    // reading joint values positionally depends on it.
     EXPECT_THAT(both->getActiveJointModelNames(), ElementsAreArray(expected));
 }
 
@@ -178,14 +169,11 @@ TEST_F(RobotModelTest, TheDualArmGroupIsNotAChainAndHasBothArmsAsSubgroups)
     const auto* both = model_->getJointModelGroup("both_arms");
     ASSERT_NE(both, nullptr);
 
-    // This is the root reason both_arms must stay out of kinematics.yaml: every chain solver,
-    // pick_ik included, refuses a group that is not a chain, and MoveIt only builds the
-    // per-subgroup solver map for groups that have no solver of their own.
+    // Why both_arms stays out of kinematics.yaml: chain solvers refuse it, and MoveIt builds the
+    // per-subgroup solver map only for groups without a solver of their own.
     EXPECT_FALSE(both->isChain()) << "both_arms is a chain, so the subgroup IK story is wrong";
 
-    // The map is keyed on subgroups, so there have to be exactly the two arms to key it on.
-    // Whether the map itself was populated needs a plugin loader and a live node, so it is
-    // asserted in test_moveit_config_drift (the YAML rule) and against a running move_group.
+    // The solver map is keyed on these subgroups; test_moveit_config_drift checks the YAML rule.
     std::vector<const moveit::core::JointModelGroup*> sub_groups;
     both->getSubgroups(sub_groups);
     std::set<std::string> subgroups;
@@ -198,10 +186,8 @@ TEST_F(RobotModelTest, TheDualArmGroupIsNotAChainAndHasBothArmsAsSubgroups)
 
 TEST_F(RobotModelTest, NoArmGroupCommandsTheHand)
 {
-    // The hand is a separate device on its own topics with its own authority, and it has its
-    // own group and its own controller. An arm group that reached into one would plan a
-    // trajectory no single controller can execute, so MoveIt would either split it or refuse
-    // it.
+    // The hand has its own group and controller; an arm group reaching into it would plan a
+    // trajectory no single controller executes.
     for (const auto* name : { "left_arm", "right_arm", "both_arms" })
     {
         const auto* group = model_->getJointModelGroup(name);
@@ -216,7 +202,7 @@ TEST_F(RobotModelTest, NoArmGroupCommandsTheHand)
 
 TEST_F(RobotModelTest, ArmsAreRootedAtTheTorsoNotThePelvis)
 {
-    // Spanning the waist would plan motion the onboard controller owns.
+    // The waist belongs to waist_freeze_controller and the balance policy.
     for (const auto* name : { "left_arm", "right_arm" })
     {
         const auto* group = model_->getJointModelGroup(name);
@@ -269,10 +255,8 @@ TEST_F(RobotModelTest, TheNamedPosesAgreeAcrossTheThreeGroups)
 
 TEST_F(RobotModelTest, EachHandIsExactlyItsSevenFingerJoints)
 {
-    // A set, not a sequence: a group declared as a joint list comes back sorted rather than in
-    // document order, so left_hand reads index, middle, thumb here while the wire says thumb,
-    // middle, index. Harmless because the JTC remaps by name and G1Dex3System takes its order
-    // from the URDF; the wire order is pinned by g1_description's xacro test.
+    // A set: MoveIt sorts a joint-list group. The wire order is pinned by g1_description's xacro
+    // test and test_moveit_config_drift.
     for (const auto* side : { "left", "right" })
     {
         const auto* hand = model_->getJointModelGroup(std::string(side) + "_hand");
@@ -291,8 +275,7 @@ TEST_F(RobotModelTest, EachHandIsExactlyItsSevenFingerJoints)
 
 TEST_F(RobotModelTest, EachHandIsItsArmsEndEffector)
 {
-    // What lets attachObject work out its own touch links, and what makes RViz offer the hand
-    // as the arm's gripper rather than as an unrelated group.
+    // Lets attachObject derive its touch links and RViz offer the hand as the arm's gripper.
     std::map<std::string, srdf::Model::EndEffector> by_group;
     for (const auto& effector : srdf_->getEndEffectors())
     {
@@ -311,9 +294,7 @@ TEST_F(RobotModelTest, EachHandIsItsArmsEndEffector)
 
 TEST_F(RobotModelTest, EachHandHasAnOpenAndAClosedPosture)
 {
-    // Three per hand, and each must name all seven joints: a posture that leaves a finger out
-    // moves the rest and leaves that one wherever it happened to be. pinch_ready is the one a
-    // pick descends in, with the thumb retracted so it does not reach the table first.
+    // Each must name all seven joints, or the finger left out stays wherever it happened to be.
     std::map<std::string, std::set<std::string>> poses_by_group;
     for (const auto& state : srdf_->getGroupStates())
     {
@@ -334,8 +315,7 @@ TEST_F(RobotModelTest, EachHandHasAnOpenAndAClosedPosture)
 
 TEST_F(RobotModelTest, TheNamedPosesAreWithinJointLimits)
 {
-    // Collision-freedom was checked live against move_group before these were written down;
-    // limits are checkable here, and a pose outside them is a plan that fails at request time.
+    // A named pose outside the limits fails every plan request that targets it.
     const auto* both = model_->getJointModelGroup("both_arms");
     ASSERT_NE(both, nullptr);
     moveit::core::RobotState state(model_);
@@ -357,9 +337,8 @@ TEST_F(RobotModelTest, TheNamedPosesAreWithinJointLimits)
 
 TEST_F(RobotModelTest, TheCollisionMatrixExists)
 {
-    // Deliberately a conservative matrix: adjacent pairs plus what touches at rest, and nothing
-    // found by random sampling. Enough that the robot is not in collision before it moves, which
-    // is what RRTConnect needs to seed. The bound is a floor, not a target.
+    // Adjacent pairs plus what touches at rest, enough for RRTConnect to seed from a start state
+    // that is not in collision. The bound is a floor, not a target.
     EXPECT_GT(srdf_->getDisabledCollisionPairs().size(), 40U)
         << "g1.srdf carries no generated collision matrix; see the package README";
 }
@@ -382,10 +361,7 @@ TEST_F(RobotModelTest, AdjacentLinksAreDisabled)
         {
             continue;
         }
-        // Only pairs that can actually collide need disabling. The sensor bodies added in
-        // g1_common.xacro are visual-only on purpose, so they carry no collision shapes
-        // and MoveIt never checks them; requiring them here would pad the matrix with entries
-        // that mean nothing.
+        // Links without collision shapes, like the visual-only sensor bodies, are never checked.
         const auto* parent_link = model_->getLinkModel(parent);
         const auto* child_link  = model_->getLinkModel(child);
         if (parent_link == nullptr || child_link == nullptr || parent_link->getShapes().empty() ||
@@ -393,8 +369,8 @@ TEST_F(RobotModelTest, AdjacentLinksAreDisabled)
         {
             continue;
         }
-        // Links joined by a joint touch by construction. This is the category a careless hand
-        // edit drops, and dropping it makes every plan start in collision.
+        // Links joined by a joint touch by construction; dropping one makes every plan start in
+        // collision.
         EXPECT_TRUE(disabled.contains({ parent, child }))
             << "adjacent pair " << parent << " / " << child << " is not disabled";
     }
@@ -402,10 +378,8 @@ TEST_F(RobotModelTest, AdjacentLinksAreDisabled)
 
 TEST_F(RobotModelTest, TheArmsCanStillCollideWithEachOther)
 {
-    // The safety property that makes both_arms worth having. Proximal cross-arm pairs are
-    // legitimately disabled (two shoulders cannot reach each other), but anything from the
-    // elbow out must stay checked, or a coordinated plan can drive the hands through one
-    // another and report success.
+    // Anything from the elbow out must stay checked across arms, or a both_arms plan can drive
+    // the hands through one another and report success.
     for (const auto& pair : srdf_->getDisabledCollisionPairs())
     {
         const bool left_then_right =

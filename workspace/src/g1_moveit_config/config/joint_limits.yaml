@@ -1,24 +1,13 @@
 # Velocity and acceleration limits MoveIt times its trajectories against.
 #
-# These are not the URDF's limits. The URDF says 22 to 37 rad/s, which is what the motor can do,
-# not what the arm tracks. arm_trajectory_controller claims position alone, so the component runs
-# these joints on its position_only_kp of 25 to 40, soft enough that a trajectory timed against
-# the motor is one the arm falls behind, which surfaces as the controller aborting on a goal-time
-# tolerance that looks unrelated to speed. 0.8 is what the arm actually follows: JTC
-# interpolation and the 200 Hz controller_manager against a 100 Hz publish rate can push
-# instantaneous command deltas above the nominal.
+# Not the URDF's 22 to 37 rad/s, which are motor limits. arm_trajectory_controller claims position
+# alone, so the arm runs on the component's position_only_kp (g1_description's
+# lowcmd_params.yaml) with no gravity compensation and falls behind a trajectory timed near the
+# motor limits; the JTC then aborts on its goal-time tolerance. 0.8 rad/s on every arm joint.
 #
-# g1_moveit_config's drift test asserts every value here stays under that clamp.
-#
-# Acceleration has no URDF equivalent at all, the vendored file declaring none, and
-# time-optimal parameterization needs one. Without it a plan comes back "successful" carrying
-# zero timestamps and only fails at execution. 2.0 rad/s^2 reaches full speed in 0.4 s; arm
-# acceleration shifts the centre of mass on a robot that is balancing itself, so it starts
-# conservative and moves when there is a measurement to move it against.
-#
-# Uniform across all 14 rather than per-joint: every URDF limit is far above the clamp, so the
-# clamp is what binds on every joint and per-joint tuning would encode a distinction that does
-# not exist yet.
+# The URDF declares no acceleration limits and time parameterization needs them: without, a plan
+# succeeds with zero timestamps and fails only at execution. 2.0 rad/s^2 is conservative because
+# arm acceleration shifts the centre of mass of a robot balancing itself.
 
 joint_limits:
   left_shoulder_pitch_joint:
@@ -92,11 +81,9 @@ joint_limits:
     has_acceleration_limits: true
     max_acceleration: 2.0
 
-  # The hands run against a different clamp: g1_hand_interface slews at 3.0 rad/s
-  # (g1_description/config/dex3_params.yaml), so 2.0 leaves the same backstop margin 0.8 leaves
-  # the arm's 1.0. Acceleration is higher than the arm's because a finger is a few grams on a
-  # short lever and moving one does not shift the centre of mass of a balancing robot; 2.0 here
-  # would make every grasp take a second for no reason.
+  # G1Dex3System slew-clamps every finger at 3.0 rad/s (g1_description's dex3_params.yaml); the
+  # drift test keeps these under it. Acceleration is higher than the arm's because a finger does
+  # not move the centre of mass.
   left_hand_thumb_0_joint:
     has_velocity_limits: true
     max_velocity: 2.0

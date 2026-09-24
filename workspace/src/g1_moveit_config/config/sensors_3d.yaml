@@ -1,66 +1,44 @@
 # The 3D LiDAR into the planning scene, so move_group plans around what the robot can see.
 #
-# octomap_resolution is read at the node root, not inside a sensor block, because move_group's
-# to_dict() flat-merges this whole file into its parameters, which is the only reason a
-# top-level key here becomes a node parameter. Without it move_group logs "Resolution not
-# specified for Octomap. Assuming resolution = 0.1".
+# octomap_resolution sits at the top level because to_dict() flat-merges this file into
+# move_group's parameters, which read it at the node root. Unset, it falls back to 0.1 m.
 #
-# octomap_frame is deliberately absent because it does nothing. startWorldGeometryMonitor()
-# constructs the monitor with scene_->getPlanningFrame(), which is never empty, so the branch
-# that would read octomap_frame is unreachable. The octomap always lands in the planning frame,
-# `pelvis` for us. That is correct while the pelvis is pinned or the robot stands still; a
-# walking pelvis drags the voxel grid with it and the map smears. The fix when that matters is
-# an SRDF virtual joint to odom, argued in g1.srdf, not a setting here.
+# No octomap_frame: move_group builds the monitor in the planning frame, `pelvis`, and never reads
+# it. A walking pelvis drags the voxel grid with it; the fix is a virtual joint to odom in
+# g1.srdf, not a setting here.
 octomap_resolution: 0.025
 
-# `sensors` is a flat list of names, each a sibling top-level key below. It is not a list of
-# dicts, which ROS 2 parameters cannot represent, so the perception tutorial
-# (still an unmigrated ROS 1 page, its source begins ":moveit1:") cannot be copied.
+# A flat list of names, each a top-level block below. ROS 2 parameters cannot hold a list of
+# dicts, so the ROS 1-era perception tutorial does not carry over.
 sensors:
   - mid360_cloud
 
-# PointCloudOctomapUpdater rather than DepthImageOctomapUpdater, and not by preference.
-# On 2.5.9 the depth-image plugin's initialize() runs before setParams()
-# (occupancy_map_monitor.cpp L97 then L100), and initialize() is where the clipping planes,
-# shadow threshold and padding are pushed into the mesh filter, so none of its YAML ever
-# applies. Padding is the self-filter, and an untunable self-filter is not usable. That plugin
-# also links OpenGL, which a CPU-only machine cannot load.
+# PointCloudOctomapUpdater, not DepthImageOctomapUpdater: on MoveIt 2.5.9 the depth-image plugin's
+# initialize() runs before setParams(), so its padding, which is the self-filter, never applies.
 #
-# Every key below is mandatory: setParams() ANDs all seven, and dropping one skips the sensor
-# with nothing but an error log. Keep the decimal points: an int where a double is expected
-# throws out of the monitor constructor.
+# Every key is mandatory: setParams() skips the sensor with only an error log if one is missing.
+# Keep the decimal points: an int where a double is expected throws out of the monitor.
 mid360_cloud:
   sensor_plugin: occupancy_map_monitor/PointCloudOctomapUpdater
 
-  # The LiDAR, not the depth camera. The camera publishes a
-  # depth image, and turning it into a cloud needs depth_image_proc, whose point_cloud_xyz node
-  # would not receive from our relay: the relay publishes SensorDataQoS (best effort) and that
-  # node's image_transport subscription is reliable, so it sat silent with the image publishing
-  # at 10 Hz beside it. Remapping was correct (verified with `ros2 node info`) and a
-  # qos_overrides parameter did not take either, because the node does not enable overriding on
-  # those subscriptions.
-  #
-  # The LiDAR sidesteps all of it: already a PointCloud2, and the octomap updater subscribes
-  # with rmw_qos_profile_sensor_data, which matches the relay. No converter node at all.
+  # The LiDAR, not the depth camera: depth_image_proc's converter subscribes reliable and never
+  # receives the camera relay's best-effort images. This updater uses sensor-data QoS.
   point_cloud_topic: /livox/lidar
 
   # Past this a ray is carved as free space instead of marking an endpoint. The arms reach
-  # about 0.7 m, so this covers the workspace and a little beyond without mapping the far wall.
+  # about 0.7 m, so this covers the workspace without mapping the far wall.
   max_range: 2.5
 
-  # Every other point. The octomap resolution is 25 mm and the D435 returns far more points
-  # than that needs at these ranges.
+  # Every other point, halving the cost of each update.
   point_subsample: 2
 
-  # Self-filter padding, applied to the robot's own URDF collision geometry. Generous on the
-  # multiplier because those meshes become convex hulls, and a hull of the rubber hand is
-  # already a fat blob, so nothing between the fingers will ever be mapped regardless.
+  # Self-filter padding on the robot's own collision geometry. Generous on the scale because the
+  # meshes become convex hulls, so nothing between the fingers is ever mapped regardless.
   padding_offset: 0.02
   padding_scale: 1.2
 
   # The planner does not need a 30 Hz map, and every update walks the shape mask.
   max_update_rate: 5.0
 
-  # The self-filtered cloud, for seeing what the filter actually removed. Empty would simply
-  # skip the publisher.
+  # The self-filtered cloud, to see what the filter removed.
   filtered_cloud_topic: filtered_cloud

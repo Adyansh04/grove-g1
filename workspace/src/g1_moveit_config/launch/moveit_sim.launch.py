@@ -1,8 +1,7 @@
 """The simulator plus move_group: one command for arm planning in sim.
 
-Includes g1_bringup rather than the other way round, because manipulation sits above bring-up. Every
-argument is forwarded explicitly: an included file inherits the parent's configurations, so a
-child's default never fires for a name declared here.
+Every argument is forwarded explicitly: an included file inherits the parent's configurations,
+so a child's default never fires for a name declared here.
 """
 
 import os
@@ -64,9 +63,9 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "pin_pelvis",
             default_value="false",
-            description="SIM-ONLY: weld the pelvis and disable the walking policy, so the arms "
-            "can be exercised with nothing driving the legs. Worth it for planning work -- a "
-            "balancing robot sways, and the arm chain hangs off that.",
+            description="SIM-ONLY: pin the robot in place and disable the walking policy, so the "
+            "arms can be exercised with nothing driving the legs. A balancing robot sways, and "
+            "the arm chain hangs off that.",
         ),
         DeclareLaunchArgument(
             "sim_start_delay_s",
