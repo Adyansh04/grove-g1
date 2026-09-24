@@ -2,17 +2,9 @@
  * @file g1_base_approach_node.cpp
  * @brief Walks the base into arm's reach of a measured object, and backs it out again.
  *
- * The missing step between navigation and manipulation. Nav2 parks within 0.5 m of a goal it
- * chose from a map and the arm's measured reach window is about 0.2 m wide, so navigate-then-pick
- * does not work without something to close the gap.
- *
- * Lives here rather than in g1_manipulation because everything that writes a velocity command
- * belongs to the package that owns the velocity path.
- *
- * Writes /cmd_vel directly, as Nav2 does. Nothing arbitrates between the two because the mission
- * tree runs NavigateToPose and ApproachObject in sequence, never together.
- *
- * One closed loop over all three axes; the control law itself is in approach_planner.
+ * Nav2 parks within 0.5 m of its goal and the arm's reach window is about 0.11 m wide, so this
+ * closes the gap against the measured object. It writes /cmd_vel directly, as Nav2 does; the
+ * mission tree never runs the two together. The control law is in approach_planner.
  */
 
 #include <tf2/LinearMath/Quaternion.h>
@@ -26,8 +18,10 @@
 #include <cmath>
 #include <g1_msgs/action/approach_object.hpp>
 #include <g1_msgs/action/retreat.hpp>
+#include <geometry_msgs/msg/point_stamped.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <geometry_msgs/msg/twist.hpp>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -46,8 +40,7 @@
 namespace g1_locomotion
 {
 
-/// Nothing in this workspace asks for a longer reverse, and an unbounded distance_m is a request
-/// to walk backwards out of the room. A retreat is meant to get the base clear of a surface.
+/// A retreat only has to clear a surface; anything longer is a malformed goal.
 constexpr double kMaxRetreatDistanceM = 2.0;
 
 using ApproachObject     = g1_msgs::action::ApproachObject;
@@ -60,8 +53,7 @@ namespace
 
 double wrap(double a) { return std::atan2(std::sin(a), std::cos(a)); }
 
-/// steady_clock's own rep, not the double-based one `now() + duration<double>` produces, or
-/// every function taking a deadline needs its own template parameter.
+/// In steady_clock's own duration type, so deadlines compare without templates.
 std::chrono::steady_clock::time_point deadlineIn(double seconds)
 {
     return std::chrono::steady_clock::now() +
@@ -139,9 +131,25 @@ public:
         objects_sub_ = create_subscription<vision_msgs::msg::Detection3DArray>(
             "objects",
             rclcpp::SensorDataQoS(),
-            [this](vision_msgs::msg::Detection3DArray::SharedPtr msg) {
+            [this](const vision_msgs::msg::Detection3DArray::ConstSharedPtr& msg) {
                 const std::lock_guard<std::mutex> lock(objects_mutex_);
-                objects_ = std::move(msg);
+                for (const auto& detection : msg->detections)
+                {
+                    if (detection.results.empty())
+                    {
+                        continue;
+                    }
+                    geometry_msgs::msg::PointStamped& seen =
+                        sightings_[detection.results.front().hypothesis.class_id];
+                    seen.header = msg->header;
+                    seen.point  = detection.results.front().pose.pose.position;
+                }
+                // Track ids come and go, so aged-out sightings are dropped.
+                const rclcpp::Time newest(msg->header.stamp);
+                std::erase_if(sightings_, [&](const auto& entry) {
+                    return (newest - rclcpp::Time(entry.second.header.stamp)).seconds() * 1e3 >
+                           object_timeout_ms_;
+                });
             });
 
         approach_server_ = rclcpp_action::create_server<ApproachObject>(
@@ -199,9 +207,8 @@ public:
 
     ~BaseApproachNode() override
     {
-        // The goal threads are detached and dereference this node's members, so tearing down
-        // without waiting is a use-after-free, and the twist left on /cmd_vel would be whatever
-        // the loop last commanded. Ask them to stop, wait, then leave the wire at zero.
+        // Goal threads are detached and use this node's members: stop them, wait, then leave
+        // /cmd_vel at zero rather than at the last command.
         stopping_.store(true);
         while (goals_running_.load() > 0)
         {
@@ -216,8 +223,7 @@ public:
         }
         catch (const std::exception& e)
         {
-            // The C logger, not RCLCPP_*: this runs while the node is being destroyed, and a
-            // destructor must not throw whatever the publisher does.
+            // The C logger: this runs during destruction, which must not throw.
             RCUTILS_LOG_ERROR_NAMED(
                 "g1_base_approach",
                 "could not stop the base on shutdown: %s",
@@ -239,9 +245,8 @@ private:
         return true;
     }
 
-    /// Runs one goal body, guaranteeing the busy flag is released, the running count is balanced,
-    /// and that an escaping exception stops the robot and aborts the goal rather than terminating
-    /// the process with the last twist still latched on the wire.
+    /// Runs one goal body: releases the busy flag, balances the running count, and turns an
+    /// escaping exception into a stopped base and an aborted goal.
     template <typename ActionT, typename Body>
     void
     runGuarded(Body&& body, const std::shared_ptr<rclcpp_action::ServerGoalHandle<ActionT>>& handle)
@@ -281,8 +286,7 @@ private:
         cmd_pub_->publish(twist);
     }
 
-    /// Hold zero while the gait finishes the stride it is already in. Measuring before it stops
-    /// reports the command plus whatever of the stride was still in flight.
+    /// Holds zero while the gait finishes its stride, so the next measurement is of a stopped robot.
     void settle()
     {
         const auto until = std::chrono::steady_clock::now() +
@@ -329,67 +333,55 @@ private:
     /// The named object's position in the base frame, or nothing if it is missing or stale.
     std::optional<geometry_msgs::msg::PointStamped> objectInBase(const std::string& object_id)
     {
-        vision_msgs::msg::Detection3DArray::SharedPtr snapshot;
+        // The last sighting, not the newest message: a detector pass that misses a standing prop
+        // says nothing about where it went.
+        geometry_msgs::msg::PointStamped seen;
         {
             const std::lock_guard<std::mutex> lock(objects_mutex_);
-            snapshot = objects_;
-        }
-        if (snapshot == nullptr)
-        {
-            return std::nullopt;
+            const auto                        found = sightings_.find(object_id);
+            if (found == sightings_.end())
+            {
+                RCLCPP_WARN_THROTTLE(
+                    get_logger(),
+                    *get_clock(),
+                    2000,
+                    "'%s' has not been reported on /objects",
+                    object_id.c_str());
+                return std::nullopt;
+            }
+            seen = found->second;
         }
 
-        const double age_ms = (now() - rclcpp::Time(snapshot->header.stamp)).seconds() * 1e3;
+        const double age_ms = (now() - rclcpp::Time(seen.header.stamp)).seconds() * 1e3;
         if (age_ms > object_timeout_ms_)
         {
             RCLCPP_WARN_THROTTLE(
                 get_logger(),
                 *get_clock(),
                 2000,
-                "object poses are %.0f ms old",
+                "'%s' was last seen %.0f ms ago",
+                object_id.c_str(),
                 age_ms);
             return std::nullopt;
         }
 
-        for (const auto& detection : snapshot->detections)
+        try
         {
-            if (detection.results.empty() ||
-                detection.results.front().hypothesis.class_id != object_id)
-            {
-                continue;
-            }
-            geometry_msgs::msg::PointStamped in_source;
-            in_source.header = snapshot->header;
-            in_source.point  = detection.results.front().pose.pose.position;
-            try
-            {
-                // Latest available rather than the message stamp: both sides are ground truth
-                // on this track, and insisting on an exact stamp match fails while the robot
-                // walks for no accuracy gained.
-                in_source.header.stamp = rclcpp::Time(0, 0, get_clock()->get_clock_type());
-                return tf_buffer_.transform(in_source, base_frame_, tf2::durationFromSec(0.5));
-            }
-            catch (const tf2::TransformException& e)
-            {
-                RCLCPP_WARN_THROTTLE(
-                    get_logger(),
-                    *get_clock(),
-                    2000,
-                    "cannot transform the object pose: %s",
-                    e.what());
-                return std::nullopt;
-            }
+            // Latest transform: a standing object's odom pose stays valid, and what matters is
+            // where it is from the base now.
+            seen.header.stamp = rclcpp::Time(0, 0, get_clock()->get_clock_type());
+            return tf_buffer_.transform(seen, base_frame_, tf2::durationFromSec(0.5));
         }
-        // Logged explicitly: without it, this abort reads identically to a stale or
-        // untransformable pose, with no way to tell which one actually happened.
-        RCLCPP_WARN_THROTTLE(
-            get_logger(),
-            *get_clock(),
-            2000,
-            "'%s' is not among the %zu objects being reported",
-            object_id.c_str(),
-            snapshot->detections.size());
-        return std::nullopt;
+        catch (const tf2::TransformException& e)
+        {
+            RCLCPP_WARN_THROTTLE(
+                get_logger(),
+                *get_clock(),
+                2000,
+                "cannot transform the object pose: %s",
+                e.what());
+            return std::nullopt;
+        }
     }
 
     /// The reach window for this goal: mirrored for the left arm, widened for objects that have
@@ -438,9 +430,7 @@ private:
         const auto   deadline  = deadlineIn(timeout_s);
         auto         feedback  = std::make_shared<ApproachObject::Feedback>();
 
-        // The heading held for the whole approach. Fixed up front rather than recomputed from
-        // the object each iteration: the object moves in the base frame as the robot walks, so
-        // chasing it would never let the approach arrive square to anything.
+        // Fixed up front: chasing the object's bearing would never arrive square to anything.
         const auto start_pose = basePose();
         if (!start_pose)
         {
@@ -452,8 +442,7 @@ private:
                                        tf2::getYaw(start_pose->pose.orientation) :
                                        goal->working_yaw;
 
-        // Feedback at a couple of Hz rather than every tick: the loop runs at cmd_rate_hz and a
-        // subscriber does not need twenty updates a second to watch an approach close.
+        // Feedback at about 2 Hz, not every tick.
         const int  feedback_every = std::max(1, static_cast<int>(cmd_rate_hz_ / 2.0));
         int        tick           = 0;
         auto       last_measured  = std::chrono::steady_clock::now();
@@ -483,10 +472,8 @@ private:
             const auto here   = basePose();
             if (!object || !here)
             {
-                // Stand still rather than walk on a measurement we no longer have. Both of
-                // these go briefly unavailable for reasons that are not this skill's problem,
-                // such as a TF buffer that has not caught up after the base moved, so this is
-                // bounded rather than fatal on the first miss.
+                // Stand still without a measurement, for up to lookup_grace_s: TF and detections
+                // both drop out briefly.
                 publish(0.0, 0.0, 0.0);
                 if (blind_for() > lookup_grace_s_)
                 {
@@ -501,8 +488,7 @@ private:
             }
             last_measured = std::chrono::steady_clock::now();
 
-            // Judged in the RAW base frame, because that is the frame the ARM works in. Where
-            // the object sits relative to the robot is the whole of reachability.
+            // Judged in the base frame, which is what the arm's reach is defined in.
             const double heading_error = wrap(working_yaw - tf2::getYaw(here->pose.orientation));
             const auto   command =
                 planApproach(object->point.x, object->point.y, heading_error, limits, gait_);
@@ -531,9 +517,8 @@ private:
 
             if (command.state == ApproachState::kArrived)
             {
-                // Stop, let the gait finish its stride, then re-judge. The robot coasts after
-                // the command ends, and a coast that carries the object back out of the window
-                // has to be driven out again rather than reported as success.
+                // Stop, let the stride finish, then re-judge: the robot coasts, and a coast out of
+                // the window has to be closed again.
                 feedback->phase = ApproachObject::Feedback::PHASE_VERIFYING;
                 handle->publish_feedback(feedback);
                 settle();
@@ -608,16 +593,12 @@ private:
         const double timeout_s = goal->timeout_s > 0.0 ? goal->timeout_s : default_timeout_s_;
         const auto   deadline  = deadlineIn(timeout_s);
 
-        // Reverse. No turn, no walk: a turn taken beside a workbench swings the robot and
-        // whatever it is holding across the table, which is exactly what this exists to
-        // prevent. A navigation goal follows immediately and is far better at going somewhere
-        // than a hand-rolled controller would be.
+        // Straight back only: turning beside a surface swings the robot and what it holds across
+        // it. The navigation goal that follows does the turning.
         feedback->phase = Retreat::Feedback::PHASE_BACKING_OFF;
         handle->publish_feedback(feedback);
 
-        // nullopt, not 0.0. Reporting no progress on a TF outage would make the loop condition
-        // below unsatisfiable, so the robot reverses blind at retreat_speed until the deadline,
-        // which is 900 s whenever the goal leaves timeout_s at 0.
+        // nullopt on a TF outage, not 0.0, or the loop would reverse blind until the deadline.
         const auto travelled = [&]() -> std::optional<double> {
             const auto here = basePose();
             if (!here)
@@ -658,8 +639,7 @@ private:
             }
             else
             {
-                // Same treatment the approach loop gives a lookup failure: stop, and give TF a
-                // bounded grace to come back before abandoning the goal.
+                // As in the approach: stop, and give TF lookup_grace_s to come back.
                 publish(0.0, 0.0, 0.0);
                 if (std::chrono::steady_clock::now() > blind_deadline)
                 {
@@ -683,8 +663,7 @@ private:
         }
         settle();
 
-        // Falls back to the last good reading rather than to zero: after settle() the lookup can
-        // still be down, and reporting 0.0 there would call a completed retreat a failure.
+        // The last good reading if TF is still down, or a completed retreat reads as 0 m.
         const double backed = travelled().value_or(last_travelled);
         result->travelled_m = backed;
         result->success     = backed >= goal->distance_m;
@@ -721,17 +700,15 @@ private:
     rclcpp_action::Server<ApproachObject>::SharedPtr                    approach_server_;
     rclcpp_action::Server<Retreat>::SharedPtr                           retreat_server_;
 
-    std::mutex                                    objects_mutex_;
-    vision_msgs::msg::Detection3DArray::SharedPtr objects_;
-    tf2_ros::Buffer                               tf_buffer_;
-    tf2_ros::TransformListener                    tf_listener_;
+    std::mutex objects_mutex_;
+    /// Each object id's newest reported position, stamped when it was seen.
+    std::map<std::string, geometry_msgs::msg::PointStamped> sightings_;
+    tf2_ros::Buffer                                         tf_buffer_;
+    tf2_ros::TransformListener                              tf_listener_;
 
-    /// Shared across BOTH actions: they are the second writer on /cmd_vel and must never overlap
-    /// each other any more than they may overlap Nav2. rclcpp_action has no single-goal policy,
-    /// so without this two accepted goals run on two threads and both publish at 20 Hz.
+    /// One goal across both actions: two would be two writers on /cmd_vel.
     std::atomic<bool> busy_{ false };
-    /// Set by the destructor so a running goal leaves its loop, and waited on before teardown:
-    /// the goal threads are detached and would otherwise outlive the members they dereference.
+    /// Set by the destructor so a running goal leaves its loop.
     std::atomic<bool> stopping_{ false };
     std::atomic<int>  goals_running_{ 0 };
 };
@@ -743,9 +720,7 @@ int main(int argc, char** argv)
     rclcpp::init(argc, argv);
     try
     {
-        // Multi-threaded: a goal executes on its own thread and blocks in its control loop for
-        // seconds at a time, while /objects, TF and cancellation all have to keep flowing
-        // underneath it.
+        // Multi-threaded, so /objects, TF and cancels keep flowing while a goal loop runs.
         rclcpp::executors::MultiThreadedExecutor executor;
         auto node = std::make_shared<g1_locomotion::BaseApproachNode>();
         executor.add_node(node);
