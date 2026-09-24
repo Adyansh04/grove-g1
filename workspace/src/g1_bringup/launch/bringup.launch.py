@@ -6,13 +6,10 @@
     ros2 launch g1_bringup bringup.launch.py moveit:=true pin_pelvis:=true rviz:=true
     ros2 launch g1_bringup bringup.launch.py mode:=localization nav:=true moveit:=true
 
-sim.launch.py and control.launch.py still work standalone; this file only composes them with
-g1_navigation, g1_moveit_config and g1_manipulation.
-
-Those three are reached by path lookup and are deliberately NOT dependencies: each already
-depends on g1_bringup, and a reciprocal edge is a colcon cycle that refuses to build. Every
-argument to an included file is forwarded explicitly, because a child's default never fires for
-a name this file also declares.
+sim.launch.py and control.launch.py still work standalone; this file composes them with the
+optional packages. Those are found by path lookup, not declared as dependencies, because each
+already depends on g1_bringup. Every argument is forwarded explicitly: a child's default never
+fires for a name this file also declares.
 """
 
 import os
@@ -34,9 +31,8 @@ BRINGUP_SHARE = get_package_share_directory("g1_bringup")
 # 'none' keeps g1_navigation entirely out of the picture; the other two bring it in.
 MODES = ("none", "mapping", "localization")
 
-# A bare simulator wants 2.0; anything starting a stack alongside it wants 4.0, because more
-# nodes come up before the first physics tick. Declaring either as this file's default would
-# override whichever branch was right, so the argument defaults to an empty sentinel instead.
+# Start delays for a bare simulator and for one with a stack beside it. The argument defaults to
+# empty so that neither overrides the other branch.
 SIM_START_DELAY_S = {"bare": "2.0", "loaded": "4.0"}
 
 # Which argument pulls each optional package in, for the not-installed message.
@@ -50,9 +46,7 @@ _ENABLED_BY = {
 
 
 def _share(package):
-    """Share directory, or a message an operator can act on. Nothing builds these packages for
-    us: they are not dependencies, because the reverse edge already exists and a cycle does not
-    build."""
+    """Share directory, or a message an operator can act on: nothing builds these for us."""
     try:
         return get_package_share_directory(package)
     except PackageNotFoundError as exc:
@@ -127,9 +121,7 @@ def _sim_args(context, navigating, want_manipulation, want_perception, want_move
         delay = SIM_START_DELAY_S["loaded" if navigating or want_moveit else "bare"]
 
     return {
-        # Forced on for navigation, which needs the sweep, the relay, the odom chain and the
-        # waist joint states, for manipulation, whose object ground truth arrives over the
-        # relay's socket, and for perception, which has nothing to look at without the camera.
+        # Navigation, manipulation and perception all need the relay, the odom chain or the camera.
         "sensors": (
             "true"
             if navigating or want_manipulation or want_perception
@@ -165,19 +157,15 @@ def _moveit():
     )
 
 
-def _manipulation(want_perception, visualization):
-    # Perception owns the object stream when it runs, and its poses arrive seconds late.
-    #
-    # 8 s, not 4. Measured in sim, where the detector shares a GPU with MuJoCo's rendering:
-    # /objects comes out at 0.39 Hz, a cycle every 2.6 s, and stretches past 4 s once the arm is
-    # planning too. Every lookup was then refused on age with "No usable object poses ... 4.17 s
-    # old", which surfaces to a tree as the surface having vanished. The scenes this runs on are
-    # static, so an 8 s old pose of a bench is still exactly where the bench is; a moving object
-    # on hardware, off its own camera, wants the shorter number back.
+def _manipulation(want_perception, visualization, world):
     return _include(
         os.path.join(_share("g1_manipulation"), "launch", "manipulation.launch.py"),
         object_source="perception" if want_perception else LaunchConfiguration("object_source"),
+        # Perception's poses arrive seconds late when the detector shares the GPU with the
+        # simulator. The scenes are static, so an old pose is still a true one.
         object_timeout_ms="8000.0" if want_perception else "1000.0",
+        # The navigation desk's ball sits by the edge, where the thumb hangs past the desk.
+        min_grip_height_m="0.035" if world == "navigation" else "0.080",
         grasp_source=LaunchConfiguration("grasp_source"),
         grasp_offset=LaunchConfiguration("grasp_offset"),
         visualization=visualization,
@@ -229,16 +217,13 @@ def _rviz(navigating, want_nav, want_moveit):
     windows = []
 
     if want_moveit:
-        # MoveIt's own launcher, because the MotionPlanning panel needs the semantic and
-        # kinematics descriptions as node parameters. rviz_config is left unset on purpose:
-        # this file never declares that name, so the child's own default applies.
+        # MoveIt's own launcher: the MotionPlanning panel needs the semantic and kinematics
+        # descriptions as node parameters.
         windows.append(
             _include(os.path.join(_share("g1_moveit_config"), "launch", "moveit_rviz.launch.py"))
         )
 
-    # Keyed off nav, not mode: localization without a planner has a map and nothing to show.
-    # The nav config carries a nav2_rviz_plugins display, so it is only named on a run that
-    # navigates.
+    # Keyed off nav, not mode: the nav config carries a nav2_rviz_plugins display.
     if want_moveit:
         config = (
             os.path.join(_share("g1_navigation"), "config", "g1_navigation.rviz")
@@ -303,7 +288,11 @@ def _setup(context, *args, **kwargs):
     if want_perception:
         actions.append(_perception(visualization))
     if want_manipulation:
-        actions.append(_manipulation(want_perception, visualization))
+        actions.append(
+            _manipulation(
+                want_perception, visualization, LaunchConfiguration("world").perform(context)
+            )
+        )
     if want_vla:
         actions.append(_vla())
     if want_moveit and _flag(context, "activate_arm"):
@@ -436,13 +425,13 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "mock_latency_s",
             default_value="0.0",
-            description="How far behind the camera the mock detector's masks are. 1.5 is what "
-            "the real one costs.",
+            description="How far behind the camera the mock detector's masks are; the real one "
+            "runs a second or more behind.",
         ),
         DeclareLaunchArgument(
             "mock_rate_hz",
             default_value="10.0",
-            description="How often the mock detector answers. The real one manages 0.7.",
+            description="How often the mock detector answers; the real one manages about 1 Hz.",
         ),
         DeclareLaunchArgument(
             "mock_margin_m",
@@ -454,7 +443,7 @@ def generate_launch_description():
             "activate_arm",
             default_value="false",
             description="SIM CONVENIENCE: run scripts/activate_arm automatically once the "
-            "stack is up. Needs moveit:=true. Off by default -- acquiring the arm is "
+            "stack is up. Needs moveit:=true. Off by default: acquiring the arm is "
             "deliberate, and on hardware it is the moment MoveIt starts driving real joints.",
         ),
         DeclareLaunchArgument(
@@ -467,8 +456,8 @@ def generate_launch_description():
             "sensors",
             default_value="false",
             description="LiDAR sweep, the relay and the odom -> base_footprint -> pelvis "
-            "chain. Only meaningful with mode:=none -- the navigation modes need it and turn "
-            "it on themselves.",
+            "chain. Only meaningful with mode:=none; the navigation modes turn it on "
+            "themselves.",
         ),
         DeclareLaunchArgument(
             "odometry",
@@ -500,9 +489,8 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "sim_start_delay_s",
             default_value="",
-            description="Seconds to delay the simulator's start. Empty means the branch's own "
-            "default: 2.0 for mode:=none, 4.0 for the navigation modes, which start more nodes "
-            "before the first physics tick.",
+            description="Seconds to delay the simulator's start. Empty means 2.0 for a bare "
+            "simulator and 4.0 when navigation or MoveIt starts beside it.",
         ),
         OpaqueFunction(function=_setup),
     ])
