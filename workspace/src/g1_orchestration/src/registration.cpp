@@ -27,6 +27,7 @@ namespace g1_orchestration
 void registerSkillNodes(BT::BehaviorTreeFactory& factory, const RosContext& context)
 {
     registerLeaf<LookFor>(factory, "LookFor", context);
+    registerLeaf<StopLooking>(factory, "StopLooking", context);
     registerLeaf<NavigateToPose>(factory, "NavigateToPose", context);
     registerLeaf<ApproachObject>(factory, "ApproachObject", context);
     registerLeaf<Retreat>(factory, "Retreat", context);

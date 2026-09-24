@@ -7,7 +7,7 @@
             <input_port name="timeout_s" type="double" default="0.000000">0 uses the server's own default.</input_port>
             <input_port name="server_timeout_s" type="double" default="10.000000">How long to wait for the action server to appear.</input_port>
             <input_port name="use_current_heading" type="bool" default="false">Hold whatever heading the robot already has, instead of working_yaw.</input_port>
-            <input_port name="working_yaw" type="double">Heading to hold while approaching, usually the staging goal's goal_yaw. Ignored when use_current_heading is true.</input_port>
+            <input_port name="working_yaw" type="double">Heading to hold while approaching, usually NavigateToPose's goal_yaw; unused with use_current_heading.</input_port>
             <input_port name="arm" type="std::string" default="right">'left' or 'right'.</input_port>
             <input_port name="object_id" type="std::string">Must match a class_id published on /objects.</input_port>
         </Action>
@@ -27,9 +27,10 @@
             <input_port name="instruction" type="std::string">What the policy is asked to do, in plain language.</input_port>
         </Action>
         <Action ID="LookFor">
-            <input_port name="timeout_s" type="double" default="20.000000">Budget for the write and for the objects to appear. A detector pass is ~0.5 s per phrase and the tracker needs a few before it trusts a track.</input_port>
+            <input_port name="timeout_s" type="double" default="20.000000">Seconds to wait for the objects once the phrases are written. The write gets up to 5 s of its own.</input_port>
             <input_port name="detector" type="std::string" default="/g1_detector">Node whose `phrases` to write. Empty waits without narrowing anything.</input_port>
-            <input_port name="objects" type="std::string">Comma-separated objects to look for. Each is an id the detector is asked for and waited on by name, or 'id=phrase' when the wording that finds it reliably is not the name the tree uses, e.g. 'red_block=bright red plastic block'.</input_port>
+            <input_port name="also" type="std::string" default="">More objects to ask for, in the same form, without waiting on them: ones a later step needs to see, like the object Place confirms after letting go.</input_port>
+            <input_port name="objects" type="std::string">Comma-separated objects to ask the detector for and wait on: an id, or 'id=phrase' when the wording that finds it differs from the name the tree uses.</input_port>
         </Action>
         <Action ID="NavigateToPose">
             <output_port name="goal_yaw" type="double">The goal's heading, for an ApproachObject that has to hold it.</output_port>
@@ -62,6 +63,10 @@
             <input_port name="server_timeout_s" type="double" default="10.000000">How long to wait for the action server to appear.</input_port>
             <input_port name="named_target" type="std::string">A group_state of that group, e.g. tucked.</input_port>
             <input_port name="group" type="std::string">A group in g1.srdf, e.g. right_arm.</input_port>
+        </Action>
+        <Action ID="StopLooking">
+            <input_port name="timeout_s" type="double" default="5.000000">Budget for the write.</input_port>
+            <input_port name="detector" type="std::string" default="/g1_detector">Node whose `phrases` to empty.</input_port>
         </Action>
     </TreeNodesModel>
 </root>
