@@ -33,8 +33,7 @@ bool Grasp::fillGoal(Goal& goal)
         RCLCPP_ERROR(node_->get_logger(), "[%s] needs an instruction", name().c_str());
         return false;
     }
-    // Separate from the instruction on purpose: the policy is told what to do, and this names
-    // the object whose measured lift decides whether it did it.
+    // Named apart from the instruction: this object's measured lift judges success.
     const auto object_id = getInput<std::string>("object_id");
     if (!object_id || object_id->empty())
     {

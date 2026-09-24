@@ -2,8 +2,7 @@
  * @file test_chunk_utils.cpp
  * @brief The checks a chunk has to survive before any of it is executed.
  *
- * These are the gate's whole reject-before-moving story, so what matters is that each one
- * actually fires: a check that silently passes everything reads exactly like a safe robot.
+ * Each check must actually fire: one that silently passes everything looks like a safe robot.
  */
 
 #include <gmock/gmock.h>

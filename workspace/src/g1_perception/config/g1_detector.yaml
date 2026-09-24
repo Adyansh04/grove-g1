@@ -1,0 +1,25 @@
+# The detector client, loaded by g1_perception/launch/perception.launch.py with detector:=vision.
+g1_detector:
+  ros__parameters:
+    # The vision server runs on the host, since it needs torch and CUDA; compose is host-networked.
+    # Start it with scripts/vision_server.py.
+    server_address: "tcp://127.0.0.1:5560"
+
+    # Well past the slowest inference: this is what a stalled server costs before the node
+    # rebuilds its socket.
+    zmq_timeout_ms: 20000
+
+    # How soon after an answer the next question is asked; the call itself blocks.
+    detect_rate_hz: 1.0
+
+    # `phrases` is a launch argument; empty means idle, and trees change it with ros2 param set.
+
+    # Frames older than this are not asked about. 2.5 s because in simulation the camera and the
+    # detector share one GPU and frames arrive 1.4 to 1.9 s old; a moving scene wants less.
+    max_image_age_s: 2.5
+
+    # Grounding DINO scores every object against every phrase, so this decides how many
+    # runners-up become tracks of their own. Widen the wording before lowering it. SAM 3 uses
+    # only box_threshold.
+    box_threshold: 0.40
+    text_threshold: 0.25

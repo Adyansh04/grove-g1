@@ -1,0 +1,18 @@
+# The stand-in detector, loaded by perception.launch.py with detector:=mock. SIMULATION ONLY: it
+# cuts masks from simulator ground truth. Wildcard key: the node runs as g1_detector, and this
+# file is only loaded for it.
+/**:
+  ros__parameters:
+    # `phrases` comes from the launch file, which feeds the real detector too.
+
+    # Seconds the masks lag the camera. Around 1.5 mimics the real detector downstream.
+    mock_latency_s: 0.0
+    # Mask rate. The camera runs at 10 Hz; the real detector well under 1.
+    mock_rate_hz: 10.0
+
+    # How far outside its box a pixel may sit and still count, m. Zero leaves a flat face almost
+    # unmasked; well past a few millimetres it is a sloppy segmenter.
+    mock_margin_m: 0.005
+
+    # Fewer visible pixels and the object is unseen; about a 7 mm object at 0.5 m.
+    min_pixels: 50

@@ -2,96 +2,57 @@
 # See g1_locomotion/README.md.
 g1_base_approach:
   ros__parameters:
-    # The same topic Nav2 writes. The mission tree runs navigation and approach in sequence,
-    # so the two are never publishing at once.
+    # Nav2's topic too; the mission tree never runs the two together.
     cmd_vel_topic: "/cmd_vel"
     base_frame: "base_footprint"
 
-    # SPEED FLOORS, not minimum-useful speeds. The walking policy has a measured deadband:
-    # commanded 0.10 m/s it delivers 0.016 forward and 0.007 lateral, which is nothing. From
-    # 0.20 it tracks at 70-80 % of command forward, and lateral needs 0.30 before it tracks
-    # properly (0.20 gives only 0.083). So lateral's floor sits higher than forward's.
-    #
-    # These are what make a proportional law converge at all: without them the P term asks for
-    # 0.05 m/s a few centimetres out and the robot simply stands there.
+    # Speed floors: the gait ignores commands inside its deadband, and lateral needs more than
+    # forward before it tracks.
     min_speed_x_mps: 0.20
     min_speed_y_mps: 0.25
 
-    # Ceilings. Well inside what the policy tracks (it is still linear at 0.50 forward), because
-    # this skill runs next to furniture and a fast arrival is not the point.
+    # Ceilings, well inside what the policy tracks, since this runs next to furniture.
     max_speed_x_mps: 0.40
     max_speed_y_mps: 0.35
     max_yaw_rate_rps: 0.60
 
-    # Proportional gains: one metre of error asks for one metre per second, which the floors and
-    # ceilings above then bring into the range the gait honours. Yaw has NO deadband and tracks
-    # near 1:1 in both directions, so it has no floor and needs no compensation.
+    # Proportional gains before the floors and ceilings. Yaw has no deadband and no floor.
     speed_per_m: 1.0
     yaw_rate_per_rad: 1.0
 
-    # Retreat drives one continuous reverse, closed on distance travelled. Above the deadband,
-    # and slower than the forward ceiling because it is backing away from a surface blind.
+    # Reverse speed for a retreat, which backs away from a surface blind.
     retreat_speed_mps: 0.30
 
-    # Hold zero while the gait finishes the stride it is already in, before measuring where the
-    # object actually ended up. Measuring mid-stride reports the command rather than the result.
+    # Zero held while the gait finishes its stride, before the object is re-measured.
     settle_s: 1.0
     cmd_rate_hz: 20.0
 
-    # Where the object has to end up, in the base frame, for the arm to reach it.
-    #
-    # Measured by asking /compute_ik for the grasp frame at the workbench cube's own height
-    # (pelvis z +0.0375) across a sweep of x, four attempts each.
-    # Everything from x 0.16 to 0.36 solves 4/4; 0.38 and beyond solve none.
-    #
-    # target_y_m mirrors for the left arm, exactly as the grasp offset does.
-    target_x_m: 0.270
+    # Where the object has to end up in the base frame. Every pick of the ball came from x 0.29 to
+    # 0.32; nearer, the pregrasp has no IK. target_y_m mirrors for the left arm.
+    target_x_m: 0.300
     target_y_m: -0.220
 
-    # Objects the robot must stand FURTHER BACK from than target_x_m. Reaching over a surface to
-    # set something down sweeps the palm and wrist across its face; reaching onto one for a cube
-    # does not. From the cube's 0.270 the drop pad's preplace has no collision-free path at all.
-    standoff_object_ids: ["drop_pad"]
+    # Objects to stand further back from: reaching over a surface to set something down sweeps
+    # the wrist across its face.
+    standoff_object_ids: ["brown_box"]
     standoff_target_x_m: [0.350]
 
-    # From a 2D grid run at the workbench with the arms tucked, at the pregrasp height, checking
-    # each IK solution against /check_state_validity. Only the pregrasp
-    # has to be collision-free: the grasp pose sits on the table and is inside its octomap by
-    # construction, which is what the descent's collision exemption exists for.
-    #
-    # The pregrasp band is solid across every x from 0.16 to 0.38 for y between -0.20 and -0.26,
-    # and gets patchy above -0.17.
-    #
-    # forward_tolerance_m is DELIBERATELY TIGHTER than that band. The arm grants +/-0.11, and the
-    # old value used all of it because the old gait's forward step was irreducible at ~0.29 m and
-    # could not have held anything narrower. This one stops where it decides to: measured coast
-    # after the command drops to zero is 0.025-0.037 m over six trials at the forward floor, so
-    # the loop leaves the object 0.013-0.025 m from target instead of anywhere in an 0.11 m band.
-    # Spending a few more seconds closing buys the arm margin at both ends of its reach.
-    #
-    # The coast always shrinks the error rather than growing it, because it carries on in the
-    # direction the loop was driving. Oscillation would need a coast wider than the whole band,
-    # and the settle-then-re-judge on arrival catches it if that ever happens.
-    forward_tolerance_m: 0.050
-    # Left at the arm's own band: lateral coast measures 0.015-0.043 m, so this is already about
-    # as tight as the gait can hold, and it is the arm's tight axis rather than the gait's.
+    # How close each axis has to get. The robot coasts 25 to 37 mm forward and 15 to 43 mm
+    # laterally after the command stops, always toward the target.
+    forward_tolerance_m: 0.030
     lateral_tolerance_m: 0.040
 
-    # Loose on purpose, 20 degrees. Heading is not part of arriving, since reachability is
-    # judged in the base frame where heading does not appear, so this only decides how square
-    # stands to the surface while it closes.
+    # Loose on purpose (20 degrees): heading only keeps the robot square to the surface.
     heading_tolerance_rad: 0.350
 
-    # Nearer than this and the object is genuinely under the robot, where no walk helps and the
-    # tree has to re-stage through Nav2. Everything above it is recovered by reversing.
+    # Nearer than this the object is under the robot and the tree has to re-stage through Nav2.
     min_forward_m: 0.050
 
-    object_timeout_ms: 1500.0
+    # How old an object's last sighting may be. The props stand still, and the last half metre to
+    # the storage bench is blind: the hand carrying the ball covers the box.
+    object_timeout_ms: 30000.0
 
-    # A missing object pose or base transform stops the robot and is re-read for this long before
-    # the goal fails. Both go briefly unavailable for reasons that are not this skill's problem,
-    # such as a TF buffer that has not caught up after the base moved, and
-    # failing on the first miss threw away a healthy approach mid-mission.
-    lookup_grace_s: 3.0
+    # How long a missing object pose or base transform is waited out, standing still.
+    lookup_grace_s: 5.0
 
     default_timeout_s: 900.0

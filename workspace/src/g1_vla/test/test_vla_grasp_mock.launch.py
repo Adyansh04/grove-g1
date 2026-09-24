@@ -1,13 +1,8 @@
 """Headless sim integration test: the gate executes what is safe and refuses what is not.
 
-The acceptance gate for this package, and the half no unit test can reach. `test_chunk_utils`
-proves the arithmetic; only a running stack proves that the arithmetic is wired to a real
-planning scene, to real controllers, and that a refusal happens BEFORE the arm moves rather than
-after.
-
-Both halves matter and the second one matters more. A gate that never rejects anything passes a
-happy-path test perfectly while protecting nothing, so the second case aims the engine at a pose
-measured to self-collide and asserts the arm is still where it started.
+Proves the checks are wired to a real planning scene and real controllers, and that a refusal
+happens before the arm moves. The refusal case matters more: a gate that never rejects passes a
+happy-path test while protecting nothing.
 
 Run via `colcon test --packages-select g1_vla`.
 """
@@ -32,19 +27,18 @@ from sensor_msgs.msg import JointState
 from g1_msgs.action import Grasp
 
 # Same budget as the manipulation suite: simulator, move_group, the skills, the object pipeline
-# and a delayed acquire behind all of it.
+# and a delayed acquire.
 STACK_SETTLE_S = 55.0
 READY_TIMEOUT_S = STACK_SETTLE_S + 30.0
 
-# Short on purpose. Nothing here should ever grasp the cube, so both cases end on this or on the
-# rejection limit, and the server's 90 s default would only make the suite slow.
+# Short on purpose: nothing here grasps the block, so both cases end on this or on the rejection
+# limit.
 GOAL_TIMEOUT_S = 20.0
 MAX_REJECTED = 5
 
 WATCHED = ["right_shoulder_pitch_joint", "right_shoulder_roll_joint", "right_elbow_joint"]
-# Both targets turn on shoulder roll and nothing else, in opposite directions, so what decides
-# each case is self-collision geometry rather than how the octomap happened to fill in. Measured
-# against this scene: the arm meets the torso from about roll 0.1.
+# Shoulder roll in opposite directions, so each case turns on self-collision rather than on how
+# the octomap filled in. The arm meets the torso from about roll 0.1.
 BLOCKED_TARGET = [0.06, 0.6, 0.09]
 FREE_TARGET = [0.0, -0.55, 0.3]
 
@@ -59,8 +53,8 @@ def generate_test_description():
             "manipulation": "true",
             "vla": "true",
             "vla_engine": "mock",
-            # FAST-LIO cannot work in this scene: the bench is at arm's length with the pelvis
-            # pinned, so the Mid360 returns nothing and no odom is ever published.
+            # FAST-LIO publishes no odom here: with the pelvis pinned at arm's length from the
+            # bench, the Mid360 returns nothing.
             "odometry": "ground_truth",
             "world": "manipulation",
             "pin_pelvis": "true",
@@ -88,9 +82,7 @@ class TestVlaGraspMock(unittest.TestCase):
 
         cls.node.create_subscription(JointState, "/joint_states", _on_joints, 20)
         cls.grasp = ActionClient(cls.node, Grasp, "/g1_vla_server/grasp")
-        cls.server_params = cls.node.create_client(
-            SetParameters, "/g1_vla_server/set_parameters"
-        )
+        cls.server_params = cls.node.create_client(SetParameters, "/g1_vla_server/set_parameters")
         cls.engine_params = cls.node.create_client(
             SetParameters, "/g1_vla_mock_engine/set_parameters"
         )
@@ -120,8 +112,8 @@ class TestVlaGraspMock(unittest.TestCase):
 
     def _run_grasp(self, timeout_s):
         goal = Grasp.Goal()
-        goal.instruction = "pick up the red cube"
-        goal.object_id = "red_cube"
+        goal.instruction = "pick up the red block"
+        goal.object_id = "red_block"
         goal.arm = "right"
         handle_future = self.grasp.send_goal_async(goal)
         rclpy.spin_until_future_complete(self.node, handle_future, timeout_sec=30.0)
@@ -142,8 +134,7 @@ class TestVlaGraspMock(unittest.TestCase):
             rclpy.spin_once(self.node, timeout_sec=0.2)
         self.assertGreaterEqual(len(self.joints), 40, "joint states never arrived")
 
-        # Shorter than the server's own default so the free-space case ends on the timeout
-        # rather than on the suite's.
+        # So the free-space case ends on the goal's timeout, not the suite's.
         self._set_params(
             self.server_params,
             [
@@ -161,10 +152,11 @@ class TestVlaGraspMock(unittest.TestCase):
         before = self._watched()
         result = self._run_grasp(GOAL_TIMEOUT_S + 60.0)
 
-        # Never a success: the mock walks the arm through free space and does not grasp
-        # anything, so the object never lifts. What is being tested is the path in between.
+        # Never a success, since the mock grasps nothing; what is tested is the path in between.
         self.assertIn("executed", result.message)
-        self.assertIn("0 rejected", result.message, f"a free-space walk was refused: {result.message}")
+        self.assertIn(
+            "0 rejected", result.message, f"a free-space walk was refused: {result.message}"
+        )
         self.assertNotIn("[0 executed", result.message, f"nothing ran: {result.message}")
 
         self._spin(2.0)
@@ -172,10 +164,8 @@ class TestVlaGraspMock(unittest.TestCase):
         self.assertGreater(moved, 0.05, "the arm did not move for chunks that passed the gate")
 
     def test_02_a_blocked_chunk_is_refused_before_the_arm_moves(self):
-        # First, from the rest pose. The arm meets the torso a short way into the very first
-        # chunk from there, so nothing legitimate can run before the refusal; started from
-        # anywhere else the walk would cross clear ground first and one chunk would rightly
-        # execute, which is a weaker claim.
+        # Runs first, from the rest pose: the very first chunk already reaches the torso, so
+        # nothing legitimate can execute before the refusal.
         self._set_params(
             self.engine_params,
             [Parameter("target_positions", Parameter.Type.DOUBLE_ARRAY, BLOCKED_TARGET)],
@@ -193,16 +183,12 @@ class TestVlaGraspMock(unittest.TestCase):
         self.assertIn("in collision", result.message)
         self.assertIn(f"[0 executed, {MAX_REJECTED} rejected]", result.message)
 
-        # The claim this whole package exists to make: refused before moving, not after.
-        # The bar is 0.1 rad rather than zero because the arms run position-only on a soft gain
-        # and the measured pose keeps trailing the commanded one by a few hundredths of a radian
-        # after motion stops -- the same drift moveit_controllers.yaml sets a 0.05 start
-        # tolerance for. One executed chunk would be 0.24 rad, so the two are not close.
+        # Refused before moving. 0.1 rad rather than zero because the soft position gain leaves
+        # the measured pose a few hundredths behind; one executed chunk would move 0.24 rad.
         self._spin(2.0)
         moved = max(abs(a - b) for a, b in zip(self._watched(), before, strict=True))
         self.assertLess(moved, 0.1, f"the arm moved {moved:.3f} rad on a refused chunk")
 
 
-# No post-shutdown exit-code check, matching the other sim suites: move_group segfaults in its
-# own destructor on this MoveIt and ros2_control_node leaves 130 on SIGINT. Asserting on that
-# tests their teardown, not this gate.
+# No post-shutdown exit-code check: move_group segfaults in its own destructor on this MoveIt and
+# ros2_control_node exits 130 on SIGINT.

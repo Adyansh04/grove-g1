@@ -1,19 +1,8 @@
-"""FAST-LIO odometry against MuJoCo ground truth: precision standing, sanity walking.
+"""FAST-LIO's odom -> base_footprint tracks MuJoCo's pelvis pose, standing and walking.
 
-The unit suites prove the adapter math; this proves the pipeline. The full stack comes up with
-`odometry:=fast_lio` and the odom -> base_footprint it publishes is compared against the exact
-pelvis pose MuJoCo reports over the relay's sensor socket, so a regression anywhere in the chain
-shows up here.
-
-Two phases with very different tolerances. Standing is repeatable and gets a tight bound:
-measured drift is ~2 cm, asserted at 0.35 m. Walking is looser, because a stumble degrades any
-LIO and the bound has to survive one. scripts/lio_bench measures ~10 cm worst case over 21 m on
-a clean run; this asserts 1.0 m, which still catches a divergence of kilometres.
-
-`odom` is latched wherever FAST-LIO first produced a pose and the robot does not settle on a
-repeatable heading, so the two frames are aligned by the headings measured at the first paired
-sample, not by a best fit over the path: that reads lower where the estimate is bad and it is
-easy to get the sign wrong.
+The walking bound is loose enough to survive a stumble and still catches a divergence. The frames
+are aligned by the headings at the first paired sample, not a best fit over the path, which would
+flatter a bad estimate.
 """
 
 import math
@@ -39,11 +28,9 @@ STAND_S = 12.0
 WALK_S = 15.0
 CMD_VX = 0.4
 
-# Standing: measured ~2 cm of wander; anything near this bound means the estimator is sick.
+# A healthy estimate wanders a few centimetres standing; anything near this bound is a fault.
 MAX_STANDING_DRIFT_M = 0.35
-# Walking: it has to have actually moved for the comparison to mean anything. A clean run is
-# ~10 cm worst-case over 21 m (scripts/lio_bench); this leaves an order of magnitude for a bad
-# gait and still catches divergence, which is metres and upwards.
+# The robot has to have moved for the walking comparison to mean anything.
 MIN_TRUTH_PATH_M = 0.8
 MAX_WALK_GAP_M = 1.0
 
@@ -164,9 +151,7 @@ class FastLioOdometryTest(unittest.TestCase):
             f"fast_lio wandered {lio_wander:.2f} m while the robot stood still",
         )
 
-        # Phase 2: walk. Nothing puts the robot into a walking mode first, because the policy is
-        # already balancing it and takes velocity directly. CMD_VX clears the gait's deadband,
-        # below which the command produces no motion at all.
+        # Phase 2: walk. CMD_VX is well clear of the gait's ~0.15 m/s deadband.
         cmd = Twist()
         cmd.linear.x = CMD_VX
         samples = self._collect(WALK_S, command=cmd)

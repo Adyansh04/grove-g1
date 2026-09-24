@@ -4,10 +4,6 @@
 /**
  * @file livox_custom_msg.hpp
  * @brief PointCloud2 -> Livox CustomMsg, split out so the conversion tests without a graph.
- *
- * The mirror of this conversion on the hardware side (g1_state_estimation's livox_cloud) was
- * extracted for the same reason, and the test written against it found that it had never once
- * produced a valid message. Field-by-field conversions look obviously correct and are not.
  */
 
 #include <livox_ros_driver2/msg/custom_msg.hpp>

@@ -8,6 +8,8 @@ line-ending = "lf"
 
 [lint.isort]
 combine-as-imports = true
+# Named, not inferred: ruff's guess from `src` changes with a package's directory layout.
+known-first-party = ["g1_msgs", "g1_perception"]
 
 [lint]
 select = [

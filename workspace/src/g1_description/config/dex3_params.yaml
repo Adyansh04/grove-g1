@@ -1,41 +1,36 @@
 # Hardware parameters for g1_hand_interface/G1Dex3System, one component per hand.
 #
-# Consumed by urdf/g1_common.xacro via xacro.load_yaml, for the same reason lowcmd_params.yaml
-# is: ros2_control plugins only ever see parameters that arrive as <ros2_control><param> tags,
-# never controller_manager's own YAML.
+# Consumed by urdf/g1_common.xacro via xacro.load_yaml: ros2_control plugins only see parameters
+# that arrive as <ros2_control><param> tags.
 
-# Common to both hands. Gains are the hand's own, roughly 300x smaller than the arm's,
-# because these are finger motors. From Unitree's maintained teleop path; their SDK example
-# sweeps at 0.5/0.1 and grips at 1.5/0.1.
+# Common to both hands.
 system:
   # Must match lowcmd_params.yaml. ChannelFactory is per process and only its first Init
   # applies, so a mismatch strands whichever component initialises second.
   domain_id: 1
   network_interface: ""
 
-  kp: 1.5
-  kd: 0.2
+  # Above Unitree's 1.5 teleop grip. Torque is kp times position error, and 2.3 lets a thumb
+  # stalled ~0.6 rad short of its target press at the joint's 1.4 Nm rating. The simulator
+  # clamps at the URDF effort limit either way. kd is the component's 0.2 default times
+  # sqrt(kp / 1.5).
+  kp: 2.3
+  kd: 0.25
   command_publish_rate: 100.0    # Hz; what Unitree's own teleop publishes at
-  max_joint_velocity_rad_s: 3.0  # rad/s; slew clamp. There is no blend weight on this
-                                 # interface, so this is the only thing between a large
-                                 # trajectory step and a finger moving at motor speed.
-  state_timeout_ms: 200.0        # ms; HandState older than this blocks activation, and errors
-                                 # the component if it goes stale once active
-  # The robot carries both rt/dex3/<side>/state and a lower-rate rt/lf/dex3/<side>/state, and
-  # Unitree's own code disagrees about which to read: their Dex3 example takes the `lf` one,
-  # the SDK bridge publishes the plain one. This is a control loop with the freshness gate
-  # above, so the full-rate channel is the default. The xacro puts the side between these two.
+  max_joint_velocity_rad_s: 3.0  # rad/s; slew clamp, the only limit between a large
+                                 # trajectory step and a finger moving at motor speed
+  state_timeout_ms: 200.0        # ms; HandState older than this errors the component once
+                                 # active. Activation has its own fixed 5 s wait for a first frame.
+  # Full rate rather than the lower-rate rt/lf/dex3/<side>/state Unitree's Dex3 example reads,
+  # since the staleness gate above needs it. The xacro puts the side between these two.
   state_topic_prefix: "rt/dex3/"
   state_topic_suffix: "/state"
 
-# Position limits, straight from g1_29dof_with_hand_rev_1_0.urdf. Duplicated here because
-# HardwareInfo does not carry the URDF's own <limit> tags, and the component clamps to these
-# as a backstop against a bad command. The two hands mirror: left closes negative, right
-# positive. Unitree's SDK example disagrees on thumb_1 (0.724, and 0.742 on the right, which
-# looks like a transposed digit); the URDF matches the published spec and is the conservative
-# pair, so it wins.
+# Position limits copied from the URDF, since HardwareInfo does not carry <limit> tags; the
+# component clamps commands to them. Left closes negative, right positive. Unitree's SDK example
+# differs on thumb_1; the URDF matches the published spec.
 #
-# Order is the Dex3 wire order and the component refuses to init if the xacro reorders it.
+# Dex3 wire order: the component refuses to init if the xacro reorders it.
 joints:
   left_hand_thumb_0_joint:   { min: -1.04719755, max:  1.04719755 }
   left_hand_thumb_1_joint:   { min: -0.61086523, max:  1.04719755 }

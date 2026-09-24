@@ -4,8 +4,6 @@
 /**
  * @file g1_freeze_controller.hpp
  * @brief Capture-and-hold controller for joints on the rt/lowcmd component.
- *
- * Drops the upstream regex gain patterns: one value per joint is all any G1 config has used.
  */
 
 #include <string>
@@ -20,9 +18,8 @@ namespace g1_controllers
 /**
  * @brief Holds every claimed joint at the position it had when this controller activated.
  *
- * The lowcmd component leaves unclaimed joints unpowered, so something has to hold the body
- * when no policy is running. That is deliberately a controller rather than component behaviour:
- * it can be switched in and out at runtime, and it keeps the component free of policy.
+ * One `kp` and `kd` for every claimed joint. The lowcmd component leaves unclaimed joints
+ * unpowered, so this is what holds the body when no policy is running.
  */
 class G1FreezeController : public controller_interface::ControllerInterface
 {

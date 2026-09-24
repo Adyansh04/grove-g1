@@ -17,8 +17,7 @@ namespace g1_orchestration
 /**
  * @brief Picks a named object up.
  *
- * The pose is not a port: the skill reads it fresh from /objects, so a retry re-reads rather
- * than replaying a stale one.
+ * No pose port: the server reads it fresh from /objects, so a retry never replays a stale one.
  */
 class Pick : public SkillActionNode<g1_msgs::action::Pick>
 {

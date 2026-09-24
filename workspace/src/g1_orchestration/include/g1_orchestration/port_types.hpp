@@ -23,9 +23,6 @@ struct Station
 
 /**
  * @brief A point written into the tree XML as "x;y;z", in metres.
- *
- * Distinct from Station rather than reusing its third field: a place target has a height, not
- * a heading.
  */
 struct Point3
 {
@@ -36,7 +33,7 @@ struct Point3
 
 }  // namespace g1_orchestration
 
-// Declared in BT's namespace because that is where the library looks the conversion up.
+// BT looks up convertFromString specialisations in its own namespace.
 namespace BT
 {
 /**

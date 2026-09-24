@@ -19,8 +19,8 @@ namespace g1_controllers
 namespace
 {
 
-/// IMU interfaces the component exports, in the order imu_state_indices_ stores them. Orientation
-/// is x,y,z,w here and w,x,y,z in the policy, so the two are not interchangeable.
+/// IMU state interfaces in imu_state_indices_ order: w first, as the policy wants, although the
+/// component exports orientation x,y,z,w.
 constexpr std::array<const char*, 7> kImuInterfaces{ "orientation.w",      "orientation.x",
                                                      "orientation.y",      "orientation.z",
                                                      "angular_velocity.x", "angular_velocity.y",
@@ -64,7 +64,6 @@ G1AgileController::on_configure(const rclcpp_lifecycle::State& /*previous_state*
 
     if (model_path_.empty())
     {
-        // Default to the policy shipped with this package, so only a retrained one needs a path.
         model_path_ = ament_index_cpp::get_package_share_directory("g1_controllers") +
                       "/policy/unitree_g1_velocity_e2e.onnx";
     }
@@ -80,8 +79,7 @@ G1AgileController::on_configure(const rclcpp_lifecycle::State& /*previous_state*
         const double policy_hz = update_rate / static_cast<double>(decimation_);
         if (std::abs(policy_hz - kPolicyRateHz) > 1.0)
         {
-            // The policy's history spacing is baked in at training, so an off-rate loop silently
-            // changes what it thinks a timestep is.
+            // The history spacing is fixed at training; an off-rate loop silently changes it.
             RCLCPP_WARN(
                 logger,
                 "policy would run at %.1f Hz, not the %.0f Hz it was trained at",
@@ -104,8 +102,7 @@ G1AgileController::on_configure(const rclcpp_lifecycle::State& /*previous_state*
     cmd_vel_subscriber_ = get_node()->create_subscription<geometry_msgs::msg::Twist>(
         cmd_vel_topic_,
         rclcpp::SystemDefaultsQoS(),
-        // ConstSharedPtr by reference: the only const-ref callback signature rclcpp accepts, and
-        // it avoids a refcount bump per message.
+        // ConstSharedPtr by reference: the const-ref signature rclcpp accepts, no refcount bump.
         [this](const geometry_msgs::msg::Twist::ConstSharedPtr& message) {
             cmd_vel_buffer_.writeFromNonRT(*message);
             last_cmd_vel_seconds_.store(get_node()->now().seconds());
@@ -331,8 +328,7 @@ G1AgileController::update(const rclcpp::Time& time, const rclcpp::Duration& /*pe
 
     for (std::size_t i = 0; i < kNumActJoints; ++i)
     {
-        // Absolute radians, and the gains the policy expects them to be held with. Velocity and
-        // effort targets are zero, matching the actuator model the policy was trained against.
+        // Zero velocity and effort match the actuator model the policy was trained against.
         (void)command_interfaces_[position_command_indices_[i]].set_value(
             static_cast<double>(action_.joint_position.at(i)));
         (void)command_interfaces_[velocity_command_indices_[i]].set_value(0.0);

@@ -21,8 +21,6 @@ ClearCostmaps::ClearCostmaps(
 
 BT::PortsList ClearCostmaps::providedPorts()
 {
-    // The service names are ports because Nav2's costmap names are configurable; a stack that
-    // renames them should not need this file rebuilt.
     return {
         ports::serviceTimeout(5.0, "Per-costmap service budget."),
         BT::InputPort<std::string>(
@@ -62,8 +60,6 @@ BT::NodeStatus ClearCostmaps::tick()
         }
     }
 
-    // SUCCESS even when a costmap did not clear. Nav2 plans perfectly well from a stale costmap,
-    // just less directly; failing here would abort a mission over a housekeeping step.
     if (!all_cleared)
     {
         RCLCPP_WARN(node_->get_logger(), "[%s] continuing with a costmap uncleared", name().c_str());

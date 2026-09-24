@@ -1,10 +1,12 @@
 #include "grasp_weld.h"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <limits>
 #include <string>
 #include <thread>
@@ -17,8 +19,7 @@ namespace grove_g1
 namespace
 {
 
-// Welds this manager owns are named with this prefix in the scene. Anything else in
-// <equality> is left alone.
+// Scene equalities with this prefix are managed; any other equality is left alone.
 constexpr const char* kWeldPrefix = "grasp_";
 
 constexpr int kTickRateHz = 100;
@@ -27,19 +28,13 @@ struct Config
 {
     bool enabled = false;
 
-    // How close the object's origin must be to the palm's for a closing hand to take it.
-    // Sized for the palm-to-grasp-point offset plus half a small object, not measured against
-    // anything real -- see the header on why none of these transfer to hardware.
+    // Palm-to-object origin distance within which the hand can take the object. A released
+    // object must get this far away before it can be taken again.
     double capture_radius_m = 0.12;
 
-    // Fraction of available travel, averaged over the hand's seven joints, that counts as
-    // closed. The SRDF's `closed` posture measures 0.70 by this metric and `open` measures 0,
-    // so 0.5 sits between them with room either side.
-    double close_fraction = 0.5;
-
-    // Released below this, not at close_fraction: without the gap, a hand holding at exactly
-    // the threshold would drop and re-grab the object every few ticks.
-    double release_fraction = 0.3;
+    // How long a held object may go without thumb-and-finger contact before release: long
+    // enough to ride out contact flicker during a carry.
+    double release_after_s = 0.3;
 };
 
 // One managed weld: a palm, an object, and the constraint that can join them.
@@ -49,15 +44,18 @@ struct ManagedWeld
     int         palm_id   = -1;
     int         object_id = -1;
     std::string name;
+    // Cleared on release and set again once the palm is outside the capture radius, so a hand
+    // opening over the object it just put down does not take it straight back.
+    bool armed = true;
 };
 
 // A hand, and whichever weld it currently holds.
 struct Hand
 {
-    int              palm_id = -1;
-    std::vector<int> finger_qpos_adr;
-    std::vector<int> finger_jnt_id;
-    int              holding_eq = -1;
+    int palm_id     = -1;
+    int thumb       = -1;  ///< the palm child the thumb hangs from
+    int holding_eq  = -1;
+    int apart_ticks = 0;
 };
 
 struct State
@@ -68,9 +66,8 @@ struct State
 
 State& state()
 {
-    // Deliberately leaked, for the same reason sensor_publisher and dex3_handler leak theirs:
-    // the physics thread ends in exit(0), which runs static destructors while this thread may
-    // still be alive, and destroying a joinable std::thread calls std::terminate.
+    // Leaked on purpose: the physics thread ends in exit(0), and a static destructor
+    // destroying this still-joinable std::thread would call std::terminate.
     static State* s = new State();
     return *s;
 }
@@ -96,13 +93,9 @@ Config loadConfig()
         {
             cfg.capture_radius_m = node["capture_radius_m"].as<double>();
         }
-        if (node["close_fraction"])
+        if (node["release_after_s"])
         {
-            cfg.close_fraction = node["close_fraction"].as<double>();
-        }
-        if (node["release_fraction"])
-        {
-            cfg.release_fraction = node["release_fraction"].as<double>();
+            cfg.release_after_s = node["release_after_s"].as<double>();
         }
     }
     catch (const std::exception& e)
@@ -113,56 +106,60 @@ Config loadConfig()
             e.what());
         cfg.enabled = false;
     }
-    if (cfg.capture_radius_m <= 0.0 || cfg.release_fraction > cfg.close_fraction)
+    if (cfg.capture_radius_m <= 0.0 || cfg.release_after_s < 0.0)
     {
         std::fprintf(
             stderr,
-            "[grove_g1] grasp_weld needs capture_radius_m > 0 and release_fraction <= "
-            "close_fraction; DISABLED\n");
+            "[grove_g1] grasp_weld needs capture_radius_m > 0 and release_after_s >= 0; "
+            "DISABLED\n");
         cfg.enabled = false;
     }
     return cfg;
 }
 
-// True if `ancestor` is `body` or one of its parents. Used instead of matching joint names, so
-// the fingers are found by where they are in the model rather than by what they are called.
-bool isInSubtree(const mjModel* model, int body, int ancestor)
+// The digit `body` belongs to, as the palm's direct child it hangs from; -1 for the palm itself
+// or anything outside this hand.
+int digitOf(const mjModel* model, int body, int palm_id)
 {
     while (body > 0)
     {
-        if (body == ancestor)
+        const int parent = model->body_parentid[body];
+        if (parent == palm_id)
         {
-            return true;
+            return body;
         }
-        body = model->body_parentid[body];
+        body = parent;
     }
-    return body == ancestor;
+    return -1;
 }
 
-// Mean fraction of available travel across the hand's joints. Zero at the URDF zero (which is
-// what `open` is) and about 0.70 at the SRDF's `closed` posture.
-//
-// Signed against whichever range bound the joint is moving toward, so it reads the same for
-// both hands: the Dex3's two sides mirror, and the left closes negative where the right
-// closes positive.
-double closureOf(const mjModel* model, const mjData* data, const Hand& hand)
+// Whether the thumb and at least one other digit of `hand` touch `object_id` this step. The
+// thumb is required so side-by-side fingers with nothing opposite cannot take the object.
+bool opposedOn(const mjModel* model, const mjData* data, const Hand& hand, int object_id)
 {
-    if (hand.finger_qpos_adr.empty())
+    bool thumb  = false;
+    bool finger = false;
+    for (int i = 0; i < data->ncon; ++i)
     {
-        return 0.0;
-    }
-    double total = 0.0;
-    for (std::size_t i = 0; i < hand.finger_qpos_adr.size(); ++i)
-    {
-        const double q     = data->qpos[hand.finger_qpos_adr[i]];
-        const int    jnt   = hand.finger_jnt_id[i];
-        const double bound = q < 0.0 ? model->jnt_range[2 * jnt] : model->jnt_range[2 * jnt + 1];
-        if (std::abs(bound) > 1e-9)
+        const mjContact& contact = data->contact[i];
+        if (contact.exclude != 0)
         {
-            total += std::abs(q / bound);
+            continue;
+        }
+        for (int side = 0; side < 2; ++side)
+        {
+            const int mine  = contact.geom[side];
+            const int other = contact.geom[1 - side];
+            if (mine < 0 || other < 0 || model->geom_bodyid[other] != object_id)
+            {
+                continue;
+            }
+            const int digit = digitOf(model, model->geom_bodyid[mine], hand.palm_id);
+            thumb           = thumb || (digit >= 0 && digit == hand.thumb);
+            finger          = finger || (digit >= 0 && digit != hand.thumb);
         }
     }
-    return total / static_cast<double>(hand.finger_qpos_adr.size());
+    return thumb && finger;
 }
 
 double distanceBetween(const mjData* data, int body_a, int body_b)
@@ -172,12 +169,8 @@ double distanceBetween(const mjData* data, int body_a, int body_b)
     return mju_norm3(d);
 }
 
-// Freezes the object where it currently sits relative to the palm.
-//
-// The relative pose MUST be written: MuJoCo's compiler pre-fills eq_data's relpose from the
-// model's initial configuration, so an untouched weld would snap the object to wherever it
-// happened to start relative to the hand. Layout verified against MuJoCo 3.3.6 rather than
-// assumed -- anchor(3), relpose position(3), relpose quaternion(4), torquescale(1).
+// Freezes the object where it sits relative to the palm. relpose must be written, or the weld snaps
+// the object to its spawn offset; eq_data (MuJoCo 3.3.6) is anchor, pos, quat, torquescale.
 void engage(mjModel* model, mjData* data, const ManagedWeld& weld)
 {
     double palm_quat_inv[4];
@@ -206,7 +199,7 @@ void release(mjData* data, const ManagedWeld& weld)
 }
 
 // Reads the managed welds out of the model, and the hands out of the welds. Returns false if
-// this model declares none, which is the normal case for the flat and perception worlds.
+// this model declares none, as most scenes do.
 bool resolve(const mjModel* model, std::vector<ManagedWeld>& welds, std::vector<Hand>& hands)
 {
     welds.clear();
@@ -233,8 +226,7 @@ bool resolve(const mjModel* model, std::vector<ManagedWeld>& welds, std::vector<
         weld.name      = name;
         welds.push_back(weld);
 
-        // Inactive at rest, whatever the scene said: a weld that starts engaged would hold an
-        // object the hand is nowhere near.
+        // A weld that starts engaged holds an object the hand is nowhere near; run() clears it.
         if (model->eq_active0[eq] != 0)
         {
             std::fprintf(
@@ -257,23 +249,27 @@ bool resolve(const mjModel* model, std::vector<ManagedWeld>& welds, std::vector<
         }
         Hand hand;
         hand.palm_id = weld.palm_id;
-        for (int jnt = 0; jnt < model->njnt; ++jnt)
+        // The palm's direct children are its digits. Which one is the thumb is only in its
+        // name: nothing in the tree's shape tells it from the fingers.
+        int digits = 0;
+        for (int body = 1; body < model->nbody; ++body)
         {
-            // Hinges only, and only inside the palm's own subtree: that is exactly the seven
-            // finger joints, found without depending on what they are named.
-            if (model->jnt_type[jnt] != mjJNT_HINGE ||
-                !isInSubtree(model, model->jnt_bodyid[jnt], hand.palm_id))
+            if (model->body_parentid[body] != hand.palm_id)
             {
                 continue;
             }
-            hand.finger_qpos_adr.push_back(model->jnt_qposadr[jnt]);
-            hand.finger_jnt_id.push_back(jnt);
+            ++digits;
+            const char* name = mj_id2name(model, mjOBJ_BODY, body);
+            if (name != nullptr && std::strstr(name, "thumb") != nullptr)
+            {
+                hand.thumb = body;
+            }
         }
-        if (hand.finger_qpos_adr.empty())
+        if (digits < 2 || hand.thumb < 0)
         {
             std::fprintf(
                 stderr,
-                "[grove_g1] weld body1 '%s' has no finger joints under it; grasp DISABLED\n",
+                "[grove_g1] weld body1 '%s' has no thumb and finger under it; grasp DISABLED\n",
                 mj_id2name(model, mjOBJ_BODY, hand.palm_id));
             return false;
         }
@@ -306,7 +302,19 @@ void run(const Config cfg, mjModel** model, mjData** data, std::recursive_mutex*
         return;
     }
 
+    {
+        std::lock_guard<std::recursive_mutex> lock(*sim_mtx);
+        if (*model == m && *data != nullptr)
+        {
+            for (const ManagedWeld& weld : welds)
+            {
+                (*data)->eq_active[weld.eq_id] = 0;
+            }
+        }
+    }
+
     const auto period = std::chrono::nanoseconds(std::chrono::seconds(1)) / kTickRateHz;
+    const int  release_ticks = static_cast<int>(std::ceil(cfg.release_after_s * kTickRateHz));
     auto       next   = std::chrono::steady_clock::now();
 
     while (s.running.load(std::memory_order_relaxed))
@@ -315,8 +323,7 @@ void run(const Config cfg, mjModel** model, mjData** data, std::recursive_mutex*
         std::this_thread::sleep_until(next);
 
         std::lock_guard<std::recursive_mutex> lock(*sim_mtx);
-        // A reload frees the model these ids index. One-way, like the sensor sampler: the
-        // grasp stops rather than resolving against a model it never measured.
+        // A reload frees the model these ids index. One-way, like the sensor sampler.
         if (*model != m || *data == nullptr)
         {
             std::fprintf(stderr, "[grove_g1] model replaced; grasp weld is OFF\n");
@@ -324,36 +331,45 @@ void run(const Config cfg, mjModel** model, mjData** data, std::recursive_mutex*
         }
         mjData* d = *data;
 
+        for (ManagedWeld& weld : welds)
+        {
+            if (!weld.armed &&
+                distanceBetween(d, weld.palm_id, weld.object_id) > cfg.capture_radius_m)
+            {
+                weld.armed = true;
+            }
+        }
+
         for (Hand& hand : hands)
         {
-            const double closure = closureOf(m, d, hand);
-
             if (hand.holding_eq >= 0)
             {
-                if (closure <= cfg.release_fraction)
+                ManagedWeld& held = welds[hand.holding_eq];
+                hand.apart_ticks =
+                    opposedOn(m, d, hand, held.object_id) ? 0 : hand.apart_ticks + 1;
+                if (hand.apart_ticks > release_ticks)
                 {
-                    release(d, welds[hand.holding_eq]);
-                    hand.holding_eq = -1;
+                    release(d, held);
+                    held.armed       = false;
+                    hand.holding_eq  = -1;
+                    hand.apart_ticks = 0;
                 }
                 continue;
             }
-            if (closure < cfg.close_fraction)
-            {
-                continue;
-            }
 
-            // Nearest candidate wins, so a hand closing between two objects takes one rather
-            // than whichever the scene happens to list first.
+            // Nearest opposed candidate wins, so a hand closing between two objects takes one
+            // rather than whichever the scene lists first.
             int    best     = -1;
             double best_gap = cfg.capture_radius_m;
             for (std::size_t i = 0; i < welds.size(); ++i)
             {
-                if (welds[i].palm_id != hand.palm_id || d->eq_active[welds[i].eq_id] != 0)
+                const ManagedWeld& weld = welds[i];
+                if (weld.palm_id != hand.palm_id || !weld.armed || d->eq_active[weld.eq_id] != 0)
                 {
                     continue;
                 }
-                const double gap = distanceBetween(d, welds[i].palm_id, welds[i].object_id);
-                if (gap < best_gap)
+                const double gap = distanceBetween(d, weld.palm_id, weld.object_id);
+                if (gap < best_gap && opposedOn(m, d, hand, weld.object_id))
                 {
                     best     = static_cast<int>(i);
                     best_gap = gap;
@@ -367,8 +383,7 @@ void run(const Config cfg, mjModel** model, mjData** data, std::recursive_mutex*
         }
     }
 
-    // A stopped manager must not leave an object glued to a hand: eq_active persists, and the
-    // next thing to read this model would see a grasp nobody is maintaining.
+    // eq_active persists, so a stopped manager must not leave an object glued to a hand.
     std::lock_guard<std::recursive_mutex> lock(*sim_mtx);
     if (*model == m && *data != nullptr)
     {

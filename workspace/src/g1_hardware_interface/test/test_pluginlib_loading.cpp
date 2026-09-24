@@ -9,11 +9,9 @@
 #include <pluginlib/class_loader.hpp>
 
 /**
- * @brief Confirms G1LowCmdSystem is discoverable through the same pluginlib lookup
- * controller_manager uses, rather than merely compiling.
+ * @brief G1LowCmdSystem resolves through the pluginlib lookup controller_manager uses.
  *
- * Also the canary for the SDK's RPATH: this dlopens the library, which links unitree_sdk2 and
- * its own CycloneDDS, so a broken DT_RPATH fails here rather than on the robot.
+ * Also the DT_RPATH canary: the dlopen pulls in unitree_sdk2 and its own CycloneDDS.
  */
 TEST(G1LowCmdSystemPluginlib, DiscoversAndInstantiates)
 {

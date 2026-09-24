@@ -1,6 +1,6 @@
 <mujoco model="g1_navigation_pinned_scene">
-  <!-- torso_link and not pelvis: the waist stays free and pitches the torso ~34 degrees,
-       which moves the sensor mounts the geometry checks measure against. -->
+  <!-- torso_link, not pelvis: with only the pelvis welded, the free waist pitches the torso
+       ~34 degrees and moves the sensor mounts the geometry checks measure. -->
   <include file="g1_navigation_scene.staged.xml"/>
 
   <equality>

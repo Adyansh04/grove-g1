@@ -79,8 +79,7 @@ if(BUILD_TESTING)
   ament_add_gmock(test_chunk_utils test/test_chunk_utils.cpp)
   target_link_libraries(test_chunk_utils g1_vla_chunk_utils)
 
-  # Not a simulator test: it runs the adapter against a stub policy server, so it needs neither
-  # MuJoCo nor a GPU and CI can run it.
+  # Against a stub policy server: no MuJoCo or GPU, so CI runs it.
   add_launch_test(test/test_groot_adapter.launch.py TARGET test_groot_adapter TIMEOUT 180)
 
   add_launch_test(test/test_vla_grasp_mock.launch.py TARGET test_vla_grasp_mock TIMEOUT 500)

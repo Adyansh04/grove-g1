@@ -15,11 +15,9 @@ namespace g1_orchestration
 {
 
 /**
- * @brief Grasps an object by running a learned policy under a planning-scene check.
+ * @brief Grasps an object with a learned policy, checked against the planning scene.
  *
- * Sits beside Pick rather than replacing it: same authority, same controllers, different way of
- * deciding where the arm goes. A failure leaves the arm where it stopped, so a tree using this
- * needs its own recovery.
+ * A failure leaves the arm where it stopped, so the tree must recover it.
  */
 class Grasp : public SkillActionNode<g1_msgs::action::Grasp>
 {

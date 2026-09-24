@@ -6,7 +6,7 @@
            base_class_type="hardware_interface::SystemInterface">
       <description>
         ros2_control System owning all 29 G1 body motors over Unitree's rt/lowcmd, with no
-        onboard balance running underneath. See the package README for the authority model.
+        onboard balance running underneath.
       </description>
     </class>
   </library>

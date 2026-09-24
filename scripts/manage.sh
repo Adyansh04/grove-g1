@@ -80,11 +80,8 @@ case "$ACTION" in
         docker compose exec "${SERVICE_NAME}" bash
         ;;
     exec-as-me)
-        # Same shell, but as the host's UID/GID instead of root. Use this for anything that
-        # REWRITES sources in place -- clang-tidy --fix, clang-format -i -- because a
-        # root-run tool flips the file's owner on the host and blocks the next host edit.
-        # Everything else should keep using `exec`: root is what makes /root/workspace,
-        # /root/.ssh and unrestricted /dev work as documented.
+        # As the host UID/GID, for tools that rewrite sources in place: a root-run one leaves
+        # root-owned files on the host. Everything else uses `exec`, which needs root.
         echo "Attaching bash as $(id -u):$(id -g) to '${SERVICE_NAME}'..."
         docker compose exec --user "$(id -u):$(id -g)" "${SERVICE_NAME}" bash
         ;;

@@ -18,10 +18,8 @@ namespace g1_controllers
 namespace
 {
 
-/// Reference interfaces start as NaN, meaning no upstream controller wrote them this tick. Also
-/// true for an infinity, which is not a value we can use either, and which would otherwise
-/// reach the integrator, where `inf - inf` makes integrated_position_ NaN for the rest of the
-/// session. Note blend_ratio 0 is no protection: `0.0 * inf` is NaN, not zero.
+/// NaN marks a reference nothing upstream wrote. Infinity is rejected too: it would latch the
+/// integrator at NaN, even at blend ratio 0, since `0.0 * inf` is NaN.
 bool unwritten(double value) { return !std::isfinite(value); }
 
 /// Expands a single-value or per-joint parameter to one entry per joint.
@@ -320,9 +318,7 @@ bool G1SafetyController::outOfDomain() const
         {
             continue;
         }
-        // Every comparison below is false against NaN, since std::max returns the accumulator
-        // and NaN > limit is false, so without this a robot whose velocities have gone non-finite
-        // reads as in-domain. This check fails closed on exactly the input it exists to catch.
+        // Fail closed: every comparison below is false against NaN.
         if (!std::isfinite(velocity.value()))
         {
             return true;
@@ -332,8 +328,7 @@ bool G1SafetyController::outOfDomain() const
         peak = std::max(peak, magnitude);
         ++contribed;
     }
-    // Divided by the joints that actually contributed. Counting skipped ones biases the mean low,
-    // which weakens the guard precisely when interface access is already degraded.
+    // Mean over the joints that reported, so missing readings cannot dilute it; none fails closed.
     if (contribed == 0)
     {
         return true;
@@ -350,9 +345,6 @@ void G1SafetyController::latchEmergency(const char* reason)
     {
         return;
     }
-    // const char* rather than std::string: this runs on the 200 Hz path, and building a string
-    // from the literal would put a heap allocation in the tick where the policy has just gone
-    // out of range.
     RCLCPP_ERROR(
         get_node()->get_logger(),
         "%s -- holding the last safe pose and switching to '%s'",
@@ -401,10 +393,8 @@ controller_interface::return_type G1SafetyController::update_and_write_commands(
         const double      commanded   = reference_interfaces_[base + kPosition];
         const double      position_in = unwritten(commanded) ? activation_position_[i] : commanded;
 
-        // A latched emergency means the policy is no longer trusted, so nothing it writes is
-        // used: the pose stops advancing AND the gains revert to the freeze values. Reading its
-        // stiffness here would hold the last safe pose with a diverging policy's gains, updated
-        // at 50 Hz, for as long as the switch takes to land.
+        // Once latched, nothing the policy writes is used, gains included: hold the last
+        // integrated pose on the fallback gains until the emergency controller takes over.
         if (emergency_latched_.load())
         {
             (void)command_interfaces_[position_command_indices_[i]].set_value(

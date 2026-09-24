@@ -4,9 +4,6 @@
 /**
  * @file g1_agile_controller.hpp
  * @brief Runs the AGILE velocity policy over the rt/lowcmd component's state and command interfaces.
- *
- * Drives the one policy directly rather than interpreting a tensor graph, so its signature is
- * fixed and checked at load. See the package README for what this was adapted from.
  */
 
 #include <atomic>
@@ -29,12 +26,9 @@ namespace g1_controllers
 /**
  * @brief Velocity-tracking locomotion policy for the 12 leg joints plus waist roll and pitch.
  *
- * Observes every body joint and the pelvis IMU, takes a velocity command on `~/cmd_vel`, and
- * writes joint targets with per-joint gains. Arms and waist yaw are deliberately not claimed, so
- * a trajectory controller can own them at the same time through ordinary resource arbitration.
- *
- * Commands normally go to a G1SafetyController's reference interfaces rather than straight to the
- * component, so the policy ramps in rather than stepping.
+ * Observes all 29 body joints and the pelvis IMU, tracks the Twist on `cmd_vel_topic`, and writes
+ * joint targets with the policy's per-joint gains. Arms and waist yaw are left for other
+ * controllers. Normally chained onto a G1SafetyController so the policy ramps in.
  */
 class G1AgileController : public controller_interface::ControllerInterface
 {
@@ -95,8 +89,6 @@ private:
     PolicyObservation            observation_;
     PolicyAction                 action_;
 
-    /// Joint names in the policy's observation order, filtered to those the component exports.
-    std::vector<std::size_t> observed_slots_;
     std::vector<std::size_t> position_state_indices_;
     std::vector<std::size_t> velocity_state_indices_;
     /// Orientation w,x,y,z then angular velocity x,y,z, in that order.
@@ -112,8 +104,8 @@ private:
     std::atomic<double>                                        last_cmd_vel_seconds_{ 0.0 };
     rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_subscriber_;
 
-    /// Latched true on the first successful inference. Distinguishes "controller active" from
-    /// "policy is actually commanding", which is the state a test has to wait for.
+    /// `~/inferring`, transient local: true from the first successful inference, so a test can wait
+    /// for the policy to be commanding rather than merely active.
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr inferring_publisher_;
     bool                                              inferring_ = false;
 };

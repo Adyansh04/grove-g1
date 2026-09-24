@@ -1,16 +1,15 @@
-# Publishes the simulator's sensor frames onto ROS. The socket path must match the one
-# unitree_mujoco reads from g1_bringup/config/sim_sensors.yaml.
+# Publishes the simulator's sensor frames onto ROS. sim.launch.py overrides socket_path with
+# the value in g1_bringup/config/sim_sensors.yaml, which the simulator reads.
 g1_sensor_relay:
   ros__parameters:
     socket_path: "/tmp/g1_sensors.sock"
-    # How often the socket is drained. Well above the 10 Hz sweep so a frame is never
-    # waiting on the poll.
+    # Socket drain rate: well above the sweep, and fast enough for a large depth frame.
     poll_hz: 500.0
 
     # LiDAR
     topic: "/livox/lidar"
     frame_id: "mid360_link"
-    # odom, not world: the cloud has to land in the frame the planners work in.
+    # Frame stamped on ~/sensor_pose. There is no world frame on TF, and odom is close to it.
     world_frame_id: "odom"
 
     # IMU inside the Mid360

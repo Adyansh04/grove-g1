@@ -4,9 +4,9 @@
   <name>g1_bringup</name>
   <version>0.1.0</version>
   <description>
-    Sim bring-up for the G1 stack: launches unitree_mujoco alongside the ros2_control stack.
-    Launch files, config, scenes and scripts only, with no compiled code of its own. See README
-    for the full operating procedure.
+    Bring-up for the G1 stack: launches unitree_mujoco and the ros2_control stack and composes
+    navigation, MoveIt, manipulation, perception and the VLA grasp onto them. Launch files,
+    config, scenes and scripts only.
   </description>
   <maintainer email="gupta.adyansh@gmail.com">Adyansh</maintainer>
   <license>BSD-3-Clause</license>
@@ -31,30 +31,30 @@
   <depend>launch_ros</depend>
 
   <exec_depend>ament_index_python</exec_depend>
+  <!-- activate_arm's clear-posture move goes out as a trajectory goal of its own. -->
+  <exec_depend>control_msgs</exec_depend>
+  <exec_depend>trajectory_msgs</exec_depend>
   <exec_depend>xvfb</exec_depend>
   <exec_depend>rviz2</exec_depend>
 
-  <!-- Loaded at runtime by control.launch.py as a ros2_control plugin; nothing here
-       compiles against it. -->
+  <!-- ros2_control plugins, loaded at runtime from the URDF; nothing here compiles against
+       them. -->
   <exec_depend>g1_hardware_interface</exec_depend>
   <exec_depend>g1_hand_interface</exec_depend>
 
   <!-- Manual teleop demo dependency (see README). -->
   <exec_depend>teleop_twist_keyboard</exec_depend>
 
-  <!-- Lint checks run via workspace-root CTests (see CMakeLists.txt). -->
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_cmake_lint_cmake</test_depend>
   <test_depend>ament_cmake_xmllint</test_depend>
   <test_depend>launch_testing</test_depend>
   <test_depend>launch_testing_ament_cmake</test_depend>
-  <!-- The launch suites are Python and import these directly. -->
   <test_depend>nav_msgs</test_depend>
   <test_depend>sensor_msgs</test_depend>
-  <test_depend>control_msgs</test_depend>
-  <test_depend>trajectory_msgs</test_depend>
-  <test_depend>builtin_interfaces</test_depend>
   <test_depend>geometry_msgs</test_depend>
+  <test_depend>std_msgs</test_depend>
+  <test_depend>tf2_msgs</test_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

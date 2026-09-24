@@ -1,0 +1,39 @@
+<?xml version="1.0"?>
+<!--
+  Pick the red block off a cluttered table and drop it in the box. No navigation; run against the
+  `tabletop` world, where the red and blue blocks differ only in colour.
+
+  Nothing here carries a coordinate: the block and the box are named and resolved from /objects,
+  whichever source fills it, so the same tree runs on hardware.
+
+  The arm is normally acquired by activate_arm:=true already; AcquireArm is idempotent.
+-->
+<root BTCPP_format="4" main_tree_to_execute="SortIntoBox">
+  <BehaviorTree ID="SortIntoBox">
+    <Sequence name="sort_the_red_block">
+      <AcquireArm name="take_the_arm"/>
+      <SetArmPosture name="start_clear" group="right_arm" named_target="tucked"/>
+
+      <!-- Only these two: the detector runs a pass per phrase, and seven phrases outrun its
+           freshness limit. The long wording widens each object's margin over the runner-up. -->
+      <LookFor name="find_the_block_and_the_box"
+        objects="red_block=bright red plastic block,brown_box=brown box container"/>
+
+      <!-- The camera cannot see behind the arm, so voxels it left behind survive until cleared.
+           Pick clears again before its descent; this one also covers the pregrasp. -->
+      <ClearOctomap name="forget_where_the_arm_has_been"/>
+
+      <!-- A missed grasp fails cleanly, so one retry re-reads the pose and tries again. -->
+      <RetryUntilSuccessful name="pick_with_one_retry" num_attempts="2">
+        <Pick name="pick_the_red_block" object_id="red_block" arm="right"/>
+      </RetryUntilSuccessful>
+
+      <!-- Straight from the lift to above the box: the `carry` posture would drive the held
+           block down through the table. Place clears the octomap before it plans. -->
+      <Place name="drop_it_in_the_box" surface="brown_box" arm="right"/>
+
+      <SetArmPosture name="tuck_away" group="right_arm" named_target="tucked"/>
+      <ReleaseArm name="hand_the_arm_back"/>
+    </Sequence>
+  </BehaviorTree>
+</root>

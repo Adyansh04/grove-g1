@@ -2,8 +2,7 @@
 #
 # Sets up the host-side GR00T policy server that g1_vla's groot engine talks to.
 #
-# Optional. Nothing else in the stack needs it: the mock engine serves the same
-# GetActionChunk service, and every other skill is unaffected. Run this only to drive the
+# Optional: the mock engine serves the same GetActionChunk service. Run this only to drive the
 # learned-grasp path with a real model.
 #
 #   ./scripts/setup-groot.sh
@@ -11,19 +10,14 @@
 #
 # Idempotent. Safe to re-run to repair a half-finished install.
 #
-# WHY THIS IS NOT A ROS PACKAGE. The model needs torch and CUDA; the container deliberately
-# does not have them, because unitree_sdk2 already owns a DDS stack in that image and the
-# adapter speaks this server's wire protocol rather than importing its package. So the server
-# lives on the host, outside workspace.repos, which only tracks buildable ROS packages.
+# Not a ROS package: the model needs torch and CUDA, which the container deliberately lacks, so
+# the server runs on the host and g1_vla_groot_adapter speaks its wire protocol.
 #
-# WHY THE TORCH WHEELS ARE FETCHED BY HAND. `uv sync` re-downloads the 901 MB torch wheel from
-# download.pytorch.org and the connection drops partway through, repeatably, at full line rate.
-# curl with -C - resumes; uv does not. Once the wheels are cached locally the rest of the
-# install comes from PyPI and is unremarkable.
+# The torch wheels are fetched with curl because the ~900 MB download from download.pytorch.org
+# drops partway through, and curl -C - resumes where uv cannot.
 set -euo pipefail
 
-# Pinned rather than tracking main: the observation contract is read out of the checkpoint at
-# runtime, but the wire protocol and the server's own entry point are not versioned anywhere.
+# Pinned: the wire protocol and the server's entry point are not versioned anywhere upstream.
 GROOT_COMMIT="376ba89"
 GROOT_REPO="https://github.com/NVIDIA/Isaac-GR00T.git"
 GROOT_HOME="${GROOT_HOME:-${HOME}/ref/Isaac-GR00T}"
@@ -85,8 +79,7 @@ echo "==> virtualenv"
 [ -d "${GROOT_HOME}/.venv" ] || uv venv --python "${PYTHON_VERSION}" "${GROOT_HOME}/.venv"
 
 echo "==> installing torch, then the inference subset"
-# --no-sync everywhere after this: a bare `uv sync` would resolve the full dependency set and
-# go back to download.pytorch.org for a wheel that is already sitting in the cache.
+# `uv pip install`, never `uv sync`, which would fetch torch from download.pytorch.org again.
 VIRTUAL_ENV="${GROOT_HOME}/.venv" uv pip install --quiet \
     "${WHEEL_CACHE}/${TORCH_WHEEL//%2B/+}" "${WHEEL_CACHE}/${VISION_WHEEL//%2B/+}"
 VIRTUAL_ENV="${GROOT_HOME}/.venv" uv pip install --quiet \

@@ -1,10 +1,6 @@
 /**
  * @file test_livox_cloud.cpp
- * @brief The hardware CustomMsg -> PointCloud2 conversion.
- *
- * This path never runs in simulation, where the relay publishes /livox/lidar directly, so the
- * sim acceptance test cannot catch a regression in it. Everything reading /livox/lidar on the
- * robot depends on it producing the layout they expect.
+ * @brief The hardware CustomMsg -> PointCloud2 conversion, which no simulation path reaches.
  */
 
 #include <gmock/gmock.h>
@@ -36,8 +32,7 @@ TEST(LivoxCloud, CarriesEveryPointThrough)
     sensor_msgs::msg::PointCloud2 cloud;
     g1_state_estimation::toPointCloud2(custom, cloud);
 
-    // The frame and stamp have to survive: a cloud that arrives in the wrong frame is worse
-    // than no cloud, because the costmap happily marks obstacles wherever it lands.
+    // A cloud in the wrong frame is worse than none: the costmap marks it wherever it lands.
     EXPECT_EQ(cloud.header.frame_id, "mid360_link");
     EXPECT_EQ(cloud.header.stamp.sec, 42);
     EXPECT_EQ(cloud.height, 1U);
@@ -93,8 +88,7 @@ TEST(LivoxCloud, AnEmptySweepIsAnEmptyCloudRatherThanAMalformedOne)
 
 TEST(LivoxCloud, ReusingTheSameMessageDoesNotAccumulate)
 {
-    // The node publishes from a fresh message today, but resizing onto a dirty cloud is the
-    // obvious optimisation to make later, and it must not silently grow the point count.
+    // Resizing onto a reused cloud must not grow the point count.
     sensor_msgs::msg::PointCloud2 cloud;
 
     livox_ros_driver2::msg::CustomMsg first;

@@ -1,0 +1,21 @@
+# Six-DoF grasps for one object perception is already reporting. No imagery in the request: only
+# the server knows which mask belongs to which tracked object.
+
+# A class_id on /objects, indexed ("red_block_0") or the bare phrase ("red_block").
+string object_id
+# Which hand the grasps are for; grasps do not transfer between hands.
+string HAND_LEFT=left
+string HAND_RIGHT=right
+string hand
+---
+bool ok
+# Why there are none. An unknown object lists what is being reported; an unsupported hand is
+# refused, never mirrored.
+string message
+# Frame of every pose below, and the stamp of the depth frame they came from.
+std_msgs/Header header
+# Best first, as poses of the GENERATOR's gripper frame, which is not in this robot's URDF: the
+# consumer applies its measured offset to reach its own grasp frame.
+geometry_msgs/Pose[] grasps
+# Confidence in [0, 1], one per grasp.
+float32[] scores

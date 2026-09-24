@@ -1,7 +1,7 @@
-"""The Nav2 servers, plus the one G1-specific node that makes their output usable.
+"""The Nav2 servers, plus g1_base_approach for the last half metre Nav2's tolerance leaves.
 
-Runs uncomposed: composition does not deliver the nested costmap parameters, so
-controller_server hangs forever in Activating.
+Runs uncomposed: composed, the nested costmap parameters never arrive and controller_server
+hangs in Activating.
 """
 
 import os
@@ -41,8 +41,8 @@ def _arguments():
         DeclareLaunchArgument(
             "use_sim_time",
             default_value="false",
-            description="There is no /clock on this track -- the simulator links no ROS at "
-            "all. A true here gives every Nav2 server a clock that never advances.",
+            description="Passed to g1_base_approach only; the servers read params_file. Keep "
+            "false: there is no /clock on this track.",
         ),
         DeclareLaunchArgument(
             "params_file",
@@ -53,8 +53,7 @@ def _arguments():
         DeclareLaunchArgument(
             "use_composition",
             default_value="false",
-            description="DEFAULT FALSE, unlike the rest of this package, and rejected if "
-            "set: composition does not deliver the nested costmap parameters.",
+            description="Rejected if true: composed, the nested costmap parameters never arrive.",
         ),
         DeclareLaunchArgument("log_level", default_value="info"),
     ]
@@ -63,8 +62,8 @@ def _arguments():
 def _servers():
     params = ParameterFile(LaunchConfiguration("params_file"), allow_substs=True)
     log_args = ["--ros-args", "--log-level", LaunchConfiguration("log_level")]
-    # The params file cannot name its own package share. Both trees, not just the one we use:
-    # bt_navigator loads every navigator's tree on activate regardless of `navigators`.
+    # The params file cannot name its own share. Both trees: bt_navigator loads every
+    # navigator's tree on activate regardless of `navigators`.
     bt_xml = {
         "default_nav_to_pose_bt_xml": os.path.join(SHARE, "config", "navigate_to_pose.xml"),
         "default_nav_through_poses_bt_xml": os.path.join(
@@ -84,8 +83,8 @@ def _servers():
         )
 
     return GroupAction(actions=[
-        # odom is remapped because controller_server declares no odom_topic parameter: setting
-        # one is silently ignored, and Nav2 then believes the robot is permanently stationary.
+        # controller_server subscribes to relative `odom`; unremapped it hears nothing and
+        # treats the robot as stationary.
         server(
             "nav2_controller", "controller_server", "controller_server", [params],
             TF_REMAPPINGS + [("cmd_vel", "/cmd_vel"), ("odom", "/g1_odometry_publisher/odom")],
@@ -103,9 +102,10 @@ def _servers():
 
 
 def _base_approach():
-    """Launched unconditionally: gating it on a navigation argument would couple the packages.
+    """Launched unconditionally; without /objects its goals just fail.
 
-    Writes /cmd_vel directly, so the mission tree keeps it and Nav2 strictly sequential.
+    A manipulation flag here would couple this package to one it knows nothing about. It writes
+    /cmd_vel like Nav2, so the mission tree runs the two strictly in sequence.
     """
     return Node(
         package="g1_locomotion",
@@ -124,7 +124,6 @@ def generate_launch_description():
     return LaunchDescription(
         [SetEnvironmentVariable("RCUTILS_LOGGING_BUFFERED_STREAM", "1")]
         + _arguments()
-        # After the declarations: evaluating use_composition ahead of its
-        # DeclareLaunchArgument fails with "does not exist" on a plain `ros2 launch`.
+        # After the declarations, or use_composition does not exist yet on a plain launch.
         + [OpaqueFunction(function=_reject_composition), _servers(), _base_approach()]
     )

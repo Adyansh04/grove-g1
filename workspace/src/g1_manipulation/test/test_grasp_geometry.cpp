@@ -1,11 +1,6 @@
 /**
  * @file test_grasp_geometry.cpp
- * @brief The arm/group mapping and the grasp-frame goal, without a running MoveIt.
- *
- * Where the hand grips is not arithmetic here at all: it is the {side}_hand_grasp_frame
- * link in g1_description, and goals are given for that frame directly. What is left to pin is
- * which groups and frames an "arm" string resolves to, and that the goal passes position
- * through untouched while orienting the closing axis at the floor.
+ * @brief The arm/group mapping and the top-grasp goal, without a running MoveIt.
  */
 
 #include <gmock/gmock.h>
@@ -25,17 +20,14 @@ using g1_manipulation::resolveArm;
 namespace
 {
 
-/// The server's own graspFrameGoal, which is a private member. Position passes through; only
-/// the orientation is computed, and it mirrors between hands.
+constexpr double kDepth     = 0.026;
+constexpr double kMinHeight = 0.080;
+
+/// The orientation alone: zero height and no depth or minimum, so z passes through.
 geometry_msgs::msg::Pose
 graspFrameGoal(const geometry_msgs::msg::Pose& object, const std::vector<double>& rpy, bool is_left)
 {
-    geometry_msgs::msg::Pose goal;
-    goal.position = object.position;
-    tf2::Quaternion rotation;
-    rotation.setRPY((is_left ? -1.0 : 1.0) * rpy[0], rpy[1], rpy[2]);
-    goal.orientation = tf2::toMsg(rotation);
-    return goal;
+    return g1_manipulation::topGraspGoal(object, 0.0, 0.0, 0.0, rpy, is_left);
 }
 
 geometry_msgs::msg::Pose objectAt(double x, double y, double z)
@@ -68,8 +60,7 @@ TEST(ResolveArm, MapsASideOntoItsGroupsFramesAndHandedness)
 
 TEST(ResolveArm, RejectsAnythingElseWithoutAssigning)
 {
-    // The names have to match g1.srdf's groups and the URDF's frames exactly. A silent
-    // fallback to one side would move the wrong arm, which is what this refusal prevents.
+    // No fallback to a side: a near-miss name would move the wrong arm.
     ArmContext arm;
     arm.arm_group = "sentinel";
     EXPECT_FALSE(resolveArm("Left", arm));
@@ -78,26 +69,38 @@ TEST(ResolveArm, RejectsAnythingElseWithoutAssigning)
     EXPECT_EQ(arm.arm_group, "sentinel");
 }
 
-TEST(GraspFrameGoal, PutsTheGraspFrameExactlyOnTheObject)
+TEST(GraspFrameGoal, GoesStraightToTheObjectHorizontally)
 {
-    // The offset lives in the URDF, so the goal position is the object position with no
-    // arithmetic left here to get wrong.
-    const std::vector<double> rpy{ -M_PI_2, 0.0, 0.0 };
-    const auto                target = objectAt(0.35, -0.20, 0.83);
-
-    const auto goal = graspFrameGoal(target, rpy, /*is_left=*/false);
+    const auto target = objectAt(0.35, -0.20, 0.83);
+    const auto goal   = graspFrameGoal(target, { -M_PI_2, 0.0, 0.0 }, /*is_left=*/false);
 
     EXPECT_DOUBLE_EQ(goal.position.x, target.position.x);
     EXPECT_DOUBLE_EQ(goal.position.y, target.position.y);
-    EXPECT_DOUBLE_EQ(goal.position.z, target.position.z);
+}
+
+TEST(GraspFrameGoal, GripsUnderTheTopButNeverTooLow)
+{
+    const std::vector<double> rpy{ -M_PI_2, 0.0, 0.0 };
+    // A 90 mm block on a 0.80 m surface: the minimum height wins over the depth under the top.
+    const auto block = g1_manipulation::topGraspGoal(
+        objectAt(0.3, -0.2, 0.845),
+        0.09,
+        kDepth,
+        kMinHeight,
+        rpy,
+        false);
+    EXPECT_NEAR(block.position.z, 0.80 + kMinHeight, 1e-9);
+
+    // A 70 mm ball with a low minimum: the depth under the top wins.
+    const auto ball =
+        g1_manipulation::topGraspGoal(objectAt(0.3, -0.2, 0.835), 0.07, kDepth, 0.035, rpy, false);
+    EXPECT_NEAR(ball.position.z, 0.87 - kDepth, 1e-9);
 }
 
 TEST(GraspFrameGoal, PointsTheClosingAxisAtTheFloor)
 {
-    // The Dex3's fingers curl toward the palm's +y, so it is THAT axis that has to end up
-    // pointing down for a grasp off a table, and the palm's +x has to stay forward, so the
-    // arm reaches out rather than the wrist contorting. Getting this wrong is easy to miss by
-    // inspection, so it is pinned here instead.
+    // The Dex3 closes toward the palm's +y, so that axis points down for a top grasp, with +x
+    // forward so the arm reaches out rather than the wrist contorting.
     const auto palm = graspFrameGoal(objectAt(0.4, 0.0, 0.8), { -M_PI_2, 0.0, 0.0 }, false);
 
     tf2::Quaternion rotation;
@@ -112,8 +115,8 @@ TEST(GraspFrameGoal, PointsTheClosingAxisAtTheFloor)
 
 TEST(GraspFrameGoal, TheTwoHandsMirror)
 {
-    // The hands are mirror images, so the roll that points one hand's closing axis down points
-    // the other's up. A shared orientation would have the left hand grasping upside down.
+    // Mirror-image hands: the roll that points the right hand's closing axis down points the
+    // left's up, so a shared orientation grasps upside down with the left.
     const auto right = graspFrameGoal(objectAt(0.35, 0.20, 0.83), { -M_PI_2, 0.0, 0.0 }, false);
     const auto left  = graspFrameGoal(objectAt(0.35, 0.20, 0.83), { -M_PI_2, 0.0, 0.0 }, true);
 

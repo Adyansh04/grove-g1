@@ -1,8 +1,7 @@
 """move_group on its own: planning, no simulator.
 
-Nothing here is sim-specific, so this file carries to hardware unchanged; moveit_sim.launch.py
-composes it with the simulator. Starts whether or not the arm is acquired, since planning needs only
-joint states, and nothing here activates a controller.
+Nothing here is sim-specific, so it carries to hardware unchanged. Planning needs only joint
+states, and nothing here activates a controller.
 """
 
 import os
@@ -28,10 +27,8 @@ def _config(name):
 
 
 def _moveit_config():
-    """Every path explicit: the builder otherwise guesses names from the robot name and
-    silently carries on when one is missing, which surfaces later as an empty planning
-    pipeline. sensors_3d is worse, being guarded by an exists() check, so a wrong path is a
-    silent no-op with no octomap."""
+    """Every path explicit: the builder otherwise guesses file names and silently skips a missing
+    one, and a wrong sensors_3d path is a silent no-op with no octomap."""
     return (
         MoveItConfigsBuilder("g1", package_name="g1_moveit_config")
         # The same xacro control.launch.py feeds robot_state_publisher, so move_group plans
@@ -52,10 +49,8 @@ def _moveit_config():
 
 
 def _servo_config():
-    """Deliberately without sensors_3d. Handed the sensor config, servo starts a second octomap
-    updater on the same camera: double the CPU, and a map that can disagree with the one
-    move_group checks against. It consumes move_group's scene over /monitored_planning_scene
-    instead."""
+    """Without sensors_3d: servo would start a second octomap updater on the same sensor, one that
+    can disagree with move_group's. It reads move_group's scene over /monitored_planning_scene."""
     return (
         MoveItConfigsBuilder("g1", package_name="g1_moveit_config")
         .robot_description(
@@ -107,9 +102,8 @@ def generate_launch_description():
                 # Puts the SRDF on a topic, so RViz's MotionPlanning display picks it up
                 # instead of every consumer being handed the same parameter.
                 {"publish_robot_description_semantic": True},
-                # Off by default, and servo is useless without it: a secondary scene monitor
-                # gets its world and robot state from this topic alone, and without it waits
-                # forever on a state update, silently never moving.
+                # Off by default, and servo's secondary scene monitor gets its world and robot
+                # state from this topic alone; without it servo silently never moves.
                 {"publish_planning_scene": True},
                 {"publish_geometry_updates": True},
                 {"publish_state_updates": True},

@@ -1,13 +1,8 @@
 """Every one of the 29 body motors has exactly one owner, in every state the stack can be in.
 
-The invariant this file exists for: G1LowCmdSystem sends a command for all 29 motors on every
-tick, and it leaves any joint no controller claimed unpowered. So a joint missing from these
-lists is not a configuration nit, it is a limb that goes limp. Two controllers claiming one
-joint is the other half: ros2_control refuses the switch, and whichever controller lost the race
-never activates.
-
-Read against the description's own joint list rather than a copy, so adding a motor to the robot
-and forgetting to give it an owner fails here.
+G1LowCmdSystem leaves unclaimed joints unpowered, and ros2_control refuses a switch in which two
+controllers claim one joint. Read against the description's own joint list, so a new motor with
+no owner fails here.
 """
 
 import os
@@ -75,12 +70,7 @@ def test_the_arm_pair_is_a_straight_swap(controllers):
 
 
 def test_the_emergency_freeze_takes_over_exactly_what_it_replaces(controllers):
-    """A wider emergency target cannot activate at all.
-
-    The safety controller's switch deactivates itself and activates this one. Any joint here
-    that some other controller already holds makes those resources unavailable, so the switch
-    fails and the legs are left with no controller in the one case that matters most.
-    """
+    """A wider emergency target could not activate while other controllers hold those joints."""
     safety = claimed(controllers, "locomotion_safety_controller")
     assert claimed(controllers, "locomotion_freeze_controller") == safety
 

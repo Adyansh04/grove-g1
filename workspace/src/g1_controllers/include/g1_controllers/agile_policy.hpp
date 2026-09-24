@@ -4,10 +4,6 @@
 /**
  * @file agile_policy.hpp
  * @brief Runs the AGILE velocity policy: observation packing, inference, history feedback.
- *
- * Wraps the shipped end-to-end ONNX, which carries its own normalisation, action scaling and
- * history buffers. Callers supply state in the policy's own joint orderings and get absolute
- * joint targets with the gains to hold them.
  */
 
 #include <onnxruntime_cxx_api.h>
@@ -29,7 +25,7 @@ inline constexpr std::size_t kNumActJoints = 14;
 /// Ticks of history the policy carries internally.
 inline constexpr std::size_t kHistoryLength = 5;
 
-/// Policy tick rate and the controller_manager rate it decimates from, both fixed at training.
+/// Policy rate, and its decimation from the controller_manager loop. Both fixed at training.
 inline constexpr double kPolicyRateHz     = 50.0;
 inline constexpr int    kPolicyDecimation = 4;
 
@@ -86,8 +82,8 @@ struct PolicyAction
 /**
  * @brief One loaded AGILE policy session.
  *
- * Every buffer is allocated at construction, so run() neither allocates nor throws and is safe
- * inside the controller update loop.
+ * The ONNX carries its own normalisation, action scaling and history. Every buffer is allocated
+ * at construction, so run() neither allocates nor throws and is safe in the update loop.
  */
 class AgilePolicy
 {
@@ -96,8 +92,8 @@ public:
      * @brief Loads the ONNX and checks its signature against the contract above.
      *
      * @param model_path Filesystem path to the policy ONNX.
-     * @throws Ort::Exception if the model is unreadable, or std::runtime_error if its inputs and
-     *         outputs do not match the expected names and widths.
+     * @throws Ort::Exception if the model is unreadable, or std::runtime_error if its input and
+     *         output names or counts differ from the contract.
      */
     explicit AgilePolicy(const std::string& model_path);
 

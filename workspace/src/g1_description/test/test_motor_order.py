@@ -1,13 +1,9 @@
 """
 The DDS motor order is a table of names, and a name that is not a joint fails silently.
 
-`g1_hardware_interface` maps the URDF's joints onto LowCmd/LowState motor indices through one
-table, `kG1JointNames`. Index into it is the motor index on the wire, so permuting it lands a
-knee angle on a waist joint, which moves every sensor frame hanging off `torso_link` and reads
-downstream as an odometry or calibration fault rather than as what it is.
-
-This lives in g1_description rather than beside the table because the URDF is the other half of
-the comparison, and the check is only meaningful across the two.
+`g1_hardware_interface`'s `kG1JointNames` maps URDF joints onto LowCmd/LowState motor indices:
+position in it is the motor index on the wire, and a permutation reads downstream as an odometry
+or calibration fault. It is checked here because the URDF is the other half of the comparison.
 """
 
 import pathlib
@@ -43,16 +39,14 @@ def test_the_table_covers_every_body_motor_exactly_once():
 
 
 def test_the_table_is_in_sdk_motor_index_order():
-    # Position in this table IS the motor index the component packs LowCmd from, so the whole
-    # order is load-bearing, not just the leg/waist/arm boundaries. A swap inside one group,
-    # hip roll for hip yaw say, keeps the set, the counts and the boundaries intact and still
-    # sends every command to the wrong motor.
+    # The whole order, not just the group boundaries: swapping hip roll for hip yaw keeps the
+    # set and the counts and still sends every command to the wrong motor.
     assert _motor_order() == EXPECTED_BODY_JOINTS
 
 
 def test_every_name_is_a_joint_the_urdf_actually_has():
-    # A name the URDF does not have is dropped when the component maps joints, so the motor is
-    # simply never driven: no error anywhere, just a limb that does not move.
+    # A name the URDF lacks is dropped when the component maps joints, and that motor is never
+    # driven, with no error anywhere.
     urdf_joints = {j.get("name") for j in ET.parse(_URDF).getroot().findall("joint")}
     missing = [name for name in _motor_order() if name not in urdf_joints]
     assert not missing, f"not joints in {_URDF.name}: {missing}"

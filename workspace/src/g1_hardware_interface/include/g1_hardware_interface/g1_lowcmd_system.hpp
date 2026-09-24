@@ -4,10 +4,6 @@
 /**
  * @file g1_lowcmd_system.hpp
  * @brief ros2_control SystemInterface owning all 29 G1 body motors over rt/lowcmd.
- *
- * The joint mapping, the kp/kd command interfaces and the mode branches follow the upstream
- * component this is adapted from, so third-party controllers bind unchanged. Provenance and
- * the deviations are in the package README.
  */
 
 #include <array>
@@ -59,8 +55,7 @@ struct JointData
     JointCommand    command;
     InterfaceClaims claims;
 
-    /// Applied in kPositionOnly, where no controller supplies gains. Per joint because a knee
-    /// and a wrist do not share a sensible default; upstream hardcodes 10/1 for every motor.
+    /// Applied in kPositionOnly, where no controller supplies gains. Per joint, from the URDF.
     PositionOnlyGains position_only_gains;
 
     std::int16_t surface_temperature = 0;
@@ -103,7 +98,8 @@ struct ImuData
  * @brief ros2_control System publishing rt/lowcmd and subscribing rt/lowstate over unitree_sdk2.
  *
  * Owns the whole body: nothing else may publish rt/lowcmd while this is active, and no onboard
- * balance runs underneath it. See the package README for the authority model.
+ * balance runs underneath it. Joint order, kp/kd interfaces and mode branches follow the upstream
+ * component, so its controllers bind unchanged.
  */
 class G1LowCmdSystem : public hardware_interface::SystemInterface
 {
@@ -122,8 +118,7 @@ public:
     on_deactivate(const rclcpp_lifecycle::State& previous_state) override;
     hardware_interface::CallbackReturn
     on_error(const rclcpp_lifecycle::State& previous_state) override;
-    /// Belt and braces: controller_manager does not guarantee on_deactivate runs before the
-    /// process goes away, and this is the only channel holding the robot up.
+    /// Runs the release ramp too: controller_manager does not guarantee on_deactivate before exit.
     hardware_interface::CallbackReturn
     on_shutdown(const rclcpp_lifecycle::State& previous_state) override;
 
@@ -157,9 +152,9 @@ private:
     void shutdownSdk();
 
     /**
-     * @brief Releases whatever onboard mode holds the motors.
+     * @brief Releases whatever onboard mode holds the motors. Blocking; never on the update path.
      *
-     * Blocking, and only ever called off the real-time path.
+     * @return false if a mode survived every release attempt.
      */
     bool releaseOnboardMotionMode();
 
@@ -191,7 +186,8 @@ private:
     bool publishLowCmd();
 
     /**
-     * @brief Ramps stiffness to zero over release_ramp_s, then stops publishing.
+     * @brief Ramps stiffness to zero over release_ramp_s with release_kd held, then sends one
+     *        disabled frame. Blocks for the ramp; returns at once if not active.
      */
     void releaseSynchronously();
 
@@ -219,16 +215,14 @@ private:
     std::atomic<bool>                               sdk_initialized_{ false };
     std::atomic<bool>                               first_state_received_{ false };
     std::atomic<bool>                               active_{ false };
-    /// Held for the body of write(). Clearing active_ does not stop a write() already past its
-    /// check, and the release ramp runs on the executor thread while write() runs on the update
-    /// thread: both fill low_cmd_ and both publish it, so one frame could carry half of each.
+    /// Set for the body of write(), so the release ramp on the executor thread can wait out an
+    /// in-flight write before it fills low_cmd_.
     std::atomic<bool> in_write_{ false };
 
     unitree::robot::ChannelSubscriberPtr<unitree_hg::msg::dds_::LowState_> lowstate_subscriber_;
     unitree::robot::ChannelPublisherPtr<unitree_hg::msg::dds_::LowCmd_>    lowcmd_publisher_;
 
-    /// Added to the controller_manager's own executor, which Jazzy hands us in on_init. Humble
-    /// had no such hook, so ports from that era reach for get_node() instead.
+    /// Spun by controller_manager's own executor, which on_init receives in its params.
     rclcpp::Node::SharedPtr                                             node_;
     rclcpp::Executor::WeakPtr                                           executor_;
     rclcpp::Publisher<diagnostic_msgs::msg::DiagnosticArray>::SharedPtr diagnostics_pub_;

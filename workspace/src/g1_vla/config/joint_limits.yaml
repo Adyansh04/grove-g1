@@ -1,10 +1,6 @@
-# What the gate checks a policy chunk against. A copy of g1_moveit_config's, with the arms at
-# 1.0 rather than 0.8: a chunk is a trajectory sampled at the rate its training data was captured
-# at, so executing it slower is not a safe version of the same motion. 1.0 is the backstop the
-# hand clamp is already written against.
-#
-# Local to this package so a planned pick, place or posture keeps the shared clamp. Only chunk
-# validation and the servo jog clamp read this file, both through vla.launch.py.
+# Limits the gate checks policy chunks and servo jogs against, loaded only by vla.launch.py.
+# g1_moveit_config's values with the arms at 1.0 rad/s instead of 0.8: a chunk is timed at its
+# training rate, and slowing it is not a safer version of the same motion.
 
 joint_limits:
   left_shoulder_pitch_joint:

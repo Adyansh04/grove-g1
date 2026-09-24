@@ -48,9 +48,8 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_sensor_mounts test/test_sensor_mounts.py)
   ament_add_pytest_test(test_motor_order test/test_motor_order.py)
 
-  # ament_cmake_xmllint only covers package.xml, and both xacro and MuJoCo accept things
-  # xmllint rejects -- notably a "--" inside a comment, which is illegal XML but loads fine,
-  # so it survives until something else reads the file. Made three times here now.
+  # ament_cmake_xmllint only covers package.xml, and xacro accepts a double hyphen inside a
+  # comment, which is illegal XML and breaks the next strict parser to read the file.
   find_program(XMLLINT_EXECUTABLE xmllint)
   if(XMLLINT_EXECUTABLE)
     file(GLOB _description_xml

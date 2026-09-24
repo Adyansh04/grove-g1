@@ -1,19 +1,7 @@
 <mujoco model="g1_manipulation_scene">
-  <!-- The fast skill scene: one object, on a pedestal, at arm's length in front of the robot.
-
-       Exists so a pick can be exercised without navigating to the facility workbench first,
-       and without waiting on the gait to hold still once it has. The pedestal top is at the
-       workbench's own 0.75 m and the object is the same 6 cm cube, so a grasp tuned here is
-       tuned for there.
-
-       Deliberately measured against by nothing else. g1_perception_scene is what the LiDAR
-       and octomap tests assert geometry from, and adding a pedestal to it would move numbers
-       those tests were written against.
-
-       Every geom is group 2, for the reason g1_perception_scene explains: the sweep masks to
-       that group, or every ray returns the robot's own shell.
-
-       Staged into the vendored model directory at launch, so relative includes resolve. -->
+  <!-- The skill scene: one block on a pedestal at arm's length, so a pick runs without
+       navigating first. Every geom is group 2, the only group the LiDAR sweep sees. Staged into
+       the vendored model directory at launch, so relative includes resolve. -->
   <include file="g1_29dof.xml"/>
 
   <statistic center="0 0 0.5" extent="2.0"/>
@@ -39,44 +27,60 @@
     <light pos="0 0 1.5" dir="0 0 -1" directional="true"/>
     <geom name="floor" group="2" size="0 0 0.05" type="plane" material="groundplane"/>
 
-    <!-- The near edge must clear the spawned arm. The right palm hangs at about odom
-         (0.18, -0.18, 0.74) at spawn: arms down, elbows bent forward by the pose
-         arm_freeze_controller captures. So the top starts at x 0.26, 8 cm clear of it, and
-         sits at 0.80, above where the palm hangs rather than around it.
-
-         Height is chosen to match the facility workbench (0.75) as closely as the arm's reach
-         allows, so a grasp tuned here transfers. -->
-    <geom name="table_top" group="2" type="box" size="0.16 0.14 0.015" pos="0.42 -0.20 0.785"
-      material="pedestal_mat" contype="1" conaffinity="1"/>
+    <!-- Top at 0.80 m, its near edge 8 cm clear of the spawned right palm. Contype bit 1 on the
+         top and the block is what the Dex3's contact geometry (contype 2) pairs with. -->
+    <geom name="table_top" group="2" type="box" size="0.19 0.17 0.015" pos="0.45 -0.20 0.785"
+      material="pedestal_mat" contype="3" conaffinity="3"/>
     <geom name="table_leg_near" group="2" type="box" size="0.02 0.02 0.385"
-      pos="0.54 -0.32 0.385" material="pedestal_mat" contype="1" conaffinity="1"/>
+      pos="0.60 -0.35 0.385" material="pedestal_mat" contype="1" conaffinity="1"/>
     <geom name="table_leg_far" group="2" type="box" size="0.02 0.02 0.385"
-      pos="0.54 -0.08 0.385" material="pedestal_mat" contype="1" conaffinity="1"/>
+      pos="0.60 -0.05 0.385" material="pedestal_mat" contype="1" conaffinity="1"/>
 
-    <!-- Same size, mass and friction as the facility scene's, so the two are the same problem.
-         On the near half of the top, which is the part the arm can reach, and spawned at
-         exactly rest height (half-height 0.03 above the 0.80 surface) rather than a few mm
-         above it, so it settles instead of bouncing. -->
-    <body name="red_cube" pos="0.28 -0.20 0.830">
-      <freejoint name="red_cube_joint"/>
-      <geom group="2" type="box" size="0.03 0.03 0.03" material="mat_red_obj" mass="0.15"
-        contype="1" conaffinity="1" friction="1 0.005 0.0001"/>
+    <!-- 60 x 60 x 90, spawned at rest height. Taller than wide because the thumb hangs 63 mm
+         below the grip point: gripped at min_grip_height_m (80 mm) it clears the table by 17. -->
+    <body name="red_block" pos="0.32 -0.20 0.847">
+      <freejoint name="red_block_joint"/>
+      <geom group="2" type="box" size="0.03 0.03 0.045" material="mat_red_obj" mass="0.22"
+        contype="3" conaffinity="3" friction="1 0.005 0.0001"/>
     </body>
 
-    <!-- The depth camera element the sensor sampler renders through, exactly as the other
-         scenes carry it: the mount belongs to the vendored robot and cannot host a camera, so
-         the sampler writes this one's pose from torso_link every frame. -->
+    <!-- The depth camera the sensor sampler renders through; it moves the camera to the torso
+         mount every frame. -->
     <camera name="d435i" mode="fixed" fovy="58" resolution="848 480" pos="0 0 1"/>
   </worldbody>
 
+  <!-- No grasp_* welds: the fingers hold the block by contact (patch 008). -->
+
   <equality>
-    <!-- Inactive, and only grove-g1's grasp_weld manager ever turns one on, when the hand it
-         names has measurably closed near the cube. SIMULATION ONLY: the Dex3 fingers carry no
-         contact geometry (patch 003, deliberate), so without these a closed hand passes
-         straight through. -->
-    <weld name="grasp_left_red_cube" body1="left_hand_palm_link" body2="red_cube"
-      active="false"/>
-    <weld name="grasp_right_red_cube" body1="right_hand_palm_link" body2="red_cube"
-      active="false"/>
+    <!-- Spawn the arms at activate_arm's CLEAR_POSTURE: at the URDF zero the right hand is inside
+         the block. These hold the pose until patch 007 hands each joint to its motor. -->
+    <joint name="startup_hold_left_shoulder_pitch" joint1="left_shoulder_pitch_joint"
+      polycoef="0.9 0 0 0 0" solref="0.05 1"/>
+    <joint name="startup_hold_left_shoulder_roll" joint1="left_shoulder_roll_joint"
+      polycoef="1.1 0 0 0 0" solref="0.05 1"/>
+    <joint name="startup_hold_left_shoulder_yaw" joint1="left_shoulder_yaw_joint"
+      polycoef="0 0 0 0 0" solref="0.05 1"/>
+    <joint name="startup_hold_left_elbow" joint1="left_elbow_joint"
+      polycoef="0 0 0 0 0" solref="0.05 1"/>
+    <joint name="startup_hold_left_wrist_roll" joint1="left_wrist_roll_joint"
+      polycoef="0 0 0 0 0" solref="0.05 1"/>
+    <joint name="startup_hold_left_wrist_pitch" joint1="left_wrist_pitch_joint"
+      polycoef="0 0 0 0 0" solref="0.05 1"/>
+    <joint name="startup_hold_left_wrist_yaw" joint1="left_wrist_yaw_joint"
+      polycoef="0 0 0 0 0" solref="0.05 1"/>
+    <joint name="startup_hold_right_shoulder_pitch" joint1="right_shoulder_pitch_joint"
+      polycoef="0.9 0 0 0 0" solref="0.05 1"/>
+    <joint name="startup_hold_right_shoulder_roll" joint1="right_shoulder_roll_joint"
+      polycoef="-1.1 0 0 0 0" solref="0.05 1"/>
+    <joint name="startup_hold_right_shoulder_yaw" joint1="right_shoulder_yaw_joint"
+      polycoef="0 0 0 0 0" solref="0.05 1"/>
+    <joint name="startup_hold_right_elbow" joint1="right_elbow_joint"
+      polycoef="0 0 0 0 0" solref="0.05 1"/>
+    <joint name="startup_hold_right_wrist_roll" joint1="right_wrist_roll_joint"
+      polycoef="0 0 0 0 0" solref="0.05 1"/>
+    <joint name="startup_hold_right_wrist_pitch" joint1="right_wrist_pitch_joint"
+      polycoef="0 0 0 0 0" solref="0.05 1"/>
+    <joint name="startup_hold_right_wrist_yaw" joint1="right_wrist_yaw_joint"
+      polycoef="0 0 0 0 0" solref="0.05 1"/>
   </equality>
 </mujoco>

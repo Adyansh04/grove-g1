@@ -4,8 +4,7 @@ Started by `nav_soak`, and usable by hand against an already-running stack:
 
     ros2 run g1_navigation nav_diag.py 200
 
-Prints a snapshot every 20 s so a long run can be watched, and a summary on exit. The
-summary is the output that matters; the snapshots are progress.
+Prints a progress snapshot every 20 s and the summary on exit.
 """
 import math
 import signal
@@ -22,10 +21,9 @@ from rclpy.time import Duration, Time
 from sensor_msgs.msg import PointCloud2
 
 SWEEP_S = 0.032        # measured cost of one full 360x32 sweep
-OBSTACLE_RANGE = 5.0   # obstacle_max_range in config/nav2_params.yaml
+OBSTACLE_RANGE = 3.0   # obstacle_max_range in config/nav2_params.yaml
 FLOOR_CUT = 0.08       # min_obstacle_height
-# Measured envelope of the walking policy: translation commands below this produce essentially
-# no motion. Yaw has no deadband and tracks near 1:1, so it only appears here as "is it turning".
+# The gait ignores translation commands below this. Yaw has no deadband.
 VEL_DEADBAND = 0.15
 
 
@@ -74,11 +72,7 @@ class NavDiag(Node):
             self.nav_cmd_in_deadband += 1
 
     def on_cloud(self, msg):
-        """How far the pelvis tilt moves across one sweep window.
-
-        The cloud is stamped at relay publish time, but the geometry it describes was sampled
-        up to a sweep earlier, so this is the attitude error the costmap transform inherits.
-        """
+        """Pelvis pitch change across one sweep: the attitude error its transform can carry."""
         stamp = Time.from_msg(msg.header.stamp)
         try:
             a = self.buf.lookup_transform("base_footprint", "pelvis", stamp)
@@ -90,11 +84,7 @@ class NavDiag(Node):
             math.degrees(abs(pitch_of(a.transform.rotation) - pitch_of(b.transform.rotation))))
 
     def on_costmap(self, msg):
-        # >= 99, not >= 253. The costmap is republished as an OccupancyGrid, and
-        # Costmap2DPublisher rescales on the way out: LETHAL_OBSTACLE 254 -> 100,
-        # INSCRIBED_INFLATED_OBSTACLE 253 -> 99, NO_INFORMATION -> -1, everything else 0-98.
-        # Thresholding on the raw costmap values could never match anything, so this read zero
-        # through every run whatever the costmap actually contained.
+        # OccupancyGrid rescales costs: lethal 254 -> 100, inscribed 253 -> 99.
         self.lethal.append(sum(1 for v in msg.data if v >= 99))
 
     def on_tick(self):
@@ -177,9 +167,7 @@ def main():
     rclpy.init()
     node = NavDiag()
 
-    # The summary has to survive a signal. KeyboardInterrupt is a BaseException, so an
-    # `except Exception` around the spin loop silently skips report() and the run ends with
-    # no numbers at all.
+    # Signals set a flag instead of raising, so report() still runs.
     stop = {"now": False}
     signal.signal(signal.SIGINT, lambda *_: stop.update(now=True))
     signal.signal(signal.SIGTERM, lambda *_: stop.update(now=True))

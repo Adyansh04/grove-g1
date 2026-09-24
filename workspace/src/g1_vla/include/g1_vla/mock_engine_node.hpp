@@ -6,9 +6,7 @@
  * @brief A deterministic stand-in for a policy engine.
  *
  * Serves the same chunk service a real policy does, walking the named joints toward a fixed
- * target a bounded step at a time. It exists so the gate can be tested without a model: aim it
- * at free space and every chunk should execute, aim it into a surface and every chunk should be
- * rejected before the arm moves.
+ * target a bounded step at a time, so the gate can be tested without a model.
  */
 
 #include <g1_msgs/srv/get_action_chunk.hpp>

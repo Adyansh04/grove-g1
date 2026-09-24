@@ -71,8 +71,8 @@ def test_component_claims_all_29_body_motors_in_sdk_order(expanded_urdf_path):
 
 
 def test_every_body_joint_exports_kp_and_kd(expanded_urdf_path):
-    # kp and kd as command interfaces is what lets a controller pick the joint's control mode
-    # per tick; without them the policy has no way to send the gains it infers.
+    # kp and kd as command interfaces let a controller pick the joint's control mode per tick;
+    # without them the policy cannot send the gains it infers.
     root = ET.parse(expanded_urdf_path).getroot()
     for joint in component(root, "G1LowCmdSystem").findall("joint"):
         commands = [c.get("name") for c in joint.findall("command_interface")]
@@ -83,10 +83,8 @@ def test_every_body_joint_exports_kp_and_kd(expanded_urdf_path):
 
 @pytest.mark.parametrize("side", ["left", "right"])
 def test_each_hand_is_its_own_component_in_wire_order(expanded_urdf_path, side):
-    # The Dex3 is a separate device with its own authority, so it gets its own component
-    # rather than extra joints on the body's. Order is load-bearing here and not merely
-    # tidy: HandCmd.motor_cmd is positional, and G1Dex3System refuses to init on a mismatch
-    # precisely so a reordered list cannot silently close the wrong fingers.
+    # Its own component, not joints on the body's. Order matters: HandCmd.motor_cmd is
+    # positional, so a reordered list would close the wrong fingers.
     root = ET.parse(expanded_urdf_path).getroot()
     hand = component(root, f"G1Dex3System{side.capitalize()}")
 
@@ -94,12 +92,8 @@ def test_each_hand_is_its_own_component_in_wire_order(expanded_urdf_path, side):
     params = {p.get("name"): p.text for p in hand.findall("hardware/param")}
     assert params["side"] == side
     assert {"kp", "kd", "command_publish_rate", "max_joint_velocity_rad_s"} <= params.keys()
-    # ChannelFactory::Init is mutex-guarded and later calls are a silent no-op, so whichever of
-    # the three components activates first fixes both of these for the whole process and a
-    # component that disagreed would sit on a channel that never carries traffic.
-    #
-    # network_interface is the more dangerous: a non-empty value on the winner makes the SDK
-    # build an inline CycloneDDS config and discard CYCLONEDDS_URI for every component.
+    # Only the first ChannelFactory::Init in the process applies, so a component that disagreed
+    # would sit on a channel that never carries traffic.
     body = component(root, "G1LowCmdSystem")
     for shared in ("domain_id", "network_interface"):
         assert params[shared] == body.find(f"hardware/param[@name='{shared}']").text, shared

@@ -46,8 +46,8 @@ constexpr std::chrono::seconds      kMotionSwitchBackoff{ 2 };
 constexpr std::chrono::milliseconds kReleaseTickPeriod{ 5 };
 constexpr std::chrono::seconds      kFirstStateTimeout{ 10 };
 
-/// Clears the flag on every exit from write(), including the error return. Pointer rather than
-/// reference so the type stays assignable, which clang-tidy requires of a data member.
+/// Clears in_write_ on every exit from write(). A pointer member, since clang-tidy rejects a
+/// reference one.
 struct InWriteGuard
 {
     std::atomic<bool>* flag;
@@ -130,8 +130,7 @@ G1LowCmdSystem::on_init(const hardware_interface::HardwareComponentInterfacePara
 
     const auto& hw = info.hardware_parameters;
 
-    // Deliberately empty by default: a non-empty interface makes the SDK build its own inline
-    // CycloneDDS config and discard CYCLONEDDS_URI, which is what pins us to loopback.
+    // Keep empty: a non-empty interface makes the SDK discard CYCLONEDDS_URI, which pins loopback.
     if (const auto it = hw.find("network_interface"); it != hw.end())
     {
         network_interface_ = it->second;
@@ -380,15 +379,13 @@ bool G1LowCmdSystem::initializeSdk()
     }
 }
 
-/// Idempotent, and unguarded on purpose: a failed initializeSdk leaves channels open with
-/// sdk_initialized_ still false, and those have to go too: the subscriber's handler captures
-/// this, so an outliving channel writes into a destroyed component.
+/// Idempotent and unguarded: a failed initializeSdk() can leave channels open, and the
+/// subscriber's handler captures this.
 void G1LowCmdSystem::shutdownSdk()
 {
     lowstate_subscriber_.reset();
     lowcmd_publisher_.reset();
-    // first_state_received_ is cleared so a re-activation waits for a frame on the new
-    // subscriber rather than seeding from whatever the buffer holds from the previous session.
+    // Clearing first_state_received_ makes a re-activation wait for a frame on the new subscriber.
     sdk_initialized_      = false;
     first_state_received_ = false;
 }
@@ -568,7 +565,7 @@ G1LowCmdSystem::read(const rclcpp::Time& /*time*/, const rclcpp::Duration& /*per
     if (has_imu_)
     {
         const auto& imu = sample->state.imu_state();
-        // Unitree order the quaternion w, x, y, z.
+        // Unitree orders the quaternion w, x, y, z.
         imu_data_.orientation_w = imu.quaternion()[0];
         imu_data_.orientation_x = imu.quaternion()[1];
         imu_data_.orientation_y = imu.quaternion()[2];
@@ -606,15 +603,14 @@ bool G1LowCmdSystem::publishLowCmd()
 hardware_interface::return_type
 G1LowCmdSystem::write(const rclcpp::Time& /*time*/, const rclcpp::Duration& /*period*/)
 {
+    // Raised before active_ is read, both sequentially consistent: either the release ramp sees
+    // this flag and waits, or this sees active_ cleared and stays out.
+    in_write_.store(true);
+    const InWriteGuard guard{ &in_write_ };
     if (!active_.load() || !sdk_initialized_.load())
     {
         return hardware_interface::return_type::OK;
     }
-
-    // Announced for the whole body, so the release ramp cannot start filling low_cmd_ underneath
-    // this tick. Two relaxed-ish atomic stores, no allocation and no lock on the 200 Hz path.
-    in_write_.store(true, std::memory_order_release);
-    const InWriteGuard guard{ &in_write_ };
 
     for (const auto& jd : joint_data_)
     {
@@ -641,10 +637,9 @@ void G1LowCmdSystem::releaseSynchronously()
         return;
     }
 
-    // active_ is now false, so no further write() can enter; wait out the one that may already
-    // be inside. Without this the ramp's first frame can interleave with a controller command
-    // mid-CRC, and shutdownSdk() can reset the publisher while write() is dereferencing it.
-    while (in_write_.load(std::memory_order_acquire))
+    // Wait out a write() already inside, which would otherwise interleave with the ramp's frame
+    // or use the publisher shutdownSdk() resets.
+    while (in_write_.load())
     {
         std::this_thread::yield();
     }

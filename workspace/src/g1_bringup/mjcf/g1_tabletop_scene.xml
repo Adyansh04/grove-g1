@@ -1,0 +1,143 @@
+<mujoco model="g1_tabletop_scene">
+  <!-- The perception scene: six objects and a box on one pedestal. The near row is in reach and
+       holds two blocks that differ only in colour, so "the red block" is a choice; the far row is
+       out of reach on purpose, to give a selector more candidates than the arm can take. Every
+       geom is group 2, the only group the LiDAR sweep sees. -->
+  <include file="g1_29dof.xml"/>
+
+  <statistic center="0 0 0.5" extent="2.0"/>
+
+  <visual>
+    <headlight diffuse="0.6 0.6 0.6" ambient="0.3 0.3 0.3" specular="0 0 0"/>
+    <rgba haze="0.15 0.25 0.35 1"/>
+    <global azimuth="-130" elevation="-20" offwidth="1280" offheight="720"/>
+  </visual>
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512"
+      height="3072"/>
+    <texture type="2d" name="groundplane" builtin="checker" mark="edge" rgb1="0.2 0.3 0.4"
+      rgb2="0.1 0.2 0.3" markrgb="0.8 0.8 0.8" width="300" height="300"/>
+    <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5"
+      reflectance="0.2"/>
+    <material name="pedestal_mat" rgba="0.35 0.38 0.42 1"/>
+    <material name="brown_box_mat" rgba="0.72 0.53 0.31 1" specular="0.1" shininess="0.1"/>
+    <material name="mat_red_obj" rgba="0.9 0.15 0.15 1" specular="0.6" shininess="0.8"/>
+    <material name="mat_green_obj" rgba="0.15 0.8 0.2 1" specular="0.6" shininess="0.8"/>
+    <material name="mat_blue_obj" rgba="0.15 0.3 0.9 1" specular="0.6" shininess="0.8"/>
+    <material name="mat_yellow_obj" rgba="0.95 0.8 0.1 1" specular="0.6" shininess="0.8"/>
+    <material name="mat_white_obj" rgba="0.92 0.92 0.9 1" specular="0.4" shininess="0.5"/>
+  </asset>
+
+  <worldbody>
+    <light pos="0 0 1.5" dir="0 0 -1" directional="true"/>
+    <geom name="floor" group="2" size="0 0 0.05" type="plane" material="groundplane"/>
+
+    <!-- Same 0.80 m top as the manipulation pedestal, wider for the extra objects. Contype bit 1
+         on the top and the objects is what the Dex3's contact geometry (contype 2) pairs with. -->
+    <geom name="table_top" group="2" type="box" size="0.19 0.28 0.015" pos="0.43 -0.32 0.785"
+      material="pedestal_mat" contype="3" conaffinity="3"/>
+    <geom name="table_leg_near" group="2" type="box" size="0.02 0.02 0.385"
+      pos="0.58 -0.56 0.385" material="pedestal_mat" contype="1" conaffinity="1"/>
+    <geom name="table_leg_far" group="2" type="box" size="0.02 0.02 0.385"
+      pos="0.58 -0.08 0.385" material="pedestal_mat" contype="1" conaffinity="1"/>
+
+    <!-- Somewhere to put an object down. A named body without a joint: static, but reported by
+         the simulator's pose relay, so perception and a place can both find it by name. -->
+    <body name="brown_box" pos="0.32 -0.34 0.80">
+      <geom name="brown_box_floor" group="2" type="box" size="0.08 0.08 0.006" pos="0 0 0.006"
+        material="brown_box_mat" contype="3" conaffinity="3"/>
+      <geom name="brown_box_wall_near" group="2" type="box" size="0.08 0.008 0.032"
+        pos="0 -0.072 0.032" material="brown_box_mat" contype="3" conaffinity="3"/>
+      <geom name="brown_box_wall_far" group="2" type="box" size="0.08 0.008 0.032"
+        pos="0 0.072 0.032" material="brown_box_mat" contype="3" conaffinity="3"/>
+      <geom name="brown_box_wall_right" group="2" type="box" size="0.008 0.064 0.032"
+        pos="-0.072 0 0.032" material="brown_box_mat" contype="3" conaffinity="3"/>
+      <geom name="brown_box_wall_left" group="2" type="box" size="0.008 0.064 0.032"
+        pos="0.072 0 0.032" material="brown_box_mat" contype="3" conaffinity="3"/>
+    </body>
+
+    <!-- 45 x 45 x 90. Taller than wide because the thumb hangs 63 mm below the grip point, and
+         narrow enough for the fingers to wrap rather than pinch it. -->
+    <body name="red_block" pos="0.30 -0.08 0.847">
+      <freejoint name="red_block_joint"/>
+      <geom group="2" type="box" size="0.0225 0.0225 0.045" material="mat_red_obj" mass="0.124"
+        contype="3" conaffinity="3" friction="1 0.005 0.0001"/>
+    </body>
+
+    <!-- The red block in blue: only colour tells them apart. 140 mm apart, so the hand can
+         descend on either without shoving the other. -->
+    <body name="blue_block" pos="0.30 -0.22 0.847">
+      <freejoint name="blue_block_joint"/>
+      <geom group="2" type="box" size="0.0225 0.0225 0.045" material="mat_blue_obj" mass="0.124"
+        contype="3" conaffinity="3" friction="1 0.005 0.0001"/>
+    </body>
+
+    <!-- The far row, out of reach: here to be told apart, not picked. -->
+    <body name="green_cylinder" pos="0.50 -0.10 0.847">
+      <freejoint name="green_cylinder_joint"/>
+      <geom group="2" type="cylinder" size="0.03 0.045" material="mat_green_obj" mass="0.15"
+        contype="3" conaffinity="3" friction="1 0.005 0.0001"/>
+    </body>
+
+    <!-- Seen from above its lowest visible point is its equator, which is what the support-plane
+         fit has to get right. -->
+    <body name="blue_sphere" pos="0.50 -0.24 0.839">
+      <freejoint name="blue_sphere_joint"/>
+      <geom group="2" type="sphere" size="0.037" material="mat_blue_obj" mass="0.1"
+        contype="3" conaffinity="3" friction="0.8 0.005 0.0001"/>
+    </body>
+
+    <!-- Rectangular, so its yaw is recoverable. -->
+    <body name="yellow_box" pos="0.50 -0.38 0.827">
+      <freejoint name="yellow_box_joint"/>
+      <geom group="2" type="box" size="0.04 0.025 0.025" material="mat_yellow_obj" mass="0.12"
+        contype="3" conaffinity="3"/>
+    </body>
+
+    <body name="white_cup" pos="0.50 -0.52 0.847">
+      <freejoint name="white_cup_joint"/>
+      <geom group="2" type="cylinder" size="0.035 0.045" material="mat_white_obj" mass="0.12"
+        contype="3" conaffinity="3" friction="1 0.005 0.0001"/>
+    </body>
+
+    <!-- The depth camera the sensor sampler renders through; it moves the camera to the torso
+         mount every frame. -->
+    <camera name="d435i" mode="fixed" fovy="58" resolution="848 480" pos="0 0 1"/>
+  </worldbody>
+
+  <!-- No grasp_* welds: the fingers hold objects by contact (patch 008). -->
+
+  <equality>
+    <!-- Spawn the arms at activate_arm's CLEAR_POSTURE: at the URDF zero the right hand is inside
+         the green cylinder. These hold the pose until patch 007 hands each joint to its motor. -->
+    <joint name="startup_hold_left_shoulder_pitch" joint1="left_shoulder_pitch_joint"
+      polycoef="0.9 0 0 0 0" solref="0.05 1"/>
+    <joint name="startup_hold_left_shoulder_roll" joint1="left_shoulder_roll_joint"
+      polycoef="1.1 0 0 0 0" solref="0.05 1"/>
+    <joint name="startup_hold_left_shoulder_yaw" joint1="left_shoulder_yaw_joint"
+      polycoef="0 0 0 0 0" solref="0.05 1"/>
+    <joint name="startup_hold_left_elbow" joint1="left_elbow_joint"
+      polycoef="0 0 0 0 0" solref="0.05 1"/>
+    <joint name="startup_hold_left_wrist_roll" joint1="left_wrist_roll_joint"
+      polycoef="0 0 0 0 0" solref="0.05 1"/>
+    <joint name="startup_hold_left_wrist_pitch" joint1="left_wrist_pitch_joint"
+      polycoef="0 0 0 0 0" solref="0.05 1"/>
+    <joint name="startup_hold_left_wrist_yaw" joint1="left_wrist_yaw_joint"
+      polycoef="0 0 0 0 0" solref="0.05 1"/>
+    <joint name="startup_hold_right_shoulder_pitch" joint1="right_shoulder_pitch_joint"
+      polycoef="0.9 0 0 0 0" solref="0.05 1"/>
+    <joint name="startup_hold_right_shoulder_roll" joint1="right_shoulder_roll_joint"
+      polycoef="-1.1 0 0 0 0" solref="0.05 1"/>
+    <joint name="startup_hold_right_shoulder_yaw" joint1="right_shoulder_yaw_joint"
+      polycoef="0 0 0 0 0" solref="0.05 1"/>
+    <joint name="startup_hold_right_elbow" joint1="right_elbow_joint"
+      polycoef="0 0 0 0 0" solref="0.05 1"/>
+    <joint name="startup_hold_right_wrist_roll" joint1="right_wrist_roll_joint"
+      polycoef="0 0 0 0 0" solref="0.05 1"/>
+    <joint name="startup_hold_right_wrist_pitch" joint1="right_wrist_pitch_joint"
+      polycoef="0 0 0 0 0" solref="0.05 1"/>
+    <joint name="startup_hold_right_wrist_yaw" joint1="right_wrist_yaw_joint"
+      polycoef="0 0 0 0 0" solref="0.05 1"/>
+  </equality>
+</mujoco>

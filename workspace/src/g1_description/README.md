@@ -1,14 +1,14 @@
 # g1_description
 
-The Unitree G1 robot description: a vendored, kinematics-only URDF plus the xacro wrappers that add
-the `ros2_control` blocks for the body motors and the two hands.
+The Unitree G1 robot description: a vendored, kinematics-only URDF plus the xacro wrappers that
+add the `ros2_control` blocks for the body motors and the two hands.
 
 `ament_cmake`, no compiled code.
 
 ```mermaid
 flowchart LR
-    V["g1_29dof_with_hand_rev_1_0.urdf<br/>vendored, unmodified"] --> C
-    C["g1_common.xacro<br/>sensor frames, both hands"] --> X["g1_lowcmd.urdf.xacro<br/>body component"]
+    V["g1_29dof_with_hand_rev_1_0.urdf<br/>vendored"] --> C
+    C["g1_common.xacro<br/>sensor and grasp frames, both hands"] --> X["g1_lowcmd.urdf.xacro<br/>body component"]
     P["lowcmd_params.yaml<br/>dex3_params.yaml"] -- "xacro.load_yaml" --> C
     P --> X
     X --> RSP["robot_state_publisher"]
@@ -19,7 +19,7 @@ flowchart LR
 
 | Path | Purpose |
 |---|---|
-| `urdf/g1_29dof_with_hand_rev_1_0.urdf` | The vendored upstream description, unmodified. |
+| `urdf/g1_29dof_with_hand_rev_1_0.urdf` | Unitree's description, byte-for-byte except mesh paths rewritten to `package://`. |
 | `urdf/g1_common.xacro` | Includes the vendored URDF, adds the sensor and grasp frames and both hand components. Loaded on its own by consumers that want the geometry without the body component. |
 | `urdf/g1_lowcmd.urdf.xacro` | Includes `g1_common.xacro` and adds the body component's `<ros2_control>` block. This is the entry point. |
 | `config/lowcmd_params.yaml` | Body-component tunables and the per-joint position-only gains. |
@@ -58,9 +58,23 @@ channels, and a hand fault should not take the arms down with it.
 | `motor_temp_warn_threshold` | 120 | Degrees C. Warns on `/diagnostics`. |
 | `release_motion_mode` | false | Whether to ask the onboard motion service to hand over the motors. The simulator has no such service; hardware must set it true. |
 
-The same file carries the per-joint `position_only_kp` and `kd`, used only when a controller claims
-position without supplying gains. Joint order is the Unitree DDS wire order and is not ours to
-renumber.
+The same file carries the per-joint `position_only_kp` and `position_only_kd`, used only when a
+controller claims position without supplying gains: 10/1 on the legs and waist, 300/4 on the
+shoulders and elbows, 150/3 on the wrists. Check the arm gains against the motor limits before
+running on hardware. Joint order is the Unitree DDS wire order and is not ours to renumber.
+
+`config/dex3_params.yaml`, shared by both hands:
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `domain_id`, `network_interface` | 1, `""` | Must match `lowcmd_params.yaml`. |
+| `kp`, `kd` | 2.3, 0.25 | Finger gains. kp lets a thumb stalled short of its target press at the joint's 1.4 Nm rating. |
+| `command_publish_rate` | 100.0 | Hz. |
+| `max_joint_velocity_rad_s` | 3.0 | Slew clamp on every finger command. |
+| `state_timeout_ms` | 200.0 | `HandState` older than this errors the component once active. |
+| `state_topic_prefix`, `state_topic_suffix` | `rt/dex3/`, `/state` | The side goes between them. |
+
+Per-finger `min` and `max` follow, copied from the URDF; the component clamps commands to them.
 
 ## Inspecting the model
 
@@ -82,6 +96,7 @@ No simulator needed for any of them.
 
 | Test | Checks |
 |---|---|
-| `test_lowcmd_xacro` | Expands the xacro, validates it with `check_urdf`, and asserts the `<ros2_control>` blocks: all 29 body motors on the body component, the Dex3 wire order on each hand, and that both hands carry the body component's `domain_id`. |
+| `test_lowcmd_xacro` | Expands the xacro, validates it with `check_urdf`, and asserts the `<ros2_control>` blocks: all 29 body motors on the body component, the Dex3 wire order on each hand, and that both hands carry the body component's `domain_id` and `network_interface`. |
 | `test_motor_order` | Cross-checks the body component's own joint table against the URDF. |
 | `test_sensor_mounts` | Cross-checks the sensor mount poses against the simulator's compile-time copy of the same four numbers, which cannot ask TF where the sensors are. |
+| `xmllint_description_g1_description` | Every URDF and xacro is well-formed XML, which xacro does not enforce. |

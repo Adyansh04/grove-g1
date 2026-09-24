@@ -1,16 +1,11 @@
-"""Arguments must survive every include boundary bringup.launch.py introduces.
+"""Launch arguments must survive every include boundary, for both navigation callers.
 
-Included launch files inherit the parent's configurations, so a child's own
-DeclareLaunchArgument default never fires for anything the parent declared. Nothing crashes
-when that happens; the wrong value simply arrives. So this walks the includes rather than
-launching them, resolving what each file actually forwards. It needs no simulator and no DDS.
+An included file inherits the parent's configurations, so a child's DeclareLaunchArgument default
+never fires for a name the parent declared and the wrong value arrives silently. This resolves
+what bringup.launch.py and nav_sim.launch.py forward without launching anything, and checks that
+nav_stack.launch.py stages no simulator of its own.
 
-Both callers of the same two pieces are checked: bringup.launch.py and nav_sim.launch.py each
-stage a simulator and include nav_stack.launch.py, which is itself checked for staging no
-simulator, since that is what makes including it next to one safe.
-
-Lives in g1_navigation because it reads both packages' launch files and g1_bringup cannot
-depend on g1_navigation.
+Lives here because g1_bringup cannot depend on g1_navigation.
 """
 
 import importlib.util

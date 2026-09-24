@@ -1,12 +1,10 @@
-# Build-and-test image for CI. NOT the development environment -- .devcontainer/Dockerfile is,
-# and at 19 GB a runner cannot pull it. This carries only what the packages link against.
+# Build-and-test image for CI, not the development environment: .devcontainer/Dockerfile is too
+# big (19 GB) for a runner to pull. This carries only what the packages link against.
 #
-# Absent by design: MuJoCo, CUDA, Xvfb, the unitree_mujoco tree. Anything under
-# `ctest -L simulator` cannot run here. RViz arrives anyway, as a dependency of the moveit and
-# navigation2 metapackages.
+# No MuJoCo, CUDA, Xvfb or unitree_mujoco, so nothing under `ctest -L simulator` runs here. RViz
+# arrives anyway as a dependency of the moveit and navigation2 metapackages.
 #
-# The version ARGs below must match .devcontainer/Dockerfile; ci.yml fails the build if they
-# drift, because CI on different versions tests a configuration nobody ships.
+# The version ARGs must match .devcontainer/Dockerfile; ci.yml fails the build if they drift.
 FROM ros:jazzy-ros-base
 
 # Must match .devcontainer/Dockerfile: every `ros-${ROS_DISTRO}-*` apt name below resolves
@@ -16,11 +14,9 @@ ARG ROS_DISTRO=jazzy
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ENV DEBIAN_FRONTEND=noninteractive
 
-# clang-format's output is not stable across major versions, so an unpinned one rejects
-# correctly formatted files. The same pin covers clang-tidy, whose check set and fix-its also
-# move between releases -- and it has to match the dev container's, or the clang_tidy_check_*
-# tests disagree with what a developer reproduces locally. liburdfdom-tools is check_urdf, which
-# g1_description's xacro test shells out to.
+# clang-format and clang-tidy change between major versions, so both are pinned to the dev
+# container's or the clang_*_check tests disagree with a local run. liburdfdom-tools provides
+# check_urdf for g1_description's xacro test.
 ARG LLVM_VERSION=18
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
@@ -97,10 +93,8 @@ RUN test -e /opt/ros/${ROS_DISTRO}/lib/libbehaviortree_cpp.so || \
     ln -s "$(dpkg-architecture -qDEB_HOST_MULTIARCH)/libbehaviortree_cpp.so" \
           /opt/ros/${ROS_DISTRO}/lib/libbehaviortree_cpp.so
 
-# Compilation parallelism for the three source builds below. Sized for the GitHub runner that
-# builds this image, not for a workstation: heavy C++ here runs 0.5-1 GB per cc1plus, and the
-# rule that keeps it off the OOM killer is one job per ~2 GB of RAM. Raise with
-# --build-arg BUILD_JOBS=N on a bigger box.
+# Parallelism for the three source builds below, sized for the GitHub runner: cc1plus takes
+# 0.5-1 GB here, so allow one job per ~2 GB of RAM. Raise with --build-arg BUILD_JOBS=N.
 ARG BUILD_JOBS=3
 
 # --- unitree_sdk2 -------------------------------------------------------------------------
@@ -150,7 +144,7 @@ RUN mkdir -p /etc/cyclonedds && \
       '  </Interfaces></General></Domain>' \
       '</CycloneDDS>' > /etc/cyclonedds/cyclonedds.xml
 
-# Must match .devcontainer/Dockerfile; the version-drift job in ci.yml checks that it does.
+# RMW_IMPLEMENTATION must match .devcontainer/Dockerfile; ci.yml checks that it does.
 ENV RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 ENV CYCLONEDDS_URI=file:///etc/cyclonedds/cyclonedds.xml
 ENV ROS_DOMAIN_ID=1

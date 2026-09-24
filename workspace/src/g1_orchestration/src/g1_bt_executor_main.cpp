@@ -2,10 +2,8 @@
  * @file g1_bt_executor_main.cpp
  * @brief Loads a behavior tree and ticks it, with the arm bracket guaranteed around the run.
  *
- * The tree decides what happens. This file guarantees the narrower thing: whatever the tree
- * does, succeed, fail, throw or be interrupted, the arm and hands are released before the
- * process exits. A tree cannot promise that for itself, because the paths where it matters most
- * are the ones where the tree stopped running.
+ * Whether the tree succeeds, fails, throws or is interrupted, the arm and hands are released
+ * before exit; a tree cannot promise that once it has stopped running.
  */
 
 #include <behaviortree_cpp/bt_factory.h>
@@ -27,8 +25,7 @@
 namespace
 {
 
-// Set from the signal handler, so it must be exactly this type: everything else is undefined
-// behaviour in a handler, rclcpp::shutdown included.
+// Written by the signal handler, where only a lock-free atomic is safe (not rclcpp::shutdown).
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 std::atomic<bool> g_interrupted{ false };
 
@@ -36,12 +33,10 @@ void onSignal(int) { g_interrupted = true; }
 
 constexpr double kReleaseTimeoutS = 15.0;
 
-/// How long the executor keeps running after a halt, so the cancels it published are delivered
-/// and answered before the clients that sent them are destroyed.
+/// Spin time after a halt, so published cancels are delivered before their clients are destroyed.
 constexpr auto kCancelSettle = std::chrono::milliseconds(500);
 
-/// Releases the arm and hands when it goes out of scope, however that happens. A destructor
-/// rather than a call at the end of main, so no path out can skip it.
+/// Releases the arm and hands on scope exit, so no path out of main can skip it.
 class ArmBracket
 {
 public:
@@ -55,8 +50,7 @@ public:
 
     ~ArmBracket()
     {
-        // A destructor is noexcept, and releaseArm makes service calls on a node it builds, so
-        // anything escaping it would end the process instead of releasing.
+        // Destructors are noexcept: an escaping exception would terminate the process.
         try
         {
             g1_orchestration::releaseArm(logger_, timeout_s_);
@@ -94,8 +88,7 @@ int main(int argc, char** argv)
             return 1;
         }
 
-        // Refused rather than clamped: 0 divides to infinity and casting that to a duration is
-        // undefined, and a negative ticks the tree as fast as the CPU allows.
+        // 1/0 is infinite, which is UB to cast to a duration; a negative rate would tick flat out.
         if (!std::isfinite(tick_rate_hz) || tick_rate_hz <= 0.0)
         {
             RCLCPP_ERROR(node->get_logger(), "tick_rate_hz must be positive, got %f", tick_rate_hz);
@@ -103,8 +96,7 @@ int main(int argc, char** argv)
             return 1;
         }
 
-        // Installed before anything is acquired, so a Ctrl-C reaches the release below rather
-        // than killing the process with the arm still active.
+        // Installed before anything is acquired, so Ctrl-C reaches the release.
         const auto previous_int  = std::signal(SIGINT, onSignal);
         const auto previous_term = std::signal(SIGTERM, onSignal);
         if (previous_int == SIG_ERR || previous_term == SIG_ERR)
@@ -120,7 +112,6 @@ int main(int argc, char** argv)
 
         int exit_code = 0;
         {
-            // Closes when this scope ends, on every path out of it.
             const ArmBracket bracket(node->get_logger(), kReleaseTimeoutS);
 
             try
@@ -144,11 +135,8 @@ int main(int argc, char** argv)
                         groot2_port);
                 }
 
-                // Declared after the tree so it is joined before the tree is destroyed; the
-                // other order frees a leaf while the executor is inside its result callback.
-                //
-                // spin_once, not spin_some: spin_some never blocks waiting for work, so on an
-                // idle executor it returns at once and this loop spins hot.
+                // Declared after the tree so it joins first; otherwise a leaf can be freed inside
+                // its result callback. spin_once, since spin_some never blocks and spins hot.
                 std::jthread spinner([&executor](const std::stop_token& stop) {
                     while (rclcpp::ok() && !stop.stop_requested())
                     {
@@ -156,8 +144,7 @@ int main(int argc, char** argv)
                     }
                 });
 
-                // Ticked by hand rather than with tickWhileRunning, so the interrupt is checked
-                // between ticks and a halt still runs every leaf's own cancellation.
+                // Ticked by hand, not tickWhileRunning, so an interrupt is seen between ticks.
                 const auto     period = std::chrono::duration<double>(1.0 / tick_rate_hz);
                 BT::NodeStatus status = BT::NodeStatus::RUNNING;
                 while (rclcpp::ok() && !g_interrupted && status == BT::NodeStatus::RUNNING)
@@ -171,8 +158,7 @@ int main(int argc, char** argv)
                 {
                     RCLCPP_WARN(node->get_logger(), "interrupted; halting the tree");
                     tree.haltTree();
-                    // haltTree publishes each leaf's cancel and returns. The spinner is still up
-                    // here, so this is the window in which those reach the wire and are answered.
+                    // The spinner is still up, so the cancels haltTree published go out now.
                     std::this_thread::sleep_for(kCancelSettle);
                     exit_code = 130;
                 }
@@ -192,7 +178,7 @@ int main(int argc, char** argv)
                 exit_code = 1;
             }
 
-            // The spinner and the tree are already gone by here, both inside the block above.
+            // The spinner and the tree are already destroyed.
             executor.remove_node(node);
         }
 
@@ -201,7 +187,7 @@ int main(int argc, char** argv)
     }
     catch (const std::exception& e)
     {
-        // Nothing here has acquired the arm yet, so there is nothing to release.
+        // Either the bracket never existed or it has already released.
         RCLCPP_ERROR(
             rclcpp::get_logger("g1_bt_executor"),
             "startup or shutdown failed: %s",

@@ -27,13 +27,11 @@ def _include(path, **launch_args):
 
 
 def _setup(context, *args, **kwargs):
-    # Resolved BEFORE the sim include, which sets rviz=false for its own scope and leaks that
-    # back here. Without capturing it first, rviz:=true silently gets you no RViz at all.
+    # Resolved before the sim include, which sets rviz=false and leaks it back into this scope.
     want_rviz = LaunchConfiguration("rviz").perform(context).lower() == "true"
 
     actions = [
-        # sensors:=true is not optional: it gates the LiDAR sweep, the relay, the
-        # odom -> base_footprint -> pelvis chain and the waist joint states.
+        # sensors:=true gates the LiDAR sweep, the relay and the odom -> base_footprint chain.
         # rviz stays false, or sim.launch.py opens a second window on the sensor config.
         _include(
             BRINGUP_LAUNCH,

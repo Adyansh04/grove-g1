@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """A policy server that answers the real wire protocol with fixed numbers.
 
-Stands in for the model so the adapter's protocol, key mapping and action integration can be
-tested without a GPU. It encodes the way the reference servers do, including the ModalityConfig
-marker, so the adapter's decode path is exercised rather than bypassed.
+Tests the adapter without a GPU. It encodes the way the reference servers do, ModalityConfig
+marker included, so the adapter's decode path really runs.
 
 Usage: policy_server_stub.py <port> <horizon> <delta>
 """
@@ -15,8 +14,7 @@ import msgpack
 import msgpack_numpy as mnp
 import numpy as np
 
-# The key set and widths of the checkpoint's own G1 embodiment, so what the adapter has to
-# satisfy here is what the real server asks for rather than a convenient subset.
+# The key set and widths of the checkpoint's own G1 embodiment, not a convenient subset.
 STATE_DIMS = {
     "left_wrist_eef_9d": 9,
     "right_wrist_eef_9d": 9,
@@ -26,8 +24,7 @@ STATE_DIMS = {
     "right_arm": 7,
     "waist": 3,
 }
-# Offered in the action space and nothing to do with an arm. A client is expected to ignore
-# these, so the stub keeps them to prove ignoring them is possible.
+# Action keys that have nothing to do with an arm, kept so the adapter has to ignore them.
 ACTION_ONLY_DIMS = {"base_height_command": 1, "navigate_command": 3}
 VIDEO_KEY = "ego_view"
 ANNOTATION_KEY = "annotation.human.task_description"
@@ -96,16 +93,15 @@ def main():
         elif endpoint == "reset":
             reply = {"status": "ok"}
         elif endpoint == "get_action":
-            # The real server calls its handler with data as keyword arguments, so the
-            # observation arrives under "observation" rather than as the payload itself.
+            # The real server passes data to its handler as keyword arguments, so the observation
+            # arrives under "observation".
             data = request.get("data", {}).get("observation", {})
             complaint = _complaint(data)
             if complaint:
                 reply = {"error": complaint}
             else:
-                # Absolute answers, one constant offset from the state that was sent, so the
-                # adapter's output is checkable by hand. The real server likewise resolves its
-                # relative training representation before replying.
+                # Absolute answers one constant offset from the state sent, checkable by hand. The
+                # real server likewise converts its relative predictions before replying.
                 actions = {}
                 for key, dim in STATE_DIMS.items():
                     base = np.asarray(data["state"][key], dtype=np.float64)[0, -1]

@@ -1,21 +1,13 @@
 #!/usr/bin/env python3
-"""Measure FAST-LIO against ground truth with NOTHING else in the loop.
+"""Score FAST-LIO against MuJoCo ground truth with nothing else in the loop.
 
-No Nav2, no AMCL, no map, no costmap. Just the simulator, the LIO pipeline, and velocity
-commands driven open-loop from here. Everything the earlier runs blamed on LIO could equally
-have been the planner, the controller or a stale map; this removes all of them.
+No Nav2, AMCL or map: the simulator, the LIO pipeline and open-loop velocity commands.
 
-  truth  /g1_sensor_relay/base_state   -- exact MuJoCo pelvis state, pose and heading in one
-  lio    odom -> base_footprint        -- what the LIO pipeline publishes
+  truth  /g1_sensor_relay/base_state   exact MuJoCo pelvis pose
+  lio    odom -> base_footprint        what the LIO pipeline publishes
 
-The two live in different frames: `odom` is latched wherever FAST-LIO happened to be when it
-first produced a pose, and the robot does not spawn at a repeatable heading. So the frames are
-aligned ONCE, from the pose the robot is actually standing in when the run starts, and never
-touched again. Every gap after that is divergence accumulated since that instant.
-
-Aligning by a best fit over the whole path reads lower and means less: it rotates part of the
-real error away and smears the rest evenly along the run, so no row of the table is the error
-at that point in the run.
+The frames are aligned once, from the pose the robot holds when the run starts, so every later
+gap is divergence since then. A best-fit alignment over the whole path would hide part of it.
 """
 import csv
 import math
@@ -31,33 +23,23 @@ from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from tf2_msgs.msg import TFMessage
 
-# Clear of the gait's 0.15 m/s translation deadband and inside the controller's own clamps
-# (0.6 m/s, 0.9 rad/s). Yaw tracks near 1:1 and has no deadband.
+# Above the gait's 0.15 m/s deadband, inside the controller's 0.6 m/s and 0.9 rad/s clamps.
 VX, WZ = 0.5, 0.8
-# An arbitrary wander, not a figure. Comparing two estimates OF THE SAME MOTION does not
-# care what shape that motion is, so there is no controller here and nothing to tune -- the
-# gait just has to move the robot and turn it now and then.
-# (vx, wz, seconds)
+# An arbitrary open-loop wander of (vx, wz, seconds); both estimates see the same motion.
 LEGS = [(VX, 0.0, 8.0), (0.0, WZ, 1.0), (VX, 0.0, 6.0), (0.0, -WZ, 1.4),
         (VX, 0.0, 7.0), (0.0, WZ, 1.2), (VX, 0.0, 5.0), (0.0, -WZ, 1.0),
         (VX, 0.0, 8.0), (0.0, WZ, 1.6), (VX, 0.0, 6.0)]
-# Standing pelvis height is 0.734 m (measured). Below this the robot is on the floor, and every
-# number after that point describes a fallen robot being dragged by a flailing gait rather than
-# the odometry under test -- a huge drift number that has nothing to do with the estimator.
-# Abort instead.
+# Pelvis below this means a fall (standing is ~0.73 m); abort rather than score it.
 MIN_PELVIS_Z = 0.55
-# The robot does not always arrive at its spawn pose quietly: some launches lurch, some go over
-# entirely, and the heading it settles on varies by ten degrees or more between runs. A run that
-# starts mid-recovery measures the gait, and a frame alignment taken mid-lurch is wrong for the
-# whole run after it, so the baseline waits for the pelvis to sit at standing height and stop.
+# The baseline waits for the pelvis to stand still at standing height: an alignment taken
+# mid-lurch after spawn skews the whole run.
 SETTLE_Z = (0.70, 0.80)
 SETTLE_MOVE_M = 0.01
 SETTLE_SECS = 3.0
 SETTLE_TIMEOUT_S = 60.0
 # Where the full paired trace lands, for plotting the two paths against each other.
 TRACE_PATH = os.environ.get("LIO_BENCH_TRACE", "/tmp/lio_bench_trace.csv")
-# How far along the path between printed rows. Distance rather than time, so a slow leg and a
-# fast one get the same number of samples and the table reads as geometry, not as a clock.
+# Printed row spacing, by distance so slow and fast legs sample evenly.
 TRACE_EVERY_M = 1.0
 
 
@@ -166,8 +148,7 @@ def report(b):
     gaps = [math.hypot(tx - ax, ty - ay) for (tx, ty), (ax, ay) in zip(T, L, strict=True)]
     dist = sum(math.dist(T[i], T[i - 1]) for i in range(1, len(T)))
 
-    # Full paired trace, both columns in the truth frame. Written before the summary so it
-    # survives even if something below throws.
+    # Both columns in the truth frame. Written first so it survives a failure below.
     try:
         with open(TRACE_PATH, "w", newline="") as fh:
             w = csv.writer(fh)
@@ -182,8 +163,7 @@ def report(b):
     except OSError as e:
         print("RESULT trace              could not write %s: %s" % (TRACE_PATH, e))
 
-    # Sampled every metre of travel, so divergence is visible as it develops rather than only
-    # at the end -- a loop can finish close by luck after wandering badly in the middle.
+    # One row per metre: a loop can end close by luck after wandering in the middle.
     print("RESULT --- path, every %.1f m of travel ---" % TRACE_EVERY_M)
     print("RESULT   path_m |    truth (x, y)  |      lio (x, y)  |   gap")
     run = 0.0
@@ -219,20 +199,16 @@ def main():
     signal.signal(signal.SIGINT, stop)
     signal.signal(signal.SIGTERM, stop)
 
-    # TF appearing IS the readiness signal: it only exists once FAST-LIO has fixed gravity and
-    # produced a pose the publisher accepted.
+    # TF appears only once FAST-LIO has a pose the publisher accepted.
     if not b.wait_for(b.ready, 180.0, "odom -> base_footprint never appeared"):
         rclpy.shutdown()
         return
 
-    # Everything before this point is discarded. The baseline both paths are differenced from,
-    # and the rotation between their frames, have to come from a pose the robot actually held
-    # rather than one it was passing through on its way back upright.
+    # The baseline and frame rotation must come from a pose the robot actually held.
     if not b.settle():
         rclpy.shutdown()
         return
-    # Including the fall latch: a spawn that dips and recovers is exactly what settle() waited
-    # out, and leaving it set aborts the first leg on a robot that is standing up fine.
+    # Clear the fall latch too: settle() already waited out any spawn dip.
     b.track.clear()
     b.fallen = None
     if not b.spin(2.0):
@@ -251,7 +227,7 @@ def main():
             print("RESULT ABORT: robot fell (pelvis %.3f m, standing is 0.734) -- "
                   "nothing after this measures odometry" % b.fallen)
             rclpy.shutdown()
-        return
+            return
     b.cmd.publish(Twist())
     b.spin(2.0)
     report(b)

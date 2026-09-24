@@ -1,17 +1,12 @@
 """The octomap has to actually stop a plan, not merely exist.
 
-A non-empty octomap proves the sensor is wired up. It does not prove MoveIt is collision
-checking against it, and those are separate failures: the updater can be filling a map that the
-planning scene never consults, and everything looks healthy.
+A filling map proves the sensor is wired up, not that the planning scene checks against it. So
+this puts the right palm inside `reach_obstacle`, the slab g1_bringup's perception scene places
+within the arms' reach, and asserts the state is rejected with `<octomap>` as a contact body,
+which a pose that merely self-collides would not produce.
 
-So this drives a hand at `reach_obstacle`, the box g1_bringup's perception scene puts 0.42 m in
-front of the chest, and asserts the state is rejected as colliding, then asserts the same
-state is fine with sensors off, which is the control. Without that second half the test would
-pass just as well against a pose that self-collides.
-
-pin_pelvis because the octomap lands in the planning frame, `pelvis`, and a pelvis that moves
-drags the voxel grid with it (config/sensors_3d.yaml). Pinned, the map is stationary and the
-result is deterministic.
+pin_pelvis because the octomap lives in the planning frame, `pelvis`, and a moving pelvis drags
+the voxel grid with it.
 """
 
 import os
@@ -30,11 +25,8 @@ from moveit_msgs.srv import GetPlanningScene, GetPositionFK, GetStateValidity
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
 
-# Matches test_moveit_plan_execute. Longer than this and launch_testing's own startup timeout
-# fires first, killing the whole launch with "Timed out waiting for processes to start up"
-# and every test reports "Launch stopped before the active tests finished", which looks like a
-# stack failure and is not one. The octomap needs far longer than 12 s to fill; that wait
-# belongs inside the tests, where the timeout is ours to choose.
+# Any longer and launch_testing's startup timeout kills the launch first. The octomap fill takes
+# far longer and is waited for inside the tests.
 SIM_SETTLE_S = 12.0
 ARM_JOINTS = [
     f"{side}_{joint}"
@@ -45,9 +37,8 @@ ARM_JOINTS = [
     )
 ]
 
-# Reaches the right hand forward into where reach_obstacle sits. Chosen by measurement, not by
-# eye: test_octomap_blocks_a_plan fails loudly if it turns out to be self-colliding with
-# sensors off, which is exactly what the control assertion is for.
+# Reaches the right hand forward into reach_obstacle; test_02 checks by FK that the palm lands
+# inside it.
 REACH_INTO_BOX = {
     "right_shoulder_pitch_joint": -1.45,
     "right_shoulder_roll_joint": -0.10,
@@ -140,8 +131,7 @@ class TestOctomapBlocksAPlan(unittest.TestCase):
             octomap = result.scene.world.octomap
             if not octomap.octomap.data:
                 return False
-            # The frame is the planning frame, never octomap_frame, pinned here because a
-            # change would silently move every voxel relative to the robot.
+            # Asserted: a different frame would silently move every voxel relative to the robot.
             self.assertEqual(octomap.header.frame_id, "pelvis")
             return True
 
@@ -164,10 +154,9 @@ class TestOctomapBlocksAPlan(unittest.TestCase):
         return result.pose_stamped[0].pose.position
 
     def test_02_reaching_into_the_mapped_box_is_rejected(self):
-        # Where the palm actually ends up, so a failure says whether the pose missed the slab
-        # or the octomap is simply not being checked. reach_obstacle is x 0.28 +/- 0.10 and
-        # z 1.25 +/- 0.25 in world; the pelvis is pinned near 0.755, so in this frame that is
-        # x 0.18 to 0.38 and z 0.245 to 0.745.
+        # Separates a pose that missed the slab from an octomap that is not checked.
+        # reach_obstacle is x 0.28 +/- 0.10 and z 1.25 +/- 0.25 in world; with the pelvis at
+        # z 0.755 that is x 0.18 to 0.38 and z 0.245 to 0.745 here.
         self.assertTrue(self.fk.wait_for_service(timeout_sec=30.0))
         palm = self._palm_in_pelvis(REACH_INTO_BOX)
         self.assertIsNotNone(palm, "/compute_fk gave no pose")
@@ -189,7 +178,6 @@ class TestOctomapBlocksAPlan(unittest.TestCase):
             "scene is not collision checking against it",
         )
         # An octomap collision names <octomap> as one body; a self-collision names two links.
-        # Without this the test would pass on a pose that merely self-collides.
         bodies = {c.contact_body_1 for c in result.contacts} | {
             c.contact_body_2 for c in result.contacts
         }
@@ -201,9 +189,8 @@ class TestOctomapBlocksAPlan(unittest.TestCase):
 @launch_testing.post_shutdown_test()
 class TestCleanShutdown(unittest.TestCase):
     def test_no_process_died_badly(self, proc_info):
-        # 130 is SIGINT through the shell wrapper control.launch.py uses; -11 is move_group's
-        # own teardown segfault in MoveItCpp's destructor, which happens after every run and is
-        # not this test's business.
+        # 130 is SIGINT through control.launch.py's shell wrapper; -11 is move_group's own
+        # teardown segfault in MoveItCpp's destructor, outside this test's scope.
         launch_testing.asserts.assertExitCodes(
             proc_info, allowable_exit_codes=[0, 130, -2, -6, -9, -11, -15]
         )

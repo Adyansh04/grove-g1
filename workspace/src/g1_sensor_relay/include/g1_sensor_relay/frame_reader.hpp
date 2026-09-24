@@ -4,9 +4,6 @@
 /**
  * @file frame_reader.hpp
  * @brief Framing and validation for the simulator's sensor stream, free of ROS and sockets.
- *
- * Split out so the wire format is testable without a simulator, a socket or a running
- * graph, same discipline as g1_state_estimation's odom_math.
  */
 
 #include <array>
@@ -29,11 +26,10 @@ enum class FrameStatus
     kBadMagic,    ///< Not our stream, or the stream desynchronised.
     kBadVersion,  ///< Producer and consumer disagree on the layout.
     kBadKind,     ///< A frame type this build does not know.
-    kBadLength,   ///< payload_bytes disagrees with point_count, or exceeds the sane cap.
+    kBadLength,   ///< payload_bytes disagrees with the header, or a count exceeds its cap.
 };
 
-/// Refuses an object frame with more records than this. Same reasoning as kMaxPoints, at a
-/// scale that suits a hand-listed set of scene bodies.
+/// Refuses an object frame with more records than this, for the same reason as kMaxPoints.
 inline constexpr std::uint32_t kMaxObjects = 1024;
 
 /**
@@ -78,20 +74,17 @@ struct CloudFrame
 };
 
 /**
- * @brief Refuses a frame larger than this many points.
+ * @brief Refuses a cloud with more points, or a depth image with more pixels, than this.
  *
- * A desynchronised stream produces a garbage length, and trusting it means a multi-gigabyte
- * allocation. Well above any resolution we would configure.
+ * A desynchronised stream produces garbage lengths; this bounds the allocation.
  */
 inline constexpr std::uint32_t kMaxPoints = 4'000'000;
 
 /**
  * @brief Attempts to take one frame from the front of `buffer`.
  *
- * On FrameStatus::kOk the consumed bytes are erased from `buffer` and `out` is filled. On
- * kIncomplete nothing is consumed. On any other status the caller must drop the connection:
- * the stream cannot be resynchronised, and pretending otherwise turns a framing bug into
- * plausible-looking point clouds.
+ * On kOk the frame is erased from `buffer` and `out` is filled; on kIncomplete nothing is
+ * consumed. Any other status means the stream cannot be resynchronised: drop the connection.
  */
 FrameStatus tryReadFrame(std::vector<std::uint8_t>& buffer, CloudFrame& out);
 

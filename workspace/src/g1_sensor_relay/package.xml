@@ -4,11 +4,9 @@
   <name>g1_sensor_relay</name>
   <version>0.1.0</version>
   <description>
-    Publishes sensor data sampled inside the patched unitree_mujoco. The simulator
-    computes the sweep against its own mjData and hands finished frames over a local
-    socket; this node turns them into ROS 2 messages. The split exists because
-    unitree_sdk2 already owns the CycloneDDS domain in that process and rmw_cyclonedds
-    cannot share it. See README.
+    Publishes the sensor frames the patched unitree_mujoco samples against its own
+    mjData and sends over a local socket, plus g1_livox_bridge for FAST-LIO.
+    Simulation only. See README.
   </description>
   <maintainer email="gupta.adyansh@gmail.com">Adyansh</maintainer>
   <license>BSD-3-Clause</license>

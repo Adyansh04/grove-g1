@@ -2,9 +2,8 @@
  * @file test_hand_contact.cpp
  * @brief The allowed-collision-matrix arithmetic, without a planning scene.
  *
- * The matrix is square and index-addressed, so the failures worth pinning are a grown name list
- * with an ungrown row, and a half-written symmetric pair. Both read as an exemption that did
- * nothing.
+ * The matrix is square and index-addressed: the failures pinned are a name added without its
+ * row, and a symmetric pair written on one side only.
  */
 
 #include <gmock/gmock.h>
@@ -82,24 +81,24 @@ TEST(HandContact, WritesBothHalvesOfEveryPair)
 {
     AllowedCollisionMatrix acm = matrixOver(kHandLinks);
 
-    editHandContact(acm, kHandLinks, { "<octomap>", "red_cube" }, true, true);
+    editHandContact(acm, kHandLinks, { "<octomap>", "red_block" }, true, true);
 
     EXPECT_TRUE(allowed(acm, "<octomap>", "right_hand_palm_link"));
     EXPECT_TRUE(allowed(acm, "right_hand_palm_link", "<octomap>"));
     // The touchables against each other, not only against the hand.
-    EXPECT_TRUE(allowed(acm, "red_cube", "<octomap>"));
-    EXPECT_TRUE(allowed(acm, "<octomap>", "red_cube"));
+    EXPECT_TRUE(allowed(acm, "red_block", "<octomap>"));
+    EXPECT_TRUE(allowed(acm, "<octomap>", "red_block"));
 }
 
 TEST(HandContact, WithoutIncludeLinksLeavesTheHandChecked)
 {
     AllowedCollisionMatrix acm = matrixOver(kHandLinks);
 
-    editHandContact(acm, kHandLinks, { "<octomap>", "red_cube" }, true, false);
+    editHandContact(acm, kHandLinks, { "<octomap>", "red_block" }, true, false);
 
-    EXPECT_TRUE(allowed(acm, "red_cube", "<octomap>"));
+    EXPECT_TRUE(allowed(acm, "red_block", "<octomap>"));
     EXPECT_FALSE(allowed(acm, "right_hand_palm_link", "<octomap>"));
-    EXPECT_FALSE(allowed(acm, "right_wrist_roll_link", "red_cube"));
+    EXPECT_FALSE(allowed(acm, "right_wrist_roll_link", "red_block"));
 }
 
 TEST(HandContact, RestoreClearsWhatTheApplySet)

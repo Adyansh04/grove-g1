@@ -2,9 +2,8 @@
  * @file g1_bt_node_model_main.cpp
  * @brief Writes the Groot2 palette for every leaf this package registers.
  *
- * Groot2 needs a node model to OFFER nodes for editing; the Groot2Publisher alone only lets it
- * watch. Generated from the same factory the executor builds, so the editor cannot show a leaf
- * with ports it does not have. test_node_model catches drift from the checked-in copy.
+ * Groot2 needs this model to offer nodes for editing; the Groot2Publisher only lets it watch.
+ * Writes to the path given as the first argument, else to stdout:
  *
  *   ros2 run g1_orchestration g1_bt_node_model > trees/g1_orchestration_nodes.xml
  */
@@ -21,8 +20,7 @@
 
 int main(int argc, char** argv)
 {
-    // A node is built only because the leaf builders take one; registration never dereferences
-    // it, and nothing here reaches the graph.
+    // Only because the leaf builders take a node; registration never uses it.
     rclcpp::init(argc, argv);
     auto node = std::make_shared<rclcpp::Node>("g1_bt_node_model");
 

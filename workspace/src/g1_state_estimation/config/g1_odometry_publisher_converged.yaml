@@ -1,31 +1,20 @@
-# odom -> base_footprint -> pelvis publisher for the unitree_mujoco ground-truth track, loaded
-# by g1_bringup/launch/sim.launch.py. See g1_state_estimation/README.md.
-#
-# SIMULATION ONLY. This is MuJoCo's own state, not an estimate; the robot has no equivalent.
-# The hardware source is odometry:=fast_lio, configured in g1_odometry_publisher_fastlio.yaml.
+# odometry:=ground_truth, loaded by g1_bringup's sim.launch.py. Simulation only: MuJoCo's exact
+# pelvis state, which the robot has no equivalent of.
 g1_odometry_publisher:
   ros__parameters:
-    # Pose and twist together, sampled in the simulator off the pelvis imu site and carried
-    # over the sensor relay's socket. Needs sensors:=true, which is what runs the relay.
+    # From g1_sensor_relay's ~/base_state, so it needs sensors:=true.
     odometry_source: "ground_truth"
 
     odom_frame_id: "odom"
-    # Split, because the pelvis pitches a few degrees with the gait and both Nav2 and
-    # slam_toolbox want a gravity-aligned base. pelvis keeps the real attitude, so the sensor
-    # mounts hanging off it stay honest.
+    # Split: Nav2 and slam_toolbox want a gravity-aligned base; pelvis keeps the real attitude.
     base_frame_id: "base_footprint"
     pelvis_frame_id: "pelvis"
 
-    # Tilt past which the ZYX heading is ill-conditioned and the last good one is held instead.
-    #
-    # A GUESS, not a measurement. Chosen below 90 because conditioning degrades before it fails
-    # outright, and because a robot at 80 degrees is falling rather than navigating. It has been
-    # seen to fire correctly on a real spawn topple (113 degrees), which says it triggers, not
-    # that 80 is the right number. Lower it if a hard gait ever holds the heading spuriously.
+    # Past this tilt the heading is held. Untuned: below 90 because conditioning degrades first,
+    # and a robot at 80 degrees is falling anyway.
     max_tilt_deg: 80.0
 
-    # No start height is configured: a walking robot's height is measured, and this source
-    # carries it. Only fast_lio needs one, to place its latched origin above the floor.
+    # No start_height_m: this source carries the real height.
 
     publish_rate_hz: 50.0
     publish_odom_msg: true
@@ -33,7 +22,6 @@ g1_odometry_publisher:
     source_timeout_ms: 200.0
     wall_timeout_ms: 2000.0
 
-    # Ground truth has no meaningful uncertainty, but an all-zero covariance is a known Nav2
-    # footgun, so a small non-zero diagonal goes out instead.
+    # Exact state, but an all-zero covariance is a known Nav2 pitfall.
     pose_covariance: 1.0e-6
     twist_covariance: 1.0e-6

@@ -1,74 +1,46 @@
-# Sensor sampling inside unitree_mujoco. Read via GROVE_G1_SENSOR_CONFIG; with that
-# variable unset the patched binary behaves exactly like the stock one, which is why the
-# locomotion suites are unaffected until they opt in.
-#
-# The simulator loads no ROS and no DDS: unitree_sdk2 already owns the CycloneDDS domain in
-# that process. Frames go over the socket below to g1_sensor_relay, which publishes them.
+# Sensor sampling inside the patched unitree_mujoco, read via GROVE_G1_SENSOR_CONFIG; unset, the
+# simulator runs its stock code path. The simulator process loads no ROS, so frames go over
+# socket_path to g1_sensor_relay, which publishes them.
 enabled: true
 
-# A full 360x32 sweep costs ~32 ms against the G1 scene (74 geoms, 36 meshes), so this is a
-# real budget. It runs on its own thread and never blocks physics or the 1 kHz control path,
-# but it still costs a core; the timing gate decides what ships.
+# A full sweep costs ~32 ms of raycasting. It has its own thread and never blocks physics, but it
+# does cost a core.
 rate_hz: 10.0
 azimuth_steps: 360
 elevation_steps: 32
 range_max: 40.0
 
-# The IMU inside the Mid360, sampled on its own thread. 200 Hz because that is what a real
-# Mid360 publishes: FAST-LIO's gravity init averages a fixed sample COUNT, so a different rate
-# here would average a different span of time than it will on the robot. Its own thread because
-# a sweep spends ~32 ms raycasting, and an IMU that stops for 32 ms in every 100 is the gap
-# this exists to close.
+# The Mid360's IMU, on its own thread so the sweep never stalls it. 200 Hz as on the real Mid360:
+# FAST-LIO's gravity init averages a fixed sample count, not a fixed time.
 imu_rate_hz: 200.0
 
-# Also passed to g1_sensor_relay by the launch, so there is one source of truth.
+# sim.launch.py hands this to g1_sensor_relay as well.
 socket_path: "/tmp/g1_sensors.sock"
 
-# Depth camera. Rendered offscreen on the sensor thread against its own snapshot, then
-# linearised to metres before it leaves the simulator. Measured 7.9 ms/frame depth-only and
-# 11.5 ms with colour, of which only ~0.04 ms holds the sim lock; the rest is the render and
-# the socket write, both off-lock.
+# The D435i, rendered offscreen on the sensor thread. Depth leaves the simulator in metres.
 camera_enabled: true
 
-# Ground-truth poses for the manipulable objects, sampled on the same cycle as the sweep and
-# sent ahead of it. SIMULATION ONLY: this is the stand-in for a perception pipeline, and
-# g1_object_pose_source refuses to run at all with object_source: hardware.
-#
-# An explicit list, never every body with a free joint: the pelvis has one of those too.
-# Bodies absent from the staged scene are reported once and skipped, so the flat and
-# perception worlds cost nothing here.
+# Ground-truth object poses, sampled with each sweep. SIMULATION ONLY: the stand-in for perception
+# and the source of the mock detector's masks. An explicit list because the pelvis has a free joint
+# too; bodies missing from the staged scene are reported once and skipped.
 object_bodies:
-  - red_cube
+  - red_block
+  - blue_block
   - green_cylinder
   - blue_sphere
   - yellow_box
-  # Not manipulable, and tracked anyway: g1_base_approach ranges to something on /objects to
-  # decide where to stand, and the place leg needs a landmark on the drop-off bench the way the
-  # pick leg has the cube itself. Static, so its pose never changes.
-  - drop_pad
+  - white_cup
+  # Static, but reported so a place has a target on /objects for g1_base_approach to range to.
+  - brown_box
 
-# SIMULATION ONLY, and a stand-in rather than a model of anything. The Dex3 fingers carry no
-# contact geometry (patch 003, deliberate), so a closed hand passes through an object and
-# nothing is ever picked up. This welds the object to the palm once the fingers have measurably
-# closed near it, and releases when they open.
-#
-# NONE OF THESE THREE NUMBERS TRANSFER TO HARDWARE. There the mechanism is friction between
-# real finger pads and a real object; these describe the weld, not the Dex3's grip, and a grasp
-# that holds here says nothing about whether the real hand holds it. They sit on the hardware
-# re-validation list with the gait deadband and the hand-mass scaling.
-#
-# Which welds exist is declared in the scene, not here: g1_navigation_scene.xml's `grasp_*`
-# equality constraints are found by name.
+# SIMULATION ONLY, a stand-in for friction: a grasp that holds here says nothing about the real
+# Dex3. Scenes opt in by declaring `grasp_*` weld equalities, as the navigation world does.
 grasp_weld:
   enabled: true
 
-  # Palm origin to object origin. Covers the palm-to-grasp-point offset plus half a small
-  # object, chosen rather than measured.
-  capture_radius_m: 0.12
+  # Welds an object to a hand while the thumb and one other digit touch it within this distance of
+  # the palm origin. A released object re-arms once the palm is farther away than this.
+  capture_radius_m: 0.16
 
-  # Mean fraction of available joint travel across the hand's seven joints. The SRDF's `closed`
-  # posture measures 0.70 by this metric and `open` measures 0, so 0.5 sits between them.
-  close_fraction: 0.5
-  # Deliberately below close_fraction: without the gap a hand resting at the threshold would
-  # drop and re-grab the object every few ticks.
-  release_fraction: 0.3
+  # Seconds without that contact before a held object is released.
+  release_after_s: 0.3

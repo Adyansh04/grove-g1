@@ -15,10 +15,9 @@ namespace g1_orchestration
 {
 
 /**
- * @brief Walks the base the last half metre, until the object is where the arm can reach it.
+ * @brief Walks the base the last stretch, until the object is within the arm's reach.
  *
- * The step NavigateToPose cannot do: Nav2 arrives within 0.5 m of a pose it chose from a map,
- * and the arm's whole usable window is about a quarter of that.
+ * Nav2's goal tolerance is several times wider than the arm's reach window.
  */
 class ApproachObject : public SkillActionNode<g1_msgs::action::ApproachObject>
 {

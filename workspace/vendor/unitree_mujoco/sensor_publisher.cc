@@ -36,24 +36,18 @@ struct Config
     double      rate_hz     = 10.0;
     std::string socket_path = "/tmp/g1_sensors.sock";
 
-    // Mid360 envelope. Resolution is a real budget, not a formality: 360x32 costs ~32 ms per
-    // sweep against the G1 scene, so it is configurable and the timing gate decides what ships.
-    // Which MuJoCo geom group the sweep sees. Scene geometry is group 2; the robot uses
-    // groups 0 (collision) and 1 (visual). Without the mask every ray returns the torso
-    // shell ~6 cm from the mount and the world is never reached.
-    //
-    // Group 2 and not 3, because MuJoCo's viewer renders only groups 0-2: scene geometry in
-    // group 3 is physically present, hit by rays, and completely invisible on screen.
+    // Geom group the sweep sees. Scene geometry is group 2: unmasked, rays hit the robot's own
+    // torso shell, and group 3 would be hit by rays but never drawn by the viewer.
     int    scene_geom_group = 2;
 
     bool camera_enabled = false;
     int  camera_width   = 848;
     int  camera_height  = 480;
 
-    // Bodies whose ground-truth pose is published, for the sim-only object source. An
-    // explicit list, never "every body with a free joint": the pelvis has one too, and so
-    // does anything else a scene author drops in. Empty means the feature is off.
+    // Bodies whose ground-truth pose is published for the sim-only object source. An explicit
+    // list, never "every free body": the pelvis has a free joint too. Empty turns it off.
     std::vector<std::string> object_bodies;
+    // Mid360 envelope. Resolution is a real cost: 360x32 takes ~32 ms per sweep of the G1 scene.
     int    azimuth_steps   = 360;
     int    elevation_steps = 32;
     double azimuth_min     = -M_PI;
@@ -63,18 +57,12 @@ struct Config
     double range_min       = 0.1;
     double range_max       = 40.0;
 
-    // The IMU inside the Mid360, sampled on its own thread. 200 Hz because that is what a real
-    // Mid360 publishes; a simulator that streams faster is lying about what the robot will hand
-    // FAST-LIO.
+    // The IMU inside the Mid360, at the real unit's rate.
     double imu_rate_hz = 200.0;
 };
 
-// Mount poses relative to torso_link, mirroring mid360_joint and d435_joint in Unitree's
-// vendored URDF. Constants, not Config: nothing sets them and nothing should. They are
-// already a second copy of numbers the URDF owns, and making them settable would add a
-// third that can disagree with both. If the URDF moves, these move with it.
-// NOT g1_sim's torso-folded values -- that fold exists only because the sandbox body has
-// no torso.
+// Mount poses relative to torso_link, copied from mid360_joint and d435_joint in Unitree's
+// vendored URDF. Constants, not Config: the URDF owns them, and these move when it does.
 constexpr double kMountXyz[3] = {0.0002835, 0.00003, 0.428434};
 constexpr double kMountRpy[3] = {M_PI, 0.05112069379091391, 0.0};
 constexpr double kCamXyz[3]   = {0.0576235, 0.01753, 0.42987};
@@ -93,11 +81,8 @@ struct State
 
 State& state()
 {
-    // Deliberately leaked. unitree_mujoco's physics thread ends with exit(0), which runs
-    // static destructors while our sampler thread is still running; destroying a joinable
-    // std::thread calls std::terminate ("terminate called without an active exception").
-    // The vendor's own bridge thread sidesteps this because main() ends in pthread_exit,
-    // which skips destructors entirely. A never-destroyed singleton is the small fix.
+    // Leaked on purpose: the physics thread ends in exit(0), and a static destructor
+    // destroying these still-joinable threads would call std::terminate.
     static State* s = new State();
     return *s;
 }
@@ -160,11 +145,8 @@ Config loadConfig()
     return cfg;
 }
 
-// Axis-aligned extents of a body's own geometry, as full widths in the body frame.
-//
-// Every geom's bounding box is taken about the BODY origin rather than the geom's, so a body
-// whose geom sits off-centre reports a box that still contains it. All four scene objects are
-// single centred geoms, where this is simply the geom's own size.
+// Axis-aligned extents of a body's own geometry, as full widths in the body frame. Each geom's
+// box is taken about the body origin, so an off-centre geom still fits inside.
 void bodyExtents(const mjModel* m, int body, double out[3])
 {
     out[0] = out[1] = out[2] = 0.0;
@@ -172,9 +154,8 @@ void bodyExtents(const mjModel* m, int body, double out[3])
     {
         const int     geom = m->body_geomadr[body] + i;
         const mjtNum* size = m->geom_size + 3 * geom;
-        // MuJoCo's geom_size means different things per type, and only these three appear in
-        // the scene's graspable bodies. An unrecognised type contributes nothing rather than
-        // a wrong number.
+        // geom_size means something different per type; an unhandled type contributes nothing
+        // rather than a wrong number.
         double half[3] = { 0.0, 0.0, 0.0 };
         switch (m->geom_type[geom])
         {
@@ -202,10 +183,8 @@ void bodyExtents(const mjModel* m, int body, double out[3])
     }
 }
 
-// Resolves the tracked bodies against the current model, dropping any it does not have.
-// A scene without the pick-and-place objects (the flat and perception worlds) is a normal
-// configuration rather than an error, so a missing body says so once and is skipped --
-// the same treatment dex3_handler gives a model with no hands.
+// Resolves the tracked bodies against the current model. A missing body is normal (not every
+// scene has the props), so it is logged once and skipped.
 void resolveObjectBodies(
     const mjModel* m, const std::vector<std::string>& names, std::vector<int>& ids,
     std::vector<ObjectPoseRecord>& records)
@@ -284,13 +263,8 @@ void matrixToQuat(const double R[9], double q[4])
     }
 }
 
-// Never blocks, never raises SIGPIPE, never throws. A dead or slow relay costs one dropped
-// frame, never a stalled simulator.
-//
-// Shared by the sweep loop and the IMU loop, hence the lock: one connection keeps the relay's
-// single-client server unchanged and keeps frames in one order. A send is normally a memcpy into
-// a socket buffer, but against a stalled relay it retries up to the deadline in sendAll, so the
-// IMU path uses trySend and drops rather than queueing behind a 2.9 MB camera frame.
+// Non-blocking, no SIGPIPE, no exceptions: a dead relay costs frames, never the simulator. One
+// connection for all sender threads keeps frames in order; small streams use trySend().
 class RelaySocket
 {
 public:
@@ -304,8 +278,7 @@ public:
         sendLocked(header, payload, payload_bytes);
     }
 
-    /// Drops the frame rather than queueing behind another thread's. For streams where a late
-    /// sample is worth less than a stalled one.
+    /// Drops the frame rather than waiting for another thread's send to finish.
     void trySend(const SensorFrameHeader& header, const void* payload, std::size_t payload_bytes)
     {
         const std::unique_lock<std::mutex> guard(send_mtx_, std::try_to_lock);
@@ -326,9 +299,8 @@ private:
         if (!sendAll(&header, sizeof(header), /*frame_started=*/false)) {
             return;
         }
-        // Mid-frame now: dropping the body would leave a header with no payload, and the
-        // relay would read the next frame's bytes as this one's points, validate them, and
-        // publish a self-consistent cloud of garbage.
+        // The header is out, so the body must follow or the relay reads the next frame's bytes
+        // as this one's payload.
         sendAll(payload, payload_bytes, /*frame_started=*/true);
     }
 
@@ -347,12 +319,8 @@ private:
             ::close(fd);
             return false;
         }
-        // A depth+colour frame is ~2.9 MB, which the default buffer cannot hold, so every
-        // frame would otherwise dribble out across the relay's poll wakeups.
-        // SO_SNDBUFFORCE first: plain SO_SNDBUF is silently clamped to 2*net.core.wmem_max
-        // (~416 KB here), which is not enough and gives no error to notice. FORCE needs
-        // CAP_NET_ADMIN, which the dev container has; the plain call is the fallback for
-        // anywhere it does not, and the retry loop below still covers that case.
+        // A depth+colour frame is ~2.9 MB. SO_SNDBUF is silently clamped to 2*net.core.wmem_max,
+        // so SO_SNDBUFFORCE goes first. It needs CAP_NET_ADMIN; without it, sendAll's retry copes.
         const int snd = 4 * 1024 * 1024;
         if (::setsockopt(fd, SOL_SOCKET, SO_SNDBUFFORCE, &snd, sizeof(snd)) != 0) {
             ::setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &snd, sizeof(snd));
@@ -369,13 +337,8 @@ private:
     {
         const char* p        = static_cast<const char*>(buf);
         std::size_t sent     = 0;
-        // Per send, not per frame: a frame is a header plus a body, and a cycle sends both
-        // a depth and a LiDAR frame, so a fully stalled relay can hold this thread for four
-        // times this budget. That is survivable because it waits off the sim lock (every
-        // relay.send call is outside the lock_guard scopes) and the loop re-anchors its
-        // schedule afterwards -- physics is never delayed, only the sensor rate drops.
-        // With SO_SNDBUFFORCE above this should not trigger at all; it is the fallback for
-        // an unprivileged container where the buffer stays clamped.
+        // Per send call, so a stalled relay can hold a cycle for several of these. Every send
+        // happens off the sim lock, so only the sensor rate drops, never physics.
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(80);
         while (sent < bytes) {
             // MSG_NOSIGNAL is load-bearing: without it a vanished relay raises SIGPIPE and
@@ -391,11 +354,8 @@ private:
                     logThrottled("relay slow; dropping frame", slow_log_);
                     return false;
                 }
-                // A depth+colour frame is ~2.9 MB and may not fit the socket buffer in one go, so
-                // EAGAIN mid-frame is normal rather than a fault. Wait briefly for the relay
-                // to drain. This is off the sim lock, so it delays only this thread, never
-                // physics; past the deadline the frame is abandoned and the connection reset
-                // rather than left desynchronised.
+                // EAGAIN mid-frame is normal for a frame bigger than the socket buffer: wait for
+                // the relay to drain, and past the deadline reset rather than desynchronise.
                 if (std::chrono::steady_clock::now() < deadline) {
                     std::this_thread::sleep_for(std::chrono::microseconds(200));
                     continue;
@@ -487,8 +447,8 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
     mjData*      snapshot = mj_makeData(m);
     RelaySocket& relay    = *relay_socket;
 
-    // offscreen render state. Its own GL context on this thread: measured safe alongside the
-    // viewer's, and glfwCreateWindow off the main thread works here despite the docs.
+    // Offscreen render state in this thread's own GL context. glfwCreateWindow off the main
+    // thread works here despite the GLFW docs.
     mjvScene    cam_scn;
     mjrContext  cam_con;
     mjvOption   cam_opt;
@@ -509,10 +469,8 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
             mjr_setBuffer(mjFB_OFFSCREEN, &cam_con);
             mjv_defaultOption(&cam_opt);
             mjv_defaultCamera(&cam_cam);
-            // FIXED and bound to our camera element, not FREE. A free camera ignores
-            // cam_xpos/cam_xmat entirely and orbits its own default pose, so every pose
-            // written below would be silently discarded and the depth would be identical
-            // whatever the robot did.
+            // FIXED on the d435i camera, not FREE: a free camera ignores cam_xpos/cam_xmat, so
+            // the pose written each frame would be discarded.
             cam_cam.type       = mjCAMERA_FIXED;
             cam_cam.fixedcamid = mj_name2id(m, mjOBJ_CAMERA, "d435i");
             cam_rgb.resize(static_cast<std::size_t>(cfg.camera_width) * cfg.camera_height * 3);
@@ -534,30 +492,20 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
     bool reload_pending = false;
     while (state().running.load(std::memory_order_relaxed)) {
         next += std::chrono::duration_cast<std::chrono::steady_clock::duration>(period);
-        // If a sweep overruns its period, sleep_until returns immediately forever and the
-        // loop free-runs, taking sim_mtx as fast as it can. Resolution is configurable, so
-        // that is reachable rather than theoretical.
+        // Re-anchor after an overrun, or sleep_until returns at once forever and the loop
+        // free-runs on sim_mtx.
         next = std::max(next, std::chrono::steady_clock::now());
 
-        // Snapshot under the lock, raycast outside it. Holding the lock across a ~32 ms
-        // sweep would stall physics exactly as badly as running inline.
+        // Snapshot under the lock, raycast outside it: a ~32 ms sweep under the lock would
+        // stall physics.
         double     sim_time = 0.0;
         double     torso_pos[3];
         double     torso_mat[9];
         const auto lock_start = std::chrono::steady_clock::now();
         {
             std::lock_guard<std::recursive_mutex> lock(*sim_mtx);
-            // NOT mj_copyData. That copies the arena as well, and MuJoCo rejects it
-            // outright while another thread has the stack in use ("attempting to copy
-            // mjData while stack is in use") -- which killed the simulator, because
-            // sim.mtx does not cover the render thread's use of mjData.
-            //
-            // mj_ray only reads geom poses, and everything this sweep can hit is a
-            // primitive (the scene's boxes and plane), so no mesh BVH is involved. Two
-            // arrays is both correct and far cheaper than a full mjData.
-            // The viewer's Reload button and drag-and-drop both replace the model and
-            // free the old one (main.cc reassigns m/d). A latched pointer would dangle,
-            // and the memcpy below would size itself from a freed model's ngeom.
+            // Not mj_copyData, which aborts while the render thread holds the stack. A reload frees
+            // the old model, so a latched pointer would size these copies from freed memory.
             if (*model != m) {
                 reload_pending = true;
             } else {
@@ -569,9 +517,6 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
                 sim_time = live->time;
                 std::memcpy(torso_pos, live->xpos + 3 * torso_id, sizeof(torso_pos));
                 std::memcpy(torso_mat, live->xmat + 9 * torso_id, sizeof(torso_mat));
-                // Body poses, not free-joint qpos: a body welded to the hand by the grasp
-                // weld still reports where it actually is, while its qpos would describe a
-                // constraint MuJoCo is currently overriding.
                 for (std::size_t i = 0; i < object_ids.size(); ++i) {
                     std::memcpy(
                         object_records[i].pos, live->xpos + 3 * object_ids[i],
@@ -593,11 +538,8 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
             // Body ids are indices into the old model's name table; a reload renumbers them.
             resolveObjectBodies(m, cfg.object_bodies, object_ids, object_records);
             std::fprintf(stderr, "[grove_g1] model reloaded; sensor snapshot rebuilt\n");
-            // cam_scn and cam_con were built against the old model: their mesh and texture
-            // ids index freed arrays, and cam_id indexes the old model's camera list, so
-            // the memcpy into snapshot->cam_xpos would run off the new (possibly smaller)
-            // one. Rebuilding both is more code than a debugging-only Reload deserves, so
-            // the camera stops and the LiDAR carries on.
+            // The render state and cam_id belong to the old model. Rebuilding them is not worth
+            // it for a debugging-only Reload, so the camera stops and the LiDAR carries on.
             if (cam_win != nullptr) {
                 cam_win = nullptr;
                 cam_id  = -1;
@@ -618,23 +560,19 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
             std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - lock_start)
                 .count();
 
-        // A snapshot taken before MuJoCo has run kinematics has an all-zero xmat, and
-        // mj_ray aborts the whole process on a zero-length direction ("vector length is too
-        // small"). Skip the cycle rather than hand it one.
+        // Before kinematics has run, xmat is all zero, and mj_ray aborts the process on a
+        // zero-length direction. Skip the cycle rather than hand it one.
         const double row0 = torso_mat[0] * torso_mat[0] + torso_mat[1] * torso_mat[1] +
                             torso_mat[2] * torso_mat[2];
-        // !isfinite first: NaN fails every comparison, so `row0 < 0.5` alone lets a diverged
-        // pose through and mj_ray answers a zero-length direction with mju_error, which
-        // aborts the simulator rather than returning.
+        // NaN fails every comparison, so `row0 < 0.5` alone would let a diverged pose through.
         if (!std::isfinite(row0) || row0 < 0.5 || !std::isfinite(torso_pos[0]) ||
             !std::isfinite(torso_pos[1]) || !std::isfinite(torso_pos[2])) {
             std::this_thread::sleep_until(next);
             continue;
         }
 
-        // Before the sweep, not after: these poses are already in hand from the snapshot,
-        // and sending them here keeps them ~32 ms fresher than the LiDAR frame they share a
-        // cycle with. No sensor pose to report -- the records carry world poses directly.
+        // Sent before the sweep, so they are ~32 ms fresher. No sensor pose: the records carry
+        // world poses directly.
         if (!object_records.empty()) {
             SensorFrameHeader oh{};
             oh.magic         = kSensorFrameMagic;
@@ -647,9 +585,8 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
             relay.send(oh, object_records.data(), oh.payload_bytes);
         }
 
-        // Sensor pose = torso pose composed with the fixed mount, taken live rather than
-        // hardcoded: torso_link's height depends on the waist chain and the current stance,
-        // so any baked-in constant is wrong the moment the robot walks.
+        // Sensor pose = live torso pose composed with the fixed mount; torso_link moves with
+        // the waist and the stance.
         double origin[3];
         for (int r = 0; r < 3; ++r) {
             origin[r] = torso_pos[r] + torso_mat[3 * r + 0] * kMountXyz[0] +
@@ -679,9 +616,8 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
             double dist = mj_ray(m, snapshot, origin, world_dir, geomgroup, 1, -1, &geomid[i]);
             const std::size_t o = static_cast<std::size_t>(i) * 3;
             if (dist < cfg.range_min || dist > cfg.range_max) {
-                // NaN, not (0,0,0). Zero is a valid point AT the sensor, and every filter
-                // that honours is_dense=false keeps it: thousands of phantom returns
-                // stacked on the robot, straight into a costmap.
+                // NaN, not zero: (0,0,0) is a valid point at the sensor, and filters honouring
+                // is_dense=false would keep it and mark the robot's own position in a costmap.
                 points[o + 0] = points[o + 1] = points[o + 2] =
                     std::numeric_limits<float>::quiet_NaN();
                 continue;
@@ -701,9 +637,8 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
         matrixToQuat(R_sensor, header.sensor_quat);
         header.point_count = static_cast<uint32_t>(n_rays);
 
-        // The snapshot is the only thing that contends with physics, so its cost is the
-        // number that matters; the ~32 ms sweep below it runs off-lock. Reported rarely
-        // rather than never: if the copy ever grows, this is where it shows up.
+        // The snapshot is the only work that contends with physics, so its lock time is what
+        // gets reported.
         {
             static int    cycles     = 0;
             static double lock_worst = 0.0;
@@ -717,16 +652,14 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
         }
 
         if (cam_win != nullptr && cam_id >= 0 && !reload_pending) {
-            // Transform arrays only, never mj_copyData: the copy is what MuJoCo refuses
-            // when the live stack is in use, and refusing aborts the process (S3, test A).
+            // Transform arrays only, never mj_copyData; see the sweep snapshot above.
             const auto cam_t0 = std::chrono::steady_clock::now();
             double     cam_torso_pos[3];
             double     cam_torso_mat[9];
             {
                 std::lock_guard<std::recursive_mutex> lock(*sim_mtx);
-                // Re-checked here, not inherited from the sweep above: that lock was
-                // released in between, and a reload landing in the gap would size these
-                // copies from the old model against the new mjData.
+                // Re-checked: the lock was released since the sweep, and a reload in between
+                // would size these copies from the old model.
                 if (*model != m) {
                     reload_pending = true;
                 }
@@ -757,8 +690,7 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
                                     cam_torso_mat[1] * cam_torso_mat[1] +
                                     cam_torso_mat[2] * cam_torso_mat[2];
             if (std::isfinite(cam_row0) && cam_row0 >= 0.5) {
-                // Our own snapshot, so writing the camera pose straight into it is safe and
-                // avoids needing a mocap body or a camera on the vendored robot.
+                // Our own snapshot, so the camera pose can be written straight into it.
                 double cam_pos[3];
                 for (int r = 0; r < 3; ++r) {
                     cam_pos[r] = cam_torso_pos[r] +
@@ -776,9 +708,8 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
                         R_body[3 * r + c] = acc;
                     }
                 }
-                // MuJoCo cameras look down their own -z with +y up; the URDF mount frame is
-                // x forward, y left, z up. Columns are permuted rather than multiplying by a
-                // constant rotation, which is the same mapping written more directly.
+                // MuJoCo cameras look down -z with +y up; the URDF mount frame is x forward,
+                // y left, z up. The columns are permuted accordingly.
                 double R_cam[9];
                 for (int r = 0; r < 3; ++r) {
                     R_cam[3 * r + 0] = -R_body[3 * r + 1];  // cam x  <- -body y
@@ -794,15 +725,8 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
                 mjr_readPixels(cam_rgb.data(), cam_depth.data(),
                                vp, &cam_con);
 
-                // mjr_readPixels hands back the raw OpenGL depth buffer: non-linear, in
-                // [0,1]. Publishing it as metres would look plausible at every distance and
-                // be wrong at all of them, so it is linearised here against the model's own
-                // near/far planes.
-                // The frustum the render actually used, not vis.map. mjv_updateScene
-                // derives frustum_near/far per camera and mjr_render projects with those;
-                // reconstructing them from vis.map * stat.extent gives a different, wrong
-                // near plane and therefore a depth that is plausible at every range and
-                // correct at none.
+                // Linearise the [0,1] OpenGL depth with the frustum the render actually used;
+                // vis.map * stat.extent gives a different near plane and wrong depth everywhere.
                 const double znear = cam_scn.camera[0].frustum_near;
                 const double zfar  = cam_scn.camera[0].frustum_far;
                 for (std::size_t i = 0; i < cam_depth.size(); ++i) {
@@ -844,8 +768,8 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
                 dh.width    = static_cast<uint32_t>(w);
                 dh.height   = static_cast<uint32_t>(h);
                 dh.fovy_deg = static_cast<float>(m->cam_fovy[cam_id]);
-                // Colour rides in the same frame rather than a second one: it came from the
-                // same render, so pairing it up downstream could only lose that guarantee.
+                // Colour rides in the same frame: it came from the same render, and pairing it up
+                // downstream could only lose that.
                 cam_payload.resize(depth_bytes + rgb_bytes);
                 std::memcpy(cam_payload.data(), cam_depth.data(), depth_bytes);
                 if (rgb_bytes != 0) {
@@ -873,28 +797,16 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
 
     mj_deleteData(snapshot);
 
-    // The GL window, scene and context are deliberately NOT freed here. glfwDestroyWindow
-    // must run on the main thread, and calling it from this one segfaulted the simulator on
-    // reload. Leaking them is safe for the one case that reaches here: a model reload stops
-    // the sampler for good, so nothing touches these again, and the process frees them at
-    // exit. There is no restart path to reclaim them for.
+    // The GL window, scene and context are leaked on purpose: glfwDestroyWindow must run on
+    // the main thread, and a stopped sampler never restarts.
 }
 
-// The Mid360's own IMU, sampled on its own thread.
-//
-// It exists because FAST-LIO fuses the IMU that is bolted beside the laser, and substituting the
-// pelvis IMU for it does not work on this robot: three actuated waist joints lie in between and
-// the walking policy drives them through tens of degrees, so the lidar-to-IMU extrinsic FAST-LIO
-// is configured with is wrong by a different amount every scan.
-//
-// Separate from the sweep thread rather than folded into it, because a sweep spends ~32 ms
-// raycasting off the sim lock and an IMU that stops for 32 ms in every 100 is exactly the gap
-// this is here to close. What it holds the lock for is fourteen doubles.
+// The Mid360's own IMU, which FAST-LIO needs beside the laser rather than below the waist joints.
+// Its own thread, since a sweep spends ~32 ms raycasting.
 void imuLoop(const Config cfg, mjModel** model, mjData** data, std::recursive_mutex* sim_mtx,
              RelaySocket* relay_socket)
 {
-    // The physics thread loads both after this one starts; wait for them the same way the sweep
-    // loop does rather than dereferencing a null.
+    // The physics thread loads both after this one starts.
     mjModel* m = nullptr;
     while (state().running.load(std::memory_order_relaxed) &&
            ((m = *model) == nullptr || *data == nullptr)) {
@@ -904,8 +816,7 @@ void imuLoop(const Config cfg, mjModel** model, mjData** data, std::recursive_mu
         return;
     }
 
-    // By name, never by index: appending sensors to the MJCF shifts every index after them, and
-    // the SDK bridge resolves its own IMU the same way for the same reason.
+    // By name, never by index: appending sensors to the MJCF shifts every index after them.
     const int quat_id = mj_name2id(m, mjOBJ_SENSOR, "mid360_imu_quat");
     const int gyro_id = mj_name2id(m, mjOBJ_SENSOR, "mid360_imu_gyro");
     const int acc_id  = mj_name2id(m, mjOBJ_SENSOR, "mid360_imu_acc");
@@ -956,10 +867,8 @@ void imuLoop(const Config cfg, mjModel** model, mjData** data, std::recursive_mu
             header.version       = kSensorFrameVersion;
             header.kind          = static_cast<uint32_t>(SensorFrameKind::Imu);
             header.payload_bytes = static_cast<uint32_t>(sizeof(sample));
-            // trySend, not send: the sweep and the camera share this socket, and a stalled
-            // relay can hold it for the length of their retry deadline. Waiting out someone
-            // else's 2.9 MB frame would open a far bigger hole in this stream than the one
-            // dropped sample does.
+            // trySend: waiting out another thread's 2.9 MB frame would leave a far bigger gap
+            // in this stream than one dropped sample.
             relay_socket->trySend(header, &sample, sizeof(sample));
         }
 
@@ -971,9 +880,8 @@ void imuLoop(const Config cfg, mjModel** model, mjData** data, std::recursive_mu
 // 48 bytes, so the cost is noise next to one LiDAR sweep.
 constexpr double kBaseStateRateHz = 200.0;
 
-// Ground truth for the sim-only odometry source. Every quantity is a stock MJCF sensor on the
-// pelvis IMU site, the same site the robot's own IMU reports from, so this is exact MuJoCo
-// state rather than anything modelled.
+// Ground truth for the sim-only odometry source: stock MJCF sensors on the pelvis IMU site, so
+// this is exact MuJoCo state rather than anything modelled.
 void baseStateLoop(mjModel** model, mjData** data, std::recursive_mutex* sim_mtx,
                    RelaySocket* relay_socket)
 {
@@ -1078,12 +986,8 @@ void StopSensorPublisher()
     if (!s.running.exchange(false)) {
         return;
     }
-    // Blocking join, not a signal-and-hope. The sampler dereferences the model outside the
-    // sim lock -- mjv_updateScene, mjr_render and mj_ray all do, deliberately, so a render
-    // does not stall physics -- so the only safe point to free the model is after the
-    // thread has actually stopped. Signalling without joining leaves exactly the
-    // use-after-free this exists to close: a viewer Reload segfaulted the simulator.
-    // Costs up to one sample period (~100 ms) plus one sweep, on a debugging-only action.
+    // Join, not just signal: the render and raycast read the model outside the sim lock, so it
+    // may be freed only once the threads have stopped. Costs up to a period plus one sweep.
     if (s.thread.joinable()) {
         s.thread.join();
     }
@@ -1093,8 +997,7 @@ void StopSensorPublisher()
     if (s.base_thread.joinable()) {
         s.base_thread.join();
     }
-    // Closed only now, with both threads stopped: the relay sees EOF and logs a disconnect
-    // rather than holding a connection that will never carry another frame.
+    // Closed once every thread has stopped, so the relay sees EOF and logs a disconnect.
     s.relay.reset();
     std::fprintf(stderr,
                  "[grove_g1] SENSORS DISABLED: the model was replaced and the sampler was "

@@ -1,34 +1,22 @@
-# Nav2 for the G1 on the converged unitree_mujoco track.
+# Nav2 for the G1 on the unitree_mujoco track.
 #
-# ADAPTED FROM nav2_bringup's own params/nav2_params.yaml (Humble 1.1.20), trimmed to the four
-# servers this stack launches and then changed only where this robot differs from a TurtleBot.
-# Upstream ordering and structure are kept so the two can be diffed.
-#
-# Three servers have no block here because they are not launched: smoother_server,
-# waypoint_follower and velocity_smoother. See launch/nav2.launch.py for why each is out.
-#
-# Every comment below marks a value as MEASURED or GUESS. A green test_navigate_to_pose does
-# not validate the guesses.
+# Adapted from nav2_bringup's params/nav2_params.yaml (Humble 1.1.20) in upstream order, so the
+# two diff cleanly. smoother_server, waypoint_follower and velocity_smoother are not launched.
+# use_sim_time is false throughout: there is no /clock on this track.
 bt_navigator:
   ros__parameters:
     use_sim_time: false
     global_frame: map
     robot_base_frame: base_footprint
-    # 1.0 everywhere that declares it, matching AMCL's. TF timing is this stack's recurring
-    # failure, and a 0.1 default here against a 1.0 there is the kind of mismatch that surfaces
-    # as an unexplained flake rather than an error.
+    # Matches AMCL. A mismatch surfaces as an intermittent TF flake rather than an error.
     transform_tolerance: 1.0
-    # bt_navigator DOES declare odom_topic (verified). controller_server does not, and is
-    # remapped in the launch instead.
+    # controller_server gets its odometry through a remap in nav2.launch.py instead.
     odom_topic: /g1_odometry_publisher/odom
     navigators: ["navigate_to_pose"]
     navigate_to_pose:
       plugin: "nav2_bt_navigator::NavigateToPoseNavigator"
-    # default_nav_to_pose_bt_xml is set by nav2.launch.py, not here: a params file cannot name
-    # its own package share. Do NOT write a find-pkg-share substitution into this file, not even
-    # inside a comment: ParameterFile(allow_substs=True) expands substitutions in comments too,
-    # and an illustrative one with a placeholder package name takes the whole launch down with
-    # "'...' is not a valid package name".
+    # The tree paths are set by nav2.launch.py. Never write a find-pkg-share substitution in
+    # this file, even in a comment: ParameterFile(allow_substs=True) expands comments too.
     bt_loop_duration: 10
     default_server_timeout: 20
     wait_for_service_timeout: 1000
@@ -44,85 +32,56 @@ bt_navigator_navigate_to_pose_rclcpp_node:
 controller_server:
   ros__parameters:
     use_sim_time: false
-    # The walking policy runs at 50 Hz and reads /cmd_vel directly, so there is no slow wire
-    # to match any more. Back to upstream's rate.
     controller_frequency: 20.0
     min_x_velocity_threshold: 0.001
     min_y_velocity_threshold: 0.5
     min_theta_velocity_threshold: 0.001
     failure_tolerance: 0.3
     progress_checker_plugins: ["progress_checker"]
-    goal_checker_plugins: ["general_goal_checker"] # "precise_goal_checker"
+    goal_checker_plugins: ["general_goal_checker"]
     controller_plugins: ["FollowPath"]
 
-    # Progress checker parameters
     progress_checker:
       plugin: "nav2_controller::SimpleProgressChecker"
-      # Gait initiation takes seconds, and the policy ignores any command inside its 0.15 m/s
-      # deadband, so genuinely stationary intervals are normal and upstream's 10 s aborts
-      # healthy goals. 20 s still trips on the measured frozen-gait case, 0.09 m in 30 s.
+      # Gait start-up and the 0.15 m/s deadband make stationary spells normal, and upstream's
+      # 10 s aborts healthy goals. 20 s still catches a frozen gait.
       required_movement_radius: 0.5
       movement_time_allowance: 20.0
-    # Goal checker parameters
-    #precise_goal_checker:
-    #  plugin: "nav2_controller::SimpleGoalChecker"
-    #  xy_goal_tolerance: 0.25
-    #  yaw_goal_tolerance: 0.25
-    #  stateful: True
     general_goal_checker:
       stateful: True
       plugin: "nav2_controller::SimpleGoalChecker"
-      # No approach deceleration (see FollowPath), so the robot runs at 0.6 m/s until the
-      # checker fires. One 0.2 s tick is 0.12 m before gait settling is counted; tighter
-      # tolerances produce goals that never converge. GUESSES.
+      # No approach deceleration (see FollowPath): the robot arrives at full speed and coasts,
+      # so tighter tolerances never converge.
       xy_goal_tolerance: 0.5
       yaw_goal_tolerance: 0.5
-    # RotationShim wrapping RegulatedPurePursuit, replacing upstream's DWB.
-    #
-    # DWB's value is picking a good point in a continuous velocity window. This robot's window
-    # has three usable points (stop, ~0.6 m/s forward, ~1.57 rad/s turn) and a large dead zone,
-    # so the sampling is mostly over commands it ignores. MPPI is a worse fit still: it is a
-    # sampling MPC that assumes the robot roughly executes what it is told, and a commanded
-    # (0.50, 0, 0.50) here measured (0.337, 0.299, 0.390).
-    #
-    # The shim rotates in place on a large heading error, then hands to RPP for the straight
-    # run, which is exactly the two-primitive decomposition the measurements demand.
-    #
-    # Worth knowing when tuning: the policy tracks yaw near 1:1 with no deadband, so RPP's
-    # curvature steering (vyaw = vx * kappa) now does reach the robot, unlike under the gait
-    # this was first tuned against. lookahead_dist matters again as a result.
+    # RotationShim around RegulatedPurePursuit instead of DWB: turn in place, then drive at one
+    # speed. Linear commands under 0.15 m/s do nothing, which defeats velocity sampling.
     FollowPath:
       plugin: "nav2_rotation_shim_controller::RotationShimController"
       primary_controller: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
-      angular_dist_threshold: 0.35        # ~20 deg. GUESS, and the first knob to tune.
-      forward_sampling_distance: 0.6      # GUESS
-      rotate_to_heading_angular_vel: 1.57 # measured operating point; == the bridge's yaw clamp
-      # Deliberately large. At 5 Hz, 6.0 allows only 1.2 rad/s per tick, landing exactly on the
-      # shaper's 1.20 engage threshold and reaching 1.57 on tick two. 10.0 crosses the dead zone
-      # in one tick. This is not a CONTROL_MODES rule-3 violation: rule 3 governs joint setpoints
-      # and blend weights, where a large error becomes high-speed motion. Here a velocity
-      # reference goes to a balance controller doing its own footstep planning, and a slow ramp
-      # produces NO motion rather than gentle motion.
+      angular_dist_threshold: 0.35        # ~20 deg. Untuned, and the first knob to try.
+      forward_sampling_distance: 0.6
+      rotate_to_heading_angular_vel: 1.57 # g1_controllers clamps yaw rate to 0.9 rad/s anyway
+      # Not bound by ramp-don't-snap, which covers joint setpoints and blend weights: this is a
+      # velocity reference to a policy that balances and places its own steps.
       max_angular_accel: 10.0
       simulate_ahead_time: 1.0
 
-      desired_linear_vel: 0.6             # measured operating point
-      # Every regulation feature below is OFF on purpose. Each exists to slow the robot down
-      # smoothly; here slowing down means dropping into the dead zone and stopping dead.
+      desired_linear_vel: 0.6             # g1_controllers' max_linear_speed
+      # Regulation off: every feature below slows the robot, and under 0.15 m/s it stops dead.
       min_approach_linear_velocity: 0.6
       approach_velocity_scaling_dist: 0.0
       use_regulated_linear_velocity_scaling: false
       use_cost_regulated_linear_velocity_scaling: false
       use_rotate_to_heading: true
-      # RPP rejects use_rotate_to_heading and allow_reversing both true. Reversing stays off,
-      # consistent with the BT dropping BackUp.
+      # RPP rejects this and use_rotate_to_heading both true; the gait does not reverse anyway.
       allow_reversing: false
-      rotate_to_heading_min_angle: 0.6    # GUESS
+      rotate_to_heading_min_angle: 0.6
       rotate_to_heading_angular_accel: 10.0
-      lookahead_dist: 0.9                 # GUESS, and mostly inert; see the note above
+      # Yaw tracks near 1:1, so curvature steering reaches the robot and this matters. Untuned.
+      lookahead_dist: 0.9
       use_velocity_scaled_lookahead_dist: false
-      # Left at 1.0. This is the controller's own pose-transform tolerance, not a costmap's,
-      # and tightening it is a separate question from the sensor-staleness one below.
+      # The controller's pose-transform tolerance, separate from the costmaps' 0.3.
       transform_tolerance: 1.0
 
 local_costmap:
@@ -132,20 +91,16 @@ local_costmap:
       publish_frequency: 2.0
       global_frame: odom
       robot_base_frame: base_footprint
-      # 0.3, upstream's default, not 1.0. One second is longer than a gait cycle, so a
-      # cloud could be transformed with a pelvis attitude from the opposite phase of the
-      # step. The pelvis swings 9.31 deg peak to peak while walking (measured), and at
-      # obstacle_max_range even a fraction of that lifts floor returns above the 0.08 m
-      # cut. If this starts dropping clouds, that is the finding: TF genuinely lags.
+      # Under one gait cycle, so a cloud never takes the pelvis tilt of the other phase of the
+      # step, which at range lifts floor returns over min_obstacle_height.
       transform_tolerance: 0.3
       use_sim_time: false
       rolling_window: true
       width: 3
       height: 3
       resolution: 0.05
-      # The standing footprint is smaller, but the gait drifts 0.22-0.30 m/s laterally while
-      # walking forward, so the swept corridor is wider than the body. Circular rather than a
-      # polygon: it cannot hold a heading, so a precise polygon would be false precision. GUESS.
+      # Wider than the standing body because the gait drifts sideways; circular because it does
+      # not hold heading precisely.
       robot_radius: 0.45
       plugins: ["voxel_layer", "inflation_layer"]
       inflation_layer:
@@ -157,41 +112,34 @@ local_costmap:
         enabled: True
         publish_voxel_map: True
         origin_z: 0.0
-        # The column has to CONTAIN THE SENSOR, not just the obstacles: the Mid360 sits at
-        # 1.22 m, and a column shorter than that makes VoxelLayer reject every cloud with
-        # "Sensor origin ... is out of map bounds", leaving the local costmap empty. Measured on
-        # this stack. Jazzy's voxel grid hard-caps z_voxels at 16, so the 2.0 m has to come from
-        # a coarser z instead: 16 x 0.125 = 2.0 m, clearing sensor and max_obstacle_height both.
+        # The column must contain the sensor (1.22 m) or VoxelLayer rejects every cloud.
+        # z_voxels caps at 16, so the height comes from z_resolution: 16 x 0.125 = 2.0 m.
         z_resolution: 0.125
         z_voxels: 16
         max_obstacle_height: 2.0
         mark_threshold: 0
-        # The raw 3D sweep, NOT /scan. The flatten's 0.30 m floor cut is right for a 2D scan
-        # matcher but discards exactly what a walking robot must not hit: crates, the ramp, a
-        # pallet, a step. nav2_costmap_2d takes PointCloud2 natively, and ObservationBuffer
-        # transforms into the costmap's global frame BEFORE applying the height thresholds, so
-        # the cut below is gravity-aligned.
+        # The raw cloud, not /scan, whose 0.30 m floor cut hides low obstacles. Height limits
+        # apply after the transform into the global frame, so they are gravity-aligned.
         observation_sources: lidar
         lidar:
           topic: /livox/lidar
           data_type: "PointCloud2"
           clearing: True
           marking: True
-          # 70% of every cloud is floor, measured at z < 0.05 m. Upstream's implicit 0.0 would
-          # paint the entire facility as an obstacle and no plan would ever be found.
+          # Clears the floor returns; at 0.0 the whole floor marks as obstacle.
           min_obstacle_height: 0.08
-          # Ceiling and light fixtures. Walls are 3.2 m; the robot is ~1.3 m.
+          # Below the ceiling and light fixtures; the robot is about 1.3 m tall.
           max_obstacle_height: 1.80
-          # At 15 m adjacent 1-degree beams are 26 cm apart, so long-range raytracing leaves
-          # radial spoke gaps in cleared space. GUESS, and unchanged.
+          # Above obstacle_max_range so anything marked can be cleared. Far beams are too sparse
+          # to clear without spoke gaps.
           raytrace_max_range: 6.0
           raytrace_min_range: 0.0
-          # MEASURED, and the reasoning is in the package README: the estimate's attitude, not
-          # its height, is what limits how far a floor return can be placed, and marking was
-          # 0.000% inside 3 m against 0.091% at 4-5 m. raytrace above this so anything markable
-          # is also clearable.
+          # Attitude error times range is height error; past 3 m floor returns start crossing
+          # min_obstacle_height. See the README.
           obstacle_max_range: 3.0
-          obstacle_min_range: 0.0
+          # Keeps the carried object and the robot's own arms off the costmap. Anything the base
+          # can hit appears beyond 0.6 m.
+          obstacle_min_range: 0.6
       always_send_full_costmap: True
 
 global_costmap:
@@ -201,16 +149,9 @@ global_costmap:
       publish_frequency: 1.0
       global_frame: map
       robot_base_frame: base_footprint
-      # 0.3, upstream's default, not 1.0. One second is longer than a gait cycle, so a
-      # cloud could be transformed with a pelvis attitude from the opposite phase of the
-      # step. The pelvis swings 9.31 deg peak to peak while walking (measured), and at
-      # obstacle_max_range even a fraction of that lifts floor returns above the 0.08 m
-      # cut. If this starts dropping clouds, that is the finding: TF genuinely lags.
+      # Same as local_costmap.
       transform_tolerance: 0.3
       use_sim_time: false
-      # The standing footprint is smaller, but the gait drifts 0.22-0.30 m/s laterally while
-      # walking forward, so the swept corridor is wider than the body. Circular rather than a
-      # polygon: it cannot hold a heading, so a precise polygon would be false precision. GUESS.
       robot_radius: 0.45
       resolution: 0.05
       track_unknown_space: true
@@ -218,32 +159,19 @@ global_costmap:
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True
-        # The raw 3D sweep, NOT /scan. The flatten's 0.30 m floor cut is right for a 2D scan
-        # matcher but discards exactly what a walking robot must not hit: crates, the ramp, a
-        # pallet, a step. nav2_costmap_2d takes PointCloud2 natively, and ObservationBuffer
-        # transforms into the costmap's global frame BEFORE applying the height thresholds, so
-        # the cut below is gravity-aligned.
+        # The observation source matches local_costmap's; see the comments there.
         observation_sources: lidar
         lidar:
           topic: /livox/lidar
           data_type: "PointCloud2"
           clearing: True
           marking: True
-          # 70% of every cloud is floor, measured at z < 0.05 m. Upstream's implicit 0.0 would
-          # paint the entire facility as an obstacle and no plan would ever be found.
           min_obstacle_height: 0.08
-          # Ceiling and light fixtures. Walls are 3.2 m; the robot is ~1.3 m.
           max_obstacle_height: 1.80
-          # At 15 m adjacent 1-degree beams are 26 cm apart, so long-range raytracing leaves
-          # radial spoke gaps in cleared space. GUESS, and unchanged.
           raytrace_max_range: 6.0
           raytrace_min_range: 0.0
-          # MEASURED, and the reasoning is in the package README: the estimate's attitude, not
-          # its height, is what limits how far a floor return can be placed, and marking was
-          # 0.000% inside 3 m against 0.091% at 4-5 m. raytrace above this so anything markable
-          # is also clearable.
           obstacle_max_range: 3.0
-          obstacle_min_range: 0.0
+          obstacle_min_range: 0.6
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
         map_subscribe_transient_local: True
@@ -255,8 +183,7 @@ global_costmap:
 
 planner_server:
   ros__parameters:
-    # The BT's RateController replans at 1 Hz, so upstream's 20.0 logs "missed its desired
-    # rate" on essentially every cycle, which is noise on the acceptance gate's own output.
+    # Matches the BT's 1 Hz replan; upstream's 20.0 logs a missed-rate warning every cycle.
     expected_planner_frequency: 1.0
     use_sim_time: false
     planner_plugins: ["GridBased"]
@@ -271,10 +198,8 @@ behavior_server:
     costmap_topic: local_costmap/costmap_raw
     footprint_topic: local_costmap/published_footprint
     cycle_frequency: 10.0
-    # backup and drive_on_heading are gone because both command reverse, which this gait does not
-    # produce; see config/navigate_to_pose.xml. Dropping the plugins as well as the tree nodes
-    # means no action server exists to invoke even from a hand-edited tree. assisted_teleop has
-    # no caller here.
+    # No backup or drive_on_heading: both reverse, which the gait does not do, and without the
+    # plugins no tree can call them. assisted_teleop has no caller.
     behavior_plugins: ["spin", "wait"]
     spin:
       plugin: "nav2_behaviors::Spin"
@@ -285,17 +210,13 @@ behavior_server:
     transform_tolerance: 1.0
     use_sim_time: false
     simulate_ahead_time: 2.0
-    # Above upstream's 1.0 because the policy tracks yaw proportionally and has been swept to
-    # 0.8 rad/s without falling; Spin clamps its command to this.
+    # Spin's own clamp; g1_controllers clamps yaw rate again at 0.9 rad/s.
     max_rotational_vel: 1.57
     min_rotational_vel: 1.2
     rotational_acc_lim: 3.2
 
 lifecycle_manager_navigation:
   ros__parameters:
-    # No /clock on this track: the simulator links no ROS at all.
     use_sim_time: false
     autostart: true
-    # Upstream's list minus smoother_server, waypoint_follower and velocity_smoother.
     node_names: ["controller_server", "planner_server", "behavior_server", "bt_navigator"]
-

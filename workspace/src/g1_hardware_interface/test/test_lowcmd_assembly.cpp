@@ -4,6 +4,7 @@
  */
 #include <gmock/gmock.h>
 
+#include <cmath>
 #include <cstring>
 
 #include "g1_hardware_interface/lowcmd_assembly.hpp"
@@ -130,6 +131,15 @@ TEST(FillReleaseCmd, StiffnessFadesWhileDampingAndHoldPositionStay)
     EXPECT_FLOAT_EQ(finish.kd(), 3.0F);
     EXPECT_FLOAT_EQ(finish.q(), 0.4F);
     EXPECT_EQ(finish.mode(), 1U);
+}
+
+TEST(FillReleaseCmd, ANonFiniteHoldLeavesOnlyDamping)
+{
+    unitree_hg::msg::dds_::MotorCmd_ motor{};
+    fillReleaseCmd(motor, std::nan(""), 80.0, 0.7, 3.0);
+    EXPECT_FLOAT_EQ(motor.kp(), 0.0F);
+    EXPECT_FLOAT_EQ(motor.q(), 0.0F);
+    EXPECT_FLOAT_EQ(motor.kd(), 3.0F);
 }
 
 TEST(FillReleaseCmd, NeverCommandsTorque)

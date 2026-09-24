@@ -31,8 +31,7 @@ EXPECTED_BEAMS = 360
 EXPECTED_INCREMENT = np.radians(1.0)
 RANGE_MAX = 25.0
 
-# Measured on the converged track: the pelvis stands about 0.75 m up. Loose because it is a
-# property of the stance, not a constant.
+# Standing pelvis height; loose because it varies with stance.
 PELVIS_HEIGHT_M = 0.75
 PELVIS_HEIGHT_TOL = 0.12
 

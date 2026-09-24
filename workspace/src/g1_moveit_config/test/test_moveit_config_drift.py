@@ -1,10 +1,7 @@
 """Numbers that must agree across packages, where neither package's own tests can see the pair.
 
-The same blind spot test_rviz_configs exists for: MoveIt's idea of the arm lives here, the
-controller's lives in g1_controllers, and the hand's speed clamp lives in g1_description.
-Nothing but a test that reads all three notices when they drift apart.
-
-No simulator, no ROS graph.
+MoveIt's idea of the arm lives here, the controllers' in g1_controllers and the hand's speed
+clamp in g1_description. No simulator, no ROS graph.
 """
 
 import os
@@ -73,12 +70,7 @@ def srdf():
 
 
 def test_the_srdf_is_well_formed_xml(srdf):
-    """It has already been unparseable once.
-
-    XML forbids a double hyphen inside a comment, the SRDF is comment-heavy, and no linter in
-    this workspace reads .srdf, since ament_xmllint only looks at .xml. The failure surfaces as
-    move_group dying at launch with a column number.
-    """
+    """No linter here reads .srdf, and a double hyphen in a comment kills move_group at launch."""
     assert srdf.tag == "robot"
 
 
@@ -86,7 +78,7 @@ def test_moveit_drives_the_controller_bringup_actually_runs(moveit_controllers, 
     mine = moveit_controllers["moveit_simple_controller_manager"]["arm_trajectory_controller"]
     theirs = controllers["arm_trajectory_controller"]["ros__parameters"]
     assert mine["joints"] == theirs["joints"], (
-        "g1_moveit_config and g1_bringup disagree about which joints arm_trajectory_controller "
+        "g1_moveit_config and g1_controllers disagree about which joints arm_trajectory_controller "
         "owns; MoveIt would plan for joints the controller will refuse"
     )
 
@@ -107,13 +99,10 @@ def test_partial_joint_goals_stay_enabled(controllers):
 
 
 def test_planned_hand_speed_stays_under_the_clamp(joint_limits):
-    """The clamp is a backstop, not a controller in the loop.
+    """G1Dex3System slew-clamps every finger; plan faster and the motion is silently stretched
+    until the controller aborts on its goal-time tolerance.
 
-    G1Dex3System slew-clamps every finger it owns; plan faster than that and the motion is
-    silently stretched until the controller aborts on a goal-time tolerance instead.
-
-    The body component has no such clamp, deliberately: it would throttle exactly the fast
-    corrections the balance policy needs, so there is nothing to check the arm against.
+    The body component has no such clamp, so there is nothing to check the arm against.
     """
     clamp = _load(DESCRIPTION_CONFIG_DIR, "dex3_params.yaml")["system"]["max_joint_velocity_rad_s"]
     for joint in HAND_JOINTS["left"] + HAND_JOINTS["right"]:
@@ -135,10 +124,10 @@ def test_every_arm_joint_has_an_acceleration_limit(joint_limits):
 
 
 def test_joint_limits_cover_exactly_what_we_command(joint_limits):
-    """Everything we own and nothing we do not: the arms plus both hands.
+    """Everything MoveIt commands and nothing else: the arms plus both hands.
 
-    A joint missing here is timed against no limit at all; a leg or waist joint appearing here
-    would claim a limit on something the onboard controller owns.
+    A joint missing here is timed against no limit at all; a leg or waist joint here would claim
+    a limit on something the balance policy or the waist freeze owns.
     """
     expected = ARM_JOINTS + HAND_JOINTS["left"] + HAND_JOINTS["right"]
     assert sorted(joint_limits) == sorted(expected)
@@ -150,13 +139,8 @@ def test_the_hand_agrees_across_srdf_controller_and_moveit(
 ):
     """Three files have to name the same seven joints in the same order.
 
-    The JTC itself remaps by name, but G1Dex3System does not: it writes HandCmd.motor_cmd
-    positionally and refuses to init on a mismatch, so a reordering here would either fail
-    loudly at startup or, if the guard were ever relaxed, close the wrong fingers.
-
-    MoveIt's own RobotModel sorts a joint-list group alphabetically and will not report this
-    order back; see test_robot_model. That is what makes reading it from the files the only
-    way to pin it.
+    The JTC remaps by name, but G1Dex3System writes HandCmd.motor_cmd positionally. MoveIt's
+    RobotModel sorts a joint-list group, so only the files can pin this order.
     """
     group = next(g for g in srdf.findall("group") if g.get("name") == f"{side}_hand")
     controller = f"{side}_hand_controller"
@@ -183,20 +167,23 @@ def test_the_hand_is_driven_as_a_trajectory_not_a_gripper_command(side, moveit_c
 
 @pytest.mark.parametrize("side", ["left", "right"])
 def test_each_hand_has_an_open_and_a_closed_posture(side, srdf):
-    """The whole vocabulary a pick and place needs, and both must name all seven joints."""
+    """The postures a pick and place needs, each naming all seven joints.
+
+    A pick descends in pinch_ready, because at `open` the thumb reaches the table first.
+    """
     states = {
         s.get("name"): s
         for s in srdf.findall("group_state")
         if s.get("group") == f"{side}_hand"
     }
-    assert set(states) == {"open", "closed"}
+    assert set(states) == {"open", "closed", "pinch_ready"}
     for name, state in states.items():
         named = {j.get("name") for j in state.findall("joint")}
         assert named == set(HAND_JOINTS[side]), f"{side} {name} does not cover the hand"
 
 
 def test_the_home_state_lists_the_arm_joints_in_motor_order(srdf):
-    """`home` is compared positionally elsewhere, so its joint order is part of its contract."""
+    """`home` lists the arm joints in the controllers' motor order."""
     home = next(
         s for s in srdf.findall("group_state")
         if s.get("name") == "home" and s.get("group") == "both_arms"
@@ -207,10 +194,8 @@ def test_the_home_state_lists_the_arm_joints_in_motor_order(srdf):
 def test_chain_groups_have_a_solver_and_the_composite_one_does_not(srdf, kinematics):
     """The composite group must not appear in kinematics.yaml.
 
-    pick_ik rejects any group that is not a chain, and MoveIt only builds the per-subgroup
-    solver map for groups that have no solver of their own. Naming both_arms here suppresses
-    that map, which is what breaks dual-arm pose goals. It is the most-copied mistake in
-    published dual-arm configs, so it is asserted rather than left to a comment.
+    pick_ik rejects any group that is not a chain, and MoveIt builds the per-subgroup solver map
+    only for groups without a solver of their own, so an entry breaks dual-arm pose goals.
     """
     for group in srdf.findall("group"):
         name = group.get("name")
@@ -231,10 +216,10 @@ def test_the_dual_arm_group_spans_both_arms(srdf):
 
 
 def test_no_config_here_claims_simulated_time():
-    """There is no /clock on this track: the simulator links no ROS.
+    """There is no /clock: the simulator links no ROS.
 
-    Same trap g1_navigation/test/test_no_sim_time.py exists for. A node given use_sim_time gets
-    a clock that never advances, which surfaces as TF lookups failing somewhere unrelated.
+    A node given use_sim_time gets a clock that never advances, which surfaces as TF lookups
+    failing somewhere unrelated.
     """
     offenders = []
     for name in os.listdir(MOVEIT_CONFIG_DIR):
@@ -249,10 +234,8 @@ def test_no_config_here_claims_simulated_time():
 
 # --- sensors_3d.yaml -------------------------------------------------------------------
 #
-# The octomap updater fails quietly. setParams() ANDs its seven required keys and skips the
-# sensor with only an error log if one is missing, a wrong type throws out of the monitor
-# constructor, and MoveItConfigsBuilder guards the whole file with an exists() check so a rename
-# is a no-op. The stack then comes up healthy and never builds a map.
+# The octomap updater fails quietly: a missing key skips the sensor with only an error log, and
+# the stack comes up healthy without ever building a map.
 
 POINTCLOUD_PLUGIN = "occupancy_map_monitor/PointCloudOctomapUpdater"
 DEPTH_IMAGE_PLUGIN = "occupancy_map_monitor/DepthImageOctomapUpdater"
@@ -273,22 +256,20 @@ def sensors_3d():
 
 
 def test_the_octomap_resolution_is_set_at_the_top_level(sensors_3d):
-    """move_group reads it as a node parameter, which only works because to_dict() flat-merges
-    this file. Unset, it silently assumes 0.1 m and logs a warning most people scroll past."""
+    """move_group reads it as a node parameter, via to_dict()'s flat merge. Unset, it falls back
+    to 0.1 m with only a warning."""
     assert isinstance(sensors_3d.get("octomap_resolution"), float)
     assert 0.0 < sensors_3d["octomap_resolution"] < 0.5
 
 
 def test_octomap_frame_is_not_set(sensors_3d):
-    """It would be inert and therefore misleading. startWorldGeometryMonitor() constructs the
-    monitor with the planning frame, which is never empty, so the branch reading octomap_frame
-    is unreachable. Anyone setting it would think they had moved the map."""
+    """It would be inert: move_group builds the monitor in the planning frame and never reads
+    octomap_frame, so setting it would only look like it moved the map."""
     assert "octomap_frame" not in sensors_3d
 
 
 def test_sensors_is_a_flat_list_of_names(sensors_3d):
-    """Not a list of dicts. ROS 2 parameters cannot represent that, which is what makes the
-    Humble perception tutorial (an unmigrated ROS 1 page) impossible to copy."""
+    """Not a list of dicts, which ROS 2 parameters cannot represent."""
     names = sensors_3d.get("sensors")
     assert isinstance(names, list) and names
     for name in names:
@@ -317,8 +298,8 @@ def test_every_sensor_block_is_fully_specified(sensors_3d):
 
 
 def test_the_self_filter_padding_is_not_disabled(sensors_3d):
-    """Padding is the self-filter margin. At zero the robot's own arms get mapped as obstacles
-    the moment a link's TF is a little late."""
+    """Padding is the self-filter margin: without it the robot's own arms get mapped as
+    obstacles as soon as a link's TF is a little late."""
     for name in sensors_3d["sensors"]:
         assert sensors_3d[name]["padding_scale"] >= 1.0, f"{name} shrinks the robot's own shapes"
         assert sensors_3d[name]["padding_offset"] >= 0.0

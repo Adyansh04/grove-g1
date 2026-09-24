@@ -26,9 +26,8 @@ namespace g1_state_estimation
 /**
  * @brief Publishes the odom -> base chain and nav_msgs/Odometry from the configured source.
  *
- * Lifecycle rather than a plain node so the failure is externally observable: with
- * `odometry_source=hardware` this returns FAILURE from on_configure and sits in `unconfigured`
- * with no publisher and no broadcaster, which a test can assert.
+ * Lifecycle so a refused source is observable: `hardware` fails on_configure and leaves no
+ * publisher or broadcaster behind.
  */
 class G1OdometryPublisher : public rclcpp_lifecycle::LifecycleNode
 {
@@ -58,7 +57,7 @@ private:
     void onGroundTruth(const nav_msgs::msg::Odometry::SharedPtr& msg);
 
     /**
-     * @brief Takes the pelvis attitude, the gravity reference every source levels against.
+     * @brief Takes the pelvis attitude, the fast_lio source's gravity reference.
      */
     void onImu(const sensor_msgs::msg::Imu::SharedPtr& msg);
 
@@ -71,22 +70,19 @@ private:
      * @brief Latches odom_from_lio_ so the first LiDAR sample lands at a canonical start pose.
      *
      * @param lio_from_base The first pose the LiDAR odometry reported.
-     * @return False until the IMU has supplied a gravity-aligned attitude to level against.
+     * @return False, leaving the origin unlatched, until an upright IMU attitude has arrived.
      */
     bool latchLidarOrigin(const Pose3d& lio_from_base);
 
     /**
-     * @brief Stores an orientation and re-derives the heading from it.
-     *
-     * Holds the last good heading past max_tilt_rad_. Shared by every source that carries a
-     * full attitude.
+     * @brief Stores an orientation and re-derives the heading, held past max_tilt_rad_.
      */
     void applyOrientation(const Quaternion& q);
 
     /**
-     * @brief LiDAR attitude with its slow drift against gravity taken out, against the IMU.
+     * @brief The LiDAR attitude with its slow tilt drift against the IMU removed.
      *
-     * Stateful: advances tilt_correction_ by one step per call.
+     * Advances tilt_correction_ one step per call.
      *
      * @return The input unchanged until an IMU attitude has arrived.
      */
@@ -95,8 +91,10 @@ private:
     /**
      * @brief Refreshes the transform from the LiDAR odometry's frame to the published body.
      *
-     * Identity unless lidar_body_frame_id_ names something else. Refreshed per sample rather
-     * than cached: on the robot that chain crosses the waist joints.
+     * Identity when lidar_body_frame_id_ is empty. Looked up per sample: the chain crosses the
+     * waist joints.
+     *
+     * @return False while the transform is unavailable.
      */
     bool lookUpLidarBodyOffset();
 
@@ -120,19 +118,14 @@ private:
     rclcpp::TimerBase::SharedPtr                                             timer_;
 
     OdometrySource source_ = OdometrySource::kHardware;
-    /// Topic the configured source actually reads. Held as a string because only one
-    /// of the two subscriptions exists, and the other is null.
+    /// Topic the configured source reads; only one of the two subscriptions exists.
     std::string source_topic_;
     std::string odom_frame_id_;
     std::string base_frame_id_;
-    /// Body link hung under base_frame_id_, carrying the height and tilt the footprint drops.
-    /// Empty publishes a single odom -> base_frame_id_ edge with the full pose; naming a link
-    /// here splits it into a ground-projected edge plus a second edge carrying the height and
-    /// tilt (see GroundSplit).
+    /// Body link under base_frame_id_. Empty publishes one odom -> base_frame_id_ edge with the
+    /// full pose; set, the pose is split into two edges (see GroundSplit).
     std::string pelvis_frame_id_;
-    /// Frame the LiDAR odometry reports the pose of: FAST-LIO's `body`, which is its IMU.
-    /// Empty means that frame already is the body this node publishes. It is `mid360_imu` on
-    /// both tracks: the simulator models an IMU in the sensor housing as the robot has one.
+    /// Frame FAST-LIO reports the pose of (`mid360_imu`). Empty means the published body itself.
     std::string lidar_body_frame_id_;
     /// Beyond this the heading is ill-conditioned and the last good one is held instead.
     double                 max_tilt_rad_     = 0.0;
@@ -145,26 +138,19 @@ private:
     std::array<double, 36> twist_covariance_{};
 
     PlanarPose pose_;
-    /// Height and full orientation, carried separately from PlanarPose: a walking G1 has both a
-    /// height and a tilt that a flat 2D pose cannot express.
+    /// Height and full attitude, which PlanarPose cannot carry.
     double     pose_z_ = 0.0;
     Quaternion orientation_;
-    /// Set once a usable orientation has arrived. Until then nothing is published:
-    /// an unusable quaternion must not reach TF.
+    /// Nothing is published until a usable orientation has arrived.
     bool have_orientation_ = false;
-    /// Latest validated IMU attitude. The fast_lio source levels its odom frame against this at
-    /// the latch, and keeps using it afterwards as the gravity reference that FAST-LIO's own
-    /// estimate drifts away from.
+    /// Latest validated IMU attitude: levels odom at the latch, then corrects FAST-LIO's tilt.
     Quaternion imu_orientation_;
     bool       have_imu_orientation_ = false;
-    /// Low-passed tilt error between FAST-LIO's attitude and the IMU's, applied to every
-    /// published attitude. Slow on purpose; see levelledAttitude().
+    /// Low-passed tilt error between FAST-LIO and the IMU, applied to every published attitude.
     Quaternion tilt_correction_;
     /// Per-sample slerp fraction toward the instantaneous error, from `tilt_correction_gain`.
     double tilt_correction_gain_ = 0.05;
-    /// odom -> the LiDAR odometry's own start frame. FAST-LIO's `camera_init` is wherever its
-    /// IMU happened to be pointing when it initialised, not a gravity-aligned world frame, so
-    /// this is what turns its output into something Nav2 can consume.
+    /// odom -> FAST-LIO's `camera_init`, which is wherever its IMU pointed at startup.
     Pose3d odom_from_lio_;
     bool   lidar_origin_latched_ = false;
     /// Body offset from lidar_body_frame_id_, refreshed from TF per sample.
