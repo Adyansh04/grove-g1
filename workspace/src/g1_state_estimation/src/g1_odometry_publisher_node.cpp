@@ -19,16 +19,14 @@ namespace g1_state_estimation
 
 namespace
 {
-// Sensor-style: the base state is a stream of samples where only the newest matters, and
-// a reliable subscriber against a best-effort publisher simply receives nothing.
+// Only the newest sample matters, and a best-effort subscriber matches either publisher.
 rclcpp::QoS baseStateQos()
 {
     return rclcpp::QoS(rclcpp::KeepLast(1)).best_effort().durability_volatile();
 }
 
-// Validates and normalises an attitude before it can reach TF: a zero-norm quaternion becomes
-// NaN inside tf2 and the transform is dropped against tf2's name rather than this one. A
-// norm^2 test that admits 1.0 also admits 4.0, and nothing reports an unscaled /tf.
+// Rejects near-zero quaternions, which tf2 turns into NaN and drops silently, and normalises the
+// rest so no scaled rotation reaches /tf.
 std::optional<Quaternion> normalisedAttitude(const geometry_msgs::msg::Quaternion& q)
 {
     const double norm2 = (q.w * q.w) + (q.x * q.x) + (q.y * q.y) + (q.z * q.z);
@@ -46,21 +44,16 @@ G1OdometryPublisher::G1OdometryPublisher(const rclcpp::NodeOptions& options)
 {
     declare_parameter<std::string>("odometry_source", "hardware");
     declare_parameter<std::string>("odom_frame_id", "odom");
-    // REP-105: gravity-aligned and on the ground. Nav2's robot_base_frame and slam_toolbox's
-    // base_frame both default to a frame like this, and a 2D costmap has nowhere to put tilt.
+    // REP-105 ground projection, the base frame Nav2 and slam_toolbox expect.
     declare_parameter<std::string>("base_frame_id", "base_footprint");
-    // Empty means one edge carrying the full pose; naming a link splits it in two (see
-    // GroundSplit).
+    // Empty means one edge carrying the full pose; naming a link splits it (see GroundSplit).
     declare_parameter<std::string>("pelvis_frame_id", "");
     declare_parameter<double>("max_tilt_deg", 80.0);
     // Empty means the LiDAR odometry already reports the frame this node publishes.
     declare_parameter<std::string>("lidar_body_frame_id", "");
-    // Body height above the floor when the LiDAR odometry starts, which puts odom on the
-    // ground plane. Only fast_lio uses it: that source measures height relative to wherever
-    // it initialised and has no idea where the floor is.
+    // fast_lio only: body height above the floor at the latch. FAST-LIO's origin knows no floor.
     declare_parameter<double>("start_height_m", 0.0);
-    // How fast the published tilt is pulled toward the IMU's. See levelledAttitude() for why
-    // this has to be slow, and the shipped config for the numbers.
+    // Per-sample slerp toward the IMU's tilt; must stay slow, see levelledAttitude().
     declare_parameter<double>("tilt_correction_gain", 0.05);
     declare_parameter<double>("publish_rate_hz", 50.0);
     declare_parameter<bool>("publish_odom_msg", true);
@@ -86,8 +79,7 @@ bool G1OdometryPublisher::readParameters()
 
     if (source_ == OdometrySource::kHardware)
     {
-        // Deliberately long. Anyone hitting this needs to know the topic they are about to
-        // go looking for does not carry what they think it does.
+        // Long on purpose: it answers where to look next.
         RCLCPP_ERROR(
             get_logger(),
             "odometry_source='hardware' is not a source: the real G1 publishes no odometry of "
@@ -136,8 +128,7 @@ bool G1OdometryPublisher::readParameters()
             get_parameter("max_tilt_deg").as_double());
         return false;
     }
-    // 1.0 would substitute the IMU's tilt outright, which is the timing error levelledAttitude()
-    // exists to avoid; 0.0 is the honest way to turn the correction off.
+    // 1.0 would substitute the IMU's tilt outright (see levelledAttitude()); 0.0 disables.
     if (tilt_correction_gain_ < 0.0 || tilt_correction_gain_ >= 1.0)
     {
         RCLCPP_ERROR(
@@ -155,9 +146,7 @@ bool G1OdometryPublisher::readParameters()
 rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
 G1OdometryPublisher::on_configure(const rclcpp_lifecycle::State&)
 {
-    // Nothing is created before this returns true. An unimplemented source must leave no
-    // publisher and no broadcaster behind: advertising /tf and then going quiet is exactly
-    // the silent failure this node exists to avoid.
+    // Nothing is created before the parameters pass: a refused source leaves no /tf publisher.
     if (!readParameters())
     {
         return CallbackReturn::FAILURE;
@@ -168,13 +157,10 @@ G1OdometryPublisher::on_configure(const rclcpp_lifecycle::State&)
     {
         odom_pub_ = create_publisher<nav_msgs::msg::Odometry>("~/odom", rclcpp::QoS(10));
     }
-    // Every callback below takes its SharedPtr by value because rclcpp offers no const-ref
-    // dispatch for a mutable pointee; the handlers they forward to do take const-ref.
+    // rclcpp has no const-ref dispatch for a mutable pointee, so these take SharedPtr by value.
     // NOLINTBEGIN(performance-unnecessary-value-param)
     if (source_ == OdometrySource::kGroundTruth)
     {
-        // Pose and twist in one message, so unlike the estimator below there is no second
-        // topic whose attitude could go stale independently.
         ground_truth_sub_ = create_subscription<nav_msgs::msg::Odometry>(
             "~/base_state",
             baseStateQos(),
@@ -186,9 +172,8 @@ G1OdometryPublisher::on_configure(const rclcpp_lifecycle::State&)
             "~/lidar_odometry",
             baseStateQos(),
             [this](nav_msgs::msg::Odometry::SharedPtr msg) { onLidarOdometry(msg); });
-        // The attitude is needed once, to level the odom frame at the latch: the LiDAR
-        // odometry's own start frame is wherever its IMU was pointing, which is not gravity.
-        // This must be the pelvis IMU, because what it levels is the pelvis attitude.
+        // The pelvis IMU, since the pelvis attitude is what gets levelled: at the latch, then
+        // continuously against FAST-LIO's tilt drift.
         imu_sub_ = create_subscription<sensor_msgs::msg::Imu>(
             "~/imu",
             baseStateQos(),
@@ -242,13 +227,10 @@ G1OdometryPublisher::on_cleanup(const rclcpp_lifecycle::State&)
     have_sample_          = false;
     have_orientation_     = false;
     have_imu_orientation_ = false;
-    // Neither is gated by a have_* flag, so a re-configure would otherwise publish the previous
-    // session's tilt correction, and its first ~/odom the previous session's velocity: dt is
-    // zero on the first sample, so the twist branch is skipped.
+    // Not gated by have_* flags, so a re-configure would publish the last session's values.
     tilt_correction_ = Quaternion{};
     world_twist_     = PlanarTwist{};
-    // Cleared with the rest: a re-configure is a fresh start, and reusing the old origin would
-    // silently place the new run in the previous run's odom frame.
+    // A re-configure starts a new odom frame.
     lidar_origin_latched_ = false;
     return CallbackReturn::SUCCESS;
 }
@@ -256,8 +238,7 @@ G1OdometryPublisher::on_cleanup(const rclcpp_lifecycle::State&)
 rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
 G1OdometryPublisher::on_activate(const rclcpp_lifecycle::State& previous_state)
 {
-    // Checked, not discarded: this is what activates odom_pub_. Ignoring it starts the timer
-    // and reports SUCCESS against a publisher that never came up, and TF still goes out.
+    // The base class activates odom_pub_; if that fails, the timer must not start.
     const auto base_result = LifecycleNode::on_activate(previous_state);
     if (base_result != CallbackReturn::SUCCESS)
     {
@@ -301,9 +282,8 @@ bool G1OdometryPublisher::lookUpLidarBodyOffset()
     const std::string& body = pelvis_frame_id_.empty() ? base_frame_id_ : pelvis_frame_id_;
     try
     {
-        // Not cached: the sensor-to-pelvis chain crosses the three waist joints, which the
-        // policy drives through tens of degrees. TimePointZero pairs a fresh waist state with a
-        // scan one FAST-LIO period old; the residual is bounded by one gait step.
+        // Not cached: the chain crosses the waist joints. TimePointZero pairs the newest waist
+        // state with a scan up to one FAST-LIO period older.
         const auto tf = tf_buffer_->lookupTransform(lidar_body_frame_id_, body, tf2::TimePointZero);
         lio_body_from_base_.x = tf.transform.translation.x;
         lio_body_from_base_.y = tf.transform.translation.y;
@@ -340,8 +320,7 @@ bool G1OdometryPublisher::latchLidarOrigin(const Pose3d& lio_from_base)
         return false;
     }
 
-    // The latch happens once and is never revisited, so a garbage tilt here is baked into odom
-    // for the whole run. Past this angle the robot is falling, not standing at an origin.
+    // The latch is permanent, so refuse it while the robot is falling.
     const double tilt = tiltFromVertical(imu_orientation_);
     if (tilt > max_tilt_rad_)
     {
@@ -356,9 +335,7 @@ bool G1OdometryPublisher::latchLidarOrigin(const Pose3d& lio_from_base)
         return false;
     }
 
-    // Where the robot is declared to have been standing when odometry began: at the origin,
-    // facing +x, at the configured height, tilted as the IMU says. Discarding only the heading
-    // is what makes this odom and not a map.
+    // The origin, facing +x, at start_height_m, with the IMU's tilt: only the heading is dropped.
     Pose3d start;
     start.z = start_height_m_;
     start.q =
@@ -382,9 +359,7 @@ void G1OdometryPublisher::onLidarOdometry(const nav_msgs::msg::Odometry::SharedP
         return;
     }
 
-    // Normalised, not merely range-checked: everything downstream takes the conjugate as the
-    // inverse and assumes a unit rotation, so a norm-2 quaternion would scale every composed
-    // translation by four and reach /tf unscaled, which nothing reports.
+    // Normalised: everything downstream inverts by conjugate, which assumes a unit quaternion.
     const std::optional<Quaternion> lidar_attitude = normalisedAttitude(msg->pose.pose.orientation);
 
     Pose3d lio_from_lidar_body;
@@ -393,8 +368,7 @@ void G1OdometryPublisher::onLidarOdometry(const nav_msgs::msg::Odometry::SharedP
     lio_from_lidar_body.z = msg->pose.pose.position.z;
     lio_from_lidar_body.q = lidar_attitude.value_or(Quaternion{});
 
-    // A diverged scan match reports NaN rather than failing. Rejected here, before it can
-    // reach the origin latch, where a single bad sample is permanent.
+    // A diverged scan match reports NaN; reject it before it can reach the permanent latch.
     if (!lidar_attitude.has_value() || !isUsablePose(lio_from_lidar_body))
     {
         RCLCPP_WARN_THROTTLE(
@@ -425,12 +399,8 @@ void G1OdometryPublisher::onLidarOdometry(const nav_msgs::msg::Odometry::SharedP
 
     applyOrientation(levelledAttitude(base_in_odom.q));
 
-    // Differenced, because FAST-LIO publishes an empty twist and Nav2's controller reads
-    // velocity from the message. Coarse by construction: two ~10 Hz poses, not an estimate.
-    //
-    // The dt floor matters because one duplicated-then-corrected stamp pair turns a normal 4 cm
-    // step into tens of m/s, labelled to the controller as measured velocity. Below it the
-    // previous twist is kept rather than replaced by a fabricated one.
+    // FAST-LIO leaves twist empty and Nav2's controller reads it, so difference the poses.
+    // Below the dt floor a near-duplicate stamp would make tens of m/s; keep the last twist.
     constexpr double kMinTwistDtS = 0.005;
     if (dt >= kMinTwistDtS)
     {
@@ -448,15 +418,8 @@ Quaternion G1OdometryPublisher::levelledAttitude(const Quaternion& lidar_attitud
         return lidar_attitude;
     }
 
-    // FAST-LIO lets its gravity state wander: measured 1.32 degrees off horizontal against the
-    // ground truth's 0.00. The costmap cuts the floor at an absolute height (0.08 m), so a
-    // degree of tilt lifts the floor over that cut a few metres out and the robot paints rings
-    // of its own floor as obstacle. AMCL is 2D and cannot correct it downstream.
-    //
-    // Only the slow part comes from the IMU. Its newest sample pairs with a scan a FAST-LIO
-    // period older and the pelvis swings ~9 degrees per gait cycle, so substituting the tilt
-    // outright would inject more timing error than drift. Low-passing the difference removes
-    // only the drifting part.
+    // Removes FAST-LIO's slow gravity drift, which lifts distant floor over the costmap's cut.
+    // Only the slow part: the IMU sample can be a scan period newer than this pose, mid-step.
     const double     lidar_yaw = quaternionToYaw(lidar_attitude);
     const Quaternion lidar_tilt =
         splitGroundProjection(0.0, 0.0, 0.0, lidar_attitude, lidar_yaw).tilt;
@@ -473,9 +436,8 @@ void G1OdometryPublisher::applyOrientation(const Quaternion& q)
 {
     orientation_ = q;
 
-    // Only the heading is held: near the vertical-axis singularity yaw swings wildly for tiny
-    // attitude changes, and that noise reaches the ground projection and the body twist. The
-    // attitude itself still goes out, and the first sample always latches.
+    // Past max tilt, yaw is ill-conditioned, so hold the heading; the attitude still goes out.
+    // The first sample always sets it.
     if (tiltFromVertical(q) <= max_tilt_rad_ || !have_orientation_)
     {
         pose_.yaw = quaternionToYaw(q);
@@ -496,14 +458,11 @@ void G1OdometryPublisher::applyOrientation(const Quaternion& q)
 
 void G1OdometryPublisher::onGroundTruth(const nav_msgs::msg::Odometry::SharedPtr& msg)
 {
-    // Exact pelvis state, sampled inside the simulator off the same MuJoCo site the robot's
-    // own IMU reports from. It reaches ROS over the sensor relay's socket rather than a DDS
-    // topic, which is why it does not depend on which middleware is running.
+    // Exact pelvis state from MuJoCo, relayed over g1_sensor_relay's socket.
     const auto& p = msg->pose.pose.position;
     if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z))
     {
-        // A diverged MuJoCo publishes NaN here, and tf2 drops NaN transforms silently, so
-        // the symptom would be a frame that simply stops existing.
+        // A diverged MuJoCo publishes NaN, which tf2 would drop silently.
         RCLCPP_WARN_THROTTLE(
             get_logger(),
             steady_clock_,
@@ -528,8 +487,7 @@ void G1OdometryPublisher::onGroundTruth(const nav_msgs::msg::Odometry::SharedPtr
     pose_z_ = p.z;
     applyOrientation(*attitude);
 
-    // The wire twist is body-frame, per nav_msgs/Odometry; the publish path re-derives that
-    // from the world twist held here, so rotate once on the way in.
+    // The wire twist is body-frame; world_twist_ is odom-frame and rotated back on publish.
     const auto&  v = msg->twist.twist.linear;
     const double c = std::cos(pose_.yaw);
     const double s = std::sin(pose_.yaw);
@@ -541,9 +499,8 @@ void G1OdometryPublisher::onGroundTruth(const nav_msgs::msg::Odometry::SharedPtr
 
 void G1OdometryPublisher::onImu(const sensor_msgs::msg::Imu::SharedPtr& msg)
 {
-    // The pelvis IMU, from ros2_control's broadcaster rather than the robot wire, so one topic
-    // serves sim and hardware. It is the gravity reference levelledAttitude() corrects against;
-    // heading never comes from it, because that is what the LiDAR solution does not drift in.
+    // The pelvis IMU via ros2_control's broadcaster, one topic on both tracks. Gravity reference
+    // only; heading comes from the scan match.
     const std::optional<Quaternion> attitude = normalisedAttitude(msg->orientation);
     if (!attitude)
     {
@@ -560,9 +517,8 @@ void G1OdometryPublisher::onImu(const sensor_msgs::msg::Imu::SharedPtr& msg)
 
 void G1OdometryPublisher::noteSample(const rclcpp::Time& stamp)
 {
-    // Time of the last stamp CHANGE, not of the last message: a wedged simulator can keep
-    // republishing the same sample forever. Order matters, rclcpp::Time::operator!= throws
-    // on mismatched clock types and last_sample_stamp_ starts out RCL_SYSTEM_TIME.
+    // Tracks the last stamp change, not the last message: a wedged source can repeat a sample.
+    // have_sample_ first: operator!= throws against the initial RCL_SYSTEM_TIME stamp.
     if (!have_sample_ || stamp != last_sample_stamp_)
     {
         last_advance_wall_ = std::chrono::steady_clock::now();
@@ -589,18 +545,15 @@ void G1OdometryPublisher::onTimer()
         return;
     }
 
-    // Measured on the steady clock from the last stamp change, not by comparing now() against
-    // the stamp: that measures the offset between two clocks. Under the MuJoCo viewer the
-    // simulator runs below real time, so steady samples carry stamps seconds behind wall clock.
+    // Steady time since the stamp last changed. now() minus the stamp would mix two clocks, and
+    // the MuJoCo viewer runs the sim below real time.
     const double since_advance =
         std::chrono::duration<double>(std::chrono::steady_clock::now() - last_advance_wall_).count();
-    // Not std::min: isStale treats a non-positive timeout as disabled and min(0, 2) is 0, so
-    // disabling one budget would silently disable the other. Each is judged on its own.
+    // Judged separately: a non-positive budget is disabled, and min() would disable both.
     if (isStale(since_advance, source_timeout_s_) || isStale(since_advance, wall_timeout_s_))
     {
-        // Stop publishing rather than re-stamping the last pose. A frozen transform with a
-        // fresh timestamp is indistinguishable from a stationary robot, which is how a dead
-        // source turns into a confidently wrong map.
+        // Go silent rather than re-stamp: a frozen pose with fresh stamps looks like a robot
+        // standing still.
         RCLCPP_WARN_THROTTLE(
             get_logger(),
             steady_clock_,
@@ -673,9 +626,8 @@ void G1OdometryPublisher::onTimer()
     odom.header.stamp    = stamp;
     odom.header.frame_id = odom_frame_id_;
     odom.child_frame_id  = base_frame_id_;
-    // Taken from the transform published just above rather than rebuilt from pose_, so the two
-    // cannot disagree: with a split chain that means the footprint, not the body. Dropping z and
-    // the tilt is correct, since child_frame_id names the footprint and toBodyTwist is yaw-only.
+    // Copied from the transform above so the two cannot disagree; with a split chain that is the
+    // footprint, which child_frame_id names.
     odom.pose.pose.position.x  = tf.transform.translation.x;
     odom.pose.pose.position.y  = tf.transform.translation.y;
     odom.pose.pose.position.z  = tf.transform.translation.z;

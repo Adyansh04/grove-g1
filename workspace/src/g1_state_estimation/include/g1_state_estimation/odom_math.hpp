@@ -3,10 +3,7 @@
 
 /**
  * @file odom_math.hpp
- * @brief Frame and staleness math for the odom -> base publisher.
- *
- * ROS-free so it is testable without a node, DDS or a running sim, the same split
- * g1_hardware_interface applies to lowcmd_assembly.
+ * @brief Frame and staleness math for the odom -> base publisher, ROS-free so it tests alone.
  */
 
 #include <array>
@@ -31,8 +28,7 @@ enum class OdometrySource
  *
  * @param name   Parameter value, expected `ground_truth`, `fast_lio` or `hardware`.
  * @param[out] out  Set only when the name is recognised.
- * @return False for an unrecognised name, so the caller can fail configure rather than
- *         silently fall back to a default that might fabricate transforms.
+ * @return False for an unrecognised name, so configure fails instead of falling back.
  */
 bool parseOdometrySource(const std::string& name, OdometrySource& out);
 
@@ -79,12 +75,10 @@ struct Pose3d
 };
 
 /**
- * @brief Whether a pose can safely be turned into a transform.
+ * @brief Whether a pose can become a transform.
  *
- * Finite translation, and a quaternion whose norm is far enough from zero to normalise. A
- * diverging scan matcher reports NaN rather than stopping and tf2 normalises silently, so an
- * unchecked NaN becomes a dropped transform naming no source, and one latched at the origin
- * is baked in for the whole run.
+ * Finite translation, and a quaternion far enough from zero to normalise; a diverged scan match
+ * reports NaN.
  */
 bool isUsablePose(const Pose3d& pose);
 
@@ -108,31 +102,24 @@ Pose3d invertPose(const Pose3d& pose);
 Quaternion yawToQuaternion(double yaw);
 
 /**
- * @brief Heading about +z: the ZYX yaw, valid under roll and pitch.
+ * @brief Heading about +z: the ZYX yaw, valid under roll and pitch, wrapped to (-pi, pi].
  *
- * Round-trip inverse of yawToQuaternion(); result is wrapped to (-pi, pi].
- *
- * The general form matters on the converged track. The short `2*atan2(z, w)` is exact only for
- * a pure +z rotation, and a walking G1 is never that.
+ * Round-trip inverse of yawToQuaternion(). `2*atan2(z, w)` is exact only with no roll or pitch.
  */
 double quaternionToYaw(const Quaternion& q);
 
 /**
  * @brief Angle between the body's +z and the world's +z, in radians.
  *
- * Roll and pitch together, without picking an Euler convention. Used to refuse a ground
- * projection whose heading has gone ill-conditioned: approaching 90 degrees of pitch the yaw
- * swings wildly for tiny attitude changes, which is a fall rather than a navigation state.
- * Conservative on purpose: it also trips on pure roll, where the yaw is still fine.
+ * Roll and pitch together, for the heading guard. Conservative: pure roll counts too, although
+ * yaw stays well-conditioned there.
  */
 double tiltFromVertical(const Quaternion& q);
 
 /**
- * @brief A 6-DoF pose split into its REP-105 ground projection and the residual tilt.
+ * @brief A 6-DoF pose split into its REP-105 ground projection and the residual.
  *
- * Nav2 and slam_toolbox both want a gravity-aligned, ground-projected base frame; the robot's
- * own root link pitches with the gait. Splitting here yields both as one chain
- * (odom -> footprint -> body) rather than two independent edges off odom that could disagree.
+ * Published as one chain, odom -> footprint -> body, so the two edges cannot disagree.
  */
 struct GroundSplit
 {
@@ -155,11 +142,10 @@ struct GroundSplit
 GroundSplit splitGroundProjection(double x, double y, double z, const Quaternion& q, double yaw);
 
 /**
- * @brief Recombines a heading with a tilt: the inverse of splitGroundProjection's split.
+ * @brief Recombines a heading with a tilt, the inverse of splitGroundProjection().
  *
- * composeAttitude(yaw, splitGroundProjection(..., q, yaw).tilt) reproduces q. Builds an
- * attitude from two sources, heading from one and roll/pitch from another, which is what the
- * fast_lio source does to keep the published frame gravity-true.
+ * composeAttitude(yaw, splitGroundProjection(..., q, yaw).tilt) reproduces q. The two parts may
+ * come from different sources.
  */
 Quaternion composeAttitude(double yaw, const Quaternion& tilt);
 
@@ -174,28 +160,21 @@ Quaternion composeRotation(const Quaternion& a, const Quaternion& b);
 Quaternion invertRotation(const Quaternion& q);
 
 /**
- * @brief Moves @p from a fraction @p t of the way toward @p to along the shortest arc.
+ * @brief Moves @p from a fraction @p t of the way toward @p to along the shorter arc.
  *
- * Used to low-pass a correction rather than apply it whole. t is clamped to [0, 1]; the
- * shorter arc is taken, so a correction never spins the long way round.
+ * t is clamped to [0, 1].
  */
 Quaternion slerp(const Quaternion& from, const Quaternion& to, double t);
 
 /**
  * @brief Wraps an angle to (-pi, pi].
- *
- * The yaw joint is a continuous hinge, so its position grows without bound as the base
- * spins. Publishing that raw into a quaternion is harmless, but comparing two of them is
- * not, hence one wrap in one place.
  */
 double wrapAngle(double angle);
 
 /**
  * @brief Rotates a world-frame planar twist into the base frame.
  *
- * nav_msgs/Odometry defines `twist` in the child frame, not the header frame, while the planar
- * joints report velocity in the world frame. Handing it straight to the message is wrong for
- * every yaw except zero, and Nav2's controller server reads it.
+ * nav_msgs/Odometry carries `twist` in the child frame, not the header frame.
  *
  * @param world_twist  Twist expressed in the odom frame.
  * @param yaw          Current base yaw in the odom frame.
@@ -205,9 +184,7 @@ PlanarTwist toBodyTwist(const PlanarTwist& world_twist, double yaw);
 /**
  * @brief Whether the source is too old to keep publishing transforms from.
  *
- * Compares elapsed against the timeout inclusively, so a sample exactly at the timeout is
- * NOT yet stale; the boundary is pinned by test because "off by one tick" here means
- * either a spurious TF gap or a transform that outlives its data.
+ * A sample exactly at the timeout is not yet stale.
  *
  * @param elapsed_s    Seconds since the last accepted sample.
  * @param timeout_s    Configured tolerance. Non-positive disables the check.
@@ -217,8 +194,7 @@ bool isStale(double elapsed_s, double timeout_s);
 /**
  * @brief Fills a 6x6 row-major covariance with a single value on the diagonal.
  *
- * Ground truth has no meaningful uncertainty, but an all-zero covariance is a known Nav2
- * footgun, so a small non-zero diagonal is written instead of leaving it empty.
+ * All-zero covariance is a known Nav2 pitfall, so even exact sources publish a small diagonal.
  *
  * @param value  Written to all six diagonal entries; off-diagonals are zeroed.
  */

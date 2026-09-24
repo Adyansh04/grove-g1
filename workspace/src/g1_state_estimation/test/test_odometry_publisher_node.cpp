@@ -43,9 +43,8 @@ rclcpp::NodeOptions optionsWithSource(const std::string& source, bool use_sim_ti
         rclcpp::Parameter("source_timeout_ms", 200.0),
         rclcpp::Parameter("wall_timeout_ms", 300.0),
         rclcpp::Parameter("start_height_m", 0.793),
-        // One edge carrying the whole pose, so these suites assert against the pose the source
-        // reports rather than against its ground projection. The split chain has its own
-        // suites further down.
+        // One edge carrying the whole pose, so these suites see the source's pose unprojected.
+        // The split chain has its own suites below.
         rclcpp::Parameter("base_frame_id", "base_link"),
         rclcpp::Parameter("use_sim_time", use_sim_time),
     });
@@ -85,10 +84,8 @@ makeLidarOdometry(const rclcpp::Time& stamp, double x, double y, double z, doubl
     return msg;
 }
 
-/// The simulator's ground-truth track: split chain, one source topic.
-///
-/// Frames and source mirror config/g1_odometry_publisher_converged.yaml; the rates and timeouts
-/// are faster than the shipped ones so these suites do not wait on real budgets.
+/// The ground-truth source with the split chain of g1_odometry_publisher_converged.yaml, and
+/// test-sized rate and timeouts.
 rclcpp::NodeOptions optionsForGroundTruth(double max_tilt_deg = 80.0)
 {
     rclcpp::NodeOptions options;
@@ -385,9 +382,8 @@ TEST(OdometryPublisherFastLio, ConfiguresAndActivates)
 
 TEST(OdometryPublisherFastLio, PublishesNothingUntilTheImuHasLevelledTheOrigin)
 {
-    // FAST-LIO's start frame is wherever its IMU happened to be pointing, so without an
-    // attitude to level against there is no way to know which way is up. Publishing anyway
-    // would tilt odom by the robot's initial lean, permanently.
+    // Without an attitude there is no way to know which way is up, and publishing anyway would
+    // tilt odom by the robot's initial lean for good.
     auto node = std::make_shared<G1OdometryPublisher>(optionsWithSource("fast_lio"));
     ASSERT_EQ(node->configure().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
     ASSERT_EQ(node->activate().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE);
@@ -412,9 +408,8 @@ TEST(OdometryPublisherFastLio, LatchesTheOriginThenReportsMotionRelativeToIt)
 
     FastLioHarness harness(node, "fastlio_latch_helper");
 
-    // A deliberately non-trivial start pose. In practice FAST-LIO's first sample is the
-    // identity, since its start frame is the body frame at init, which would let a broken
-    // composition pass by doing nothing at all.
+    // Non-trivial on purpose: FAST-LIO's real first sample is identity, which a broken
+    // composition would pass.
     const double start_x   = 0.4;
     const double start_y   = -0.2;
     const double start_z   = 0.05;
@@ -507,10 +502,8 @@ TEST(OdometryPublisherFastLio, StopsPublishingWhenTheSourceGoesSilent)
 
 TEST(OdometryPublisherSimTime, StopsPublishingWhenSimTimeItselfFreezes)
 {
-    // The failure the wall-clock test cannot see. On the simulator track /clock comes from the
-    // SAME process as the sensor data, so when that process wedges, sim time stops with it:
-    // `now() - last_sample_stamp_` stays pinned near zero and a sim-time-only staleness check
-    // never fires, leaving a frozen pose broadcast as if it were live.
+    // Under sim time a wedged simulator freezes /clock and the stamps together, so only a
+    // wall-clock budget notices.
     auto node = std::make_shared<G1OdometryPublisher>(optionsWithSource("fast_lio", true));
     ASSERT_EQ(node->configure().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
     ASSERT_EQ(node->activate().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE);
@@ -553,9 +546,7 @@ TEST(OdometryPublisherSimTime, StopsPublishingWhenSimTimeItselfFreezes)
     }
     ASSERT_GT(transform_count, 0U) << "never published while sim time was advancing";
 
-    // Now the simulator wedges: /clock stops AND the stamp stops advancing, but samples
-    // keep arriving, so the node still has fresh-looking data on a frozen clock. Wall time
-    // is the only thing left that can notice.
+    // Wedge: /clock and the stamps stop, but samples keep arriving.
     const std::size_t before_freeze = transform_count;
     for (int i = 0; i < 15; ++i)
     {
@@ -696,19 +687,14 @@ TEST(OdometryPublisherGroundTruth, TiltGuardHoldsTheLastGoodHeadingAndWarnsOnce)
     ASSERT_TRUE(body.has_value());
     EXPECT_GT(tiltOf(body->transform.rotation), 0.5) << "the real tilt must still reach TF";
 
-    // Throttled at 2 s, so 15 samples inside that window give one line rather than fifteen.
-    //
-    // RCLCPP_WARN_THROTTLE keeps its timestamp in a static local at the call site, not per
-    // node, so every test in this binary shares one window. Only one other test tilts the
-    // robot and it stops at one sample; keep it that way or this assertion goes order-dependent.
+    // Throttled at 2 s. The throttle state is a static at the call site, shared by every test
+    // here, so no other test may tilt past one sample or this goes order-dependent.
     EXPECT_EQ(warns, 1) << "expected exactly one throttled warning, got " << warns;
 }
 
 TEST(OdometryPublisherGroundTruth, TiltGuardLatchesTheFirstSampleEvenMidFall)
 {
-    // The documented spawn-topple case: if the very first attitude is already past the limit
-    // there is nothing to hold instead, so it latches rather than publishing a default zero
-    // heading that no sensor ever reported.
+    // Spawn topple: with no heading to hold yet, the first attitude sets it even past the limit.
     auto node = std::make_shared<G1OdometryPublisher>(optionsForGroundTruth(10.0));
     ASSERT_EQ(node->configure().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
     ASSERT_EQ(node->activate().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE);

@@ -1,51 +1,26 @@
-# odom -> base_footprint -> pelvis from LiDAR-inertial odometry, loaded by
-# g1_state_estimation/launch/fastlio_odometry.launch.py.
-#
-# The only source that runs on the real robot. Unlike the converged track's config this is an
-# ESTIMATE: it drifts, and correcting that drift is what map -> odom exists for.
+# odometry:=fast_lio, loaded by fastlio_odometry.launch.py. The only source that runs on the
+# robot. An estimate, so it drifts, and map -> odom corrects it.
 g1_odometry_publisher:
   ros__parameters:
     odometry_source: "fast_lio"
 
     odom_frame_id: "odom"
-    # Split for the same reason the converged track splits it: the pelvis pitches a few degrees
-    # with the gait and both Nav2 and slam_toolbox want a gravity-aligned base.
+    # Split, as in the ground-truth config.
     base_frame_id: "base_footprint"
     pelvis_frame_id: "pelvis"
 
-    # The frame FAST-LIO reports the pose OF, so this node can offset the estimate over to the
-    # pelvis through TF. It is the Mid360's own IMU on both tracks, the simulator modelling one
-    # in the sensor housing too, so unlike most of this stack there is no sim/hardware split
-    # here.
-    #
-    # That chain crosses the three waist joints, so /joint_states must carry them or the lookup
-    # never resolves and this source publishes nothing. joint_state_broadcaster covers all 29
-    # from the body component, on both tracks.
+    # The frame FAST-LIO reports, offset to the pelvis through TF. That chain crosses the waist
+    # joints, so without them in /joint_states this source publishes nothing.
     lidar_body_frame_id: "mid360_imu"
 
-    # Pelvis height above the floor when odometry starts, which is what puts odom on the ground
-    # plane. FAST-LIO measures height relative to wherever it initialised and cannot know where
-    # the floor is.
-    #
-    # MEASURED on the standing robot, 5459 samples with no spread at all. Getting this even a
-    # few centimetres high has real consequences: the costmap's obstacle layer cuts the floor at
-    # min_obstacle_height 0.08, so an inflated pelvis height pushes floor returns toward that
-    # cut before the estimator's own tilt drift is even counted, and the symptom is rings of
-    # floor marked as obstacle with no path found.
-    #
-    # Re-measure if the stance changes. It is a property of this robot's standing pose under the
-    # current balance policy, not a constant of the G1, and a value 21 mm too high puts a
-    # permanent bias under the floor.
+    # Standing pelvis height at the latch, which puts odom on the floor. Re-measure if the stance
+    # changes: a few centimetres high lifts floor returns toward the costmap's 0.08 m cut.
     start_height_m: 0.729
 
     max_tilt_deg: 80.0
 
-    # How hard the published roll and pitch are pulled toward the pelvis IMU's, as a slerp
-    # fraction per LiDAR sample. At FAST-LIO's 10 Hz this is roughly a 2 s time constant:
-    # slower than the gait, so scan-synchronised attitude passes through untouched, and faster
-    # than FAST-LIO's gravity drift, which is the thing being removed. Raise it only with a
-    # measurement in hand: too fast pins a fresh IMU sample onto an older scan and injects
-    # gait-frequency error rather than removing drift. 0.0 turns the correction off.
+    # Slerp fraction per LiDAR sample toward the pelvis IMU's tilt: ~2 s at 10 Hz, slower than
+    # the gait and faster than FAST-LIO's drift. Too high injects gait-rate error; 0.0 disables.
     tilt_correction_gain: 0.05
 
     publish_rate_hz: 50.0
@@ -54,9 +29,6 @@ g1_odometry_publisher:
     source_timeout_ms: 500.0
     wall_timeout_ms: 2000.0
 
-    # Deliberately looser than the converged track's 1e-6. That source is exact MuJoCo state;
-    # this one is a scan-matched estimate whose twist is a difference of two 10 Hz poses.
-    # Still a placeholder rather than a characterisation: nothing here has measured FAST-LIO's
-    # actual covariance on this robot.
+    # Placeholders, looser than ground truth's; FAST-LIO's real covariance is uncharacterised.
     pose_covariance: 1.0e-3
     twist_covariance: 1.0e-2

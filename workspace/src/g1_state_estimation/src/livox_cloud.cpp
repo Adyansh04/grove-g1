@@ -17,13 +17,11 @@ void toPointCloud2(
     cloud.header = custom.header;
     cloud.height = 1;
     cloud.width  = static_cast<std::uint32_t>(custom.points.size());
-    // Unordered, and a sweep can legitimately return nothing: that is what is_dense=false says.
+    // Unfiltered, so is_dense stays false.
     cloud.is_dense     = false;
     cloud.is_bigendian = false;
 
-    // Fields spelled out rather than setPointCloud2FieldsByString: that helper only knows
-    // "xyz", "rgb" and "rgba", and throws on anything else, including "intensity", which is
-    // the field every consumer of /livox/lidar reads.
+    // Spelled out: setPointCloud2FieldsByString knows only xyz, rgb and rgba, not intensity.
     sensor_msgs::PointCloud2Modifier modifier(cloud);
     modifier.setPointCloud2Fields(
         4,

@@ -1,9 +1,8 @@
-"""The lidar-to-IMU extrinsic is the same constant in simulation and on the robot.
+"""The Mid360's lidar-to-IMU extrinsic is the same constant in simulation and on the robot.
 
-It is a constant only because the IMU is inside the sensor in both places, the simulator modelling
-one there rather than substituting the pelvis IMU, which is three actuated waist joints away. See
-g1_state_estimation's README. These tests hold the arrangement in place: where the simulator puts
-its IMU, what both configs say about it, and the joints that make the substitution wrong.
+It is constant because the simulator models an IMU inside the sensor instead of using the pelvis
+IMU, three actuated waist joints away. These tests pin where the simulator puts that IMU, what
+both FAST-LIO configs say, and the joints that rule out the pelvis IMU.
 """
 
 import math
@@ -118,9 +117,8 @@ def _mjcf_site():
 
 
 def test_the_mjcf_site_is_where_the_urdf_says_the_sensor_imu_is():
-    # This is the number the whole arrangement rests on: the simulator's IMU has to sit at the
-    # pose the extrinsic below is measured from, and nothing else compares the two. Recomputed
-    # from the URDF mount composed with Livox's offset rather than copied.
+    # The simulator's IMU must sit where the extrinsic assumes. Recomputed from the URDF mount
+    # and Livox's offset rather than copied.
     translation, rotation = _chain_from_urdf("mid360_link", "torso_link")
     imu_in_lidar = [-v for v in _LIVOX_LIDAR_IN_IMU]
     expect = [
@@ -142,8 +140,7 @@ def test_the_mjcf_site_is_where_the_urdf_says_the_sensor_imu_is():
 
 
 def test_both_configs_carry_the_livox_lever_arm():
-    # The simulator's IMU site is placed from these same numbers, so a change here without a
-    # matching change to the MJCF patch silently moves one and not the other.
+    # The MJCF IMU site is placed from these numbers; change both or neither.
     for name in ("fastlio_mid360_sim.yaml", "fastlio_mid360_hardware.yaml"):
         translation, rotation = _config_extrinsic(name)
         assert translation == pytest.approx(_LIVOX_LIDAR_IN_IMU, abs=1e-9), name
@@ -154,7 +151,7 @@ def test_both_configs_carry_the_livox_lever_arm():
 
 
 def test_the_sensor_is_not_rigidly_attached_to_the_imu():
-    # The reason the extrinsic above cannot be a constant, asserted rather than remembered.
+    # Why the pelvis IMU cannot stand in: the chain from it to the sensor moves.
     joints = _joints_from_urdf()
     link = "mid360_link"
     movable = []
@@ -171,17 +168,15 @@ def test_the_sensor_is_not_rigidly_attached_to_the_imu():
 
 
 def test_the_mount_is_actually_upside_down():
-    # Guards the URDF side of the comparison: if someone rights the sensor there, the config
-    # comparison above would happily follow it, and this is the assertion that asks whether
-    # that was meant. The physical Mid360 on a G1 points its +z at the floor.
+    # The physical Mid360 on a G1 points its +z at the floor. The comparisons above would
+    # follow a righted URDF mount without complaint.
     _, rotation = _chain_from_urdf("mid360_link", "pelvis")
     assert rotation[2][2] < -0.9, "mid360 +z no longer points down; was the mount changed?"
 
 
 def test_the_imu_frame_inverts_the_livox_lever_arm():
-    # mid360_imu is hand-written as the inverse of Livox's published lidar-in-IMU offset;
-    # check the two cancel instead of trusting the sign flip was done right. Read from
-    # g1_common.xacro, which is where the shared sensor frames live.
+    # mid360_imu in g1_common.xacro is hand-written as the inverse of Livox's offset; check the
+    # sign flip.
     xacro = (
         pathlib.Path(get_package_share_directory("g1_description")) / "urdf" / "g1_common.xacro"
     )

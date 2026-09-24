@@ -18,7 +18,7 @@ find_package(tf2_ros REQUIRED)
 
 # --- libraries -------------------------------------------------------------
 
-# Frame and staleness math, deliberately free of ROS so it tests without a node or DDS.
+# Frame and staleness math, free of ROS so it tests without a node or DDS.
 add_library(odom_math src/odom_math.cpp)
 g1_target_defaults(odom_math)
 
@@ -36,9 +36,7 @@ target_link_libraries(g1_odometry_publisher_node PUBLIC
   ${tf2_msgs_TARGETS}
 )
 
-# Hardware only: gives the rest of the stack its PointCloud2 while FAST-LIO takes the CustomMsg
-# the driver is running in. A library so it tests without a Mid360, since nothing in simulation
-# exercises this direction.
+# Hardware-only CustomMsg -> PointCloud2 conversion, a library so it tests without a Mid360.
 add_library(livox_cloud src/livox_cloud.cpp)
 g1_target_defaults(livox_cloud)
 target_link_libraries(livox_cloud PUBLIC
@@ -77,18 +75,17 @@ if(BUILD_TESTING)
   ament_add_gmock(test_odom_math test/test_odom_math.cpp)
   target_link_libraries(test_odom_math odom_math)
 
-  # Hardware-only path: no simulation run reaches it, so this is its only coverage.
+  # Its only coverage: no simulation run reaches the hardware path.
   ament_add_gmock(test_livox_cloud test/test_livox_cloud.cpp)
   target_link_libraries(test_livox_cloud livox_cloud)
 
-  # Runs a real node on an isolated ROS_DOMAIN_ID, so it must not share the sim's.
+  # Runs a real node, on its own ROS_DOMAIN_ID so a running sim cannot feed it.
   ament_add_gmock(test_odometry_publisher_node test/test_odometry_publisher_node.cpp)
   target_link_libraries(test_odometry_publisher_node
     g1_odometry_publisher_node ${rosgraph_msgs_TARGETS})
 
-  # The sim FAST-LIO extrinsic is a copy of the URDF mount; this fails when they drift apart.
-  # The full-stack version (FAST-LIO vs ground truth on a walk) is g1_bringup's
-  # test_fastlio_odometry: it launches sim.launch.py, which would be a cycle from here.
+  # The MJCF IMU site, both FAST-LIO configs and the URDF must agree on the Mid360 extrinsic.
+  # The full-stack check is g1_bringup's test_fastlio_odometry, a dependency cycle from here.
   ament_add_pytest_test(test_sim_extrinsic test/test_sim_extrinsic.py)
 
   g1_add_lint_tests()
