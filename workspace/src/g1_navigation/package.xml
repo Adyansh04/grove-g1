@@ -4,8 +4,8 @@
   <name>g1_navigation</name>
   <version>0.1.0</version>
   <description>
-    SLAM Toolbox mapping and Nav2 navigation for the G1 on the converged unitree_mujoco
-    track. Configuration, launch and maps only; the nodes are upstream.
+    SLAM Toolbox mapping, AMCL localization and Nav2 for the G1 on the unitree_mujoco
+    track. Configuration, launch files and maps; the nodes are upstream.
   </description>
   <maintainer email="gupta.adyansh@gmail.com">Adyansh</maintainer>
   <license>BSD-3-Clause</license>
@@ -27,8 +27,7 @@
   <exec_depend>nav2_planner</exec_depend>
   <exec_depend>nav2_regulated_pure_pursuit_controller</exec_depend>
   <exec_depend>nav2_rotation_shim_controller</exec_depend>
-  <!-- ParticleCloud, the one non-default RViz display in g1_navigation.rviz. Declaring it
-       here is why that config cannot live in g1_bringup. -->
+  <!-- The AMCL particle display in g1_navigation.rviz, and why that config lives here. -->
   <exec_depend>nav2_rviz_plugins</exec_depend>
   <exec_depend>pointcloud_to_laserscan</exec_depend>
   <exec_depend>rclcpp_components</exec_depend>

@@ -1,11 +1,7 @@
 """The acceptance gate: the robot reaches a navigation goal on its own.
 
-Everything else in this package tests a part; this tests that a planner, a controller and a
-balancing walking policy add up to a robot that gets somewhere.
-
-It is also the only place the whole machine runs at once. `sensors:=true` puts the LiDAR sweep,
-the relay and FAST-LIO on the same box as the 200 Hz control loop and the 50 Hz policy, which
-is what the two safety assertions at the end are there to catch.
+The only suite that runs the whole machine at once: the LiDAR sweep, the relay and FAST-LIO share
+the box with the 200 Hz control loop and the 50 Hz policy, and the last test catches an overrun.
 """
 
 import math
@@ -31,14 +27,13 @@ from sensor_msgs.msg import Imu
 from std_srvs.srv import Trigger
 from tf2_ros import Buffer, TransformListener
 
-# Derived from maps/facility.pgm. The robot spawns at the origin of a 4x4 m crossroads, where
-# every axis-aligned 4 m ray hits a partition at 2 m. This pose is 3.54 m out at -45 degrees,
-# with a clear line from spawn and 1.80 m to the nearest obstacle.
+# 3.54 m from spawn at -45 degrees, on a clear line through the crossroads and 1.8 m from the
+# nearest obstacle in maps/facility.pgm.
 GOAL_X = 2.5
 GOAL_Y = -2.5
 
-# Tilt, never the quaternion's w: yawing drives w down while the robot stands perfectly straight.
-# This is the world z-component of the body z-axis, 1.0 upright and 0.0 on its side.
+# World z of the body z-axis: 1.0 upright, 0.0 on its side. Not the quaternion's w, which yaw
+# alone drives down.
 MIN_UPRIGHT_Z = 0.64
 
 BRINGUP_TIMEOUT_S = 180.0
@@ -150,28 +145,24 @@ class NavigateToPoseTest(unittest.TestCase):
 
     def test_reaches_the_goal(self):
         self.assertTrue(self.ready, "navigate_to_pose action server never appeared")
-        # Without this the run still proceeds and fails later at pose_in_map(), reported as a
-        # navigation failure rather than as the localization problem it actually is.
+        # Fail here as a localization problem rather than later as a navigation one.
         self.assertTrue(self.tf_ready, "map -> base_footprint never became available")
 
-        # Goals are accepted well before the map is rasterised, and one planned against an empty
-        # global costmap makes the BT loop without ever returning a result. Global, not local:
-        # the local one is a 3 m rolling window and is legitimately empty at spawn.
+        # A goal planned against an empty global costmap loops the BT forever. Not the local
+        # costmap, which is legitimately empty at spawn.
         deadline = time.time() + 60.0
         populated = False
         while time.time() < deadline and not populated:
             rclpy.spin_once(self.node, timeout_sec=0.1)
             if self.costmaps:
-                # OccupancyGrid is int8 on the 0-100 scale, NOT the costmap's internal 0-255.
-                # Thresholding at 253 reports an empty costmap on a perfectly healthy one.
+                # OccupancyGrid is 0-100, not the costmap's internal 0-255.
                 populated = any(v > 0 for v in self.costmaps[-1].data)
         self.assertTrue(populated, "the global costmap never loaded the static map")
 
         upright_before = self.uprightness()
         self.assertGreater(upright_before, MIN_UPRIGHT_Z, "the robot was already down")
 
-        # Active, not merely present: bt_navigator is near the end of the lifecycle manager's
-        # ordered activation and rejects goals until it gets there.
+        # Active, not merely present: bt_navigator activates late and rejects goals until then.
         self.assertTrue(
             self.nav_active.wait_for_service(timeout_sec=60.0),
             "no lifecycle_manager_navigation/is_active service",
@@ -221,9 +212,8 @@ class NavigateToPoseTest(unittest.TestCase):
         )
 
     def test_the_policy_carried_the_robot_the_whole_way(self):
-        # Runs after the goal, and this ordering is the point: Nav2 can report success on a robot
-        # the emergency freeze caught, because the freeze holds it upright and the pose still
-        # arrives. Uprightness alone would not catch that either.
+        # Runs after test_reaches_the_goal (alphabetical order). Nav2 can succeed on a robot the
+        # emergency freeze caught, since the freeze holds it upright.
         upright = self.uprightness()
         self.assertGreater(
             upright, MIN_UPRIGHT_Z, f"pelvis uprightness {upright:.3f} after navigating: it fell"
