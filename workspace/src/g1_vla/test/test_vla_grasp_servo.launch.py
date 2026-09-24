@@ -1,17 +1,9 @@
 """Headless sim integration test: the same gate, executing through MoveIt Servo.
 
-test_vla_grasp_mock covers the trajectory path. This covers what the servo path adds and what it
-gives up.
-
-What it does NOT assert is that the arm follows the validated waypoints. It does not: jog
-commands are integrated by the servo, which tracks velocity and never position, and the arm keeps
-moving for up to incoming_command_timeout after a chunk's stream ends. The validated positions
-are a reference the arm is steered toward. Asserting otherwise here would be encoding a promise
-this execution mode does not make.
-
-Servo brings its own collision monitor on top, which decelerates during motion rather than
-refusing beforehand. The last case pins that separately, because a servo whose monitor is
-misconfigured looks identical to one that works right up until something moves into the arm.
+Does not assert that the arm follows the validated waypoints: servo tracks velocity, not
+position, and keeps moving for up to incoming_command_timeout after a stream ends. The last case
+checks servo's own collision monitor, whose misconfiguration is invisible until something moves
+into the arm.
 
 Run via `colcon test --packages-select g1_vla`.
 """
@@ -44,8 +36,7 @@ GOAL_TIMEOUT_S = 8.0
 MAX_REJECTED = 5
 
 WATCHED = ["right_shoulder_pitch_joint", "right_shoulder_roll_joint", "right_elbow_joint"]
-# Same targets as the trajectory suite: shoulder roll in opposite directions, so each case
-# turns on self-collision geometry rather than on how the octomap filled in.
+# Same targets as the trajectory suite, turning on self-collision rather than the octomap.
 BLOCKED_TARGET = [0.06, 0.6, 0.09]
 FREE_TARGET = [0.0, -0.55, 0.3]
 
@@ -164,8 +155,7 @@ class TestVlaGraspServo(unittest.TestCase):
         result = self._run_grasp(GOAL_TIMEOUT_S + 60.0)
 
         self.assertNotIn("[0 executed", result.message, f"nothing ran: {result.message}")
-        # The backend actually in use, not just the parameter: nothing publishes here in
-        # trajectory mode, so a zero count would mean the mode never took effect.
+        # Nothing publishes here in trajectory mode, so this proves servo mode took effect.
         self.assertGreater(self.jogs, 50, "no jog commands were streamed")
 
         self._spin(2.0)
@@ -173,8 +163,7 @@ class TestVlaGraspServo(unittest.TestCase):
         self.assertGreater(moved, 0.05, "the arm did not move for chunks that passed the gate")
 
     def test_02_a_blocked_chunk_is_never_streamed(self):
-        # From the rest pose, where the very first chunk already reaches the torso, so nothing
-        # legitimate can run ahead of the refusal.
+        # From the rest pose, where the very first chunk already reaches the torso.
         self._set_params(
             self.engine_params,
             [Parameter("target_positions", Parameter.Type.DOUBLE_ARRAY, BLOCKED_TARGET)],
@@ -190,17 +179,14 @@ class TestVlaGraspServo(unittest.TestCase):
             f"expected a blocked abort, got: {result.message}",
         )
         self.assertIn(f"{MAX_REJECTED} rejected]", result.message)
-        # Direct evidence, and better than the trajectory suite can get: in servo mode nothing
-        # reaches the arm except through this topic, so a zero count is proof that a refused
-        # chunk was never streamed.
+        # In servo mode the arm moves only through this topic, so zero jogs proves the refused
+        # chunk never reached it.
         self.assertEqual(self.jogs, 0, "a refused chunk was streamed anyway")
 
-
     def test_04_servo_halts_for_a_collision_while_moving(self):
-        """The layer servo adds over the gate: reacting during motion, not before it.
+        """Servo's own collision monitor, which reacts during motion rather than before it.
 
-        Driven directly rather than through a chunk. The gate would refuse this motion outright,
-        which is the point: what is under test here is the second line of defence.
+        Driven directly, not through a chunk, since the gate would refuse this motion outright.
         """
         switch = self.node.create_client(ServoCommandType, "/servo_node/switch_command_type")
         self.assertTrue(switch.wait_for_service(timeout_sec=30.0), "servo is not running")
@@ -231,6 +217,6 @@ class TestVlaGraspServo(unittest.TestCase):
 
         self.assertIn(ServoStatus.HALT_FOR_COLLISION, codes, f"servo never halted; saw {codes}")
         # Absolute, not a delta: the previous case leaves the joint wherever it stopped, and
-        # 14 s at 0.25 rad/s would reach 3.5 rad if nothing intervened.
+        # 14 s at 0.25 rad/s would reach 3.5 rad unchecked.
         reached = self.joints["right_shoulder_roll_joint"]
         self.assertLess(reached, 0.12, f"servo let the arm reach {reached:.3f} rad")

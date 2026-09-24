@@ -6,11 +6,9 @@
  * @brief The grasp skill: a policy's action chunks, checked against the planning scene before
  *        any of them reach a controller.
  *
- * Adds no command path. Chunks go out through the same trajectory controllers MoveIt already
- * drives, so the one-writer rule is unaffected by this node existing, and the legs stay on the
- * balance policy throughout.
- *
- * Takes no control authority of its own: the arm and hands must already be acquired.
+ * Adds no command path: chunks go through the trajectory controllers MoveIt already drives, so
+ * the one-writer rule holds and the legs stay on the balance policy. Takes no control authority
+ * of its own; the arm and hands must already be acquired.
  */
 
 #include <atomic>
@@ -76,7 +74,7 @@ private:
     using FollowJointTrajectory = control_msgs::action::FollowJointTrajectory;
     using JointTrajectory       = trajectory_msgs::msg::JointTrajectory;
 
-    /// What one goal ended up doing. Its counters are the record the experiment reads.
+    /// What one goal did. The counters go into the result message on every path.
     struct Outcome
     {
         bool        success{ false };
@@ -85,15 +83,10 @@ private:
         uint16_t    rejected{ 0 };
     };
 
-    /// Claims the arm for one goal.
+    /// Admits a goal only if none is running.
     bool acquire();
 
-    /**
-     * @brief Re-reads the tunables so a change takes effect on the next goal.
-     *
-     * Caching them at construction would mean every threshold needed a restart to move, which
-     * is the wrong trade for numbers whose right value is found by watching the robot.
-     */
+    /// Re-reads the tunables so `ros2 param set` takes effect on the next goal.
     void refreshTunables();
 
     void executeGrasp(const std::shared_ptr<GoalHandle>& goal_handle);
@@ -106,7 +99,7 @@ private:
     Outcome runGrasp(
         const std::shared_ptr<GoalHandle>& goal_handle, const std::string& side, double start_z);
 
-    /// The same request left in flight, so inference can run while the arm is still moving.
+    /// Sends a chunk request without waiting, so inference overlaps the arm's motion.
     ChunkFuture sendChunkRequest(const std::string& instruction, bool new_episode);
 
     /// Waits on a request from sendChunkRequest(). @return nullopt with @p why set.
@@ -115,8 +108,8 @@ private:
     /**
      * @brief Every reason this chunk must not be executed.
      *
-     * @return Empty when the chunk may run. The kinematic checks come first because they are
-     *         local; the planning-scene calls are the expensive part.
+     * @return Empty when the chunk may run. The local kinematic checks run before the
+     *         planning-scene calls.
      */
     std::string rejectionReason(const JointTrajectory& chunk, const std::string& side);
 
@@ -138,20 +131,14 @@ private:
     /**
      * @brief Streams the arm's share of a chunk as jog commands instead of a trajectory.
      *
-     * Servo re-checks proximity while the arm is moving and scales the command down, which the
-     * trajectory path cannot: a trajectory is validated once and then executed blind. Only the
-     * arm goes this way, because the hands are not in servo's group.
+     * Servo scales the command down on proximity while the arm moves, which a trajectory
+     * validated once cannot. Only the arm: the hands are not in servo's group.
      *
      * @return false if the chunk names a joint that is not being measured.
      */
     bool streamArmServo(const JointTrajectory& arm_slice, std::string& why);
 
-    /**
-     * @brief Puts servo into joint-jog mode, once per goal.
-     *
-     * Servo starts with no command type selected and silently refuses every jog until one is
-     * chosen, which reads as a policy whose commands do nothing.
-     */
+    /// Puts servo into joint-jog mode, once per goal; until then it silently ignores every jog.
     bool selectServoJointJog(std::string& why);
 
     /// Caps a tracking correction at the same speed the chunk was validated against.

@@ -1,13 +1,9 @@
 #!/usr/bin/env python3
 """Policy engine backed by a vision-language-action model served over ZMQ.
 
-Serves the same GetActionChunk the mock engine does, so the gate cannot tell them apart. What is
-specific here is the wire protocol and the mapping between the model's modality keys and this
-robot's joint names, which is read from the server at startup and checked against config rather
-than assumed.
-
-Speaks the protocol directly instead of importing the model's own package, which keeps the ROS
-container free of its dependency tree.
+Serves the same GetActionChunk as the mock engine. The model's modality keys are read from the
+server at startup and checked against the configured joint mapping rather than assumed. Speaks
+the wire protocol directly, so the container never imports the model's package.
 """
 
 import io
@@ -39,8 +35,7 @@ _STATE, _VIDEO, _LANGUAGE = "state", "video", "language"
 def _decode_hook(obj):
     """Undo the server's array and config encodings.
 
-    Two array forms are in circulation: a raw .npy payload and msgpack_numpy's. Both are
-    accepted because both are shipped by the reference servers.
+    Accepts both array forms the reference servers ship: a raw .npy payload and msgpack_numpy's.
     """
     if isinstance(obj, dict):
         if obj.get("__ndarray_class__") or obj.get(b"__ndarray_class__"):
@@ -60,8 +55,8 @@ def _decode_hook(obj):
 class PolicyClient:
     """A REQ socket to the policy server.
 
-    REQ sockets alternate send and recv strictly, so a timed-out request leaves the socket
-    unusable and it is rebuilt rather than reused.
+    REQ strictly alternates send and recv, so a timed-out request leaves the socket unusable and
+    it is rebuilt.
     """
 
     def __init__(self, address, timeout_ms):
@@ -111,7 +106,7 @@ def _pose_to_eef_9d(transform):
     """A transform as [x, y, z] + rot6d, the 9-vector the model's *_eef_9d state keys carry.
 
     rot6d is the first two rows of the rotation matrix, row-major, matching the model's own
-    conversion. The third row is recoverable as their cross product, which is why it is dropped.
+    conversion; the third row is their cross product.
     """
     translation, q = transform.translation, transform.rotation
     norm = math.sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w) or 1.0
@@ -132,8 +127,7 @@ def _pose_to_eef_9d(transform):
 def _mapping_param(node, prefix):
     """A {modality key: value} map read from a nested parameter block."""
     return {
-        name: parameter.value
-        for name, parameter in node.get_parameters_by_prefix(prefix).items()
+        name: parameter.value for name, parameter in node.get_parameters_by_prefix(prefix).items()
     }
 
 
@@ -146,13 +140,11 @@ class GrootAdapter(Node):
         self._address = self._param("server_address", "tcp://127.0.0.1:5555")
         self._action_dt_s = float(self._param("action_dt_s", 0.05))
         self._max_horizon = int(self._param("max_horizon", 16))
-        # A checkpoint trained on relative actions still answers in absolute units: the server
-        # un-relativises against the state it was given before replying. Set this to
-        # "relative_to_observation" only for a server that does not.
+        # The server converts relative predictions back to absolute against the state it was
+        # sent. "relative_to_observation" is only for a server that does not.
         self._action_mode = self._param("action_mode", "absolute")
-        # One inference step's worth of wall time, used to turn the server's frame-history
-        # offsets into timestamps. The recording rate that produced those offsets is not on the
-        # wire, so this is a tuning knob rather than a derived quantity.
+        # Turns the server's frame-history offsets into wall time. The recording rate is not on
+        # the wire, so this is tuned rather than derived.
         self._history_step_s = float(self._param("history_step_s", 1.0 / 30.0))
         self._max_image_age_s = float(self._param("max_image_age_s", 2.0))
         self._max_joint_speed = float(self._param("max_joint_speed", 0.7))
@@ -175,8 +167,8 @@ class GrootAdapter(Node):
 
         self.create_subscription(JointState, "/joint_states", self._on_joint_states, 1)
         for key, topic in self._video_topics.items():
-            # Sensor QoS deliberately: the relay publishes best-effort, and a reliable
-            # subscriber silently never matches it.
+            # Sensor QoS: the relay publishes best-effort, which a reliable subscriber never
+            # matches.
             self.create_subscription(
                 Image,
                 topic,
@@ -200,8 +192,8 @@ class GrootAdapter(Node):
     def _on_image(self, key, msg):
         frames = self._frames[key]
         frames.append((rclpy.time.Time.from_msg(msg.header.stamp).nanoseconds / 1e9, msg))
-        # Only as much history as the furthest offset the server asked for; a frame at 848x480
-        # is a megabyte, so an unbounded buffer would cost more than the model.
+        # Only as much history as the furthest offset the server asked for: an 848x480 frame is
+        # about a megabyte.
         while len(frames) > 2 and frames[-1][0] - frames[1][0] > self._history_span_s:
             frames.popleft()
 
@@ -216,9 +208,8 @@ class GrootAdapter(Node):
     def _handshake(self):
         """Reads the server's modality keys and checks config against them before serving.
 
-        The keys are the model's, not ours, and they change with the checkpoint. Refusing here
-        with the actual key list is what makes a mismatch a five-minute fix instead of a silently
-        transposed joint vector.
+        The keys change with the checkpoint. Refusing with the actual key list turns a mismatch
+        into a config fix instead of a silently transposed joint vector.
         """
         try:
             self._client.call("ping")
@@ -236,9 +227,8 @@ class GrootAdapter(Node):
                 f"server modality '{modality}': {served[modality]} at {deltas[modality]}"
             )
 
-        # Observations are an obligation and actions are a menu: the model conditions on every
-        # state and video key it declares, so any one missing is a malformed request, while the
-        # action keys it offers include a mobile base and a waist this skill does not drive.
+        # The model conditions on every state and video key it declares, so each must be mapped.
+        # Action keys are optional: they include a base and a waist this skill does not drive.
         supplied = {
             _STATE: set(self._state_joints) | set(self._state_eef_frames),
             _VIDEO: set(self._video_topics),
@@ -354,9 +344,7 @@ class GrootAdapter(Node):
 
         chunk.joint_names = names
         elapsed = 0.0
-        # The first segment runs from where the arm is now, not from the chunk's own first point,
-        # and that is the one the gate times against the measured pose. Leaving it on the nominal
-        # spacing is what makes an otherwise legal chunk read as too fast.
+        # The gate times the first segment from the measured pose, so it is paced from there too.
         previous = [self._measured[joint] for joint in names]
         for positions in rows:
             elapsed += self._step_duration(positions, previous)
@@ -371,10 +359,8 @@ class GrootAdapter(Node):
     def _step_duration(self, positions, previous):
         """How long to allow for one waypoint: the model's spacing, or longer if it is too fast.
 
-        Stretching the whole chunk to fit its fastest segment slows the parts that were already
-        legal and pushes the policy further from the rate it was trained at. Timing each segment
-        on its own keeps the path exactly as predicted and only spends time where a joint would
-        otherwise be asked to outrun its limit.
+        Per segment rather than stretching the whole chunk, so the legal parts keep the rate the
+        policy was trained at.
         """
         if self._max_joint_speed <= 0.0:
             return self._action_dt_s
@@ -393,10 +379,11 @@ class GrootAdapter(Node):
                 self._instruction = request.instruction
                 self.get_logger().info(f"new episode: '{request.instruction}'")
 
-            # A request's "data" is the handler's keyword arguments, not the observation itself,
-            # and the reply is the policy's (action, info) pair, which msgpack delivers as a list.
+            # "data" holds the handler's keyword arguments, not the observation itself, and the
+            # reply is the policy's (action, info) pair, which msgpack delivers as a list.
             answer = self._client.call(
-                "get_action", {"observation": self._observation(request.instruction), "options": None}
+                "get_action",
+                {"observation": self._observation(request.instruction), "options": None},
             )
             response.chunk = self._chunk(answer[0] if isinstance(answer, list) else answer)
             response.ok = True

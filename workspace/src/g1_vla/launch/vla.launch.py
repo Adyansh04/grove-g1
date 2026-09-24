@@ -1,7 +1,7 @@
 """The grasp skill and the policy engine that feeds it.
 
-No simulator and no move_group: g1_bringup composes both alongside this. The engine is chosen
-here rather than in the server, which only ever sees one service.
+Needs move_group and the controllers already running; g1_bringup composes them. The engine is
+chosen here, so the server only ever sees one service.
 """
 
 import os
@@ -26,10 +26,9 @@ def _config(share, name):
 
 
 def _moveit_config():
-    """The server loads the robot model from its own parameters, for the groups and the hand
-    links it exempts; without them it builds against an empty model. joint_limits is this
-    package's own: the speed a policy chunk may ask for is not the speed a planned motion is
-    timed at."""
+    """Robot model for the server, which loads it from its own parameters for the groups and
+    hand links. joint_limits is this package's own: a policy chunk may move faster than a
+    planned motion is timed at."""
     return (
         MoveItConfigsBuilder("g1", package_name="g1_moveit_config")
         .robot_description(

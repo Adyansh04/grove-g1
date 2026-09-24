@@ -151,9 +151,8 @@ void G1VlaServer::initialize()
         controllers_.push_back(std::move(target));
     }
 
-    // The URDF's velocity limits are what the motor can do, not what the arm tracks: 22 to 37
-    // rad/s against the 1.0 MoveIt times trajectories against. Checking a chunk against the motor
-    // spec would pass everything, so the planning limits win wherever they exist.
+    // The URDF limits are the motor spec, far above what the arm tracks, so a chunk checked
+    // against them would pass anything. The planning limits win wherever they exist.
     std::vector<std::string> fell_back;
     for (const ControllerTarget& controller : controllers_)
     {
@@ -221,8 +220,8 @@ void G1VlaServer::initialize()
             }).detach();
         });
 
-    // The arm limit is logged because it is the one number that decides whether the velocity
-    // check means anything, and it has two very different plausible values.
+    // The arm limit decides whether the velocity check means anything, and a URDF fallback
+    // would put it an order of magnitude too high.
     RCLCPP_INFO(
         get_logger(),
         "grasp server ready in %s mode, engine at '%s', arm velocity limit %.2f rad/s",
@@ -411,9 +410,7 @@ std::string G1VlaServer::checkWaypoints(
         const auto response = future.get();
         if (!response->valid)
         {
-            // Naming the pair matters: "waypoint 3 is in collision" gives an operator nothing to
-            // act on, and the two likely causes, the scene and the robot itself, want opposite
-            // responses.
+            // Name the pair: a scene contact and a self-contact want opposite responses.
             const std::string what = response->contacts.empty() ?
                                          "" :
                                          " (" + response->contacts.front().contact_body_1 +
@@ -690,9 +687,8 @@ G1VlaServer::Outcome G1VlaServer::runGrasp(
         }
         consecutive_rejects = 0;
 
-        // Trajectory mode replaces the running plan mid-motion rather than waiting for it, so
-        // the arm never stands still on inference and the policy sees states it can still act
-        // on. Servo mode streams from this thread and stays serial.
+        // Trajectory mode replaces the running plan mid-motion, so the arm never stands still on
+        // inference. Servo mode streams from this thread and stays serial.
         const bool streaming = execution_mode_ != "servo";
         if (!executeChunk(*chunk, why, !streaming))
         {
@@ -789,8 +785,8 @@ void G1VlaServer::executeGrasp(const std::shared_ptr<GoalHandle>& goal_handle)
     const Outcome outcome = runGrasp(goal_handle, goal->arm, *start_z);
 
     result->success = outcome.success;
-    // Counters on every path, not just the happy one: how much of a policy's output survived the
-    // gate is the measurement this skill exists to produce.
+    // Counters on every path: how much policy output survived the gate is the measurement
+    // this skill exists to produce.
     result->message = outcome.message + " [" + std::to_string(outcome.executed) + " executed, " +
                       std::to_string(outcome.rejected) + " rejected]";
     if (outcome.success)
