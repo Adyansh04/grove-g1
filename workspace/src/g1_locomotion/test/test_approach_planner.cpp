@@ -1,10 +1,7 @@
 /**
  * @file test_approach_planner.cpp
- * @brief The control law that walks the base into arm's reach.
- *
- * Worth testing away from a simulator because a live run exercises one trajectory, while the
- * properties that matter are the ones a good run never touches: the deadband floor that makes
- * the law converge at all, the overshoot that is recoverable, and the one that is not.
+ * @brief The control law that walks the base into arm's reach, including the cases a good live
+ *        run never exercises.
  */
 
 #include <gmock/gmock.h>
@@ -44,10 +41,7 @@ TEST(ApproachPlanner, ObjectInTheWindowIsArrivedAndCommandsNothing)
 
 TEST(ApproachPlanner, AnErrorJustOutsideTheWindowStillClearsTheGaitDeadband)
 {
-    // The property the whole law rests on. 0.001 m past the tolerance is a 0.111 m error, and a
-    // plain proportional term would ask for 0.111 m/s, which this gait ignores entirely
-    // (measured 0.016 m/s delivered for a commanded 0.10). Without the floor the approach
-    // stalls a centimetre outside the window and burns its whole timeout there.
+    // Just outside the window a plain P term asks for a speed inside the gait's deadband.
     auto       limits = defaults();
     const auto command =
         plan(limits.target_x_m + limits.forward_tolerance_m + 0.001, -0.220, limits);
@@ -58,8 +52,7 @@ TEST(ApproachPlanner, AnErrorJustOutsideTheWindowStillClearsTheGaitDeadband)
 
 TEST(ApproachPlanner, ASmallLateralErrorClearsTheLateralFloorWhichIsHigher)
 {
-    // Lateral's floor sits above forward's because the gait tracks it worse: 0.20 commanded
-    // delivers only 0.083 m/s sideways, against 0.123 forward.
+    // Lateral's floor is higher: the gait tracks sideways worse.
     auto       limits = defaults();
     const auto command =
         plan(0.270, limits.target_y_m + limits.lateral_tolerance_m + 0.001, limits);
@@ -78,8 +71,7 @@ TEST(ApproachPlanner, ABigErrorIsCappedRatherThanScaledUp)
 
 TEST(ApproachPlanner, BothAxesAreDrivenAtOnce)
 {
-    // The old gait needed forward and lateral resolved one at a time. This one takes a velocity
-    // and returns a proportional fraction of it on every axis, so there is nothing to sequence.
+    // Every axis is driven in the same tick; nothing is sequenced.
     const auto command = plan(0.600, 0.100, defaults());
     EXPECT_GT(command.vx_mps, 0.0);
     EXPECT_GT(command.vy_mps, 0.0);
@@ -87,8 +79,7 @@ TEST(ApproachPlanner, BothAxesAreDrivenAtOnce)
 
 TEST(ApproachPlanner, VelocitiesPointAtTheError)
 {
-    // Sign errors here walk the robot away from the object, which reads as a stuck approach
-    // rather than as a wrong direction.
+    // A sign error walks the robot away, which looks like a stuck approach.
     const auto too_far  = plan(0.600, -0.220, defaults());
     const auto too_near = plan(0.150, -0.220, defaults());
     EXPECT_GT(too_far.vx_mps, 0.0);
@@ -134,8 +125,7 @@ TEST(ApproachPlanner, HeadingIsHeldWhileClosingButIsNotPartOfArriving)
 
 TEST(ApproachPlanner, SmallHeadingErrorsAreLeftAloneRatherThanFloored)
 {
-    // Yaw has no deadband and tracks near 1:1, so it needs no floor, and flooring it would
-    // swing the robot past square for a couple of degrees of error.
+    // Yaw has no deadband, so small corrections are not floored.
     const auto limits = defaults();
     const auto command =
         planApproach(0.600, -0.220, limits.heading_tolerance_rad - 0.01, limits, gait());
@@ -180,8 +170,7 @@ TEST(ApproachPlanner, UnusableGaitLimitsAreRefusedRatherThanCommanded)
 {
     EXPECT_TRUE(gaitLimitsAreUsable(gait()));
 
-    // A floor above its ceiling clamps every command to the floor, so the robot would drive at
-    // the deadband speed no matter how close it got.
+    // A floor above its ceiling would drive at that speed however close the robot got.
     auto inverted            = gait();
     inverted.min_speed_x_mps = 0.9;
     inverted.max_speed_x_mps = 0.4;

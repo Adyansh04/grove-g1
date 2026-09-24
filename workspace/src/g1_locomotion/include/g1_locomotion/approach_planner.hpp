@@ -6,24 +6,9 @@
  * @brief Where a measured object has to end up for the arm to reach it, and how fast to walk
  *        there.
  *
- * Separated from the node so the control law is assertable without a simulator, a gait, or a
- * graph.
- *
- * The gait takes a velocity and returns a proportional fraction of it, with one property that
- * shapes everything here: a deadband on both linear axes. Commanded 0.10 m/s the robot does not
- * move at all, measured 0.016 forward and 0.007 lateral, and from about 0.20 upward it
- * tracks at 70-80 % of command. So the law is **proportional with a floor**, not plain
- * proportional: a pure P term near the target asks for a speed the robot ignores, and the
- * approach stalls a few centimetres short of the window. Yaw has no deadband and tracks near
- * 1:1, so it gets no floor. The measurements are in the package README.
- *
- * All three axes are driven at once, which is why there is no move sequencing here at all: the
- * skill is one closed loop, not a plan of primitives.
- *
- * Heading is not part of arriving. Reachability is judged in the base frame, by where the object
- * sits relative to the robot, and which way the room faces is not part of that. The heading
- * term only keeps the robot square to the surface while it closes, and it is zeroed the moment
- * both linear axes are inside their tolerances.
+ * Proportional with a floor on the linear axes, because the gait ignores speeds inside its
+ * deadband; yaw has none. All three axes run at once in one closed loop. Arrival is judged on the
+ * linear axes only: heading just keeps the robot square to the surface while it closes.
  */
 
 #include <cstdint>
@@ -46,41 +31,37 @@ enum class ApproachState : std::uint8_t
  */
 struct ApproachLimits
 {
-    /// MEASURED with /compute_ik at the workbench block's height: x 0.16 to 0.36 all solve,
-    /// 0.38 does not. target_y_m mirrors for the left arm, exactly as the grasp offset does.
+    /// Where the arm reaches, from IK at the workbench's height. target_y_m mirrors for the left
+    /// arm.
     double target_x_m = 0.270;
     double target_y_m = -0.220;
 
-    /// How close each axis has to get. Tighter than the band the arm grants (+/-0.11 forward),
-    /// because the loop can hold it: measured coast after the command stops is 0.025-0.037 m.
+    /// How close each axis has to get; the robot coasts 25 to 37 mm after the command stops.
     double forward_tolerance_m = 0.050;
     double lateral_tolerance_m = 0.040;
 
-    /// Nearer than this and the object is genuinely under the robot. Everything above it is
-    /// recovered by reversing, so keep it well below the band's near end.
+    /// Nearer than this the object is under the robot and no walk recovers it.
     double min_forward_m = 0.050;
 
-    /// Loose on purpose: this only decides how square the robot stands to the surface while it
-    /// closes, and holding it tightly buys nothing.
+    /// Loose on purpose: it only keeps the robot roughly square to the surface.
     double heading_tolerance_rad = 0.350;
 };
 
 /**
- * @brief What the gait will actually honour. Every number here is measured, not chosen.
+ * @brief The velocity range the gait actually honours.
  */
 struct GaitLimits
 {
-    /// Floors, not minimum-useful speeds: below these the gait delivers nothing at all.
+    /// Below these the gait does not move at all.
     double min_speed_x_mps = 0.20;
     double min_speed_y_mps = 0.25;
 
-    /// Ceilings. Well inside what the policy tracks, because this skill works next to furniture.
+    /// Well inside what the policy tracks, since this runs next to furniture.
     double max_speed_x_mps  = 0.40;
     double max_speed_y_mps  = 0.35;
     double max_yaw_rate_rps = 0.60;
 
-    /// Proportional gains. 1.0 means "one metre of error asks for one metre per second", which
-    /// the clamps then bring into the honoured range.
+    /// Proportional gains, before the floors and ceilings clamp them.
     double speed_per_m      = 1.0;
     double yaw_rate_per_rad = 1.0;
 };
