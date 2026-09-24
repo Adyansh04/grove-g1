@@ -3,14 +3,10 @@
 
 /**
  * @file g1_object_pose_source_node.hpp
- * @brief Publishes the poses of manipulable objects, and owns where they are allowed to come
- *        from.
+ * @brief Publishes the poses of manipulable objects, and owns where they may come from.
  *
- * The boundary between manipulation and perception: skills consume `/objects` and never learn
- * which source filled it.
- *
- * `hardware` is the default and refuses to configure, as in g1_state_estimation's odometry
- * publisher: a bring-up that forgets to name its source must fail visibly.
+ * Skills consume `/objects` and never learn which source filled it. The default source,
+ * `hardware`, refuses to configure, so a bring-up that names none fails visibly.
  */
 
 #include <tf2_ros/buffer.h>
@@ -27,15 +23,15 @@ namespace g1_manipulation
 {
 
 /**
- * @brief Where object poses come from. There is no "best available" fallback on purpose.
+ * @brief Where object poses come from. Deliberately no "best available" fallback.
  */
 enum class ObjectSource
 {
-    /// MuJoCo body poses, sampled inside the simulator and carried by g1_sensor_relay.
+    /// MuJoCo body poses, carried out of the simulator by g1_sensor_relay.
     kSimGroundTruth,
     /// Measured by g1_perception from the camera, in simulation or on the robot.
     kPerception,
-    /// Not implemented. Refuses to configure; see the node's on_configure.
+    /// Not implemented; refuses to configure.
     kHardware,
 };
 
@@ -51,8 +47,8 @@ bool parseObjectSource(const std::string& name, ObjectSource& out);
 /**
  * @brief Whether @p id is the bare-phrase alias of a tracked id in @p objects.
  *
- * Perception publishes a sole track twice, as `red_block_0` and as `red_block`, so a tree can name
- * it either way; drawn both times, the two labels stack into one unreadable one.
+ * Perception publishes a sole track twice, as `red_block_0` and as `red_block`; drawn both times,
+ * the two labels stack into one unreadable one.
  */
 [[nodiscard]] bool
 isBarePhraseAlias(const std::string& id, const vision_msgs::msg::Detection3DArray& objects);
@@ -77,14 +73,16 @@ private:
     bool         publish_markers_{ false };
     std::string  source_frame_id_;
     std::string  output_frame_id_;
+    /// Wait for a transform at the detection's stamp. Must cover the gap between odom updates: a
+    /// stamp newer than the last odom resolves only when the next one arrives.
+    double transform_timeout_s_{ 0.5 };
 
     std::unique_ptr<tf2_ros::Buffer>            tf_buffer_;
     std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
 
     rclcpp::Subscription<vision_msgs::msg::Detection3DArray>::SharedPtr source_sub_;
     rclcpp_lifecycle::LifecyclePublisher<vision_msgs::msg::Detection3DArray>::SharedPtr objects_pub_;
-    /// Only created when publish_markers is set: an rviz aid, not part of the interface, and
-    /// nothing should grow a dependency on it.
+    /// Null unless publish_markers is set: an RViz aid, not part of the interface.
     rclcpp_lifecycle::LifecyclePublisher<visualization_msgs::msg::MarkerArray>::SharedPtr
         markers_pub_;
 };

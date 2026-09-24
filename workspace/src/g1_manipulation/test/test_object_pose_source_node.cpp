@@ -2,8 +2,7 @@
  * @file test_object_pose_source_node.cpp
  * @brief In-process lifecycle tests for the object-pose source.
  *
- * Runs on an isolated ROS_DOMAIN_ID so a running simulator on the default domain cannot feed
- * it real data, same pattern as g1_state_estimation's test_odometry_publisher_node.
+ * On an isolated ROS_DOMAIN_ID, so a simulator running on the default domain cannot feed it.
  */
 
 #include <gmock/gmock.h>
@@ -37,8 +36,7 @@ rclcpp::NodeOptions optionsWithSource(const std::string& source)
     return options;
 }
 
-/// Source and output deliberately different, which is the real configuration: a detector
-/// measures in a camera frame and /objects is published in a fixed one.
+/// Distinct source and output frames, as deployed: a detector measures in a camera frame.
 rclcpp::NodeOptions optionsWithFrames(const std::string& source, const std::string& output)
 {
     rclcpp::NodeOptions options;
@@ -89,7 +87,7 @@ vision_msgs::msg::Detection3DArray makeGroundTruth(
     return msg;
 }
 
-/// Drives one activated node against a publisher on its source topic and captures /objects.
+/// Drives one node against a publisher on its source topic and captures /objects.
 class Harness
 {
 public:
@@ -111,8 +109,7 @@ public:
 
     void publishAndSpin(const vision_msgs::msg::Detection3DArray& msg)
     {
-        // Discovery first: a publish into an undiscovered subscription is simply lost, and the
-        // test would read as a node that dropped the message.
+        // Discovery first: a publish before the subscription is discovered is lost.
         spinFor({ node_->get_node_base_interface(), peer_->get_node_base_interface() }, 300ms);
         source_pub_->publish(msg);
         spinFor({ node_->get_node_base_interface(), peer_->get_node_base_interface() }, 300ms);
@@ -143,8 +140,8 @@ staticTf(const std::string& parent, const std::string& child, double x, double y
     tf.transform.translation.z = z;
     tf.transform.rotation.w    = 1.0;
     caster->sendTransform(tf);
-    // Held alive by the returned node, which owns the latched publisher.
     node->set_parameter(rclcpp::Parameter("use_sim_time", false));
+    // The latched publisher lives in the broadcaster, so it is kept for the whole run.
     static std::vector<std::shared_ptr<tf2_ros::StaticTransformBroadcaster>> keep;
     keep.push_back(caster);
     return node;
@@ -152,9 +149,7 @@ staticTf(const std::string& parent, const std::string& child, double x, double y
 
 }  // namespace
 
-// Transform, not relabel: rewriting only the frame label while leaving the numbers alone is
-// correct only while the two frames coincide, and they stop coinciding the moment odometry is
-// an estimate. A relabel-only bug would leave x at 1.0 here.
+// A relabel that left the numbers alone would leave x at 1.0.
 TEST(ObjectPoseSource, TransformsThePoseRatherThanRelabellingTheFrame)
 {
     auto    tf_node = staticTf("odom", "camera_color_optical_frame", 2.0, -3.0, 0.5);
@@ -174,15 +169,12 @@ TEST(ObjectPoseSource, TransformsThePoseRatherThanRelabellingTheFrame)
     EXPECT_NEAR(pose.position.x, 3.0, 1e-6);
     EXPECT_NEAR(pose.position.y, -2.5, 1e-6);
     EXPECT_NEAR(pose.position.z, 0.75, 1e-6);
-    // The bbox carries the pose too, and a consumer that reads it instead of the hypothesis
-    // would otherwise get an untransformed one.
+    // The bbox centre is transformed too, not only the hypothesis.
     EXPECT_NEAR(out.detections[0].bbox.center.position.x, 3.0, 1e-6);
 }
 
-// No transform published for this frame, so there is nothing to place the object with.
-// Publishing it anyway, in whatever frame, would put an object somewhere no one measured.
-// A frame name no other test broadcasts: static transforms are transient local and outlive
-// the test that sent them, so reusing the camera frame here would find the earlier one.
+// A frame no test broadcasts: static transforms are transient local and outlive the test that
+// sent them.
 TEST(ObjectPoseSource, PublishesNothingWhenTheTransformIsMissing)
 {
     Harness harness{ optionsWithFrames("unbroadcast_sensor_frame", "odom") };
@@ -229,8 +221,7 @@ TEST(ObjectMarkers, SkipsOnlyTheBarePhraseAliasOfATrack)
 
 TEST(ObjectPoseSource, RefusesToConfigureOnHardware)
 {
-    // A hardware bring-up that reaches this must fail loudly rather than publish simulator
-    // ground truth a grasp planner cannot tell apart from a measurement.
+    // Fails loudly rather than hand a planner simulator truth it cannot tell from a measurement.
     auto node = std::make_shared<G1ObjectPoseSource>(optionsWithSource("hardware"));
     EXPECT_EQ(node->configure().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_UNCONFIGURED);
 }
@@ -260,8 +251,7 @@ TEST(ObjectPoseSource, RepublishesGroundTruthInTheOutputFrame)
     const auto& out = *harness.last();
     EXPECT_EQ(out.header.frame_id, "odom");
     ASSERT_EQ(out.detections.size(), 1U);
-    // The per-detection header is relabelled too: a consumer that reads that one instead of
-    // the array's would otherwise be told the pose is in a frame that is not in the TF tree.
+    // The per-detection header is relabelled too, not only the array's.
     EXPECT_EQ(out.detections[0].header.frame_id, "odom");
     ASSERT_EQ(out.detections[0].results.size(), 1U);
     EXPECT_EQ(out.detections[0].results[0].hypothesis.class_id, "red_block");
@@ -271,8 +261,7 @@ TEST(ObjectPoseSource, RepublishesGroundTruthInTheOutputFrame)
 
 TEST(ObjectPoseSource, CarriesTheSourceStampRatherThanRestampingIt)
 {
-    // Restamping would launder a stale pose as a fresh one, and freshness is exactly what a
-    // skill checks before committing an arm to a grasp.
+    // A restamp would pass a stale pose as fresh, and skills gate a grasp on freshness.
     Harness harness{ optionsWithSource("sim_ground_truth") };
     ASSERT_EQ(harness.configure(), lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
     ASSERT_EQ(harness.activate(), lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE);
@@ -280,17 +269,15 @@ TEST(ObjectPoseSource, CarriesTheSourceStampRatherThanRestampingIt)
     harness.publishAndSpin(makeGroundTruth("odom", "red_block", 1.0, 2.0, 0.75));
 
     ASSERT_TRUE(harness.last().has_value());
-    // Compared field by field rather than as rclcpp::Time: a stamp that has been through a
-    // message carries RCL_ROS_TIME, the literal would be RCL_SYSTEM_TIME, and rclcpp throws
-    // on comparing the two rather than answering.
+    // Field by field: rclcpp::Time throws comparing the message's RCL_ROS_TIME with a
+    // RCL_SYSTEM_TIME literal.
     EXPECT_EQ(harness.last()->header.stamp.sec, 123);
     EXPECT_EQ(harness.last()->header.stamp.nanosec, 456U);
 }
 
 TEST(ObjectPoseSource, DropsPosesStampedWithAFrameItWasNotConfiguredFor)
 {
-    // This node verifies the frame rather than transforming it, so a sample from anywhere
-    // else is dropped. Accepting it would place objects wherever the robot is standing.
+    // optionsWithSource keeps the default source frame, odom, so a camera-frame sample is foreign.
     Harness harness{ optionsWithSource("sim_ground_truth") };
     ASSERT_EQ(harness.configure(), lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
     ASSERT_EQ(harness.activate(), lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE);
@@ -313,8 +300,7 @@ TEST(ObjectPoseSource, StaysQuietUntilActivated)
 
 int main(int argc, char** argv)
 {
-    // Isolated domain: a running sim on the default domain must not be able to feed this.
-    // Before any node or thread exists, so the thread-safety this warns about does not apply.
+    // Set before any thread exists, so setenv's thread-safety warning does not apply.
     // NOLINTNEXTLINE(concurrency-mt-unsafe)
     setenv("ROS_DOMAIN_ID", "78", 1);
     ::testing::InitGoogleMock(&argc, argv);

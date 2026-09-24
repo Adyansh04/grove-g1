@@ -19,15 +19,13 @@ namespace g1_manipulation
 namespace
 {
 
-// Best-effort in, matching g1_sensor_relay's sensor QoS: a reliable subscriber against a
-// best-effort publisher simply receives nothing, which is the usual reason a topic looks dead.
+// Best effort to match g1_sensor_relay: a reliable reader never matches a best-effort writer.
 rclcpp::QoS sourceQos()
 {
     return rclcpp::QoS(rclcpp::KeepLast(1)).best_effort().durability_volatile();
 }
 
-// Reliable out, deliberately unlike the input. This is not a sensor stream a consumer samples;
-// it is what a skill decides a grasp from at 10 Hz, and a dropped message costs a failed pick.
+// Reliable, unlike the input: skills decide grasps from this, and a dropped message costs a pick.
 rclcpp::QoS outputQos()
 {
     return rclcpp::QoS(rclcpp::KeepLast(1)).reliable().durability_volatile();
@@ -77,6 +75,7 @@ G1ObjectPoseSource::G1ObjectPoseSource(const rclcpp::NodeOptions& options)
     declare_parameter<std::string>("source_frame_id", "odom");
     declare_parameter<std::string>("output_frame_id", "odom");
     declare_parameter<bool>("publish_markers", true);
+    declare_parameter<double>("transform_timeout_s", 0.5);
 }
 
 bool G1ObjectPoseSource::readParameters()
@@ -94,8 +93,7 @@ bool G1ObjectPoseSource::readParameters()
 
     if (source_ == ObjectSource::kHardware)
     {
-        // Long on purpose: publishing nothing quietly would read as a broken topic, not as a
-        // source that does not exist.
+        // Verbose on purpose: silence would read as a broken topic, not a missing source.
         RCLCPP_ERROR(
             get_logger(),
             "object_source='hardware' is not implemented: this robot has no detector of its "
@@ -106,9 +104,10 @@ bool G1ObjectPoseSource::readParameters()
         return false;
     }
 
-    source_frame_id_ = get_parameter("source_frame_id").as_string();
-    output_frame_id_ = get_parameter("output_frame_id").as_string();
-    publish_markers_ = get_parameter("publish_markers").as_bool();
+    source_frame_id_     = get_parameter("source_frame_id").as_string();
+    output_frame_id_     = get_parameter("output_frame_id").as_string();
+    publish_markers_     = get_parameter("publish_markers").as_bool();
+    transform_timeout_s_ = get_parameter("transform_timeout_s").as_double();
     if (source_frame_id_.empty() || output_frame_id_.empty())
     {
         RCLCPP_ERROR(get_logger(), "source_frame_id and output_frame_id must be non-empty");
@@ -119,8 +118,7 @@ bool G1ObjectPoseSource::readParameters()
 
 G1ObjectPoseSource::CallbackReturn G1ObjectPoseSource::on_configure(const rclcpp_lifecycle::State&)
 {
-    // Nothing is created before this returns true, so an unimplemented source leaves no
-    // publisher behind for a consumer to wait on forever.
+    // Before anything is created, so a refused source leaves no publisher to wait on forever.
     if (!readParameters())
     {
         return CallbackReturn::FAILURE;
@@ -132,8 +130,7 @@ G1ObjectPoseSource::CallbackReturn G1ObjectPoseSource::on_configure(const rclcpp
     objects_pub_ = create_publisher<vision_msgs::msg::Detection3DArray>("~/objects", outputQos());
     if (publish_markers_)
     {
-        // Transient local so rviz shows the markers when it connects late, which is the usual
-        // way of looking at them.
+        // Transient local, so an RViz started later still gets the last markers.
         markers_pub_ = create_publisher<visualization_msgs::msg::MarkerArray>(
             "~/object_markers",
             rclcpp::QoS(rclcpp::KeepLast(1)).reliable().transient_local());
@@ -168,12 +165,11 @@ G1ObjectPoseSource::CallbackReturn G1ObjectPoseSource::on_cleanup(const rclcpp_l
     return CallbackReturn::SUCCESS;
 }
 
-// A box at each object's pose and a label above it, drawn from the SAME message /objects
-// carries, so what rviz shows is what a skill acts on rather than a second computation of it.
+// Drawn from the message /objects carries, so RViz shows exactly what a skill acts on.
 void G1ObjectPoseSource::publishMarkers(const vision_msgs::msg::Detection3DArray& objects)
 {
     auto markers = std::make_unique<visualization_msgs::msg::MarkerArray>();
-    // Rebuilt every message, so a vanished object must not leave its marker on screen.
+    // Rebuilt every message, so a vanished object must not leave its marker behind.
     visualization_msgs::msg::Marker clear;
     clear.action = visualization_msgs::msg::Marker::DELETEALL;
     markers->markers.reserve(1 + 2 * objects.detections.size());
@@ -214,8 +210,7 @@ void G1ObjectPoseSource::publishMarkers(const vision_msgs::msg::Detection3DArray
     markers_pub_->publish(std::move(markers));
 }
 
-// By value, not const-ref: this mutates the message in place, and rclcpp has no const-ref
-// dispatch for a mutable pointee.
+// By value: the message is mutated in place, and rclcpp has no const-ref dispatch for that.
 // NOLINTNEXTLINE(performance-unnecessary-value-param)
 void G1ObjectPoseSource::onObjectPoses(vision_msgs::msg::Detection3DArray::SharedPtr msg)
 {
@@ -223,9 +218,7 @@ void G1ObjectPoseSource::onObjectPoses(vision_msgs::msg::Detection3DArray::Share
     {
         return;
     }
-    // The detector reports from the frame it measured in, which rides on the robot. Rewriting
-    // that label to a fixed frame is only correct while the two coincide, and they stop
-    // coinciding the moment odom is an estimate rather than ground truth.
+    // Only the configured frame: a sample stamped otherwise means the source is miswired.
     if (msg->header.frame_id != source_frame_id_)
     {
         RCLCPP_WARN_THROTTLE(
@@ -241,14 +234,13 @@ void G1ObjectPoseSource::onObjectPoses(vision_msgs::msg::Detection3DArray::Share
     geometry_msgs::msg::TransformStamped source_to_output;
     try
     {
-        // At the message's own stamp, not the latest: the pose was measured when the camera
-        // was somewhere specific, and composing it with a newer transform moves the object by
-        // however far the robot walked in between.
+        // At the capture stamp, not the latest: a newer transform moves the object by however
+        // far the robot walked since.
         source_to_output = tf_buffer_->lookupTransform(
             output_frame_id_,
             msg->header.frame_id,
             msg->header.stamp,
-            tf2::durationFromSec(0.2));
+            tf2::durationFromSec(transform_timeout_s_));
     }
     catch (const tf2::TransformException& ex)
     {
@@ -262,11 +254,8 @@ void G1ObjectPoseSource::onObjectPoses(vision_msgs::msg::Detection3DArray::Share
         return;
     }
 
-    // Mutated in place and moved out rather than copied: the array carries a vector of
-    // detections, each with its own vector of hypotheses and strings. Safe because this
-    // subscription is inter-process, so the callback owns the only reference: if this node is
-    // ever composed with intra-process comms on, the message becomes shared and this must go
-    // back to a copy.
+    // Mutated and moved out: inter-process, so the callback owns the only reference. Composed
+    // with intra-process comms, this must become a copy.
     vision_msgs::msg::Detection3DArray& out = *msg;
     out.header.frame_id                     = output_frame_id_;
     for (vision_msgs::msg::Detection3D& detection : out.detections)
@@ -279,9 +268,8 @@ void G1ObjectPoseSource::onObjectPoses(vision_msgs::msg::Detection3DArray::Share
         }
     }
 
-    // The stamp is carried through rather than refreshed. Restamping here would launder a
-    // stale pose as a fresh one, and consumers judge freshness for themselves: only the skill
-    // about to grasp knows how old is too old.
+    // The capture stamp is kept: consumers judge freshness, and a restamp would pass a stale pose
+    // as fresh.
     if (markers_pub_ && markers_pub_->is_activated())
     {
         publishMarkers(out);

@@ -1,14 +1,10 @@
 # The object-pose source, loaded by g1_manipulation/launch/manipulation.launch.py.
-#
-# SIMULATION ONLY as configured. See g1_manipulation/README.md.
 g1_object_pose_source:
   ros__parameters:
-    # `object_source` and `publish_markers` are launch arguments, not keys here: a node-named key
-    # beats the launch override file, so a key here would pin them. The source defaults to
-    # "hardware", which refuses to configure, so a bring-up that sets neither fails visibly.
+    # object_source and publish_markers are launch arguments only: a node-named key here would
+    # beat the launch override and pin them.
 
-    # In, the frame the detector measures from; out, the frame /objects is published in. In has to
-    # be measured rather than fixed: an object announced in odom is only right while odom IS the
-    # world. Out stays odom because MoveIt's collision objects need somewhere fixed to sit.
+    # In: the frame the detector measures in, which rides on the robot. Out: fixed, so MoveIt's
+    # collision objects do not move with the robot.
     source_frame_id: "camera_color_optical_frame"
     output_frame_id: "odom"
