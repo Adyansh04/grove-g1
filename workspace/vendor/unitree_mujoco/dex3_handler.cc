@@ -21,16 +21,14 @@ namespace
 
 constexpr std::size_t kNumJoints = 7;
 
-// Dex3 wire order, identical for both hands. Looked up BY NAME, never by index: the joints
-// land contiguously in the current model, but Unitree's own tooling has a right-hand enum
-// that lists index before middle, and one reordered MJCF would close the wrong fingers.
+// Dex3 wire order, identical for both hands. Resolved by name, never by index: a reordered MJCF
+// would otherwise close the wrong fingers.
 constexpr std::array<const char*, kNumJoints> kJointSuffixes = {
     "thumb_0", "thumb_1", "thumb_2", "middle_0", "middle_1", "index_0", "index_1",
 };
 
-// Peak motor torque per joint, from the URDF's effort limits. Without this the simulated
-// finger is roughly three times stronger than the real one at full PD error, which would let
-// sim show grasps the robot cannot reproduce.
+// Peak torque per joint, N m, from the URDF's effort limits, so a simulated finger is no stronger
+// than the real one.
 constexpr std::array<double, kNumJoints> kEffortLimit = {
     2.45, 1.4, 1.4, 1.4, 1.4, 1.4, 1.4,
 };
@@ -39,9 +37,8 @@ constexpr int    kControlRateHz  = 1000;  // matches the SDK bridge's own tick
 constexpr int    kStatePublishHz = 100;   // real rate is undocumented; matches the cmd rate
 constexpr double kCommandTimeoutS = 1.0;  // Unitree's own timeout bit means ~1 s
 
-// Lock means "motor held", not "motor off". Undriven fingers therefore hold station instead
-// of hanging, which is what the hardware does and, more to the point, what MoveIt reads as
-// the start state. These are the hand's own nominal gains.
+// Lock means "motor held", not "motor off": undriven fingers hold station as on hardware, which is
+// also what MoveIt reads as the start state. The hand's own nominal gains.
 constexpr double kHoldKp = 1.5;
 constexpr double kHoldKd = 0.2;
 
@@ -91,9 +88,8 @@ struct State
 
 State& state()
 {
-    // Deliberately leaked, for the same reason sensor_publisher leaks its own: the physics
-    // thread ends in exit(0), which runs static destructors while this thread may still be
-    // alive, and destroying a joinable std::thread calls std::terminate.
+    // Leaked on purpose: the physics thread ends in exit(0), and a static destructor
+    // destroying this still-joinable std::thread would call std::terminate.
     static State* s = new State();
     return *s;
 }
@@ -138,9 +134,8 @@ void openChannels(Hand& hand)
         new unitree::robot::ChannelPublisher<HandState>("rt/dex3/" + hand.side + "/state"));
     hand.pub->InitChannel();
     hand.state.motor_state().resize(kNumJoints);
-    // press_sensor_state stays EMPTY on purpose. The hand has 9 tactile sensors we do not
-    // simulate, and an empty sequence reads as "no data" where nine zeroed sensors would read
-    // as "nothing is touching the fingers", which is a different and wrong claim.
+    // press_sensor_state stays empty: the tactile sensors are not simulated, and zeros would
+    // claim nothing is touching the fingers.
 }
 
 // Runs the PD the real finger motor runs, into the generalized-force channel rather than an
@@ -193,8 +188,7 @@ void publishState(const mjData* data, Hand& hand)
         auto& motor = hand.state.motor_state()[i];
         motor.q()   = static_cast<float>(data->qpos[hand.qpos_adr[i]]);
         motor.dq()  = static_cast<float>(data->qvel[hand.dof_adr[i]]);
-        // The applied torque IS what the motor produced here, so this is the real tau_est
-        // rather than a stand-in.
+        // The applied torque is exactly what the simulated motor produced.
         motor.tau_est() = static_cast<float>(data->qfrc_applied[hand.dof_adr[i]]);
         motor.mode()    = packMode(i, hand.driven[i] ? kStatusFoc : kStatusLock);
     }
@@ -240,9 +234,8 @@ void run(mjModel** model, mjData** data)
 
     while (s.running)
     {
-        // Raw mjData access without sim.mtx, exactly as the vendored SDK bridge does for
-        // ctrl[] and sensordata[]. Taking the lock at 1 kHz would contend with physics for
-        // no benefit: these are independent doubles and a torn read costs one stale tick.
+        // No sim.mtx, as in the SDK bridge: these are independent doubles, a torn read costs
+        // one stale tick, and a 1 kHz lock would contend with physics.
         mjModel* m = *model;
         mjData*  d = *data;
         if (m != nullptr && d != nullptr)
@@ -264,8 +257,7 @@ void run(mjModel** model, mjData** data)
         std::this_thread::sleep_until(next);
     }
 
-    // qfrc_applied is not cleared between steps, so a torque left behind here would be
-    // integrated forever.
+    // qfrc_applied persists between steps, so a torque left here would act forever.
     if (*data != nullptr)
     {
         for (const auto& hand : s.hands)

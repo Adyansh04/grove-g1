@@ -9,11 +9,9 @@ namespace grove_g1
 /**
  * @brief Spawns the joints a scene declares a `startup_hold_<joint>` equality for at that angle.
  *
- * Called once per model load, on the physics thread, before the first step. Without it the
- * equalities have to drag the arms out of the pose the URDF zero leaves them in, which since the
- * fingers gained contact geometry means dragging a hand out through whatever it spawned inside.
- * Applying the angle first leaves the equality satisfied at t=0: nothing swings, and the
- * constraint still holds the pose against gravity until patch 007 hands it to the motors.
+ * Called once per model load, on the physics thread, before the first step, so the equality is
+ * satisfied at t=0 instead of dragging a hand out through whatever it spawned inside. The
+ * equality still holds the pose until patch 007 hands it to the motors.
  */
 void ApplyStartupPose(const mjModel* model, mjData* data);
 
