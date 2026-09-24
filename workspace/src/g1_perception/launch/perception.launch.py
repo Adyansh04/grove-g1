@@ -1,8 +1,7 @@
 """Runs a detector and the node that turns its masks into object poses.
 
-Two detectors serve the same instance-mask topic and the geometry node cannot tell them apart:
-`mock` cuts masks from simulator ground truth and needs no GPU, `vision` asks the host vision
-server. Which one runs is an argument, exactly as the learned-grasp engines are.
+`mock` cuts masks from simulator ground truth and needs no GPU; `vision` asks the host vision
+server. Both publish the same mask topic, so the geometry node cannot tell them apart.
 """
 
 import os
@@ -16,8 +15,6 @@ from launch_ros.actions import Node
 
 SHARE = get_package_share_directory("g1_perception")
 
-# Both detectors publish here and the geometry node subscribes here, so swapping one for the
-# other changes no other file.
 MASK_TOPIC = "/g1_perception/instance_masks"
 COLOR_IMAGE = "/camera/color/image_raw"
 COLOR_INFO = "/camera/color/camera_info"
@@ -26,7 +23,7 @@ DEPTH_INFO = "/camera/aligned_depth_to_color/camera_info"
 GROUND_TRUTH = "/g1_sensor_relay/object_poses"
 TRACKED_MASKS = "/g1_object_geometry/tracked_masks"
 OBJECT_POSES = "/g1_object_geometry/object_poses"
-# One service name whichever generator answers it, so a caller is written once.
+# The same name whichever generator answers.
 GRASP_SERVICE = "/g1_grasp_engine/generate_grasps"
 
 
@@ -35,8 +32,7 @@ def _config(name):
 
 
 def _nodes(context, *args, **kwargs):
-    # A comma separated argument rather than a list: launch arguments are strings, and the one
-    # place that owns what the robot is looking for should be the command line, not a file.
+    # Comma separated, since launch arguments are strings.
     phrases = [
         phrase.strip()
         for phrase in LaunchConfiguration("phrases").perform(context).split(",")
@@ -47,7 +43,8 @@ def _nodes(context, *args, **kwargs):
     mock = Node(
         package="g1_perception",
         executable="g1_mock_detector",
-        name="g1_mock_detector",
+        # The real detector's name, since only one runs: trees write `phrases` on g1_detector.
+        name="g1_detector",
         output="screen",
         condition=IfCondition(EqualsSubstitution(detector, "mock")),
         parameters=[

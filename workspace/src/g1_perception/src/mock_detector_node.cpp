@@ -1,3 +1,8 @@
+/**
+ * @file mock_detector_node.cpp
+ * @brief Cuts instance masks from simulator ground truth against the rendered depth.
+ */
+
 #include "g1_perception/mock_detector_node.hpp"
 
 #include <algorithm>
@@ -42,16 +47,13 @@ constexpr double kDepthHistoryHeadroomS = 2.0;
 
 G1MockDetector::G1MockDetector(const rclcpp::NodeOptions& options)
   : rclcpp::Node("g1_mock_detector", options)
-  // Derived from the latency, not configured beside it: a shorter window silently hands out the
-  // oldest frame held instead of the one asked for.
+  // Sized from the latency: a shorter window would silently hand out the oldest frame instead.
   , depth_frames_(
         declare_parameter<double>("mock_latency_s", 0.0) + kDepthHistoryHeadroomS,
         /*tolerance_s=*/0.0)
 {
-    phrases_   = declare_parameter<std::vector<std::string>>("phrases", std::vector<std::string>{});
-    latency_s_ = get_parameter("mock_latency_s").as_double();
-    // Slack on the box test below. Zero keeps only the pixels rounding pushed inward; past a few
-    // millimetres it becomes a deliberately sloppy segmenter.
+    declare_parameter<std::vector<std::string>>("phrases", std::vector<std::string>{});
+    latency_s_           = get_parameter("mock_latency_s").as_double();
     margin_m_            = declare_parameter<double>("mock_margin_m", 0.005);
     min_pixels_          = static_cast<int>(declare_parameter<int>("min_pixels", 50));
     const double rate_hz = declare_parameter<double>("mock_rate_hz", 10.0);
@@ -67,8 +69,8 @@ G1MockDetector::G1MockDetector(const rclcpp::NodeOptions& options)
         "depth/image_raw",
         sensorQos(),
         [this](sensor_msgs::msg::Image::ConstSharedPtr depth) { onDepth(std::move(depth)); });
-    // The colour camera_info: its frame is what the real detector stamps masks with, and the two
-    // optical frames are coincident in the URDF.
+    // Colour camera_info, whose frame the real detector stamps masks with; the depth optical
+    // frame coincides with it in the URDF.
     info_sub_ = create_subscription<sensor_msgs::msg::CameraInfo>(
         "camera_info",
         sensorQos(),
@@ -114,13 +116,7 @@ std::optional<g1_msgs::msg::InstanceMask> G1MockDetector::maskFor(
 
     // Nothing beyond the object's bounding sphere can belong to it, whatever its depth says.
     const double radius = half.length();
-    // An object level with the camera plane projects to infinity, and one behind it projects
-    // backwards. Both used to pass the z > 0 test and then cast a nonsense double to an integer,
-    // which is undefined and in practice wrapped to a huge unsigned extent: the bounds check
-    // below saw x1 far above x0, agreed, and the allocation that followed threw length_error and
-    // took the node down at startup. Seen the first time this ran in the navigation world, where
-    // the robot begins a building away from the props; a tabletop scene always has them a
-    // comfortable distance in front.
+    // An object level with or behind the camera plane has no usable projection.
     if (!(centre.z() > kMinProjectionDepthM) || !std::isfinite(intrinsics.fx) ||
         !std::isfinite(intrinsics.fy))
     {
@@ -136,8 +132,7 @@ std::optional<g1_msgs::msg::InstanceMask> G1MockDetector::maskFor(
         return std::nullopt;
     }
 
-    // Clamped as doubles, before anything is narrowed. Casting first is what made the extent
-    // wrap.
+    // Clamp as doubles before narrowing: casting an out-of-range double is undefined.
     const auto clamp = [](double value, double lo, double hi) {
         return static_cast<std::int64_t>(std::clamp(value, lo, hi));
     };
@@ -155,8 +150,8 @@ std::optional<g1_msgs::msg::InstanceMask> G1MockDetector::maskFor(
         return std::nullopt;
     }
 
-    // Cropped to what was found: a loose region would hand the geometry node a support ring
-    // sampling the neighbouring object instead of the table.
+    // Cropped to the hits: a loose region would put the geometry node's support ring on a
+    // neighbouring object instead of the table.
     std::vector<std::uint8_t> found(static_cast<std::size_t>(x1 - x0) * (y1 - y0), 0);
     std::uint32_t             hit_x0 = x1;
     std::uint32_t             hit_y0 = y1;
@@ -218,7 +213,9 @@ std::optional<g1_msgs::msg::InstanceMask> G1MockDetector::maskFor(
 
 void G1MockDetector::publishMasks()
 {
-    if (truth_ == nullptr || camera_info_ == nullptr || phrases_.empty())
+    // Re-read every pass, as the real detector does, so a tree's writes to `phrases` apply.
+    const std::vector<std::string> phrases = get_parameter("phrases").as_string_array();
+    if (truth_ == nullptr || camera_info_ == nullptr || phrases.empty())
     {
         return;
     }
@@ -245,16 +242,12 @@ void G1MockDetector::publishMasks()
             continue;
         }
         const std::string& class_id = detection.results.front().hypothesis.class_id;
-        // An entry may be "name=phrase", as the real detector accepts: there the long phrase is
-        // what the model is asked for and the short name is what gets published, so a tree can
-        // say red_block while the detector is asked for a bright red plastic block. Nothing here
-        // asks a model anything, so only the name half matters -- but the two detectors have to
-        // take the same phrase list or swapping one for the other silently detects nothing.
+        // Takes the real detector's "name=phrase" entries too; only the name matters here.
         const auto match =
-            std::find_if(phrases_.begin(), phrases_.end(), [&class_id](const std::string& entry) {
+            std::find_if(phrases.begin(), phrases.end(), [&class_id](const std::string& entry) {
                 return slugify(nameOf(entry)) == class_id;
             });
-        if (match == phrases_.end())
+        if (match == phrases.end())
         {
             continue;
         }

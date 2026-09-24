@@ -3,12 +3,10 @@
 
 /**
  * @file mock_detector_node.hpp
- * @brief A detector stand-in that needs no GPU, no model and no network.
+ * @brief A detector stand-in that needs no GPU, model or network.
  *
- * Masks are cut from simulator object poses against the real rendered depth, so everything
- * downstream of the mask runs for real. Only the detector itself goes untested.
- *
- * SIMULATION ONLY. It subscribes to ground truth, which the robot does not have.
+ * Cuts masks from simulator ground-truth poses against the rendered depth, so everything after
+ * the mask runs for real. SIMULATION ONLY: the robot has no ground truth.
  */
 
 #include <g1_msgs/msg/instance_mask_array.hpp>
@@ -36,7 +34,8 @@ private:
     void onDepth(sensor_msgs::msg::Image::ConstSharedPtr depth);
     void publishMasks();
 
-    /// The pixels of @p detection in @p depth, as an InstanceMask, or nothing when it is hidden.
+    /// The pixels of @p detection in @p depth as an InstanceMask, or nothing when it is out of
+    /// view or under min_pixels.
     [[nodiscard]] std::optional<g1_msgs::msg::InstanceMask> maskFor(
         const vision_msgs::msg::Detection3D& detection, const sensor_msgs::msg::Image& depth,
         const std::string& phrase) const;
@@ -51,10 +50,9 @@ private:
     vision_msgs::msg::Detection3DArray::ConstSharedPtr truth_;
     sensor_msgs::msg::CameraInfo::ConstSharedPtr       camera_info_;
 
-    std::vector<std::string> phrases_;
-    double                   latency_s_{ 0.0 };
-    double                   margin_m_{ 0.0 };
-    int                      min_pixels_{ 50 };
+    double latency_s_{ 0.0 };
+    double margin_m_{ 0.0 };
+    int    min_pixels_{ 50 };
 };
 
 }  // namespace g1_perception
