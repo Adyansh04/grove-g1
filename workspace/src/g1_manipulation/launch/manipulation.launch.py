@@ -1,7 +1,6 @@
 """Pick and place skills, and the object-pose source they read.
 
-No simulator and no move_group: g1_bringup composes both alongside this. Only the object source
-is simulation-specific, and it says so itself: its `hardware` setting refuses to configure.
+Starts neither the simulator nor move_group; g1_bringup launches both alongside this.
 """
 
 import os
@@ -29,9 +28,9 @@ def _config(share, name):
 
 
 def _moveit_config():
-    """MoveGroupInterface needs the description, its semantics and the kinematics solvers in
-    its own node's parameters; without them it builds against an empty model and every plan
-    fails for a reason that names neither this file nor the missing parameter."""
+    """MoveGroupInterface reads the description, semantics and kinematics from its own node's
+    parameters; without them every plan fails against an empty model, and the error does not
+    say so."""
     return (
         MoveItConfigsBuilder("g1", package_name="g1_moveit_config")
         .robot_description(
@@ -61,8 +60,8 @@ def _object_source():
             },
         ],
         remappings=[
-            # Derived from object_source, not set beside it: two free arguments let
-            # object_source:=perception read the simulator's own poses.
+            # Derived from object_source rather than a second argument, so perception can never
+            # read the simulator's poses.
             (
                 "~/object_poses",
                 PythonExpression(
@@ -80,8 +79,7 @@ def _object_source():
 
 
 def _bring_up(node):
-    """Launch event handlers rather than a lifecycle manager: there is one node here, and a
-    manager would be more moving parts than the thing it manages."""
+    """Configures, then activates, through launch events: one node needs no lifecycle manager."""
 
     def _transition(transition_id):
         return EmitEvent(
@@ -115,6 +113,7 @@ def generate_launch_description():
             _config(SHARE, "g1_manipulation_server.yaml"),
             {
                 "object_timeout_ms": LaunchConfiguration("object_timeout_ms"),
+                "min_grip_height_m": LaunchConfiguration("min_grip_height_m"),
                 "grasp_source": LaunchConfiguration("grasp_source"),
                 "publish_markers": LaunchConfiguration("visualization"),
                 "graspgen_to_grasp_frame_xyz_rpy": ParameterValue(
@@ -144,15 +143,22 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "grasp_offset",
                 default_value="[0.0, 0.0, 0.0, 0.0, 0.0, 0.0]",
-                description="The generator's gripper frame to <side>_hand_grasp_frame, as xyz "
-                "then rpy for the right hand. Zero says they coincide, which is what you get by "
-                "assuming rather than by measuring it against the candidates in RViz.",
+                description="The generator's gripper frame to <side>_hand_grasp_frame, xyz then "
+                "rpy, measured for the hand the generator serves. Zero says they coincide, which "
+                "is an assumption until it is measured against the candidates in RViz.",
             ),
             DeclareLaunchArgument(
                 "object_timeout_ms",
                 default_value="1000.0",
                 description="How old a pose may be before a skill refuses to act on it. A real "
                 "detector needs seconds here, not the sub-second a simulator stream affords.",
+            ),
+            DeclareLaunchArgument(
+                "min_grip_height_m",
+                default_value="0.080",
+                description="Lowest grip above the surface an object stands on. The thumb hangs "
+                "63 mm below the grasp frame, so lower only where it can hang past the surface's "
+                "edge.",
             ),
             DeclareLaunchArgument(
                 "visualization",

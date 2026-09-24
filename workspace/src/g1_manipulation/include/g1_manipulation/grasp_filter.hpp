@@ -5,8 +5,7 @@
  * @file grasp_filter.hpp
  * @brief The arithmetic between a generated grasp and one this arm can be asked for.
  *
- * A generator answers in its own gripper frame and knows nothing about this robot. Kept free of
- * MoveIt so it can be tested without one.
+ * A generator answers in its own gripper frame and knows nothing about this robot.
  */
 
 #include <array>
@@ -19,23 +18,25 @@ namespace g1_manipulation
  * @brief Re-expresses a generated grasp as a goal for this robot's own grasp frame.
  *
  * @param generated Pose of the generator's gripper frame, in any frame.
- * @param xyz_rpy   Generator gripper frame to `<side>_hand_grasp_frame`, for the right hand,
- *                  measured against the candidates in RViz.
- * @param is_left   Mirrors it the way the URDF does: y, z and the roll change sign.
+ * @param xyz_rpy   Generator gripper frame to the grasp frame of the hand the generator serves,
+ *                  metres then radians. Measured per hand: a generator serves one.
  */
-[[nodiscard]] geometry_msgs::msg::Pose applyGripperOffset(
-    const geometry_msgs::msg::Pose& generated, const std::array<double, 6>& xyz_rpy, bool is_left);
+[[nodiscard]] geometry_msgs::msg::Pose
+applyGripperOffset(const geometry_msgs::msg::Pose& generated, const std::array<double, 6>& xyz_rpy);
 
 /**
- * @brief Angle between a grasp's approach axis and straight down, in radians.
+ * @brief Angle between a generated grasp's approach axis and straight down, in radians.
  *
- * +z of the grasp frame is the direction the hand travels. Zero reaches straight down; past a
- * right angle it is coming up from underneath, which on a table means through it.
+ * The approach is the gripper frame's +z. Zero reaches straight down; past a right angle the hand
+ * comes up from underneath, which on a table means through it.
+ *
+ * @param generated Expressed in a z-up frame.
  */
 [[nodiscard]] double approachTiltRad(const geometry_msgs::msg::Pose& generated);
 
 /**
- * @brief The approach axis of a generated grasp, as a unit vector in the pose's own frame.
+ * @brief The approach axis of a generated grasp, as a unit vector in the frame the pose is
+ *        expressed in.
  */
 [[nodiscard]] std::array<double, 3> approachAxis(const geometry_msgs::msg::Pose& generated);
 

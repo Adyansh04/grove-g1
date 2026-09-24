@@ -1,264 +1,107 @@
 # Pick and place skills, loaded by g1_manipulation/launch/manipulation.launch.py.
 #
-# Real-robot code throughout; only where the object poses come from is simulation-specific, and
-# that lives in g1_object_pose_source.yaml.
+# `object_timeout_ms`, `grasp_source`, `min_grip_height_m` and `graspgen_to_grasp_frame_xyz_rpy`
+# are launch arguments, because their right values depend on what the stack is launched with.
+# Everything else except velocity_scaling, grasp_rpy, grasp_service and publish_markers can be set
+# live between goals.
 g1_manipulation_server:
   ros__parameters:
-    # `object_timeout_ms` is a launch argument, not a key here: a node-named key beats the
-    # launch override file, and how old a pose may be depends on what produces it.
-
-    # Where the approach starts, along the planning frame's z. Measured: the hand clears the
-    # workbench octomap only at 0.185 and above, and the pregrasp stays collision-checked so the
-    # planner cannot route through the table on the way in.
+    # Pregrasp height above the grasp. The hand clears the workbench octomap from about 0.185 up.
     approach_height_m: 0.22
 
-    # Below the object's TOP face, so the fingers close around it rather than on top of it.
-    # Capped by the palm: the grasp frame is 26 mm clear of the palm's own face, so a deeper
-    # grip drives the palm into the top of the object. See g1_common.xacro for both numbers.
-    grasp_depth_below_top_m: 0.020
+    # How far below the object's top face the grasp frame aims. The palm face is 26 mm above the
+    # frame, so a deeper grip drives the palm into the object.
+    grasp_depth_below_top_m: 0.026
 
-    # And never lower than this above whatever the object stands on, which wins when the two
-    # disagree. Measured in MuJoCo: while it descends the hand hangs 63 mm below the grasp frame,
-    # so the thumb's clearance over the surface is this minus 63 mm. At the old 0.068 that left
-    # 5 mm against a descent that lands within 6-10 mm, and the thumb scraped the table and
-    # dragged the object 44 mm before the fingers closed. 80 mm leaves 17.
-    #
-    # It also decides the props. The grip point can never be above the object, so an object has
-    # to be at least this tall, and the hand takes nothing wider than 75 mm: no cube satisfies
-    # both, which is why they are 60 wide and 90 tall.
-    #
-    # Why a carried block still works its way out, measured rather than reasoned about, because
-    # two earlier readings of it were wrong and are recorded where they were made: the grasp
-    # frame in g1_common.xacro and the close order in g1.srdf.
-    #
-    # The hand does not hold station while it closes. Tracked through a close on the bench:
-    # the grasp frame rose 28 mm in odom while the block, which the bench is holding, rose 13.
-    # The fingers press down on a supported object and the arm yields to the reaction, since it
-    # is position-controlled with no gravity compensation. So the hand ends up gripping about
-    # 15 mm higher on the block than it aimed, with only the fingertips on it, roughly 40 mm
-    # beyond the frame along the closing axis.
-    #
-    # That is why grip force is not the lever it looks like. Every finger sits at its 1.4 N.m
-    # clamp during a hold, which suggests a large normal force, but a block at a third of the
-    # mass (40 g against 124) still crept out and still dropped, only slower: 1.3 mm/s against
-    # 3 to 7. Marginal contact, not marginal torque.
-    #
-    # Aiming the descent lower to cancel the 28 mm is not available: min_grip_height_m already
-    # leaves the thumb only 17 mm over the surface. The fix that follows from the mechanism is to
-    # re-seat the object once it is off the bench and nothing is resisting the fingers, which is
-    # a regrasp after the lift and is not built.
-    #
-    min_grip_height_m: 0.080
-
-    # How close the grasp frame must MEASURE to its target before the fingers close, and how many
-    # corrections it gets. The arm is position-only and has no gravity compensation, so it always
-    # settles somewhere short; the corrections are what close that gap.
-    #
-    # 10 mm was chosen when the arm sagged 40 mm at kp 40 and the descent could only repeat to
-    # about 8. At kp 300 the pregrasp now settles to 4 mm in one go, so this is no longer the
-    # binding constraint and could be tightened if anything ever needs it to be. The grip check
-    # is what actually decides whether the grasp worked.
+    # How close the grasp frame must measure to its target before the hand closes, and how many
+    # corrections the arm gets to get there.
     settle_tolerance_m: 0.010
     settle_attempts: 2
 
-    # How far off the grasp pose the descent may end and still be worth closing on. The hand takes
-    # nothing wider than 75 mm and these blocks are 60, so a couple of millimetres is slack and
-    # anything past that is air. Measured on a failed pick: the descent ended with the block 115 mm
-    # away in the palm's frame, the fingers swept shut through nothing, and the grip check then
-    # reported every finger unloaded -- a true answer to the wrong question, since the arm had
-    # never arrived. Refusing here says that instead, and leaves the object untouched for the
-    # retry.
+    # Still this far off after the last descent, the pick is refused rather than closing on air.
     max_grasp_offset_m: 0.020
 
-    # How much narrower than the object the hand closes, which is what loads the fingers against
-    # it. Small, because this is a squeeze and not a grip: the fingers reach their target and
-    # keep pushing at kp times whatever error remains, and everything past the object's surface
-    # goes into driving it out of the hand.
-    #
-    # Watched on a 70 mm ball, traced through the close: the fingers met it at 71 mm of span,
-    # carried on to the 67 mm they had been told to, and the ball was gone two samples later.
-    # 8 mm of preload ejected it. A flat-sided block tolerates more, because the contact normal
-    # points straight back at the finger; on a curved surface it angles outward and the squeeze
-    # acts like a wedge.
-    grip_preload_m: 0.002
+    # How far the object may shift between being located and the descent, and still be followed.
+    # Larger than body sway means a different object or a bad frame.
+    grasp_refresh_max_shift_m: 0.10
 
-    # How far the object may have moved between being located and being descended on, for the
-    # descent to follow it there rather than aim where it used to be. The planner works in the
-    # pelvis frame and the pelvis is not still: on its legs the balance controller shifts the
-    # body while the arm reaches the pregrasp.
-    #
-    # 50 mm is body sway with room to spare. Past this it is a different object or a bad frame,
-    # and following it would drag the hand across the surface.
-    #
-    # A rolling object wants more than this, and a sphere was tried: it needed 120 mm. That
-    # experiment is not the reason to raise it though, because the rolling turned out to be a
-    # scene fault, a ball spawned 10.5 mm inside the bench and ejected by the contact solver.
-    grasp_refresh_max_shift_m: 0.050
-
-    # Where every descent starts from, back up the approach axis, with only the stretch below it
-    # taken as a straight line. Not the pregrasp: the full approach is 12 to 22 cm and runs out of
-    # straight line part way often enough that retrying the whole thing repeats that. 8 cm clears
-    # the top of anything this hand can grip and is short enough to walk.
+    # Where every descent starts, back up the approach axis from the grasp.
     reaim_clearance_m: 0.08
 
-    # How long to let the arm stop before measuring it. MoveIt's execute() returns when the
-    # controller says the trajectory is done, which is about a second before a position-only arm
-    # has finished sagging into its steady-state error. Measured too early it reads a pose the arm
-    # never reached, and the corrections then chase a residual that is not there.
+    # How long the arm gets to stop after a move before it is measured.
     settle_wait_s: 0.8
 
-    # Clears the workbench, and the exemption is restored at the end of the lift, so wherever the
-    # lift finishes becomes the start state of the next collision-checked plan.
-    #
-    # The arm never quite gets here: position-only, it settles about 39 mm low under the load of
-    # a held block, and that gap is the same 39 mm whether this is 0.20 or 0.15, so it is sag
-    # rather than reach. Asked for 0.20 to leave about 160 mm of real clearance for the carry.
+    # Lift above the grasp. The arm settles about 40 mm short of it under a held object.
     lift_height_m: 0.20
-
-    # The same standoff for a place. Smaller than the pick's on purpose: a place target is
-    # already elevated by whatever it is going onto, so the same 0.22 put the preplace at 1.155 m
-    # where the pregrasp that works sits at 1.090. Measured, every one of the five plans to it
-    # failed in 5 ms, which is an unreachable goal rather than a search that ran out of road.
-    place_approach_height_m: 0.15
-
-    # Straight-line lift tries. One is not enough when the line is genuinely blocked: whatever
-    # truncates it is usually below the hand, so the next line, started higher, gets further.
-    # Retried on the Cartesian fraction alone; the 39 mm of sag is not a short line and retrying
-    # it just spends every attempt.
     lift_attempts: 3
 
-    # How far the object may end up from where it was aimed before the place is called a failure.
-    # 0.08 could not tell the two outcomes apart that matter here: the box floor and the tabletop
-    # beside it are 12 mm apart, and a block left on the table measured 68 mm from the aim point,
-    # which passed. Sized instead to the box's 120 mm cavity, so landing outside it fails.
-    place_tolerance_m: 0.05
+    # Preplace height above the place pose, lower than the pick's because the target is raised.
+    place_approach_height_m: 0.15
 
-    # The hand covers the object until it lets go, so the detector needs a frame or two before the
-    # landing can be confirmed at all. Running out is a failure: not being able to see where the
-    # object went is exactly the state a dropped one leaves behind.
+    # Hand closing. Spans are measured between the thumb and index links; closure is linear in
+    # between. The close starts grip_start_margin_m outside the widest measured side (never wider
+    # than grip_max_width_m), creeps in grip_search_step_m at a time until the thumb opposes a
+    # finger, and gives up grip_search_beyond_m past the narrowest side.
+    hand_close_s: 1.5
+    hand_span_open_m: 0.124
+    hand_span_closed_m: 0.058
+    grip_preload_m: 0.002
+    grip_start_margin_m: 0.010
+    grip_max_width_m: 0.075
+    grip_search_step_m: 0.002
+    grip_search_beyond_m: 0.006
+
+    # A contact is only judged once every finger is slower than this.
+    grip_settled_speed_rad_s: 0.1
+
+    # Past contact every finger is commanded to its stall plus this, so all press with kp times
+    # the same error. More squeezes a round object out of the hand.
+    grip_hold_bias_rad: 0.08
+
+    # A finger is pressing when it is this far short of its target and pushing this hard. Finger kp
+    # is about 2.2 N.m/rad, so a held finger reads at least 0.04 N.m and an empty one 0.01.
+    grip_check_enabled: true
+    grip_min_position_error_rad: 0.08
+    grip_min_effort_nm: 0.03
+
+    # How far a released object may read from where it was aimed. On a named surface the footprint
+    # decides instead, with place_footprint_margin_m past the rim, and this only bounds the height.
+    place_tolerance_m: 0.05
+    place_footprint_margin_m: 0.02
+
+    # How long the detector gets to find the object after the release. Not finding it fails the
+    # place, since that is what a dropped object looks like.
     place_confirm_timeout_s: 4.0
 
-    # Well under joint_limits.yaml's 0.8 rad/s cap: arm motion disturbs a standing humanoid, and
-    # scaling the trajectory beats clamping joints, which bends the path.
-    #
-    # Halved from 0.3 because the arm does not follow what the planner draws. Measured off
-    # arm_trajectory_controller's own error field, while moving: 57 mm at the hand on the median,
-    # 74 mm at the 90th, 171 mm at worst, against a scene whose gaps are tens of millimetres.
-    # MoveIt guarantees clearance along the trajectory, so whatever the arm lags by is clearance
-    # the real link never had, and no amount of octomap or planner work can close that. Slower
-    # trades cycle time for the part of the lag that is dynamic; the rest is gain, in
-    # g1_description/config/lowcmd_params.yaml.
+    # How old a standing object's last sighting may be when the newest detections miss it. Matches
+    # g1_base_approach, which runs just before on the same sighting.
+    sighting_memory_s: 30.0
+
+    # Wait after /clear_octomap for the sensor to put the visible surfaces back.
+    octomap_rebuild_wait_s: 0.8
+
+    # The arm lags its trajectory by several centimetres at speed, and that lag is clearance MoveIt
+    # never checked, so it moves slowly.
     velocity_scaling: 0.15
     planning_time_s: 10.0
-
-    # Samples per motion, all inside planning_time_s: ValidateSolution rejects paths OMPL accepted,
-    # and that rejection returns fast enough to sample again.
+    # Samples within planning_time_s: ValidateSolution rejects some paths OMPL accepts, quickly.
     planning_attempts: 5
 
-    # Which face the fixed grasp comes in on: "top" or "front". The generator, when one is
-    # running, answers this for itself and ignores both.
-    #
-    # Top descends onto the top face and closes across the object's width. It is what every
-    # scene here was tuned against, and it is marginal on these props: the block is 60 mm across
-    # and the hand takes 75, so the fingers barely span it and a grip that survives a pinned-base
-    # lift has been seen to shake loose while the robot walks.
-    #
-    # Front comes in horizontally onto the face turned towards the robot. Same closing width, but
-    # the object's long axis lies across the fingers rather than along them, so there is more of
-    # it between them to hold.
-    #
-    # Measured head to head on the tabletop, the approach confirmed in the log each time: top
-    # put the block in the bench 2 of 2, front managed 0 of 2.
-    #
-    # Retried later, once top picked reliably, because front is the only approach that can grip
-    # an object through its middle: it has no thumb hanging below it, so front_grip_height_m
-    # sets the grip directly and is not held above the centre of mass the way min_grip_height_m
-    # holds a top grasp. That is the failure a carry keeps dying of, so front was worth another
-    # look on its own merits rather than as a fallback.
-    #
-    # Still 0 of 3, and the failure moved twice, which is progress worth writing down.
-    #
-    # Staging back along the object's own axis pushed the block before the fingers closed: it
-    # went from x 0.300 to 0.360-0.396 and ended at z 0.767, below the 0.802 bench, in all three
-    # runs. Staging ABOVE the grip instead fixed that completely, since the fingers close
-    # horizontally and do not need the approach to share their axis: the block now finishes at
-    # x 0.306-0.323 and z 0.7899, which is where it started, and the fingers load to 0.27-0.42.
-    #
-    # What is left is a descent that stops 26, 26 and 27 mm short, the same distance every run,
-    # and it is NOT a collision. Asked directly, every contact at the front grasp pose and at
-    # the height it stops at is a hand-versus-octomap pair, which the descent already exempts,
-    # and 50 mm higher is clear outright. IK solves at every height tried.
-    #
-    # So the target is reachable and legal, and what fails is the straight line to it: the same
-    # null-space discontinuity kinematics.yaml describes, where the solver answers successive
-    # Cartesian waypoints from different parts of the null space and the path stops partway.
-    # Front is blocked on that, not on anything of its own. Top stays the default meanwhile.
-    grasp_approach: "top"
-
+    # Right hand's orientation at a top grasp; the left mirrors the roll.
     grasp_rpy: [-1.5707963, 0.0, 0.0]
 
-    # The same for a front grasp, and a separate number because it is a different wrist pose
-    # rather than a tweak of the one above. Mirrors for the left arm exactly as grasp_rpy does.
-    #
-    # The yaw is 45 degrees because that is the only one that works, swept against IK and
-    # /check_state_validity at the tabletop block, octomap contacts discounted since the descent
-    # exempts the hand from the map:
-    #   yaw   0: the grasp is reachable, the standoff behind it drives the arm into the torso
-    #   yaw  45: both reachable and clear, at every grip height tried
-    #   yaw  90: no IK at the grasp at all
-    #   yaw -45, -90, 180: blocked on the shoulder, or no IK
-    front_grasp_rpy: [-1.5707963, 0.0, 0.7853982]
-
-    # A front grasp's equivalent of approach_height_m: how far ABOVE the grip it stages. It used
-    # to stage back along the object's own axis, at 0.18, which is what a front grasp means
-    # geometrically and is also what pushed the block off the bench before the fingers closed.
-    # The fingers close horizontally either way, so the hand can come down past the object
-    # instead of in at it. Smaller than the top grasp's 0.22 because the grip is at mid-height,
-    # so there is less room above it before the arm runs out of reach.
-    front_approach_standoff_m: 0.12
-
-    # Where a front grip lands, measured up from the object's base. Half of a 90 mm block, so the
-    # fingers take it across the middle with equal amounts above and below.
-    front_grip_height_m: 0.045
-
-    # `grasp_source` is a launch argument, for the same reason `object_timeout_ms` is. There is
-    # no fallback between the two: a pick quietly using the fixed pose would look like it worked.
+    # Generated grasps only.
     grasp_service: "/g1_grasp_engine/generate_grasps"
-
-    # Must stay longer than the adapter's own zmq_timeout_ms (30 s in g1_graspgen_adapter.yaml):
-    # give up first and a slow generator is reported silent while it is still working.
+    # Longer than the adapter's own zmq_timeout_ms (30 s), or a slow generator reads as silent.
     grasp_timeout_s: 35.0
-
-    # Candidates come back best first. Below this score they are not worth the inverse
-    # kinematics call, and past this many the arm is not going to reach a better one.
     min_grasp_score: 0.5
     max_grasp_candidates: 20
-
-    # How far from straight down a grasp may come in. Past a right angle it reaches up through
-    # the table; the margin below leaves room for one across a corner.
+    # Past a right angle a grasp reaches up through the surface.
     max_approach_tilt_deg: 75.0
-
-    # Where the hand waits, back along the grasp's own approach axis rather than straight up: a
-    # side grasp has its clear line along that axis and a ceiling above it.
+    # Pregrasp distance back along a generated grasp's own approach axis.
     approach_standoff_m: 0.12
-
-    # Per candidate, and there can be twenty of them, so this is a filter rather than a solve.
+    # Per candidate, so this is a filter rather than a solve.
     ik_timeout_s: 0.05
 
-    # The last move into a grasp is a straight line, as MoveIt's own pick pipeline does: how
-    # finely it is walked, and how much must be clear before it is taken instead of planned.
+    # Interpolation step for straight-line moves.
     cartesian_step_m: 0.005
-    cartesian_min_fraction: 0.8
-
-    # `graspgen_to_grasp_frame_xyz_rpy` is a launch argument for the same reason: it describes
-    # whichever generator is answering, and the stand-in's frame is not the real one's.
-
-    # Settle time after /clear_octomap, before anything plans against the map again.
-    #
-    # The clear is not selective and the planning scene holds no collision objects at all, so it
-    # takes the table and the bench with it, not just the arm's own stale voxels. Measured on the
-    # tabletop world: the map is at 18 % of its old size 0.2 s after a clear, 72 % by 0.4 s and
-    # peaks at 0.8 s. Planning inside that window is planning blind, which is how the arm came to
-    # drive into the bench. It settles back at 72 %, and the 28 % that never returns is the stale
-    # part nothing can currently see, which is the whole point of clearing.
-    octomap_rebuild_wait_s: 0.8

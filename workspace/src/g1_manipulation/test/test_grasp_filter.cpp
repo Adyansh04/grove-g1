@@ -1,7 +1,7 @@
 /**
  * @file test_grasp_filter.cpp
- * @brief Pins the two conversions between a generated grasp and something this arm can be asked
- *        for, because getting either wrong puts the hand somewhere plausible and wrong.
+ * @brief The generated-grasp arithmetic, where a mistake puts the hand somewhere plausible and
+ *        wrong.
  */
 
 #include <gmock/gmock.h>
@@ -63,10 +63,8 @@ TEST(ApproachAxis, PointsWhereThePoseOwnZDoes)
 TEST(GripperOffset, MovesTheGoalIntoTheGraspFrame)
 {
     // An identity grasp at the origin, offset 1 cm along the gripper's own x.
-    const geometry_msgs::msg::Pose out = applyGripperOffset(
-        poseAt(0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
-        { 0.01, 0.0, 0.0, 0.0, 0.0, 0.0 },
-        /*is_left=*/false);
+    const geometry_msgs::msg::Pose out =
+        applyGripperOffset(poseAt(0.0, 0.0, 0.0, 0.0, 0.0, 0.0), { 0.01, 0.0, 0.0, 0.0, 0.0, 0.0 });
 
     EXPECT_NEAR(out.position.x, 0.01, 1e-9);
     EXPECT_NEAR(out.position.y, 0.0, 1e-9);
@@ -78,26 +76,11 @@ TEST(GripperOffset, AppliesTheOffsetInTheGraspOwnFrame)
     // Yawed by a right angle, so the gripper's +x is the world's +y and the offset follows it.
     const geometry_msgs::msg::Pose out = applyGripperOffset(
         poseAt(0.3, -0.2, 0.9, 0.0, 0.0, M_PI_2),
-        { 0.01, 0.0, 0.0, 0.0, 0.0, 0.0 },
-        /*is_left=*/false);
+        { 0.01, 0.0, 0.0, 0.0, 0.0, 0.0 });
 
     EXPECT_NEAR(out.position.x, 0.3, 1e-9);
     EXPECT_NEAR(out.position.y, -0.19, 1e-9);
     EXPECT_NEAR(out.position.z, 0.9, 1e-9);
-}
-
-TEST(GripperOffset, MirrorsTheWayTheUrdfMirrorsTheTwoHands)
-{
-    const std::array<double, 6>    measured{ 0.010, 0.044, 0.009, 0.2, 0.0, 0.0 };
-    const geometry_msgs::msg::Pose identity = poseAt(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
-
-    const geometry_msgs::msg::Pose right = applyGripperOffset(identity, measured, false);
-    const geometry_msgs::msg::Pose left  = applyGripperOffset(identity, measured, true);
-
-    EXPECT_NEAR(right.position.x, left.position.x, 1e-9);
-    EXPECT_NEAR(right.position.y, -left.position.y, 1e-9);
-    EXPECT_NEAR(right.position.z, -left.position.z, 1e-9);
-    EXPECT_NEAR(right.orientation.x, -left.orientation.x, 1e-9);
 }
 
 }  // namespace

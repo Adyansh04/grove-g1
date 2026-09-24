@@ -1,24 +1,9 @@
 #!/usr/bin/env python3
-"""Checks what a pick does with a grasp generator behind it.
+"""A pick with a grasp generator behind it.
 
-Four claims, none of which any other test covers:
-
-  1. Offered only a grasp reaching up through the table, the pick refuses it and says so. A
-     filter that never rejects anything has not been tested.
-  2. An object nobody is reporting is still refused, with the generator in the loop.
-  3. Offered sensible grasps, the pick takes one and the fingers report a grip on it.
-  4. With RViz off, nothing is drawn: no visualizer runs and no marker publisher exists.
-
-The order is load-bearing, alphabetically as unittest runs them: test_03 takes the object off the
-table, and test_01 and test_02 need it still on it.
-
-There is no fallback to the fixed top-down pose anywhere in those paths, which is the property
-worth the most here: a pick told to use a generator and quietly not using it would look like it
-worked.
-
-This only works because two things happen first: activate_arm moves the arms clear of the table's
-octomap, since a start state in collision has no plan at all, and the approach runs as a straight
-line rather than a planned path.
+Covers: a grasp reaching up through the table is refused; an unreported object is refused with
+the generator in the loop; a sensible grasp picks the object up; with RViz off nothing is drawn.
+Tests run in name order, and test_03 takes the object off the table, so it comes last.
 """
 
 import os
@@ -52,10 +37,8 @@ DRAWN_TOPICS = [
 ]
 
 # The stand-in generator's gripper frame to right_hand_grasp_frame. It reports a pose 10 cm above
-# the object's top face, and the grasp frame has to arrive just under that face: on a 9 cm block
-# min_grip_height_m wins over grasp_depth_below_top_m and puts it 2 mm down, so 0.102 along the
-# generator's own approach axis. Against the real generator this whole vector is a measurement,
-# not a choice.
+# the object's top face, so the grasp frame lands just under that face. Against the real
+# generator this vector is a measurement.
 GRASP_OFFSET = "[0.0, 0.0, 0.102, 1.5707963, 0.0, 0.0]"
 
 
@@ -143,9 +126,7 @@ class TestGeneratedGraspPick(unittest.TestCase):
 
     def _set_only_from_below(self, value):
         """Switches the stand-in generator to offering nothing but the grasp from underneath."""
-        client = self.node.create_client(
-            SetParameters, "/g1_mock_grasp_source/set_parameters"
-        )
+        client = self.node.create_client(SetParameters, "/g1_mock_grasp_source/set_parameters")
         self.assertTrue(client.wait_for_service(timeout_sec=30.0))
         request = SetParameters.Request()
         request.parameters = [
@@ -157,8 +138,7 @@ class TestGeneratedGraspPick(unittest.TestCase):
         self.assertTrue(future.result().results[0].successful)
 
     def test_00_nothing_is_drawn_with_rviz_off(self):
-        # After wait_for_server, and against topics that must exist, so an unfinished discovery
-        # cannot pass this.
+        # Against topics that must exist, so unfinished discovery cannot pass this.
         for topic in ("/g1_object_geometry/object_poses", "/objects"):
             self.assertNotEqual(self.node.get_publishers_info_by_topic(topic), [], topic)
         self.assertNotIn("g1_perception_visualizer", self.node.get_node_names())
@@ -166,13 +146,8 @@ class TestGeneratedGraspPick(unittest.TestCase):
             self.assertEqual(self.node.get_publishers_info_by_topic(topic), [], topic)
 
     def test_03_a_generated_grasp_picks_the_object_up(self):
-        """Asserts the result, not the object, and that is forced rather than lazy.
-
-        /objects here comes from the grounder, not from simulator ground truth, so a cube in the
-        hand is occluded by the hand and stops being detected: measuring it after the lift asks
-        perception for something it cannot see. The pick's own grip check is what decides the
-        result, and test_pick_place measures the object against ground truth.
-        """
+        """Asserts the result: /objects comes from perception here, which loses the object
+        once the hand covers it. test_pick_place measures the object against ground truth."""
         before = self._object_pose()
         self.assertIsNotNone(before)
 
@@ -182,8 +157,7 @@ class TestGeneratedGraspPick(unittest.TestCase):
         self.assertIn("pressing", result.message)
 
     def test_01_a_grasp_from_under_the_table_is_refused(self):
-        # The only candidate on offer now reaches up through the surface the object stands on.
-        # Taking it would drive the hand through the table, so the pick has to end here.
+        # The only candidate on offer reaches up through the table.
         self._set_only_from_below(True)
         try:
             result = self._pick()
@@ -201,6 +175,5 @@ class TestGeneratedGraspPick(unittest.TestCase):
         self.assertIn("locating", result.message)
 
 
-# No post-shutdown exit-code check, matching the other sim suites: move_group segfaults in its
-# own destructor on this MoveIt and ros2_control_node leaves 130 on SIGINT. Asserting on that
-# tests their teardown, not this pick.
+# No post-shutdown exit-code check: move_group segfaults in its own destructor on this MoveIt, and
+# ros2_control_node exits 130 on SIGINT.

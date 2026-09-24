@@ -5,8 +5,7 @@
   <version>0.1.0</version>
   <description>
     Pick and place skills for the G1, served as actions over MoveIt, plus the
-    object-pose source that decides where object poses are allowed to come from.
-    See README for why the source refuses to run on hardware.
+    object-pose source that decides where object poses may come from.
   </description>
   <maintainer email="gupta.adyansh@gmail.com">Adyansh</maintainer>
   <license>BSD-3-Clause</license>
@@ -29,8 +28,9 @@
   <depend>tf2_geometry_msgs</depend>
   <depend>tf2_ros</depend>
 
-  <!-- Launch-time only: manipulation.launch.py assembles the same MoveIt configuration
-       g1_moveit_config's own move_group.launch.py does. -->
+  <!-- Launch-time only: manipulation.launch.py builds its MoveIt parameters from it. -->
+  <exec_depend>g1_description</exec_depend>
+  <exec_depend>moveit_configs_utils</exec_depend>
   <exec_depend>g1_moveit_config</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
@@ -41,9 +41,8 @@
   <test_depend>ament_cmake_lint_cmake</test_depend>
   <test_depend>ament_cmake_xmllint</test_depend>
   <test_depend>ament_cmake_gmock</test_depend>
-  <!-- g1_msgs and vision_msgs Python bindings for test_pick_place.launch.py. A plain <depend>
-       does not put them on a launch test's PYTHONPATH; the test environment is built from test
-       dependencies. Same reason g1_bringup names g1_msgs twice. -->
+  <!-- Repeated for the launch tests' Python imports: their environment is built from test
+       dependencies, and a plain <depend> does not put these on it. -->
   <test_depend>g1_msgs</test_depend>
   <test_depend>vision_msgs</test_depend>
   <test_depend>launch_testing</test_depend>
