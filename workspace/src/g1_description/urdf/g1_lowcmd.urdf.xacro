@@ -1,9 +1,8 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="g1_29dof_with_hand_rev_1_0">
 
-  <!-- The 29 body motors are owned by G1LowCmdSystem over rt/lowcmd, with no onboard balance
-       running underneath. This file holds only that ros2_control block; g1_common.xacro brings
-       the body, the sensor and grasp frames, and both Dex3 components. -->
+  <!-- All 29 body motors on G1LowCmdSystem over rt/lowcmd, with no onboard balance underneath.
+       Everything else, both Dex3 components included, comes from g1_common.xacro. -->
   <xacro:include filename="g1_common.xacro"/>
 
   <xacro:property name="lowcmd" value="${xacro.load_yaml('../config/lowcmd_params.yaml')}"/>
@@ -13,8 +12,8 @@
       <command_interface name="position"/>
       <command_interface name="velocity"/>
       <command_interface name="effort"/>
-      <!-- kp and kd as command interfaces is what lets a controller pick the joint's control
-           mode per tick, and what a policy controller needs. The names are the upstream ones. -->
+      <!-- kp and kd as command interfaces let a controller pick the joint's control mode per
+           tick, which the policy needs. Upstream names. -->
       <command_interface name="kp"/>
       <command_interface name="kd"/>
       <state_interface name="position"/>

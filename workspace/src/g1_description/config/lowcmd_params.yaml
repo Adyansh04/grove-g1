@@ -8,10 +8,8 @@ system:
   # (simulate/config.yaml) and ROS_DOMAIN_ID. Both are 1 in this image.
   domain_id: 1
 
-  # MUST stay empty. A non-empty interface makes the SDK build an inline CycloneDDS config that
-  # replaces CYCLONEDDS_URI wholesale, losing MaxAutoParticipantIndex and crashing DDS init. That
-  # is the same fault patches/unitree_mujoco/002-sdk-honour-cyclonedds-uri.patch fixed for the
-  # simulator. The interface is pinned by CYCLONEDDS_URI instead.
+  # MUST stay empty: a non-empty value makes the SDK build an inline CycloneDDS config that
+  # replaces CYCLONEDDS_URI and crashes DDS init. CYCLONEDDS_URI pins the interface instead.
   network_interface: ""
 
   lowstate_timeout_ms: 100     # ms; rt/lowstate older than this errors the component while active
@@ -23,39 +21,12 @@ system:
   # in unitree_mujoco, so sim leaves it false; hardware must set it true or rt/lowcmd is ignored.
   release_motion_mode: false
 
-# Gains used only when a controller claims position without kp/kd, i.e. the kPositionOnly branch.
-# 10/1 is the upstream value everywhere it has not been measured otherwise, and it is what the
-# legs and waist keep: nothing claims them position-only, so the number is never reached there.
-#
-# The 14 arm joints are the exception, because arm_trajectory_controller claims position alone
-# and so lands on this branch on every MoveIt execution. 10 is enough to hold the arms hanging
-# at rest, where they lie along gravity, but not to track a trajectory that lifts them: measured
-# under a controller commanding the arms forward, 10 left them sagging about 0.4 rad, resting on
-# the hips. Unitree's own arm example values, 40 for shoulders and elbow and 25 for the lighter
-# wrists, fixed that: they hold a pose, which is all the measurement above asked of them.
-#
-# They do not TRACK one. Measured off arm_trajectory_controller's own error field through a pick
-# and place, while the arm was moving: 57 mm of lag at the hand on the median, 74 mm at the 90th
-# and 171 mm at worst, the shoulder roll alone trailing 0.31 rad. MoveIt only promises clearance
-# along the trajectory it drew, so every millimetre of that lag is clearance the real link never
-# had, and it is why the arm kept striking props the planner had routed it around.
-#
-# 300/150, because doubling to 80 was not enough. This loop has no gravity compensation, so the
-# only restoring torque it has is kp times error: the error IS how it holds the arm up, and a
-# soft joint simply sits wherever that balances. Measured off the controller's own error field
-# while carrying a block, commanded velocity zero: the shoulder drifted 184 mm at the hand over
-# 5.4 s, and sat at 33 mm the rest of the time. 0.33 rad on a 0.55 m arm at kp 80 is about 27 Nm
-# of load, which needs roughly four times the stiffness to hold inside 30 mm.
-#
-# kd rises with the SQUARE ROOT of kp, not with kp: damping a stiffer spring the same way needs
-# 2*sqrt(kp*I), so 40->300 is kd 1 -> about 2.7, taken to 4 to stay on the damped side. Getting
-# this wrong rings the joint, and a ringing joint is the 2.33 rad/s the arm was measured doing
-# while it was told to hold still.
-#
-# Only arm_trajectory_controller and arm_freeze_controller ever reach these joints, and the
-# freeze holds the same number deliberately so the handover is not a step in stiffness; both
-# moved together. Real motors have torque limits this does not know about: 300 x 0.1 rad is
-# 30 Nm, which wants checking against the datasheet before any of this reaches hardware.
+# Gains for joints a controller claims position-only. Legs and waist keep the upstream 10/1.
+# arm_trajectory_controller claims the arms this way, so MoveIt runs on these: with no gravity
+# compensation, stiffness is what holds the arm on its planned path. kd scales with sqrt(kp).
+# arm_freeze_controller holds all 14 arm joints at 300/4, so the handover steps the wrists to 150/3.
+# Hardware: at 0.1 rad of error these ask 30 Nm of a shoulder and 15 Nm of a wrist, past the
+# URDF's 25 Nm and 5 Nm (wrist pitch, yaw) limits. Check before running on the robot.
 joints:
   left_hip_pitch_joint:        { position_only_kp: 10.0, position_only_kd: 1.0 }
   left_hip_roll_joint:         { position_only_kp: 10.0, position_only_kd: 1.0 }

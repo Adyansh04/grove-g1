@@ -1,23 +1,16 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="g1_29dof_with_hand_rev_1_0">
 
-  <!-- The robot itself: the vendored body, the frames the rest of the stack looks up by name,
-       and the two hands. Split from g1_lowcmd.urdf.xacro because consumers that only need the
-       geometry (RViz, the sensor-extrinsic test) must not pull in a ros2_control block that
-       would try to claim the body motors. -->
+  <!-- The robot without the body's ros2_control block: the vendored body, the frames the stack
+       looks up by name, and both hands. Geometry-only consumers (RViz, the sensor-extrinsic
+       test) load this file so they cannot claim the body motors. -->
 
-  <!-- Upstream description, with one mechanical edit: mesh paths were changed from relative
-       ("meshes/x.STL") to package:// so RViz can resolve them. See g1_description/README.md.
-       Everything else is byte-for-byte upstream, CRLF included, so it stays diffable against
-       Unitree's file. xacro:include discards the <robot> wrapper. -->
+  <!-- Unitree's URDF, byte-for-byte (CRLF included) apart from mesh paths rewritten to
+       package:// for RViz. Additions go in this file, so it stays diffable against upstream. -->
   <xacro:include filename="g1_29dof_with_hand_rev_1_0.urdf"/>
 
-  <!-- REP-145 optical frames. The vendored URDF stops at d435_link, which is a body frame
-       (x forward, y left, z up); every ROS depth consumer, rviz's DepthCloud included,
-       assumes the optical convention (z forward, x right, y down). Publishing a depth
-       image in the body frame projects it rotated 90 degrees, which looks like a broken
-       sensor rather than a wrong frame. Added here rather than in the vendored file, which
-       is kept as close to upstream as possible. -->
+  <!-- REP 103 optical frames (z forward, x right, y down), which ROS depth consumers assume.
+       d435_link is a body frame, and a depth image stamped in it projects rotated 90 degrees. -->
   <link name="camera_depth_optical_frame"/>
   <joint name="camera_depth_optical_joint" type="fixed">
     <parent link="d435_link"/>
@@ -32,22 +25,13 @@
     <origin xyz="0 0 0" rpy="-1.5707963267948966 0 -1.5707963267948966"/>
   </joint>
 
-  <!-- Sensor bodies. The vendored URDF leaves d435_link and mid360_link as empty links, so both
-       sensors are invisible in RViz and it is impossible to see where either is pointing.
-       Attached as child links rather than by editing those links, for the same reason the
-       optical frames above are: the vendored file stays byte-for-byte diffable against
-       Unitree's.
-
-       VISUAL ONLY, deliberately. Collision geometry here would be swept into MoveIt's
-       self-filter and its planning scene, so a mis-sized box would silently either carve a hole
-       in the octomap or block plans near the head. These exist to be looked at, nothing more.
-       See g1_moveit_config/config/sensors_3d.yaml for what the sensors actually feed. -->
+  <!-- Sensor bodies, so RViz shows where each sensor sits and points. VISUAL ONLY: collision
+       geometry would enter MoveIt's self-filter and planning scene, where a mis-sized shape
+       carves a hole in the octomap or blocks plans near the head. -->
   <link name="d435_visual">
     <visual>
-      <!-- Intel's own placement from realsense2_description's _d435.urdf.xacro: the mesh origin
-           sits at the front plate between the two infrared cameras, so it needs this offset and
-           rotation to line up with the link. Values are
-           d435_zero_depth_to_glass + d435_glass_to_front, and -d435_cam_depth_py. -->
+      <!-- Intel's mesh placement from realsense2_description's _d435.urdf.xacro: x is
+           d435_zero_depth_to_glass + d435_glass_to_front, y is -d435_cam_depth_py. -->
       <origin xyz="0.0043 -0.0175 0" rpy="1.5707963267948966 0 1.5707963267948966"/>
       <geometry>
         <mesh filename="package://realsense2_description/meshes/d435.dae"/>
@@ -61,9 +45,8 @@
 
   <link name="mid360_visual">
     <visual>
-      <!-- Livox ship no ROS description package, so this is a primitive from the published
-           MID360 dimensions (65 x 65 x 60 mm) rather than a mesh. It marks where the LiDAR is
-           and roughly how big; do not read anything finer off it. -->
+      <!-- Livox ship no ROS description, so a cylinder from the published 65 x 65 x 60 mm
+           envelope: position and rough size only. -->
       <geometry>
         <cylinder radius="0.0325" length="0.060"/>
       </geometry>
@@ -77,10 +60,9 @@
     <child link="mid360_visual"/>
   </joint>
 
-  <!-- The Mid360's built-in IMU, which is the frame FAST-LIO's odometry reports ("body").
-       Livox publish the LIDAR-in-IMU offset [-0.011, -0.02329, 0.04412]; this joint is its
-       inverse, because here the parent is the lidar frame the cloud arrives in. Rotation is
-       identity: both sensors sit in one housing and flip together with the mount. -->
+  <!-- The Mid360's built-in IMU, FAST-LIO's "body" frame. The inverse of Livox's published
+       LiDAR-in-IMU offset [-0.011, -0.02329, 0.04412], since the parent here is the LiDAR. No
+       rotation: both sit in one housing. -->
   <link name="mid360_imu"/>
   <joint name="mid360_imu_joint" type="fixed">
     <parent link="mid360_link"/>
@@ -101,17 +83,14 @@
     </joint>
   </xacro:macro>
 
-  <!-- One component per hand. The Dex3 is a separate device on its own SDK channels with its
-       own authority, so it is neither folded into the body component nor shared between the
-       two hands: a fault on one hand must not take the arms or the other hand down with it.
+  <!-- One component per hand, so a fault on one hand takes down neither the arms nor the other
+       hand.
 
-       domain_id and network_interface must match the body component's. ChannelFactory is per
-       process and only its first Init takes effect, so a disagreement would silently strand
-       whichever component initialised second.
+       domain_id and network_interface must match the body component's: ChannelFactory is per
+       process, only its first Init applies, and a mismatch silently strands the later one.
 
-       Joint order is the Dex3 wire order and G1Dex3System refuses to init if it is disturbed,
-       because HandCmd_::motor_cmd is a positional array and a reordered list would close the
-       wrong fingers. -->
+       Joint order is the Dex3 wire order, since HandCmd_::motor_cmd is positional; G1Dex3System
+       refuses to init if it is disturbed. -->
   <xacro:macro name="g1_dex3_hand" params="side">
     <ros2_control name="G1Dex3System${'Left' if side == 'left' else 'Right'}" type="system">
       <hardware>
@@ -140,43 +119,12 @@
   <xacro:g1_dex3_hand side="left"/>
   <xacro:g1_dex3_hand side="right"/>
 
-  <!-- Where the hand actually closes, as a frame rather than a number in a config file.
-
-       The palm link's origin is not the point the fingers grip at, and the difference is large
-       enough to matter: planning to the palm origin puts the object through the fingers.
-
-       A frame, not a parameter, for three reasons. It is visible in RViz, so being wrong is
-       something you can see rather than infer from a failed plan. MoveIt can be given a pose
-       goal for it directly, so no code does offset arithmetic. And it is a property of the
-       Dex3's own geometry, identical on the real hand, so it belongs in the description
-       alongside everything else the URDF says about the hand.
-
-       Orientation matches the palm, so a caller still chooses how to hold the hand; only the
-       position is corrected. The two hands mirror, which is why y flips.
-
-       x = 0.090 is bounded on both sides, measured against the finger collision capsules in
-       MuJoCo rather than estimated. The thumb's own surface sits at palm x = 0.046 at
-       `pinch_ready`, so anything nearer than that is in the space the hand descends through;
-       and the thumb only swings out to x = 0.091 at `closed`, so anything further and it never
-       reaches the object at all. Between them this frame takes objects 20 to 75 mm across.
-
-       y = 0.050 is where the fingers and thumb meet, and it is also what fixes how tall an
-       object has to be: the hand hangs 113 mm below the palm even with the thumb retracted, so
-       63 mm below this frame, and an object shorter than that gets the thumb on the table
-       instead. See g1_manipulation's grasp_depth_below_top_m and min_grip_height_m.
-
-       y = 0.050 is where the thumb and finger link origins meet, and it is also what fixes how
-       tall an object has to be: the hand hangs 113 mm below the palm even with the thumb
-       retracted, so 63 mm below this frame, and an object shorter than that gets the thumb on
-       the table instead. See g1_manipulation's grasp_depth_below_top_m and min_grip_height_m.
-
-       Tried at 0.085 twice, because ground truth puts a held block about 36 mm beyond this
-       frame along the closing axis and 0.085 looked like the correction. It is not. Moving the
-       frame moved the block with it, to 29 mm beyond the new position: the offset is the
-       closing fingers sweeping the object outward before the thumb arrives, not a frame in the
-       wrong place. 0.085 therefore bought nothing and cost two picks in ten on the pinned
-       tabletop, so it is reverted and the sweep is dealt with where it happens, in the order the
-       hand closes. See g1_manipulation's thumb_set posture. -->
+  <!-- The point the Dex3 closes on. Pose goals target it rather than the palm origin, which
+       would put the object through the fingers. Orientation is the palm's; y mirrors.
+       x = 0.090: past the retracted thumb's surface (x 0.046 at pinch_ready), within the closed
+       thumb's reach (x 0.091).
+       y = 0.050: where fingers and thumb meet; the hand hangs 63 mm below it, which
+       g1_manipulation's min_grip_height_m allows for. -->
 
   <xacro:macro name="g1_grasp_frame" params="side mirror">
     <link name="${side}_hand_grasp_frame"/>

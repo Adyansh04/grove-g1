@@ -2,11 +2,9 @@
 The sensor mounts exist twice, and copies drift.
 
 `workspace/vendor/unitree_mujoco/sensor_publisher.cc` carries `kMountXyz`/`kMountRpy` and
-`kCamXyz`/`kCamRpy` as compile-time constants, because the simulator computes the sweep and the
-render inside its own process and links no ROS: it cannot ask TF where the sensors are. The URDF
-owns the same four numbers. Move one and not the other and the cloud arrives in a frame that
-does not describe where it was taken from, which reads downstream as an odometry or a
-calibration fault rather than as what it is.
+`kCamXyz`/`kCamRpy` as compile-time constants, because the simulator links no ROS and cannot ask
+TF where the sensors are. Move one copy and not the other, and the cloud arrives in a frame that
+does not describe where it was taken.
 """
 
 import math
