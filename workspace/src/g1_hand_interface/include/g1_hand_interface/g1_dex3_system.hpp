@@ -4,13 +4,6 @@
 /**
  * @file g1_dex3_system.hpp
  * @brief ros2_control SystemInterface for one Unitree Dex3-1 hand, over its own SDK channels.
- *
- * Real hardware code. It speaks Unitree's published Dex3 contract and carries to the robot
- * unchanged; the simulator answers the same channels.
- *
- * Deliberately not part of the body component. The hand is a separate device on separate
- * channels with separate authority, and one component per hand keeps a hand fault from taking
- * the arms down with it.
  */
 
 #include <array>
@@ -37,13 +30,8 @@ namespace g1_hand_interface
 /// this before publishing; an empty sequence is accepted and silently does nothing.
 inline constexpr std::size_t kNumHandJoints = 7;
 
-/// Wire order, identical for both hands: thumb_0, thumb_1, thumb_2, middle_0, middle_1,
-/// index_0, index_1. This is also the URDF's own document order, so the map is positional.
-///
-/// Do NOT copy Unitree's Dex3_1_Right_JointIndex enum from xr_teleoperate/avp_teleoperate: it
-/// lists index before middle, contradicting their documented order. It is inert there (every
-/// use is enumerate(), so the value never permutes anything) but transcribing it here would
-/// close the wrong fingers.
+/// Wire order, identical for both hands and the same as the URDF's. Do not copy Unitree's
+/// Dex3_1_Right_JointIndex enum: it lists index before middle, against their documented order.
 inline constexpr std::array<const char*, kNumHandJoints> kJointSuffixes = {
     "thumb_0", "thumb_1", "thumb_2", "middle_0", "middle_1", "index_0", "index_1",
 };
@@ -75,8 +63,8 @@ inline void packHandMotor(
     unitree_hg::msg::dds_::MotorCmd_& motor, std::size_t index, bool driven, double position,
     double kp, double kd)
 {
-    // timeout armed on release only: while driving, the controller is the heartbeat, and arming
-    // it would stop the fingers a second after any hiccup in the control loop.
+    // Timeout armed on release only: while driving it would stop the fingers a second after any
+    // hiccup in the control loop.
     motor.mode() = packMode(index, driven ? kStatusFoc : kStatusLock, !driven);
     motor.q()    = static_cast<float>(position);
     motor.dq()   = 0.0F;
@@ -85,6 +73,11 @@ inline void packHandMotor(
     motor.kd()   = static_cast<float>(driven ? kd : 0.0);
 }
 
+/**
+ * @brief One Dex3-1 hand: position commands, clamped and slewed, on rt/dex3/<side>/{cmd,state}.
+ *
+ * Separate from the body component, one per hand, so a hand fault cannot take the arms down.
+ */
 class G1Dex3System : public hardware_interface::SystemInterface
 {
 public:
@@ -102,10 +95,8 @@ public:
     hardware_interface::CallbackReturn
     on_deactivate(const rclcpp_lifecycle::State& previous) override;
     /**
-     * @brief Releases the hand on the error path.
-     *
-     * read() can error the component straight to a failed state without on_deactivate ever
-     * running, and the release frame is the only one that arms the motor's own timeout.
+     * @brief Releases the hand. read() can error the component without on_deactivate running, and
+     *        only the release frame arms the motors' own timeout.
      */
     hardware_interface::CallbackReturn on_error(const rclcpp_lifecycle::State& previous) override;
     hardware_interface::CallbackReturn on_shutdown(const rclcpp_lifecycle::State& previous) override;
@@ -165,9 +156,8 @@ private:
 
     std::string side_;  ///< "left" or "right"; picks the channel pair and the joint prefix.
 
-    /// Which state channel to read. Parameterised because the robot carries both
-    /// rt/dex3/<side>/state and a lower-rate rt/lf/ variant, and Unitree's own code
-    /// disagrees about which one to use.
+    /// Parameterised because the robot also carries a lower-rate rt/lf/dex3/<side>/state, and
+    /// Unitree's own code disagrees about which to read.
     std::string state_topic_;
     std::string cmd_topic_;
 
@@ -180,24 +170,23 @@ private:
     std::array<double, kNumHandJoints> lower_limit_{};
     std::array<double, kNumHandJoints> upper_limit_{};
 
-    /// From <param> tags on the ros2_control block. kp/kd are ~300x smaller than the arm's:
-    /// these are finger motors, and arm gains here would be violent.
+    /// From the <param> tags. Finger-motor gains, far below the arm's.
     double kp_{ 1.5 };
     double kd_{ 0.2 };
     double command_publish_rate_{ 100.0 };
     double max_joint_velocity_{ 3.0 };
     double state_timeout_s_{ 0.2 };
 
-    /// Must match the body component's: ChannelFactory is per process and only the first Init
-    /// takes effect, so a disagreement here would silently put one of them on the wrong domain.
+    /// Must match the body component's: ChannelFactory is per process and only its first Init
+    /// applies.
     std::string network_interface_;
     int         domain_id_{ 0 };
 
-    /// The first write takes full authority: unlike a blended interface, there is no weight to
-    /// bring up. So the ramp is ours, and it is the only thing between a large command step and
-    /// a fast finger. Atomic because the lifecycle callbacks clear it from the executor thread
-    /// while read() and write() are reading it on the update thread.
-    std::atomic<bool>                     seeded_{ false };
+    /// True once commands are seeded from the measurement; write() sends nothing before. Atomic:
+    /// lifecycle callbacks clear it while read() and write() run on the update thread.
+    std::atomic<bool> seeded_{ false };
+    /// Raised for the duration of write(), so a release can wait it out.
+    std::atomic<bool>                     in_write_{ false };
     std::chrono::steady_clock::time_point last_publish_{};
 
     /// Preallocated and resized once, so the write path never allocates.
