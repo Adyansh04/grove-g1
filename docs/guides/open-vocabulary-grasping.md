@@ -1,14 +1,18 @@
 # Open-vocabulary perception
 
 Name an object in plain text and get its 3D pose, with no dataset and no training. Two halves: a
-vision server on the host that turns an RGB frame plus a list of noun phrases into one mask per
-object, and `g1_perception` in the container, which lifts those masks into the object poses the
-manipulation skills consume.
+vision server on the host turns an RGB frame plus a list of noun phrases into one mask per object,
+and `g1_perception` in the container lifts those masks into the object poses the manipulation
+skills consume. The same server can turn an instruction into phrases, and a second host server
+proposes grasps.
+
+Host commands run from the repository root. `ros2` commands run in a container shell with the
+workspace sourced, as in the other guides.
 
 ## Running it in the stack
 
-The stand-in detector cuts masks out of simulator ground truth, so the whole pipeline below the
-mask runs without a GPU or a server:
+The stand-in detector cuts masks out of simulator ground truth, so everything below the mask runs
+without a GPU or a server:
 
 ```bash
 ros2 launch g1_bringup bringup.launch.py world:=tabletop pin_pelvis:=true \
@@ -24,12 +28,14 @@ ros2 launch g1_bringup bringup.launch.py world:=tabletop pin_pelvis:=true \
 ```
 
 `perception:=true` makes the object-pose source take measured poses instead of the simulator's,
-and widens the staleness window the skills judge against, because a detector answers in seconds
-rather than milliseconds. Objects arrive on `/objects` as `red_block_0`, plus a bare `red_block`
-while only one of them is in view.
+and raises how old a pose the skills accept from 1 s to 8 s, because the detector answers in
+seconds. Each phrase costs the server a model pass, so ask only for what the task needs; the
+mission trees narrow the list themselves.
 
-Measured against the simulator's own poses in the tabletop world: all five objects land within
-1.5 mm, and their sizes within 4.4 mm.
+Objects arrive on `/objects` as `<phrase>_<index>`, such as `red_block_0`. The bare phrase,
+`red_block`, is an alias for the first object seen alone under that phrase, held until its track
+retires. It is withheld from any frame where that object is unseen or another object with the same
+phrase is in view, so it never jumps between objects.
 
 ## Watching it in RViz
 
@@ -43,25 +49,26 @@ Measured against the simulator's own poses in the tabletop world: all five objec
 | Grasp plan | `/g1_manipulation_server/grasp_plan` | During a pick, every candidate weighed and the grasp taken. |
 
 The switch behind all four is `visualization`, which follows `rviz`. `visualization:=false` keeps
-them off with RViz open, and nothing of them runs: no node, no publisher.
+them off with RViz open, and then none of their nodes or publishers exist.
 
 ## The vision server
+
+On the host. It needs `uv`:
 
 ```bash
 ./scripts/setup-vision.sh
 ```
 
-Creates a virtualenv at `~/ref/grove-vision/.venv`, reusing the torch wheels that
-`scripts/setup-groot.sh` caches. The model weights download on first run: about 900 MB for
-Grounding DINO base and 180 MB for SAM 2.1 small.
-
-Run it:
+This creates a virtualenv at `~/ref/grove-vision/.venv`, sharing the torch wheel cache with
+`scripts/setup-groot.sh`. The weights download on first run: about 900 MB for Grounding DINO base
+and 180 MB for SAM 2.1 small.
 
 ```bash
 ~/ref/grove-vision/.venv/bin/python scripts/vision_server.py --port 5560
 ```
 
-Compose is host-networked, so the container reaches it at `tcp://127.0.0.1:5560`.
+Compose is host-networked, so the container reaches it at `tcp://127.0.0.1:5560`. The default
+backend needs about 2.4 GiB of VRAM on top of the simulator's.
 
 To check it against saved frames without binding a socket:
 
@@ -70,71 +77,64 @@ To check it against saved frames without binding a socket:
   --self-test frame.png --phrases "red block,green cylinder"
 ```
 
-The self-test prints one line per instance with its score, region of interest and pixel count, then
-the peak VRAM. It exits non-zero when a phrase found nothing, so it works as a smoke test.
+The self-test prints each instance's score, region of interest and pixel count, then the peak
+VRAM, and exits non-zero when a phrase found nothing. Run it on frames from a new scene before
+trusting the detector there.
 
 ## The protocol
 
-msgpack with `msgpack_numpy` for the arrays, over a ZMQ REQ/REP socket, the same shape the GR00T
-policy server uses.
+msgpack, with `msgpack_numpy` for the arrays, over a ZeroMQ REQ/REP socket, the same shape the
+GR00T policy server uses. A request is `{"endpoint": <name>, "data": {...}}`.
 
-| Endpoint | Request | Reply |
+| Endpoint | Data | Reply |
 |---|---|---|
 | `ping` | nothing | `status`, `backend`, `device` |
 | `segment` | `image` uint8 (H, W, 3), `phrases`, optional `box_threshold` and `text_threshold` | `model`, `elapsed_ms`, `instances` |
+| `ground` | `image`, `instruction`; needs `--vlm` | `phrases`, `target`, `points`, `model`, `elapsed_ms` |
 
 Each instance carries `label` (the phrase it was asked for, not the model's own wording), `score`,
-`roi` as `[x, y, width, height]`, and `mask`, a uint8 crop of that rectangle holding 0 or 255. The
-crop rather than a full frame: at 848x480 a full mask is 407 kB per object against about 3 kB for a
-6 cm object at half a metre.
+`roi` as `[x, y, width, height]`, and `mask`, a uint8 crop of that rectangle holding 0 or 255.
 
-Any failure comes back as `{"error": "..."}`. A REQ socket is stranded by a missing reply, so the
-server answers even when it cannot do the work.
-
-## Measured
-
-Three rendered frames per scene from the simulator's own head camera at 848x480, compared against
-masks from MuJoCo's segmentation render. RTX 4080 Laptop, float32, no TensorRT.
-
-| Scene | Phrases | Found | Score | Mask IoU | Latency | Peak VRAM |
-|---|---|---|---|---|---|---|
-| Five objects on a bench | 5 | 5 of 5, every frame | 0.85 to 0.91 | 0.97 to 0.99 | 1.45 to 1.72 s | 2.37 GiB |
-| Manipulation world, one cube on a grey pedestal | 1 | 1 of 1, every frame | 0.81 | n/a | 1.43 to 1.75 s | 2.35 GiB |
-
-Flat-shaded simulator renders were the open question, because published work reports these models
-failing on non-photorealistic scenes. They do not fail on ours. Expect worse on textured household
-objects, and check before trusting a new scene.
+Any failure comes back as `{"error": "..."}`. A missing reply would strand the client's REQ
+socket, so the server answers even when it cannot do the work.
 
 ## Swapping the model
 
-`--backend sam3` runs SAM 3 instead, one model from text straight to masks, and it scores better on
-every published benchmark. Its weights are gated: request access at
-https://huggingface.co/facebook/sam3, then sign in with
+`--backend sam3` runs SAM 3 instead, one model from text straight to masks. Its weights are gated:
+request access at https://huggingface.co/facebook/sam3, then sign in with
 
 ```bash
 ~/ref/grove-vision/.venv/bin/hf auth login
 ```
 
-Nothing in the ROS workspace changes when the backend does. The instance-mask message is the same
-either way, which is the point of putting the model behind a socket.
+Nothing in the ROS workspace changes with the backend; the instance-mask message is the same
+either way.
 
 ## Grasps
 
-A second host server turns the same masks into six-degree-of-freedom grasps for the Dex3-1, with
-no CAD model of anything. It is [GraspGenX](https://github.com/NVlabs/GraspGenX), whose released
-model conditions on a gripper's *sweep volume*: two boxes describing the finger volume open and
-half closed. That is why a hand it has never trained on works, and it ships the description of
-this one, `unitree_g1`, which is the Dex3-1's seven joints.
+A second host server, [GraspGenX](https://github.com/NVlabs/GraspGenX), turns the same masks into
+six-degree-of-freedom grasps for the Dex3-1, with no CAD model of anything. Its model conditions on
+a gripper's sweep volume, the space the fingers fill open and half closed, so it works for a hand
+it never trained on. The adapter sends the Dex3-1's, from GraspGenX's own `unitree_g1`
+description.
+
+On the host, again with `uv`:
 
 ```bash
 ./scripts/setup-graspgen.sh
 ```
 
-It tracks upstream `main` and prints the commit it checked out. Nothing upstream versions the
-wire protocol the adapter speaks, so once a commit works, pin it: `GRASPGEN_REF=<sha>
-./scripts/setup-graspgen.sh`.
+It tracks upstream `main` and prints the commit it checked out. Upstream does not version the wire
+protocol, so once a commit works, pin it: `GRASPGEN_REF=<sha> ./scripts/setup-graspgen.sh`. Serve
+it; the first run downloads a few gigabytes of checkpoints into `~/ref/GraspGenX/ext`:
 
-Run the server it prints, then ask for candidates:
+```bash
+cd ~/ref/GraspGenX
+uv run python client-server/graspgenx_server.py \
+  --config ext/graspgenx_checkpoints/release --assets_dir ext/gripper_descriptions --port 5556
+```
+
+Then ask for candidates:
 
 ```bash
 ros2 launch g1_bringup bringup.launch.py world:=tabletop pin_pelvis:=true \
@@ -147,23 +147,29 @@ ros2 service call /g1_grasp_engine/generate_grasps g1_msgs/srv/GenerateGrasps \
   "{object_id: red_block_0, hand: right}"
 ```
 
-Nothing moves and nothing is drawn: this stage produces candidates, and what filters and executes
-them is the arm side. A pick with `grasp_source:=generated` and `rviz:=true` draws them on
-`/g1_manipulation_server/grasp_plan`, each as an arrow along its approach: green for the one taken,
-red for too tilted, orange for out of reach.
+That call only returns candidates; the arm side filters and executes them. Add
+`grasp_source:=generated activate_arm:=true activate_arm_delay_s:=40.0 rviz:=true` to the launch
+and send a pick:
+
+```bash
+ros2 action send_goal /g1_manipulation_server/pick g1_msgs/action/Pick \
+  "{object_id: red_block, arm: right}" --feedback
+```
+
+`grasp_plan` then draws each candidate as an arrow along its approach: green for the one taken, red
+for too tilted, orange for out of reach.
 
 `grasp_engine:=mock` answers the same service from `/objects` alone, with three sensible grasps and
-one deliberately reaching up through the table, so the filtering above it can be tested without a
-GPU.
+one reaching up through the table, so the filtering can be tested without a GPU.
 
 ### The one calibration
 
-GraspGenX returns poses of its own gripper frame, where +Z is the approach direction and +X the
-closing direction. That is not a link in this robot's URDF. Run a pick against a known object:
-`grasp_plan` draws the candidates in the generator's frame and the goal's axes after the offset.
-Read the offset to `right_hand_grasp_frame` off the two and pass it as `grasp_offset`; that
-number is what the arm side applies. Left-hand requests are refused rather than mirrored: a mirrored sweep volume is a
-different gripper, and the model was never asked about it.
+GraspGenX returns poses of its own gripper frame, where +z is the approach and the fingers close
+along x. That frame is not a link of this robot. Run a pick against a known object: `grasp_plan`
+draws the candidates in the generator's frame and the goal's axes after the offset. Read the offset
+to `right_hand_grasp_frame` off the two and pass it as `grasp_offset`, xyz then rpy; the arm side
+applies it. Left-hand requests are refused rather than mirrored: a mirrored sweep volume is a
+different gripper.
 
 ## Instructions
 
@@ -175,8 +181,8 @@ different job, and a vision-language model does it. Start the server with one:
   --vlm Qwen/Qwen3-VL-2B-Instruct --port 5560
 ```
 
-It loads on the first grounding request rather than at startup, so segmentation is unaffected
-until something asks. Then run the grounder beside the detector:
+The model loads on the first grounding request rather than at startup, so segmentation is
+unaffected until something asks. Then run the grounder beside the detector:
 
 ```bash
 ros2 launch g1_bringup bringup.launch.py world:=tabletop pin_pelvis:=true \
@@ -189,7 +195,6 @@ ros2 service call /ground_instruction g1_msgs/srv/GroundInstruction \
   "{instruction: 'pick up the white cup next to the green cylinder'}"
 ```
 
-The answer is the phrases, which of them the instruction was about, and points where the model
-could give them. Those phrases are written straight onto the detector, so the next detection
-looks for them. Ask for the target's object id on `/objects` a second or two later: the detector
-needs one pass to find it.
+The answer holds the phrases, the one the instruction is about, and image points where the model
+could give them. The grounder writes the phrases onto the detector, so look for the target on
+`/objects` a second or two later, after one detection pass.

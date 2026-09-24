@@ -13,48 +13,49 @@ An autonomy stack for the [Unitree G1](https://www.unitree.com/g1) humanoid, bui
 and developed simulation-first against `unitree_mujoco`.
 
 The simulator speaks the same DDS channels as the real robot, so the hardware interface, the
-navigation stack and the control-authority logic all carry over to hardware without code changes.
+navigation stack and the control-authority logic carry over to hardware without code changes.
 Moving to the physical G1 is a domain-ID and interface change, not a rewrite.
 
 ## What it does today
 
 The robot maps a facility with SLAM Toolbox, localizes against the saved map, and drives itself to
 a goal pose under Nav2. Balance is ours: a learned locomotion policy runs at 50 Hz inside a
-`ros2_control` controller and commands all 29 body motors over `rt/lowcmd`, with no onboard
-controller underneath. Arm trajectories are an ordinary `JointTrajectoryController` claiming the
-14 arm joints on the same component, so MoveIt executes while the policy keeps the robot up.
+`ros2_control` controller and drives the legs and waist over `rt/lowcmd`, with no onboard
+controller underneath. One hardware component owns all 29 body motors, and arm trajectories are an
+ordinary `JointTrajectoryController` claiming the 14 arm joints on it, so MoveIt executes while the
+policy keeps the robot up.
 
 MoveIt plans for either arm or both together, collision-checked against a live octomap built from
-the LiDAR, and each Dex3-1 hand is its own planning group with `open` and `closed` postures.
+the LiDAR, and each Dex3-1 hand is its own planning group with named postures.
 
-On top of that, pick and place are served as actions, and a BehaviorTree.CPP behaviour tree
-sequences them with navigation into a mission that runs end to end in the facility world: drive
-to a workbench, walk the last half metre under closed-loop control, pick a cube up, carry it
-across the building, and put it down on a bench. That mission reads object poses from the
-simulator. With `perception:=true` they are measured from the head camera instead: objects are
-named in plain text, segmented, and lifted into 3D with the aligned depth frame, and the skills
-take them without changing.
+Pick and place are served as actions, and a BehaviorTree.CPP tree sequences them with navigation
+into a mission that runs end to end in the facility world: drive to a workbench, walk the last
+half metre under closed-loop control, pick up a ball, carry it across the building, and drop it
+into a box on another bench. Object poses come from the simulator by default. With
+`perception:=true` they are measured from the head camera instead: objects are named in plain
+text, segmented, and lifted into 3D with the aligned depth frame, and the skills take them without
+changing.
 
-Nav2 parks within 0.5 m of a goal and the arm's usable window is about 0.2 m wide, so a base
+Nav2 parks within 0.5 m of a goal and the arm's reach window is about 0.11 m wide, so a base
 approach skill closes the gap against the measured object rather than against the map. The tree
 is editable in Groot2 against a generated node palette.
 
 Learned manipulation is wired up on top of that: a vision-language-action policy proposes joint
-targets and every chunk is checked against the planning scene before it runs. The pipeline works;
-the pretrained policy does not grasp reliably, which needs fine-tuning on demonstrations from
-this robot.
+targets and every chunk is checked against the planning scene before it runs. The pipeline works,
+but the pretrained policy does not grasp: that needs fine-tuning on demonstrations from this robot,
+and there is no demonstration recorder yet.
 
-## Nav2 Demo
+## Nav2 demo
 
-![Nav2 Demo](docs/media/grove_nav2_demo.gif)
+![Nav2 demo](docs/media/grove_nav2_demo.gif)
 
-## MoveIt Demo
+## MoveIt demo
 
-![MoveIt Demo](docs/media/grove_moveit_demo.gif)
+![MoveIt demo](docs/media/grove_moveit_demo.gif)
 
-## Pick & Place Demo
+## Pick and place demo
 
-![Pick & Place Demo](docs/media/grove_pick_place_demo.gif)
+![Pick and place demo](docs/media/grove_pick_place_demo.gif)
 
 ## Architecture
 
@@ -83,16 +84,13 @@ Two rules shape the design, and both apply in simulation so the habits transfer:
 | [`g1_locomotion`](workspace/src/g1_locomotion) | Walks the base into arm's reach of a measured object, and backs it out again. |
 | [`g1_manipulation`](workspace/src/g1_manipulation) | Pick and place as actions, and the object-pose source behind them. |
 | [`g1_moveit_config`](workspace/src/g1_moveit_config) | MoveIt config: arm and hand planning groups, kinematics, the octomap. |
-| [`g1_msgs`](workspace/src/g1_msgs) | The mission's own interfaces: pick, place, approach, retreat, arm posture, grasp. |
+| [`g1_msgs`](workspace/src/g1_msgs) | The stack's own interfaces: the skill actions, the policy and perception services, instance masks. |
 | [`g1_navigation`](workspace/src/g1_navigation) | SLAM Toolbox mapping, AMCL localization and Nav2. |
 | [`g1_orchestration`](workspace/src/g1_orchestration) | The behaviour tree that sequences navigation and manipulation into a mission. |
-| [`g1_sensor_relay`](workspace/src/g1_sensor_relay) | Publishes LiDAR and depth frames sampled inside the simulator. |
+| [`g1_perception`](workspace/src/g1_perception) | Object poses from the camera for objects named in text, plus grasp generation and instruction grounding. |
+| [`g1_sensor_relay`](workspace/src/g1_sensor_relay) | Publishes the LiDAR, camera, IMU and object poses sampled inside the simulator. |
 | [`g1_state_estimation`](workspace/src/g1_state_estimation) | Publishes `odom` to `base_footprint` and the TF chain Nav2 needs. |
 | [`g1_vla`](workspace/src/g1_vla) | Learned grasping: a policy's action chunks, checked against the planning scene before they run. |
-
-There is no demonstration recorder yet, so the learned-grasp path runs a pretrained policy and
-cannot be fine-tuned on this robot; a recorder, and the LeRobot dataset and policy tooling that
-would sit beside it, are both still open.
 
 ## Quick start
 
@@ -137,17 +135,17 @@ colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo -D
 source install/setup.bash
 ```
 
-Then pick a demo. The run commands live in their own guides so this page stays short:
+Then pick a demo:
 
 | Guide | What it covers |
 |---|---|
 | [Navigation and arm planning](docs/guides/navigation-and-moveit.md) | Mapping, localization, Nav2 goals, and MoveIt planning against the LiDAR octomap. |
-| [Pick and place](docs/guides/pick-and-place.md) | The manipulation skills and the behaviour tree that sequences them with navigation. |
+| [Pick and place](docs/guides/pick-and-place.md) | The manipulation skills and the behaviour trees that sequence them with navigation. |
 | [Learned grasping](docs/guides/learned-grasping.md) | A vision-language-action policy behind the planning-scene gate. Runs; does not grasp yet. |
-| [Open-vocabulary perception](docs/guides/open-vocabulary-grasping.md) | Naming objects in text and getting their 3D poses, with no dataset and no training. |
+| [Open-vocabulary perception](docs/guides/open-vocabulary-grasping.md) | Objects named in text and measured in 3D, generated grasps, and instructions turned into phrases. |
 
-Each guide lists the launch arguments it uses and why, and
-`ros2 launch g1_bringup bringup.launch.py --show-args` prints the full set.
+`ros2 launch g1_bringup bringup.launch.py --show-args` prints every launch argument with its
+description.
 
 ## Development environment
 
@@ -168,13 +166,13 @@ The container runs `privileged` with `network_mode: host` and a `/dev` bind moun
 deliberate for local robotics development: DDS discovery between the bare-DDS simulator and the
 ROS graph happens over loopback, and device access has to work.
 
-Pointing the container at a real G1 is three environment variables, not an image rebuild:
+Pointing the container at a real G1 takes three variables in `.env`, not an image rebuild:
 `GROVE_G1_CYCLONEDDS_URI=file:///etc/cyclonedds/cyclonedds.hardware.xml` (baked in beside the
-loopback one, differing only in the interface), `GROVE_G1_ROBOT_NIC` for the NIC that reaches
-the robot, and `GROVE_G1_ROS_DOMAIN_ID` for its domain. They are prefixed because the base
-image's own `/etc/profile.d/10-ros-env.sh` rewrites the unprefixed names. `sim.launch.py`
-refuses to start unless `CYCLONEDDS_URI` names a profile that pins `lo`, so the simulator
-cannot be brought up pointing at a robot.
+loopback profile, differing only in the interface), `GROVE_G1_ROBOT_NIC` for the NIC that reaches
+the robot, and `GROVE_G1_ROS_DOMAIN_ID` for its domain. They carry a prefix because the base
+image's `/etc/profile.d/10-ros-env.sh` overwrites the plain names. `sim.launch.py` refuses to start
+unless `CYCLONEDDS_URI` names a profile that pins `lo`, so the simulator cannot come up pointing
+at a robot.
 
 Lifecycle:
 
@@ -191,52 +189,46 @@ Project dependencies belong in `.devcontainer/Dockerfile`, followed by
 
 ## Tests
 
+In the container, from `/root/workspace`:
+
 ```bash
-colcon test --packages-select g1_description g1_locomotion g1_navigation
-colcon test-result --all
+colcon test --packages-select-regex '^g1_' --executor sequential --ctest-args -LE simulator
+colcon test-result --verbose
 ```
 
-Leftover nodes from a previous run are the most productive source of phantom failures here:
-several copies of the stack on one DDS graph look like bugs everywhere except where they are.
-Clear them first, and note it verifies the graph rather than the process table:
+`^g1_` skips the vendored packages, whose lint targets fail by design. `-LE simulator` leaves out
+the suites that launch a simulator. Those are timing-sensitive, so clear any leftover stack first
+and run them one package at a time, which `--executor sequential` does:
 
 ```bash
 ./scripts/clean-stack.sh
+colcon test --packages-select-regex '^g1_' --executor sequential --ctest-args -L simulator
 ```
 
-Suites that launch a simulator are timing-sensitive and serialize on a shared ctest resource lock.
-Run them **one package at a time**, and check nothing is left over from a previous run
-(`pgrep -x unitree_mujoco`) before trusting a result: a stray simulator is the usual explanation
-for a batch of failures that all pass on a clean rerun. Each package README says which of its
-tests need a simulator.
-
-Those suites carry the ctest label `simulator`, so the rest can be run on their own:
-
-```bash
-colcon test --ctest-args -LE simulator   # everything that needs no simulator
-colcon test --ctest-args -L  simulator   # only the simulator suites
-```
+`clean-stack.sh` exits non-zero unless the ROS graph is empty afterwards. Several stacks on one
+DDS graph are the usual explanation for a batch of failures that pass on a clean rerun. Each
+package README says which of its tests need a simulator.
 
 ## Continuous integration
 
-Every pull request, and every push to `main`, builds the workspace and runs the tests that need
-no simulator, in the image built by `.github/ci.Dockerfile`. Lint runs as part of `colcon test`,
-not separately.
+Every pull request, and every push to `main`, builds the workspace and runs the tests that need no
+simulator, in the image built by `.github/ci.Dockerfile`. Lint runs as part of `colcon test`, not
+separately.
 
-The simulator suites are excluded: they are CPU-time-sensitive and measure a shared runner
-rather than the stack. Run them locally before merging anything that touches locomotion,
-navigation or the sensor path.
+The simulator suites are excluded, because on a shared runner they measure the runner rather than
+the stack. Run them locally before merging anything they cover.
 
-A per-package C++ coverage table is printed to each run's summary. It covers only the tests CI
-runs, so the node and launch layer reads low there by construction. It is a signal on the pure
-logic, not a figure for the repository, which is why there is no badge for it.
+Each run's summary prints per-package C++ coverage from those same tests, so the node and launch
+layer reads low by construction. It is a signal on the pure logic, not a figure for the
+repository.
 
 ## Repository layout
 
 ```
 .devcontainer/     derived dev image
+docs/guides/       how to run each demo
 workspace/src/     ROS 2 packages
 workspace/patches/ patches applied to vendored sources at image build
 workspace/vendor/  our source compiled into the vendored simulator
-scripts/           container lifecycle, and stack teardown
+scripts/           container lifecycle, stack teardown, and the host-side model servers
 ```
