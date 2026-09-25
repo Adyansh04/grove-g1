@@ -96,6 +96,15 @@ if(BUILD_TESTING)
   ament_add_gmock(test_viewpoint_planner test/test_viewpoint_planner.cpp TIMEOUT 300)
   target_link_libraries(test_viewpoint_planner g1_world_model_core)
 
+  find_package(launch_testing_ament_cmake REQUIRED)
+
+  # The acceptance run: explores the apartment world and scores rooms, coverage and objects
+  # against its ground truth. Tens of minutes, and it needs the simulator.
+  add_launch_test(test/test_world_model_explore.launch.py
+    TARGET test_world_model_explore TIMEOUT 3600)
+  set_tests_properties(test_world_model_explore PROPERTIES
+    LABELS simulator RESOURCE_LOCK mujoco_sim COST 3000)
+
   g1_add_lint_tests()
 endif()
 

@@ -19,6 +19,7 @@ find_package(rclcpp_action REQUIRED)
 find_package(std_srvs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
+find_package(tf2_ros REQUIRED)
 find_package(vision_msgs REQUIRED)
 
 # --- library ---------------------------------------------------------------
@@ -39,6 +40,7 @@ add_library(g1_bt_nodes
   src/skills/place.cpp
   src/skills/retreat.cpp
   src/skills/set_arm_posture.cpp
+  src/skills/world_model_leaves.cpp
 )
 g1_target_defaults(g1_bt_nodes)
 target_link_libraries(g1_bt_nodes PUBLIC
@@ -47,6 +49,7 @@ target_link_libraries(g1_bt_nodes PUBLIC
   rclcpp_action::rclcpp_action
   tf2::tf2
   tf2_geometry_msgs::tf2_geometry_msgs
+  tf2_ros::tf2_ros
   ${controller_manager_msgs_TARGETS}
   ${g1_msgs_TARGETS}
   ${geometry_msgs_TARGETS}

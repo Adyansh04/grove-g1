@@ -35,6 +35,12 @@
   <test_depend>ament_cmake_gmock</test_depend>
   <test_depend>ament_cmake_lint_cmake</test_depend>
   <test_depend>ament_cmake_xmllint</test_depend>
+  <test_depend>g1_bringup</test_depend>
+  <test_depend>g1_orchestration</test_depend>
+  <test_depend>nav2_msgs</test_depend>
+  <test_depend>python3-yaml</test_depend>
+  <test_depend>launch_testing</test_depend>
+  <test_depend>launch_testing_ament_cmake</test_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

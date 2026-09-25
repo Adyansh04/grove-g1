@@ -1,0 +1,54 @@
+<?xml version="1.0"?>
+<!--
+  Explores the building and builds the world model: rooms, objects and what the head camera has
+  seen of them. Pass one walks to frontiers until the LiDAR map is closed; on a complete map it
+  ends at once. Pass two makes the camera see what the map holds, one viewpoint at a time: walk
+  there, face each heading, dwell while the detector answers, report. The world model plans
+  every viewpoint from what the camera actually measured, and the tree only moves the robot.
+
+  Needs Nav2, the world model and a detector publishing masks; the detector's phrases are set at
+  launch. Viewpoints Nav2 cannot reach are reported and avoided, never retried here.
+-->
+<root BTCPP_format="4" main_tree_to_execute="Explore">
+  <BehaviorTree ID="Explore">
+    <Sequence name="explore">
+      <SubTree ID="VisitViewpoints" name="close_the_map" mode="frontier"/>
+      <SubTree ID="VisitViewpoints" name="see_every_room" mode="coverage"/>
+      <SaveWorld name="save_the_world"/>
+    </Sequence>
+  </BehaviorTree>
+
+  <BehaviorTree ID="VisitViewpoints">
+    <Sequence name="visit_until_done">
+      <!-- NextViewpoint fails when there is nothing left: that ends the loop, and `outcome`
+           tells a finished pass from an error. -->
+      <ForceSuccess name="loop_ends_when_done">
+        <KeepRunningUntilFailure name="viewpoint_loop">
+          <Sequence name="one_viewpoint">
+            <NextViewpoint name="next_viewpoint" mode="{mode}" goal="{goal}"
+                           headings="{headings}" viewpoint_id="{viewpoint}"
+                           outcome="{outcome}"/>
+            <Fallback name="visit_or_report_unreached">
+              <Sequence name="visit">
+                <NavigateToPose name="walk_there" goal="{goal}"/>
+                <LoopDouble name="each_heading" queue="{headings}" value="{heading}">
+                  <Sequence name="face_and_dwell">
+                    <!-- A spin that falls short still leaves the camera looking somewhere
+                         useful; coverage is measured, not assumed. -->
+                    <ForceSuccess name="turn_even_if_short">
+                      <TurnTo name="face_heading" yaw="{heading}"/>
+                    </ForceSuccess>
+                    <Sleep name="dwell_for_the_detector" msec="2500"/>
+                  </Sequence>
+                </LoopDouble>
+                <ReportViewpoint name="report_reached" viewpoint_id="{viewpoint}" reached="true"/>
+              </Sequence>
+              <ReportViewpoint name="report_unreached" viewpoint_id="{viewpoint}" reached="false"/>
+            </Fallback>
+          </Sequence>
+        </KeepRunningUntilFailure>
+      </ForceSuccess>
+      <ScriptCondition name="stopped_because_done" code="outcome == 'done'"/>
+    </Sequence>
+  </BehaviorTree>
+</root>

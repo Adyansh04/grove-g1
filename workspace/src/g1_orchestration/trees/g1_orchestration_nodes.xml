@@ -39,6 +39,16 @@
             <input_port name="server_timeout_s" type="double" default="10.000000">How long to wait for the action server to appear.</input_port>
             <input_port name="goal" type="g1_orchestration::Station">Where to drive to, as 'x;y;yaw'.</input_port>
         </Action>
+        <Action ID="NextViewpoint">
+            <output_port name="outcome" type="std::string">'viewpoint', 'done' or 'error'.</output_port>
+            <output_port name="room_id" type="std::string">The room the viewpoint stands in.</output_port>
+            <output_port name="viewpoint_id" type="int">For ReportViewpoint.</output_port>
+            <output_port name="goal" type="g1_orchestration::Station">Where to stand, facing the first heading.</output_port>
+            <input_port name="service" type="std::string" default="/g1_world_model/next_viewpoint">The world model's service.</input_port>
+            <input_port name="mode" type="std::string" default="coverage">'frontier' to close the map, 'coverage' to make the camera see it.</input_port>
+            <output_port name="headings" type="std::shared_ptr&lt;std::deque&lt;double, std::allocator&lt;double&gt; &gt; &gt;">Map-frame yaws to face, in order.</output_port>
+            <input_port name="timeout_s" type="double" default="30.000000">How long to wait for a map and a pose before giving up.</input_port>
+        </Action>
         <Action ID="Pick">
             <input_port name="server_timeout_s" type="double" default="10.000000">How long to wait for the action server to appear.</input_port>
             <input_port name="arm" type="std::string" default="right">'left' or 'right'.</input_port>
@@ -54,10 +64,29 @@
         <Action ID="ReleaseArm">
             <input_port name="timeout_s" type="double" default="15.000000">Per-step service budget.</input_port>
         </Action>
+        <Action ID="ReportViewpoint">
+            <input_port name="service" type="std::string" default="/g1_world_model/report_viewpoint">The world model's service.</input_port>
+            <input_port name="reached" type="bool" default="true">Whether navigation got there.</input_port>
+            <input_port name="viewpoint_id" type="int">From NextViewpoint.</input_port>
+            <input_port name="timeout_s" type="double" default="5.000000">Service budget.</input_port>
+        </Action>
+        <Action ID="ResolveTarget">
+            <output_port name="target_id" type="std::string">What it resolved to.</output_port>
+            <output_port name="goal" type="g1_orchestration::Station">A reachable pose facing the target.</output_port>
+            <input_port name="service" type="std::string" default="/g1_world_model/get_approach_pose">The world model's service.</input_port>
+            <input_port name="standoff" type="double" default="0.000000">Distance from the target's footprint, m; 0 for the default.</input_port>
+            <input_port name="room" type="std::string" default="">Narrows a label search to one room.</input_port>
+            <input_port name="target" type="std::string">An object id, a room, or a label to search for.</input_port>
+            <input_port name="timeout_s" type="double" default="10.000000">Service budget.</input_port>
+        </Action>
         <Action ID="Retreat">
             <input_port name="server_timeout_s" type="double" default="10.000000">How long to wait for the action server to appear.</input_port>
             <input_port name="timeout_s" type="double" default="0.000000">0 uses the server's own default.</input_port>
             <input_port name="distance" type="double" default="0.600000">How far to reverse, in metres.</input_port>
+        </Action>
+        <Action ID="SaveWorld">
+            <input_port name="service" type="std::string" default="/g1_world_model/save">The world model's service.</input_port>
+            <input_port name="timeout_s" type="double" default="20.000000">Service budget.</input_port>
         </Action>
         <Action ID="SetArmPosture">
             <input_port name="server_timeout_s" type="double" default="10.000000">How long to wait for the action server to appear.</input_port>
@@ -67,6 +96,12 @@
         <Action ID="StopLooking">
             <input_port name="timeout_s" type="double" default="5.000000">Budget for the write.</input_port>
             <input_port name="detector" type="std::string" default="/g1_detector">Node whose `phrases` to empty.</input_port>
+        </Action>
+        <Action ID="TurnTo">
+            <input_port name="server_timeout_s" type="double" default="10.000000">How long to wait for the action server to appear.</input_port>
+            <input_port name="base_frame" type="std::string" default="base_footprint">The robot's base frame.</input_port>
+            <input_port name="frame" type="std::string" default="map">Frame of `yaw`.</input_port>
+            <input_port name="yaw" type="double">Heading to face, rad, in `frame`.</input_port>
         </Action>
     </TreeNodesModel>
 </root>
