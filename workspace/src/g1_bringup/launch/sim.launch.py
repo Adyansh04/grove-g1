@@ -4,7 +4,6 @@ Refuses to start outside the container's DDS environment; see README.md.
 """
 
 import os
-import shutil
 
 import yaml
 from ament_index_python.packages import get_package_share_directory
@@ -40,6 +39,11 @@ G1_MODEL_DIR = os.path.normpath(
 STAGED_SCENE_NAME = "g1_grove_scene.staged.xml"
 STAGED_WALK_BASE = "g1_walk_base.staged.xml"
 
+# Scenes built from fetched assets (the apartment) name their files under this placeholder,
+# replaced at staging. The default is the host's workspace/assets as the container mounts it.
+ASSETS_PLACEHOLDER = "@GROVE_ASSETS@"
+ASSETS_DIR = os.environ.get("GROVE_ASSETS_DIR", "/root/workspace/assets")
+
 # Prepended to LD_LIBRARY_PATH, so the simulator loads unitree_sdk2's CycloneDDS and no other.
 UNITREE_ROBOTICS_LIB = "/opt/unitree_robotics/lib"
 
@@ -55,7 +59,7 @@ SIM_START_DELAY_S = 2.0
 # after spawn, it bakes in a wrong gravity and diverges.
 FASTLIO_EXTRA_DELAY_S = 10.0
 
-WORLDS = ("navigation", "perception", "manipulation", "tabletop", "lio")
+WORLDS = ("navigation", "perception", "manipulation", "tabletop", "lio", "apartment")
 ODOMETRY_SOURCES = ("ground_truth", "fast_lio")
 
 EXPECTED_RMW = "rmw_fastrtps_cpp"
@@ -151,18 +155,34 @@ def _scene_files(world, sensors, pin_pelvis):
     return "g1_pinned_scene.xml", []
 
 
+def _stage_file(source, target):
+    """Copies one scene into place, pointing any asset placeholders at the fetched assets."""
+    with open(source, encoding="utf-8") as handle:
+        scene = handle.read()
+    if ASSETS_PLACEHOLDER in scene:
+        if not os.path.isdir(ASSETS_DIR):
+            raise RuntimeError(
+                f"{os.path.basename(source)} needs the world assets in {ASSETS_DIR!r} "
+                "(GROVE_ASSETS_DIR), which are fetched, not committed: run "
+                "scripts/setup-world-assets.sh on the host."
+            )
+        scene = scene.replace(ASSETS_PLACEHOLDER, ASSETS_DIR)
+    with open(target, "w", encoding="utf-8") as handle:
+        handle.write(scene)
+
+
 def _stage_scene(world, sensors, pin_pelvis):
     """Copies the scene and its bases into the model directory; returns the paths for cleanup."""
     mjcf_dir = os.path.join(BRINGUP_SHARE, "mjcf")
     overlay, bases = _scene_files(world, sensors, pin_pelvis)
 
     staged = os.path.join(G1_MODEL_DIR, STAGED_SCENE_NAME)
-    shutil.copyfile(os.path.join(mjcf_dir, overlay), staged)
+    _stage_file(os.path.join(mjcf_dir, overlay), staged)
 
     staged_paths = [staged]
     for source, staged_name in bases:
         target = os.path.join(G1_MODEL_DIR, staged_name)
-        shutil.copyfile(os.path.join(mjcf_dir, source), target)
+        _stage_file(os.path.join(mjcf_dir, source), target)
         staged_paths.append(target)
     return staged_paths
 
@@ -182,11 +202,14 @@ def _cleanup_on_shutdown(staged_paths):
 # --- sensors and odometry -------------------------------------------------------------------
 
 
-def _sensor_nodes(sim_env, want_rviz):
+def _sensor_nodes(sim_env, want_rviz, world):
     """Start order does not matter: the relay listens once up, and the simulator retries its
     connection every cycle."""
-    # The patched simulator starts its sensor thread only when this names a config.
-    sensor_config = os.path.join(BRINGUP_SHARE, "config", "sim_sensors.yaml")
+    # The patched simulator starts its sensor thread only when this names a config. A world with
+    # props of its own lists them in its own copy.
+    sensor_config = os.path.join(BRINGUP_SHARE, "config", f"sim_sensors_{world}.yaml")
+    if not os.path.isfile(sensor_config):
+        sensor_config = os.path.join(BRINGUP_SHARE, "config", "sim_sensors.yaml")
     sim_env["GROVE_G1_SENSOR_CONFIG"] = sensor_config
     with open(sensor_config) as handle:
         socket_path = yaml.safe_load(handle)["socket_path"]
@@ -331,11 +354,13 @@ def _launch_setup(context, *args, **kwargs):
             f"world:={world!r} is not a scene. Use 'navigation' (the multi-room facility), "
             "'perception' (the small room the geometry test measures against), "
             "'manipulation' (one object on a pedestal at arm's length, for the skill tests), "
-            "'tabletop' (several objects on a table, for perception) or 'lio' (the walled, "
-            "asymmetric room for scoring LiDAR-inertial odometry)."
+            "'tabletop' (several objects on a table, for perception), 'lio' (the walled, "
+            "asymmetric room for scoring LiDAR-inertial odometry) or 'apartment' (five "
+            "furnished rooms off a hallway, for the semantic map and exploration)."
         )
-    if world == "lio" and pin_pelvis and sensors:
-        raise RuntimeError("world:=lio has no pinned scene; drop pin_pelvis:=true.")
+    pinned = os.path.join(BRINGUP_SHARE, "mjcf", f"g1_{world}_pinned_scene.xml")
+    if pin_pelvis and sensors and not os.path.isfile(pinned):
+        raise RuntimeError(f"world:={world} has no pinned scene; drop pin_pelvis:=true.")
     # Checked even with sensors off, so a typo fails here rather than selecting the other source.
     if odometry not in ODOMETRY_SOURCES:
         raise RuntimeError(
@@ -348,7 +373,7 @@ def _launch_setup(context, *args, **kwargs):
 
     actions = []
     if sensors:
-        actions += _sensor_nodes(sim_env, _flag(context, "rviz"))
+        actions += _sensor_nodes(sim_env, _flag(context, "rviz"), world)
         actions += _odometry_actions(odometry, sim_start_delay_s)
 
     actions.append(_cleanup_on_shutdown(_stage_scene(world, sensors, pin_pelvis)))
@@ -378,7 +403,8 @@ def generate_launch_description():
             "multi-room facility; 'perception' is the bare room test_lidar_geometry measures "
             "against; 'manipulation' is one object at arm's length; 'tabletop' is several "
             "objects on a pedestal, for perception; 'lio' is the walled room for scoring "
-            "odometry.",
+            "odometry; 'apartment' is five furnished rooms off a hallway, built from fetched "
+            "assets (scripts/setup-world-assets.sh).",
         ),
         DeclareLaunchArgument(
             "rviz",

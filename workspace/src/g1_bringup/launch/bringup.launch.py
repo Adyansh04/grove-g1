@@ -469,10 +469,11 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "world",
             default_value="navigation",
-            description="Which scene to stage. 'navigation' is the facility the committed map "
-            "was built from; localization against any other world will not converge. "
-            "'manipulation' is one object at arm's length, for a pick without navigating "
-            "to the workbench first; 'tabletop' is five of different shapes, for perception.",
+            description="Which scene to stage. 'navigation' is the facility and 'apartment' "
+            "five furnished rooms; each has a committed map, which localization picks by "
+            "world, and against any other world it will not converge. 'manipulation' is one "
+            "object at arm's length, for a pick without navigating to the workbench first; "
+            "'tabletop' is five of different shapes, for perception.",
         ),
         DeclareLaunchArgument(
             "headless",

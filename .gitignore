@@ -3,6 +3,9 @@ workspace/build/
 workspace/install/
 workspace/log/
 
+# Third-party meshes and textures fetched by scripts/setup-world-assets.sh
+workspace/assets/
+
 # workspace/.clang-format, .clang-tidy, .clangd and ruff.toml are NOT ignored any more.
 # They used to be empty root-owned placeholders that Docker materialised for four
 # single-file bind mounts, hence the ignore. Those mounts are gone; the paths are now

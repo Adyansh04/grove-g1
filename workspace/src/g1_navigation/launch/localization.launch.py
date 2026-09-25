@@ -10,21 +10,31 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, GroupAction
 from launch.conditions import IfCondition, UnlessCondition
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, PythonExpression
 from launch_ros.actions import LoadComposableNodes, Node
 from launch_ros.descriptions import ComposableNode
 
 SHARE = get_package_share_directory("g1_navigation")
 PARAMS_FILE = os.path.join(SHARE, "config", "localization.yaml")
 
+# The committed map of each g1_bringup world that has one. `world` is the caller's argument
+# (bringup, nav_sim); launched alone, or for any other world, this is the facility's map.
+WORLD_MAPS = {"navigation": "facility.yaml", "apartment": "apartment.yaml"}
+
+
+def _world_map():
+    world = LaunchConfiguration("world", default="navigation")
+    name = PythonExpression([repr(WORLD_MAPS), ".get('", world, "', 'facility.yaml')"])
+    return PathJoinSubstitution([SHARE, "maps", name])
+
 
 def _arguments():
     return [
         DeclareLaunchArgument(
             "map",
-            default_value=os.path.join(SHARE, "maps", "facility.yaml"),
-            description="Occupancy grid to localize against. Re-map if the scene has "
-            "changed; nothing checks that this still matches.",
+            default_value=_world_map(),
+            description="Occupancy grid to localize against; defaults to the committed map of "
+            "world:=. Re-map if the scene has changed; nothing checks that this still matches.",
         ),
         DeclareLaunchArgument(
             "use_composition",
