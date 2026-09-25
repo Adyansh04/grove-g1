@@ -34,6 +34,7 @@
   <exec_depend>python3-numpy</exec_depend>
   <exec_depend>python3-zmq</exec_depend>
   <exec_depend>python3-msgpack</exec_depend>
+  <exec_depend>python3-pil</exec_depend>
   <!-- msgpack-numpy has no rosdep key or Ubuntu package; .devcontainer/Dockerfile pip-installs
        it, so rosdep alone leaves the scripts failing on import. -->
   <exec_depend>python3-pip</exec_depend>

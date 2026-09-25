@@ -8,19 +8,17 @@ the free tier and falls back to the local VLM, so a refusal here is logged and d
 model asks again later.
 """
 
+import io
 from collections import OrderedDict
 
 import numpy as np
 import rclpy
+from PIL import Image
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 
 from g1_msgs.msg import DescribeRequest, Description
 from g1_perception.host_clients import VisionClient
-
-try:
-    import cv2
-except ImportError:  # pragma: no cover - cv_bridge's dependency, present in the image
-    cv2 = None
 
 
 class Describer(Node):
@@ -80,11 +78,16 @@ class Describer(Node):
 
     @staticmethod
     def _decode(image):
-        """A JPEG CompressedImage as (H, W, 3) RGB, the layout the server takes."""
-        if cv2 is None:
+        """A JPEG CompressedImage as (H, W, 3) RGB, the layout the server takes.
+
+        Pillow rather than OpenCV: the image's apt OpenCV is built against NumPy 1 and fails to
+        import beside the NumPy 2 the other nodes use.
+        """
+        try:
+            with Image.open(io.BytesIO(bytes(image.data))) as decoded:
+                return np.asarray(decoded.convert("RGB"))
+        except OSError:
             return None
-        bgr = cv2.imdecode(np.frombuffer(bytes(image.data), dtype=np.uint8), cv2.IMREAD_COLOR)
-        return None if bgr is None else np.ascontiguousarray(bgr[:, :, ::-1])
 
     def close(self):
         self._client.close()
@@ -95,7 +98,7 @@ def main():
     node = Describer()
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
         node.close()
