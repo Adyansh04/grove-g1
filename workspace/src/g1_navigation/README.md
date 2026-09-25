@@ -54,6 +54,9 @@ ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose \
   "{pose: {header: {frame_id: map}, pose: {position: {x: 2.5, y: -2.5}, orientation: {w: 1.0}}}}"
 ```
 
+`mode:=mapping nav:=true` runs Nav2 on the map slam_toolbox is still building, which is what the
+world model's exploration does (`g1_world_model`); a goal can shift a little under a loop closure.
+
 Everything here needs `sensors:=true` for the LiDAR, the relay and the `odom` to `base_footprint`
 chain. The navigation modes set it for you.
 

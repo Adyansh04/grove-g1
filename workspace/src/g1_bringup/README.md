@@ -40,7 +40,7 @@ flowchart LR
 | Argument | Default | Meaning |
 |---|---|---|
 | `mode` | `none` | `none` is the simulator alone. `mapping` adds the scan pipeline and slam_toolbox, `localization` adds `map_server` and AMCL. |
-| `nav` | `false` | Nav2 and the base-approach skill. Needs `mode:=localization`. |
+| `nav` | `false` | Nav2 and the base-approach skill. Needs a map: `mode:=mapping` explores while building one, `mode:=localization` uses the committed one. |
 | `moveit` | `false` | `move_group`, in any mode. Executing a plan still needs the arm acquired. |
 | `activate_arm` | `false` | Run `activate_arm` automatically. Only with `moveit:=true`. |
 | `activate_arm_delay_s` | `25.0` | Seconds before that. Too early and it fails, because the component is not loaded or state is not flowing yet. |

@@ -75,12 +75,12 @@ def _validate(mode, want_nav, want_moveit, want_manipulation, want_perception, w
         raise RuntimeError(
             f"mode:={mode!r} is not a mode. 'none' is the simulator on its own; 'mapping' "
             f"builds a map with slam_toolbox; 'localization' runs map_server + AMCL against "
-            f"the committed one, and is what nav:=true requires."
+            f"the committed one. nav:=true needs one of the two."
         )
-    if want_nav and mode != "localization":
+    if want_nav and mode == "none":
         raise RuntimeError(
-            f"nav:=true needs mode:=localization, not mode:={mode!r}. Navigating against a "
-            "map slam_toolbox is still building means the goal pose moves under the planner."
+            "nav:=true needs a map: mode:=mapping builds one as the robot explores, "
+            "mode:=localization uses the committed one."
         )
     if want_manipulation and not want_moveit:
         raise RuntimeError(
@@ -316,8 +316,8 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "nav",
             default_value="false",
-            description="Start the Nav2 servers and the base approach. Requires "
-            "mode:=localization.",
+            description="Start the Nav2 servers and the base approach. Needs a map: "
+            "mode:=mapping explores while building one, mode:=localization uses the committed one.",
         ),
         DeclareLaunchArgument(
             "rviz",
