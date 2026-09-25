@@ -3,6 +3,8 @@
  * @brief ROS plumbing around the world model: inputs, services, publishing and persistence.
  */
 
+#include "g1_world_model/world_model_node.hpp"
+
 #include <algorithm>
 #include <cctype>
 #include <charconv>
@@ -16,8 +18,6 @@
 #include <opencv2/imgproc.hpp>
 #include <sensor_msgs/point_cloud2_iterator.hpp>
 #include <tf2_eigen/tf2_eigen.hpp>
-
-#include "g1_world_model/world_model_node.hpp"
 
 namespace g1_world_model
 {
@@ -53,6 +53,32 @@ bool containsWord(const std::string& haystack, const std::string& needle)
 
 std::string objectId(int id) { return "O" + std::to_string(id); }
 
+/// @p area of an rgb8 or bgr8 image as BGR, or empty for any other encoding.
+cv::Mat bgrArea(const sensor_msgs::msg::Image& image, cv::Rect area)
+{
+    area &= cv::Rect(0, 0, static_cast<int>(image.width), static_cast<int>(image.height));
+    if ((image.encoding != "rgb8" && image.encoding != "bgr8") || area.empty() ||
+        image.data.size() < static_cast<std::size_t>(image.step) * image.height)
+    {
+        return {};
+    }
+    // Copied row by row: the message is const, and the area is all that is kept.
+    cv::Mat out(area.height, area.width, CV_8UC3);
+    for (int row = 0; row < area.height; ++row)
+    {
+        std::memcpy(
+            out.ptr<std::uint8_t>(row),
+            image.data.data() + (static_cast<std::size_t>(area.y + row) * image.step) +
+                (static_cast<std::size_t>(area.x) * 3U),
+            static_cast<std::size_t>(area.width) * 3U);
+    }
+    if (image.encoding == "rgb8")
+    {
+        cv::cvtColor(out, out, cv::COLOR_RGB2BGR);
+    }
+    return out;
+}
+
 /// "room A" .. "room Z", then "room 27" and on: short names people can say.
 std::string roomAlias(int number)
 {
@@ -81,19 +107,27 @@ WorldModelNode::WorldModelNode(const rclcpp::NodeOptions& options)
   , depth_history_(declare_parameter<double>("frame_history_s", 6.0), 0.02, 64)
   , color_history_(get_parameter("frame_history_s").as_double(), 0.02, 64)
 {
-    map_frame_           = declare_parameter<std::string>("map_frame", "map");
-    base_frame_          = declare_parameter<std::string>("base_frame", "base_footprint");
-    world_dir_           = declare_parameter<std::string>("world_dir", "");
-    require_stillness_   = declare_parameter<bool>("require_stillness", true);
-    still_linear_        = declare_parameter<double>("still_linear", 0.05);
-    still_angular_       = declare_parameter<double>("still_angular", 0.05);
-    settle_s_            = declare_parameter<double>("settle_s", 1.0);
-    tf_wait_s_           = declare_parameter<double>("tf_wait_s", 0.2);
-    resegment_period_s_  = declare_parameter<double>("resegment_period_s", 5.0);
-    autosave_period_s_   = declare_parameter<double>("autosave_period_s", 60.0);
-    describe_            = declare_parameter<bool>("describe", false);
-    describe_after_      = static_cast<int>(declare_parameter<int>("describe_after", 3));
-    describe_retry_s_    = declare_parameter<double>("describe_retry_s", 60.0);
+    map_frame_          = declare_parameter<std::string>("map_frame", "map");
+    base_frame_         = declare_parameter<std::string>("base_frame", "base_footprint");
+    world_dir_          = declare_parameter<std::string>("world_dir", "");
+    require_stillness_  = declare_parameter<bool>("require_stillness", true);
+    still_linear_       = declare_parameter<double>("still_linear", 0.05);
+    still_angular_      = declare_parameter<double>("still_angular", 0.05);
+    settle_s_           = declare_parameter<double>("settle_s", 1.0);
+    tf_wait_s_          = declare_parameter<double>("tf_wait_s", 0.2);
+    resegment_period_s_ = declare_parameter<double>("resegment_period_s", 5.0);
+    autosave_period_s_  = declare_parameter<double>("autosave_period_s", 60.0);
+    describe_           = declare_parameter<bool>("describe", false);
+    describe_after_     = static_cast<int>(declare_parameter<int>("describe_after", 3));
+    describe_retry_s_   = declare_parameter<double>("describe_retry_s", 60.0);
+    describe_min_crop_ =
+        static_cast<int>(declare_parameter<int>("describe_min_crop", describe_min_crop_));
+    describe_room_views_ =
+        static_cast<int>(declare_parameter<int>("describe_room_views", describe_room_views_));
+    describe_rooms_below_ =
+        declare_parameter<double>("describe_rooms_below", describe_rooms_below_);
+    describe_room_coverage_ =
+        declare_parameter<double>("describe_room_coverage", describe_room_coverage_);
     structure_enabled_   = declare_parameter<bool>("structure.enabled", true);
     structure_min_z_     = declare_parameter<double>("structure.min_z", 1.4);
     structure_max_z_     = declare_parameter<double>("structure.max_z", 2.2);
@@ -799,53 +833,85 @@ void WorldModelNode::onMasks(const g1_msgs::msg::InstanceMaskArray::ConstSharedP
     dirty_                                  = true;
 
     const auto color = color_history_.at(stamp);
-    for (const MaskOutcome& outcome : outcomes)
+    for (std::size_t slot = 0; slot < outcomes.size(); ++slot)
     {
-        if (outcome.best_view && color != nullptr)
+        if (outcomes[slot].best_view && color != nullptr)
         {
-            if (const MappedObject* object = objects_.find(outcome.object))
+            if (const MappedObject* object = objects_.find(outcomes[slot].object))
             {
-                storeCrop(*object, *color);
+                storeCrop(*object, *color, inputs[slot]);
             }
         }
     }
     coverage_.setSurfaces(objects_.surfaces());
 }
 
-void WorldModelNode::storeCrop(const MappedObject& object, const sensor_msgs::msg::Image& color)
+void WorldModelNode::storeCrop(
+    const MappedObject& object, const sensor_msgs::msg::Image& color, const MaskInput& mask)
 {
-    if (color.encoding != "rgb8" && color.encoding != "bgr8")
+    // A sliver seen at the image edge is not worth describing: shown little, a small VLM
+    // invents something.
+    if (std::min(mask.width, mask.height) < describe_min_crop_)
     {
         return;
     }
-    // A margin of context helps a describer tell a mug from a vase.
-    const BestView& view = object.best_view;
-    const int       pad  = std::max(8, std::max(view.width, view.height) / 8);
-    const cv::Rect  area =
-        cv::Rect(view.x - pad, view.y - pad, view.width + (2 * pad), view.height + (2 * pad)) &
-        cv::Rect(0, 0, static_cast<int>(color.width), static_cast<int>(color.height));
-    if (area.empty() || color.data.size() < static_cast<std::size_t>(color.step) * color.height)
+    const int pad = std::max(8, std::max(mask.width, mask.height) / 8);
+    const cv::Rect area(mask.x - pad, mask.y - pad, mask.width + (2 * pad), mask.height + (2 * pad));
+    cv::Mat crop = bgrArea(color, area);
+    if (crop.empty())
     {
         return;
     }
-    // Copied row by row: the message is const, and the crop is all that is kept.
-    cv::Mat crop(area.height, area.width, CV_8UC3);
-    for (int row = 0; row < area.height; ++row)
+    // The mask's own pixels on grey, the margin keeping the outline whole: the robot's arms hang
+    // into the head camera's view, and a describer shown them names them instead.
+    const cv::Rect kept =
+        area & cv::Rect(0, 0, static_cast<int>(color.width), static_cast<int>(color.height));
+    for (int row = 0; row < crop.rows; ++row)
     {
-        std::memcpy(
-            crop.ptr<std::uint8_t>(row),
-            color.data.data() + (static_cast<std::size_t>(area.y + row) * color.step) +
-                (static_cast<std::size_t>(area.x) * 3U),
-            static_cast<std::size_t>(area.width) * 3U);
-    }
-    if (color.encoding == "rgb8")
-    {
-        cv::cvtColor(crop, crop, cv::COLOR_RGB2BGR);
+        auto*     pixel = crop.ptr<cv::Vec3b>(row);
+        const int v     = kept.y + row - mask.y;
+        for (int col = 0; col < crop.cols; ++col)
+        {
+            const int u = kept.x + col - mask.x;
+            if (u < 0 || v < 0 || u >= mask.width || v >= mask.height ||
+                mask.mask[(static_cast<std::size_t>(v) * mask.width) + u] == 0)
+            {
+                pixel[col] = cv::Vec3b(128, 128, 128);
+            }
+        }
     }
     std::vector<std::uint8_t> jpeg;
     cv::imencode(".jpg", crop, jpeg, { cv::IMWRITE_JPEG_QUALITY, 85 });
     crops_[object.id] = std::move(jpeg);
     described_.erase(object.id);  // A better view is worth another description.
+}
+
+void WorldModelNode::storeRoomView()
+{
+    const auto       robot = robotPose();
+    const RoomState* room  = robot ? roomByLabel(roomLabelAt(robot->x, robot->y)) : nullptr;
+    const auto       color = color_history_.atOrBefore(now().seconds());
+    if (room == nullptr || color == nullptr)
+    {
+        return;
+    }
+    cv::Mat view = bgrArea(
+        *color,
+        cv::Rect(0, 0, static_cast<int>(color->width), static_cast<int>(color->height)));
+    if (view.empty())
+    {
+        return;
+    }
+    // Half size: the server shrinks every image to 512 px anyway.
+    cv::resize(view, view, cv::Size(), 0.5, 0.5, cv::INTER_AREA);
+    std::vector<std::uint8_t> jpeg;
+    cv::imencode(".jpg", view, jpeg, { cv::IMWRITE_JPEG_QUALITY, 85 });
+    auto& views = room_views_[room->id];
+    views.push_back(std::move(jpeg));
+    while (static_cast<int>(views.size()) > describe_room_views_)
+    {
+        views.pop_front();
+    }
 }
 
 void WorldModelNode::onDescription(const g1_msgs::msg::Description::ConstSharedPtr& description)
@@ -1171,6 +1237,11 @@ void WorldModelNode::onReportViewpoint(
     const g1_msgs::srv::ReportViewpoint::Response::SharedPtr& /*response*/)
 {
     planner_.report(coverage_, request->viewpoint_id, request->reached);
+    // The last heading's frame, after its dwell: a settled, unblurred look at the room.
+    if (describe_ && request->reached)
+    {
+        storeRoomView();
+    }
     dirty_ = true;
 }
 
@@ -1716,7 +1787,66 @@ void WorldModelNode::requestDescriptions()
     {
         return;
     }
-    const double now_s = now().seconds();
+    const double now_s       = now().seconds();
+    const auto   asked_since = [&](const std::string& id) {
+        const auto asked = requested_at_.find(id);
+        return asked != requested_at_.end() && now_s - asked->second < describe_retry_s_;
+    };
+
+    // Rooms first: few, and a room's type steers every search in it. Only once the camera has
+    // seen most of one, and only where its objects leave the type in doubt.
+    std::vector<CoverageTally> tallies;
+    for (std::size_t slot = 0; slot < rooms_.size(); ++slot)
+    {
+        const RoomState& room  = rooms_[slot];
+        const auto       views = room_views_.find(room.id);
+        if (views == room_views_.end() || room.type_source == "operator" ||
+            room.type_source == "describer" ||
+            (!room.type.empty() && room.type_confidence >= describe_rooms_below_) ||
+            asked_since(room.id))
+        {
+            continue;
+        }
+        if (tallies.empty())
+        {
+            tallies = coverage_.tally(room_labels_, static_cast<int>(rooms_.size()));
+        }
+        const CoverageTally& tally = tallies[slot + 1];
+        if (tally.floor == 0 ||
+            static_cast<double>(tally.floor_seen) < describe_room_coverage_ * tally.floor)
+        {
+            continue;
+        }
+        g1_msgs::msg::DescribeRequest request;
+        request.subject_id = room.id;
+        request.task       = g1_msgs::msg::DescribeRequest::TASK_ROOM;
+        for (const std::vector<std::uint8_t>& jpeg : views->second)
+        {
+            sensor_msgs::msg::CompressedImage image;
+            image.format = "jpeg";
+            image.data   = jpeg;
+            request.images.push_back(std::move(image));
+        }
+        std::map<std::string, int> counts;
+        for (const MappedObject& object : objects_.objects())
+        {
+            if (object.state == ObjectState::kActive &&
+                roomLabelAt(object.box_centre.x(), object.box_centre.y()) ==
+                    static_cast<int>(slot) + 1)
+            {
+                ++counts[object.label()];
+            }
+        }
+        for (const auto& [label, count] : counts)
+        {
+            request.labels.push_back(label);
+            request.votes.push_back(static_cast<float>(count));
+        }
+        describe_pub_->publish(request);
+        requested_at_[room.id] = now_s;
+        return;  // One at a time: the describer is rate limited anyway.
+    }
+
     for (const MappedObject& object : objects_.objects())
     {
         const std::string id = objectId(object.id);
@@ -1725,8 +1855,7 @@ void WorldModelNode::requestDescriptions()
         {
             continue;
         }
-        const auto asked = requested_at_.find(id);
-        if (asked != requested_at_.end() && now_s - asked->second < describe_retry_s_)
+        if (asked_since(id))
         {
             continue;
         }

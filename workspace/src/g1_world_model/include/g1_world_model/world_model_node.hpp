@@ -130,29 +130,36 @@ private:
     [[nodiscard]] g1_msgs::msg::WorldObject toMessage(const MappedObject& object) const;
     [[nodiscard]] std::optional<DepthImage> depthView(const sensor_msgs::msg::Image& image);
     void updateCameraModel(const std::string& frame, const builtin_interfaces::msg::Time& stamp);
-    void storeCrop(const MappedObject& object, const sensor_msgs::msg::Image& color);
+    void storeCrop(
+        const MappedObject& object, const sensor_msgs::msg::Image& color, const MaskInput& mask);
+    /// Keeps the newest colour frame as a view of the room the robot stands in.
+    void storeRoomView();
 
     // Parameters.
     std::string map_frame_;
     std::string base_frame_;
     std::string world_dir_;
-    bool        require_stillness_   = true;
-    double      still_linear_        = 0.05;
-    double      still_angular_       = 0.05;
-    double      settle_s_            = 1.0;
-    double      tf_wait_s_           = 0.2;
-    double      resegment_period_s_  = 5.0;
-    double      autosave_period_s_   = 60.0;
-    bool        describe_            = false;
-    int         describe_after_      = 3;
-    double      describe_retry_s_    = 60.0;
-    bool        structure_enabled_   = true;
-    double      structure_min_z_     = 1.4;
-    double      structure_max_z_     = 2.2;
-    int         structure_min_hits_  = 3;
-    double      structure_dilate_    = 0.30;
-    int         structure_min_cells_ = 200;
-    int         structure_min_clear_ = 5;
+    bool        require_stillness_      = true;
+    double      still_linear_           = 0.05;
+    double      still_angular_          = 0.05;
+    double      settle_s_               = 1.0;
+    double      tf_wait_s_              = 0.2;
+    double      resegment_period_s_     = 5.0;
+    double      autosave_period_s_      = 60.0;
+    bool        describe_               = false;
+    int         describe_after_         = 3;
+    double      describe_retry_s_       = 60.0;
+    int         describe_min_crop_      = 32;
+    int         describe_room_views_    = 3;
+    double      describe_rooms_below_   = 0.8;
+    double      describe_room_coverage_ = 0.8;
+    bool        structure_enabled_      = true;
+    double      structure_min_z_        = 1.4;
+    double      structure_max_z_        = 2.2;
+    int         structure_min_hits_     = 3;
+    double      structure_dilate_       = 0.30;
+    int         structure_min_cells_    = 200;
+    int         structure_min_clear_    = 5;
 
     // The model.
     CoverageMap            coverage_;
@@ -177,19 +184,20 @@ private:
     int                          structure_cells_segmented_ = 0;
     sensor_msgs::msg::PointCloud2::ConstSharedPtr pending_cloud_;
 
-    std::optional<Intrinsics>                           intrinsics_;
-    bool                                                camera_known_ = false;
-    g1_perception::DepthHistory                         depth_history_;
-    g1_perception::DepthHistory                         color_history_;
-    std::deque<sensor_msgs::msg::Image::ConstSharedPtr> pending_depth_;
-    std::vector<float>                                  depth_scratch_;
-    std::deque<std::pair<double, bool>>                 motion_;
-    std::map<int, std::vector<std::uint8_t>>            crops_;
-    std::set<int>                                       described_;
-    std::map<std::string, double>                       requested_at_;
-    bool                                                dirty_       = false;
-    std::size_t                                         frames_seen_ = 0;
-    std::size_t                                         frames_used_ = 0;
+    std::optional<Intrinsics>                                    intrinsics_;
+    bool                                                         camera_known_ = false;
+    g1_perception::DepthHistory                                  depth_history_;
+    g1_perception::DepthHistory                                  color_history_;
+    std::deque<sensor_msgs::msg::Image::ConstSharedPtr>          pending_depth_;
+    std::vector<float>                                           depth_scratch_;
+    std::deque<std::pair<double, bool>>                          motion_;
+    std::map<int, std::vector<std::uint8_t>>                     crops_;
+    std::set<int>                                                described_;
+    std::map<std::string, double>                                requested_at_;
+    std::map<std::string, std::deque<std::vector<std::uint8_t>>> room_views_;  // JPEGs by room id.
+    bool                                                         dirty_       = false;
+    std::size_t                                                  frames_seen_ = 0;
+    std::size_t                                                  frames_used_ = 0;
 
     // ROS plumbing.
     std::shared_ptr<tf2_ros::Buffer>            tf_buffer_;

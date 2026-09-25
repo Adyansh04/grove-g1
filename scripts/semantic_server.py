@@ -475,8 +475,9 @@ def _prompt(task, n_images, context):
         views = "The image shows" if n_images == 1 else f"The {n_images} images show"
         # The detector's label comes last and only for label_ok: named up front, it anchors the
         # model, which then calls a fridge a cabinet because the detector did.
+        # Never "a robot saw": shown too little, a small model answers with the prompt's words.
         return (
-            f"{views} one object a robot saw indoors, cropped from its camera.\n\n"
+            f"{views} one indoor object, cut out of a camera image on a grey background.\n\n"
             "Answer in JSON:\n"
             "- name: what the object is, judged from the image alone: a common noun of 1 to 3 "
             'words, singular and lower case, such as "office chair", "mug" or "floor lamp".\n'

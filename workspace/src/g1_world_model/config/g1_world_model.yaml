@@ -110,3 +110,11 @@ g1_world_model:
     describe: false
     describe_after: 3
     describe_retry_s: 60.0
+    # Objects only ever seen as a sliver narrower than this, px, keep the detector's label.
+    describe_min_crop: 32
+    # Rooms are asked about with up to this many whole frames, one per viewpoint reached in them,
+    # once the camera has seen this share of their floor, and only while the type their objects
+    # give is below this confidence.
+    describe_room_views: 3
+    describe_room_coverage: 0.8
+    describe_rooms_below: 0.8

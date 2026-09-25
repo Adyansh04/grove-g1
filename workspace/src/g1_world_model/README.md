@@ -67,7 +67,8 @@ ros2 run g1_orchestration g1_bt_executor --ros-args \
 
 With the real detector, start `scripts/semantic_server.py` on the host and load
 `g1_perception/config/indoor_vocabulary.yaml` for `g1_detector`; add `describe:=true` to name
-objects through the server's VLM.
+objects through the server's VLM, and to type the rooms whose objects leave their type in doubt
+from a few whole frames taken where the robot stood in them.
 
 ## Tests
 

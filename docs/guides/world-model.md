@@ -70,7 +70,8 @@ room descriptions (Gemini on its free tier, falling back to Qwen3.5-4B in llama.
 Gemini needs a free API key in `~/.config/grove/gemini.env`. The server caps its own use at 5
 requests a minute and 100 a day, and stops for the day on any quota answer. Then run `g1_detector`
 with `g1_perception/config/indoor_vocabulary.yaml` in place of the mock, and launch the world model
-with `describe:=true`.
+with `describe:=true`: each object gets a name and a caption, and a room whose objects do not
+settle its type is typed from the frames the robot took standing in it.
 
 ## What the camera cannot see
 
