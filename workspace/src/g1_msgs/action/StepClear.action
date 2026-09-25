@@ -1,0 +1,21 @@
+# Step the base out of the band where Nav2 counts it as touching an obstacle.
+#
+# Nav2's footprint is a circle wider than the body, so the gait's drift can leave the robot inside
+# that radius of furniture it is still clear of, and from there every Nav2 motion refuses to start.
+# This turns in place, then walks straight out, forward or backward, the way that gets clear
+# soonest. Already clear, it succeeds without moving.
+
+# Distance to end up from the nearest obstacle in the local costmap, m.
+float64 clearance_m
+# Seconds before giving up. 0 uses the server's default.
+float64 timeout_s
+---
+bool success
+string message
+# From the base to the nearest obstacle at the end, m.
+float64 clearance_m
+---
+string PHASE_TURNING=turning
+string PHASE_STEPPING=stepping
+string phase
+float64 clearance_m

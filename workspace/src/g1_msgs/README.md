@@ -8,7 +8,7 @@ perception, and the instance masks a detector publishes. `ament_cmake` with
 ```mermaid
 flowchart LR
     BT["g1_bt_executor"] -- "Pick, Place,<br/>SetArmPosture" --> MS["g1_manipulation_server"]
-    BT -- "ApproachObject, Retreat" --> BA["g1_base_approach"]
+    BT -- "ApproachObject, Retreat,<br/>StepClear" --> BA["g1_base_approach"]
     BT -- "Grasp" --> VS["g1_vla_server"]
     VS -- "GetActionChunk" --> PE["policy engine"]
     MS -- "GenerateGrasps" --> GS["grasp source"]
@@ -21,7 +21,7 @@ colcon build --symlink-install --packages-select g1_msgs
 
 ## Actions
 
-All six are actions because each runs for seconds and must be cancellable. Every one except
+All seven are actions because each runs for seconds and must be cancellable. Every one except
 `SetArmPosture` publishes its phase as feedback, and `Pick`, `Place`, `ApproachObject` and
 `Retreat` prefix a failure message with it. The phase strings are constants in the `.action`
 files, so servers and tests share one definition.
@@ -33,6 +33,7 @@ files, so servers and tests share one definition.
 | `SetArmPosture` | `g1_manipulation_server` | `group`, `named_target` | Named SRDF poses only; an unknown name fails the goal. |
 | `ApproachObject` | `g1_base_approach` | `object_id`, `arm`, `working_yaw`, `use_current_heading`, `timeout_s` | Walks the base until the object is inside the arm's reach window, judged in the base frame. Nav2 only parks within 0.5 m. |
 | `Retreat` | `g1_base_approach` | `distance_m`, `timeout_s` | Reverses clear of a surface and stops, without turning. |
+| `StepClear` | `g1_base_approach` | `clearance_m`, `timeout_s` | Turns, then walks straight out of the band where Nav2 counts the robot as touching an obstacle. Succeeds at once when already clear. |
 | `Grasp` | `g1_vla_server` | `instruction`, `object_id`, `arm` | Runs a learned policy under a planning-scene check. Success is the measured lift of `object_id`. Feedback counts chunks executed and rejected. |
 
 ## Services

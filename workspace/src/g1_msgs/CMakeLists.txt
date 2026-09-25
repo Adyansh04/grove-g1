@@ -20,6 +20,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "action/Place.action"
   "action/Retreat.action"
   "action/SetArmPosture.action"
+  "action/StepClear.action"
   "msg/DescribeRequest.msg"
   "msg/Description.msg"
   "msg/Doorway.msg"

@@ -56,3 +56,18 @@ g1_base_approach:
     lookup_grace_s: 5.0
 
     default_timeout_s: 900.0
+
+    # Stepping out of Nav2's collision band. Nav2 checks a 0.45 m circle and will not move the
+    # robot once an obstacle is inside it, though the body is still clear.
+    step_clear:
+      costmap_topic: "/local_costmap/costmap"
+      # Nothing may come nearer the base than this on the way out: the body with its arms.
+      body_radius_m: 0.30
+      # Longest straight step tried; further is a job for Nav2 again.
+      max_step_m: 0.80
+      # Walking worth one radian of turning: turns drift the gait, so a longer step can be better.
+      turn_cost_m_per_rad: 0.20
+      # Over the forward deadband, and the retreat's reverse speed.
+      speed_mps: 0.30
+      heading_tolerance_rad: 0.15
+      timeout_s: 20.0

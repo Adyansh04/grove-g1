@@ -15,6 +15,7 @@
   <depend>rclcpp</depend>
   <depend>rclcpp_action</depend>
   <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
   <depend>g1_msgs</depend>
 
   <!-- It closes on an object it reads off /objects, which is why a locomotion package depends

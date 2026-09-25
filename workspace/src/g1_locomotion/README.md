@@ -2,12 +2,14 @@
 
 Closes the gap between navigation and manipulation. Nav2 parks within 0.5 m of its goal and the
 arm's reach window is about 0.11 m wide, so `g1_base_approach` walks the last stretch against the
-measured object, and backs the robot out again afterwards. `ament_cmake`, C++20.
+measured object, and backs the robot out again afterwards. It also steps the robot out of Nav2's
+collision band when the gait has drifted it there. `ament_cmake`, C++20.
 
 ```mermaid
 flowchart LR
-    BT["behavior tree"] -- "ApproachObject / Retreat" --> BA["g1_base_approach"]
+    BT["behavior tree"] -- "ApproachObject / Retreat / StepClear" --> BA["g1_base_approach"]
     OBJ["/objects"] --> BA
+    CM["/local_costmap/costmap"] --> BA
     TF["TF: odom -> base_footprint"] --> BA
     BA -- "/cmd_vel" --> POL["the walking policy"]
 ```
@@ -21,11 +23,24 @@ lives here because everything that writes a velocity belongs to the package that
 |---|---|---|
 | `~/approach_object` | action | `g1_msgs/action/ApproachObject` |
 | `~/retreat` | action | `g1_msgs/action/Retreat` |
+| `~/step_clear` | action | `g1_msgs/action/StepClear` |
+| `/local_costmap/costmap` | in | `nav_msgs/msg/OccupancyGrid`, latched (`step_clear.costmap_topic`) |
 | `/objects` | in | `vision_msgs/msg/Detection3DArray`, sensor QoS |
 | `/cmd_vel` | out | `geometry_msgs/msg/Twist` (`cmd_vel_topic`) |
 
 `ApproachObject` walks until the object sits in the arm's reach window. `Retreat` reverses straight
-back by a set distance, at most 2 m, without turning. One goal runs at a time across both actions.
+back by a set distance, at most 2 m, without turning. One goal runs at a time across all three.
+
+## Stepping clear
+
+Nav2 checks a 0.45 m circle, wider than the body because the gait drifts sideways. Once the gait
+has drifted the robot within that radius of furniture, every Nav2 motion, spin included, refuses
+to start, though the robot is still clear of it. `StepClear` gets it out: from the local costmap's
+lethal cells it picks the straight step, forward or backward, that reaches the goal's clearance
+soonest, trading distance against turning (`turn_cost_m_per_rad`), and never passing nearer
+anything than `body_radius_m`. It turns in place, walks the step, and stops early once clear.
+Already clear, it succeeds without moving; boxed in, it fails without moving. The search is
+`step_clear.hpp`, unit-tested without ROS.
 
 ## Control law
 
