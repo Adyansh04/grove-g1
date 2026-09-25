@@ -1,0 +1,15 @@
+# A reachable pose facing a target, for NavigateToPose.
+
+# Object id ("O12"), room id or name, or a label to search for.
+string target
+
+# Narrows a label search to one room; empty for anywhere.
+string room
+
+# Distance kept from the object's footprint, m; 0 uses the node's default.
+float32 standoff
+---
+bool success
+geometry_msgs/PoseStamped pose
+string target_id
+string message

@@ -35,6 +35,9 @@ class Detector(Node):
         self._max_image_age_s = float(self._param("max_image_age_s", 1.0))
         self._box_threshold = float(self._param("box_threshold", 0.30))
         self._text_threshold = float(self._param("text_threshold", 0.25))
+        # Ask the server for an image embedding per instance, for the world model's matching and
+        # text search. Only the semantic server answers it; the vision server ignores the key.
+        self._embed = bool(self._param("embed", False))
         rate_hz = float(self._param("detect_rate_hz", 1.0))
         if not self.has_parameter("phrases"):
             # Typed: rclpy reads a bare [] as BYTE_ARRAY and then refuses every STRING_ARRAY.
@@ -116,6 +119,7 @@ class Detector(Node):
                     "phrases": phrases,
                     "box_threshold": self._box_threshold,
                     "text_threshold": self._text_threshold,
+                    "embed": self._embed,
                 },
             )
         except (RuntimeError, ValueError) as error:
@@ -152,6 +156,9 @@ class Detector(Node):
             out.roi.width = width
             out.roi.height = height
             out.data = mask.reshape(-1).tolist()
+            embedding = instance.get("embedding")
+            if embedding is not None:
+                out.embedding = np.asarray(embedding, dtype=np.float32).reshape(-1).tolist()
             masks.instances.append(out)
         self._publisher.publish(masks)
 

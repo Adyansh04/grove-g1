@@ -1,0 +1,4 @@
+# Tells the planner how a viewpoint went, so an unreachable one is not offered forever.
+uint32 viewpoint_id
+bool reached
+---

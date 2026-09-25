@@ -1,0 +1,42 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>g1_world_model</name>
+  <version>0.1.0</version>
+  <description>
+    What the robot knows about its surroundings on top of the SLAM map: rooms and doorways
+    segmented from the occupancy grid, objects fused from detector masks and depth, and how much
+    of each room the head camera has seen. Plans the viewpoints that finish the job, and answers
+    where-is and how-to-get-there queries for the behavior tree.
+  </description>
+  <maintainer email="gupta.adyansh@gmail.com">Adyansh</maintainer>
+  <license>BSD-3-Clause</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>builtin_interfaces</depend>
+  <depend>eigen</depend>
+  <depend>g1_msgs</depend>
+  <depend>g1_perception</depend>
+  <depend>geometry_msgs</depend>
+  <depend>libopencv-dev</depend>
+  <depend>nav_msgs</depend>
+  <depend>rclcpp</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_srvs</depend>
+  <depend>tf2</depend>
+  <depend>tf2_eigen</depend>
+  <depend>tf2_ros</depend>
+  <depend>visualization_msgs</depend>
+  <depend>yaml-cpp</depend>
+
+  <!-- ament_lint_common intentionally not used to avoid clang-format conflicts. -->
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_cmake_gmock</test_depend>
+  <test_depend>ament_cmake_lint_cmake</test_depend>
+  <test_depend>ament_cmake_xmllint</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

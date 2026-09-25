@@ -126,6 +126,7 @@ install(PROGRAMS
   scripts/g1_detector
   scripts/g1_graspgen_adapter
   scripts/g1_instruction_grounder
+  scripts/g1_object_describer
   DESTINATION lib/${PROJECT_NAME})
 
 # --- tests -----------------------------------------------------------------

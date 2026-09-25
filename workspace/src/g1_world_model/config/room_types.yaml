@@ -1,0 +1,35 @@
+# How often each object label appears in each room type, P(present | type), for the naive Bayes
+# room typer. Labels a type does not list get `unlisted`. Keys must match the detector
+# vocabulary (workspace/src/g1_perception/config/indoor_vocabulary.yaml).
+unlisted: 0.08
+
+room_types:
+  kitchen:
+    prior: 0.15
+    objects: { refrigerator: 0.9, fridge: 0.9, counter: 0.8, sink: 0.8, oven: 0.8, stove: 0.8,
+               microwave: 0.7, dishwasher: 0.6, kettle: 0.5, "dining table": 0.3, chair: 0.4,
+               dustbin: 0.5, cabinet: 0.5, bowl: 0.5, mug: 0.4, bottle: 0.4 }
+  living room:
+    prior: 0.2
+    objects: { sofa: 0.9, couch: 0.9, armchair: 0.7, "coffee table": 0.8, television: 0.7,
+               tv: 0.7, bookshelf: 0.4, "potted plant": 0.5, lamp: 0.5, rug: 0.5, cushion: 0.6,
+               "side table": 0.4 }
+  dining room:
+    prior: 0.1
+    objects: { "dining table": 0.9, chair: 0.8, cabinet: 0.3, bowl: 0.3, "potted plant": 0.3 }
+  bedroom:
+    prior: 0.2
+    objects: { bed: 0.95, nightstand: 0.7, wardrobe: 0.6, dresser: 0.5, lamp: 0.4, pillow: 0.6,
+               "drawer cabinet": 0.5 }
+  office:
+    prior: 0.15
+    objects: { desk: 0.9, "office chair": 0.8, chair: 0.5, monitor: 0.7, computer: 0.6,
+               laptop: 0.6, keyboard: 0.6, bookshelf: 0.5, printer: 0.4, dustbin: 0.4,
+               "cardboard box": 0.2 }
+  bathroom:
+    prior: 0.1
+    objects: { toilet: 0.95, sink: 0.7, bathtub: 0.8, shower: 0.8, mirror: 0.5, towel: 0.6 }
+  storage room:
+    prior: 0.1
+    objects: { "cardboard box": 0.8, box: 0.8, crate: 0.8, shelf: 0.7, "storage box": 0.8,
+               cabinet: 0.4, bucket: 0.4 }

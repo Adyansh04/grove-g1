@@ -28,6 +28,26 @@ std::string nameOf(const std::string& entry)
     const std::size_t split = entry.find('=');
     return split == std::string::npos ? entry : entry.substr(0, split);
 }
+
+/// Whether a ground-truth body is an instance of a class: "chair_3" of "chair", and "red_block"
+/// of itself. Numbered bodies let one phrase stand for every chair in a scene, as it would for a
+/// real detector.
+bool isInstanceOf(const std::string& class_id, const std::string& slug)
+{
+    if (class_id == slug)
+    {
+        return true;
+    }
+    if (class_id.size() <= slug.size() + 1 || class_id.compare(0, slug.size(), slug) != 0 ||
+        class_id[slug.size()] != '_')
+    {
+        return false;
+    }
+    return std::all_of(
+        class_id.begin() + static_cast<std::ptrdiff_t>(slug.size()) + 1,
+        class_id.end(),
+        [](char c) { return c >= '0' && c <= '9'; });
+}
 }  // namespace
 
 namespace
@@ -245,7 +265,7 @@ void G1MockDetector::publishMasks()
         // Takes the real detector's "name=phrase" entries too; only the name matters here.
         const auto match =
             std::find_if(phrases.begin(), phrases.end(), [&class_id](const std::string& entry) {
-                return slugify(nameOf(entry)) == class_id;
+                return isInstanceOf(class_id, slugify(nameOf(entry)));
             });
         if (match == phrases.end())
         {

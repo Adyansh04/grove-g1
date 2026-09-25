@@ -14,3 +14,7 @@ sensor_msgs/RegionOfInterest roi
 # roi.height * roi.width bytes, row major, 0 outside the instance and 255 inside. Bytes rather
 # than packed bits, since erosion works on bytes.
 uint8[] data
+
+# Image embedding of the instance's crop, L2-normalised, from whichever embedder the server runs.
+# Empty when the detector does not embed.
+float32[] embedding

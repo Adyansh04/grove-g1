@@ -1,0 +1,107 @@
+#!/usr/bin/env python3
+"""Names the world model's objects and rooms with a vision-language model on the host.
+
+Python because it is a ZMQ client of scripts/semantic_server.py, as g1_detector is. The world model
+publishes a DescribeRequest once an object has been seen a few times; this node sends it to the
+server's describe endpoint, one at a time, and publishes the answer. The server keeps Gemini inside
+the free tier and falls back to the local VLM, so a refusal here is logged and dropped: the world
+model asks again later.
+"""
+
+from collections import OrderedDict
+
+import numpy as np
+import rclpy
+from rclpy.node import Node
+
+from g1_msgs.msg import DescribeRequest, Description
+from g1_perception.host_clients import VisionClient
+
+try:
+    import cv2
+except ImportError:  # pragma: no cover - cv_bridge's dependency, present in the image
+    cv2 = None
+
+
+class Describer(Node):
+    def __init__(self):
+        super().__init__("g1_object_describer")
+        self._address = self.declare_parameter("server_address", "tcp://127.0.0.1:5561").value
+        timeout_ms = int(self.declare_parameter("zmq_timeout_ms", 30000).value)
+        self._queue_limit = int(self.declare_parameter("queue_size", 50).value)
+        # Newest request per subject: a better crop replaces the one still waiting.
+        self._queue = OrderedDict()
+        self._client = VisionClient(self._address, timeout_ms)
+        self._publisher = self.create_publisher(Description, "~/descriptions", 20)
+        self.create_subscription(DescribeRequest, "describe_requests", self._on_request, 50)
+        self.create_timer(0.5, self._tick)
+
+    def _on_request(self, request):
+        self._queue.pop(request.subject_id, None)
+        self._queue[request.subject_id] = request
+        while len(self._queue) > self._queue_limit:
+            self._queue.popitem(last=False)
+
+    def _tick(self):
+        if not self._queue:
+            return
+        _, request = self._queue.popitem(last=False)
+        images = [self._decode(image) for image in request.images]
+        images = [image for image in images if image is not None]
+        counts = {
+            label: float(vote) for label, vote in zip(request.labels, request.votes, strict=False)
+        }
+        context = (
+            {"labels": counts}
+            if request.task == DescribeRequest.TASK_OBJECT
+            else {"objects": counts}
+        )
+        try:
+            reply = self._client.call(
+                "describe", {"task": request.task, "images": images, "context": context}
+            )
+        except (RuntimeError, ValueError) as error:
+            self.get_logger().warning(f"{request.subject_id}: {error}", throttle_duration_sec=10.0)
+            return
+        out = Description()
+        out.subject_id = request.subject_id
+        out.task = request.task
+        out.name = str(reply.get("name", ""))
+        out.caption = str(reply.get("caption", ""))
+        out.label_ok = bool(reply.get("label_ok", True))
+        out.room_type = str(reply.get("room_type", "") or "")
+        out.confidence = float(reply.get("confidence", 0.0) or 0.0)
+        out.model = f"{reply.get('backend', '')}:{reply.get('model', '')}"
+        self._publisher.publish(out)
+        self.get_logger().info(
+            f"{request.subject_id}: {out.name or out.room_type} ({out.model}, "
+            f"{float(reply.get('elapsed_ms', 0.0)):.0f} ms)"
+        )
+
+    @staticmethod
+    def _decode(image):
+        """A JPEG CompressedImage as (H, W, 3) RGB, the layout the server takes."""
+        if cv2 is None:
+            return None
+        bgr = cv2.imdecode(np.frombuffer(bytes(image.data), dtype=np.uint8), cv2.IMREAD_COLOR)
+        return None if bgr is None else np.ascontiguousarray(bgr[:, :, ::-1])
+
+    def close(self):
+        self._client.close()
+
+
+def main():
+    rclpy.init()
+    node = Describer()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.close()
+        node.destroy_node()
+        rclpy.try_shutdown()
+
+
+if __name__ == "__main__":
+    main()

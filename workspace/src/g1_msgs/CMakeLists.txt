@@ -20,12 +20,23 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "action/Place.action"
   "action/Retreat.action"
   "action/SetArmPosture.action"
+  "msg/DescribeRequest.msg"
+  "msg/Description.msg"
+  "msg/Doorway.msg"
   "msg/ExemplarPoint.msg"
   "msg/InstanceMask.msg"
   "msg/InstanceMaskArray.msg"
+  "msg/Room.msg"
+  "msg/RoomArray.msg"
+  "msg/WorldObject.msg"
+  "msg/WorldObjectArray.msg"
+  "srv/FindObjects.srv"
   "srv/GenerateGrasps.srv"
+  "srv/GetApproachPose.srv"
   "srv/GroundInstruction.srv"
   "srv/GetActionChunk.srv"
+  "srv/NextViewpoint.srv"
+  "srv/ReportViewpoint.srv"
   DEPENDENCIES builtin_interfaces geometry_msgs sensor_msgs std_msgs trajectory_msgs
 )
 

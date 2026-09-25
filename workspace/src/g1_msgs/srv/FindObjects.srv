@@ -1,0 +1,20 @@
+# Objects matching a label, name or free text, best first.
+
+string query
+
+# Room id or name to search in; empty searches everywhere.
+string room
+
+uint32 max_results
+
+# Optional text embedding of the query, from the same model as the objects' embeddings.
+float32[] query_embedding
+---
+WorldObject[] objects
+float32[] scores
+
+# False with a coverage figure means "not in the part the camera has seen", not "absent".
+bool found
+float32 searched_coverage
+
+string message

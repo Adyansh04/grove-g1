@@ -1,0 +1,26 @@
+# Where to stand and which way to look next. Called in a loop by the exploration tree.
+
+# "frontier" closes the map under SLAM; "coverage" makes the camera see what the map holds.
+string MODE_FRONTIER="frontier"
+string MODE_COVERAGE="coverage"
+string mode
+---
+uint8 STATUS_VIEWPOINT=0
+uint8 STATUS_DONE=1
+uint8 STATUS_UNAVAILABLE=2
+uint8 status
+
+uint32 viewpoint_id
+
+# Where to stand; the yaw is the first heading.
+geometry_msgs/PoseStamped pose
+
+# Map-frame yaws to face in turn once there, rad.
+float32[] headings
+
+string room_id
+
+# Target cells the view is predicted to cover.
+float32 expected_gain
+
+string message
