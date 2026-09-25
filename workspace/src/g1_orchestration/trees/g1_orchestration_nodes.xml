@@ -93,6 +93,11 @@
             <input_port name="named_target" type="std::string">A group_state of that group, e.g. tucked.</input_port>
             <input_port name="group" type="std::string">A group in g1.srdf, e.g. right_arm.</input_port>
         </Action>
+        <Action ID="StepClear">
+            <input_port name="server_timeout_s" type="double" default="10.000000">How long to wait for the action server to appear.</input_port>
+            <input_port name="timeout_s" type="double" default="0.000000">0 uses the server's own default.</input_port>
+            <input_port name="clearance" type="double" default="0.550000">Distance to end up from the nearest obstacle, in metres. Nav2's circle is 0.45.</input_port>
+        </Action>
         <Action ID="StopLooking">
             <input_port name="timeout_s" type="double" default="5.000000">Budget for the write.</input_port>
             <input_port name="detector" type="std::string" default="/g1_detector">Node whose `phrases` to empty.</input_port>

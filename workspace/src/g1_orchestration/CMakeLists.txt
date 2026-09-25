@@ -39,6 +39,7 @@ add_library(g1_bt_nodes
   src/skills/pick.cpp
   src/skills/place.cpp
   src/skills/retreat.cpp
+  src/skills/step_clear.cpp
   src/skills/set_arm_posture.cpp
   src/skills/world_model_leaves.cpp
 )

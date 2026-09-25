@@ -30,7 +30,15 @@
                            outcome="{outcome}"/>
             <Fallback name="visit_or_report_unreached">
               <Sequence name="visit">
+                <!-- Nav2 will not start a motion with furniture inside its 0.45 m circle, and the
+                     gait's drift leaves the robot there; this is a no-op when it is clear. -->
+                <ForceSuccess name="unless_boxed_in">
+                  <StepClear name="step_clear_to_walk"/>
+                </ForceSuccess>
                 <NavigateToPose name="walk_there" goal="{goal}"/>
+                <ForceSuccess name="unless_boxed_in_there">
+                  <StepClear name="step_clear_to_turn"/>
+                </ForceSuccess>
                 <LoopDouble name="each_heading" queue="{headings}" value="{heading}">
                   <Sequence name="face_and_dwell">
                     <!-- A spin that falls short still leaves the camera looking somewhere
