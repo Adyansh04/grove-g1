@@ -1,0 +1,160 @@
+# The detector's word list for semantic mapping: g1_detector pointed at scripts/semantic_server.py,
+# whose YOLOE backend scores every region against the whole list in one forward pass. Load it
+# after g1_detector.yaml so these values win.
+#
+# One name per kind of object: singular, lower case, 1-3 words, and no two names a detector would
+# swap on the same object (sofa, not also couch; mug, not also cup; shelf, not also bookshelf),
+# since each label a track collects is a vote the map must reconcile. What an object is exactly
+# is the describer's job, not the word list's.
+g1_detector:
+  ros__parameters:
+    server_address: "tcp://127.0.0.1:5561"
+
+    # YOLOE's scores run lower than Grounding DINO's. On the renders and photos it was tried on,
+    # most detections under 0.3 had the wrong name or repeated another one.
+    box_threshold: 0.30
+
+    phrases:
+      # seating and tables
+      - chair
+      - armchair
+      - sofa
+      - stool
+      - bench
+      - dining table
+      - coffee table
+      - desk
+      - nightstand
+      # storage furniture
+      - cabinet
+      - wardrobe
+      - dresser
+      - shelf
+      - tv stand
+      - filing cabinet
+      - shoe rack
+      - coat rack
+      # beds and textiles
+      - bed
+      - crib
+      - pillow
+      - blanket
+      - rug
+      - curtain
+      - towel
+      - clothing
+      # fixed parts of the building
+      - door
+      - window
+      - staircase
+      - fireplace
+      - radiator
+      - countertop
+      - sink
+      # lighting and decor
+      - lamp
+      - clock
+      - picture frame
+      - mirror
+      - potted plant
+      - vase
+      - candle
+      # kitchen appliances
+      - refrigerator
+      - oven
+      - stove
+      - microwave
+      - dishwasher
+      - toaster
+      - kettle
+      - coffee maker
+      - blender
+      - rice cooker
+      - range hood
+      - water dispenser
+      # kitchenware
+      - frying pan
+      - cooking pot
+      - plate
+      - bowl
+      - mug
+      - drinking glass
+      - bottle
+      - jar
+      - soda can
+      - cutting board
+      - knife
+      - fork
+      - spoon
+      - dish rack
+      - paper towel
+      # bathroom
+      - toilet
+      - bathtub
+      - shower
+      - toilet paper
+      - toothbrush
+      - soap dispenser
+      - hair dryer
+      # laundry and cleaning
+      - washing machine
+      - clothes dryer
+      - ironing board
+      - vacuum cleaner
+      - broom
+      - mop
+      - bucket
+      - trash can
+      # heating and air
+      - fan
+      - air conditioner
+      - air purifier
+      - space heater
+      # electronics
+      - television
+      - monitor
+      - laptop
+      - desktop computer
+      - keyboard
+      - computer mouse
+      - speaker
+      - printer
+      - wifi router
+      - phone
+      - tablet
+      - remote control
+      - game console
+      - headphones
+      - projector
+      - power strip
+      # office
+      - book
+      - whiteboard
+      - scissors
+      - stapler
+      - pen
+      # containers and bags
+      - box
+      - basket
+      - bag
+      - backpack
+      - suitcase
+      - tray
+      - toolbox
+      # leisure
+      - toy
+      - guitar
+      - piano
+      - bicycle
+      - treadmill
+      - dumbbell
+      - chessboard
+      # everything else
+      - umbrella
+      - shoe
+      - ladder
+      - fire extinguisher
+      - first aid kit
+      - person
+      - dog
+      - cat
