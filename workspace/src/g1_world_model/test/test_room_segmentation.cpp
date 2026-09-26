@@ -260,5 +260,27 @@ TEST(RoomSegmentation, ResamplesOntoAGrownMap)
         result.labels.at<int>(cellsOf(2.0), cellsOf(2.5)));
 }
 
+TEST(RoomSegmentation, GivesFloorOutsideEveryRoomToTheRoomItBordersMost)
+{
+    // Two rooms side by side; free floor no room holds: a strip along room 1 only, a strip
+    // touching room 2 along more cells than room 1, and a pocket walled off from both.
+    cv::Mat cells(10, 20, CV_8UC1, cv::Scalar(kFree));
+    cv::Mat labels(10, 20, CV_32S, cv::Scalar(0));
+    labels(cv::Rect(0, 0, 10, 8)).setTo(1);
+    labels(cv::Rect(10, 0, 10, 8)).setTo(2);
+    cells(cv::Rect(0, 8, 20, 2)).setTo(kOccupied);
+    labels(cv::Rect(0, 3, 2, 3)).setTo(0);  // Along room 1 only.
+    labels(cv::Rect(8, 0, 6, 1)).setTo(0);  // More of it along room 2 than room 1.
+    cells(cv::Rect(15, 2, 5, 5)).setTo(kOccupied);
+    cells.at<std::uint8_t>(4, 17) = kFree;  // Walled in.
+    labels.at<int>(4, 17)         = 0;
+
+    const cv::Mat claimed = claimUnlabelledFloor(labels, cells);
+    EXPECT_EQ(claimed.at<int>(4, 0), 1);
+    EXPECT_EQ(claimed.at<int>(0, 9), 2);
+    EXPECT_EQ(claimed.at<int>(4, 17), 0);
+    EXPECT_EQ(claimed.at<int>(8, 5), 0);  // Solid stays outside.
+}
+
 }  // namespace
 }  // namespace g1_world_model

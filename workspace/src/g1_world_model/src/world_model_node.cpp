@@ -1923,7 +1923,8 @@ cv::Mat WorldModelNode::renderSemanticMap() const
             objects.push_back({ footprintOf(object), object.label() });
         }
     }
-    return renderWorld(floorPlan(), geometry_, room_labels_, rooms, objects);
+    const cv::Mat plan = floorPlan();
+    return renderWorld(plan, geometry_, claimUnlabelledFloor(room_labels_, plan), rooms, objects);
 }
 
 // --- publishing -----------------------------------------------------------------------------

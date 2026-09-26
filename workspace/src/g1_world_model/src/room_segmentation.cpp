@@ -705,4 +705,62 @@ cv::Mat resampleLabels(const cv::Mat& labels, const GridGeometry& from, const Gr
     return out;
 }
 
+cv::Mat claimUnlabelledFloor(const cv::Mat& labels, const cv::Mat& cells)
+{
+    cv::Mat claimed = labels.clone();
+    if (labels.size() != cells.size())
+    {
+        return claimed;
+    }
+    cv::Mat   pockets;
+    const int count = cv::connectedComponents((cells == kFree) & (labels == 0), pockets, 4, CV_32S);
+    // Per pocket, how many floor cells of each room border it.
+    std::vector<std::unordered_map<int, int>> borders(static_cast<std::size_t>(count));
+    for (int y = 0; y < labels.rows; ++y)
+    {
+        for (int x = 0; x < labels.cols; ++x)
+        {
+            const int pocket = pockets.at<int>(y, x);
+            if (pocket == 0)
+            {
+                continue;
+            }
+            for (const auto& [nx, ny] :
+                 { std::pair{ x + 1, y }, { x - 1, y }, { x, y + 1 }, { x, y - 1 } })
+            {
+                if (nx >= 0 && ny >= 0 && nx < labels.cols && ny < labels.rows &&
+                    labels.at<int>(ny, nx) > 0 && cells.at<std::uint8_t>(ny, nx) == kFree)
+                {
+                    ++borders[static_cast<std::size_t>(pocket)][labels.at<int>(ny, nx)];
+                }
+            }
+        }
+    }
+    std::vector<int> owner(static_cast<std::size_t>(count), 0);
+    for (std::size_t pocket = 1; pocket < borders.size(); ++pocket)
+    {
+        int most = 0;
+        for (const auto& [room, cells_along] : borders[pocket])
+        {
+            if (cells_along > most || (cells_along == most && room < owner[pocket]))
+            {
+                most          = cells_along;
+                owner[pocket] = room;
+            }
+        }
+    }
+    for (int y = 0; y < labels.rows; ++y)
+    {
+        for (int x = 0; x < labels.cols; ++x)
+        {
+            const int pocket = pockets.at<int>(y, x);
+            if (pocket > 0 && owner[static_cast<std::size_t>(pocket)] > 0)
+            {
+                claimed.at<int>(y, x) = owner[static_cast<std::size_t>(pocket)];
+            }
+        }
+    }
+    return claimed;
+}
+
 }  // namespace g1_world_model

@@ -117,6 +117,16 @@ std::vector<int> matchRegions(
  */
 cv::Mat resampleLabels(const cv::Mat& labels, const GridGeometry& from, const GridGeometry& to);
 
+/**
+ * @brief Gives each stretch of free floor outside every room to the room it borders most: floor
+ *        that was unknown when the rooms were cut, such as behind a wardrobe, and is free in the
+ *        floor plan. Floor bordering no room stays 0.
+ *
+ * @param labels CV_32S room labels, 0 outside every room.
+ * @param cells  CV_8U Cell values on the same grid.
+ */
+[[nodiscard]] cv::Mat claimUnlabelledFloor(const cv::Mat& labels, const cv::Mat& cells);
+
 }  // namespace g1_world_model
 
 #endif  // G1_WORLD_MODEL__ROOM_SEGMENTATION_HPP_
