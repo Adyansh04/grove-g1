@@ -30,6 +30,8 @@
   <depend>visualization_msgs</depend>
   <depend>yaml-cpp</depend>
 
+  <exec_depend>rviz2</exec_depend>
+
   <!-- ament_lint_common intentionally not used to avoid clang-format conflicts. -->
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_cmake_gmock</test_depend>

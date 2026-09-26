@@ -14,6 +14,7 @@
 #include <filesystem>
 #include <fstream>
 #include <limits>
+#include <numbers>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 #include <sensor_msgs/point_cloud2_iterator.hpp>
@@ -104,7 +105,9 @@ geometry_msgs::msg::Pose poseOf(double x, double y, double z, double yaw)
 
 WorldModelNode::WorldModelNode(const rclcpp::NodeOptions& options)
   : rclcpp::Node("g1_world_model", options)
-  , depth_history_(declare_parameter<double>("frame_history_s", 6.0), 0.02, 64)
+  // Masks are used only from a still robot, so the depth frame beside a dropped one is the same
+  // view: a match within 0.1 s, not just the frame's own stamp.
+  , depth_history_(declare_parameter<double>("frame_history_s", 6.0), 0.1, 64)
   , color_history_(get_parameter("frame_history_s").as_double(), 0.02, 64)
 {
     map_frame_          = declare_parameter<std::string>("map_frame", "map");
@@ -156,6 +159,8 @@ WorldModelNode::WorldModelNode(const rclcpp::NodeOptions& options)
     planner.robot_radius = declare_parameter<double>("planner.robot_radius", planner.robot_radius);
     planner.clearance_margin =
         declare_parameter<double>("planner.clearance_margin", planner.clearance_margin);
+    planner.frontier_clearance =
+        declare_parameter<double>("planner.frontier_clearance", planner.frontier_clearance);
     planner.travel_margin =
         declare_parameter<double>("planner.travel_margin", planner.travel_margin);
     planner.candidate_spacing =
@@ -177,6 +182,17 @@ WorldModelNode::WorldModelNode(const rclcpp::NodeOptions& options)
         static_cast<int>(declare_parameter<int>("planner.max_candidates", planner.max_candidates));
     planner.min_frontier_size =
         declare_parameter<double>("planner.min_frontier_size", planner.min_frontier_size);
+    planner.frontier_stand_back =
+        declare_parameter<double>("planner.frontier_stand_back", planner.frontier_stand_back);
+    planner.min_frontier_unknown =
+        declare_parameter<double>("planner.min_frontier_unknown", planner.min_frontier_unknown);
+    planner.frontier_seen_radius =
+        declare_parameter<double>("planner.frontier_seen_radius", planner.frontier_seen_radius);
+    max_wall_gap_ = declare_parameter<double>("floor_plan.max_wall_gap", max_wall_gap_);
+    planner.frontier_stall_visits = static_cast<int>(
+        declare_parameter<int>("planner.frontier_stall_visits", planner.frontier_stall_visits));
+    planner.min_frontier_growth =
+        declare_parameter<double>("planner.min_frontier_growth", planner.min_frontier_growth);
     planner.max_attempts =
         static_cast<int>(declare_parameter<int>("planner.max_attempts", planner.max_attempts));
     planner.max_room_failures = static_cast<int>(
@@ -203,7 +219,16 @@ WorldModelNode::WorldModelNode(const rclcpp::NodeOptions& options)
         declare_parameter<double>("objects.max_merged_extent", objects.max_merged_extent);
     objects.min_observations = static_cast<int>(
         declare_parameter<int>("objects.min_observations", objects.min_observations));
-    objects.confirm_s      = declare_parameter<double>("objects.confirm_s", objects.confirm_s);
+    map_fit_params_.reach = declare_parameter<double>("objects.fit_reach", map_fit_params_.reach);
+    map_fit_params_.max_growth =
+        declare_parameter<double>("objects.fit_max_growth", map_fit_params_.max_growth);
+    map_fit_params_.min_share =
+        declare_parameter<double>("objects.fit_min_share", map_fit_params_.min_share);
+    map_fit_params_.max_stretch =
+        declare_parameter<double>("objects.fit_max_stretch", map_fit_params_.max_stretch);
+    min_furniture_depth_ = declare_parameter<double>("objects.fit_min_depth", min_furniture_depth_);
+    objects.confirm_s    = declare_parameter<double>("objects.confirm_s", objects.confirm_s);
+    second_look_reach_ = declare_parameter<double>("objects.second_look_reach", second_look_reach_);
     objects.support_labels = declare_parameter<std::vector<std::string>>(
         "objects.support_labels",
         objects.support_labels);
@@ -306,10 +331,12 @@ WorldModelNode::WorldModelNode(const rclcpp::NodeOptions& options)
             onDescription(description);
         });
 
-    rooms_pub_    = create_publisher<g1_msgs::msg::RoomArray>("~/rooms", latchedQos());
-    objects_pub_  = create_publisher<g1_msgs::msg::WorldObjectArray>("~/objects", latchedQos());
-    coverage_pub_ = create_publisher<nav_msgs::msg::OccupancyGrid>("~/coverage", latchedQos());
-    markers_pub_  = create_publisher<visualization_msgs::msg::MarkerArray>(
+    rooms_pub_      = create_publisher<g1_msgs::msg::RoomArray>("~/rooms", latchedQos());
+    objects_pub_    = create_publisher<g1_msgs::msg::WorldObjectArray>("~/objects", latchedQos());
+    coverage_pub_   = create_publisher<nav_msgs::msg::OccupancyGrid>("~/coverage", latchedQos());
+    walls_pub_      = create_publisher<nav_msgs::msg::OccupancyGrid>("~/walls", latchedQos());
+    floor_plan_pub_ = create_publisher<nav_msgs::msg::OccupancyGrid>("~/floor_plan", latchedQos());
+    markers_pub_    = create_publisher<visualization_msgs::msg::MarkerArray>(
         "~/markers",
         rclcpp::QoS(rclcpp::KeepLast(1)).reliable());
     describe_pub_ = create_publisher<g1_msgs::msg::DescribeRequest>(
@@ -356,7 +383,7 @@ WorldModelNode::WorldModelNode(const rclcpp::NodeOptions& options)
             const TriggerSrv::Response::SharedPtr& response) { onSave(request, response); });
 
     integrate_timer_ =
-        create_wall_timer(std::chrono::milliseconds(50), [this] { integratePendingDepth(); });
+        create_wall_timer(std::chrono::milliseconds(50), [this] { integratePending(); });
     publish_timer_  = create_wall_timer(std::chrono::seconds(1), [this] { publishState(); });
     describe_timer_ = create_wall_timer(std::chrono::seconds(2), [this] { requestDescriptions(); });
     if (!world_dir_.empty() && autosave_period_s_ > 0.0)
@@ -397,6 +424,7 @@ void WorldModelNode::onMap(const nav_msgs::msg::OccupancyGrid::ConstSharedPtr& m
         RCLCPP_WARN(get_logger(), "map data does not match its size; ignored");
         return;
     }
+    planner_.mapUpdated();
     cv::Mat cells = classifyOccupancy(map->data.data(), geometry);
     if (!cells_.empty() && geometry == geometry_ && cv::countNonZero(cells != cells_) == 0)
     {
@@ -405,6 +433,20 @@ void WorldModelNode::onMap(const nav_msgs::msg::OccupancyGrid::ConstSharedPtr& m
     if (!(geometry == geometry_) && !room_labels_.empty())
     {
         room_labels_ = resampleLabels(room_labels_, geometry_, geometry);
+    }
+    if (!(geometry == geometry_) && structure_hits_.size() == geometry_.cellCount())
+    {
+        // The walls seen so far stay where they are when SLAM grows or shifts the map.
+        structure_hits_ = remapLayer<std::uint16_t>(structure_hits_, geometry_, geometry, 0);
+        band_clear_     = remapLayer<std::uint16_t>(band_clear_, geometry_, geometry, 0);
+        structure_cells_ =
+            static_cast<int>(std::ranges::count_if(structure_hits_, [this](std::uint16_t hits) {
+                return hits >= structure_min_hits_;
+            }));
+        cleared_cells_ =
+            static_cast<int>(std::ranges::count_if(band_clear_, [this](std::uint16_t clear) {
+                return clear >= structure_min_clear_;
+            }));
     }
     cells_    = std::move(cells);
     geometry_ = geometry;
@@ -577,13 +619,14 @@ void WorldModelNode::integrateCloud(const sensor_msgs::msg::PointCloud2& cloud)
     }
 }
 
-cv::Mat WorldModelNode::structureCells() const
+bool WorldModelNode::structureReady() const
 {
-    if (!structure_enabled_ || structure_cells_ < structure_min_cells_ ||
-        structure_hits_.size() != geometry_.cellCount())
-    {
-        return cells_;
-    }
+    return structure_enabled_ && structure_cells_ >= structure_min_cells_ &&
+           structure_hits_.size() == geometry_.cellCount();
+}
+
+cv::Mat WorldModelNode::wallMask(int reach) const
+{
     cv::Mat walls(geometry_.height, geometry_.width, CV_8UC1, cv::Scalar(0));
     for (std::size_t index = 0; index < structure_hits_.size(); ++index)
     {
@@ -592,13 +635,15 @@ cv::Mat WorldModelNode::structureCells() const
             walls.ptr<std::uint8_t>(0)[index] = 255;
         }
     }
-    // A wall's returns scatter a cell or two either side of the line the scan map drew.
-    const int reach = std::max(1, geometry_.cellsFor(structure_dilate_));
     cv::dilate(
         walls,
         walls,
         cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size((2 * reach) + 1, (2 * reach) + 1)));
-    // Only cells the LiDAR has looked across at wall height: an unseen wall stays a wall.
+    return walls;
+}
+
+cv::Mat WorldModelNode::clearedMask() const
+{
     cv::Mat cleared(geometry_.height, geometry_.width, CV_8UC1, cv::Scalar(0));
     for (std::size_t index = 0; index < band_clear_.size(); ++index)
     {
@@ -607,9 +652,56 @@ cv::Mat WorldModelNode::structureCells() const
             cleared.ptr<std::uint8_t>(0)[index] = 255;
         }
     }
-    cv::Mat rooms = cells_.clone();
-    rooms.setTo(kFree, (cells_ == kOccupied) & (walls == 0) & (cleared != 0));
-    return rooms;
+    return cleared;
+}
+
+cv::Mat WorldModelNode::structureCells() const
+{
+    if (!structureReady())
+    {
+        return cells_;
+    }
+    // A wall's returns scatter a cell or two either side of the line the scan map drew. Only
+    // cells the LiDAR has looked across at wall height are cleared: an unseen wall stays a wall.
+    const cv::Mat walls = wallMask(std::max(1, geometry_.cellsFor(structure_dilate_)));
+    cv::Mat       rooms = cells_.clone();
+    rooms.setTo(kFree, (cells_ == kOccupied) & (walls == 0) & (clearedMask() != 0));
+    // Furniture the band never looked across, and the unseen inside of all of it, still stands
+    // there: gone too, unless it touches a wall.
+    return clearFreestanding(rooms, wallMask(1));
+}
+
+cv::Mat WorldModelNode::furnitureCells() const
+{
+    if (!structureReady())
+    {
+        return {};
+    }
+    // Solid cells less wall-height hits: a counter stays solid back to its wall, a wardrobe keeps
+    // its inside; walls no hit marked are too thin to survive the opening.
+    const int radius    = std::max(1, geometry_.cellsFor(0.5 * min_furniture_depth_));
+    cv::Mat   furniture = (floorPlan() == kOccupied) & (wallMask(1) == 0);
+    cv::morphologyEx(
+        furniture,
+        furniture,
+        cv::MORPH_OPEN,
+        cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size((2 * radius) + 1, (2 * radius) + 1)));
+    return furniture;
+}
+
+cv::Mat WorldModelNode::floorPlan() const
+{
+    return structureReady() ?
+               completeMap(cells_, wallMask(0), frame_yaw_, geometry_.cellsFor(max_wall_gap_)) :
+               settleEnclosedUnknown(cells_);
+}
+
+Footprint WorldModelNode::footprintOf(const MappedObject& object) const
+{
+    const auto fitted = fitted_.find(object.id);
+    return fitted != fitted_.end() ?
+               fitted->second :
+               Footprint{ object.box_centre, object.box_size, object.box_yaw };
 }
 
 bool WorldModelNode::wasStill(double stamp) const
@@ -744,7 +836,7 @@ void WorldModelNode::updateCameraModel(
     }
 }
 
-void WorldModelNode::integratePendingDepth()
+void WorldModelNode::integratePending()
 {
     if (cells_.empty())
     {
@@ -782,35 +874,58 @@ void WorldModelNode::integratePendingDepth()
         }
         ++frames_used_;
     }
+    while (!pending_masks_.empty() && seconds(pending_masks_.front()->header.stamp) <= horizon)
+    {
+        const auto masks = pending_masks_.front();
+        pending_masks_.pop_front();
+        integrateMasks(*masks);
+    }
 }
 
 void WorldModelNode::onMasks(const g1_msgs::msg::InstanceMaskArray::ConstSharedPtr& masks)
 {
-    if (cells_.empty() || !intrinsics_ || masks->instances.empty())
+    // Held like depth: a fast detector answers before its frame's transform, or the frame itself,
+    // has arrived here.
+    if (!masks->instances.empty())
+    {
+        pending_masks_.push_back(masks);
+    }
+    while (pending_masks_.size() > 16)
+    {
+        pending_masks_.pop_front();
+    }
+}
+
+void WorldModelNode::integrateMasks(const g1_msgs::msg::InstanceMaskArray& masks)
+{
+    if (!intrinsics_)
     {
         return;
     }
-    const double stamp = seconds(masks->header.stamp);
+    const double stamp = seconds(masks.header.stamp);
     if (!wasStill(stamp))
     {
+        ++mask_tally_.moving;
         return;  // Masks cut from a frame taken mid-turn would land the objects out of place.
     }
     const auto depth = depth_history_.at(stamp);
     if (depth == nullptr)
     {
-        RCLCPP_DEBUG(get_logger(), "no depth frame for masks at %.3f", stamp);
+        ++mask_tally_.no_depth;
         return;
     }
     const auto pose = mapFrom(depth->header.frame_id, depth->header.stamp);
     const auto view = depthView(*depth);
-    if (!pose || !view || masks->image_width != depth->width || masks->image_height != depth->height)
+    if (!pose || !view || masks.image_width != depth->width || masks.image_height != depth->height)
     {
+        ++mask_tally_.no_pose;
         return;
     }
+    ++mask_tally_.used;
 
     std::vector<MaskInput> inputs;
-    inputs.reserve(masks->instances.size());
-    for (const auto& instance : masks->instances)
+    inputs.reserve(masks.instances.size());
+    for (const auto& instance : masks.instances)
     {
         if (instance.data.size() !=
             static_cast<std::size_t>(instance.roi.width) * instance.roi.height)
@@ -831,6 +946,10 @@ void WorldModelNode::onMasks(const g1_msgs::msg::InstanceMaskArray::ConstSharedP
     const FrameInput               frame{ stamp, *view, *intrinsics_, *pose };
     const std::vector<MaskOutcome> outcomes = objects_.integrate(inputs, frame);
     dirty_                                  = true;
+    for (const std::string& label : objects_.takeDropped())
+    {
+        RCLCPP_INFO(get_logger(), "dropped a '%s' nothing confirmed", label.c_str());
+    }
 
     const auto color = color_history_.at(stamp);
     for (std::size_t slot = 0; slot < outcomes.size(); ++slot)
@@ -973,7 +1092,16 @@ void WorldModelNode::resegment()
     last_segmented_            = now();
     structure_cells_segmented_ = structure_cells_ + cleared_cells_;
     map_changed_               = false;
-    Segmentation segmentation  = segmentRooms(structureCells(), geometry_, segmentation_params_);
+    const double walls         = dominantAxis(cells_);
+    if (std::abs(std::remainder(walls - frame_yaw_, std::numbers::pi / 2.0)) > 0.01)
+    {
+        frame_yaw_ = walls;
+        objects_.setFrame(frame_yaw_);
+    }
+    const cv::Mat walls_only = structureCells();
+    walls_pub_->publish(gridMessage(walls_only));
+    floor_plan_pub_->publish(gridMessage(floorPlan()));
+    Segmentation segmentation = segmentRooms(walls_only, geometry_, segmentation_params_);
 
     const int              previous_count = static_cast<int>(rooms_.size());
     const std::vector<int> match          = matchRegions(
@@ -1129,7 +1257,7 @@ void WorldModelNode::typeRooms()
     std::vector<std::vector<std::string>> labels(rooms_.size());
     for (const MappedObject& object : objects_.objects())
     {
-        if (object.state != ObjectState::kActive)
+        if (object.state != ObjectState::kActive || !objects_.confirmed(object))
         {
             continue;
         }
@@ -1176,11 +1304,13 @@ void WorldModelNode::onNextViewpoint(
     {
         resegment();
     }
-    const bool   frontier = request->mode == g1_msgs::srv::NextViewpoint::Request::MODE_FRONTIER;
-    const auto   started  = std::chrono::steady_clock::now();
-    const Plan   plan     = frontier ? planner_.nextFrontier(cells_, geometry_, *robot) :
-                                       planner_.nextCoverage(coverage_, room_labels_, *robot);
-    const double took_ms =
+    const bool frontier = request->mode == g1_msgs::srv::NextViewpoint::Request::MODE_FRONTIER;
+    const auto started  = std::chrono::steady_clock::now();
+    std::optional<Viewpoint> look = frontier ? std::nullopt : secondLook(*robot);
+    const Plan               plan = look ? Plan{ PlanStatus::kViewpoint, std::move(*look), {} } :
+                                    frontier ? planner_.nextFrontier(cells_, geometry_, *robot) :
+                                               planner_.nextCoverage(coverage_, room_labels_, *robot);
+    const double             took_ms =
         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
 
     response->message = plan.reason;
@@ -1194,6 +1324,7 @@ void WorldModelNode::onNextViewpoint(
                 frontier ? "frontier" : "coverage",
                 plan.reason.c_str());
             dirty_ = true;
+            heading_to_.reset();
             return;
         case PlanStatus::kUnavailable:
             response->status = Response::STATUS_UNAVAILABLE;
@@ -1202,6 +1333,7 @@ void WorldModelNode::onNextViewpoint(
             break;
     }
     const Viewpoint& viewpoint     = plan.viewpoint;
+    heading_to_                    = viewpoint;
     response->status               = Response::STATUS_VIEWPOINT;
     response->viewpoint_id         = viewpoint.id;
     response->pose.header.frame_id = map_frame_;
@@ -1220,16 +1352,61 @@ void WorldModelNode::onNextViewpoint(
         response->room_id = room->id;
     }
     response->expected_gain = static_cast<float>(viewpoint.gain);
+    // The mapped area rides along, as the frontier pass's stopping rule counts it, and what became
+    // of the detector's masks on the way here.
     RCLCPP_INFO(
         get_logger(),
-        "viewpoint %u at (%.2f, %.2f), %zu headings, gain %.0f, cost %.1f s, planned in %.0f ms",
+        "viewpoint %u at (%.2f, %.2f), %zu headings, gain %.0f, cost %.1f s, planned in %.0f ms, "
+        "%.1f m2 mapped; mask frames since: %d used, %d moving, %d without depth, %d without pose",
         viewpoint.id,
         viewpoint.x,
         viewpoint.y,
         viewpoint.headings.size(),
         viewpoint.gain,
         viewpoint.cost,
-        took_ms);
+        took_ms,
+        cv::countNonZero(cells_ != kUnknown) * geometry_.resolution * geometry_.resolution,
+        mask_tally_.used,
+        mask_tally_.moving,
+        mask_tally_.no_depth,
+        mask_tally_.no_pose);
+    mask_tally_ = {};
+}
+
+std::optional<Viewpoint> WorldModelNode::secondLook(const Pose2D& robot)
+{
+    const double        stamp         = now().seconds();
+    const MappedObject* best          = nullptr;
+    double              best_distance = second_look_reach_;
+    for (const MappedObject* object : objects_.glimpses())
+    {
+        // Past confirm_s it is dropped whatever a look shows.
+        if (looked_again_.contains(object->id) ||
+            stamp - object->first_seen > objects_.params().confirm_s)
+        {
+            continue;
+        }
+        const double distance =
+            std::hypot(object->seen_from.x() - robot.x, object->seen_from.y() - robot.y);
+        if (distance <= best_distance)
+        {
+            best          = object;
+            best_distance = distance;
+        }
+    }
+    if (best == nullptr)
+    {
+        return std::nullopt;
+    }
+    looked_again_.insert(best->id);
+    const Eigen::Vector2d to = best->box_centre - best->seen_from;
+    RCLCPP_INFO(
+        get_logger(),
+        "second look at a '%s' seen once, from (%.2f, %.2f)",
+        best->label().c_str(),
+        best->seen_from.x(),
+        best->seen_from.y());
+    return planner_.glance(best->seen_from.x(), best->seen_from.y(), std::atan2(to.y(), to.x()));
 }
 
 void WorldModelNode::onReportViewpoint(
@@ -1257,7 +1434,7 @@ std::vector<std::pair<const MappedObject*, double>> WorldModelNode::matchObjects
     }
     for (const MappedObject& object : objects_.objects())
     {
-        if (object.state == ObjectState::kRemoved)
+        if (!shown(object))
         {
             continue;
         }
@@ -1449,7 +1626,7 @@ void WorldModelNode::onGetApproachPose(
                             " is on the map";
         return;
     }
-    footprint       = { object->box_centre, object->box_size, object->box_yaw };
+    footprint       = footprintOf(*object);
     target_id       = objectId(object->id);
     const auto pose = approachPose(
         planner_.clearance(),
@@ -1515,7 +1692,15 @@ std::string WorldModelNode::saveNow()
         snapshot.rooms.push_back(
             { room.id, room.name, room.type, room.type_confidence, room.type_source, x, y });
     }
-    snapshot.objects         = objects_.objects();
+    // The boxes as shown: the map's outline where it gave one.
+    snapshot.objects = objects_.objects();
+    for (MappedObject& object : snapshot.objects)
+    {
+        const Footprint box = footprintOf(object);
+        object.box_centre   = box.centre;
+        object.box_size     = box.size;
+        object.box_yaw      = box.yaw;
+    }
     const auto layers        = coverage_.layers();
     snapshot.quality         = *layers[0];
     snapshot.surface_quality = *layers[1];
@@ -1534,9 +1719,61 @@ std::string WorldModelNode::saveNow()
                 reinterpret_cast<const char*>(jpeg.data()),
                 static_cast<std::streamsize>(jpeg.size()));
         }
-        dirty_ = false;
+        // The map the world was built on, and a picture of both, beside it.
+        if (!cells_.empty())
+        {
+            failure = saveOccupancy(world_dir_, gridMessage(floorPlan()).data, geometry_);
+        }
+        if (failure.empty() && !cv::imwrite(
+                                   (std::filesystem::path(world_dir_) / "semantic_map.png").string(),
+                                   renderSemanticMap()))
+        {
+            failure = "cannot write semantic_map.png";
+        }
+        dirty_ = !failure.empty();
     }
     return failure;
+}
+
+nav_msgs::msg::OccupancyGrid WorldModelNode::gridMessage(const cv::Mat& cells) const
+{
+    nav_msgs::msg::OccupancyGrid grid;
+    grid.header.stamp              = now();
+    grid.header.frame_id           = map_frame_;
+    grid.info.resolution           = static_cast<float>(geometry_.resolution);
+    grid.info.width                = static_cast<std::uint32_t>(geometry_.width);
+    grid.info.height               = static_cast<std::uint32_t>(geometry_.height);
+    grid.info.origin.position.x    = geometry_.origin_x;
+    grid.info.origin.position.y    = geometry_.origin_y;
+    grid.info.origin.orientation.w = 1.0;
+    grid.data.resize(geometry_.cellCount());
+    for (std::size_t index = 0; index < grid.data.size(); ++index)
+    {
+        const std::uint8_t cell = cells.ptr<std::uint8_t>(0)[index];
+        grid.data[index] =
+            static_cast<std::int8_t>(cell == kOccupied ? 100 : (cell == kFree ? 0 : -1));
+    }
+    return grid;
+}
+
+cv::Mat WorldModelNode::renderSemanticMap() const
+{
+    std::vector<RenderRoom> rooms;
+    for (const RoomState& room : rooms_)
+    {
+        std::string text = room.id + " " + (room.type.empty() ? room.name : room.type);
+        rooms.push_back(
+            { room.region.label, std::move(text), room.region.centroid_x, room.region.centroid_y });
+    }
+    std::vector<RenderObject> objects;
+    for (const MappedObject& object : objects_.objects())
+    {
+        if (object.state == ObjectState::kActive && objects_.confirmed(object))
+        {
+            objects.push_back({ footprintOf(object), object.label() });
+        }
+    }
+    return renderWorld(floorPlan(), geometry_, room_labels_, rooms, objects);
 }
 
 // --- publishing -----------------------------------------------------------------------------
@@ -1554,14 +1791,11 @@ g1_msgs::msg::WorldObject WorldModelNode::toMessage(const MappedObject& object) 
     {
         out.room_id = room->id;
     }
-    out.support_id = object.support > 0 ? objectId(object.support) : std::string{};
-    out.pose       = poseOf(
-        object.box_centre.x(),
-        object.box_centre.y(),
-        0.5 * (object.z_min + object.z_max),
-        object.box_yaw);
-    out.size.x       = object.box_size.x();
-    out.size.y       = object.box_size.y();
+    out.support_id      = object.support > 0 ? objectId(object.support) : std::string{};
+    const Footprint box = footprintOf(object);
+    out.pose = poseOf(box.centre.x(), box.centre.y(), 0.5 * (object.z_min + object.z_max), box.yaw);
+    out.size.x       = box.size.x();
+    out.size.y       = box.size.y();
     out.size.z       = object.height();
     out.observations = static_cast<std::uint32_t>(object.observations);
     out.first_seen   = rclcpp::Time(static_cast<std::int64_t>(object.first_seen * 1e9));
@@ -1586,6 +1820,7 @@ void WorldModelNode::publishState()
         resegment();
     }
     typeRooms();
+    fitted_ = fitToMap(objects_.objects(), furnitureCells(), geometry_, map_fit_params_);
 
     const auto                       stamp = now();
     const std::vector<CoverageTally> tallies =
@@ -1593,7 +1828,7 @@ void WorldModelNode::publishState()
     std::vector<int> object_counts(rooms_.size() + 1, 0);
     for (const MappedObject& object : objects_.objects())
     {
-        if (object.state != ObjectState::kRemoved)
+        if (shown(object))
         {
             ++object_counts[static_cast<std::size_t>(std::clamp(
                 roomLabelAt(object.box_centre.x(), object.box_centre.y()),
@@ -1653,7 +1888,7 @@ void WorldModelNode::publishState()
     objects.header = rooms.header;
     for (const MappedObject& object : objects_.objects())
     {
-        if (object.state != ObjectState::kRemoved)
+        if (shown(object))
         {
             objects.objects.push_back(toMessage(object));
         }
@@ -1694,23 +1929,60 @@ void WorldModelNode::publishMarkers(const std::vector<CoverageTally>& tallies)
         marker.pose.orientation.w = 1.0;
         return marker;
     };
+    const auto paint =
+        [](visualization_msgs::msg::Marker& marker, const cv::Vec3f& rgb, float alpha) {
+            marker.color.r = rgb[0];
+            marker.color.g = rgb[1];
+            marker.color.b = rgb[2];
+            marker.color.a = alpha;
+        };
+    const auto point = [](double x, double y, double z) {
+        geometry_msgs::msg::Point out;
+        out.x = x;
+        out.y = y;
+        out.z = z;
+        return out;
+    };
 
+    // Each room a tinted floor in its own colour, so the segmentation reads at a glance; the
+    // same colours as the saved semantic_map.png.
+    std::vector<visualization_msgs::msg::Marker> areas(rooms_.size());
+    const int                                    step = std::max(1, geometry_.cellsFor(0.2));
     for (std::size_t slot = 0; slot < rooms_.size(); ++slot)
     {
-        const RoomState& room    = rooms_[slot];
-        auto             outline = base("rooms", visualization_msgs::msg::Marker::LINE_STRIP);
-        outline.scale.x          = 0.04;
-        outline.color.r          = 0.2F;
-        outline.color.g          = 0.6F;
-        outline.color.b          = 1.0F;
-        outline.color.a          = 0.9F;
+        areas[slot]         = base("room_areas", visualization_msgs::msg::Marker::CUBE_LIST);
+        areas[slot].scale.x = areas[slot].scale.y = geometry_.resolution * step;
+        areas[slot].scale.z                       = 0.01;
+        paint(areas[slot], roomColour(slot), 0.35F);
+    }
+    if (!room_labels_.empty())
+    {
+        for (int y = step / 2; y < geometry_.height; y += step)
+        {
+            for (int x = step / 2; x < geometry_.width; x += step)
+            {
+                const int label = room_labels_.at<int>(y, x);
+                if (label > 0 && label <= static_cast<int>(rooms_.size()))
+                {
+                    areas[static_cast<std::size_t>(label - 1)].points.push_back(
+                        point(geometry_.centreX(x), geometry_.centreY(y), 0.005));
+                }
+            }
+        }
+    }
+    for (std::size_t slot = 0; slot < rooms_.size(); ++slot)
+    {
+        if (!areas[slot].points.empty())
+        {
+            markers.markers.push_back(areas[slot]);
+        }
+        const RoomState& room = rooms_[slot];
+        auto outline          = base("room_outlines", visualization_msgs::msg::Marker::LINE_STRIP);
+        outline.scale.x       = 0.05;
+        paint(outline, roomColour(slot), 0.9F);
         for (const cv::Point2d& corner : room.region.outline)
         {
-            geometry_msgs::msg::Point point;
-            point.x = corner.x;
-            point.y = corner.y;
-            point.z = 0.02;
-            outline.points.push_back(point);
+            outline.points.push_back(point(corner.x, corner.y, 0.02));
         }
         if (!outline.points.empty())
         {
@@ -1724,11 +1996,10 @@ void WorldModelNode::publishMarkers(const std::vector<CoverageTally>& tallies)
         auto text = base("room_names", visualization_msgs::msg::Marker::TEXT_VIEW_FACING);
         text.pose.position.x = room.region.centroid_x;
         text.pose.position.y = room.region.centroid_y;
-        text.pose.position.z = 1.8;
-        text.scale.z         = 0.35;
-        text.color.r = text.color.g = text.color.b = 1.0F;
-        text.color.a                               = 1.0F;
-        text.text = room.name + (room.type.empty() ? "" : ": " + room.type) + "\n" +
+        text.pose.position.z = 1.2;
+        text.scale.z         = 0.4;
+        paint(text, { 1.0F, 1.0F, 1.0F }, 1.0F);
+        text.text = room.id + ": " + (room.type.empty() ? room.name : room.type) + "\n" +
                     std::to_string((100 * seen) / total) + "% seen";
         markers.markers.push_back(text);
 
@@ -1737,46 +2008,70 @@ void WorldModelNode::publishMarkers(const std::vector<CoverageTally>& tallies)
             auto door            = base("doorways", visualization_msgs::msg::Marker::CYLINDER);
             door.pose.position.x = contact.x;
             door.pose.position.y = contact.y;
-            door.pose.position.z = 0.05;
-            door.scale.x = door.scale.y = contact.width;
-            door.scale.z                = 0.05;
-            door.color.g                = 1.0F;
-            door.color.a                = 0.5F;
+            door.pose.position.z = 0.03;
+            // A marker in the gap, not a disc across it: a doorway is a place, not an area.
+            door.scale.x = door.scale.y = std::min(contact.width, 0.5);
+            door.scale.z                = 0.04;
+            paint(door, { 0.2F, 0.9F, 0.3F }, 0.5F);
             markers.markers.push_back(door);
         }
     }
 
+    // Objects in their room's colour, a shade darker, named above.
     for (const MappedObject& object : objects_.objects())
     {
-        if (object.state == ObjectState::kRemoved)
+        if (!shown(object))
         {
             continue;
         }
-        auto box = base("objects", visualization_msgs::msg::Marker::CUBE);
-        box.pose = poseOf(
-            object.box_centre.x(),
-            object.box_centre.y(),
-            0.5 * (object.z_min + object.z_max),
-            object.box_yaw);
-        box.scale.x = object.box_size.x();
-        box.scale.y = object.box_size.y();
-        box.scale.z = std::max(0.02, object.height());
-        box.color.r = object.state == ObjectState::kStale ? 0.6F : 1.0F;
-        box.color.g = 0.55F;
-        box.color.b = 0.1F;
-        box.color.a = 0.35F;
-        markers.markers.push_back(box);
+        const Footprint box  = footprintOf(object);
+        const int       room = roomLabelAt(box.centre.x(), box.centre.y());
+        const cv::Vec3f rgb  = room > 0 ? roomColour(static_cast<std::size_t>(room - 1)) * 0.75F :
+                                          cv::Vec3f(0.6F, 0.6F, 0.6F);
+        auto            cube = base("objects", visualization_msgs::msg::Marker::CUBE);
+        cube.pose =
+            poseOf(box.centre.x(), box.centre.y(), 0.5 * (object.z_min + object.z_max), box.yaw);
+        cube.scale.x = box.size.x();
+        cube.scale.y = box.size.y();
+        cube.scale.z = std::max(0.02, object.height());
+        paint(cube, rgb, object.state == ObjectState::kStale ? 0.25F : 0.6F);
+        markers.markers.push_back(cube);
 
         auto label = base("object_names", visualization_msgs::msg::Marker::TEXT_VIEW_FACING);
-        label.pose.position.x = object.box_centre.x();
-        label.pose.position.y = object.box_centre.y();
-        label.pose.position.z = object.z_max + 0.15;
-        label.scale.z         = 0.15;
-        label.color.r = label.color.g = label.color.b = 1.0F;
-        label.color.a                                 = 1.0F;
-        label.text =
-            objectId(object.id) + " " + (object.name.empty() ? object.label() : object.name);
+        label.pose.position = point(box.centre.x(), box.centre.y(), object.z_max + 0.15);
+        label.scale.z       = 0.15;
+        paint(label, { 1.0F, 1.0F, 1.0F }, 1.0F);
+        label.text = object.label();
+        if (!object.name.empty() && object.name != object.label())
+        {
+            label.text += " (" + object.name + ")";
+        }
         markers.markers.push_back(label);
+    }
+
+    // Where the robot is headed and what it will face there.
+    if (heading_to_)
+    {
+        auto spot    = base("viewpoint", visualization_msgs::msg::Marker::CYLINDER);
+        spot.pose    = poseOf(heading_to_->x, heading_to_->y, 0.02, 0.0);
+        spot.scale.x = spot.scale.y = 0.3;
+        spot.scale.z                = 0.04;
+        paint(spot, { 1.0F, 0.85F, 0.1F }, 0.9F);
+        markers.markers.push_back(spot);
+        for (const double heading : heading_to_->headings)
+        {
+            auto arrow = base("viewpoint", visualization_msgs::msg::Marker::ARROW);
+            arrow.points.push_back(point(heading_to_->x, heading_to_->y, 0.1));
+            arrow.points.push_back(point(
+                heading_to_->x + (0.7 * std::cos(heading)),
+                heading_to_->y + (0.7 * std::sin(heading)),
+                0.1));
+            arrow.scale.x = 0.05;
+            arrow.scale.y = 0.12;
+            arrow.scale.z = 0.15;
+            paint(arrow, { 1.0F, 0.85F, 0.1F }, 0.9F);
+            markers.markers.push_back(arrow);
+        }
     }
     markers_pub_->publish(markers);
 }
@@ -1830,7 +2125,7 @@ void WorldModelNode::requestDescriptions()
         std::map<std::string, int> counts;
         for (const MappedObject& object : objects_.objects())
         {
-            if (object.state == ObjectState::kActive &&
+            if (object.state == ObjectState::kActive && objects_.confirmed(object) &&
                 roomLabelAt(object.box_centre.x(), object.box_centre.y()) ==
                     static_cast<int>(slot) + 1)
             {

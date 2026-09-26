@@ -105,6 +105,12 @@ if(BUILD_TESTING)
     TARGET test_world_model_explore TIMEOUT 3600)
   set_tests_properties(test_world_model_explore PROPERTIES
     LABELS simulator RESOURCE_LOCK mujoco_sim COST 3000)
+  # The same run from no map at all: slam_toolbox builds it while the robot explores.
+  add_launch_test(test/test_world_model_explore.launch.py
+    TARGET test_world_model_explore_mapping TIMEOUT 5400)
+  set_tests_properties(test_world_model_explore_mapping PROPERTIES
+    LABELS simulator RESOURCE_LOCK mujoco_sim COST 5000
+    ENVIRONMENT "G1_WORLD_MODEL_TEST_MAPPING=1")
 
   g1_add_lint_tests()
 endif()

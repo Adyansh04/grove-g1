@@ -17,13 +17,13 @@ Fetch its assets once on the host (about 330 MB; nothing is committed):
 Then, inside the container:
 
 ```bash
-ros2 launch g1_bringup bringup.launch.py mode:=localization nav:=true world:=apartment headless:=true
+ros2 launch g1_bringup bringup.launch.py mode:=mapping nav:=true world:=apartment headless:=true
 ros2 run g1_perception g1_mock_detector --ros-args -r __node:=g1_detector \
   -p "phrases:=['sofa','dustbin','bed','desk','chair','dining table','bookshelf','mug']" \
   -r object_poses:=/g1_sensor_relay/object_poses \
   -r depth/image_raw:=/camera/aligned_depth_to_color/image_raw \
   -r camera_info:=/camera/color/camera_info -r "~/instance_masks:=/g1_perception/instance_masks"
-ros2 launch g1_world_model world_model.launch.py world_dir:=/root/data/worlds/apartment
+ros2 launch g1_world_model world_model.launch.py world_dir:=/root/data/worlds/apartment rviz:=true
 ros2 run g1_orchestration g1_bt_executor --ros-args \
   -p tree_file:=$(ros2 pkg prefix g1_orchestration)/share/g1_orchestration/trees/explore.xml
 ```
@@ -32,10 +32,20 @@ The mock detector cuts masks from simulator ground truth, because open-vocabular
 work on flat MuJoCo renders. It matches a phrase to every numbered body of that class: "chair"
 finds `chair_1` to `chair_5`.
 
-`explore.xml` first walks to frontiers until the LiDAR map is closed (on a saved map this ends at
-once), then visits viewpoints until the camera has seen every room, and saves the world. In RViz,
-add `/g1_world_model/markers` for rooms, doorways and object boxes, and `/g1_world_model/coverage`
-for what the camera has seen.
+With `mode:=mapping` there is no map to start from: `explore.xml` first walks to frontiers while
+slam_toolbox builds one, then visits viewpoints until the camera has seen every room, and saves
+the world. `mode:=localization` uses the committed map instead, and the frontier pass ends at once.
+Before each walk and each turn the tree runs `StepClear`: Nav2 will not move a robot with furniture
+inside its 0.45 m circle, and the gait's drift can leave it there, so `g1_base_approach` first
+steps it a few centimetres clear. When the robot is already clear it does nothing.
+
+`rviz:=true` opens the world model's own view: each room tinted and named with how much of it the
+camera has seen, doorways, object boxes in their room's colour, the coverage heat map, the
+viewpoint the robot is walking to with the headings it will face, and the head camera.
+
+When the tree finishes, `world_dir` holds the map SLAM made as a floor plan, each room closed and
+the furniture solid (`map.pgm`, `map.yaml`), a picture of it with the rooms and objects drawn in
+(`semantic_map.png`), and `world.yaml` with every room and object in plain text.
 
 ## Asking the world model
 

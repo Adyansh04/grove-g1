@@ -37,6 +37,9 @@ g1_world_model:
       # LiDAR barely sees left the robot where Nav2 could plan nothing.
       robot_radius: 0.45
       clearance_margin: 0.25
+      # Frontier goals stand wider: a 2 m shadow drew the robot into a pocket with 0.75 m of
+      # clearance among an armchair, a plant and a cabinet, and Nav2 never got it out.
+      frontier_clearance: 0.35
       # Paths keep one map cell more than the radius, as Nav2's inflation does.
       travel_margin: 0.05
       candidate_spacing: 0.40
@@ -49,9 +52,26 @@ g1_world_model:
       # The detector answers about once a second on frames 1.4-1.9 s old.
       dwell_time: 2.5
       goal_overhead: 4.0
-      room_switch_factor: 2.0
+      # Walking to another room costs this many times more while this one has work left: at 2
+      # the robot left rooms half seen and came back for the rest two or three times.
+      room_switch_factor: 3.0
+      # Poses scored per request: those with the most unseen work per second of getting there.
       max_candidates: 400
       min_frontier_size: 0.75
+      frontier_stand_back: 0.5
+      # A frontier worth walking to opens onto this much unknown, m2: the shadow behind a sofa is a
+      # pocket, not a way on; the coverage pass still looks there with the camera.
+      min_frontier_unknown: 4.0
+      # Unknown the robot had in plain view this near a viewpoint it reached, m. Still unknown
+      # once the map has caught up, it is shadow the LiDAR cannot reach, like the floor behind an
+      # armchair whose wall it never saw; chasing that wedges the robot among the furniture.
+      frontier_seen_radius: 1.5
+      # The frontier pass ends once this many visits in a row added less known map than this, m2:
+      # the rooms are found by then, and the camera pass walking through them fills the corners.
+      # Run 20: the first 11 visits mapped 187 of 208 m2 at 8 to 33 m2 each; the 14 after added 0
+      # to 4.5 m2 each.
+      frontier_stall_visits: 4
+      min_frontier_growth: 12.0
       max_attempts: 2
       # Unreached viewpoints in a room the robot has never got into before it stops trying that
       # room, and in a row anywhere before it decides the robot itself is stuck and plans nothing
@@ -72,11 +92,30 @@ g1_world_model:
       # shelves are also seen as legs and ends, apart, but never joined into anything longer.
       merge_gap: 0.10
       support_merge_gap: 1.0
-      max_merged_extent: 3.0
+      max_merged_extent: 3.5
       # Anything real in view is detected in several frames of a dwell; one sighting that no
-      # second follows within confirm_s is a fragment cut from something else.
+      # second follows within confirm_s is a fragment cut from something else. Long enough for a
+      # later viewpoint in the same room to confirm what one at the edge of view caught once.
       min_observations: 2
-      confirm_s: 30.0
+      confirm_s: 120.0
+      # The camera pass goes back to where something was seen once, as far as this, m, and looks
+      # at it again: the TV on its stand shows only a strip at the image's upper edge, and one
+      # dwell caught it in a single frame.
+      second_look_reach: 3.0
+      # Floor objects take the outline the floor plan shows under them. A blob this near a box
+      # competes for it; each cell goes to the box it lies deepest in, unless further outside it
+      # than fit_max_stretch; an object keeps its share if it comes to between these many times
+      # its box's area. Wall-height hits are walls, and so are bands thinner than fit_min_depth.
+      fit_reach: 0.15
+      fit_max_growth: 3.0
+      fit_min_share: 0.25
+      fit_max_stretch: 1.0
+      fit_min_depth: 0.2
+
+    floor_plan:
+      # Walls hidden from the LiDAR at every height, behind a wardrobe or a tall shelf, are
+      # carried straight on for up to this long in the saved floor plan, m.
+      max_wall_gap: 2.5
 
     rooms:
       min_persistence: 0.15

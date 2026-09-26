@@ -50,6 +50,7 @@
 #include "g1_world_model/room_segmentation.hpp"
 #include "g1_world_model/room_typing.hpp"
 #include "g1_world_model/viewpoint_planner.hpp"
+#include "g1_world_model/world_render.hpp"
 #include "g1_world_model/world_store.hpp"
 
 namespace g1_world_model
@@ -105,17 +106,39 @@ private:
         const std_srvs::srv::Trigger::Request::SharedPtr&  request,
         const std_srvs::srv::Trigger::Response::SharedPtr& response);
 
-    /// Integrates queued depth frames old enough for their transform to exist.
-    void integratePendingDepth();
+    /// Integrates queued depth frames and masks old enough for their transform to exist.
+    void integratePending();
+    void integrateMasks(const g1_msgs::msg::InstanceMaskArray& masks);
     void resegment();
     /// The map with furniture cleared: occupied cells no wall-height return backs up.
     [[nodiscard]] cv::Mat structureCells() const;
-    void                  applyRestore();
-    void                  typeRooms();
-    void                  publishState();
-    void                  publishMarkers(const std::vector<CoverageTally>& tallies);
-    void                  requestDescriptions();
-    std::string           saveNow();
+    /// Occupied cells the LiDAR has looked across at wall height: furniture, not walls. Empty
+    /// until enough walls have been seen to tell.
+    [[nodiscard]] cv::Mat furnitureCells() const;
+    [[nodiscard]] bool    structureReady() const;
+    /// Wall-height returns, grown by @p reach cells, CV_8U 255 where a wall is.
+    [[nodiscard]] cv::Mat wallMask(int reach) const;
+    /// Cells the LiDAR has looked across at wall height without a return, CV_8U 255.
+    [[nodiscard]] cv::Mat clearedMask() const;
+    /// The box an object is shown and approached by: the map's outline of it when it has one.
+    [[nodiscard]] Footprint footprintOf(const MappedObject& object) const;
+    void                    applyRestore();
+    void                    typeRooms();
+    void                    publishState();
+    void                    publishMarkers(const std::vector<CoverageTally>& tallies);
+    void                    requestDescriptions();
+    std::string             saveNow();
+    /// The picture saved beside the world: rooms, objects and their names on the map.
+    [[nodiscard]] cv::Mat renderSemanticMap() const;
+    /// Published, drawn and answered for: not removed, and confirmed rather than one glimpse.
+    [[nodiscard]] bool shown(const MappedObject& object) const
+    {
+        return object.state != ObjectState::kRemoved && objects_.confirmed(object);
+    }
+    /// The map as a floor plan: rooms closed by the walls seen above the furniture, furniture solid.
+    [[nodiscard]] cv::Mat floorPlan() const;
+    /// @p cells as an OccupancyGrid on the current map: free 0, occupied 100, unknown -1.
+    [[nodiscard]] nav_msgs::msg::OccupancyGrid gridMessage(const cv::Mat& cells) const;
 
     [[nodiscard]] bool wasStill(double stamp) const;
     [[nodiscard]] std::optional<Eigen::Isometry3d>
@@ -134,6 +157,8 @@ private:
         const MappedObject& object, const sensor_msgs::msg::Image& color, const MaskInput& mask);
     /// Keeps the newest colour frame as a view of the room the robot stands in.
     void storeRoomView();
+    /// Back to where the nearest glimpse was seen, facing it, while a sighting still confirms it.
+    [[nodiscard]] std::optional<Viewpoint> secondLook(const Pose2D& robot);
 
     // Parameters.
     std::string map_frame_;
@@ -168,6 +193,7 @@ private:
     RoomSegmentationParams segmentation_params_;
     ApproachParams         approach_params_;
     RoomTypeTable          room_types_;
+    MapFitParams           map_fit_params_;
 
     cv::Mat                      cells_;
     GridGeometry                 geometry_;
@@ -177,11 +203,18 @@ private:
     std::vector<RoomState>       rooms_;
     int                          next_room_ = 1;
     std::optional<WorldSnapshot> pending_restore_;
-    std::vector<std::uint16_t>   structure_hits_;
-    std::vector<std::uint16_t>   band_clear_;  // Rays that crossed the band above a cell.
-    int                          cleared_cells_             = 0;
-    int                          structure_cells_           = 0;
-    int                          structure_cells_segmented_ = 0;
+    double                       frame_yaw_    = 0.0;  // The walls' yaw, which boxes lie along.
+    double                       max_wall_gap_ = 2.5;  // Longest hidden wall the plan closes, m.
+    double        min_furniture_depth_ = 0.2;  // Thinner solid bands are walls to the map fit, m.
+    double        second_look_reach_   = 3.0;  // Farthest walk back to a glimpse, m.
+    std::set<int> looked_again_;               // Glimpses already given their second look.
+    std::map<int, Footprint>   fitted_;        // Object boxes taken from the map, by id.
+    std::optional<Viewpoint>   heading_to_;    // The viewpoint being visited, for RViz.
+    std::vector<std::uint16_t> structure_hits_;
+    std::vector<std::uint16_t> band_clear_;  // Rays that crossed the band above a cell.
+    int                        cleared_cells_             = 0;
+    int                        structure_cells_           = 0;
+    int                        structure_cells_segmented_ = 0;
     sensor_msgs::msg::PointCloud2::ConstSharedPtr pending_cloud_;
 
     std::optional<Intrinsics>                                    intrinsics_;
@@ -189,6 +222,7 @@ private:
     g1_perception::DepthHistory                                  depth_history_;
     g1_perception::DepthHistory                                  color_history_;
     std::deque<sensor_msgs::msg::Image::ConstSharedPtr>          pending_depth_;
+    std::deque<g1_msgs::msg::InstanceMaskArray::ConstSharedPtr>  pending_masks_;
     std::vector<float>                                           depth_scratch_;
     std::deque<std::pair<double, bool>>                          motion_;
     std::map<int, std::vector<std::uint8_t>>                     crops_;
@@ -198,6 +232,14 @@ private:
     bool                                                         dirty_       = false;
     std::size_t                                                  frames_seen_ = 0;
     std::size_t                                                  frames_used_ = 0;
+    // Mask frames since the last viewpoint, by what became of them.
+    struct MaskTally
+    {
+        int used     = 0;
+        int moving   = 0;
+        int no_depth = 0;
+        int no_pose  = 0;
+    } mask_tally_;
 
     // ROS plumbing.
     std::shared_ptr<tf2_ros::Buffer>            tf_buffer_;
@@ -215,6 +257,8 @@ private:
     rclcpp::Publisher<g1_msgs::msg::RoomArray>::SharedPtr              rooms_pub_;
     rclcpp::Publisher<g1_msgs::msg::WorldObjectArray>::SharedPtr       objects_pub_;
     rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr         coverage_pub_;
+    rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr         walls_pub_;
+    rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr         floor_plan_pub_;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr markers_pub_;
     rclcpp::Publisher<g1_msgs::msg::DescribeRequest>::SharedPtr        describe_pub_;
 

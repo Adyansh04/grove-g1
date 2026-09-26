@@ -5,6 +5,9 @@ simulator ground truth, so this scores the mapping, not a detector on flat rende
 model and the exploration tree. Once the tree finishes, the rooms, the camera coverage and the
 objects are scored against worlds/apartment.truth.yaml, and the robot is sent to an object by
 name with no coordinates anywhere.
+
+With G1_WORLD_MODEL_TEST_MAPPING=1 there is no map to start from: slam_toolbox builds it while
+the tree walks to frontiers, and everything is scored on the map the robot made.
 """
 
 import math
@@ -26,6 +29,7 @@ from launch.actions import IncludeLaunchDescription, TimerAction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node as LaunchNode
 from nav2_msgs.action import NavigateToPose
+from nav_msgs.msg import Odometry
 from rclpy.action import ActionClient
 from rclpy.node import Node
 from rclpy.qos import QoSDurabilityPolicy, QoSProfile, QoSReliabilityPolicy
@@ -46,7 +50,9 @@ TRUTH = os.path.join(
 WORLD_DIR = tempfile.mkdtemp(prefix="g1_world_explore_")
 
 BRINGUP_TIMEOUT_S = 240.0
-EXPLORE_TIMEOUT_S = 50 * 60.0
+MAPPING = os.environ.get("G1_WORLD_MODEL_TEST_MAPPING", "") == "1"
+# Mapping first walks every frontier, which the committed map has none of.
+EXPLORE_TIMEOUT_S = (75 if MAPPING else 50) * 60.0
 
 # Scoring thresholds; the numbers each run measured are printed beside them.
 MIN_FLOOR_COVERAGE = 0.90
@@ -54,6 +60,8 @@ MIN_FACE_COVERAGE = 0.80
 MIN_OBJECT_RECALL = 0.85
 MAX_DUPLICATE_SHARE = 0.10
 MATCH_MARGIN_M = 0.4
+# Boxes of furniture on the floor against the true footprints: median intersection over union.
+MIN_BOX_IOU = 0.5
 
 LATCHED = QoSProfile(
     depth=1,
@@ -81,7 +89,7 @@ def generate_test_description():
                         )
                     ),
                     launch_arguments={
-                        "mode": "localization",
+                        "mode": "mapping" if MAPPING else "localization",
                         "nav": "true",
                         "world": "apartment",
                         "headless": "true",
@@ -137,20 +145,81 @@ def inside(polygon, x, y):
     return hit
 
 
-def on_footprint(item, mapped):
+def yaw_of(q):
+    return math.atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z))
+
+
+def to_world(frame, x, y):
+    tx, ty, theta = frame
+    return (
+        tx + math.cos(theta) * x - math.sin(theta) * y,
+        ty + math.sin(theta) * x + math.cos(theta) * y,
+    )
+
+
+def to_map(frame, x, y):
+    tx, ty, theta = frame
+    dx, dy = x - tx, y - ty
+    return math.cos(theta) * dx + math.sin(theta) * dy, -math.sin(theta) * dx + math.cos(theta) * dy
+
+
+def world_pose(mapped, frame):
+    x, y = to_world(frame, mapped.pose.position.x, mapped.pose.position.y)
+    return x, y, yaw_of(mapped.pose.orientation) + frame[2]
+
+
+def on_footprint(item, mapped, frame):
     """Whether a mapped object's centre is on a truth object's footprint, grown by the margin.
 
     A table seen from one side fuses around the part the camera saw, so its centre can sit a
     metre from the true one while still being the table."""
     yaw = math.radians(item["yaw"])
-    dx = mapped.pose.position.x - item["centre"][0]
-    dy = mapped.pose.position.y - item["centre"][1]
+    x, y, _ = world_pose(mapped, frame)
+    dx = x - item["centre"][0]
+    dy = y - item["centre"][1]
     along = (math.cos(yaw) * dx) + (math.sin(yaw) * dy)
     across = (-math.sin(yaw) * dx) + (math.cos(yaw) * dy)
     return (
         abs(along) <= (0.5 * item["size"][0]) + MATCH_MARGIN_M
         and abs(across) <= (0.5 * item["size"][1]) + MATCH_MARGIN_M
     )
+
+
+def box_iou(item, mapped, frame):
+    """Intersection over union of a truth footprint and a mapped box, sampled every 2 cm."""
+    truth = (
+        item["centre"][0],
+        item["centre"][1],
+        item["size"][0],
+        item["size"][1],
+        math.radians(item["yaw"]),
+    )
+    x, y, yaw = world_pose(mapped, frame)
+    box = (x, y, mapped.size.x, mapped.size.y, yaw)
+
+    def inside(rect, x, y):
+        cx, cy, sx, sy, a = rect
+        dx, dy = x - cx, y - cy
+        return (
+            abs(math.cos(a) * dx + math.sin(a) * dy) <= sx / 2
+            and abs(-math.sin(a) * dx + math.cos(a) * dy) <= sy / 2
+        )
+
+    reach = max(math.hypot(r[2], r[3]) / 2 for r in (truth, box))
+    x0 = min(truth[0], box[0]) - reach
+    y0 = min(truth[1], box[1]) - reach
+    x1 = max(truth[0], box[0]) + reach
+    y1 = max(truth[1], box[1]) + reach
+    both = either = 0
+    steps_x = int((x1 - x0) / 0.02) + 1
+    steps_y = int((y1 - y0) / 0.02) + 1
+    for i in range(steps_x):
+        for j in range(steps_y):
+            x, y = x0 + i * 0.02, y0 + j * 0.02
+            a, b = inside(truth, x, y), inside(box, x, y)
+            both += a and b
+            either += a or b
+    return both / either if either else 0.0
 
 
 def centroid(polygon):
@@ -171,6 +240,11 @@ class ExploreApartmentTest(unittest.TestCase):
         cls.save = cls.node.create_client(Trigger, "/g1_world_model/save")
         cls.rooms = None
         cls.objects = None
+        cls.truth_pose = None
+        cls.world_from_map = None
+        cls.node.create_subscription(
+            Odometry, "/g1_sensor_relay/base_state", cls._on_truth_pose, 10
+        )
         cls.node.create_subscription(RoomArray, "/g1_world_model/rooms", cls._on_rooms, LATCHED)
         cls.node.create_subscription(
             WorldObjectArray, "/g1_world_model/objects", cls._on_objects, LATCHED
@@ -194,6 +268,26 @@ class ExploreApartmentTest(unittest.TestCase):
     @classmethod
     def _on_objects(cls, msg):
         cls.objects = msg
+
+    @classmethod
+    def _on_truth_pose(cls, msg):
+        cls.truth_pose = msg
+
+    def frame(self):
+        """World from map as (x, y, yaw), from the simulator's own pose of the robot: SLAM's map
+        starts wherever the robot stood at boot, localization's is the world give or take AMCL."""
+        if self.world_from_map is None:
+            self.spin(1.0)
+            self.assertIsNotNone(self.truth_pose, "no ground-truth pose from the simulator")
+            here = self.buffer.lookup_transform("map", "base_footprint", rclpy.time.Time())
+            truth = self.truth_pose.pose.pose
+            mx, my = here.transform.translation.x, here.transform.translation.y
+            theta = yaw_of(truth.orientation) - yaw_of(here.transform.rotation)
+            tx = truth.position.x - (math.cos(theta) * mx - math.sin(theta) * my)
+            ty = truth.position.y - (math.sin(theta) * mx + math.cos(theta) * my)
+            type(self).world_from_map = (tx, ty, theta)
+            print(f"map to world: ({tx:.2f}, {ty:.2f}) m, {math.degrees(theta):.1f} deg")
+        return self.world_from_map
 
     @classmethod
     def tearDownClass(cls):
@@ -255,8 +349,9 @@ class ExploreApartmentTest(unittest.TestCase):
             )
         )
         claimed = {}
+        frame = self.frame()
         for truth_room in self.truth["rooms"]:
-            x, y = centroid(truth_room["polygon"])
+            x, y = to_map(frame, *centroid(truth_room["polygon"]))
             owners = [room_id for room_id, outline in outlines.items() if inside(outline, x, y)]
             self.assertEqual(len(owners), 1, f"{truth_room['id']}'s middle is in {owners}")
             claimed.setdefault(owners[0], []).append(truth_room["id"])
@@ -280,6 +375,7 @@ class ExploreApartmentTest(unittest.TestCase):
         self.assertIsNotNone(self.objects, "no objects published")
         mapped = [o for o in self.objects.objects if o.state == 0]
         wanted = [o for o in self.truth["objects"] if o["observable_from_standing"]]
+        frame = self.frame()
         found = 0
         duplicates = 0
         used = set()
@@ -287,7 +383,9 @@ class ExploreApartmentTest(unittest.TestCase):
         for item in wanted:
             names = {item["label"], *item.get("synonyms", [])}
             near = [
-                o for o in mapped if (o.label in names or o.name in names) and on_footprint(item, o)
+                o
+                for o in mapped
+                if (o.label in names or o.name in names) and on_footprint(item, o, frame)
             ]
             if near:
                 found += 1
@@ -301,8 +399,24 @@ class ExploreApartmentTest(unittest.TestCase):
             f"objects: {found}/{len(wanted)} observable found (recall {recall:.2f}), "
             f"{duplicates} duplicates, {len(stray)} unmatched: {stray[:10]}; missing {missing}"
         )
+        # How well the boxes sit on the furniture: what an approach pose is computed from.
+        fits = []
+        for item in wanted:
+            if item.get("on") or min(item["size"][:2]) < 0.3:
+                continue
+            names = {item["label"], *item.get("synonyms", [])}
+            near = [o for o in mapped if o.label in names and on_footprint(item, o, frame)]
+            if near:
+                fits.append(max(box_iou(item, o, frame) for o in near))
+        fits.sort()
+        median_fit = fits[len(fits) // 2] if fits else 0.0
+        print(
+            f"boxes: median IoU {median_fit:.2f} over {len(fits)} floor objects, "
+            f"lowest {[round(f, 2) for f in fits[:5]]}"
+        )
         self.assertGreaterEqual(recall, MIN_OBJECT_RECALL)
         self.assertLessEqual(duplicates, MAX_DUPLICATE_SHARE * len(wanted))
+        self.assertGreaterEqual(median_fit, MIN_BOX_IOU)
 
     def test_5_goes_to_an_object_by_name(self):
         request = GetApproachPose.Request()
@@ -329,7 +443,7 @@ class ExploreApartmentTest(unittest.TestCase):
             o for o in self.truth["objects"] if o["label"] == "dustbin" and o["room"] == "office"
         ]
         here = self.buffer.lookup_transform("map", "base_footprint", rclpy.time.Time())
-        x, y = here.transform.translation.x, here.transform.translation.y
+        x, y = to_world(self.frame(), here.transform.translation.x, here.transform.translation.y)
         nearest = min(math.hypot(b["centre"][0] - x, b["centre"][1] - y) for b in bins)
         print(f"stopped {nearest:.2f} m from the office dustbin ({response.target_id})")
         self.assertLess(nearest, 2.0)
@@ -337,7 +451,14 @@ class ExploreApartmentTest(unittest.TestCase):
     def test_6_saves_the_world(self):
         response = self.call(self.save, Trigger.Request())
         self.assertTrue(response.success, response.message)
-        for name in ("world.yaml", "objects.bin", "coverage.bin"):
+        for name in (
+            "world.yaml",
+            "objects.bin",
+            "coverage.bin",
+            "map.pgm",
+            "map.yaml",
+            "semantic_map.png",
+        ):
             self.assertTrue(os.path.exists(os.path.join(WORLD_DIR, name)), name)
 
 

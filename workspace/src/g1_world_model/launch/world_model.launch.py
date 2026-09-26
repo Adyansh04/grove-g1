@@ -1,8 +1,9 @@
 """The world model node, wired to the camera, the detector's masks, the map and odometry.
 
-    ros2 launch g1_world_model world_model.launch.py world_dir:=/root/data/worlds/apartment
+    ros2 launch g1_world_model world_model.launch.py world_dir:=/root/data/worlds/apartment rviz:=true
 
-world_dir keeps the rooms, objects and camera coverage between runs; empty keeps them in memory.
+world_dir keeps the rooms, objects and camera coverage between runs, with the map they were built
+on (map.pgm, map.yaml) and a picture of both (semantic_map.png); empty keeps them in memory.
 """
 
 import os
@@ -39,6 +40,12 @@ def generate_launch_description():
                 default_value="false",
                 description="Ask g1_object_describer to name objects from their best crop.",
             ),
+            DeclareLaunchArgument(
+                "rviz",
+                default_value="false",
+                description="Open RViz on the map, rooms, objects, camera coverage and the next "
+                "viewpoint.",
+            ),
             Node(
                 package="g1_world_model",
                 executable="g1_world_model",
@@ -64,6 +71,13 @@ def generate_launch_description():
                     ("cloud", LIDAR),
                     ("descriptions", "/g1_object_describer/descriptions"),
                 ],
+            ),
+            Node(
+                package="rviz2",
+                executable="rviz2",
+                name="g1_world_model_rviz",
+                arguments=["-d", os.path.join(SHARE, "config", "g1_world_model.rviz")],
+                condition=IfCondition(LaunchConfiguration("rviz")),
             ),
             # Names objects through the host semantic server (scripts/semantic_server.py).
             Node(
