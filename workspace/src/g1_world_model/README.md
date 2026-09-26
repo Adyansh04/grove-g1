@@ -71,7 +71,8 @@ Everything but the node itself is plain C++ with no ROS dependency, so it is uni
 | `map.pgm`, `map.yaml` | The floor plan of the map the world was built on, as `map_saver` writes it: after a mapping run, the map SLAM made, with each wall closed where furniture hid it from the scan band (from the LiDAR's hits at wall height, over the furniture) and the pockets that shuts in settled, so furniture is solid and every room a closed outline. Floor no sensor reached behind a wardrobe is drawn as floor unless an object the camera mapped stands there. |
 | `semantic_map.png` | That map with each room tinted and named, and every object's box and label. |
 | `world.yaml` | Rooms and objects in plain text: ids, names, types, boxes, what rests on what. |
-| `objects.bin`, `coverage.bin`, `crops/` | Object voxels, what the camera has seen, and each object's best view. |
+| `objects.bin`, `coverage.bin`, `crops/` | Object voxels, what the camera has seen (and the map SLAM made), and each object's best view. |
+| `wall_hits.png` | The LiDAR's returns at wall height, north up like `map.pgm`: with `coverage.bin` they rebuild the floor plan offline. |
 
 A later run with the same `world_dir` on the same map picks all of it up and carries on.
 

@@ -1835,6 +1835,17 @@ std::string WorldModelNode::saveNow()
         {
             failure = "cannot write semantic_map.png";
         }
+        // The LiDAR's wall-height returns the plan closes its walls on, north up like map.pgm:
+        // with coverage.bin's map they rebuild the floor plan offline.
+        if (failure.empty() && !cells_.empty())
+        {
+            cv::Mat walls;
+            cv::flip(wallMask(0), walls, 0);
+            if (!cv::imwrite((std::filesystem::path(world_dir_) / "wall_hits.png").string(), walls))
+            {
+                failure = "cannot write wall_hits.png";
+            }
+        }
         dirty_ = !failure.empty();
     }
     return failure;
