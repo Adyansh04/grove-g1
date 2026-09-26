@@ -145,18 +145,26 @@ cv::Mat completeMap(const cv::Mat& cells, const cv::Mat& walls, double yaw, int 
     cv::Mat closed = cells.clone();
     closed.setTo(kOccupied, (walls != 0) & (cells == kUnknown));
 
-    // In the walls' own frame each wall is a row or a column of the grid.
+    // In the walls' own frame each wall is a row or a column of the grid. The canvas holds the
+    // whole turned grid: one its own size cuts the corners off, and at 80-odd degrees both ends.
     const cv::Point2f centre(
         0.5F * static_cast<float>(cells.cols),
         0.5F * static_cast<float>(cells.rows));
-    const double  degrees  = yaw * 180.0 / std::numbers::pi;
-    const cv::Mat to_walls = cv::getRotationMatrix2D(centre, degrees, 1.0);
-    cv::Mat       turned;
+    const double     degrees  = yaw * 180.0 / std::numbers::pi;
+    cv::Mat          to_walls = cv::getRotationMatrix2D(centre, degrees, 1.0);
+    const cv::Rect2f bounds =
+        cv::RotatedRect(centre, cv::Size2f(cells.size()), static_cast<float>(degrees))
+            .boundingRect2f();
+    to_walls.at<double>(0, 2) += (0.5 * bounds.width) - centre.x;
+    to_walls.at<double>(1, 2) += (0.5 * bounds.height) - centre.y;
+    cv::Mat turned;
     cv::warpAffine(
         closed,
         turned,
         to_walls,
-        closed.size(),
+        cv::Size(
+            static_cast<int>(std::ceil(bounds.width)),
+            static_cast<int>(std::ceil(bounds.height))),
         cv::INTER_NEAREST,
         cv::BORDER_CONSTANT,
         cv::Scalar(kUnknown));
@@ -202,7 +210,7 @@ cv::Mat completeMap(const cv::Mat& cells, const cv::Mat& walls, double yaw, int 
         gaps,
         back,
         to_walls,
-        gaps.size(),
+        closed.size(),
         cv::INTER_NEAREST | cv::WARP_INVERSE_MAP,
         cv::BORDER_CONSTANT,
         cv::Scalar(0));

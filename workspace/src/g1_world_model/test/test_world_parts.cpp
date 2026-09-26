@@ -244,6 +244,22 @@ TEST(Grid, ClosesTheWallBehindACounterButNotADoorway)
     EXPECT_EQ(plan.at<std::uint8_t>(37, 27), kUnknown);   // And below the room.
 }
 
+TEST(Grid, ClosesFurnitureAtTheMapsEdgeWhateverTheWallsYaw)
+{
+    // A fridge in a room's corner, its back at the grid's edge: the wall behind it is off the map,
+    // so only the run between the wall and the fridge's side closes it.
+    cv::Mat cells(40, 60, CV_8UC1, cv::Scalar(kFree));
+    cv::line(cells, cv::Point(1, 0), cv::Point(1, 39), cv::Scalar(kOccupied));
+    cv::rectangle(cells, cv::Point(2, 0), cv::Point(9, 7), cv::Scalar(kUnknown), cv::FILLED);
+    cv::line(cells, cv::Point(2, 8), cv::Point(10, 8), cv::Scalar(kOccupied));
+    cv::line(cells, cv::Point(10, 0), cv::Point(10, 8), cv::Scalar(kOccupied));
+    const cv::Mat walls(cells.size(), CV_8UC1, cv::Scalar(0));
+    for (const double yaw : { 0.0, 1.45 })
+    {
+        EXPECT_EQ(completeMap(cells, walls, yaw, 20).at<std::uint8_t>(3, 5), kOccupied) << yaw;
+    }
+}
+
 TEST(WorldStore, SavesTheMapAsMapServerReadsIt)
 {
     // 3 x 2: free, occupied, unknown on the bottom row; unknown, free, occupied on the top.
