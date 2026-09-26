@@ -526,12 +526,12 @@ void WorldModelNode::onMap(const nav_msgs::msg::OccupancyGrid::ConstSharedPtr& m
 
 void WorldModelNode::onDepth(sensor_msgs::msg::Image::ConstSharedPtr depth)
 {
-    ++frames_seen_;
     depth_history_.push(depth);
     pending_depth_.push_back(std::move(depth));
     while (pending_depth_.size() > 16)
     {
         pending_depth_.pop_front();
+        ++depth_tally_.dropped;
     }
 }
 
@@ -959,19 +959,21 @@ void WorldModelNode::integratePending()
         updateCameraModel(depth->header.frame_id, depth->header.stamp);
         if (!wasStill(stamp))
         {
+            ++depth_tally_.moving;
             continue;
         }
         const auto pose = mapFrom(depth->header.frame_id, depth->header.stamp);
         const auto view = depthView(*depth);
         if (!pose || !view)
         {
+            ++depth_tally_.no_pose;
             continue;
         }
         if (coverage_.integrate(*view, *intrinsics_, *pose) > 0)
         {
             dirty_ = true;
         }
-        ++frames_used_;
+        ++depth_tally_.used;
     }
     while (!pending_masks_.empty() && seconds(pending_masks_.front()->header.stamp) <= horizon)
     {
@@ -1469,7 +1471,9 @@ void WorldModelNode::onNextViewpoint(
         mask_tally_.moving,
         mask_tally_.no_depth,
         mask_tally_.no_pose);
-    mask_tally_ = {};
+    mask_tally_   = {};
+    depth_tally_  = {};
+    predicted_on_ = geometry_;
     visits_.push_back({ viewpoint.x, viewpoint.y, viewpoint.id, look.has_value(), std::nullopt });
 }
 
@@ -1513,6 +1517,34 @@ void WorldModelNode::onReportViewpoint(
     const g1_msgs::srv::ReportViewpoint::Request::SharedPtr& request,
     const g1_msgs::srv::ReportViewpoint::Response::SharedPtr& /*response*/)
 {
+    // What the stop delivered against what was predicted of it, before report() writes anything
+    // off: a stop far short lost its frames to the stillness gate, the queue, or where it stood.
+    const auto robot = robotPose();
+    if (request->reached && robot && heading_to_ && heading_to_->id == request->viewpoint_id &&
+        !heading_to_->predicted.empty() && predicted_on_ == geometry_)
+    {
+        const int    count  = static_cast<int>(geometry_.cellCount());
+        const auto   missed = std::ranges::count_if(heading_to_->predicted, [&](int target) {
+            return target < count ? coverage_.pending(target) :
+                                      coverage_.surfacePending(target - count);
+        });
+        const double last =
+            heading_to_->headings.empty() ? robot->yaw : heading_to_->headings.back();
+        RCLCPP_INFO(
+            get_logger(),
+            "viewpoint %u reached: saw %td of %zu predicted; depth frames %d used, %d moving, %d "
+            "dropped, %d without pose; stopped %.2f m off, facing %.0f deg off the last heading",
+            request->viewpoint_id,
+            static_cast<std::ptrdiff_t>(heading_to_->predicted.size()) - missed,
+            heading_to_->predicted.size(),
+            depth_tally_.used,
+            depth_tally_.moving,
+            depth_tally_.dropped,
+            depth_tally_.no_pose,
+            std::hypot(robot->x - heading_to_->x, robot->y - heading_to_->y),
+            std::abs(std::remainder(robot->yaw - last, 2.0 * std::numbers::pi)) * 180.0 /
+                std::numbers::pi);
+    }
     planner_.report(coverage_, request->viewpoint_id, request->reached);
     const auto visit = std::ranges::find(visits_, request->viewpoint_id, &Visit::id);
     if (visit != visits_.end())

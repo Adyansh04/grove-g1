@@ -250,17 +250,19 @@ private:
     std::set<int>                                                described_;
     std::map<std::string, double>                                requested_at_;
     std::map<std::string, std::deque<std::vector<std::uint8_t>>> room_views_;  // JPEGs by room id.
-    bool                                                         dirty_       = false;
-    std::size_t                                                  frames_seen_ = 0;
-    std::size_t                                                  frames_used_ = 0;
-    // Mask frames since the last viewpoint, by what became of them.
-    struct MaskTally
+    bool                                                         dirty_ = false;
+    // Frames since the last viewpoint, by what became of them.
+    struct FrameTally
     {
         int used     = 0;
         int moving   = 0;
         int no_depth = 0;
         int no_pose  = 0;
-    } mask_tally_;
+        int dropped  = 0;  // Depth pushed out of a full queue before its turn came.
+    };
+    FrameTally   depth_tally_;
+    FrameTally   mask_tally_;
+    GridGeometry predicted_on_;  // The grid heading_to_'s predicted targets index.
 
     // ROS plumbing.
     tf2_ros::Buffer            tf_buffer_;
