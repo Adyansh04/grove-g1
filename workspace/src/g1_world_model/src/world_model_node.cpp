@@ -246,7 +246,8 @@ WorldModelNode::WorldModelNode(const rclcpp::NodeOptions& options)
     max_wall_gap_ = declare_parameter<double>("floor_plan.max_wall_gap", max_wall_gap_);
     max_furniture_depth_ =
         declare_parameter<double>("floor_plan.max_furniture_depth", max_furniture_depth_);
-    min_wall_run_ = declare_parameter<double>("floor_plan.min_wall_run", min_wall_run_);
+    min_wall_run_   = declare_parameter<double>("floor_plan.min_wall_run", min_wall_run_);
+    max_wall_crack_ = declare_parameter<double>("floor_plan.max_wall_crack", max_wall_crack_);
     planner.frontier_stall_visits = static_cast<int>(
         declare_parameter<int>("planner.frontier_stall_visits", planner.frontier_stall_visits));
     planner.min_frontier_growth =
@@ -762,7 +763,8 @@ cv::Mat WorldModelNode::floorPlan() const
                                   frame_yaw_,
                                   { geometry_.cellsFor(max_wall_gap_),
                                     geometry_.cellsFor(max_furniture_depth_),
-                                    geometry_.cellsFor(min_wall_run_) },
+                                    geometry_.cellsFor(min_wall_run_),
+                                    geometry_.cellsFor(max_wall_crack_) },
                                   furniture) :
                               settleEnclosedUnknown(cells_, furniture);
 }

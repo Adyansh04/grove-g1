@@ -214,7 +214,8 @@ private:
     double                       frame_yaw_    = 0.0;  // The walls' yaw, which boxes lie along.
     double                       max_wall_gap_ = 2.5;  // Longest hidden wall the plan closes, m.
     double        max_furniture_depth_         = 1.2;  // Longest other unseen stretch it closes, m.
-    double        min_wall_run_ = 0.3;  // Straight wall either side that makes a gap a wall's, m.
+    double        min_wall_run_   = 0.3;  // Straight wall either side that makes a gap a wall's, m.
+    double        max_wall_crack_ = 0.3;  // Free gap in such a wall closed in the plan, m.
     double        min_furniture_depth_ = 0.2;  // Thinner solid bands are walls to the map fit, m.
     double        second_look_reach_   = 3.0;  // Farthest walk back to a glimpse, m.
     std::set<int> looked_again_;               // Glimpses already given their second look.

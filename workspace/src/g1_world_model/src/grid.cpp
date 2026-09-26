@@ -5,6 +5,7 @@
 
 #include "g1_world_model/grid.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <numbers>
@@ -20,6 +21,10 @@ namespace
 
 /// Cells from its edge to its middle, at most, for a pocket to be a crack: a beam gap in a wall.
 constexpr float kCrackDepth = 2.0F;
+
+/// How completeMap() closes a gap: its unknown cells only, or every cell of a crack in a wall.
+constexpr std::uint8_t kAcrossUnknown = 1;
+constexpr std::uint8_t kThroughCrack  = 2;
 
 /// How sharply occupied cells stack along the axes turned by @p yaw: sum of squared counts.
 double profileSharpness(const std::vector<cv::Point2f>& points, double yaw, int span)
@@ -189,7 +194,8 @@ cv::Mat completeMap(
         cv::Scalar(kUnknown));
     cv::Mat gaps(turned.size(), CV_8UC1, cv::Scalar(0));
     // A gap flanked by a straight run of solid on both sides is a wall carried on behind
-    // furniture; any other closes only across one piece of furniture's depth.
+    // furniture; any other closes only across one piece of furniture's depth. Free cells keep a
+    // gap open: doorways are free.
     const auto close_line = [&](int count, const auto& at, const auto& mark) {
         int last   = -1;
         int behind = 0;
@@ -216,7 +222,7 @@ cv::Mat completeMap(
                 {
                     for (int j = last + 1; j < i; ++j)
                     {
-                        mark(j);
+                        mark(j, kAcrossUnknown);
                     }
                 }
             }
@@ -224,19 +230,67 @@ cv::Mat completeMap(
             behind = run;
         }
     };
+    // Grazing beams mark a thin wall free in places, often every few cells: a gap no wider than a
+    // crack closes, free or not, where the wall runs on for wall_run either side through other
+    // such gaps. A doorway is wider, and ends the run.
+    const auto close_cracks = [&](int count, const auto& at, const auto& mark) {
+        for (int i = 0; i < count;)
+        {
+            if (at(i) != kOccupied)
+            {
+                ++i;
+                continue;
+            }
+            const int                        start = i;
+            int                              end   = i;
+            std::vector<std::pair<int, int>> cracks;
+            for (;;)
+            {
+                while (end < count && at(end) == kOccupied)
+                {
+                    ++end;
+                }
+                int next = end;
+                while (next < count && at(next) != kOccupied)
+                {
+                    ++next;
+                }
+                if (next >= count || next - end > limits.crack)
+                {
+                    break;
+                }
+                cracks.emplace_back(end, next);
+                end = next;
+            }
+            for (const auto& [from, to] : cracks)
+            {
+                if (from - start >= limits.wall_run && end - to >= limits.wall_run)
+                {
+                    for (int j = from; j < to; ++j)
+                    {
+                        mark(j, kThroughCrack);
+                    }
+                }
+            }
+            i = end;
+        }
+    };
+    const auto mark_at = [&](int x, int y, std::uint8_t kind) {
+        gaps.at<std::uint8_t>(y, x) = std::max(gaps.at<std::uint8_t>(y, x), kind);
+    };
     for (int y = 0; y < turned.rows; ++y)
     {
-        close_line(
-            turned.cols,
-            [&](int x) { return turned.at<std::uint8_t>(y, x); },
-            [&](int x) { gaps.at<std::uint8_t>(y, x) = 255; });
+        const auto at   = [&](int x) { return turned.at<std::uint8_t>(y, x); };
+        const auto mark = [&](int x, std::uint8_t kind) { mark_at(x, y, kind); };
+        close_line(turned.cols, at, mark);
+        close_cracks(turned.cols, at, mark);
     }
     for (int x = 0; x < turned.cols; ++x)
     {
-        close_line(
-            turned.rows,
-            [&](int y) { return turned.at<std::uint8_t>(y, x); },
-            [&](int y) { gaps.at<std::uint8_t>(y, x) = 255; });
+        const auto at   = [&](int y) { return turned.at<std::uint8_t>(y, x); };
+        const auto mark = [&](int y, std::uint8_t kind) { mark_at(x, y, kind); };
+        close_line(turned.rows, at, mark);
+        close_cracks(turned.rows, at, mark);
     }
     cv::Mat back;
     cv::warpAffine(
@@ -247,7 +301,9 @@ cv::Mat completeMap(
         cv::INTER_NEAREST | cv::WARP_INVERSE_MAP,
         cv::BORDER_CONSTANT,
         cv::Scalar(0));
-    closed.setTo(kOccupied, (back != 0) & (closed == kUnknown));
+    closed.setTo(
+        kOccupied,
+        ((back == kAcrossUnknown) & (closed == kUnknown)) | (back == kThroughCrack));
     return settleEnclosedUnknown(closed, furniture);
 }
 

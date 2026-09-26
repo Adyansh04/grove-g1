@@ -141,6 +141,9 @@ g1_world_model:
       # straight solid at least min_wall_run long either side.
       max_wall_gap: 2.5
       min_wall_run: 0.3
+      # A free gap in such a wall no wider than this is a crack, closed: grazing beams mark thin
+      # walls free in places (run 35's hallway walls came out dashed). Doorways are far wider.
+      max_wall_crack: 0.3
       # Any other unseen stretch between two solid cells closes only across one piece of
       # furniture's depth: at 2.5 m it filled the floor behind the bedroom's wardrobe to the wall.
       max_furniture_depth: 1.2

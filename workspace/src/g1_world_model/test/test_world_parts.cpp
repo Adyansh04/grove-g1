@@ -244,6 +244,22 @@ TEST(Grid, ClosesTheWallBehindACounterButNotADoorway)
     EXPECT_EQ(plan.at<std::uint8_t>(37, 27), kUnknown);   // And below the room.
 }
 
+TEST(Grid, ClosesACrackTheBeamsCutInAWallButNotADoorway)
+{
+    // A room whose top wall the scan marked free for three cells, and a doorway six wide.
+    cv::Mat cells(40, 60, CV_8UC1, cv::Scalar(kUnknown));
+    cv::rectangle(cells, cv::Point(5, 5), cv::Point(54, 34), cv::Scalar(kOccupied), cv::FILLED);
+    cv::rectangle(cells, cv::Point(6, 6), cv::Point(53, 33), cv::Scalar(kFree), cv::FILLED);
+    cv::line(cells, cv::Point(30, 5), cv::Point(32, 5), cv::Scalar(kFree));
+    cv::rectangle(cells, cv::Point(54, 15), cv::Point(59, 20), cv::Scalar(kFree), cv::FILLED);
+    const cv::Mat walls(cells.size(), CV_8UC1, cv::Scalar(0));
+
+    const cv::Mat plan = completeMap(cells, walls, 0.0, { 20, 12, 3, 4 });
+    EXPECT_EQ(plan.at<std::uint8_t>(5, 31), kOccupied);  // The crack.
+    EXPECT_EQ(plan.at<std::uint8_t>(17, 54), kFree);     // The doorway.
+    EXPECT_EQ(plan.at<std::uint8_t>(10, 31), kFree);     // The room.
+}
+
 TEST(Grid, ClosesFurnitureAtTheMapsEdgeWhateverTheWallsYaw)
 {
     // A fridge in a room's corner, its back at the grid's edge: the wall behind it is off the map,

@@ -147,6 +147,7 @@ struct PlanGaps
     int wall      = 0;  ///< Through a wall running straight on both sides for wall_run cells.
     int furniture = 0;  ///< Across anything else: one piece of furniture's depth.
     int wall_run  = 0;
+    int crack     = 0;  ///< Through free cells, in such a wall only: narrower than any door.
 };
 
 /**
