@@ -18,6 +18,13 @@ g1_world_model:
     # Depth is integrated this long after its stamp, once AMCL's map -> odom has caught up.
     tf_wait_s: 0.2
     frame_history_s: 6.0
+
+    # The cameras read. Camera N reads <prefix>depth/image_raw, <prefix>depth/camera_info,
+    # <prefix>color/image_raw and <prefix>instance_masks, prefix camera.N.prefix ("N/" unset);
+    # world_model.launch.py wires each to its driver's topics. Height, pitch and heading come from
+    # TF and camera_info, so cameras are added, moved or dropped here and in the launch alone.
+    # camera.N.coverage: false keeps a camera for objects and room views only.
+    cameras: ["head"]
     resegment_period_s: 5.0
 
     coverage:

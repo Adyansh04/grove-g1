@@ -71,6 +71,27 @@ public:
     WorldModelNode& operator=(WorldModelNode&&)      = delete;
 
 private:
+    /// A camera read from its own topics: <prefix>depth/image_raw, <prefix>depth/camera_info,
+    /// <prefix>color/image_raw and <prefix>instance_masks, prefix from camera.<name>.prefix.
+    struct CameraFeed
+    {
+        CameraFeed(std::string feed_name, bool credits_coverage, double history_s);
+
+        std::string                 name;
+        bool                        coverage = true;  // Its depth credits camera coverage.
+        std::optional<Intrinsics>   intrinsics;
+        std::optional<CameraModel>  model;  // Its mount, once TF has it.
+        std::string                 frame;  // The depth frame's id.
+        g1_perception::DepthHistory depth_history;
+        g1_perception::DepthHistory color_history;
+        std::deque<sensor_msgs::msg::Image::ConstSharedPtr>              pending_depth;
+        std::deque<g1_msgs::msg::InstanceMaskArray::ConstSharedPtr>      pending_masks;
+        rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr         depth_sub;
+        rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr         color_sub;
+        rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr    info_sub;
+        rclcpp::Subscription<g1_msgs::msg::InstanceMaskArray>::SharedPtr masks_sub;
+    };
+
     struct RoomState
     {
         std::string id;
@@ -82,10 +103,11 @@ private:
     };
 
     void onMap(const nav_msgs::msg::OccupancyGrid::ConstSharedPtr& map);
-    void onDepth(sensor_msgs::msg::Image::ConstSharedPtr depth);
-    void onColor(sensor_msgs::msg::Image::ConstSharedPtr color);
-    void onCameraInfo(const sensor_msgs::msg::CameraInfo::ConstSharedPtr& info);
-    void onMasks(const g1_msgs::msg::InstanceMaskArray::ConstSharedPtr& masks);
+    void onDepth(CameraFeed& camera, sensor_msgs::msg::Image::ConstSharedPtr depth);
+    static void
+    onCameraInfo(CameraFeed& camera, const sensor_msgs::msg::CameraInfo::ConstSharedPtr& info);
+    static void
+         onMasks(CameraFeed& camera, const g1_msgs::msg::InstanceMaskArray::ConstSharedPtr& masks);
     void onOdometry(const nav_msgs::msg::Odometry::ConstSharedPtr& odometry);
     void onCloud(const sensor_msgs::msg::PointCloud2::ConstSharedPtr& cloud);
     void integrateCloud(const sensor_msgs::msg::PointCloud2& cloud);
@@ -109,7 +131,7 @@ private:
 
     /// Integrates queued depth frames and masks old enough for their transform to exist.
     void integratePending();
-    void integrateMasks(const g1_msgs::msg::InstanceMaskArray& masks);
+    void integrateMasks(CameraFeed& camera, const g1_msgs::msg::InstanceMaskArray& masks);
     void resegment();
     /// The map with furniture cleared: occupied cells no wall-height return backs up.
     [[nodiscard]] cv::Mat structureCells() const;
@@ -160,7 +182,8 @@ private:
         const std::vector<float>& query_embedding) const;
     [[nodiscard]] g1_msgs::msg::WorldObject toMessage(const MappedObject& object) const;
     [[nodiscard]] std::optional<DepthImage> depthView(const sensor_msgs::msg::Image& image);
-    void updateCameraModel(const std::string& frame, const builtin_interfaces::msg::Time& stamp);
+    void                                    updateCameraModel(
+                                           CameraFeed& camera, const std::string& frame, const builtin_interfaces::msg::Time& stamp);
     void storeCrop(
         const MappedObject& object, const sensor_msgs::msg::Image& color, const MaskInput& mask);
     /// Keeps the newest colour frame as a view of the room the robot stands in.
@@ -231,7 +254,6 @@ private:
     };
     std::vector<Visit>         visits_;  // Every viewpoint issued, in order, for RViz.
     nav_msgs::msg::Path        trail_;   // Where the robot has walked, for RViz.
-    std::string                camera_frame_;
     std::vector<std::uint16_t> structure_hits_;
     std::vector<std::uint16_t> band_clear_;  // Rays that crossed the band above a cell.
     int                        cleared_cells_             = 0;
@@ -239,14 +261,9 @@ private:
     int                        structure_cells_segmented_ = 0;
     sensor_msgs::msg::PointCloud2::ConstSharedPtr pending_cloud_;
 
-    std::optional<Intrinsics>                                    intrinsics_;
-    bool                                                         camera_known_ = false;
-    g1_perception::DepthHistory                                  depth_history_;
-    g1_perception::DepthHistory                                  color_history_;
-    std::deque<sensor_msgs::msg::Image::ConstSharedPtr>          pending_depth_;
-    std::deque<g1_msgs::msg::InstanceMaskArray::ConstSharedPtr>  pending_masks_;
-    std::vector<float>                                           depth_scratch_;
-    std::deque<std::pair<double, bool>>                          motion_;
+    std::deque<CameraFeed>              cameras_;  // A deque: callbacks hold references into it.
+    std::vector<float>                  depth_scratch_;
+    std::deque<std::pair<double, bool>> motion_;
     std::map<int, std::vector<std::uint8_t>>                     crops_;
     std::set<int>                                                described_;
     std::map<std::string, double>                                requested_at_;
@@ -269,14 +286,10 @@ private:
     tf2_ros::Buffer            tf_buffer_;
     tf2_ros::TransformListener tf_listener_;
 
-    rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr    map_sub_;
-    rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr         depth_sub_;
-    rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr         color_sub_;
-    rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr    info_sub_;
-    rclcpp::Subscription<g1_msgs::msg::InstanceMaskArray>::SharedPtr masks_sub_;
-    rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr         odometry_sub_;
-    rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr   cloud_sub_;
-    rclcpp::Subscription<g1_msgs::msg::Description>::SharedPtr       description_sub_;
+    rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr  map_sub_;
+    rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr       odometry_sub_;
+    rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr cloud_sub_;
+    rclcpp::Subscription<g1_msgs::msg::Description>::SharedPtr     description_sub_;
 
     rclcpp::Publisher<g1_msgs::msg::RoomArray>::SharedPtr              rooms_pub_;
     rclcpp::Publisher<g1_msgs::msg::WorldObjectArray>::SharedPtr       objects_pub_;

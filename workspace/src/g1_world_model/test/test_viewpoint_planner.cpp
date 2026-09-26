@@ -778,6 +778,32 @@ TEST(ViewpointPlanner, WaitsOutAStuckRobotInsteadOfGivingUpEveryRoom)
     EXPECT_EQ(plan.status, PlanStatus::kViewpoint);
 }
 
+TEST(ViewpointPlanner, ScoresAHeadingByWhatEveryCameraSees)
+{
+    // A second camera looking back sees what the front one turns its back on, from the same stop.
+    const World  world = twoRoomsAndACorridor();
+    const Camera camera;
+    CoverageMap  coverage;
+    coverage.setMap(world.cells, world.geometry);
+    const Segmentation rooms = segmentRooms(world.cells, world.geometry, {});
+    const Pose2D       robot{ 2.5, 3.0, 0.0 };
+    CameraModel        back = camera.model;
+    back.yaw                = std::numbers::pi;
+    PlannerParams params;
+    params.max_headings = 1;
+
+    ViewpointPlanner front(params, camera.model);
+    ViewpointPlanner both(params, std::vector<CameraModel>{ camera.model, back });
+    const Plan       one = front.nextCoverage(coverage, rooms.labels, robot);
+    const Plan       two = both.nextCoverage(coverage, rooms.labels, robot);
+    ASSERT_EQ(one.status, PlanStatus::kViewpoint);
+    ASSERT_EQ(two.status, PlanStatus::kViewpoint);
+    EXPECT_GT(two.viewpoint.gain, 1.5 * one.viewpoint.gain);
+
+    ViewpointPlanner blind(params, std::vector<CameraModel>{});
+    EXPECT_EQ(blind.nextCoverage(coverage, rooms.labels, robot).status, PlanStatus::kUnavailable);
+}
+
 TEST(ViewpointPlanner, EndsOnTheRateOnlyOnceEveryRoomHasItsShare)
 {
     const World  world = twoRoomsAndACorridor();

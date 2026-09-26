@@ -150,10 +150,6 @@ constexpr double kTrailSpacing = 0.1;
 
 WorldModelNode::WorldModelNode(const rclcpp::NodeOptions& options)
   : rclcpp::Node("g1_world_model", options)
-  // Masks are used only from a still robot, so the depth frame beside a dropped one is the same
-  // view: a match within 0.1 s, not just the frame's own stamp.
-  , depth_history_(declare_parameter<double>("frame_history_s", 6.0), 0.1, 64)
-  , color_history_(get_parameter("frame_history_s").as_double(), 0.02, 64)
   , tf_buffer_(get_clock())
   , tf_listener_(tf_buffer_)
 {
@@ -360,23 +356,42 @@ WorldModelNode::WorldModelNode(const rclcpp::NodeOptions& options)
         "map",
         latchedQos(),
         [this](const nav_msgs::msg::OccupancyGrid::ConstSharedPtr& map) { onMap(map); });
-    depth_sub_ = create_subscription<sensor_msgs::msg::Image>(
-        "depth/image_raw",
-        sensorQos(),
-        [this](sensor_msgs::msg::Image::ConstSharedPtr depth) { onDepth(std::move(depth)); });
-    color_sub_ = create_subscription<sensor_msgs::msg::Image>(
-        "color/image_raw",
-        sensorQos(),
-        [this](sensor_msgs::msg::Image::ConstSharedPtr color) { onColor(std::move(color)); });
-    info_sub_ = create_subscription<sensor_msgs::msg::CameraInfo>(
-        "depth/camera_info",
-        sensorQos(),
-        [this](const sensor_msgs::msg::CameraInfo::ConstSharedPtr& info) { onCameraInfo(info); });
-    // Reliable, as both the real and the mock detector publish them.
-    masks_sub_ = create_subscription<g1_msgs::msg::InstanceMaskArray>(
-        "instance_masks",
-        rclcpp::QoS(rclcpp::KeepLast(4)).reliable(),
-        [this](const g1_msgs::msg::InstanceMaskArray::ConstSharedPtr& masks) { onMasks(masks); });
+    const double history_s = declare_parameter<double>("frame_history_s", 6.0);
+    for (const std::string& name :
+         declare_parameter<std::vector<std::string>>("cameras", std::vector<std::string>{ "head" }))
+    {
+        const auto prefix =
+            declare_parameter<std::string>("camera." + name + ".prefix", name + "/");
+        CameraFeed& camera = cameras_.emplace_back(
+            name,
+            declare_parameter<bool>("camera." + name + ".coverage", true),
+            history_s);
+        camera.depth_sub = create_subscription<sensor_msgs::msg::Image>(
+            prefix + "depth/image_raw",
+            sensorQos(),
+            [this, &camera](sensor_msgs::msg::Image::ConstSharedPtr depth) {
+                onDepth(camera, std::move(depth));
+            });
+        camera.color_sub = create_subscription<sensor_msgs::msg::Image>(
+            prefix + "color/image_raw",
+            sensorQos(),
+            [&camera](sensor_msgs::msg::Image::ConstSharedPtr color) {
+                camera.color_history.push(std::move(color));
+            });
+        camera.info_sub = create_subscription<sensor_msgs::msg::CameraInfo>(
+            prefix + "depth/camera_info",
+            sensorQos(),
+            [&camera](const sensor_msgs::msg::CameraInfo::ConstSharedPtr& info) {
+                onCameraInfo(camera, info);
+            });
+        // Reliable, as both the real and the mock detector publish them.
+        camera.masks_sub = create_subscription<g1_msgs::msg::InstanceMaskArray>(
+            prefix + "instance_masks",
+            rclcpp::QoS(rclcpp::KeepLast(4)).reliable(),
+            [&camera](const g1_msgs::msg::InstanceMaskArray::ConstSharedPtr& masks) {
+                onMasks(camera, masks);
+            });
+    }
     odometry_sub_ = create_subscription<nav_msgs::msg::Odometry>(
         "odom",
         rclcpp::QoS(rclcpp::KeepLast(10)),
@@ -525,23 +540,28 @@ void WorldModelNode::onMap(const nav_msgs::msg::OccupancyGrid::ConstSharedPtr& m
     }
 }
 
-void WorldModelNode::onDepth(sensor_msgs::msg::Image::ConstSharedPtr depth)
+WorldModelNode::CameraFeed::CameraFeed(std::string feed_name, bool credits_coverage, double history_s)
+  : name(std::move(feed_name))
+  , coverage(credits_coverage)
+  // Masks are used only from a still robot, so the depth frame beside a dropped one is the same
+  // view: a match within 0.1 s, not just the frame's own stamp.
+  , depth_history(history_s, 0.1, 64)
+  , color_history(history_s, 0.02, 64)
+{}
+
+void WorldModelNode::onDepth(CameraFeed& camera, sensor_msgs::msg::Image::ConstSharedPtr depth)
 {
-    depth_history_.push(depth);
-    pending_depth_.push_back(std::move(depth));
-    while (pending_depth_.size() > 16)
+    camera.depth_history.push(depth);
+    camera.pending_depth.push_back(std::move(depth));
+    while (camera.pending_depth.size() > 16)
     {
-        pending_depth_.pop_front();
+        camera.pending_depth.pop_front();
         ++depth_tally_.dropped;
     }
 }
 
-void WorldModelNode::onColor(sensor_msgs::msg::Image::ConstSharedPtr color)
-{
-    color_history_.push(std::move(color));
-}
-
-void WorldModelNode::onCameraInfo(const sensor_msgs::msg::CameraInfo::ConstSharedPtr& info)
+void WorldModelNode::onCameraInfo(
+    CameraFeed& camera, const sensor_msgs::msg::CameraInfo::ConstSharedPtr& info)
 {
     if (info->k[0] <= 0.0 || info->k[4] <= 0.0)
     {
@@ -553,10 +573,10 @@ void WorldModelNode::onCameraInfo(const sensor_msgs::msg::CameraInfo::ConstShare
                                  info->k[5],
                                  static_cast<int>(info->width),
                                  static_cast<int>(info->height) };
-    if (!intrinsics_ || !(*intrinsics_ == intrinsics))
+    if (!camera.intrinsics || !(*camera.intrinsics == intrinsics))
     {
-        intrinsics_   = intrinsics;
-        camera_known_ = false;
+        camera.intrinsics = intrinsics;
+        camera.model.reset();
     }
 }
 
@@ -903,9 +923,9 @@ std::optional<DepthImage> WorldModelNode::depthView(const sensor_msgs::msg::Imag
 }
 
 void WorldModelNode::updateCameraModel(
-    const std::string& frame, const builtin_interfaces::msg::Time& stamp)
+    CameraFeed& camera, const std::string& frame, const builtin_interfaces::msg::Time& stamp)
 {
-    if (camera_known_ || !intrinsics_)
+    if (camera.model || !camera.intrinsics)
     {
         return;
     }
@@ -914,19 +934,33 @@ void WorldModelNode::updateCameraModel(
         const Eigen::Isometry3d base_from_camera = tf2::transformToEigen(
             tf_buffer_.lookupTransform(base_frame_, frame, rclcpp::Time(stamp)));
         const Eigen::Vector3d axis = base_from_camera.linear().col(2);
+        const Intrinsics&     k    = *camera.intrinsics;
         CameraModel           model;
         model.height         = base_from_camera.translation().z();
         model.pitch          = std::asin(std::clamp(-axis.z(), -1.0, 1.0));
-        model.horizontal_fov = 2.0 * std::atan(0.5 * intrinsics_->width / intrinsics_->fx);
-        model.vertical_fov   = 2.0 * std::atan(0.5 * intrinsics_->height / intrinsics_->fy);
-        planner_.setCamera(model);
-        camera_known_ = true;
-        camera_frame_ = frame;
+        model.yaw            = std::atan2(axis.y(), axis.x());
+        model.horizontal_fov = 2.0 * std::atan(0.5 * k.width / k.fx);
+        model.vertical_fov   = 2.0 * std::atan(0.5 * k.height / k.fy);
+        camera.model         = model;
+        camera.frame         = frame;
+        // The planner predicts with the cameras whose depth credits coverage, once each is known.
+        std::vector<CameraModel> models;
+        for (const CameraFeed& known : cameras_)
+        {
+            if (known.coverage && known.model)
+            {
+                models.push_back(*known.model);
+            }
+        }
+        planner_.setCameras(std::move(models));
         RCLCPP_INFO(
             get_logger(),
-            "camera: %.2f m up, pitched %.1f deg down, %.1f x %.1f deg",
+            "camera '%s': %.2f m up, pitched %.1f deg down, %.0f deg off the base's heading, "
+            "%.1f x %.1f deg",
+            camera.name.c_str(),
             model.height,
             model.pitch * 180.0 / M_PI,
+            model.yaw * 180.0 / M_PI,
             model.horizontal_fov * 180.0 / M_PI,
             model.vertical_fov * 180.0 / M_PI);
     }
@@ -949,59 +983,69 @@ void WorldModelNode::integratePending()
         integrateCloud(*pending_cloud_);
         pending_cloud_.reset();
     }
-    if (!intrinsics_)
+    for (CameraFeed& camera : cameras_)
     {
-        return;
-    }
-    while (!pending_depth_.empty() && seconds(pending_depth_.front()->header.stamp) <= horizon)
-    {
-        const auto depth = pending_depth_.front();
-        pending_depth_.pop_front();
-        const double stamp = seconds(depth->header.stamp);
-        updateCameraModel(depth->header.frame_id, depth->header.stamp);
-        if (!wasStill(stamp))
+        if (!camera.intrinsics)
         {
-            ++depth_tally_.moving;
             continue;
         }
-        const auto pose = mapFrom(depth->header.frame_id, depth->header.stamp);
-        const auto view = depthView(*depth);
-        if (!pose || !view)
+        while (!camera.pending_depth.empty() &&
+               seconds(camera.pending_depth.front()->header.stamp) <= horizon)
         {
-            ++depth_tally_.no_pose;
-            continue;
+            const auto depth = camera.pending_depth.front();
+            camera.pending_depth.pop_front();
+            const double stamp = seconds(depth->header.stamp);
+            updateCameraModel(camera, depth->header.frame_id, depth->header.stamp);
+            if (!camera.coverage)
+            {
+                continue;
+            }
+            if (!wasStill(stamp))
+            {
+                ++depth_tally_.moving;
+                continue;
+            }
+            const auto pose = mapFrom(depth->header.frame_id, depth->header.stamp);
+            const auto view = depthView(*depth);
+            if (!pose || !view)
+            {
+                ++depth_tally_.no_pose;
+                continue;
+            }
+            if (coverage_.integrate(*view, *camera.intrinsics, *pose) > 0)
+            {
+                dirty_ = true;
+            }
+            ++depth_tally_.used;
         }
-        if (coverage_.integrate(*view, *intrinsics_, *pose) > 0)
+        while (!camera.pending_masks.empty() &&
+               seconds(camera.pending_masks.front()->header.stamp) <= horizon)
         {
-            dirty_ = true;
+            const auto masks = camera.pending_masks.front();
+            camera.pending_masks.pop_front();
+            integrateMasks(camera, *masks);
         }
-        ++depth_tally_.used;
-    }
-    while (!pending_masks_.empty() && seconds(pending_masks_.front()->header.stamp) <= horizon)
-    {
-        const auto masks = pending_masks_.front();
-        pending_masks_.pop_front();
-        integrateMasks(*masks);
     }
 }
 
-void WorldModelNode::onMasks(const g1_msgs::msg::InstanceMaskArray::ConstSharedPtr& masks)
+void WorldModelNode::onMasks(
+    CameraFeed& camera, const g1_msgs::msg::InstanceMaskArray::ConstSharedPtr& masks)
 {
     // Held like depth: a fast detector answers before its frame's transform, or the frame itself,
     // has arrived here.
     if (!masks->instances.empty())
     {
-        pending_masks_.push_back(masks);
+        camera.pending_masks.push_back(masks);
     }
-    while (pending_masks_.size() > 16)
+    while (camera.pending_masks.size() > 16)
     {
-        pending_masks_.pop_front();
+        camera.pending_masks.pop_front();
     }
 }
 
-void WorldModelNode::integrateMasks(const g1_msgs::msg::InstanceMaskArray& masks)
+void WorldModelNode::integrateMasks(CameraFeed& camera, const g1_msgs::msg::InstanceMaskArray& masks)
 {
-    if (!intrinsics_)
+    if (!camera.intrinsics)
     {
         return;
     }
@@ -1011,7 +1055,7 @@ void WorldModelNode::integrateMasks(const g1_msgs::msg::InstanceMaskArray& masks
         ++mask_tally_.moving;
         return;  // Masks cut from a frame taken mid-turn would land the objects out of place.
     }
-    const auto depth = depth_history_.at(stamp);
+    const auto depth = camera.depth_history.at(stamp);
     if (depth == nullptr)
     {
         ++mask_tally_.no_depth;
@@ -1046,7 +1090,7 @@ void WorldModelNode::integrateMasks(const g1_msgs::msg::InstanceMaskArray& masks
         input.embedding = instance.embedding;
         inputs.push_back(std::move(input));
     }
-    const FrameInput               frame{ stamp, *view, *intrinsics_, *pose };
+    const FrameInput               frame{ stamp, *view, *camera.intrinsics, *pose };
     const std::vector<MaskOutcome> outcomes = objects_.integrate(inputs, frame);
     dirty_                                  = true;
     for (const std::string& label : objects_.takeDropped())
@@ -1054,7 +1098,7 @@ void WorldModelNode::integrateMasks(const g1_msgs::msg::InstanceMaskArray& masks
         RCLCPP_INFO(get_logger(), "dropped a '%s' nothing confirmed", label.c_str());
     }
 
-    const auto color = color_history_.at(stamp);
+    const auto color = camera.color_history.at(stamp);
     for (std::size_t slot = 0; slot < outcomes.size(); ++slot)
     {
         if (outcomes[slot].best_view && color != nullptr)
@@ -1112,7 +1156,16 @@ void WorldModelNode::storeRoomView()
 {
     const auto       robot = robotPose();
     const RoomState* room  = robot ? roomByLabel(roomLabelAt(robot->x, robot->y)) : nullptr;
-    const auto       color = color_history_.atOrBefore(now().seconds());
+    // The first camera listed that has colour: a room is typed from one view per stop.
+    sensor_msgs::msg::Image::ConstSharedPtr color;
+    for (const CameraFeed& camera : cameras_)
+    {
+        color = camera.color_history.atOrBefore(now().seconds());
+        if (color != nullptr)
+        {
+            break;
+        }
+    }
     if (room == nullptr || color == nullptr)
     {
         return;
@@ -2296,34 +2349,42 @@ void WorldModelNode::appendRunMarkers(
         markers.markers.push_back(label);
     }
 
-    // Where the head camera looks now: its image's corners on the floor, out to coverage range.
-    if (!intrinsics_ || camera_frame_.empty())
+    // Where each camera looks now: its image's corners on the floor, out to coverage range.
+    const double                   range = coverage_.params().max_range;
+    const std::array<cv::Vec3f, 3> colours{
+        { { 1.0F, 0.85F, 0.1F }, { 0.2F, 0.85F, 1.0F }, { 1.0F, 0.4F, 0.8F } }
+    };
+    std::size_t shade = 0;
+    for (const CameraFeed& camera : cameras_)
     {
-        return;
+        const cv::Vec3f& colour = colours.at(shade++ % colours.size());
+        if (!camera.intrinsics || camera.frame.empty())
+        {
+            continue;
+        }
+        const auto pose = mapFrom(camera.frame, builtin_interfaces::msg::Time{});
+        if (!pose)
+        {
+            continue;
+        }
+        const Intrinsics& k    = *camera.intrinsics;
+        auto              view = base("camera_view", visualization_msgs::msg::Marker::LINE_STRIP);
+        view.scale.x           = 0.03;
+        paint(view, colour, 0.8F);
+        const auto width  = static_cast<double>(k.width);
+        const auto height = static_cast<double>(k.height);
+        for (const auto& [u, v] : std::array<std::pair<double, double>, 5>{
+                 { { 0.0, 0.0 }, { width, 0.0 }, { width, height }, { 0.0, height }, { 0.0, 0.0 } } })
+        {
+            const Eigen::Vector3d ray =
+                (pose->linear() * Eigen::Vector3d((u - k.cx) / k.fx, (v - k.cy) / k.fy, 1.0))
+                    .normalized();
+            const double to_floor    = ray.z() < -1e-3 ? -pose->translation().z() / ray.z() : range;
+            const Eigen::Vector3d at = pose->translation() + (std::min(to_floor, range) * ray);
+            view.points.push_back(point(at.x(), at.y(), 0.03));
+        }
+        markers.markers.push_back(view);
     }
-    const auto pose = mapFrom(camera_frame_, builtin_interfaces::msg::Time{});
-    if (!pose)
-    {
-        return;
-    }
-    const Intrinsics& k     = *intrinsics_;
-    const double      range = coverage_.params().max_range;
-    auto              view  = base("camera_view", visualization_msgs::msg::Marker::LINE_STRIP);
-    view.scale.x            = 0.03;
-    paint(view, { 1.0F, 0.85F, 0.1F }, 0.8F);
-    const auto width  = static_cast<double>(k.width);
-    const auto height = static_cast<double>(k.height);
-    for (const auto& [u, v] : std::array<std::pair<double, double>, 5>{
-             { { 0.0, 0.0 }, { width, 0.0 }, { width, height }, { 0.0, height }, { 0.0, 0.0 } } })
-    {
-        const Eigen::Vector3d ray =
-            (pose->linear() * Eigen::Vector3d((u - k.cx) / k.fx, (v - k.cy) / k.fy, 1.0))
-                .normalized();
-        const double to_floor    = ray.z() < -1e-3 ? -pose->translation().z() / ray.z() : range;
-        const Eigen::Vector3d at = pose->translation() + (std::min(to_floor, range) * ray);
-        view.points.push_back(point(at.x(), at.y(), 0.03));
-    }
-    markers.markers.push_back(view);
 }
 
 void WorldModelNode::extendTrail()

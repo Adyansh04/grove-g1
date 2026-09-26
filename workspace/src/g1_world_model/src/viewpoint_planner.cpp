@@ -96,8 +96,12 @@ void dropSeenFrontier(
 }  // namespace
 
 ViewpointPlanner::ViewpointPlanner(PlannerParams params, CameraModel camera)
+  : ViewpointPlanner(params, std::vector<CameraModel>{ camera })
+{}
+
+ViewpointPlanner::ViewpointPlanner(PlannerParams params, std::vector<CameraModel> cameras)
   : params_(params)
-  , camera_(camera)
+  , cameras_(std::move(cameras))
 {}
 
 void ViewpointPlanner::computeTraversable(const cv::Mat& cells, const GridGeometry& geometry)
@@ -197,18 +201,18 @@ void ViewpointPlanner::travelFrom(
 }
 
 void ViewpointPlanner::castRays(
-    const CoverageMap& coverage, double x, double y, std::vector<Hit>& hits,
-    std::vector<int>& offsets) const
+    const CoverageMap& coverage, const CameraModel& camera, double x, double y,
+    std::vector<Hit>& hits, std::vector<int>& offsets) const
 {
     const GridGeometry&   geometry = coverage.geometry();
     const CoverageParams& measure  = coverage.params();
     const cv::Mat&        cells    = coverage.cells();
     const int             count    = static_cast<int>(geometry.cellCount());
 
-    const double height   = camera_.height;
-    const double tan_low  = std::tan(camera_.pitch + (0.5 * camera_.vertical_fov));
-    const double tan_high = std::tan(camera_.pitch - (0.5 * camera_.vertical_fov));
-    const double tan_half = std::tan(0.5 * camera_.vertical_fov);
+    const double height   = camera.height;
+    const double tan_low  = std::tan(camera.pitch + (0.5 * camera.vertical_fov));
+    const double tan_high = std::tan(camera.pitch - (0.5 * camera.vertical_fov));
+    const double tan_half = std::tan(0.5 * camera.vertical_fov);
     const double horizontal_reach =
         std::sqrt(std::max(0.0, (measure.max_range * measure.max_range) - (height * height)));
     // With the upper edge of the image below the horizon, the floor ends where that ray lands.
@@ -221,7 +225,7 @@ void ViewpointPlanner::castRays(
     const auto predict =
         [&](double along, double drop, double cos_incidence, TargetKind kind, int target) {
             const double below = std::atan2(drop, along);
-            const double rho_v = std::tan(below - camera_.pitch) / tan_half;
+            const double rho_v = std::tan(below - camera.pitch) / tan_half;
             if (std::abs(rho_v) >= 1.0)
             {
                 return;
@@ -651,11 +655,17 @@ Plan ViewpointPlanner::nextCoverage(
         return plan;
     }
 
-    // How far a pending target can be from a pose that might see it.
-    const double reach = std::sqrt(std::max(
+    if (cameras_.empty())
+    {
+        plan.reason = "no camera yet";
+        return plan;
+    }
+    // How far a pending target can be from a pose that might see it: the lowest camera reaches
+    // furthest.
+    const double lowest = std::ranges::min(cameras_, {}, &CameraModel::height).height;
+    const double reach  = std::sqrt(std::max(
         0.0,
-        (coverage.params().max_range * coverage.params().max_range) -
-            (camera_.height * camera_.height)));
+        (coverage.params().max_range * coverage.params().max_range) - (lowest * lowest)));
     cv::Mat      to_pending;
     cv::distanceTransform(pending == 0, to_pending, cv::DIST_L2, cv::DIST_MASK_PRECISE);
     to_pending *= geometry.resolution;
@@ -779,16 +789,40 @@ Plan ViewpointPlanner::nextCoverage(
 
     const int    per_heading = std::max(1, params_.ray_count / std::max(1, params_.heading_count));
     const double ray_angle   = kTwoPi / params_.ray_count;
-    const int    half_rays = static_cast<int>(std::floor(0.5 * camera_.horizontal_fov / ray_angle));
-    const double tan_half_h = std::tan(0.5 * camera_.horizontal_fov);
-    // Horizontal image offset of each ray relative to the heading, shared by all headings.
-    std::vector<float> rho_h(static_cast<std::size_t>((2 * half_rays) + 1));
-    for (int offset = -half_rays; offset <= half_rays; ++offset)
+    // Per camera: the rays it casts from a candidate, and where across its image each ray falls.
+    struct CameraRays
     {
-        const int slot = offset + half_rays;
-        rho_h[static_cast<std::size_t>(slot)] =
-            static_cast<float>(std::tan(offset * ray_angle) / tan_half_h);
+        const CameraModel* camera = nullptr;
+        std::vector<Hit>   hits;
+        std::vector<int>   offsets;
+        int                half_rays = 0;
+        int                yaw_rays  = 0;
+        std::vector<float> rho_h;  // Horizontal image offset per ray from the optical axis.
+    };
+    std::vector<CameraRays> views(cameras_.size());
+    for (std::size_t c = 0; c < cameras_.size(); ++c)
+    {
+        CameraRays& view = views[c];
+        view.camera      = &cameras_[c];
+        view.half_rays =
+            static_cast<int>(std::floor(0.5 * view.camera->horizontal_fov / ray_angle));
+        view.yaw_rays           = static_cast<int>(std::lround(view.camera->yaw / ray_angle));
+        const double tan_half_h = std::tan(0.5 * view.camera->horizontal_fov);
+        for (int offset = -view.half_rays; offset <= view.half_rays; ++offset)
+        {
+            view.rho_h.push_back(static_cast<float>(std::tan(offset * ray_angle) / tan_half_h));
+        }
     }
+    const auto cast_all = [&](double x, double y) {
+        bool any = false;
+        for (CameraRays& view : views)
+        {
+            view.hits.clear();
+            castRays(coverage, *view.camera, x, y, view.hits, view.offsets);
+            any = any || !view.hits.empty();
+        }
+        return any;
+    };
     // Rooms still short of their share of floor or faces seen; past the rate cut only they count.
     int room_count = 0;
     if (has_rooms)
@@ -835,11 +869,9 @@ Plan ViewpointPlanner::nextCoverage(
     };
     const auto well_seen = static_cast<float>(coverage.params().well_seen);
 
-    std::vector<Hit> hits;
-    std::vector<int> offsets;
-    double           best_utility = 0.0;
-    double           best_gain    = 0.0;
-    const bool       room_short   = current_room > 0 && current_room <= room_count &&
+    double     best_utility = 0.0;
+    double     best_gain    = 0.0;
+    const bool room_short   = current_room > 0 && current_room <= room_count &&
                             short_room[static_cast<std::size_t>(current_room)] != 0;
     std::vector<Viewpoint> options;  // Every candidate worth a visit, for the tour.
     const auto             choose = [&] {
@@ -858,9 +890,7 @@ Plan ViewpointPlanner::nextCoverage(
             {
                 continue;
             }
-            hits.clear();
-            castRays(coverage, x, y, hits, offsets);
-            if (hits.empty())
+            if (!cast_all(x, y))
             {
                 continue;
             }
@@ -869,38 +899,43 @@ Plan ViewpointPlanner::nextCoverage(
             const auto heading_gain = [&](int heading, bool commit, std::vector<int>* seen) {
                 ++heading_value_;
                 double gain = 0.0;
-                for (int offset = -half_rays; offset <= half_rays; ++offset)
+                for (const CameraRays& view : views)
                 {
-                    const int ray =
-                        ((heading * per_heading) + offset + params_.ray_count) % params_.ray_count;
-                    const float horizontal = std::abs(
-                        rho_h[static_cast<std::size_t>(offset) + static_cast<std::size_t>(half_rays)]);
-                    for (int h = offsets[static_cast<std::size_t>(ray)];
-                         h < offsets[static_cast<std::size_t>(ray) + 1];
-                         ++h)
+                    for (int slot = 0; slot <= 2 * view.half_rays; ++slot)
                     {
-                        const Hit&  hit  = hits[static_cast<std::size_t>(h)];
-                        const float rho  = std::max(horizontal, std::abs(hit.rho_v));
-                        const float edge = 1.0F - (rho * rho * rho * rho);
-                        if (hit.base * edge < well_seen)
+                        const int turned =
+                            (heading * per_heading) + view.yaw_rays + slot - view.half_rays;
+                        const int ray =
+                            ((turned % params_.ray_count) + params_.ray_count) % params_.ray_count;
+                        const float horizontal =
+                            std::abs(view.rho_h[static_cast<std::size_t>(slot)]);
+                        for (int h = view.offsets[static_cast<std::size_t>(ray)];
+                             h < view.offsets[static_cast<std::size_t>(ray) + 1];
+                             ++h)
                         {
-                            continue;
-                        }
-                        const auto target     = static_cast<std::size_t>(hit.target);
-                        predicted_any[target] = 1;
-                        if (chosen_mark_[target] == chosen_value_ ||
-                            heading_mark_[target] == heading_value_)
-                        {
-                            continue;
-                        }
-                        heading_mark_[target] = heading_value_;
-                        gain += weight(hit.kind) * counts(hit.target);
-                        if (commit)
-                        {
-                            chosen_mark_[target] = chosen_value_;
-                            if (seen != nullptr)
+                            const Hit&  hit = view.hits[static_cast<std::size_t>(h)];
+                            const float rho = std::max(horizontal, std::abs(hit.rho_v));
+                            const float edge = 1.0F - (rho * rho * rho * rho);
+                            if (hit.base * edge < well_seen)
                             {
-                                seen->push_back(hit.target);
+                                continue;
+                            }
+                            const auto target = static_cast<std::size_t>(hit.target);
+                            predicted_any[target] = 1;
+                            if (chosen_mark_[target] == chosen_value_ ||
+                                heading_mark_[target] == heading_value_)
+                            {
+                                continue;
+                            }
+                            heading_mark_[target] = heading_value_;
+                            gain += weight(hit.kind) * counts(hit.target);
+                            if (commit)
+                            {
+                                chosen_mark_[target] = chosen_value_;
+                                if (seen != nullptr)
+                                {
+                                    seen->push_back(hit.target);
+                                }
                             }
                         }
                     }
@@ -1011,19 +1046,18 @@ Plan ViewpointPlanner::nextCoverage(
         // Any heading can centre a ray, so only its vertical offset counts.
         for (const Candidate& candidate : rest)
         {
-            hits.clear();
-            castRays(
-                coverage,
+            cast_all(
                 geometry.centreX(candidate.index % geometry.width),
-                geometry.centreY(candidate.index / geometry.width),
-                hits,
-                offsets);
-            for (const Hit& hit : hits)
+                geometry.centreY(candidate.index / geometry.width));
+            for (const CameraRays& view : views)
             {
-                const float rho = std::abs(hit.rho_v);
-                if (hit.base * (1.0F - (rho * rho * rho * rho)) >= well_seen)
+                for (const Hit& hit : view.hits)
                 {
-                    predicted_any[static_cast<std::size_t>(hit.target)] = 1;
+                    const float rho = std::abs(hit.rho_v);
+                    if (hit.base * (1.0F - (rho * rho * rho * rho)) >= well_seen)
+                    {
+                        predicted_any[static_cast<std::size_t>(hit.target)] = 1;
+                    }
                 }
             }
         }

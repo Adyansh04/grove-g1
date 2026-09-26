@@ -10,8 +10,8 @@ the behavior tree, so missions name targets instead of carrying coordinates.
 | | Name | Type |
 |---|---|---|
 | Sub | `map` | `nav_msgs/OccupancyGrid` (latched) |
-| Sub | `depth/image_raw`, `depth/camera_info`, `color/image_raw` | aligned D435i streams |
-| Sub | `instance_masks` | `g1_msgs/InstanceMaskArray`, from `g1_detector` or the mock |
+| Sub | `<camera>/depth/image_raw`, `<camera>/depth/camera_info`, `<camera>/color/image_raw` | each camera's aligned depth and colour |
+| Sub | `<camera>/instance_masks` | `g1_msgs/InstanceMaskArray` for that camera, from `g1_detector` or the mock |
 | Sub | `cloud` | `sensor_msgs/PointCloud2`, the LiDAR, for the walls-only grid |
 | Sub | `odom` | `nav_msgs/Odometry`, for the stillness gate |
 | Sub | `descriptions` | `g1_msgs/Description`, from `g1_object_describer` |
@@ -29,6 +29,13 @@ the behavior tree, so missions name targets instead of carrying coordinates.
 
 Parameters and their reasons are in `config/g1_world_model.yaml`; room type likelihoods in
 `config/room_types.yaml`.
+
+Cameras are configuration only: `cameras` lists them, each reads the four topics above under
+`camera.<name>.prefix` (`<name>/` by default), and its height, pitch, heading and field of view
+come from TF and `camera_info`. Every camera whose `camera.<name>.coverage` is true credits
+coverage, and the planner scores each heading by what all of them see. `world_model.launch.py
+cameras:=head,chest` wires the simulator's head and chest cameras; another robot needs only its
+own topic remaps.
 
 ## How it works
 

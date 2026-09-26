@@ -29,13 +29,14 @@
 namespace g1_world_model
 {
 
-/// The head camera's mount, as far as prediction needs it. Read from TF and camera_info.
+/// A camera's mount, as far as prediction needs it. Read from TF and camera_info.
 struct CameraModel
 {
     double height         = 1.21;  ///< Optical centre above the floor, m.
     double pitch          = 0.83;  ///< Optical axis below the horizon, rad.
     double horizontal_fov = 1.55;  ///< rad.
     double vertical_fov   = 1.01;  ///< rad.
+    double yaw            = 0.0;   ///< Optical axis from the base's heading, rad, left positive.
 };
 
 struct PlannerParams
@@ -115,10 +116,13 @@ class ViewpointPlanner
 {
 public:
     explicit ViewpointPlanner(PlannerParams params = {}, CameraModel camera = {});
+    /// Cameras turn with the base: a heading is scored by what all of them see from it.
+    ViewpointPlanner(PlannerParams params, std::vector<CameraModel> cameras);
 
-    void setCamera(const CameraModel& camera) { camera_ = camera; }
+    /// With none, coverage planning waits for one.
+    void setCameras(std::vector<CameraModel> cameras) { cameras_ = std::move(cameras); }
 
-    [[nodiscard]] const CameraModel& camera() const { return camera_; }
+    [[nodiscard]] const std::vector<CameraModel>& cameras() const { return cameras_; }
 
     [[nodiscard]] const PlannerParams& params() const { return params_; }
 
@@ -228,13 +232,13 @@ private:
         std::vector<Viewpoint> options, const GridGeometry& geometry,
         const std::function<double(int)>& worth) const;
     void castRays(
-        const CoverageMap& coverage, double x, double y, std::vector<Hit>& hits,
-        std::vector<int>& offsets) const;
+        const CoverageMap& coverage, const CameraModel& camera, double x, double y,
+        std::vector<Hit>& hits, std::vector<int>& offsets) const;
     [[nodiscard]] double blacklistFactor(double x, double y) const;
     [[nodiscard]] double turnTime(double from_yaw, std::vector<double>& headings) const;
 
-    PlannerParams params_;
-    CameraModel   camera_;
+    PlannerParams            params_;
+    std::vector<CameraModel> cameras_;
 
     cv::Mat            clearance_;    // CV_32F, m
     cv::Mat            traversable_;  // CV_8U
