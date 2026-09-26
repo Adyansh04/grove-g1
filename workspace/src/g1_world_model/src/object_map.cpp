@@ -1121,7 +1121,8 @@ void settleSides(
     const double res   = geometry.resolution;
     const int    reach = std::max(1, geometry.cellsFor(params.wall_reach));
     const auto   cell  = [&](const CellIndex& at) {
-        return geometry.contains(at) ? plan.at<std::uint8_t>(at.y, at.x) : kUnknown;
+        return geometry.contains(at) ? plan.at<std::uint8_t>(at.y, at.x) :
+                                          static_cast<std::uint8_t>(kUnknown);
     };
     for (auto& [id, box] : fitted)
     {
