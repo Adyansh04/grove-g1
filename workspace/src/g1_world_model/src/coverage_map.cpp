@@ -450,24 +450,11 @@ std::vector<CoverageTally> CoverageMap::tally(const cv::Mat& labels, int count) 
     }
     for (int y = 0; y < geometry_.height; ++y)
     {
-        const int* row = labels.ptr<int>(y);
         for (int x = 0; x < geometry_.width; ++x)
         {
-            const int label = std::clamp(row[x], 0, count);
-            // Faces sit in occupied cells, outside every room: credit the room they face.
-            int       owner = label;
-            const int index = geometry_.index(x, y);
-            if (owner == 0 && kind(index) == TargetKind::kFace)
-            {
-                const cv::Vec2f normal = normal_[static_cast<std::size_t>(index)];
-                const int       fx     = x + static_cast<int>(std::lround(normal[0]));
-                const int       fy     = y + static_cast<int>(std::lround(normal[1]));
-                if (geometry_.contains(fx, fy))
-                {
-                    owner = std::clamp(labels.at<int>(fy, fx), 0, count);
-                }
-            }
-            CoverageTally& t = tallies[static_cast<std::size_t>(owner)];
+            const int      index = geometry_.index(x, y);
+            const int      owner = std::clamp(roomOf(index, labels), 0, count);
+            CoverageTally& t     = tallies[static_cast<std::size_t>(owner)];
             // Shares are of what can be seen: a written-off target counts only if seen after all.
             const bool seen = wellSeen(index);
             if (seen || !unobservable(index))
@@ -498,17 +485,46 @@ std::vector<CoverageTally> CoverageMap::tally(const cv::Mat& labels, int count) 
     return tallies;
 }
 
-std::vector<std::int8_t> CoverageMap::qualityGrid() const
+int CoverageMap::roomOf(int index, const cv::Mat& labels) const
 {
-    std::vector<std::int8_t> grid(geometry_.cellCount(), -1);
-    for (std::size_t index = 0; index < grid.size(); ++index)
+    const int count = static_cast<int>(geometry_.cellCount());
+    const int cell  = index >= count ? index - count : index;
+    const int x     = cell % geometry_.width;
+    const int y     = cell / geometry_.width;
+    const int label = labels.at<int>(y, x);
+    if (label != 0 || index >= count || kind(cell) != TargetKind::kFace)
     {
-        if (kind_[index] == static_cast<std::uint8_t>(TargetKind::kNone) && surface_at_[index] < 0)
+        return label;
+    }
+    const cv::Vec2f normal = normal_[static_cast<std::size_t>(cell)];
+    const int       fx     = x + static_cast<int>(std::lround(normal[0]));
+    const int       fy     = y + static_cast<int>(std::lround(normal[1]));
+    return geometry_.contains(fx, fy) ? labels.at<int>(fy, fx) : 0;
+}
+
+std::vector<std::int8_t> CoverageMap::statusGrid() const
+{
+    constexpr std::int8_t    kToSee      = 90;
+    constexpr std::int8_t    kWrittenOff = 99;
+    std::vector<std::int8_t> grid(geometry_.cellCount(), 0);
+    const auto               count   = grid.size();
+    const bool               planned = planned_.size() == 2 * count;
+    for (std::size_t index = 0; index < count; ++index)
+    {
+        const int  cell_index = static_cast<int>(index);
+        const bool to_see     = pending(cell_index) && (!planned || planned_[index] != 0);
+        const bool top_to_see =
+            surfacePending(cell_index) && (!planned || planned_[count + index] != 0);
+        if (to_see || top_to_see)
         {
-            continue;
+            grid[index] = kToSee;
         }
-        const int best = std::max(quality_[index], surface_quality_[index]);
-        grid[index]    = static_cast<std::int8_t>((best * 100) / 255);
+        else if (
+            pending(cell_index) || surfacePending(cell_index) || unobservable(cell_index) ||
+            surfaceUnobservable(cell_index))
+        {
+            grid[index] = kWrittenOff;
+        }
     }
     return grid;
 }

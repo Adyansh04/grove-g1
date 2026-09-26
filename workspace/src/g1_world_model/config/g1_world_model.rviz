@@ -39,14 +39,14 @@ Visualization Manager:
     Enabled: true
     Displays:
     - Class: rviz_default_plugins/Map
-      Name: Camera coverage (coloured = seen)
+      Name: Camera coverage (red = still to see, cyan = written off)
       Enabled: true
       Topic:
         Value: /g1_world_model/coverage
         Depth: 1
         Durability Policy: Volatile
         Reliability Policy: Reliable
-      Alpha: 0.45
+      Alpha: 0.5
       Color Scheme: costmap
       Draw Behind: false
     - Class: rviz_default_plugins/Map

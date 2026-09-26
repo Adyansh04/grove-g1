@@ -114,8 +114,14 @@ void ViewpointPlanner::computeTraversable(const cv::Mat& cells, const GridGeomet
 
 void ViewpointPlanner::computeTravel(const GridGeometry& geometry, const Pose2D& robot)
 {
-    travel_.assign(geometry.cellCount(), kUnreachable);
-    const CellIndex start = geometry.toCell(robot.x, robot.y);
+    travelFrom(geometry, robot.x, robot.y, travel_);
+}
+
+void ViewpointPlanner::travelFrom(
+    const GridGeometry& geometry, double x0, double y0, std::vector<float>& field) const
+{
+    field.assign(geometry.cellCount(), kUnreachable);
+    const CellIndex start = geometry.toCell(x0, y0);
     if (!geometry.contains(start))
     {
         return;
@@ -144,9 +150,9 @@ void ViewpointPlanner::computeTravel(const GridGeometry& geometry, const Pose2D&
                 continue;
             }
             const int index = geometry.index(x, y);
-            if (distance < travel_[static_cast<std::size_t>(index)])
+            if (distance < field[static_cast<std::size_t>(index)])
             {
-                travel_[static_cast<std::size_t>(index)] = distance;
+                field[static_cast<std::size_t>(index)] = distance;
                 queue.emplace(distance, index);
             }
         }
@@ -158,7 +164,7 @@ void ViewpointPlanner::computeTravel(const GridGeometry& geometry, const Pose2D&
     {
         const auto [cost, index] = queue.top();
         queue.pop();
-        if (cost > travel_[static_cast<std::size_t>(index)])
+        if (cost > field[static_cast<std::size_t>(index)])
         {
             continue;
         }
@@ -180,9 +186,9 @@ void ViewpointPlanner::computeTravel(const GridGeometry& geometry, const Pose2D&
                 }
                 const int   next = geometry.index(x + dx, y + dy);
                 const float step = (dx != 0 && dy != 0) ? diagonal : straight;
-                if (cost + step < travel_[static_cast<std::size_t>(next)])
+                if (cost + step < field[static_cast<std::size_t>(next)])
                 {
-                    travel_[static_cast<std::size_t>(next)] = cost + step;
+                    field[static_cast<std::size_t>(next)] = cost + step;
                     queue.emplace(cost + step, next);
                 }
             }
@@ -783,6 +789,39 @@ Plan ViewpointPlanner::nextCoverage(
         rho_h[static_cast<std::size_t>(slot)] =
             static_cast<float>(std::tan(offset * ray_angle) / tan_half_h);
     }
+    // Rooms still short of their share of floor or faces seen; past the rate cut only they count.
+    int room_count = 0;
+    if (has_rooms)
+    {
+        double highest = 0.0;
+        cv::minMaxLoc(room_labels, nullptr, &highest);
+        room_count = static_cast<int>(highest);
+    }
+    std::vector<std::uint8_t> short_room(static_cast<std::size_t>(room_count) + 1, 0);
+    bool                      any_short = false;
+    if (room_count > 0)
+    {
+        const std::vector<CoverageTally> tallies = coverage.tally(room_labels, room_count);
+        for (int room = 1; room <= room_count; ++room)
+        {
+            const CoverageTally& t = tallies[static_cast<std::size_t>(room)];
+            const bool           is_short =
+                (t.floor > 0 && t.floor_seen < params_.room_floor_goal * t.floor) ||
+                (t.face > 0 && t.face_seen < params_.room_face_goal * t.face);
+            short_room[static_cast<std::size_t>(room)] = static_cast<std::uint8_t>(is_short);
+            any_short                                  = any_short || is_short;
+        }
+    }
+    const auto counts = [&](int target) {
+        if (!focusing_)
+        {
+            return 1.0;
+        }
+        const int room = coverage.roomOf(target, room_labels);
+        return room > 0 && room <= room_count && short_room[static_cast<std::size_t>(room)] != 0 ?
+                   1.0 :
+                   0.0;
+    };
     const auto weight = [this](TargetKind kind) {
         switch (kind)
         {
@@ -800,135 +839,174 @@ Plan ViewpointPlanner::nextCoverage(
     std::vector<int> offsets;
     double           best_utility = 0.0;
     double           best_gain    = 0.0;
-    for (const Candidate& candidate : candidates)
-    {
-        const int    cx     = candidate.index % geometry.width;
-        const int    cy     = candidate.index / geometry.width;
-        const double x      = geometry.centreX(cx);
-        const double y      = geometry.centreY(cy);
-        const double factor = blacklistFactor(x, y);
-        if (!std::isfinite(factor))
+    const bool       room_short   = current_room > 0 && current_room <= room_count &&
+                            short_room[static_cast<std::size_t>(current_room)] != 0;
+    std::vector<Viewpoint> options;  // Every candidate worth a visit, for the tour.
+    const auto             choose = [&] {
+        best_utility = 0.0;
+        best_gain    = 0.0;
+        plan         = Plan{};
+        options.clear();
+        for (const Candidate& candidate : candidates)
         {
-            continue;
-        }
-        hits.clear();
-        castRays(coverage, x, y, hits, offsets);
-        if (hits.empty())
-        {
-            continue;
-        }
-
-        // Gain of heading j over targets no chosen heading covers yet.
-        const auto heading_gain = [&](int heading, bool commit, std::vector<int>* seen) {
-            ++heading_value_;
-            double gain = 0.0;
-            for (int offset = -half_rays; offset <= half_rays; ++offset)
+            const int    cx     = candidate.index % geometry.width;
+            const int    cy     = candidate.index / geometry.width;
+            const double x      = geometry.centreX(cx);
+            const double y      = geometry.centreY(cy);
+            const double factor = blacklistFactor(x, y);
+            if (!std::isfinite(factor))
             {
-                const int ray =
-                    ((heading * per_heading) + offset + params_.ray_count) % params_.ray_count;
-                const float horizontal = std::abs(
-                    rho_h[static_cast<std::size_t>(offset) + static_cast<std::size_t>(half_rays)]);
-                for (int h = offsets[static_cast<std::size_t>(ray)];
-                     h < offsets[static_cast<std::size_t>(ray) + 1];
-                     ++h)
+                continue;
+            }
+            hits.clear();
+            castRays(coverage, x, y, hits, offsets);
+            if (hits.empty())
+            {
+                continue;
+            }
+
+            // Gain of heading j over targets no chosen heading covers yet.
+            const auto heading_gain = [&](int heading, bool commit, std::vector<int>* seen) {
+                ++heading_value_;
+                double gain = 0.0;
+                for (int offset = -half_rays; offset <= half_rays; ++offset)
                 {
-                    const Hit&  hit  = hits[static_cast<std::size_t>(h)];
-                    const float rho  = std::max(horizontal, std::abs(hit.rho_v));
-                    const float edge = 1.0F - (rho * rho * rho * rho);
-                    if (hit.base * edge < well_seen)
+                    const int ray =
+                        ((heading * per_heading) + offset + params_.ray_count) % params_.ray_count;
+                    const float horizontal = std::abs(
+                        rho_h[static_cast<std::size_t>(offset) + static_cast<std::size_t>(half_rays)]);
+                    for (int h = offsets[static_cast<std::size_t>(ray)];
+                         h < offsets[static_cast<std::size_t>(ray) + 1];
+                         ++h)
                     {
-                        continue;
-                    }
-                    const auto target     = static_cast<std::size_t>(hit.target);
-                    predicted_any[target] = 1;
-                    if (chosen_mark_[target] == chosen_value_ ||
-                        heading_mark_[target] == heading_value_)
-                    {
-                        continue;
-                    }
-                    heading_mark_[target] = heading_value_;
-                    gain += weight(hit.kind);
-                    if (commit)
-                    {
-                        chosen_mark_[target] = chosen_value_;
-                        if (seen != nullptr)
+                        const Hit&  hit  = hits[static_cast<std::size_t>(h)];
+                        const float rho  = std::max(horizontal, std::abs(hit.rho_v));
+                        const float edge = 1.0F - (rho * rho * rho * rho);
+                        if (hit.base * edge < well_seen)
                         {
-                            seen->push_back(hit.target);
+                            continue;
+                        }
+                        const auto target     = static_cast<std::size_t>(hit.target);
+                        predicted_any[target] = 1;
+                        if (chosen_mark_[target] == chosen_value_ ||
+                            heading_mark_[target] == heading_value_)
+                        {
+                            continue;
+                        }
+                        heading_mark_[target] = heading_value_;
+                        gain += weight(hit.kind) * counts(hit.target);
+                        if (commit)
+                        {
+                            chosen_mark_[target] = chosen_value_;
+                            if (seen != nullptr)
+                            {
+                                seen->push_back(hit.target);
+                            }
                         }
                     }
                 }
-            }
-            return gain;
-        };
+                return gain;
+            };
 
-        ++chosen_value_;
-        std::vector<double> headings;
-        std::vector<int>    seen;
-        double              gain = 0.0;
-        std::vector<bool>   used(static_cast<std::size_t>(params_.heading_count), false);
-        for (int pick = 0; pick < params_.max_headings; ++pick)
-        {
-            int    best_heading = -1;
-            double best_added   = 0.0;
-            for (int heading = 0; heading < params_.heading_count; ++heading)
+            ++chosen_value_;
+            std::vector<double> headings;
+            std::vector<int>    seen;
+            double              gain = 0.0;
+            std::vector<bool>   used(static_cast<std::size_t>(params_.heading_count), false);
+            for (int pick = 0; pick < params_.max_headings; ++pick)
             {
-                if (used[static_cast<std::size_t>(heading)])
+                int    best_heading = -1;
+                double best_added   = 0.0;
+                for (int heading = 0; heading < params_.heading_count; ++heading)
                 {
-                    continue;
+                    if (used[static_cast<std::size_t>(heading)])
+                    {
+                        continue;
+                    }
+                    const double added = heading_gain(heading, false, nullptr);
+                    if (added > best_added)
+                    {
+                        best_added   = added;
+                        best_heading = heading;
+                    }
                 }
-                const double added = heading_gain(heading, false, nullptr);
-                if (added > best_added)
+                const double needed = pick == 0 ? 1.0 : params_.min_heading_gain;
+                if (best_heading < 0 || best_added < needed)
                 {
-                    best_added   = added;
-                    best_heading = heading;
+                    break;
                 }
+                used[static_cast<std::size_t>(best_heading)] = true;
+                heading_gain(best_heading, true, &seen);
+                headings.push_back(wrapAngle(best_heading * per_heading * ray_angle));
+                gain += best_added;
             }
-            const double needed = pick == 0 ? 1.0 : params_.min_heading_gain;
-            if (best_heading < 0 || best_added < needed)
+            if (headings.empty())
             {
-                break;
+                continue;
             }
-            used[static_cast<std::size_t>(best_heading)] = true;
-            heading_gain(best_heading, true, &seen);
-            headings.push_back(wrapAngle(best_heading * per_heading * ray_angle));
-            gain += best_added;
-        }
-        if (headings.empty())
-        {
-            continue;
-        }
 
-        const double travel_time =
-            travel_[static_cast<std::size_t>(candidate.index)] / params_.travel_speed;
-        const double arrival = std::hypot(x - robot.x, y - robot.y) > 0.3 ?
-                                   std::atan2(y - robot.y, x - robot.x) :
-                                   robot.yaw;
-        double       cost    = travel_time + turnTime(arrival, headings) +
-                      (static_cast<double>(headings.size()) * params_.dwell_time) +
-                      params_.goal_overhead;
-        cost *= factor;
-        const int room = room_at(cx, cy);
-        if (room_has_work && room != current_room)
-        {
-            cost *= params_.room_switch_factor;
+            const double travel_time =
+                travel_[static_cast<std::size_t>(candidate.index)] / params_.travel_speed;
+            const double arrival = std::hypot(x - robot.x, y - robot.y) > 0.3 ?
+                                                   std::atan2(y - robot.y, x - robot.x) :
+                                                   robot.yaw;
+            double       cost    = travel_time + turnTime(arrival, headings) +
+                          (static_cast<double>(headings.size()) * params_.dwell_time) +
+                          params_.goal_overhead;
+            cost *= factor;
+            const int room = room_at(cx, cy);
+            if (room_has_work && room != current_room)
+            {
+                cost *= params_.room_switch_factor;
+            }
+            const double utility = gain / cost;
+            best_gain            = std::max(best_gain, gain);
+            Viewpoint here;
+            here.x         = x;
+            here.y         = y;
+            here.headings  = headings;
+            here.room      = room;
+            here.gain      = gain;
+            here.cost      = cost;
+            here.predicted = seen;
+            if (gain >= params_.min_viewpoint_gain)
+            {
+                options.push_back(here);
+            }
+            if (utility > best_utility)
+            {
+                best_utility   = utility;
+                plan.status    = PlanStatus::kViewpoint;
+                plan.viewpoint = std::move(here);
+            }
         }
-        const double utility = gain / cost;
-        best_gain            = std::max(best_gain, gain);
-        if (utility > best_utility)
+        // The room the robot stands in keeps it while short of its share, or while a viewpoint
+        // there still pays the pass's rate: leaving either way meant walking back for it later
+        // (run 31: 15 m for 629 targets; run 34: 13 m for 669 in a room already past its share).
+        const auto in_room = [&](const Viewpoint& option) { return option.room == current_room; };
+        const auto rate = [](const Viewpoint& option) { return option.gain / option.cost; };
+        const bool stay =
+            current_room > 0 && std::ranges::any_of(options, [&](const Viewpoint& option) {
+                return in_room(option) &&
+                       (room_short || rate(option) >= params_.min_viewpoint_rate);
+            });
+        if (stay)
         {
-            best_utility             = utility;
-            plan.status              = PlanStatus::kViewpoint;
-            plan.viewpoint.x         = x;
-            plan.viewpoint.y         = y;
-            plan.viewpoint.headings  = headings;
-            plan.viewpoint.room      = room;
-            plan.viewpoint.gain      = gain;
-            plan.viewpoint.cost      = cost;
-            plan.viewpoint.predicted = seen;
+            std::erase_if(options, [&](const Viewpoint& option) { return !in_room(option); });
+            plan.viewpoint = *std::ranges::max_element(options, {}, rate);
         }
+    };
+    choose();
+    if (best_utility < params_.min_viewpoint_rate && any_short && !focusing_ &&
+        best_gain >= params_.min_viewpoint_gain)
+    {
+        // Viewpoints no longer pay for themselves, but rooms are short of their share: from here
+        // on only their targets count, until they have it or nothing more there can be seen.
+        focusing_ = true;
+        choose();
     }
-
-    if (best_gain < params_.min_viewpoint_gain)
+    if (best_gain < params_.min_viewpoint_gain ||
+        (best_utility < params_.min_viewpoint_rate && !any_short))
     {
         // Any heading can centre a ray, so only its vertical offset counts.
         for (const Candidate& candidate : rest)
@@ -973,6 +1051,17 @@ Plan ViewpointPlanner::nextCoverage(
         return plan;
     }
 
+    // Greedy by gain per second zigzags across a room: of the few viewpoints that together see
+    // the most, go to the first on the shortest walk through them.
+    if (auto first = tourStart(std::move(options), geometry, [&](int target) {
+            const double kind =
+                target >= count ? params_.surface_weight : weight(coverage.kind(target));
+            return kind * counts(target);
+        }))
+    {
+        plan.viewpoint = std::move(*first);
+    }
+    coverage.setPlanned(predicted_any);
     plan.viewpoint.id = next_id_++;
     issued_.push_back(plan.viewpoint);
     // Only the recent past matters for reports; keep the list short.
@@ -981,6 +1070,115 @@ Plan ViewpointPlanner::nextCoverage(
         issued_.erase(issued_.begin());
     }
     return plan;
+}
+
+std::optional<Viewpoint> ViewpointPlanner::tourStart(
+    std::vector<Viewpoint> options, const GridGeometry& geometry,
+    const std::function<double(int)>& worth) const
+{
+    // Greedy cover: each pick adds the most of what the ones before it leave unseen.
+    std::vector<std::uint8_t> covered(2 * geometry.cellCount(), 0);
+    std::vector<Viewpoint>    picks;
+    while (static_cast<int>(picks.size()) < params_.tour_size && !options.empty())
+    {
+        double      best_added = 0.0;
+        std::size_t best       = 0;
+        for (std::size_t i = 0; i < options.size(); ++i)
+        {
+            double added = 0.0;
+            for (const int target : options[i].predicted)
+            {
+                if (covered[static_cast<std::size_t>(target)] == 0)
+                {
+                    added += worth(target);
+                }
+            }
+            if (added > best_added)
+            {
+                best_added = added;
+                best       = i;
+            }
+        }
+        if (best_added < params_.min_viewpoint_gain)
+        {
+            break;
+        }
+        for (const int target : options[best].predicted)
+        {
+            covered[static_cast<std::size_t>(target)] = 1;
+        }
+        picks.push_back(std::move(options[best]));
+        options.erase(options.begin() + static_cast<std::ptrdiff_t>(best));
+    }
+    if (picks.size() < 2)
+    {
+        return std::nullopt;
+    }
+
+    // Walking distances: from the robot, already known, and between the picks.
+    const std::size_t count = picks.size();
+    const auto        cell  = [&](const Viewpoint& v) {
+        return static_cast<std::size_t>(geometry.index(geometry.toCell(v.x, v.y)));
+    };
+    std::vector<double> start(count);
+    std::vector<double> between(count * count);
+    std::vector<float>  field;
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        start[i] = travel_[cell(picks[i])];
+        travelFrom(geometry, picks[i].x, picks[i].y, field);
+        for (std::size_t j = 0; j < count; ++j)
+        {
+            between[(i * count) + j] = field[cell(picks[j])];
+        }
+    }
+    const auto walk = [&](const std::vector<std::size_t>& order) {
+        double total = start[order.front()];
+        for (std::size_t k = 1; k < order.size(); ++k)
+        {
+            total += between[(order[k - 1] * count) + order[k]];
+        }
+        return total;
+    };
+    // Nearest first, then untangle crossings (2-opt on the open walk).
+    std::vector<std::size_t> order;
+    std::vector<bool>        placed(count, false);
+    for (std::size_t k = 0; k < count; ++k)
+    {
+        std::size_t next    = count;
+        double      nearest = std::numeric_limits<double>::infinity();
+        for (std::size_t j = 0; j < count; ++j)
+        {
+            const double d = order.empty() ? start[j] : between[(order.back() * count) + j];
+            if (!placed[j] && (next == count || d < nearest))
+            {
+                next    = j;
+                nearest = d;
+            }
+        }
+        placed[next] = true;
+        order.push_back(next);
+    }
+    for (bool improved = true; improved;)
+    {
+        improved = false;
+        for (std::size_t i = 0; i + 1 < count; ++i)
+        {
+            for (std::size_t j = i + 1; j < count; ++j)
+            {
+                std::vector<std::size_t> swapped = order;
+                std::reverse(
+                    swapped.begin() + static_cast<std::ptrdiff_t>(i),
+                    swapped.begin() + static_cast<std::ptrdiff_t>(j) + 1);
+                if (walk(swapped) < walk(order) - 1e-6)
+                {
+                    order    = std::move(swapped);
+                    improved = true;
+                }
+            }
+        }
+    }
+    return std::move(picks[order.front()]);
 }
 
 void ViewpointPlanner::recordPose(const Pose2D& robot)

@@ -34,7 +34,8 @@ g1_world_model:
     planner:
       # Nav2's footprint radius; standing poses keep this plus the margin from obstacles. The margin
       # is wide because Nav2 stops up to 0.5 m short, and a stop beside a low coffee table the
-      # LiDAR barely sees left the robot where Nav2 could plan nothing.
+      # LiDAR barely sees left the robot where Nav2 could plan nothing. At 0.15 (run 30) the robot
+      # wedged by the living room's armchair within 11 minutes, StepClear or not.
       robot_radius: 0.45
       clearance_margin: 0.25
       # Frontier goals stand wider: a 2 m shadow drew the robot into a pocket with 0.75 m of
@@ -46,6 +47,13 @@ g1_world_model:
       max_headings: 3
       min_heading_gain: 20.0
       min_viewpoint_gain: 40.0
+      # The pass ends once the best viewpoint pays less than this, weighted targets per second,
+      # and every room has these shares of its floor and faces seen; until then only the short
+      # rooms' targets count. Runs 26-29 spent 28-45% of their time past the rate for 4% of the
+      # gain; run 31, cut on the rate alone, left three rooms' faces at 0.64-0.72.
+      min_viewpoint_rate: 2.0
+      room_floor_goal: 0.9
+      room_face_goal: 0.8
       # Measured on the AGILE gait: Nav2 averages about 0.35 m/s, turning is 1:1 up to 0.84 rad/s.
       travel_speed: 0.35
       turn_speed: 0.8
@@ -57,6 +65,10 @@ g1_world_model:
       room_switch_factor: 3.0
       # Poses scored per request: those with the most unseen work per second of getting there.
       max_candidates: 400
+      # The next viewpoint is the first stop of the shortest walk through the few that together
+      # see the most, re-planned each time. On the ground-truth replay, greedy order walked 258 m
+      # for 28.7 min; a tour of 8 walked 173 m for 25.7 min.
+      tour_size: 8
       min_frontier_size: 0.75
       frontier_stand_back: 0.5
       # A frontier worth walking to opens onto this much unknown, m2: the shadow behind a sofa is a

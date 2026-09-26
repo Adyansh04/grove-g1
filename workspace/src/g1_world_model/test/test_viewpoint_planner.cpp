@@ -250,6 +250,26 @@ TEST(CoverageMap, ForgetsATopThatTurnsOutHigherThanItWasSeenAt)
     EXPECT_FALSE(coverage.surfaceWellSeen(front));
 }
 
+TEST(CoverageMap, TellsWhatThePlanWillSeeFromWhatNoPoseCan)
+{
+    const World world = twoRoomsAndACorridor();
+    CoverageMap coverage;
+    coverage.setMap(world.cells, world.geometry);
+    const std::size_t count = world.geometry.cellCount();
+    const auto        planned =
+        static_cast<std::size_t>(world.geometry.index(world.geometry.toCell(7.5, 4.5)));
+    const auto blind =
+        static_cast<std::size_t>(world.geometry.index(world.geometry.toCell(2.5, 3.0)));
+    EXPECT_EQ(coverage.statusGrid()[blind], 90);  // Before any plan, all still to see.
+
+    std::vector<std::uint8_t> predicted(2 * count, 0);
+    predicted[planned] = 1;
+    coverage.setPlanned(predicted);
+    const std::vector<std::int8_t> grid = coverage.statusGrid();
+    EXPECT_EQ(grid[planned], 90);
+    EXPECT_EQ(grid[blind], 99);
+}
+
 TEST(CoverageMap, CreditsWallsDespiteLocalisationError)
 {
     const World  world = twoRoomsAndACorridor();
@@ -756,6 +776,100 @@ TEST(ViewpointPlanner, WaitsOutAStuckRobotInsteadOfGivingUpEveryRoom)
     // Freed and carried a metre on: planning resumes, and no room was given up on the way.
     plan = planner.nextCoverage(coverage, rooms.labels, { 5.0, 0.9, 0.0 });
     EXPECT_EQ(plan.status, PlanStatus::kViewpoint);
+}
+
+TEST(ViewpointPlanner, EndsOnTheRateOnlyOnceEveryRoomHasItsShare)
+{
+    const World  world = twoRoomsAndACorridor();
+    const Camera camera;
+    CoverageMap  coverage;
+    coverage.setMap(world.cells, world.geometry);
+    const Segmentation rooms = segmentRooms(world.cells, world.geometry, {});
+    PlannerParams      impatient;
+    impatient.min_viewpoint_rate = 1e9;  // No viewpoint ever pays for itself.
+
+    // Nothing seen yet: every room is short, so the pass goes on regardless.
+    ViewpointPlanner early(impatient, camera.model);
+    ASSERT_EQ(
+        early.nextCoverage(coverage, rooms.labels, { 1.0, 0.9, 0.0 }).status,
+        PlanStatus::kViewpoint);
+
+    ViewpointPlanner planner({}, camera.model);
+    Pose2D           robot{ 1.0, 0.9, 0.0 };
+    for (int visit = 0; visit < 60; ++visit)
+    {
+        const Plan plan = planner.nextCoverage(coverage, rooms.labels, robot);
+        if (plan.status != PlanStatus::kViewpoint)
+        {
+            break;
+        }
+        robot = look(world, camera, coverage, plan.viewpoint);
+        planner.report(coverage, plan.viewpoint.id, true);
+    }
+    const PlannerParams              goals;
+    const std::vector<CoverageTally> tallies =
+        coverage.tally(rooms.labels, static_cast<int>(rooms.regions.size()));
+    for (std::size_t room = 1; room < tallies.size(); ++room)
+    {
+        EXPECT_GE(tallies[room].floor_seen, goals.room_floor_goal * tallies[room].floor) << room;
+        EXPECT_GE(tallies[room].face_seen, goals.room_face_goal * tallies[room].face) << room;
+    }
+    // Every room has its share: the rate ends it.
+    ViewpointPlanner late(impatient, camera.model);
+    EXPECT_EQ(late.nextCoverage(coverage, rooms.labels, robot).status, PlanStatus::kDone);
+}
+
+TEST(ViewpointPlanner, FinishesTheRoomItStandsInBeforeLeaving)
+{
+    // A glance round the left room leaves it short of its share; the right one, unseen, pays
+    // far more. Leaving now means walking back for the rest later.
+    const World  world = twoRoomsAndACorridor();
+    const Camera camera;
+    CoverageMap  coverage;
+    coverage.setMap(world.cells, world.geometry);
+    const Segmentation rooms = segmentRooms(world.cells, world.geometry, {});
+    Viewpoint          glance;
+    glance.x              = 2.5;
+    glance.y              = 3.0;
+    glance.headings       = { 0.0, std::numbers::pi / 2.0 };
+    const Pose2D    robot = look(world, camera, coverage, glance);
+    const CellIndex here  = world.geometry.toCell(robot.x, robot.y);
+    const int       room  = rooms.labels.at<int>(here.y, here.x);
+    PlannerParams   params;
+    params.room_switch_factor = 1.0;  // Nothing but the rule itself holds the robot here.
+    ViewpointPlanner planner(params, camera.model);
+
+    const Plan plan = planner.nextCoverage(coverage, rooms.labels, robot);
+    ASSERT_EQ(plan.status, PlanStatus::kViewpoint);
+    EXPECT_EQ(plan.viewpoint.room, room);
+}
+
+TEST(ViewpointPlanner, FinishesARoomPastItsShareWhileAViewThereStillPays)
+{
+    // No room is short, yet the left one holds views worth the rate: a tour of the two that see
+    // the most, both in the unseen right room, would leave them for a walk back.
+    const World  world = twoRoomsAndACorridor();
+    const Camera camera;
+    CoverageMap  coverage;
+    coverage.setMap(world.cells, world.geometry);
+    const Segmentation rooms = segmentRooms(world.cells, world.geometry, {});
+    Viewpoint          glance;
+    glance.x              = 2.5;
+    glance.y              = 3.0;
+    glance.headings       = { 0.0, std::numbers::pi / 2.0 };
+    const Pose2D    robot = look(world, camera, coverage, glance);
+    const CellIndex here  = world.geometry.toCell(robot.x, robot.y);
+    PlannerParams   params;
+    params.room_switch_factor = 1.0;
+    params.room_floor_goal    = 0.0;
+    params.room_face_goal     = 0.0;
+    params.tour_size          = 2;
+    ViewpointPlanner planner(params, camera.model);
+
+    const Plan plan = planner.nextCoverage(coverage, rooms.labels, robot);
+    ASSERT_EQ(plan.status, PlanStatus::kViewpoint);
+    EXPECT_EQ(plan.viewpoint.room, rooms.labels.at<int>(here.y, here.x));
+    EXPECT_GE(plan.viewpoint.gain / plan.viewpoint.cost, params.min_viewpoint_rate);
 }
 
 TEST(ViewpointPlanner, StaysInItsRoomWhenCandidatesAreCapped)

@@ -17,6 +17,7 @@
  */
 
 #include <cstdint>
+#include <functional>
 #include <opencv2/core.hpp>
 #include <optional>
 #include <string>
@@ -39,24 +40,30 @@ struct CameraModel
 
 struct PlannerParams
 {
-    double robot_radius          = 0.45;  ///< Clearance a standing pose needs, m.
-    double clearance_margin      = 0.25;  ///< Added to robot_radius for candidate poses, m.
-    double frontier_clearance    = 0.35;  ///< Added to robot_radius for frontier goals, m.
-    double travel_margin         = 0.05;  ///< Added to robot_radius for paths, m.
-    double candidate_spacing     = 0.40;  ///< Lattice step of candidate positions, m.
-    int    ray_count             = 240;   ///< Prediction rays per full turn.
-    int    heading_count         = 16;    ///< Headings tried per position.
-    int    max_headings          = 3;     ///< Headings kept per viewpoint.
-    double min_heading_gain      = 20.0;  ///< Weighted targets a further heading must add.
-    double min_viewpoint_gain    = 40.0;  ///< Below this nothing is worth the walk: done.
-    double face_weight           = 2.0;   ///< Objects stand against faces: they count double.
-    double surface_weight        = 3.0;   ///< And sit on surfaces.
-    double travel_speed          = 0.35;  ///< Average over a Nav2 goal on this gait, m/s.
-    double turn_speed            = 0.8;   ///< In-place yaw rate, rad/s.
-    double dwell_time            = 2.5;   ///< Per heading: detections arrive about 1 s late, s.
-    double goal_overhead         = 4.0;   ///< Per viewpoint: planning, starting, settling, s.
-    double room_switch_factor    = 3.0;   ///< Cost multiplier for leaving a room with work left.
-    int    max_candidates        = 400;   ///< Positions evaluated per request.
+    double robot_radius       = 0.45;  ///< Clearance a standing pose needs, m.
+    double clearance_margin   = 0.25;  ///< Added to robot_radius for candidate poses, m.
+    double frontier_clearance = 0.35;  ///< Added to robot_radius for frontier goals, m.
+    double travel_margin      = 0.05;  ///< Added to robot_radius for paths, m.
+    double candidate_spacing  = 0.40;  ///< Lattice step of candidate positions, m.
+    int    ray_count          = 240;   ///< Prediction rays per full turn.
+    int    heading_count      = 16;    ///< Headings tried per position.
+    int    max_headings       = 3;     ///< Headings kept per viewpoint.
+    double min_heading_gain   = 20.0;  ///< Weighted targets a further heading must add.
+    double min_viewpoint_gain = 40.0;  ///< Below this nothing is worth the walk: done.
+    double min_viewpoint_rate = 2.0;   ///< Weighted targets per second, likewise...
+    double room_floor_goal    = 0.9;   ///< ...once every room has this share of floor seen
+    double room_face_goal     = 0.8;   ///< and this of faces; until then its targets alone.
+    double face_weight        = 2.0;   ///< Objects stand against faces: they count double.
+    double surface_weight     = 3.0;   ///< And sit on surfaces.
+    double travel_speed       = 0.35;  ///< Average over a Nav2 goal on this gait, m/s.
+    double turn_speed         = 0.8;   ///< In-place yaw rate, rad/s.
+    double dwell_time         = 2.5;   ///< Per heading: detections arrive about 1 s late, s.
+    double goal_overhead      = 4.0;   ///< Per viewpoint: planning, starting, settling, s.
+    double room_switch_factor = 3.0;   ///< Cost multiplier for leaving a room with work left.
+    int    max_candidates     = 400;   ///< Positions evaluated per request.
+    /// Viewpoints that together see the most, taken up to this many; the next is the first stop
+    /// of the shortest walk through them. 1 picks by gain per second alone.
+    int    tour_size             = 8;
     double min_frontier_size     = 0.75;  ///< Shorter frontiers are map noise, m.
     double frontier_stand_back   = 0.5;   ///< Frontier goals stand this far from its middle, m.
     double frontier_gap_close    = 0.15;  ///< Gaps between beams closed before frontiers, m.
@@ -212,6 +219,14 @@ private:
     bool stuck(const Pose2D& robot, Plan& plan);
     void computeTraversable(const cv::Mat& cells, const GridGeometry& geometry);
     void computeTravel(const GridGeometry& geometry, const Pose2D& robot);
+    /// Path length from (@p x, @p y) to every cell over the traversable grid, into @p field.
+    void
+    travelFrom(const GridGeometry& geometry, double x, double y, std::vector<float>& field) const;
+    /// The first stop of the shortest walk through the few @p options that together see the
+    /// most, each target counted at @p worth; empty when fewer than two are worth a visit.
+    [[nodiscard]] std::optional<Viewpoint> tourStart(
+        std::vector<Viewpoint> options, const GridGeometry& geometry,
+        const std::function<double(int)>& worth) const;
     void castRays(
         const CoverageMap& coverage, double x, double y, std::vector<Hit>& hits,
         std::vector<int>& offsets) const;
@@ -225,7 +240,8 @@ private:
     cv::Mat            traversable_;  // CV_8U
     std::vector<float> travel_;       // Path length from the robot, m; infinity if unreachable.
 
-    std::uint32_t               next_id_ = 1;
+    std::uint32_t               next_id_  = 1;
+    bool                        focusing_ = false;  // Past the rate cut, on the short rooms.
     std::vector<Viewpoint>      issued_;
     std::vector<IssuedFrontier> issued_frontiers_;
     std::vector<Blacklisted>    blacklist_;

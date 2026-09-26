@@ -232,8 +232,18 @@ public:
      */
     [[nodiscard]] std::vector<CoverageTally> tally(const cv::Mat& labels, int count) const;
 
-    /// Quality as 0..100 per cell, -1 where there is no target: an OccupancyGrid payload.
-    [[nodiscard]] std::vector<std::int8_t> qualityGrid() const;
+    /// The room label a target counts for: its cell's, or for a face the cell's it faces, since
+    /// faces sit in occupied cells outside every room. Surfaces take @p index minus cellCount().
+    [[nodiscard]] int roomOf(int index, const cv::Mat& labels) const;
+
+    /// What is left for the camera, as an OccupancyGrid payload for RViz's costmap palette: 90
+    /// (red) a target the plan will still see, 99 (cyan) one written off or that no pose in the
+    /// last plan could see, 0 (clear) the rest.
+    [[nodiscard]] std::vector<std::int8_t> statusGrid() const;
+
+    /// Marks, for statusGrid() alone, which targets the last plan could see: @p predicted holds
+    /// one flag per cell, then one per surface cell, as the planner counts them.
+    void setPlanned(const std::vector<std::uint8_t>& predicted) { planned_ = predicted; }
 
     [[nodiscard]] const GridGeometry&   geometry() const { return geometry_; }
     [[nodiscard]] const cv::Mat&        cells() const { return cells_; }
@@ -282,6 +292,7 @@ private:
     std::vector<std::uint8_t>  surface_quality_;
     std::vector<std::uint8_t>  flags_;
     std::vector<std::uint8_t>  directions_;
+    std::vector<std::uint8_t>  planned_;  // From the last plan, for display; empty before one.
     std::vector<std::uint16_t> views_;
     std::vector<std::uint32_t> last_frame_;
     std::vector<cv::Vec2f>     normal_;

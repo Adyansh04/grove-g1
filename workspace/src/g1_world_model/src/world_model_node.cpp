@@ -174,6 +174,14 @@ WorldModelNode::WorldModelNode(const rclcpp::NodeOptions& options)
         declare_parameter<double>("planner.min_heading_gain", planner.min_heading_gain);
     planner.min_viewpoint_gain =
         declare_parameter<double>("planner.min_viewpoint_gain", planner.min_viewpoint_gain);
+    planner.min_viewpoint_rate =
+        declare_parameter<double>("planner.min_viewpoint_rate", planner.min_viewpoint_rate);
+    planner.room_floor_goal =
+        declare_parameter<double>("planner.room_floor_goal", planner.room_floor_goal);
+    planner.room_face_goal =
+        declare_parameter<double>("planner.room_face_goal", planner.room_face_goal);
+    planner.tour_size =
+        static_cast<int>(declare_parameter<int>("planner.tour_size", planner.tour_size));
     planner.travel_speed = declare_parameter<double>("planner.travel_speed", planner.travel_speed);
     planner.turn_speed   = declare_parameter<double>("planner.turn_speed", planner.turn_speed);
     planner.dwell_time   = declare_parameter<double>("planner.dwell_time", planner.dwell_time);
@@ -1951,7 +1959,7 @@ void WorldModelNode::publishState()
     coverage.info.origin.position.x    = geometry_.origin_x;
     coverage.info.origin.position.y    = geometry_.origin_y;
     coverage.info.origin.orientation.w = 1.0;
-    coverage.data                      = coverage_.qualityGrid();
+    coverage.data                      = coverage_.statusGrid();
     coverage_pub_->publish(coverage);
 
     publishMarkers(tallies);

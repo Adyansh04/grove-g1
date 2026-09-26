@@ -17,7 +17,7 @@ the behavior tree, so missions name targets instead of carrying coordinates.
 | Sub | `descriptions` | `g1_msgs/Description`, from `g1_object_describer` |
 | Pub | `~/rooms` | `g1_msgs/RoomArray` (latched): outline, doorways, type, coverage |
 | Pub | `~/objects` | `g1_msgs/WorldObjectArray` (latched) |
-| Pub | `~/coverage` | `nav_msgs/OccupancyGrid`: best view quality per target, 0-100 |
+| Pub | `~/coverage` | `nav_msgs/OccupancyGrid` for RViz's costmap palette: 90 still to see, 99 written off, 0 the rest |
 | Pub | `~/walls` | `nav_msgs/OccupancyGrid` (latched): the walls-only map rooms are cut on |
 | Pub | `~/floor_plan` | `nav_msgs/OccupancyGrid` (latched): the map with each room closed and furniture solid, as saved |
 | Pub | `~/markers` | `visualization_msgs/MarkerArray` for RViz |
