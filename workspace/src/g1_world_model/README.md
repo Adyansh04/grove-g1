@@ -18,9 +18,10 @@ the behavior tree, so missions name targets instead of carrying coordinates.
 | Pub | `~/rooms` | `g1_msgs/RoomArray` (latched): outline, doorways, type, coverage |
 | Pub | `~/objects` | `g1_msgs/WorldObjectArray` (latched) |
 | Pub | `~/coverage` | `nav_msgs/OccupancyGrid` for RViz's costmap palette: 90 still to see, 99 written off, 0 the rest |
+| Pub | `~/trail` | `nav_msgs/Path` (latched): where the robot has walked |
 | Pub | `~/walls` | `nav_msgs/OccupancyGrid` (latched): the walls-only map rooms are cut on |
 | Pub | `~/floor_plan` | `nav_msgs/OccupancyGrid` (latched): the map with each room closed and furniture solid, as saved |
-| Pub | `~/markers` | `visualization_msgs/MarkerArray` for RViz |
+| Pub | `~/markers` | `visualization_msgs/MarkerArray` for RViz: rooms, doorways, objects, glimpses, every viewpoint in order, the camera's view on the floor |
 | Pub | `~/describe_requests` | `g1_msgs/DescribeRequest`, with `describe:=true` |
 | Srv | `~/next_viewpoint`, `~/report_viewpoint` | the exploration loop |
 | Srv | `~/find_objects`, `~/get_approach_pose` | queries for missions |

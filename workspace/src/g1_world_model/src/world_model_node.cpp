@@ -19,6 +19,7 @@
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 #include <sensor_msgs/point_cloud2_iterator.hpp>
+#include <std_msgs/msg/color_rgba.hpp>
 #include <tf2_eigen/tf2_eigen.hpp>
 
 namespace g1_world_model
@@ -101,6 +102,49 @@ geometry_msgs::msg::Pose poseOf(double x, double y, double z, double yaw)
     pose.orientation.w = std::cos(0.5 * yaw);
     return pose;
 }
+
+visualization_msgs::msg::Marker newMarker(
+    const std::string& frame, const rclcpp::Time& stamp, const std::string& ns, int id, int type)
+{
+    visualization_msgs::msg::Marker marker;
+    marker.header.frame_id    = frame;
+    marker.header.stamp       = stamp;
+    marker.ns                 = ns;
+    marker.id                 = id;
+    marker.type               = type;
+    marker.action             = visualization_msgs::msg::Marker::ADD;
+    marker.pose.orientation.w = 1.0;
+    return marker;
+}
+
+std_msgs::msg::ColorRGBA colourOf(const cv::Vec3f& rgb, float alpha)
+{
+    std_msgs::msg::ColorRGBA colour;
+    colour.r = rgb[0];
+    colour.g = rgb[1];
+    colour.b = rgb[2];
+    colour.a = alpha;
+    return colour;
+}
+
+void paint(visualization_msgs::msg::Marker& marker, const cv::Vec3f& rgb, float alpha)
+{
+    marker.color = colourOf(rgb, alpha);
+}
+
+geometry_msgs::msg::Point point(double x, double y, double z)
+{
+    geometry_msgs::msg::Point out;
+    out.x = x;
+    out.y = y;
+    out.z = z;
+    return out;
+}
+
+/// The last this many viewpoints carry their number in RViz.
+constexpr std::size_t kNumberedVisits = 5;
+/// The trail takes a pose once the robot has moved this far, m.
+constexpr double kTrailSpacing = 0.1;
 
 }  // namespace
 
@@ -355,6 +399,7 @@ WorldModelNode::WorldModelNode(const rclcpp::NodeOptions& options)
     coverage_pub_   = create_publisher<nav_msgs::msg::OccupancyGrid>("~/coverage", latchedQos());
     walls_pub_      = create_publisher<nav_msgs::msg::OccupancyGrid>("~/walls", latchedQos());
     floor_plan_pub_ = create_publisher<nav_msgs::msg::OccupancyGrid>("~/floor_plan", latchedQos());
+    trail_pub_      = create_publisher<nav_msgs::msg::Path>("~/trail", latchedQos());
     markers_pub_    = create_publisher<visualization_msgs::msg::MarkerArray>(
         "~/markers",
         rclcpp::QoS(rclcpp::KeepLast(1)).reliable());
@@ -874,6 +919,7 @@ void WorldModelNode::updateCameraModel(
         model.vertical_fov   = 2.0 * std::atan(0.5 * intrinsics_->height / intrinsics_->fy);
         planner_.setCamera(model);
         camera_known_ = true;
+        camera_frame_ = frame;
         RCLCPP_INFO(
             get_logger(),
             "camera: %.2f m up, pitched %.1f deg down, %.1f x %.1f deg",
@@ -1424,6 +1470,7 @@ void WorldModelNode::onNextViewpoint(
         mask_tally_.no_depth,
         mask_tally_.no_pose);
     mask_tally_ = {};
+    visits_.push_back({ viewpoint.x, viewpoint.y, viewpoint.id, look.has_value(), std::nullopt });
 }
 
 std::optional<Viewpoint> WorldModelNode::secondLook(const Pose2D& robot)
@@ -1467,6 +1514,11 @@ void WorldModelNode::onReportViewpoint(
     const g1_msgs::srv::ReportViewpoint::Response::SharedPtr& /*response*/)
 {
     planner_.report(coverage_, request->viewpoint_id, request->reached);
+    const auto visit = std::ranges::find(visits_, request->viewpoint_id, &Visit::id);
+    if (visit != visits_.end())
+    {
+        visit->reached = request->reached;
+    }
     // The last heading's frame, after its dwell: a settled, unblurred look at the room.
     if (describe_ && request->reached)
     {
@@ -1963,6 +2015,7 @@ void WorldModelNode::publishState()
     coverage_pub_->publish(coverage);
 
     publishMarkers(tallies);
+    extendTrail();
 }
 
 void WorldModelNode::publishMarkers(const std::vector<CoverageTally>& tallies)
@@ -1975,29 +2028,7 @@ void WorldModelNode::publishMarkers(const std::vector<CoverageTally>& tallies)
     const auto stamp = now();
     int        id    = 0;
     const auto base  = [&](const std::string& ns, int type) {
-        visualization_msgs::msg::Marker marker;
-        marker.header.frame_id    = map_frame_;
-        marker.header.stamp       = stamp;
-        marker.ns                 = ns;
-        marker.id                 = id++;
-        marker.type               = type;
-        marker.action             = visualization_msgs::msg::Marker::ADD;
-        marker.pose.orientation.w = 1.0;
-        return marker;
-    };
-    const auto paint =
-        [](visualization_msgs::msg::Marker& marker, const cv::Vec3f& rgb, float alpha) {
-            marker.color.r = rgb[0];
-            marker.color.g = rgb[1];
-            marker.color.b = rgb[2];
-            marker.color.a = alpha;
-        };
-    const auto point = [](double x, double y, double z) {
-        geometry_msgs::msg::Point out;
-        out.x = x;
-        out.y = y;
-        out.z = z;
-        return out;
+        return newMarker(map_frame_, stamp, ns, id++, type);
     };
 
     // Each room a tinted floor in its own colour, so the segmentation reads at a glance; the
@@ -2129,7 +2160,136 @@ void WorldModelNode::publishMarkers(const std::vector<CoverageTally>& tallies)
             markers.markers.push_back(arrow);
         }
     }
+    appendRunMarkers(markers, stamp, id);
     markers_pub_->publish(markers);
+}
+
+void WorldModelNode::appendRunMarkers(
+    visualization_msgs::msg::MarkerArray& markers, const rclcpp::Time& stamp, int& id) const
+{
+    const auto base = [&](const std::string& ns, int type) {
+        return newMarker(map_frame_, stamp, ns, id++, type);
+    };
+
+    // Every viewpoint so far, to follow the order the robot takes: reached green, refused red,
+    // second looks violet, the one it is walking to yellow; the last few numbered.
+    if (!visits_.empty())
+    {
+        auto dots    = base("visited", visualization_msgs::msg::Marker::SPHERE_LIST);
+        dots.scale.x = dots.scale.y = dots.scale.z = 0.12;
+        paint(dots, { 1.0F, 1.0F, 1.0F }, 1.0F);
+        for (const Visit& visit : visits_)
+        {
+            const cv::Vec3f rgb = !visit.reached  ? cv::Vec3f(1.0F, 0.85F, 0.1F) :
+                                  !*visit.reached ? cv::Vec3f(0.9F, 0.2F, 0.2F) :
+                                  visit.glance    ? cv::Vec3f(0.7F, 0.4F, 1.0F) :
+                                                    cv::Vec3f(0.2F, 0.8F, 0.3F);
+            dots.points.push_back(point(visit.x, visit.y, 0.06));
+            dots.colors.push_back(colourOf(rgb, 1.0F));
+        }
+        markers.markers.push_back(dots);
+        const std::size_t first =
+            visits_.size() > kNumberedVisits ? visits_.size() - kNumberedVisits : 0;
+        for (std::size_t i = first; i < visits_.size(); ++i)
+        {
+            auto number = base("visit_numbers", visualization_msgs::msg::Marker::TEXT_VIEW_FACING);
+            number.pose.position = point(visits_[i].x, visits_[i].y, 0.35);
+            number.scale.z       = 0.2;
+            paint(number, { 1.0F, 1.0F, 1.0F }, 1.0F);
+            number.text = std::to_string(i + 1);
+            markers.markers.push_back(number);
+        }
+    }
+
+    // Objects seen once, not yet shown: a wire box and a question mark until a second sighting.
+    for (const MappedObject* glimpse : objects_.glimpses())
+    {
+        auto frame    = base("glimpses", visualization_msgs::msg::Marker::LINE_LIST);
+        frame.scale.x = 0.02;
+        paint(frame, { 0.85F, 0.85F, 0.85F }, 0.9F);
+        const double c      = std::cos(glimpse->box_yaw);
+        const double s      = std::sin(glimpse->box_yaw);
+        const auto   corner = [&](int bits) {
+            const double u = ((bits & 1) != 0 ? 0.5 : -0.5) * glimpse->box_size.x();
+            const double v = ((bits & 2) != 0 ? 0.5 : -0.5) * glimpse->box_size.y();
+            return point(
+                glimpse->box_centre.x() + (c * u) - (s * v),
+                glimpse->box_centre.y() + (s * u) + (c * v),
+                (bits & 4) != 0 ? glimpse->z_max : glimpse->z_min);
+        };
+        for (int bits = 0; bits < 8; ++bits)
+        {
+            for (const int axis : { 1, 2, 4 })
+            {
+                if ((bits & axis) == 0)
+                {
+                    frame.points.push_back(corner(bits));
+                    frame.points.push_back(corner(bits | axis));
+                }
+            }
+        }
+        markers.markers.push_back(frame);
+        auto label = base("glimpses", visualization_msgs::msg::Marker::TEXT_VIEW_FACING);
+        label.pose.position =
+            point(glimpse->box_centre.x(), glimpse->box_centre.y(), glimpse->z_max + 0.15);
+        label.scale.z = 0.15;
+        paint(label, { 0.85F, 0.85F, 0.85F }, 1.0F);
+        label.text = glimpse->label() + "?";
+        markers.markers.push_back(label);
+    }
+
+    // Where the head camera looks now: its image's corners on the floor, out to coverage range.
+    if (!intrinsics_ || camera_frame_.empty())
+    {
+        return;
+    }
+    const auto pose = mapFrom(camera_frame_, builtin_interfaces::msg::Time{});
+    if (!pose)
+    {
+        return;
+    }
+    const Intrinsics& k     = *intrinsics_;
+    const double      range = coverage_.params().max_range;
+    auto              view  = base("camera_view", visualization_msgs::msg::Marker::LINE_STRIP);
+    view.scale.x            = 0.03;
+    paint(view, { 1.0F, 0.85F, 0.1F }, 0.8F);
+    const auto width  = static_cast<double>(k.width);
+    const auto height = static_cast<double>(k.height);
+    for (const auto& [u, v] : std::array<std::pair<double, double>, 5>{
+             { { 0.0, 0.0 }, { width, 0.0 }, { width, height }, { 0.0, height }, { 0.0, 0.0 } } })
+    {
+        const Eigen::Vector3d ray =
+            (pose->linear() * Eigen::Vector3d((u - k.cx) / k.fx, (v - k.cy) / k.fy, 1.0))
+                .normalized();
+        const double to_floor    = ray.z() < -1e-3 ? -pose->translation().z() / ray.z() : range;
+        const Eigen::Vector3d at = pose->translation() + (std::min(to_floor, range) * ray);
+        view.points.push_back(point(at.x(), at.y(), 0.03));
+    }
+    markers.markers.push_back(view);
+}
+
+void WorldModelNode::extendTrail()
+{
+    const auto robot = robotPose();
+    if (!robot)
+    {
+        return;
+    }
+    if (!trail_.poses.empty())
+    {
+        const auto& last = trail_.poses.back().pose.position;
+        if (std::hypot(robot->x - last.x, robot->y - last.y) < kTrailSpacing)
+        {
+            return;
+        }
+    }
+    geometry_msgs::msg::PoseStamped pose;
+    pose.header.frame_id = map_frame_;
+    pose.header.stamp    = now();
+    pose.pose            = poseOf(robot->x, robot->y, 0.02, robot->yaw);
+    trail_.poses.push_back(pose);
+    trail_.header = pose.header;
+    trail_pub_->publish(trail_);
 }
 
 void WorldModelNode::requestDescriptions()

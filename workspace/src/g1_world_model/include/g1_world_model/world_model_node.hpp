@@ -32,6 +32,7 @@
 #include <memory>
 #include <nav_msgs/msg/occupancy_grid.hpp>
 #include <nav_msgs/msg/odometry.hpp>
+#include <nav_msgs/msg/path.hpp>
 #include <optional>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/camera_info.hpp>
@@ -126,8 +127,13 @@ private:
     void                    typeRooms();
     void                    publishState();
     void                    publishMarkers(const std::vector<CoverageTally>& tallies);
-    void                    requestDescriptions();
-    std::string             saveNow();
+    /// The run so far: viewpoints in order, glimpses, and where the camera looks.
+    void appendRunMarkers(
+        visualization_msgs::msg::MarkerArray& markers, const rclcpp::Time& stamp, int& id) const;
+    /// Adds the robot's pose to ~/trail once it has moved on.
+    void        extendTrail();
+    void        requestDescriptions();
+    std::string saveNow();
     /// The picture saved beside the world: rooms, objects and their names on the map.
     [[nodiscard]] cv::Mat renderSemanticMap() const;
     /// Published, drawn and answered for: not removed, and confirmed rather than one glimpse.
@@ -212,8 +218,19 @@ private:
     double        min_furniture_depth_ = 0.2;  // Thinner solid bands are walls to the map fit, m.
     double        second_look_reach_   = 3.0;  // Farthest walk back to a glimpse, m.
     std::set<int> looked_again_;               // Glimpses already given their second look.
-    std::map<int, Footprint>   fitted_;        // Object boxes taken from the map, by id.
-    std::optional<Viewpoint>   heading_to_;    // The viewpoint being visited, for RViz.
+    std::map<int, Footprint> fitted_;          // Object boxes taken from the map, by id.
+    std::optional<Viewpoint> heading_to_;      // The viewpoint being visited, for RViz.
+    struct Visit
+    {
+        double              x      = 0.0;
+        double              y      = 0.0;
+        std::uint32_t       id     = 0;
+        bool                glance = false;  // A second look at a glimpse.
+        std::optional<bool> reached;         // Unset until the tree reports it.
+    };
+    std::vector<Visit>         visits_;  // Every viewpoint issued, in order, for RViz.
+    nav_msgs::msg::Path        trail_;   // Where the robot has walked, for RViz.
+    std::string                camera_frame_;
     std::vector<std::uint16_t> structure_hits_;
     std::vector<std::uint16_t> band_clear_;  // Rays that crossed the band above a cell.
     int                        cleared_cells_             = 0;
@@ -263,6 +280,7 @@ private:
     rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr         coverage_pub_;
     rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr         walls_pub_;
     rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr         floor_plan_pub_;
+    rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr                  trail_pub_;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr markers_pub_;
     rclcpp::Publisher<g1_msgs::msg::DescribeRequest>::SharedPtr        describe_pub_;
 

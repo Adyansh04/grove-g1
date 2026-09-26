@@ -40,8 +40,9 @@ inside its 0.45 m circle, and the gait's drift can leave it there, so `g1_base_a
 steps it a few centimetres clear. When the robot is already clear it does nothing.
 
 `rviz:=true` opens the world model's own view: each room tinted and named with how much of it the
-camera has seen, doorways, object boxes in their room's colour, the coverage heat map, the
-viewpoint the robot is walking to with the headings it will face, and the head camera.
+camera has seen, doorways, object boxes in their room's colour, what the camera still has to see
+(red) and what it has written off (cyan), the robot's trail and every viewpoint in order, the one
+it is walking to with the headings it will face, and where the head camera looks on the floor.
 
 When the tree finishes, `world_dir` holds the map SLAM made as a floor plan, each room closed and
 the furniture solid (`map.pgm`, `map.yaml`), a picture of it with the rooms and objects drawn in

@@ -71,6 +71,10 @@ Visualization Manager:
         objects: true
         object_names: true
         viewpoint: true
+        visited: true
+        visit_numbers: true
+        glimpses: true
+        camera_view: true
       Topic:
         Value: /g1_world_model/markers
         Depth: 1
@@ -86,6 +90,17 @@ Visualization Manager:
       Durability Policy: Transient Local
       Reliability Policy: Reliable
     Alpha: 1
+  - Class: rviz_default_plugins/Path
+    Name: Robot's trail
+    Enabled: true
+    Topic:
+      Value: /g1_world_model/trail
+      Depth: 1
+      Durability Policy: Transient Local
+      Reliability Policy: Reliable
+    Color: 80; 200; 255
+    Line Style: Lines
+    Line Width: 0.03
   - Class: rviz_default_plugins/Path
     Name: Planned path
     Enabled: true
