@@ -42,7 +42,7 @@ steps it a few centimetres clear. When the robot is already clear it does nothin
 `rviz:=true` opens the world model's own view: each room tinted and named with how much of it the
 camera has seen, doorways, object boxes in their room's colour, what the camera still has to see
 (red) and what it has written off (cyan), the robot's trail and every viewpoint in order, the one
-it is walking to with the headings it will face, and where the head camera looks on the floor.
+it is walking to with the headings it will face, and where each camera looks on the floor.
 
 When the tree finishes, `world_dir` holds the map SLAM made as a floor plan, each room closed and
 the furniture solid (`map.pgm`, `map.yaml`), a picture of it with the rooms and objects drawn in
@@ -90,3 +90,11 @@ The D435i is pitched 47.6° down on a head that cannot turn. Standing, it sees f
 ahead, a table top only within about 1.4 m, and nothing above camera height. The world model
 writes off what no standing pose can see, and each room reports those cells as
 `unobservable_cells`, so a shelf's top tier is listed as unseen rather than silently missing.
+
+In simulation a second D435i sits on the chest, 1.03 m up and 20° down (`g1_description`'s
+`config/cameras.yaml`), and sees walls, counters and shelves from the side. Pass
+`cameras:=head,chest` to both `bringup.launch.py` and `world_model.launch.py`, and run a mock
+detector per camera (the
+chest one on `/chest_camera/*` and `/g1_sensor_relay/chest/object_poses`, publishing
+`/g1_perception/chest/instance_masks`). `cameras:=chest` alone saves the head camera's render and
+detector, but the chest camera sees little floor near the robot, so the camera pass takes longer.
