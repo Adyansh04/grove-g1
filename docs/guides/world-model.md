@@ -35,6 +35,8 @@ finds `chair_1` to `chair_5`.
 With `mode:=mapping` there is no map to start from: `explore.xml` first walks to frontiers while
 slam_toolbox builds one, then visits viewpoints until the camera has seen every room, and saves
 the world. `mode:=localization` uses the committed map instead, and the frontier pass ends at once.
+Last, the robot looks into the pockets of unknown left inside the building, such as the corner
+behind a wardrobe, from the few spots that see them, so the floor plan's walls close there too.
 Before each walk and each turn the tree runs `StepClear`: Nav2 will not move a robot with furniture
 inside its 0.45 m circle, and the gait's drift can leave it there, so `g1_base_approach` first
 steps it a few centimetres clear. When the robot is already clear it does nothing.
@@ -94,7 +96,7 @@ writes off what no standing pose can see, and each room reports those cells as
 In simulation a second D435i sits on the chest, 1.03 m up and 20° down (`g1_description`'s
 `config/cameras.yaml`), and sees walls, counters and shelves from the side. Pass
 `cameras:=head,chest` to both `bringup.launch.py` and `world_model.launch.py`, and run a mock
-detector per camera (the
-chest one on `/chest_camera/*` and `/g1_sensor_relay/chest/object_poses`, publishing
-`/g1_perception/chest/instance_masks`). `cameras:=chest` alone saves the head camera's render and
-detector, but the chest camera sees little floor near the robot, so the camera pass takes longer.
+detector per camera (the chest one on `/chest_camera/*` and `/g1_sensor_relay/chest/object_poses`,
+publishing `/g1_perception/chest/instance_masks`). `cameras:=chest` alone saves the head camera's
+render and detector, but the chest camera sees little floor near the robot, so the camera pass
+takes longer.
