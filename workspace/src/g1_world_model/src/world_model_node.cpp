@@ -109,6 +109,8 @@ WorldModelNode::WorldModelNode(const rclcpp::NodeOptions& options)
   // view: a match within 0.1 s, not just the frame's own stamp.
   , depth_history_(declare_parameter<double>("frame_history_s", 6.0), 0.1, 64)
   , color_history_(get_parameter("frame_history_s").as_double(), 0.02, 64)
+  , tf_buffer_(get_clock())
+  , tf_listener_(tf_buffer_)
 {
     map_frame_          = declare_parameter<std::string>("map_frame", "map");
     base_frame_         = declare_parameter<std::string>("base_frame", "base_footprint");
@@ -288,9 +290,6 @@ WorldModelNode::WorldModelNode(const rclcpp::NodeOptions& options)
                 error.c_str());
         }
     }
-
-    tf_buffer_   = std::make_shared<tf2_ros::Buffer>(get_clock());
-    tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
     map_sub_ = create_subscription<nav_msgs::msg::OccupancyGrid>(
         "map",
@@ -733,7 +732,7 @@ WorldModelNode::mapFrom(const std::string& frame, const builtin_interfaces::msg:
     try
     {
         return tf2::transformToEigen(
-            tf_buffer_->lookupTransform(map_frame_, frame, rclcpp::Time(stamp)));
+            tf_buffer_.lookupTransform(map_frame_, frame, rclcpp::Time(stamp)));
     }
     catch (const tf2::TransformException&)
     {
@@ -746,7 +745,7 @@ std::optional<Pose2D> WorldModelNode::robotPose() const
     try
     {
         const auto transform =
-            tf_buffer_->lookupTransform(map_frame_, base_frame_, tf2::TimePointZero);
+            tf_buffer_.lookupTransform(map_frame_, base_frame_, tf2::TimePointZero);
         const auto& q = transform.transform.rotation;
         return Pose2D{
             transform.transform.translation.x,
@@ -812,7 +811,7 @@ void WorldModelNode::updateCameraModel(
     try
     {
         const Eigen::Isometry3d base_from_camera = tf2::transformToEigen(
-            tf_buffer_->lookupTransform(base_frame_, frame, rclcpp::Time(stamp)));
+            tf_buffer_.lookupTransform(base_frame_, frame, rclcpp::Time(stamp)));
         const Eigen::Vector3d axis = base_from_camera.linear().col(2);
         CameraModel           model;
         model.height         = base_from_camera.translation().z();

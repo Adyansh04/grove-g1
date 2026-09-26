@@ -11,6 +11,7 @@
 #include <chrono>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <rcl_interfaces/srv/set_parameters.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <set>
@@ -61,7 +62,7 @@ private:
 
     rclcpp::Node::SharedPtr                                             node_;
     rclcpp::Node::SharedPtr                                             client_node_;
-    std::unique_ptr<rclcpp::executors::SingleThreadedExecutor>          executor_;
+    std::optional<rclcpp::executors::SingleThreadedExecutor>            executor_;
     rclcpp::Client<rcl_interfaces::srv::SetParameters>::SharedPtr       set_phrases_;
     rclcpp::Subscription<vision_msgs::msg::Detection3DArray>::SharedPtr objects_sub_;
 

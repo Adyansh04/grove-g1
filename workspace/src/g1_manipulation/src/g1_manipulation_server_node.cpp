@@ -154,6 +154,8 @@ bool resolveArm(const std::string& arm, ArmContext& out)
 
 G1ManipulationServer::G1ManipulationServer(const rclcpp::NodeOptions& options)
   : rclcpp::Node("g1_manipulation_server", options)
+  , tf_buffer_(get_clock())
+  , tf_listener_(tf_buffer_)
 {
     declareParameters();
 
@@ -169,9 +171,6 @@ G1ManipulationServer::G1ManipulationServer(const rclcpp::NodeOptions& options)
             const std::lock_guard<std::mutex> lock(joint_states_mutex_);
             joint_states_ = *msg;
         });
-
-    tf_buffer_   = std::make_unique<tf2_ros::Buffer>(get_clock());
-    tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
     grasps_ =
         create_client<g1_msgs::srv::GenerateGrasps>(get_parameter("grasp_service").as_string());
@@ -331,13 +330,12 @@ void G1ManipulationServer::initialize()
     // both_arms takes named postures only; pose goals would need the subgroup IK g1.srdf omits.
     for (const char* name : { "left_arm", "right_arm", "both_arms", "left_hand", "right_hand" })
     {
-        auto group = std::make_shared<MoveGroup>(shared_from_this(), name);
-        group->setMaxVelocityScalingFactor(velocity_scaling_);
-        group->setMaxAccelerationScalingFactor(velocity_scaling_);
-        group->setPlanningTime(planning_time_s_);
-        groups_.emplace(name, group);
+        MoveGroup& group = groups_.try_emplace(name, shared_from_this(), name).first->second;
+        group.setMaxVelocityScalingFactor(velocity_scaling_);
+        group.setMaxAccelerationScalingFactor(velocity_scaling_);
+        group.setPlanningTime(planning_time_s_);
     }
-    planning_frame_ = groups_.at("left_arm")->getPlanningFrame();
+    planning_frame_ = groups_.at("left_arm").getPlanningFrame();
 
     // Servers only once the groups exist, so an early goal is refused rather than timed out.
     pick_server_ = rclcpp_action::create_server<Pick>(
@@ -457,7 +455,7 @@ std::optional<geometry_msgs::msg::Pose> G1ManipulationServer::toPlanningFrame(
 
     try
     {
-        return tf_buffer_->transform(in, planning_frame_, std::chrono::milliseconds(500)).pose;
+        return tf_buffer_.transform(in, planning_frame_, std::chrono::milliseconds(500)).pose;
     }
     catch (const tf2::TransformException& e)
     {
@@ -990,7 +988,7 @@ std::optional<geometry_msgs::msg::Point> G1ManipulationServer::residualTo(
     geometry_msgs::msg::TransformStamped here;
     try
     {
-        here = tf_buffer_->lookupTransform(
+        here = tf_buffer_.lookupTransform(
             group.getPlanningFrame(),
             link,
             tf2::TimePointZero,
@@ -1543,7 +1541,7 @@ G1ManipulationServer::planWithinBudget(MoveGroup& group, MoveGroup::Plan& plan)
 G1ManipulationServer::MoveGroup* G1ManipulationServer::groupFor(const std::string& name)
 {
     const auto it = groups_.find(name);
-    return it == groups_.end() ? nullptr : it->second.get();
+    return it == groups_.end() ? nullptr : &it->second;
 }
 
 void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& goal_handle)

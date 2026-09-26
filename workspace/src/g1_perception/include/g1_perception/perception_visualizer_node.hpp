@@ -68,8 +68,8 @@ private:
     /// Null without a ground-truth topic, which is every run on the robot.
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr truth_pub_;
 
-    std::unique_ptr<tf2_ros::Buffer>            tf_buffer_;
-    std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
+    tf2_ros::Buffer            tf_buffer_;
+    tf2_ros::TransformListener tf_listener_;
 
     DepthHistory                                       images_;
     sensor_msgs::msg::CameraInfo::ConstSharedPtr       camera_info_;

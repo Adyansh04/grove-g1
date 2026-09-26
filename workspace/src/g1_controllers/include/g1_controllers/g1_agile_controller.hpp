@@ -85,9 +85,9 @@ private:
     double max_linear_speed_  = 0.0;
     double max_angular_speed_ = 0.0;
 
-    std::unique_ptr<AgilePolicy> policy_;
-    PolicyObservation            observation_;
-    PolicyAction                 action_;
+    std::optional<AgilePolicy> policy_;
+    PolicyObservation          observation_;
+    PolicyAction               action_;
 
     std::vector<std::size_t> position_state_indices_;
     std::vector<std::size_t> velocity_state_indices_;

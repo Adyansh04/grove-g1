@@ -62,6 +62,8 @@ geometry_msgs::msg::Pose poseFrom(const OrientedBox& box)
 
 G1ObjectGeometry::G1ObjectGeometry(const rclcpp::NodeOptions& options)
   : rclcpp::Node("g1_object_geometry", options)
+  , tf_buffer_(get_clock())
+  , tf_listener_(tf_buffer_)
   , depth_history_(
         declare_parameter<double>("depth_history_s", 5.0),
         declare_parameter<double>("stamp_tolerance_ms", 130.0) / 1000.0,
@@ -84,9 +86,6 @@ G1ObjectGeometry::G1ObjectGeometry(const rclcpp::NodeOptions& options)
     min_score_                 = declare_parameter<double>("min_score", 0.30);
     transform_timeout_s_       = declare_parameter<double>("transform_timeout_s", 0.2);
     publish_bare_phrase_alias_ = declare_parameter<bool>("publish_bare_phrase_alias", true);
-
-    tf_buffer_   = std::make_unique<tf2_ros::Buffer>(get_clock());
-    tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
     objects_pub_ =
         create_publisher<vision_msgs::msg::Detection3DArray>("~/object_poses", objectsQos());
@@ -233,7 +232,7 @@ void G1ObjectGeometry::onMasks(const g1_msgs::msg::InstanceMaskArray::ConstShare
         geometry_msgs::msg::TransformStamped to_up_frame;
         try
         {
-            to_up_frame = tf_buffer_->lookupTransform(
+            to_up_frame = tf_buffer_.lookupTransform(
                 up_frame_,
                 masks->header.frame_id,
                 masks->header.stamp,

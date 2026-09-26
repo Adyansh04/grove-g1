@@ -231,6 +231,8 @@ measuredFor(const std::string& label, const vision_msgs::msg::Detection3DArray& 
 
 G1PerceptionVisualizer::G1PerceptionVisualizer(const rclcpp::NodeOptions& options)
   : rclcpp::Node("g1_perception_visualizer", options)
+  , tf_buffer_(get_clock())
+  , tf_listener_(tf_buffer_)
   , images_(
         declare_parameter<double>("image_history_s", 5.0),
         declare_parameter<double>("stamp_tolerance_ms", 50.0) / 1000.0,
@@ -238,9 +240,6 @@ G1PerceptionVisualizer::G1PerceptionVisualizer(const rclcpp::NodeOptions& option
 {
     fixed_frame_                  = declare_parameter<std::string>("fixed_frame", "odom");
     const std::string truth_topic = declare_parameter<std::string>("ground_truth_topic", "");
-
-    tf_buffer_   = std::make_unique<tf2_ros::Buffer>(get_clock());
-    tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
     annotated_pub_ = create_publisher<sensor_msgs::msg::Image>(
         "~/annotated_image",
@@ -382,7 +381,7 @@ void G1PerceptionVisualizer::storeTruth(const vision_msgs::msg::Detection3DArray
         in_camera.header.frame_id = truth.header.frame_id;
         in_camera.pose            = detection.bbox.center;
         const std::optional<geometry_msgs::msg::PoseStamped> in_fixed =
-            transformed(*tf_buffer_, in_camera, fixed_frame_);
+            transformed(tf_buffer_, in_camera, fixed_frame_);
         if (!in_fixed)
         {
             return;
@@ -448,7 +447,7 @@ std::optional<double> G1PerceptionVisualizer::errorTo(
         in_camera.header = objects_->header;
         in_camera.point  = seen.bbox.center.position;
         const std::optional<geometry_msgs::msg::PointStamped> in_fixed =
-            transformed(*tf_buffer_, in_camera, fixed_frame_);
+            transformed(tf_buffer_, in_camera, fixed_frame_);
         if (!in_fixed)
         {
             continue;

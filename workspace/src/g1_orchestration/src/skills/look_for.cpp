@@ -134,7 +134,7 @@ BT::NodeStatus LookFor::onStart()
     detector_  = getInput<std::string>("detector").value_or("");
 
     client_node_ = makeClientNode("g1_look_for_client");
-    executor_    = std::make_unique<rclcpp::executors::SingleThreadedExecutor>();
+    executor_.emplace();
     executor_->add_node(client_node_);
     seen_.clear();
     objects_sub_ = client_node_->create_subscription<vision_msgs::msg::Detection3DArray>(

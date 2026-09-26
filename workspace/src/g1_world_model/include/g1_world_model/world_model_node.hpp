@@ -242,8 +242,8 @@ private:
     } mask_tally_;
 
     // ROS plumbing.
-    std::shared_ptr<tf2_ros::Buffer>            tf_buffer_;
-    std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
+    tf2_ros::Buffer            tf_buffer_;
+    tf2_ros::TransformListener tf_listener_;
 
     rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr    map_sub_;
     rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr         depth_sub_;

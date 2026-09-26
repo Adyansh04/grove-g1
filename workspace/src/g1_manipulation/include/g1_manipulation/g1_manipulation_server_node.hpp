@@ -475,7 +475,7 @@ private:
      */
     MoveGroup* groupFor(const std::string& name);
 
-    std::map<std::string, std::shared_ptr<MoveGroup>>  groups_;
+    std::map<std::string, MoveGroup>                   groups_;
     moveit::planning_interface::PlanningSceneInterface planning_scene_;
 
     rclcpp::Subscription<vision_msgs::msg::Detection3DArray>::SharedPtr objects_sub_;
@@ -494,8 +494,8 @@ private:
     std::map<std::string, double*> live_doubles_;
     std::map<std::string, int*>    live_ints_;
 
-    std::unique_ptr<tf2_ros::Buffer>            tf_buffer_;
-    std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
+    tf2_ros::Buffer            tf_buffer_;
+    tf2_ros::TransformListener tf_listener_;
 
     /// Null unless publish_markers is set.
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr grasp_plan_pub_;

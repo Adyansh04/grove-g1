@@ -90,7 +90,7 @@ G1AgileController::on_configure(const rclcpp_lifecycle::State& /*previous_state*
 
     try
     {
-        policy_ = std::make_unique<AgilePolicy>(model_path_);
+        policy_.emplace(model_path_);
     }
     catch (const std::exception& error)
     {

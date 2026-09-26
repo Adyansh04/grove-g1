@@ -71,8 +71,8 @@ private:
     /// Masks run on their own group so their TF wait cannot stall depth ingest.
     rclcpp::CallbackGroup::SharedPtr masks_group_;
 
-    std::unique_ptr<tf2_ros::Buffer>            tf_buffer_;
-    std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
+    tf2_ros::Buffer            tf_buffer_;
+    tf2_ros::TransformListener tf_listener_;
 
     /// Guards depth_history_ and camera_info_: onMasks reads them while onDepth writes.
     std::mutex                                   frames_mutex_;

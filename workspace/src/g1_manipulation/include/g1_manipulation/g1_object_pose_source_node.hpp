@@ -13,6 +13,7 @@
 #include <tf2_ros/transform_listener.h>
 
 #include <memory>
+#include <optional>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_lifecycle/lifecycle_node.hpp>
 #include <string>
@@ -77,8 +78,9 @@ private:
     /// stamp newer than the last odom resolves only when the next one arrives.
     double transform_timeout_s_{ 0.5 };
 
-    std::unique_ptr<tf2_ros::Buffer>            tf_buffer_;
-    std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
+    // From configure to cleanup. The listener writes into the buffer, so it is declared after it.
+    std::optional<tf2_ros::Buffer>            tf_buffer_;
+    std::optional<tf2_ros::TransformListener> tf_listener_;
 
     rclcpp::Subscription<vision_msgs::msg::Detection3DArray>::SharedPtr source_sub_;
     rclcpp_lifecycle::LifecyclePublisher<vision_msgs::msg::Detection3DArray>::SharedPtr objects_pub_;

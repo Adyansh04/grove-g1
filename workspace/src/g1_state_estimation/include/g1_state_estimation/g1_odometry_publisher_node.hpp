@@ -8,6 +8,7 @@
 
 #include <chrono>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -112,10 +113,11 @@ private:
     rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr                   imu_sub_;
     rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr                 lidar_odom_sub_;
     rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub_;
-    std::unique_ptr<tf2_ros::TransformBroadcaster>                           tf_broadcaster_;
-    std::unique_ptr<tf2_ros::Buffer>                                         tf_buffer_;
-    std::shared_ptr<tf2_ros::TransformListener>                              tf_listener_;
-    rclcpp::TimerBase::SharedPtr                                             timer_;
+    // From configure to cleanup. The listener writes into the buffer, so it is declared after it.
+    std::optional<tf2_ros::TransformBroadcaster> tf_broadcaster_;
+    std::optional<tf2_ros::Buffer>               tf_buffer_;
+    std::optional<tf2_ros::TransformListener>    tf_listener_;
+    rclcpp::TimerBase::SharedPtr                 timer_;
 
     OdometrySource source_ = OdometrySource::kHardware;
     /// Topic the configured source reads; only one of the two subscriptions exists.
