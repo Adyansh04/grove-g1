@@ -72,6 +72,9 @@ struct PlannerParams
     double frontier_seen_radius  = 1.5;  ///< Unknown seen this near and still unknown is shadow, m.
     int    frontier_stall_visits = 4;    ///< Frontier visits over which the map has to grow...
     double min_frontier_growth   = 12.0;  ///< ...by this much known area, m2, or the pass ends.
+    double pocket_min_area       = 0.1;   ///< Unknown inside the building this big gets a look, m2.
+    double pocket_look_range     = 3.0;   ///< Farthest a pocket is looked into from, m.
+    double pocket_min_edge       = 0.4;   ///< Pocket edge a look sees that no other look does, m.
     int    max_attempts          = 2;  ///< Predicted-but-unseen visits before a target is dropped.
     double blacklist_radius      = 0.5;  ///< Around a viewpoint Nav2 could not reach, m.
     int    max_room_failures     = 3;  ///< Unreached viewpoints in a room never entered: given up.
@@ -128,6 +131,24 @@ public:
 
     /// The frontier to walk to next, or kDone once no reachable frontier is left.
     Plan nextFrontier(const cv::Mat& cells, const GridGeometry& geometry, const Pose2D& robot);
+
+    /**
+     * @brief Where to look into the next unknown pocket inside the building, or kDone once every
+     *        look is taken. For after the camera pass: the frontier pass leaves corners such as
+     *        the floor behind a wardrobe as too small to walk to, and the camera pass maps most.
+     *
+     * A pocket is unknown inside @p inside that borders free floor. The first call plans the
+     * looks, each a spot that sees the most pocket edge no other look has, straight across free
+     * floor; each call then walks the shortest way through those left, and drops any whose edge
+     * is mapped.
+     * Unknown found after the plan is left: chasing each look's crumbs cost run 41 nine minutes.
+     *
+     * @param inside CV_8U on @p cells' grid, non-zero inside the building (the floor plan's
+     *               known cells).
+     */
+    Plan nextPocketLook(
+        const cv::Mat& cells, const cv::Mat& inside, const GridGeometry& geometry,
+        const Pose2D& robot);
 
     /**
      * @brief Remembers that the robot stood at @p robot and looked around; report() calls it.
@@ -219,6 +240,12 @@ private:
         double        target_y;
     };
 
+    struct PocketLook
+    {
+        Viewpoint                view;
+        std::vector<cv::Point2d> edge;  ///< The pocket edge it was planned for, map frame.
+    };
+
     /// True, with @p plan set to unavailable, while the robot stands where it got stuck.
     bool stuck(const Pose2D& robot, Plan& plan);
     void computeTraversable(const cv::Mat& cells, const GridGeometry& geometry);
@@ -241,6 +268,9 @@ private:
         std::vector<Hit>& hits, std::vector<int>& offsets) const;
     [[nodiscard]] double blacklistFactor(double x, double y) const;
     [[nodiscard]] double turnTime(double from_yaw, std::vector<double>& headings) const;
+    /// Greedy cover of the pockets' edge by spots; needs clearance_ and travel_.
+    [[nodiscard]] std::vector<PocketLook>
+    planPocketLooks(const cv::Mat& cells, const cv::Mat& inside, const GridGeometry& geometry) const;
 
     PlannerParams            params_;
     std::vector<CameraModel> cameras_;
@@ -261,6 +291,9 @@ private:
     std::vector<double>         frontier_known_;  // Known area as each frontier was issued, m2.
     int                         failures_in_a_row_ = 0;
     std::optional<Pose2D>       stuck_at_;
+
+    // Planned once, as the camera pass ends.
+    std::optional<std::vector<PocketLook>> pocket_looks_;
 
     // Per-target marks, compared against a counter so they never need clearing.
     std::vector<std::uint32_t> chosen_mark_;

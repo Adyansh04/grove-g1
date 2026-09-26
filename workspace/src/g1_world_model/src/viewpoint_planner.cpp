@@ -619,6 +619,231 @@ Plan ViewpointPlanner::nextFrontier(
     return plan;
 }
 
+std::vector<ViewpointPlanner::PocketLook> ViewpointPlanner::planPocketLooks(
+    const cv::Mat& cells, const cv::Mat& inside, const GridGeometry& geometry) const
+{
+    cv::Mat labels;
+    cv::Mat stats;
+    cv::Mat centroids;
+    cv::connectedComponentsWithStats(
+        (cells == kUnknown) & (inside != 0),
+        labels,
+        stats,
+        centroids,
+        4,
+        CV_32S);
+    const double cell_area = geometry.resolution * geometry.resolution;
+    // Pocket cells beside free floor: where a look into a pocket enters it.
+    std::vector<cv::Point> edge;
+    for (int y = 0; y < cells.rows; ++y)
+    {
+        for (int x = 0; x < cells.cols; ++x)
+        {
+            const int pocket = labels.at<int>(y, x);
+            if (pocket == 0 ||
+                stats.at<int>(pocket, cv::CC_STAT_AREA) * cell_area < params_.pocket_min_area)
+            {
+                continue;
+            }
+            for (const auto& [nx, ny] :
+                 { std::pair{ x + 1, y }, { x - 1, y }, { x, y + 1 }, { x, y - 1 } })
+            {
+                if (geometry.contains(nx, ny) && cells.at<std::uint8_t>(ny, nx) == kFree)
+                {
+                    edge.emplace_back(x, y);
+                    break;
+                }
+            }
+        }
+    }
+
+    // A camera pose's margin from what is mapped solid, and a frontier's from the unknown: a
+    // pocket may hide what the robot walks into, as when run 39 wedged it beside an armchair
+    // looking into a corner, while mapped furniture is where Nav2 expects it.
+    cv::Mat known;
+    cv::distanceTransform(cells != kUnknown, known, cv::DIST_L2, cv::DIST_MASK_PRECISE);
+    known *= geometry.resolution;
+    const double standable       = params_.robot_radius + params_.clearance_margin;
+    const double clear_of_unseen = params_.robot_radius + params_.frontier_clearance;
+    const int    reach           = geometry.cellsFor(params_.pocket_look_range);
+    const auto   min_edge = static_cast<std::size_t>(geometry.cellsFor(params_.pocket_min_edge));
+    const int    step     = std::max(1, geometry.cellsFor(0.2));
+    struct Spot
+    {
+        cv::Point        cell;
+        std::vector<int> sees;  // Edge cells in plain view, straight across free floor.
+    };
+    std::vector<Spot> spots;
+    for (int y = 0; y < cells.rows; y += step)
+    {
+        for (int x = 0; x < cells.cols; x += step)
+        {
+            if (cells.at<std::uint8_t>(y, x) != kFree || clearance_.at<float>(y, x) < standable ||
+                known.at<float>(y, x) < clear_of_unseen ||
+                !std::isfinite(travel_[static_cast<std::size_t>(geometry.index(x, y))]))
+            {
+                continue;
+            }
+            Spot spot{ { x, y }, {} };
+            for (std::size_t i = 0; i < edge.size(); ++i)
+            {
+                const cv::Point target = edge[i];
+                if (((target.x - x) * (target.x - x)) + ((target.y - y) * (target.y - y)) >
+                    reach * reach)
+                {
+                    continue;
+                }
+                const int        pocket = labels.at<int>(target);
+                cv::LineIterator line(cells, spot.cell, target, 8);
+                for (int j = 0; j < line.count; ++j, ++line)
+                {
+                    const cv::Point at = line.pos();
+                    if (cells.at<std::uint8_t>(at) == kFree)
+                    {
+                        continue;
+                    }
+                    if (labels.at<int>(at) == pocket)
+                    {
+                        spot.sees.push_back(static_cast<int>(i));
+                    }
+                    break;
+                }
+            }
+            if (spot.sees.size() >= min_edge)
+            {
+                spots.push_back(std::move(spot));
+            }
+        }
+    }
+
+    // Each look takes the spot that sees the most edge no earlier look has; the nearer on a tie.
+    std::vector<std::uint8_t> covered(edge.size(), 0);
+    std::vector<PocketLook>   looks;
+    const auto                travel = [&](const Spot& spot) {
+        return travel_[static_cast<std::size_t>(geometry.index(spot.cell.x, spot.cell.y))];
+    };
+    while (true)
+    {
+        const Spot* best       = nullptr;
+        std::size_t best_count = 0;
+        for (const Spot& spot : spots)
+        {
+            const auto fresh =
+                static_cast<std::size_t>(std::ranges::count_if(spot.sees, [&](int i) {
+                    return covered[static_cast<std::size_t>(i)] == 0;
+                }));
+            if (fresh > best_count ||
+                (fresh == best_count && best != nullptr && travel(spot) < travel(*best)))
+            {
+                best       = &spot;
+                best_count = fresh;
+            }
+        }
+        if (best == nullptr || best_count < min_edge)
+        {
+            break;
+        }
+        PocketLook  look;
+        cv::Point2d middle(0.0, 0.0);
+        for (const int i : best->sees)
+        {
+            auto& seen = covered[static_cast<std::size_t>(i)];
+            if (seen == 0)
+            {
+                seen                 = 1;
+                const cv::Point cell = edge[static_cast<std::size_t>(i)];
+                look.edge.emplace_back(geometry.centreX(cell.x), geometry.centreY(cell.y));
+                middle += look.edge.back();
+            }
+        }
+        middle *= 1.0 / static_cast<double>(look.edge.size());
+        look.view.x        = geometry.centreX(best->cell.x);
+        look.view.y        = geometry.centreY(best->cell.y);
+        look.view.headings = { std::atan2(middle.y - look.view.y, middle.x - look.view.x) };
+        looks.push_back(std::move(look));
+    }
+    return looks;
+}
+
+Plan ViewpointPlanner::nextPocketLook(
+    const cv::Mat& cells, const cv::Mat& inside, const GridGeometry& geometry, const Pose2D& robot)
+{
+    Plan plan;
+    if (cells.empty() || inside.size() != cells.size())
+    {
+        plan.reason = "no map yet";
+        return plan;
+    }
+    if (stuck(robot, plan))
+    {
+        return plan;
+    }
+    computeTraversable(cells, geometry);
+    computeTravel(geometry, robot);
+    if (!pocket_looks_)
+    {
+        pocket_looks_ = planPocketLooks(cells, inside, geometry);
+    }
+
+    const auto unknown_edge = [&](const PocketLook& look) {
+        return std::ranges::count_if(look.edge, [&](const cv::Point2d& at) {
+            const CellIndex cell = geometry.toCell(at.x, at.y);
+            return geometry.contains(cell) && cells.at<std::uint8_t>(cell.y, cell.x) == kUnknown;
+        });
+    };
+    const auto min_edge = geometry.cellsFor(params_.pocket_min_edge);
+    std::erase_if(*pocket_looks_, [&](const PocketLook& look) {
+        return unknown_edge(look) < min_edge;
+    });
+    const double             standable = params_.robot_radius + params_.clearance_margin;
+    std::vector<std::size_t> reachable;
+    std::vector<Viewpoint>   stops;
+    for (std::size_t i = 0; i < pocket_looks_->size(); ++i)
+    {
+        const Viewpoint& view = (*pocket_looks_)[i].view;
+        const CellIndex  at   = geometry.toCell(view.x, view.y);
+        if (geometry.contains(at) && clearance_.at<float>(at.y, at.x) >= standable &&
+            std::isfinite(travel_[static_cast<std::size_t>(geometry.index(at))]))
+        {
+            reachable.push_back(i);
+            stops.push_back(view);
+        }
+    }
+    if (stops.empty())
+    {
+        pocket_looks_->clear();
+        plan.status = PlanStatus::kDone;
+        plan.reason = "every pocket inside the building has had its look";
+        return plan;
+    }
+
+    // The first stop of the shortest walk through them all: the nearest alone sent run 42 across
+    // the flat and back.
+    const auto next = pocket_looks_->begin() +
+                      static_cast<std::ptrdiff_t>(reachable[shortestWalkStart(stops, geometry)]);
+    const double travel = travel_[static_cast<std::size_t>(
+        geometry.index(geometry.toCell(next->view.x, next->view.y)))];
+    plan.status         = PlanStatus::kViewpoint;
+    plan.viewpoint      = next->view;
+    plan.viewpoint.gain = static_cast<double>(unknown_edge(*next));
+    const double arrival =
+        std::hypot(plan.viewpoint.x - robot.x, plan.viewpoint.y - robot.y) > 0.3 ?
+            std::atan2(plan.viewpoint.y - robot.y, plan.viewpoint.x - robot.x) :
+            robot.yaw;
+    plan.viewpoint.cost = (travel / params_.travel_speed) +
+                          turnTime(arrival, plan.viewpoint.headings) + params_.dwell_time +
+                          params_.goal_overhead;
+    pocket_looks_->erase(next);
+    plan.reason       = std::format("{} more planned", pocket_looks_->size());
+    plan.viewpoint.id = next_id_++;
+    issued_.push_back(plan.viewpoint);
+    if (issued_.size() > 16)
+    {
+        issued_.erase(issued_.begin());
+    }
+    return plan;
+}
+
 Plan ViewpointPlanner::nextCoverage(
     CoverageMap& coverage, const cv::Mat& room_labels, const Pose2D& robot)
 {

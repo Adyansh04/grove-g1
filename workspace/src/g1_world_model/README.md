@@ -51,14 +51,17 @@ own topic remaps.
   target it lands on with a quality from range, incidence and distance from the image centre. Only
   frames taken after the base has been still for `settle_s` count, because the relay stamps images
   on arrival.
-- **Viewpoints** (`viewpoint_planner`): frontier mode walks to the edge of the known map, where
-  the known map opens onto real unknown space rather than the shadow behind a sofa. Unknown the
-  robot has already had in plain view from a viewpoint it reached, and that is still unknown once
-  SLAM has caught up, is shadow too, so it never walks into a corner of furniture after it; coverage
-  mode samples standing poses, predicts per heading which pending targets would be seen well
-  enough, keeps up to three headings, and ranks poses by gain per second of walking, turning and
-  dwelling. Targets that no reachable pose can see, such as a shelf above camera height, are
-  written off and reported per room, and a room whose viewpoints Nav2 keeps refusing is given up.
+- **Viewpoints** (`viewpoint_planner`): frontier mode walks to the edge of the known map, where the
+  known map opens onto real unknown space rather than the shadow behind a sofa. Unknown the robot
+  has already had in plain view from a viewpoint it reached, and that is still unknown once SLAM has
+  caught up, is shadow too, so it never walks into a corner of furniture after it. Coverage mode
+  samples standing poses, predicts per heading which pending targets would be seen well enough,
+  keeps up to three headings, and ranks poses by gain per second of walking, turning and dwelling.
+  Targets that no reachable pose can see, such as a shelf above camera height, are written off and
+  reported per room, and a room whose viewpoints Nav2 keeps refusing is given up. Once the camera
+  has seen what it can, the robot looks into the unknown pockets left inside the building, such as
+  the floor behind a wardrobe or a notch in a wall, from the few spots that see their edges, so
+  their walls close in the map.
 - **Objects** (`object_map`): masks lifted with depth into voxels and matched to mapped objects on
   overlap, label votes and embeddings, tolerant of AMCL's decimetre drift. Parts of one object
   seen from different sides merge when they touch, and only then is a sighting nothing confirmed

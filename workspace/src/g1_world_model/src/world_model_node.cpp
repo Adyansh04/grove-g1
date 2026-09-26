@@ -222,6 +222,12 @@ WorldModelNode::WorldModelNode(const rclcpp::NodeOptions& options)
         declare_parameter<double>("planner.room_face_goal", planner.room_face_goal);
     planner.tour_size =
         static_cast<int>(declare_parameter<int>("planner.tour_size", planner.tour_size));
+    planner.pocket_min_area =
+        declare_parameter<double>("planner.pocket_min_area", planner.pocket_min_area);
+    planner.pocket_look_range =
+        declare_parameter<double>("planner.pocket_look_range", planner.pocket_look_range);
+    planner.pocket_min_edge =
+        declare_parameter<double>("planner.pocket_min_edge", planner.pocket_min_edge);
     planner.travel_speed = declare_parameter<double>("planner.travel_speed", planner.travel_speed);
     planner.turn_speed   = declare_parameter<double>("planner.turn_speed", planner.turn_speed);
     planner.dwell_time   = declare_parameter<double>("planner.dwell_time", planner.dwell_time);
@@ -1463,10 +1469,32 @@ void WorldModelNode::onNextViewpoint(
     const bool frontier = request->mode == g1_msgs::srv::NextViewpoint::Request::MODE_FRONTIER;
     const auto started  = std::chrono::steady_clock::now();
     std::optional<Viewpoint> look = frontier ? std::nullopt : secondLook(*robot);
-    const Plan               plan = look ? Plan{ PlanStatus::kViewpoint, std::move(*look), {} } :
+    Plan                     plan = look ? Plan{ PlanStatus::kViewpoint, std::move(*look), {} } :
                                     frontier ? planner_.nextFrontier(cells_, geometry_, *robot) :
                                                planner_.nextCoverage(coverage_, room_labels_, *robot);
-    const double             took_ms =
+    // The frontier pass leaves corners of the map too small to walk to, behind a wardrobe or in a
+    // notch of a room, and the camera pass maps most of them on its way: the rest get a look.
+    if (!frontier && plan.status == PlanStatus::kDone)
+    {
+        Plan pocket = planner_.nextPocketLook(cells_, floorPlan() != kUnknown, geometry_, *robot);
+        if (pocket.status == PlanStatus::kViewpoint)
+        {
+            RCLCPP_INFO(
+                get_logger(),
+                "looking into a pocket of unknown from (%.2f, %.2f), %.0f cells of its edge "
+                "unknown; %s",
+                pocket.viewpoint.x,
+                pocket.viewpoint.y,
+                pocket.viewpoint.gain,
+                pocket.reason.c_str());
+            plan = std::move(pocket);
+        }
+        else if (pocket.status == PlanStatus::kDone)
+        {
+            plan.reason += "; " + pocket.reason;
+        }
+    }
+    const double took_ms =
         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
 
     response->message = plan.reason;

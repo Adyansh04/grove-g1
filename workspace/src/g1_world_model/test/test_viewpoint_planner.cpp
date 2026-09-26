@@ -778,6 +778,64 @@ TEST(ViewpointPlanner, WaitsOutAStuckRobotInsteadOfGivingUpEveryRoom)
     EXPECT_EQ(plan.status, PlanStatus::kViewpoint);
 }
 
+TEST(ViewpointPlanner, LooksOnceIntoTheCornerBehindAWardrobe)
+{
+    // A 5 x 4 m room. A wardrobe stands out from the right wall, and the strip between it and the
+    // top wall was never scanned. A block of furniture has an unknown inside, which is no pocket.
+    cv::Mat cells(80, 100, CV_8UC1, cv::Scalar(kFree));
+    cv::rectangle(cells, cv::Rect(0, 0, 100, 80), cv::Scalar(kOccupied), 2);
+    cells(cv::Rect(80, 30, 18, 30)).setTo(kOccupied);
+    cells(cv::Rect(80, 60, 18, 18)).setTo(kUnknown);
+    cells(cv::Rect(20, 20, 12, 12)).setTo(kOccupied);
+    cells(cv::Rect(23, 23, 6, 6)).setTo(kUnknown);
+    const GridGeometry geometry{ kResolution, 0.0, 0.0, 100, 80 };
+    const cv::Mat      inside(cells.size(), CV_8UC1, cv::Scalar(255));
+    ViewpointPlanner   planner;
+
+    const Plan look = planner.nextPocketLook(cells, inside, geometry, { 1.5, 2.5, 0.0 });
+    ASSERT_EQ(look.status, PlanStatus::kViewpoint);
+    EXPECT_LT(look.viewpoint.x, 4.0);  // On the room's side of the strip, looking in.
+    ASSERT_EQ(look.viewpoint.headings.size(), 1U);
+    const double to_strip = std::atan2(3.45 - look.viewpoint.y, 4.45 - look.viewpoint.x);
+    EXPECT_LT(
+        std::abs(std::remainder(look.viewpoint.headings[0] - to_strip, 2.0 * std::numbers::pi)),
+        0.3);
+
+    // Unknown found after the plan, as a look uncovers a little more, gets no look of its own.
+    cells(cv::Rect(40, 60, 10, 10)).setTo(kUnknown);
+    EXPECT_EQ(
+        planner.nextPocketLook(cells, inside, geometry, { 1.5, 2.5, 0.0 }).status,
+        PlanStatus::kDone);
+}
+
+TEST(ViewpointPlanner, DropsAPocketLookOnceItsEdgeIsMapped)
+{
+    // A 10 m room with a corner never scanned at each end, too far apart for one look: behind a
+    // wardrobe at the top right, and at the bottom left.
+    cv::Mat cells(80, 200, CV_8UC1, cv::Scalar(kFree));
+    cv::rectangle(cells, cv::Rect(0, 0, 200, 80), cv::Scalar(kOccupied), 2);
+    cells(cv::Rect(180, 30, 18, 30)).setTo(kOccupied);
+    cells(cv::Rect(180, 60, 18, 18)).setTo(kUnknown);
+    cells(cv::Rect(2, 2, 16, 16)).setTo(kUnknown);
+    const GridGeometry geometry{ kResolution, 0.0, 0.0, 200, 80 };
+    const cv::Mat      inside(cells.size(), CV_8UC1, cv::Scalar(255));
+    const Pose2D       robot{ 6.5, 2.5, 0.0 };
+
+    ViewpointPlanner both;
+    const Plan       first = both.nextPocketLook(cells, inside, geometry, robot);
+    ASSERT_EQ(first.status, PlanStatus::kViewpoint);
+    EXPECT_GT(first.viewpoint.x, 5.0);  // The nearer corner first.
+    const Plan second = both.nextPocketLook(cells, inside, geometry, robot);
+    ASSERT_EQ(second.status, PlanStatus::kViewpoint);
+    EXPECT_LT(second.viewpoint.x, 5.0);
+
+    // Mapped by the time its turn comes, the bottom left corner is not walked to.
+    ViewpointPlanner mapped;
+    ASSERT_EQ(mapped.nextPocketLook(cells, inside, geometry, robot).status, PlanStatus::kViewpoint);
+    cells(cv::Rect(2, 2, 16, 16)).setTo(kFree);
+    EXPECT_EQ(mapped.nextPocketLook(cells, inside, geometry, robot).status, PlanStatus::kDone);
+}
+
 TEST(ViewpointPlanner, ScoresAHeadingByWhatEveryCameraSees)
 {
     // A second camera looking back sees what the front one turns its back on, from the same stop.

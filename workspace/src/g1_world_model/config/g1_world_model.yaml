@@ -91,6 +91,16 @@ g1_world_model:
       # to 4.5 m2 each.
       frontier_stall_visits: 4
       min_frontier_growth: 12.0
+      # The frontier pass ignores unknown under min_frontier_unknown, so corners of rooms (the
+      # floor behind the bedroom's wardrobe, a notch in a wall) were never scanned and their
+      # walls never closed. After the camera pass, which maps most of them on its way, the robot
+      # looks into the unknown pockets this big left inside the building, from within the range,
+      # m2 / m.
+      pocket_min_area: 0.1
+      pocket_look_range: 3.0
+      # Pocket edge a look must see that no other look does, m: on run 40's map, looks at less
+      # were walks of up to 50 s for strips the floor plan closes anyway.
+      pocket_min_edge: 0.4
       max_attempts: 2
       # Unreached viewpoints in a room the robot has never got into before it stops trying that
       # room, and in a row anywhere before it decides the robot itself is stuck and plans nothing
