@@ -8,6 +8,8 @@ name with no coordinates anywhere.
 
 With G1_WORLD_MODEL_TEST_MAPPING=1 there is no map to start from: slam_toolbox builds it while
 the tree walks to frontiers, and everything is scored on the map the robot made.
+G1_WORLD_MODEL_TEST_CAMERAS picks the cameras rendered and read (default head,chest), each with a
+mock detector of its own.
 """
 
 import math
@@ -51,6 +53,7 @@ WORLD_DIR = tempfile.mkdtemp(prefix="g1_world_explore_")
 
 BRINGUP_TIMEOUT_S = 240.0
 MAPPING = os.environ.get("G1_WORLD_MODEL_TEST_MAPPING", "") == "1"
+CAMERAS = os.environ.get("G1_WORLD_MODEL_TEST_CAMERAS", "head,chest")
 # Mapping first walks every frontier, which the committed map has none of.
 EXPLORE_TIMEOUT_S = (75 if MAPPING else 50) * 60.0
 
@@ -75,6 +78,38 @@ def load_truth():
         return yaml.safe_load(handle)
 
 
+def mock_detector(camera, phrases):
+    """Masks for one camera, cut from the ground truth the relay puts in that camera's frame."""
+    head = camera == "head"
+    return LaunchNode(
+        package="g1_perception",
+        executable="g1_mock_detector",
+        name="g1_detector" if head else f"g1_detector_{camera}",
+        output="log",
+        parameters=[
+            os.path.join(
+                get_package_share_directory("g1_perception"), "config", "g1_mock_detector.yaml"
+            ),
+            {"phrases": phrases, "mock_rate_hz": 2.0},
+        ],
+        remappings=[
+            (
+                "object_poses",
+                "/g1_sensor_relay/object_poses" if head else f"/g1_sensor_relay/{camera}/object_poses",
+            ),
+            (
+                "depth/image_raw",
+                f"/{'camera' if head else camera + '_camera'}/aligned_depth_to_color/image_raw",
+            ),
+            ("camera_info", f"/{'camera' if head else camera + '_camera'}/color/camera_info"),
+            (
+                "~/instance_masks",
+                "/g1_perception/instance_masks" if head else f"/g1_perception/{camera}/instance_masks",
+            ),
+        ],
+    )
+
+
 @pytest.mark.launch_test
 def generate_test_description():
     truth = load_truth()
@@ -92,30 +127,12 @@ def generate_test_description():
                         "mode": "mapping" if MAPPING else "localization",
                         "nav": "true",
                         "world": "apartment",
+                        "cameras": CAMERAS,
                         "headless": "true",
                         "rviz": "false",
                     }.items(),
                 ),
-                LaunchNode(
-                    package="g1_perception",
-                    executable="g1_mock_detector",
-                    name="g1_detector",
-                    output="log",
-                    parameters=[
-                        os.path.join(
-                            get_package_share_directory("g1_perception"),
-                            "config",
-                            "g1_mock_detector.yaml",
-                        ),
-                        {"phrases": phrases, "mock_rate_hz": 2.0},
-                    ],
-                    remappings=[
-                        ("object_poses", "/g1_sensor_relay/object_poses"),
-                        ("depth/image_raw", "/camera/aligned_depth_to_color/image_raw"),
-                        ("camera_info", "/camera/color/camera_info"),
-                        ("~/instance_masks", "/g1_perception/instance_masks"),
-                    ],
-                ),
+                *[mock_detector(name, phrases) for name in CAMERAS.split(",")],
                 IncludeLaunchDescription(
                     PythonLaunchDescriptionSource(
                         os.path.join(
@@ -124,7 +141,7 @@ def generate_test_description():
                             "world_model.launch.py",
                         )
                     ),
-                    launch_arguments={"world_dir": WORLD_DIR}.items(),
+                    launch_arguments={"world_dir": WORLD_DIR, "cameras": CAMERAS}.items(),
                 ),
                 TimerAction(period=1.0, actions=[launch_testing.actions.ReadyToTest()]),
             ]
