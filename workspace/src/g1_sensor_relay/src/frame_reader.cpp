@@ -99,6 +99,7 @@ FrameStatus tryReadFrame(std::vector<std::uint8_t>& buffer, CloudFrame& out)
     out.width    = header.width;
     out.height   = header.height;
     out.fovy_deg = header.fovy_deg;
+    out.camera.assign(header.camera, strnlen(header.camera, sizeof(header.camera)));
     if (is_cloud)
     {
         out.kind = FrameKind::kPointCloud;

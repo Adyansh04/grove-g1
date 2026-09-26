@@ -241,8 +241,10 @@
     <!-- Tracking Camera Following Unitree G1 -->
     <camera name="robot_cam" pos="2.5 -2.5 2.2" xyaxes="0.707 0.707 0 -0.3 0.3 0.9" fovy="55"/>
 
-    <!-- D435i intrinsics only: the sensor sampler moves it to the torso mount every frame. -->
+    <!-- Camera intrinsics only: the sensor sampler moves each to its mount in g1_description's
+         cameras.yaml every frame. -->
     <camera name="d435i" mode="fixed" fovy="58" resolution="848 480" pos="0 0 1"/>
+    <camera name="chest_d435i" mode="fixed" fovy="58" resolution="848 480" pos="0 0 1"/>
   </worldbody>
 
   <!-- Carry welds for the ball. grasp_weld engages one while the thumb and another digit touch

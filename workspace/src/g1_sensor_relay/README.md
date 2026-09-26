@@ -30,12 +30,13 @@ cross the socket.
 | Topic | Type | Notes |
 |---|---|---|
 | `/livox/lidar` | `sensor_msgs/msg/PointCloud2` | Sensor data QoS, so a reliable subscriber sees nothing. |
-| `/camera/aligned_depth_to_color/image_raw` | `sensor_msgs/msg/Image` | `32FC1`, metres. Misses are NaN, not 0. |
+| `/camera/aligned_depth_to_color/image_raw` | `sensor_msgs/msg/Image` | The head camera: `32FC1`, metres. Misses are NaN, not 0. |
 | `/camera/color/image_raw` | `sensor_msgs/msg/Image` | `rgb8` |
 | `/camera/aligned_depth_to_color/camera_info`, `/camera/color/camera_info` | `sensor_msgs/msg/CameraInfo` | Same intrinsics. |
+| `/chest_camera/...` | as above | The chest camera, the same four topics, when the simulator renders it. |
 | `/livox/imu` | `sensor_msgs/msg/Imu` | The IMU inside the Mid360, 200 Hz. Reliable like the real driver, depth 400 because samples arrive in bursts. |
 | `~/base_state` | `nav_msgs/msg/Odometry` | Exact pelvis state out of MuJoCo, for `g1_state_estimation`'s ground-truth source. Not `/odom`, because it is truth, not an estimate. |
-| `~/object_poses` | `vision_msgs/msg/Detection3DArray` | Raw ground truth in the camera frame. `g1_object_pose_source` turns it into `/objects`. |
+| `~/object_poses`, `~/chest/object_poses` | `vision_msgs/msg/Detection3DArray` | Raw ground truth in each camera's frame. `g1_object_pose_source` and the mock detector turn it into `/objects` and masks. |
 | `~/sensor_pose` | `geometry_msgs/msg/PoseStamped` | Where the simulator says the LiDAR is. Diagnostic. |
 | `/livox/custom_msg` | `livox_ros_driver2/msg/CustomMsg` | `g1_livox_bridge` only. Reliable, depth 20, matching the real driver. |
 
@@ -43,8 +44,9 @@ Depth and colour come from one render, so they share a pose, a timestamp and int
 D435i gets that alignment from its align-depth-to-colour step, which is why the depth topic is
 named as if it had run.
 
-Images are published in the REP-145 optical frames, not `d435_link`: depth consumers assume z
-forward, and the body frame would rotate the cloud 90 degrees.
+Images are published in the REP-145 optical frames, not the camera's body link: depth consumers
+assume z forward, and the body frame would rotate the cloud 90 degrees. Each depth frame carries
+the name of the camera it came from, and the relay publishes it under that camera's topics.
 
 ## Parameters
 
@@ -54,8 +56,10 @@ forward, and the body frame would rotate the cloud 90 degrees.
 | `poll_hz` | `500.0` | Socket drain rate. |
 | `topic`, `frame_id` | `/livox/lidar`, `mid360_link` | The point cloud. |
 | `imu_topic`, `imu_frame_id` | `/livox/imu`, `mid360_imu` | The Mid360's IMU. Its rate is `imu_rate_hz` in the simulator's sensor config. |
-| `depth_topic`, `depth_info_topic`, `color_topic`, `info_topic` | As in the topic table | Camera topics. |
-| `depth_frame_id`, `color_frame_id` | `camera_depth_optical_frame`, `camera_color_optical_frame` | REP-145 optical frames. |
+| `cameras` | `[head]` | Camera names the simulator may send; the shipped config lists `head` and `chest`. |
+| `N.depth_topic`, `N.depth_info_topic`, `N.color_topic`, `N.info_topic` | `/camera/...` for `head`, `/N_camera/...` otherwise | Camera N's topics. |
+| `N.depth_frame_id`, `N.color_frame_id` | `camera_*_optical_frame` for `head`, `N_camera_*_optical_frame` otherwise | REP-145 optical frames. |
+| `N.object_poses_topic` | `~/object_poses` for `head`, `~/N/object_poses` otherwise | Ground truth in camera N's colour frame. |
 | `world_frame_id` | `world` | Frame stamped on `~/sensor_pose`. The shipped config sets `odom`, since TF has no `world`. |
 | `base_state_frame_id`, `base_state_odom_frame` | `pelvis`, `odom` | Frames stamped on `~/base_state`. |
 
@@ -93,8 +97,9 @@ one constant lidar-to-IMU extrinsic.
 
 ## Object poses
 
-`~/object_poses` carries objects in `camera_color_optical_frame`, as a detector would report them,
-so `g1_object_pose_source` runs the same code on the robot. The camera's world pose comes from the
+`~/object_poses` carries objects in `camera_color_optical_frame` (and each other camera's topic in
+its own frame), as a detector would report them, so `g1_object_pose_source` runs the same code on
+the robot. The camera's world pose comes from the
 LiDAR's ground-truth pose and the rigid LiDAR-to-camera transform, so it is one sweep stale: a few
 centimetres at walking pace.
 

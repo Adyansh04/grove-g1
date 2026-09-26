@@ -128,6 +128,7 @@ def _sim_args(context, navigating, want_manipulation, want_perception, want_move
             else LaunchConfiguration("sensors")
         ),
         "world": LaunchConfiguration("world"),
+        "cameras": LaunchConfiguration("cameras"),
         "odometry": LaunchConfiguration("odometry"),
         "headless": LaunchConfiguration("headless"),
         "pin_pelvis": "true" if pin_pelvis else "false",
@@ -474,6 +475,12 @@ def generate_launch_description():
             "world, and against any other world it will not converge. 'manipulation' is one "
             "object at arm's length, for a pick without navigating to the workbench first; "
             "'tabletop' is five of different shapes, for perception.",
+        ),
+        DeclareLaunchArgument(
+            "cameras",
+            default_value="",
+            description="Comma-separated cameras the simulator renders: 'head' (manipulation's), "
+            "'chest' (mapping's), both, or empty for the world's sensor config.",
         ),
         DeclareLaunchArgument(
             "headless",

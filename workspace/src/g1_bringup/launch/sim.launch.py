@@ -29,6 +29,8 @@ from lifecycle_msgs.msg import Transition
 BRINGUP_SHARE = get_package_share_directory("g1_bringup")
 STATE_SHARE = get_package_share_directory("g1_state_estimation")
 RELAY_SHARE = get_package_share_directory("g1_sensor_relay")
+# Where each camera mounts; the simulator renders from it and the URDF builds frames from it.
+CAMERA_MOUNTS = os.path.join(get_package_share_directory("g1_description"), "config", "cameras.yaml")
 
 UNITREE_MUJOCO_BIN = "/opt/unitree_robotics/unitree_mujoco/simulate/build/unitree_mujoco"
 # MuJoCo resolves <include> relative to the scene file, so scenes are staged next to the vendored
@@ -202,7 +204,7 @@ def _cleanup_on_shutdown(staged_paths):
 # --- sensors and odometry -------------------------------------------------------------------
 
 
-def _sensor_nodes(sim_env, want_rviz, world):
+def _sensor_nodes(sim_env, want_rviz, world, cameras):
     """Start order does not matter: the relay listens once up, and the simulator retries its
     connection every cycle."""
     # The patched simulator starts its sensor thread only when this names a config. A world with
@@ -211,6 +213,10 @@ def _sensor_nodes(sim_env, want_rviz, world):
     if not os.path.isfile(sensor_config):
         sensor_config = os.path.join(BRINGUP_SHARE, "config", "sim_sensors.yaml")
     sim_env["GROVE_G1_SENSOR_CONFIG"] = sensor_config
+    sim_env["GROVE_G1_CAMERA_MOUNTS"] = CAMERA_MOUNTS
+    # Unset, the sensor config's `enabled` flags decide which cameras render.
+    if cameras:
+        sim_env["GROVE_G1_CAMERAS"] = cameras
     with open(sensor_config) as handle:
         socket_path = yaml.safe_load(handle)["socket_path"]
 
@@ -373,7 +379,9 @@ def _launch_setup(context, *args, **kwargs):
 
     actions = []
     if sensors:
-        actions += _sensor_nodes(sim_env, _flag(context, "rviz"), world)
+        actions += _sensor_nodes(
+            sim_env, _flag(context, "rviz"), world, LaunchConfiguration("cameras").perform(context)
+        )
         actions += _odometry_actions(odometry, sim_start_delay_s)
 
     actions.append(_cleanup_on_shutdown(_stage_scene(world, sensors, pin_pelvis)))
@@ -416,6 +424,13 @@ def generate_launch_description():
             default_value="false",
             description="Stage the world's sensor scene, run the LiDAR, IMU and camera inside "
             "the simulator, and start g1_sensor_relay and the odometry source.",
+        ),
+        DeclareLaunchArgument(
+            "cameras",
+            default_value="",
+            description="Comma-separated cameras the simulator renders, from the sensor "
+            "config's list: 'head', 'chest', 'head,chest'. Empty keeps the config's own choice. "
+            "Each costs ~5 ms of render per frame, and a detector per camera downstream.",
         ),
         DeclareLaunchArgument(
             "odometry",

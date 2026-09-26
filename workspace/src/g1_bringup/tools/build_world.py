@@ -405,9 +405,11 @@ def scene_xml(plan, props, manifest, root):
         "",
         f'    <camera name="overview" pos="{fmt(cx, y0 - 9, 14)}" xyaxes="1 0 0 0 0.7 0.714" '
         'fovy="60"/>',
-        "    <!-- D435i intrinsics only: the sensor sampler moves it to the torso mount every "
-        "frame. -->",
+        "    <!-- Camera intrinsics only: the sensor sampler moves each to its mount in "
+        "g1_description's",
+        "         cameras.yaml every frame. -->",
         '    <camera name="d435i" mode="fixed" fovy="58" resolution="848 480" pos="0 0 1"/>',
+        '    <camera name="chest_d435i" mode="fixed" fovy="58" resolution="848 480" pos="0 0 1"/>',
         "  </worldbody>",
         "</mujoco>",
         "",

@@ -15,6 +15,7 @@
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
@@ -30,6 +31,19 @@ namespace grove_g1
 namespace
 {
 
+// A camera rendered offscreen on the sensor thread: the MJCF camera `mjcf` (its fovy and
+// resolution) moved every frame to `xyz`/`rpy` on body `parent`, as g1_description's cameras.yaml
+// mounts it. Frames carry `name`; the relay publishes each camera's under its own topics.
+struct CameraConfig
+{
+    std::string name;
+    std::string mjcf;
+    bool        enabled = true;
+    std::string parent;
+    double      xyz[3] = {0.0, 0.0, 0.0};
+    double      rpy[3] = {0.0, 0.0, 0.0};
+};
+
 struct Config
 {
     bool        enabled     = false;
@@ -40,9 +54,7 @@ struct Config
     // torso shell, and group 3 would be hit by rays but never drawn by the viewer.
     int    scene_geom_group = 2;
 
-    bool camera_enabled = false;
-    int  camera_width   = 848;
-    int  camera_height  = 480;
+    std::vector<CameraConfig> cameras;
 
     // Bodies whose ground-truth pose is published for the sim-only object source. An explicit
     // list, never "every free body": the pelvis has a free joint too. Empty turns it off.
@@ -61,12 +73,11 @@ struct Config
     double imu_rate_hz = 200.0;
 };
 
-// Mount poses relative to torso_link, copied from mid360_joint and d435_joint in Unitree's
-// vendored URDF. Constants, not Config: the URDF owns them, and these move when it does.
+// The LiDAR's mount relative to torso_link, copied from mid360_joint in Unitree's vendored URDF.
+// A constant, not Config: the URDF owns it, and this moves when it does. Cameras come from
+// cameras.yaml instead, which the URDF reads too.
 constexpr double kMountXyz[3] = {0.0002835, 0.00003, 0.428434};
 constexpr double kMountRpy[3] = {M_PI, 0.05112069379091391, 0.0};
-constexpr double kCamXyz[3]   = {0.0576235, 0.01753, 0.42987};
-constexpr double kCamRpy[3]   = {0.0, 0.8307767239493009, 0.0};
 
 class RelaySocket;
 
@@ -118,8 +129,12 @@ Config loadConfig()
         if (root["elevation_steps"]) {
             cfg.elevation_steps = root["elevation_steps"].as<int>();
         }
-        if (root["camera_enabled"]) {
-            cfg.camera_enabled = root["camera_enabled"].as<bool>();
+        for (const YAML::Node& node : root["cameras"]) {
+            CameraConfig camera;
+            camera.name    = node["name"].as<std::string>();
+            camera.mjcf    = node["mjcf"] ? node["mjcf"].as<std::string>() : camera.name;
+            camera.enabled = node["enabled"] ? node["enabled"].as<bool>() : true;
+            cfg.cameras.push_back(camera);
         }
         if (root["range_max"]) {
             cfg.range_max = root["range_max"].as<double>();
@@ -136,6 +151,39 @@ Config loadConfig()
             stderr, "[grove_g1] sensor config '%s' failed to load (%s); sensors DISABLED\n", path,
             e.what());
         cfg.enabled = false;
+    }
+    // GROVE_G1_CAMERAS, a comma-separated list, overrides which cameras render: the launch turns
+    // cameras off for a run without editing the config.
+    if (const char* only = std::getenv("GROVE_G1_CAMERAS"); only != nullptr) {
+        const std::string list = std::string(",") + only + ",";
+        for (CameraConfig& camera : cfg.cameras) {
+            camera.enabled = list.find("," + camera.name + ",") != std::string::npos;
+        }
+    }
+    const char* mounts = std::getenv("GROVE_G1_CAMERA_MOUNTS");
+    for (CameraConfig& camera : cfg.cameras) {
+        if (!camera.enabled) {
+            continue;
+        }
+        try {
+            if (mounts == nullptr || *mounts == '\0') {
+                throw std::runtime_error("GROVE_G1_CAMERA_MOUNTS is unset");
+            }
+            const YAML::Node mount = YAML::LoadFile(mounts)[camera.name];
+            if (!mount) {
+                throw std::runtime_error(std::string("no entry in ") + mounts);
+            }
+            camera.parent = mount["parent"].as<std::string>();
+            for (int i = 0; i < 3; ++i) {
+                camera.xyz[i] = mount["xyz"][i].as<double>();
+                camera.rpy[i] = mount["rpy"][i].as<double>();
+            }
+        } catch (const std::exception& e) {
+            // Loud, and off: a camera rendered from a made-up mount would look like it works.
+            std::fprintf(stderr, "[grove_g1] camera '%s' has no mount (%s); DISABLED\n",
+                         camera.name.c_str(), e.what());
+            camera.enabled = false;
+        }
     }
     if (cfg.rate_hz <= 0.0 || cfg.imu_rate_hz <= 0.0 || cfg.azimuth_steps <= 0 ||
         cfg.elevation_steps <= 0) {
@@ -407,9 +455,43 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
 
     double R_mount[9];
     rpyToMatrix(kMountRpy, R_mount);
-    double R_cam_mount[9];
-    rpyToMatrix(kCamRpy, R_cam_mount);
-    int cam_id = mj_name2id(m, mjOBJ_CAMERA, "d435i");
+    // Each enabled camera with its MJCF camera, parent body and render size resolved.
+    struct CameraRig
+    {
+        std::string                name;
+        int                        cam_id  = -1;
+        int                        body_id = -1;
+        double                     xyz[3]  = {0.0, 0.0, 0.0};
+        double                     R_mount[9];
+        int                        width  = 0;
+        int                        height = 0;
+        std::vector<unsigned char> rgb;
+        std::vector<float>         depth;
+    };
+    std::vector<CameraRig> rigs;
+    for (const CameraConfig& camera : cfg.cameras) {
+        if (!camera.enabled) {
+            continue;
+        }
+        CameraRig rig;
+        rig.name    = camera.name;
+        rig.cam_id  = mj_name2id(m, mjOBJ_CAMERA, camera.mjcf.c_str());
+        rig.body_id = mj_name2id(m, mjOBJ_BODY, camera.parent.c_str());
+        if (rig.cam_id < 0 || rig.body_id < 0) {
+            std::fprintf(stderr,
+                         "[grove_g1] camera '%s': no MJCF camera '%s' or body '%s' in this scene; "
+                         "DISABLED\n",
+                         camera.name.c_str(), camera.mjcf.c_str(), camera.parent.c_str());
+            continue;
+        }
+        std::memcpy(rig.xyz, camera.xyz, sizeof(rig.xyz));
+        rpyToMatrix(camera.rpy, rig.R_mount);
+        // The MJCF camera's own resolution, so a camera's size is declared where its fovy is.
+        rig.width  = m->cam_resolution[2 * rig.cam_id] > 0 ? m->cam_resolution[2 * rig.cam_id] : 848;
+        rig.height =
+            m->cam_resolution[2 * rig.cam_id + 1] > 0 ? m->cam_resolution[2 * rig.cam_id + 1] : 480;
+        rigs.push_back(std::move(rig));
+    }
 
     std::vector<int>              object_ids;
     std::vector<ObjectPoseRecord> object_records;
@@ -454,12 +536,10 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
     mjvOption   cam_opt;
     mjvCamera   cam_cam;
     GLFWwindow* cam_win = nullptr;
-    std::vector<unsigned char> cam_rgb;
     std::vector<unsigned char> cam_payload;
-    std::vector<float>         cam_depth;
-    if (cfg.camera_enabled) {
+    if (!rigs.empty()) {
         if (glfwInit() && (glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE), true) &&
-            (cam_win = glfwCreateWindow(cfg.camera_width, cfg.camera_height, "g1cam", nullptr,
+            (cam_win = glfwCreateWindow(rigs.front().width, rigs.front().height, "g1cam", nullptr,
                                         nullptr)) != nullptr) {
             glfwMakeContextCurrent(cam_win);
             mjv_defaultScene(&cam_scn);
@@ -469,14 +549,27 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
             mjr_setBuffer(mjFB_OFFSCREEN, &cam_con);
             mjv_defaultOption(&cam_opt);
             mjv_defaultCamera(&cam_cam);
-            // FIXED on the d435i camera, not FREE: a free camera ignores cam_xpos/cam_xmat, so
-            // the pose written each frame would be discarded.
-            cam_cam.type       = mjCAMERA_FIXED;
-            cam_cam.fixedcamid = mj_name2id(m, mjOBJ_CAMERA, "d435i");
-            cam_rgb.resize(static_cast<std::size_t>(cfg.camera_width) * cfg.camera_height * 3);
-            cam_depth.resize(static_cast<std::size_t>(cfg.camera_width) * cfg.camera_height);
-            std::fprintf(stderr, "[grove_g1] camera: offscreen %dx%d ready\n",
-                         cam_con.offWidth, cam_con.offHeight);
+            // FIXED on each camera in turn, not FREE: a free camera ignores cam_xpos/cam_xmat,
+            // so the pose written each frame would be discarded.
+            cam_cam.type = mjCAMERA_FIXED;
+            // One offscreen buffer renders every camera; one larger than it cannot.
+            rigs.erase(std::remove_if(rigs.begin(), rigs.end(), [&](const CameraRig& rig) {
+                const bool fits = rig.width <= cam_con.offWidth && rig.height <= cam_con.offHeight;
+                if (!fits) {
+                    std::fprintf(stderr,
+                                 "[grove_g1] camera '%s': %dx%d exceeds the %dx%d offscreen "
+                                 "buffer (visual/global offwidth, offheight); DISABLED\n",
+                                 rig.name.c_str(), rig.width, rig.height, cam_con.offWidth,
+                                 cam_con.offHeight);
+                }
+                return !fits;
+            }), rigs.end());
+            for (CameraRig& rig : rigs) {
+                rig.rgb.resize(static_cast<std::size_t>(rig.width) * rig.height * 3);
+                rig.depth.resize(static_cast<std::size_t>(rig.width) * rig.height);
+                std::fprintf(stderr, "[grove_g1] camera '%s': offscreen %dx%d ready\n",
+                             rig.name.c_str(), rig.width, rig.height);
+            }
         } else {
             std::fprintf(stderr, "[grove_g1] camera: GL setup FAILED; disabled\n");
             cam_win = nullptr;
@@ -538,14 +631,14 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
             // Body ids are indices into the old model's name table; a reload renumbers them.
             resolveObjectBodies(m, cfg.object_bodies, object_ids, object_records);
             std::fprintf(stderr, "[grove_g1] model reloaded; sensor snapshot rebuilt\n");
-            // The render state and cam_id belong to the old model. Rebuilding them is not worth
-            // it for a debugging-only Reload, so the camera stops and the LiDAR carries on.
+            // The render state and camera ids belong to the old model. Rebuilding them is not
+            // worth it for a debugging-only Reload, so the cameras stop and the LiDAR carries on.
             if (cam_win != nullptr) {
                 cam_win = nullptr;
-                cam_id  = -1;
+                rigs.clear();
                 std::fprintf(
                     stderr,
-                    "[grove_g1] camera DISABLED after model reload; restart the sim for it\n");
+                    "[grove_g1] cameras DISABLED after model reload; restart the sim for them\n");
             }
             if (torso_id < 0) {
                 std::fprintf(
@@ -651,11 +744,9 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
             }
         }
 
-        if (cam_win != nullptr && cam_id >= 0 && !reload_pending) {
+        if (cam_win != nullptr && !rigs.empty() && !reload_pending) {
             // Transform arrays only, never mj_copyData; see the sweep snapshot above.
             const auto cam_t0 = std::chrono::steady_clock::now();
-            double     cam_torso_pos[3];
-            double     cam_torso_mat[9];
             {
                 std::lock_guard<std::recursive_mutex> lock(*sim_mtx);
                 // Re-checked: the lock was released since the sweep, and a reload in between
@@ -680,30 +771,34 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
                     std::memcpy(
                         snapshot->light_xdir, live->light_xdir, sizeof(mjtNum) * 3 * m->nlight);
                 }
-                std::memcpy(cam_torso_pos, live->xpos + 3 * torso_id, sizeof(cam_torso_pos));
-                std::memcpy(cam_torso_mat, live->xmat + 9 * torso_id, sizeof(cam_torso_mat));
                 }
             }
             const auto cam_t1 = std::chrono::steady_clock::now();
 
-            const double cam_row0 = cam_torso_mat[0] * cam_torso_mat[0] +
-                                    cam_torso_mat[1] * cam_torso_mat[1] +
-                                    cam_torso_mat[2] * cam_torso_mat[2];
-            if (std::isfinite(cam_row0) && cam_row0 >= 0.5) {
+            for (CameraRig& rig : rigs) {
+                if (reload_pending) {
+                    break;
+                }
+                const mjtNum* body_pos = snapshot->xpos + 3 * rig.body_id;
+                const mjtNum* body_mat = snapshot->xmat + 9 * rig.body_id;
+                const double  row0     = body_mat[0] * body_mat[0] + body_mat[1] * body_mat[1] +
+                                    body_mat[2] * body_mat[2];
+                if (!std::isfinite(row0) || row0 < 0.5) {
+                    continue;
+                }
                 // Our own snapshot, so the camera pose can be written straight into it.
                 double cam_pos[3];
                 for (int r = 0; r < 3; ++r) {
-                    cam_pos[r] = cam_torso_pos[r] +
-                                 cam_torso_mat[3 * r + 0] * kCamXyz[0] +
-                                 cam_torso_mat[3 * r + 1] * kCamXyz[1] +
-                                 cam_torso_mat[3 * r + 2] * kCamXyz[2];
+                    cam_pos[r] = body_pos[r] + body_mat[3 * r + 0] * rig.xyz[0] +
+                                 body_mat[3 * r + 1] * rig.xyz[1] +
+                                 body_mat[3 * r + 2] * rig.xyz[2];
                 }
                 double R_body[9];
                 for (int r = 0; r < 3; ++r) {
                     for (int c = 0; c < 3; ++c) {
                         double acc = 0.0;
                         for (int k = 0; k < 3; ++k) {
-                            acc += cam_torso_mat[3 * r + k] * R_cam_mount[3 * k + c];
+                            acc += body_mat[3 * r + k] * rig.R_mount[3 * k + c];
                         }
                         R_body[3 * r + c] = acc;
                     }
@@ -716,40 +811,40 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
                     R_cam[3 * r + 1] = R_body[3 * r + 2];   // cam y  <-  body z
                     R_cam[3 * r + 2] = -R_body[3 * r + 0];  // cam z  <- -body x
                 }
-                std::memcpy(snapshot->cam_xpos + 3 * cam_id, cam_pos, sizeof(cam_pos));
-                std::memcpy(snapshot->cam_xmat + 9 * cam_id, R_cam, sizeof(R_cam));
+                std::memcpy(snapshot->cam_xpos + 3 * rig.cam_id, cam_pos, sizeof(cam_pos));
+                std::memcpy(snapshot->cam_xmat + 9 * rig.cam_id, R_cam, sizeof(R_cam));
 
+                cam_cam.fixedcamid = rig.cam_id;
                 mjv_updateScene(m, snapshot, &cam_opt, nullptr, &cam_cam, mjCAT_ALL, &cam_scn);
-                mjrRect vp{0, 0, cfg.camera_width, cfg.camera_height};
+                mjrRect vp{0, 0, rig.width, rig.height};
                 mjr_render(vp, &cam_scn, &cam_con);
-                mjr_readPixels(cam_rgb.data(), cam_depth.data(),
-                               vp, &cam_con);
+                mjr_readPixels(rig.rgb.data(), rig.depth.data(), vp, &cam_con);
 
                 // Linearise the [0,1] OpenGL depth with the frustum the render actually used;
                 // vis.map * stat.extent gives a different near plane and wrong depth everywhere.
                 const double znear = cam_scn.camera[0].frustum_near;
                 const double zfar  = cam_scn.camera[0].frustum_far;
-                for (std::size_t i = 0; i < cam_depth.size(); ++i) {
-                    const double z = cam_depth[i];
-                    cam_depth[i]   = (z >= 1.0)
-                                       ? std::numeric_limits<float>::quiet_NaN()
-                                       : static_cast<float>(
-                                             znear * zfar / (zfar - z * (zfar - znear)));
+                for (float& value : rig.depth) {
+                    const double z = value;
+                    value          = (z >= 1.0)
+                                         ? std::numeric_limits<float>::quiet_NaN()
+                                         : static_cast<float>(
+                                               znear * zfar / (zfar - z * (zfar - znear)));
                 }
 
                 // Rows come out of GL bottom-up; ROS images are top-down.
-                const int w = cfg.camera_width, h = cfg.camera_height;
+                const int w = rig.width, h = rig.height;
                 for (int y = 0; y < h / 2; ++y) {
-                    std::swap_ranges(cam_depth.begin() + static_cast<std::size_t>(y) * w,
-                                     cam_depth.begin() + static_cast<std::size_t>(y + 1) * w,
-                                     cam_depth.begin() + static_cast<std::size_t>(h - 1 - y) * w);
+                    std::swap_ranges(rig.depth.begin() + static_cast<std::size_t>(y) * w,
+                                     rig.depth.begin() + static_cast<std::size_t>(y + 1) * w,
+                                     rig.depth.begin() + static_cast<std::size_t>(h - 1 - y) * w);
                 }
                 {
                     const std::size_t stride = static_cast<std::size_t>(w) * 3;
                     for (int y = 0; y < h / 2; ++y) {
-                        std::swap_ranges(cam_rgb.begin() + static_cast<std::size_t>(y) * stride,
-                                         cam_rgb.begin() + static_cast<std::size_t>(y + 1) * stride,
-                                         cam_rgb.begin() +
+                        std::swap_ranges(rig.rgb.begin() + static_cast<std::size_t>(y) * stride,
+                                         rig.rgb.begin() + static_cast<std::size_t>(y + 1) * stride,
+                                         rig.rgb.begin() +
                                              static_cast<std::size_t>(h - 1 - y) * stride);
                     }
                 }
@@ -758,8 +853,8 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
                 dh.magic         = kSensorFrameMagic;
                 dh.version       = kSensorFrameVersion;
                 dh.kind          = static_cast<uint32_t>(SensorFrameKind::Depth);
-                const std::size_t depth_bytes = cam_depth.size() * sizeof(float);
-                const std::size_t rgb_bytes    = cam_rgb.size();
+                const std::size_t depth_bytes = rig.depth.size() * sizeof(float);
+                const std::size_t rgb_bytes   = rig.rgb.size();
                 dh.payload_bytes = static_cast<uint32_t>(depth_bytes + rgb_bytes);
                 dh.rgb_bytes     = static_cast<uint32_t>(rgb_bytes);
                 dh.sim_time_s    = sim_time;
@@ -767,13 +862,14 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
                 matrixToQuat(R_body, dh.sensor_quat);
                 dh.width    = static_cast<uint32_t>(w);
                 dh.height   = static_cast<uint32_t>(h);
-                dh.fovy_deg = static_cast<float>(m->cam_fovy[cam_id]);
+                dh.fovy_deg = static_cast<float>(m->cam_fovy[rig.cam_id]);
+                std::snprintf(dh.camera, sizeof(dh.camera), "%s", rig.name.c_str());
                 // Colour rides in the same frame: it came from the same render, and pairing it up
                 // downstream could only lose that.
                 cam_payload.resize(depth_bytes + rgb_bytes);
-                std::memcpy(cam_payload.data(), cam_depth.data(), depth_bytes);
+                std::memcpy(cam_payload.data(), rig.depth.data(), depth_bytes);
                 if (rgb_bytes != 0) {
-                    std::memcpy(cam_payload.data() + depth_bytes, cam_rgb.data(), rgb_bytes);
+                    std::memcpy(cam_payload.data() + depth_bytes, rig.rgb.data(), rgb_bytes);
                 }
                 relay.send(dh, cam_payload.data(), cam_payload.size());
             }
@@ -785,8 +881,9 @@ void sensorLoop(const Config cfg, mjModel** model, mjData** data, std::recursive
             cam_total_ms += std::chrono::duration<double, std::milli>(cam_t2 - cam_t0).count();
             if (++cam_n % 100 == 0) {
                 std::fprintf(
-                    stderr, "[grove_g1] camera: %.2f ms/frame, %.3f ms under lock (%d frames)\n",
-                    cam_total_ms / cam_n, cam_lock_ms / cam_n, cam_n);
+                    stderr,
+                    "[grove_g1] cameras: %.2f ms/frame for %zu, %.3f ms under lock (%d frames)\n",
+                    cam_total_ms / cam_n, rigs.size(), cam_lock_ms / cam_n, cam_n);
             }
         }
 

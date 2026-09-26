@@ -47,6 +47,7 @@ flowchart LR
 | `rviz` | `false` | Open RViz for what is running: MoveIt's own window with `moveit:=true`, plus `g1_navigation.rviz` if `nav:=true`. Without MoveIt, `g1_navigation.rviz` in the navigation modes and `g1_sensors.rviz` otherwise. |
 | `visualization` | empty | Everything drawn only for RViz: the annotated camera image, ground truth, `/object_markers` and the grasp plan. Empty follows `rviz`; an RViz opened by hand later needs `true`. |
 | `sensors` | `false` | LiDAR, IMU and camera, the relay and the `odom` to `base_footprint` chain. Forced on by the navigation modes, `manipulation` and `perception`. |
+| `cameras` | empty | Which cameras render: `head` (manipulation's), `chest` (mapping's) or `head,chest`. Empty keeps the world's sensor config: the head camera alone. Mounts are in `g1_description`'s `config/cameras.yaml`. |
 | `odometry` | `fast_lio` | What publishes `odom` to `base_footprint`: `fast_lio`, the LiDAR-inertial pipeline the robot runs, or `ground_truth`, the simulator's exact pose, for ruling the odometry out. |
 | `world` | `navigation` | `navigation`, `perception`, `manipulation`, `tabletop` or `lio`. Staged only with sensors on; otherwise the bare floor. Localization converges only in `navigation`, the facility the committed map was built from. |
 | `headless` | `true` | `false` shows the MuJoCo viewer. See the viewer warning below. |
@@ -151,7 +152,7 @@ others.
 
 | Path | Contents |
 |---|---|
-| `config/sim_sensors.yaml` | LiDAR, IMU and camera parameters read by the patched simulator, the bodies that publish ground-truth poses, and the grasp weld for scenes that declare one. |
+| `config/sim_sensors.yaml` | LiDAR, IMU and camera parameters read by the patched simulator (the cameras by name and MJCF camera, mounted from `g1_description`'s `config/cameras.yaml`), the bodies that publish ground-truth poses, and the grasp weld for scenes that declare one. |
 | `config/g1_sensors.rviz` | RViz without navigation. Fixed frame `odom`. |
 | `mjcf/*.xml` | One scene per world and a pinned variant of each (`lio` has none), plus the flat, walk and pinned overlays. Staged next to the vendored model at launch and removed on shutdown. |
 
