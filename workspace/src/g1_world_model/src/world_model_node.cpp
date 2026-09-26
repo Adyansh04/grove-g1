@@ -1525,20 +1525,32 @@ void WorldModelNode::onReportViewpoint(
     if (request->reached && robot && heading_to_ && heading_to_->id == request->viewpoint_id &&
         !heading_to_->predicted.empty() && predicted_on_ == geometry_)
     {
-        const int    count  = static_cast<int>(geometry_.cellCount());
-        const auto   missed = std::ranges::count_if(heading_to_->predicted, [&](int target) {
-            return target < count ? coverage_.pending(target) :
-                                      coverage_.surfacePending(target - count);
-        });
+        // Seen of predicted, by kind: floor, faces, surfaces.
+        const int                         count = static_cast<int>(geometry_.cellCount());
+        std::array<std::array<int, 2>, 3> tally{};
+        for (const int target : heading_to_->predicted)
+        {
+            const bool surface = target >= count;
+            const auto kind    = surface ? 2 : coverage_.kind(target) == TargetKind::kFace ? 1 : 0;
+            const bool missed =
+                surface ? coverage_.surfacePending(target - count) : coverage_.pending(target);
+            ++tally.at(kind).at(1);
+            tally.at(kind).at(0) += static_cast<int>(!missed);
+        }
         const double last =
             heading_to_->headings.empty() ? robot->yaw : heading_to_->headings.back();
         RCLCPP_INFO(
             get_logger(),
-            "viewpoint %u reached: saw %td of %zu predicted; depth frames %d used, %d moving, %d "
-            "dropped, %d without pose; stopped %.2f m off, facing %.0f deg off the last heading",
+            "viewpoint %u reached: saw %d/%d floor, %d/%d faces, %d/%d surfaces predicted; depth "
+            "frames %d used, %d moving, %d dropped, %d without pose; stopped %.2f m off, facing "
+            "%.0f deg off the last heading",
             request->viewpoint_id,
-            static_cast<std::ptrdiff_t>(heading_to_->predicted.size()) - missed,
-            heading_to_->predicted.size(),
+            tally[0][0],
+            tally[0][1],
+            tally[1][0],
+            tally[1][1],
+            tally[2][0],
+            tally[2][1],
             depth_tally_.used,
             depth_tally_.moving,
             depth_tally_.dropped,
