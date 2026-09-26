@@ -138,6 +138,7 @@ std::string saveWorld(const std::string& directory, const WorldSnapshot& snapsho
         yaml << YAML::Key << "first_seen" << YAML::Value << object.first_seen;
         yaml << YAML::Key << "last_seen" << YAML::Value << object.last_seen;
         yaml << YAML::Key << "misses" << YAML::Value << object.misses;
+        yaml << YAML::Key << "top_seen" << YAML::Value << object.top_seen;
         yaml << YAML::Key << "state" << YAML::Value << stateName(object.state);
         yaml << YAML::Key << "best_view" << YAML::Value << YAML::Flow << YAML::BeginSeq
              << object.best_view.stamp << object.best_view.x << object.best_view.y
@@ -315,6 +316,7 @@ std::optional<WorldSnapshot> loadWorld(const std::string& directory, std::string
             object.first_seen   = node["first_seen"].as<double>(0.0);
             object.last_seen    = node["last_seen"].as<double>(0.0);
             object.misses       = node["misses"].as<int>(0);
+            object.top_seen     = node["top_seen"].as<bool>(false);
             object.state        = stateOf(node["state"].as<std::string>("active"));
             if (const YAML::Node view = node["best_view"]; view && view.size() == 6)
             {

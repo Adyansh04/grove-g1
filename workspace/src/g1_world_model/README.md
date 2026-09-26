@@ -39,9 +39,11 @@ Parameters and their reasons are in `config/g1_world_model.yaml`; room type like
   standing clear of the walls with no return at wall height, unseen inside and all (`~/walls`
   shows the grid). Room ids survive re-segmentation by overlap.
 - **Coverage** (`coverage_map`): floor cells, faces (obstacle cells beside free space) and the tops
-  of tables and shelves. Every depth sample credits the target it lands on with a quality from
-  range, incidence and distance from the image centre. Only frames taken after the base has been
-  still for `settle_s` count, because the relay stamps images on arrival.
+  of tables and shelves whose top a view has taken in: a shelf taller than the camera looks is cut
+  off at the image's top edge, and its highest voxel is no top. Every depth sample credits the
+  target it lands on with a quality from range, incidence and distance from the image centre. Only
+  frames taken after the base has been still for `settle_s` count, because the relay stamps images
+  on arrival.
 - **Viewpoints** (`viewpoint_planner`): frontier mode walks to the edge of the known map, where
   the known map opens onto real unknown space rather than the shadow behind a sofa. Unknown the
   robot has already had in plain view from a viewpoint it reached, and that is still unknown once

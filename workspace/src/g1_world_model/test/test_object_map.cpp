@@ -233,6 +233,30 @@ TEST(ObjectMap, FusesATableAndTheMugOnItAcrossViews)
     EXPECT_NEAR(surfaces[0].height, 0.75, 0.06);
 }
 
+TEST(ObjectMap, TakesNoTopFromFurnitureTallerThanTheViewReached)
+{
+    // A bookshelf a metre off, taller than the head camera looks up: its mask runs off the image
+    // and its highest voxel is only where the view stopped. The table beside it is seen whole.
+    const Camera camera;
+    const Box    shelf{ "bookshelf", { 2.0, 1.8, 0.0 }, { 3.0, 2.15, 2.0 } };
+    const Box    table{ "table", { 3.4, 1.6, 0.0 }, { 4.4, 2.0, 0.75 } };
+    ObjectMap    map;
+    Frame        frame = render(
+        camera,
+        camera.pose(3.2, 0.9, std::numbers::pi / 2.0),
+        { shelf, table },
+        { shelf, table },
+        1.0);
+    map.integrate(frame.inputs, frame.input);
+
+    ASSERT_NE(byLabel(map, "bookshelf"), nullptr);
+    ASSERT_NE(byLabel(map, "table"), nullptr);
+    EXPECT_LT(byLabel(map, "bookshelf")->z_max, 1.2);
+    const std::vector<Surface> surfaces = map.surfaces();
+    ASSERT_EQ(surfaces.size(), 1U);
+    EXPECT_EQ(surfaces[0].id, byLabel(map, "table")->id);
+}
+
 TEST(ObjectMap, ToleratesLocalisationDriftBetweenVisits)
 {
     const Camera           camera;

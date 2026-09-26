@@ -124,6 +124,9 @@ struct MappedObject
     double                     box_yaw    = 0.0;
     double                     z_min      = 0.0;
     double                     z_max      = 0.0;
+    /// A mask of it stopped short of its image's upper edge: z_max is its own top, not merely
+    /// as high as a camera looked.
+    bool top_seen = false;
 
     int         observations = 0;
     double      first_seen   = 0.0;
@@ -214,6 +217,7 @@ private:
     {
         std::vector<std::uint64_t> voxels;
         Eigen::Vector3d            centroid = Eigen::Vector3d::Zero();
+        bool                       top_seen = false;  // See MappedObject::top_seen.
     };
 
     [[nodiscard]] std::optional<Lifted> lift(const MaskInput& mask, const FrameInput& frame) const;

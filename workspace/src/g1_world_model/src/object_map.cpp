@@ -210,7 +210,8 @@ ObjectMap::lift(const MaskInput& mask, const FrameInput& frame) const
     }
     pixels = thinned(pixels, static_cast<std::size_t>(params_.max_points));
 
-    std::vector<std::uint64_t> keys;
+    std::vector<std::uint64_t>                 keys;
+    std::vector<std::pair<std::uint64_t, int>> rows;  // Each point's voxel and image row.
     keys.reserve(pixels.size());
     for (const auto& [u, v] : pixels)
     {
@@ -230,6 +231,7 @@ ObjectMap::lift(const MaskInput& mask, const FrameInput& frame) const
             continue;
         }
         keys.push_back(keyOf(point));
+        rows.emplace_back(keys.back(), v);
     }
     std::sort(keys.begin(), keys.end());
     keys.erase(std::unique(keys.begin(), keys.end()), keys.end());
@@ -306,6 +308,19 @@ ObjectMap::lift(const MaskInput& mask, const FrameInput& frame) const
         return std::nullopt;
     }
     lifted.centroid /= static_cast<double>(lifted.voxels.size());
+
+    // The view went past the object's top when its highest points are not all in the image's
+    // top rows: a shelf taller than the camera looks is cut off there, a table's top runs down.
+    double top = std::numeric_limits<double>::lowest();
+    for (const std::uint64_t key : lifted.voxels)
+    {
+        top = std::max(top, centreOf(key).z());
+    }
+    const int edge  = frame.depth.height / 10;
+    lifted.top_seen = std::ranges::any_of(rows, [&](const auto& point) {
+        return point.second >= edge && centreOf(point.first).z() >= top - params_.voxel &&
+               std::binary_search(lifted.voxels.begin(), lifted.voxels.end(), point.first);
+    });
     return lifted;
 }
 
@@ -478,7 +493,8 @@ void ObjectMap::absorb(
         detection.voxels.begin(),
         detection.voxels.end(),
         std::back_inserter(merged));
-    object.voxels = thinned(merged, static_cast<std::size_t>(params_.max_voxels));
+    object.voxels   = thinned(merged, static_cast<std::size_t>(params_.max_voxels));
+    object.top_seen = object.top_seen || detection.top_seen;
 
     if (object.observations == 0)
     {
@@ -722,6 +738,7 @@ void ObjectMap::checkAbsence(const FrameInput& frame, const std::vector<int>& ma
 
 void ObjectMap::mergeInto(MappedObject& keep, MappedObject& drop) const
 {
+    keep.top_seen = keep.top_seen || drop.top_seen;
     for (const auto& [label, weight] : drop.votes)
     {
         keep.votes[label] += weight;
@@ -896,8 +913,9 @@ std::vector<Surface> ObjectMap::surfaces() const
     std::vector<Surface> out;
     for (const MappedObject& object : objects_)
     {
+        // A top no view has taken in is where a camera stopped looking, not a surface.
         if (object.state == ObjectState::kRemoved || !isSupport(object.label()) ||
-            object.height() < 0.2)
+            object.height() < 0.2 || !object.top_seen)
         {
             continue;
         }
