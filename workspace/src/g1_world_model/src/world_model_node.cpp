@@ -232,6 +232,14 @@ WorldModelNode::WorldModelNode(const rclcpp::NodeOptions& options)
         declare_parameter<double>("objects.fit_min_share", map_fit_params_.min_share);
     map_fit_params_.max_stretch =
         declare_parameter<double>("objects.fit_max_stretch", map_fit_params_.max_stretch);
+    map_fit_params_.edge_bleed =
+        declare_parameter<double>("objects.fit_edge_bleed", map_fit_params_.edge_bleed);
+    map_fit_params_.wall_reach =
+        declare_parameter<double>("objects.fit_wall_reach", map_fit_params_.wall_reach);
+    map_fit_params_.adrift_free =
+        declare_parameter<double>("objects.fit_adrift_free", map_fit_params_.adrift_free);
+    map_fit_params_.min_adrift_share =
+        declare_parameter<double>("objects.fit_min_adrift_share", map_fit_params_.min_adrift_share);
     min_furniture_depth_ = declare_parameter<double>("objects.fit_min_depth", min_furniture_depth_);
     objects.confirm_s    = declare_parameter<double>("objects.confirm_s", objects.confirm_s);
     second_look_reach_ = declare_parameter<double>("objects.second_look_reach", second_look_reach_);
@@ -674,16 +682,16 @@ cv::Mat WorldModelNode::structureCells() const
     return clearFreestanding(rooms, wallMask(1));
 }
 
-cv::Mat WorldModelNode::furnitureCells() const
+cv::Mat WorldModelNode::furnitureCells(const cv::Mat& plan) const
 {
-    if (!structureReady())
+    if (plan.empty())
     {
         return {};
     }
     // Solid cells less wall-height hits: a counter stays solid back to its wall, a wardrobe keeps
     // its inside; walls no hit marked are too thin to survive the opening.
     const int radius    = std::max(1, geometry_.cellsFor(0.5 * min_furniture_depth_));
-    cv::Mat   furniture = (floorPlan() == kOccupied) & (wallMask(1) == 0);
+    cv::Mat   furniture = (plan == kOccupied) & (wallMask(1) == 0);
     cv::morphologyEx(
         furniture,
         furniture,
@@ -1857,7 +1865,10 @@ void WorldModelNode::publishState()
         resegment();
     }
     typeRooms();
-    fitted_ = fitToMap(objects_.objects(), furnitureCells(), geometry_, map_fit_params_);
+    // The map's outline under each floor object, its sides then set by what they face.
+    const cv::Mat plan = structureReady() ? floorPlan() : cv::Mat();
+    fitted_ = fitToMap(objects_.objects(), furnitureCells(plan), geometry_, map_fit_params_, plan);
+    settleSides(fitted_, plan, wallMask(0), geometry_, map_fit_params_);
 
     const auto                       stamp = now();
     const std::vector<CoverageTally> tallies =

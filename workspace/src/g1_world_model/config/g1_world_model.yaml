@@ -111,6 +111,17 @@ g1_world_model:
       fit_min_share: 0.25
       fit_max_stretch: 1.0
       fit_min_depth: 0.2
+      # Then each side moves to where the object ends: in by the scan's blur where it faces free
+      # floor, out to the wall where the wall's band took the object's back. Runs 26-29 boxes were
+      # 0.10-0.17 m too big across chairs, sofas and tables, 0.10-0.12 m short across counters.
+      fit_edge_bleed: 0.05
+      fit_wall_reach: 0.2
+      # A box mostly on floor the scan saw free has drifted: run 28's crate spread 2.3 m over the
+      # storage room as SLAM moved its map; the map's outline of at least fit_min_adrift_share m2
+      # then replaces it. A plant's leaves over free floor are no drift: run 33 swapped a plant
+      # for the 9 cells of its pot.
+      fit_adrift_free: 0.5
+      fit_min_adrift_share: 0.04
 
     floor_plan:
       # Walls hidden from the LiDAR at every height, behind a wardrobe or a tall shelf, are

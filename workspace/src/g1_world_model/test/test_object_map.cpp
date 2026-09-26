@@ -676,6 +676,64 @@ TEST(MapFit, GivesACounterItsBackRatherThanTheStoveBesideIt)
     EXPECT_NEAR(fitted.at(2).size.x(), 0.75, 0.12);
 }
 
+TEST(MapFit, TakesTheMapsOutlineForABoxThatDriftedOverFreeFloor)
+{
+    // A crate against a wall whose voxels SLAM smeared 2.3 m along the floor beside it.
+    const GridGeometry geometry{ 0.05, 0.0, 0.0, 80, 60 };
+    cv::Mat            plan(geometry.height, geometry.width, CV_8UC1, cv::Scalar(kFree));
+    cv::Mat            furniture(plan.size(), CV_8UC1, cv::Scalar(0));
+    plan(cv::Rect(60, 10, 11, 22)).setTo(kOccupied);
+    furniture(cv::Rect(60, 10, 11, 22)).setTo(255);
+    MappedObject crate;
+    crate.id         = 1;
+    crate.box_centre = { 3.0, 1.1 };
+    crate.box_size   = { 1.2, 2.3 };
+
+    EXPECT_FALSE(fitToMap({ crate }, furniture, geometry).contains(1));
+    const std::map<int, Footprint> fitted = fitToMap({ crate }, furniture, geometry, {}, plan);
+    ASSERT_TRUE(fitted.contains(1));
+    EXPECT_NEAR(fitted.at(1).size.x(), 0.55, 0.06);
+    EXPECT_NEAR(fitted.at(1).size.y(), 1.1, 0.06);
+}
+
+TEST(MapFit, KeepsAPlantsBoxOverTheFloorItsLeavesCover)
+{
+    // The scan sees a plant's pot, the camera its leaves out over the floor round it.
+    const GridGeometry geometry{ 0.05, 0.0, 0.0, 60, 60 };
+    cv::Mat            plan(geometry.height, geometry.width, CV_8UC1, cv::Scalar(kFree));
+    cv::Mat            furniture(plan.size(), CV_8UC1, cv::Scalar(0));
+    plan(cv::Rect(28, 28, 3, 3)).setTo(kOccupied);
+    furniture(cv::Rect(28, 28, 3, 3)).setTo(255);
+    MappedObject plant;
+    plant.id         = 1;
+    plant.box_centre = { 1.475, 1.475 };
+    plant.box_size   = { 0.7, 0.66 };
+    EXPECT_FALSE(fitToMap({ plant }, furniture, geometry, {}, plan).contains(1));
+}
+
+TEST(MapFit, MovesEachSideToWhereTheObjectEnds)
+{
+    // A chair out on the floor whose blob the scan blurred a cell wider all round, and a counter
+    // the wall's band cut 0.15 m short of its wall; both fitted to exactly what the blobs gave.
+    const GridGeometry geometry{ 0.05, 0.0, 0.0, 80, 60 };
+    cv::Mat            plan(geometry.height, geometry.width, CV_8UC1, cv::Scalar(kFree));
+    cv::Mat            walls(plan.size(), CV_8UC1, cv::Scalar(0));
+    plan.rowRange(50, 53).setTo(kOccupied);
+    walls.rowRange(50, 53).setTo(255);
+    plan(cv::Rect(19, 36, 34, 14)).setTo(kOccupied);  // The counter, y 1.80-2.50.
+    plan(cv::Rect(59, 9, 12, 12)).setTo(kOccupied);   // The chair, x 2.95-3.55.
+    std::map<int, Footprint> fitted{
+        { 1, { { 1.8, 2.075 }, { 1.7, 0.55 }, 0.0 } },
+        { 2, { { 3.25, 0.75 }, { 0.6, 0.6 }, 0.0 } },
+    };
+    settleSides(fitted, plan, walls, geometry);
+
+    EXPECT_NEAR(fitted.at(1).size.y(), 0.65, 1e-6);  // In at the front, back to the wall.
+    EXPECT_NEAR(fitted.at(1).centre.y(), 2.175, 1e-6);
+    EXPECT_NEAR(fitted.at(2).size.x(), 0.5, 1e-6);
+    EXPECT_NEAR(fitted.at(2).size.y(), 0.5, 1e-6);
+}
+
 TEST(MapFit, LeavesTheWallAWardrobeStandsAgainst)
 {
     // The floor plan fuses a wardrobe to a thick stretch of wall that runs on 3 m past it.

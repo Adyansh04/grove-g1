@@ -241,6 +241,13 @@ struct MapFitParams
     double max_growth  = 3.0;   ///< A share larger than this many boxes is something bigger.
     double min_share   = 0.25;  ///< And one smaller than this share is a leg, not the object.
     double max_stretch = 1.0;   ///< Cells further than this outside an object's box are not its, m.
+    double edge_bleed  = 0.05;  ///< The scan's blur past a side that faces free floor, m.
+    /// A box more than this share of it on floor the scan saw free has drifted: the map's
+    /// outline under it replaces it, if at least min_adrift_share, m2; a plant's pot, alone in
+    /// the scan under its leaves, is not the plant.
+    double adrift_free      = 0.5;
+    double min_adrift_share = 0.04;
+    double wall_reach       = 0.2;  ///< Furthest a side reaches back to the wall behind it, m.
 };
 
 /**
@@ -250,10 +257,25 @@ struct MapFitParams
  * all to the nearest for its size; an object keeps its share only when that is about its own size.
  *
  * @param furniture CV_8U on @p geometry, non-zero where the map is occupied but not by a wall.
+ * @param plan      CV_8U Cell values of the floor plan, to tell a drifted box; may be empty.
  * @return Fitted boxes by object id, each along its object's own box axes.
  */
 [[nodiscard]] std::map<int, Footprint> fitToMap(
     const std::vector<MappedObject>& objects, const cv::Mat& furniture,
+    const GridGeometry& geometry, const MapFitParams& params = {}, const cv::Mat& plan = {});
+
+/**
+ * @brief Moves each side of fitted boxes to where the plan says the object ends.
+ *
+ * A side facing free floor comes in by edge_bleed, the scan's blur. A side facing solid that no
+ * wall return marks, with the wall right behind it, goes out to the wall: the wall's band took
+ * the back of a counter with it. A side facing anything else stays.
+ *
+ * @param plan  CV_8U Cell values of the floor plan the boxes were fitted on.
+ * @param walls CV_8U, non-zero where the LiDAR hit wall height.
+ */
+void settleSides(
+    std::map<int, Footprint>& fitted, const cv::Mat& plan, const cv::Mat& walls,
     const GridGeometry& geometry, const MapFitParams& params = {});
 
 }  // namespace g1_world_model

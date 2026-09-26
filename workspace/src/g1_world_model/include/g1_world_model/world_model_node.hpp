@@ -112,9 +112,9 @@ private:
     void resegment();
     /// The map with furniture cleared: occupied cells no wall-height return backs up.
     [[nodiscard]] cv::Mat structureCells() const;
-    /// Occupied cells the LiDAR has looked across at wall height: furniture, not walls. Empty
-    /// until enough walls have been seen to tell.
-    [[nodiscard]] cv::Mat furnitureCells() const;
+    /// The furniture in @p plan, the floor plan: its solid cells less wall-height returns and
+    /// bands too thin to be furniture. Empty when @p plan is.
+    [[nodiscard]] cv::Mat furnitureCells(const cv::Mat& plan) const;
     [[nodiscard]] bool    structureReady() const;
     /// Wall-height returns, grown by @p reach cells, CV_8U 255 where a wall is.
     [[nodiscard]] cv::Mat wallMask(int reach) const;

@@ -22,6 +22,8 @@ namespace
 
 constexpr std::int64_t  kKeyOffset = std::int64_t{ 1 } << 20;
 constexpr std::uint64_t kKeyMask   = (std::uint64_t{ 1 } << 21) - 1;
+/// Of a box's extent, the most one side comes in for the scan's blur: a dustbin would vanish.
+constexpr double kMaxBleedShare = 0.1;
 
 float depthAt(const DepthImage& depth, int u, int v)
 {
@@ -947,7 +949,7 @@ void ObjectMap::restore(std::vector<MappedObject> objects)
 
 std::map<int, Footprint> fitToMap(
     const std::vector<MappedObject>& objects, const cv::Mat& furniture,
-    const GridGeometry& geometry, const MapFitParams& params)
+    const GridGeometry& geometry, const MapFitParams& params, const cv::Mat& plan)
 {
     std::map<int, Footprint> fitted;
     if (furniture.empty() || furniture.rows != geometry.height || furniture.cols != geometry.width)
@@ -1062,13 +1064,38 @@ std::map<int, Footprint> fitToMap(
         }
     }
 
+    // Voxels laid down before SLAM moved its map smear an object over floor the scan saw free.
+    const auto adrift = [&](const MappedObject& object) {
+        if (plan.empty())
+        {
+            return false;
+        }
+        cv::Mat                  box(plan.size(), CV_8UC1, cv::Scalar(0));
+        std::array<cv::Point, 4> corners;
+        const double             c = std::cos(object.box_yaw);
+        const double             s = std::sin(object.box_yaw);
+        std::size_t              k = 0;
+        for (const auto& [su, sv] : { std::pair{ 1, 1 }, { -1, 1 }, { -1, -1 }, { 1, -1 } })
+        {
+            const double    u    = 0.5 * su * object.box_size.x();
+            const double    v    = 0.5 * sv * object.box_size.y();
+            const CellIndex cell = geometry.toCell(
+                object.box_centre.x() + (c * u) - (s * v),
+                object.box_centre.y() + (s * u) + (c * v));
+            corners.at(k++) = { cell.x, cell.y };
+        }
+        cv::fillConvexPoly(box, corners.data(), static_cast<int>(corners.size()), cv::Scalar(255));
+        const int area = cv::countNonZero(box);
+        return area > 0 && cv::countNonZero(box & (plan == kFree)) > params.adrift_free * area;
+    };
     const double cell_area = geometry.resolution * geometry.resolution;
     for (const Owner& owner : owners)
     {
         const double share    = owner.cells * cell_area;
         const double box_area = owner.object->box_size.x() * owner.object->box_size.y();
+        const bool   drifted  = share >= params.min_adrift_share && adrift(*owner.object);
         if (owner.cells == 0 || share > params.max_growth * box_area ||
-            share < params.min_share * box_area)
+            (share < params.min_share * box_area && !drifted))
         {
             continue;
         }
@@ -1081,6 +1108,78 @@ std::map<int, Footprint> fitToMap(
                                      owner.object->box_yaw };
     }
     return fitted;
+}
+
+void settleSides(
+    std::map<int, Footprint>& fitted, const cv::Mat& plan, const cv::Mat& walls,
+    const GridGeometry& geometry, const MapFitParams& params)
+{
+    if (plan.empty() || walls.size() != plan.size())
+    {
+        return;
+    }
+    const double res   = geometry.resolution;
+    const int    reach = std::max(1, geometry.cellsFor(params.wall_reach));
+    const auto   cell  = [&](const CellIndex& at) {
+        return geometry.contains(at) ? plan.at<std::uint8_t>(at.y, at.x) : kUnknown;
+    };
+    for (auto& [id, box] : fitted)
+    {
+        const Eigen::Vector2d along(std::cos(box.yaw), std::sin(box.yaw));
+        const Eigen::Vector2d across(-along.y(), along.x());
+        // How far each side moves out, negative in: +along, -along, +across, -across.
+        std::array<double, 4> move{};
+        for (std::size_t side = 0; side < move.size(); ++side)
+        {
+            const bool            lengthwise = side < 2;
+            const Eigen::Vector2d normal =
+                (lengthwise ? along : across) * (side % 2 == 0 ? 1.0 : -1.0);
+            const Eigen::Vector2d tangent      = lengthwise ? across : along;
+            const double          half         = 0.5 * (lengthwise ? box.size.x() : box.size.y());
+            const double          length       = lengthwise ? box.size.y() : box.size.x();
+            int                   facing_floor = 0;
+            std::vector<int>      to_wall;
+            const int             count = std::max(1, static_cast<int>(std::lround(length / res)));
+            for (int sample = 0; sample < count; ++sample)
+            {
+                const double          t      = ((sample + 0.5) * res) - (0.5 * length);
+                const Eigen::Vector2d edge   = box.centre + (half * normal) + (t * tangent);
+                const auto            beyond = [&](int step) {
+                    const Eigen::Vector2d at = edge + (((step + 0.5) * res) * normal);
+                    return geometry.toCell(at.x(), at.y());
+                };
+                if (cell(beyond(0)) == kFree)
+                {
+                    ++facing_floor;
+                    continue;
+                }
+                for (int step = 0; step < reach && cell(beyond(step)) == kOccupied; ++step)
+                {
+                    const CellIndex at = beyond(step);
+                    if (walls.at<std::uint8_t>(at.y, at.x) != 0)
+                    {
+                        to_wall.push_back(step);
+                        break;
+                    }
+                }
+            }
+            // Most of the side has to agree before it moves.
+            if (facing_floor * 10 >= count * 6)
+            {
+                move.at(side) = -std::min(params.edge_bleed, kMaxBleedShare * 2.0 * half);
+            }
+            else if (static_cast<int>(to_wall.size()) * 10 >= count * 6)
+            {
+                const auto middle =
+                    to_wall.begin() + static_cast<std::ptrdiff_t>(to_wall.size() / 2);
+                std::nth_element(to_wall.begin(), middle, to_wall.end());
+                move.at(side) = *middle * res;
+            }
+        }
+        box.size.x() = std::max(res, box.size.x() + move[0] + move[1]);
+        box.size.y() = std::max(res, box.size.y() + move[2] + move[3]);
+        box.centre += (0.5 * (move[0] - move[1]) * along) + (0.5 * (move[2] - move[3]) * across);
+    }
 }
 
 }  // namespace g1_world_model
