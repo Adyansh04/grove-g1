@@ -1149,8 +1149,14 @@ std::optional<Viewpoint> ViewpointPlanner::tourStart(
         return std::nullopt;
     }
 
-    // Walking distances: from the robot, already known, and between the picks.
-    const std::size_t count = picks.size();
+    return std::move(picks[shortestWalkStart(picks, geometry)]);
+}
+
+std::size_t ViewpointPlanner::shortestWalkStart(
+    const std::vector<Viewpoint>& stops, const GridGeometry& geometry) const
+{
+    // Walking distances: from the robot, already known, and between the stops.
+    const std::size_t count = stops.size();
     const auto        cell  = [&](const Viewpoint& v) {
         return static_cast<std::size_t>(geometry.index(geometry.toCell(v.x, v.y)));
     };
@@ -1159,11 +1165,11 @@ std::optional<Viewpoint> ViewpointPlanner::tourStart(
     std::vector<float>  field;
     for (std::size_t i = 0; i < count; ++i)
     {
-        start[i] = travel_[cell(picks[i])];
-        travelFrom(geometry, picks[i].x, picks[i].y, field);
+        start[i] = travel_[cell(stops[i])];
+        travelFrom(geometry, stops[i].x, stops[i].y, field);
         for (std::size_t j = 0; j < count; ++j)
         {
-            between[(i * count) + j] = field[cell(picks[j])];
+            between[(i * count) + j] = field[cell(stops[j])];
         }
     }
     const auto walk = [&](const std::vector<std::size_t>& order) {
@@ -1212,7 +1218,7 @@ std::optional<Viewpoint> ViewpointPlanner::tourStart(
             }
         }
     }
-    return std::move(picks[order.front()]);
+    return order.front();
 }
 
 void ViewpointPlanner::recordPose(const Pose2D& robot)

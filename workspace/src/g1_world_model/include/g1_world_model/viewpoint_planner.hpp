@@ -231,6 +231,11 @@ private:
     [[nodiscard]] std::optional<Viewpoint> tourStart(
         std::vector<Viewpoint> options, const GridGeometry& geometry,
         const std::function<double(int)>& worth) const;
+    /// Index of the first of @p stops (not empty) on the shortest walk from the robot through
+    /// them all: nearest first, then 2-opt, over walking distances.
+    [[nodiscard]] std::size_t
+    shortestWalkStart(const std::vector<Viewpoint>& stops, const GridGeometry& geometry) const;
+
     void castRays(
         const CoverageMap& coverage, const CameraModel& camera, double x, double y,
         std::vector<Hit>& hits, std::vector<int>& offsets) const;
