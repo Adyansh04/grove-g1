@@ -6,6 +6,7 @@
 #include <gmock/gmock.h>
 
 #include <cmath>
+#include <functional>
 #include <limits>
 #include <numbers>
 
@@ -339,6 +340,46 @@ TEST(ObjectMap, JoinsTheEndsOfATableButNotTwoChairs)
     EXPECT_GT(byLabel(map, "table")->box_size.maxCoeff(), 2.5);
 }
 
+TEST(ObjectMap, MergesALowFragmentUnderTheBedItBelongsTo)
+{
+    // A bed frame, and one of its legs seen alone in another view: too low to touch the frame.
+    const Camera camera;
+    const Box    bed{ "bed", { 1.0, 1.2, 0.35 }, { 3.0, 2.2, 0.72 } };
+    const Box    leg{ "bed", { 2.6, 1.3, 0.0 }, { 2.9, 1.6, 0.15 } };
+    ObjectMap    map;
+    const auto   pose  = camera.pose(2.0, 0.2, std::numbers::pi / 2.0);
+    Frame        first = render(camera, pose, { bed, leg }, { bed }, 1.0);
+    map.integrate(first.inputs, first.input);
+    Frame second = render(camera, pose, { bed, leg }, { leg }, 2.0);
+    map.integrate(second.inputs, second.input);
+    ASSERT_EQ(countActive(map), 2);
+
+    map.mergeDuplicates();
+    EXPECT_EQ(countActive(map), 1);
+}
+
+TEST(ObjectMap, OffersASecondLookAtAGlimpseButNotAtAPieceOfWhatItKnows)
+{
+    // A bed seen twice, a vase in front of it once, and one of the bed's legs once on its own.
+    const Camera camera;
+    const Box    bed{ "bed", { 1.0, 1.2, 0.35 }, { 3.0, 2.2, 0.72 } };
+    const Box    leg{ "bed", { 2.6, 1.3, 0.0 }, { 2.9, 1.6, 0.15 } };
+    const Box    vase{ "vase", { 1.5, 0.9, 0.0 }, { 1.7, 1.1, 0.4 } };
+    ObjectMap    map;
+    const auto   pose  = camera.pose(2.0, 0.2, std::numbers::pi / 2.0);
+    Frame        first = render(camera, pose, { bed, leg, vase }, { bed, vase }, 1.0);
+    map.integrate(first.inputs, first.input);
+    Frame second = render(camera, pose, { bed, leg, vase }, { bed, leg }, 2.0);
+    map.integrate(second.inputs, second.input);
+    ASSERT_EQ(countActive(map), 3);
+
+    const std::vector<const MappedObject*> glimpses = map.glimpses();
+    ASSERT_EQ(glimpses.size(), 1U);
+    EXPECT_EQ(glimpses[0]->label(), "vase");
+    EXPECT_NEAR(glimpses[0]->seen_from.x(), 2.0, 1e-9);
+    EXPECT_NEAR(glimpses[0]->seen_from.y(), 0.2, 1e-9);
+}
+
 TEST(ObjectMap, DropsAFragmentNoSecondSightingConfirms)
 {
     const Camera camera;
@@ -350,10 +391,36 @@ TEST(ObjectMap, DropsAFragmentNoSecondSightingConfirms)
     Frame second = render(camera, pose, { kTable, vase, kWall }, { kTable }, 2.0);
     map.integrate(second.inputs, second.input);
 
-    EXPECT_EQ(map.pruneUnconfirmed(10.0), 0);  // Still within the window: it may yet be seen.
-    EXPECT_EQ(map.pruneUnconfirmed(40.0), 1);
+    const double window = ObjectMapParams{}.confirm_s;
+    EXPECT_EQ(map.pruneUnconfirmed(window - 10.0), 0);  // Within the window: it may yet be seen.
+    EXPECT_EQ(map.pruneUnconfirmed(window + 10.0), 1);
     EXPECT_EQ(byLabel(map, "vase"), nullptr);
     EXPECT_NE(byLabel(map, "table"), nullptr);
+}
+
+TEST(ObjectMap, JoinsTwoGlimpsesOfATableBeforeDroppingEither)
+{
+    // One end of the table seen once, the other once more than the confirmation window later.
+    const Camera    camera;
+    const Box       table{ "table", { 1.0, 1.0, 0.0 }, { 4.0, 1.8, 0.75 } };
+    const Box       left{ "table", { 1.0, 1.0, 0.0 }, { 2.5, 1.8, 0.75 } };
+    const Box       right{ "table", { 2.55, 1.0, 0.0 }, { 4.0, 1.8, 0.75 } };
+    ObjectMapParams params;
+    params.merge_every = 1;
+    ObjectMap map(params);
+    Frame     first =
+        render(camera, camera.pose(1.75, 0.0, std::numbers::pi / 2.0), { table }, { left }, 1.0);
+    map.integrate(first.inputs, first.input);
+    Frame second = render(
+        camera,
+        camera.pose(3.25, 0.0, std::numbers::pi / 2.0),
+        { table },
+        { right },
+        params.confirm_s + 10.0);
+    map.integrate(second.inputs, second.input);
+
+    ASSERT_EQ(countActive(map), 1);
+    EXPECT_GT(byLabel(map, "table")->box_size.maxCoeff(), 2.5);
 }
 
 TEST(ObjectMap, KeepsABookApartFromTheShelfItStandsIn)
@@ -386,6 +453,222 @@ TEST(ObjectMap, KeepsABookApartFromTheShelfItStandsIn)
     EXPECT_EQ(countActive(map), 2);
     ASSERT_NE(byLabel(map, "book"), nullptr);
     EXPECT_EQ(byLabel(map, "shelf")->votes.count("book"), 0U);
+}
+
+/// An object made of voxels at the given floor points, 0.2-0.6 m up, fitted with the walls at
+/// @p frame_yaw.
+MappedObject fitted(const std::vector<Eigen::Vector2d>& points, double frame_yaw)
+{
+    ObjectMap    map;
+    MappedObject object;
+    object.id           = 1;
+    object.votes["box"] = 1.0F;
+    object.observations = 3;
+    for (const Eigen::Vector2d& point : points)
+    {
+        for (int layer = 1; layer <= 3; ++layer)
+        {
+            object.voxels.push_back(map.keyOf({ point.x(), point.y(), 0.2 * layer }));
+        }
+    }
+    std::sort(object.voxels.begin(), object.voxels.end());
+    object.voxels.erase(
+        std::unique(object.voxels.begin(), object.voxels.end()),
+        object.voxels.end());
+    map.restore({ object });
+    map.setFrame(frame_yaw);
+    return map.objects().front();
+}
+
+/// Points every 2 cm over a rectangle turned by @p yaw about @p centre, kept where @p keep says.
+std::vector<Eigen::Vector2d> rectangle(
+    Eigen::Vector2d centre, double length, double width, double yaw,
+    const std::function<bool(double, double)>& keep = [](double, double) { return true; })
+{
+    std::vector<Eigen::Vector2d> points;
+    for (int i = 0; i * 0.02 <= length; ++i)
+    {
+        for (int j = 0; j * 0.02 <= width; ++j)
+        {
+            const double u = (i * 0.02) - (0.5 * length);
+            const double v = (j * 0.02) - (0.5 * width);
+            if (keep(u, v))
+            {
+                points.emplace_back(
+                    centre.x() + (u * std::cos(yaw)) - (v * std::sin(yaw)),
+                    centre.y() + (u * std::sin(yaw)) + (v * std::cos(yaw)));
+            }
+        }
+    }
+    return points;
+}
+
+double axisError(double a, double b)
+{
+    return std::abs(std::remainder(a - b, std::numbers::pi / 2.0));
+}
+
+TEST(ObjectBox, LaysAPartlySeenFootprintAlongTheWalls)
+{
+    // Half a 1.0 x 0.6 m fridge, cut along its diagonal: the tightest box around it is diagonal.
+    const MappedObject fridge = fitted(
+        rectangle(
+            { 2.0, 1.0 },
+            1.0,
+            0.6,
+            0.0,
+            [](double u, double v) { return (u / 0.5) + (v / 0.3) <= 0.0; }),
+        0.0);
+    EXPECT_LT(axisError(fridge.box_yaw, 0.0), 0.01);
+    EXPECT_NEAR(fridge.box_size.maxCoeff(), 1.0, 0.1);
+    EXPECT_NEAR(fridge.box_size.minCoeff(), 0.6, 0.1);
+}
+
+TEST(ObjectBox, LaysARoundBinAlongTheWallsWhateverTheirAngle)
+{
+    const auto bin = rectangle({ 1.0, 1.0 }, 0.3, 0.3, 0.0, [](double u, double v) {
+        return std::hypot(u, v) <= 0.15;
+    });
+    for (const double walls : { 0.0, 0.5 })
+    {
+        const MappedObject fitted_bin = fitted(bin, walls);
+        EXPECT_LT(axisError(fitted_bin.box_yaw, walls), 0.01) << walls;
+        EXPECT_LT(fitted_bin.box_size.maxCoeff(), 0.42) << walls;
+    }
+}
+
+TEST(ObjectBox, TurnsWithALongObjectSetAtAnAngle)
+{
+    const double       yaw  = 35.0 * std::numbers::pi / 180.0;
+    const MappedObject sofa = fitted(rectangle({ 3.0, 2.0 }, 2.0, 0.8, yaw), 0.0);
+    EXPECT_LT(axisError(sofa.box_yaw, yaw), 0.05);
+    EXPECT_NEAR(sofa.box_size.maxCoeff(), 2.0, 0.1);
+    EXPECT_NEAR(sofa.box_size.minCoeff(), 0.8, 0.1);
+}
+
+TEST(ObjectBox, IsNotStretchedByAFewStrayVoxels)
+{
+    std::vector<Eigen::Vector2d> table  = rectangle({ 2.0, 2.0 }, 1.0, 1.0, 0.0);
+    const std::size_t            strays = table.size() / 100;
+    for (std::size_t i = 0; i < strays; ++i)
+    {
+        table.emplace_back(2.9, 2.0 + (0.01 * static_cast<double>(i % 10)));
+    }
+    const MappedObject box = fitted(table, 0.0);
+    EXPECT_LT(box.box_size.maxCoeff(), 1.1);
+    EXPECT_NEAR(box.box_centre.x(), 2.0, 0.05);
+}
+
+TEST(MapFit, TakesTheOutlineTheMapShowsUnderEachObject)
+{
+    const GridGeometry geometry{ 0.05, 0.0, 0.0, 120, 80 };
+    cv::Mat            furniture(geometry.height, geometry.width, CV_8UC1, cv::Scalar(0));
+    const auto         blob = [&](double x0, double y0, double x1, double y1) {
+        furniture(cv::Rect(
+            geometry.toCell(x0, y0).x,
+            geometry.toCell(x0, y0).y,
+            geometry.toCell(x1, y1).x - geometry.toCell(x0, y0).x,
+            geometry.toCell(x1, y1).y - geometry.toCell(x0, y0).y)) = 255;
+    };
+    blob(2.0, 1.0, 4.0, 2.0);  // A table.
+    blob(2.5, 2.3, 3.0, 2.8);  // A chair.
+    blob(0.5, 0.5, 1.5, 1.5);  // Two nightstands side by side, one blob in the map.
+    blob(0.3, 2.5, 2.0, 3.8);  // A bed, under something much smaller.
+
+    const auto object = [](int id, double x, double y, double sx, double sy, int support = 0) {
+        MappedObject out;
+        out.id         = id;
+        out.box_centre = { x, y };
+        out.box_size   = { sx, sy };
+        out.support    = support;
+        return out;
+    };
+    const std::vector<MappedObject> objects{
+        object(1, 3.2, 1.6, 1.6, 0.7),     // The table, fused from its near half.
+        object(2, 2.75, 2.55, 0.3, 0.3),   // The chair.
+        object(3, 3.0, 1.5, 0.1, 0.1, 1),  // A mug on the table.
+        object(4, 0.8, 1.0, 0.4, 0.8),     // The nightstands, each taking its half.
+        object(5, 1.2, 1.0, 0.4, 0.8),
+        object(6, 1.2, 3.1, 0.3, 0.3),  // A bin on a far bigger blob.
+    };
+    const std::map<int, Footprint> fitted = fitToMap(objects, furniture, geometry);
+
+    ASSERT_TRUE(fitted.contains(1));
+    EXPECT_NEAR(fitted.at(1).centre.x(), 3.0, 0.05);
+    EXPECT_NEAR(fitted.at(1).centre.y(), 1.5, 0.05);
+    EXPECT_NEAR(fitted.at(1).size.x(), 2.0, 0.06);
+    EXPECT_NEAR(fitted.at(1).size.y(), 1.0, 0.06);
+    ASSERT_TRUE(fitted.contains(2));
+    EXPECT_NEAR(fitted.at(2).size.x(), 0.5, 0.06);
+    EXPECT_FALSE(fitted.contains(3));
+    ASSERT_TRUE(fitted.contains(4));
+    ASSERT_TRUE(fitted.contains(5));
+    EXPECT_NEAR(fitted.at(4).centre.x(), 0.75, 0.05);
+    EXPECT_NEAR(fitted.at(5).centre.x(), 1.25, 0.05);
+    EXPECT_NEAR(fitted.at(4).size.x(), 0.5, 0.06);
+    EXPECT_FALSE(fitted.contains(6));
+}
+
+TEST(MapFit, SplitsATableFromTheChairsPushedUnderIt)
+{
+    // The scan band sees a table and the chairs against it as one blob.
+    const GridGeometry geometry{ 0.05, 0.0, 0.0, 120, 80 };
+    cv::Mat            furniture(geometry.height, geometry.width, CV_8UC1, cv::Scalar(0));
+    const auto         blob = [&](double x0, double y0, double x1, double y1) {
+        const CellIndex low  = geometry.toCell(x0, y0);
+        const CellIndex high = geometry.toCell(x1, y1);
+        furniture(cv::Rect(low.x, low.y, high.x - low.x, high.y - low.y)) = 255;
+    };
+    blob(2.0, 1.0, 4.0, 2.0);  // The table.
+    blob(2.5, 2.0, 3.0, 2.5);  // A chair on one side...
+    blob(3.2, 0.5, 3.7, 1.0);  // ...and one on the other.
+    const auto object = [](int id, double x, double y, double sx, double sy) {
+        MappedObject out;
+        out.id         = id;
+        out.box_centre = { x, y };
+        out.box_size   = { sx, sy };
+        return out;
+    };
+    // The table fused from its near end only; the chairs about right.
+    const std::map<int, Footprint> fitted = fitToMap(
+        { object(1, 3.4, 1.5, 1.2, 0.8),
+          object(2, 2.75, 2.25, 0.4, 0.4),
+          object(3, 3.45, 0.75, 0.4, 0.4) },
+        furniture,
+        geometry);
+
+    ASSERT_TRUE(fitted.contains(1));
+    EXPECT_NEAR(fitted.at(1).centre.x(), 3.0, 0.05);
+    EXPECT_NEAR(fitted.at(1).size.x(), 2.0, 0.06);
+    EXPECT_NEAR(fitted.at(1).size.y(), 1.0, 0.06);
+    // A chair may take a sliver of table edge nearer its box than the table's: still a chair.
+    ASSERT_TRUE(fitted.contains(2));
+    EXPECT_NEAR(fitted.at(2).centre.y(), 2.25, 0.05);
+    EXPECT_LT(fitted.at(2).size.x(), 0.7);
+    ASSERT_TRUE(fitted.contains(3));
+    EXPECT_NEAR(fitted.at(3).centre.y(), 0.75, 0.05);
+    EXPECT_LT(fitted.at(3).size.x(), 0.7);
+}
+
+TEST(MapFit, LeavesTheWallAWardrobeStandsAgainst)
+{
+    // The floor plan fuses a wardrobe to a thick stretch of wall that runs on 3 m past it.
+    const GridGeometry geometry{ 0.05, 0.0, 0.0, 120, 80 };
+    cv::Mat            furniture(geometry.height, geometry.width, CV_8UC1, cv::Scalar(0));
+    furniture(cv::Rect(20, 10, 34, 22)) = 255;  // The wardrobe, 1.7 x 1.1 m.
+    furniture(cv::Rect(20, 32, 94, 7))  = 255;  // The wall behind it, 4.7 m.
+    MappedObject wardrobe;
+    wardrobe.id         = 1;
+    wardrobe.box_centre = { 1.9, 1.05 };  // Its front half only, as the camera saw it.
+    wardrobe.box_size   = { 1.6, 0.5 };
+
+    // The wall adds to its share: let the area through to see where the box stops.
+    MapFitParams params;
+    params.max_growth                     = 5.0;
+    const std::map<int, Footprint> fitted = fitToMap({ wardrobe }, furniture, geometry, params);
+    ASSERT_TRUE(fitted.contains(1));
+    EXPECT_LT(fitted.at(1).size.x(), 1.6 + 2.0 + 0.06);  // At most a metre either side...
+    EXPECT_GT(fitted.at(1).size.y(), 1.0);               // ...and back to the wall.
 }
 
 TEST(ObjectMap, KeysRoundTrip)

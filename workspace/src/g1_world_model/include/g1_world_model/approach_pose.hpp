@@ -32,14 +32,6 @@ struct ApproachParams
     double sample_step  = 0.15;  ///< Spacing of candidates along a ring, m.
 };
 
-/// A rectangular footprint in the map frame.
-struct Footprint
-{
-    Eigen::Vector2d centre = Eigen::Vector2d::Zero();
-    Eigen::Vector2d size   = Eigen::Vector2d::Zero();  ///< Along the box axes, m.
-    double          yaw    = 0.0;
-};
-
 /**
  * @brief The nearest reachable pose facing @p target.
  *

@@ -12,6 +12,7 @@
 #include <limits>
 #include <numeric>
 #include <opencv2/imgproc.hpp>
+#include <utility>
 
 namespace g1_world_model
 {
@@ -75,6 +76,32 @@ bool touching(const MappedObject& a, const MappedObject& b, double gap)
     };
     // Separating axes: two rectangles are apart iff one of their four edge directions parts them.
     return std::ranges::all_of(std::array{ along_a[0], along_a[1], along_b[0], along_b[1] }, meet);
+}
+
+/// Whether the smaller footprint's centre lies within the larger, whatever their heights: a bed's
+/// legs seen alone sit under it, too low to touch it.
+bool nested(const MappedObject& a, const MappedObject& b)
+{
+    const bool            a_smaller = a.box_size.prod() <= b.box_size.prod();
+    const MappedObject&   inner     = a_smaller ? a : b;
+    const MappedObject&   outer     = a_smaller ? b : a;
+    const Eigen::Vector2d offset    = inner.box_centre - outer.box_centre;
+    const double          c         = std::cos(outer.box_yaw);
+    const double          s         = std::sin(outer.box_yaw);
+    return std::abs((offset.x() * c) + (offset.y() * s)) <= 0.5 * outer.box_size.x() &&
+           std::abs((offset.y() * c) - (offset.x() * s)) <= 0.5 * outer.box_size.y();
+}
+
+/// The lowest and highest values once @p trim are dropped from each end.
+std::pair<double, double> trimmedRange(std::vector<double>& values, std::size_t trim)
+{
+    trim            = std::min(trim, (values.size() - 1) / 2);
+    const auto low  = values.begin() + static_cast<std::ptrdiff_t>(trim);
+    const auto high = values.end() - 1 - static_cast<std::ptrdiff_t>(trim);
+    std::nth_element(values.begin(), low, values.end());
+    const double lowest = *low;
+    std::nth_element(values.begin(), high, values.end());
+    return { lowest, *high };
 }
 
 /// Longest side of the axis-aligned box around both footprints.
@@ -340,6 +367,15 @@ double ObjectMap::similarity(const std::vector<float>& a, const std::vector<floa
     return dot;
 }
 
+void ObjectMap::setFrame(double yaw)
+{
+    frame_yaw_ = yaw;
+    for (MappedObject& object : objects_)
+    {
+        refreshShape(object);
+    }
+}
+
 void ObjectMap::refreshShape(MappedObject& object) const
 {
     if (object.voxels.empty())
@@ -364,10 +400,41 @@ void ObjectMap::refreshShape(MappedObject& object) const
     object.z_min    = z_min - (0.5 * params_.voxel);
     object.z_max    = z_max + (0.5 * params_.voxel);
 
-    const cv::RotatedRect box = cv::minAreaRect(footprint);
-    object.box_centre         = { box.center.x, box.center.y };
-    object.box_size           = { box.size.width + params_.voxel, box.size.height + params_.voxel };
-    object.box_yaw            = box.angle * std::numbers::pi / 180.0;
+    // Along the walls unless the tightest box is much smaller: a partial or round footprint
+    // fits the walls as well as any angle, and must not turn diagonal for a sliver.
+    const auto fit = [&](double yaw) {
+        const double        c = std::cos(yaw);
+        const double        s = std::sin(yaw);
+        std::vector<double> along;
+        std::vector<double> across;
+        along.reserve(footprint.size());
+        across.reserve(footprint.size());
+        for (const cv::Point2f& point : footprint)
+        {
+            along.push_back((point.x * c) + (point.y * s));
+            across.push_back((point.y * c) - (point.x * s));
+        }
+        // Order statistics, so a few stray voxels do not stretch the box.
+        const auto trim =
+            static_cast<std::size_t>(params_.box_trim * static_cast<double>(footprint.size()));
+        const auto [along_low, along_high]   = trimmedRange(along, trim);
+        const auto [across_low, across_high] = trimmedRange(across, trim);
+        const double mid_along               = 0.5 * (along_low + along_high);
+        const double mid_across              = 0.5 * (across_low + across_high);
+        object.box_yaw                       = yaw;
+        object.box_centre                    = { (mid_along * c) - (mid_across * s),
+                                                 (mid_along * s) + (mid_across * c) };
+        object.box_size                      = { along_high - along_low + params_.voxel,
+                                                 across_high - across_low + params_.voxel };
+    };
+    fit(frame_yaw_);
+    const cv::RotatedRect tightest = cv::minAreaRect(footprint);
+    const double          tightest_area =
+        (tightest.size.width + params_.voxel) * (tightest.size.height + params_.voxel);
+    if (tightest_area < params_.turned_area_ratio * object.box_size.x() * object.box_size.y())
+    {
+        fit(tightest.angle * std::numbers::pi / 180.0);
+    }
 }
 
 void ObjectMap::absorb(
@@ -414,6 +481,7 @@ void ObjectMap::absorb(
     if (object.observations == 0)
     {
         object.first_seen = frame.stamp;
+        object.seen_from  = frame.map_from_camera.translation().head<2>();
     }
     ++object.observations;
     object.last_seen = std::max(object.last_seen, frame.stamp);
@@ -552,8 +620,10 @@ ObjectMap::integrate(const std::vector<MaskInput>& masks, const FrameInput& fram
     checkAbsence(frame, matched);
     if (params_.merge_every > 0 && frames_ % params_.merge_every == 0)
     {
-        pruneUnconfirmed(frame.stamp);
+        // Merge first: two glimpses of one object confirm each other, where pruning first would
+        // drop the older before the newer could join it.
         mergeDuplicates();
+        pruneUnconfirmed(frame.stamp);
     }
     relateSupports();
     return outcomes;
@@ -724,7 +794,7 @@ int ObjectMap::mergeDuplicates()
             // Parts of one object share no voxels: two sides of a table touch, and a table's legs
             // and the ends either side of a chair stand apart, however far their centres.
             const bool parts =
-                same && (touching(a, b, params_.merge_gap) ||
+                same && (touching(a, b, params_.merge_gap) || nested(a, b) ||
                          (isSupport(a.label()) && touching(a, b, params_.support_merge_gap) &&
                           jointExtent(a, b) <= params_.max_merged_extent));
             if (!overlapping && !parts)
@@ -746,10 +816,36 @@ int ObjectMap::pruneUnconfirmed(double now)
 {
     const auto before = objects_.size();
     std::erase_if(objects_, [&](const MappedObject& object) {
-        return object.observations < params_.min_observations &&
-               now - object.first_seen > params_.confirm_s;
+        const bool drop = object.observations < params_.min_observations &&
+                          now - object.first_seen > params_.confirm_s;
+        if (drop)
+        {
+            dropped_.push_back(object.label());
+        }
+        return drop;
     });
     return static_cast<int>(before - objects_.size());
+}
+
+std::vector<const MappedObject*> ObjectMap::glimpses() const
+{
+    std::vector<const MappedObject*> out;
+    for (const MappedObject& object : objects_)
+    {
+        if (object.state == ObjectState::kRemoved || confirmed(object))
+        {
+            continue;
+        }
+        const bool piece = std::ranges::any_of(objects_, [&](const MappedObject& other) {
+            return confirmed(other) && other.label() == object.label() &&
+                   touching(object, other, params_.position_tolerance);
+        });
+        if (!piece)
+        {
+            out.push_back(&object);
+        }
+    }
+    return out;
 }
 
 void ObjectMap::relateSupports()
@@ -847,6 +943,141 @@ void ObjectMap::restore(std::vector<MappedObject> objects)
         std::sort(object.voxels.begin(), object.voxels.end());
         refreshShape(object);
     }
+}
+
+std::map<int, Footprint> fitToMap(
+    const std::vector<MappedObject>& objects, const cv::Mat& furniture,
+    const GridGeometry& geometry, const MapFitParams& params)
+{
+    std::map<int, Footprint> fitted;
+    if (furniture.empty() || furniture.rows != geometry.height || furniture.cols != geometry.width)
+    {
+        return fitted;
+    }
+    cv::Mat   labels;
+    const int blobs = cv::connectedComponents(furniture != 0, labels, 8, CV_32S);
+
+    // Floor objects, each with its box's frame.
+    struct Owner
+    {
+        const MappedObject* object;
+        double              c;
+        double              s;
+        double              half_u;
+        double              half_v;
+        double              along_low   = std::numeric_limits<double>::max();
+        double              along_high  = std::numeric_limits<double>::lowest();
+        double              across_low  = std::numeric_limits<double>::max();
+        double              across_high = std::numeric_limits<double>::lowest();
+        int                 cells       = 0;
+    };
+    std::vector<Owner> owners;
+    for (const MappedObject& object : objects)
+    {
+        if (object.state == ObjectState::kActive && object.support == 0)
+        {
+            owners.push_back({ &object,
+                               std::cos(object.box_yaw),
+                               std::sin(object.box_yaw),
+                               std::max(0.5 * object.box_size.x(), geometry.resolution),
+                               std::max(0.5 * object.box_size.y(), geometry.resolution) });
+        }
+    }
+
+    // A blob competes for the objects whose box, grown by the reach, touches it.
+    std::vector<std::vector<std::size_t>> competitors(static_cast<std::size_t>(blobs));
+    for (std::size_t slot = 0; slot < owners.size(); ++slot)
+    {
+        const Owner&    owner   = owners[slot];
+        const auto&     centre  = owner.object->box_centre;
+        const double    reach_u = owner.half_u + params.reach;
+        const double    reach_v = owner.half_v + params.reach;
+        const double    radius  = std::hypot(reach_u, reach_v);
+        const CellIndex low     = geometry.toCell(centre.x() - radius, centre.y() - radius);
+        const CellIndex high    = geometry.toCell(centre.x() + radius, centre.y() + radius);
+        for (int y = std::max(0, low.y); y <= std::min(geometry.height - 1, high.y); ++y)
+        {
+            for (int x = std::max(0, low.x); x <= std::min(geometry.width - 1, high.x); ++x)
+            {
+                const int blob = labels.at<int>(y, x);
+                auto&     list = competitors[static_cast<std::size_t>(blob)];
+                if (blob == 0 || std::ranges::find(list, slot) != list.end())
+                {
+                    continue;
+                }
+                const double dx = geometry.centreX(x) - centre.x();
+                const double dy = geometry.centreY(y) - centre.y();
+                if (std::abs((dx * owner.c) + (dy * owner.s)) <= reach_u &&
+                    std::abs((dy * owner.c) - (dx * owner.s)) <= reach_v)
+                {
+                    list.push_back(slot);
+                }
+            }
+        }
+    }
+
+    // Each cell of a blob goes to the competitor whose box it lies deepest in, counted in box
+    // widths: chairs pushed under a table split its blob with it rather than spoil it.
+    for (int y = 0; y < labels.rows; ++y)
+    {
+        for (int x = 0; x < labels.cols; ++x)
+        {
+            const auto& list = competitors[static_cast<std::size_t>(labels.at<int>(y, x))];
+            if (labels.at<int>(y, x) == 0 || list.empty())
+            {
+                continue;
+            }
+            const double px    = geometry.centreX(x);
+            const double py    = geometry.centreY(y);
+            const auto   depth = [&](const Owner& owner) {
+                const double dx = px - owner.object->box_centre.x();
+                const double dy = py - owner.object->box_centre.y();
+                return std::max(
+                    std::abs((dx * owner.c) + (dy * owner.s)) / owner.half_u,
+                    std::abs((dy * owner.c) - (dx * owner.s)) / owner.half_v);
+            };
+            Owner& best = owners[*std::ranges::min_element(list, {}, [&](std::size_t slot) {
+                return depth(owners[slot]);
+            })];
+            // A wall the plan fused to a wardrobe runs on well past it: not the wardrobe's.
+            const double dx      = px - best.object->box_centre.x();
+            const double dy      = py - best.object->box_centre.y();
+            const double outside = std::hypot(
+                std::max(std::abs((dx * best.c) + (dy * best.s)) - best.half_u, 0.0),
+                std::max(std::abs((dy * best.c) - (dx * best.s)) - best.half_v, 0.0));
+            if (outside > params.max_stretch)
+            {
+                continue;
+            }
+            const double along  = (px * best.c) + (py * best.s);
+            const double across = (py * best.c) - (px * best.s);
+            best.along_low      = std::min(best.along_low, along);
+            best.along_high     = std::max(best.along_high, along);
+            best.across_low     = std::min(best.across_low, across);
+            best.across_high    = std::max(best.across_high, across);
+            ++best.cells;
+        }
+    }
+
+    const double cell_area = geometry.resolution * geometry.resolution;
+    for (const Owner& owner : owners)
+    {
+        const double share    = owner.cells * cell_area;
+        const double box_area = owner.object->box_size.x() * owner.object->box_size.y();
+        if (owner.cells == 0 || share > params.max_growth * box_area ||
+            share < params.min_share * box_area)
+        {
+            continue;
+        }
+        const double mid_along   = 0.5 * (owner.along_low + owner.along_high);
+        const double mid_across  = 0.5 * (owner.across_low + owner.across_high);
+        fitted[owner.object->id] = { { (mid_along * owner.c) - (mid_across * owner.s),
+                                       (mid_along * owner.s) + (mid_across * owner.c) },
+                                     { owner.along_high - owner.along_low + geometry.resolution,
+                                       owner.across_high - owner.across_low + geometry.resolution },
+                                     owner.object->box_yaw };
+    }
+    return fitted;
 }
 
 }  // namespace g1_world_model

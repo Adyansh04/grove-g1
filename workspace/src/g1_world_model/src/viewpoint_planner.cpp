@@ -6,7 +6,9 @@
 #include "g1_world_model/viewpoint_planner.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <format>
 #include <functional>
 #include <limits>
 #include <numbers>
@@ -25,6 +27,72 @@ constexpr double kTwoPi       = 2.0 * std::numbers::pi;
 
 double wrapAngle(double angle) { return std::remainder(angle, kTwoPi); }
 
+/// Clears each frontier cell with an unknown neighbour some trail point had in plain view, across
+/// free cells only, within @p radius.
+void dropSeenFrontier(
+    cv::Mat& frontier, const cv::Mat& known, const GridGeometry& geometry,
+    const std::vector<cv::Point2d>& trail, double radius)
+{
+    std::vector<cv::Point> stood;
+    for (const cv::Point2d& point : trail)
+    {
+        const CellIndex cell = geometry.toCell(point.x, point.y);
+        if (geometry.contains(cell) && known.at<std::uint8_t>(cell.y, cell.x) == kFree)
+        {
+            stood.emplace_back(cell.x, cell.y);
+        }
+    }
+    const double reach = radius / geometry.resolution;
+    // Free all the way to the unknown cell itself: the frontier cell being visible is not
+    // enough, the unknown beside it may be round a door frame.
+    const auto in_view = [&](const cv::Point& from, const cv::Point& to) {
+        if (std::hypot(to.x - from.x, to.y - from.y) > reach)
+        {
+            return false;
+        }
+        cv::LineIterator line(known, from, to, 8);
+        for (int i = 0; i + 1 < line.count; ++i, ++line)
+        {
+            if (**line != kFree)
+            {
+                return false;
+            }
+        }
+        return true;
+    };
+    for (int y = 1; y + 1 < frontier.rows; ++y)
+    {
+        auto* row = frontier.ptr<std::uint8_t>(y);
+        for (int x = 1; x + 1 < frontier.cols; ++x)
+        {
+            if (row[x] == 0)
+            {
+                continue;
+            }
+            for (const cv::Point& from : stood)
+            {
+                if (std::abs(x - from.x) > reach + 1 || std::abs(y - from.y) > reach + 1)
+                {
+                    continue;
+                }
+                const bool seen = std::ranges::any_of(
+                    std::array{ cv::Point(x + 1, y),
+                                cv::Point(x - 1, y),
+                                cv::Point(x, y + 1),
+                                cv::Point(x, y - 1) },
+                    [&](const cv::Point& next) {
+                        return known.at<std::uint8_t>(next) == kUnknown && in_view(from, next);
+                    });
+                if (seen)
+                {
+                    row[x] = 0;
+                    break;
+                }
+            }
+        }
+    }
+}
+
 }  // namespace
 
 ViewpointPlanner::ViewpointPlanner(PlannerParams params, CameraModel camera)
@@ -34,12 +102,14 @@ ViewpointPlanner::ViewpointPlanner(PlannerParams params, CameraModel camera)
 
 void ViewpointPlanner::computeTraversable(const cv::Mat& cells, const GridGeometry& geometry)
 {
-    const cv::Mat free_mask = cells == kFree;
-    cv::distanceTransform(free_mask, clearance_, cv::DIST_L2, cv::DIST_MASK_PRECISE);
+    // Clearance from what is known to be solid. Unknown space is not a wall: counted as one, no
+    // pose near a frontier would ever be standable while SLAM is still growing the map.
+    const cv::Mat not_occupied = cells != kOccupied;
+    cv::distanceTransform(not_occupied, clearance_, cv::DIST_L2, cv::DIST_MASK_PRECISE);
     clearance_ *= geometry.resolution;
     // Nav2 inflates every cell within robot_radius to lethal, centre to centre; the margin keeps
     // a doorway exactly twice that wide from being a path here and a wall there.
-    traversable_ = clearance_ >= params_.robot_radius + params_.travel_margin;
+    traversable_ = (clearance_ >= params_.robot_radius + params_.travel_margin) & (cells == kFree);
 }
 
 void ViewpointPlanner::computeTravel(const GridGeometry& geometry, const Pose2D& robot)
@@ -303,51 +373,145 @@ Plan ViewpointPlanner::nextFrontier(
     {
         return plan;
     }
-    computeTraversable(cells, geometry);
+    // Once the rooms are found the frontiers left are corners behind furniture: stop when the
+    // last few visits added next to nothing, and let the camera pass fill them in.
+    const double known_area = static_cast<double>(cv::countNonZero(cells != kUnknown)) *
+                              geometry.resolution * geometry.resolution;
+    const auto stall = static_cast<std::size_t>(std::max(1, params_.frontier_stall_visits));
+    if (frontier_known_.size() >= stall &&
+        known_area - frontier_known_[frontier_known_.size() - stall] < params_.min_frontier_growth)
+    {
+        plan.status = PlanStatus::kDone;
+        plan.reason = std::format(
+            "the last {} frontiers added under {:.0f} m2 of map",
+            stall,
+            params_.min_frontier_growth);
+        return plan;
+    }
+    // A young SLAM map is known only along each beam a few metres out: close the gaps between
+    // beams, never over a wall, or every gap is a frontier and none is a place to go.
+    cv::Mat known = cells.clone();
+    {
+        cv::Mat   free_mask = cells == kFree;
+        const int gap       = std::max(1, geometry.cellsFor(params_.frontier_gap_close));
+        cv::morphologyEx(
+            free_mask,
+            free_mask,
+            cv::MORPH_CLOSE,
+            cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size((2 * gap) + 1, (2 * gap) + 1)));
+        known.setTo(kFree, free_mask & (cells == kUnknown));
+    }
+    computeTraversable(known, geometry);
     computeTravel(geometry, robot);
 
     // Free cells beside unknown ones.
-    cv::Mat frontier = cv::Mat::zeros(cells.size(), CV_8UC1);
-    for (int y = 1; y + 1 < cells.rows; ++y)
+    cv::Mat frontier = cv::Mat::zeros(known.size(), CV_8UC1);
+    for (int y = 1; y + 1 < known.rows; ++y)
     {
-        for (int x = 1; x + 1 < cells.cols; ++x)
+        for (int x = 1; x + 1 < known.cols; ++x)
         {
-            if (cells.at<std::uint8_t>(y, x) != kFree)
+            if (known.at<std::uint8_t>(y, x) != kFree)
             {
                 continue;
             }
-            if (cells.at<std::uint8_t>(y, x + 1) == kUnknown ||
-                cells.at<std::uint8_t>(y, x - 1) == kUnknown ||
-                cells.at<std::uint8_t>(y + 1, x) == kUnknown ||
-                cells.at<std::uint8_t>(y - 1, x) == kUnknown)
+            if (known.at<std::uint8_t>(y, x + 1) == kUnknown ||
+                known.at<std::uint8_t>(y, x - 1) == kUnknown ||
+                known.at<std::uint8_t>(y + 1, x) == kUnknown ||
+                known.at<std::uint8_t>(y - 1, x) == kUnknown)
             {
                 frontier.at<std::uint8_t>(y, x) = 255;
             }
         }
     }
+    // Unknown the robot has already had in plain view from nearby is shadow the LiDAR cannot
+    // reach, such as the floor behind an armchair whose wall it never saw, not a way on.
+    dropSeenFrontier(frontier, known, geometry, trail_, params_.frontier_seen_radius);
     cv::Mat   labels;
     cv::Mat   stats;
     cv::Mat   centroids;
-    const int found = cv::connectedComponentsWithStats(frontier, labels, stats, centroids, 8);
+    const int found =
+        cv::connectedComponentsWithStats(frontier, labels, stats, centroids, 8, CV_32S);
+    // How much unknown each frontier opens onto: a pocket behind a sofa is a small region shut in
+    // by furniture and walls, a doorway into an unexplored room joins the unknown beyond it.
+    cv::Mat   unknown_labels;
+    cv::Mat   unknown_stats;
+    cv::Mat   unknown_centroids;
+    const int unknown_regions = cv::connectedComponentsWithStats(
+        known == kUnknown,
+        unknown_labels,
+        unknown_stats,
+        unknown_centroids,
+        4,
+        CV_32S);
+    std::vector<int> opens_onto(static_cast<std::size_t>(found), 0);
+    for (int y = 1; y + 1 < labels.rows; ++y)
+    {
+        for (int x = 1; x + 1 < labels.cols; ++x)
+        {
+            const int component = labels.at<int>(y, x);
+            if (component == 0)
+            {
+                continue;
+            }
+            for (const auto& [nx, ny] :
+                 { std::pair{ x + 1, y }, { x - 1, y }, { x, y + 1 }, { x, y - 1 } })
+            {
+                const int region = unknown_labels.at<int>(ny, nx);
+                if (region > 0 && region < unknown_regions)
+                {
+                    int& area = opens_onto[static_cast<std::size_t>(component)];
+                    area      = std::max(area, unknown_stats.at<int>(region, cv::CC_STAT_AREA));
+                }
+            }
+        }
+    }
+    const double min_unknown_cells =
+        params_.min_frontier_unknown / (geometry.resolution * geometry.resolution);
 
-    const int    min_cells     = geometry.cellsFor(params_.min_frontier_size);
-    const int    search        = geometry.cellsFor(1.5);
-    const double standable     = params_.robot_radius + params_.clearance_margin;
+    // Each frontier's own cell nearest its centroid: the centroid of a curved frontier can lie
+    // out in the unknown, where nothing stands.
+    std::vector<CellIndex> anchor(static_cast<std::size_t>(found));
+    std::vector<double>    anchor_error(
+        static_cast<std::size_t>(found),
+        std::numeric_limits<double>::infinity());
+    for (int y = 0; y < labels.rows; ++y)
+    {
+        for (int x = 0; x < labels.cols; ++x)
+        {
+            const int component = labels.at<int>(y, x);
+            if (component == 0)
+            {
+                continue;
+            }
+            const double error = std::hypot(
+                x - centroids.at<double>(component, 0),
+                y - centroids.at<double>(component, 1));
+            if (error < anchor_error[static_cast<std::size_t>(component)])
+            {
+                anchor_error[static_cast<std::size_t>(component)] = error;
+                anchor[static_cast<std::size_t>(component)]       = { x, y };
+            }
+        }
+    }
+
+    const int min_cells = geometry.cellsFor(params_.min_frontier_size);
+    const int search    = geometry.cellsFor(1.5);
+    // Wider than a camera pose needs: a frontier's small shadows lead into furniture pockets,
+    // which let the robot in and Nav2 cannot bring it out of.
+    const double standable     = params_.robot_radius + params_.frontier_clearance;
     double       best          = 0.0;
     double       best_target_x = 0.0;
     double       best_target_y = 0.0;
     for (int component = 1; component < found; ++component)
     {
         const int size = stats.at<int>(component, cv::CC_STAT_AREA);
-        if (size < min_cells)
+        if (size < min_cells || opens_onto[static_cast<std::size_t>(component)] < min_unknown_cells)
         {
             continue;
         }
-        const double target_x =
-            geometry.origin_x + ((centroids.at<double>(component, 0) + 0.5) * geometry.resolution);
-        const double target_y =
-            geometry.origin_y + ((centroids.at<double>(component, 1) + 0.5) * geometry.resolution);
-        const bool exhausted = std::any_of(
+        const double target_x  = geometry.centreX(anchor[static_cast<std::size_t>(component)].x);
+        const double target_y  = geometry.centreY(anchor[static_cast<std::size_t>(component)].y);
+        const bool   exhausted = std::any_of(
             exhausted_frontiers_.begin(),
             exhausted_frontiers_.end(),
             [&](const auto& entry) {
@@ -359,8 +523,10 @@ Plan ViewpointPlanner::nextFrontier(
             continue;
         }
 
-        // The reachable standing cell nearest the frontier's middle.
+        // The reachable standing cell nearest the frontier's middle, a step back from it so the
+        // robot has a direction to face.
         const CellIndex centre     = geometry.toCell(target_x, target_y);
+        const int       stand_back = geometry.cellsFor(params_.frontier_stand_back);
         int             goal       = -1;
         double          goal_error = 0.0;
         for (int dy = -search; dy <= search; ++dy)
@@ -369,7 +535,8 @@ Plan ViewpointPlanner::nextFrontier(
             {
                 const int x = centre.x + dx;
                 const int y = centre.y + dy;
-                if (!geometry.contains(x, y) || clearance_.at<float>(y, x) < standable)
+                if (!geometry.contains(x, y) || clearance_.at<float>(y, x) < standable ||
+                    (dx * dx) + (dy * dy) < stand_back * stand_back)
                 {
                     continue;
                 }
@@ -427,6 +594,7 @@ Plan ViewpointPlanner::nextFrontier(
         return plan;
     }
     plan.viewpoint.id = next_id_++;
+    frontier_known_.push_back(known_area);
     // Kept so a frontier that survives two visits is dropped, and an unreachable goal avoided.
     issued_frontiers_.push_back({ plan.viewpoint.id, best_target_x, best_target_y });
     issued_.push_back(plan.viewpoint);
@@ -542,7 +710,8 @@ Plan ViewpointPlanner::nextCoverage(
         for (int x = spacing / 2; x < geometry.width; x += spacing)
         {
             const int index = geometry.index(x, y);
-            if (clearance_.at<float>(y, x) < standable || to_pending.at<float>(y, x) > reach)
+            if (cells.at<std::uint8_t>(y, x) != kFree || clearance_.at<float>(y, x) < standable ||
+                to_pending.at<float>(y, x) > reach)
             {
                 continue;
             }
@@ -551,32 +720,6 @@ Plan ViewpointPlanner::nextCoverage(
             (reachable ? candidates : rest).push_back({ index, 0.0 });
         }
     }
-    if (static_cast<int>(candidates.size()) > params_.max_candidates)
-    {
-        // Rank by how much pending work lies within sight, a cheap stand-in for the gain.
-        cv::Mat integral;
-        cv::integral(pending / 255, integral, CV_32S);
-        const int window = geometry.cellsFor(reach);
-        for (Candidate& candidate : candidates)
-        {
-            const int x     = candidate.index % geometry.width;
-            const int y     = candidate.index / geometry.width;
-            const int x0    = std::max(0, x - window);
-            const int y0    = std::max(0, y - window);
-            const int x1    = std::min(geometry.width, x + window + 1);
-            const int y1    = std::min(geometry.height, y + window + 1);
-            candidate.score = integral.at<int>(y1, x1) - integral.at<int>(y0, x1) -
-                              integral.at<int>(y1, x0) + integral.at<int>(y0, x0);
-        }
-        std::nth_element(
-            candidates.begin(),
-            candidates.begin() + params_.max_candidates,
-            candidates.end(),
-            [](const Candidate& a, const Candidate& b) { return a.score > b.score; });
-        rest.insert(rest.end(), candidates.begin() + params_.max_candidates, candidates.end());
-        candidates.resize(static_cast<std::size_t>(params_.max_candidates));
-    }
-
     // Does the room the robot stands in still hold work worth a viewpoint?
     bool room_has_work = false;
     if (current_room > 0)
@@ -590,6 +733,38 @@ Plan ViewpointPlanner::nextCoverage(
                 room_has_work = ++left >= static_cast<int>(params_.min_viewpoint_gain);
             }
         }
+    }
+
+    if (static_cast<int>(candidates.size()) > params_.max_candidates)
+    {
+        // Rank by pending work in sight per second of getting there: by work alone the cut drops
+        // the room the robot stands in, which it leaves half done and comes back to later.
+        cv::Mat integral;
+        cv::integral(pending / 255, integral, CV_32S);
+        const int window = geometry.cellsFor(reach);
+        for (Candidate& candidate : candidates)
+        {
+            const int    x    = candidate.index % geometry.width;
+            const int    y    = candidate.index / geometry.width;
+            const int    x0   = std::max(0, x - window);
+            const int    y0   = std::max(0, y - window);
+            const int    x1   = std::min(geometry.width, x + window + 1);
+            const int    y1   = std::min(geometry.height, y + window + 1);
+            const double work = integral.at<int>(y1, x1) - integral.at<int>(y0, x1) -
+                                integral.at<int>(y1, x0) + integral.at<int>(y0, x0);
+            const double seconds =
+                (travel_[static_cast<std::size_t>(candidate.index)] / params_.travel_speed) +
+                params_.goal_overhead + params_.dwell_time;
+            const bool elsewhere = room_has_work && room_at(x, y) != current_room;
+            candidate.score = work / (seconds * (elsewhere ? params_.room_switch_factor : 1.0));
+        }
+        std::nth_element(
+            candidates.begin(),
+            candidates.begin() + params_.max_candidates,
+            candidates.end(),
+            [](const Candidate& a, const Candidate& b) { return a.score > b.score; });
+        rest.insert(rest.end(), candidates.begin() + params_.max_candidates, candidates.end());
+        candidates.resize(static_cast<std::size_t>(params_.max_candidates));
     }
 
     chosen_mark_.resize(static_cast<std::size_t>(count) * 2, 0);
@@ -808,6 +983,19 @@ Plan ViewpointPlanner::nextCoverage(
     return plan;
 }
 
+void ViewpointPlanner::recordPose(const Pose2D& robot)
+{
+    pending_trail_.emplace_back(robot.x, robot.y);
+}
+
+void ViewpointPlanner::mapUpdated()
+{
+    // SLAM folds scans into the map it publishes every few seconds; until then what the robot
+    // saw from a pose is not in the map, and the frontiers there only look unexplored.
+    trail_.insert(trail_.end(), pending_trail_.begin(), pending_trail_.end());
+    pending_trail_.clear();
+}
+
 bool ViewpointPlanner::stuck(const Pose2D& robot, Plan& plan)
 {
     if (failures_in_a_row_ < params_.max_failures_in_a_row)
@@ -865,6 +1053,12 @@ void ViewpointPlanner::report(CoverageMap& coverage, std::uint32_t id, bool reac
     }
     if (frontier != issued_frontiers_.end())
     {
+        // A walk navigation could not finish says nothing about what is left to find: it is not
+        // one of the visits the stall rule counts.
+        if (!reached && !frontier_known_.empty() && frontier->id == issued_frontiers_.back().id)
+        {
+            frontier_known_.pop_back();
+        }
         issued_frontiers_.erase(frontier);
     }
 
@@ -876,6 +1070,10 @@ void ViewpointPlanner::report(CoverageMap& coverage, std::uint32_t id, bool reac
         return;
     }
     outcomes_.push_back({ issued->x, issued->y, reached });
+    if (reached)
+    {
+        recordPose({ issued->x, issued->y, 0.0 });
+    }
     if (outcomes_.size() > 256)
     {
         outcomes_.erase(outcomes_.begin());

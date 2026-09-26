@@ -41,6 +41,7 @@ struct PlannerParams
 {
     double robot_radius          = 0.45;  ///< Clearance a standing pose needs, m.
     double clearance_margin      = 0.25;  ///< Added to robot_radius for candidate poses, m.
+    double frontier_clearance    = 0.35;  ///< Added to robot_radius for frontier goals, m.
     double travel_margin         = 0.05;  ///< Added to robot_radius for paths, m.
     double candidate_spacing     = 0.40;  ///< Lattice step of candidate positions, m.
     int    ray_count             = 240;   ///< Prediction rays per full turn.
@@ -54,9 +55,15 @@ struct PlannerParams
     double turn_speed            = 0.8;   ///< In-place yaw rate, rad/s.
     double dwell_time            = 2.5;   ///< Per heading: detections arrive about 1 s late, s.
     double goal_overhead         = 4.0;   ///< Per viewpoint: planning, starting, settling, s.
-    double room_switch_factor    = 2.0;   ///< Cost multiplier for leaving a room with work left.
+    double room_switch_factor    = 3.0;   ///< Cost multiplier for leaving a room with work left.
     int    max_candidates        = 400;   ///< Positions evaluated per request.
     double min_frontier_size     = 0.75;  ///< Shorter frontiers are map noise, m.
+    double frontier_stand_back   = 0.5;   ///< Frontier goals stand this far from its middle, m.
+    double frontier_gap_close    = 0.15;  ///< Gaps between beams closed before frontiers, m.
+    double min_frontier_unknown  = 4.0;   ///< Unknown area a frontier must open onto, m2.
+    double frontier_seen_radius  = 1.5;  ///< Unknown seen this near and still unknown is shadow, m.
+    int    frontier_stall_visits = 4;    ///< Frontier visits over which the map has to grow...
+    double min_frontier_growth   = 12.0;  ///< ...by this much known area, m2, or the pass ends.
     int    max_attempts          = 2;  ///< Predicted-but-unseen visits before a target is dropped.
     double blacklist_radius      = 0.5;  ///< Around a viewpoint Nav2 could not reach, m.
     int    max_room_failures     = 3;  ///< Unreached viewpoints in a room never entered: given up.
@@ -112,6 +119,17 @@ public:
     Plan nextFrontier(const cv::Mat& cells, const GridGeometry& geometry, const Pose2D& robot);
 
     /**
+     * @brief Remembers that the robot stood at @p robot and looked around; report() calls it.
+     *
+     * Unknown in plain view from there that the caught-up map (mapUpdated()) still lacks is
+     * shadow the LiDAR cannot reach, and frontiers onto it are dropped.
+     */
+    void recordPose(const Pose2D& robot);
+
+    /// The map now holds all the LiDAR saw from the poses recorded so far.
+    void mapUpdated();
+
+    /**
      * @brief The viewpoint with the most predicted coverage per second.
      *
      * Also writes off targets that no reachable pose can see, once nothing else is left.
@@ -128,10 +146,20 @@ public:
      * Reached: every target it was meant to cover and still has not gets an attempt, and is
      * written off after max_attempts. Not reached: the spot is avoided, after max_room_failures
      * in a room never entered the whole room, and after max_failures_in_a_row anywhere nothing is
-     * planned until
-     * the robot has moved.
+     * planned until the robot has moved.
      */
     void report(CoverageMap& coverage, std::uint32_t id, bool reached);
+
+    /// A viewpoint outside the coverage bookkeeping: stand at (@p x, @p y) and face @p heading.
+    [[nodiscard]] Viewpoint glance(double x, double y, double heading)
+    {
+        Viewpoint viewpoint;
+        viewpoint.id       = next_id_++;
+        viewpoint.x        = x;
+        viewpoint.y        = y;
+        viewpoint.headings = { heading };
+        return viewpoint;
+    }
 
     /**
      * @brief Computes clearance and the travel field from @p robot without planning, for callers
@@ -202,7 +230,10 @@ private:
     std::vector<IssuedFrontier> issued_frontiers_;
     std::vector<Blacklisted>    blacklist_;
     std::vector<Blacklisted>    exhausted_frontiers_;
-    std::vector<Outcome>        outcomes_;  // Of coverage viewpoints, oldest first.
+    std::vector<Outcome>        outcomes_;        // Of coverage viewpoints, oldest first.
+    std::vector<cv::Point2d>    trail_;           // Where the robot looked from, map frame.
+    std::vector<cv::Point2d>    pending_trail_;   // Not yet in the map.
+    std::vector<double>         frontier_known_;  // Known area as each frontier was issued, m2.
     int                         failures_in_a_row_ = 0;
     std::optional<Pose2D>       stuck_at_;
 

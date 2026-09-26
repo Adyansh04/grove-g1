@@ -40,12 +40,14 @@ void CoverageMap::setMap(const cv::Mat& cells, const GridGeometry& geometry)
     const std::size_t count     = geometry.cellCount();
     if (!same_grid)
     {
-        quality_.assign(count, 0);
-        surface_quality_.assign(count, 0);
-        flags_.assign(count, 0);
-        directions_.assign(count, 0);
-        views_.assign(count, 0);
-        last_frame_.assign(count, 0);
+        // SLAM grows and shifts its map every few seconds: what was seen stays seen.
+        const GridGeometry from = cells_.empty() ? GridGeometry{} : geometry_;
+        quality_                = remapLayer<std::uint8_t>(quality_, from, geometry, 0);
+        surface_quality_        = remapLayer<std::uint8_t>(surface_quality_, from, geometry, 0);
+        flags_                  = remapLayer<std::uint8_t>(flags_, from, geometry, 0);
+        directions_             = remapLayer<std::uint8_t>(directions_, from, geometry, 0);
+        views_                  = remapLayer<std::uint16_t>(views_, from, geometry, 0);
+        last_frame_             = remapLayer<std::uint32_t>(last_frame_, from, geometry, 0);
         surface_at_.assign(count, -1);
         surface_height_.clear();
     }
@@ -138,6 +140,14 @@ void CoverageMap::setSurfaces(const std::vector<Surface>& surfaces)
         cv::fillConvexPoly(mask, polygon, cv::Scalar(255));
         const int slot = static_cast<int>(surface_height_.size());
         surface_height_.push_back(surface.height);
+        // A top found higher than it was credited at was never seen: only views that stopped below
+        // it were, and those credited the front face's upper edge.
+        const auto [top, first] = surface_top_.try_emplace(surface.id, surface.height);
+        const bool rose         = !first && surface.height > top->second + params_.surface_band;
+        if (rose)
+        {
+            top->second = surface.height;
+        }
         for (int y = 0; y < mask.rows; ++y)
         {
             const std::uint8_t* row = mask.ptr<std::uint8_t>(y);
@@ -145,7 +155,12 @@ void CoverageMap::setSurfaces(const std::vector<Surface>& surfaces)
             {
                 if (row[x] != 0)
                 {
-                    surface_at_[static_cast<std::size_t>(geometry_.index(x, y))] = slot;
+                    const auto index   = static_cast<std::size_t>(geometry_.index(x, y));
+                    surface_at_[index] = slot;
+                    if (rose)
+                    {
+                        surface_quality_[index] = 0;
+                    }
                 }
             }
         }

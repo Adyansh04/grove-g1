@@ -32,6 +32,7 @@ add_library(g1_world_model_core
   src/room_segmentation.cpp
   src/room_typing.cpp
   src/viewpoint_planner.cpp
+  src/world_render.cpp
   src/world_store.cpp
 )
 g1_target_defaults(g1_world_model_core)

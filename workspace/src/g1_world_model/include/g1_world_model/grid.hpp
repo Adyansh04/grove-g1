@@ -9,10 +9,12 @@
  * them. Row y grows with map y, so an image of a layer is upside down on screen.
  */
 
+#include <Eigen/Core>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <opencv2/core.hpp>
+#include <vector>
 
 namespace g1_world_model
 {
@@ -79,6 +81,74 @@ struct GridGeometry
 
     friend bool operator==(const GridGeometry&, const GridGeometry&) = default;
 };
+
+/// A rectangular footprint in the map frame.
+struct Footprint
+{
+    Eigen::Vector2d centre = Eigen::Vector2d::Zero();
+    Eigen::Vector2d size   = Eigen::Vector2d::Zero();  ///< Along the box axes, m.
+    double          yaw    = 0.0;
+};
+
+/**
+ * @brief A per-cell layer carried onto another grid, as when SLAM grows or shifts its map.
+ *
+ * Each cell of @p to takes the @p from cell under its centre, or @p fill where there is none.
+ */
+template <typename T>
+std::vector<T>
+remapLayer(const std::vector<T>& layer, const GridGeometry& from, const GridGeometry& to, T fill)
+{
+    std::vector<T> out(to.cellCount(), fill);
+    if (layer.size() != from.cellCount())
+    {
+        return out;
+    }
+    for (int y = 0; y < to.height; ++y)
+    {
+        const int source_y = from.toCell(to.centreX(0), to.centreY(y)).y;
+        if (source_y < 0 || source_y >= from.height)
+        {
+            continue;
+        }
+        for (int x = 0; x < to.width; ++x)
+        {
+            const int source_x = from.toCell(to.centreX(x), to.centreY(y)).x;
+            if (source_x >= 0 && source_x < from.width)
+            {
+                out[static_cast<std::size_t>(to.index(x, y))] =
+                    layer[static_cast<std::size_t>(from.index(source_x, source_y))];
+            }
+        }
+    }
+    return out;
+}
+
+/**
+ * @brief The walls' yaw in [0, pi/2), where projections stack occupied cells into the sharpest
+ *        peaks; 0 when nothing is occupied. Indoor walls meet square, so one angle gives both.
+ */
+[[nodiscard]] double dominantAxis(const cv::Mat& cells);
+
+/**
+ * @brief Settles the unknown pockets a map encloses: occupied beside anything solid (furniture
+ *        insides, unseen wall), free among floor alone; unknown reaching the edge stays.
+ */
+[[nodiscard]] cv::Mat settleEnclosedUnknown(const cv::Mat& cells);
+
+/**
+ * @brief The map drawn as a floor plan: each room closed, each piece of furniture solid.
+ *
+ * Wall-height hits fill unknown cells (free wins, so doorways stay open), walls hidden at every
+ * height run straight on across up to @p max_gap unknown cells, then the pockets settle.
+ *
+ * @param cells   CV_8U Cell values of the scan map.
+ * @param walls   CV_8U, non-zero where the LiDAR hit wall height.
+ * @param yaw     The walls' yaw, from dominantAxis(), rad.
+ * @param max_gap Longest hidden stretch of wall to close, cells.
+ */
+[[nodiscard]] cv::Mat
+completeMap(const cv::Mat& cells, const cv::Mat& walls, double yaw, int max_gap);
 
 /**
  * @brief Classifies nav_msgs occupancy values into Cell values.

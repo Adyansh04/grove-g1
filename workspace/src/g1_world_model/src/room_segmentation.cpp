@@ -518,6 +518,42 @@ void findContacts(
 
 }  // namespace
 
+cv::Mat clearFreestanding(const cv::Mat& cells, const cv::Mat& walls)
+{
+    cv::Mat   blobs = cells != kFree;
+    cv::Mat   labels;
+    const int count = cv::connectedComponents(blobs, labels, 8, CV_32S);
+    // A blob stays if it holds a wall return or reaches the edge.
+    std::vector<std::uint8_t> keep(static_cast<std::size_t>(count), 0);
+    for (int y = 0; y < labels.rows; ++y)
+    {
+        const auto* row  = labels.ptr<int>(y);
+        const auto* wall = walls.ptr<std::uint8_t>(y);
+        const bool  edge = y == 0 || y + 1 == labels.rows;
+        for (int x = 0; x < labels.cols; ++x)
+        {
+            if (row[x] > 0 && (wall[x] != 0 || edge || x == 0 || x + 1 == labels.cols))
+            {
+                keep[static_cast<std::size_t>(row[x])] = 1;
+            }
+        }
+    }
+    cv::Mat out = cells.clone();
+    for (int y = 0; y < labels.rows; ++y)
+    {
+        const int* row  = labels.ptr<int>(y);
+        auto*      cell = out.ptr<std::uint8_t>(y);
+        for (int x = 0; x < labels.cols; ++x)
+        {
+            if (row[x] > 0 && keep[static_cast<std::size_t>(row[x])] == 0)
+            {
+                cell[x] = kFree;
+            }
+        }
+    }
+    return out;
+}
+
 Segmentation segmentRooms(
     const cv::Mat& cells, const GridGeometry& geometry, const RoomSegmentationParams& params)
 {

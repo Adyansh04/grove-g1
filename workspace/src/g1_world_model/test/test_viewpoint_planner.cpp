@@ -5,6 +5,7 @@
 
 #include <gmock/gmock.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <limits>
@@ -219,6 +220,36 @@ TEST(CoverageMap, CreditsWhatTheCameraSees)
     EXPECT_FALSE(coverage.wellSeen(at(5.5, 4.5)));  // Beyond the horizontal field of view.
 }
 
+TEST(CoverageMap, ForgetsATopThatTurnsOutHigherThanItWasSeenAt)
+{
+    // The table first mapped from its front face alone, 0.2 m short of its real top.
+    const World  world = twoRoomsAndACorridor();
+    const Camera camera;
+    CoverageMap  coverage;
+    coverage.setMap(world.cells, world.geometry);
+    Surface table;
+    table.id        = 1;
+    table.height    = 0.55;
+    table.footprint = { { 2.0, 4.0 }, { 3.2, 4.0 }, { 3.2, 4.8 }, { 2.0, 4.8 } };
+    coverage.setSurfaces({ table });
+
+    const Eigen::Isometry3d  pose  = camera.pose(2.6, 2.9, std::numbers::pi / 2.0);
+    const std::vector<float> depth = camera.render(world, pose);
+    coverage.integrate(
+        { depth.data(),
+          camera.intrinsics.width,
+          camera.intrinsics.height,
+          static_cast<std::size_t>(camera.intrinsics.width) },
+        camera.intrinsics,
+        pose);
+    const int front = world.geometry.index(world.geometry.toCell(2.6, 4.02));
+    ASSERT_TRUE(coverage.surfaceWellSeen(front));  // Its front face, at the height believed.
+
+    table.height = 0.75;
+    coverage.setSurfaces({ table });
+    EXPECT_FALSE(coverage.surfaceWellSeen(front));
+}
+
 TEST(CoverageMap, CreditsWallsDespiteLocalisationError)
 {
     const World  world = twoRoomsAndACorridor();
@@ -283,6 +314,49 @@ TEST(CoverageMap, CreditsTheNearSideOfAThinWall)
     }
     EXPECT_GE(near_side, 15);
     EXPECT_EQ(far_side, 0);
+}
+
+TEST(CoverageMap, KeepsWhatWasSeenWhenTheMapGrows)
+{
+    const World  world = twoRoomsAndACorridor();
+    const Camera camera;
+    CoverageMap  coverage;
+    coverage.setMap(world.cells, world.geometry);
+    const Eigen::Isometry3d  pose  = camera.pose(2.5, 3.5, std::numbers::pi / 2.0);
+    const std::vector<float> depth = camera.render(world, pose);
+    coverage.integrate(
+        { depth.data(),
+          camera.intrinsics.width,
+          camera.intrinsics.height,
+          static_cast<std::size_t>(camera.intrinsics.width) },
+        camera.intrinsics,
+        pose);
+    const Totals before = totals(coverage);
+    int          seen   = -1;
+    for (int index = 0; index < static_cast<int>(world.geometry.cellCount()) && seen < 0; ++index)
+    {
+        if (coverage.kind(index) == TargetKind::kFloor && coverage.wellSeen(index))
+        {
+            seen = index;
+        }
+    }
+    ASSERT_GE(seen, 0);
+    const double seen_x = world.geometry.centreX(seen % world.geometry.width);
+    const double seen_y = world.geometry.centreY(seen / world.geometry.width);
+
+    // SLAM adds a metre of unknown on every side: the same cells, 20 further in.
+    const int margin = 20;
+    cv::Mat   grown(
+        world.cells.rows + (2 * margin),
+        world.cells.cols + (2 * margin),
+        CV_8UC1,
+        cv::Scalar(kUnknown));
+    world.cells.copyTo(grown(cv::Rect(margin, margin, world.cells.cols, world.cells.rows)));
+    const GridGeometry geometry{ kResolution, -1.0, -1.0, grown.cols, grown.rows };
+    coverage.setMap(grown, geometry);
+
+    EXPECT_TRUE(coverage.wellSeen(geometry.index(geometry.toCell(seen_x, seen_y))));
+    EXPECT_NEAR(totals(coverage).floor_share, before.floor_share, 1e-9);
 }
 
 TEST(CoverageMap, SharesLeaveOutWhatWasWrittenOffUnseen)
@@ -367,6 +441,170 @@ TEST(ViewpointPlanner, SendsTheRobotToTheFrontierThenStops)
 
     const Plan done = planner.nextFrontier(world.cells, world.geometry, { 4.5, 0.9, 0.0 });
     EXPECT_EQ(done.status, PlanStatus::kDone);
+}
+
+TEST(ViewpointPlanner, ReachesAFrontierBeforeTheMapHasWalls)
+{
+    // SLAM's first map: 3 x 2 m of free floor around the robot, unknown all round, no walls yet.
+    const GridGeometry geometry{ kResolution, 0.0, 0.0, cellsOf(10.0), cellsOf(10.0) };
+    cv::Mat            cells(geometry.height, geometry.width, CV_8UC1, cv::Scalar(kUnknown));
+    cells(cv::Rect(cellsOf(3.5), cellsOf(4.0), cellsOf(3.0), cellsOf(2.0))) = kFree;
+
+    ViewpointPlanner planner;
+    const Plan       plan = planner.nextFrontier(cells, geometry, { 5.0, 5.0, 0.0 });
+    ASSERT_EQ(plan.status, PlanStatus::kViewpoint) << plan.reason;
+    const CellIndex goal = geometry.toCell(plan.viewpoint.x, plan.viewpoint.y);
+    EXPECT_EQ(cells.at<std::uint8_t>(goal.y, goal.x), kFree);
+}
+
+TEST(ViewpointPlanner, LooksPastTheGapsBetweenBeamsInAYoungMap)
+{
+    // SLAM after one sweep: known all round the robot to 1.5 m, then only along beams 5 deg apart
+    // out to 4.5 m, a wall at 4.6 m ahead; unknown between the beams.
+    const GridGeometry geometry{ kResolution, 0.0, 0.0, cellsOf(12.0), cellsOf(12.0) };
+    cv::Mat            cells(geometry.height, geometry.width, CV_8UC1, cv::Scalar(kUnknown));
+    const cv::Point    robot(cellsOf(6.0), cellsOf(6.0));
+    cv::circle(cells, robot, cellsOf(1.5), cv::Scalar(kFree), cv::FILLED);
+    for (int degrees = 0; degrees < 360; degrees += 5)
+    {
+        const double angle = degrees * std::numbers::pi / 180.0;
+        cv::line(
+            cells,
+            robot,
+            robot + cv::Point(
+                        static_cast<int>(std::lround(cellsOf(4.5) * std::cos(angle))),
+                        static_cast<int>(std::lround(cellsOf(4.5) * std::sin(angle)))),
+            cv::Scalar(kFree));
+    }
+    cv::line(
+        cells,
+        { cellsOf(10.6), cellsOf(4.0) },
+        { cellsOf(10.6), cellsOf(8.0) },
+        cv::Scalar(kOccupied),
+        2);
+
+    ViewpointPlanner planner;
+    const Plan       plan = planner.nextFrontier(cells, geometry, { 6.0, 6.0, 0.0 });
+    ASSERT_EQ(plan.status, PlanStatus::kViewpoint) << plan.reason;
+    // Out towards the edge of what is known, not a step from where the robot already stands.
+    EXPECT_GT(std::hypot(plan.viewpoint.x - 6.0, plan.viewpoint.y - 6.0), 2.0);
+}
+
+TEST(ViewpointPlanner, LeavesThePocketBehindASofaToTheCamera)
+{
+    // Everything mapped but a 1 x 1 m shadow behind a sofa: a frontier, and nothing beyond it.
+    World world = twoRoomsAndACorridor();
+    world.box(2.0, 5.2, 4.0, 5.8, 0.8F);  // The sofa, its back 1 m off the wall.
+    world.finish();
+    cv::Mat cells                                                           = world.cells.clone();
+    cells(cv::Rect(cellsOf(2.5), cellsOf(5.8), cellsOf(1.0), cellsOf(1.0))) = kUnknown;
+
+    ViewpointPlanner planner;
+    const Plan       plan = planner.nextFrontier(cells, world.geometry, { 1.0, 0.9, 0.0 });
+    EXPECT_EQ(plan.status, PlanStatus::kDone) << plan.reason;
+}
+
+TEST(ViewpointPlanner, LeavesAShadowItHasLookedIntoFromNearby)
+{
+    // An armchair and a tall cabinet box in a corner the LiDAR cannot see into.
+    World world;
+    world.heights = cv::Mat(cellsOf(5.7), cellsOf(6.2), CV_32F, cv::Scalar(kWallHeight));
+    world.box(0.1, 0.1, 6.1, 5.6, 0.0F);
+    world.box(2.0, 3.0, 4.0, 3.6, 0.8F);  // The armchair.
+    world.box(4.0, 3.0, 4.6, 5.6, 2.0F);  // The cabinet.
+    world.finish();
+    cv::Mat cells                                                           = world.cells.clone();
+    cells(cv::Rect(cellsOf(2.0), cellsOf(3.6), cellsOf(2.0), cellsOf(2.0))) = kUnknown;
+    CoverageMap coverage;
+    coverage.setMap(cells, world.geometry);
+    PlannerParams params;
+    params.min_frontier_unknown = 1.0;  // As when the shadow joins the unknown outside the walls.
+    const Pose2D robot{ 1.0, 1.0, 0.0 };
+
+    ViewpointPlanner planner(params);
+    const Plan       first = planner.nextFrontier(cells, world.geometry, robot);
+    ASSERT_EQ(first.status, PlanStatus::kViewpoint);
+    planner.report(coverage, first.viewpoint.id, true);
+    // Until SLAM has folded in what the robot saw from there, the frontier still counts.
+    EXPECT_EQ(planner.nextFrontier(cells, world.geometry, robot).status, PlanStatus::kViewpoint);
+    planner.mapUpdated();
+    const Plan after = planner.nextFrontier(cells, world.geometry, robot);
+    EXPECT_EQ(after.status, PlanStatus::kDone) << after.reason;
+
+    // Near, but only across the armchair: still worth the walk.
+    ViewpointPlanner across(params);
+    across.recordPose({ 2.5, 2.7, 0.0 });
+    across.mapUpdated();
+    EXPECT_EQ(across.nextFrontier(cells, world.geometry, robot).status, PlanStatus::kViewpoint);
+}
+
+TEST(ViewpointPlanner, EndsTheFrontierPassWhenVisitsStopGrowingTheMap)
+{
+    // One room with eight unknown pockets, each a frontier worth a walk.
+    World world;
+    world.heights = cv::Mat(cellsOf(12.0), cellsOf(12.0), CV_32F, cv::Scalar(kWallHeight));
+    world.box(0.1, 0.1, 11.9, 11.9, 0.0F);
+    world.finish();
+    std::vector<cv::Point2d> pockets;
+    for (const double x : { 0.8, 3.8, 6.8, 9.4 })
+    {
+        for (const double y : { 1.0, 5.0 })
+        {
+            pockets.emplace_back(x, y);
+        }
+    }
+    const auto pocket = [](const cv::Point2d& corner) {
+        return cv::Rect(cellsOf(corner.x), cellsOf(corner.y), cellsOf(2.2), cellsOf(2.2));
+    };
+    cv::Mat cells = world.cells.clone();
+    for (const cv::Point2d& corner : pockets)
+    {
+        cells(pocket(corner)) = kUnknown;
+    }
+    CoverageMap coverage;
+    coverage.setMap(cells, world.geometry);
+    const Pose2D robot{ 6.0, 10.5, 0.0 };
+
+    PlannerParams params;
+    params.frontier_stall_visits = 5;
+    params.min_frontier_growth   = 2.0;
+
+    // Five visits that reveal nothing, and the pass is over.
+    ViewpointPlanner stalled(params);
+    for (int visit = 0; visit < 5; ++visit)
+    {
+        const Plan plan = stalled.nextFrontier(cells, world.geometry, robot);
+        ASSERT_EQ(plan.status, PlanStatus::kViewpoint) << visit;
+        stalled.report(coverage, plan.viewpoint.id, true);
+    }
+    const Plan last = stalled.nextFrontier(cells, world.geometry, robot);
+    EXPECT_EQ(last.status, PlanStatus::kDone) << last.reason;
+
+    // Each visit revealing the pocket it went to keeps it going.
+    ViewpointPlanner growing(params);
+    cv::Mat          revealed = cells.clone();
+    for (int visit = 0; visit < 5; ++visit)
+    {
+        const Plan plan = growing.nextFrontier(revealed, world.geometry, robot);
+        ASSERT_EQ(plan.status, PlanStatus::kViewpoint) << visit;
+        growing.report(coverage, plan.viewpoint.id, true);
+        const auto nearest = std::ranges::min_element(pockets, {}, [&](const cv::Point2d& c) {
+            return std::hypot(c.x + 1.1 - plan.viewpoint.x, c.y + 1.1 - plan.viewpoint.y);
+        });
+        revealed(pocket(*nearest)) = kFree;
+    }
+    EXPECT_EQ(growing.nextFrontier(revealed, world.geometry, robot).status, PlanStatus::kViewpoint);
+
+    // Walks navigation could not finish are not visits: four of them and one that revealed
+    // nothing leave the pass going.
+    ViewpointPlanner refused(params);
+    for (int visit = 0; visit < 5; ++visit)
+    {
+        const Plan plan = refused.nextFrontier(cells, world.geometry, robot);
+        ASSERT_EQ(plan.status, PlanStatus::kViewpoint) << visit;
+        refused.report(coverage, plan.viewpoint.id, visit == 4);
+    }
+    EXPECT_EQ(refused.nextFrontier(cells, world.geometry, robot).status, PlanStatus::kViewpoint);
 }
 
 TEST(ViewpointPlanner, AvoidsAViewpointNavigationCouldNotReach)
@@ -518,6 +756,31 @@ TEST(ViewpointPlanner, WaitsOutAStuckRobotInsteadOfGivingUpEveryRoom)
     // Freed and carried a metre on: planning resumes, and no room was given up on the way.
     plan = planner.nextCoverage(coverage, rooms.labels, { 5.0, 0.9, 0.0 });
     EXPECT_EQ(plan.status, PlanStatus::kViewpoint);
+}
+
+TEST(ViewpointPlanner, StaysInItsRoomWhenCandidatesAreCapped)
+{
+    // Most of the left room seen already, the right one not at all. Cut by work alone, the kept
+    // poses are all in the right room and the robot leaves this one half done, to come back on
+    // another lap.
+    const World  world = twoRoomsAndACorridor();
+    const Camera camera;
+    CoverageMap  coverage;
+    coverage.setMap(world.cells, world.geometry);
+    const Segmentation rooms = segmentRooms(world.cells, world.geometry, {});
+    Viewpoint          glance;
+    glance.x        = 2.5;
+    glance.y        = 3.0;
+    glance.headings = { 0.0, std::numbers::pi / 2.0, std::numbers::pi, -std::numbers::pi / 2.0 };
+    const Pose2D  robot = look(world, camera, coverage, glance);
+    PlannerParams params;
+    params.max_candidates = 20;
+    ViewpointPlanner planner(params, camera.model);
+
+    const Plan plan = planner.nextCoverage(coverage, rooms.labels, robot);
+    ASSERT_EQ(plan.status, PlanStatus::kViewpoint);
+    const CellIndex here = world.geometry.toCell(robot.x, robot.y);
+    EXPECT_EQ(plan.viewpoint.room, rooms.labels.at<int>(here.y, here.x));
 }
 
 TEST(ViewpointPlanner, WritesOffWhatNoPoseCanSeeWhenCandidatesAreCapped)

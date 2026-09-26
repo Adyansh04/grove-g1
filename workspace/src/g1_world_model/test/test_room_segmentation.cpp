@@ -119,6 +119,44 @@ TEST(RoomSegmentation, FurnitureDoesNotSplitARoom)
     EXPECT_EQ(result.regions.size(), 1U);
 }
 
+TEST(RoomSegmentation, ClearsFurnitureStandingClearOfTheWalls)
+{
+    // The apartment's TV corner: a TV cabinet against the wall and, clear of the walls, an
+    // armchair, a coffee table and a sofa, each an outline round an inside the LiDAR never saw.
+    cv::Mat cells(cellsOf(8.2), cellsOf(8.2), CV_8UC1, cv::Scalar(kOccupied));
+    fill(cells, 0.1, 0.1, 8.1, 8.1, kFree);
+    fill(cells, 2.8, 0.1, 5.2, 0.6, kOccupied);  // The TV cabinet.
+    const auto furniture = [&](double x0, double y0, double x1, double y1) {
+        fill(cells, x0, y0, x1, y1, kOccupied);
+        fill(cells, x0 + 0.05, y0 + 0.05, x1 - 0.05, y1 - 0.05, kUnknown);
+    };
+    furniture(3.4, 1.75, 4.6, 2.35);  // Coffee table, 1.15 m off the cabinet.
+    furniture(3.1, 2.85, 4.9, 3.65);  // Sofa.
+    furniture(1.0, 1.6, 2.0, 2.6);    // Armchair.
+    // Wall returns along the walls only: nothing in here reaches wall height.
+    cv::Mat walls(cells.size(), CV_8UC1, cv::Scalar(0));
+    walls.setTo(255, cells == kOccupied);
+    fill(walls, 0.1, 0.1, 8.1, 8.1, static_cast<Cell>(0));
+
+    const cv::Mat cleared = clearFreestanding(cells, walls);
+    EXPECT_EQ(cleared.at<std::uint8_t>(cellsOf(2.0), cellsOf(4.0)), kFree);      // Table, inside.
+    EXPECT_EQ(cleared.at<std::uint8_t>(cellsOf(0.3), cellsOf(4.0)), kOccupied);  // Cabinet.
+    EXPECT_EQ(segmentRooms(cleared, geometryOf(cells), {}).regions.size(), 1U);
+}
+
+TEST(RoomSegmentation, KeepsTheOutsideAndWhatTouchesAWall)
+{
+    cv::Mat cells(cellsOf(4.0), cellsOf(4.0), CV_8UC1, cv::Scalar(kUnknown));
+    fill(cells, 0.5, 0.5, 3.5, 3.5, kOccupied);
+    fill(cells, 0.6, 0.6, 3.4, 3.4, kFree);
+    cv::Mat walls = cells == kOccupied;
+    fill(cells, 0.6, 1.0, 1.2, 2.0, kOccupied);  // A shelf against the wall, below wall height.
+
+    const cv::Mat cleared = clearFreestanding(cells, walls);
+    EXPECT_EQ(cleared.at<std::uint8_t>(0, 0), kUnknown);
+    EXPECT_EQ(cleared.at<std::uint8_t>(cellsOf(1.5), cellsOf(0.9)), kOccupied);
+}
+
 TEST(RoomSegmentation, UnknownSpaceIsNotARoom)
 {
     cv::Mat cells(cellsOf(5.0), cellsOf(5.0), CV_8UC1, cv::Scalar(kUnknown));

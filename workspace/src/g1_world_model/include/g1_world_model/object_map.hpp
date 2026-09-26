@@ -19,6 +19,7 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "g1_world_model/coverage_map.hpp"
@@ -47,13 +48,15 @@ struct ObjectMapParams
     double merge_similarity   = 0.8;    ///< Embedding cosine that stands in for a shared label.
     double merge_gap          = 0.10;   ///< Same label, boxes this close: sides of one object, m.
     double support_merge_gap  = 1.0;    ///< For tables and shelves, seen as legs and ends, m.
-    double max_merged_extent  = 3.0;    ///< The support gap joins nothing longer, m.
+    double max_merged_extent  = 3.5;    ///< The support gap joins nothing longer, m.
     int    merge_every        = 10;     ///< Frames between merge passes.
     int    max_voxels         = 20000;  ///< Per object; big furniture is thinned beyond it.
     int    stale_after        = 4;      ///< Misses before an object is stale.
     int    remove_after       = 10;     ///< And removed.
     int    min_observations   = 2;      ///< Fewer, this long after the first: a fragment, dropped.
-    double confirm_s          = 30.0;   ///< s.
+    double confirm_s          = 120.0;  ///< s.
+    double box_trim           = 0.02;   ///< Share of footprint points left off each box side.
+    double turned_area_ratio  = 0.7;    ///< A box leaves the walls only this much tighter.
     double miss_margin        = 0.30;   ///< Depth this far behind an object sees through it, m;
                                         ///< less for small objects, down to one voxel.
 
@@ -116,6 +119,7 @@ struct MappedObject
     std::vector<std::uint64_t> voxels;  ///< Sorted voxel keys.
     Eigen::Vector3d            centroid   = Eigen::Vector3d::Zero();
     Eigen::Vector2d            box_centre = Eigen::Vector2d::Zero();  ///< Footprint, map frame.
+    Eigen::Vector2d            seen_from  = Eigen::Vector2d::Zero();  ///< First camera position.
     Eigen::Vector2d            box_size   = Eigen::Vector2d::Zero();  ///< Along the box axes, m.
     double                     box_yaw    = 0.0;
     double                     z_min      = 0.0;
@@ -151,6 +155,9 @@ class ObjectMap
 public:
     explicit ObjectMap(ObjectMapParams params = {});
 
+    /// The walls' yaw (dominantAxis), which boxes lie along; refits every object.
+    void setFrame(double yaw);
+
     /**
      * @brief Fuses one frame's masks.
      *
@@ -166,6 +173,19 @@ public:
 
     /// Drops objects seen fewer than min_observations times in the confirm_s after the first.
     int pruneUnconfirmed(double now);
+
+    /// Seen often enough to be real rather than a glimpse still waiting to be confirmed.
+    [[nodiscard]] bool confirmed(const MappedObject& object) const
+    {
+        return object.observations >= params_.min_observations;
+    }
+
+    /// Unconfirmed objects, less pieces of a confirmed one of their label (those merge into it):
+    /// what a second look from where they were seen confirms or drops.
+    [[nodiscard]] std::vector<const MappedObject*> glimpses() const;
+
+    /// Labels of what pruneUnconfirmed() has dropped since the last call.
+    [[nodiscard]] std::vector<std::string> takeDropped() { return std::exchange(dropped_, {}); }
 
     /// Recomputes which object rests on which.
     void relateSupports();
@@ -209,9 +229,32 @@ private:
 
     ObjectMapParams           params_;
     std::vector<MappedObject> objects_;
-    int                       next_id_ = 1;
-    int                       frames_  = 0;
+    std::vector<std::string>  dropped_;
+    int                       next_id_   = 1;
+    int                       frames_    = 0;
+    double                    frame_yaw_ = 0.0;
 };
+
+struct MapFitParams
+{
+    double reach       = 0.15;  ///< A blob this near an object's box is under it, m.
+    double max_growth  = 3.0;   ///< A share larger than this many boxes is something bigger.
+    double min_share   = 0.25;  ///< And one smaller than this share is a leg, not the object.
+    double max_stretch = 1.0;   ///< Cells further than this outside an object's box are not its, m.
+};
+
+/**
+ * @brief Boxes for floor objects from the furniture the map shows, sharper than fused voxels.
+ *
+ * Each furniture cell goes to the box it lies deepest in, counted in box widths, so chairs under
+ * a table split its blob; an object keeps its share only when that is about its own size.
+ *
+ * @param furniture CV_8U on @p geometry, non-zero where the map is occupied but not by a wall.
+ * @return Fitted boxes by object id, each along its object's own box axes.
+ */
+[[nodiscard]] std::map<int, Footprint> fitToMap(
+    const std::vector<MappedObject>& objects, const cv::Mat& furniture,
+    const GridGeometry& geometry, const MapFitParams& params = {});
 
 }  // namespace g1_world_model
 

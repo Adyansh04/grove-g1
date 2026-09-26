@@ -18,6 +18,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <opencv2/core.hpp>
 #include <vector>
 
@@ -287,6 +288,7 @@ private:
     std::vector<int>           nearest_face_;  // Per cell, the face within face_reach, or -1.
     std::vector<int>           surface_at_;
     std::vector<double>        surface_height_;
+    std::map<int, double>      surface_top_;  // Per owner, the height its top was credited at.
     std::uint32_t              frame_ = 0;
 
     Intrinsics            rays_for_;

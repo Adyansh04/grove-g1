@@ -221,6 +221,56 @@ bool worldFits(
     return static_cast<double>(agree) >= min_agreement * static_cast<double>(snapshot.cells.size());
 }
 
+std::string saveOccupancy(
+    const std::string& directory, const std::vector<std::int8_t>& data, const GridGeometry& geometry)
+{
+    if (data.size() != geometry.cellCount())
+    {
+        return "the map's data does not match its size";
+    }
+    const std::filesystem::path root(directory);
+    std::error_code             error;
+    std::filesystem::create_directories(root, error);
+    if (error)
+    {
+        return "cannot create " + directory + ": " + error.message();
+    }
+    // map_saver's trinary encoding: free white, occupied black, unknown the grey it reads back.
+    std::string image =
+        "P5\n" + std::to_string(geometry.width) + " " + std::to_string(geometry.height) + "\n255\n";
+    const std::size_t header = image.size();
+    image.resize(header + geometry.cellCount());
+    for (int y = 0; y < geometry.height; ++y)
+    {
+        // PGM rows run from the top, the map's highest y.
+        const std::size_t row =
+            header + (static_cast<std::size_t>(geometry.height - 1 - y) * geometry.width);
+        for (int x = 0; x < geometry.width; ++x)
+        {
+            const auto cell = static_cast<std::size_t>(geometry.index(x, y));
+            // Signed by definition: -1 is unknown.
+            const int value = data[cell];  // NOLINT(bugprone-signed-char-misuse)
+            image[row + static_cast<std::size_t>(x)] =
+                static_cast<char>(value < 0 ? 205 : (value >= 65 ? 0 : (value <= 25 ? 254 : 205)));
+        }
+    }
+    std::string failure =
+        writeAtomically(root / "map.pgm", image, std::ios::out | std::ios::binary);
+    if (!failure.empty())
+    {
+        return failure;
+    }
+    std::ostringstream yaml;
+    yaml.precision(9);
+    yaml
+        << "image: map.pgm\nmode: trinary\nresolution: " << geometry.resolution << "\norigin: ["
+        << geometry.origin_x << ", " << geometry.origin_y
+        << ", 0]\nnegate: 0\n"
+        // 205 reads back as occupancy 0.196; a free threshold above it would serve unknown as free.
+        << "occupied_thresh: 0.65\nfree_thresh: 0.196\n";
+    return writeAtomically(root / "map.yaml", yaml.str(), std::ios::out);
+}
+
 std::optional<WorldSnapshot> loadWorld(const std::string& directory, std::string& error)
 {
     const std::filesystem::path root(directory);

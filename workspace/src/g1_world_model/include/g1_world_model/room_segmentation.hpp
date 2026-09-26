@@ -74,6 +74,18 @@ struct Segmentation
 };
 
 /**
+ * @brief Sets furniture standing clear of the walls free, so that only walls divide rooms.
+ *
+ * A blob with no wall-height return is furniture (a coffee table and a TV cabinet make no
+ * doorway); blobs reaching the grid's edge stay, as that unknown is the outside.
+ *
+ * @param cells CV_8U Cell values.
+ * @param walls CV_8U, non-zero where the LiDAR hit wall height.
+ * @return @p cells with those blobs free.
+ */
+[[nodiscard]] cv::Mat clearFreestanding(const cv::Mat& cells, const cv::Mat& walls);
+
+/**
  * @brief Segments the free space of @p cells into rooms.
  *
  * @param cells    CV_8U Cell image, from classifyOccupancy().
