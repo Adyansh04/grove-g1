@@ -246,8 +246,8 @@ struct MapFitParams
 /**
  * @brief Boxes for floor objects from the furniture the map shows, sharper than fused voxels.
  *
- * Each furniture cell goes to the box it lies deepest in, counted in box widths, so chairs under
- * a table split its blob; an object keeps its share only when that is about its own size.
+ * Each furniture cell goes to the box it lies deepest in, counted in box widths, or outside them
+ * all to the nearest for its size; an object keeps its share only when that is about its own size.
  *
  * @param furniture CV_8U on @p geometry, non-zero where the map is occupied but not by a wall.
  * @return Fitted boxes by object id, each along its object's own box axes.

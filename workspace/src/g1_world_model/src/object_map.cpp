@@ -1016,8 +1016,8 @@ std::map<int, Footprint> fitToMap(
         }
     }
 
-    // Each cell of a blob goes to the competitor whose box it lies deepest in, counted in box
-    // widths: chairs pushed under a table split its blob with it rather than spoil it.
+    // Each cell of a blob goes to the box it lies deepest in, counted in box widths, so chairs
+    // under a table split its blob; outside them all, to the nearest for its size.
     for (int y = 0; y < labels.rows; ++y)
     {
         for (int x = 0; x < labels.cols; ++x)
@@ -1027,25 +1027,28 @@ std::map<int, Footprint> fitToMap(
             {
                 continue;
             }
-            const double px    = geometry.centreX(x);
-            const double py    = geometry.centreY(y);
-            const auto   depth = [&](const Owner& owner) {
+            const double px = geometry.centreX(x);
+            const double py = geometry.centreY(y);
+            // Metres outside the box, and depth in it in box widths.
+            const auto place = [&](const Owner& owner) {
                 const double dx = px - owner.object->box_centre.x();
                 const double dy = py - owner.object->box_centre.y();
-                return std::max(
-                    std::abs((dx * owner.c) + (dy * owner.s)) / owner.half_u,
-                    std::abs((dy * owner.c) - (dx * owner.s)) / owner.half_v);
+                const double u  = std::abs((dx * owner.c) + (dy * owner.s));
+                const double v  = std::abs((dy * owner.c) - (dx * owner.s));
+                return std::pair{
+                    std::hypot(std::max(u - owner.half_u, 0.0), std::max(v - owner.half_v, 0.0)),
+                    std::max(u / owner.half_u, v / owner.half_v)
+                };
             };
-            Owner& best = owners[*std::ranges::min_element(list, {}, [&](std::size_t slot) {
-                return depth(owners[slot]);
+            const auto rank = [&](const Owner& owner) {
+                const auto [outside, depth] = place(owner);
+                return std::pair{ outside / std::max(owner.half_u, owner.half_v), depth };
+            };
+            Owner& best = owners[*std::ranges::min_element(list, {}, [&](std::size_t candidate) {
+                return rank(owners[candidate]);
             })];
             // A wall the plan fused to a wardrobe runs on well past it: not the wardrobe's.
-            const double dx      = px - best.object->box_centre.x();
-            const double dy      = py - best.object->box_centre.y();
-            const double outside = std::hypot(
-                std::max(std::abs((dx * best.c) + (dy * best.s)) - best.half_u, 0.0),
-                std::max(std::abs((dy * best.c) - (dx * best.s)) - best.half_v, 0.0));
-            if (outside > params.max_stretch)
+            if (place(best).first > params.max_stretch)
             {
                 continue;
             }

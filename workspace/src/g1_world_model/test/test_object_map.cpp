@@ -650,6 +650,32 @@ TEST(MapFit, SplitsATableFromTheChairsPushedUnderIt)
     EXPECT_LT(fitted.at(3).size.x(), 0.7);
 }
 
+TEST(MapFit, GivesACounterItsBackRatherThanTheStoveBesideIt)
+{
+    // A counter and the stove at its end, one blob; the counter fused from its front 0.3 m only.
+    const GridGeometry geometry{ 0.05, 0.0, 0.0, 120, 60 };
+    cv::Mat            furniture(geometry.height, geometry.width, CV_8UC1, cv::Scalar(0));
+    furniture(cv::Rect(20, 20, 52, 13)) = 255;
+    furniture(cv::Rect(72, 20, 15, 14)) = 255;
+    const auto object                   = [](int id, double x, double y, double sx, double sy) {
+        MappedObject out;
+        out.id         = id;
+        out.box_centre = { x, y };
+        out.box_size   = { sx, sy };
+        return out;
+    };
+    const std::map<int, Footprint> fitted = fitToMap(
+        { object(1, 2.3, 1.15, 2.6, 0.3), object(2, 3.97, 1.34, 0.74, 0.68) },
+        furniture,
+        geometry);
+
+    ASSERT_TRUE(fitted.contains(1));
+    EXPECT_NEAR(fitted.at(1).size.y(), 0.65, 0.06);
+    ASSERT_TRUE(fitted.contains(2));
+    EXPECT_NEAR(fitted.at(2).centre.x(), 3.97, 0.06);
+    EXPECT_NEAR(fitted.at(2).size.x(), 0.75, 0.12);
+}
+
 TEST(MapFit, LeavesTheWallAWardrobeStandsAgainst)
 {
     // The floor plan fuses a wardrobe to a thick stretch of wall that runs on 3 m past it.
