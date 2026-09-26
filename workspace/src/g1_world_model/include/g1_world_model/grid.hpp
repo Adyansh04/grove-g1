@@ -133,22 +133,37 @@ remapLayer(const std::vector<T>& layer, const GridGeometry& from, const GridGeom
 /**
  * @brief Settles the unknown pockets a map encloses: occupied beside anything solid (furniture
  *        insides, unseen wall), free among floor alone; unknown reaching the edge stays.
+ *
+ * A wide pocket that also opens onto free floor is solid only under @p furniture, where the
+ * camera has mapped an object; elsewhere it is floor no beam reached, behind a wardrobe.
+ *
+ * @param furniture CV_8U on the same grid, non-zero where a floor object stands; may be empty.
  */
-[[nodiscard]] cv::Mat settleEnclosedUnknown(const cv::Mat& cells);
+[[nodiscard]] cv::Mat settleEnclosedUnknown(const cv::Mat& cells, const cv::Mat& furniture = {});
+
+/// How far completeMap() carries solid across unknown, in cells.
+struct PlanGaps
+{
+    int wall      = 0;  ///< Through a wall running straight on both sides for wall_run cells.
+    int furniture = 0;  ///< Across anything else: one piece of furniture's depth.
+    int wall_run  = 0;
+};
 
 /**
  * @brief The map drawn as a floor plan: each room closed, each piece of furniture solid.
  *
  * Wall-height hits fill unknown cells (free wins, so doorways stay open), walls hidden at every
- * height run straight on across up to @p max_gap unknown cells, then the pockets settle.
+ * height run straight on across the unknown, furniture fills across its depth, then pockets settle.
  *
- * @param cells   CV_8U Cell values of the scan map.
- * @param walls   CV_8U, non-zero where the LiDAR hit wall height.
- * @param yaw     The walls' yaw, from dominantAxis(), rad.
- * @param max_gap Longest hidden stretch of wall to close, cells.
+ * @param cells     CV_8U Cell values of the scan map.
+ * @param walls     CV_8U, non-zero where the LiDAR hit wall height.
+ * @param yaw       The walls' yaw, from dominantAxis(), rad.
+ * @param limits    How far to carry solid across unknown.
+ * @param furniture As for settleEnclosedUnknown().
  */
-[[nodiscard]] cv::Mat
-completeMap(const cv::Mat& cells, const cv::Mat& walls, double yaw, int max_gap);
+[[nodiscard]] cv::Mat completeMap(
+    const cv::Mat& cells, const cv::Mat& walls, double yaw, const PlanGaps& limits,
+    const cv::Mat& furniture = {});
 
 /**
  * @brief Classifies nav_msgs occupancy values into Cell values.

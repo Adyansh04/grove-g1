@@ -18,6 +18,9 @@ namespace g1_world_model
 namespace
 {
 
+/// Cells from its edge to its middle, at most, for a pocket to be a crack: a beam gap in a wall.
+constexpr float kCrackDepth = 2.0F;
+
 /// How sharply occupied cells stack along the axes turned by @p yaw: sum of squared counts.
 double profileSharpness(const std::vector<cv::Point2f>& points, double yaw, int span)
 {
@@ -85,62 +88,78 @@ double dominantAxis(const cv::Mat& cells)
     return std::fmod(fine + quarter, quarter);
 }
 
-cv::Mat settleEnclosedUnknown(const cv::Mat& cells)
+cv::Mat settleEnclosedUnknown(const cv::Mat& cells, const cv::Mat& furniture)
 {
     cv::Mat   labels;
     cv::Mat   stats;
     cv::Mat   centroids;
     const int count =
         cv::connectedComponentsWithStats(cells == kUnknown, labels, stats, centroids, 4, CV_32S);
+    // Per pocket: what it borders, and how far its middle lies from its edge.
     std::vector<std::uint8_t> solid(static_cast<std::size_t>(count), 0);
+    std::vector<std::uint8_t> floor(static_cast<std::size_t>(count), 0);
+    std::vector<float>        depth(static_cast<std::size_t>(count), 0.0F);
+    cv::Mat                   inset;
+    cv::distanceTransform(cells == kUnknown, inset, cv::DIST_L1, 3);
     for (int y = 0; y < cells.rows; ++y)
     {
-        const int* row = labels.ptr<int>(y);
+        const int*   row  = labels.ptr<int>(y);
+        const float* away = inset.ptr<float>(y);
         for (int x = 0; x < cells.cols; ++x)
         {
-            const int label = row[x];
-            if (label == 0 || solid[static_cast<std::size_t>(label)] != 0)
+            const auto label = static_cast<std::size_t>(row[x]);
+            if (label == 0)
             {
                 continue;
             }
+            depth[label] = std::max(depth[label], away[x]);
             for (const auto& [nx, ny] :
                  { std::pair{ x + 1, y }, { x - 1, y }, { x, y + 1 }, { x, y - 1 } })
             {
-                if (nx >= 0 && ny >= 0 && nx < cells.cols && ny < cells.rows &&
-                    cells.at<std::uint8_t>(ny, nx) == kOccupied)
+                if (nx >= 0 && ny >= 0 && nx < cells.cols && ny < cells.rows)
                 {
-                    solid[static_cast<std::size_t>(label)] = 1;
-                    break;
+                    const std::uint8_t next = cells.at<std::uint8_t>(ny, nx);
+                    solid[label] |= static_cast<std::uint8_t>(next == kOccupied);
+                    floor[label] |= static_cast<std::uint8_t>(next == kFree);
                 }
             }
         }
     }
-    cv::Mat settled = cells.clone();
+    const bool hinted  = !furniture.empty() && furniture.size() == cells.size();
+    cv::Mat    settled = cells.clone();
     for (int y = 0; y < cells.rows; ++y)
     {
         const int* row  = labels.ptr<int>(y);
         auto*      cell = settled.ptr<std::uint8_t>(y);
         for (int x = 0; x < cells.cols; ++x)
         {
-            const int label = row[x];
+            const auto label = static_cast<std::size_t>(row[x]);
             if (label == 0)
             {
                 continue;
             }
-            const int* box     = stats.ptr<int>(label);
+            const int* box     = stats.ptr<int>(static_cast<int>(label));
             const bool outside = box[cv::CC_STAT_LEFT] == 0 || box[cv::CC_STAT_TOP] == 0 ||
                                  box[cv::CC_STAT_LEFT] + box[cv::CC_STAT_WIDTH] == cells.cols ||
                                  box[cv::CC_STAT_TOP] + box[cv::CC_STAT_HEIGHT] == cells.rows;
-            if (!outside)
+            if (outside)
             {
-                cell[x] = solid[static_cast<std::size_t>(label)] != 0 ? kOccupied : kFree;
+                continue;
             }
+            // A wide pocket open to the floor is the floor no beam reached behind a wardrobe, or
+            // the underside of an armchair: solid only where an object stands.
+            const bool solid_here =
+                solid[label] != 0 && (floor[label] == 0 || depth[label] <= kCrackDepth ||
+                                      (hinted && furniture.at<std::uint8_t>(y, x) != 0));
+            cell[x] = solid_here ? kOccupied : kFree;
         }
     }
     return settled;
 }
 
-cv::Mat completeMap(const cv::Mat& cells, const cv::Mat& walls, double yaw, int max_gap)
+cv::Mat completeMap(
+    const cv::Mat& cells, const cv::Mat& walls, double yaw, const PlanGaps& limits,
+    const cv::Mat& furniture)
 {
     cv::Mat closed = cells.clone();
     closed.setTo(kOccupied, (walls != 0) & (cells == kUnknown));
@@ -168,27 +187,41 @@ cv::Mat completeMap(const cv::Mat& cells, const cv::Mat& walls, double yaw, int 
         cv::INTER_NEAREST,
         cv::BORDER_CONSTANT,
         cv::Scalar(kUnknown));
-    cv::Mat    gaps(turned.size(), CV_8UC1, cv::Scalar(0));
+    cv::Mat gaps(turned.size(), CV_8UC1, cv::Scalar(0));
+    // A gap flanked by a straight run of solid on both sides is a wall carried on behind
+    // furniture; any other closes only across one piece of furniture's depth.
     const auto close_line = [&](int count, const auto& at, const auto& mark) {
-        int last = -1;
+        int last   = -1;
+        int behind = 0;
+        int run    = 0;
         for (int i = 0; i < count; ++i)
         {
             const std::uint8_t cell = at(i);
-            if (cell == kFree)
+            if (cell != kOccupied)
             {
-                last = -1;
+                last = cell == kFree ? -1 : last;
+                run  = 0;
+                continue;
             }
-            else if (cell == kOccupied)
+            ++run;
+            if (last >= 0 && i - last > 1)
             {
-                if (last >= 0 && i - last - 1 <= max_gap)
+                int ahead = 0;
+                while (i + ahead < count && at(i + ahead) == kOccupied)
+                {
+                    ++ahead;
+                }
+                const bool wall = behind >= limits.wall_run && ahead >= limits.wall_run;
+                if (i - last - 1 <= (wall ? limits.wall : limits.furniture))
                 {
                     for (int j = last + 1; j < i; ++j)
                     {
                         mark(j);
                     }
                 }
-                last = i;
             }
+            last   = i;
+            behind = run;
         }
     };
     for (int y = 0; y < turned.rows; ++y)
@@ -215,7 +248,7 @@ cv::Mat completeMap(const cv::Mat& cells, const cv::Mat& walls, double yaw, int 
         cv::BORDER_CONSTANT,
         cv::Scalar(0));
     closed.setTo(kOccupied, (back != 0) & (closed == kUnknown));
-    return settleEnclosedUnknown(closed);
+    return settleEnclosedUnknown(closed, furniture);
 }
 
 cv::Mat classifyOccupancy(

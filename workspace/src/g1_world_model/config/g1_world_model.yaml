@@ -114,8 +114,13 @@ g1_world_model:
 
     floor_plan:
       # Walls hidden from the LiDAR at every height, behind a wardrobe or a tall shelf, are
-      # carried straight on for up to this long in the saved floor plan, m.
+      # carried straight on for up to this long in the saved floor plan, m: a wall is a gap with
+      # straight solid at least min_wall_run long either side.
       max_wall_gap: 2.5
+      min_wall_run: 0.3
+      # Any other unseen stretch between two solid cells closes only across one piece of
+      # furniture's depth: at 2.5 m it filled the floor behind the bedroom's wardrobe to the wall.
+      max_furniture_depth: 1.2
 
     rooms:
       min_persistence: 0.15

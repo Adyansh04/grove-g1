@@ -234,7 +234,7 @@ TEST(Grid, ClosesTheWallBehindACounterButNotADoorway)
     cv::line(cells, cv::Point(20, 30), cv::Point(35, 30), cv::Scalar(kOccupied));
     cv::line(walls, cv::Point(20, 34), cv::Point(35, 34), cv::Scalar(0));
 
-    const cv::Mat plan = completeMap(cells, walls, 0.0, 20);
+    const cv::Mat plan = completeMap(cells, walls, 0.0, { 20, 12, 3 });
     EXPECT_EQ(plan.at<std::uint8_t>(5, 30), kOccupied);   // The wall behind the counter.
     EXPECT_EQ(plan.at<std::uint8_t>(7, 30), kOccupied);   // The counter, solid to the wall.
     EXPECT_EQ(plan.at<std::uint8_t>(34, 27), kOccupied);  // The wall behind the wardrobe.
@@ -256,8 +256,37 @@ TEST(Grid, ClosesFurnitureAtTheMapsEdgeWhateverTheWallsYaw)
     const cv::Mat walls(cells.size(), CV_8UC1, cv::Scalar(0));
     for (const double yaw : { 0.0, 1.45 })
     {
-        EXPECT_EQ(completeMap(cells, walls, yaw, 20).at<std::uint8_t>(3, 5), kOccupied) << yaw;
+        EXPECT_EQ(completeMap(cells, walls, yaw, { 20, 12, 3 }).at<std::uint8_t>(3, 5), kOccupied)
+            << yaw;
     }
+}
+
+TEST(Grid, KeepsTheFloorBehindAWardrobeFreeButFillsWhatTheCameraMapped)
+{
+    // A room with a wardrobe in its top right corner: the scan saw its west and south faces, and
+    // past its corner some of the floor between it and the top wall; the rest of that floor never.
+    cv::Mat cells(40, 60, CV_8UC1, cv::Scalar(kUnknown));
+    cv::rectangle(cells, cv::Point(5, 5), cv::Point(54, 34), cv::Scalar(kOccupied), cv::FILLED);
+    cv::rectangle(cells, cv::Point(6, 6), cv::Point(53, 33), cv::Scalar(kFree), cv::FILLED);
+    cv::rectangle(cells, cv::Point(45, 6), cv::Point(53, 21), cv::Scalar(kUnknown), cv::FILLED);
+    cv::line(cells, cv::Point(44, 12), cv::Point(44, 22), cv::Scalar(kOccupied));
+    cv::line(cells, cv::Point(44, 22), cv::Point(53, 22), cv::Scalar(kOccupied));
+    // An armchair out on the floor, seen from the north and east only: floor all round the rest.
+    cv::rectangle(cells, cv::Point(20, 20), cv::Point(26, 25), cv::Scalar(kUnknown), cv::FILLED);
+    cv::line(cells, cv::Point(20, 19), cv::Point(27, 19), cv::Scalar(kOccupied));
+    cv::line(cells, cv::Point(27, 19), cv::Point(27, 25), cv::Scalar(kOccupied));
+    cv::Mat walls(cells.size(), CV_8UC1, cv::Scalar(0));
+    cv::rectangle(walls, cv::Point(5, 5), cv::Point(54, 34), cv::Scalar(255));
+    // The camera mapped the armchair, and the wardrobe from its faces.
+    cv::Mat mapped(cells.size(), CV_8UC1, cv::Scalar(0));
+    cv::rectangle(mapped, cv::Point(19, 18), cv::Point(28, 26), cv::Scalar(255), cv::FILLED);
+    cv::rectangle(mapped, cv::Point(43, 11), cv::Point(54, 23), cv::Scalar(255), cv::FILLED);
+
+    const cv::Mat plan = completeMap(cells, walls, 0.0, { 20, 12, 3 }, mapped);
+    EXPECT_EQ(plan.at<std::uint8_t>(17, 49), kOccupied);  // The wardrobe, solid to the wall.
+    EXPECT_EQ(plan.at<std::uint8_t>(8, 49), kFree);       // The floor behind it: floor.
+    EXPECT_EQ(plan.at<std::uint8_t>(22, 23), kOccupied);  // The armchair's underside.
+    EXPECT_EQ(completeMap(cells, walls, 0.0, { 20, 12, 3 }).at<std::uint8_t>(22, 23), kFree);
 }
 
 TEST(WorldStore, SavesTheMapAsMapServerReadsIt)

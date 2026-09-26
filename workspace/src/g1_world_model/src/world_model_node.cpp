@@ -6,6 +6,7 @@
 #include "g1_world_model/world_model_node.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <charconv>
 #include <chrono>
@@ -191,6 +192,9 @@ WorldModelNode::WorldModelNode(const rclcpp::NodeOptions& options)
     planner.frontier_seen_radius =
         declare_parameter<double>("planner.frontier_seen_radius", planner.frontier_seen_radius);
     max_wall_gap_ = declare_parameter<double>("floor_plan.max_wall_gap", max_wall_gap_);
+    max_furniture_depth_ =
+        declare_parameter<double>("floor_plan.max_furniture_depth", max_furniture_depth_);
+    min_wall_run_ = declare_parameter<double>("floor_plan.min_wall_run", min_wall_run_);
     planner.frontier_stall_visits = static_cast<int>(
         declare_parameter<int>("planner.frontier_stall_visits", planner.frontier_stall_visits));
     planner.min_frontier_growth =
@@ -690,9 +694,43 @@ cv::Mat WorldModelNode::furnitureCells() const
 
 cv::Mat WorldModelNode::floorPlan() const
 {
-    return structureReady() ?
-               completeMap(cells_, wallMask(0), frame_yaw_, geometry_.cellsFor(max_wall_gap_)) :
-               settleEnclosedUnknown(cells_);
+    const cv::Mat furniture = floorObjects();
+    return structureReady() ? completeMap(
+                                  cells_,
+                                  wallMask(0),
+                                  frame_yaw_,
+                                  { geometry_.cellsFor(max_wall_gap_),
+                                    geometry_.cellsFor(max_furniture_depth_),
+                                    geometry_.cellsFor(min_wall_run_) },
+                                  furniture) :
+                              settleEnclosedUnknown(cells_, furniture);
+}
+
+cv::Mat WorldModelNode::floorObjects() const
+{
+    cv::Mat mask(cells_.size(), CV_8UC1, cv::Scalar(0));
+    for (const MappedObject& object : objects_.objects())
+    {
+        if (!shown(object) || object.support != 0)
+        {
+            continue;
+        }
+        const double             c = std::cos(object.box_yaw);
+        const double             s = std::sin(object.box_yaw);
+        std::array<cv::Point, 4> corners;
+        std::size_t              corner = 0;
+        for (const auto& [su, sv] : { std::pair{ 1, 1 }, { -1, 1 }, { -1, -1 }, { 1, -1 } })
+        {
+            const double    u    = su * ((0.5 * object.box_size.x()) + map_fit_params_.reach);
+            const double    v    = sv * ((0.5 * object.box_size.y()) + map_fit_params_.reach);
+            const CellIndex cell = geometry_.toCell(
+                object.box_centre.x() + (c * u) - (s * v),
+                object.box_centre.y() + (s * u) + (c * v));
+            corners.at(corner++) = { cell.x, cell.y };
+        }
+        cv::fillConvexPoly(mask, corners.data(), static_cast<int>(corners.size()), cv::Scalar(255));
+    }
+    return mask;
 }
 
 Footprint WorldModelNode::footprintOf(const MappedObject& object) const
