@@ -7,7 +7,7 @@ find_package(ament_cmake REQUIRED)
 
 # --- install ---------------------------------------------------------------
 
-install(DIRECTORY config launch mjcf DESTINATION share/${PROJECT_NAME})
+install(DIRECTORY config launch mjcf worlds DESTINATION share/${PROJECT_NAME})
 install(
   PROGRAMS scripts/activate_arm scripts/deactivate_arm
   DESTINATION lib/${PROJECT_NAME}
