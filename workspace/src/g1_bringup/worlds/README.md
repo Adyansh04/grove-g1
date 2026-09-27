@@ -14,7 +14,7 @@ ros2 launch g1_bringup bringup.launch.py world:=apartment mode:=localization nav
 | File | |
 |---|---|
 | `apartment.yaml` | The floor plan: rooms, walls, doorways, lights, and each prop's asset and pose. The one file to edit. |
-| `apartment.truth.yaml` | Ground truth for scoring: room polygons and types, doorways, and for each object its label, synonyms, room, bounding box, support, and whether the standing robot's camera can see it from anywhere it can reach. |
+| `apartment.truth.yaml` | Ground truth for scoring: room polygons and types, doorways, and for each object its label, synonyms, room, bounding box, support, and whether one of the standing robot's cameras (head and chest, from `g1_description`'s `cameras.yaml`) can see it from anywhere it can reach. |
 | `../mjcf/g1_apartment_scene.xml` | The scene. Asset paths start with `@GROVE_ASSETS@/`, which `sim.launch.py` replaces with `$GROVE_ASSETS_DIR` (default `/root/workspace/assets`) when it stages the scene. |
 | `../config/sim_sensors_apartment.yaml` | `sim_sensors.yaml` with every prop in `object_bodies`. `sim.launch.py` takes `sim_sensors_<world>.yaml` when one exists. |
 | `g1_navigation`: `maps/apartment.{pgm,yaml}` | The occupancy grid, which localization picks for `world:=apartment`. |
@@ -51,8 +51,9 @@ together; the map is rasterised from the scene, so a stale map would be a map of
 - Poses are quaternions: `g1_29dof.xml` sets `angle="radian"` for the whole model, so an `euler`
   in degrees would be read as radians.
 - The renderer honours eight lights and the headlight takes one, so the plan has seven.
-- `book_2` sits on a tier at 1.66 m, above the head camera, as a target that must be reported
-  unobservable. `crate_2`, 0.25 m tall, is below the 2D scan band, so it is missing from the map.
+- `book_2` sits on a tier at 1.66 m, above the head camera's view. Only the chest camera, whose
+  view rises 9° above the horizon, sees it, from 4.0 to 4.5 m away, so a head-only run cannot map
+  it. `crate_2`, 0.25 m tall, is below the 2D scan band, so it is missing from the map.
 - Doors are at least 1.2 m. The storage door was 1.0 m as a stress case, and Nav2 would not plan
   through it: the robot wedged in the frame and every later goal failed.
 
