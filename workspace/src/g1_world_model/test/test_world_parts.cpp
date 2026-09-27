@@ -99,6 +99,17 @@ TEST(RoomTyping, NamesDistinctiveRoomsFromTheirObjects)
     EXPECT_GT(storage.probability, 0.5);
 }
 
+TEST(RoomTyping, ReadsOtherWordsAsTheTablesOwn)
+{
+    const RoomTypeTable types = table();
+    EXPECT_EQ(types.canonical("Dustbin"), "trash can");
+    EXPECT_EQ(types.canonical("fridge"), "refrigerator");
+    EXPECT_EQ(types.canonical("lamp"), "lamp");
+    EXPECT_EQ(classifyRoom(types, { "fridge", "counter", "dustbin" }, 5.0, 4.0).type, "kitchen");
+    // Two words for one kind of object are one piece of evidence, so a hallway stays one.
+    EXPECT_EQ(classifyRoom(types, { "bookshelf", "shelf", "bookcase" }, 12.0, 1.8).type, "hallway");
+}
+
 TEST(RoomTyping, ALongEmptyStripIsAHallway)
 {
     EXPECT_EQ(classifyRoom(table(), { "potted plant" }, 12.0, 1.8).type, "hallway");

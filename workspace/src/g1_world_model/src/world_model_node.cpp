@@ -1672,6 +1672,8 @@ std::vector<std::pair<const MappedObject*, double>> WorldModelNode::matchObjects
     {
         return matches;  // A room nobody knows: "not found", never "found somewhere else".
     }
+    // "dustbin" finds what the detector calls a trash can.
+    const std::string wanted = room_types_.canonical(query);
     for (const MappedObject& object : objects_.objects())
     {
         if (!shown(object))
@@ -1690,13 +1692,14 @@ std::vector<std::pair<const MappedObject*, double>> WorldModelNode::matchObjects
         }
         else if (!query.empty())
         {
-            if (lowered(object.label()) == lowered(query) || lowered(object.name) == lowered(query))
+            if (room_types_.canonical(object.label()) == wanted ||
+                room_types_.canonical(object.name) == wanted)
             {
                 score = 1.0;
             }
             else if (
                 containsWord(object.label(), query) || containsWord(query, object.label()) ||
-                containsWord(object.name, query))
+                containsWord(object.name, query) || containsWord(object.name, wanted))
             {
                 score = 0.8;
             }
@@ -1708,14 +1711,15 @@ std::vector<std::pair<const MappedObject*, double>> WorldModelNode::matchObjects
             {
                 // A runner-up label: worth something in proportion to its share of the votes.
                 float total = 0.0F;
+                float vote  = 0.0F;
                 for (const auto& [label, weight] : object.votes)
                 {
                     total += weight;
+                    vote += room_types_.canonical(label) == wanted ? weight : 0.0F;
                 }
-                const auto vote = object.votes.find(lowered(query));
-                if (vote != object.votes.end() && total > 0.0F)
+                if (total > 0.0F)
                 {
-                    score = 0.5 * static_cast<double>(vote->second / total);
+                    score = 0.5 * static_cast<double>(vote / total);
                 }
             }
         }

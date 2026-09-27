@@ -24,10 +24,15 @@ struct RoomTypeTable
     std::vector<std::string>                   types;
     std::vector<double>                        priors;
     std::map<std::string, std::vector<double>> likelihood;  ///< label -> P(present | type).
+    std::map<std::string, std::string>         synonyms;    ///< Other word -> the table's word.
     double unlisted = 0.08;  ///< P(present | type) for a label the type does not list.
 
-    /// Parses the `room_types` table of a YAML file; throws YAML::Exception on bad input.
+    /// Parses the `room_types` table and the `synonyms` of a YAML file; throws YAML::Exception on
+    /// bad input.
     static RoomTypeTable fromYaml(const std::string& path);
+
+    /// @p word lower-cased and in the table's words: "Fridge" is "refrigerator".
+    [[nodiscard]] std::string canonical(const std::string& word) const;
 };
 
 struct RoomTyping

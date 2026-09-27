@@ -8,6 +8,7 @@
 #include <yaml-cpp/yaml.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <set>
 
@@ -21,6 +22,14 @@ namespace
 constexpr double      kHallwayWidth       = 2.2;
 constexpr double      kHallwayAspect      = 3.0;
 constexpr std::size_t kHallwayMostObjects = 2;
+
+std::string lowered(std::string text)
+{
+    std::transform(text.begin(), text.end(), text.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return text;
+}
 
 }  // namespace
 
@@ -46,13 +55,32 @@ RoomTypeTable RoomTypeTable::fromYaml(const std::string& path)
             row[slot] = object.second.as<double>();
         }
     }
+    for (const auto& group : root["synonyms"])
+    {
+        const auto word = group.first.as<std::string>();
+        for (const auto& other : group.second)
+        {
+            table.synonyms[lowered(other.as<std::string>())] = word;
+        }
+    }
     return table;
+}
+
+std::string RoomTypeTable::canonical(const std::string& word) const
+{
+    std::string key   = lowered(word);
+    const auto  found = synonyms.find(key);
+    return found == synonyms.end() ? key : found->second;
 }
 
 RoomTyping classifyRoom(
     const RoomTypeTable& table, const std::vector<std::string>& labels, double length, double width)
 {
-    const std::set<std::string> distinct(labels.begin(), labels.end());
+    std::set<std::string> distinct;
+    for (const std::string& label : labels)
+    {
+        distinct.insert(table.canonical(label));
+    }
     if (width > 0.0 && width < kHallwayWidth && length > kHallwayAspect * width &&
         distinct.size() <= kHallwayMostObjects)
     {
