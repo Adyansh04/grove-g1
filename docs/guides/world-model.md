@@ -87,8 +87,9 @@ cd workspace/src/canopy
 ~/.local/share/canopy/.venv/bin/python servers/semantic_server.py
 ```
 
-Gemini needs a free API key in `~/.config/canopy/gemini.env`. The server caps its own use at 5
-requests a minute and 100 a day, and stops for the day on any quota answer. Then launch the world
+Gemini needs a free API key in `~/.config/canopy/gemini.env`. The free tier limits each model
+separately, so the server spreads the calls over several, each under its own caps (canopy's
+`servers/README.md` lists them). Then launch the world
 model with `detector:=true describe:=true` in place of the mock: a detector per camera asks the
 server, each object gets a name and a caption, and a room whose objects do not settle its type is
 typed from the frames the robot took standing in it.
@@ -97,7 +98,8 @@ The acceptance test (`g1_bringup`'s `test_explore_apartment`) runs this way with
 `G1_EXPLORE_TEST_DETECTOR=semantic`. On the apartment
 renders it finds about three quarters of the objects against the mock's all: YOLOE confuses
 furniture of one material (desk, cabinet, TV stand) and misses mugs and bowls on tables, while the
-describer usually names them right. Gemini's 100 requests a day cover about one run.
+describer usually names them right. A run makes 100 to 250 describe calls; Gemini's free tier
+covers several runs a day before the local VLM takes over.
 
 ## What the camera cannot see
 
