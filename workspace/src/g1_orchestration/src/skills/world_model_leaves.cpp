@@ -9,6 +9,7 @@
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
 
+#include <algorithm>
 #include <canopy_msgs/srv/get_approach_pose.hpp>
 #include <canopy_msgs/srv/next_viewpoint.hpp>
 #include <canopy_msgs/srv/report_viewpoint.hpp>
@@ -63,6 +64,10 @@ BT::PortsList NextViewpoint::providedPorts()
 {
     return {
         ports::serviceTimeout(30.0, "How long to wait for a map and a pose before giving up."),
+        BT::InputPort<double>(
+            "retry_s",
+            1.0,
+            "Seconds between asks while the world model is unavailable; at least 0.1."),
         BT::InputPort<std::string>(
             "mode",
             "coverage",
@@ -84,8 +89,10 @@ BT::NodeStatus NextViewpoint::tick()
     using Service = canopy_msgs::srv::NextViewpoint;
 
     const double timeout_s = getInput<double>("timeout_s").value_or(30.0);
-    auto         request   = std::make_shared<Service::Request>();
-    request->mode          = getInput<std::string>("mode").value_or("coverage");
+    // Floored so a zero or NaN does not spin on the service.
+    const double retry_s = std::max(0.1, getInput<double>("retry_s").value_or(1.0));
+    auto         request = std::make_shared<Service::Request>();
+    request->mode        = getInput<std::string>("mode").value_or("coverage");
     const std::string service =
         getInput<std::string>("service").value_or(std::string(kWorldModel) + "/next_viewpoint");
 
@@ -140,7 +147,7 @@ BT::NodeStatus NextViewpoint::tick()
             setOutput("outcome", std::string("error"));
             return BT::NodeStatus::FAILURE;
         }
-        std::this_thread::sleep_for(std::chrono::seconds(1));
+        std::this_thread::sleep_for(std::chrono::duration<double>(retry_s));
     }
 }
 
@@ -302,6 +309,15 @@ BT::PortsList TurnTo::providedPorts()
         BT::InputPort<double>("yaw", "Heading to face, rad, in `frame`."),
         BT::InputPort<std::string>("frame", "map", "Frame of `yaw`."),
         BT::InputPort<std::string>("base_frame", "base_footprint", "The robot's base frame."),
+        BT::InputPort<double>(
+            "yaw_rate",
+            0.4,
+            "Yaw rate, rad/s, the gait holds while turning: below what the spin asks for, since "
+            "the controller caps it. Sizes the spin's time allowance."),
+        BT::InputPort<double>(
+            "slack_s",
+            8.0,
+            "Seconds the allowance adds for the turn to start and settle."),
     });
 }
 
@@ -334,8 +350,10 @@ bool TurnTo::fillGoal(Goal& goal)
     }
     const double turn = std::remainder(*yaw - now_yaw, 2.0 * M_PI);
     goal.target_yaw   = static_cast<float>(turn);
-    // Generous: the controller caps yaw rate below what the spin behavior asks for.
-    goal.time_allowance = rclcpp::Duration::from_seconds(8.0 + (std::abs(turn) / 0.4));
+    // Floored so a zero, negative or NaN port cannot make the allowance infinite or negative.
+    const double rate   = std::max(0.05, getInput<double>("yaw_rate").value_or(0.4));
+    const double slack  = std::max(0.0, getInput<double>("slack_s").value_or(8.0));
+    goal.time_allowance = rclcpp::Duration::from_seconds(slack + (std::abs(turn) / rate));
     return true;
 }
 

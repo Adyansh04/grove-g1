@@ -41,11 +41,12 @@
         </Action>
         <Action ID="NextViewpoint">
             <output_port name="outcome" type="std::string">'viewpoint', 'stuck', 'done' or 'error'.</output_port>
-            <output_port name="room_id" type="std::string">The room the viewpoint stands in.</output_port>
             <output_port name="viewpoint_id" type="int">For ReportViewpoint.</output_port>
             <output_port name="goal" type="g1_orchestration::Station">Where to stand, facing the first heading.</output_port>
             <input_port name="service" type="std::string" default="/canopy/next_viewpoint">The world model's service.</input_port>
             <input_port name="mode" type="std::string" default="coverage">'frontier' to close the map, 'coverage' to make the camera see it.</input_port>
+            <output_port name="room_id" type="std::string">The room the viewpoint stands in.</output_port>
+            <input_port name="retry_s" type="double" default="1.000000">Seconds between asks while the world model is unavailable; at least 0.1.</input_port>
             <output_port name="headings" type="std::shared_ptr&lt;std::deque&lt;double, std::allocator&lt;double&gt; &gt; &gt;">Map-frame yaws to face, in order.</output_port>
             <input_port name="timeout_s" type="double" default="30.000000">How long to wait for a map and a pose before giving up.</input_port>
         </Action>
@@ -104,6 +105,8 @@
         </Action>
         <Action ID="TurnTo">
             <input_port name="server_timeout_s" type="double" default="10.000000">How long to wait for the action server to appear.</input_port>
+            <input_port name="slack_s" type="double" default="8.000000">Seconds the allowance adds for the turn to start and settle.</input_port>
+            <input_port name="yaw_rate" type="double" default="0.400000">Yaw rate, rad/s, the gait holds while turning: below what the spin asks for, since the controller caps it. Sizes the spin's time allowance.</input_port>
             <input_port name="base_frame" type="std::string" default="base_footprint">The robot's base frame.</input_port>
             <input_port name="frame" type="std::string" default="map">Frame of `yaw`.</input_port>
             <input_port name="yaw" type="double">Heading to face, rad, in `frame`.</input_port>
