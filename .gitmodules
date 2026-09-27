@@ -3,3 +3,11 @@
 	url = https://github.com/Adyansh04/unitree_mujoco.git
 	branch = grove
 	shallow = true
+[submodule "workspace/src/livox_ros_driver2"]
+	path = workspace/src/livox_ros_driver2
+	url = https://github.com/Adyansh04/livox_ros_driver2.git
+	branch = grove
+[submodule "workspace/src/fast_lio_humanoid"]
+	path = workspace/src/fast_lio_humanoid
+	url = https://github.com/Adyansh04/FAST_LIO_LOCALIZATION_HUMANOID.git
+	branch = grove

@@ -81,6 +81,8 @@ jobs:
       CCACHE_MAXSIZE: 1G
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: recursive
 
       # $GITHUB_WORKSPACE, not ${{ github.workspace }}: inside a container the latter expands to
       # the runner's host path, which does not exist here.
@@ -106,11 +108,6 @@ jobs:
             fail=1
           fi
           exit $fail
-
-      - name: Import externals
-        run: |
-          git config --global --add safe.directory '*'
-          ./scripts/import-externals.sh
 
       - uses: actions/cache@v6
         with:
@@ -180,11 +177,8 @@ jobs:
       CCACHE_DISABLE: "1"
     steps:
       - uses: actions/checkout@v7
-
-      - name: Import externals
-        run: |
-          git config --global --add safe.directory '*'
-          ./scripts/import-externals.sh
+        with:
+          submodules: recursive
 
       - name: Build instrumented
         working-directory: workspace

@@ -30,7 +30,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         liburdfdom-tools \
         python3-colcon-common-extensions \
         python3-pip \
-        python3-vcstool \
     && ln -sf /usr/bin/clang-format-${LLVM_VERSION} /usr/bin/clang-format \
     && ln -sf /usr/bin/clang-tidy-${LLVM_VERSION} /usr/bin/clang-tidy \
     && ln -sf /usr/bin/run-clang-tidy-${LLVM_VERSION} /usr/bin/run-clang-tidy \

@@ -1,8 +1,8 @@
 {
   "_comment": [
     "Livox-SDK2 config for the Mid360 on the G1. Hardware only.",
-    "Ours, not the driver's config/MID360_config.json, which scripts/import-externals.sh",
-    "overwrites. Host 192.168.123.164 is the robot's Orin; Unitree ships the Mid360 at",
+    "Ours, not the driver's config/MID360_config.json, which carries Livox's defaults.",
+    "Host 192.168.123.164 is the robot's Orin; Unitree ships the Mid360 at",
     "192.168.123.120, not Livox's default 192.168.1.x. Ping both before blaming the driver.",
     "extrinsic_parameter stays identity: the upside-down mount is in the URDF (mid360_joint),",
     "and applying it here too would invert the cloud twice."

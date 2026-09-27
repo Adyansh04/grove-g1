@@ -103,27 +103,27 @@ Install Docker Engine with Docker Compose v2, the NVIDIA driver and the NVIDIA C
 on the host. The simulator uses the GPU exposed by `docker-compose.yml`. For the GUI modes, run
 from an X11 desktop session; `manage.sh start` grants the container local X11 access.
 
-Install [`vcstool`](https://github.com/dirk-thomas/vcstool) on the host as well, because the
-import script uses its `vcs` command before the development container exists:
+### Start the development container
+
+Clone with the submodules, or fetch them in an existing clone:
 
 ```bash
-sudo apt install python3-vcstool
+git clone --recurse-submodules https://github.com/Adyansh04/grove-g1.git
+git submodule update --init
 ```
 
-### Start the development container
+The third-party code the stack changes lives in forks, on their `grove` branches:
+`livox_ros_driver2` and `fast_lio_humanoid` under `workspace/src`, and `unitree_mujoco`, which the
+image builds, under `workspace/vendor`. `git config submodule.recurse true` makes `git pull` move
+them along.
 
 From the repository root, on the host:
 
 ```bash
 cp .env.example .env
-./scripts/import-externals.sh
 ./scripts/manage.sh start
 ./scripts/manage.sh exec
 ```
-
-`import-externals.sh` pulls the third-party packages listed in `workspace.repos` into
-`workspace/src` and puts the two that ship a non-standard layout into a buildable one. Run it
-again whenever `workspace.repos` changes.
 
 ### Build
 
