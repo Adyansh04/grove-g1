@@ -855,6 +855,12 @@ Plan ViewpointPlanner::nextCoverage(
         plan.reason = "no map yet";
         return plan;
     }
+    if (coverage_done_)
+    {
+        plan.status = PlanStatus::kDone;
+        plan.reason = *coverage_done_;
+        return plan;
+    }
     if (stuck(robot, plan))
     {
         return plan;
@@ -875,8 +881,9 @@ Plan ViewpointPlanner::nextCoverage(
     }
     if (pending_count == 0)
     {
-        plan.status = PlanStatus::kDone;
-        plan.reason = "every observable target has been seen";
+        plan.status    = PlanStatus::kDone;
+        plan.reason    = "every observable target has been seen";
+        coverage_done_ = plan.reason;
         return plan;
     }
 
@@ -1307,6 +1314,7 @@ Plan ViewpointPlanner::nextCoverage(
         plan.status = PlanStatus::kDone;
         plan.reason = "no viewpoint adds enough; " + std::to_string(written_off) +
                       " targets written off as unobservable";
+        coverage_done_ = plan.reason;
         return plan;
     }
 

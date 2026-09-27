@@ -949,6 +949,40 @@ TEST(ViewpointPlanner, EndsOnTheRateOnlyOnceEveryRoomHasItsShare)
     EXPECT_EQ(late.nextCoverage(coverage, rooms.labels, robot).status, PlanStatus::kDone);
 }
 
+TEST(ViewpointPlanner, StaysDoneOnceTheCameraPassEnds)
+{
+    // Everything seen but a patch of floor in the right room: too little for the walk from the
+    // corridor's far end, worth a stop from beside it.
+    const World  world = twoRoomsAndACorridor();
+    const Camera camera;
+    CoverageMap  coverage;
+    coverage.setMap(world.cells, world.geometry);
+    const std::size_t         count = world.geometry.cellCount();
+    std::vector<std::uint8_t> quality(count, 255);
+    const CellIndex           patch = world.geometry.toCell(8.3, 4.3);
+    for (int y = patch.y; y < patch.y + 8; ++y)
+    {
+        for (int x = patch.x; x < patch.x + 8; ++x)
+        {
+            quality[static_cast<std::size_t>(world.geometry.index(x, y))] = 0;
+        }
+    }
+    const std::vector<std::uint8_t> none(count, 0);
+    ASSERT_TRUE(coverage.restoreLayers(quality, none, none, none));
+    const Segmentation rooms = segmentRooms(world.cells, world.geometry, {});
+    PlannerParams      params;
+    params.min_viewpoint_rate = 3.0;
+    const Pose2D far{ 1.0, 0.9, 0.0 };
+    const Pose2D beside{ 8.0, 3.2, 0.0 };
+
+    ViewpointPlanner fresh(params, camera.model);
+    ASSERT_EQ(fresh.nextCoverage(coverage, rooms.labels, beside).status, PlanStatus::kViewpoint);
+
+    ViewpointPlanner planner(params, camera.model);
+    ASSERT_EQ(planner.nextCoverage(coverage, rooms.labels, far).status, PlanStatus::kDone);
+    EXPECT_EQ(planner.nextCoverage(coverage, rooms.labels, beside).status, PlanStatus::kDone);
+}
+
 TEST(ViewpointPlanner, FinishesTheRoomItStandsInBeforeLeaving)
 {
     // A glance round the left room leaves it short of its share; the right one, unseen, pays

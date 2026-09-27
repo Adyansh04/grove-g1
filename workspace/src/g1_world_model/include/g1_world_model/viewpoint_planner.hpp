@@ -164,7 +164,8 @@ public:
     /**
      * @brief The viewpoint with the most predicted coverage per second.
      *
-     * Also writes off targets that no reachable pose can see, once nothing else is left.
+     * Also writes off targets that no reachable pose can see, once nothing else is left; done
+     * stays done, wherever the pocket looks after it take the robot.
      *
      * @param coverage    Targets and their qualities; updated only by write-offs.
      * @param room_labels CV_32S room labels on the coverage grid, or empty.
@@ -292,6 +293,9 @@ private:
     int                         failures_in_a_row_ = 0;
     std::optional<Pose2D>       stuck_at_;
 
+    // Why the camera pass ended, once it has: seen from where a pocket look leaves the robot, a
+    // leftover viewpoint can pay again, and run 47 walked back for seven of them.
+    std::optional<std::string> coverage_done_;
     // Planned once, as the camera pass ends.
     std::optional<std::vector<PocketLook>> pocket_looks_;
 
