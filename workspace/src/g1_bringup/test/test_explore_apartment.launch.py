@@ -45,6 +45,8 @@ from rclpy.qos import QoSDurabilityPolicy, QoSProfile, QoSReliabilityPolicy
 from std_srvs.srv import Trigger
 from tf2_ros import Buffer, TransformListener
 
+from g1_msgs.action import StepClear
+
 TRUTH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "worlds", "apartment.truth.yaml"
 )
@@ -291,6 +293,7 @@ class ExploreApartmentTest(unittest.TestCase):
         cls.buffer = Buffer()
         cls.listener = TransformListener(cls.buffer, cls.node)
         cls.navigate = ActionClient(cls.node, NavigateToPose, "navigate_to_pose")
+        cls.step_clear = ActionClient(cls.node, StepClear, "/g1_base_approach/step_clear")
         cls.approach = cls.node.create_client(GetApproachPose, "/canopy/get_approach_pose")
         cls.save = cls.node.create_client(Trigger, "/canopy/save")
         cls.rooms = None
@@ -497,12 +500,31 @@ class ExploreApartmentTest(unittest.TestCase):
         self.assertLessEqual(duplicates, MAX_DUPLICATE_SHARE * len(wanted))
         self.assertGreaterEqual(median_fit, MIN_BOX_IOU)
 
+    def run_goal(self, client, goal, timeout_s):
+        """Sends an action goal and waits for its result; None when refused or out of time."""
+        if not client.wait_for_server(timeout_sec=10.0):
+            return None
+        sent = client.send_goal_async(goal)
+        deadline = time.time() + timeout_s
+        while not sent.done() and time.time() < deadline:
+            rclpy.spin_once(self.node, timeout_sec=0.05)
+        handle = sent.result() if sent.done() else None
+        if handle is None or not handle.accepted:
+            return None
+        result = handle.get_result_async()
+        while not result.done() and time.time() < deadline:
+            rclpy.spin_once(self.node, timeout_sec=0.05)
+        return result.result() if result.done() else None
+
     def test_5_goes_to_an_object_by_name(self):
         request = GetApproachPose.Request()
         request.target = "dustbin"
         request.room = "office"
         response = self.call(self.approach, request)
         self.assertTrue(response.success, response.message)
+        # As the exploration tree does before every walk: the gait's drift can leave the robot
+        # inside Nav2's footprint of furniture, and from there Nav2 will not start.
+        self.run_goal(self.step_clear, StepClear.Goal(clearance_m=0.55), 60.0)
         goal = NavigateToPose.Goal()
         goal.pose = response.pose
         sent = self.navigate.send_goal_async(goal)

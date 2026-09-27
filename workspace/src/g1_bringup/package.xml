@@ -66,6 +66,7 @@
   <test_depend>action_msgs</test_depend>
   <test_depend>canopy_msgs</test_depend>
   <test_depend>canopy_perception</test_depend>
+  <test_depend>g1_msgs</test_depend>
   <test_depend>g1_orchestration</test_depend>
   <test_depend>nav2_msgs</test_depend>
   <test_depend>std_srvs</test_depend>
