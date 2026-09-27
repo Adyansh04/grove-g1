@@ -158,7 +158,10 @@ public:
                 "positive and no greater than its ceiling");
         }
 
-        cmd_pub_     = create_publisher<geometry_msgs::msg::Twist>(cmd_topic_, 1);
+        // The AGILE controller's profile: reliable so the closing zero arrives, never latched.
+        cmd_pub_ = create_publisher<geometry_msgs::msg::Twist>(
+            cmd_topic_,
+            rclcpp::QoS(rclcpp::KeepLast(1)).reliable().durability_volatile());
         objects_sub_ = create_subscription<vision_msgs::msg::Detection3DArray>(
             "objects",
             rclcpp::SensorDataQoS(),
