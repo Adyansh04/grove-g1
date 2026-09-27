@@ -1,0 +1,17 @@
+# canopy's robot values for the G1, over canopy's config/canopy.yaml (passed as its params_file
+# by launch/world_model.launch.py). Retuning the G1's footprint or gait happens here.
+/**:
+  ros__parameters:
+    planner:
+      # Nav2's footprint radius (g1_navigation's nav2_params.yaml), wider than the 0.30 m body
+      # because the gait drifts. Standing poses keep the margin more: Nav2 stops up to 0.5 m short,
+      # and at a 0.15 m margin (run 30) the robot wedged by the living room's armchair.
+      robot_radius: 0.45
+      clearance_margin: 0.25
+      frontier_clearance: 0.35
+      travel_margin: 0.05
+      # Measured on the AGILE gait: Nav2 averages about 0.35 m/s, turning is 1:1 up to 0.84 rad/s.
+      travel_speed: 0.35
+      turn_speed: 0.8
+      # The detector answers about once a second on frames 1.4-1.9 s old.
+      dwell_time: 2.5

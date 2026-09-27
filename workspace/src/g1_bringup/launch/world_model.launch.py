@@ -36,6 +36,11 @@ def canopy(context):
                 ),
                 "odom_topic": "/g1_odometry_publisher/odom",
                 "cloud_topic": "/livox/lidar",
+                # Always the G1's own: an including launch's params_file, Nav2's say, would
+                # otherwise reach canopy under the same name.
+                "params_file": os.path.join(
+                    get_package_share_directory("g1_bringup"), "config", "world_model.yaml"
+                ),
                 "world_dir": LaunchConfiguration("world_dir"),
                 "detector": LaunchConfiguration("detector"),
                 "describe": LaunchConfiguration("describe"),
