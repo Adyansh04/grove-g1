@@ -18,11 +18,13 @@ _CONFIG_DIR = pathlib.Path(__file__).resolve().parent.parent / "config"
 # Livox's published lidar-in-IMU offset for the Mid360, the number both configs and the MJCF
 # site are built from.
 _LIVOX_LIDAR_IN_IMU = [-0.011, -0.02329, 0.04412]
-_MJCF_PATCH = (
+_MJCF = (
     pathlib.Path(__file__).resolve().parents[3]
-    / "patches"
+    / "vendor"
     / "unitree_mujoco"
-    / "006-add-mid360-imu.patch"
+    / "unitree_robots"
+    / "g1"
+    / "g1_29dof.xml"
 )
 
 
@@ -103,16 +105,12 @@ def _quat_to_matrix(w, x, y, z):
 
 
 def _mjcf_site():
-    """pos and quat of the mid360_imu site, out of the MJCF patch."""
-    # Added lines only, with the diff marker off, so the element reads as XML.
-    text = "\n".join(
-        line[1:] for line in _MJCF_PATCH.read_text().splitlines() if line.startswith("+")
-    )
-    match = re.search(r'<site name="mid360_imu"[^>]*?pos="([^"]+)"\s+quat="([^"]+)"', text)
-    assert match, "mid360_imu site not found in the MJCF patch"
+    """pos and quat of the mid360_imu site, out of the simulator's G1 model."""
+    site = ET.parse(_MJCF).getroot().find(".//site[@name='mid360_imu']")
+    assert site is not None, "mid360_imu site not found in the simulator's G1 model"
     return (
-        [float(v) for v in match.group(1).split()],
-        [float(v) for v in match.group(2).split()],
+        [float(v) for v in site.get("pos").split()],
+        [float(v) for v in site.get("quat").split()],
     )
 
 

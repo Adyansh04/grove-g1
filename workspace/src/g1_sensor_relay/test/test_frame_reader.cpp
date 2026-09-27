@@ -261,7 +261,7 @@ TEST(WireFormat, TheTwoCopiesOfSensorFrameAreIdentical)
     // The simulator compiles its own copy under workspace/vendor. If they drift, the relay
     // reinterprets bytes and the failure looks like corrupt geometry, not a build problem.
     const char* ours   = "include/g1_sensor_relay/sensor_frame.h";
-    const char* theirs = "../../vendor/unitree_mujoco/sensor_frame.h";
+    const char* theirs = "../../vendor/unitree_mujoco/simulate/src/sensor_frame.h";
 
     std::ifstream a(ours);
     std::ifstream b(theirs);
@@ -273,7 +273,7 @@ TEST(WireFormat, TheTwoCopiesOfSensorFrameAreIdentical)
     sa << a.rdbuf();
     sb << b.rdbuf();
     EXPECT_EQ(sa.str(), sb.str())
-        << "workspace/vendor/unitree_mujoco/sensor_frame.h and the relay's copy have drifted";
+        << "the simulator's sensor_frame.h and the relay's copy have drifted";
 }
 
 TEST(FrameReader, ReadsADepthFrameWithColour)

@@ -107,11 +107,11 @@
     <camera name="chest_d435i" mode="fixed" fovy="58" resolution="848 480" pos="0 0 1"/>
   </worldbody>
 
-  <!-- No grasp_* welds: the fingers hold objects by contact (patch 008). -->
+  <!-- No grasp_* welds: the fingers hold objects by contact. -->
 
   <equality>
     <!-- Spawn the arms at activate_arm's CLEAR_POSTURE: at the URDF zero the right hand is inside
-         the green cylinder. These hold the pose until patch 007 hands each joint to its motor. -->
+         the green cylinder. These hold the pose until the simulator hands each joint to its motor. -->
     <joint name="startup_hold_left_shoulder_pitch" joint1="left_shoulder_pitch_joint"
       polycoef="0.9 0 0 0 0" solref="0.05 1"/>
     <joint name="startup_hold_left_shoulder_roll" joint1="left_shoulder_roll_joint"

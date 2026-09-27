@@ -5,8 +5,8 @@
 
   <equality>
     <!-- Holds the robot up until every motor has been driven for half a second, when the
-         simulator's SDK bridge (patch 007) releases it by this name. Without it the robot falls
-         before a balance policy exists. -->
+         simulator's SDK bridge releases it by this name. Without it the robot falls before a
+         balance policy exists. -->
     <weld name="pelvis_startup_hold" body1="pelvis"/>
   </equality>
 </mujoco>

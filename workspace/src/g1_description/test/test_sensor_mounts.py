@@ -1,11 +1,11 @@
 """
 The sensor mounts exist twice, and copies drift.
 
-`workspace/vendor/unitree_mujoco/sensor_publisher.cc` carries the LiDAR mount as `kMountXyz`/
-`kMountRpy` compile-time constants, because the simulator links no ROS and cannot ask TF where the
-sensor is; the cameras it reads from config/cameras.yaml, whose head entry mirrors Unitree's
-d435_joint. Move one copy and not the other, and the data arrives in a frame that does not
-describe where it was taken.
+The simulator's `simulate/src/sensor_publisher.cc` (submodule `workspace/vendor/unitree_mujoco`)
+carries the LiDAR mount as `kMountXyz`/`kMountRpy` compile-time constants, because the simulator
+links no ROS and cannot ask TF where the sensor is; the cameras it reads from config/cameras.yaml,
+whose head entry mirrors Unitree's d435_joint. Move one copy and not the other, and the data
+arrives in a frame that does not describe where it was taken.
 """
 
 import math
@@ -22,7 +22,12 @@ _URDF = (
     / "g1_29dof_with_hand_rev_1_0.urdf"
 )
 _SENSOR_PUBLISHER = (
-    pathlib.Path(__file__).resolve().parents[3] / "vendor" / "unitree_mujoco" / "sensor_publisher.cc"
+    pathlib.Path(__file__).resolve().parents[3]
+    / "vendor"
+    / "unitree_mujoco"
+    / "simulate"
+    / "src"
+    / "sensor_publisher.cc"
 )
 
 _CAMERAS = pathlib.Path(__file__).resolve().parent.parent / "config" / "cameras.yaml"

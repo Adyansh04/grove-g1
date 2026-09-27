@@ -228,7 +228,6 @@ repository.
 .devcontainer/     derived dev image
 docs/guides/       how to run each demo
 workspace/src/     ROS 2 packages
-workspace/patches/ patches applied to vendored sources at image build
-workspace/vendor/  our source compiled into the vendored simulator
+workspace/vendor/  the simulator, a submodule of our unitree_mujoco fork
 scripts/           container lifecycle, stack teardown, and the host-side model servers
 ```

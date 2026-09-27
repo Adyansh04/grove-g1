@@ -233,22 +233,13 @@ RUN apt-get update && apt-get install -y \
      python3 -m pip install --no-cache-dir --no-deps msgpack-numpy==0.4.8)
 
 # --- unitree_mujoco (the `simulate` app) ------------------------------------
-COPY workspace/patches/unitree_mujoco/ /tmp/unitree_mujoco_patches/
-COPY workspace/vendor/unitree_mujoco/ /tmp/unitree_mujoco_src/
-ARG UNITREE_MUJOCO_SHA=ae6a8403e272733e9996ef59990880330496177f
-RUN git init -q /opt/unitree_robotics/unitree_mujoco && \
-    cd /opt/unitree_robotics/unitree_mujoco && \
-    git remote add origin https://github.com/unitreerobotics/unitree_mujoco.git && \
-    git fetch --depth 1 origin ${UNITREE_MUJOCO_SHA} && \
-    git checkout -q FETCH_HEAD && \
-    for p in /tmp/unitree_mujoco_patches/*.patch; do \
-        [ -e "$p" ] || continue; \
-        echo "Applying $(basename "$p")"; \
-        git apply --check "$p" || { echo "PATCH DOES NOT APPLY: $p"; exit 1; }; \
-        git apply "$p"; \
-    done && \
-    cp /tmp/unitree_mujoco_src/*.h /tmp/unitree_mujoco_src/*.cc simulate/src/ && \
-    rm -rf .git && \
+# The submodule workspace/vendor/unitree_mujoco: upstream plus grove-g1's changes, on the grove
+# branch of Adyansh04/unitree_mujoco (its GROVE.md lists them).
+COPY workspace/vendor/unitree_mujoco/ /opt/unitree_robotics/unitree_mujoco/
+RUN cd /opt/unitree_robotics/unitree_mujoco && \
+    { [ -f simulate/CMakeLists.txt ] || \
+      { echo "workspace/vendor/unitree_mujoco is empty: git submodule update --init"; exit 1; }; } && \
+    rm -rf .git simulate/build && \
     rm -rf simulate/mujoco && \
     mv /opt/unitree_robotics/mujoco-${MUJOCO_VERSION} simulate/mujoco && \
     mkdir simulate/build && cd simulate/build && \

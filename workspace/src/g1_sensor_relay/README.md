@@ -111,7 +111,7 @@ centimetres at walking pace.
 | `livox_custom_msg.{hpp,cpp}` | PointCloud2 to CustomMsg, split out so the conversion tests without a graph. |
 | `g1_sensor_relay_node.cpp` | The socket, the poll loop and the publishers. |
 | `g1_livox_bridge_node.cpp` | The FAST-LIO front end above. |
-| `sensor_frame.h` | The wire struct, byte-identical to `workspace/vendor/unitree_mujoco/sensor_frame.h`. |
+| `sensor_frame.h` | The wire struct, byte-identical to the simulator's `simulate/src/sensor_frame.h` (submodule `workspace/vendor/unitree_mujoco`). |
 
 The wire format is untrusted input: every length is validated before it is used, including the one
 multiply that could overflow.
