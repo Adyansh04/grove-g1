@@ -122,7 +122,7 @@ from a few whole frames taken where the robot stood in them.
   map and scores rooms, coverage, objects and how well the boxes fit, against
   `g1_bringup/worlds/apartment.truth.yaml`, then walks to an object by name.
   `test_world_model_explore_mapping` does the same from no map, on the one SLAM builds; truth is
-  moved into that map through the simulator's own pose of the robot.
+  moved into that map by fitting the robot's positions on it to its true ones over the run.
 
 ## Credits
 
