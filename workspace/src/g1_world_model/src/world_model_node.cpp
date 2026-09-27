@@ -187,6 +187,8 @@ WorldModelNode::WorldModelNode(const rclcpp::NodeOptions& options)
     coverage.good_range = declare_parameter<double>("coverage.good_range", coverage.good_range);
     coverage.max_range  = declare_parameter<double>("coverage.max_range", coverage.max_range);
     coverage.well_seen  = declare_parameter<double>("coverage.well_seen", coverage.well_seen);
+    coverage.face_redraw_reach =
+        declare_parameter<double>("coverage.face_redraw_reach", coverage.face_redraw_reach);
     coverage.pixel_stride =
         static_cast<int>(declare_parameter<int>("coverage.pixel_stride", coverage.pixel_stride));
     coverage.floor_incidence_limit =

@@ -19,6 +19,8 @@ namespace
 
 float incidenceLimitCos(double limit) { return static_cast<float>(std::cos(limit)); }
 
+constexpr float kSameFacing = 0.7F;  // Cosine between two faces' normals: within 45 degrees.
+
 /// Sector 0..7 of an azimuth, counter-clockwise from +x.
 std::uint8_t sectorOf(double dx, double dy)
 {
@@ -38,16 +40,21 @@ void CoverageMap::setMap(const cv::Mat& cells, const GridGeometry& geometry)
 {
     const bool        same_grid = geometry == geometry_ && !cells_.empty();
     const std::size_t count     = geometry.cellCount();
+    // The faces before this map, on its grid, for a redrawn wall to take its credit from.
+    std::vector<std::uint8_t> old_kind   = kind_;
+    std::vector<cv::Vec2f>    old_normal = normal_;
     if (!same_grid)
     {
         // SLAM grows and shifts its map every few seconds: what was seen stays seen.
         const GridGeometry from = cells_.empty() ? GridGeometry{} : geometry_;
-        quality_                = remapLayer<std::uint8_t>(quality_, from, geometry, 0);
-        surface_quality_        = remapLayer<std::uint8_t>(surface_quality_, from, geometry, 0);
-        flags_                  = remapLayer<std::uint8_t>(flags_, from, geometry, 0);
-        directions_             = remapLayer<std::uint8_t>(directions_, from, geometry, 0);
-        views_                  = remapLayer<std::uint16_t>(views_, from, geometry, 0);
-        last_frame_             = remapLayer<std::uint32_t>(last_frame_, from, geometry, 0);
+        old_kind                = remapLayer<std::uint8_t>(kind_, from, geometry, 0);
+        old_normal       = remapLayer<cv::Vec2f>(normal_, from, geometry, cv::Vec2f(0.0F, 0.0F));
+        quality_         = remapLayer<std::uint8_t>(quality_, from, geometry, 0);
+        surface_quality_ = remapLayer<std::uint8_t>(surface_quality_, from, geometry, 0);
+        flags_           = remapLayer<std::uint8_t>(flags_, from, geometry, 0);
+        directions_      = remapLayer<std::uint8_t>(directions_, from, geometry, 0);
+        views_           = remapLayer<std::uint16_t>(views_, from, geometry, 0);
+        last_frame_      = remapLayer<std::uint32_t>(last_frame_, from, geometry, 0);
         surface_at_.assign(count, -1);
         surface_height_.clear();
     }
@@ -101,6 +108,41 @@ void CoverageMap::setMap(const cv::Mat& cells, const GridGeometry& geometry)
         }
     }
     rebuildNearestFaces();
+
+    // After a loop closure SLAM redraws walls a cell or two off, and a wall drawn further back
+    // puts its faces on cells that were inside it and never seen: each takes the credit of an old
+    // face beside it facing the same way. Run 45 lost a fifth of every finished room's faces in
+    // one redraw, and walked back to each.
+    const int reach = std::max(1, geometry.cellsFor(params_.face_redraw_reach));
+    const std::vector<std::uint8_t> before = quality_;
+    const auto                      face   = static_cast<std::uint8_t>(TargetKind::kFace);
+    for (int y = 0; y < rows; ++y)
+    {
+        for (int x = 0; x < cols; ++x)
+        {
+            const auto index = static_cast<std::size_t>(geometry.index(x, y));
+            if (kind_[index] != face || old_kind[index] == face)
+            {
+                continue;
+            }
+            for (int dy = -reach; dy <= reach; ++dy)
+            {
+                for (int dx = -reach; dx <= reach; ++dx)
+                {
+                    if (!geometry.contains(x + dx, y + dy))
+                    {
+                        continue;
+                    }
+                    const auto other = static_cast<std::size_t>(geometry.index(x + dx, y + dy));
+                    if (old_kind[other] == face &&
+                        old_normal[other].dot(normal_[index]) >= kSameFacing)
+                    {
+                        quality_[index] = std::max(quality_[index], before[other]);
+                    }
+                }
+            }
+        }
+    }
     // A cell that changed kind keeps nothing it earned as the other kind.
     if (same_grid)
     {

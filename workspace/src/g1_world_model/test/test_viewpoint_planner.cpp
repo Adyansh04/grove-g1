@@ -300,6 +300,52 @@ TEST(CoverageMap, CreditsWallsDespiteLocalisationError)
     EXPECT_GE(seen, 15);
 }
 
+TEST(CoverageMap, KeepsAWallsCreditWhenSlamRedrawsItACellBack)
+{
+    const World  world = twoRoomsAndACorridor();
+    const Camera camera;
+    CoverageMap  coverage;
+    coverage.setMap(world.cells, world.geometry);
+    const Eigen::Isometry3d  pose  = camera.pose(7.5, 5.0, std::numbers::pi / 2.0);
+    const std::vector<float> depth = camera.render(world, pose);
+    coverage.integrate(
+        { depth.data(),
+          camera.intrinsics.width,
+          camera.intrinsics.height,
+          static_cast<std::size_t>(camera.intrinsics.width) },
+        camera.intrinsics,
+        pose);
+    const auto seen_along = [&](double y) {
+        int seen = 0;
+        for (int step = 0; step <= 20; ++step)
+        {
+            const CellIndex cell = world.geometry.toCell(7.0 + (0.05 * step), y);
+            seen += static_cast<int>(coverage.wellSeen(world.geometry.index(cell)));
+        }
+        return seen;
+    };
+    ASSERT_GE(seen_along(6.92), 15);
+
+    // A loop closure redraws the right room's far wall a cell further back, and puts a box in the
+    // room behind the camera: the wall keeps its credit, and the box, never seen, earns none.
+    cv::Mat         redrawn = world.cells.clone();
+    const CellIndex face    = world.geometry.toCell(5.1, 6.92);
+    redrawn.row(face.y).colRange(face.x, world.geometry.toCell(10.1, 6.92).x).setTo(kFree);
+    const CellIndex box = world.geometry.toCell(8.5, 3.5);
+    redrawn(cv::Rect(box.x, box.y, 6, 6)).setTo(kOccupied);
+    coverage.setMap(redrawn, world.geometry);
+    EXPECT_GE(seen_along(6.97), 15);
+    int box_seen = 0;
+    for (int y = box.y; y < box.y + 6; ++y)
+    {
+        for (int x = box.x; x < box.x + 6; ++x)
+        {
+            box_seen += static_cast<int>(coverage.wellSeen(world.geometry.index(x, y)));
+        }
+    }
+    EXPECT_EQ(box_seen, 0);
+}
+
 TEST(CoverageMap, CreditsTheNearSideOfAThinWall)
 {
     const World  world = twoRoomsAndACorridor();

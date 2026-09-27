@@ -45,7 +45,9 @@ struct CoverageParams
     double face_max_z   = 2.0;
     double surface_band = 0.05;  ///< Samples this close to a surface's height credit it, m.
     /// A wall sample credits the face cell this near, m: AMCL puts walls up to 0.2 m off the map's.
-    double face_reach              = 0.25;
+    double face_reach = 0.25;
+    /// A face SLAM redraws within this of an old one facing the same way keeps its credit, m.
+    double face_redraw_reach       = 0.1;
     double floor_incidence_limit   = 1.40;  ///< Beyond this from the normal a view is useless, rad.
     double face_incidence_limit    = 1.31;
     double surface_incidence_limit = 1.48;

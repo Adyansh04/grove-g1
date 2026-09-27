@@ -50,7 +50,8 @@ own topic remaps.
   off at the image's top edge, and its highest voxel is no top. Every depth sample credits the
   target it lands on with a quality from range, incidence and distance from the image centre. Only
   frames taken after the base has been still for `settle_s` count, because the relay stamps images
-  on arrival.
+  on arrival. When SLAM redraws a wall a cell or two off, as after a loop closure, its faces keep
+  the credit of the old ones beside them.
 - **Viewpoints** (`viewpoint_planner`): frontier mode walks to the edge of the known map, where the
   known map opens onto real unknown space rather than the shadow behind a sofa. Unknown the robot
   has already had in plain view from a viewpoint it reached, and that is still unknown once SLAM has

@@ -37,6 +37,9 @@ g1_world_model:
       floor_incidence_limit: 1.40
       face_incidence_limit: 1.31
       surface_incidence_limit: 1.48
+      # A face SLAM redraws this near an old one facing the same way keeps its credit, m: loop
+      # closures move walls a cell or two, and the credit stayed on the old cells (run 45).
+      face_redraw_reach: 0.1
 
     planner:
       # Nav2's footprint radius; standing poses keep this plus the margin from obstacles. The margin
