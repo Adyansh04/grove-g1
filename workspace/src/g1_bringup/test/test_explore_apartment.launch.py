@@ -267,7 +267,18 @@ class ExploreApartmentTest(unittest.TestCase):
         cls.node.create_subscription(WorldObjectArray, "/canopy/objects", cls._on_objects, LATCHED)
         cls.truth = load_truth()
 
-        cls.ready = cls.navigate.wait_for_server(timeout_sec=BRINGUP_TIMEOUT_S)
+        # Nav2 active, not merely its action server up: an inactive bt_navigator rejects the tree's
+        # first goal, and that viewpoint would count as unreachable.
+        active = cls.node.create_client(Trigger, "/lifecycle_manager_navigation/is_active")
+        deadline = time.time() + BRINGUP_TIMEOUT_S
+        cls.ready = False
+        while not cls.ready and time.time() < deadline:
+            if active.wait_for_service(timeout_sec=1.0):
+                answer = active.call_async(Trigger.Request())
+                rclpy.spin_until_future_complete(cls.node, answer, timeout_sec=2.0)
+                cls.ready = answer.done() and answer.result().success
+            if not cls.ready:
+                rclpy.spin_once(cls.node, timeout_sec=0.5)
         cls.tf_ready = False
         deadline = time.time() + 90.0
         while time.time() < deadline and not cls.tf_ready:
@@ -350,7 +361,7 @@ class ExploreApartmentTest(unittest.TestCase):
         return future.result()
 
     def test_1_explores_the_apartment(self):
-        self.assertTrue(self.ready, "navigate_to_pose never appeared")
+        self.assertTrue(self.ready, "Nav2 never became active")
         self.assertTrue(self.tf_ready, "map -> base_footprint never appeared")
         tree = os.path.join(get_package_share_directory("g1_orchestration"), "trees", "explore.xml")
         # Its own process group, so a timeout takes the whole executor down with it.
