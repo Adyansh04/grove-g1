@@ -8,12 +8,12 @@ behavior tree and the instruction grounder write.
 
 import numpy as np
 import rclpy
+from canopy_msgs.msg import InstanceMask, InstanceMaskArray
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import Image
 
-from g1_msgs.msg import InstanceMask, InstanceMaskArray
 from g1_perception.host_clients import VisionClient, image_to_array
 
 # Reliable: masks are small and slow, and a dropped one is seconds blind.

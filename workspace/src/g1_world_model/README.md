@@ -11,18 +11,18 @@ the behavior tree, so missions name targets instead of carrying coordinates.
 |---|---|---|
 | Sub | `map` | `nav_msgs/OccupancyGrid` (latched) |
 | Sub | `<camera>/depth/image_raw`, `<camera>/depth/camera_info`, `<camera>/color/image_raw` | each camera's aligned depth and colour |
-| Sub | `<camera>/instance_masks` | `g1_msgs/InstanceMaskArray` for that camera, from `g1_detector` or the mock |
+| Sub | `<camera>/instance_masks` | `canopy_msgs/InstanceMaskArray` for that camera, from `g1_detector` or the mock |
 | Sub | `cloud` | `sensor_msgs/PointCloud2`, the LiDAR, for the walls-only grid |
 | Sub | `odom` | `nav_msgs/Odometry`, for the stillness gate |
-| Sub | `descriptions` | `g1_msgs/Description`, from `g1_object_describer` |
-| Pub | `~/rooms` | `g1_msgs/RoomArray` (latched): outline, doorways, type, coverage |
-| Pub | `~/objects` | `g1_msgs/WorldObjectArray` (latched) |
+| Sub | `descriptions` | `canopy_msgs/Description`, from `g1_object_describer` |
+| Pub | `~/rooms` | `canopy_msgs/RoomArray` (latched): outline, doorways, type, coverage |
+| Pub | `~/objects` | `canopy_msgs/WorldObjectArray` (latched) |
 | Pub | `~/coverage` | `nav_msgs/OccupancyGrid` for RViz's costmap palette: 90 still to see, 99 written off, 0 the rest |
 | Pub | `~/trail` | `nav_msgs/Path` (latched): where the robot has walked |
 | Pub | `~/walls` | `nav_msgs/OccupancyGrid` (latched): the walls-only map rooms are cut on |
 | Pub | `~/floor_plan` | `nav_msgs/OccupancyGrid` (latched): the map with each room closed and furniture solid, as saved |
 | Pub | `~/markers` | `visualization_msgs/MarkerArray` for RViz: rooms, doorways, objects, glimpses, every viewpoint in order, the camera's view on the floor |
-| Pub | `~/describe_requests` | `g1_msgs/DescribeRequest`, with `describe:=true` |
+| Pub | `~/describe_requests` | `canopy_msgs/DescribeRequest`, with `describe:=true` |
 | Srv | `~/next_viewpoint`, `~/report_viewpoint` | the exploration loop |
 | Srv | `~/find_objects`, `~/get_approach_pose` | queries for missions |
 | Srv | `~/save` | `std_srvs/Trigger`: writes the world to `world_dir` (also every minute) |

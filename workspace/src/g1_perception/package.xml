@@ -15,6 +15,7 @@
   <!-- Installs g1_perception/, the module the three adapter scripts import. -->
   <buildtool_depend>ament_cmake_python</buildtool_depend>
 
+  <depend>canopy_msgs</depend>
   <depend>cv_bridge</depend>
   <depend>g1_msgs</depend>
   <depend>geometry_msgs</depend>

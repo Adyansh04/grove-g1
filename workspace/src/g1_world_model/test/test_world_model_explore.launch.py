@@ -33,6 +33,8 @@ import rclpy
 import yaml
 from action_msgs.msg import GoalStatus
 from ament_index_python.packages import get_package_share_directory
+from canopy_msgs.msg import RoomArray, WorldObjectArray
+from canopy_msgs.srv import GetApproachPose
 from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription, TimerAction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
@@ -44,9 +46,6 @@ from rclpy.node import Node
 from rclpy.qos import QoSDurabilityPolicy, QoSProfile, QoSReliabilityPolicy
 from std_srvs.srv import Trigger
 from tf2_ros import Buffer, TransformListener
-
-from g1_msgs.msg import RoomArray, WorldObjectArray
-from g1_msgs.srv import GetApproachPose
 
 TRUTH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),

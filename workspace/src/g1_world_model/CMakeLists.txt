@@ -7,7 +7,7 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/g1_common.cmake)
 
 find_package(ament_cmake REQUIRED)
 find_package(Eigen3 REQUIRED)
-find_package(g1_msgs REQUIRED)
+find_package(canopy_msgs REQUIRED)
 find_package(g1_perception REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
@@ -52,7 +52,7 @@ target_link_libraries(g1_world_model_node PUBLIC
   rclcpp::rclcpp
   tf2_ros::tf2_ros
   tf2_eigen::tf2_eigen
-  ${g1_msgs_TARGETS}
+  ${canopy_msgs_TARGETS}
   ${geometry_msgs_TARGETS}
   ${nav_msgs_TARGETS}
   ${sensor_msgs_TARGETS}
@@ -128,7 +128,7 @@ ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
 ament_export_include_directories(include)
 ament_export_dependencies(
   Eigen3
-  g1_msgs
+  canopy_msgs
   g1_perception
   geometry_msgs
   nav_msgs

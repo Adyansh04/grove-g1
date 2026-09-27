@@ -13,11 +13,11 @@ from collections import OrderedDict
 
 import numpy as np
 import rclpy
+from canopy_msgs.msg import DescribeRequest, Description
 from PIL import Image
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 
-from g1_msgs.msg import DescribeRequest, Description
 from g1_perception.host_clients import VisionClient
 
 

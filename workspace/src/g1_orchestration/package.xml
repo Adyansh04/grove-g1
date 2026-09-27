@@ -16,6 +16,7 @@
   <depend>rclcpp</depend>
   <depend>rclcpp_action</depend>
   <depend>behaviortree_cpp</depend>
+  <depend>canopy_msgs</depend>
   <depend>g1_msgs</depend>
   <depend>nav2_msgs</depend>
   <depend>geometry_msgs</depend>

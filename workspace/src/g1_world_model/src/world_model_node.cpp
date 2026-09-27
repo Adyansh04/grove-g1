@@ -399,10 +399,10 @@ WorldModelNode::WorldModelNode(const rclcpp::NodeOptions& options)
                 onCameraInfo(camera, info);
             });
         // Reliable, as both the real and the mock detector publish them.
-        camera.masks_sub = create_subscription<g1_msgs::msg::InstanceMaskArray>(
+        camera.masks_sub = create_subscription<canopy_msgs::msg::InstanceMaskArray>(
             prefix + "instance_masks",
             rclcpp::QoS(rclcpp::KeepLast(4)).reliable(),
-            [&camera](const g1_msgs::msg::InstanceMaskArray::ConstSharedPtr& masks) {
+            [&camera](const canopy_msgs::msg::InstanceMaskArray::ConstSharedPtr& masks) {
                 onMasks(camera, masks);
             });
     }
@@ -417,30 +417,30 @@ WorldModelNode::WorldModelNode(const rclcpp::NodeOptions& options)
             sensorQos(),
             [this](const sensor_msgs::msg::PointCloud2::ConstSharedPtr& cloud) { onCloud(cloud); });
     }
-    description_sub_ = create_subscription<g1_msgs::msg::Description>(
+    description_sub_ = create_subscription<canopy_msgs::msg::Description>(
         "descriptions",
         rclcpp::QoS(rclcpp::KeepLast(20)).reliable(),
-        [this](const g1_msgs::msg::Description::ConstSharedPtr& description) {
+        [this](const canopy_msgs::msg::Description::ConstSharedPtr& description) {
             onDescription(description);
         });
 
-    rooms_pub_      = create_publisher<g1_msgs::msg::RoomArray>("~/rooms", latchedQos());
-    objects_pub_    = create_publisher<g1_msgs::msg::WorldObjectArray>("~/objects", latchedQos());
-    coverage_pub_   = create_publisher<nav_msgs::msg::OccupancyGrid>("~/coverage", latchedQos());
-    walls_pub_      = create_publisher<nav_msgs::msg::OccupancyGrid>("~/walls", latchedQos());
+    rooms_pub_    = create_publisher<canopy_msgs::msg::RoomArray>("~/rooms", latchedQos());
+    objects_pub_  = create_publisher<canopy_msgs::msg::WorldObjectArray>("~/objects", latchedQos());
+    coverage_pub_ = create_publisher<nav_msgs::msg::OccupancyGrid>("~/coverage", latchedQos());
+    walls_pub_    = create_publisher<nav_msgs::msg::OccupancyGrid>("~/walls", latchedQos());
     floor_plan_pub_ = create_publisher<nav_msgs::msg::OccupancyGrid>("~/floor_plan", latchedQos());
     trail_pub_      = create_publisher<nav_msgs::msg::Path>("~/trail", latchedQos());
     markers_pub_    = create_publisher<visualization_msgs::msg::MarkerArray>(
         "~/markers",
         rclcpp::QoS(rclcpp::KeepLast(1)).reliable());
-    describe_pub_ = create_publisher<g1_msgs::msg::DescribeRequest>(
+    describe_pub_ = create_publisher<canopy_msgs::msg::DescribeRequest>(
         "~/describe_requests",
         rclcpp::QoS(rclcpp::KeepLast(10)).reliable());
 
-    using NextViewpointSrv   = g1_msgs::srv::NextViewpoint;
-    using ReportViewpointSrv = g1_msgs::srv::ReportViewpoint;
-    using FindObjectsSrv     = g1_msgs::srv::FindObjects;
-    using ApproachSrv        = g1_msgs::srv::GetApproachPose;
+    using NextViewpointSrv   = canopy_msgs::srv::NextViewpoint;
+    using ReportViewpointSrv = canopy_msgs::srv::ReportViewpoint;
+    using FindObjectsSrv     = canopy_msgs::srv::FindObjects;
+    using ApproachSrv        = canopy_msgs::srv::GetApproachPose;
     using TriggerSrv         = std_srvs::srv::Trigger;
     next_viewpoint_srv_      = create_service<NextViewpointSrv>(
         "~/next_viewpoint",
@@ -1043,7 +1043,7 @@ void WorldModelNode::integratePending()
 }
 
 void WorldModelNode::onMasks(
-    CameraFeed& camera, const g1_msgs::msg::InstanceMaskArray::ConstSharedPtr& masks)
+    CameraFeed& camera, const canopy_msgs::msg::InstanceMaskArray::ConstSharedPtr& masks)
 {
     // Held like depth: a fast detector answers before its frame's transform, or the frame itself,
     // has arrived here.
@@ -1057,7 +1057,8 @@ void WorldModelNode::onMasks(
     }
 }
 
-void WorldModelNode::integrateMasks(CameraFeed& camera, const g1_msgs::msg::InstanceMaskArray& masks)
+void WorldModelNode::integrateMasks(
+    CameraFeed& camera, const canopy_msgs::msg::InstanceMaskArray& masks)
 {
     if (!camera.intrinsics)
     {
@@ -1203,10 +1204,10 @@ void WorldModelNode::storeRoomView()
     }
 }
 
-void WorldModelNode::onDescription(const g1_msgs::msg::Description::ConstSharedPtr& description)
+void WorldModelNode::onDescription(const canopy_msgs::msg::Description::ConstSharedPtr& description)
 {
     const std::string& subject = description->subject_id;
-    if (description->task == g1_msgs::msg::DescribeRequest::TASK_ROOM)
+    if (description->task == canopy_msgs::msg::DescribeRequest::TASK_ROOM)
     {
         for (RoomState& room : rooms_)
         {
@@ -1459,10 +1460,10 @@ void WorldModelNode::typeRooms()
 // --- services -------------------------------------------------------------------------------
 
 void WorldModelNode::onNextViewpoint(
-    const g1_msgs::srv::NextViewpoint::Request::SharedPtr&  request,
-    const g1_msgs::srv::NextViewpoint::Response::SharedPtr& response)
+    const canopy_msgs::srv::NextViewpoint::Request::SharedPtr&  request,
+    const canopy_msgs::srv::NextViewpoint::Response::SharedPtr& response)
 {
-    using Response   = g1_msgs::srv::NextViewpoint::Response;
+    using Response   = canopy_msgs::srv::NextViewpoint::Response;
     const auto robot = robotPose();
     if (cells_.empty() || !robot)
     {
@@ -1474,7 +1475,7 @@ void WorldModelNode::onNextViewpoint(
     {
         resegment();
     }
-    const bool frontier = request->mode == g1_msgs::srv::NextViewpoint::Request::MODE_FRONTIER;
+    const bool frontier = request->mode == canopy_msgs::srv::NextViewpoint::Request::MODE_FRONTIER;
     const auto started  = std::chrono::steady_clock::now();
     std::optional<Viewpoint> look = frontier ? std::nullopt : secondLook(*robot);
     Plan                     plan = look ? Plan{ PlanStatus::kViewpoint, std::move(*look), {} } :
@@ -1605,8 +1606,8 @@ std::optional<Viewpoint> WorldModelNode::secondLook(const Pose2D& robot)
 }
 
 void WorldModelNode::onReportViewpoint(
-    const g1_msgs::srv::ReportViewpoint::Request::SharedPtr& request,
-    const g1_msgs::srv::ReportViewpoint::Response::SharedPtr& /*response*/)
+    const canopy_msgs::srv::ReportViewpoint::Request::SharedPtr& request,
+    const canopy_msgs::srv::ReportViewpoint::Response::SharedPtr& /*response*/)
 {
     // What the stop delivered against what was predicted of it, before report() writes anything
     // off: a stop far short lost its frames to the stillness gate, the queue, or where it stood.
@@ -1748,8 +1749,8 @@ std::vector<std::pair<const MappedObject*, double>> WorldModelNode::matchObjects
 }
 
 void WorldModelNode::onFindObjects(
-    const g1_msgs::srv::FindObjects::Request::SharedPtr&  request,
-    const g1_msgs::srv::FindObjects::Response::SharedPtr& response)
+    const canopy_msgs::srv::FindObjects::Request::SharedPtr&  request,
+    const canopy_msgs::srv::FindObjects::Response::SharedPtr& response)
 {
     const auto matches = matchObjects(request->query, request->room, request->query_embedding);
     const auto limit   = request->max_results == 0 ? std::size_t{ 10 } :
@@ -1791,8 +1792,8 @@ void WorldModelNode::onFindObjects(
 }
 
 void WorldModelNode::onGetApproachPose(
-    const g1_msgs::srv::GetApproachPose::Request::SharedPtr&  request,
-    const g1_msgs::srv::GetApproachPose::Response::SharedPtr& response)
+    const canopy_msgs::srv::GetApproachPose::Request::SharedPtr&  request,
+    const canopy_msgs::srv::GetApproachPose::Response::SharedPtr& response)
 {
     const auto robot = robotPose();
     if (cells_.empty() || !robot)
@@ -2034,9 +2035,9 @@ cv::Mat WorldModelNode::renderSemanticMap() const
 
 // --- publishing -----------------------------------------------------------------------------
 
-g1_msgs::msg::WorldObject WorldModelNode::toMessage(const MappedObject& object) const
+canopy_msgs::msg::WorldObject WorldModelNode::toMessage(const MappedObject& object) const
 {
-    g1_msgs::msg::WorldObject out;
+    canopy_msgs::msg::WorldObject out;
     out.id         = objectId(object.id);
     out.label      = object.label();
     out.name       = object.name;
@@ -2096,14 +2097,14 @@ void WorldModelNode::publishState()
         }
     }
 
-    g1_msgs::msg::RoomArray rooms;
+    canopy_msgs::msg::RoomArray rooms;
     rooms.header.stamp    = stamp;
     rooms.header.frame_id = map_frame_;
     for (std::size_t slot = 0; slot < rooms_.size(); ++slot)
     {
-        const RoomState&     state = rooms_[slot];
-        const CoverageTally& tally = tallies[slot + 1];
-        g1_msgs::msg::Room   room;
+        const RoomState&       state = rooms_[slot];
+        const CoverageTally&   tally = tallies[slot + 1];
+        canopy_msgs::msg::Room room;
         room.id              = state.id;
         room.name            = state.name;
         room.type            = state.type;
@@ -2121,7 +2122,7 @@ void WorldModelNode::publishState()
         room.area       = static_cast<float>(state.region.area);
         for (const RegionContact& contact : state.region.contacts)
         {
-            g1_msgs::msg::Doorway doorway;
+            canopy_msgs::msg::Doorway doorway;
             if (const RoomState* other = roomByLabel(contact.to_label))
             {
                 doorway.to_room = other->id;
@@ -2143,7 +2144,7 @@ void WorldModelNode::publishState()
     }
     rooms_pub_->publish(rooms);
 
-    g1_msgs::msg::WorldObjectArray objects;
+    canopy_msgs::msg::WorldObjectArray objects;
     objects.header = rooms.header;
     for (const MappedObject& object : objects_.objects())
     {
@@ -2487,9 +2488,9 @@ void WorldModelNode::requestDescriptions()
         {
             continue;
         }
-        g1_msgs::msg::DescribeRequest request;
+        canopy_msgs::msg::DescribeRequest request;
         request.subject_id = room.id;
-        request.task       = g1_msgs::msg::DescribeRequest::TASK_ROOM;
+        request.task       = canopy_msgs::msg::DescribeRequest::TASK_ROOM;
         for (const std::vector<std::uint8_t>& jpeg : views->second)
         {
             sensor_msgs::msg::CompressedImage image;
@@ -2529,9 +2530,9 @@ void WorldModelNode::requestDescriptions()
         {
             continue;
         }
-        g1_msgs::msg::DescribeRequest request;
+        canopy_msgs::msg::DescribeRequest request;
         request.subject_id = id;
-        request.task       = g1_msgs::msg::DescribeRequest::TASK_OBJECT;
+        request.task       = canopy_msgs::msg::DescribeRequest::TASK_OBJECT;
         sensor_msgs::msg::CompressedImage image;
         image.format = "jpeg";
         image.data   = crops_.at(object.id);

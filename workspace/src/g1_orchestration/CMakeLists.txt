@@ -8,6 +8,7 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/g1_common.cmake)
 find_package(ament_cmake REQUIRED)
 # v4, the same libbehaviortree_cpp Nav2's navigator links, so leaves here and Nav2's share it.
 find_package(behaviortree_cpp REQUIRED)
+find_package(canopy_msgs REQUIRED)
 find_package(controller_manager_msgs REQUIRED)
 find_package(g1_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
@@ -52,6 +53,7 @@ target_link_libraries(g1_bt_nodes PUBLIC
   tf2_geometry_msgs::tf2_geometry_msgs
   tf2_ros::tf2_ros
   ${controller_manager_msgs_TARGETS}
+  ${canopy_msgs_TARGETS}
   ${g1_msgs_TARGETS}
   ${geometry_msgs_TARGETS}
   ${lifecycle_msgs_TARGETS}

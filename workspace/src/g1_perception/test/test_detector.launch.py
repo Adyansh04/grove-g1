@@ -12,6 +12,7 @@ import unittest
 import launch_testing
 import pytest
 import rclpy
+from canopy_msgs.msg import InstanceMaskArray
 from launch import LaunchDescription
 from launch.actions import ExecuteProcess, TimerAction
 from launch_ros.actions import Node
@@ -20,8 +21,6 @@ from rclpy.node import Node as RclpyNode
 from rclpy.parameter import Parameter
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import Image
-
-from g1_msgs.msg import InstanceMaskArray
 
 PORT = 5591
 STUB = os.path.join(os.path.dirname(__file__), "vision_server_stub.py")

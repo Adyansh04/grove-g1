@@ -18,16 +18,16 @@
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
 
+#include <canopy_msgs/msg/describe_request.hpp>
+#include <canopy_msgs/msg/description.hpp>
+#include <canopy_msgs/msg/instance_mask_array.hpp>
+#include <canopy_msgs/msg/room_array.hpp>
+#include <canopy_msgs/msg/world_object_array.hpp>
+#include <canopy_msgs/srv/find_objects.hpp>
+#include <canopy_msgs/srv/get_approach_pose.hpp>
+#include <canopy_msgs/srv/next_viewpoint.hpp>
+#include <canopy_msgs/srv/report_viewpoint.hpp>
 #include <deque>
-#include <g1_msgs/msg/describe_request.hpp>
-#include <g1_msgs/msg/description.hpp>
-#include <g1_msgs/msg/instance_mask_array.hpp>
-#include <g1_msgs/msg/room_array.hpp>
-#include <g1_msgs/msg/world_object_array.hpp>
-#include <g1_msgs/srv/find_objects.hpp>
-#include <g1_msgs/srv/get_approach_pose.hpp>
-#include <g1_msgs/srv/next_viewpoint.hpp>
-#include <g1_msgs/srv/report_viewpoint.hpp>
 #include <map>
 #include <memory>
 #include <nav_msgs/msg/occupancy_grid.hpp>
@@ -84,12 +84,12 @@ private:
         std::string                 frame;  // The depth frame's id.
         g1_perception::DepthHistory depth_history;
         g1_perception::DepthHistory color_history;
-        std::deque<sensor_msgs::msg::Image::ConstSharedPtr>              pending_depth;
-        std::deque<g1_msgs::msg::InstanceMaskArray::ConstSharedPtr>      pending_masks;
-        rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr         depth_sub;
-        rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr         color_sub;
-        rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr    info_sub;
-        rclcpp::Subscription<g1_msgs::msg::InstanceMaskArray>::SharedPtr masks_sub;
+        std::deque<sensor_msgs::msg::Image::ConstSharedPtr>                  pending_depth;
+        std::deque<canopy_msgs::msg::InstanceMaskArray::ConstSharedPtr>      pending_masks;
+        rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr             depth_sub;
+        rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr             color_sub;
+        rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr        info_sub;
+        rclcpp::Subscription<canopy_msgs::msg::InstanceMaskArray>::SharedPtr masks_sub;
     };
 
     struct RoomState
@@ -107,31 +107,31 @@ private:
     static void
     onCameraInfo(CameraFeed& camera, const sensor_msgs::msg::CameraInfo::ConstSharedPtr& info);
     static void
-         onMasks(CameraFeed& camera, const g1_msgs::msg::InstanceMaskArray::ConstSharedPtr& masks);
+    onMasks(CameraFeed& camera, const canopy_msgs::msg::InstanceMaskArray::ConstSharedPtr& masks);
     void onOdometry(const nav_msgs::msg::Odometry::ConstSharedPtr& odometry);
     void onCloud(const sensor_msgs::msg::PointCloud2::ConstSharedPtr& cloud);
     void integrateCloud(const sensor_msgs::msg::PointCloud2& cloud);
-    void onDescription(const g1_msgs::msg::Description::ConstSharedPtr& description);
+    void onDescription(const canopy_msgs::msg::Description::ConstSharedPtr& description);
 
     void onNextViewpoint(
-        const g1_msgs::srv::NextViewpoint::Request::SharedPtr&  request,
-        const g1_msgs::srv::NextViewpoint::Response::SharedPtr& response);
+        const canopy_msgs::srv::NextViewpoint::Request::SharedPtr&  request,
+        const canopy_msgs::srv::NextViewpoint::Response::SharedPtr& response);
     void onReportViewpoint(
-        const g1_msgs::srv::ReportViewpoint::Request::SharedPtr&  request,
-        const g1_msgs::srv::ReportViewpoint::Response::SharedPtr& response);
+        const canopy_msgs::srv::ReportViewpoint::Request::SharedPtr&  request,
+        const canopy_msgs::srv::ReportViewpoint::Response::SharedPtr& response);
     void onFindObjects(
-        const g1_msgs::srv::FindObjects::Request::SharedPtr&  request,
-        const g1_msgs::srv::FindObjects::Response::SharedPtr& response);
+        const canopy_msgs::srv::FindObjects::Request::SharedPtr&  request,
+        const canopy_msgs::srv::FindObjects::Response::SharedPtr& response);
     void onGetApproachPose(
-        const g1_msgs::srv::GetApproachPose::Request::SharedPtr&  request,
-        const g1_msgs::srv::GetApproachPose::Response::SharedPtr& response);
+        const canopy_msgs::srv::GetApproachPose::Request::SharedPtr&  request,
+        const canopy_msgs::srv::GetApproachPose::Response::SharedPtr& response);
     void onSave(
         const std_srvs::srv::Trigger::Request::SharedPtr&  request,
         const std_srvs::srv::Trigger::Response::SharedPtr& response);
 
     /// Integrates queued depth frames and masks old enough for their transform to exist.
     void integratePending();
-    void integrateMasks(CameraFeed& camera, const g1_msgs::msg::InstanceMaskArray& masks);
+    void integrateMasks(CameraFeed& camera, const canopy_msgs::msg::InstanceMaskArray& masks);
     void resegment();
     /// The map with furniture cleared: occupied cells no wall-height return backs up.
     [[nodiscard]] cv::Mat structureCells() const;
@@ -180,10 +180,10 @@ private:
     [[nodiscard]] std::vector<std::pair<const MappedObject*, double>> matchObjects(
         const std::string& query, const std::string& room,
         const std::vector<float>& query_embedding) const;
-    [[nodiscard]] g1_msgs::msg::WorldObject toMessage(const MappedObject& object) const;
-    [[nodiscard]] std::optional<DepthImage> depthView(const sensor_msgs::msg::Image& image);
-    void                                    updateCameraModel(
-                                           CameraFeed& camera, const std::string& frame, const builtin_interfaces::msg::Time& stamp);
+    [[nodiscard]] canopy_msgs::msg::WorldObject toMessage(const MappedObject& object) const;
+    [[nodiscard]] std::optional<DepthImage>     depthView(const sensor_msgs::msg::Image& image);
+    void                                        updateCameraModel(
+                                               CameraFeed& camera, const std::string& frame, const builtin_interfaces::msg::Time& stamp);
     void storeCrop(
         const MappedObject& object, const sensor_msgs::msg::Image& color, const MaskInput& mask);
     /// Keeps the newest colour frame as a view of the room the robot stands in.
@@ -289,22 +289,22 @@ private:
     rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr  map_sub_;
     rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr       odometry_sub_;
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr cloud_sub_;
-    rclcpp::Subscription<g1_msgs::msg::Description>::SharedPtr     description_sub_;
+    rclcpp::Subscription<canopy_msgs::msg::Description>::SharedPtr description_sub_;
 
-    rclcpp::Publisher<g1_msgs::msg::RoomArray>::SharedPtr              rooms_pub_;
-    rclcpp::Publisher<g1_msgs::msg::WorldObjectArray>::SharedPtr       objects_pub_;
+    rclcpp::Publisher<canopy_msgs::msg::RoomArray>::SharedPtr          rooms_pub_;
+    rclcpp::Publisher<canopy_msgs::msg::WorldObjectArray>::SharedPtr   objects_pub_;
     rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr         coverage_pub_;
     rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr         walls_pub_;
     rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr         floor_plan_pub_;
     rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr                  trail_pub_;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr markers_pub_;
-    rclcpp::Publisher<g1_msgs::msg::DescribeRequest>::SharedPtr        describe_pub_;
+    rclcpp::Publisher<canopy_msgs::msg::DescribeRequest>::SharedPtr    describe_pub_;
 
-    rclcpp::Service<g1_msgs::srv::NextViewpoint>::SharedPtr   next_viewpoint_srv_;
-    rclcpp::Service<g1_msgs::srv::ReportViewpoint>::SharedPtr report_viewpoint_srv_;
-    rclcpp::Service<g1_msgs::srv::FindObjects>::SharedPtr     find_objects_srv_;
-    rclcpp::Service<g1_msgs::srv::GetApproachPose>::SharedPtr approach_srv_;
-    rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr        save_srv_;
+    rclcpp::Service<canopy_msgs::srv::NextViewpoint>::SharedPtr   next_viewpoint_srv_;
+    rclcpp::Service<canopy_msgs::srv::ReportViewpoint>::SharedPtr report_viewpoint_srv_;
+    rclcpp::Service<canopy_msgs::srv::FindObjects>::SharedPtr     find_objects_srv_;
+    rclcpp::Service<canopy_msgs::srv::GetApproachPose>::SharedPtr approach_srv_;
+    rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr            save_srv_;
 
     rclcpp::TimerBase::SharedPtr integrate_timer_;
     rclcpp::TimerBase::SharedPtr publish_timer_;

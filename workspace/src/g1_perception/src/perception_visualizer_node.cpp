@@ -129,7 +129,8 @@ void drawBox(
     }
 }
 
-void drawMask(cv::Mat& image, const g1_msgs::msg::InstanceMask& instance, const cv::Scalar& colour)
+void drawMask(
+    cv::Mat& image, const canopy_msgs::msg::InstanceMask& instance, const cv::Scalar& colour)
 {
     const cv::Rect roi(
         static_cast<int>(instance.roi.x_offset),
@@ -258,10 +259,10 @@ G1PerceptionVisualizer::G1PerceptionVisualizer(const rclcpp::NodeOptions& option
         [this](sensor_msgs::msg::CameraInfo::ConstSharedPtr info) {
             camera_info_ = std::move(info);
         });
-    masks_sub_ = create_subscription<g1_msgs::msg::InstanceMaskArray>(
+    masks_sub_ = create_subscription<canopy_msgs::msg::InstanceMaskArray>(
         "tracked_masks",
         reliableQos(2),
-        [this](g1_msgs::msg::InstanceMaskArray::ConstSharedPtr masks) {
+        [this](canopy_msgs::msg::InstanceMaskArray::ConstSharedPtr masks) {
             masks_ = std::move(masks);
             renderIfPaired();
         });
@@ -341,7 +342,7 @@ void G1PerceptionVisualizer::publishAnnotatedImage(const sensor_msgs::msg::Image
 
     std::vector<Label> labels;
     labels.reserve(masks_->instances.size());
-    for (const g1_msgs::msg::InstanceMask& instance : masks_->instances)
+    for (const canopy_msgs::msg::InstanceMask& instance : masks_->instances)
     {
         const cv::Scalar colour = colourFor(instance.label);
         drawMask(image->image, instance, colour);

@@ -9,12 +9,12 @@
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
 
+#include <canopy_msgs/srv/get_approach_pose.hpp>
+#include <canopy_msgs/srv/next_viewpoint.hpp>
+#include <canopy_msgs/srv/report_viewpoint.hpp>
 #include <chrono>
 #include <cmath>
 #include <deque>
-#include <g1_msgs/srv/get_approach_pose.hpp>
-#include <g1_msgs/srv/next_viewpoint.hpp>
-#include <g1_msgs/srv/report_viewpoint.hpp>
 #include <memory>
 #include <mutex>
 #include <std_srvs/srv/trigger.hpp>
@@ -81,7 +81,7 @@ BT::PortsList NextViewpoint::providedPorts()
 
 BT::NodeStatus NextViewpoint::tick()
 {
-    using Service = g1_msgs::srv::NextViewpoint;
+    using Service = canopy_msgs::srv::NextViewpoint;
 
     const double timeout_s = getInput<double>("timeout_s").value_or(30.0);
     auto         request   = std::make_shared<Service::Request>();
@@ -160,7 +160,7 @@ BT::PortsList ReportViewpoint::providedPorts()
 
 BT::NodeStatus ReportViewpoint::tick()
 {
-    using Service         = g1_msgs::srv::ReportViewpoint;
+    using Service         = canopy_msgs::srv::ReportViewpoint;
     auto request          = std::make_shared<Service::Request>();
     request->viewpoint_id = static_cast<std::uint32_t>(getInput<int>("viewpoint_id").value_or(0));
     request->reached      = getInput<bool>("reached").value_or(true);
@@ -204,7 +204,7 @@ BT::PortsList ResolveTarget::providedPorts()
 
 BT::NodeStatus ResolveTarget::tick()
 {
-    using Service      = g1_msgs::srv::GetApproachPose;
+    using Service      = canopy_msgs::srv::GetApproachPose;
     auto       request = std::make_shared<Service::Request>();
     const auto target  = getInput<std::string>("target");
     if (!target || target->empty())

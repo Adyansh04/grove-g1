@@ -15,12 +15,11 @@ import sys
 
 import rclpy
 import yaml
+from canopy_msgs.msg import RoomArray
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from rclpy.time import Time
 from rclpy.utilities import remove_ros_args
 from tf2_ros import Buffer, TransformException, TransformListener
-
-from g1_msgs.msg import RoomArray
 
 
 def main():

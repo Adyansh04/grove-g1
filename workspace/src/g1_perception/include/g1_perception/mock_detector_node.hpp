@@ -9,7 +9,7 @@
  * the mask runs for real. SIMULATION ONLY: the robot has no ground truth.
  */
 
-#include <g1_msgs/msg/instance_mask_array.hpp>
+#include <canopy_msgs/msg/instance_mask_array.hpp>
 #include <memory>
 #include <optional>
 #include <rclcpp/rclcpp.hpp>
@@ -36,14 +36,14 @@ private:
 
     /// The pixels of @p detection in @p depth as an InstanceMask, or nothing when it is out of
     /// view or under min_pixels.
-    [[nodiscard]] std::optional<g1_msgs::msg::InstanceMask> maskFor(
+    [[nodiscard]] std::optional<canopy_msgs::msg::InstanceMask> maskFor(
         const vision_msgs::msg::Detection3D& detection, const sensor_msgs::msg::Image& depth,
         const std::string& phrase) const;
 
     rclcpp::Subscription<vision_msgs::msg::Detection3DArray>::SharedPtr truth_sub_;
     rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr            depth_sub_;
     rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr       info_sub_;
-    rclcpp::Publisher<g1_msgs::msg::InstanceMaskArray>::SharedPtr       masks_pub_;
+    rclcpp::Publisher<canopy_msgs::msg::InstanceMaskArray>::SharedPtr   masks_pub_;
     rclcpp::TimerBase::SharedPtr                                        timer_;
 
     DepthHistory                                       depth_frames_;

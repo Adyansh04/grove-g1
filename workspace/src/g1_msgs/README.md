@@ -1,9 +1,9 @@
 # g1_msgs
 
 The stack's own interfaces: the actions the behavior tree calls on `g1_locomotion`,
-`g1_manipulation` and `g1_vla`, the services behind the learned grasp and open-vocabulary
-perception, and the instance masks a detector publishes. `ament_cmake` with
-`rosidl_default_generators`, no source of its own.
+`g1_manipulation` and `g1_vla`, and the services behind the learned grasp and open-vocabulary
+perception. The instance masks a detector publishes, and the world model's interfaces, are in
+`canopy_msgs`. `ament_cmake` with `rosidl_default_generators`, no source of its own.
 
 ```mermaid
 flowchart LR
@@ -12,7 +12,7 @@ flowchart LR
     BT -- "Grasp" --> VS["g1_vla_server"]
     VS -- "GetActionChunk" --> PE["policy engine"]
     MS -- "GenerateGrasps" --> GS["grasp source"]
-    D["detector"] -- "InstanceMaskArray" --> G["g1_object_geometry"]
+    D["detector"] -- "InstanceMaskArray<br/>(canopy_msgs)" --> G["g1_object_geometry"]
 ```
 
 ```bash
@@ -48,6 +48,4 @@ files, so servers and tests share one definition.
 
 | Message | Carries | Notes |
 |---|---|---|
-| `InstanceMask` | `label`, `score`, `roi`, `data` | One object. `data` is a 0-or-255 crop of `roi`, not a full frame. `label` is the phrase the detector was asked for, so the object id holds when the model rewords its answer. |
-| `InstanceMaskArray` | `header`, `image_width`, `image_height`, `model`, `instances` | `header` is the image's stamp and frame, not the publish time: the geometry node pairs on it. Nothing reads `model`, which keeps the segmenter swappable. |
 | `ExemplarPoint` | `phrase`, `x`, `y` | A pixel on one object, returned by `GroundInstruction` to tell instances of a phrase apart. |

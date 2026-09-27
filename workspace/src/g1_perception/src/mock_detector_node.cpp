@@ -78,7 +78,8 @@ G1MockDetector::G1MockDetector(const rclcpp::NodeOptions& options)
     min_pixels_          = static_cast<int>(declare_parameter<int>("min_pixels", 50));
     const double rate_hz = declare_parameter<double>("mock_rate_hz", 10.0);
 
-    masks_pub_ = create_publisher<g1_msgs::msg::InstanceMaskArray>("~/instance_masks", maskQos());
+    masks_pub_ =
+        create_publisher<canopy_msgs::msg::InstanceMaskArray>("~/instance_masks", maskQos());
     truth_sub_ = create_subscription<vision_msgs::msg::Detection3DArray>(
         "object_poses",
         sensorQos(),
@@ -114,7 +115,7 @@ void G1MockDetector::onDepth(sensor_msgs::msg::Image::ConstSharedPtr depth)
     depth_frames_.push(std::move(depth));
 }
 
-std::optional<g1_msgs::msg::InstanceMask> G1MockDetector::maskFor(
+std::optional<canopy_msgs::msg::InstanceMask> G1MockDetector::maskFor(
     const vision_msgs::msg::Detection3D& detection, const sensor_msgs::msg::Image& depth,
     const std::string& phrase) const
 {
@@ -210,7 +211,7 @@ std::optional<g1_msgs::msg::InstanceMask> G1MockDetector::maskFor(
         return std::nullopt;
     }
 
-    g1_msgs::msg::InstanceMask out;
+    canopy_msgs::msg::InstanceMask out;
     out.label        = phrase;
     out.score        = detection.results.empty() ?
                            1.0F :
@@ -248,7 +249,7 @@ void G1MockDetector::publishMasks()
         return;
     }
 
-    g1_msgs::msg::InstanceMaskArray masks;
+    canopy_msgs::msg::InstanceMaskArray masks;
     masks.header.stamp    = chosen->header.stamp;
     masks.header.frame_id = camera_info_->header.frame_id;
     masks.image_width     = chosen->width;
@@ -271,7 +272,7 @@ void G1MockDetector::publishMasks()
         {
             continue;
         }
-        std::optional<g1_msgs::msg::InstanceMask> instance =
+        std::optional<canopy_msgs::msg::InstanceMask> instance =
             maskFor(detection, *chosen, nameOf(*match));
         if (instance)
         {

@@ -89,15 +89,16 @@ G1ObjectGeometry::G1ObjectGeometry(const rclcpp::NodeOptions& options)
 
     objects_pub_ =
         create_publisher<vision_msgs::msg::Detection3DArray>("~/object_poses", objectsQos());
-    tracked_pub_ = create_publisher<g1_msgs::msg::InstanceMaskArray>("~/tracked_masks", maskQos());
+    tracked_pub_ =
+        create_publisher<canopy_msgs::msg::InstanceMaskArray>("~/tracked_masks", maskQos());
 
     masks_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
     rclcpp::SubscriptionOptions mask_options;
     mask_options.callback_group = masks_group_;
-    masks_sub_                  = create_subscription<g1_msgs::msg::InstanceMaskArray>(
+    masks_sub_                  = create_subscription<canopy_msgs::msg::InstanceMaskArray>(
         "~/instance_masks",
         maskQos(),
-        [this](const g1_msgs::msg::InstanceMaskArray::ConstSharedPtr& masks) { onMasks(masks); },
+        [this](const canopy_msgs::msg::InstanceMaskArray::ConstSharedPtr& masks) { onMasks(masks); },
         mask_options);
     depth_sub_ = create_subscription<sensor_msgs::msg::Image>(
         "depth/image_raw",
@@ -134,7 +135,7 @@ void G1ObjectGeometry::onCameraInfo(sensor_msgs::msg::CameraInfo::ConstSharedPtr
 }
 
 std::optional<OrientedBox> G1ObjectGeometry::measure(
-    const g1_msgs::msg::InstanceMask& instance, const sensor_msgs::msg::Image& depth,
+    const canopy_msgs::msg::InstanceMask& instance, const sensor_msgs::msg::Image& depth,
     const Intrinsics& intrinsics, const Point3& up) const
 {
     const DepthView view{ depth.data, depth.width, depth.height, depth.step };
@@ -183,7 +184,7 @@ std::optional<OrientedBox> G1ObjectGeometry::measure(
     return fitOrientedBox(points, up, support, min_extent_m_, max_extent_m_);
 }
 
-void G1ObjectGeometry::onMasks(const g1_msgs::msg::InstanceMaskArray::ConstSharedPtr& masks)
+void G1ObjectGeometry::onMasks(const canopy_msgs::msg::InstanceMaskArray::ConstSharedPtr& masks)
 {
     const double          stamp_s = DepthHistory::stampSeconds(masks->header);
     std::vector<Measured> measured;
@@ -257,7 +258,7 @@ void G1ObjectGeometry::onMasks(const g1_msgs::msg::InstanceMaskArray::ConstShare
 
         for (std::size_t index = 0; index < masks->instances.size(); ++index)
         {
-            const g1_msgs::msg::InstanceMask& instance = masks->instances[index];
+            const canopy_msgs::msg::InstanceMask& instance = masks->instances[index];
             if (instance.score < min_score_)
             {
                 continue;
@@ -291,14 +292,14 @@ void G1ObjectGeometry::onMasks(const g1_msgs::msg::InstanceMaskArray::ConstShare
 }
 
 void G1ObjectGeometry::publish(
-    const g1_msgs::msg::InstanceMaskArray& masks, const std::vector<Measured>& measured,
+    const canopy_msgs::msg::InstanceMaskArray& masks, const std::vector<Measured>& measured,
     const std::vector<std::string>& ids)
 {
     vision_msgs::msg::Detection3DArray objects;
     // The image's stamp, not now(), so consumers see the detector's latency.
     objects.header = masks.header;
 
-    g1_msgs::msg::InstanceMaskArray tracked = masks;
+    canopy_msgs::msg::InstanceMaskArray tracked = masks;
 
     for (std::size_t i = 0; i < measured.size(); ++i)
     {

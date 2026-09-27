@@ -9,12 +9,12 @@ Python because it is a ZMQ and msgpack client; see the package README.
 
 import numpy as np
 import rclpy
+from canopy_msgs.msg import InstanceMaskArray
 from geometry_msgs.msg import Pose
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import CameraInfo, Image
 
-from g1_msgs.msg import InstanceMaskArray
 from g1_msgs.srv import GenerateGrasps
 from g1_perception.host_clients import GraspClient
 

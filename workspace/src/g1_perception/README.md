@@ -39,10 +39,10 @@ colcon build --symlink-install --packages-select g1_perception
 |---|---|---|
 | Sub | `color/image_raw` (detector) | `sensor_msgs/Image`, best effort, depth 1 |
 | Sub | `object_poses`, `depth/image_raw`, `camera_info` (mock) | `vision_msgs/Detection3DArray`, `sensor_msgs/Image`, `sensor_msgs/CameraInfo` |
-| Sub | `~/instance_masks`, `depth/image_raw`, `depth/camera_info` (geometry) | `g1_msgs/InstanceMaskArray`, `sensor_msgs/Image`, `sensor_msgs/CameraInfo` |
-| Pub | `~/instance_masks` (both detectors) | `g1_msgs/InstanceMaskArray`, reliable |
+| Sub | `~/instance_masks`, `depth/image_raw`, `depth/camera_info` (geometry) | `canopy_msgs/InstanceMaskArray`, `sensor_msgs/Image`, `sensor_msgs/CameraInfo` |
+| Pub | `~/instance_masks` (both detectors) | `canopy_msgs/InstanceMaskArray`, reliable |
 | Pub | `~/object_poses` (geometry) | `vision_msgs/Detection3DArray`, reliable |
-| Pub | `~/tracked_masks` (geometry) | `g1_msgs/InstanceMaskArray`, the input masks relabelled with object ids |
+| Pub | `~/tracked_masks` (geometry) | `canopy_msgs/InstanceMaskArray`, the input masks relabelled with object ids |
 | Srv | `~/generate_grasps` (both grasp sources) | `g1_msgs/GenerateGrasps` |
 | Srv | `~/ground` (grounder) | `g1_msgs/GroundInstruction` |
 | Sub | `color/image_raw`, `color/camera_info`, `tracked_masks`, `object_poses`, `ground_truth_topic` (visualizer) | as above; nothing is drawn until a frame's masks, poses and image are all in |

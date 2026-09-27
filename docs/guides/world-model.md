@@ -55,8 +55,8 @@ the furniture solid (`map.pgm`, `map.yaml`), a picture of it with the rooms and 
 ## Asking the world model
 
 ```bash
-ros2 service call /g1_world_model/find_objects g1_msgs/srv/FindObjects "{query: dustbin, room: office}"
-ros2 service call /g1_world_model/get_approach_pose g1_msgs/srv/GetApproachPose "{target: 'dining table'}"
+ros2 service call /g1_world_model/find_objects canopy_msgs/srv/FindObjects "{query: dustbin, room: office}"
+ros2 service call /g1_world_model/get_approach_pose canopy_msgs/srv/GetApproachPose "{target: 'dining table'}"
 ros2 topic echo --qos-durability transient_local /g1_world_model/rooms
 ```
 
