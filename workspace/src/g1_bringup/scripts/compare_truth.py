@@ -211,7 +211,13 @@ def main():
     truth = [
         o for o in yaml.safe_load(open(args.truth))["objects"] if o["observable_from_standing"]
     ]
-    objects = yaml.safe_load(open(os.path.join(args.world, "world.yaml")))["objects"]
+    # As /canopy/objects shows them, which the test scores: active and confirmed. world.yaml keeps
+    # removed and stale objects and single glimpses as well.
+    objects = [
+        o
+        for o in yaml.safe_load(open(os.path.join(args.world, "world.yaml")))["objects"]
+        if o.get("state", "active") == "active" and o.get("observations", 0) >= 2
+    ]
 
     rows = score(truth, objects, frame, args.margin, args.min_size)
     if not rows:
