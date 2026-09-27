@@ -9,6 +9,7 @@ find_package(ament_cmake REQUIRED)
 # v4, the same libbehaviortree_cpp Nav2's navigator links, so leaves here and Nav2's share it.
 find_package(behaviortree_cpp REQUIRED)
 find_package(canopy_msgs REQUIRED)
+find_package(canopy_perception REQUIRED)
 find_package(controller_manager_msgs REQUIRED)
 find_package(g1_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
@@ -47,6 +48,7 @@ add_library(g1_bt_nodes
 g1_target_defaults(g1_bt_nodes)
 target_link_libraries(g1_bt_nodes PUBLIC
   behaviortree_cpp::behaviortree_cpp
+  canopy_perception::canopy_perception_core
   rclcpp::rclcpp
   rclcpp_action::rclcpp_action
   tf2::tf2
