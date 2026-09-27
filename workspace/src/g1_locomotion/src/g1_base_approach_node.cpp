@@ -69,9 +69,13 @@ double wrap(double a) { return std::atan2(std::sin(a), std::cos(a)); }
 /// In steady_clock's own duration type, so deadlines compare without templates.
 std::chrono::steady_clock::time_point deadlineIn(double seconds)
 {
+    // A day stands in for no limit: casting an infinite or huge double to the clock's integer
+    // ticks is undefined, and lands the deadline in the past.
+    constexpr double kLongest = 86400.0;
+    const double bounded = std::isfinite(seconds) ? std::clamp(seconds, 0.0, kLongest) : kLongest;
     return std::chrono::steady_clock::now() +
            std::chrono::duration_cast<std::chrono::steady_clock::duration>(
-               std::chrono::duration<double>(seconds));
+               std::chrono::duration<double>(bounded));
 }
 
 }  // namespace
