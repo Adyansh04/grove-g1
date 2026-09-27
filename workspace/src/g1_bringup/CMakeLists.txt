@@ -55,14 +55,15 @@ if(BUILD_TESTING)
     RESOURCE_LOCK mujoco_sim LABELS simulator COST 100)
 
   # canopy's acceptance run: explores the apartment and scores rooms, coverage and objects against
-  # its ground truth. Tens of minutes.
+  # its ground truth. Tens of minutes; the timeouts sit above the test's own worst case (about
+  # 3830 s, and 5330 s from no map) so it can fail with a message rather than be killed.
   add_launch_test(test/test_explore_apartment.launch.py
-    TARGET test_explore_apartment TIMEOUT 3600)
+    TARGET test_explore_apartment TIMEOUT 4200)
   set_tests_properties(test_explore_apartment PROPERTIES
     LABELS simulator RESOURCE_LOCK mujoco_sim COST 3000)
   # The same run from no map at all: slam_toolbox builds it while the robot explores.
   add_launch_test(test/test_explore_apartment.launch.py
-    TARGET test_explore_apartment_mapping TIMEOUT 5400)
+    TARGET test_explore_apartment_mapping TIMEOUT 6000)
   set_tests_properties(test_explore_apartment_mapping PROPERTIES
     LABELS simulator RESOURCE_LOCK mujoco_sim COST 5000
     ENVIRONMENT "G1_EXPLORE_TEST_MAPPING=1")
