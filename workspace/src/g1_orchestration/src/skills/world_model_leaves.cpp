@@ -28,7 +28,7 @@ namespace g1_orchestration
 namespace
 {
 
-constexpr const char* kWorldModel = "/g1_world_model";
+constexpr const char* kWorldModel = "/canopy";
 
 double yawOf(const geometry_msgs::msg::Quaternion& q)
 {

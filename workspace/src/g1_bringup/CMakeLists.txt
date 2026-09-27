@@ -9,7 +9,11 @@ find_package(ament_cmake REQUIRED)
 
 install(DIRECTORY config launch mjcf worlds DESTINATION share/${PROJECT_NAME})
 install(
-  PROGRAMS scripts/activate_arm scripts/deactivate_arm
+  PROGRAMS
+    scripts/activate_arm
+    scripts/deactivate_arm
+    scripts/compare_truth.py
+    scripts/run_summary.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -49,6 +53,19 @@ if(BUILD_TESTING)
   add_launch_test(test/test_agile_walk.launch.py TARGET test_agile_walk TIMEOUT 360)
   set_tests_properties(test_agile_walk PROPERTIES
     RESOURCE_LOCK mujoco_sim LABELS simulator COST 100)
+
+  # canopy's acceptance run: explores the apartment and scores rooms, coverage and objects against
+  # its ground truth. Tens of minutes.
+  add_launch_test(test/test_explore_apartment.launch.py
+    TARGET test_explore_apartment TIMEOUT 3600)
+  set_tests_properties(test_explore_apartment PROPERTIES
+    LABELS simulator RESOURCE_LOCK mujoco_sim COST 3000)
+  # The same run from no map at all: slam_toolbox builds it while the robot explores.
+  add_launch_test(test/test_explore_apartment.launch.py
+    TARGET test_explore_apartment_mapping TIMEOUT 5400)
+  set_tests_properties(test_explore_apartment_mapping PROPERTIES
+    LABELS simulator RESOURCE_LOCK mujoco_sim COST 5000
+    ENVIRONMENT "G1_EXPLORE_TEST_MAPPING=1")
 
   # DDS drain gap between simulator suites.
   add_test(NAME sim_settle_gap COMMAND ${CMAKE_COMMAND} -E sleep 5)

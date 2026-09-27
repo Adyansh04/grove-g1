@@ -1,7 +1,8 @@
 # Exploring a building and asking what is where
 
-The world model (`g1_world_model`) builds on the SLAM map: rooms and doorways, the objects in
-each room, and how much of every room the head camera has seen. An exploration tree walks the
+The world model builds on the SLAM map: rooms and doorways, the objects in each room, and how much
+of every room the cameras have seen. It is canopy (`workspace/src/canopy`, its own repository),
+which `g1_bringup/launch/world_model.launch.py` wires to the G1's topics. An exploration tree walks the
 robot through the building until the camera has seen what it can, and missions then name their
 targets ("the dustbin in the office") instead of carrying coordinates.
 
@@ -19,18 +20,19 @@ Then, inside the container:
 ```bash
 ros2 launch g1_bringup bringup.launch.py mode:=mapping nav:=true world:=apartment headless:=true \
   arms_at_sides:=true
-ros2 run canopy_perception mock_detector --ros-args -r __node:=g1_detector \
+ros2 run canopy_perception mock_detector --ros-args -r __node:=detector_head \
   -p "phrases:=['sofa','dustbin','bed','desk','chair','dining table','bookshelf','mug']" \
   -r object_poses:=/g1_sensor_relay/object_poses \
   -r depth/image_raw:=/camera/aligned_depth_to_color/image_raw \
-  -r camera_info:=/camera/color/camera_info -r "~/instance_masks:=/g1_perception/instance_masks"
-ros2 launch g1_world_model world_model.launch.py world_dir:=/root/data/worlds/apartment rviz:=true
+  -r camera_info:=/camera/color/camera_info
+ros2 launch g1_bringup world_model.launch.py world_dir:=/root/data/worlds/apartment rviz:=true
 ros2 run g1_orchestration g1_bt_executor --ros-args \
   -p tree_file:=$(ros2 pkg prefix g1_orchestration)/share/g1_orchestration/trees/explore.xml
 ```
 
 The mock detector cuts masks from simulator ground truth, so a run scores the mapping rather than a
-detector on renders. It matches a phrase to every numbered body of that class: "chair" finds
+detector on renders. Named `detector_<camera>`, it publishes where canopy reads that camera's
+masks. It matches a phrase to every numbered body of that class: "chair" finds
 `chair_1` to `chair_5`. `arms_at_sides:=true` hangs the arms beside the thighs: at zero the
 forearms point forward into both cameras' views, and a real detector maps the hands.
 
@@ -55,12 +57,14 @@ the furniture solid (`map.pgm`, `map.yaml`), a picture of it with the rooms and 
 ## Asking the world model
 
 ```bash
-ros2 service call /g1_world_model/find_objects canopy_msgs/srv/FindObjects "{query: dustbin, room: office}"
-ros2 service call /g1_world_model/get_approach_pose canopy_msgs/srv/GetApproachPose "{target: 'dining table'}"
-ros2 topic echo --qos-durability transient_local /g1_world_model/rooms
+ros2 service call /canopy/find_objects canopy_msgs/srv/FindObjects "{query: dustbin, room: office}"
+ros2 service call /canopy/get_approach_pose canopy_msgs/srv/GetApproachPose "{target: 'dining table'}"
+ros2 topic echo --qos-durability transient_local /canopy/rooms
 ```
 
-A room can be named by its id (`R3`), its name (`room C`) or its type (`office`). A search that
+A room can be named by its id (`R3`), its name (`room C`) or its type (`office`), and an object
+by the detector's word or a synonym from canopy's room table ("dustbin" finds a trash can). A search
+that
 finds nothing reports how much of the searched area the camera has seen, so "not found" means "not
 in the 96 % of the office the camera saw", not "absent".
 
@@ -84,12 +88,13 @@ cd workspace/src/canopy
 ```
 
 Gemini needs a free API key in `~/.config/canopy/gemini.env`. The server caps its own use at 5
-requests a minute and 100 a day, and stops for the day on any quota answer. Then run canopy_perception's
-`detector` with its `config/detector.yaml` in place of the mock, and launch the world model
-with `describe:=true`: each object gets a name and a caption, and a room whose objects do not
-settle its type is typed from the frames the robot took standing in it.
+requests a minute and 100 a day, and stops for the day on any quota answer. Then launch the world
+model with `detector:=true describe:=true` in place of the mock: a detector per camera asks the
+server, each object gets a name and a caption, and a room whose objects do not settle its type is
+typed from the frames the robot took standing in it.
 
-The acceptance test runs this way with `G1_WORLD_MODEL_TEST_DETECTOR=semantic`. On the apartment
+The acceptance test (`g1_bringup`'s `test_explore_apartment`) runs this way with
+`G1_EXPLORE_TEST_DETECTOR=semantic`. On the apartment
 renders it finds about three quarters of the objects against the mock's all: YOLOE confuses
 furniture of one material (desk, cabinet, TV stand) and misses mugs and bowls on tables, while the
 describer usually names them right. Gemini's 100 requests a day cover about one run.
@@ -104,7 +109,7 @@ writes off what no standing pose can see, and each room reports those cells as
 In simulation a second D435i sits on the chest, 1.03 m up and 20° down (`g1_description`'s
 `config/cameras.yaml`), and sees walls, counters and shelves from the side. Pass
 `cameras:=head,chest` to both `bringup.launch.py` and `world_model.launch.py`, and run a mock
-detector per camera (the chest one on `/chest_camera/*` and `/g1_sensor_relay/chest/object_poses`,
-publishing `/g1_perception/chest/instance_masks`). `cameras:=chest` alone saves the head camera's
+detector per camera (`detector_chest`, on `/chest_camera/*` and
+`/g1_sensor_relay/chest/object_poses`). `cameras:=chest` alone saves the head camera's
 render and detector, but the chest camera sees little floor near the robot, so the camera pass
 takes longer.

@@ -50,10 +50,10 @@ One file per leaf, the layout `nav2_behavior_tree` uses.
 | `LookFor` | the detector's `phrases`, then `/objects` | `objects` (`id` or `id=phrase`, comma-separated, waited on), `also` (asked for, not waited on), `detector`, `timeout_s`. Answers RUNNING while it waits. |
 | `StopLooking` | the detector's `phrases` | `detector`, `timeout_s`; empties the list, which idles the detector |
 | `Grasp` | `/g1_vla_server/grasp` | `instruction`, `object_id`, `arm` |
-| `NextViewpoint` | `/g1_world_model/next_viewpoint` | in `mode` (`frontier` or `coverage`); out `goal`, `headings`, `viewpoint_id`, `room_id`, `outcome`. Fails when nothing is left; `outcome` says whether that is `done` or an `error`. |
-| `ReportViewpoint` | `/g1_world_model/report_viewpoint` | `viewpoint_id`, `reached` |
-| `ResolveTarget` | `/g1_world_model/get_approach_pose` | in `target` (object id, room, or label), `room`; out `goal`, `target_id` |
-| `SaveWorld` | `/g1_world_model/save` | `timeout_s` |
+| `NextViewpoint` | `/canopy/next_viewpoint` | in `mode` (`frontier` or `coverage`); out `goal`, `headings`, `viewpoint_id`, `room_id`, `outcome`. Fails when nothing is left; `outcome` says whether that is `done` or an `error`. |
+| `ReportViewpoint` | `/canopy/report_viewpoint` | `viewpoint_id`, `reached` |
+| `ResolveTarget` | `/canopy/get_approach_pose` | in `target` (object id, room, or label), `room`; out `goal`, `target_id` |
+| `SaveWorld` | `/canopy/save` | `timeout_s` |
 | `TurnTo` | Nav2 `/spin` | `yaw` in `frame`; turns by the difference from the current heading |
 
 Every action leaf also takes `server_timeout_s` (default 10.0), how long to wait for the server to
@@ -104,7 +104,7 @@ fails if the palette drifts, and `test_tree_loads` fails if a tree names a leaf 
 | `pick_and_place_in_place.xml` | `world:=manipulation` | The same skills with no driving. |
 | `sort_into_box.xml` | `world:=tabletop`, perception | Pick the red block from a cluttered table and drop it in the box. |
 | `vla_grasp_in_place.xml` | `world:=manipulation`, `vla:=true` | The learned grasp in place of a planned pick. |
-| `explore.xml` | Nav2, `g1_world_model`, a detector | Walks to frontiers until the LiDAR map is closed, then to camera viewpoints until every room has been seen, then saves the world. Steps clear of furniture before each Nav2 motion. |
+| `explore.xml` | Nav2, canopy's world model, a detector | Walks to frontiers until the LiDAR map is closed, then to camera viewpoints until every room has been seen, then saves the world. Steps clear of furniture before each Nav2 motion. |
 | `TuckBothArms` | subtree of `pick_and_place.xml` | Both arms to `tucked`, each retried. |
 
 The navigation stations are staging poses, not working poses: Nav2's goal tolerance is 0.5 m

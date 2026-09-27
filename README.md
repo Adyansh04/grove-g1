@@ -84,13 +84,17 @@ Two rules shape the design, and both apply in simulation so the habits transfer:
 | [`g1_locomotion`](workspace/src/g1_locomotion) | Walks the base into arm's reach of a measured object, and backs it out again. |
 | [`g1_manipulation`](workspace/src/g1_manipulation) | Pick and place as actions, and the object-pose source behind them. |
 | [`g1_moveit_config`](workspace/src/g1_moveit_config) | MoveIt config: arm and hand planning groups, kinematics, the octomap. |
-| [`g1_msgs`](workspace/src/g1_msgs) | The stack's own interfaces: the skill actions, the policy and perception services, instance masks. |
+| [`g1_msgs`](workspace/src/g1_msgs) | The stack's own interfaces: the skill actions and the policy and perception services. |
 | [`g1_navigation`](workspace/src/g1_navigation) | SLAM Toolbox mapping, AMCL localization and Nav2. |
 | [`g1_orchestration`](workspace/src/g1_orchestration) | The behaviour tree that sequences navigation and manipulation into a mission. |
 | [`g1_perception`](workspace/src/g1_perception) | Object poses from the camera for objects named in text, plus grasp generation and instruction grounding. |
 | [`g1_sensor_relay`](workspace/src/g1_sensor_relay) | Publishes the LiDAR, camera, IMU and object poses sampled inside the simulator. |
 | [`g1_state_estimation`](workspace/src/g1_state_estimation) | Publishes `odom` to `base_footprint` and the TF chain Nav2 needs. |
 | [`g1_vla`](workspace/src/g1_vla) | Learned grasping: a policy's action chunks, checked against the planning scene before they run. |
+
+The world model is [canopy](workspace/src/canopy), a repository of its own: rooms, objects and camera
+coverage on the SLAM map, the exploration that fills them in, its detector front end and the host
+model servers.
 
 ## Quick start
 
@@ -143,6 +147,7 @@ Then pick a demo:
 | [Pick and place](docs/guides/pick-and-place.md) | The manipulation skills and the behaviour trees that sequence them with navigation. |
 | [Learned grasping](docs/guides/learned-grasping.md) | A vision-language-action policy behind the planning-scene gate. Runs; does not grasp yet. |
 | [Open-vocabulary perception](docs/guides/open-vocabulary-grasping.md) | Objects named in text and measured in 3D, generated grasps, and instructions turned into phrases. |
+| [Exploring and asking what is where](docs/guides/world-model.md) | canopy's exploration of a flat, its rooms and objects, and finding them by name. |
 
 `ros2 launch g1_bringup bringup.launch.py --show-args` prints every launch argument with its
 description.
