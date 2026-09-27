@@ -416,6 +416,28 @@ void ObjectMap::refreshShape(MappedObject& object) const
     object.centroid = sum / static_cast<double>(sample.size());
     object.z_min    = z_min - (0.5 * params_.voxel);
     object.z_max    = z_max + (0.5 * params_.voxel);
+    // A mug's edge the table's mask took in stands above the table: its top is the highest layer
+    // with a good share of the voxels of the densest one in the band clutter stands in. Run 49's
+    // coffee table read 0.52 m for 0.39 m, and no depth sample on it counted as its top; a shelf's
+    // front face fills every layer alike, so its top stays its highest voxel.
+    std::vector<int> layers(
+        static_cast<std::size_t>(std::lround((z_max - z_min) / params_.voxel)) + 1,
+        0);
+    for (const std::uint64_t key : sample)
+    {
+        ++layers[static_cast<std::size_t>(std::lround((centreOf(key).z() - z_min) / params_.voxel))];
+    }
+    const auto band =
+        static_cast<std::size_t>(std::lround(params_.top_clutter_height / params_.voxel));
+    const auto lowest = layers.size() - 1 - std::min(band, layers.size() - 1);
+    const int  densest =
+        *std::max_element(layers.begin() + static_cast<std::ptrdiff_t>(lowest), layers.end());
+    std::size_t top = layers.size() - 1;
+    while (top > lowest && layers[top] < params_.top_layer_share * densest)
+    {
+        --top;
+    }
+    object.top = z_min + (static_cast<double>(top) + 0.5) * params_.voxel;
 
     // Along the walls unless the tightest box is much smaller: a partial or round footprint
     // fits the walls as well as any angle, and must not turn diagonal for a sliver.
@@ -890,7 +912,7 @@ void ObjectMap::relateSupports()
             {
                 continue;
             }
-            if (object.z_min < under.z_max - 0.08 || object.z_min > under.z_max + 0.10)
+            if (object.z_min < under.top - 0.08 || object.z_min > under.top + 0.10)
             {
                 continue;
             }
@@ -902,9 +924,9 @@ void ObjectMap::relateSupports()
             {
                 continue;
             }
-            if (under.z_max > best_top)
+            if (under.top > best_top)
             {
-                best_top       = under.z_max;
+                best_top       = under.top;
                 object.support = under.id;
             }
         }
@@ -930,7 +952,7 @@ std::vector<Surface> ObjectMap::surfaces() const
         }
         Surface surface;
         surface.id     = object.id;
-        surface.height = object.z_max;
+        surface.height = object.top;
         const double c = std::cos(object.box_yaw);
         const double s = std::sin(object.box_yaw);
         for (const auto& [sx, sy] : { std::pair{ 1, 1 }, { -1, 1 }, { -1, -1 }, { 1, -1 } })

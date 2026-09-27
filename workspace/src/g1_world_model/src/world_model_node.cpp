@@ -278,6 +278,10 @@ WorldModelNode::WorldModelNode(const rclcpp::NodeOptions& options)
     objects.merge_gap = declare_parameter<double>("objects.merge_gap", objects.merge_gap);
     objects.support_merge_gap =
         declare_parameter<double>("objects.support_merge_gap", objects.support_merge_gap);
+    objects.top_layer_share =
+        declare_parameter<double>("objects.top_layer_share", objects.top_layer_share);
+    objects.top_clutter_height =
+        declare_parameter<double>("objects.top_clutter_height", objects.top_clutter_height);
     objects.max_merged_extent =
         declare_parameter<double>("objects.max_merged_extent", objects.max_merged_extent);
     objects.min_observations = static_cast<int>(

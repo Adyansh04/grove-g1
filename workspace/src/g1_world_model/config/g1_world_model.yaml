@@ -125,6 +125,11 @@ g1_world_model:
       merge_gap: 0.10
       support_merge_gap: 1.0
       max_merged_extent: 3.5
+      # A support's top is its highest voxel layer with this share of the voxels of the densest one
+      # within top_clutter_height of its highest voxel, m: the rim of a mug its mask took in raised
+      # run 49's coffee table from 0.39 to 0.52 m, and a shelf's lower tiers are no top.
+      top_layer_share: 0.2
+      top_clutter_height: 0.3
       # Anything real in view is detected in several frames of a dwell; one sighting that no
       # second follows within confirm_s is a fragment cut from something else. Long enough for a
       # later viewpoint in the same room to confirm what one at the edge of view caught once.

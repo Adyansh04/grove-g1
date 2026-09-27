@@ -47,7 +47,8 @@ own topic remaps.
   shows the grid). Room ids survive re-segmentation by overlap.
 - **Coverage** (`coverage_map`): floor cells, faces (obstacle cells beside free space) and the tops
   of tables and shelves whose top a view has taken in: a shelf taller than the camera looks is cut
-  off at the image's top edge, and its highest voxel is no top. Every depth sample credits the
+  off at the image's top edge, and its highest voxel is no top. A top is the highest voxel layer
+  dense enough to be the furniture, not the mug on it its mask took in. Every depth sample credits the
   target it lands on with a quality from range, incidence and distance from the image centre. Only
   frames taken after the base has been still for `settle_s` count, because the relay stamps images
   on arrival. When SLAM redraws a wall a cell or two off, as after a loop closure, its faces keep

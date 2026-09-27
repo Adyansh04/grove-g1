@@ -233,6 +233,72 @@ TEST(ObjectMap, FusesATableAndTheMugOnItAcrossViews)
     EXPECT_NEAR(surfaces[0].height, 0.75, 0.06);
 }
 
+TEST(ObjectMap, TakesATablesTopBelowTheMugItsMaskTookIn)
+{
+    // The table's mask takes in the mug standing on it, as a mask's edge does: the surface is the
+    // table's top all the same, and the mug stands on it.
+    const Camera camera;
+    const Box    table_and_mug{ "table", { 2.0, 1.0, 0.0 }, { 3.2, 1.8, 0.85 } };
+    ObjectMap    map;
+    // From the table's near side, then from its left end.
+    Frame first = render(
+        camera,
+        camera.pose(2.6, 0.2, std::numbers::pi / 2.0),
+        { kTable, kMug, kWall },
+        { table_and_mug, kMug },
+        1.0);
+    map.integrate(first.inputs, first.input);
+    Frame second = render(
+        camera,
+        camera.pose(1.2, 1.4, 0.0),
+        { kTable, kMug, kWall },
+        { table_and_mug, kMug },
+        2.0);
+    map.integrate(second.inputs, second.input);
+    const MappedObject* table = byLabel(map, "table");
+    const MappedObject* mug   = byLabel(map, "mug");
+    ASSERT_NE(table, nullptr);
+    ASSERT_NE(mug, nullptr);
+    EXPECT_GT(table->z_max, 0.8);  // The mug's voxels are the table's too.
+    const std::vector<Surface> surfaces = map.surfaces();
+    ASSERT_EQ(surfaces.size(), 1U);
+    EXPECT_NEAR(surfaces[0].height, 0.75, 0.05);
+    EXPECT_EQ(mug->support, table->id);
+}
+
+TEST(ObjectMap, KeepsAShelfsTopAboveItsLowerTier)
+{
+    // A deep low tier the head camera sees from above, and a back panel to 1.4 m the chest camera
+    // sees from the front, as one shelf: the tier's dense top is no clutter, and the shelf's top
+    // stays its highest voxel.
+    const Camera head;
+    Camera       chest;
+    chest.height = 1.03;
+    chest.pitch  = 0.349;
+    const Box tier{ "shelf", { 2.0, 1.0, 0.0 }, { 3.0, 1.85, 0.4 } };
+    const Box panel{ "shelf", { 2.0, 1.85, 0.0 }, { 3.0, 1.95, 1.4 } };
+    const Box shelf{ "shelf", { 2.0, 1.0, 0.0 }, { 3.0, 1.95, 1.4 } };
+    ObjectMap map;
+    Frame     above = render(
+        head,
+        head.pose(2.5, 0.2, std::numbers::pi / 2.0),
+        { tier, panel, kWall },
+        { shelf },
+        1.0);
+    map.integrate(above.inputs, above.input);
+    Frame front = render(
+        chest,
+        chest.pose(2.5, -0.5, std::numbers::pi / 2.0),
+        { tier, panel, kWall },
+        { shelf },
+        2.0);
+    map.integrate(front.inputs, front.input);
+    const MappedObject* mapped = byLabel(map, "shelf");
+    ASSERT_NE(mapped, nullptr);
+    EXPECT_GT(mapped->z_max, 1.3);
+    EXPECT_NEAR(mapped->top, mapped->z_max, 0.05);
+}
+
 TEST(ObjectMap, TakesNoTopFromFurnitureTallerThanTheViewReached)
 {
     // A bookshelf a metre off, taller than the head camera looks up: its mask runs off the image

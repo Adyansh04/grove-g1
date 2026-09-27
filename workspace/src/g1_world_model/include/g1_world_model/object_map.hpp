@@ -42,14 +42,16 @@ struct ObjectMapParams
     double strong_share       = 0.20;  ///< ...if the mask is not a sliver of the object.
     double geometry_weight    = 0.6;
     double semantic_weight    = 0.4;
-    double position_tolerance = 0.35;   ///< Same label, this near the box: localisation drift, m.
-    double merge_distance     = 1.5;    ///< Merge pass: centres this close are compared, m.
-    double merge_overlap      = 0.5;    ///< And merged above this overlap, either way round.
-    double merge_similarity   = 0.8;    ///< Embedding cosine that stands in for a shared label.
-    double merge_gap          = 0.10;   ///< Same label, boxes this close: sides of one object, m.
-    double support_merge_gap  = 1.0;    ///< For tables and shelves, seen as legs and ends, m.
-    double max_merged_extent  = 3.5;    ///< The support gap joins nothing longer, m.
-    int    merge_every        = 10;     ///< Frames between merge passes.
+    double position_tolerance = 0.35;  ///< Same label, this near the box: localisation drift, m.
+    double merge_distance     = 1.5;   ///< Merge pass: centres this close are compared, m.
+    double merge_overlap      = 0.5;   ///< And merged above this overlap, either way round.
+    double merge_similarity   = 0.8;   ///< Embedding cosine that stands in for a shared label.
+    double merge_gap          = 0.10;  ///< Same label, boxes this close: sides of one object, m.
+    double support_merge_gap  = 1.0;   ///< For tables and shelves, seen as legs and ends, m.
+    double top_layer_share    = 0.2;   ///< Of the densest layer's voxels, the top layer has this...
+    double top_clutter_height = 0.3;   ///< ...among those this far below the highest voxel, m.
+    double max_merged_extent  = 3.5;   ///< The support gap joins nothing longer, m.
+    int    merge_every        = 10;    ///< Frames between merge passes.
     int    max_voxels         = 20000;  ///< Per object; big furniture is thinned beyond it.
     int    stale_after        = 4;      ///< Misses before an object is stale.
     int    remove_after       = 10;     ///< And removed.
@@ -117,14 +119,15 @@ struct MappedObject
     std::vector<float>           embedding;  ///< Running mean, re-normalised.
     int                          embedding_count = 0;
 
-    std::vector<std::uint64_t> voxels;  ///< Sorted voxel keys.
-    Eigen::Vector3d            centroid   = Eigen::Vector3d::Zero();
+    std::vector<std::uint64_t> voxels;                                ///< Sorted voxel keys.
     Eigen::Vector2d            box_centre = Eigen::Vector2d::Zero();  ///< Footprint, map frame.
     Eigen::Vector2d            seen_from  = Eigen::Vector2d::Zero();  ///< First camera position.
     Eigen::Vector2d            box_size   = Eigen::Vector2d::Zero();  ///< Along the box axes, m.
+    Eigen::Vector3d            centroid   = Eigen::Vector3d::Zero();
     double                     box_yaw    = 0.0;
     double                     z_min      = 0.0;
     double                     z_max      = 0.0;
+    double                     top        = 0.0;  ///< Its top surface, below what stands on it.
     /// A mask of it stopped short of its image's upper edge: z_max is its own top, not merely
     /// as high as a camera looked.
     bool top_seen = false;
