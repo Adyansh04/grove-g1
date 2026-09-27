@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """Serves detection, embeddings and descriptions for the semantic map, on the host GPU.
 
-The ROS image carries no torch or CUDA, so the container reaches the models over ZMQ, as it does
-scripts/vision_server.py. `segment` answers in the vision server's format, so g1_detector works
-unchanged when pointed at this port. The difference is what `phrases` means: here it is the
-detector's vocabulary, scored against every region in one forward pass rather than one pass per
-phrase, so a list of a hundred names costs about what one does.
+The robot's image carries no torch or CUDA, so its nodes reach the models over ZMQ.
+canopy_perception's detector and describer are the clients. Unlike a grounding segmenter that runs
+a pass per phrase, `phrases` here is the detector's vocabulary, scored against every region in one
+forward pass, so a list of a hundred names costs about what one does.
 
 Each backend is chosen by a flag or by --config, and the replies name no model-specific fields:
 
@@ -13,7 +12,7 @@ Each backend is chosen by a flag or by --config, and the replies name no model-s
                yoloe-pf  YOLOE-26 prompt-free: its built-in vocabulary; phrases are ignored
   --embedder   siglip2   SigLIP 2 image and text embeddings (default), or none
   --describer  gemini    Gemini REST API, free tier: at most 5 requests a minute and 100 a day
-               openai    any OpenAI-compatible server; scripts/start-vlm.sh runs one locally
+               openai    any OpenAI-compatible server; start-vlm.sh beside this file runs one
                none      echoes the detector's label at confidence 0, so describe never fails
                A list such as gemini,openai (the default) falls through in order when one is
                rate limited or unreachable.
@@ -26,12 +25,12 @@ Models:
   Qwen3.5-4B Q4_K_M        https://huggingface.co/Qwen/Qwen3.5-4B, GGUF from
                            https://huggingface.co/unsloth/Qwen3.5-4B-GGUF
 
-    ./scripts/semantic_server.py
-    ./scripts/semantic_server.py --describer openai          # offline, after start-vlm.sh start
-    ./scripts/semantic_server.py --config semantic.yaml --set yoloe.imgsz=800
-    ./scripts/semantic_server.py --self-test frame.png --describe-test
+    ./servers/semantic_server.py
+    ./servers/semantic_server.py --describer openai          # offline, after start-vlm.sh start
+    ./servers/semantic_server.py --config semantic.yaml --set yoloe.imgsz=800
+    ./servers/semantic_server.py --self-test frame.png --describe-test
 
-Run scripts/setup-semantic.sh first. --config takes a YAML file shaped like DEFAULTS below.
+Run servers/setup.sh first. --config takes a YAML file shaped like DEFAULTS below.
 
 Wire protocol, msgpack with msgpack_numpy for the arrays. Any failure is {"error": "..."}:
 
@@ -73,10 +72,11 @@ from zoneinfo import ZoneInfo
 
 import numpy as np
 
-VENV_HINT = "scripts/setup-semantic.sh has not been run, or the wrong interpreter is being used"
+VENV_HINT = "servers/setup.sh has not been run, or the wrong interpreter is being used"
 REPO = Path(__file__).resolve().parents[1]
-VOCABULARY = REPO / "workspace/src/g1_perception/config/indoor_vocabulary.yaml"
-WEIGHTS = "~/ref/grove-semantic/weights"
+VOCABULARY = REPO / "canopy_perception/config/detector.yaml"
+# Where servers/setup.sh put the weights; its CANOPY_HOME.
+WEIGHTS = f"{os.environ.get('CANOPY_HOME', '~/.local/share/canopy')}/weights"
 
 DEFAULTS = {
     "host": "127.0.0.1",
@@ -85,7 +85,7 @@ DEFAULTS = {
     "detector": "yoloe",
     "embedder": "siglip2",
     "describer": "gemini,openai",
-    # When a request carries none; g1_detector always sends its own.
+    # When a request carries none; the detector always sends its own.
     "box_threshold": 0.25,
     "yoloe": {"weights": f"{WEIGHTS}/yoloe-26l-seg.pt", "imgsz": 640, "half": True, "max_det": 100},
     "yoloe-pf": {
@@ -97,8 +97,8 @@ DEFAULTS = {
     "siglip2": {"model": "google/siglip2-base-patch16-256"},
     "gemini": {
         "model": "gemini-3.5-flash-lite",
-        "key_file": "~/.config/grove/gemini.env",
-        "usage_file": "~/.config/grove/gemini_usage.json",
+        "key_file": "~/.config/canopy/gemini.env",
+        "usage_file": "~/.config/canopy/gemini_usage.json",
         "per_minute": 5,
         "per_day": 100,
         "timeout_s": 20.0,
@@ -150,9 +150,8 @@ class Unavailable(Exception):
     """A describer that cannot answer now: rate limited, out of quota, or unreachable."""
 
 
-# Detectors: `name` and segment(image, phrases, box_threshold, text_threshold) -> instances, the
-# vision server's interface. Its GroundedSam2Backend and Sam3Backend fit as they are, given an
-# `import torch` and a DETECTORS entry.
+# Detectors: `name` and segment(image, phrases, box_threshold, text_threshold) -> instances. A
+# grounding segmenter (Grounding DINO with SAM 2, or SAM 3) fits as it is, given a DETECTORS entry.
 
 
 def _roi_and_crop(mask):
@@ -218,7 +217,7 @@ class YoloeDetector:
             quantize=16 if self._half else 32,
             device=self._device,
             max_det=self._max_det,
-            # Full-resolution masks, cut to each box like the vision server's.
+            # Full-resolution masks, cut to each box.
             retina_masks=True,
             # One label per region: otherwise the end-to-end head emits a region once per class
             # that scores above the threshold, and each copy would become a track.
@@ -981,12 +980,13 @@ def serve(server, config):
 
 
 def _load_phrases(value):
-    """Comma-separated phrases, or the phrases of a g1_detector parameter file."""
+    """Comma-separated phrases, or the phrases of a detector parameter file."""
     if value.endswith((".yaml", ".yml")):
         import yaml
 
         return list(
-            yaml.safe_load(Path(value).read_text())["g1_detector"]["ros__parameters"]["phrases"]
+            # Whatever node the file is keyed for: /** or a name.
+            next(iter(yaml.safe_load(Path(value).read_text()).values()))["ros__parameters"]["phrases"]
         )
     return [phrase.strip() for phrase in value.split(",") if phrase.strip()]
 
@@ -1082,7 +1082,7 @@ def main():
     parser.add_argument(
         "--phrases",
         default=str(VOCABULARY),
-        help="for --self-test: comma separated, or a g1_detector parameter file",
+        help="for --self-test: comma separated, or a detector parameter file",
     )
     args = parser.parse_args()
 

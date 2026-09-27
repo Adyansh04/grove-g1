@@ -13,9 +13,9 @@ G1_WORLD_MODEL_TEST_CAMERAS picks the cameras rendered and read (default head,ch
 detector of its own.
 
 G1_WORLD_MODEL_TEST_DETECTOR=semantic swaps the mock for canopy_perception's detector asking
-scripts/semantic_server.py on the host (YOLOE over the indoor word list, SigLIP 2 embeddings), and
-turns the describer on. Start the server, and scripts/start-vlm.sh for its local describer, before
-the test.
+canopy's servers/semantic_server.py on the host (YOLOE over the indoor word list, SigLIP 2
+embeddings), and turns the describer on. Start the server, and servers/start-vlm.sh for its local
+describer, before the test.
 """
 
 import math

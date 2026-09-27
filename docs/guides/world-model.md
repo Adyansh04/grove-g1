@@ -77,12 +77,13 @@ The host semantic server serves detection (YOLOE-26), image embeddings (SigLIP 2
 room descriptions (Gemini on its free tier, falling back to Qwen3.5-4B in llama.cpp):
 
 ```bash
-./scripts/setup-semantic.sh
-./scripts/start-vlm.sh start            # the offline VLM, on 127.0.0.1:8080
-~/ref/grove-semantic/.venv/bin/python scripts/semantic_server.py
+cd workspace/src/canopy
+./servers/setup.sh
+./servers/start-vlm.sh start            # the offline VLM, on 127.0.0.1:8080
+~/.local/share/canopy/.venv/bin/python servers/semantic_server.py
 ```
 
-Gemini needs a free API key in `~/.config/grove/gemini.env`. The server caps its own use at 5
+Gemini needs a free API key in `~/.config/canopy/gemini.env`. The server caps its own use at 5
 requests a minute and 100 a day, and stops for the day on any quota answer. Then run canopy_perception's
 `detector` with its `config/detector.yaml` in place of the mock, and launch the world model
 with `describe:=true`: each object gets a name and a caption, and a room whose objects do not

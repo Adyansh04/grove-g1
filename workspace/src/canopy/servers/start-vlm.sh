@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 #
-# Runs the local VLM behind scripts/semantic_server.py's `openai` describer: Qwen3.5-4B (Q4_K_M)
+# Runs the local VLM behind servers/semantic_server.py's `openai` describer: Qwen3.5-4B (Q4_K_M)
 # and its vision projector in llama.cpp's server, in a container.
 #
-#   ./scripts/start-vlm.sh start     # returns once the model answers
-#   ./scripts/start-vlm.sh status
-#   ./scripts/start-vlm.sh stop
+#   ./servers/start-vlm.sh start     # returns once the model answers
+#   ./servers/start-vlm.sh status
+#   ./servers/start-vlm.sh stop
 #
 # OpenAI-compatible API at http://127.0.0.1:8080/v1, bound to localhost only. Run
-# scripts/setup-semantic.sh first; it fetches the GGUF files and this image.
+# servers/setup.sh first; it fetches the GGUF files and this image.
 set -euo pipefail
 
-NAME=grove-vlm
+NAME=canopy-vlm
 # Pinned, because llama.cpp's flags change between builds: build 11151 (bd4f514db).
 IMAGE="${VLM_IMAGE:-ghcr.io/ggml-org/llama.cpp@sha256:014f721265464f38ccb247c1338d07d852c4bae7509a4b4734d07a2bbadc765c}"
 PORT="${VLM_PORT:-8080}"
@@ -31,7 +31,7 @@ start() {
     model=$(compgen -G "${HF_CACHE}/hub/models--unsloth--Qwen3.5-4B-GGUF/snapshots/*/${MODEL}" \
         | head -n 1 || true)
     if [ -z "${model}" ] || [ ! -e "$(dirname "${model}")/${MMPROJ}" ]; then
-        echo "${MODEL} or ${MMPROJ} is missing from ${HF_CACHE}; run scripts/setup-semantic.sh" >&2
+        echo "${MODEL} or ${MMPROJ} is missing from ${HF_CACHE}; run servers/setup.sh" >&2
         exit 1
     fi
     snapshot="/hf/$(dirname "${model#"${HF_CACHE}"/}")"

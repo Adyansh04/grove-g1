@@ -108,7 +108,7 @@ ros2 run g1_orchestration g1_bt_executor --ros-args \
   -p tree_file:=$(ros2 pkg prefix g1_orchestration)/share/g1_orchestration/trees/explore.xml
 ```
 
-With the real detector, start `scripts/semantic_server.py` on the host and run canopy_perception's
+With the real detector, start canopy's `servers/semantic_server.py` on the host and run canopy_perception's
 `detector` with its `config/detector.yaml`; add `describe:=true` to name
 objects through the server's VLM, and to type the rooms whose objects leave their type in doubt
 from a few whole frames taken where the robot stood in them.

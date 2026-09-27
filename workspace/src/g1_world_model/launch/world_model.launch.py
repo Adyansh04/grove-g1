@@ -108,7 +108,7 @@ def generate_launch_description():
                 arguments=["-d", os.path.join(SHARE, "config", "g1_world_model.rviz")],
                 condition=IfCondition(LaunchConfiguration("rviz")),
             ),
-            # Names objects through the host semantic server (scripts/semantic_server.py).
+            # Names objects through the host semantic server (canopy's servers/semantic_server.py).
             Node(
                 package="canopy_perception",
                 executable="object_describer",

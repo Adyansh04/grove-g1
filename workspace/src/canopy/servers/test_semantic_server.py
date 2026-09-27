@@ -1,6 +1,6 @@
-"""Unit tests for scripts/semantic_server.py: no GPU, no network, no model weights.
+"""Unit tests for servers/semantic_server.py: no GPU, no network, no model weights.
 
-~/ref/grove-semantic/.venv/bin/python -m unittest scripts/tests/test_semantic_server.py
+$CANOPY_HOME/.venv/bin/python -m unittest servers/test_semantic_server.py
 """
 
 import argparse
@@ -17,7 +17,7 @@ from types import SimpleNamespace
 import numpy as np
 from PIL import Image
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import semantic_server as ss  # noqa: E402
 
 
