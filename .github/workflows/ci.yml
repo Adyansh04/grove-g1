@@ -132,17 +132,20 @@ jobs:
 
       - name: Test
         working-directory: workspace
-        # ^g1_ skips the vendored checkouts, whose lint targets fail by design. Lint for ours
-        # runs here as each package's own ctest target, which is why there is no lint job.
+        # g1_ and canopy (the world model's submodule, which has no CI of its own yet); the
+        # vendored checkouts' lint targets fail by design. Lint for ours runs here as each
+        # package's own ctest target, which is why there is no lint job.
         # --return-code-on-test-failure: colcon test otherwise exits 0 over a failing suite.
         run: |
           source /opt/ros/jazzy/setup.bash
           source install/setup.bash
           colcon test \
-            --packages-select-regex '^g1_' \
+            --packages-select-regex '^(g1_|canopy)' \
             --executor sequential \
             --return-code-on-test-failure \
             --ctest-args -LE simulator
+          # canopy's model server is not a ROS package; its tests need no GPU or weights.
+          python3 -m unittest src/canopy/servers/test_semantic_server.py
 
       - name: Test results
         if: always()
@@ -194,7 +197,7 @@ jobs:
         run: |
           source /opt/ros/jazzy/setup.bash
           source install/setup.bash
-          colcon test --packages-select-regex '^g1_' --executor sequential \
+          colcon test --packages-select-regex '^(g1_|canopy)' --executor sequential \
             --ctest-args -LE simulator
 
       - name: Report
@@ -207,7 +210,7 @@ jobs:
             echo 'largely unmeasured here. Read it per package, not as a repo total.'
             echo
             echo '```'
-            gcovr --root . --filter 'src/g1_' --exclude '.*/test/' \
+            gcovr --root . --filter 'src/(g1_|canopy)' --exclude '.*/test/' \
                   --txt --print-summary 2>&1 || echo "gcovr produced no data"
             echo '```'
           } | tee -a "$GITHUB_STEP_SUMMARY"
