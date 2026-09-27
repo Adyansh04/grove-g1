@@ -125,6 +125,8 @@ because they read logs and saved worlds offline or are small ROS probes; none ru
 | `run_summary.py LOG` | Where a run's time went; with `--track`, the walks back into rooms and the longest walks; with `--plot`, the walk over the saved floor plan. |
 | `compare_truth.py WORLD` | Each floor object's box against the truth, scored as the acceptance test scores it; with `--overlay`, the scene's walls and furniture drawn over the saved floor plan. |
 
+`doc/` holds a world saved by the acceptance test and pictures of it made with these tools.
+
 ## Tests
 
 - Unit (CI): `test_room_segmentation` (hand-drawn plans and the committed facility and apartment

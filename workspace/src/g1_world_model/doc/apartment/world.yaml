@@ -1,0 +1,671 @@
+version: 1
+grid: {resolution: 0.05000000074505806, origin_x: -5.8992834418164186, origin_y: -6.3642981184771896, width: 418, height: 274}
+next_room: 9
+rooms:
+  - {id: R1, name: room A, type: kitchen, type_confidence: 0.95857719537183605, type_source: objects, x: -1.2700723786572619, y: -0.11917787515695212}
+  - {id: R3, name: room C, type: office, type_confidence: 0.94730637525495398, type_source: objects, x: 6.4139556936588109, y: -2.6805135515216589}
+  - {id: R6, name: room F, type: storage room, type_confidence: 0.88607594936708867, type_source: objects, x: 12.256674058870624, y: -2.061449725619013}
+  - {id: R8, name: room H, type: hallway, type_confidence: 0.80000000000000004, type_source: objects, x: 8.5760719049139436, y: 0.88377938360050756}
+  - {id: R4, name: room D, type: bedroom, type_confidence: 0.99489337934611344, type_source: objects, x: 5.1122674100498848, y: 3.6975128047761232}
+  - {id: R7, name: room G, type: living room, type_confidence: 0.69930069930069938, type_source: objects, x: 11.127517269477163, y: 4.4933838298463851}
+objects:
+  - id: 1
+    label: chair
+    votes: {chair: 83}
+    name: ""
+    caption: ""
+    centre: [-3.4128630581333037, 1.324198014828081]
+    size: [0.41248977259238917, 0.46248977259238916, 1]
+    yaw: 0.097738438111682369
+    observations: 62
+    first_seen: 1790480618.7656116
+    last_seen: 1790482015.0544345
+    misses: 0
+    top_seen: true
+    state: active
+    best_view: [1790481641.7565622, 438, 99, 242, 326, 78081.214919567108]
+  - id: 3
+    label: dining table
+    votes: {dining table: 99}
+    name: ""
+    caption: ""
+    centre: [-2.9805741448766701, 2.1698902813279553]
+    size: [2.0097327813520525, 1.7223700256825965, 0.80000000000000004]
+    yaw: 0.097738438111682369
+    observations: 73
+    first_seen: 1790480618.7736323
+    last_seen: 1790482015.0544345
+    misses: 0
+    top_seen: true
+    state: active
+    best_view: [1790481989.256825, 28, 136, 476, 303, 141446.91213512421]
+  - id: 5
+    label: chair
+    votes: {chair: 91}
+    name: ""
+    caption: ""
+    centre: [-2.4039128310210791, 1.4329166923907732]
+    size: [0.43200635283503852, 0.47809712790834596, 1]
+    yaw: 0.097738438111682369
+    observations: 69
+    first_seen: 1790480618.7656116
+    last_seen: 1790482015.0544345
+    misses: 0
+    top_seen: true
+    state: active
+    best_view: [1790481963.2541695, 252, 101, 214, 342, 73147.578513622284]
+  - id: 6
+    label: chair
+    votes: {chair: 69}
+    name: ""
+    caption: ""
+    centre: [-2.6104591544604498, 3.2746812596161896]
+    size: [0.52664994925556385, 0.70153833617403305, 1]
+    yaw: 0.097738438111682369
+    observations: 50
+    first_seen: 1790480618.7736323
+    last_seen: 1790482015.0544345
+    misses: 0
+    top_seen: true
+    state: active
+    best_view: [1790481896.7764134, 105, 121, 300, 359, 41992.676031589508]
+  - id: 7
+    label: bowl
+    votes: {bowl: 36}
+    name: ""
+    caption: ""
+    centre: [-2.6601904264635508, 2.5219424406604789]
+    size: [0.35456938928771548, 0.33818022812617382, 0.12]
+    yaw: 0.097738438111682369
+    observations: 32
+    first_seen: 1790480618.7736323
+    last_seen: 1790482015.0544345
+    misses: 0
+    top_seen: true
+    state: active
+    best_view: [1790481981.6602864, 638, 146, 60, 26, 1388.9116644859314]
+  - id: 8
+    label: stove
+    votes: {stove: 30}
+    name: ""
+    caption: ""
+    centre: [-2.0091254896638535, 5.3848569164858731]
+    size: [0.83033594801919453, 0.5629824342075469, 0.92000000000000004]
+    yaw: 0.097738438111682369
+    observations: 21
+    first_seen: 1790480634.2531216
+    last_seen: 1790482015.0544345
+    misses: 0
+    top_seen: true
+    state: active
+    best_view: [1790481519.9617753, 274, 116, 282, 330, 92980.741657018661]
+  - id: 9
+    label: dustbin
+    votes: {dustbin: 19}
+    name: ""
+    caption: ""
+    centre: [-1.3980576576528445, 5.6601905318252488]
+    size: [0.32256695578910216, 0.28275813503544439, 0.32000000000000001]
+    yaw: 0.097738438111682369
+    observations: 14
+    first_seen: 1790480634.2531216
+    last_seen: 1790481989.256825
+    misses: 0
+    top_seen: true
+    state: active
+    best_view: [1790481520.0533099, 546, 112, 99, 99, 9538.6605708003044]
+  - id: 10
+    label: bed
+    votes: {bed: 75}
+    name: ""
+    caption: ""
+    centre: [4.2955151188625562, 5.3649746915128702]
+    size: [1.3508827997243751, 1.9167749935887732, 1.4000000000000001]
+    yaw: 0.097738438111682369
+    observations: 56
+    first_seen: 1790480710.151005
+    last_seen: 1790482183.2504959
+    misses: 0
+    top_seen: true
+    state: active
+    best_view: [1790482173.2565992, 0, 0, 627, 480, 119828.66356658936]
+  - id: 11
+    label: wardrobe
+    votes: {wardrobe: 56}
+    name: ""
+    caption: ""
+    centre: [7.4456687557303063, 5.2022461062466343]
+    size: [1.056432885821156, 1.6821283158039215, 1.8400000000000001]
+    yaw: 0.097738438111682369
+    observations: 44
+    first_seen: 1790480710.151005
+    last_seen: 1790482462.2545404
+    misses: 0
+    top_seen: true
+    state: active
+    best_view: [1790482178.2589197, 188, 0, 660, 480, 126413.88038635254]
+  - id: 12
+    label: nightstand
+    votes: {nightstand: 28}
+    name: ""
+    caption: ""
+    centre: [3.1991109183785396, 6.0283017343947636]
+    size: [0.51760754765751615, 0.31810263322435378, 0.76000000000000001]
+    yaw: 0.097738438111682369
+    observations: 18
+    first_seen: 1790480710.1548424
+    last_seen: 1790482173.3612342
+    misses: 0
+    top_seen: true
+    state: active
+    best_view: [1790482099.7591941, 466, 145, 126, 150, 18828.918349742889]
+  - id: 13
+    label: clock
+    votes: {clock: 13}
+    name: ""
+    caption: ""
+    centre: [3.1438846690145583, 6.0203808774562795]
+    size: [0.19923646941814607, 0.13523138840579293, 0.19999999999999996]
+    yaw: 0.097738438111682369
+    observations: 12
+    first_seen: 1790480710.1548424
+    last_seen: 1790482173.3612342
+    misses: 0
+    top_seen: true
+    state: active
+    best_view: [1790482099.3040254, 514, 118, 25, 35, 843.54943037033081]
+  - id: 15
+    label: bookshelf
+    votes: {bookshelf: 38}
+    name: ""
+    caption: ""
+    centre: [8.4075567670223066, 4.6148577778666153]
+    size: [0.44199389261148253, 1.1780744476921563, 1.5600000000000001]
+    yaw: 0.097738438111682369
+    observations: 28
+    first_seen: 1790480741.2536659
+    last_seen: 1790481215.0599754
+    misses: 0
+    top_seen: false
+    state: active
+    best_view: [1790480856.7593241, 470, 0, 336, 377, 47380.797514343263]
+  - id: 16
+    label: bed
+    votes: {bed: 39}
+    name: ""
+    caption: ""
+    centre: [11.639511247322803, 6.6450156176225459]
+    size: [2.0936481675172818, 0.80203099778919085, 1.1600000000000001]
+    yaw: 0.097738438111682369
+    observations: 27
+    first_seen: 1790480754.6855938
+    last_seen: 1790480926.4531977
+    misses: 0
+    top_seen: true
+    state: active
+    best_view: [1790480892.2510703, 0, 0, 392, 480, 68970.92138671875]
+  - id: 18
+    label: shelf
+    votes: {shelf: 57}
+    name: ""
+    caption: ""
+    centre: [12.619838753262574, -4.4305714835178414]
+    size: [2.3680592959169404, 0.75153833617403265, 1.76]
+    yaw: 0.097738438111682369
+    observations: 35
+    first_seen: 1790480785.2615435
+    last_seen: 1790482421.0594943
+    misses: 0
+    top_seen: true
+    state: active
+    best_view: [1790480785.4645762, 0, 0, 671, 480, 128587.47038269043]
+  - id: 19
+    label: cardboard box
+    votes: {cardboard box: 21}
+    name: ""
+    caption: ""
+    centre: [12.063313281304568, -4.3537919735865511]
+    size: [0.5450328779414102, 0.5458081991421686, 0.35999999999999999]
+    yaw: 0.097738438111682369
+    observations: 16
+    first_seen: 1790480785.2615435
+    last_seen: 1790482421.0594943
+    misses: 0
+    top_seen: true
+    state: active
+    best_view: [1790480785.4645762, 305, 95, 200, 145, 28758.506417274475]
+  - id: 21
+    label: armchair
+    votes: {armchair: 54}
+    name: ""
+    caption: ""
+    centre: [13.468313743241312, 4.5624274351269269]
+    size: [0.95034518987700056, 0.88961697962170705, 1.1200000000000001]
+    yaw: 0.097738438111682369
+    observations: 32
+    first_seen: 1790480811.7862546
+    last_seen: 1790481235.0545421
+    misses: 0
+    top_seen: true
+    state: active
+    best_view: [1790480818.7583005, 453, 0, 395, 434, 62987.862006902695]
+  - id: 22
+    label: dustbin
+    votes: {dustbin: 28}
+    name: ""
+    caption: ""
+    centre: [8.7563055169898867, 2.1576767284317979]
+    size: [0.32256674177397832, 0.25465877652400198, 0.36000000000000004]
+    yaw: 0.097738438111682369
+    observations: 22
+    first_seen: 1790480840.7784035
+    last_seen: 1790480970.258971
+    misses: 0
+    top_seen: true
+    state: active
+    best_view: [1790480964.2510567, 591, 57, 83, 91, 6739.2606022953987]
+  - id: 24
+    label: crate
+    votes: {crate: 53}
+    name: ""
+    caption: ""
+    centre: [14.376395206129969, -2.1593290005654295]
+    size: [0.3496647836304545, 1.1042698179000388, 0.48000000000000004]
+    yaw: 0.097738438111682369
+    observations: 35
+    first_seen: 1790480993.1714709
+    last_seen: 1790481137.2536182
+    misses: 0
+    top_seen: true
+    state: active
+    best_view: [1790481117.2510407, 408, 43, 364, 322, 114454.23779058456]
+  - id: 25
+    label: crate
+    votes: {crate: 23}
+    name: ""
+    caption: ""
+    centre: [10.552606276290996, -4.5485692167111731]
+    size: [0.5973268124810529, 0.49819260963436646, 0.28000000000000003]
+    yaw: 0.097738438111682369
+    observations: 17
+    first_seen: 1790480993.1714709
+    last_seen: 1790482421.0594943
+    misses: 0
+    top_seen: true
+    state: active
+    best_view: [1790481067.7589109, 338, 266, 152, 129, 19211.555817604065]
+  - id: 28
+    label: chair
+    votes: {chair: 50}
+    name: ""
+    caption: ""
+    centre: [6.4772040728326994, -3.929467049263176]
+    size: [0.58129046505682025, 0.74642056185396455, 1.04]
+    yaw: 0.097738438111682369
+    observations: 38
+    first_seen: 1790481270.6541421
+    last_seen: 1790482353.5540965
+    misses: 0
+    top_seen: true
+    state: active
+    best_view: [1790482352.7601392, 29, 89, 267, 345, 78787.343953549862]
+  - id: 29
+    label: desk
+    votes: {desk: 56}
+    name: ""
+    caption: ""
+    centre: [6.5529298987392366, -4.7618695953953694]
+    size: [2.0390076517160267, 0.91545988432285941, 0.80000000000000004]
+    yaw: 0.097738438111682369
+    observations: 41
+    first_seen: 1790481270.659771
+    last_seen: 1790482357.0605035
+    misses: 0
+    top_seen: true
+    state: active
+    best_view: [1790482295.157028, 11, 122, 374, 344, 118271.14745426178]
+  - id: 31
+    label: laptop
+    votes: {laptop: 30}
+    name: ""
+    caption: ""
+    centre: [6.3566865588411208, -4.7462079542005569]
+    size: [0.40608866793755366, 0.4537043039765089, 0.23999999999999999]
+    yaw: 0.097738438111682369
+    observations: 25
+    first_seen: 1790481270.659771
+    last_seen: 1790482357.0605035
+    misses: 0
+    top_seen: true
+    state: active
+    best_view: [1790482352.7601392, 341, 95, 132, 72, 9099.6407947540283]
+  - id: 32
+    label: shelf
+    votes: {shelf: 52}
+    name: ""
+    caption: ""
+    centre: [3.2285037347684455, -3.1387763735328162]
+    size: [0.61294053611395194, 1.1460722747398218, 1.8]
+    yaw: 0.097738438111682369
+    observations: 43
+    first_seen: 1790481159.7572627
+    last_seen: 1790482377.1564517
+    misses: 0
+    top_seen: true
+    state: active
+    best_view: [1790482344.254194, 39, 0, 353, 392, 52113.856969833374]
+  - id: 33
+    label: cardboard box
+    votes: {cardboard box: 23}
+    name: ""
+    caption: ""
+    centre: [3.2462131390022488, -3.1193908020978727]
+    size: [0.4537043039765089, 0.56922840309241973, 0.40000000000000002]
+    yaw: 0.097738438111682369
+    observations: 19
+    first_seen: 1790481270.659771
+    last_seen: 1790482371.2580066
+    misses: 0
+    top_seen: true
+    state: active
+    best_view: [1790482344.254194, 178, 94, 165, 107, 17264.631371498108]
+  - id: 35
+    label: mug
+    votes: {mug: 23}
+    name: ""
+    caption: ""
+    centre: [7.0996190081028034, -4.5561152594598679]
+    size: [0.28275766047403822, 0.24685191470755272, 0.16000000000000003]
+    yaw: 0.097738438111682369
+    observations: 22
+    first_seen: 1790481329.7537284
+    last_seen: 1790482353.5540965
+    misses: 0
+    top_seen: true
+    state: active
+    best_view: [1790482295.157028, 209, 130, 63, 38, 2310.0143043994904]
+  - id: 37
+    label: sofa
+    votes: {sofa: 140}
+    name: ""
+    caption: ""
+    centre: [-1.1672376436908287, -2.8361559548391204]
+    size: [1.8458112339482828, 0.86228194952567216, 0.72000000000000008]
+    yaw: 0.097738438111682369
+    observations: 105
+    first_seen: 1790481344.5904131
+    last_seen: 1790482499.7569897
+    misses: 0
+    top_seen: true
+    state: active
+    best_view: [1790481804.056263, 451, 145, 395, 320, 116465.42844772339]
+  - id: 39
+    label: coffee table
+    votes: {coffee table: 109}
+    name: ""
+    caption: ""
+    centre: [-1.0429518235132309, -4.0288721844412283]
+    size: [1.2086717044418891, 0.62032362554211851, 0.40000000000000002]
+    yaw: 0.097738438111682369
+    observations: 83
+    first_seen: 1790481379.7567666
+    last_seen: 1790482499.7569897
+    misses: 0
+    top_seen: true
+    state: active
+    best_view: [1790481785.7510567, 107, 21, 292, 262, 74480.023976802826]
+  - id: 40
+    label: bookshelf
+    votes: {bookshelf: 81}
+    name: ""
+    caption: ""
+    centre: [-4.922529369251218, -2.106131009406421]
+    size: [0.60123107387173658, 1.4809340188166022, 1.8400000000000001]
+    yaw: 0.097738438111682369
+    observations: 66
+    first_seen: 1790481412.255048
+    last_seen: 1790482529.2532873
+    misses: 0
+    top_seen: true
+    state: active
+    best_view: [1790481704.2560358, 451, 0, 397, 439, 64135.721329951288]
+  - id: 41
+    label: cabinet
+    votes: {cabinet: 81}
+    name: ""
+    caption: ""
+    centre: [-0.89596354413328338, -5.6719335834316897]
+    size: [2.3378145054189949, 0.45955046779966563, 0.68000000000000005]
+    yaw: 0.097738438111682369
+    observations: 59
+    first_seen: 1790481426.2512212
+    last_seen: 1790482499.7569897
+    misses: 0
+    top_seen: true
+    state: active
+    best_view: [1790481781.0556664, 268, 140, 447, 316, 140770.20697188377]
+  - id: 43
+    label: mug
+    votes: {mug: 91}
+    name: ""
+    caption: ""
+    centre: [-1.4465940716384598, -4.1567246040463539]
+    size: [0.27885458548686753, 0.55361491674022245, 0.16000000000000003]
+    yaw: 0.097738438111682369
+    observations: 67
+    first_seen: 1790481426.2512212
+    last_seen: 1790482499.7569897
+    misses: 0
+    top_seen: true
+    state: active
+    best_view: [1790481832.2533247, 113, 50, 54, 46, 1901.6654784679413]
+  - id: 44
+    label: bowl
+    votes: {bowl: 82}
+    name: ""
+    caption: ""
+    centre: [-0.73417296111890407, -4.1394287607335229]
+    size: [0.28275789775474131, 0.4302844245528718, 0.12000000000000005]
+    yaw: 0.097738438111682369
+    observations: 63
+    first_seen: 1790481426.2512212
+    last_seen: 1790482499.7569897
+    misses: 0
+    top_seen: true
+    state: active
+    best_view: [1790481746.662945, 18, 331, 112, 85, 5099.7615146636963]
+  - id: 46
+    label: television
+    votes: {television: 34}
+    name: ""
+    caption: ""
+    centre: [-0.92159928875774155, -5.7636890291390861]
+    size: [0.77295283503639278, 0.53722574976228632, 0.52000000000000013]
+    yaw: 0.097738438111682369
+    observations: 30
+    first_seen: 1790481426.7556729
+    last_seen: 1790481858.5572548
+    misses: 0
+    top_seen: true
+    state: active
+    best_view: [1790481741.7610104, 37, 42, 229, 157, 29819.086146593094]
+  - id: 47
+    label: armchair
+    votes: {armchair: 87}
+    name: ""
+    caption: ""
+    centre: [-3.5269085970278637, -4.3674940480191431]
+    size: [1.0047470764188517, 0.95010656061759535, 1.04]
+    yaw: 0.097738438111682369
+    observations: 66
+    first_seen: 1790481426.2512212
+    last_seen: 1790482499.7569897
+    misses: 0
+    top_seen: true
+    state: active
+    best_view: [1790481707.7526956, 0, 0, 297, 434, 42368.910130405427]
+  - id: 49
+    label: book
+    votes: {book: 37}
+    name: ""
+    caption: ""
+    centre: [-4.7359248756818655, -2.3815614635162397]
+    size: [0.13523186296719822, 0.28275789775474108, 0.23999999999999999]
+    yaw: 0.097738438111682369
+    observations: 34
+    first_seen: 1790481431.2657156
+    last_seen: 1790482528.9570346
+    misses: 0
+    top_seen: true
+    state: active
+    best_view: [1790481703.6723962, 579, 143, 72, 80, 5522.8120422363281]
+  - id: 50
+    label: book
+    votes: {book: 7}
+    name: ""
+    caption: ""
+    centre: [-4.7619423321230938, -1.8201904411123251]
+    size: [0.09151948103217486, 0.20313970957682101, 0.19999999999999996]
+    yaw: 0.097738438111682369
+    observations: 7
+    first_seen: 1790481431.2657156
+    last_seen: 1790481753.6556146
+    misses: 0
+    top_seen: false
+    state: active
+    best_view: [1790481745.2609584, 167, 0, 17, 18, 17.352827382087707]
+  - id: 53
+    label: fridge
+    votes: {fridge: 41}
+    name: ""
+    caption: ""
+    centre: [-5.4446792171159295, 4.8316972724697278]
+    size: [0.92360685041449742, 1.0000975430398142, 1.8400000000000001]
+    yaw: 0.097738438111682369
+    observations: 31
+    first_seen: 1790481495.2568376
+    last_seen: 1790481989.256825
+    misses: 0
+    top_seen: true
+    state: active
+    best_view: [1790481576.7569256, 460, 0, 388, 480, 68045.685012817383]
+  - id: 54
+    label: counter
+    votes: {counter: 52}
+    name: ""
+    caption: ""
+    centre: [-3.646723708987452, 5.2345962217933533]
+    size: [2.5468569077621011, 0.48003696817628488, 0.92000000000000004]
+    yaw: 0.097738438111682369
+    observations: 34
+    first_seen: 1790481495.2568376
+    last_seen: 1790482015.0544345
+    misses: 0
+    top_seen: true
+    state: active
+    best_view: [1790481524.2643256, 371, 99, 352, 289, 101007.55771827698]
+  - id: 56
+    label: chair
+    votes: {chair: 65, counter: 1}
+    name: ""
+    caption: ""
+    centre: [-3.587125592920859, 3.1916767641110737]
+    size: [0.48664686863629486, 0.68202175593138326, 1]
+    yaw: 0.097738438111682369
+    observations: 50
+    first_seen: 1790481495.2568376
+    last_seen: 1790482015.0544345
+    misses: 0
+    top_seen: true
+    state: active
+    best_view: [1790481637.8647375, 420, 97, 166, 287, 47584.584419369698]
+  - id: 57
+    label: mug
+    votes: {mug: 38}
+    name: ""
+    caption: ""
+    centre: [-3.4219422929558578, 1.9798095117715397]
+    size: [0.27495127321899332, 0.2944677391835881, 0.19999999999999996]
+    yaw: 0.097738438111682369
+    observations: 33
+    first_seen: 1790481495.2568376
+    last_seen: 1790482015.0544345
+    misses: 0
+    top_seen: true
+    state: active
+    best_view: [1790481641.7565622, 308, 150, 52, 54, 2794.6674857139587]
+  - id: 60
+    label: microwave
+    votes: {microwave: 29}
+    name: ""
+    caption: ""
+    centre: [-4.5658272270618463, 5.1594287156111802]
+    size: [0.64494296961256525, 0.60200653466595355, 0.35999999999999999]
+    yaw: 0.097738438111682369
+    observations: 25
+    first_seen: 1790481495.2568376
+    last_seen: 1790481981.6602864
+    misses: 0
+    top_seen: true
+    state: active
+    best_view: [1790481530.7576342, 477, 24, 171, 97, 12651.661579370499]
+  - id: 61
+    label: kettle
+    votes: {kettle: 24}
+    name: ""
+    caption: ""
+    centre: [-3.4392381449516405, 5.2322306428973979]
+    size: [0.33037362685600197, 0.23514242919975989, 0.31999999999999995]
+    yaw: 0.097738438111682369
+    observations: 20
+    first_seen: 1790481519.9617753
+    last_seen: 1790482015.0544345
+    misses: 0
+    top_seen: true
+    state: active
+    best_view: [1790481531.213695, 708, 8, 140, 155, 4462.3617458343506]
+  - id: 63
+    label: potted plant
+    votes: {potted plant: 23}
+    name: ""
+    caption: ""
+    centre: [-4.2343539642144501, -5.8654054236297659]
+    size: [0.49367587385982387, 0.7064174812346955, 0.48000000000000004]
+    yaw: 0.097738438111682369
+    observations: 21
+    first_seen: 1790481659.2587488
+    last_seen: 1790482499.7569897
+    misses: 0
+    top_seen: true
+    state: active
+    best_view: [1790481683.754452, 12, 124, 127, 173, 11943.387646555901]
+  - id: 67
+    label: potted plant
+    votes: {potted plant: 27}
+    name: ""
+    caption: ""
+    centre: [2.8140588506453228, 1.772182697856963]
+    size: [0.62664995000062151, 0.58249901445019581, 0.76000000000000001]
+    yaw: 0.097738438111682369
+    observations: 19
+    first_seen: 1790482058.6505544
+    last_seen: 1790482146.5553892
+    misses: 0
+    top_seen: true
+    state: active
+    best_view: [1790482118.2559974, 208, 4, 158, 313, 48858.578794002533]
+  - id: 69
+    label: dustbin
+    votes: {dustbin: 25}
+    name: ""
+    caption: ""
+    centre: [9.8763058516909439, -4.8023231464671303]
+    size: [0.3225676676312092, 0.31866388080193081, 0.32000000000000001]
+    yaw: 0.097738438111682369
+    observations: 17
+    first_seen: 1790482212.2568774
+    last_seen: 1790482302.0569301
+    misses: 0
+    top_seen: true
+    state: active
+    best_view: [1790482302.0569301, 680, 135, 118, 112, 9189.9534473419189]
