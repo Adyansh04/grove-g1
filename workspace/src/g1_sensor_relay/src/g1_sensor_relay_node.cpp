@@ -444,10 +444,12 @@ private:
         }
         const CameraOut& camera = found->second;
         auto             img    = std::make_unique<sensor_msgs::msg::Image>();
-        img->header.stamp       = now();
-        img->header.frame_id    = camera.depth_frame_id;
-        img->height             = frame.height;
-        img->width              = frame.width;
+        // The render's instant, as a RealSense driver stamps capture: arrival trails it by the
+        // render and the transfer, more for the second camera of a snapshot.
+        img->header.stamp    = stampFor(frame.sim_time_s);
+        img->header.frame_id = camera.depth_frame_id;
+        img->height          = frame.height;
+        img->width           = frame.width;
         // 32FC1 metres, already linearised from MuJoCo's depth buffer by the simulator.
         img->encoding     = "32FC1";
         img->is_bigendian = 0;

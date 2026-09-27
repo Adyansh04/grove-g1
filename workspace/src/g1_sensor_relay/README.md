@@ -42,7 +42,8 @@ cross the socket.
 
 Depth and colour come from one render, so they share a pose, a timestamp and intrinsics. A real
 D435i gets that alignment from its align-depth-to-colour step, which is why the depth topic is
-named as if it had run.
+named as if it had run. The stamp is the render's instant on this node's clock, as the RealSense
+driver stamps capture, so every camera rendered from one snapshot shares it.
 
 Images are published in the REP-145 optical frames, not the camera's body link: depth consumers
 assume z forward, and the body frame would rotate the cloud 90 degrees. Each depth frame carries
