@@ -1,0 +1,52 @@
+# Builds every package and runs the unit and lint tests, then the model server's tests. Nothing
+# here needs a GPU or a simulator.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-24.04
+    container: ros:jazzy-ros-base
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: src/canopy
+
+      - name: Install dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            clang-format clang-tidy python3-colcon-common-extensions python3-pip
+          python3 -m pip install --no-cache-dir --break-system-packages ruff==0.16.1
+          python3 -m pip install --no-cache-dir --no-deps --break-system-packages \
+            msgpack-numpy==0.4.8
+          rosdep update
+          rosdep install --from-paths src --ignore-src -y --rosdistro jazzy
+
+      - name: Build
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          colcon build --cmake-args -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+      # --return-code-on-test-failure: colcon test exits 0 over a failing suite otherwise.
+      - name: Test
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          colcon test --return-code-on-test-failure --event-handlers console_cohesion+
+          colcon test-result --verbose
+
+      - name: Model server tests
+        run: |
+          python3 -m pip install --no-cache-dir --break-system-packages pillow
+          cd src/canopy && python3 -m unittest servers/test_semantic_server.py
