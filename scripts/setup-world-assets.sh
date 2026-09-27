@@ -28,16 +28,17 @@ DEPS=(
     "pyyaml==6.0.3"
 )
 
+command -v uv >/dev/null || {
+    echo "uv is not installed: https://docs.astral.sh/uv/getting-started/installation/" >&2
+    exit 1
+}
 if [ ! -x "${WORLDGEN_HOME}/.venv/bin/python" ]; then
-    command -v uv >/dev/null || {
-        echo "uv is not installed: https://docs.astral.sh/uv/getting-started/installation/" >&2
-        exit 1
-    }
     echo "==> virtualenv at ${WORLDGEN_HOME}/.venv"
     mkdir -p "${WORLDGEN_HOME}"
     uv venv --python "${PYTHON_VERSION}" "${WORLDGEN_HOME}/.venv"
-    VIRTUAL_ENV="${WORLDGEN_HOME}/.venv" uv pip install --quiet "${DEPS[@]}"
 fi
+# Every run: a no-op when the pins are met, and the repair after a failed install or a new pin.
+VIRTUAL_ENV="${WORLDGEN_HOME}/.venv" uv pip install --quiet "${DEPS[@]}"
 
 exec "${WORLDGEN_HOME}/.venv/bin/python" \
     "${REPO}/workspace/src/g1_bringup/tools/world_assets.py" "$@"
