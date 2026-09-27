@@ -65,7 +65,8 @@ own topic remaps.
 - **Objects** (`object_map`): masks lifted with depth into voxels and matched to mapped objects on
   overlap, label votes and embeddings, tolerant of AMCL's decimetre drift. Parts of one object
   seen from different sides merge when they touch, and only then is a sighting nothing confirmed
-  within two minutes dropped; until a second sighting confirms it, it is neither published nor
+  within two minutes dropped (a sighting is an instant: two cameras catching one moment count
+  once); until a second sighting confirms it, it is neither published nor
   drawn, and the camera pass goes back to where it was seen to look at it once more. Objects
   whose place the camera sees through collect misses, and are marked
   stale and then removed. Boxes lie along the walls unless an object is clearly turned from them;

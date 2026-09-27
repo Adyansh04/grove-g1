@@ -55,6 +55,7 @@ struct ObjectMapParams
     int    remove_after       = 10;     ///< And removed.
     int    min_observations   = 2;      ///< Fewer, this long after the first: a fragment, dropped.
     double confirm_s          = 120.0;  ///< s.
+    double sighting_gap_s     = 0.05;   ///< Detections closer in time are one sighting, s.
     double box_trim           = 0.02;   ///< Share of footprint points left off each box side.
     double turned_area_ratio  = 0.7;    ///< A box leaves the walls only this much tighter.
     double miss_margin        = 0.30;   ///< Depth this far behind an object sees through it, m;
@@ -128,7 +129,7 @@ struct MappedObject
     /// as high as a camera looked.
     bool top_seen = false;
 
-    int         observations = 0;
+    int         observations = 0;  ///< Sightings: instants, not the frames or cameras in one.
     double      first_seen   = 0.0;
     double      last_seen    = 0.0;
     int         misses       = 0;

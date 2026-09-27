@@ -422,6 +422,26 @@ TEST(ObjectMap, DropsAFragmentNoSecondSightingConfirms)
     EXPECT_NE(byLabel(map, "table"), nullptr);
 }
 
+TEST(ObjectMap, CountsTwoCamerasAtOneInstantAsOneSighting)
+{
+    // Two cameras catch a fragment in one render, a few ms apart; only the table is seen again.
+    const Camera camera;
+    const Box    vase{ "vase", { 2.0, 1.2, 0.75 }, { 2.1, 1.3, 0.95 } };
+    ObjectMap    map;
+    const auto   pose = camera.pose(2.6, 0.6, std::numbers::pi / 2.0);
+    for (const double stamp : { 1.0, 1.004 })
+    {
+        Frame frame = render(camera, pose, { kTable, vase, kWall }, { kTable, vase }, stamp);
+        map.integrate(frame.inputs, frame.input);
+    }
+    Frame later = render(camera, pose, { kTable, vase, kWall }, { kTable }, 2.0);
+    map.integrate(later.inputs, later.input);
+
+    EXPECT_EQ(map.pruneUnconfirmed(ObjectMapParams{}.confirm_s + 10.0), 1);
+    EXPECT_EQ(byLabel(map, "vase"), nullptr);
+    EXPECT_NE(byLabel(map, "table"), nullptr);
+}
+
 TEST(ObjectMap, JoinsTwoGlimpsesOfATableBeforeDroppingEither)
 {
     // One end of the table seen once, the other once more than the confirmation window later.

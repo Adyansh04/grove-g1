@@ -127,6 +127,9 @@ g1_world_model:
       # later viewpoint in the same room to confirm what one at the edge of view caught once.
       min_observations: 2
       confirm_s: 120.0
+      # Detections closer together than this are one sighting, s: the head and chest frames of
+      # one render arrive a few ms apart, a camera's next frame 100 ms later.
+      sighting_gap_s: 0.05
       # The camera pass goes back to where something was seen once, as far as this, m, and looks
       # at it again: the TV on its stand shows only a strip at the image's upper edge, and one
       # dwell caught it in a single frame.

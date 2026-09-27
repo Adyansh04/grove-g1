@@ -501,7 +501,12 @@ void ObjectMap::absorb(
         object.first_seen = frame.stamp;
         object.seen_from  = frame.map_from_camera.translation().head<2>();
     }
-    ++object.observations;
+    // Two cameras of one render, or two masks of one frame, are one sighting: confirming wants a
+    // second look, and one instant confirmed the phantoms of runs 37, 42 and 44.
+    if (object.observations == 0 || frame.stamp - object.last_seen >= params_.sighting_gap_s)
+    {
+        ++object.observations;
+    }
     object.last_seen = std::max(object.last_seen, frame.stamp);
     object.misses    = 0;
     object.state     = ObjectState::kActive;
@@ -773,7 +778,11 @@ void ObjectMap::mergeInto(MappedObject& keep, MappedObject& drop) const
         drop.voxels.end(),
         std::back_inserter(merged));
     keep.voxels = thinned(merged, static_cast<std::size_t>(params_.max_voxels));
-    keep.observations += drop.observations;
+    // Two fragments of one instant, one per camera, are still one sighting.
+    const bool one_instant = keep.last_seen - keep.first_seen < params_.sighting_gap_s &&
+                             drop.last_seen - drop.first_seen < params_.sighting_gap_s &&
+                             std::abs(keep.first_seen - drop.first_seen) < params_.sighting_gap_s;
+    keep.observations += one_instant ? 0 : drop.observations;
     keep.first_seen = std::min(keep.first_seen, drop.first_seen);
     keep.last_seen  = std::max(keep.last_seen, drop.last_seen);
     if (drop.best_view.score > keep.best_view.score)
