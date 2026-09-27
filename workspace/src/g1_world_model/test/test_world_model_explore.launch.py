@@ -63,6 +63,8 @@ MIN_FACE_COVERAGE = 0.80
 MIN_OBJECT_RECALL = 0.85
 MAX_DUPLICATE_SHARE = 0.10
 MATCH_MARGIN_M = 0.4
+# Standing poses the map's frame is fitted to; a run records several hundred.
+MIN_TRACK_POSES = 50
 # Boxes of furniture on the floor against the true footprints: median intersection over union.
 MIN_BOX_IOU = 0.5
 
@@ -180,6 +182,27 @@ def to_map(frame, x, y):
     return math.cos(theta) * dx + math.sin(theta) * dy, -math.sin(theta) * dx + math.cos(theta) * dy
 
 
+def fit_frame(pairs):
+    """World from map as (x, y, yaw): the rigid motion that best lays the robot's map positions
+    on its true ones, least squares."""
+    n = len(pairs)
+    mx = sum(m[0] for m, _ in pairs) / n
+    my = sum(m[1] for m, _ in pairs) / n
+    wx = sum(w[0] for _, w in pairs) / n
+    wy = sum(w[1] for _, w in pairs) / n
+    cross = dot = 0.0
+    for (ax, ay), (bx, by) in pairs:
+        ax, ay, bx, by = ax - mx, ay - my, bx - wx, by - wy
+        cross += (ax * by) - (ay * bx)
+        dot += (ax * bx) + (ay * by)
+    theta = math.atan2(cross, dot)
+    return (
+        wx - (math.cos(theta) * mx - math.sin(theta) * my),
+        wy - (math.sin(theta) * mx + math.cos(theta) * my),
+        theta,
+    )
+
+
 def world_pose(mapped, frame):
     x, y = to_world(frame, mapped.pose.position.x, mapped.pose.position.y)
     return x, y, yaw_of(mapped.pose.orientation) + frame[2]
@@ -259,6 +282,8 @@ class ExploreApartmentTest(unittest.TestCase):
         cls.objects = None
         cls.truth_pose = None
         cls.world_from_map = None
+        cls.track = []
+        cls.last_truth = None
         cls.node.create_subscription(
             Odometry, "/g1_sensor_relay/base_state", cls._on_truth_pose, 10
         )
@@ -290,9 +315,34 @@ class ExploreApartmentTest(unittest.TestCase):
     def _on_truth_pose(cls, msg):
         cls.truth_pose = msg
 
+    def record_pose(self):
+        """The robot's map and true positions, while it stands still: the two arrive apart, and a
+        walking robot moves between them."""
+        if self.truth_pose is None:
+            return
+        try:
+            here = self.buffer.lookup_transform("map", "base_footprint", rclpy.time.Time())
+        except Exception:  # noqa: BLE001 - no map yet
+            return
+        truth = self.truth_pose.pose.pose.position
+        world = (truth.x, truth.y)
+        last = self.last_truth
+        type(self).last_truth = world
+        if last is not None and math.hypot(world[0] - last[0], world[1] - last[1]) < 0.05:
+            self.track.append(((here.transform.translation.x, here.transform.translation.y), world))
+
     def frame(self):
-        """World from map as (x, y, yaw), from the simulator's own pose of the robot: SLAM's map
-        starts wherever the robot stood at boot, localization's is the world give or take AMCL."""
+        """World from map as (x, y, yaw), fitted to the robot's positions over the whole run: SLAM's
+        map starts wherever the robot stood at boot, and one pose at the end would carry the
+        localization error there into every object (0.1 m and 1 degree in run 44). From the
+        simulator's pose of the robot alone when too few were recorded."""
+        if self.world_from_map is None and len(self.track) >= MIN_TRACK_POSES:
+            type(self).world_from_map = fit_frame(self.track)
+            tx, ty, theta = self.world_from_map
+            print(
+                f"map to world: ({tx:.2f}, {ty:.2f}) m, {math.degrees(theta):.1f} deg, "
+                f"from {len(self.track)} poses"
+            )
         if self.world_from_map is None:
             self.spin(1.0)
             self.assertIsNotNone(self.truth_pose, "no ground-truth pose from the simulator")
@@ -347,6 +397,7 @@ class ExploreApartmentTest(unittest.TestCase):
         started = time.time()
         while executor.poll() is None and time.time() - started < EXPLORE_TIMEOUT_S:
             self.spin(1.0)
+            self.record_pose()
         if executor.poll() is None:
             os.killpg(executor.pid, signal.SIGINT)
             executor.wait(timeout=30)
