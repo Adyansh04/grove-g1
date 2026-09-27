@@ -24,6 +24,10 @@ import yaml
 from PIL import Image, ImageDraw
 
 FRAME = re.compile(r"map to world: \(([-\d.]+), ([-\d.]+)\) m, ([-\d.]+) deg")
+# Shared with the acceptance test, which imports them: how far past a truth footprint a mapped
+# centre still names it, m, and the floor objects too small for a box fit to mean much, m.
+MATCH_MARGIN_M = 0.4
+MIN_FIT_SIZE_M = 0.3
 
 
 def bringup_file(relative):
@@ -54,7 +58,7 @@ def inside(rect, x, y):
 
 
 def iou(truth, box):
-    """Intersection over union of two footprints, sampled every 2 cm as the test does."""
+    """Intersection over union of two footprints, (x, y, size x, size y, yaw), sampled every 2 cm."""
     reach = max(math.hypot(r[2], r[3]) / 2 for r in (truth, box))
     x0, y0 = min(truth[0], box[0]) - reach, min(truth[1], box[1]) - reach
     x1, y1 = max(truth[0], box[0]) + reach, max(truth[1], box[1]) + reach
@@ -190,8 +194,8 @@ def main():
     parser.add_argument("--fit", action="store_true", help="refit the frame to the objects")
     parser.add_argument("--truth", default=bringup_file("worlds/apartment.truth.yaml"))
     parser.add_argument("--scene", default=bringup_file("mjcf/g1_apartment_scene.xml"))
-    parser.add_argument("--margin", type=float, default=0.4, help="the test's match margin, m")
-    parser.add_argument("--min-size", type=float, default=0.3, help="smaller objects unscored, m")
+    parser.add_argument("--margin", type=float, default=MATCH_MARGIN_M, help="match margin, m")
+    parser.add_argument("--min-size", type=float, default=MIN_FIT_SIZE_M, help="unscored below, m")
     parser.add_argument("--overlay", help="picture of the truth over the saved floor plan")
     parser.add_argument("--crop", nargs=4, type=float, metavar=("X0", "Y0", "X1", "Y1"))
     parser.add_argument("--mark", nargs=2, type=float, action="append", default=[])

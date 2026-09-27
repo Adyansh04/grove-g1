@@ -21,6 +21,7 @@ import os
 import re
 import signal
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -47,6 +48,10 @@ from tf2_ros import Buffer, TransformListener
 
 from g1_msgs.action import StepClear
 
+# The offline scorer's geometry, so a saved world scores there as it did here.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "scripts"))
+from compare_truth import MATCH_MARGIN_M, MIN_FIT_SIZE_M, fit_frame, iou, to_world  # noqa: E402
+
 TRUTH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "worlds", "apartment.truth.yaml"
 )
@@ -64,7 +69,6 @@ MIN_FLOOR_COVERAGE = 0.90
 MIN_FACE_COVERAGE = 0.80
 MIN_OBJECT_RECALL = 0.85
 MAX_DUPLICATE_SHARE = 0.10
-MATCH_MARGIN_M = 0.4
 # Standing poses the map's frame is fitted to; a run records several hundred.
 MIN_TRACK_POSES = 50
 # Boxes of furniture on the floor against the true footprints: median intersection over union.
@@ -177,39 +181,10 @@ def yaw_of(q):
     return math.atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z))
 
 
-def to_world(frame, x, y):
-    tx, ty, theta = frame
-    return (
-        tx + math.cos(theta) * x - math.sin(theta) * y,
-        ty + math.sin(theta) * x + math.cos(theta) * y,
-    )
-
-
 def to_map(frame, x, y):
     tx, ty, theta = frame
     dx, dy = x - tx, y - ty
     return math.cos(theta) * dx + math.sin(theta) * dy, -math.sin(theta) * dx + math.cos(theta) * dy
-
-
-def fit_frame(pairs):
-    """World from map as (x, y, yaw): the rigid motion that best lays the robot's map positions
-    on its true ones, least squares."""
-    n = len(pairs)
-    mx = sum(m[0] for m, _ in pairs) / n
-    my = sum(m[1] for m, _ in pairs) / n
-    wx = sum(w[0] for _, w in pairs) / n
-    wy = sum(w[1] for _, w in pairs) / n
-    cross = dot = 0.0
-    for (ax, ay), (bx, by) in pairs:
-        ax, ay, bx, by = ax - mx, ay - my, bx - wx, by - wy
-        cross += (ax * by) - (ay * bx)
-        dot += (ax * bx) + (ay * by)
-    theta = math.atan2(cross, dot)
-    return (
-        wx - (math.cos(theta) * mx - math.sin(theta) * my),
-        wy - (math.sin(theta) * mx + math.cos(theta) * my),
-        theta,
-    )
 
 
 def world_pose(mapped, frame):
@@ -243,40 +218,10 @@ def on_footprint(item, mapped, frame):
 
 
 def box_iou(item, mapped, frame):
-    """Intersection over union of a truth footprint and a mapped box, sampled every 2 cm."""
-    truth = (
-        item["centre"][0],
-        item["centre"][1],
-        item["size"][0],
-        item["size"][1],
-        math.radians(item["yaw"]),
-    )
+    """Intersection over union of a truth footprint and a mapped box."""
+    truth = (*item["centre"][:2], *item["size"][:2], math.radians(item["yaw"]))
     x, y, yaw = world_pose(mapped, frame)
-    box = (x, y, mapped.size.x, mapped.size.y, yaw)
-
-    def inside(rect, x, y):
-        cx, cy, sx, sy, a = rect
-        dx, dy = x - cx, y - cy
-        return (
-            abs(math.cos(a) * dx + math.sin(a) * dy) <= sx / 2
-            and abs(-math.sin(a) * dx + math.cos(a) * dy) <= sy / 2
-        )
-
-    reach = max(math.hypot(r[2], r[3]) / 2 for r in (truth, box))
-    x0 = min(truth[0], box[0]) - reach
-    y0 = min(truth[1], box[1]) - reach
-    x1 = max(truth[0], box[0]) + reach
-    y1 = max(truth[1], box[1]) + reach
-    both = either = 0
-    steps_x = int((x1 - x0) / 0.02) + 1
-    steps_y = int((y1 - y0) / 0.02) + 1
-    for i in range(steps_x):
-        for j in range(steps_y):
-            x, y = x0 + i * 0.02, y0 + j * 0.02
-            a, b = inside(truth, x, y), inside(box, x, y)
-            both += a and b
-            either += a or b
-    return both / either if either else 0.0
+    return iou(truth, (x, y, mapped.size.x, mapped.size.y, yaw))
 
 
 def centroid(polygon):
@@ -497,7 +442,7 @@ class ExploreApartmentTest(unittest.TestCase):
         # How well the boxes sit on the furniture: what an approach pose is computed from.
         fits = []
         for item in wanted:
-            if item.get("on") or min(item["size"][:2]) < 0.3:
+            if item.get("on") or min(item["size"][:2]) < MIN_FIT_SIZE_M:
                 continue
             names = {item["label"], *item.get("synonyms", [])}
             near = [o for o in mapped if o.label in names and on_footprint(item, o, frame)]
