@@ -199,6 +199,7 @@ public:
                 return rclcpp_action::CancelResponse::ACCEPT;
             },
             [this](const std::shared_ptr<GoalHandleApproach>& handle) {
+                goals_running_.fetch_add(1);
                 std::thread{ [this, handle] {
                     runGuarded([&] { runApproach(handle); }, handle);
                 } }.detach();
@@ -224,6 +225,7 @@ public:
                 return rclcpp_action::CancelResponse::ACCEPT;
             },
             [this](const std::shared_ptr<GoalHandleRetreat>& handle) {
+                goals_running_.fetch_add(1);
                 std::thread{ [this, handle] {
                     runGuarded([&] { runRetreat(handle); }, handle);
                 } }.detach();
@@ -249,6 +251,7 @@ public:
                 return rclcpp_action::CancelResponse::ACCEPT;
             },
             [this](const std::shared_ptr<GoalHandleStepClear>& handle) {
+                goals_running_.fetch_add(1);
                 std::thread{ [this, handle] {
                     runGuarded([&] { runStepClear(handle); }, handle);
                 } }.detach();
@@ -306,13 +309,13 @@ private:
         return true;
     }
 
-    /// Runs one goal body: releases the busy flag, balances the running count, and turns an
-    /// escaping exception into a stopped base and an aborted goal.
+    /// Runs one goal body: releases the busy flag, balances the running count its caller took
+    /// before the thread started, and turns an escaping exception into a stopped base and an
+    /// aborted goal.
     template <typename ActionT, typename Body>
     void
     runGuarded(Body&& body, const std::shared_ptr<rclcpp_action::ServerGoalHandle<ActionT>>& handle)
     {
-        goals_running_.fetch_add(1);
         try
         {
             body();
