@@ -43,7 +43,8 @@ flowchart LR
 | `nav` | `false` | Nav2 and the base-approach skill. Needs a map: `mode:=mapping` explores while building one, `mode:=localization` uses the committed one. |
 | `moveit` | `false` | `move_group`, in any mode. Executing a plan still needs the arm acquired. |
 | `activate_arm` | `false` | Run `activate_arm` automatically. Only with `moveit:=true`. |
-| `activate_arm_delay_s` | `25.0` | Seconds before that. Too early and it fails, because the component is not loaded or state is not flowing yet. |
+| `arms_at_sides` | `false` | Hang the arms beside the thighs through `activate_arm --posture sides`, for exploration: at zero the forearms point forward into both cameras' views, and a real detector maps the hands. Ignored when `activate_arm` runs. |
+| `activate_arm_delay_s` | `25.0` | Seconds before either. Too early and it fails, because the component is not loaded or state is not flowing yet. |
 | `rviz` | `false` | Open RViz for what is running: MoveIt's own window with `moveit:=true`, plus `g1_navigation.rviz` if `nav:=true`. Without MoveIt, `g1_navigation.rviz` in the navigation modes and `g1_sensors.rviz` otherwise. |
 | `visualization` | empty | Everything drawn only for RViz: the annotated camera image, ground truth, `/object_markers` and the grasp plan. Empty follows `rviz`; an RViz opened by hand later needs `true`. |
 | `sensors` | `false` | LiDAR, IMU and camera, the relay and the `odom` to `base_footprint` chain. Forced on by the navigation modes, `manipulation` and `perception`. |
@@ -123,6 +124,9 @@ component before controller, best-effort: a missing hand logs a warning and leav
 Last, it ramps both arms straight out to the sides over four seconds without planning. Where they
 hang at bring-up is inside the octomap of any table in front, and MoveIt will not plan from a
 start state in collision. If that move fails the step exits non-zero.
+
+`--posture sides`, which `arms_at_sides` runs, hangs the arms beside the thighs instead, out of
+both cameras' views, and `--no-hands` leaves the Dex3 alone.
 
 `deactivate_arm` releases the hands, then swaps the freeze back in, again in one switch.
 

@@ -196,7 +196,7 @@ def _vla():
     )
 
 
-def _activate_arm(delay_s):
+def _activate_arm(delay_s, *args):
     """Delayed rather than sequenced on an event: the component only accepts activation once
     controller_manager has loaded it and /lowstate is flowing, and neither emits anything this
     file can wait on. scripts/activate_arm still fails loudly if it runs too early."""
@@ -204,7 +204,7 @@ def _activate_arm(delay_s):
         period=delay_s,
         actions=[
             ExecuteProcess(
-                cmd=["ros2", "run", "g1_bringup", "activate_arm"],
+                cmd=["ros2", "run", "g1_bringup", "activate_arm", *args],
                 name="activate_arm",
                 output="screen",
             )
@@ -296,10 +296,11 @@ def _setup(context, *args, **kwargs):
         )
     if want_vla:
         actions.append(_vla())
+    arm_delay_s = float(LaunchConfiguration("activate_arm_delay_s").perform(context))
     if want_moveit and _flag(context, "activate_arm"):
-        actions.append(
-            _activate_arm(float(LaunchConfiguration("activate_arm_delay_s").perform(context)))
-        )
+        actions.append(_activate_arm(arm_delay_s))
+    elif _flag(context, "arms_at_sides"):
+        actions.append(_activate_arm(arm_delay_s, "--posture", "sides", "--no-hands"))
     if want_rviz:
         actions.extend(_rviz(navigating, want_nav, want_moveit))
     return actions
@@ -446,6 +447,13 @@ def generate_launch_description():
             description="SIM CONVENIENCE: run scripts/activate_arm automatically once the "
             "stack is up. Needs moveit:=true. Off by default: acquiring the arm is "
             "deliberate, and on hardware it is the moment MoveIt starts driving real joints.",
+        ),
+        DeclareLaunchArgument(
+            "arms_at_sides",
+            default_value="false",
+            description="Hang the arms beside the thighs once the stack is up, through "
+            "scripts/activate_arm. For exploration: at zero the forearms point forward, into both "
+            "cameras' views, and a real detector maps the hands. Ignored when activate_arm runs.",
         ),
         DeclareLaunchArgument(
             "activate_arm_delay_s",
