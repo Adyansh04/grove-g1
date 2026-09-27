@@ -1,0 +1,26 @@
+line-length = 100
+src = ["."]
+
+[format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+
+[lint.isort]
+combine-as-imports = true
+# Named, not inferred: ruff's guess from `src` changes with a package's directory layout.
+known-first-party = ["canopy_msgs", "canopy_perception"]
+
+[lint]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # Pyflakes
+    "I",  # isort (import sorting)
+    "B",  # flake8-bugbear
+    "C4", # flake8-comprehensions
+]
+
+ignore = [
+    "E501", # line too long, handled by the formatter
+]
