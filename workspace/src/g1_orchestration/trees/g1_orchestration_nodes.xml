@@ -40,7 +40,7 @@
             <input_port name="goal" type="g1_orchestration::Station">Where to drive to, as 'x;y;yaw'.</input_port>
         </Action>
         <Action ID="NextViewpoint">
-            <output_port name="outcome" type="std::string">'viewpoint', 'done' or 'error'.</output_port>
+            <output_port name="outcome" type="std::string">'viewpoint', 'stuck', 'done' or 'error'.</output_port>
             <output_port name="room_id" type="std::string">The room the viewpoint stands in.</output_port>
             <output_port name="viewpoint_id" type="int">For ReportViewpoint.</output_port>
             <output_port name="goal" type="g1_orchestration::Station">Where to stand, facing the first heading.</output_port>

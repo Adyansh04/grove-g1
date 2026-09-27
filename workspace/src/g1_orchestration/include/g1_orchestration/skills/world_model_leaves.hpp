@@ -23,7 +23,8 @@ namespace g1_orchestration
  * @brief Fetches the next viewpoint: where to stand and the headings to face there.
  *
  * FAILURE ends an exploration loop: `outcome` then says whether it was "done" or an error.
- * While the model has no map or pose yet it waits, up to timeout_s.
+ * SUCCESS with `outcome` "stuck" asks the tree to move the robot off first. While the model has
+ * no map or pose yet, or SLAM is catching up, it waits, up to timeout_s.
  */
 class NextViewpoint : public ServiceLeaf
 {

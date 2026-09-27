@@ -28,30 +28,40 @@
             <NextViewpoint name="next_viewpoint" mode="{mode}" goal="{goal}"
                            headings="{headings}" viewpoint_id="{viewpoint}"
                            outcome="{outcome}"/>
-            <Fallback name="visit_or_report_unreached">
-              <Sequence name="visit">
-                <!-- Nav2 will not start a motion with furniture inside its 0.45 m circle, and the
-                     gait's drift leaves the robot there; this is a no-op when it is clear. -->
-                <ForceSuccess name="unless_boxed_in">
-                  <StepClear name="step_clear_to_walk"/>
+            <Fallback name="step_off_or_visit">
+              <!-- The last viewpoints all went unreached from here: step further clear, then ask
+                   again. The world model resumes where the robot stands if it cannot move. -->
+              <Sequence name="step_off_when_stuck">
+                <ScriptCondition name="stuck" code="outcome == 'stuck'"/>
+                <ForceSuccess name="even_if_boxed_in">
+                  <StepClear name="step_clear_when_stuck" clearance="0.7"/>
                 </ForceSuccess>
-                <NavigateToPose name="walk_there" goal="{goal}"/>
-                <ForceSuccess name="unless_boxed_in_there">
-                  <StepClear name="step_clear_to_turn"/>
-                </ForceSuccess>
-                <LoopDouble name="each_heading" queue="{headings}" value="{heading}">
-                  <Sequence name="face_and_dwell">
-                    <!-- A spin that falls short still leaves the camera looking somewhere
-                         useful; coverage is measured, not assumed. -->
-                    <ForceSuccess name="turn_even_if_short">
-                      <TurnTo name="face_heading" yaw="{heading}"/>
-                    </ForceSuccess>
-                    <Sleep name="dwell_for_the_detector" msec="2500"/>
-                  </Sequence>
-                </LoopDouble>
-                <ReportViewpoint name="report_reached" viewpoint_id="{viewpoint}" reached="true"/>
               </Sequence>
-              <ReportViewpoint name="report_unreached" viewpoint_id="{viewpoint}" reached="false"/>
+              <Fallback name="visit_or_report_unreached">
+                <Sequence name="visit">
+                  <!-- Nav2 will not start a motion with furniture inside its 0.45 m circle, and the
+                       gait's drift leaves the robot there; this is a no-op when it is clear. -->
+                  <ForceSuccess name="unless_boxed_in">
+                    <StepClear name="step_clear_to_walk"/>
+                  </ForceSuccess>
+                  <NavigateToPose name="walk_there" goal="{goal}"/>
+                  <ForceSuccess name="unless_boxed_in_there">
+                    <StepClear name="step_clear_to_turn"/>
+                  </ForceSuccess>
+                  <LoopDouble name="each_heading" queue="{headings}" value="{heading}">
+                    <Sequence name="face_and_dwell">
+                      <!-- A spin that falls short still leaves the camera looking somewhere
+                           useful; coverage is measured, not assumed. -->
+                      <ForceSuccess name="turn_even_if_short">
+                        <TurnTo name="face_heading" yaw="{heading}"/>
+                      </ForceSuccess>
+                      <Sleep name="dwell_for_the_detector" msec="2500"/>
+                    </Sequence>
+                  </LoopDouble>
+                  <ReportViewpoint name="report_reached" viewpoint_id="{viewpoint}" reached="true"/>
+                </Sequence>
+                <ReportViewpoint name="report_unreached" viewpoint_id="{viewpoint}" reached="false"/>
+              </Fallback>
             </Fallback>
           </Sequence>
         </KeepRunningUntilFailure>

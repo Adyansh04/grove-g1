@@ -75,7 +75,7 @@ BT::PortsList NextViewpoint::providedPorts()
         BT::OutputPort<BT::SharedQueue<double>>("headings", "Map-frame yaws to face, in order."),
         BT::OutputPort<int>("viewpoint_id", "For ReportViewpoint."),
         BT::OutputPort<std::string>("room_id", "The room the viewpoint stands in."),
-        BT::OutputPort<std::string>("outcome", "'viewpoint', 'done' or 'error'."),
+        BT::OutputPort<std::string>("outcome", "'viewpoint', 'stuck', 'done' or 'error'."),
     };
 }
 
@@ -123,7 +123,13 @@ BT::NodeStatus NextViewpoint::tick()
             setOutput("outcome", std::string("viewpoint"));
             return BT::NodeStatus::SUCCESS;
         }
-        // Unavailable: no map or no pose yet. Worth waiting for at the start of a run.
+        if (response->status == Service::Response::STATUS_STUCK)
+        {
+            RCLCPP_WARN(node_->get_logger(), "[%s] %s", name().c_str(), response->message.c_str());
+            setOutput("outcome", std::string("stuck"));
+            return BT::NodeStatus::SUCCESS;
+        }
+        // Unavailable: no map or pose yet, or SLAM catching up. Worth waiting for.
         if (std::chrono::steady_clock::now() >= deadline)
         {
             RCLCPP_ERROR(
