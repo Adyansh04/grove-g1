@@ -5,7 +5,8 @@
 # This turns in place, then walks straight out, forward or backward, the way that gets clear
 # soonest. Already clear, it succeeds without moving.
 
-# Distance to end up from the nearest obstacle in the local costmap, m.
+# Distance to end up from the nearest obstacle in the local costmap, m; at most 0.7, all the
+# 3 m rolling costmap can check past the longest step.
 float64 clearance_m
 # Seconds before giving up. 0 uses the server's default.
 float64 timeout_s

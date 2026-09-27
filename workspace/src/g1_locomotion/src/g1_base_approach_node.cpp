@@ -48,8 +48,9 @@ namespace g1_locomotion
 /// A retreat only has to clear a surface; anything longer is a malformed goal.
 constexpr double kMaxRetreatDistanceM = 2.0;
 
-/// Wanting more clearance than this is a navigation goal, not a step.
-constexpr double kMaxStepClearanceM = 1.5;
+/// The 3 x 3 m rolling costmap's half width less the 0.8 m longest step: beyond it the step would
+/// end where the grid cannot see, and cells outside the window read as free.
+constexpr double kMaxStepClearanceM = 0.7;
 
 /// Nav2's lethal cost in an OccupancyGrid; 99 only marks the band inflated around it.
 constexpr std::int8_t kLethal = 100;
