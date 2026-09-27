@@ -118,8 +118,9 @@ git submodule update --init
 
 The third-party code the stack changes lives in forks, on their `grove` branches:
 `livox_ros_driver2` and `fast_lio_humanoid` under `workspace/src`, and `unitree_mujoco`, which the
-image builds, under `workspace/vendor`. `git config submodule.recurse true` makes `git pull` move
-them along.
+image builds, under `workspace/vendor`. The world model, [canopy](https://github.com/Adyansh04/canopy),
+is a repository of its own on `main`, under `workspace/src/canopy`. `git config submodule.recurse
+true` makes `git pull` move them along.
 
 From the repository root, on the host:
 

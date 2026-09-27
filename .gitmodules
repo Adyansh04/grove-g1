@@ -11,3 +11,7 @@
 	path = workspace/src/fast_lio_humanoid
 	url = https://github.com/Adyansh04/FAST_LIO_LOCALIZATION_HUMANOID.git
 	branch = grove
+[submodule "workspace/src/canopy"]
+	path = workspace/src/canopy
+	url = https://github.com/Adyansh04/canopy.git
+	branch = main
