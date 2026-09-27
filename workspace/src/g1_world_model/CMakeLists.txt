@@ -72,6 +72,13 @@ install(DIRECTORY include/ DESTINATION include)
 install(DIRECTORY config launch DESTINATION share/${PROJECT_NAME})
 install(TARGETS g1_world_model_core g1_world_model_node EXPORT export_${PROJECT_NAME} DESTINATION lib)
 install(TARGETS g1_world_model DESTINATION lib/${PROJECT_NAME})
+install(
+  PROGRAMS
+    scripts/track_run.py
+    scripts/snapshot_map.py
+    scripts/run_summary.py
+    scripts/compare_truth.py
+  DESTINATION lib/${PROJECT_NAME})
 
 # --- tests -----------------------------------------------------------------
 

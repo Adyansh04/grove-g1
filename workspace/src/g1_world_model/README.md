@@ -113,6 +113,18 @@ With the real detector, start `scripts/semantic_server.py` on the host and load
 objects through the server's VLM, and to type the rooms whose objects leave their type in doubt
 from a few whole frames taken where the robot stood in them.
 
+## Debugging tools
+
+In `scripts/`, run with `ros2 run g1_world_model <tool> --help` for every option. Python,
+because they read logs and saved worlds offline or are small ROS probes; none runs in the loop.
+
+| Tool | What it gives |
+|---|---|
+| `track_run.py PREFIX` | Records a run for `run_summary.py`: the robot's pose, each room's coverage over time, the rooms' outlines. |
+| `snapshot_map.py OUT.png` | SLAM's map as it stands, with the frontier cells the frontier pass plans on. |
+| `run_summary.py LOG` | Where a run's time went; with `--track`, the walks back into rooms and the longest walks; with `--plot`, the walk over the saved floor plan. |
+| `compare_truth.py WORLD` | Each floor object's box against the truth, scored as the acceptance test scores it; with `--overlay`, the scene's walls and furniture drawn over the saved floor plan. |
+
 ## Tests
 
 - Unit (CI): `test_room_segmentation` (hand-drawn plans and the committed facility and apartment
