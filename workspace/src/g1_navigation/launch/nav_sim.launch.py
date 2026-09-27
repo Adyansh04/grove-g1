@@ -72,13 +72,13 @@ def generate_launch_description():
             "mode",
             default_value="mapping",
             description="'mapping' builds a new map with slam_toolbox; 'localization' runs "
-            "map_server + AMCL against maps/facility.",
+            "map_server + AMCL against the world's committed map.",
         ),
         DeclareLaunchArgument(
             "nav",
             default_value="false",
-            description="Start the Nav2 servers and the base approach. Requires "
-            "mode:=localization.",
+            description="Start the Nav2 servers and the base approach. A tree with fixed goals "
+            "wants mode:=localization, where no loop closure moves the map under them.",
         ),
         DeclareLaunchArgument(
             "odometry",
@@ -89,8 +89,8 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "world",
             default_value="navigation",
-            description="Which g1_bringup scene to stage. The committed map was built from "
-            "'navigation'; localization against any other world will not converge.",
+            description="Which g1_bringup scene to stage. Only 'navigation' and 'apartment' have "
+            "a committed map to localize against.",
         ),
         DeclareLaunchArgument(
             "rviz",

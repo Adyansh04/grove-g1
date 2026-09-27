@@ -313,7 +313,7 @@ def generate_launch_description():
             default_value="none",
             description="'none' runs the simulator alone and never touches g1_navigation. "
             "'mapping' adds the scan pipeline and slam_toolbox. 'localization' adds the scan "
-            "pipeline, map_server and AMCL, and is the mode nav:=true requires.",
+            "pipeline, map_server and AMCL against the world's committed map.",
         ),
         DeclareLaunchArgument(
             "nav",
