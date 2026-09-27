@@ -73,6 +73,8 @@ if(BUILD_TESTING)
   set_tests_properties(sim_settle_gap PROPERTIES
     RESOURCE_LOCK mujoco_sim LABELS simulator COST 50)
 
+  # The world generator runs on the host, but is linted with the rest.
+  list(APPEND G1_PYTHON_DIRS tools)
   g1_add_lint_tests()
 endif()
 
