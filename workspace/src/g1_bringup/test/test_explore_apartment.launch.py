@@ -285,6 +285,19 @@ def centroid(polygon):
     return sum(xs) / len(xs), sum(ys) / len(ys)
 
 
+def stop(process):
+    """SIGINT to the process group, then SIGKILL past 30 s: the tree's arm release alone can make
+    several 15 s service calls, and a survivor would drive the next suite's robot."""
+    if process.poll() is not None:
+        return
+    os.killpg(process.pid, signal.SIGINT)
+    try:
+        process.wait(timeout=30)
+    except subprocess.TimeoutExpired:
+        os.killpg(process.pid, signal.SIGKILL)
+        process.wait()
+
+
 class ExploreApartmentTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -306,9 +319,7 @@ class ExploreApartmentTest(unittest.TestCase):
             Odometry, "/g1_sensor_relay/base_state", cls._on_truth_pose, 10
         )
         cls.node.create_subscription(RoomArray, "/canopy/rooms", cls._on_rooms, LATCHED)
-        cls.node.create_subscription(
-            WorldObjectArray, "/canopy/objects", cls._on_objects, LATCHED
-        )
+        cls.node.create_subscription(WorldObjectArray, "/canopy/objects", cls._on_objects, LATCHED)
         cls.truth = load_truth()
 
         cls.ready = cls.navigate.wait_for_server(timeout_sec=BRINGUP_TIMEOUT_S)
@@ -413,12 +424,14 @@ class ExploreApartmentTest(unittest.TestCase):
             start_new_session=True,
         )
         started = time.time()
-        while executor.poll() is None and time.time() - started < EXPLORE_TIMEOUT_S:
-            self.spin(1.0)
-            self.record_pose()
-        if executor.poll() is None:
-            os.killpg(executor.pid, signal.SIGINT)
-            executor.wait(timeout=30)
+        try:
+            while executor.poll() is None and time.time() - started < EXPLORE_TIMEOUT_S:
+                self.spin(1.0)
+                self.record_pose()
+            timed_out = executor.poll() is None
+        finally:
+            stop(executor)
+        if timed_out:
             self.fail(f"exploration did not finish in {EXPLORE_TIMEOUT_S / 60:.0f} min")
         minutes = (time.time() - started) / 60.0
         print(f"exploration finished in {minutes:.1f} min with exit code {executor.returncode}")
