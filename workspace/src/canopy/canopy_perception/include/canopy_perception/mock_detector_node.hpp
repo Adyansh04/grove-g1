@@ -1,5 +1,5 @@
-#ifndef G1_PERCEPTION__MOCK_DETECTOR_NODE_HPP_
-#define G1_PERCEPTION__MOCK_DETECTOR_NODE_HPP_
+#ifndef CANOPY_PERCEPTION__MOCK_DETECTOR_NODE_HPP_
+#define CANOPY_PERCEPTION__MOCK_DETECTOR_NODE_HPP_
 
 /**
  * @file mock_detector_node.hpp
@@ -19,15 +19,15 @@
 #include <vector>
 #include <vision_msgs/msg/detection3_d_array.hpp>
 
-#include "g1_perception/depth_history.hpp"
+#include "canopy_perception/depth_history.hpp"
 
-namespace g1_perception
+namespace canopy_perception
 {
 
-class G1MockDetector : public rclcpp::Node
+class MockDetector : public rclcpp::Node
 {
 public:
-    explicit G1MockDetector(const rclcpp::NodeOptions& options);
+    explicit MockDetector(const rclcpp::NodeOptions& options);
 
 private:
     void onTruth(vision_msgs::msg::Detection3DArray::ConstSharedPtr truth);
@@ -55,6 +55,6 @@ private:
     int    min_pixels_{ 50 };
 };
 
-}  // namespace g1_perception
+}  // namespace canopy_perception
 
-#endif  // G1_PERCEPTION__MOCK_DETECTOR_NODE_HPP_
+#endif  // CANOPY_PERCEPTION__MOCK_DETECTOR_NODE_HPP_

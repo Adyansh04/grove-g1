@@ -186,7 +186,7 @@ std::optional<OrientedBox> G1ObjectGeometry::measure(
 
 void G1ObjectGeometry::onMasks(const canopy_msgs::msg::InstanceMaskArray::ConstSharedPtr& masks)
 {
-    const double          stamp_s = DepthHistory::stampSeconds(masks->header);
+    const double          stamp_s = canopy_perception::DepthHistory::stampSeconds(masks->header);
     std::vector<Measured> measured;
 
     // An empty array still reaches the tracker: it is how objects disappear.

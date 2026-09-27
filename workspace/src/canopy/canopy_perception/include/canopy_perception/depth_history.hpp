@@ -1,5 +1,5 @@
-#ifndef G1_PERCEPTION__DEPTH_HISTORY_HPP_
-#define G1_PERCEPTION__DEPTH_HISTORY_HPP_
+#ifndef CANOPY_PERCEPTION__DEPTH_HISTORY_HPP_
+#define CANOPY_PERCEPTION__DEPTH_HISTORY_HPP_
 
 /**
  * @file depth_history.hpp
@@ -12,7 +12,7 @@
 #include <deque>
 #include <sensor_msgs/msg/image.hpp>
 
-namespace g1_perception
+namespace canopy_perception
 {
 
 class DepthHistory
@@ -47,6 +47,6 @@ private:
     std::deque<sensor_msgs::msg::Image::ConstSharedPtr> frames_;
 };
 
-}  // namespace g1_perception
+}  // namespace canopy_perception
 
-#endif  // G1_PERCEPTION__DEPTH_HISTORY_HPP_
+#endif  // CANOPY_PERCEPTION__DEPTH_HISTORY_HPP_

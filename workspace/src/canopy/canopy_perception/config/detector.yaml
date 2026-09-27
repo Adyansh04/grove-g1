@@ -1,18 +1,34 @@
-# The detector's word list for semantic mapping: g1_detector pointed at scripts/semantic_server.py,
-# whose YOLOE backend scores every region against the whole list in one forward pass. Load it
-# after g1_detector.yaml so these values win.
+# The detector for semantic mapping, against servers/semantic_server.py, whose YOLOE backend
+# scores every region against the whole word list in one forward pass. Keyed /** so a detector
+# per camera, whatever its node name, reads it.
 #
 # One name per kind of object: singular, lower case, 1-3 words, and no two names a detector would
 # swap on the same object (sofa, not also couch; mug, not also cup; shelf, not also bookshelf),
 # since each label a track collects is a vote the map must reconcile. What an object is exactly
-# is the describer's job, not the word list's.
-g1_detector:
+# is the describer's job, not the word list's; the world model maps people's other words onto
+# these through its room table's synonyms.
+/**:
   ros__parameters:
+    # The server runs on the host, since it needs torch and CUDA.
     server_address: "tcp://127.0.0.1:5561"
+
+    # Well past the slowest inference: this is what a stalled server costs before the node
+    # rebuilds its socket.
+    zmq_timeout_ms: 20000
+
+    # How soon after an answer the next question is asked; the call itself blocks.
+    detect_rate_hz: 1.0
+
+    # Frames older than this are not asked about. 2.5 s because in simulation the camera and the
+    # models share one GPU and frames arrive 1.4 to 1.9 s old; a moving scene wants less.
+    max_image_age_s: 2.5
 
     # YOLOE's scores run lower than Grounding DINO's. On the renders and photos it was tried on,
     # most detections under 0.3 had the wrong name or repeated another one.
     box_threshold: 0.30
+
+    # An image embedding per instance, for the world model's matching and text search.
+    embed: true
 
     phrases:
       # seating and tables

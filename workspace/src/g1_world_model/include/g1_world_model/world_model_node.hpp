@@ -44,7 +44,7 @@
 #include <vector>
 #include <visualization_msgs/msg/marker_array.hpp>
 
-#include "g1_perception/depth_history.hpp"
+#include "canopy_perception/depth_history.hpp"
 #include "g1_world_model/approach_pose.hpp"
 #include "g1_world_model/coverage_map.hpp"
 #include "g1_world_model/object_map.hpp"
@@ -77,13 +77,13 @@ private:
     {
         CameraFeed(std::string feed_name, bool credits_coverage, double history_s);
 
-        std::string                 name;
-        bool                        coverage = true;  // Its depth credits camera coverage.
-        std::optional<Intrinsics>   intrinsics;
-        std::optional<CameraModel>  model;  // Its mount, once TF has it.
-        std::string                 frame;  // The depth frame's id.
-        g1_perception::DepthHistory depth_history;
-        g1_perception::DepthHistory color_history;
+        std::string                     name;
+        bool                            coverage = true;  // Its depth credits camera coverage.
+        std::optional<Intrinsics>       intrinsics;
+        std::optional<CameraModel>      model;  // Its mount, once TF has it.
+        std::string                     frame;  // The depth frame's id.
+        canopy_perception::DepthHistory depth_history;
+        canopy_perception::DepthHistory color_history;
         std::deque<sensor_msgs::msg::Image::ConstSharedPtr>                  pending_depth;
         std::deque<canopy_msgs::msg::InstanceMaskArray::ConstSharedPtr>      pending_masks;
         rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr             depth_sub;

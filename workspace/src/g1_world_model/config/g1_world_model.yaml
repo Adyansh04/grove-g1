@@ -204,7 +204,7 @@ g1_world_model:
       standoff: 0.60
       max_standoff: 1.80
 
-    # Ask a describer (g1_object_describer) to name objects from their best crop.
+    # Ask a describer (canopy_perception's object_describer) to name objects from their best crop.
     describe: false
     describe_after: 3
     describe_retry_s: 60.0

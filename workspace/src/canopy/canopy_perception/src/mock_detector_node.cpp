@@ -3,7 +3,7 @@
  * @brief Cuts instance masks from simulator ground truth against the rendered depth.
  */
 
-#include "g1_perception/mock_detector_node.hpp"
+#include "canopy_perception/mock_detector_node.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -12,10 +12,11 @@
 #include <tf2/LinearMath/Vector3.hpp>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
-#include "g1_perception/depth_history.hpp"
-#include "g1_perception/object_geometry.hpp"
+#include "canopy_perception/depth_history.hpp"
+#include "canopy_perception/depth_image.hpp"
+#include "canopy_perception/phrase.hpp"
 
-namespace g1_perception
+namespace canopy_perception
 {
 namespace
 {
@@ -65,8 +66,8 @@ constexpr double kDepthHistoryHeadroomS = 2.0;
 
 }  // namespace
 
-G1MockDetector::G1MockDetector(const rclcpp::NodeOptions& options)
-  : rclcpp::Node("g1_mock_detector", options)
+MockDetector::MockDetector(const rclcpp::NodeOptions& options)
+  : rclcpp::Node("mock_detector", options)
   // Sized from the latency: a shorter window would silently hand out the oldest frame instead.
   , depth_frames_(
         declare_parameter<double>("mock_latency_s", 0.0) + kDepthHistoryHeadroomS,
@@ -105,17 +106,17 @@ G1MockDetector::G1MockDetector(const rclcpp::NodeOptions& options)
         });
 }
 
-void G1MockDetector::onTruth(vision_msgs::msg::Detection3DArray::ConstSharedPtr truth)
+void MockDetector::onTruth(vision_msgs::msg::Detection3DArray::ConstSharedPtr truth)
 {
     truth_ = std::move(truth);
 }
 
-void G1MockDetector::onDepth(sensor_msgs::msg::Image::ConstSharedPtr depth)
+void MockDetector::onDepth(sensor_msgs::msg::Image::ConstSharedPtr depth)
 {
     depth_frames_.push(std::move(depth));
 }
 
-std::optional<canopy_msgs::msg::InstanceMask> G1MockDetector::maskFor(
+std::optional<canopy_msgs::msg::InstanceMask> MockDetector::maskFor(
     const vision_msgs::msg::Detection3D& detection, const sensor_msgs::msg::Image& depth,
     const std::string& phrase) const
 {
@@ -232,7 +233,7 @@ std::optional<canopy_msgs::msg::InstanceMask> G1MockDetector::maskFor(
     return out;
 }
 
-void G1MockDetector::publishMasks()
+void MockDetector::publishMasks()
 {
     // Re-read every pass, as the real detector does, so a tree's writes to `phrases` apply.
     const std::vector<std::string> phrases = get_parameter("phrases").as_string_array();
@@ -282,4 +283,4 @@ void G1MockDetector::publishMasks()
     masks_pub_->publish(masks);
 }
 
-}  // namespace g1_perception
+}  // namespace canopy_perception

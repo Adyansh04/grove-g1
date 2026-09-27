@@ -6,9 +6,7 @@
 #include "g1_perception/object_geometry.hpp"
 
 #include <algorithm>
-#include <cctype>
 #include <cmath>
-#include <cstring>
 #include <limits>
 
 namespace g1_perception
@@ -116,45 +114,6 @@ double median(std::vector<double>& values)
 }
 
 }  // namespace
-
-double DepthView::at(std::uint32_t u, std::uint32_t v) const
-{
-    if (u >= width || v >= height)
-    {
-        return std::numeric_limits<double>::quiet_NaN();
-    }
-    const std::size_t offset = (static_cast<std::size_t>(v) * step) + (u * sizeof(float));
-    if (offset + sizeof(float) > data.size())
-    {
-        return std::numeric_limits<double>::quiet_NaN();
-    }
-    float metres = 0.0F;
-    std::memcpy(&metres, data.data() + offset, sizeof(float));
-    return static_cast<double>(metres);
-}
-
-std::string slugify(std::string_view phrase)
-{
-    std::string out;
-    out.reserve(phrase.size());
-    for (const char character : phrase)
-    {
-        const auto raw = static_cast<unsigned char>(character);
-        if (std::isalnum(raw) != 0)
-        {
-            out.push_back(static_cast<char>(std::tolower(raw)));
-        }
-        else if (!out.empty() && out.back() != '_')
-        {
-            out.push_back('_');
-        }
-    }
-    while (!out.empty() && out.back() == '_')
-    {
-        out.pop_back();
-    }
-    return out;
-}
 
 std::vector<std::uint8_t> erodeMask(const MaskView& mask, int iterations)
 {

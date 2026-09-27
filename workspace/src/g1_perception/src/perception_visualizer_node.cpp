@@ -295,14 +295,15 @@ void G1PerceptionVisualizer::renderIfPaired()
     {
         return;
     }
-    const double stamp_s = DepthHistory::stampSeconds(masks_->header);
+    const double stamp_s = canopy_perception::DepthHistory::stampSeconds(masks_->header);
     const sensor_msgs::msg::Image::ConstSharedPtr frame = images_.at(stamp_s);
     if (frame == nullptr)
     {
         // Colour can land after masks cut from its depth twin, so the next image retries. The
         // frame is gone only when every held frame is newer than the stamp.
         const sensor_msgs::msg::Image::ConstSharedPtr before = images_.atOrBefore(stamp_s);
-        if (before == nullptr || DepthHistory::stampSeconds(before->header) > stamp_s)
+        if (before == nullptr ||
+            canopy_perception::DepthHistory::stampSeconds(before->header) > stamp_s)
         {
             RCLCPP_WARN_THROTTLE(
                 get_logger(),

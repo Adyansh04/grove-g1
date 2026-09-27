@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
-"""Asks the host vision server what is in the camera image and publishes the masks it answers with.
+"""Asks a host model server what is in the camera image and publishes the masks it answers with.
 
 Python because it is a ZMQ and msgpack client. `phrases` is the whole control interface: an empty
-list is idle, and `ros2 param set /g1_detector phrases "['red block', 'blue sphere']"` is what the
+list is idle, and `ros2 param set /detector phrases "['red block', 'blue sphere']"` is what the
 behavior tree and the instruction grounder write.
 """
 
 import numpy as np
 import rclpy
-from canopy_msgs.msg import InstanceMask, InstanceMaskArray
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import Image
 
-from g1_perception.host_clients import VisionClient, image_to_array
+from canopy_msgs.msg import InstanceMask, InstanceMaskArray
+from canopy_perception.host_clients import VisionClient, image_to_array
 
 # Reliable: masks are small and slow, and a dropped one is seconds blind.
 MASK_QOS = 2
@@ -31,13 +31,13 @@ IMAGE_QOS = QoSProfile(
 
 class Detector(Node):
     def __init__(self):
-        super().__init__("g1_detector", automatically_declare_parameters_from_overrides=True)
-        self._address = self._param("server_address", "tcp://127.0.0.1:5560")
+        super().__init__("detector", automatically_declare_parameters_from_overrides=True)
+        self._address = self._param("server_address", "tcp://127.0.0.1:5561")
         self._max_image_age_s = float(self._param("max_image_age_s", 1.0))
         self._box_threshold = float(self._param("box_threshold", 0.30))
         self._text_threshold = float(self._param("text_threshold", 0.25))
         # Ask the server for an image embedding per instance, for the world model's matching and
-        # text search. Only the semantic server answers it; the vision server ignores the key.
+        # text search. A server that does not embed ignores the key.
         self._embed = bool(self._param("embed", False))
         rate_hz = float(self._param("detect_rate_hz", 1.0))
         if not self.has_parameter("phrases"):
@@ -62,12 +62,12 @@ class Detector(Node):
             reply = self._client.call("ping")
         except RuntimeError as error:
             self.get_logger().warning(
-                f"the vision server at {self._address} did not answer: {error}. "
-                "Retrying on each detection; start it with scripts/vision_server.py."
+                f"the model server at {self._address} did not answer: {error}. "
+                "Retrying on each detection; start it with servers/semantic_server.py."
             )
             return False
         self.get_logger().info(
-            f"vision server at {self._address}: {reply.get('backend')} on {reply.get('device')}"
+            f"model server at {self._address}: {reply.get('backend')} on {reply.get('device')}"
         )
         return True
 

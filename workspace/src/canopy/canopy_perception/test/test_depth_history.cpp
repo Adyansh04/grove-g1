@@ -7,12 +7,12 @@
 
 #include <memory>
 
-#include "g1_perception/depth_history.hpp"
+#include "canopy_perception/depth_history.hpp"
 
 namespace
 {
 
-using g1_perception::DepthHistory;
+using canopy_perception::DepthHistory;
 
 sensor_msgs::msg::Image::SharedPtr frameAt(double stamp_s)
 {

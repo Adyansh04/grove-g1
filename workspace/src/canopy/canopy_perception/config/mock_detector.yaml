@@ -1,6 +1,5 @@
-# The stand-in detector, loaded by perception.launch.py with detector:=mock. SIMULATION ONLY: it
-# cuts masks from simulator ground truth. Wildcard key: the node runs as g1_detector, and this
-# file is only loaded for it.
+# The stand-in detector. SIMULATION ONLY: it cuts masks from the ground-truth boxes a simulator
+# publishes. Wildcard key: it runs under whatever name the detector it stands in for has.
 /**:
   ros__parameters:
     # `phrases` comes from the launch file, which feeds the real detector too.

@@ -15,8 +15,15 @@
 #include <string_view>
 #include <vector>
 
+#include "canopy_perception/depth_image.hpp"
+#include "canopy_perception/phrase.hpp"
+
 namespace g1_perception
 {
+
+using canopy_perception::DepthView;
+using canopy_perception::Intrinsics;
+using canopy_perception::slugify;
 
 /// A point in the frame the depth image was captured in, metres.
 struct Point3
@@ -35,31 +42,6 @@ struct Point3
 {
     return { (a.y * b.z) - (a.z * b.y), (a.z * b.x) - (a.x * b.z), (a.x * b.y) - (a.y * b.x) };
 }
-
-/// Pinhole parameters, read from CameraInfo::k rather than assumed.
-struct Intrinsics
-{
-    double fx{ 0.0 };
-    double fy{ 0.0 };
-    double cx{ 0.0 };
-    double cy{ 0.0 };
-};
-
-/**
- * @brief A borrowed view over a 32FC1 depth image in metres.
- *
- * Rows can be padded, so `step` is carried rather than derived from the width.
- */
-struct DepthView
-{
-    std::span<const std::uint8_t> data;
-    std::uint32_t                 width{ 0 };
-    std::uint32_t                 height{ 0 };
-    std::uint32_t                 step{ 0 };
-
-    /// Depth at a pixel, or NaN where the sensor reported nothing or the pixel is out of bounds.
-    [[nodiscard]] double at(std::uint32_t u, std::uint32_t v) const;
-};
 
 /// A mask cropped to its own bounding box: `data` is `width * height` bytes, zero outside.
 struct MaskView
@@ -83,9 +65,6 @@ struct OrientedBox
     /// Second in-plane axis, completing a right-handed frame with axis_x and up.
     Point3 axis_y;
 };
-
-/// Turns a noun phrase into the object id it is published under. Shared with the mock detector.
-[[nodiscard]] std::string slugify(std::string_view phrase);
 
 /**
  * @brief Shrinks a mask by @p iterations passes of a 3x3 minimum filter.

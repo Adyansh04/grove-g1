@@ -23,7 +23,7 @@
 #include <vector>
 #include <vision_msgs/msg/detection3_d_array.hpp>
 
-#include "g1_perception/depth_history.hpp"
+#include "canopy_perception/depth_history.hpp"
 #include "g1_perception/object_geometry.hpp"
 #include "g1_perception/object_tracker.hpp"
 
@@ -76,7 +76,7 @@ private:
 
     /// Guards depth_history_ and camera_info_: onMasks reads them while onDepth writes.
     std::mutex                                   frames_mutex_;
-    DepthHistory                                 depth_history_;
+    canopy_perception::DepthHistory              depth_history_;
     ObjectTracker                                tracker_;
     sensor_msgs::msg::CameraInfo::ConstSharedPtr camera_info_;
 

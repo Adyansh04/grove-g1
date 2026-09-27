@@ -70,7 +70,7 @@ def world_model(context):
                 ("map", "/map"),
                 ("odom", ODOMETRY),
                 ("cloud", LIDAR),
-                ("descriptions", "/g1_object_describer/descriptions"),
+                ("descriptions", "/object_describer/descriptions"),
             ],
         )
     ]
@@ -87,7 +87,7 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "describe",
                 default_value="false",
-                description="Ask g1_object_describer to name objects from their best crop.",
+                description="Ask canopy_perception's object_describer to name objects from their best crop.",
             ),
             DeclareLaunchArgument(
                 "rviz",
@@ -110,9 +110,9 @@ def generate_launch_description():
             ),
             # Names objects through the host semantic server (scripts/semantic_server.py).
             Node(
-                package="g1_perception",
-                executable="g1_object_describer",
-                name="g1_object_describer",
+                package="canopy_perception",
+                executable="object_describer",
+                name="object_describer",
                 output="both",
                 condition=IfCondition(LaunchConfiguration("describe")),
                 remappings=[("describe_requests", "/g1_world_model/describe_requests")],

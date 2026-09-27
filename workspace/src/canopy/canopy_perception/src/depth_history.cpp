@@ -3,12 +3,12 @@
  * @brief The stamp-matched frame history.
  */
 
-#include "g1_perception/depth_history.hpp"
+#include "canopy_perception/depth_history.hpp"
 
 #include <cmath>
 #include <limits>
 
-namespace g1_perception
+namespace canopy_perception
 {
 
 DepthHistory::DepthHistory(double history_s, double tolerance_s, std::size_t max_frames)
@@ -67,4 +67,4 @@ sensor_msgs::msg::Image::ConstSharedPtr DepthHistory::atOrBefore(double stamp_s)
     return chosen;
 }
 
-}  // namespace g1_perception
+}  // namespace canopy_perception

@@ -23,7 +23,7 @@
 #include <vision_msgs/msg/detection3_d_array.hpp>
 #include <visualization_msgs/msg/marker_array.hpp>
 
-#include "g1_perception/depth_history.hpp"
+#include "canopy_perception/depth_history.hpp"
 
 namespace g1_perception
 {
@@ -71,7 +71,7 @@ private:
     tf2_ros::Buffer            tf_buffer_;
     tf2_ros::TransformListener tf_listener_;
 
-    DepthHistory                                        images_;
+    canopy_perception::DepthHistory                     images_;
     sensor_msgs::msg::CameraInfo::ConstSharedPtr        camera_info_;
     canopy_msgs::msg::InstanceMaskArray::ConstSharedPtr masks_;
     vision_msgs::msg::Detection3DArray::ConstSharedPtr  objects_;

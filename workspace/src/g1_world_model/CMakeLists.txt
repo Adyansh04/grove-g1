@@ -8,7 +8,7 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/g1_common.cmake)
 find_package(ament_cmake REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(canopy_msgs REQUIRED)
-find_package(g1_perception REQUIRED)
+find_package(canopy_perception REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(OpenCV REQUIRED COMPONENTS core imgproc imgcodecs)
@@ -47,7 +47,7 @@ add_library(g1_world_model_node src/world_model_node.cpp)
 g1_target_defaults(g1_world_model_node)
 target_link_libraries(g1_world_model_node PUBLIC
   g1_world_model_core
-  g1_perception::g1_perception_depth_history
+  canopy_perception::canopy_perception_core
   opencv_imgcodecs
   rclcpp::rclcpp
   tf2_ros::tf2_ros
@@ -129,7 +129,7 @@ ament_export_include_directories(include)
 ament_export_dependencies(
   Eigen3
   canopy_msgs
-  g1_perception
+  canopy_perception
   geometry_msgs
   nav_msgs
   OpenCV

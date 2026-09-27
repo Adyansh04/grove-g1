@@ -17,7 +17,7 @@
   <depend>builtin_interfaces</depend>
   <depend>eigen</depend>
   <depend>canopy_msgs</depend>
-  <depend>g1_perception</depend>
+  <depend>canopy_perception</depend>
   <depend>geometry_msgs</depend>
   <depend>libopencv-dev</depend>
   <depend>nav_msgs</depend>

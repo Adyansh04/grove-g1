@@ -12,7 +12,7 @@ the tree walks to frontiers, and everything is scored on the map the robot made.
 G1_WORLD_MODEL_TEST_CAMERAS picks the cameras rendered and read (default head,chest), each with a
 detector of its own.
 
-G1_WORLD_MODEL_TEST_DETECTOR=semantic swaps the mock for g1_detector asking
+G1_WORLD_MODEL_TEST_DETECTOR=semantic swaps the mock for canopy_perception's detector asking
 scripts/semantic_server.py on the host (YOLOE over the indoor word list, SigLIP 2 embeddings), and
 turns the describer on. Start the server, and scripts/start-vlm.sh for its local describer, before
 the test.
@@ -107,13 +107,13 @@ def mock_detector(camera, phrases):
     """Masks for one camera, cut from the ground truth the relay puts in that camera's frame."""
     head = camera == "head"
     return LaunchNode(
-        package="g1_perception",
-        executable="g1_mock_detector",
+        package="canopy_perception",
+        executable="mock_detector",
         name=detector_name(camera),
         output="log",
         parameters=[
             os.path.join(
-                get_package_share_directory("g1_perception"), "config", "g1_mock_detector.yaml"
+                get_package_share_directory("canopy_perception"), "config", "mock_detector.yaml"
             ),
             {"phrases": phrases, "mock_rate_hz": 2.0},
         ],
@@ -131,20 +131,14 @@ def mock_detector(camera, phrases):
 
 def semantic_detector(camera):
     """Masks for one camera from the host semantic server, over the indoor word list."""
-    config = os.path.join(get_package_share_directory("g1_perception"), "config")
-    # Read here rather than passed as files: both are keyed g1_detector, which the second camera's
-    # node is not called.
-    parameters = {}
-    for name in ("g1_detector.yaml", "indoor_vocabulary.yaml"):
-        with open(os.path.join(config, name)) as handle:
-            parameters.update(yaml.safe_load(handle)["g1_detector"]["ros__parameters"])
-    parameters["embed"] = True
     return LaunchNode(
-        package="g1_perception",
-        executable="g1_detector",
+        package="canopy_perception",
+        executable="detector",
         name=detector_name(camera),
         output="log",
-        parameters=[parameters],
+        parameters=[
+            os.path.join(get_package_share_directory("canopy_perception"), "config", "detector.yaml")
+        ],
         remappings=[
             ("color/image_raw", f"{camera_namespace(camera)}/color/image_raw"),
             ("~/instance_masks", mask_topic(camera)),

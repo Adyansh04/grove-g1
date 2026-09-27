@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Names the world model's objects and rooms with a vision-language model on the host.
 
-Python because it is a ZMQ client of scripts/semantic_server.py, as g1_detector is. The world model
+Python because it is a ZMQ client of servers/semantic_server.py, as the detector is. The world model
 publishes a DescribeRequest once an object has been seen a few times; this node sends it to the
 server's describe endpoint, one at a time, and publishes the answer. The server keeps Gemini inside
 the free tier and falls back to the local VLM, so a refusal here is logged and dropped: the world
@@ -13,17 +13,17 @@ from collections import OrderedDict
 
 import numpy as np
 import rclpy
-from canopy_msgs.msg import DescribeRequest, Description
 from PIL import Image
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 
-from g1_perception.host_clients import VisionClient
+from canopy_msgs.msg import DescribeRequest, Description
+from canopy_perception.host_clients import VisionClient
 
 
 class Describer(Node):
     def __init__(self):
-        super().__init__("g1_object_describer")
+        super().__init__("object_describer")
         self._address = self.declare_parameter("server_address", "tcp://127.0.0.1:5561").value
         timeout_ms = int(self.declare_parameter("zmq_timeout_ms", 30000).value)
         self._queue_limit = int(self.declare_parameter("queue_size", 50).value)

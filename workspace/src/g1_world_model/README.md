@@ -11,10 +11,10 @@ the behavior tree, so missions name targets instead of carrying coordinates.
 |---|---|---|
 | Sub | `map` | `nav_msgs/OccupancyGrid` (latched) |
 | Sub | `<camera>/depth/image_raw`, `<camera>/depth/camera_info`, `<camera>/color/image_raw` | each camera's aligned depth and colour |
-| Sub | `<camera>/instance_masks` | `canopy_msgs/InstanceMaskArray` for that camera, from `g1_detector` or the mock |
+| Sub | `<camera>/instance_masks` | `canopy_msgs/InstanceMaskArray` for that camera, from canopy_perception's `detector` or `mock_detector` |
 | Sub | `cloud` | `sensor_msgs/PointCloud2`, the LiDAR, for the walls-only grid |
 | Sub | `odom` | `nav_msgs/Odometry`, for the stillness gate |
-| Sub | `descriptions` | `canopy_msgs/Description`, from `g1_object_describer` |
+| Sub | `descriptions` | `canopy_msgs/Description`, from canopy_perception's `object_describer` |
 | Pub | `~/rooms` | `canopy_msgs/RoomArray` (latched): outline, doorways, type, coverage |
 | Pub | `~/objects` | `canopy_msgs/WorldObjectArray` (latched) |
 | Pub | `~/coverage` | `nav_msgs/OccupancyGrid` for RViz's costmap palette: 90 still to see, 99 written off, 0 the rest |
@@ -98,7 +98,7 @@ frontiers, then the camera pass runs on it. `mode:=localization` uses the commit
 
 ```bash
 ros2 launch g1_bringup bringup.launch.py mode:=mapping nav:=true world:=apartment headless:=true
-ros2 run g1_perception g1_mock_detector --ros-args -r __node:=g1_detector \
+ros2 run canopy_perception mock_detector --ros-args -r __node:=g1_detector \
   -p "phrases:=['sofa','dustbin','bed','desk','chair']" \
   -r object_poses:=/g1_sensor_relay/object_poses \
   -r depth/image_raw:=/camera/aligned_depth_to_color/image_raw \
@@ -108,8 +108,8 @@ ros2 run g1_orchestration g1_bt_executor --ros-args \
   -p tree_file:=$(ros2 pkg prefix g1_orchestration)/share/g1_orchestration/trees/explore.xml
 ```
 
-With the real detector, start `scripts/semantic_server.py` on the host and load
-`g1_perception/config/indoor_vocabulary.yaml` for `g1_detector`; add `describe:=true` to name
+With the real detector, start `scripts/semantic_server.py` on the host and run canopy_perception's
+`detector` with its `config/detector.yaml`; add `describe:=true` to name
 objects through the server's VLM, and to type the rooms whose objects leave their type in doubt
 from a few whole frames taken where the robot stood in them.
 

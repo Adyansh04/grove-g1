@@ -1,7 +1,7 @@
 # How often each object label appears in each room type, P(present | type), for the naive Bayes
 # room typer. Labels a type does not list get `unlisted`. Keys are the detector vocabulary's words
-# (workspace/src/g1_perception/config/indoor_vocabulary.yaml); `synonyms` maps other detectors'
-# and people's words onto them, for typing and for finding objects by name.
+# (canopy_perception's config/detector.yaml); `synonyms` maps other detectors' and people's words
+# onto them, for typing and for finding objects by name.
 unlisted: 0.08
 
 room_types:

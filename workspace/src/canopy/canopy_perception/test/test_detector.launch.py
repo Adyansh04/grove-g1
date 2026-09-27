@@ -12,7 +12,6 @@ import unittest
 import launch_testing
 import pytest
 import rclpy
-from canopy_msgs.msg import InstanceMaskArray
 from launch import LaunchDescription
 from launch.actions import ExecuteProcess, TimerAction
 from launch_ros.actions import Node
@@ -22,20 +21,22 @@ from rclpy.parameter import Parameter
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import Image
 
+from canopy_msgs.msg import InstanceMaskArray
+
 PORT = 5591
-STUB = os.path.join(os.path.dirname(__file__), "vision_server_stub.py")
+STUB = os.path.join(os.path.dirname(__file__), "segment_server_stub.py")
 CAMERA_TOPIC = "/camera/color/image_raw"
-MASK_TOPIC = "/g1_detector/instance_masks"
-UNDIRECTED_NAME = "g1_detector_undirected"
+MASK_TOPIC = "/detector/instance_masks"
+UNDIRECTED_NAME = "detector_undirected"
 WIDTH, HEIGHT = 640, 480
 
 
 @pytest.mark.launch_test
 def generate_test_description():
     detector = Node(
-        package="g1_perception",
-        executable="g1_detector",
-        name="g1_detector",
+        package="canopy_perception",
+        executable="detector",
+        name="detector",
         output="screen",
         remappings=[("color/image_raw", CAMERA_TOPIC)],
         parameters=[
@@ -50,8 +51,8 @@ def generate_test_description():
     )
     # A second detector with no `phrases` override, to exercise the node's own declaration.
     undirected = Node(
-        package="g1_perception",
-        executable="g1_detector",
+        package="canopy_perception",
+        executable="detector",
         name=UNDIRECTED_NAME,
         output="screen",
         remappings=[("color/image_raw", CAMERA_TOPIC)],
@@ -142,7 +143,7 @@ class TestDetector(unittest.TestCase):
                       "the masks are stamped with something other than a frame")
 
     def test_04_an_empty_phrase_list_stops_the_stream(self):
-        client = self.node.create_client(SetParameters, "/g1_detector/set_parameters")
+        client = self.node.create_client(SetParameters, "/detector/set_parameters")
         self.assertTrue(client.wait_for_service(timeout_sec=10.0))
 
         self._set_phrases(client, [])

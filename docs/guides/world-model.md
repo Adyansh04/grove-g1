@@ -19,7 +19,7 @@ Then, inside the container:
 ```bash
 ros2 launch g1_bringup bringup.launch.py mode:=mapping nav:=true world:=apartment headless:=true \
   arms_at_sides:=true
-ros2 run g1_perception g1_mock_detector --ros-args -r __node:=g1_detector \
+ros2 run canopy_perception mock_detector --ros-args -r __node:=g1_detector \
   -p "phrases:=['sofa','dustbin','bed','desk','chair','dining table','bookshelf','mug']" \
   -r object_poses:=/g1_sensor_relay/object_poses \
   -r depth/image_raw:=/camera/aligned_depth_to_color/image_raw \
@@ -83,8 +83,8 @@ room descriptions (Gemini on its free tier, falling back to Qwen3.5-4B in llama.
 ```
 
 Gemini needs a free API key in `~/.config/grove/gemini.env`. The server caps its own use at 5
-requests a minute and 100 a day, and stops for the day on any quota answer. Then run `g1_detector`
-with `g1_perception/config/indoor_vocabulary.yaml` in place of the mock, and launch the world model
+requests a minute and 100 a day, and stops for the day on any quota answer. Then run canopy_perception's
+`detector` with its `config/detector.yaml` in place of the mock, and launch the world model
 with `describe:=true`: each object gets a name and a caption, and a room whose objects do not
 settle its type is typed from the frames the robot took standing in it.
 
