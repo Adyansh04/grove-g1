@@ -2,9 +2,11 @@
 
 The entry point for the G1 stack in simulation. `bringup.launch.py` stages one `unitree_mujoco`
 world and the ros2_control stack, then composes navigation, MoveIt, manipulation, perception and
-the VLA grasp beside them as asked. The package also holds the MJCF scenes, the simulator's sensor
-config, and two Python scripts that acquire and release the arms: one-shot sequencing well under
-1 Hz, so not C++. No compiled code.
+the VLA grasp beside them as asked. `world_model.launch.py` runs canopy's world model on the G1's
+topics. The package also holds the MJCF scenes, the simulator's sensor config and the apartment
+world. No compiled code: the Python here is one-shot or offline, well under 1 Hz, so not C++. Two
+scripts acquire and release the arms, two analyse a finished exploration run, and `tools/` builds
+the apartment on the host with mujoco, trimesh and scipy.
 
 ```mermaid
 flowchart LR
@@ -50,7 +52,7 @@ flowchart LR
 | `sensors` | `false` | LiDAR, IMU and camera, the relay and the `odom` to `base_footprint` chain. Forced on by the navigation modes, `manipulation` and `perception`. |
 | `cameras` | empty | Which cameras render: `head` (manipulation's), `chest` (mapping's) or `head,chest`. Empty keeps the world's sensor config: the head camera alone. Mounts are in `g1_description`'s `config/cameras.yaml`. |
 | `odometry` | `fast_lio` | What publishes `odom` to `base_footprint`: `fast_lio`, the LiDAR-inertial pipeline the robot runs, or `ground_truth`, the simulator's exact pose, for ruling the odometry out. |
-| `world` | `navigation` | `navigation`, `perception`, `manipulation`, `tabletop` or `lio`. Staged only with sensors on; otherwise the bare floor. Localization converges only in `navigation`, the facility the committed map was built from. |
+| `world` | `navigation` | `navigation`, `perception`, `manipulation`, `tabletop`, `lio` or `apartment` (see [worlds/README.md](worlds/README.md)). Staged only with sensors on; otherwise the bare floor. Localization has a committed map for `navigation` and `apartment` only. |
 | `headless` | `true` | `false` shows the MuJoCo viewer. See the viewer warning below. |
 | `pin_pelvis` | `false` | Weld the robot in place and freeze the legs instead of running the policy, to exercise the arms alone. `mode:=none` only. |
 | `sim_start_delay_s` | empty | Seconds to delay the simulator. Empty means 2.0, or 4.0 when navigation or MoveIt starts alongside it. |
@@ -80,6 +82,12 @@ flowchart LR
 `sim_start_delay_s` (default `2.0`) with the meanings above, plus `rviz` to open
 `g1_sensors.rviz` with sensors on. `rviz.launch.py` takes `rviz_config` (required) and
 `node_name` (`rviz2`). `control.launch.py` takes `pin_pelvis`, which `sim.launch.py` sets.
+
+`world_model.launch.py` starts canopy with the G1's odometry and LiDAR topics and its own
+`config/world_model.yaml`. It takes `cameras` (`head`; bringup's names), `world_dir` (where to
+save and resume the world, empty for neither), and `detector`, `describe` and `rviz` (all
+`false`). [docs/guides/world-model.md](../../../docs/guides/world-model.md) runs it with an
+exploration tree.
 
 ## Running in simulation
 
@@ -157,8 +165,11 @@ others.
 | Path | Contents |
 |---|---|
 | `config/sim_sensors.yaml` | LiDAR, IMU and camera parameters read by the patched simulator (the cameras by name and MJCF camera, mounted from `g1_description`'s `config/cameras.yaml`), the bodies that publish ground-truth poses, and the grasp weld for scenes that declare one. |
+| `config/sim_sensors_apartment.yaml` | The apartment's `sim_sensors.yaml`, tracking every prop; generated. `sim.launch.py` takes `sim_sensors_<world>.yaml` when one exists. |
+| `config/world_model.yaml` | The G1's values for canopy: the planner's footprint and clearances, and the gait's speeds. |
 | `config/g1_sensors.rviz` | RViz without navigation. Fixed frame `odom`. |
-| `mjcf/*.xml` | One scene per world and a pinned variant of each (`lio` has none), plus the flat, walk and pinned overlays. Staged next to the vendored model at launch and removed on shutdown. |
+| `mjcf/*.xml` | One scene per world and a pinned variant of each (`lio` and `apartment` have none), plus the flat, walk and pinned overlays. Staged next to the vendored model at launch and removed on shutdown. |
+| `worlds/` | The apartment's floor plan and ground truth; `tools/build_world.py` generates the rest. |
 
 Controller configuration lives in `g1_controllers/config/lowcmd_controllers.yaml`, which
 `control.launch.py` loads.
@@ -176,8 +187,10 @@ colcon test --packages-select g1_bringup --ctest-args -LE simulator   # what CI 
 | `test_lidar_geometry` | yes | The LiDAR measures the room it is in. |
 | `test_fastlio_odometry` | yes | FAST-LIO's `odom` against the simulator's pelvis pose, standing and walking. |
 | `test_agile_walk` | yes | The AGILE policy stands the robot unpinned and walks it on `/cmd_vel` without the safety controller latching. |
+| `test_explore_apartment` | yes | canopy's acceptance run: explores the apartment on its committed map and scores rooms, camera coverage and objects against its ground truth. Tens of minutes; needs the fetched assets. |
+| `test_explore_apartment_mapping` | yes | The same from no map, with slam_toolbox building it. |
 | `xmllint_scenes_g1_bringup` | no | The MJCF scenes are valid XML, which MuJoCo's parser does not enforce. |
-| `ruff_check_g1_bringup` | no | Lints the launch files, tests and scripts. |
+| `ruff_check_g1_bringup` | no | Lints the launch files, tests, scripts and tools. |
 
 The simulator suites serialise on a shared resource lock, with a `sim_settle_gap` pause to let
 DDS drain. MuJoCo syncs to CPU time while the policy runs on a wall timer, so on a loaded machine
