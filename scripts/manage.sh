@@ -22,6 +22,19 @@ else
 fi
 
 # --- Helper Functions ---
+# The image builds the simulator from the unitree_mujoco checkout: refuse one that is not the
+# commit this repo records ('+' in git submodule status), or was never checked out ('-').
+function check_simulator_checkout() {
+    local root status
+    root="$(cd "$(dirname "$0")/.." && pwd)"
+    status=$(git -C "$root" submodule status workspace/vendor/unitree_mujoco 2>/dev/null || true)
+    if [[ "$status" == [+-]* ]]; then
+        echo "workspace/vendor/unitree_mujoco is not at the commit this repo records:" >&2
+        echo "  git submodule update --init workspace/vendor/unitree_mujoco" >&2
+        exit 1
+    fi
+}
+
 function print_usage() {
     echo "Usage: ROS_DISTRO=<humble|jazzy|...> $0 [start|stop|restart|recreate|logs|exec|exec-as-me]"
     echo "Note: .env is loaded first when present; otherwise shell environment and Compose defaults are used."
@@ -42,6 +55,7 @@ case "$ACTION" in
     echo "Starting ROS development container for ROS_DISTRO='${ROS_DISTRO:-<from defaults>}'..."
     echo "Granting GUI access (X11)..."
     xhost +local:docker 2>/dev/null || true
+    check_simulator_checkout
     docker compose up -d --build "${SERVICE_NAME}"
     echo
     echo "Active services:"
@@ -64,6 +78,7 @@ case "$ACTION" in
     echo "Code and data on host are preserved: ./workspace, ./data"
     echo "Granting GUI access (X11)..."
     xhost +local:docker 2>/dev/null || true
+    check_simulator_checkout
     docker compose down
     docker compose up -d --build "${SERVICE_NAME}"
     echo
