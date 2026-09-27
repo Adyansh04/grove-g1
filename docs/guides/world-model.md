@@ -17,7 +17,8 @@ Fetch its assets once on the host (about 330 MB; nothing is committed):
 Then, inside the container:
 
 ```bash
-ros2 launch g1_bringup bringup.launch.py mode:=mapping nav:=true world:=apartment headless:=true
+ros2 launch g1_bringup bringup.launch.py mode:=mapping nav:=true world:=apartment headless:=true \
+  arms_at_sides:=true
 ros2 run g1_perception g1_mock_detector --ros-args -r __node:=g1_detector \
   -p "phrases:=['sofa','dustbin','bed','desk','chair','dining table','bookshelf','mug']" \
   -r object_poses:=/g1_sensor_relay/object_poses \
@@ -28,9 +29,10 @@ ros2 run g1_orchestration g1_bt_executor --ros-args \
   -p tree_file:=$(ros2 pkg prefix g1_orchestration)/share/g1_orchestration/trees/explore.xml
 ```
 
-The mock detector cuts masks from simulator ground truth, because open-vocabulary models do not
-work on flat MuJoCo renders. It matches a phrase to every numbered body of that class: "chair"
-finds `chair_1` to `chair_5`.
+The mock detector cuts masks from simulator ground truth, so a run scores the mapping rather than a
+detector on renders. It matches a phrase to every numbered body of that class: "chair" finds
+`chair_1` to `chair_5`. `arms_at_sides:=true` hangs the arms beside the thighs: at zero the
+forearms point forward into both cameras' views, and a real detector maps the hands.
 
 With `mode:=mapping` there is no map to start from: `explore.xml` first walks to frontiers while
 slam_toolbox builds one, then visits viewpoints until the camera has seen every room, and saves
@@ -85,6 +87,11 @@ requests a minute and 100 a day, and stops for the day on any quota answer. Then
 with `g1_perception/config/indoor_vocabulary.yaml` in place of the mock, and launch the world model
 with `describe:=true`: each object gets a name and a caption, and a room whose objects do not
 settle its type is typed from the frames the robot took standing in it.
+
+The acceptance test runs this way with `G1_WORLD_MODEL_TEST_DETECTOR=semantic`. On the apartment
+renders it finds about three quarters of the objects against the mock's all: YOLOE confuses
+furniture of one material (desk, cabinet, TV stand) and misses mugs and bowls on tables, while the
+describer usually names them right. Gemini's 100 requests a day cover about one run.
 
 ## What the camera cannot see
 

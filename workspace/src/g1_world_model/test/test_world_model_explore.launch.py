@@ -1,19 +1,26 @@
 """The world model's acceptance run: explore the apartment, then score what it learned.
 
-Brings up the apartment world with localization and Nav2, the mock detector (masks cut from
-simulator ground truth, so this scores the mapping, not a detector on flat renders), the world
-model and the exploration tree. Once the tree finishes, the rooms, the camera coverage and the
-objects are scored against worlds/apartment.truth.yaml, and the robot is sent to an object by
-name with no coordinates anywhere.
+Brings up the apartment world with localization and Nav2, the arms hung at the sides out of the
+cameras' view, the mock detector (masks cut from simulator ground truth, so this scores the
+mapping, not a detector on flat renders), the world model and the exploration tree. Once the tree
+finishes, the rooms, the camera coverage and the objects are scored against
+worlds/apartment.truth.yaml, and the robot is sent to an object by name with no coordinates
+anywhere.
 
 With G1_WORLD_MODEL_TEST_MAPPING=1 there is no map to start from: slam_toolbox builds it while
 the tree walks to frontiers, and everything is scored on the map the robot made.
 G1_WORLD_MODEL_TEST_CAMERAS picks the cameras rendered and read (default head,chest), each with a
-mock detector of its own.
+detector of its own.
+
+G1_WORLD_MODEL_TEST_DETECTOR=semantic swaps the mock for g1_detector asking
+scripts/semantic_server.py on the host (YOLOE over the indoor word list, SigLIP 2 embeddings), and
+turns the describer on. Start the server, and scripts/start-vlm.sh for its local describer, before
+the test.
 """
 
 import math
 import os
+import re
 import signal
 import subprocess
 import tempfile
@@ -54,6 +61,7 @@ WORLD_DIR = tempfile.mkdtemp(prefix="g1_world_explore_")
 BRINGUP_TIMEOUT_S = 240.0
 MAPPING = os.environ.get("G1_WORLD_MODEL_TEST_MAPPING", "") == "1"
 CAMERAS = os.environ.get("G1_WORLD_MODEL_TEST_CAMERAS", "head,chest")
+DETECTOR = os.environ.get("G1_WORLD_MODEL_TEST_DETECTOR", "mock")
 # Mapping first walks every frontier, which the committed map has none of.
 EXPLORE_TIMEOUT_S = (75 if MAPPING else 50) * 60.0
 
@@ -80,13 +88,29 @@ def load_truth():
         return yaml.safe_load(handle)
 
 
+def camera_namespace(camera):
+    return "/camera" if camera == "head" else f"/{camera}_camera"
+
+
+def mask_topic(camera):
+    return (
+        "/g1_perception/instance_masks"
+        if camera == "head"
+        else f"/g1_perception/{camera}/instance_masks"
+    )
+
+
+def detector_name(camera):
+    return "g1_detector" if camera == "head" else f"g1_detector_{camera}"
+
+
 def mock_detector(camera, phrases):
     """Masks for one camera, cut from the ground truth the relay puts in that camera's frame."""
     head = camera == "head"
     return LaunchNode(
         package="g1_perception",
         executable="g1_mock_detector",
-        name="g1_detector" if head else f"g1_detector_{camera}",
+        name=detector_name(camera),
         output="log",
         parameters=[
             os.path.join(
@@ -99,15 +123,32 @@ def mock_detector(camera, phrases):
                 "object_poses",
                 "/g1_sensor_relay/object_poses" if head else f"/g1_sensor_relay/{camera}/object_poses",
             ),
-            (
-                "depth/image_raw",
-                f"/{'camera' if head else camera + '_camera'}/aligned_depth_to_color/image_raw",
-            ),
-            ("camera_info", f"/{'camera' if head else camera + '_camera'}/color/camera_info"),
-            (
-                "~/instance_masks",
-                "/g1_perception/instance_masks" if head else f"/g1_perception/{camera}/instance_masks",
-            ),
+            ("depth/image_raw", f"{camera_namespace(camera)}/aligned_depth_to_color/image_raw"),
+            ("camera_info", f"{camera_namespace(camera)}/color/camera_info"),
+            ("~/instance_masks", mask_topic(camera)),
+        ],
+    )
+
+
+def semantic_detector(camera):
+    """Masks for one camera from the host semantic server, over the indoor word list."""
+    config = os.path.join(get_package_share_directory("g1_perception"), "config")
+    # Read here rather than passed as files: both are keyed g1_detector, which the second camera's
+    # node is not called.
+    parameters = {}
+    for name in ("g1_detector.yaml", "indoor_vocabulary.yaml"):
+        with open(os.path.join(config, name)) as handle:
+            parameters.update(yaml.safe_load(handle)["g1_detector"]["ros__parameters"])
+    parameters["embed"] = True
+    return LaunchNode(
+        package="g1_perception",
+        executable="g1_detector",
+        name=detector_name(camera),
+        output="log",
+        parameters=[parameters],
+        remappings=[
+            ("color/image_raw", f"{camera_namespace(camera)}/color/image_raw"),
+            ("~/instance_masks", mask_topic(camera)),
         ],
     )
 
@@ -116,6 +157,11 @@ def mock_detector(camera, phrases):
 def generate_test_description():
     truth = load_truth()
     phrases = sorted({item["label"] for item in truth["objects"]})
+    semantic = DETECTOR == "semantic"
+    detectors = [
+        semantic_detector(name) if semantic else mock_detector(name, phrases)
+        for name in CAMERAS.split(",")
+    ]
     return (
         LaunchDescription(
             [
@@ -130,11 +176,12 @@ def generate_test_description():
                         "nav": "true",
                         "world": "apartment",
                         "cameras": CAMERAS,
+                        "arms_at_sides": "true",
                         "headless": "true",
                         "rviz": "false",
                     }.items(),
                 ),
-                *[mock_detector(name, phrases) for name in CAMERAS.split(",")],
+                *detectors,
                 IncludeLaunchDescription(
                     PythonLaunchDescriptionSource(
                         os.path.join(
@@ -143,7 +190,11 @@ def generate_test_description():
                             "world_model.launch.py",
                         )
                     ),
-                    launch_arguments={"world_dir": WORLD_DIR, "cameras": CAMERAS}.items(),
+                    launch_arguments={
+                        "world_dir": WORLD_DIR,
+                        "cameras": CAMERAS,
+                        "describe": "true" if semantic else "false",
+                    }.items(),
                 ),
                 TimerAction(period=1.0, actions=[launch_testing.actions.ReadyToTest()]),
             ]
@@ -206,6 +257,14 @@ def fit_frame(pairs):
 def world_pose(mapped, frame):
     x, y = to_world(frame, mapped.pose.position.x, mapped.pose.position.y)
     return x, y, yaw_of(mapped.pose.orientation) + frame[2]
+
+
+def names_it(mapped, names):
+    """Whether a mapped object's label, or whole words of its describer's name, is one of names:
+    "plastic crate" is a crate, as FindObjects answers it."""
+    return mapped.label in names or any(
+        re.search(rf"\b{re.escape(name)}\b", mapped.name.lower()) for name in names
+    )
 
 
 def on_footprint(item, mapped, frame):
@@ -450,11 +509,7 @@ class ExploreApartmentTest(unittest.TestCase):
         missing = []
         for item in wanted:
             names = {item["label"], *item.get("synonyms", [])}
-            near = [
-                o
-                for o in mapped
-                if (o.label in names or o.name in names) and on_footprint(item, o, frame)
-            ]
+            near = [o for o in mapped if names_it(o, names) and on_footprint(item, o, frame)]
             if near:
                 found += 1
                 duplicates += len(near) - 1
