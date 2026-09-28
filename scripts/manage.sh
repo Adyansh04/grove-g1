@@ -1,15 +1,19 @@
 #!/bin/bash
 #
-# Unified script for managing the ROS development Docker container lifecycle.
+# Manages the ROS development container and runs commands inside it.
 #
-# Usage: ROS_DISTRO=jazzy ./scripts/manage.sh [start|stop|restart|recreate|logs|exec|exec-as-me]
+# Usage: ./scripts/manage.sh <command> [args]; ./scripts/manage.sh help lists the commands.
 #
 
 set -euo pipefail
 
 # --- Configuration ---
 SERVICE_NAME="ros-dev"
-ENV_FILE="$(cd "$(dirname "$0")/.." && pwd)/.env"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ENV_FILE="$ROOT/.env"
+
+# Compose looks for docker-compose.yml in the working directory, whatever the caller's.
+cd "$ROOT"
 
 # Load .env first so it wins over any inherited shell values.
 if [[ -f "$ENV_FILE" ]]; then
@@ -21,13 +25,18 @@ else
     echo "Warning: no .env file found at $ENV_FILE; falling back to shell environment and Compose defaults." >&2
 fi
 
+# Our packages. The vendored ones' lint targets fail by design.
+OUR_PACKAGES='^(g1_|canopy)'
+
+# Run before every command in the container: ROS, then the workspace once it has been built.
+IN_WORKSPACE='source "/opt/ros/$ROS_DISTRO/setup.bash" && cd /root/workspace && if [[ -f install/setup.bash ]]; then source install/setup.bash; fi'
+
 # --- Helper Functions ---
 # The image builds the simulator from the unitree_mujoco checkout: refuse one that is not the
 # commit this repo records ('+' in git submodule status), or was never checked out ('-').
 function check_simulator_checkout() {
-    local root status
-    root="$(cd "$(dirname "$0")/.." && pwd)"
-    status=$(git -C "$root" submodule status workspace/vendor/unitree_mujoco 2>/dev/null || true)
+    local status
+    status=$(git -C "$ROOT" submodule status workspace/vendor/unitree_mujoco 2>/dev/null || true)
     if [[ "$status" == [+-]* ]]; then
         echo "workspace/vendor/unitree_mujoco is not at the commit this repo records:" >&2
         echo "  git submodule update --init workspace/vendor/unitree_mujoco" >&2
@@ -35,16 +44,69 @@ function check_simulator_checkout() {
     fi
 }
 
+# Runs a command in the container, in /root/workspace with ROS and the workspace sourced.
+function in_container() {
+    local tty=()
+    [[ -t 0 && -t 1 ]] || tty=(-T)
+    docker compose exec "${tty[@]}" "${SERVICE_NAME}" bash -c "$IN_WORKSPACE && exec \"\$@\"" bash "$@"
+}
+
+# The named packages, or the whole workspace. Capped: uncapped, the compilers run the machine out
+# of memory and the OOM killer takes the desktop session with them.
+function build() {
+    local select=()
+    (( $# )) && select=(--packages-select "$@")
+    in_container env MAKEFLAGS="${MAKEFLAGS:--j4}" colcon build --symlink-install --parallel-workers 4 \
+        "${select[@]}" --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+}
+
+# Our packages' tests, or the named packages', without the simulator suites. With --sim, only
+# those, after clean-stack.sh: a stack left on the graph fails them at random.
+function run_tests() {
+    local labels=(-LE simulator)
+    if [[ "${1:-}" == --sim ]]; then
+        shift
+        labels=(-L simulator)
+        "$ROOT/scripts/clean-stack.sh"
+    fi
+    local select=(--packages-select-regex "$OUR_PACKAGES")
+    (( $# )) && select=(--packages-select "$@")
+    # One package at a time, as CI runs them. Results from earlier runs are cleared first, or
+    # they would be reported as this run's.
+    in_container bash -c '
+        labels=("$1" "$2")
+        shift 2
+        mapfile -t packages < <(colcon list --names-only "$@")
+        for package in "${packages[@]}"; do rm -rf "build/$package/test_results"; done
+        status=0
+        colcon test --packages-select "${packages[@]}" --executor sequential \
+            --return-code-on-test-failure --ctest-args "${labels[@]}" || status=$?
+        for package in "${packages[@]}"; do
+            [[ -d "build/$package/test_results" ]] || continue
+            summary=$(colcon test-result --test-result-base "build/$package" | tail -n 1)
+            printf "%-24s %s\n" "$package" "$summary"
+            if [[ "$summary" != *" 0 errors, 0 failures"* ]]; then
+                colcon test-result --test-result-base "build/$package" --verbose | sed "\$d"
+            fi
+        done
+        exit "$status"
+    ' bash "${labels[@]}" "${select[@]}"
+}
+
 function print_usage() {
-    echo "Usage: ROS_DISTRO=<humble|jazzy|...> $0 [start|stop|restart|recreate|logs|exec|exec-as-me]"
-    echo "Note: .env is loaded first when present; otherwise shell environment and Compose defaults are used."
-    echo "  start     - Build and start the container in detached mode."
-    echo "  stop      - Stop the running container."
-    echo "  restart   - Restart the container."
-    echo "  recreate  - Stop, remove, and rebuild the container from scratch."
-    echo "  logs      - Follow the container's log output."
-    echo "  exec      - Attach a bash shell to the running container (root)."
-    echo "  exec-as-me - Same, as your host UID/GID. Use for clang-tidy --fix / clang-format -i."
+    cat <<EOF
+Usage: $0 <command> [args]
+.env is loaded first when present; otherwise the shell environment and Compose defaults apply.
+
+  start                 Build and start the container in detached mode.
+  stop                  Stop the running container.
+  restart               Restart the container.
+  recreate              Stop, remove, and rebuild the container from scratch.
+  logs                  Follow the container's log output.
+  exec [cmd...]         A bash shell in /root/workspace with the workspace sourced, or run cmd there.
+  build [pkg...]        colcon build the named packages, or the whole workspace.
+  test [--sim] [pkg...] Our packages' tests without a simulator, or with --sim only the simulator suites.
+EOF
 }
 
 # --- Main Logic ---
@@ -91,8 +153,20 @@ case "$ACTION" in
         docker compose logs -f
         ;;
     exec)
-        echo "Attaching bash to Compose service '${SERVICE_NAME}'..."
-        docker compose exec "${SERVICE_NAME}" bash
+        shift
+        if (( $# == 0 )); then
+            echo "Attaching bash to Compose service '${SERVICE_NAME}'..."
+            set -- bash
+        fi
+        in_container "$@"
+        ;;
+    build)
+        shift
+        build "$@"
+        ;;
+    test)
+        shift
+        run_tests "$@"
         ;;
     exec-as-me)
         # As the host UID/GID, for tools that rewrite sources in place: a root-run one leaves
