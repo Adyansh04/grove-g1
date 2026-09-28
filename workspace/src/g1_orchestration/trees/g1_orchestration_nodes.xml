@@ -77,6 +77,7 @@
         </Action>
         <Action ID="ResolveTarget">
             <output_port name="target_id" type="std::string">What it resolved to.</output_port>
+            <output_port name="yaw" type="double">The goal's heading, map frame, for a TurnTo after the walk: Nav2 stops short of it.</output_port>
             <output_port name="goal" type="g1_orchestration::Station">A reachable pose facing the target.</output_port>
             <input_port name="service" type="std::string" default="/canopy/get_approach_pose">The world model's service.</input_port>
             <input_port name="standoff" type="double" default="0.000000">Distance from the target's footprint, m; 0 for the default.</input_port>

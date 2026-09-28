@@ -86,11 +86,17 @@ by the detector's word or a synonym from canopy's room table ("dustbin" finds a 
 that finds nothing reports how much of the searched area the camera has seen, so "not found" means "not
 in the 96 % of the office the camera saw", not "absent".
 
-In a tree, `ResolveTarget` turns a target into a pose facing it, for `NavigateToPose`:
+In a tree, `ResolveTarget` turns a target into a pose facing it, for `NavigateToPose`. The pose is
+0.72 m from the target, out of the steep part of Nav2's inflation, square to one of its sides and
+as near that side's middle as a short walk allows: each metre off the middle counts as 3 m of
+walking. It takes a corner only when no side is clear, and stands further off only when nothing at
+0.72 m is. Nav2 stops up to 0.5 m and 0.5 rad off, so a `TurnTo` squares the robot up once it
+arrives:
 
 ```xml
-<ResolveTarget target="dustbin" room="office" goal="{goal}"/>
+<ResolveTarget target="dustbin" room="office" goal="{goal}" yaw="{yaw}"/>
 <NavigateToPose goal="{goal}"/>
+<TurnTo yaw="{yaw}"/>
 ```
 
 ## With real models

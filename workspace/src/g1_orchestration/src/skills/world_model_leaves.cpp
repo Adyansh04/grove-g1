@@ -211,6 +211,9 @@ BT::PortsList ResolveTarget::providedPorts()
             std::string(kWorldModel) + "/get_approach_pose",
             "The world model's service."),
         BT::OutputPort<Station>("goal", "A reachable pose facing the target."),
+        BT::OutputPort<double>(
+            "yaw",
+            "The goal's heading, map frame, for a TurnTo after the walk: Nav2 stops short of it."),
         BT::OutputPort<std::string>("target_id", "What it resolved to."),
     };
 }
@@ -243,8 +246,10 @@ BT::NodeStatus ResolveTarget::tick()
             response == nullptr ? "no answer" : response->message.c_str());
         return BT::NodeStatus::FAILURE;
     }
-    const auto& pose = response->pose.pose;
-    setOutput("goal", Station{ pose.position.x, pose.position.y, yawOf(pose.orientation) });
+    const auto&  pose = response->pose.pose;
+    const double yaw  = yawOf(pose.orientation);
+    setOutput("goal", Station{ pose.position.x, pose.position.y, yaw });
+    setOutput("yaw", yaw);
     setOutput("target_id", response->target_id);
     RCLCPP_INFO(
         node_->get_logger(),
