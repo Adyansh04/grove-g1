@@ -96,7 +96,7 @@ class GraspGenAdapter(Node):
         except RuntimeError as error:
             self.get_logger().warning(
                 f"the grasp generator at {self._address} did not answer: {error}. "
-                "Requests will retry; start it with scripts/setup-graspgen.sh's instructions."
+                "Requests will retry; start it with ./scripts/serve.sh graspgen."
             )
             return
         try:

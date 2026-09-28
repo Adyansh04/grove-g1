@@ -66,11 +66,12 @@ dependencies in a virtualenv. Two things it cannot do for you:
 Serve the policy from this repository:
 
 ```bash
-~/ref/Isaac-GR00T/.venv/bin/python scripts/groot_server.py \
-    --model-path nvidia/GR00T-N1.7-3B --embodiment-tag real_g1 --port 5555
+./scripts/serve.sh groot
 ```
 
-`groot_server.py` wraps upstream's entry point to load the checkpoint in bf16. Upstream upcasts to
+That runs `servers/groot_server.py` with `--model-path nvidia/GR00T-N1.7-3B --embodiment-tag
+real_g1 --port 5555`; arguments after `groot` override them. `groot_server.py` wraps upstream's
+entry point to load the checkpoint in bf16. Upstream upcasts to
 fp32 in host memory first, about 4 GB more at peak, which on a 30 GB machine gets the load
 OOM-killed with an error that reads like a CUDA fault.
 

@@ -64,7 +64,7 @@ This creates a virtualenv at `~/ref/grove-vision/.venv`, sharing the torch wheel
 and 180 MB for SAM 2.1 small.
 
 ```bash
-~/ref/grove-vision/.venv/bin/python scripts/vision_server.py --port 5560
+./scripts/serve.sh vision
 ```
 
 Compose is host-networked, so the container reaches it at `tcp://127.0.0.1:5560`. The default
@@ -73,8 +73,7 @@ backend needs about 2.4 GiB of VRAM on top of the simulator's.
 To check it against saved frames without binding a socket:
 
 ```bash
-~/ref/grove-vision/.venv/bin/python scripts/vision_server.py \
-  --self-test frame.png --phrases "red block,green cylinder"
+./scripts/serve.sh vision --self-test frame.png --phrases "red block,green cylinder"
 ```
 
 The self-test prints each instance's score, region of interest and pixel count, then the peak
@@ -129,9 +128,7 @@ protocol, so once a commit works, pin it: `GRASPGEN_REF=<sha> ./scripts/setup-gr
 it; the first run downloads a few gigabytes of checkpoints into `~/ref/GraspGenX/ext`:
 
 ```bash
-cd ~/ref/GraspGenX
-uv run python client-server/graspgenx_server.py \
-  --config ext/graspgenx_checkpoints/release --assets_dir ext/gripper_descriptions --port 5556
+./scripts/serve.sh graspgen
 ```
 
 Then ask for candidates:
@@ -177,8 +174,7 @@ A detector takes a noun phrase. Turning "pick up the mug to the left of the bowl
 different job, and a vision-language model does it. Start the server with one:
 
 ```bash
-~/ref/grove-vision/.venv/bin/python scripts/vision_server.py \
-  --vlm Qwen/Qwen3-VL-2B-Instruct --port 5560
+./scripts/serve.sh vision --vlm Qwen/Qwen3-VL-2B-Instruct
 ```
 
 The model loads on the first grounding request rather than at startup, so segmentation is

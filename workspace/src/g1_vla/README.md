@@ -128,7 +128,7 @@ ros2 action send_goal /g1_vla_server/grasp g1_msgs/action/Grasp \
 ```
 
 The mock engine never grasps, so that goal ends on its timeout; it exists to exercise the gate.
-For a real policy, run `scripts/groot_server.py` on the host (set up by `scripts/setup-groot.sh`)
+For a real policy, run `./scripts/serve.sh groot` on the host (set up by `scripts/setup-groot.sh`)
 and use `vla_engine:=groot`. The model's modality keys belong to its checkpoint, so the adapter
 logs every key the server reports and refuses to serve until every state and video key is mapped.
 

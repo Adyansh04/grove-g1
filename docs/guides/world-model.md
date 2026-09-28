@@ -105,10 +105,8 @@ The host semantic server serves detection (YOLOE-26), image embeddings (SigLIP 2
 room descriptions (Gemini on its free tier, falling back to Qwen3.5-4B in llama.cpp):
 
 ```bash
-cd workspace/src/canopy
-./servers/setup.sh
-./servers/start-vlm.sh start            # the offline VLM, on 127.0.0.1:8080
-~/.local/share/canopy/.venv/bin/python servers/semantic_server.py
+./workspace/src/canopy/servers/setup.sh   # once
+./scripts/serve.sh canopy                 # the offline VLM on 127.0.0.1:8080, then the server
 ```
 
 Gemini needs a free API key in `~/.config/canopy/gemini.env`. The free tier limits each model

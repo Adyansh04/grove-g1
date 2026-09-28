@@ -9,9 +9,9 @@ Two backends, chosen with --backend, behind one reply format:
   grounded-sam2  Grounding DINO boxes refined into masks by SAM 2.1. Ungated; the default.
   sam3           One model from text to instance masks. Better, but the weights are gated.
 
-    ./servers/vision_server.py --port 5560
-    ./servers/vision_server.py --backend sam3 --port 5560
-    ./servers/vision_server.py --vlm Qwen/Qwen3-VL-2B-Instruct --port 5560
+    ./scripts/serve.sh vision                 # --port 5560
+    ./scripts/serve.sh vision --backend sam3
+    ./scripts/serve.sh vision --vlm Qwen/Qwen3-VL-2B-Instruct
 
 With --vlm, a vision-language model is loaded on the first `ground` request. It turns an
 instruction such as "the mug left of the bowl" into noun phrases the detector can take.
