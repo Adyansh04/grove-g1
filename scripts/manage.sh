@@ -142,9 +142,9 @@ Usage: $0 <command> [args]
   restart               Restart the container.
   recreate              Stop, remove, and rebuild the container from scratch.
   logs                  Follow the container's log output.
-  exec [cmd...]         A bash shell in /root/workspace with the workspace sourced, or run cmd there.
+  exec [cmd...]         A shell in /root/workspace with the workspace sourced, or run cmd there.
   build [pkg...]        colcon build the named packages, or the whole workspace.
-  test [--sim] [pkg...] Our packages' tests without a simulator, or with --sim only the simulator suites.
+  test [--sim] [pkg...] Our packages' tests that need no simulator, or with --sim only those that do.
   format                clang-format our C++ and ruff format our Python, in place.
   lint                  Check both, and run ruff check, without a full colcon test.
 EOF
@@ -155,16 +155,16 @@ ACTION=${1:-"help"}
 
 case "$ACTION" in
     start)
-    echo "Starting ROS development container for ROS_DISTRO='${ROS_DISTRO:-<from defaults>}'..."
-    echo "Granting GUI access (X11)..."
-    xhost +local:docker 2>/dev/null || true
-    check_simulator_checkout
-    docker compose up -d --build "${SERVICE_NAME}"
-    echo
-    echo "Active services:"
-    docker compose ps
-    echo
-    echo "Service '${SERVICE_NAME}' started. Use './scripts/manage.sh exec' to open a shell."
+        echo "Starting ROS development container for ROS_DISTRO='${ROS_DISTRO:-<from defaults>}'..."
+        echo "Granting GUI access (X11)..."
+        xhost +local:docker 2>/dev/null || true
+        check_simulator_checkout
+        docker compose up -d --build "${SERVICE_NAME}"
+        echo
+        echo "Active services:"
+        docker compose ps
+        echo
+        echo "Service '${SERVICE_NAME}' started. Use './scripts/manage.sh exec' to open a shell."
         ;;
     stop)
         echo "Stopping container..."
@@ -177,17 +177,17 @@ case "$ACTION" in
         echo "Restarted."
         ;;
     recreate)
-    echo "Recreating container for ROS_DISTRO='${ROS_DISTRO:-<from defaults>}'..."
-    echo "Code and data on host are preserved: ./workspace, ./data"
-    echo "Granting GUI access (X11)..."
-    xhost +local:docker 2>/dev/null || true
-    check_simulator_checkout
-    docker compose down
-    docker compose up -d --build "${SERVICE_NAME}"
-    echo
-    echo "Active services:"
-    docker compose ps
-    echo "Recreated."
+        echo "Recreating container for ROS_DISTRO='${ROS_DISTRO:-<from defaults>}'..."
+        echo "Code and data on host are preserved: ./workspace, ./data"
+        echo "Granting GUI access (X11)..."
+        xhost +local:docker 2>/dev/null || true
+        check_simulator_checkout
+        docker compose down
+        docker compose up -d --build "${SERVICE_NAME}"
+        echo
+        echo "Active services:"
+        docker compose ps
+        echo "Recreated."
         ;;
     logs)
         echo "Following container logs (Ctrl+C to exit)..."
@@ -215,8 +215,11 @@ case "$ACTION" in
     lint)
         lint_sources
         ;;
-    *)
+    help | -h | --help)
         print_usage
+        ;;
+    *)
+        print_usage >&2
         exit 1
         ;;
 esac
