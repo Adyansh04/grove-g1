@@ -149,6 +149,7 @@ Then pick a demo:
 | [Learned grasping](docs/guides/learned-grasping.md) | A vision-language-action policy behind the planning-scene gate. Runs; does not grasp yet. |
 | [Open-vocabulary perception](docs/guides/open-vocabulary-grasping.md) | Objects named in text and measured in 3D, generated grasps, and instructions turned into phrases. |
 | [Exploring and asking what is where](docs/guides/world-model.md) | canopy's exploration of a flat, its rooms and objects, and finding them by name. |
+| [Checking the map by hand](workspace/src/canopy/editor/doc/guide.md) | canopy's map editor, with screenshots: what to check in a saved world and how to fix it. |
 
 `ros2 launch g1_bringup bringup.launch.py --show-args` prints every launch argument with its
 description.

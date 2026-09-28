@@ -70,7 +70,8 @@ ros2 service call /canopy/reload std_srvs/srv/Trigger   # in the container, if c
 ```
 
 What you fix stays fixed in later runs on that world. Until it reloads, canopy refuses to save over
-your edits. See [canopy's editor/README.md](../../workspace/src/canopy/editor/README.md).
+your edits. The [editor's guide](../../workspace/src/canopy/editor/doc/guide.md) shows each feature
+and what to check, with screenshots.
 
 ## Asking the world model
 
