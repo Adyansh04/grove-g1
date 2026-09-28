@@ -110,7 +110,8 @@ AMCL particle display comes from `nav2_rviz_plugins`, a dependency `g1_bringup` 
 ## Tests
 
 ```bash
-colcon test --packages-select g1_navigation
+./scripts/manage.sh test g1_navigation
+./scripts/manage.sh test --sim g1_navigation   # the suites that need a simulator
 ```
 
 | Test | Needs a simulator | Covers |

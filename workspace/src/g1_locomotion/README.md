@@ -82,7 +82,7 @@ window belongs to the arm and carries to hardware.
 ## Tests
 
 ```bash
-colcon test --packages-select g1_locomotion
+./scripts/manage.sh test g1_locomotion
 ```
 
 `test_approach_planner` covers the control law without a simulator: the floor that makes it

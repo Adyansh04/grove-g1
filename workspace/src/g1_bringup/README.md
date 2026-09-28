@@ -177,9 +177,8 @@ Controller configuration lives in `g1_controllers/config/lowcmd_controllers.yaml
 ## Tests
 
 ```bash
-colcon test --packages-select g1_bringup
-colcon test-result --verbose
-colcon test --packages-select g1_bringup --ctest-args -LE simulator   # what CI runs
+./scripts/manage.sh test g1_bringup         # what CI runs
+./scripts/manage.sh test --sim g1_bringup   # the suites that need a simulator
 ```
 
 | Test | Needs a simulator | Covers |
@@ -197,7 +196,7 @@ DDS drain. MuJoCo syncs to CPU time while the policy runs on a wall timer, so on
 the robot can topple. Re-run a failing suite alone before calling it a regression:
 
 ```bash
-colcon test --packages-select g1_bringup --ctest-args -R test_agile_walk
+./scripts/manage.sh exec colcon test --packages-select g1_bringup --ctest-args -R test_agile_walk
 ```
 
 They live here rather than beside the code they exercise because those packages are dependencies
@@ -210,6 +209,6 @@ replace the one in `G1_EXPLORE_TEST_EXPORT_DIR`: a package, then a path in its s
 by default `canopy/doc/apartment`. It needs a `--symlink-install` build.
 
 ```bash
-G1_EXPLORE_TEST_DETECTOR=semantic G1_EXPLORE_TEST_EXPORT=1 colcon test \
-  --packages-select g1_bringup --ctest-args -R '^test_explore_apartment_mapping$'
+./scripts/manage.sh exec env G1_EXPLORE_TEST_DETECTOR=semantic G1_EXPLORE_TEST_EXPORT=1 \
+  colcon test --packages-select g1_bringup --ctest-args -R '^test_explore_apartment_mapping$'
 ```

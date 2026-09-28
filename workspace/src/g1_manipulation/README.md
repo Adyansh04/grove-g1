@@ -165,9 +165,9 @@ the simulator over the relay.
 | `test_pick_place` | yes | The acceptance gate: the block is lifted and held, placed back, and a grasp aimed above it is reported as a miss. |
 
 ```bash
-colcon test --packages-select g1_manipulation
+./scripts/manage.sh test g1_manipulation
 # The simulator suites need every g1_ package built:
-colcon test --packages-select-regex '^g1_' --executor sequential --ctest-args -L simulator
+./scripts/manage.sh test --sim g1_manipulation
 ```
 
 ## On hardware

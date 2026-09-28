@@ -227,7 +227,8 @@ other. `test_robot_model` asserts those stay enabled.
 | `test_moveit_lowcmd` | yes | MoveIt with the pelvis unpinned: every motor claimed before the acquire, the freeze traded for the trajectory controller and back, both arms moving without the balance policy losing the robot, and both hands activating and closing through MoveIt. |
 
 ```bash
-colcon test --packages-select g1_moveit_config
+./scripts/manage.sh test g1_moveit_config
+./scripts/manage.sh test --sim g1_moveit_config   # the suites that need a simulator
 ```
 
 Nothing stands the torso off-square, so arm groups composing through a turned waist are

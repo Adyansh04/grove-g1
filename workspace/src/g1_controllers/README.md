@@ -122,7 +122,7 @@ inside the switch that activates it.
 ## Tests
 
 ```bash
-colcon test --packages-select g1_controllers
+./scripts/manage.sh test g1_controllers
 ```
 
 | Test | Covers |

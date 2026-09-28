@@ -89,7 +89,7 @@ hardware's PD from the `kp` and `kd` in the command and clamps to the URDF's eff
 ## Tests
 
 ```bash
-colcon test --packages-select g1_hand_interface
+./scripts/manage.sh test g1_hand_interface
 ```
 
 `test_wire_contract` pins the mode byte's bit layout, the per-motor index, the joint order, and the

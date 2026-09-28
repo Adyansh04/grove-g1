@@ -169,7 +169,7 @@ Any tuning done against sim FAST-LIO is unvalidated on hardware.
 ## Tests
 
 ```bash
-colcon test --packages-select g1_state_estimation
+./scripts/manage.sh test g1_state_estimation
 ```
 
 | Test | Covers |

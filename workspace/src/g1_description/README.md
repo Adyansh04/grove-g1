@@ -90,7 +90,7 @@ For geometry, use the MuJoCo viewer once `g1_bringup` launches the simulator, or
 ## Tests
 
 ```bash
-colcon test --packages-select g1_description
+./scripts/manage.sh test g1_description
 ```
 
 No simulator needed for any of them.

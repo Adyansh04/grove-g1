@@ -120,7 +120,7 @@ stiffness is what holds the arm up.
 ## Tests
 
 ```bash
-colcon test --packages-select g1_hardware_interface
+./scripts/manage.sh test g1_hardware_interface
 ```
 
 None of these need a simulator.

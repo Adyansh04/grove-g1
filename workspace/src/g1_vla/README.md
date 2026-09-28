@@ -14,7 +14,7 @@ flowchart LR
 ```
 
 ```bash
-colcon build --symlink-install --packages-select g1_vla
+./scripts/manage.sh build g1_vla
 ```
 
 ## Nodes

@@ -175,5 +175,5 @@ None need a simulator.
 | `test_authority_drift` | The acquire sequence against `g1_bringup`'s `activate_arm`: the same names, the arm first with the hands behind it, and the freeze controller still displaced in the same switch. Plus `planArmSwitch`, including that an incoming controller which is not loaded switches nothing at all. |
 
 ```bash
-colcon test --packages-select g1_orchestration
+./scripts/manage.sh test g1_orchestration
 ```

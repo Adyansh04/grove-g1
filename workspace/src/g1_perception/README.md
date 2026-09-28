@@ -18,7 +18,7 @@ flowchart LR
 ```
 
 ```bash
-colcon build --symlink-install --packages-select g1_perception
+./scripts/manage.sh build g1_perception
 ```
 
 ## Nodes

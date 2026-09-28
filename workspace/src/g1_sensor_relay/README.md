@@ -120,7 +120,7 @@ multiply that could overflow.
 ## Tests
 
 ```bash
-colcon test --packages-select g1_sensor_relay
+./scripts/manage.sh test g1_sensor_relay
 ```
 
 `test_frame_reader` covers the framing, the bounds checks, and a drift check that reads both copies

@@ -16,7 +16,7 @@ flowchart LR
 ```
 
 ```bash
-colcon build --symlink-install --packages-select g1_msgs
+./scripts/manage.sh build g1_msgs
 ```
 
 ## Actions
