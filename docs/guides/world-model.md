@@ -54,6 +54,21 @@ When the tree finishes, `world_dir` holds the map SLAM made as a floor plan, eac
 the furniture solid (`map.pgm`, `map.yaml`), a picture of it with the rooms and objects drawn in
 (`semantic_map.png`), and `world.yaml` with every room and object in plain text.
 
+## Checking the map by hand
+
+The models get some of it wrong. canopy's map editor lists what deserves a second look, with the
+camera's view of each object: a phantom seen twice, the floor mapped as a desk, a label the
+describer disagrees with, a room typed with little confidence. Each fix is a click or two. Run it
+on the host once the run is over:
+
+```bash
+python3 workspace/src/canopy/editor/canopy_editor.py data/worlds/apartment   # http://127.0.0.1:8765/
+ros2 service call /canopy/reload std_srvs/srv/Trigger   # in the container, if canopy is still up
+```
+
+What you fix stays fixed in later runs on that world. Until it reloads, canopy refuses to save over
+your edits. See [canopy's editor/README.md](../../workspace/src/canopy/editor/README.md).
+
 ## Asking the world model
 
 ```bash
