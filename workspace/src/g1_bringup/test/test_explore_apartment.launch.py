@@ -14,11 +14,17 @@ G1_EXPLORE_TEST_DETECTOR=semantic swaps the mock for canopy_perception's detecto
 servers/semantic_server.py on the host (YOLOE over the indoor word list, SigLIP 2 embeddings), and
 turns the describer on. Start the server, and servers/start-vlm.sh for its local describer, before
 the test.
+
+G1_EXPLORE_TEST_EXPORT=1 copies the saved world over the one in G1_EXPLORE_TEST_EXPORT_DIR, a
+package and then a path inside its source directory (default canopy/doc/apartment), with a
+run.yaml of how it was made and what it scored. The source is found through the package's
+installed package.xml, so it needs a --symlink-install build.
 """
 
 import math
 import os
 import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -61,6 +67,8 @@ BRINGUP_TIMEOUT_S = 240.0
 MAPPING = os.environ.get("G1_EXPLORE_TEST_MAPPING", "") == "1"
 CAMERAS = os.environ.get("G1_EXPLORE_TEST_CAMERAS", "head,chest")
 DETECTOR = os.environ.get("G1_EXPLORE_TEST_DETECTOR", "mock")
+EXPORT = os.environ.get("G1_EXPLORE_TEST_EXPORT", "") == "1"
+EXPORT_DIR = os.environ.get("G1_EXPLORE_TEST_EXPORT_DIR", "canopy/doc/apartment")
 # Mapping first walks every frontier, which the committed map has none of.
 EXPLORE_TIMEOUT_S = (75 if MAPPING else 50) * 60.0
 
@@ -230,6 +238,28 @@ def centroid(polygon):
     return sum(xs) / len(xs), sum(ys) / len(ys)
 
 
+def export_world(results):
+    """The saved world's files, crops left out, over those in EXPORT_DIR, with run.yaml beside them.
+    Owned like the package: the test runs as root in the container."""
+    package, _, inside = EXPORT_DIR.partition("/")
+    installed = os.path.join(get_package_share_directory(package), "package.xml")
+    if not os.path.islink(installed):
+        raise RuntimeError(f"{package} is not a --symlink-install build: no source to export to")
+    root = os.path.dirname(os.path.realpath(installed))
+    target = os.path.join(root, inside)
+    os.makedirs(target, exist_ok=True)
+    for name in os.listdir(WORLD_DIR):
+        if os.path.isfile(os.path.join(WORLD_DIR, name)):
+            shutil.copyfile(os.path.join(WORLD_DIR, name), os.path.join(target, name))
+    with open(os.path.join(target, "run.yaml"), "w") as out:
+        out.write("# How this world was made: g1_bringup's test_explore_apartment.\n")
+        yaml.safe_dump(results, out, sort_keys=False, default_flow_style=None)
+    owner = os.stat(root)
+    for path in [target, *(os.path.join(target, name) for name in os.listdir(target))]:
+        os.chown(path, owner.st_uid, owner.st_gid)
+    return target
+
+
 def stop(process):
     """SIGINT to the process group, then SIGKILL past 30 s: the tree's arm release alone can make
     several 15 s service calls, and a survivor would drive the next suite's robot."""
@@ -260,6 +290,12 @@ class ExploreApartmentTest(unittest.TestCase):
         cls.world_from_map = None
         cls.track = []
         cls.last_truth = None
+        cls.results = {
+            "date": time.strftime("%Y-%m-%d"),
+            "detector": DETECTOR,
+            "cameras": CAMERAS,
+            "from_no_map": MAPPING,
+        }
         cls.node.create_subscription(
             Odometry, "/g1_sensor_relay/base_state", cls._on_truth_pose, 10
         )
@@ -391,6 +427,7 @@ class ExploreApartmentTest(unittest.TestCase):
             self.fail(f"exploration did not finish in {EXPLORE_TIMEOUT_S / 60:.0f} min")
         minutes = (time.time() - started) / 60.0
         print(f"exploration finished in {minutes:.1f} min with exit code {executor.returncode}")
+        self.results["exploration_min"] = round(minutes, 1)
         self.assertEqual(executor.returncode, 0, "the exploration tree failed")
 
     def test_2_finds_the_rooms(self):
@@ -446,6 +483,13 @@ class ExploreApartmentTest(unittest.TestCase):
                 missing.append(item["body"])
         recall = found / max(len(wanted), 1)
         stray = [o.id + " " + o.label for o in mapped if o.id not in used]
+        self.results["objects"] = {
+            "found": found,
+            "observable": len(wanted),
+            "recall": round(recall, 2),
+            "duplicates": duplicates,
+            "unmatched": len(stray),
+        }
         print(
             f"objects: {found}/{len(wanted)} observable found (recall {recall:.2f}), "
             f"{duplicates} duplicates, {len(stray)} unmatched: {stray[:10]}; missing {missing}"
@@ -461,6 +505,7 @@ class ExploreApartmentTest(unittest.TestCase):
                 fits.append(max(box_iou(item, o, frame) for o in near))
         fits.sort()
         median_fit = fits[len(fits) // 2] if fits else 0.0
+        self.results["box_iou_median"] = round(median_fit, 2)
         print(
             f"boxes: median IoU {median_fit:.2f} over {len(fits)} floor objects, "
             f"lowest {[round(f, 2) for f in fits[:5]]}"
@@ -530,6 +575,15 @@ class ExploreApartmentTest(unittest.TestCase):
             "semantic_map.png",
         ):
             self.assertTrue(os.path.exists(os.path.join(WORLD_DIR, name)), name)
+        if EXPORT:
+            tx, ty, theta = self.frame()
+            # The map's pose in the simulator's world: x and y in m, yaw in degrees.
+            self.results["map_to_world"] = [
+                round(tx, 3),
+                round(ty, 3),
+                round(math.degrees(theta), 2),
+            ]
+            print(f"world exported to {export_world(self.results)}")
 
 
 @launch_testing.post_shutdown_test()

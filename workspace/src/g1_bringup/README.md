@@ -202,3 +202,14 @@ colcon test --packages-select g1_bringup --ctest-args -R test_agile_walk
 
 They live here rather than beside the code they exercise because those packages are dependencies
 of this one.
+
+The explore tests take their options from the environment: `G1_EXPLORE_TEST_DETECTOR=semantic`
+for the real models (start canopy's servers first) and `G1_EXPLORE_TEST_CAMERAS`. With
+`G1_EXPLORE_TEST_EXPORT=1` the saved world, and a `run.yaml` of how it was made and what it scored,
+replace the one in `G1_EXPLORE_TEST_EXPORT_DIR`: a package, then a path in its source directory,
+by default `canopy/doc/apartment`. It needs a `--symlink-install` build.
+
+```bash
+G1_EXPLORE_TEST_DETECTOR=semantic G1_EXPLORE_TEST_EXPORT=1 colcon test \
+  --packages-select g1_bringup --ctest-args -R '^test_explore_apartment_mapping$'
+```
