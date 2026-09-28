@@ -8,6 +8,7 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/g1_common.cmake)
 find_package(ament_cmake REQUIRED)
 find_package(g1_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(nav_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(tf2 REQUIRED)
@@ -19,7 +20,8 @@ find_package(vision_msgs REQUIRED)
 
 # The decision logic is compiled straight into the node and its unit test, so both build it
 # under one dialect and nothing else has to link it.
-add_executable(g1_base_approach src/g1_base_approach_node.cpp src/approach_planner.cpp)
+add_executable(g1_base_approach
+  src/g1_base_approach_node.cpp src/approach_planner.cpp src/step_clear.cpp)
 g1_target_defaults(g1_base_approach)
 target_link_libraries(g1_base_approach PUBLIC
   rclcpp::rclcpp
@@ -29,6 +31,7 @@ target_link_libraries(g1_base_approach PUBLIC
   tf2_geometry_msgs::tf2_geometry_msgs
   ${g1_msgs_TARGETS}
   ${geometry_msgs_TARGETS}
+  ${nav_msgs_TARGETS}
   ${vision_msgs_TARGETS}
 )
 
@@ -49,6 +52,9 @@ if(BUILD_TESTING)
   # run exercises one trajectory, this exercises the branches.
   ament_add_gmock(test_approach_planner test/test_approach_planner.cpp src/approach_planner.cpp)
   g1_target_defaults(test_approach_planner)
+
+  ament_add_gmock(test_step_clear test/test_step_clear.cpp src/step_clear.cpp)
+  g1_target_defaults(test_step_clear)
 
   g1_add_lint_tests()
 endif()

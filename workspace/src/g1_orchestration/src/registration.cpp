@@ -20,6 +20,8 @@
 #include "g1_orchestration/skills/place.hpp"
 #include "g1_orchestration/skills/retreat.hpp"
 #include "g1_orchestration/skills/set_arm_posture.hpp"
+#include "g1_orchestration/skills/step_clear.hpp"
+#include "g1_orchestration/skills/world_model_leaves.hpp"
 
 namespace g1_orchestration
 {
@@ -31,6 +33,7 @@ void registerSkillNodes(BT::BehaviorTreeFactory& factory, const RosContext& cont
     registerLeaf<NavigateToPose>(factory, "NavigateToPose", context);
     registerLeaf<ApproachObject>(factory, "ApproachObject", context);
     registerLeaf<Retreat>(factory, "Retreat", context);
+    registerLeaf<StepClear>(factory, "StepClear", context);
     registerLeaf<Pick>(factory, "Pick", context);
     registerLeaf<Place>(factory, "Place", context);
     registerLeaf<Grasp>(factory, "Grasp", context);
@@ -39,6 +42,12 @@ void registerSkillNodes(BT::BehaviorTreeFactory& factory, const RosContext& cont
     registerLeaf<ClearOctomap>(factory, "ClearOctomap", context);
     registerLeaf<AcquireArm>(factory, "AcquireArm", context);
     registerLeaf<ReleaseArm>(factory, "ReleaseArm", context);
+    registerLeaf<NextViewpoint>(factory, "NextViewpoint", context);
+    registerLeaf<ReportViewpoint>(factory, "ReportViewpoint", context);
+    registerLeaf<ResolveTarget>(factory, "ResolveTarget", context);
+    registerLeaf<SaveWorld>(factory, "SaveWorld", context);
+    registerLeaf<CleanUpWorld>(factory, "CleanUpWorld", context);
+    registerLeaf<TurnTo>(factory, "TurnTo", context);
 }
 
 std::string nodeModelXml(const BT::BehaviorTreeFactory& factory)

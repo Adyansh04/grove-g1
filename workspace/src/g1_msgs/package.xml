@@ -5,9 +5,9 @@
   <version>0.1.0</version>
   <description>
     Interfaces for the G1 stack: the base-approach (g1_locomotion), manipulation
-    (g1_manipulation) and learned-grasp (g1_vla) actions, the policy-engine,
-    grasp-generation and grounding services, and the instance masks a detector
-    publishes (g1_perception).
+    (g1_manipulation) and learned-grasp (g1_vla) actions, and the policy-engine,
+    grasp-generation and grounding services. The world model's and the detector's are in
+    canopy_msgs.
   </description>
   <maintainer email="gupta.adyansh@gmail.com">Adyansh</maintainer>
   <license>BSD-3-Clause</license>
@@ -17,7 +17,6 @@
 
   <depend>builtin_interfaces</depend>
   <depend>geometry_msgs</depend>
-  <depend>sensor_msgs</depend>
   <depend>std_msgs</depend>
   <depend>trajectory_msgs</depend>
   <!-- Requires action_msgs to build. -->

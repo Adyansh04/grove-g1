@@ -30,7 +30,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         liburdfdom-tools \
         python3-colcon-common-extensions \
         python3-pip \
-        python3-vcstool \
     && ln -sf /usr/bin/clang-format-${LLVM_VERSION} /usr/bin/clang-format \
     && ln -sf /usr/bin/clang-tidy-${LLVM_VERSION} /usr/bin/clang-tidy \
     && ln -sf /usr/bin/run-clang-tidy-${LLVM_VERSION} /usr/bin/run-clang-tidy \
@@ -133,6 +132,10 @@ RUN mkdir -p /opt/onnxruntime && \
       | tar -xz --strip-components=1 -C /opt/onnxruntime && \
     echo /opt/onnxruntime/lib > /etc/ld.so.conf.d/onnxruntime.conf && \
     ldconfig
+
+# Pillow, for canopy's model-server tests that ci.yml runs outside colcon.
+RUN apt-get update && apt-get install -y --no-install-recommends python3-pil \
+    && rm -rf /var/lib/apt/lists/*
 
 # Loopback DDS: a runner binding its real NIC would put a test's rt/lowcmd on GitHub's network.
 RUN mkdir -p /etc/cyclonedds && \

@@ -124,8 +124,8 @@ G1ObjectPoseSource::CallbackReturn G1ObjectPoseSource::on_configure(const rclcpp
         return CallbackReturn::FAILURE;
     }
 
-    tf_buffer_   = std::make_unique<tf2_ros::Buffer>(get_clock());
-    tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
+    tf_buffer_.emplace(get_clock());
+    tf_listener_.emplace(*tf_buffer_);
 
     objects_pub_ = create_publisher<vision_msgs::msg::Detection3DArray>("~/objects", outputQos());
     if (publish_markers_)

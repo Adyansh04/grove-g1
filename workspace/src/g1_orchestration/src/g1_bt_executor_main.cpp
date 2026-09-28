@@ -15,6 +15,7 @@
 #include <cmath>
 #include <csignal>
 #include <memory>
+#include <optional>
 #include <rclcpp/rclcpp.hpp>
 #include <string>
 #include <thread>
@@ -123,11 +124,11 @@ int main(int argc, char** argv)
                 BT::Tree tree = factory.createTreeFromFile(tree_file);
                 RCLCPP_INFO(node->get_logger(), "loaded %s", tree_file.c_str());
 
-                BT::StdCoutLogger                    cout_logger(tree);
-                std::unique_ptr<BT::Groot2Publisher> groot2;
+                BT::StdCoutLogger                  cout_logger(tree);
+                std::optional<BT::Groot2Publisher> groot2;
                 if (groot2_port > 0)
                 {
-                    groot2 = std::make_unique<BT::Groot2Publisher>(tree, groot2_port);
+                    groot2.emplace(tree, groot2_port);
                     RCLCPP_INFO(
                         node->get_logger(),
                         "Groot2 can connect on port %d. Note the free tier monitors at most 20 "

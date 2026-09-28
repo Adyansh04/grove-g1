@@ -17,8 +17,15 @@ imu_rate_hz: 200.0
 # sim.launch.py hands this to g1_sensor_relay as well.
 socket_path: "/tmp/g1_sensors.sock"
 
-# The D435i, rendered offscreen on the sensor thread. Depth leaves the simulator in metres.
-camera_enabled: true
+# Depth cameras, rendered offscreen on the sensor thread through each one's MJCF camera (its fovy
+# and resolution) at its mount in g1_description's cameras.yaml. Depth leaves the simulator in
+# metres. sim.launch.py's cameras:=head,chest picks which render for one run.
+cameras:
+  - name: head
+    mjcf: d435i
+  - name: chest
+    mjcf: chest_d435i
+    enabled: false
 
 # Ground-truth object poses, sampled with each sweep. SIMULATION ONLY: the stand-in for perception
 # and the source of the mock detector's masks. An explicit list because the pelvis has a free joint

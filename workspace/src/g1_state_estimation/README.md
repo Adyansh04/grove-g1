@@ -127,9 +127,9 @@ On the robot, `launch/fastlio_odometry.launch.py` (default `sim:=false`) starts 
 the converter, FAST-LIO and this publisher. It needs `robot_state_publisher` and `/joint_states`
 already running.
 
-The driver reads this package's `config/mid360_hardware.json`, not the one in the gitignored
-`livox_ros_driver2` checkout that `scripts/import-externals.sh` regenerates. Check its addresses
-against the robot before the first run.
+The driver reads this package's `config/mid360_hardware.json`, not the one in the
+`livox_ros_driver2` submodule, which carries Livox's defaults. Check its addresses against the
+robot before the first run.
 
 `scripts/lio_bench` scores FAST-LIO against MuJoCo's pose with nothing else in the loop. It waits
 for the robot to stand still, drives open-loop legs, aborts if the robot falls, and writes the

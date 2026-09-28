@@ -49,7 +49,7 @@ Checks: '
   -cppcoreguidelines-avoid-do-while
 '
 
-# First-party headers only -- keeps vendored unitree_ros2 headers out.
+# First-party headers only -- keeps the submodules' and the SDK's headers out.
 HeaderFilterRegex: '^.*/g1_[a-z_]+/(include|src)/.*$'
 
 WarningsAsErrors: '*'

@@ -2,9 +2,11 @@
 
 The entry point for the G1 stack in simulation. `bringup.launch.py` stages one `unitree_mujoco`
 world and the ros2_control stack, then composes navigation, MoveIt, manipulation, perception and
-the VLA grasp beside them as asked. The package also holds the MJCF scenes, the simulator's sensor
-config, and two Python scripts that acquire and release the arms: one-shot sequencing well under
-1 Hz, so not C++. No compiled code.
+the VLA grasp beside them as asked. `world_model.launch.py` runs canopy's world model on the G1's
+topics. The package also holds the MJCF scenes, the simulator's sensor config and the apartment
+world. No compiled code: the Python here is one-shot or offline, well under 1 Hz, so not C++. Two
+scripts acquire and release the arms, two analyse a finished exploration run, and `tools/` builds
+the apartment on the host with mujoco, trimesh and scipy.
 
 ```mermaid
 flowchart LR
@@ -40,15 +42,17 @@ flowchart LR
 | Argument | Default | Meaning |
 |---|---|---|
 | `mode` | `none` | `none` is the simulator alone. `mapping` adds the scan pipeline and slam_toolbox, `localization` adds `map_server` and AMCL. |
-| `nav` | `false` | Nav2 and the base-approach skill. Needs `mode:=localization`. |
+| `nav` | `false` | Nav2 and the base-approach skill. Needs a map: `mode:=mapping` explores while building one, `mode:=localization` uses the committed one. |
 | `moveit` | `false` | `move_group`, in any mode. Executing a plan still needs the arm acquired. |
 | `activate_arm` | `false` | Run `activate_arm` automatically. Only with `moveit:=true`. |
-| `activate_arm_delay_s` | `25.0` | Seconds before that. Too early and it fails, because the component is not loaded or state is not flowing yet. |
+| `arms_at_sides` | `false` | Hang the arms beside the thighs through `activate_arm --posture sides`, for exploration: at zero the forearms point forward into both cameras' views, and a real detector maps the hands. Ignored when `activate_arm` runs. |
+| `activate_arm_delay_s` | `25.0` | Seconds before either. Too early and it fails, because the component is not loaded or state is not flowing yet. |
 | `rviz` | `false` | Open RViz for what is running: MoveIt's own window with `moveit:=true`, plus `g1_navigation.rviz` if `nav:=true`. Without MoveIt, `g1_navigation.rviz` in the navigation modes and `g1_sensors.rviz` otherwise. |
 | `visualization` | empty | Everything drawn only for RViz: the annotated camera image, ground truth, `/object_markers` and the grasp plan. Empty follows `rviz`; an RViz opened by hand later needs `true`. |
 | `sensors` | `false` | LiDAR, IMU and camera, the relay and the `odom` to `base_footprint` chain. Forced on by the navigation modes, `manipulation` and `perception`. |
+| `cameras` | empty | Which cameras render: `head` (manipulation's), `chest` (mapping's) or `head,chest`. Empty keeps the world's sensor config: the head camera alone. Mounts are in `g1_description`'s `config/cameras.yaml`. |
 | `odometry` | `fast_lio` | What publishes `odom` to `base_footprint`: `fast_lio`, the LiDAR-inertial pipeline the robot runs, or `ground_truth`, the simulator's exact pose, for ruling the odometry out. |
-| `world` | `navigation` | `navigation`, `perception`, `manipulation`, `tabletop` or `lio`. Staged only with sensors on; otherwise the bare floor. Localization converges only in `navigation`, the facility the committed map was built from. |
+| `world` | `navigation` | `navigation`, `perception`, `manipulation`, `tabletop`, `lio` or `apartment` (see [worlds/README.md](worlds/README.md)). Staged only with sensors on; otherwise the bare floor. Localization has a committed map for `navigation` and `apartment` only. |
 | `headless` | `true` | `false` shows the MuJoCo viewer. See the viewer warning below. |
 | `pin_pelvis` | `false` | Weld the robot in place and freeze the legs instead of running the policy, to exercise the arms alone. `mode:=none` only. |
 | `sim_start_delay_s` | empty | Seconds to delay the simulator. Empty means 2.0, or 4.0 when navigation or MoveIt starts alongside it. |
@@ -78,6 +82,12 @@ flowchart LR
 `sim_start_delay_s` (default `2.0`) with the meanings above, plus `rviz` to open
 `g1_sensors.rviz` with sensors on. `rviz.launch.py` takes `rviz_config` (required) and
 `node_name` (`rviz2`). `control.launch.py` takes `pin_pelvis`, which `sim.launch.py` sets.
+
+`world_model.launch.py` starts canopy with the G1's odometry and LiDAR topics and its own
+`config/world_model.yaml`. It takes `cameras` (`head`; bringup's names), `world_dir` (where to
+save and resume the world, empty for neither), and `detector`, `describe` and `rviz` (all
+`false`). [docs/guides/world-model.md](../../../docs/guides/world-model.md) runs it with an
+exploration tree.
 
 ## Running in simulation
 
@@ -123,6 +133,9 @@ Last, it ramps both arms straight out to the sides over four seconds without pla
 hang at bring-up is inside the octomap of any table in front, and MoveIt will not plan from a
 start state in collision. If that move fails the step exits non-zero.
 
+`--posture sides`, which `arms_at_sides` runs, hangs the arms beside the thighs instead, out of
+both cameras' views, and `--no-hands` leaves the Dex3 alone.
+
 `deactivate_arm` releases the hands, then swaps the freeze back in, again in one switch.
 
 ## Walking by hand
@@ -151,9 +164,12 @@ others.
 
 | Path | Contents |
 |---|---|
-| `config/sim_sensors.yaml` | LiDAR, IMU and camera parameters read by the patched simulator, the bodies that publish ground-truth poses, and the grasp weld for scenes that declare one. |
+| `config/sim_sensors.yaml` | LiDAR, IMU and camera parameters read by the patched simulator (the cameras by name and MJCF camera, mounted from `g1_description`'s `config/cameras.yaml`), the bodies that publish ground-truth poses, and the grasp weld for scenes that declare one. |
+| `config/sim_sensors_apartment.yaml` | The apartment's `sim_sensors.yaml`, tracking every prop; generated. `sim.launch.py` takes `sim_sensors_<world>.yaml` when one exists. |
+| `config/world_model.yaml` | The G1's values for canopy: the planner's footprint and clearances, and the gait's speeds. |
 | `config/g1_sensors.rviz` | RViz without navigation. Fixed frame `odom`. |
-| `mjcf/*.xml` | One scene per world and a pinned variant of each (`lio` has none), plus the flat, walk and pinned overlays. Staged next to the vendored model at launch and removed on shutdown. |
+| `mjcf/*.xml` | One scene per world and a pinned variant of each (`lio` and `apartment` have none), plus the flat, walk and pinned overlays. Staged next to the vendored model at launch and removed on shutdown. |
+| `worlds/` | The apartment's floor plan and ground truth; `tools/build_world.py` generates the rest. |
 
 Controller configuration lives in `g1_controllers/config/lowcmd_controllers.yaml`, which
 `control.launch.py` loads.
@@ -171,8 +187,10 @@ colcon test --packages-select g1_bringup --ctest-args -LE simulator   # what CI 
 | `test_lidar_geometry` | yes | The LiDAR measures the room it is in. |
 | `test_fastlio_odometry` | yes | FAST-LIO's `odom` against the simulator's pelvis pose, standing and walking. |
 | `test_agile_walk` | yes | The AGILE policy stands the robot unpinned and walks it on `/cmd_vel` without the safety controller latching. |
+| `test_explore_apartment` | yes | canopy's acceptance run: explores the apartment on its committed map and scores rooms, camera coverage and objects against its ground truth. Tens of minutes; needs the fetched assets. |
+| `test_explore_apartment_mapping` | yes | The same from no map, with slam_toolbox building it. |
 | `xmllint_scenes_g1_bringup` | no | The MJCF scenes are valid XML, which MuJoCo's parser does not enforce. |
-| `ruff_check_g1_bringup` | no | Lints the launch files, tests and scripts. |
+| `ruff_check_g1_bringup` | no | Lints the launch files, tests, scripts and tools. |
 
 The simulator suites serialise on a shared resource lock, with a `sim_settle_gap` pause to let
 DDS drain. MuJoCo syncs to CPU time while the policy runs on a wall timer, so on a loaded machine
@@ -184,3 +202,14 @@ colcon test --packages-select g1_bringup --ctest-args -R test_agile_walk
 
 They live here rather than beside the code they exercise because those packages are dependencies
 of this one.
+
+The explore tests take their options from the environment: `G1_EXPLORE_TEST_DETECTOR=semantic`
+for the real models (start canopy's servers first) and `G1_EXPLORE_TEST_CAMERAS`. With
+`G1_EXPLORE_TEST_EXPORT=1` the saved world, and a `run.yaml` of how it was made and what it scored,
+replace the one in `G1_EXPLORE_TEST_EXPORT_DIR`: a package, then a path in its source directory,
+by default `canopy/doc/apartment`. It needs a `--symlink-install` build.
+
+```bash
+G1_EXPLORE_TEST_DETECTOR=semantic G1_EXPLORE_TEST_EXPORT=1 colcon test \
+  --packages-select g1_bringup --ctest-args -R '^test_explore_apartment_mapping$'
+```

@@ -75,12 +75,12 @@ def _validate(mode, want_nav, want_moveit, want_manipulation, want_perception, w
         raise RuntimeError(
             f"mode:={mode!r} is not a mode. 'none' is the simulator on its own; 'mapping' "
             f"builds a map with slam_toolbox; 'localization' runs map_server + AMCL against "
-            f"the committed one, and is what nav:=true requires."
+            f"the committed one. nav:=true needs one of the two."
         )
-    if want_nav and mode != "localization":
+    if want_nav and mode == "none":
         raise RuntimeError(
-            f"nav:=true needs mode:=localization, not mode:={mode!r}. Navigating against a "
-            "map slam_toolbox is still building means the goal pose moves under the planner."
+            "nav:=true needs a map: mode:=mapping builds one as the robot explores, "
+            "mode:=localization uses the committed one."
         )
     if want_manipulation and not want_moveit:
         raise RuntimeError(
@@ -128,6 +128,7 @@ def _sim_args(context, navigating, want_manipulation, want_perception, want_move
             else LaunchConfiguration("sensors")
         ),
         "world": LaunchConfiguration("world"),
+        "cameras": LaunchConfiguration("cameras"),
         "odometry": LaunchConfiguration("odometry"),
         "headless": LaunchConfiguration("headless"),
         "pin_pelvis": "true" if pin_pelvis else "false",
@@ -195,7 +196,7 @@ def _vla():
     )
 
 
-def _activate_arm(delay_s):
+def _activate_arm(delay_s, *args):
     """Delayed rather than sequenced on an event: the component only accepts activation once
     controller_manager has loaded it and /lowstate is flowing, and neither emits anything this
     file can wait on. scripts/activate_arm still fails loudly if it runs too early."""
@@ -203,7 +204,7 @@ def _activate_arm(delay_s):
         period=delay_s,
         actions=[
             ExecuteProcess(
-                cmd=["ros2", "run", "g1_bringup", "activate_arm"],
+                cmd=["ros2", "run", "g1_bringup", "activate_arm", *args],
                 name="activate_arm",
                 output="screen",
             )
@@ -295,10 +296,11 @@ def _setup(context, *args, **kwargs):
         )
     if want_vla:
         actions.append(_vla())
+    arm_delay_s = float(LaunchConfiguration("activate_arm_delay_s").perform(context))
     if want_moveit and _flag(context, "activate_arm"):
-        actions.append(
-            _activate_arm(float(LaunchConfiguration("activate_arm_delay_s").perform(context)))
-        )
+        actions.append(_activate_arm(arm_delay_s))
+    elif _flag(context, "arms_at_sides"):
+        actions.append(_activate_arm(arm_delay_s, "--posture", "sides", "--no-hands"))
     if want_rviz:
         actions.extend(_rviz(navigating, want_nav, want_moveit))
     return actions
@@ -311,13 +313,13 @@ def generate_launch_description():
             default_value="none",
             description="'none' runs the simulator alone and never touches g1_navigation. "
             "'mapping' adds the scan pipeline and slam_toolbox. 'localization' adds the scan "
-            "pipeline, map_server and AMCL, and is the mode nav:=true requires.",
+            "pipeline, map_server and AMCL against the world's committed map.",
         ),
         DeclareLaunchArgument(
             "nav",
             default_value="false",
-            description="Start the Nav2 servers and the base approach. Requires "
-            "mode:=localization.",
+            description="Start the Nav2 servers and the base approach. Needs a map: "
+            "mode:=mapping explores while building one, mode:=localization uses the committed one.",
         ),
         DeclareLaunchArgument(
             "rviz",
@@ -447,6 +449,13 @@ def generate_launch_description():
             "deliberate, and on hardware it is the moment MoveIt starts driving real joints.",
         ),
         DeclareLaunchArgument(
+            "arms_at_sides",
+            default_value="false",
+            description="Hang the arms beside the thighs once the stack is up, through "
+            "scripts/activate_arm. For exploration: at zero the forearms point forward, into both "
+            "cameras' views, and a real detector maps the hands. Ignored when activate_arm runs.",
+        ),
+        DeclareLaunchArgument(
             "activate_arm_delay_s",
             default_value="25.0",
             description="Seconds to wait before the automatic activation. The component has to "
@@ -469,10 +478,17 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "world",
             default_value="navigation",
-            description="Which scene to stage. 'navigation' is the facility the committed map "
-            "was built from; localization against any other world will not converge. "
-            "'manipulation' is one object at arm's length, for a pick without navigating "
-            "to the workbench first; 'tabletop' is five of different shapes, for perception.",
+            description="Which scene to stage. 'navigation' is the facility and 'apartment' "
+            "five furnished rooms; each has a committed map, which localization picks by "
+            "world, and against any other world it will not converge. 'manipulation' is one "
+            "object at arm's length, for a pick without navigating to the workbench first; "
+            "'tabletop' is five of different shapes, for perception.",
+        ),
+        DeclareLaunchArgument(
+            "cameras",
+            default_value="",
+            description="Comma-separated cameras the simulator renders: 'head' (manipulation's), "
+            "'chest' (mapping's), both, or empty for the world's sensor config.",
         ),
         DeclareLaunchArgument(
             "headless",

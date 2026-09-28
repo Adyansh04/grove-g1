@@ -6,6 +6,7 @@ Asks the host vision server's `ground` endpoint and writes the answer onto the d
 """
 
 import rclpy
+from canopy_perception.host_clients import VisionClient, image_to_array
 from rcl_interfaces.srv import SetParameters
 from rclpy.node import Node
 from rclpy.parameter import Parameter
@@ -14,7 +15,6 @@ from sensor_msgs.msg import Image
 
 from g1_msgs.msg import ExemplarPoint
 from g1_msgs.srv import GroundInstruction
-from g1_perception.host_clients import VisionClient, image_to_array
 
 
 class InstructionGrounder(Node):

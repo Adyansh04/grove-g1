@@ -12,7 +12,7 @@
 #include <tf2_ros/transform_listener.h>
 
 #include <builtin_interfaces/msg/time.hpp>
-#include <g1_msgs/msg/instance_mask_array.hpp>
+#include <canopy_msgs/msg/instance_mask_array.hpp>
 #include <geometry_msgs/msg/point.hpp>
 #include <memory>
 #include <optional>
@@ -23,7 +23,7 @@
 #include <vision_msgs/msg/detection3_d_array.hpp>
 #include <visualization_msgs/msg/marker_array.hpp>
 
-#include "g1_perception/depth_history.hpp"
+#include "canopy_perception/depth_history.hpp"
 
 namespace g1_perception
 {
@@ -59,22 +59,22 @@ private:
     [[nodiscard]] std::optional<double>
     errorTo(const std::string& phrase, const geometry_msgs::msg::Point& truth) const;
 
-    rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr            image_sub_;
-    rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr       info_sub_;
-    rclcpp::Subscription<g1_msgs::msg::InstanceMaskArray>::SharedPtr    masks_sub_;
-    rclcpp::Subscription<vision_msgs::msg::Detection3DArray>::SharedPtr objects_sub_;
-    rclcpp::Subscription<vision_msgs::msg::Detection3DArray>::SharedPtr truth_sub_;
-    rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr               annotated_pub_;
+    rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr             image_sub_;
+    rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr        info_sub_;
+    rclcpp::Subscription<canopy_msgs::msg::InstanceMaskArray>::SharedPtr masks_sub_;
+    rclcpp::Subscription<vision_msgs::msg::Detection3DArray>::SharedPtr  objects_sub_;
+    rclcpp::Subscription<vision_msgs::msg::Detection3DArray>::SharedPtr  truth_sub_;
+    rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr                annotated_pub_;
     /// Null without a ground-truth topic, which is every run on the robot.
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr truth_pub_;
 
-    std::unique_ptr<tf2_ros::Buffer>            tf_buffer_;
-    std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
+    tf2_ros::Buffer            tf_buffer_;
+    tf2_ros::TransformListener tf_listener_;
 
-    DepthHistory                                       images_;
-    sensor_msgs::msg::CameraInfo::ConstSharedPtr       camera_info_;
-    g1_msgs::msg::InstanceMaskArray::ConstSharedPtr    masks_;
-    vision_msgs::msg::Detection3DArray::ConstSharedPtr objects_;
+    canopy_perception::DepthHistory                     images_;
+    sensor_msgs::msg::CameraInfo::ConstSharedPtr        camera_info_;
+    canopy_msgs::msg::InstanceMaskArray::ConstSharedPtr masks_;
+    vision_msgs::msg::Detection3DArray::ConstSharedPtr  objects_;
     /// In the fixed frame, and only objects that carry a class.
     std::optional<vision_msgs::msg::Detection3DArray> truth_;
     std::optional<builtin_interfaces::msg::Time>      rendered_stamp_;

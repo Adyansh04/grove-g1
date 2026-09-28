@@ -1,0 +1,158 @@
+# The apartment world, for testing the semantic map and the camera-coverage exploration planner.
+# tools/build_world.py turns this into mjcf/g1_apartment_scene.xml, the ground-truth sidecar
+# apartment.truth.yaml, config/sim_sensors_apartment.yaml and g1_navigation's maps/apartment.
+#
+# Metres and degrees. x is east, y is north, and the robot spawns standing at the origin, in the
+# living room. Walls are given by their centrelines. A prop's pose is [x, y, yaw] of the centre of
+# its footprint; yaw 0 means its front faces -y (south), 90 means east. `body` is <class>_<k>,
+# where the class is the detector label with underscores. A prop with `support` rests on that body
+# at the highest point under its footprint, or at `z` when given (a shelf tier, which a ray from
+# above would miss). Assets are ids from workspace/assets/manifest.yaml.
+
+name: apartment
+wall: {thickness: 0.12, height: 2.6, lintel: 2.1}
+outline: [[-5.0, -6.0], [15.0, 6.0]]
+
+rooms:
+  - {id: living, name: living room with open kitchen and dining, type: living_room,
+     rect: [[-5.0, -6.0], [3.0, 6.0]]}
+  - {id: hallway, name: hallway, type: hallway, rect: [[3.0, -0.96], [15.0, 0.96]]}
+  - {id: bedroom, name: bedroom, type: bedroom, rect: [[3.0, 0.96], [9.0, 6.0]]}
+  - {id: study, name: study with guest bed, type: study, rect: [[9.0, 0.96], [15.0, 6.0]]}
+  - {id: office, name: office, type: office, rect: [[3.0, -6.0], [10.0, -0.96]]}
+  - {id: storage, name: storage room, type: storage, rect: [[10.0, -6.0], [15.0, -0.96]]}
+
+# Interior walls; the outline adds the four outer ones. The hallway walls sit 1.92 m apart,
+# which leaves 1.8 m clear between their faces.
+walls:
+  - [[3.0, -6.0], [3.0, 6.0]]
+  - [[3.0, 0.96], [15.0, 0.96]]
+  - [[3.0, -0.96], [15.0, -0.96]]
+  - [[9.0, 0.96], [9.0, 6.0]]
+  - [[10.0, -6.0], [10.0, -0.96]]
+
+# Gaps cut into the wall under `centre`, with a lintel above; no door leaves. The robot is 0.9 m
+# across, so 1.2 m is the practical minimum: Nav2 would not plan through the 1.0 m this door
+# once was, with AMCL's decimetre offset narrowing it further in the costmap.
+doorways:
+  - {between: [living, hallway], centre: [3.0, 0.0], width: 1.8}
+  - {between: [hallway, bedroom], centre: [6.0, 0.96], width: 1.3}
+  - {between: [hallway, study], centre: [12.0, 0.96], width: 1.2}
+  - {between: [hallway, office], centre: [6.5, -0.96], width: 1.4}
+  - {between: [hallway, storage], centre: [12.5, -0.96], width: 1.2}
+
+# The floor everywhere, then visual-only patches 2 mm above it; physics and the LiDAR see the
+# plain floor.
+floor: tex_laminate_floor
+floor_patches:
+  - {texture: tex_floor_tiles, rect: [[-4.94, 4.3], [0.4, 5.94]]}
+  - {texture: tex_concrete_floor, rect: [[10.06, -5.94], [14.94, -1.02]]}
+walls_texture: tex_plaster_wall
+
+# The renderer honours eight lights and the headlight takes one. Each shadow caster costs a
+# depth pass per camera frame, so only two cast.
+lights:
+  - {name: sun, directional: true, dir: [-0.35, 0.25, -0.9], diffuse: 0.4, shadow: true}
+  - {name: lounge, pos: [-1.0, -3.2, 2.5], diffuse: 0.35}
+  - {name: kitchen, pos: [-2.3, 3.8, 2.5], diffuse: 0.35, shadow: true}
+  - {name: bedroom, pos: [6.0, 3.4, 2.5], diffuse: 0.35}
+  - {name: study, pos: [12.0, 3.4, 2.5], diffuse: 0.35}
+  - {name: office, pos: [6.5, -3.4, 2.5], diffuse: 0.35}
+  - {name: storage, pos: [12.5, -3.4, 2.5], diffuse: 0.35}
+
+# Label synonyms for scoring open-vocabulary answers, by class.
+synonyms:
+  sofa: [couch, settee]
+  armchair: [chair, lounge chair]
+  coffee_table: [table, low table]
+  cabinet: [tv stand, sideboard, media console]
+  television: [tv, tv set]
+  bookshelf: [bookcase, shelf, shelves]
+  potted_plant: [plant, houseplant, flower pot]
+  fridge: [refrigerator]
+  counter: [kitchen counter, countertop, worktop]
+  stove: [cooker, range, oven]
+  microwave: [microwave oven]
+  kettle: [electric kettle]
+  dining_table: [table, kitchen table]
+  chair: [seat, dining chair]
+  dustbin: [trash can, waste bin, wastebasket, garbage can, bin]
+  bed: [day bed, double bed]
+  nightstand: [bedside table, night table]
+  wardrobe: [closet, armoire, cupboard]
+  desk: [office desk, writing desk, table]
+  shelf: [shelving unit, rack, shelves]
+  cardboard_box: [box, carton, package]
+  crate: [box, storage crate]
+  mug: [cup, coffee mug]
+  bowl: [dish]
+  book: [novel, paperback]
+  laptop: [notebook computer, computer]
+  clock: [alarm clock]
+
+props:
+  living:
+    - {body: cabinet_1, asset: ph_modern_wooden_cabinet, pose: [-1.0, -5.66, 180]}
+    - {body: television_1, asset: ph_television_01, pose: [-1.0, -5.68, 180], support: cabinet_1}
+    - {body: sofa_1, asset: ph_sofa_02, pose: [-1.0, -2.75, 0]}
+    - {body: coffee_table_1, asset: ph_modern_coffee_table_01, pose: [-1.0, -3.95, 0]}
+    - {body: mug_2, asset: gso_mug_room_essentials, pose: [-1.35, -3.85, 40],
+       support: coffee_table_1}
+    - {body: bowl_2, asset: gso_bowl_room_essentials, pose: [-0.65, -4.0, 0],
+       support: coffee_table_1}
+    - {body: armchair_1, asset: ph_modern_arm_chair_01, pose: [-3.5, -4.0, 90]}
+    - {body: bookshelf_1, asset: ph_wooden_bookshelf_worn, pose: [-4.63, -1.6, 90]}
+    - {body: book_1, asset: gso_book, pose: [-4.45, -1.9, 90], support: bookshelf_1, z: 0.67}
+    # The unobservable target: above the head camera, which only ever looks down.
+    - {body: book_2, asset: gso_book, pose: [-4.45, -1.3, 90], support: bookshelf_1, z: 1.66}
+    - {body: potted_plant_1, asset: ph_potted_plant_02, pose: [-4.45, -5.45, 0]}
+    - {body: fridge_1, asset: nv_refrigerator_040, pose: [-4.48, 5.45, 0]}
+    # Built here: the NVIDIA set ships door fronts, not counters. Painted carcass, stone top.
+    - body: counter_1
+      pose: [-2.7, 5.61, 0]
+      boxes:
+        - {size: [2.6, 0.6, 0.86], pos: [0.0, 0.02, 0.43], rgba: [0.9, 0.9, 0.88, 1]}
+        - {size: [2.6, 0.64, 0.04], pos: [0.0, 0.0, 0.88], texture: tex_marble}
+      meshes:
+        - {asset: nv_cabinet_door_002, pos: [-1.0, -0.294, 0.1]}
+        - {asset: nv_cabinet_door_002, pos: [-0.5, -0.294, 0.1]}
+        - {asset: nv_cabinet_door_002, pos: [0.0, -0.294, 0.1]}
+        - {asset: nv_cabinet_door_002, pos: [0.5, -0.294, 0.1]}
+        - {asset: nv_cabinet_door_002, pos: [1.0, -0.294, 0.1]}
+    - {body: microwave_1, asset: nv_microwave_043, pose: [-3.55, 5.66, 0], support: counter_1}
+    - {body: kettle_1, asset: nv_kettle_005, pose: [-2.4, 5.55, 20], support: counter_1}
+    - {body: stove_1, asset: nv_stove_066, pose: [-1.0, 5.58, 0]}
+    - {body: dustbin_1, asset: gso_wastebasket, pose: [-0.35, 5.75, 0]}
+    - {body: dining_table_1, asset: ph_dining_table, pose: [-2.3, 2.6, 0]}
+    - {body: chair_1, asset: ph_dining_chair_02, pose: [-2.8, 1.68, 180]}
+    - {body: chair_2, asset: ph_dining_chair_02, pose: [-1.8, 1.68, 180]}
+    - {body: chair_3, asset: ph_dining_chair_02, pose: [-2.8, 3.52, 0]}
+    - {body: chair_4, asset: ph_dining_chair_02, pose: [-1.8, 3.52, 0]}
+    - {body: mug_1, asset: gso_mug_ace, pose: [-2.75, 2.35, 30], support: dining_table_1}
+    - {body: bowl_1, asset: gso_bowl_threshold, pose: [-1.9, 2.8, 0], support: dining_table_1}
+  bedroom:
+    - {body: bed_1, asset: ph_gothic_bed_01, pose: [5.3, 4.9, 0]}
+    - {body: nightstand_1, asset: ph_classic_nightstand_01, pose: [4.22, 5.71, 0]}
+    - {body: clock_1, asset: gso_alarm_clock, pose: [4.22, 5.68, 0], support: nightstand_1}
+    - {body: wardrobe_1, asset: ph_gothic_cabinet_01, pose: [8.36, 4.3, -90]}
+    - {body: potted_plant_2, asset: ph_potted_plant_01, pose: [3.45, 1.4, 0]}
+  study:
+    - {body: bed_2, asset: ph_vintage_day_bed, pose: [12.6, 5.5, 0]}
+    - {body: bookshelf_2, asset: ph_wooden_display_shelves_01, pose: [9.27, 3.8, 90]}
+    - {body: armchair_2, asset: ph_armchair_01, pose: [14.2, 3.2, -90]}
+    - {body: dustbin_3, asset: gso_wastebasket, pose: [9.35, 1.3, 0]}
+  office:
+    - {body: desk_1, asset: ph_metal_office_desk, pose: [6.5, -5.445, 180]}
+    - {body: chair_5, asset: ph_school_chair_01, pose: [6.5, -4.55, 0]}
+    - {body: laptop_1, asset: gso_laptop, pose: [6.3, -5.35, 180], support: desk_1}
+    - {body: mug_3, asset: gso_mug_cole, pose: [7.05, -5.25, 0], support: desk_1}
+    - {body: shelf_1, asset: ph_steel_frame_shelves_01, pose: [3.33, -3.4, 90]}
+    - {body: cardboard_box_1, asset: ph_cardboard_box_01, pose: [3.33, -3.4, 0], support: shelf_1,
+       z: 0.64}
+    - {body: dustbin_2, asset: gso_wastebasket, pose: [9.78, -5.8, 0]}
+  storage:
+    - {body: shelf_2, asset: ph_steel_frame_shelves_03, pose: [12.5, -5.56, 180]}
+    - {body: cardboard_box_2, asset: ph_cardboard_box_01, pose: [12.0, -5.56, 0], support: shelf_2,
+       z: 0.66}
+    - {body: crate_1, asset: ph_wooden_crate_02, pose: [14.655, -3.6, -90]}
+    - {body: crate_2, asset: ph_plastic_crate_02, pose: [10.45, -5.55, 0]}

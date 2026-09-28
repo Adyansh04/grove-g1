@@ -1,0 +1,15 @@
+# Where each camera sits on the robot: xyz (m) and rpy (rad) of its body frame (x forward, z up)
+# on its parent link. The simulator renders every camera from here and the URDF builds the chest
+# camera's frames from here, so a camera is moved in this file alone. The head camera's frames
+# are Unitree's own d435_joint; its entry mirrors that joint, which test_sensor_mounts checks.
+head:
+  parent: torso_link
+  xyz: [0.0576235, 0.01753, 0.42987]
+  rpy: [0.0, 0.8307767239493009, 0.0]
+# A second D435i, 1.03 m up on the chest and 20 deg down, for mapping: it sees walls, counters
+# and shelves from the side, where the head camera, 47.6 deg down, sees floor and table tops.
+# 0.11 m forward clears the torso shell (0.084 m).
+chest:
+  parent: torso_link
+  xyz: [0.11, 0.0, 0.25]
+  rpy: [0.0, 0.3490658503988659, 0.0]

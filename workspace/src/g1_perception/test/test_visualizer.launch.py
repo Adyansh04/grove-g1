@@ -13,6 +13,7 @@ import launch_testing
 import pytest
 import rclpy
 from ament_index_python.packages import get_package_share_directory
+from canopy_msgs.msg import InstanceMask, InstanceMaskArray
 from geometry_msgs.msg import Point
 from launch import LaunchDescription
 from launch_ros.actions import Node
@@ -21,8 +22,6 @@ from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profi
 from sensor_msgs.msg import CameraInfo, Image
 from vision_msgs.msg import Detection3D, Detection3DArray, ObjectHypothesisWithPose
 from visualization_msgs.msg import Marker, MarkerArray
-
-from g1_msgs.msg import InstanceMask, InstanceMaskArray
 
 CAMERA_FRAME = "camera_color_optical_frame"
 TRUTH_TOPIC = "/g1_sensor_relay/object_poses"

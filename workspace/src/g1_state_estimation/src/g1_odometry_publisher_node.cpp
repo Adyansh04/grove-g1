@@ -152,7 +152,7 @@ G1OdometryPublisher::on_configure(const rclcpp_lifecycle::State&)
         return CallbackReturn::FAILURE;
     }
 
-    tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
+    tf_broadcaster_.emplace(*this);
     if (publish_odom_msg_)
     {
         odom_pub_ = create_publisher<nav_msgs::msg::Odometry>("~/odom", rclcpp::QoS(10));
@@ -181,8 +181,8 @@ G1OdometryPublisher::on_configure(const rclcpp_lifecycle::State&)
 
         if (!lidar_body_frame_id_.empty())
         {
-            tf_buffer_   = std::make_unique<tf2_ros::Buffer>(get_clock());
-            tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_, this, false);
+            tf_buffer_.emplace(get_clock());
+            tf_listener_.emplace(*tf_buffer_, this, false);
         }
     }
     // NOLINTEND(performance-unnecessary-value-param)

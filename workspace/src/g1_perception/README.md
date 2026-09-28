@@ -8,7 +8,7 @@ knows which model drew the masks.
 ```mermaid
 flowchart LR
     C[/camera/color/image_raw/] --> D[g1_detector]
-    T[/g1_sensor_relay/object_poses/] --> M[g1_mock_detector]
+    T[/g1_sensor_relay/object_poses/] --> M[g1_detector, mock]
     D -- InstanceMaskArray --> G[g1_object_geometry]
     M -- InstanceMaskArray --> G
     P[/aligned depth + camera_info/] --> G
@@ -25,8 +25,8 @@ colcon build --symlink-install --packages-select g1_perception
 
 | Node | Does |
 |---|---|
-| `g1_detector` | Sends camera frames and the phrase list to the host vision server and publishes the instance masks it answers with. Python, see below. |
-| `g1_mock_detector` | Cuts the same masks out of simulator ground truth against the real rendered depth. No GPU, no server, no network. Simulation only. Launched under the name `g1_detector`, so a tree writes the same `phrases` whichever detector runs. |
+| `g1_detector` | canopy_perception's `detector` with `config/g1_detector.yaml`: sends camera frames and the phrase list to the host vision server and publishes the instance masks it answers with. |
+| `g1_detector` (mock) | canopy_perception's `mock_detector`: cuts the same masks out of simulator ground truth against the real rendered depth. No GPU, no server, no network. Simulation only. Launched under the same name, so a tree writes the same `phrases` whichever detector runs. |
 | `g1_object_geometry` | Deprojects each mask, finds the surface the object stands on, fits a box, and tracks it across frames so an id keeps naming one object. |
 | `g1_graspgen_adapter` | Sends the depth frame, its intrinsics and one object's mask to the host grasp generator and serves the grasps it answers with. Python, see below. |
 | `g1_mock_grasp_source` | Answers the same service from `/objects` alone: three sensible grasps and one reaching up through the table. No GPU. |
@@ -39,10 +39,10 @@ colcon build --symlink-install --packages-select g1_perception
 |---|---|---|
 | Sub | `color/image_raw` (detector) | `sensor_msgs/Image`, best effort, depth 1 |
 | Sub | `object_poses`, `depth/image_raw`, `camera_info` (mock) | `vision_msgs/Detection3DArray`, `sensor_msgs/Image`, `sensor_msgs/CameraInfo` |
-| Sub | `~/instance_masks`, `depth/image_raw`, `depth/camera_info` (geometry) | `g1_msgs/InstanceMaskArray`, `sensor_msgs/Image`, `sensor_msgs/CameraInfo` |
-| Pub | `~/instance_masks` (both detectors) | `g1_msgs/InstanceMaskArray`, reliable |
+| Sub | `~/instance_masks`, `depth/image_raw`, `depth/camera_info` (geometry) | `canopy_msgs/InstanceMaskArray`, `sensor_msgs/Image`, `sensor_msgs/CameraInfo` |
+| Pub | `~/instance_masks` (both detectors) | `canopy_msgs/InstanceMaskArray`, reliable |
 | Pub | `~/object_poses` (geometry) | `vision_msgs/Detection3DArray`, reliable |
-| Pub | `~/tracked_masks` (geometry) | `g1_msgs/InstanceMaskArray`, the input masks relabelled with object ids |
+| Pub | `~/tracked_masks` (geometry) | `canopy_msgs/InstanceMaskArray`, the input masks relabelled with object ids |
 | Srv | `~/generate_grasps` (both grasp sources) | `g1_msgs/GenerateGrasps` |
 | Srv | `~/ground` (grounder) | `g1_msgs/GroundInstruction` |
 | Sub | `color/image_raw`, `color/camera_info`, `tracked_masks`, `object_poses`, `ground_truth_topic` (visualizer) | as above; nothing is drawn until a frame's masks, poses and image are all in |
@@ -91,14 +91,16 @@ idles them, and the mission tree switches perception on only for the steps that 
 `config/g1_perception_visualizer.yaml` sizes the colour history the visualizer draws on, which has
 to outlast the detector's latency, and names the frame ground truth is compared in.
 
-## Why three nodes are Python
+## Why two nodes are Python
 
-`g1_detector`, `g1_graspgen_adapter` and `g1_instruction_grounder` are ZMQ and msgpack clients.
+`g1_graspgen_adapter` and `g1_instruction_grounder` are ZMQ and msgpack clients.
 The models they talk to need torch and CUDA, which this image deliberately does not have, so they
 run on the host and these nodes speak their wire protocol, as `g1_vla`'s policy adapter does.
-Everything the masks are used for is C++: the geometry, the tracking, and both stand-ins.
+Everything the masks are used for is C++: the geometry, the tracking, and the grasp stand-in.
 
-The socket handling the three share lives in `g1_perception/host_clients.py`.
+The socket handling they share with the detector is canopy_perception's
+(`canopy_perception/host_clients.py`); `g1_perception/host_clients.py` adds the grasp generator's
+call.
 
 ## Instructions
 
@@ -154,12 +156,10 @@ the grasp plan. The flag behind them is `visualization`, which follows `rviz`.
 
 | Test | Needs a simulator | Covers |
 |---|---|---|
-| `test_object_geometry` | No | Slugs, erosion, deprojection including the NaN and padded-row cases the simulator never produces, the depth gate, and the box fit: a tilted rectangle's yaw, a square that must not inflate, a sphere's height from its support plane, and a mask that ran onto the table. |
+| `test_object_geometry` | No | Erosion, deprojection including the NaN and padded-row cases the simulator never produces, the depth gate, and the box fit: a tilted rectangle's yaw, a square that must not inflate, a sphere's height from its support plane, and a mask that ran onto the table. |
 | `test_object_tracker` | No | Ids that survive jitter, a lone object followed past the match radius, a second instance getting its own index, two neighbours that must not swap, index reuse after a timeout, an alias that never jumps between objects, and the phrase recovered from an id. |
-| `test_depth_history` | No | Pairing a late mask with its own depth frame, refusing one outside the tolerance, and dropping frames past the window or the frame cap. |
 | `test_perception_visualizer` | No | Which drawn instance counts as measured, including a rejected one whose raw label equals an alias. |
 | `test_visualizer` | No | The visualizer on synthetic frames: the annotated image, ground truth moved into `odom` and labelled with the error, an empty frame left untouched, and masks that arrive before their frame. |
-| `test_detector` | No | The detector client against a stub vision server: the request encoding, the mask message, the image's own stamp, and a phrase list that is re-read rather than cached. |
 | `test_grounder` | No | The grounder against a stub: an instruction becomes phrases, the target is one of them, the phrases actually reach the detector's parameter, exemplar points survive, and an empty instruction is refused. |
 | `test_graspgen_adapter` | No | The grasp adapter against a stub generator: the request encoding the real server would reject, the frame and stamp of the answer, ordering by confidence, an unknown object, and a left-hand request refused rather than mirrored. |
 | `test_perception_objects` | Sim, `-L simulator` | Measured poses against the simulator's own for every tabletop prop: position and size, both names published, and the stamp being the measurement's rather than the publisher's. |

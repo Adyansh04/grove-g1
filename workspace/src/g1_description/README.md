@@ -9,7 +9,7 @@ add the `ros2_control` blocks for the body motors and the two hands.
 flowchart LR
     V["g1_29dof_with_hand_rev_1_0.urdf<br/>vendored"] --> C
     C["g1_common.xacro<br/>sensor and grasp frames, both hands"] --> X["g1_lowcmd.urdf.xacro<br/>body component"]
-    P["lowcmd_params.yaml<br/>dex3_params.yaml"] -- "xacro.load_yaml" --> C
+    P["lowcmd_params.yaml<br/>dex3_params.yaml<br/>cameras.yaml"] -- "xacro.load_yaml" --> C
     P --> X
     X --> RSP["robot_state_publisher"]
     X --> CM["controller_manager"]
@@ -24,6 +24,7 @@ flowchart LR
 | `urdf/g1_lowcmd.urdf.xacro` | Includes `g1_common.xacro` and adds the body component's `<ros2_control>` block. This is the entry point. |
 | `config/lowcmd_params.yaml` | Body-component tunables and the per-joint position-only gains. |
 | `config/dex3_params.yaml` | Hand-component tunables and the per-finger limits. |
+| `config/cameras.yaml` | Where each camera mounts. The URDF builds the chest camera's frames from it and the simulator renders every camera from it, so a camera moves in this file alone; the head entry mirrors Unitree's `d435_joint`, which `test_sensor_mounts` checks. |
 
 Visual meshes are not committed. CMake copies them at configure time from
 `/opt/unitree_robotics/unitree_mujoco/unitree_robots/g1/meshes`, overridable with the

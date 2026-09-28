@@ -55,9 +55,11 @@ ros2 run nav2_map_server map_saver_cli -f /root/workspace/src/g1_navigation/maps
 
 ## Localizing and navigating
 
-`mode:=localization` runs map_server and AMCL against the committed map. `nav:=true` adds the Nav2
-servers and the base approach, and requires `mode:=localization`: navigating against a map
-slam_toolbox is still building moves the goal under the planner, so the launch refuses it.
+`mode:=localization` runs map_server and AMCL against the world's committed map. `nav:=true` adds
+the Nav2 servers and the base approach, in either navigation mode. Trees with fixed goals, such as
+the pick-and-place missions, want `localization`: on a map slam_toolbox is still building, a loop
+closure can move the goal under the planner. Exploration runs on `mapping`
+([world-model.md](world-model.md)).
 
 ```bash
 ros2 launch g1_bringup bringup.launch.py mode:=localization nav:=true rviz:=true
@@ -142,7 +144,7 @@ DDS graph. This tears it down and exits non-zero unless the graph is empty after
 
 | Argument | Default | Notes |
 |---|---|---|
-| `mode` | `none` | `mapping` or `localization` add g1_navigation. `nav:=true` requires `localization`. |
+| `mode` | `none` | `mapping` or `localization` add g1_navigation. `nav:=true` needs one of them. |
 | `nav` | `false` | Nav2 servers and the base approach. |
 | `moveit` | `false` | move_group. Works with any mode. |
 | `sensors` | `false` | LiDAR sweep, relay and the odom chain. Forced on by the navigation modes, `manipulation` and `perception`. |

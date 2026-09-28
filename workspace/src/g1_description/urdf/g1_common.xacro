@@ -43,6 +43,46 @@
     <child link="d435_visual"/>
   </joint>
 
+  <!-- Cameras beyond Unitree's head D435i, mounted as config/cameras.yaml says; the simulator
+       renders them from the same file. Frames follow the relay's names for camera N: N_camera_link
+       (body), N_camera_depth_optical_frame and N_camera_color_optical_frame. -->
+  <xacro:property name="camera_mounts" value="${xacro.load_yaml('../config/cameras.yaml')}"/>
+  <xacro:macro name="depth_camera" params="name">
+    <xacro:property name="mount" value="${camera_mounts[name]}"/>
+    <link name="${name}_camera_link"/>
+    <joint name="${name}_camera_joint" type="fixed">
+      <parent link="${mount['parent']}"/>
+      <child link="${name}_camera_link"/>
+      <origin xyz="${mount['xyz'][0]} ${mount['xyz'][1]} ${mount['xyz'][2]}"
+              rpy="${mount['rpy'][0]} ${mount['rpy'][1]} ${mount['rpy'][2]}"/>
+    </joint>
+    <link name="${name}_camera_depth_optical_frame"/>
+    <joint name="${name}_camera_depth_optical_joint" type="fixed">
+      <parent link="${name}_camera_link"/>
+      <child link="${name}_camera_depth_optical_frame"/>
+      <origin xyz="0 0 0" rpy="-1.5707963267948966 0 -1.5707963267948966"/>
+    </joint>
+    <link name="${name}_camera_color_optical_frame"/>
+    <joint name="${name}_camera_color_optical_joint" type="fixed">
+      <parent link="${name}_camera_link"/>
+      <child link="${name}_camera_color_optical_frame"/>
+      <origin xyz="0 0 0" rpy="-1.5707963267948966 0 -1.5707963267948966"/>
+    </joint>
+    <link name="${name}_camera_visual">
+      <visual>
+        <origin xyz="0.0043 -0.0175 0" rpy="1.5707963267948966 0 1.5707963267948966"/>
+        <geometry>
+          <mesh filename="package://realsense2_description/meshes/d435.dae"/>
+        </geometry>
+      </visual>
+    </link>
+    <joint name="${name}_camera_visual_joint" type="fixed">
+      <parent link="${name}_camera_link"/>
+      <child link="${name}_camera_visual"/>
+    </joint>
+  </xacro:macro>
+  <xacro:depth_camera name="chest"/>
+
   <link name="mid360_visual">
     <visual>
       <!-- Livox ship no ROS description, so a cylinder from the published 65 x 65 x 60 mm

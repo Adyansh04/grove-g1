@@ -75,11 +75,8 @@ def _setup(context, *args, **kwargs):
         )
 
     if LaunchConfiguration("nav").perform(context).lower() == "true":
-        if mode != "localization":
-            raise RuntimeError(
-                "nav:=true needs mode:=localization. Navigating against a map slam_toolbox is "
-                "still building means the goal pose moves under the planner."
-            )
+        # With mapping, Nav2 plans on the map slam_toolbox is still growing, as exploration needs;
+        # a goal can shift a little under a loop closure. A fixed goal pose wants localization.
         # Explicit, because an included file inherits the parent's configurations and Nav2 must
         # run uncomposed. The scan and localization nodes above still compose.
         actions.append(_include("nav2.launch.py", use_composition="false"))
@@ -98,8 +95,8 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "nav",
             default_value="false",
-            description="Start the Nav2 servers and the base approach. Requires "
-            "mode:=localization. Off by default: mapping runs need none of it.",
+            description="Start the Nav2 servers and the base approach. With mode:=mapping they "
+            "plan on the map slam_toolbox is building, which is what exploration does.",
         ),
         DeclareLaunchArgument(
             "use_composition",

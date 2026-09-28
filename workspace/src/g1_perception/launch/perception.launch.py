@@ -41,14 +41,16 @@ def _nodes(context, *args, **kwargs):
     detector = LaunchConfiguration("detector")
 
     mock = Node(
-        package="g1_perception",
-        executable="g1_mock_detector",
+        package="canopy_perception",
+        executable="mock_detector",
         # The real detector's name, since only one runs: trees write `phrases` on g1_detector.
         name="g1_detector",
         output="screen",
         condition=IfCondition(EqualsSubstitution(detector, "mock")),
         parameters=[
-            _config("g1_mock_detector.yaml"),
+            os.path.join(
+                get_package_share_directory("canopy_perception"), "config", "mock_detector.yaml"
+            ),
             {
                 "phrases": phrases,
                 "mock_latency_s": LaunchConfiguration("mock_latency_s"),
@@ -65,8 +67,8 @@ def _nodes(context, *args, **kwargs):
     )
 
     vision = Node(
-        package="g1_perception",
-        executable="g1_detector",
+        package="canopy_perception",
+        executable="detector",
         name="g1_detector",
         output="screen",
         condition=IfCondition(EqualsSubstitution(detector, "vision")),

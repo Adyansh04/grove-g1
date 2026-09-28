@@ -15,7 +15,7 @@ namespace grove_g1
 // NOLINTBEGIN(readability-identifier-naming,cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
 
 // Bumped whenever the layout below changes; the relay refuses a version it does not know.
-inline constexpr uint32_t kSensorFrameVersion = 7;
+inline constexpr uint32_t kSensorFrameVersion = 8;
 
 inline constexpr uint32_t kSensorFrameMagic = 0x47314C44;  // "G1LD"
 
@@ -96,9 +96,12 @@ struct SensorFrameHeader
     // Depth: bytes of rgb8 colour after the depth floats, or 0. Both come from one render, so
     // they share pose, time and frustum.
     uint32_t rgb_bytes;
+    // Depth: the camera's name from the simulator's sensor config, NUL-terminated; empty on
+    // every other kind.
+    char camera[16];
 };
 
-static_assert(sizeof(SensorFrameHeader) == 104, "wire layout changed; bump kSensorFrameVersion");
+static_assert(sizeof(SensorFrameHeader) == 120, "wire layout changed; bump kSensorFrameVersion");
 
 // NOLINTEND(readability-identifier-naming,cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
 

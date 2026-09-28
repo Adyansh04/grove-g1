@@ -11,6 +11,7 @@ import unittest
 import launch_testing
 import pytest
 import rclpy
+from canopy_msgs.msg import InstanceMask, InstanceMaskArray
 from launch import LaunchDescription
 from launch.actions import ExecuteProcess, TimerAction
 from launch_ros.actions import Node
@@ -18,7 +19,6 @@ from rclpy.node import Node as RclpyNode
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import CameraInfo, Image
 
-from g1_msgs.msg import InstanceMask, InstanceMaskArray
 from g1_msgs.srv import GenerateGrasps
 
 PORT = 5592

@@ -9,6 +9,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 #include "g1_sensor_relay/sensor_frame.h"
@@ -53,10 +54,12 @@ enum class FrameKind
  */
 struct CloudFrame
 {
-    FrameKind          kind     = FrameKind::kPointCloud;
-    std::uint32_t      width    = 0;
-    std::uint32_t      height   = 0;
-    float              fovy_deg = 0.0F;
+    FrameKind     kind     = FrameKind::kPointCloud;
+    std::uint32_t width    = 0;
+    std::uint32_t height   = 0;
+    float         fovy_deg = 0.0F;
+    /// The camera a depth frame came from, by the simulator's sensor config name.
+    std::string        camera;
     std::vector<float> depth;
     /// rgb8, row-major, top-down, same dimensions as `depth`. Empty when colour is off.
     std::vector<std::uint8_t>               rgb;

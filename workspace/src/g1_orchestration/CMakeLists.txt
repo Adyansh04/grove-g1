@@ -8,6 +8,8 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/g1_common.cmake)
 find_package(ament_cmake REQUIRED)
 # v4, the same libbehaviortree_cpp Nav2's navigator links, so leaves here and Nav2's share it.
 find_package(behaviortree_cpp REQUIRED)
+find_package(canopy_msgs REQUIRED)
+find_package(canopy_perception REQUIRED)
 find_package(controller_manager_msgs REQUIRED)
 find_package(g1_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
@@ -19,6 +21,7 @@ find_package(rclcpp_action REQUIRED)
 find_package(std_srvs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
+find_package(tf2_ros REQUIRED)
 find_package(vision_msgs REQUIRED)
 
 # --- library ---------------------------------------------------------------
@@ -38,16 +41,21 @@ add_library(g1_bt_nodes
   src/skills/pick.cpp
   src/skills/place.cpp
   src/skills/retreat.cpp
+  src/skills/step_clear.cpp
   src/skills/set_arm_posture.cpp
+  src/skills/world_model_leaves.cpp
 )
 g1_target_defaults(g1_bt_nodes)
 target_link_libraries(g1_bt_nodes PUBLIC
   behaviortree_cpp::behaviortree_cpp
+  canopy_perception::canopy_perception_core
   rclcpp::rclcpp
   rclcpp_action::rclcpp_action
   tf2::tf2
   tf2_geometry_msgs::tf2_geometry_msgs
+  tf2_ros::tf2_ros
   ${controller_manager_msgs_TARGETS}
+  ${canopy_msgs_TARGETS}
   ${g1_msgs_TARGETS}
   ${geometry_msgs_TARGETS}
   ${lifecycle_msgs_TARGETS}

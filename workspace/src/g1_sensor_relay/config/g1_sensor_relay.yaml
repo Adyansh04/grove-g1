@@ -16,14 +16,26 @@ g1_sensor_relay:
     imu_topic: "/livox/imu"
     imu_frame_id: "mid360_imu"
 
-    # Depth camera. Two namespaces for the same intrinsics, because rviz's DepthCloud looks
+    # Depth cameras, by the name the simulator stamps on each frame (sim_sensors.yaml). Camera N
+    # publishes N.depth_topic, N.depth_info_topic, N.color_topic, N.info_topic and
+    # ~/object_poses (the head) or ~/N/object_poses, in frames N.depth_frame_id and
+    # N.color_frame_id. Two namespaces for the same intrinsics, because rviz's DepthCloud looks
     # for camera_info beside the depth image and a real D435i with align_depth publishes both.
-    depth_topic: "/camera/aligned_depth_to_color/image_raw"
-    depth_info_topic: "/camera/aligned_depth_to_color/camera_info"
-    depth_frame_id: "camera_depth_optical_frame"
-    color_topic: "/camera/color/image_raw"
-    info_topic: "/camera/color/camera_info"
-    color_frame_id: "camera_color_optical_frame"
+    cameras: ["head", "chest"]
+    head:
+      depth_topic: "/camera/aligned_depth_to_color/image_raw"
+      depth_info_topic: "/camera/aligned_depth_to_color/camera_info"
+      depth_frame_id: "camera_depth_optical_frame"
+      color_topic: "/camera/color/image_raw"
+      info_topic: "/camera/color/camera_info"
+      color_frame_id: "camera_color_optical_frame"
+    chest:
+      depth_topic: "/chest_camera/aligned_depth_to_color/image_raw"
+      depth_info_topic: "/chest_camera/aligned_depth_to_color/camera_info"
+      depth_frame_id: "chest_camera_depth_optical_frame"
+      color_topic: "/chest_camera/color/image_raw"
+      info_topic: "/chest_camera/color/camera_info"
+      color_frame_id: "chest_camera_color_optical_frame"
 
     # Ground-truth pelvis state, sim only.
     base_state_frame_id: "pelvis"

@@ -90,7 +90,7 @@ G1AgileController::on_configure(const rclcpp_lifecycle::State& /*previous_state*
 
     try
     {
-        policy_ = std::make_unique<AgilePolicy>(model_path_);
+        policy_.emplace(model_path_);
     }
     catch (const std::exception& error)
     {
@@ -99,9 +99,11 @@ G1AgileController::on_configure(const rclcpp_lifecycle::State& /*previous_state*
     }
 
     cmd_vel_buffer_.writeFromNonRT(geometry_msgs::msg::Twist{});
+    // Newest command only, and never a latched one: a reactivated controller must not replay an
+    // old velocity. Reliable, as Nav2 and g1_base_approach publish.
     cmd_vel_subscriber_ = get_node()->create_subscription<geometry_msgs::msg::Twist>(
         cmd_vel_topic_,
-        rclcpp::SystemDefaultsQoS(),
+        rclcpp::QoS(rclcpp::KeepLast(1)).reliable().durability_volatile(),
         // ConstSharedPtr by reference: the const-ref signature rclcpp accepts, no refcount bump.
         [this](const geometry_msgs::msg::Twist::ConstSharedPtr& message) {
             cmd_vel_buffer_.writeFromNonRT(*message);

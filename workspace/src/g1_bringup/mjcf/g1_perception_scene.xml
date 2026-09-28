@@ -58,9 +58,11 @@
     <geom name="reach_obstacle" group="2" type="box" size="0.10 0.45 0.25" pos="0.28 0.0 1.25"
           material="obstacle"/>
 
-    <!-- D435i intrinsics only. The pose is a placeholder the sensor thread overwrites every frame
-         from torso_link, since the vendored robot cannot host a camera element. -->
+    <!-- Camera intrinsics only. The poses are placeholders the sensor thread overwrites every
+         frame from each mount in g1_description's cameras.yaml, since the vendored robot cannot
+         host a camera element. -->
     <camera name="d435i" mode="fixed" fovy="58" resolution="848 480" pos="0 0 1"/>
+    <camera name="chest_d435i" mode="fixed" fovy="58" resolution="848 480" pos="0 0 1"/>
   </worldbody>
 
 </mujoco>

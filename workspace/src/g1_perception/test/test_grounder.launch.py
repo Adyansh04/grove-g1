@@ -32,8 +32,8 @@ WIDTH, HEIGHT = 64, 48
 def generate_test_description():
     # A real detector, so the grounder's write to its `phrases` can be checked.
     detector = Node(
-        package="g1_perception",
-        executable="g1_detector",
+        package="canopy_perception",
+        executable="detector",
         name="g1_detector",
         output="screen",
         remappings=[("color/image_raw", CAMERA_TOPIC)],

@@ -27,7 +27,6 @@ using g1_perception::gateByMedianDepth;
 using g1_perception::Intrinsics;
 using g1_perception::MaskView;
 using g1_perception::Point3;
-using g1_perception::slugify;
 using g1_perception::supportHeight;
 using g1_perception::supportRing;
 
@@ -78,13 +77,6 @@ MaskView filledMask(
 {
     storage.assign(static_cast<std::size_t>(width) * height, 255);
     return { storage, x, y, width, height };
-}
-
-TEST(Slugify, MakesAPhraseIntoAnObjectId)
-{
-    EXPECT_EQ(slugify("Red Block"), "red_block");
-    EXPECT_EQ(slugify("red  block!"), "red_block");
-    EXPECT_EQ(slugify("  "), "");
 }
 
 TEST(Erode, ShrinksASquareByOneRing)

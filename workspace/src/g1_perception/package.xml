@@ -5,16 +5,19 @@
   <version>0.1.0</version>
   <description>
     Open-vocabulary object perception for manipulation: turns detector masks and depth
-    into the object poses the manipulation skills consume. Ships the geometry node,
-    clients for the host model servers, and GPU-free mock detector and grasp source.
+    into the object poses the manipulation skills consume. Ships the geometry node, the
+    grasp and grounding clients for the host model servers, and a GPU-free grasp source; the
+    detector and its mock are canopy_perception's.
   </description>
   <maintainer email="gupta.adyansh@gmail.com">Adyansh</maintainer>
   <license>BSD-3-Clause</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
-  <!-- Installs g1_perception/, the module the three adapter scripts import. -->
+  <!-- Installs g1_perception/, the grasp client module the adapter imports. -->
   <buildtool_depend>ament_cmake_python</buildtool_depend>
 
+  <depend>canopy_msgs</depend>
+  <depend>canopy_perception</depend>
   <depend>cv_bridge</depend>
   <depend>g1_msgs</depend>
   <depend>geometry_msgs</depend>

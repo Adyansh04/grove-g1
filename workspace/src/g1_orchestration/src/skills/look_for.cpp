@@ -6,7 +6,7 @@
 #include "g1_orchestration/skills/look_for.hpp"
 
 #include <algorithm>
-#include <cctype>
+#include <canopy_perception/phrase.hpp>
 #include <chrono>
 #include <memory>
 #include <rcl_interfaces/srv/set_parameters.hpp>
@@ -41,32 +41,11 @@ std::chrono::steady_clock::duration seconds(double value)
         std::chrono::duration<double>(value));
 }
 
-/// g1_perception's slugify, which turns a detector label into an /objects id. Mirrored rather than
-/// linked, since the perception package would pull OpenCV into the tree.
-std::string slugOf(std::string_view text)
-{
-    std::string out;
-    for (const char character : text)
-    {
-        const auto raw = static_cast<unsigned char>(character);
-        if (std::isalnum(raw) != 0)
-        {
-            out.push_back(static_cast<char>(std::tolower(raw)));
-        }
-        else if (!out.empty() && out.back() != '_')
-        {
-            out.push_back('_');
-        }
-    }
-    while (!out.empty() && out.back() == '_')
-    {
-        out.pop_back();
-    }
-    return out;
-}
-
 /// The id /objects will carry for an entry: the slug of its `id` half, or of the whole phrase.
-std::string idOf(std::string_view entry) { return slugOf(entry.substr(0, entry.find('='))); }
+std::string idOf(std::string_view entry)
+{
+    return canopy_perception::slugify(entry.substr(0, entry.find('=')));
+}
 
 }  // namespace
 
@@ -134,7 +113,7 @@ BT::NodeStatus LookFor::onStart()
     detector_  = getInput<std::string>("detector").value_or("");
 
     client_node_ = makeClientNode("g1_look_for_client");
-    executor_    = std::make_unique<rclcpp::executors::SingleThreadedExecutor>();
+    executor_.emplace();
     executor_->add_node(client_node_);
     seen_.clear();
     objects_sub_ = client_node_->create_subscription<vision_msgs::msg::Detection3DArray>(

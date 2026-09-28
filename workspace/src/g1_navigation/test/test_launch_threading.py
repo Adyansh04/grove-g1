@@ -155,10 +155,16 @@ def test_exactly_one_container_is_created(nav_stack, mode):
 
 
 def test_nav_stack_refuses_bad_input(nav_stack):
-    with pytest.raises(RuntimeError, match="needs mode:=localization"):
-        _run_setup(nav_stack, mode="mapping", nav="true")
     with pytest.raises(RuntimeError, match="is not a mode"):
         _run_setup(nav_stack, mode="slam")
+
+
+def test_mapping_with_nav_plans_on_the_growing_map(nav_stack):
+    """Exploration: slam_toolbox builds the map Nav2 plans on; no map_server, no AMCL."""
+    includes = dict(_includes(_run_setup(nav_stack, mode="mapping", nav="true")))
+    assert "slam.launch.py" in includes
+    assert "localization.launch.py" not in includes
+    assert includes["nav2.launch.py"]["use_composition"] == "false"
 
 
 # --- boundary 1: bringup.launch.py -> the stack below it ------------------------------
@@ -310,10 +316,9 @@ def test_nav_sim_opens_rviz_only_when_asked(nav_sim):
 # --- the guards ----------------------------------------------------------------------
 
 
-def test_nav_without_localization_is_refused(bringup):
-    for mode in ("none", "mapping"):
-        with pytest.raises(RuntimeError, match="needs mode:=localization"):
-            _run_setup(bringup, mode=mode, nav="true")
+def test_nav_without_a_map_is_refused(bringup):
+    with pytest.raises(RuntimeError, match="needs a map"):
+        _run_setup(bringup, mode="none", nav="true")
 
 
 def test_pin_pelvis_with_navigation_is_refused(bringup):

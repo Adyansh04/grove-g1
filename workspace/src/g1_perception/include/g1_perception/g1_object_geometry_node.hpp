@@ -11,7 +11,7 @@
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
 
-#include <g1_msgs/msg/instance_mask_array.hpp>
+#include <canopy_msgs/msg/instance_mask_array.hpp>
 #include <geometry_msgs/msg/pose.hpp>
 #include <memory>
 #include <mutex>
@@ -23,7 +23,7 @@
 #include <vector>
 #include <vision_msgs/msg/detection3_d_array.hpp>
 
-#include "g1_perception/depth_history.hpp"
+#include "canopy_perception/depth_history.hpp"
 #include "g1_perception/object_geometry.hpp"
 #include "g1_perception/object_tracker.hpp"
 
@@ -48,35 +48,35 @@ private:
         std::size_t              instance_index{ 0 };
     };
 
-    void onMasks(const g1_msgs::msg::InstanceMaskArray::ConstSharedPtr& masks);
+    void onMasks(const canopy_msgs::msg::InstanceMaskArray::ConstSharedPtr& masks);
     void onDepth(sensor_msgs::msg::Image::ConstSharedPtr depth);
     void onCameraInfo(sensor_msgs::msg::CameraInfo::ConstSharedPtr info);
 
     /// Box for one instance, or nothing when its mask is malformed, too few points survive the
     /// depth checks, or the extents are out of bounds.
     std::optional<OrientedBox> measure(
-        const g1_msgs::msg::InstanceMask& instance, const sensor_msgs::msg::Image& depth,
+        const canopy_msgs::msg::InstanceMask& instance, const sensor_msgs::msg::Image& depth,
         const Intrinsics& intrinsics, const Point3& up) const;
 
     void publish(
-        const g1_msgs::msg::InstanceMaskArray& masks, const std::vector<Measured>& measured,
+        const canopy_msgs::msg::InstanceMaskArray& masks, const std::vector<Measured>& measured,
         const std::vector<std::string>& ids);
 
-    rclcpp::Subscription<g1_msgs::msg::InstanceMaskArray>::SharedPtr masks_sub_;
-    rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr         depth_sub_;
-    rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr    info_sub_;
-    rclcpp::Publisher<vision_msgs::msg::Detection3DArray>::SharedPtr objects_pub_;
-    rclcpp::Publisher<g1_msgs::msg::InstanceMaskArray>::SharedPtr    tracked_pub_;
+    rclcpp::Subscription<canopy_msgs::msg::InstanceMaskArray>::SharedPtr masks_sub_;
+    rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr             depth_sub_;
+    rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr        info_sub_;
+    rclcpp::Publisher<vision_msgs::msg::Detection3DArray>::SharedPtr     objects_pub_;
+    rclcpp::Publisher<canopy_msgs::msg::InstanceMaskArray>::SharedPtr    tracked_pub_;
 
     /// Masks run on their own group so their TF wait cannot stall depth ingest.
     rclcpp::CallbackGroup::SharedPtr masks_group_;
 
-    std::unique_ptr<tf2_ros::Buffer>            tf_buffer_;
-    std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
+    tf2_ros::Buffer            tf_buffer_;
+    tf2_ros::TransformListener tf_listener_;
 
     /// Guards depth_history_ and camera_info_: onMasks reads them while onDepth writes.
     std::mutex                                   frames_mutex_;
-    DepthHistory                                 depth_history_;
+    canopy_perception::DepthHistory              depth_history_;
     ObjectTracker                                tracker_;
     sensor_msgs::msg::CameraInfo::ConstSharedPtr camera_info_;
 

@@ -8,9 +8,14 @@ unclaimed is left unpowered. The hands are separate components and follow, best-
 The arms then move out to the sides unplanned: where they hang at bring-up is inside the octomap
 of any table in front, and MoveIt cannot plan from a start state in collision.
 
+With --posture sides the arms hang beside the thighs instead, for exploration: at zero the
+forearms point forward, into both cameras' views, and a real detector maps the hands as objects.
+--no-hands leaves the Dex3 hands alone.
+
 Python, not C++: one-shot sequencing well under 1 Hz.
 """
 
+import argparse
 import sys
 import time
 
@@ -21,6 +26,7 @@ from lifecycle_msgs.msg import State
 from rclpy.action import ActionClient
 from rclpy.duration import Duration
 from rclpy.node import Node
+from rclpy.utilities import remove_ros_args
 from trajectory_msgs.msg import JointTrajectoryPoint
 
 CONTROLLER_NAME = "arm_trajectory_controller"
@@ -47,8 +53,20 @@ CLEAR_POSTURE = {
     "wrist_pitch_joint": 0.0,
     "wrist_yaw_joint": 0.0,
 }
+# Nearly straight, beside the thighs, with the roll keeping the palms off them. Every hand and
+# forearm link is then at least 40 px outside both camera images.
+SIDES_POSTURE = {
+    "shoulder_pitch_joint": 0.0,
+    "shoulder_roll_joint": 0.20,
+    "shoulder_yaw_joint": 0.0,
+    "elbow_joint": 1.40,
+    "wrist_roll_joint": 0.0,
+    "wrist_pitch_joint": 0.0,
+    "wrist_yaw_joint": 0.0,
+}
+POSTURES = {"clear": CLEAR_POSTURE, "sides": SIDES_POSTURE}
 # Ramped, not snapped: this is a real motion on a real arm.
-CLEAR_POSTURE_DURATION_S = 4.0
+POSTURE_DURATION_S = 4.0
 ARM_TRAJECTORY_ACTION = "/arm_trajectory_controller/follow_joint_trajectory"
 
 COMPONENT_RETRY_PERIOD_S = 0.5
@@ -112,8 +130,8 @@ def retry_switch(node, client, activate, deactivate, retry_timeout_s):
     return False
 
 
-def move_arms_clear(node, timeout_s=20.0):
-    """Sends the arms to CLEAR_POSTURE through the controller, with no planner involved."""
+def move_arms(node, name, timeout_s=20.0):
+    """Sends the arms to a posture through the controller, with no planner involved."""
     client = ActionClient(node, FollowJointTrajectory, ARM_TRAJECTORY_ACTION)
     if not client.wait_for_server(timeout_sec=timeout_s):
         node.get_logger().warning(
@@ -123,34 +141,38 @@ def move_arms_clear(node, timeout_s=20.0):
 
     goal = FollowJointTrajectory.Goal()
     point = JointTrajectoryPoint()
-    # The roll above is the left arm's, as the SRDF writes its states; the right one mirrors.
+    # The rolls above are the left arm's, as the SRDF writes its states; the right one mirrors.
     for side, mirror in (("left", 1.0), ("right", -1.0)):
-        for joint, value in CLEAR_POSTURE.items():
+        for joint, value in POSTURES[name].items():
             goal.trajectory.joint_names.append(f"{side}_{joint}")
             point.positions.append(mirror * value if joint.endswith("roll_joint") else value)
     # Not int(seconds): a truncated fraction is an arm moving faster than this file says.
-    point.time_from_start = Duration(seconds=CLEAR_POSTURE_DURATION_S).to_msg()
+    point.time_from_start = Duration(seconds=POSTURE_DURATION_S).to_msg()
     goal.trajectory.points = [point]
 
     handle_future = client.send_goal_async(goal)
     rclpy.spin_until_future_complete(node, handle_future, timeout_sec=timeout_s)
     handle = handle_future.result() if handle_future.done() else None
     if handle is None or not handle.accepted:
-        node.get_logger().warning("the arm controller refused the clear posture")
+        node.get_logger().warning(f"the arm controller refused the {name} posture")
         return False
 
     result_future = handle.get_result_async()
     rclpy.spin_until_future_complete(
-        node, result_future, timeout_sec=CLEAR_POSTURE_DURATION_S + timeout_s
+        node, result_future, timeout_sec=POSTURE_DURATION_S + timeout_s
     )
     result = result_future.result() if result_future.done() else None
     if result is None or result.result.error_code != 0:
-        node.get_logger().warning("the arms did not reach the clear posture")
+        node.get_logger().warning(f"the arms did not reach the {name} posture")
         return False
     return True
 
 
 def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--posture", choices=sorted(POSTURES), default="clear")
+    parser.add_argument("--no-hands", action="store_true", help="leave the Dex3 hands alone")
+    args = parser.parse_args(remove_ros_args(sys.argv if argv is None else argv)[1:])
     rclpy.init()
     node = Node("g1_bringup_activate_arm")
     try:
@@ -173,7 +195,7 @@ def main(argv=None):
             node.get_logger().error(f"failed to activate {CONTROLLER_NAME}")
             return 1
 
-        for component, controller in HANDS:
+        for component, controller in () if args.no_hands else HANDS:
             node.get_logger().info(f"activating hand {component}...")
             if not set_component_state(
                 node,
@@ -190,8 +212,16 @@ def main(argv=None):
                     "will not move. Check that it is powered and publishing state."
                 )
 
+        if args.posture == "sides":
+            node.get_logger().info("hanging the arms at the sides, out of the cameras' view...")
+            if not move_arms(node, "sides"):
+                node.get_logger().error("the arms still hang where the cameras see them")
+                return 1
+            node.get_logger().info("the arms hang at the sides.")
+            return 0
+
         node.get_logger().info("moving the arms clear of whatever is in front of the robot...")
-        if not move_arms_clear(node):
+        if not move_arms(node, "clear"):
             # The arm is acquired and usable by hand, but still inside the octomap, so every
             # planned motion after this is refused at its start state.
             node.get_logger().error(

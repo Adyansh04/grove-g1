@@ -74,17 +74,17 @@ is a control loop with a freshness gate; `state_topic` switches it without a reb
 ## In simulation
 
 `unitree_mujoco` answers the same two channels, so this component is not swapped out for sim. The
-responder is `dex3_handler.cc`, registered by vendor patch 004, on finger joints added by patch
-003. It runs the hardware's PD from the `kp` and `kd` in the command and clamps to the URDF's effort
-limits.
+responder is the simulator's `dex3_handler.cc`, on the finger joints its G1 model adds. It runs the
+hardware's PD from the `kp` and `kd` in the command and clamps to the URDF's effort limits.
 
 - The fingers are driven through `qfrc_applied`, not MuJoCo actuators: the vendored SDK bridge
   sizes itself from the actuator count and indexes a fixed 35-slot `LowCmd`, which 29 body motors
   plus 14 fingers would overrun.
 - `status = Lock` holds the finger where it is rather than going limp, as on hardware. The same
   applies before any command arrives, and one second after the last one.
-- Finger contact exists only where a scene opts in. Patch 008 gives the palm and fingers collision
-  capsules on their own contact bit, which only the manipulation scenes' props and tables share.
+- Finger contact exists only where a scene opts in. The simulator gives the palm and fingers
+  collision capsules on their own contact bit, which only the manipulation scenes' props and tables
+  share.
 
 ## Tests
 

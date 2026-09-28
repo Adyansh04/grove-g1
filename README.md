@@ -84,13 +84,17 @@ Two rules shape the design, and both apply in simulation so the habits transfer:
 | [`g1_locomotion`](workspace/src/g1_locomotion) | Walks the base into arm's reach of a measured object, and backs it out again. |
 | [`g1_manipulation`](workspace/src/g1_manipulation) | Pick and place as actions, and the object-pose source behind them. |
 | [`g1_moveit_config`](workspace/src/g1_moveit_config) | MoveIt config: arm and hand planning groups, kinematics, the octomap. |
-| [`g1_msgs`](workspace/src/g1_msgs) | The stack's own interfaces: the skill actions, the policy and perception services, instance masks. |
+| [`g1_msgs`](workspace/src/g1_msgs) | The stack's own interfaces: the skill actions and the policy and perception services. |
 | [`g1_navigation`](workspace/src/g1_navigation) | SLAM Toolbox mapping, AMCL localization and Nav2. |
 | [`g1_orchestration`](workspace/src/g1_orchestration) | The behaviour tree that sequences navigation and manipulation into a mission. |
 | [`g1_perception`](workspace/src/g1_perception) | Object poses from the camera for objects named in text, plus grasp generation and instruction grounding. |
 | [`g1_sensor_relay`](workspace/src/g1_sensor_relay) | Publishes the LiDAR, camera, IMU and object poses sampled inside the simulator. |
 | [`g1_state_estimation`](workspace/src/g1_state_estimation) | Publishes `odom` to `base_footprint` and the TF chain Nav2 needs. |
 | [`g1_vla`](workspace/src/g1_vla) | Learned grasping: a policy's action chunks, checked against the planning scene before they run. |
+
+The world model is [canopy](workspace/src/canopy), a repository of its own: rooms, objects and camera
+coverage on the SLAM map, the exploration that fills them in, its detector front end and the host
+model servers.
 
 ## Quick start
 
@@ -103,27 +107,28 @@ Install Docker Engine with Docker Compose v2, the NVIDIA driver and the NVIDIA C
 on the host. The simulator uses the GPU exposed by `docker-compose.yml`. For the GUI modes, run
 from an X11 desktop session; `manage.sh start` grants the container local X11 access.
 
-Install [`vcstool`](https://github.com/dirk-thomas/vcstool) on the host as well, because the
-import script uses its `vcs` command before the development container exists:
+### Start the development container
+
+Clone with the submodules, or fetch them in an existing clone:
 
 ```bash
-sudo apt install python3-vcstool
+git clone --recurse-submodules https://github.com/Adyansh04/grove-g1.git
+git submodule update --init
 ```
 
-### Start the development container
+The third-party code the stack changes lives in forks, on their `grove` branches:
+`livox_ros_driver2` and `fast_lio_humanoid` under `workspace/src`, and `unitree_mujoco`, which the
+image builds, under `workspace/vendor`. The world model, [canopy](https://github.com/Adyansh04/canopy),
+is a repository of its own on `main`, under `workspace/src/canopy`. `git config submodule.recurse
+true` makes `git pull` move them along.
 
 From the repository root, on the host:
 
 ```bash
 cp .env.example .env
-./scripts/import-externals.sh
 ./scripts/manage.sh start
 ./scripts/manage.sh exec
 ```
-
-`import-externals.sh` pulls the third-party packages listed in `workspace.repos` into
-`workspace/src` and puts the two that ship a non-standard layout into a buildable one. Run it
-again whenever `workspace.repos` changes.
 
 ### Build
 
@@ -143,6 +148,8 @@ Then pick a demo:
 | [Pick and place](docs/guides/pick-and-place.md) | The manipulation skills and the behaviour trees that sequence them with navigation. |
 | [Learned grasping](docs/guides/learned-grasping.md) | A vision-language-action policy behind the planning-scene gate. Runs; does not grasp yet. |
 | [Open-vocabulary perception](docs/guides/open-vocabulary-grasping.md) | Objects named in text and measured in 3D, generated grasps, and instructions turned into phrases. |
+| [Exploring and asking what is where](docs/guides/world-model.md) | canopy's exploration of a flat, its rooms and objects, and finding them by name. |
+| [Checking the map by hand](workspace/src/canopy/editor/doc/guide.md) | canopy's map editor, with screenshots: what to check in a saved world and how to fix it. |
 
 `ros2 launch g1_bringup bringup.launch.py --show-args` prints every launch argument with its
 description.
@@ -228,7 +235,6 @@ repository.
 .devcontainer/     derived dev image
 docs/guides/       how to run each demo
 workspace/src/     ROS 2 packages
-workspace/patches/ patches applied to vendored sources at image build
-workspace/vendor/  our source compiled into the vendored simulator
+workspace/vendor/  the simulator, a submodule of our unitree_mujoco fork
 scripts/           container lifecycle, stack teardown, and the host-side model servers
 ```

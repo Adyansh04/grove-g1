@@ -81,6 +81,8 @@ jobs:
       CCACHE_MAXSIZE: 1G
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: recursive
 
       # $GITHUB_WORKSPACE, not ${{ github.workspace }}: inside a container the latter expands to
       # the runner's host path, which does not exist here.
@@ -107,11 +109,6 @@ jobs:
           fi
           exit $fail
 
-      - name: Import externals
-        run: |
-          git config --global --add safe.directory '*'
-          ./scripts/import-externals.sh
-
       - uses: actions/cache@v6
         with:
           path: .ccache
@@ -135,17 +132,24 @@ jobs:
 
       - name: Test
         working-directory: workspace
-        # ^g1_ skips the vendored checkouts, whose lint targets fail by design. Lint for ours
-        # runs here as each package's own ctest target, which is why there is no lint job.
+        # g1_ and canopy (the world model's submodule, which has no CI of its own yet); the
+        # vendored checkouts' lint targets fail by design. Lint for ours runs here as each
+        # package's own ctest target, which is why there is no lint job.
         # --return-code-on-test-failure: colcon test otherwise exits 0 over a failing suite.
         run: |
           source /opt/ros/jazzy/setup.bash
           source install/setup.bash
           colcon test \
-            --packages-select-regex '^g1_' \
+            --packages-select-regex '^(g1_|canopy)' \
             --executor sequential \
             --return-code-on-test-failure \
             --ctest-args -LE simulator
+          # canopy's model server and map editor are not ROS packages; their tests need no GPU.
+          python3 -m unittest src/canopy/servers/test_semantic_server.py
+          python3 -m unittest src/canopy/editor/test_canopy_editor.py
+          # Nor is their lint a package's ctest target.
+          ruff check src/canopy/editor src/canopy/servers
+          ruff format --check src/canopy/editor src/canopy/servers
 
       - name: Test results
         if: always()
@@ -180,11 +184,8 @@ jobs:
       CCACHE_DISABLE: "1"
     steps:
       - uses: actions/checkout@v7
-
-      - name: Import externals
-        run: |
-          git config --global --add safe.directory '*'
-          ./scripts/import-externals.sh
+        with:
+          submodules: recursive
 
       - name: Build instrumented
         working-directory: workspace
@@ -200,7 +201,7 @@ jobs:
         run: |
           source /opt/ros/jazzy/setup.bash
           source install/setup.bash
-          colcon test --packages-select-regex '^g1_' --executor sequential \
+          colcon test --packages-select-regex '^(g1_|canopy)' --executor sequential \
             --ctest-args -LE simulator
 
       - name: Report
@@ -213,7 +214,7 @@ jobs:
             echo 'largely unmeasured here. Read it per package, not as a repo total.'
             echo
             echo '```'
-            gcovr --root . --filter 'src/g1_' --exclude '.*/test/' \
+            gcovr --root . --filter 'src/(g1_|canopy)' --exclude '.*/test/' \
                   --txt --print-summary 2>&1 || echo "gcovr produced no data"
             echo '```'
           } | tee -a "$GITHUB_STEP_SUMMARY"

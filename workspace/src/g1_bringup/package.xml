@@ -31,6 +31,8 @@
   <depend>launch_ros</depend>
 
   <exec_depend>ament_index_python</exec_depend>
+  <!-- launch/world_model.launch.py. -->
+  <exec_depend>canopy</exec_depend>
   <!-- activate_arm's clear-posture move goes out as a trajectory goal of its own. -->
   <exec_depend>control_msgs</exec_depend>
   <exec_depend>trajectory_msgs</exec_depend>
@@ -45,6 +47,11 @@
   <!-- Manual teleop demo dependency (see README). -->
   <exec_depend>teleop_twist_keyboard</exec_depend>
 
+  <!-- The run analysis tools in scripts/. -->
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-pil</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_cmake_lint_cmake</test_depend>
   <test_depend>ament_cmake_xmllint</test_depend>
@@ -55,6 +62,15 @@
   <test_depend>geometry_msgs</test_depend>
   <test_depend>std_msgs</test_depend>
   <test_depend>tf2_msgs</test_depend>
+  <!-- test_explore_apartment. -->
+  <test_depend>action_msgs</test_depend>
+  <test_depend>canopy_msgs</test_depend>
+  <test_depend>canopy_perception</test_depend>
+  <test_depend>g1_msgs</test_depend>
+  <test_depend>g1_orchestration</test_depend>
+  <test_depend>nav2_msgs</test_depend>
+  <test_depend>std_srvs</test_depend>
+  <test_depend>tf2_ros_py</test_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

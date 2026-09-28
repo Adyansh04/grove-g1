@@ -129,7 +129,8 @@ void drawBox(
     }
 }
 
-void drawMask(cv::Mat& image, const g1_msgs::msg::InstanceMask& instance, const cv::Scalar& colour)
+void drawMask(
+    cv::Mat& image, const canopy_msgs::msg::InstanceMask& instance, const cv::Scalar& colour)
 {
     const cv::Rect roi(
         static_cast<int>(instance.roi.x_offset),
@@ -231,6 +232,8 @@ measuredFor(const std::string& label, const vision_msgs::msg::Detection3DArray& 
 
 G1PerceptionVisualizer::G1PerceptionVisualizer(const rclcpp::NodeOptions& options)
   : rclcpp::Node("g1_perception_visualizer", options)
+  , tf_buffer_(get_clock())
+  , tf_listener_(tf_buffer_)
   , images_(
         declare_parameter<double>("image_history_s", 5.0),
         declare_parameter<double>("stamp_tolerance_ms", 50.0) / 1000.0,
@@ -238,9 +241,6 @@ G1PerceptionVisualizer::G1PerceptionVisualizer(const rclcpp::NodeOptions& option
 {
     fixed_frame_                  = declare_parameter<std::string>("fixed_frame", "odom");
     const std::string truth_topic = declare_parameter<std::string>("ground_truth_topic", "");
-
-    tf_buffer_   = std::make_unique<tf2_ros::Buffer>(get_clock());
-    tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
     annotated_pub_ = create_publisher<sensor_msgs::msg::Image>(
         "~/annotated_image",
@@ -259,10 +259,10 @@ G1PerceptionVisualizer::G1PerceptionVisualizer(const rclcpp::NodeOptions& option
         [this](sensor_msgs::msg::CameraInfo::ConstSharedPtr info) {
             camera_info_ = std::move(info);
         });
-    masks_sub_ = create_subscription<g1_msgs::msg::InstanceMaskArray>(
+    masks_sub_ = create_subscription<canopy_msgs::msg::InstanceMaskArray>(
         "tracked_masks",
         reliableQos(2),
-        [this](g1_msgs::msg::InstanceMaskArray::ConstSharedPtr masks) {
+        [this](canopy_msgs::msg::InstanceMaskArray::ConstSharedPtr masks) {
             masks_ = std::move(masks);
             renderIfPaired();
         });
@@ -295,14 +295,15 @@ void G1PerceptionVisualizer::renderIfPaired()
     {
         return;
     }
-    const double stamp_s = DepthHistory::stampSeconds(masks_->header);
+    const double stamp_s = canopy_perception::DepthHistory::stampSeconds(masks_->header);
     const sensor_msgs::msg::Image::ConstSharedPtr frame = images_.at(stamp_s);
     if (frame == nullptr)
     {
         // Colour can land after masks cut from its depth twin, so the next image retries. The
         // frame is gone only when every held frame is newer than the stamp.
         const sensor_msgs::msg::Image::ConstSharedPtr before = images_.atOrBefore(stamp_s);
-        if (before == nullptr || DepthHistory::stampSeconds(before->header) > stamp_s)
+        if (before == nullptr ||
+            canopy_perception::DepthHistory::stampSeconds(before->header) > stamp_s)
         {
             RCLCPP_WARN_THROTTLE(
                 get_logger(),
@@ -342,7 +343,7 @@ void G1PerceptionVisualizer::publishAnnotatedImage(const sensor_msgs::msg::Image
 
     std::vector<Label> labels;
     labels.reserve(masks_->instances.size());
-    for (const g1_msgs::msg::InstanceMask& instance : masks_->instances)
+    for (const canopy_msgs::msg::InstanceMask& instance : masks_->instances)
     {
         const cv::Scalar colour = colourFor(instance.label);
         drawMask(image->image, instance, colour);
@@ -382,7 +383,7 @@ void G1PerceptionVisualizer::storeTruth(const vision_msgs::msg::Detection3DArray
         in_camera.header.frame_id = truth.header.frame_id;
         in_camera.pose            = detection.bbox.center;
         const std::optional<geometry_msgs::msg::PoseStamped> in_fixed =
-            transformed(*tf_buffer_, in_camera, fixed_frame_);
+            transformed(tf_buffer_, in_camera, fixed_frame_);
         if (!in_fixed)
         {
             return;
@@ -448,7 +449,7 @@ std::optional<double> G1PerceptionVisualizer::errorTo(
         in_camera.header = objects_->header;
         in_camera.point  = seen.bbox.center.position;
         const std::optional<geometry_msgs::msg::PointStamped> in_fixed =
-            transformed(*tf_buffer_, in_camera, fixed_frame_);
+            transformed(tf_buffer_, in_camera, fixed_frame_);
         if (!in_fixed)
         {
             continue;
