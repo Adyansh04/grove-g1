@@ -17,10 +17,12 @@ the test.
 
 G1_EXPLORE_TEST_EXPORT=1 copies the saved world over the one in G1_EXPLORE_TEST_EXPORT_DIR, a
 package and then a path inside its source directory (default canopy/doc/apartment), with a
-run.yaml of how it was made and what it scored. The source is found through the package's
+run.yaml of how it was made, what it scored and which tests passed: it exports whatever they
+found, so a failed run's world is marked as one. The source is found through the package's
 installed package.xml, so it needs a --symlink-install build.
 """
 
+import functools
 import math
 import os
 import re
@@ -273,6 +275,17 @@ def stop(process):
         process.wait()
 
 
+def recorded(test):
+    """Notes in run.yaml that `test` passed."""
+
+    @functools.wraps(test)
+    def run(self):
+        test(self)
+        self.results.setdefault("passed", []).append(test.__name__)
+
+    return run
+
+
 class ExploreApartmentTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -396,6 +409,7 @@ class ExploreApartmentTest(unittest.TestCase):
         self.assertTrue(future.done(), f"{client.srv_name} did not answer")
         return future.result()
 
+    @recorded
     def test_1_explores_the_apartment(self):
         self.assertTrue(self.ready, "Nav2 never became active")
         self.assertTrue(self.tf_ready, "map -> base_footprint never appeared")
@@ -430,6 +444,7 @@ class ExploreApartmentTest(unittest.TestCase):
         self.results["exploration_min"] = round(minutes, 1)
         self.assertEqual(executor.returncode, 0, "the exploration tree failed")
 
+    @recorded
     def test_2_finds_the_rooms(self):
         self.spin(3.0)
         self.assertIsNotNone(self.rooms, "no rooms published")
@@ -450,6 +465,7 @@ class ExploreApartmentTest(unittest.TestCase):
         merged = {room: names for room, names in claimed.items() if len(names) > 1}
         self.assertFalse(merged, f"rooms merged into one: {merged}")
 
+    @recorded
     def test_3_the_camera_saw_every_room(self):
         self.assertIsNotNone(self.rooms, "no rooms published")
         for room in self.rooms.rooms:
@@ -462,6 +478,7 @@ class ExploreApartmentTest(unittest.TestCase):
             self.assertGreaterEqual(room.floor_coverage, MIN_FLOOR_COVERAGE, room.id)
             self.assertGreaterEqual(room.face_coverage, MIN_FACE_COVERAGE, room.id)
 
+    @recorded
     def test_4_maps_the_objects(self):
         self.spin(2.0)
         self.assertIsNotNone(self.objects, "no objects published")
@@ -530,6 +547,7 @@ class ExploreApartmentTest(unittest.TestCase):
             rclpy.spin_once(self.node, timeout_sec=0.05)
         return result.result() if result.done() else None
 
+    @recorded
     def test_5_goes_to_an_object_by_name(self):
         request = GetApproachPose.Request()
         request.target = "dustbin"
