@@ -20,8 +20,6 @@ The mock engine serves the same service as the real one, so the gate cannot tell
 GPU, no downloads. In a container shell, opened with `./scripts/manage.sh exec`:
 
 ```bash
-cd /root/workspace && source install/setup.bash
-
 ros2 launch g1_bringup bringup.launch.py \
   moveit:=true manipulation:=true vla:=true vla_engine:=mock \
   world:=manipulation pin_pelvis:=true odometry:=ground_truth \

@@ -127,18 +127,19 @@ From the repository root, on the host:
 ```bash
 cp .env.example .env
 ./scripts/manage.sh start
-./scripts/manage.sh exec
 ```
 
 ### Build
 
-Inside the container:
-
 ```bash
-cd /root/workspace
-colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-source install/setup.bash
+./scripts/manage.sh build
+./scripts/manage.sh exec
 ```
+
+`build` runs `colcon build` in the container with the flags the tooling expects (RelWithDebInfo,
+and `compile_commands.json` for clangd), capped so the compilers cannot run the machine out of
+memory. `build <package>...` builds only those. `exec` opens a shell in `/root/workspace` with the
+workspace sourced, and `exec <command>` runs one there.
 
 Then pick a demo:
 
@@ -181,36 +182,32 @@ image's `/etc/profile.d/10-ros-env.sh` overwrites the plain names. `sim.launch.p
 unless `CYCLONEDDS_URI` names a profile that pins `lo`, so the simulator cannot come up pointing
 at a robot.
 
-Lifecycle:
+Lifecycle, and the everyday commands inside the container:
 
 ```bash
-./scripts/manage.sh start | stop | restart | recreate | logs | exec
+./scripts/manage.sh start | stop | restart | recreate | logs
+./scripts/manage.sh exec [command] | build [package...] | test [--sim] [package...] | format | lint
 ```
 
-Use `exec-as-me` instead of `exec` for anything that rewrites source files in place, such as
-`clang-tidy --fix` or `clang-format -i`. It runs as your host user, so the files do not come back
-owned by root.
+`format` applies clang-format and ruff format to our sources and leaves the files owned by you;
+`lint` checks the same and runs `ruff check`, in seconds rather than a full `colcon test`.
 
 Project dependencies belong in `.devcontainer/Dockerfile`, followed by
 `./scripts/manage.sh recreate`. Do not install into a running container and forget about it.
 
 ## Tests
 
-In the container, from `/root/workspace`:
-
 ```bash
-colcon test --packages-select-regex '^g1_' --executor sequential --ctest-args -LE simulator
-colcon test-result --verbose
+./scripts/manage.sh test
+./scripts/manage.sh test --sim
 ```
 
-`^g1_` skips the vendored packages, whose lint targets fail by design. `-LE simulator` leaves out
-the suites that launch a simulator. Those are timing-sensitive, so clear any leftover stack first
-and run them one package at a time, which `--executor sequential` does:
-
-```bash
-./scripts/clean-stack.sh
-colcon test --packages-select-regex '^g1_' --executor sequential --ctest-args -L simulator
-```
+The first runs what CI runs: every test of our packages and canopy's that needs no simulator,
+lint included. The vendored packages are skipped, since their lint targets fail by design.
+`--sim` runs only the suites that launch a simulator. Those are timing-sensitive, so it first
+tears down any leftover stack with `./scripts/clean-stack.sh`, and runs one package at a time.
+Name packages to test only those: `./scripts/manage.sh test --sim g1_manipulation`. Each package
+prints its summary, with the failing tests' output below it.
 
 `clean-stack.sh` exits non-zero unless the ROS graph is empty afterwards. Several stacks on one
 DDS graph are the usual explanation for a batch of failures that pass on a clean rerun. Each

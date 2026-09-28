@@ -5,17 +5,11 @@ them with navigation. There are two versions: one where the object is already at
 the full mission that drives across the facility to reach it.
 
 Every command here runs inside the development container. Start it and open a shell from the
-repository root:
+repository root; the shell starts in `/root/workspace` with the workspace sourced:
 
 ```bash
 ./scripts/manage.sh start
 ./scripts/manage.sh exec
-```
-
-Then, in that shell:
-
-```bash
-cd /root/workspace && source install/setup.bash
 ```
 
 ## The short version

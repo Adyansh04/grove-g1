@@ -4,17 +4,11 @@ Two demos that share a world. The first builds a map and drives to a goal under 
 plans arm motions against an octomap built from the same LiDAR. They can run together.
 
 Every command here runs inside the development container. Start it and open a shell from the
-repository root:
+repository root; the shell starts in `/root/workspace` with the workspace sourced:
 
 ```bash
 ./scripts/manage.sh start
 ./scripts/manage.sh exec
-```
-
-Then, in that shell:
-
-```bash
-cd /root/workspace && source install/setup.bash
 ```
 
 ## Simulator on its own

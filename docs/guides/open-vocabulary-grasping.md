@@ -6,8 +6,8 @@ and `g1_perception` in the container lifts those masks into the object poses the
 skills consume. The same server can turn an instruction into phrases, and a second host server
 proposes grasps.
 
-Host commands run from the repository root. `ros2` commands run in a container shell with the
-workspace sourced, as in the other guides.
+Host commands run from the repository root. `ros2` commands run in a container shell, opened with
+`./scripts/manage.sh exec`, as in the other guides.
 
 ## Running it in the stack
 
