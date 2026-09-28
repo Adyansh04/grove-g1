@@ -92,6 +92,10 @@ function run_tests() {
         labels=("$1" "$2")
         shift 2
         mapfile -t packages < <(colcon list --names-only "$@")
+        if (( ${#packages[@]} == 0 )); then
+            echo "no package matches: ${*:2}" >&2
+            exit 1
+        fi
         for package in "${packages[@]}"; do rm -rf "build/$package/test_results"; done
         status=0
         colcon test --packages-select "${packages[@]}" --executor sequential \
