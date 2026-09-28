@@ -143,14 +143,20 @@ workspace sourced, and `exec <command>` runs one there.
 
 Then pick a demo:
 
-| Guide | What it covers |
-|---|---|
-| [Navigation and arm planning](docs/guides/navigation-and-moveit.md) | Mapping, localization, Nav2 goals, and MoveIt planning against the LiDAR octomap. |
-| [Pick and place](docs/guides/pick-and-place.md) | The manipulation skills and the behaviour trees that sequence them with navigation. |
-| [Learned grasping](docs/guides/learned-grasping.md) | A vision-language-action policy behind the planning-scene gate. Runs; does not grasp yet. |
-| [Open-vocabulary perception](docs/guides/open-vocabulary-grasping.md) | Objects named in text and measured in 3D, generated grasps, and instructions turned into phrases. |
-| [Exploring and asking what is where](docs/guides/world-model.md) | canopy's exploration of a flat, its rooms and objects, and finding them by name. |
-| [Checking the map by hand](workspace/src/canopy/editor/doc/guide.md) | canopy's map editor, with screenshots: what to check in a saved world and how to fix it. |
+| Guide | What it covers | Launcher in `scripts/demos/` |
+|---|---|---|
+| [Navigation and arm planning](docs/guides/navigation-and-moveit.md) | Mapping, localization, Nav2 goals, and MoveIt planning against the LiDAR octomap. | `navigation-and-moveit.sh` |
+| [Pick and place](docs/guides/pick-and-place.md) | The manipulation skills and the behaviour trees that sequence them with navigation. | `pick-and-place.sh` |
+| [Learned grasping](docs/guides/learned-grasping.md) | A vision-language-action policy behind the planning-scene gate. Runs; does not grasp yet. | `learned-grasping.sh` |
+| [Open-vocabulary perception](docs/guides/open-vocabulary-grasping.md) | Objects named in text and measured in 3D, generated grasps, and instructions turned into phrases. | `open-vocabulary-grasping.sh` |
+| [Exploring and asking what is where](docs/guides/world-model.md) | canopy's exploration of a flat, its rooms and objects, and finding them by name. | `world-model.sh` |
+| [Checking the map by hand](workspace/src/canopy/editor/doc/guide.md) | canopy's map editor, with screenshots: what to check in a saved world and how to fix it. | `world-model.sh editor` |
+
+Each launcher opens a demo's commands at once: split panes in one tilix window, or a window per
+command in any other terminal (`$TERMINAL`, else the system default). It tears down any stack left
+running first, and a command that needs the stack up waits for it. Without arguments it lists its
+variants; name one to run it, as in `./scripts/demos/pick-and-place.sh in-place`. `stop` ends a
+demo.
 
 `ros2 launch g1_bringup bringup.launch.py --show-args` prints every launch argument with its
 description.
@@ -233,6 +239,6 @@ repository.
 docs/guides/       how to run each demo
 workspace/src/     ROS 2 packages
 workspace/vendor/  the simulator, a submodule of our unitree_mujoco fork
-scripts/           manage.sh for the container, stack teardown, host setup, serve.sh
+scripts/           manage.sh for the container, stack teardown, host setup, serve.sh, demos/
 servers/           the host-side model servers
 ```

@@ -4,6 +4,10 @@ A vision-language-action policy proposes joint targets, and every chunk it propo
 against MoveIt's live planning scene before any of it reaches a controller. The instruction is
 plain text: "pick up the red block".
 
+`./scripts/demos/learned-grasping.sh <mock|groot|servo>` opens a section's commands at once, in split panes of
+your terminal, after tearing down any stack left running. `stop` ends it, and `--print` lists
+the commands instead.
+
 ## What works and what does not
 
 The pipeline works end to end: a real 3B model drives the arm, the gate validates every chunk, and

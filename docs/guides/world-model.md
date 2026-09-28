@@ -6,6 +6,10 @@ which `g1_bringup/launch/world_model.launch.py` wires to the G1's topics. An exp
 robot through the building until the camera has seen what it can, and missions then name their
 targets ("the dustbin in the office") instead of carrying coordinates.
 
+`./scripts/demos/world-model.sh <mock|real|editor>` opens a section's commands at once, in split panes of
+your terminal, after tearing down any stack left running. `stop` ends it, and `--print` lists
+the commands instead.
+
 ## In simulation, with ground-truth masks
 
 The apartment world has six rooms and 44 textured props, with a ground-truth file for scoring.

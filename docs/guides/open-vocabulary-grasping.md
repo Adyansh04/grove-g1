@@ -6,6 +6,10 @@ and `g1_perception` in the container lifts those masks into the object poses the
 skills consume. The same server can turn an instruction into phrases, and a second host server
 proposes grasps.
 
+`./scripts/demos/open-vocabulary-grasping.sh <mock|vision|graspgen|grounding>` opens a section's commands at once, in split panes of
+your terminal, after tearing down any stack left running. `stop` ends it, and `--print` lists
+the commands instead.
+
 Host commands run from the repository root. `ros2` commands run in a container shell, opened with
 `./scripts/manage.sh exec`, as in the other guides.
 

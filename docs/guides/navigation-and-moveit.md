@@ -3,6 +3,10 @@
 Two demos that share a world. The first builds a map and drives to a goal under Nav2; the second
 plans arm motions against an octomap built from the same LiDAR. They can run together.
 
+`./scripts/demos/navigation-and-moveit.sh <sim|mapping|navigate|arm|both>` opens a section's commands at once, in split panes of
+your terminal, after tearing down any stack left running. `stop` ends it, and `--print` lists
+the commands instead.
+
 Every command here runs inside the development container. Start it and open a shell from the
 repository root; the shell starts in `/root/workspace` with the workspace sourced:
 

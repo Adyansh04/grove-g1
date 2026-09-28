@@ -4,6 +4,10 @@ Pick and place are ROS actions served by `g1_manipulation`, and a BehaviorTree.C
 them with navigation. There are two versions: one where the object is already at arm's length, and
 the full mission that drives across the facility to reach it.
 
+`./scripts/demos/pick-and-place.sh <in-place|mission|sort>` opens a section's commands at once, in split panes of
+your terminal, after tearing down any stack left running. `stop` ends it, and `--print` lists
+the commands instead.
+
 Every command here runs inside the development container. Start it and open a shell from the
 repository root; the shell starts in `/root/workspace` with the workspace sourced:
 
