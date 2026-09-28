@@ -156,7 +156,8 @@ Each launcher opens a demo's commands at once: split panes in one tilix window, 
 command in any other terminal (`$TERMINAL`, else the system default). It tears down any stack left
 running first, and a command that needs the stack up waits for it. Without arguments it lists its
 variants; name one to run it, as in `./scripts/demos/pick-and-place.sh in-place`. `stop` ends a
-demo.
+demo. One that opens RViz or the simulator's viewer first checks the container can reach your
+display, and refuses with the `xhost` fix if it cannot.
 
 `ros2 launch g1_bringup bringup.launch.py --show-args` prints every launch argument with its
 description.
