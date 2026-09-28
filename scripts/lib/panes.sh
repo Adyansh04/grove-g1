@@ -176,6 +176,19 @@ tilix_session() {
         "$1" "$(cat /proc/sys/kernel/random/uuid)" "$child"
 }
 
+# Whether a pane opens RViz or the simulator's viewer, going by the last value it gives each.
+needs_display() {
+    local command rviz headless
+    for command in "${PANE_COMMANDS[@]}"; do
+        rviz=$(grep -o 'rviz:=[a-z]*' <<<"$command" | tail -n 1 || true)
+        headless=$(grep -o 'headless:=[a-z]*' <<<"$command" | tail -n 1 || true)
+        if [[ "$rviz" == rviz:=true || "$headless" == headless:=false ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
 print_panes() {
     local i where
     for i in "${!PANE_COMMANDS[@]}"; do
@@ -195,6 +208,15 @@ open_panes() {
     if [[ " ${PANE_WHERE[*]} " == *" container "* ]]; then
         if ! "$ROOT/scripts/manage.sh" exec true 2>/dev/null; then
             echo "The dev container is not running; start it with ./scripts/manage.sh start." >&2
+            exit 1
+        fi
+        # RViz and the viewer draw on this display from inside the container, which can open it
+        # only after `xhost +local:docker` (manage.sh start runs it). Without it they die at once
+        # and take the whole launch down with them.
+        if needs_display && ! "$ROOT/scripts/manage.sh" exec python3 -c \
+            'import ctypes, sys; sys.exit(not ctypes.CDLL("libX11.so.6").XOpenDisplay(None))' 2>/dev/null; then
+            echo "The container cannot open your display, which RViz and the viewer need." >&2
+            echo "Allow it with: xhost +local:docker" >&2
             exit 1
         fi
         # A stack left from an earlier run shares the graph and fails this one at random.
