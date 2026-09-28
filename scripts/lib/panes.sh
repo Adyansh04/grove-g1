@@ -149,15 +149,17 @@ tilix_terminal() {
         "$(cat /proc/sys/kernel/random/uuid)" "$TILIX_PROFILE" "$ROOT" "${PANE_FILES[$1]}"
 }
 
-# Panes $1 to the last, top to bottom, each the same height.
+# Panes $1 to the last, top to bottom, each the same height. tilix wants a split's position in
+# pixels as well as its ratio, and without it loads nothing.
 tilix_stack() {
-    local first=$1 last=$((${#PANE_FILES[@]} - 1))
+    local first=$1 last=$((${#PANE_FILES[@]} - 1)) share
     if ((first == last)); then
         tilix_terminal "$first"
         return
     fi
-    printf '{"type": "Paned", "orientation": 1, "ratio": %s, "child1": %s, "child2": %s}' \
-        "$(awk -v n=$((last - first + 1)) 'BEGIN { printf "%.4f", 1 / n }')" \
+    share=$((last - first + 1))
+    printf '{"type": "Paned", "orientation": 1, "position": %d, "ratio": %s, "child1": %s, "child2": %s}' \
+        $((900 / share)) "$(awk -v n=$share 'BEGIN { printf "%.4f", 1 / n }')" \
         "$(tilix_terminal "$first")" "$(tilix_stack $((first + 1)))"
 }
 
@@ -167,7 +169,7 @@ tilix_session() {
     if ((${#PANE_FILES[@]} == 1)); then
         child=$(tilix_terminal 0)
     else
-        child=$(printf '{"type": "Paned", "orientation": 0, "ratio": 0.5, "child1": %s, "child2": %s}' \
+        child=$(printf '{"type": "Paned", "orientation": 0, "position": 800, "ratio": 0.5, "child1": %s, "child2": %s}' \
             "$(tilix_terminal 0)" "$(tilix_stack 1)")
     fi
     printf '{"type": "Session", "name": "%s", "version": "1.0", "uuid": "%s", "synchronizedInput": false, "width": 1600, "height": 900, "child": %s}\n' \
@@ -220,9 +222,15 @@ open_panes() {
         TILIX_PROFILE=$(gsettings get com.gexperts.Tilix.ProfilesList default 2>/dev/null); then
         TILIX_PROFILE=${TILIX_PROFILE//\'/}
         tilix_session "$1" >"$dir/session.json"
-        # tilix opens a bare default window rather than failing on a bad session file.
+        # On a session it cannot load, tilix opens a bare default window and only logs why.
         python3 -m json.tool "$dir/session.json" >/dev/null
-        tilix --maximize --session "$dir/session.json" >/dev/null 2>&1 &
+        tilix --maximize --session "$dir/session.json" >"$dir/tilix.log" 2>&1 &
+        sleep 2
+        if grep -q "Session could not be created" "$dir/tilix.log"; then
+            echo "tilix could not load $dir/session.json:" >&2
+            grep -m 1 "Session could not be created" "$dir/tilix.log" >&2
+            exit 1
+        fi
     else
         for i in "${!PANE_FILES[@]}"; do
             "${TERMINAL:-x-terminal-emulator}" -e "${PANE_FILES[i]}" >/dev/null 2>&1 &
