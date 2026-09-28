@@ -133,6 +133,10 @@ RUN mkdir -p /opt/onnxruntime && \
     echo /opt/onnxruntime/lib > /etc/ld.so.conf.d/onnxruntime.conf && \
     ldconfig
 
+# Pillow, for canopy's model-server tests that ci.yml runs outside colcon.
+RUN apt-get update && apt-get install -y --no-install-recommends python3-pil \
+    && rm -rf /var/lib/apt/lists/*
+
 # Loopback DDS: a runner binding its real NIC would put a test's rt/lowcmd on GitHub's network.
 RUN mkdir -p /etc/cyclonedds && \
     printf '%s\n' \
