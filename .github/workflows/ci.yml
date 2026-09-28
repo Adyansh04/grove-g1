@@ -144,8 +144,9 @@ jobs:
             --executor sequential \
             --return-code-on-test-failure \
             --ctest-args -LE simulator
-          # canopy's model server is not a ROS package; its tests need no GPU or weights.
+          # canopy's model server and map editor are not ROS packages; their tests need no GPU.
           python3 -m unittest src/canopy/servers/test_semantic_server.py
+          python3 -m unittest src/canopy/editor/test_canopy_editor.py
 
       - name: Test results
         if: always()
