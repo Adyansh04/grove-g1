@@ -22,8 +22,13 @@ ARM_JOINTS = [
     f"{side}_{joint}_joint"
     for side in ("left", "right")
     for joint in (
-        "shoulder_pitch", "shoulder_roll", "shoulder_yaw", "elbow",
-        "wrist_roll", "wrist_pitch", "wrist_yaw",
+        "shoulder_pitch",
+        "shoulder_roll",
+        "shoulder_yaw",
+        "elbow",
+        "wrist_roll",
+        "wrist_pitch",
+        "wrist_yaw",
     )
 ]
 
@@ -32,8 +37,7 @@ ARM_JOINTS = [
 HAND_JOINTS = {
     side: [
         f"{side}_hand_{joint}_joint"
-        for joint in ("thumb_0", "thumb_1", "thumb_2", "middle_0", "middle_1",
-                      "index_0", "index_1")
+        for joint in ("thumb_0", "thumb_1", "thumb_2", "middle_0", "middle_1", "index_0", "index_1")
     ]
     for side in ("left", "right")
 }
@@ -172,9 +176,7 @@ def test_each_hand_has_an_open_and_a_closed_posture(side, srdf):
     A pick descends in pinch_ready, because at `open` the thumb reaches the table first.
     """
     states = {
-        s.get("name"): s
-        for s in srdf.findall("group_state")
-        if s.get("group") == f"{side}_hand"
+        s.get("name"): s for s in srdf.findall("group_state") if s.get("group") == f"{side}_hand"
     }
     assert set(states) == {"open", "closed", "pinch_ready"}
     for name, state in states.items():
@@ -185,7 +187,8 @@ def test_each_hand_has_an_open_and_a_closed_posture(side, srdf):
 def test_the_home_state_lists_the_arm_joints_in_motor_order(srdf):
     """`home` lists the arm joints in the controllers' motor order."""
     home = next(
-        s for s in srdf.findall("group_state")
+        s
+        for s in srdf.findall("group_state")
         if s.get("name") == "home" and s.get("group") == "both_arms"
     )
     assert [j.get("name") for j in home.findall("joint")] == ARM_JOINTS
@@ -242,8 +245,14 @@ DEPTH_IMAGE_PLUGIN = "occupancy_map_monitor/DepthImageOctomapUpdater"
 
 # Every one is mandatory: setParams() returns false without it and the sensor is dropped.
 REQUIRED_POINTCLOUD_KEYS = {
-    "sensor_plugin", "point_cloud_topic", "max_range", "point_subsample",
-    "padding_offset", "padding_scale", "max_update_rate", "filtered_cloud_topic",
+    "sensor_plugin",
+    "point_cloud_topic",
+    "max_range",
+    "point_subsample",
+    "padding_offset",
+    "padding_scale",
+    "max_update_rate",
+    "filtered_cloud_topic",
 }
 # Written as YAML floats. An int here throws InvalidParameterTypeException out of the
 # OccupancyMapMonitor constructor, which reads as a launch crash with no mention of this file.

@@ -60,7 +60,9 @@ def pose_from_matrix(matrix):
 
 class GraspGenAdapter(Node):
     def __init__(self):
-        super().__init__("g1_graspgen_adapter", automatically_declare_parameters_from_overrides=True)
+        super().__init__(
+            "g1_graspgen_adapter", automatically_declare_parameters_from_overrides=True
+        )
         self._address = self._param("server_address", "tcp://127.0.0.1:5556")
         self._hand = str(self._param("hand", "right"))
         self._max_grasps = int(self._param("max_grasps", 100))
@@ -101,9 +103,7 @@ class GraspGenAdapter(Node):
             metadata = self._client.call("metadata")
         except RuntimeError:
             metadata = {}
-        self.get_logger().info(
-            f"grasp generator at {self._address}: {metadata.get('model', {})}"
-        )
+        self.get_logger().info(f"grasp generator at {self._address}: {metadata.get('model', {})}")
 
     def _on_depth(self, msg):
         key = (msg.header.stamp.sec, msg.header.stamp.nanosec)

@@ -119,7 +119,9 @@ class ScanPipelineTest(unittest.TestCase):
     def test_footprint_is_gravity_aligned(self):
         t = self.lookup("odom", "base_footprint").transform
         roll, pitch, _ = rpy(t.rotation)
-        self.assertAlmostEqual(t.translation.z, 0.0, delta=FLAT_TOL, msg="footprint is on the floor")
+        self.assertAlmostEqual(
+            t.translation.z, 0.0, delta=FLAT_TOL, msg="footprint is on the floor"
+        )
         self.assertAlmostEqual(roll, 0.0, delta=FLAT_TOL)
         self.assertAlmostEqual(pitch, 0.0, delta=FLAT_TOL)
 
@@ -157,9 +159,7 @@ class ScanPipelineTest(unittest.TestCase):
             self.assertTrue(np.isinf(misses).all(), "a miss was reported as something finite")
 
     def test_scan_rate_tracks_the_sensor(self):
-        stamps = [
-            s.header.stamp.sec + s.header.stamp.nanosec * 1e-9 for s in self.scans[-20:]
-        ]
+        stamps = [s.header.stamp.sec + s.header.stamp.nanosec * 1e-9 for s in self.scans[-20:]]
         rate = (len(stamps) - 1) / (stamps[-1] - stamps[0])
         # The sweep runs at 10 Hz. Dropping below 8 means transforms are missing and scans
         # are being discarded, which starves the matcher without any error appearing.

@@ -66,14 +66,16 @@ def _setup(context, *args, **kwargs):
 
 
 def generate_launch_description():
-    return LaunchDescription([
-        DeclareLaunchArgument(
-            "params_overrides",
-            default_value="{}",
-            description="JSON object merged over config/slam_mapping.yaml, e.g. "
-            "'{\"minimum_travel_distance\": 0.0}'. Match the shipped type exactly: JSON has "
-            "no int/float distinction, so 0 becomes an integer and slam_toolbox rejects it "
-            "against a double.",
-        ),
-        OpaqueFunction(function=_setup),
-    ])
+    return LaunchDescription(
+        [
+            DeclareLaunchArgument(
+                "params_overrides",
+                default_value="{}",
+                description="JSON object merged over config/slam_mapping.yaml, e.g. "
+                "'{\"minimum_travel_distance\": 0.0}'. Match the shipped type exactly: JSON has "
+                "no int/float distinction, so 0 becomes an integer and slam_toolbox rejects it "
+                "against a double.",
+            ),
+            OpaqueFunction(function=_setup),
+        ]
+    )

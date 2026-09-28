@@ -92,9 +92,7 @@ def _drop_cross_phrase_duplicates(boxes, labels, scores, iou_threshold=0.5):
     order = sorted(range(len(boxes)), key=lambda i: scores[i], reverse=True)
     kept = []
     for i in order:
-        if any(
-            labels[i] != labels[j] and _iou(boxes[i], boxes[j]) > iou_threshold for j in kept
-        ):
+        if any(labels[i] != labels[j] and _iou(boxes[i], boxes[j]) > iou_threshold for j in kept):
             continue
         kept.append(i)
     kept.sort()
@@ -203,7 +201,9 @@ class Sam3Backend:
             with torch.inference_mode():
                 outputs = self._model(**inputs)
             results = self._processor.post_process_instance_segmentation(
-                outputs, threshold=box_threshold, mask_threshold=0.5,
+                outputs,
+                threshold=box_threshold,
+                mask_threshold=0.5,
                 target_sizes=[image.shape[:2]],
             )[0]
             masks = results["masks"].cpu().numpy().astype(bool)
@@ -213,9 +213,7 @@ class Sam3Backend:
                 if cropped is None:
                     continue
                 roi, data = cropped
-                instances.append(
-                    {"label": phrase, "score": float(score), "roi": roi, "mask": data}
-                )
+                instances.append({"label": phrase, "score": float(score), "roi": roi, "mask": data})
         return instances
 
 
@@ -333,7 +331,9 @@ def _ground_request(grounding, payload):
 
 
 def _build_backend(args):
-    device = args.device if args.device != "auto" else ("cuda" if torch.cuda.is_available() else "cpu")
+    device = (
+        args.device if args.device != "auto" else ("cuda" if torch.cuda.is_available() else "cpu")
+    )
     dtype = {"float32": torch.float32, "bfloat16": torch.bfloat16, "float16": torch.float16}[
         args.dtype
     ]
@@ -418,8 +418,7 @@ def self_test(backend, args):
             roi = instance["roi"]
             pixels = int((instance["mask"] > 0).sum())
             print(
-                f"    {instance['label']:20s} score {instance['score']:.2f}  "
-                f"roi {roi}  {pixels} px"
+                f"    {instance['label']:20s} score {instance['score']:.2f}  roi {roi}  {pixels} px"
             )
         if missing:
             print(f"    MISSING: {', '.join(missing)}")

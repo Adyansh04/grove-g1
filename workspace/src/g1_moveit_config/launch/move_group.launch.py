@@ -76,7 +76,11 @@ def _servo():
         parameters=[
             _servo_config().to_dict(),
             # Servo reads its own settings from under this key, not from the node root.
-            {"moveit_servo": ParameterBuilder("g1_moveit_config").yaml("config/servo.yaml").to_dict()},
+            {
+                "moveit_servo": ParameterBuilder("g1_moveit_config")
+                .yaml("config/servo.yaml")
+                .to_dict()
+            },
             # The acceleration-limiting smoother is a separate plugin and takes these at the
             # node root; without them it fails to configure and servo starts with no smoothing.
             {"update_period": 0.01, "planning_group_name": SERVO_GROUP},
@@ -85,30 +89,32 @@ def _servo():
 
 
 def generate_launch_description():
-    return LaunchDescription([
-        DeclareLaunchArgument(
-            "servo",
-            default_value="false",
-            description="Also start MoveIt Servo, the streaming command path for the arms. "
-            "Off by default: it and a planned motion would both drive the same controller.",
-        ),
-        Node(
-            package="moveit_ros_move_group",
-            executable="move_group",
-            name="move_group",
-            output="screen",
-            parameters=[
-                _moveit_config().to_dict(),
-                # Puts the SRDF on a topic, so RViz's MotionPlanning display picks it up
-                # instead of every consumer being handed the same parameter.
-                {"publish_robot_description_semantic": True},
-                # Off by default, and servo's secondary scene monitor gets its world and robot
-                # state from this topic alone; without it servo silently never moves.
-                {"publish_planning_scene": True},
-                {"publish_geometry_updates": True},
-                {"publish_state_updates": True},
-                {"publish_transforms_updates": True},
-            ],
-        ),
-        _servo(),
-    ])
+    return LaunchDescription(
+        [
+            DeclareLaunchArgument(
+                "servo",
+                default_value="false",
+                description="Also start MoveIt Servo, the streaming command path for the arms. "
+                "Off by default: it and a planned motion would both drive the same controller.",
+            ),
+            Node(
+                package="moveit_ros_move_group",
+                executable="move_group",
+                name="move_group",
+                output="screen",
+                parameters=[
+                    _moveit_config().to_dict(),
+                    # Puts the SRDF on a topic, so RViz's MotionPlanning display picks it up
+                    # instead of every consumer being handed the same parameter.
+                    {"publish_robot_description_semantic": True},
+                    # Off by default, and servo's secondary scene monitor gets its world and robot
+                    # state from this topic alone; without it servo silently never moves.
+                    {"publish_planning_scene": True},
+                    {"publish_geometry_updates": True},
+                    {"publish_state_updates": True},
+                    {"publish_transforms_updates": True},
+                ],
+            ),
+            _servo(),
+        ]
+    )

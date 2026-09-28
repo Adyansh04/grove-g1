@@ -36,6 +36,7 @@ _SIGNAL_FORWARDING_WRAPPER = (
     "wait $child"
 )
 
+
 # Every body joint is claimed from the start: one the component sees unclaimed is left unpowered.
 # The policy and the safety controller it chains into activate as one group, because chained
 # reference interfaces only become claimable inside the switch that activates them.
@@ -122,12 +123,14 @@ def _launch_setup(context, *args, **kwargs):
 
 
 def generate_launch_description():
-    return LaunchDescription([
-        DeclareLaunchArgument(
-            "pin_pelvis",
-            default_value="false",
-            description="SIM-ONLY, set by sim.launch.py: freeze the legs instead of running "
-            "the balance policy.",
-        ),
-        OpaqueFunction(function=_launch_setup),
-    ])
+    return LaunchDescription(
+        [
+            DeclareLaunchArgument(
+                "pin_pelvis",
+                default_value="false",
+                description="SIM-ONLY, set by sim.launch.py: freeze the legs instead of running "
+                "the balance policy.",
+            ),
+            OpaqueFunction(function=_launch_setup),
+        ]
+    )

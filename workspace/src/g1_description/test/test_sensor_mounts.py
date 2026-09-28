@@ -16,11 +16,7 @@ import xml.etree.ElementTree as ET
 import pytest
 import yaml
 
-_URDF = (
-    pathlib.Path(__file__).resolve().parent.parent
-    / "urdf"
-    / "g1_29dof_with_hand_rev_1_0.urdf"
-)
+_URDF = pathlib.Path(__file__).resolve().parent.parent / "urdf" / "g1_29dof_with_hand_rev_1_0.urdf"
 _SENSOR_PUBLISHER = (
     pathlib.Path(__file__).resolve().parents[3]
     / "vendor"

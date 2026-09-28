@@ -66,11 +66,13 @@ def generate_test_description():
 def quat_to_matrix(q):
     """geometry_msgs Quaternion to a 3x3 rotation matrix."""
     x, y, z, w = q.x, q.y, q.z, q.w
-    return np.array([
-        [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
-        [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
-        [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
-    ])
+    return np.array(
+        [
+            [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+            [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+            [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+        ]
+    )
 
 
 class LidarGeometryTest(unittest.TestCase):
@@ -122,9 +124,7 @@ class LidarGeometryTest(unittest.TestCase):
         n = msg.width * msg.height
         raw = np.frombuffer(msg.data, dtype=np.uint8).reshape(n, msg.point_step)
         return (
-            np.frombuffer(raw[:, 0:12].tobytes(), dtype=np.float32)
-            .reshape(n, 3)
-            .astype(np.float64)
+            np.frombuffer(raw[:, 0:12].tobytes(), dtype=np.float32).reshape(n, 3).astype(np.float64)
         )
 
     def world_returns(self):
@@ -137,9 +137,7 @@ class LidarGeometryTest(unittest.TestCase):
         # A zero point is "no return", not a point at the sensor origin.
         hit = np.linalg.norm(pts, axis=1) > 1e-6
         rotation = quat_to_matrix(pose.pose.orientation)
-        origin = np.array(
-            [pose.pose.position.x, pose.pose.position.y, pose.pose.position.z]
-        )
+        origin = np.array([pose.pose.position.x, pose.pose.position.y, pose.pose.position.z])
         return (rotation @ pts[hit].T).T + origin, origin
 
     def test_01_streams_at_the_configured_rate(self):
@@ -202,9 +200,7 @@ class LidarGeometryTest(unittest.TestCase):
         world, _ = self.world_returns()
 
         floor = np.abs(world[:, 2]) < 0.05
-        self.assertGreater(
-            int(floor.sum()), 200, f"only {floor.sum()} returns on the floor plane"
-        )
+        self.assertGreater(int(floor.sum()), 200, f"only {floor.sum()} returns on the floor plane")
 
         # Per wall, so a lost sector fails rather than averaging out. Not +x, which
         # reach_obstacle occludes from 0.18 m in front of the sensor.

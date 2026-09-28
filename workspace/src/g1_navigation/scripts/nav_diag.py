@@ -6,6 +6,7 @@ Started by `nav_soak`, and usable by hand against an already-running stack:
 
 Prints a progress snapshot every 20 s and the summary on exit.
 """
+
 import math
 import signal
 import statistics as st
@@ -20,9 +21,9 @@ from rclpy.qos import QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile, QoSReli
 from rclpy.time import Duration, Time
 from sensor_msgs.msg import PointCloud2
 
-SWEEP_S = 0.032        # measured cost of one full 360x32 sweep
-OBSTACLE_RANGE = 3.0   # obstacle_max_range in config/nav2_params.yaml
-FLOOR_CUT = 0.08       # min_obstacle_height
+SWEEP_S = 0.032  # measured cost of one full 360x32 sweep
+OBSTACLE_RANGE = 3.0  # obstacle_max_range in config/nav2_params.yaml
+FLOOR_CUT = 0.08  # min_obstacle_height
 # The gait ignores translation commands below this. Yaw has no deadband.
 VEL_DEADBAND = 0.15
 
@@ -51,15 +52,27 @@ class NavDiag(Node):
         self.nav_cmd = 0
         self.nav_cmd_in_deadband = 0
 
-        self.create_subscription(PointCloud2, "/livox/lidar", self.on_cloud,
-                                 QoSProfile(depth=5,
-                                            reliability=QoSReliabilityPolicy.BEST_EFFORT,
-                                            history=QoSHistoryPolicy.KEEP_LAST))
         self.create_subscription(
-            OccupancyGrid, "/local_costmap/costmap", self.on_costmap,
-            QoSProfile(depth=1, reliability=QoSReliabilityPolicy.RELIABLE,
-                       durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
-                       history=QoSHistoryPolicy.KEEP_LAST))
+            PointCloud2,
+            "/livox/lidar",
+            self.on_cloud,
+            QoSProfile(
+                depth=5,
+                reliability=QoSReliabilityPolicy.BEST_EFFORT,
+                history=QoSHistoryPolicy.KEEP_LAST,
+            ),
+        )
+        self.create_subscription(
+            OccupancyGrid,
+            "/local_costmap/costmap",
+            self.on_costmap,
+            QoSProfile(
+                depth=1,
+                reliability=QoSReliabilityPolicy.RELIABLE,
+                durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+                history=QoSHistoryPolicy.KEEP_LAST,
+            ),
+        )
         self.create_subscription(Twist, "/cmd_vel", self.on_nav_cmd, 10)
         self.create_timer(0.05, self.on_tick)
         self.create_timer(20.0, self.snapshot)
@@ -67,8 +80,11 @@ class NavDiag(Node):
     def on_nav_cmd(self, msg):
         """Nav2's output. A command inside the deadband with no turn moves the robot nowhere."""
         self.nav_cmd += 1
-        if (abs(msg.linear.x) < VEL_DEADBAND and abs(msg.linear.y) < VEL_DEADBAND
-                and abs(msg.angular.z) < 1e-6):
+        if (
+            abs(msg.linear.x) < VEL_DEADBAND
+            and abs(msg.linear.y) < VEL_DEADBAND
+            and abs(msg.angular.z) < 1e-6
+        ):
             self.nav_cmd_in_deadband += 1
 
     def on_cloud(self, msg):
@@ -76,12 +92,14 @@ class NavDiag(Node):
         stamp = Time.from_msg(msg.header.stamp)
         try:
             a = self.buf.lookup_transform("base_footprint", "pelvis", stamp)
-            b = self.buf.lookup_transform("base_footprint", "pelvis",
-                                          stamp - Duration(seconds=SWEEP_S))
+            b = self.buf.lookup_transform(
+                "base_footprint", "pelvis", stamp - Duration(seconds=SWEEP_S)
+            )
         except Exception:
             return
         self.tilt_err.append(
-            math.degrees(abs(pitch_of(a.transform.rotation) - pitch_of(b.transform.rotation))))
+            math.degrees(abs(pitch_of(a.transform.rotation) - pitch_of(b.transform.rotation)))
+        )
 
     def on_costmap(self, msg):
         # OccupancyGrid rescales costs: lethal 254 -> 100, inscribed 253 -> 99.
@@ -114,16 +132,27 @@ class NavDiag(Node):
             pass
 
     def distance(self):
-        return sum(math.hypot(self.odom_xy[i][0] - self.odom_xy[i - 1][0],
-                              self.odom_xy[i][1] - self.odom_xy[i - 1][1])
-                   for i in range(1, len(self.odom_xy)))
+        return sum(
+            math.hypot(
+                self.odom_xy[i][0] - self.odom_xy[i - 1][0],
+                self.odom_xy[i][1] - self.odom_xy[i - 1][1],
+            )
+            for i in range(1, len(self.odom_xy))
+        )
 
     def snapshot(self):
         pct = (100.0 * self.nav_cmd_in_deadband / self.nav_cmd) if self.nav_cmd else 0.0
-        print("[snap] driven=%.2fm  nav2_cmds=%d (%.0f%% in deadband)  "
-              "amcl_corrections=%d  lethal_now=%s"
-              % (self.distance(), self.nav_cmd, pct, len(self.jumps),
-                 self.lethal[-1] if self.lethal else "n/a"))
+        print(
+            "[snap] driven=%.2fm  nav2_cmds=%d (%.0f%% in deadband)  "
+            "amcl_corrections=%d  lethal_now=%s"
+            % (
+                self.distance(),
+                self.nav_cmd,
+                pct,
+                len(self.jumps),
+                self.lethal[-1] if self.lethal else "n/a",
+            )
+        )
         sys.stdout.flush()
 
     def report(self):
@@ -131,34 +160,59 @@ class NavDiag(Node):
             if not v:
                 return "no data"
             w = sorted(x * scale for x in v)
-            return ("n=%d  min=%.3f  med=%.3f  p95=%.3f  max=%.3f %s"
-                    % (len(w), w[0], st.median(w), w[int(0.95 * (len(w) - 1))], w[-1], unit))
+            return "n=%d  min=%.3f  med=%.3f  p95=%.3f  max=%.3f %s" % (
+                len(w),
+                w[0],
+                st.median(w),
+                w[int(0.95 * (len(w) - 1))],
+                w[-1],
+                unit,
+            )
 
         print("\n================ NAV DIAGNOSTICS ================")
         print("distance driven       : %.2f m" % self.distance())
         if self.nav_cmd:
-            print("nav2 cmd_vel          : %d, of which %d (%.0f%%) inside the gait deadband"
-                  % (self.nav_cmd, self.nav_cmd_in_deadband,
-                     100.0 * self.nav_cmd_in_deadband / self.nav_cmd))
+            print(
+                "nav2 cmd_vel          : %d, of which %d (%.0f%%) inside the gait deadband"
+                % (
+                    self.nav_cmd,
+                    self.nav_cmd_in_deadband,
+                    100.0 * self.nav_cmd_in_deadband / self.nav_cmd,
+                )
+            )
         print("pelvis pitch          :", stats(self.pitch, 180 / math.pi, "deg"))
         if self.pitch:
-            print("  swing               : %.2f deg peak to peak"
-                  % ((max(self.pitch) - min(self.pitch)) * 180 / math.pi))
+            print(
+                "  swing               : %.2f deg peak to peak"
+                % ((max(self.pitch) - min(self.pitch)) * 180 / math.pi)
+            )
         print("tilt change per sweep :", stats(self.tilt_err, 1.0, "deg"))
         if self.tilt_err:
             mx = max(self.tilt_err)
-            print("  vertical error at %.0f m: max %.2f m  (floor cut is %.2f m)"
-                  % (OBSTACLE_RANGE, OBSTACLE_RANGE * math.sin(math.radians(mx)), FLOOR_CUT))
+            print(
+                "  vertical error at %.0f m: max %.2f m  (floor cut is %.2f m)"
+                % (OBSTACLE_RANGE, OBSTACLE_RANGE * math.sin(math.radians(mx)), FLOOR_CUT)
+            )
         print("local costmap lethal  :", stats(self.lethal))
         span = (self.map_odom[-1][0] - self.map_odom[0][0]) if self.map_odom else 0
         print("map->odom corrections : %d over %.0f s" % (len(self.jumps), span))
         if self.jumps:
             print("  translation         :", stats([j[1] for j in self.jumps], 100, "cm"))
-            print("  rotation            :", stats([j[2] for j in self.jumps], 180 / math.pi, "deg"))
+            print(
+                "  rotation            :", stats([j[2] for j in self.jumps], 180 / math.pi, "deg")
+            )
             if len(self.jumps) > 1:
-                print("  gaps between them   :",
-                      stats([self.jumps[i][0] - self.jumps[i - 1][0]
-                             for i in range(1, len(self.jumps))], 1.0, "s"))
+                print(
+                    "  gaps between them   :",
+                    stats(
+                        [
+                            self.jumps[i][0] - self.jumps[i - 1][0]
+                            for i in range(1, len(self.jumps))
+                        ],
+                        1.0,
+                        "s",
+                    ),
+                )
         print("=================================================\n")
         sys.stdout.flush()
 
