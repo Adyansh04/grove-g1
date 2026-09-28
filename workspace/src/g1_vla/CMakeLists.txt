@@ -24,7 +24,10 @@ add_library(g1_vla_chunk_utils src/chunk_utils.cpp)
 g1_target_defaults(g1_vla_chunk_utils)
 target_link_libraries(g1_vla_chunk_utils PUBLIC ${trajectory_msgs_TARGETS})
 
-add_library(g1_vla_server_node src/g1_vla_server_node.cpp)
+add_library(g1_vla_server_node
+  src/g1_vla_server_node.cpp
+  src/vla_server/chunks.cpp
+)
 g1_target_defaults(g1_vla_server_node)
 target_link_libraries(g1_vla_server_node PUBLIC
   g1_vla_chunk_utils
