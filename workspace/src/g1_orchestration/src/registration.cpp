@@ -46,6 +46,7 @@ void registerSkillNodes(BT::BehaviorTreeFactory& factory, const RosContext& cont
     registerLeaf<ReportViewpoint>(factory, "ReportViewpoint", context);
     registerLeaf<ResolveTarget>(factory, "ResolveTarget", context);
     registerLeaf<SaveWorld>(factory, "SaveWorld", context);
+    registerLeaf<CleanUpWorld>(factory, "CleanUpWorld", context);
     registerLeaf<TurnTo>(factory, "TurnTo", context);
 }
 

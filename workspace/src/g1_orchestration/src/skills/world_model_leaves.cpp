@@ -274,6 +274,17 @@ BT::PortsList SaveWorld::providedPorts()
     };
 }
 
+BT::PortsList CleanUpWorld::providedPorts()
+{
+    return {
+        ports::serviceTimeout(20.0, "Service budget."),
+        BT::InputPort<std::string>(
+            "service",
+            std::string(kWorldModel) + "/clean_up",
+            "The world model's service."),
+    };
+}
+
 BT::NodeStatus SaveWorld::tick()
 {
     using Service       = std_srvs::srv::Trigger;

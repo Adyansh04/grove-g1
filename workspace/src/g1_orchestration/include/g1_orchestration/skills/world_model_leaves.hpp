@@ -67,6 +67,15 @@ public:
     BT::NodeStatus       tick() override;
 };
 
+/// Has the world model take out what it can tell is not an object, once exploring is over and
+/// before the world is saved for a person to check.
+class CleanUpWorld : public SaveWorld
+{
+public:
+    using SaveWorld::SaveWorld;
+    static BT::PortsList providedPorts();
+};
+
 /**
  * @brief Turns in place to a map-frame heading with Nav2's spin behavior.
  *

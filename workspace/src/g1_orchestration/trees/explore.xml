@@ -14,6 +14,11 @@
     <Sequence name="explore">
       <SubTree ID="VisitViewpoints" name="close_the_map" mode="frontier"/>
       <SubTree ID="VisitViewpoints" name="see_every_room" mode="coverage"/>
+      <!-- What the world model can tell is not an object goes before anyone checks the map by
+           hand; the save must not wait on it. -->
+      <ForceSuccess>
+        <CleanUpWorld name="clean_up_the_world"/>
+      </ForceSuccess>
       <SaveWorld name="save_the_world"/>
     </Sequence>
   </BehaviorTree>

@@ -11,6 +11,10 @@
             <input_port name="arm" type="std::string" default="right">'left' or 'right'.</input_port>
             <input_port name="object_id" type="std::string">Must match a class_id published on /objects.</input_port>
         </Action>
+        <Action ID="CleanUpWorld">
+            <input_port name="service" type="std::string" default="/canopy/clean_up">The world model's service.</input_port>
+            <input_port name="timeout_s" type="double" default="20.000000">Service budget.</input_port>
+        </Action>
         <Action ID="ClearCostmaps">
             <input_port name="local_service" type="std::string" default="/local_costmap/clear_entirely_local_costmap">Nav2 local costmap clear service. Empty skips it.</input_port>
             <input_port name="global_service" type="std::string" default="/global_costmap/clear_entirely_global_costmap">Nav2 global costmap clear service. Empty skips it.</input_port>

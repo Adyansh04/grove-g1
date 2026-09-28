@@ -53,6 +53,7 @@ One file per leaf, the layout `nav2_behavior_tree` uses.
 | `NextViewpoint` | `/canopy/next_viewpoint` | in `mode` (`frontier` or `coverage`); out `goal`, `headings`, `viewpoint_id`, `room_id`, `outcome`. Fails when nothing is left; `outcome` says whether that is `done` or an `error`. |
 | `ReportViewpoint` | `/canopy/report_viewpoint` | `viewpoint_id`, `reached` |
 | `ResolveTarget` | `/canopy/get_approach_pose` | in `target` (object id, room, or label), `room`; out `goal`, `target_id` |
+| `CleanUpWorld` | `/canopy/clean_up` | `timeout_s`; takes out what canopy can tell is not an object, marked so a person can restore it |
 | `SaveWorld` | `/canopy/save` | `timeout_s` |
 | `TurnTo` | Nav2 `/spin` | `yaw` in `frame`; turns by the difference from the current heading |
 

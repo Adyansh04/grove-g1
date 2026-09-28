@@ -56,10 +56,13 @@ the furniture solid (`map.pgm`, `map.yaml`), a picture of it with the rooms and 
 
 ## Checking the map by hand
 
-The models get some of it wrong. canopy's map editor lists what deserves a second look, with the
-camera's view of each object: a phantom seen twice, the floor mapped as a desk, a label the
-describer disagrees with, a room typed with little confidence. Each fix is a click or two. Run it
-on the host once the run is over:
+The models get some of it wrong. Before the world is saved, `explore.xml`'s `CleanUpWorld` has
+canopy take out what it can tell is no object: the floor mapped as a table, or a piece of a sofa
+seen as a chair inside it. Those two rules took out no real object in four runs of the test flat.
+The rest is for a person. canopy's map editor lists what deserves a second look, with the camera's
+view of each object: a weakly seen phantom, a label the describer disagrees with, a room typed with
+little confidence. Each fix is a click or two, and what the clean-up took out is listed with why,
+to restore. Run it on the host once the run is over:
 
 ```bash
 python3 workspace/src/canopy/editor/canopy_editor.py data/worlds/apartment   # http://127.0.0.1:8765/
@@ -79,8 +82,7 @@ ros2 topic echo --qos-durability transient_local /canopy/rooms
 
 A room can be named by its id (`R3`), its name (`room C`) or its type (`office`), and an object
 by the detector's word or a synonym from canopy's room table ("dustbin" finds a trash can). A search
-that
-finds nothing reports how much of the searched area the camera has seen, so "not found" means "not
+that finds nothing reports how much of the searched area the camera has seen, so "not found" means "not
 in the 96 % of the office the camera saw", not "absent".
 
 In a tree, `ResolveTarget` turns a target into a pose facing it, for `NavigateToPose`:
