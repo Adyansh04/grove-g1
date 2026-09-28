@@ -233,5 +233,6 @@ repository.
 docs/guides/       how to run each demo
 workspace/src/     ROS 2 packages
 workspace/vendor/  the simulator, a submodule of our unitree_mujoco fork
-scripts/           container lifecycle, stack teardown, and the host-side model servers
+scripts/           manage.sh for the container, stack teardown, host setup, serve.sh
+servers/           the host-side model servers
 ```
