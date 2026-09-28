@@ -31,6 +31,21 @@ OUR_PACKAGES='^(g1_|canopy)'
 # Run before every command in the container: ROS, then the workspace once it has been built.
 IN_WORKSPACE='source "/opt/ros/$ROS_DISTRO/setup.bash" && cd /root/workspace && if [[ -f install/setup.bash ]]; then source install/setup.bash; fi'
 
+# What format and lint cover: our C++ and Python, the host servers, and canopy's editor and
+# servers, which are not ROS packages. Extensionless scripts are picked by their shebang, since
+# ruff reads such a file only when it is named. ruff takes each file's nearest ruff.toml, so
+# canopy's files are held to canopy's own settings.
+STYLE_SOURCES='
+    shopt -s globstar nullglob
+    cpp=(src/g1_*/include/**/*.hpp src/g1_*/src/**/*.cpp src/g1_*/test/**/*.cpp)
+    python=(src/g1_*/{launch,scripts,test,tools} src/canopy/{editor,servers} /root/.host-repo/scripts)
+    for file in src/g1_*/scripts/*; do
+        if [[ -f $file && $file != *.* ]] && head -c 32 "$file" | grep -q "^#!.*python"; then
+            python+=("$file")
+        fi
+    done
+'
+
 # --- Helper Functions ---
 # The image builds the simulator from the unitree_mujoco checkout: refuse one that is not the
 # commit this repo records ('+' in git submodule status), or was never checked out ('-').
@@ -93,6 +108,26 @@ function run_tests() {
     ' bash "${labels[@]}" "${select[@]}"
 }
 
+# clang-format writes a new file, so the C++ comes back owned by root: give it back to the user
+# who owns the checkout. ruff rewrites in place and keeps the owner.
+function format_sources() {
+    in_container bash -c "$STYLE_SOURCES"'
+        clang-format --style=file:.clang-format -i "${cpp[@]}"
+        chown "$1" "${cpp[@]}"
+        ruff format --quiet --no-cache "${python[@]}"
+    ' bash "$(id -u):$(id -g)"
+}
+
+function lint_sources() {
+    in_container bash -c "$STYLE_SOURCES"'
+        status=0
+        clang-format --style=file:.clang-format --dry-run --Werror "${cpp[@]}" || status=1
+        ruff format --check --no-cache "${python[@]}" || status=1
+        ruff check --no-cache "${python[@]}" || status=1
+        exit "$status"
+    '
+}
+
 function print_usage() {
     cat <<EOF
 Usage: $0 <command> [args]
@@ -106,6 +141,8 @@ Usage: $0 <command> [args]
   exec [cmd...]         A bash shell in /root/workspace with the workspace sourced, or run cmd there.
   build [pkg...]        colcon build the named packages, or the whole workspace.
   test [--sim] [pkg...] Our packages' tests without a simulator, or with --sim only the simulator suites.
+  format                clang-format our C++ and ruff format our Python, in place.
+  lint                  Check both, and run ruff check, without a full colcon test.
 EOF
 }
 
@@ -167,6 +204,12 @@ case "$ACTION" in
     test)
         shift
         run_tests "$@"
+        ;;
+    format)
+        format_sources
+        ;;
+    lint)
+        lint_sources
         ;;
     exec-as-me)
         # As the host UID/GID, for tools that rewrite sources in place: a root-run one leaves
