@@ -46,9 +46,10 @@ from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription, TimerAction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node as LaunchNode
-from nav2_msgs.action import NavigateToPose
+from nav2_msgs.action import NavigateToPose, Spin
 from nav_msgs.msg import Odometry
 from rclpy.action import ActionClient
+from rclpy.duration import Duration
 from rclpy.node import Node
 from rclpy.qos import QoSDurabilityPolicy, QoSProfile, QoSReliabilityPolicy
 from std_srvs.srv import Trigger
@@ -294,6 +295,7 @@ class ExploreApartmentTest(unittest.TestCase):
         cls.buffer = Buffer()
         cls.listener = TransformListener(cls.buffer, cls.node)
         cls.navigate = ActionClient(cls.node, NavigateToPose, "navigate_to_pose")
+        cls.turn = ActionClient(cls.node, Spin, "spin")
         cls.step_clear = ActionClient(cls.node, StepClear, "/g1_base_approach/step_clear")
         cls.approach = cls.node.create_client(GetApproachPose, "/canopy/get_approach_pose")
         cls.save = cls.node.create_client(Trigger, "/canopy/save")
@@ -571,6 +573,17 @@ class ExploreApartmentTest(unittest.TestCase):
             rclpy.spin_once(self.node, timeout_sec=0.05)
         self.assertTrue(result.done(), "never arrived")
         self.assertEqual(result.result().status, GoalStatus.STATUS_SUCCEEDED)
+        # Nav2 stops within 0.5 rad of the goal's heading: turn square to the bin, as a tree's
+        # TurnTo after ResolveTarget does.
+        square = yaw_of(response.pose.pose.orientation)
+        here = self.buffer.lookup_transform("map", "base_footprint", rclpy.time.Time())
+        turn = math.remainder(square - yaw_of(here.transform.rotation), 2.0 * math.pi)
+        turn_goal = Spin.Goal(target_yaw=turn)
+        turn_goal.time_allowance = Duration(seconds=8.0 + abs(turn) / 0.4).to_msg()
+        turned = self.run_goal(self.turn, turn_goal, 60.0)
+        self.assertIsNotNone(turned, "the turn was refused or ran out of time")
+        self.assertEqual(turned.status, GoalStatus.STATUS_SUCCEEDED)
+        self.spin(1.0)
 
         bins = [
             o for o in self.truth["objects"] if o["label"] == "dustbin" and o["room"] == "office"
@@ -578,8 +591,14 @@ class ExploreApartmentTest(unittest.TestCase):
         here = self.buffer.lookup_transform("map", "base_footprint", rclpy.time.Time())
         x, y = to_world(self.frame(), here.transform.translation.x, here.transform.translation.y)
         nearest = min(math.hypot(b["centre"][0] - x, b["centre"][1] - y) for b in bins)
-        print(f"stopped {nearest:.2f} m from the office dustbin ({response.target_id})")
+        off = math.remainder(yaw_of(here.transform.rotation) - square, 2.0 * math.pi)
+        print(
+            f"stopped {nearest:.2f} m from the office dustbin ({response.target_id}), "
+            f"{math.degrees(off):+.1f} deg off square"
+        )
         self.assertLess(nearest, 2.0)
+        # Nav2 alone leaves up to 0.5 rad; the turn has measured 0.2 to 8.4 degrees.
+        self.assertLess(abs(off), 0.25)
 
     def test_6_saves_the_world(self):
         response = self.call(self.save, Trigger.Request())
