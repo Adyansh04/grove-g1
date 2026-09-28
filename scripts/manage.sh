@@ -38,7 +38,7 @@ IN_WORKSPACE='source "/opt/ros/$ROS_DISTRO/setup.bash" && cd /root/workspace && 
 STYLE_SOURCES='
     shopt -s globstar nullglob
     cpp=(src/g1_*/include/**/*.hpp src/g1_*/src/**/*.cpp src/g1_*/test/**/*.cpp)
-    python=(src/g1_*/{launch,scripts,test,tools} src/canopy/{editor,servers} /root/.host-repo/scripts)
+    python=(src/g1_*/{launch,scripts,test,tools} src/canopy/{editor,servers} /root/.host-repo/servers)
     for file in src/g1_*/scripts/*; do
         if [[ -f $file && $file != *.* ]] && head -c 32 "$file" | grep -q "^#!.*python"; then
             python+=("$file")

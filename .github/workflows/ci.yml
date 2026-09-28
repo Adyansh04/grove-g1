@@ -147,9 +147,9 @@ jobs:
           # canopy's model server and map editor are not ROS packages; their tests need no GPU.
           python3 -m unittest src/canopy/servers/test_semantic_server.py
           python3 -m unittest src/canopy/editor/test_canopy_editor.py
-          # Nor is their lint a package's ctest target.
-          ruff check src/canopy/editor src/canopy/servers
-          ruff format --check src/canopy/editor src/canopy/servers
+          # Nor is their lint, or the host servers', a package's ctest target.
+          ruff check src/canopy/editor src/canopy/servers ../servers
+          ruff format --check src/canopy/editor src/canopy/servers ../servers
 
       - name: Test results
         if: always()
