@@ -211,12 +211,6 @@ case "$ACTION" in
     lint)
         lint_sources
         ;;
-    exec-as-me)
-        # As the host UID/GID, for tools that rewrite sources in place: a root-run one leaves
-        # root-owned files on the host. Everything else uses `exec`, which needs root.
-        echo "Attaching bash as $(id -u):$(id -g) to '${SERVICE_NAME}'..."
-        docker compose exec --user "$(id -u):$(id -g)" "${SERVICE_NAME}" bash
-        ;;
     *)
         print_usage
         exit 1
