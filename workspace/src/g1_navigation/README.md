@@ -1,8 +1,8 @@
 # g1_navigation
 
 SLAM Toolbox mapping, AMCL localization and Nav2 for the G1 on the `unitree_mujoco` track.
-Configuration, launch files and glue; the nodes themselves are upstream. `ament_cmake`, Python
-launch files.
+Configuration, launch files and glue; the nodes themselves are upstream. `ament_cmake`. The Python
+is launch files, tests and `nav_diag.py`, a 20 Hz diagnostic recorder with no part in control.
 
 ```mermaid
 flowchart TB
@@ -21,14 +21,15 @@ flowchart TB
 | File | Purpose |
 |---|---|
 | `nav_stack.launch.py` | The stack without a simulator: the shared container, the scan pipeline, SLAM or localization, and Nav2 with `nav:=true`. `g1_bringup` includes this. |
-| `nav_sim.launch.py` | A simulator, `nav_stack.launch.py` and optional RViz. The integration suites launch this. |
+| `nav_sim.launch.py` | A simulator, `nav_stack.launch.py` and optional RViz. `test_navigate_to_pose` launches this. |
 | `scan.launch.py` | `pointcloud_to_laserscan`, flattening the LiDAR into the 2D scan SLAM and AMCL consume. |
 | `slam.launch.py` | `slam_toolbox` in online async mapping mode. |
-| `localization.launch.py` | `map_server` and AMCL against the committed map. |
+| `localization.launch.py` | `map_server` and AMCL against the committed map of `world`, or the one `map:=` names. |
 | `nav2.launch.py` | Planner, controller, behaviors, BT navigator, lifecycle manager and `g1_base_approach`. Included only with `nav:=true`. |
 
-`g1_bringup`'s `bringup.launch.py` is the operator entry point. `nav_sim.launch.py` also exposes
-`use_composition` and `container_name`, which the bring-up entry point does not.
+`g1_bringup`'s `bringup.launch.py` is the operator entry point. `nav_stack.launch.py` and
+`nav_sim.launch.py` default to `mode:=mapping` and also take `use_composition` and `container_name`,
+which the bring-up entry point does not pass.
 
 `nav_stack.launch.py` stages no simulator. Both callers stage exactly one, and a second would put
 two writers on `rt/lowcmd`; `test_launch_threading` asserts it.
@@ -39,13 +40,8 @@ two writers on `rt/lowcmd`; `test_launch_threading` asserts it.
 ros2 launch g1_bringup bringup.launch.py mode:=mapping rviz:=true
 ```
 
-Drive it around with teleop and watch the map fill in, then save it:
-
-```bash
-ros2 run nav2_map_server map_saver_cli -f ~/facility
-```
-
-`maps/facility` is already committed, so that is only needed for a new scene. To navigate:
+Drive with teleop and watch the map fill in. `maps/facility` is already committed;
+[maps/README.md](maps/README.md) says how to regenerate a map. To navigate:
 
 ```bash
 ros2 launch g1_bringup bringup.launch.py mode:=localization nav:=true rviz:=true
@@ -57,8 +53,9 @@ ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose \
 `mode:=mapping nav:=true` runs Nav2 on the map slam_toolbox is still building, which is what the
 world model's exploration does (canopy); a goal can shift a little under a loop closure.
 
-Everything here needs `sensors:=true` for the LiDAR, the relay and the `odom` to `base_footprint`
-chain. The navigation modes set it for you.
+The navigation modes force `sensors:=true`, which brings up the LiDAR, the relay and the `odom` to
+`base_footprint` chain. The [navigation guide](../../../docs/guides/navigation-and-moveit.md) walks
+through the same steps.
 
 ## Gait constraints
 
@@ -66,29 +63,32 @@ The walking policy tracks a proportional fraction of the commanded velocity, wit
 about 0.15 m/s on both linear axes: commanded 0.10 m/s, the robot does not move. Yaw has no
 deadband and tracks near 1:1. `g1_controllers` clamps commands to 0.6 m/s and 0.9 rad/s.
 
-Beyond that, ordinary Nav2 tuning applies. Any controller or recovery must command speeds above the
-deadband, which is why reverse recovery is removed from both behavior trees and from
-`behavior_plugins`: upstream's backup speed sits inside it.
+Any controller or recovery must therefore command speeds above the deadband. That is why reverse
+recovery is removed from both behavior trees and from `behavior_plugins`: upstream's backup speed
+(0.05 m/s) sits inside it.
 
 Nav2 is not the only `/cmd_vel` writer. `nav2.launch.py` also starts `g1_locomotion`'s
-`g1_base_approach`, which closes the last half metre because Nav2's 0.5 m goal tolerance is more
-than twice the arm's usable window. Nothing arbitrates between them: the mission tree runs
-`NavigateToPose` and `ApproachObject` in sequence, never together.
+`g1_base_approach`, which walks the last stretch because Nav2 stops within 0.5 m of a goal
+(`xy_goal_tolerance`), wider than the band the arm reaches from. Nothing arbitrates between
+the two: the mission tree runs `NavigateToPose` and `ApproachObject` in sequence, never together.
 
 ## Settings worth knowing before changing them
 
 - Nav2 runs uncomposed while the scan and localization nodes compose. Composed, the costmaps come
   up on `Costmap2DROS` defaults instead of the params file and `controller_server` hangs
-  activating, so `use_composition:=true` is rejected.
-- `z_voxels` is 16, the voxel grid's maximum, so the 2.0 m column, which must contain the sensor
-  at 1.22 m or `VoxelLayer` rejects every cloud, comes from `z_resolution` 0.125 m instead.
+  activating, so `nav2.launch.py` rejects `use_composition:=true` and `nav_stack.launch.py` always
+  passes `false`.
+- `z_voxels` is 16, the voxel grid's maximum, so the column height comes from `z_resolution`:
+  16 x 0.125 m = 2.0 m. The column must contain the sensor at 1.22 m, or `VoxelLayer` rejects every
+  cloud.
 - `obstacle_max_range` is 3.0 m, well inside the sensor's reach. Attitude error times range is
   height error, so distant floor returns cross `min_obstacle_height` and mark as obstacles. The
   value is the simulator's; re-measure it on the robot.
-- `obstacle_min_range` is 0.6 m. It keeps the carried object and the robot's own arm off the
+- `obstacle_min_range` is 0.6 m. It keeps the carried object and the robot's own arms off the
   costmap; anything the base can hit shows up beyond it.
 - AMCL uses `OmniMotionModel` because the robot strafes: `g1_base_approach` commands lateral
-  velocity and the gait drifts sideways. The alphas stay at Nav2's defaults.
+  velocity and the gait drifts sideways. The alphas stay at Nav2's defaults, since neither
+  simulated odometry source says anything about the real robot's noise.
 
 ## Configuration
 
@@ -100,7 +100,7 @@ than twice the arm's usable window. Nothing arbitrates between them: the mission
 | `config/slam_mapping.yaml` | `slam_toolbox` online async. |
 | `config/g1_navigation.rviz` | RViz for the navigation modes. Fixed frame `map`. |
 | `config/navigate_to_pose.xml`, `config/navigate_through_poses.xml` | Behavior trees, with reverse recovery removed. |
-| `maps/facility.{yaml,pgm}` | The committed map of the navigation scene. |
+| `maps/facility.{yaml,pgm}`, `maps/apartment.{yaml,pgm}` | The committed maps of the `navigation` and `apartment` worlds. |
 
 `g1_navigation.rviz` has a Nav2 group and a folded Sensors group. `g1_bringup`'s
 `g1_sensors.rviz` carries the same Sensors group with fixed frame `odom` for `mode:=none`, where no
@@ -139,17 +139,19 @@ health, and tears everything down.
 ros2 run g1_navigation nav_soak                        # default goal list
 ros2 run g1_navigation nav_soak --rviz
 ros2 run g1_navigation nav_soak --goals "3.0 -3.0,-2.5 2.0"
+ros2 run g1_navigation nav_soak --odometry ground_truth
 ```
 
 It reports distance driven, the share of Nav2 commands inside the gait deadband, `map` to `odom`
-correction sizes, pelvis pitch, and local costmap lethal-cell counts. `nav_diag.py` is the
-recorder, and also runs on its own against a stack that is already up:
+correction sizes, pelvis pitch and local costmap lethal-cell counts, plus the falls, progress
+failures and recoveries counted in the launch log. `nav_diag.py` is the recorder. It also runs on
+its own against a stack that is already up, for the given number of seconds (default 200):
 
 ```bash
 ros2 run g1_navigation nav_diag.py 200
 ```
 
-Three details in `nav_soak` are load-bearing:
+`nav_soak` works around three things:
 
 - One goal at a time, each allowed to finish. A goal preempted mid-run replans abruptly and the
   robot can fall.
@@ -158,8 +160,5 @@ Three details in `nav_soak` are load-bearing:
 - Readiness read from the launch log. Discovery can outlast any timeout, and AMCL publishes
   `/amcl_pose` only after the robot moves.
 
-Check that nothing survived:
-
-```bash
-ros2 node list --no-daemon | sort | uniq -d    # any output means an orphan is still running
-```
+It checks for orphans before and after a run. After an interrupted run, check by hand: any output
+from `ros2 node list --no-daemon | sort | uniq -d` means an orphan is still running.
