@@ -98,8 +98,8 @@ models; see [Open-vocabulary perception](open-vocabulary-grasping.md). The tree 
 for objects only at the two benches and idles it in between, so `/objects` is quiet during the
 walks.
 
-Nav2 parks within 0.5 m of a goal and the arm's reach window is about 0.11 m wide, so a base
-approach skill closes the rest against the measured object rather than against the map.
+Nav2 parks anywhere within 0.5 m of a goal, a wider spread than the band the arm reaches from, so
+a base approach skill closes the rest against the measured object rather than against the map.
 
 ## Watching the tree
 
