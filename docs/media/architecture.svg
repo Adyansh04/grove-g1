@@ -1,229 +1,267 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 784" width="900" height="784" role="img" aria-label="Grove-G1 architecture">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 848" width="960" height="848" role="img" aria-label="Grove-G1 architecture">
 <title>Grove-G1 architecture</title>
 <style>
   :root {
-    --bg: #ffffff; --fg: #1f2328; --muted: #656d76; --line: #d0d7de;
-    --card: #ffffff; --card-br: #d0d7de;
-    --band: #f6f8fa; --band-br: #d8dee4;
-    --nav: #0969da; --nav-bg: #ddf4ff;
-    --man: #8250df; --man-bg: #fbefff;
-    --state: #1a7f37; --state-bg: #dafbe1;
-    --ctrl: #bc4c00; --ctrl-bg: #fff1e5;
-    --sim: #6e7781; --sim-bg: #f6f8fa;
-    --hw: #cf222e; --hw-bg: #ffebe9;
+    --bg: #ffffff; --fg: #1f2328; --muted: #656d76;
+    --card: #ffffff; --card-br: #d0d7de; --band: #f6f8fa; --band-br: #d8dee4;
+    --state: #1a7f37; --state-bg: #dafbe1; --nav: #0969da; --nav-bg: #ddf4ff;
+    --wm: #0a7b83; --wm-bg: #d4f5f2; --man: #8250df; --man-bg: #fbefff;
+    --ctrl: #bc4c00; --ctrl-bg: #fff1e5; --host: #6e7781; --host-bg: #f6f8fa;
+    --sim: #6e7781; --sim-bg: #f6f8fa; --hw: #cf222e; --hw-bg: #ffebe9;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #0d1117; --fg: #e6edf3; --muted: #8b949e; --line: #30363d;
-      --card: #161b22; --card-br: #30363d;
-      --band: #11161d; --band-br: #21262d;
-      --nav: #58a6ff; --nav-bg: #0c2d6b33;
-      --man: #bc8cff; --man-bg: #3f2a6b33;
-      --state: #3fb950; --state-bg: #12351d33;
-      --ctrl: #db6d28; --ctrl-bg: #4d2b0033;
-      --sim: #8b949e; --sim-bg: #161b22;
-      --hw: #f85149; --hw-bg: #5c1a1a33;
+      --bg: #0d1117; --fg: #e6edf3; --muted: #8b949e;
+      --card: #161b22; --card-br: #30363d; --band: #11161d; --band-br: #21262d;
+      --state: #3fb950; --state-bg: #12351d; --nav: #58a6ff; --nav-bg: #0c2d6b;
+      --wm: #2fc6b8; --wm-bg: #0b3533; --man: #bc8cff; --man-bg: #3f2a6b;
+      --ctrl: #f0883e; --ctrl-bg: #4d2b00; --host: #8b949e; --host-bg: #161b22;
+      --sim: #8b949e; --sim-bg: #161b22; --hw: #f85149; --hw-bg: #5c1a1a;
     }
   }
-
-  text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-         fill: var(--fg); }
-  .ttl  { font-size: 17px; font-weight: 700; }
-  .sub  { font-size: 11.5px; fill: var(--muted); }
-  .t    { font-size: 12.5px; font-weight: 650; }
-  .s    { font-size: 10px;   fill: var(--muted); }
-  .lbl  { font-size: 9.5px;  fill: var(--muted); font-weight: 500; }
-  .grp  { font-size: 10px; font-weight: 700; letter-spacing: .08em; }
-
+  text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif; fill: var(--fg); }
+  .mono { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace; }
+  .ttl { font-size: 17px; font-weight: 700; }
+  .sub { font-size: 11.5px; fill: var(--muted); }
+  .t { font-size: 12.5px; font-weight: 650; }
+  .s { font-size: 10px; fill: var(--muted); }
+  .lbl { font-size: 9.5px; fill: var(--muted); font-weight: 500; }
+  .grp { font-size: 10px; font-weight: 700; letter-spacing: .08em; }
+  .badge { font-size: 8px; font-weight: 700; letter-spacing: .05em; }
+  .chip { font-size: 9.5px; fill: var(--muted); }
   .card { fill: var(--card); stroke: var(--card-br); stroke-width: 1; rx: 8; }
+  .card.dash { stroke-dasharray: 4 3; fill: var(--band); }
   .band { fill: var(--band); stroke: var(--band-br); stroke-width: 1; rx: 10; }
-
-  /* Edges: base stroke carries the flow colour at low opacity, the pulse rides on top. */
-  .e { fill: none; stroke-width: 1.6; opacity: .42; stroke-linecap: round;
-       stroke-linejoin: round; }
-  .e-dash { stroke-dasharray: 3 4; }
-  .e-state { stroke: var(--state); } .e-nav  { stroke: var(--nav); }
-  .e-man   { stroke: var(--man); }   .e-ctrl { stroke: var(--ctrl); }
-
-  .pulse { fill: none; stroke-width: 2.8; stroke-linecap: round; stroke-linejoin: round;
-           stroke-dasharray: 8 100; stroke-dashoffset: 8;
-           animation: pulse 3.6s cubic-bezier(.5,0,.5,1) infinite; }
-  .p-state { stroke: var(--state); } .p-nav  { stroke: var(--nav); }
-  .p-man   { stroke: var(--man); }   .p-ctrl { stroke: var(--ctrl); }
-  @keyframes pulse { to { stroke-dashoffset: -100; } }
-
+  .lblbg { fill: var(--bg); }
+  .e { fill: none; stroke-width: 1.6; opacity: .45; stroke-linecap: round; stroke-linejoin: round; }
+  .bus { fill: none; stroke-width: 3; stroke-linecap: round; opacity: .55; }
+  .zmq { fill: none; stroke-width: 1.6; stroke-dasharray: 3 3; opacity: .8; animation: zmq 1.4s linear infinite; }
+  @keyframes zmq { to { stroke-dashoffset: -12; } }
   @media (prefers-reduced-motion: reduce) {
     .pulse { display: none; }
-    .e { opacity: .85; }
+    .zmq { animation: none; }
+    .e { opacity: .8; }
   }
 </style>
 <defs>
-<marker id="as" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--state)"/></marker>
-<marker id="an" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--nav)"/></marker>
-<marker id="am" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--man)"/></marker>
-<marker id="ac" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--ctrl)"/></marker>
+<marker id="a-state" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--state)"/></marker>
+<marker id="a-nav" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--nav)"/></marker>
+<marker id="a-wm" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--wm)"/></marker>
+<marker id="a-man" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--man)"/></marker>
+<marker id="a-ctrl" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--ctrl)"/></marker>
 </defs>
-<rect width="900" height="784" fill="var(--bg)"/>
+<rect width="960" height="848" fill="var(--bg)"/>
 <text class="ttl" x="28" y="36">Grove-G1</text>
-<text class="sub" x="112" y="36">ROS 2 autonomy stack for the Unitree G1 humanoid</text>
-<rect class="card" x="326" y="62" width="248" height="30" rx="15"/><text class="t" x="450" y="77.5" text-anchor="middle" dominant-baseline="middle">ros2 launch g1_bringup bringup.launch.py</text>
-<rect class="card" x="326" y="108" width="248" height="44"/>
-<path d="M326.5,116 v28" stroke="var(--man)" stroke-width="3.5" stroke-linecap="round"/>
-<text class="t" x="339" y="125.0" dominant-baseline="middle">g1_bt_executor</text>
-<text class="s" x="339" y="139.0" dominant-baseline="middle">BehaviorTree.CPP v4 mission tree</text>
-<path class="e e-man" d="M450,92 L450,108" marker-end="url(#am)"/>
-<rect class="band" x="28" y="184" width="252" height="252"/>
-<path d="M39,184.5 h230" stroke="var(--state)" stroke-width="2.5" stroke-linecap="round" opacity="0.85"/>
-<text class="grp" x="41" y="205" fill="var(--state)">SENSING AND STATE</text>
-<rect class="card" x="44" y="216" width="220" height="42"/>
-<path d="M44.5,224 v26" stroke="var(--state)" stroke-width="3.5" stroke-linecap="round"/>
-<text class="t" x="57" y="232.0" dominant-baseline="middle">LiDAR front end</text>
-<text class="s" x="57" y="246.0" dominant-baseline="middle">livox_ros_driver2 or g1_sensor_relay</text>
-<rect class="card" x="44" y="270" width="220" height="42"/>
-<path d="M44.5,278 v26" stroke="var(--state)" stroke-width="3.5" stroke-linecap="round"/>
-<text class="t" x="57" y="286.0" dominant-baseline="middle">fastlio_mapping</text>
-<text class="s" x="57" y="300.0" dominant-baseline="middle">FAST-LIO2 on the Mid360</text>
-<rect class="card" x="44" y="324" width="220" height="42"/>
-<path d="M44.5,332 v26" stroke="var(--state)" stroke-width="3.5" stroke-linecap="round"/>
-<text class="t" x="57" y="340.0" dominant-baseline="middle">g1_odometry_publisher</text>
-<text class="s" x="57" y="354.0" dominant-baseline="middle">odom to base_footprint</text>
-<rect class="card" x="44" y="378" width="220" height="42"/>
-<path d="M44.5,386 v26" stroke="var(--state)" stroke-width="3.5" stroke-linecap="round"/>
-<text class="t" x="57" y="394.0" dominant-baseline="middle">pointcloud_to_laserscan</text>
-<text class="s" x="57" y="408.0" dominant-baseline="middle">3D cloud to a 2D scan</text>
-<rect class="band" x="308" y="184" width="278" height="252"/>
-<path d="M319,184.5 h256" stroke="var(--nav)" stroke-width="2.5" stroke-linecap="round" opacity="0.85"/>
-<text class="grp" x="321" y="205" fill="var(--nav)">NAVIGATION</text>
-<rect class="card" x="326" y="216" width="244" height="42"/>
-<path d="M326.5,224 v26" stroke="var(--nav)" stroke-width="3.5" stroke-linecap="round"/>
-<text class="t" x="339" y="232.0" dominant-baseline="middle">Nav2</text>
-<text class="s" x="339" y="246.0" dominant-baseline="middle">planner, controller, behavior tree</text>
-<rect class="card" x="326" y="270" width="244" height="42"/>
-<path d="M326.5,278 v26" stroke="var(--nav)" stroke-width="3.5" stroke-linecap="round"/>
-<text class="t" x="339" y="286.0" dominant-baseline="middle">slam_toolbox / AMCL</text>
-<text class="s" x="339" y="300.0" dominant-baseline="middle">map to odom</text>
-<rect class="card" x="326" y="324" width="244" height="42"/>
-<path d="M326.5,332 v26" stroke="var(--nav)" stroke-width="3.5" stroke-linecap="round"/>
-<text class="t" x="339" y="340.0" dominant-baseline="middle">g1_base_approach</text>
-<text class="s" x="339" y="354.0" dominant-baseline="middle">final alignment before a grasp</text>
-<rect class="band" x="602" y="184" width="270" height="252"/>
-<path d="M613,184.5 h248" stroke="var(--man)" stroke-width="2.5" stroke-linecap="round" opacity="0.85"/>
-<text class="grp" x="615" y="205" fill="var(--man)">MANIPULATION</text>
-<rect class="card" x="618" y="216" width="238" height="42"/>
-<path d="M618.5,224 v26" stroke="var(--man)" stroke-width="3.5" stroke-linecap="round"/>
-<text class="t" x="631" y="232.0" dominant-baseline="middle">g1_manipulation_server</text>
-<text class="s" x="631" y="246.0" dominant-baseline="middle">pick, place, postures</text>
-<rect class="card" x="618" y="270" width="238" height="42"/>
-<path d="M618.5,278 v26" stroke="var(--man)" stroke-width="3.5" stroke-linecap="round"/>
-<text class="t" x="631" y="286.0" dominant-baseline="middle">move_group</text>
-<text class="s" x="631" y="300.0" dominant-baseline="middle">plan and collision check</text>
-<rect class="card" x="618" y="324" width="238" height="42"/>
-<path d="M618.5,332 v26" stroke="var(--man)" stroke-width="3.5" stroke-linecap="round"/>
-<text class="t" x="631" y="340.0" dominant-baseline="middle">g1_object_pose_source</text>
-<text class="s" x="631" y="354.0" dominant-baseline="middle">refuses on hardware</text>
-<rect x="819.2" y="332" width="27.799999999999997" height="13.5" rx="6.75" fill="var(--sim-bg)" stroke="var(--sim)" stroke-width="0.9" opacity="0.9"/><text x="833.1" y="339.4" text-anchor="middle" dominant-baseline="middle" font-size="8" font-weight="700" letter-spacing=".05em" fill="var(--sim)">SIM</text>
-<path class="e e-state" d="M154.0,258 L154.0,270" marker-end="url(#as)"/>
-<path class="pulse p-state" d="M154.0,258 L154.0,270" pathLength="100" style="animation-delay:0.0s"/>
-<rect x="71.75" y="257" width="164.5" height="14" rx="4" fill="var(--bg)"/><text class="lbl" x="154.0" y="264" text-anchor="middle" dominant-baseline="middle">/livox/custom_msg + /livox/imu</text>
-<path class="e e-state" d="M154.0,312 L154.0,324" marker-end="url(#as)"/>
-<path class="pulse p-state" d="M154.0,312 L154.0,324" pathLength="100" style="animation-delay:0.0s"/>
-<rect x="115.525" y="311" width="76.95" height="14" rx="4" fill="var(--bg)"/><text class="lbl" x="154.0" y="318" text-anchor="middle" dominant-baseline="middle">/Odometry_loc</text>
-<path class="e e-state" d="M264,237.0 L269.0,237.0 Q274,237.0 274.0,242.0 L274,451 Q274,458 281,458 L610,458"/>
-<path class="e e-state" d="M274,399.0 L264,399.0" marker-end="url(#as)"/>
-<path class="e e-state" d="M610,458 L610.0,295.0 Q610,291.0 614.0,291.0 L618,291.0" marker-end="url(#as)"/>
-<path class="pulse p-state" d="M264,237.0 L269.0,237.0 Q274,237.0 274.0,242.0 L274.0,394.0 Q274,399.0 269.0,399.0 L264,399.0" pathLength="100" style="animation-delay:0.0s"/>
-<path class="pulse p-state" d="M264,237.0 L269.0,237.0 Q274,237.0 274.0,242.0 L274,451 Q274,458 281,458 L603,458 Q610,458 610,451 L610.0,295.0 Q610,291.0 614.0,291.0 L618,291.0" pathLength="100" style="animation-delay:0.0s"/>
-<rect x="304.1" y="451" width="71.80000000000001" height="14" rx="4" fill="var(--bg)"/><text class="lbl" x="340" y="458" text-anchor="middle" dominant-baseline="middle">/livox/lidar</text>
-<path class="e e-nav" d="M264,345.0 L289,345.0 Q296,345.0 296,338.0 L296,244.0 Q296,237.0 303,237.0 L326,237.0" marker-end="url(#an)"/>
-<path class="pulse p-nav" d="M264,345.0 L289,345.0 Q296,345.0 296,338.0 L296,244.0 Q296,237.0 303,237.0 L326,237.0" pathLength="100" style="animation-delay:0.55s"/>
-<g transform="rotate(-90 296 290)"><rect x="234.35" y="283" width="123.30000000000001" height="14" rx="4" fill="var(--bg)"/><text class="lbl" x="296" y="290" text-anchor="middle" dominant-baseline="middle">odom to base_footprint</text></g>
-<path class="e e-nav" d="M264,399.0 L279,399.0 Q286,399.0 286,392.0 L286,298.0 Q286,291.0 293,291.0 L326,291.0" marker-end="url(#an)"/>
-<path class="pulse p-nav" d="M264,399.0 L279,399.0 Q286,399.0 286,392.0 L286,298.0 Q286,291.0 293,291.0 L326,291.0" pathLength="100" style="animation-delay:0.55s"/>
-<g transform="rotate(-90 286 364)"><rect x="268.125" y="357" width="35.75" height="14" rx="4" fill="var(--bg)"/><text class="lbl" x="286" y="364" text-anchor="middle" dominant-baseline="middle">/scan</text></g>
-<path class="e e-nav" d="M570,291.0 L576.0,291.0 Q582,291.0 582.0,285.0 L582.0,243.0 Q582,237.0 576.0,237.0 L570,237.0" marker-end="url(#an)"/>
-<path class="pulse p-nav" d="M570,291.0 L576.0,291.0 Q582,291.0 582.0,285.0 L582.0,243.0 Q582,237.0 576.0,237.0 L570,237.0" pathLength="100" style="animation-delay:0.55s"/>
-<rect x="548.675" y="259" width="66.65" height="14" rx="4" fill="var(--bg)"/><text class="lbl" x="582" y="266" text-anchor="middle" dominant-baseline="middle">map to odom</text>
-<path class="e e-man" d="M420,152 L420,216" marker-end="url(#am)"/>
-<path class="pulse p-man" d="M420,152 L420,216" pathLength="100" style="animation-delay:0.3s"/>
-<rect x="378.95" y="168" width="82.10000000000001" height="14" rx="4" fill="var(--bg)"/><text class="lbl" x="420" y="175" text-anchor="middle" dominant-baseline="middle">NavigateToPose</text>
-<path class="e e-man" d="M420,168 L323,168 Q316,168 316,175 L316.0,340.0 Q316,345.0 321.0,345.0 L326,345.0" marker-end="url(#am)"/>
-<path class="pulse p-man" d="M420,168 L323,168 Q316,168 316,175 L316.0,340.0 Q316,345.0 321.0,345.0 L326,345.0" pathLength="100" style="animation-delay:0.3s"/>
-<g transform="rotate(-90 316 262)"><rect x="274.95" y="255" width="82.10000000000001" height="14" rx="4" fill="var(--bg)"/><text class="lbl" x="316" y="262" text-anchor="middle" dominant-baseline="middle">ApproachObject</text></g>
-<path class="e e-man" d="M540,152 L540,161 Q540,168 547,168 L587,168 Q594,168 594,175 L594,230.0 Q594,237.0 601,237.0 L618,237.0" marker-end="url(#am)"/>
-<path class="pulse p-man" d="M540,152 L540,161 Q540,168 547,168 L587,168 Q594,168 594,175 L594,230.0 Q594,237.0 601,237.0 L618,237.0" pathLength="100" style="animation-delay:0.3s"/>
-<rect x="560.675" y="183" width="66.65" height="14" rx="4" fill="var(--bg)"/><text class="lbl" x="594" y="190" text-anchor="middle" dominant-baseline="middle">Pick, Place</text>
-<path class="e e-nav" d="M570,237.0 L573.0,237.0 Q576,237.0 576.0,240.0 L576.0,342.0 Q576,345.0 573.0,345.0 L570,345.0" marker-end="url(#an)"/>
-<path class="pulse p-nav" d="M570,237.0 L573.0,237.0 Q576,237.0 576.0,240.0 L576.0,342.0 Q576,345.0 573.0,345.0 L570,345.0" pathLength="100" style="animation-delay:0.55s"/>
-<rect x="550.4" y="315" width="51.2" height="14" rx="4" fill="var(--bg)"/><text class="lbl" x="576" y="322" text-anchor="middle" dominant-baseline="middle">/cmd_vel</text>
-<path class="e e-man" d="M737.0,258 L737.0,270" marker-end="url(#am)"/>
-<path class="pulse p-man" d="M737.0,258 L737.0,270" pathLength="100" style="animation-delay:0.3s"/>
-<path class="e e-man" d="M856,345.0 L859.0,345.0 Q862,345.0 862.0,342.0 L862.0,240.0 Q862,237.0 859.0,237.0 L856,237.0" marker-end="url(#am)"/>
-<path class="pulse p-man" d="M856,345.0 L859.0,345.0 Q862,345.0 862.0,342.0 L862.0,240.0 Q862,237.0 859.0,237.0 L856,237.0" pathLength="100" style="animation-delay:0.3s"/>
-<rect x="836.4" y="293" width="51.2" height="14" rx="4" fill="var(--bg)"/><text class="lbl" x="862" y="300" text-anchor="middle" dominant-baseline="middle">/objects</text>
-<rect class="band" x="28" y="512" width="844" height="88"/>
-<path d="M39,512.5 h822" stroke="var(--ctrl)" stroke-width="2.5" stroke-linecap="round" opacity="0.85"/>
-<text class="grp" x="41" y="533" fill="var(--ctrl)">BRIDGING AND CONTROL</text>
-<rect class="card" x="44" y="540" width="300" height="42"/>
-<path d="M44.5,548 v26" stroke="var(--ctrl)" stroke-width="3.5" stroke-linecap="round"/>
-<text class="t" x="57" y="556.0" dominant-baseline="middle">g1_controllers</text>
-<text class="s" x="57" y="570.0" dominant-baseline="middle">AGILE policy, safety blend, freeze</text>
-<rect class="card" x="372" y="540" width="250" height="42"/>
-<path d="M372.5,548 v26" stroke="var(--ctrl)" stroke-width="3.5" stroke-linecap="round"/>
-<text class="t" x="385" y="556.0" dominant-baseline="middle">G1LowCmdSystem</text>
-<text class="s" x="385" y="570.0" dominant-baseline="middle">all 29 body motors</text>
-<rect class="card" x="650" y="540" width="222" height="42"/>
-<path d="M650.5,548 v26" stroke="var(--ctrl)" stroke-width="3.5" stroke-linecap="round"/>
-<text class="t" x="663" y="556.0" dominant-baseline="middle">G1Dex3System</text>
-<text class="s" x="663" y="570.0" dominant-baseline="middle">one per hand</text>
-<path class="e e-ctrl" d="M448.0,366 L448.0,465 Q448.0,472 441.0,472 L201.0,472 Q194.0,472 194.0,479 L194.0,540" marker-end="url(#ac)"/>
-<path class="pulse p-ctrl" d="M448.0,366 L448.0,465 Q448.0,472 441.0,472 L201.0,472 Q194.0,472 194.0,479 L194.0,540" pathLength="100" style="animation-delay:1.15s"/>
-<rect x="422.4" y="367" width="51.2" height="14" rx="4" fill="var(--bg)"/><text class="lbl" x="448.0" y="374" text-anchor="middle" dominant-baseline="middle">/cmd_vel</text>
-<path class="e e-ctrl" d="M856,291.0 L862.0,291.0 Q868,291.0 868.0,297.0 L868,479 Q868,486 861,486 L497.0,486"/>
-<path class="e e-ctrl" d="M497.0,486 L497.0,540" marker-end="url(#ac)"/>
-<path class="e e-ctrl" d="M761.0,486 L761.0,540" marker-end="url(#ac)"/>
-<path class="pulse p-ctrl" d="M856,291.0 L862.0,291.0 Q868,291.0 868.0,297.0 L868,479 Q868,486 861,486 L768.0,486 Q761.0,486 761.0,493 L761.0,540" pathLength="100" style="animation-delay:1.15s"/>
-<path class="pulse p-ctrl" d="M856,291.0 L862.0,291.0 Q868,291.0 868.0,297.0 L868,479 Q868,486 861,486 L504.0,486 Q497.0,486 497.0,493 L497.0,540" pathLength="100" style="animation-delay:1.15s"/>
-<rect x="640.925" y="479" width="118.15" height="14" rx="4" fill="var(--bg)"/><text class="lbl" x="700" y="486" text-anchor="middle" dominant-baseline="middle">FollowJointTrajectory</text>
-<path class="e e-ctrl" d="M344,561.0 L372,561.0" marker-end="url(#ac)"/>
-<path class="pulse p-ctrl" d="M344,561.0 L372,561.0" pathLength="100" style="animation-delay:1.15s"/>
-<path d="M40,618 H860" stroke="var(--ctrl)" stroke-width="2" opacity="0.45" stroke-linecap="round"/>
-<path class="e e-ctrl" d="M497.0,582 L497.0,618" marker-end="url(#ac)"/>
-<path class="pulse p-ctrl" d="M497.0,582 L497.0,618" pathLength="100" style="animation-delay:1.15s"/>
-<rect x="468.825" y="599" width="56.35" height="14" rx="4" fill="var(--bg)"/><text class="lbl" x="497.0" y="606" text-anchor="middle" dominant-baseline="middle">rt/lowcmd</text>
-<path class="e e-ctrl" d="M761.0,582 L761.0,618" marker-end="url(#ac)"/>
-<path class="pulse p-ctrl" d="M761.0,582 L761.0,618" pathLength="100" style="animation-delay:1.15s"/>
-<rect x="722.525" y="599" width="76.95" height="14" rx="4" fill="var(--bg)"/><text class="lbl" x="761.0" y="606" text-anchor="middle" dominant-baseline="middle">rt/dex3/*/cmd</text>
-<text class="lbl" x="44" y="610" fill="var(--ctrl)">the same DDS channels either way</text>
-<rect class="band" x="28" y="632" width="844" height="90"/>
-<path d="M39,632.5 h822" stroke="var(--hw)" stroke-width="2.5" stroke-linecap="round" opacity="0.85"/>
-<text class="grp" x="41" y="653" fill="var(--hw)">ROBOT</text>
-<rect class="card" x="44" y="666" width="396" height="44"/>
-<path d="M44.5,674 v28" stroke="var(--sim)" stroke-width="3.5" stroke-linecap="round"/>
-<text class="t" x="57" y="683.0" dominant-baseline="middle">unitree_mujoco</text>
-<text class="s" x="57" y="697.0" dominant-baseline="middle">physics, and the same DDS channels</text>
-<rect x="403.2" y="674" width="27.799999999999997" height="13.5" rx="6.75" fill="var(--sim-bg)" stroke="var(--sim)" stroke-width="0.9" opacity="0.9"/><text x="417.1" y="681.4" text-anchor="middle" dominant-baseline="middle" font-size="8" font-weight="700" letter-spacing=".05em" fill="var(--sim)">SIM</text>
-<rect class="card" x="466" y="666" width="390" height="44"/>
-<path d="M466.5,674 v28" stroke="var(--hw)" stroke-width="3.5" stroke-linecap="round"/>
-<text class="t" x="479" y="683.0" dominant-baseline="middle">Unitree G1</text>
-<text class="s" x="479" y="697.0" dominant-baseline="middle">no onboard balance underneath</text>
-<rect x="808.0" y="674" width="39.0" height="13.5" rx="6.75" fill="var(--hw-bg)" stroke="var(--hw)" stroke-width="0.9" opacity="0.9"/><text x="827.5" y="681.4" text-anchor="middle" dominant-baseline="middle" font-size="8" font-weight="700" letter-spacing=".05em" fill="var(--hw)">ROBOT</text>
-<path class="e e-ctrl" d="M242,618 L242,666" marker-end="url(#ac)"/>
-<path class="pulse p-ctrl" d="M242,618 L242,666" pathLength="100" style="animation-delay:1.15s"/>
-<path class="e e-ctrl" d="M658,618 L658,666" marker-end="url(#ac)"/>
-<path class="pulse p-ctrl" d="M658,618 L658,666" pathLength="100" style="animation-delay:1.15s"/>
-<path class="e e-state" d="M44,688 L21,688 Q14,688 14,681 L14,237.0"/>
-<path class="e e-state" d="M14,237.0 L44,237.0" marker-end="url(#as)"/>
-<path class="pulse p-state" d="M44,688 L21,688 Q14,688 14,681 L14,244.0 Q14,237.0 21,237.0 L44,237.0" pathLength="100" style="animation-delay:1.75s"/>
-<path class="e e-state" d="M14,345.0 L44,345.0" marker-end="url(#as)"/>
-<path class="pulse p-state" d="M44,688 L21,688 Q14,688 14,681 L14,352.0 Q14,345.0 21,345.0 L44,345.0" pathLength="100" style="animation-delay:1.75s"/>
-<g transform="rotate(-90 14 506)"><rect x="-50.224999999999994" y="499" width="128.45" height="14" rx="4" fill="var(--bg)"/><text class="lbl" x="14" y="506" text-anchor="middle" dominant-baseline="middle">sensors and rt/lowstate</text></g>
-<path d="M28,740 h20" stroke="var(--state)" stroke-width="2.8" stroke-linecap="round"/>
-<text class="lbl" x="55" y="743">sensing and state</text>
-<path d="M171.4,740 h20" stroke="var(--nav)" stroke-width="2.8" stroke-linecap="round"/>
-<text class="lbl" x="198.4" y="743">localise and plan</text>
-<path d="M314.8,740 h20" stroke="var(--man)" stroke-width="2.8" stroke-linecap="round"/>
-<text class="lbl" x="341.8" y="743">orchestration</text>
-<path d="M437.40000000000003,740 h20" stroke="var(--ctrl)" stroke-width="2.8" stroke-linecap="round"/>
-<text class="lbl" x="464.40000000000003" y="743">commands to the robot</text>
-<text class="lbl" x="28" y="764">On the robot the simulation card is the physical G1 and the LiDAR front end is livox_ros_driver2. Nothing above the rail changes.</text>
+<text class="sub" x="113" y="36">ROS 2 autonomy stack for the Unitree G1 humanoid</text>
+<rect class="card" x="654" y="17" width="278" height="26" rx="13"/>
+<text class="mono" style="font-size:10.5px;font-weight:600" x="793" y="34" text-anchor="middle">ros2 launch g1_bringup bringup.launch.py</text>
+<rect class="band" x="28" y="56" width="904" height="78"/>
+<path d="M39,56.5 h882" stroke="var(--man)" stroke-width="2.5" stroke-linecap="round" opacity=".85"/>
+<text class="grp" x="41" y="77" fill="var(--man)">MISSIONS</text>
+<rect class="card" x="340" y="74" width="280" height="42"/>
+<path d="M340.5,82 v26" stroke="var(--man)" stroke-width="3.5" stroke-linecap="round"/>
+<text class="t" x="353" y="92">g1_bt_executor</text>
+<text class="s" x="353" y="106">BehaviorTree.CPP v4, a tree per mission</text>
+<rect class="card" x="58" y="86" width="98.6" height="18" rx="9"/>
+<text class="mono chip" x="107.3" y="98.5" text-anchor="middle">pick_and_place</text>
+<rect class="card" x="170" y="86" width="92.7" height="18" rx="9"/>
+<text class="mono chip" x="216.3" y="98.5" text-anchor="middle">sort_into_box</text>
+<rect class="card" x="650" y="86" width="57.3" height="18" rx="9"/>
+<text class="mono chip" x="678.6" y="98.5" text-anchor="middle">explore</text>
+<rect class="card" x="720" y="86" width="122.2" height="18" rx="9"/>
+<text class="mono chip" x="781.1" y="98.5" text-anchor="middle">vla_grasp_in_place</text>
+<rect class="band" x="28" y="166" width="288" height="244"/>
+<path d="M39,166.5 h266" stroke="var(--nav)" stroke-width="2.5" stroke-linecap="round" opacity=".85"/>
+<text class="grp" x="41" y="187" fill="var(--nav)">NAVIGATION</text>
+<rect class="band" x="336" y="166" width="288" height="244"/>
+<path d="M347,166.5 h266" stroke="var(--wm)" stroke-width="2.5" stroke-linecap="round" opacity=".85"/>
+<text class="grp" x="349" y="187" fill="var(--wm)">PERCEPTION AND WORLD MODEL</text>
+<rect class="band" x="644" y="166" width="288" height="244"/>
+<path d="M655,166.5 h266" stroke="var(--man)" stroke-width="2.5" stroke-linecap="round" opacity=".85"/>
+<text class="grp" x="657" y="187" fill="var(--man)">MANIPULATION</text>
+<rect class="card" x="44" y="198" width="256" height="40"/>
+<path d="M44.5,206 v24" stroke="var(--nav)" stroke-width="3.5" stroke-linecap="round"/>
+<text class="t" x="57" y="215">Nav2</text>
+<text class="s" x="57" y="229">planner, controller, behavior tree</text>
+<rect class="card" x="44" y="248" width="256" height="40"/>
+<path d="M44.5,256 v24" stroke="var(--nav)" stroke-width="3.5" stroke-linecap="round"/>
+<text class="t" x="57" y="265">slam_toolbox / AMCL</text>
+<text class="s" x="57" y="279">the map, and map to odom</text>
+<rect class="card" x="44" y="298" width="256" height="40"/>
+<path d="M44.5,306 v24" stroke="var(--nav)" stroke-width="3.5" stroke-linecap="round"/>
+<text class="t" x="57" y="315">g1_base_approach</text>
+<text class="s" x="57" y="329">walks the last half metre to a grasp</text>
+<rect class="card" x="352" y="198" width="256" height="40"/>
+<path d="M352.5,206 v24" stroke="var(--wm)" stroke-width="3.5" stroke-linecap="round"/>
+<text class="t" x="365" y="215">canopy</text>
+<text class="s" x="365" y="229">rooms, objects, camera coverage</text>
+<rect class="card" x="352" y="248" width="256" height="40"/>
+<path d="M352.5,256 v24" stroke="var(--wm)" stroke-width="3.5" stroke-linecap="round"/>
+<text class="t" x="365" y="265">g1_object_geometry</text>
+<text class="s" x="365" y="279">masks and depth to 3D objects</text>
+<rect class="card" x="352" y="298" width="256" height="40"/>
+<path d="M352.5,306 v24" stroke="var(--wm)" stroke-width="3.5" stroke-linecap="round"/>
+<text class="t" x="365" y="315">detector per camera</text>
+<text class="s" x="365" y="329">instance masks, mock or model</text>
+<rect class="card dash" x="352" y="348" width="256" height="40"/>
+<path d="M352.5,356 v24" stroke="var(--host)" stroke-width="3.5" stroke-linecap="round"/>
+<text class="t" x="365" y="365">vision and semantic servers</text>
+<text class="s" x="365" y="379">open-vocabulary masks, a VLM</text>
+<rect x="565.6" y="356" width="34.4" height="14" rx="7" fill="var(--host-bg)" stroke="var(--host)" stroke-width=".9"/>
+<text class="badge" x="582.8" y="366" text-anchor="middle" fill="var(--host)">HOST</text>
+<rect class="card" x="660" y="198" width="256" height="40"/>
+<path d="M660.5,206 v24" stroke="var(--man)" stroke-width="3.5" stroke-linecap="round"/>
+<text class="t" x="673" y="215">g1_manipulation_server</text>
+<text class="s" x="673" y="229">pick, place, postures</text>
+<rect class="card" x="660" y="248" width="256" height="40"/>
+<path d="M660.5,256 v24" stroke="var(--man)" stroke-width="3.5" stroke-linecap="round"/>
+<text class="t" x="673" y="265">move_group</text>
+<text class="s" x="673" y="279">MoveIt 2 against a LiDAR octomap</text>
+<rect class="card" x="660" y="298" width="256" height="40"/>
+<path d="M660.5,306 v24" stroke="var(--man)" stroke-width="3.5" stroke-linecap="round"/>
+<text class="t" x="673" y="315">g1_vla_server</text>
+<text class="s" x="673" y="329">policy chunks, checked before they run</text>
+<rect class="card dash" x="660" y="348" width="256" height="40"/>
+<path d="M660.5,356 v24" stroke="var(--host)" stroke-width="3.5" stroke-linecap="round"/>
+<text class="t" x="673" y="365">GR00T N1.7 and GraspGenX</text>
+<text class="s" x="673" y="379">the policy and grasp servers</text>
+<rect x="873.6" y="356" width="34.4" height="14" rx="7" fill="var(--host-bg)" stroke="var(--host)" stroke-width=".9"/>
+<text class="badge" x="890.8" y="366" text-anchor="middle" fill="var(--host)">HOST</text>
+<path class="zmq" d="M480,338 V348" stroke="var(--host)"/>
+<path class="zmq" d="M788,338 V348" stroke="var(--host)"/>
+<path class="e" d="M420,116 L420,140 Q420,146 414,146 L178,146 Q172,146 172,152 L172,166" stroke="var(--man)" marker-end="url(#a-man)"/>
+<path class="e" d="M480,116 L480,166" stroke="var(--man)" marker-end="url(#a-man)"/>
+<path class="e" d="M540,116 L540,140 Q540,146 546,146 L782,146 Q788,146 788,152 L788,166" stroke="var(--man)" marker-end="url(#a-man)"/>
+<path class="e" d="M44,268 L40,268 Q36,268 36,264 L36,222 Q36,218 40,218 L44,218" stroke="var(--nav)" marker-end="url(#a-nav)"/>
+<path class="e" d="M300,268 L320,268 Q326,268 326,262 L326,216 Q326,210 332,210 L352,210" stroke="var(--nav)" marker-end="url(#a-nav)"/>
+<path class="e" d="M352,318 L348,318 Q344,318 344,314 L344,230 Q344,226 348,226 L352,226" stroke="var(--wm)" marker-end="url(#a-wm)"/>
+<path class="e" d="M608,318 L612,318 Q616,318 616,314 L616,280 Q616,276 612,276 L608,276" stroke="var(--wm)" marker-end="url(#a-wm)"/>
+<path class="e" d="M608,260 L628,260 Q634,260 634,254 L634,216 Q634,210 640,210 L660,210" stroke="var(--wm)" marker-end="url(#a-wm)"/>
+<path class="e" d="M660,226 L656,226 Q652,226 652,230 L652,264 Q652,268 656,268 L660,268" stroke="var(--man)" marker-end="url(#a-man)"/>
+<path class="e" d="M916,318 L920,318 Q924,318 924,314 L924,272 Q924,268 920,268 L916,268" stroke="var(--man)" marker-end="url(#a-man)"/>
+<path class="e" d="M252,410 L252,584" stroke="var(--ctrl)" marker-end="url(#a-ctrl)"/>
+<path class="e" d="M708,410 L708,565 Q708,571 702,571 L306,571 Q300,571 300,577 L300,584" stroke="var(--ctrl)" marker-end="url(#a-ctrl)"/>
+<path class="e" d="M708,410 L708,584" stroke="var(--ctrl)" marker-end="url(#a-ctrl)"/>
+<path class="bus" d="M36,444 H924" stroke="var(--state)"/>
+<text class="lbl" x="44" y="437" fill="var(--state)">sensor topics and TF</text>
+<rect class="band" x="28" y="468" width="904" height="86"/>
+<path d="M39,468.5 h882" stroke="var(--state)" stroke-width="2.5" stroke-linecap="round" opacity=".85"/>
+<text class="grp" x="41" y="489" fill="var(--state)">SENSING AND STATE</text>
+<rect class="card" x="44" y="500" width="188" height="40"/>
+<path d="M44.5,508 v24" stroke="var(--state)" stroke-width="3.5" stroke-linecap="round"/>
+<text class="t" x="57" y="517">sensor front end</text>
+<text class="s" x="57" y="531">g1_sensor_relay, or the drivers</text>
+<path class="e" d="M138,500 L138,444" stroke="var(--state)" marker-end="url(#a-state)"/>
+<rect class="card" x="272" y="500" width="188" height="40"/>
+<path d="M272.5,508 v24" stroke="var(--state)" stroke-width="3.5" stroke-linecap="round"/>
+<text class="t" x="285" y="517">fastlio_mapping</text>
+<text class="s" x="285" y="531">FAST-LIO2 on the Mid360</text>
+<path class="e" d="M366,500 L366,444" stroke="var(--state)" marker-end="url(#a-state)"/>
+<rect class="card" x="500" y="500" width="188" height="40"/>
+<path d="M500.5,508 v24" stroke="var(--state)" stroke-width="3.5" stroke-linecap="round"/>
+<text class="t" x="513" y="517">g1_odometry_publisher</text>
+<text class="s" x="513" y="531">odom to base_footprint</text>
+<path class="e" d="M594,500 L594,444" stroke="var(--state)" marker-end="url(#a-state)"/>
+<rect class="card" x="728" y="500" width="188" height="40"/>
+<path d="M728.5,508 v24" stroke="var(--state)" stroke-width="3.5" stroke-linecap="round"/>
+<text class="t" x="741" y="517">pointcloud_to_laserscan</text>
+<text class="s" x="741" y="531">3D cloud to a 2D scan</text>
+<path class="e" d="M822,500 L822,444" stroke="var(--state)" marker-end="url(#a-state)"/>
+<path class="e" d="M172,444 L172,410" stroke="var(--state)" marker-end="url(#a-state)"/>
+<path class="e" d="M480,444 L480,410" stroke="var(--state)" marker-end="url(#a-state)"/>
+<path class="e" d="M788,444 L788,410" stroke="var(--state)" marker-end="url(#a-state)"/>
+<rect class="band" x="28" y="584" width="904" height="88"/>
+<path d="M39,584.5 h882" stroke="var(--ctrl)" stroke-width="2.5" stroke-linecap="round" opacity=".85"/>
+<text class="grp" x="41" y="605" fill="var(--ctrl)">CONTROL</text>
+<rect class="card" x="44" y="616" width="296" height="40"/>
+<path d="M44.5,624 v24" stroke="var(--ctrl)" stroke-width="3.5" stroke-linecap="round"/>
+<text class="t" x="57" y="633">g1_controllers</text>
+<text class="s" x="57" y="647">AGILE policy at 50 Hz, safety, arm trajectories</text>
+<rect class="card" x="380" y="616" width="260" height="40"/>
+<path d="M380.5,624 v24" stroke="var(--ctrl)" stroke-width="3.5" stroke-linecap="round"/>
+<text class="t" x="393" y="633">G1LowCmdSystem</text>
+<text class="s" x="393" y="647">all 29 body motors at 200 Hz</text>
+<rect class="card" x="680" y="616" width="236" height="40"/>
+<path d="M680.5,624 v24" stroke="var(--ctrl)" stroke-width="3.5" stroke-linecap="round"/>
+<text class="t" x="693" y="633">G1Dex3System</text>
+<text class="s" x="693" y="647">one per hand</text>
+<path class="e" d="M340,636 L380,636" stroke="var(--ctrl)" marker-end="url(#a-ctrl)"/>
+<path class="bus" d="M36,700 H924" stroke="var(--ctrl)"/>
+<text class="lbl" x="44" y="693" fill="var(--ctrl)">DDS: the same channels in sim and on the robot</text>
+<path class="e" d="M470,656 L470,700" stroke="var(--ctrl)" marker-end="url(#a-ctrl)"/>
+<path class="e" d="M798,656 L798,700" stroke="var(--ctrl)" marker-end="url(#a-ctrl)"/>
+<rect class="band" x="28" y="724" width="904" height="80"/>
+<path d="M39,724.5 h882" stroke="var(--hw)" stroke-width="2.5" stroke-linecap="round" opacity=".85"/>
+<text class="grp" x="41" y="745" fill="var(--hw)">ROBOT</text>
+<rect class="card" x="44" y="752" width="420" height="40"/>
+<path d="M44.5,760 v24" stroke="var(--sim)" stroke-width="3.5" stroke-linecap="round"/>
+<text class="t" x="57" y="769">unitree_mujoco</text>
+<text class="s" x="57" y="783">physics, and the robot's DDS channels</text>
+<rect x="427.2" y="760" width="28.8" height="14" rx="7" fill="var(--sim-bg)" stroke="var(--sim)" stroke-width=".9"/>
+<text class="badge" x="441.6" y="770" text-anchor="middle" fill="var(--sim)">SIM</text>
+<rect class="card" x="496" y="752" width="420" height="40"/>
+<path d="M496.5,760 v24" stroke="var(--hw)" stroke-width="3.5" stroke-linecap="round"/>
+<text class="t" x="509" y="769">Unitree G1</text>
+<text class="s" x="509" y="783">no onboard balance underneath</text>
+<rect x="868" y="760" width="40" height="14" rx="7" fill="var(--hw-bg)" stroke="var(--hw)" stroke-width=".9"/>
+<text class="badge" x="888" y="770" text-anchor="middle" fill="var(--hw)">ROBOT</text>
+<path class="e" d="M254,700 L254,752" stroke="var(--ctrl)" marker-end="url(#a-ctrl)"/>
+<path class="e" d="M706,700 L706,752" stroke="var(--ctrl)" marker-end="url(#a-ctrl)"/>
+<path class="e" d="M600,700 L600,656" stroke="var(--state)" marker-end="url(#a-state)"/>
+<path class="e" d="M44,772 L20,772 Q14,772 14,766 L14,526 Q14,520 20,520 L44,520" stroke="var(--state)" marker-end="url(#a-state)"/>
+<path d="M28,827 h18" stroke="var(--state)" stroke-width="2.8" stroke-linecap="round"/>
+<text class="lbl" x="53" y="830">sensing and state</text>
+<path d="M167.825,827 h18" stroke="var(--nav)" stroke-width="2.8" stroke-linecap="round"/>
+<text class="lbl" x="192.825" y="830">localise and plan</text>
+<path d="M307.65,827 h18" stroke="var(--wm)" stroke-width="2.8" stroke-linecap="round"/>
+<text class="lbl" x="332.65" y="830">perception and world model</text>
+<path d="M494.5,827 h18" stroke="var(--man)" stroke-width="2.8" stroke-linecap="round"/>
+<text class="lbl" x="519.5" y="830">missions and manipulation</text>
+<path d="M676.125,827 h18" stroke="var(--ctrl)" stroke-width="2.8" stroke-linecap="round"/>
+<text class="lbl" x="701.125" y="830">commands</text>
+<path d="M768.925,827 h18" stroke="var(--host)" stroke-width="2.8" stroke-linecap="round" stroke-dasharray="3 3"/>
+<text class="lbl" x="793.925" y="830">host GPU servers</text>
+<g class="pulse" opacity="0"><circle r="6.5" fill="var(--man)" opacity=".2"/><circle r="2.9" fill="var(--man)"/><animateMotion dur="7.68s" repeatCount="indefinite" calcMode="linear" keyPoints="0;1;1" keyTimes="0;0.1815;1" path="M420,116 L420,140 Q420,146 414,146 L178,146 Q172,146 172,152 L172,166"/><animate attributeName="opacity" dur="7.68s" repeatCount="indefinite" values="0;1;1;0;0" keyTimes="0;0.0234;0.1581;0.1815;1"/></g>
+<g class="pulse" opacity="0"><circle r="6.5" fill="var(--man)" opacity=".2"/><circle r="2.9" fill="var(--man)"/><animateMotion dur="7.68s" repeatCount="indefinite" calcMode="linear" keyPoints="0;1;1" keyTimes="0;0.0716;1" path="M480,116 L480,166"/><animate attributeName="opacity" dur="7.68s" repeatCount="indefinite" values="0;1;1;0;0" keyTimes="0;0.0179;0.0537;0.0716;1"/></g>
+<g class="pulse" opacity="0"><circle r="6.5" fill="var(--man)" opacity=".2"/><circle r="2.9" fill="var(--man)"/><animateMotion dur="7.68s" repeatCount="indefinite" calcMode="linear" keyPoints="0;1;1" keyTimes="0;0.1815;1" path="M540,116 L540,140 Q540,146 546,146 L782,146 Q788,146 788,152 L788,166"/><animate attributeName="opacity" dur="7.68s" repeatCount="indefinite" values="0;1;1;0;0" keyTimes="0;0.0234;0.1581;0.1815;1"/></g>
+<g class="pulse" opacity="0"><circle r="6.5" fill="var(--nav)" opacity=".2"/><circle r="2.9" fill="var(--nav)"/><animateMotion dur="7.68s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.1815;0.2531;1" path="M44,268 L40,268 Q36,268 36,264 L36,222 Q36,218 40,218 L44,218"/><animate attributeName="opacity" dur="7.68s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.1815;0.1994;0.2352;0.2531;1"/></g>
+<g class="pulse" opacity="0"><circle r="6.5" fill="var(--nav)" opacity=".2"/><circle r="2.9" fill="var(--nav)"/><animateMotion dur="7.68s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.1815;0.2531;1" path="M300,268 L320,268 Q326,268 326,262 L326,216 Q326,210 332,210 L352,210"/><animate attributeName="opacity" dur="7.68s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.1815;0.1994;0.2352;0.2531;1"/></g>
+<g class="pulse" opacity="0"><circle r="6.5" fill="var(--wm)" opacity=".2"/><circle r="2.9" fill="var(--wm)"/><animateMotion dur="7.68s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.0716;0.1431;1" path="M352,318 L348,318 Q344,318 344,314 L344,230 Q344,226 348,226 L352,226"/><animate attributeName="opacity" dur="7.68s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.0716;0.0895;0.1253;0.1431;1"/></g>
+<g class="pulse" opacity="0"><circle r="6.5" fill="var(--wm)" opacity=".2"/><circle r="2.9" fill="var(--wm)"/><animateMotion dur="7.68s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.0716;0.1431;1" path="M608,318 L612,318 Q616,318 616,314 L616,280 Q616,276 612,276 L608,276"/><animate attributeName="opacity" dur="7.68s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.0716;0.0895;0.1253;0.1431;1"/></g>
+<g class="pulse" opacity="0"><circle r="6.5" fill="var(--wm)" opacity=".2"/><circle r="2.9" fill="var(--wm)"/><animateMotion dur="7.68s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.1431;0.2147;1" path="M608,260 L628,260 Q634,260 634,254 L634,216 Q634,210 640,210 L660,210"/><animate attributeName="opacity" dur="7.68s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.1431;0.1610;0.1968;0.2147;1"/></g>
+<g class="pulse" opacity="0"><circle r="6.5" fill="var(--man)" opacity=".2"/><circle r="2.9" fill="var(--man)"/><animateMotion dur="7.68s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.2147;0.2863;1" path="M660,226 L656,226 Q652,226 652,230 L652,264 Q652,268 656,268 L660,268"/><animate attributeName="opacity" dur="7.68s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.2147;0.2326;0.2684;0.2863;1"/></g>
+<g class="pulse" opacity="0"><circle r="6.5" fill="var(--man)" opacity=".2"/><circle r="2.9" fill="var(--man)"/><animateMotion dur="7.68s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.1815;0.2531;1" path="M916,318 L920,318 Q924,318 924,314 L924,272 Q924,268 920,268 L916,268"/><animate attributeName="opacity" dur="7.68s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.1815;0.1994;0.2352;0.2531;1"/></g>
+<g class="pulse" opacity="0"><circle r="6.5" fill="var(--ctrl)" opacity=".2"/><circle r="2.9" fill="var(--ctrl)"/><animateMotion dur="7.68s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.2531;0.3609;1" path="M252,410 L252,584"/><animate attributeName="opacity" dur="7.68s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.2531;0.2765;0.3375;0.3609;1"/></g>
+<g class="pulse" opacity="0"><circle r="6.5" fill="var(--ctrl)" opacity=".2"/><circle r="2.9" fill="var(--ctrl)"/><animateMotion dur="7.68s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.2863;0.6438;1" path="M708,410 L708,565 Q708,571 702,571 L306,571 Q300,571 300,577 L300,584"/><animate attributeName="opacity" dur="7.68s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.2863;0.3097;0.6203;0.6438;1"/></g>
+<g class="pulse" opacity="0"><circle r="6.5" fill="var(--ctrl)" opacity=".2"/><circle r="2.9" fill="var(--ctrl)"/><animateMotion dur="7.68s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.2863;0.3941;1" path="M708,410 L708,584"/><animate attributeName="opacity" dur="7.68s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.2863;0.3097;0.3707;0.3941;1"/></g>
+<g class="pulse" opacity="0"><circle r="6.5" fill="var(--state)" opacity=".2"/><circle r="2.9" fill="var(--state)"/><animateMotion dur="7.68s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.7658;0.8373;1" path="M138,500 L138,444"/><animate attributeName="opacity" dur="7.68s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.7658;0.7836;0.8194;0.8373;1"/></g>
+<g class="pulse" opacity="0"><circle r="6.5" fill="var(--state)" opacity=".2"/><circle r="2.9" fill="var(--state)"/><animateMotion dur="7.68s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.7658;0.8373;1" path="M366,500 L366,444"/><animate attributeName="opacity" dur="7.68s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.7658;0.7836;0.8194;0.8373;1"/></g>
+<g class="pulse" opacity="0"><circle r="6.5" fill="var(--state)" opacity=".2"/><circle r="2.9" fill="var(--state)"/><animateMotion dur="7.68s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.7658;0.8373;1" path="M594,500 L594,444"/><animate attributeName="opacity" dur="7.68s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.7658;0.7836;0.8194;0.8373;1"/></g>
+<g class="pulse" opacity="0"><circle r="6.5" fill="var(--state)" opacity=".2"/><circle r="2.9" fill="var(--state)"/><animateMotion dur="7.68s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.7658;0.8373;1" path="M822,500 L822,444"/><animate attributeName="opacity" dur="7.68s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.7658;0.7836;0.8194;0.8373;1"/></g>
+<g class="pulse" opacity="0"><circle r="6.5" fill="var(--state)" opacity=".2"/><circle r="2.9" fill="var(--state)"/><animateMotion dur="7.68s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.8373;0.9089;1" path="M172,444 L172,410"/><animate attributeName="opacity" dur="7.68s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.8373;0.8552;0.8910;0.9089;1"/></g>
+<g class="pulse" opacity="0"><circle r="6.5" fill="var(--state)" opacity=".2"/><circle r="2.9" fill="var(--state)"/><animateMotion dur="7.68s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.8373;0.9089;1" path="M480,444 L480,410"/><animate attributeName="opacity" dur="7.68s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.8373;0.8552;0.8910;0.9089;1"/></g>
+<g class="pulse" opacity="0"><circle r="6.5" fill="var(--state)" opacity=".2"/><circle r="2.9" fill="var(--state)"/><animateMotion dur="7.68s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.8373;0.9089;1" path="M788,444 L788,410"/><animate attributeName="opacity" dur="7.68s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.8373;0.8552;0.8910;0.9089;1"/></g>
+<g class="pulse" opacity="0"><circle r="6.5" fill="var(--ctrl)" opacity=".2"/><circle r="2.9" fill="var(--ctrl)"/><animateMotion dur="7.68s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.3609;0.4325;1" path="M340,636 L380,636"/><animate attributeName="opacity" dur="7.68s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.3609;0.3788;0.4146;0.4325;1"/></g>
+<g class="pulse" opacity="0"><circle r="6.5" fill="var(--ctrl)" opacity=".2"/><circle r="2.9" fill="var(--ctrl)"/><animateMotion dur="7.68s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.4325;0.5040;1" path="M470,656 L470,700"/><animate attributeName="opacity" dur="7.68s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.4325;0.4503;0.4861;0.5040;1"/></g>
+<g class="pulse" opacity="0"><circle r="6.5" fill="var(--ctrl)" opacity=".2"/><circle r="2.9" fill="var(--ctrl)"/><animateMotion dur="7.68s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.3941;0.4657;1" path="M798,656 L798,700"/><animate attributeName="opacity" dur="7.68s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.3941;0.4120;0.4478;0.4657;1"/></g>
+<g class="pulse" opacity="0"><circle r="6.5" fill="var(--ctrl)" opacity=".2"/><circle r="2.9" fill="var(--ctrl)"/><animateMotion dur="7.68s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.5040;0.5756;1" path="M254,700 L254,752"/><animate attributeName="opacity" dur="7.68s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.5040;0.5219;0.5577;0.5756;1"/></g>
+<g class="pulse" opacity="0"><circle r="6.5" fill="var(--ctrl)" opacity=".2"/><circle r="2.9" fill="var(--ctrl)"/><animateMotion dur="7.68s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.5040;0.5756;1" path="M706,700 L706,752"/><animate attributeName="opacity" dur="7.68s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.5040;0.5219;0.5577;0.5756;1"/></g>
+<g class="pulse" opacity="0"><circle r="6.5" fill="var(--state)" opacity=".2"/><circle r="2.9" fill="var(--state)"/><animateMotion dur="7.68s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.5756;0.6472;1" path="M600,700 L600,656"/><animate attributeName="opacity" dur="7.68s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.5756;0.5935;0.6293;0.6472;1"/></g>
+<g class="pulse" opacity="0"><circle r="6.5" fill="var(--state)" opacity=".2"/><circle r="2.9" fill="var(--state)"/><animateMotion dur="7.68s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1" keyTimes="0;0.5756;0.7658;1" path="M44,772 L20,772 Q14,772 14,766 L14,526 Q14,520 20,520 L44,520"/><animate attributeName="opacity" dur="7.68s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.5756;0.5990;0.7423;0.7658;1"/></g>
+<rect class="lblbg" x="439.2" y="336" width="25.7" height="14" rx="4"/><text class="lbl" x="452" y="346.3" text-anchor="middle">ZMQ</text>
+<rect class="lblbg" x="747.2" y="336" width="25.7" height="14" rx="4"/><text class="lbl" x="760" y="346.3" text-anchor="middle">ZMQ</text>
+<rect class="lblbg" x="212.6" y="139" width="166.8" height="14" rx="4"/><text class="lbl" x="296" y="149.3" text-anchor="middle">NavigateToPose, ApproachObject</text>
+<rect class="lblbg" x="401.9" y="139" width="156.3" height="14" rx="4"/><text class="lbl" x="480" y="149.3" text-anchor="middle">NextViewpoint, ResolveTarget</text>
+<rect class="lblbg" x="612" y="139" width="104.1" height="14" rx="4"/><text class="lbl" x="664" y="149.3" text-anchor="middle">Pick, Place, Grasp</text>
+<g transform="rotate(-90 326 245)"><rect class="lblbg" x="310.6" y="238" width="30.9" height="14" rx="4"/><text class="lbl" x="326" y="248.3" text-anchor="middle">/map</text></g>
+<g transform="rotate(-90 634 242)"><rect class="lblbg" x="608.1" y="235" width="51.8" height="14" rx="4"/><text class="lbl" x="634" y="245.3" text-anchor="middle">/objects</text></g>
+<rect class="lblbg" x="226.1" y="449" width="51.8" height="14" rx="4"/><text class="lbl" x="252" y="459.3" text-anchor="middle">/cmd_vel</text>
+<rect class="lblbg" x="440.1" y="564" width="119.7" height="14" rx="4"/><text class="lbl" x="500" y="574.3" text-anchor="middle">FollowJointTrajectory</text>
+<rect class="lblbg" x="178.3" y="423" width="67.5" height="14" rx="4"/><text class="lbl" x="212" y="433.3" text-anchor="middle">odom, /scan</text>
+<rect class="lblbg" x="487" y="423" width="77.9" height="14" rx="4"/><text class="lbl" x="526" y="433.3" text-anchor="middle">cloud, images</text>
+<rect class="lblbg" x="795" y="423" width="77.9" height="14" rx="4"/><text class="lbl" x="834" y="433.3" text-anchor="middle">cloud, images</text>
+<rect class="lblbg" x="441.5" y="679" width="57" height="14" rx="4"/><text class="lbl" x="470" y="689.3" text-anchor="middle">rt/lowcmd</text>
+<rect class="lblbg" x="759" y="679" width="77.9" height="14" rx="4"/><text class="lbl" x="798" y="689.3" text-anchor="middle">rt/dex3/*/cmd</text>
+<rect class="lblbg" x="566.3" y="679" width="67.5" height="14" rx="4"/><text class="lbl" x="600" y="689.3" text-anchor="middle">rt/lowstate</text>
+<g transform="rotate(-90 14 646)"><rect class="lblbg" x="-40.6" y="639" width="109.3" height="14" rx="4"/><text class="lbl" x="14" y="649.3" text-anchor="middle">LiDAR, cameras, IMU</text></g>
 </svg>

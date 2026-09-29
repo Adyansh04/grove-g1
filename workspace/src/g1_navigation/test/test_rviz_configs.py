@@ -50,8 +50,7 @@ def test_the_sensor_group_contents_are_identical(sensors, navigation):
     a = _group(sensors, "Sensors")["Displays"]
     b = _group(navigation, "Sensors")["Displays"]
     assert a == b, (
-        "the Sensors group has drifted between g1_bringup and g1_navigation; "
-        "edit both or neither"
+        "the Sensors group has drifted between g1_bringup and g1_navigation; edit both or neither"
     )
 
 

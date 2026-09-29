@@ -30,7 +30,9 @@ BRINGUP_SHARE = get_package_share_directory("g1_bringup")
 STATE_SHARE = get_package_share_directory("g1_state_estimation")
 RELAY_SHARE = get_package_share_directory("g1_sensor_relay")
 # Where each camera mounts; the simulator renders from it and the URDF builds frames from it.
-CAMERA_MOUNTS = os.path.join(get_package_share_directory("g1_description"), "config", "cameras.yaml")
+CAMERA_MOUNTS = os.path.join(
+    get_package_share_directory("g1_description"), "config", "cameras.yaml"
+)
 
 UNITREE_MUJOCO_BIN = "/opt/unitree_robotics/unitree_mujoco/simulate/build/unitree_mujoco"
 # MuJoCo resolves <include> relative to the scene file, so scenes are staged next to the vendored
@@ -91,7 +93,7 @@ def _cyclonedds_problems(uri):
     if uri.lstrip().startswith("<"):
         config = uri
     else:
-        path = uri[len("file://"):] if uri.startswith("file://") else uri
+        path = uri[len("file://") :] if uri.startswith("file://") else uri
         if not os.path.isfile(path):
             # An unreadable URI is only a warning to CycloneDDS, which then falls back to
             # defaults and, with network_mode: host, binds the real NIC.
@@ -298,9 +300,7 @@ def _odometry_actions(odometry, sim_start_delay_s):
         name="g1_odometry_publisher",
         namespace="",
         output="both",
-        parameters=[
-            os.path.join(STATE_SHARE, "config", "g1_odometry_publisher_converged.yaml")
-        ],
+        parameters=[os.path.join(STATE_SHARE, "config", "g1_odometry_publisher_converged.yaml")],
         remappings=[("~/base_state", "/g1_sensor_relay/base_state")],
     )
     return [node] + _bring_up(node)
@@ -398,60 +398,62 @@ def _launch_setup(context, *args, **kwargs):
 
 
 def generate_launch_description():
-    return LaunchDescription([
-        DeclareLaunchArgument(
-            "headless",
-            default_value="true",
-            description="Run unitree_mujoco against our own managed Xvfb (no GUI window).",
-        ),
-        DeclareLaunchArgument(
-            "world",
-            default_value="navigation",
-            description="Which room to stage, when sensors are on. 'navigation' is the "
-            "multi-room facility; 'perception' is the bare room test_lidar_geometry measures "
-            "against; 'manipulation' is one object at arm's length; 'tabletop' is several "
-            "objects on a pedestal, for perception; 'lio' is the walled room for scoring "
-            "odometry; 'apartment' is five furnished rooms off a hallway, built from fetched "
-            "assets (scripts/setup-world-assets.sh).",
-        ),
-        DeclareLaunchArgument(
-            "rviz",
-            default_value="false",
-            description="Open config/g1_sensors.rviz. Needs sensors:=true.",
-        ),
-        DeclareLaunchArgument(
-            "sensors",
-            default_value="false",
-            description="Stage the world's sensor scene, run the LiDAR, IMU and camera inside "
-            "the simulator, and start g1_sensor_relay and the odometry source.",
-        ),
-        DeclareLaunchArgument(
-            "cameras",
-            default_value="",
-            description="Comma-separated cameras the simulator renders, from the sensor "
-            "config's list: 'head', 'chest', 'head,chest'. Empty keeps the config's own choice. "
-            "Each costs ~5 ms of render per frame, and a detector per camera downstream.",
-        ),
-        DeclareLaunchArgument(
-            "odometry",
-            default_value="fast_lio",
-            description="Which source publishes odom -> base_footprint. 'fast_lio' is the "
-            "pipeline the robot runs; 'ground_truth' is exact MuJoCo state and exists to "
-            "isolate a fault to 'not the odometry'. Either needs sensors:=true.",
-        ),
-        DeclareLaunchArgument(
-            "pin_pelvis",
-            default_value="false",
-            description="SIM-ONLY: weld the robot in place and freeze the legs instead of "
-            "running the policy, to exercise the arms alone.",
-        ),
-        DeclareLaunchArgument(
-            "sim_start_delay_s",
-            default_value=str(SIM_START_DELAY_S),
-            description="Seconds to delay unitree_mujoco relative to the rest of the launch, "
-            "so controller_manager is DDS-ready before the first physics tick. Raise it if the "
-            "robot topples on startup; do not set to 0.",
-        ),
-        OpaqueFunction(function=_check_environment),
-        OpaqueFunction(function=_launch_setup),
-    ])
+    return LaunchDescription(
+        [
+            DeclareLaunchArgument(
+                "headless",
+                default_value="true",
+                description="Run unitree_mujoco against our own managed Xvfb (no GUI window).",
+            ),
+            DeclareLaunchArgument(
+                "world",
+                default_value="navigation",
+                description="Which room to stage, when sensors are on. 'navigation' is the "
+                "multi-room facility; 'perception' is the bare room test_lidar_geometry measures "
+                "against; 'manipulation' is one object at arm's length; 'tabletop' is several "
+                "objects on a pedestal, for perception; 'lio' is the walled room for scoring "
+                "odometry; 'apartment' is five furnished rooms off a hallway, built from fetched "
+                "assets (scripts/setup-world-assets.sh).",
+            ),
+            DeclareLaunchArgument(
+                "rviz",
+                default_value="false",
+                description="Open config/g1_sensors.rviz. Needs sensors:=true.",
+            ),
+            DeclareLaunchArgument(
+                "sensors",
+                default_value="false",
+                description="Stage the world's sensor scene, run the LiDAR, IMU and camera inside "
+                "the simulator, and start g1_sensor_relay and the odometry source.",
+            ),
+            DeclareLaunchArgument(
+                "cameras",
+                default_value="",
+                description="Comma-separated cameras the simulator renders, from the sensor "
+                "config's list: 'head', 'chest', 'head,chest'. Empty keeps the config's own choice. "
+                "Each costs ~5 ms of render per frame, and a detector per camera downstream.",
+            ),
+            DeclareLaunchArgument(
+                "odometry",
+                default_value="fast_lio",
+                description="Which source publishes odom -> base_footprint. 'fast_lio' is the "
+                "pipeline the robot runs; 'ground_truth' is exact MuJoCo state and exists to "
+                "isolate a fault to 'not the odometry'. Either needs sensors:=true.",
+            ),
+            DeclareLaunchArgument(
+                "pin_pelvis",
+                default_value="false",
+                description="SIM-ONLY: weld the robot in place and freeze the legs instead of "
+                "running the policy, to exercise the arms alone.",
+            ),
+            DeclareLaunchArgument(
+                "sim_start_delay_s",
+                default_value=str(SIM_START_DELAY_S),
+                description="Seconds to delay unitree_mujoco relative to the rest of the launch, "
+                "so controller_manager is DDS-ready before the first physics tick. Raise it if the "
+                "robot topples on startup; do not set to 0.",
+            ),
+            OpaqueFunction(function=_check_environment),
+            OpaqueFunction(function=_launch_setup),
+        ]
+    )

@@ -14,11 +14,7 @@ from test_lowcmd_xacro import EXPECTED_BODY_JOINTS
 
 _SRC = pathlib.Path(__file__).resolve().parents[2]
 _MOTOR_TABLE = _SRC / "g1_hardware_interface" / "src" / "g1_lowcmd_system.cpp"
-_URDF = (
-    pathlib.Path(__file__).resolve().parent.parent
-    / "urdf"
-    / "g1_29dof_with_hand_rev_1_0.urdf"
-)
+_URDF = pathlib.Path(__file__).resolve().parent.parent / "urdf" / "g1_29dof_with_hand_rev_1_0.urdf"
 
 # 12 legs, 3 waist, 14 arms. The hands are a separate device on their own topics.
 _NUM_BODY_MOTORS = 29

@@ -61,9 +61,7 @@ cat <<EOF
 
 Done. Serve the generator:
 
-  cd ${GRASPGEN_HOME}
-  uv run python client-server/graspgenx_server.py \\
-      --config ext/graspgenx_checkpoints/release --assets_dir ext/gripper_descriptions --port 5556
+  ./scripts/serve.sh graspgen
 
 The first run downloads the checkpoints and the gripper descriptions, a few gigabytes, into
 ${GRASPGEN_HOME}/ext.

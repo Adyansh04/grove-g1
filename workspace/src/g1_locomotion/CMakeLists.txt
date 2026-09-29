@@ -21,7 +21,13 @@ find_package(vision_msgs REQUIRED)
 # The decision logic is compiled straight into the node and its unit test, so both build it
 # under one dialect and nothing else has to link it.
 add_executable(g1_base_approach
-  src/g1_base_approach_node.cpp src/approach_planner.cpp src/step_clear.cpp)
+  src/g1_base_approach_main.cpp
+  src/g1_base_approach_node.cpp
+  src/base_approach/approach_action.cpp
+  src/base_approach/retreat_action.cpp
+  src/base_approach/step_clear_action.cpp
+  src/approach_planner.cpp
+  src/step_clear.cpp)
 g1_target_defaults(g1_base_approach)
 target_link_libraries(g1_base_approach PUBLIC
   rclcpp::rclcpp

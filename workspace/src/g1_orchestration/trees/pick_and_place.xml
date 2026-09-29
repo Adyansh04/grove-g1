@@ -3,8 +3,8 @@
   Navigate to the workbench, pick the block off it, carry it to the storage room and put it in
   the bench there. Coordinates are the g1_navigation_scene facility, in `map`.
 
-  The two stations are staging poses, not working poses: Nav2's goal tolerance is 0.5 m and the
-  arm's reach window about 0.11 m. ApproachObject closes the rest against the measured object,
+  The two stations are staging poses, not working poses: Nav2's goal tolerance is 0.5 m, wider than
+  the band the arm reaches from. ApproachObject closes the rest against the measured object,
   holding the station's working yaw.
 
   The arm bracket spans pick through place because a released Dex3 goes limp and drops what it

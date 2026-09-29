@@ -14,9 +14,7 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 SHARE = get_package_share_directory("g1_navigation")
-BRINGUP_LAUNCH = os.path.join(
-    get_package_share_directory("g1_bringup"), "launch", "sim.launch.py"
-)
+BRINGUP_LAUNCH = os.path.join(get_package_share_directory("g1_bringup"), "launch", "sim.launch.py")
 NAV_STACK_LAUNCH = os.path.join(SHARE, "launch", "nav_stack.launch.py")
 
 
@@ -67,56 +65,58 @@ def _setup(context, *args, **kwargs):
 
 
 def generate_launch_description():
-    return LaunchDescription([
-        DeclareLaunchArgument(
-            "mode",
-            default_value="mapping",
-            description="'mapping' builds a new map with slam_toolbox; 'localization' runs "
-            "map_server + AMCL against the world's committed map.",
-        ),
-        DeclareLaunchArgument(
-            "nav",
-            default_value="false",
-            description="Start the Nav2 servers and the base approach. A tree with fixed goals "
-            "wants mode:=localization, where no loop closure moves the map under them.",
-        ),
-        DeclareLaunchArgument(
-            "odometry",
-            default_value="fast_lio",
-            description="Forwarded to sim.launch.py. 'ground_truth' isolates a fault to "
-            "'not the odometry'.",
-        ),
-        DeclareLaunchArgument(
-            "world",
-            default_value="navigation",
-            description="Which g1_bringup scene to stage. Only 'navigation' and 'apartment' have "
-            "a committed map to localize against.",
-        ),
-        DeclareLaunchArgument(
-            "rviz",
-            default_value="false",
-            description="Open config/g1_navigation.rviz. Its fixed frame is map, so nothing "
-            "renders until slam_toolbox or AMCL has published map -> odom.",
-        ),
-        DeclareLaunchArgument(
-            "use_composition",
-            default_value="true",
-            description="Run the navigation nodes in one component container. Set false for "
-            "one process per node when a single node is crashing.",
-        ),
-        DeclareLaunchArgument("container_name", default_value="nav2_container"),
-        DeclareLaunchArgument(
-            "headless",
-            default_value="true",
-            description="false shows the MuJoCo viewer. Its Reload button is fatal with "
-            "sensors on; see g1_bringup's README.",
-        ),
-        DeclareLaunchArgument(
-            "sim_start_delay_s",
-            default_value="4.0",
-            description="Longer than g1_bringup's own default: navigation starts more nodes "
-            "before the first physics tick, and the robot topples at spawn if discovery is "
-            "still in progress.",
-        ),
-        OpaqueFunction(function=_setup),
-    ])
+    return LaunchDescription(
+        [
+            DeclareLaunchArgument(
+                "mode",
+                default_value="mapping",
+                description="'mapping' builds a new map with slam_toolbox; 'localization' runs "
+                "map_server + AMCL against the world's committed map.",
+            ),
+            DeclareLaunchArgument(
+                "nav",
+                default_value="false",
+                description="Start the Nav2 servers and the base approach. A tree with fixed goals "
+                "wants mode:=localization, where no loop closure moves the map under them.",
+            ),
+            DeclareLaunchArgument(
+                "odometry",
+                default_value="fast_lio",
+                description="Forwarded to sim.launch.py. 'ground_truth' isolates a fault to "
+                "'not the odometry'.",
+            ),
+            DeclareLaunchArgument(
+                "world",
+                default_value="navigation",
+                description="Which g1_bringup scene to stage. Only 'navigation' and 'apartment' have "
+                "a committed map to localize against.",
+            ),
+            DeclareLaunchArgument(
+                "rviz",
+                default_value="false",
+                description="Open config/g1_navigation.rviz. Its fixed frame is map, so nothing "
+                "renders until slam_toolbox or AMCL has published map -> odom.",
+            ),
+            DeclareLaunchArgument(
+                "use_composition",
+                default_value="true",
+                description="Run the navigation nodes in one component container. Set false for "
+                "one process per node when a single node is crashing.",
+            ),
+            DeclareLaunchArgument("container_name", default_value="nav2_container"),
+            DeclareLaunchArgument(
+                "headless",
+                default_value="true",
+                description="false shows the MuJoCo viewer. Its Reload button is fatal with "
+                "sensors on; see g1_bringup's README.",
+            ),
+            DeclareLaunchArgument(
+                "sim_start_delay_s",
+                default_value="4.0",
+                description="Longer than g1_bringup's own default: navigation starts more nodes "
+                "before the first physics tick, and the robot topples at spawn if discovery is "
+                "still in progress.",
+            ),
+            OpaqueFunction(function=_setup),
+        ]
+    )

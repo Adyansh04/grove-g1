@@ -4,6 +4,10 @@ A vision-language-action policy proposes joint targets, and every chunk it propo
 against MoveIt's live planning scene before any of it reaches a controller. The instruction is
 plain text: "pick up the red block".
 
+`./scripts/demos/learned-grasping.sh <mock|groot|servo>` opens a section's commands at once, in split panes of
+your terminal, after tearing down any stack left running. `stop` ends it, and `--print` lists
+the commands instead.
+
 ## What works and what does not
 
 The pipeline works end to end: a real 3B model drives the arm, the gate validates every chunk, and
@@ -20,8 +24,6 @@ The mock engine serves the same service as the real one, so the gate cannot tell
 GPU, no downloads. In a container shell, opened with `./scripts/manage.sh exec`:
 
 ```bash
-cd /root/workspace && source install/setup.bash
-
 ros2 launch g1_bringup bringup.launch.py \
   moveit:=true manipulation:=true vla:=true vla_engine:=mock \
   world:=manipulation pin_pelvis:=true odometry:=ground_truth \
@@ -68,11 +70,12 @@ dependencies in a virtualenv. Two things it cannot do for you:
 Serve the policy from this repository:
 
 ```bash
-~/ref/Isaac-GR00T/.venv/bin/python scripts/groot_server.py \
-    --model-path nvidia/GR00T-N1.7-3B --embodiment-tag real_g1 --port 5555
+./scripts/serve.sh groot
 ```
 
-`groot_server.py` wraps upstream's entry point to load the checkpoint in bf16. Upstream upcasts to
+That runs `servers/groot_server.py` with `--model-path nvidia/GR00T-N1.7-3B --embodiment-tag
+real_g1 --port 5555`; arguments after `groot` override them. `groot_server.py` wraps upstream's
+entry point to load the checkpoint in bf16. Upstream upcasts to
 fp32 in host memory first, about 4 GB more at peak, which on a 30 GB machine gets the load
 OOM-killed with an error that reads like a CUDA fault.
 

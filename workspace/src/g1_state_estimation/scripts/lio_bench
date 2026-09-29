@@ -9,6 +9,7 @@ No Nav2, AMCL or map: the simulator, the LIO pipeline and open-loop velocity com
 The frames are aligned once, from the pose the robot holds when the run starts, so every later
 gap is divergence since then. A best-fit alignment over the whole path would hide part of it.
 """
+
 import csv
 import math
 import os
@@ -26,9 +27,19 @@ from tf2_msgs.msg import TFMessage
 # Above the gait's 0.15 m/s deadband, inside the controller's 0.6 m/s and 0.9 rad/s clamps.
 VX, WZ = 0.5, 0.8
 # An arbitrary open-loop wander of (vx, wz, seconds); both estimates see the same motion.
-LEGS = [(VX, 0.0, 8.0), (0.0, WZ, 1.0), (VX, 0.0, 6.0), (0.0, -WZ, 1.4),
-        (VX, 0.0, 7.0), (0.0, WZ, 1.2), (VX, 0.0, 5.0), (0.0, -WZ, 1.0),
-        (VX, 0.0, 8.0), (0.0, WZ, 1.6), (VX, 0.0, 6.0)]
+LEGS = [
+    (VX, 0.0, 8.0),
+    (0.0, WZ, 1.0),
+    (VX, 0.0, 6.0),
+    (0.0, -WZ, 1.4),
+    (VX, 0.0, 7.0),
+    (0.0, WZ, 1.2),
+    (VX, 0.0, 5.0),
+    (0.0, -WZ, 1.0),
+    (VX, 0.0, 8.0),
+    (0.0, WZ, 1.6),
+    (VX, 0.0, 6.0),
+]
 # Pelvis below this means a fall (standing is ~0.73 m); abort rather than score it.
 MIN_PELVIS_Z = 0.55
 # The baseline waits for the pelvis to stand still at standing height: an alignment taken
@@ -64,8 +75,11 @@ class Bench(Node):
         for t in m.transforms:
             if t.header.frame_id == "odom" and t.child_frame_id == "base_footprint":
                 r = t.transform.rotation
-                s.lio = (t.transform.translation.x, t.transform.translation.y,
-                         yaw_of(r.x, r.y, r.z, r.w))
+                s.lio = (
+                    t.transform.translation.x,
+                    t.transform.translation.y,
+                    yaw_of(r.x, r.y, r.z, r.w),
+                )
 
     def _gt(s, m):
         p = m.pose.pose.position
@@ -111,14 +125,30 @@ class Bench(Node):
                 continue
             if time.time() - since >= SETTLE_SECS:
                 s.start = (s.truth, s.truth_yaw, s.lio[:2], s.lio[2])
-                print("start  truth (%+.2f, %+.2f) z=%.3f heading %+.1f deg | "
-                      "lio (%+.2f, %+.2f) heading %+.1f deg"
-                      % (s.truth[0], s.truth[1], s.z, math.degrees(s.truth_yaw),
-                         s.lio[0], s.lio[1], math.degrees(s.lio[2])), flush=True)
+                print(
+                    "start  truth (%+.2f, %+.2f) z=%.3f heading %+.1f deg | "
+                    "lio (%+.2f, %+.2f) heading %+.1f deg"
+                    % (
+                        s.truth[0],
+                        s.truth[1],
+                        s.z,
+                        math.degrees(s.truth_yaw),
+                        s.lio[0],
+                        s.lio[1],
+                        math.degrees(s.lio[2]),
+                    ),
+                    flush=True,
+                )
                 return True
-        print("RESULT ABORT: never settled (pelvis %s, wanted %.2f-%.2f and still for %.0f s)"
-              % ("%.3f m" % s.z if s.z is not None else "unknown", SETTLE_Z[0], SETTLE_Z[1],
-                 SETTLE_SECS))
+        print(
+            "RESULT ABORT: never settled (pelvis %s, wanted %.2f-%.2f and still for %.0f s)"
+            % (
+                "%.3f m" % s.z if s.z is not None else "unknown",
+                SETTLE_Z[0],
+                SETTLE_Z[1],
+                SETTLE_SECS,
+            )
+        )
         return False
 
     def wait_for(s, pred, secs, why):
@@ -157,8 +187,17 @@ def report(b):
             for i, ((tx, ty), (ax, ay)) in enumerate(zip(T, L, strict=True)):
                 if i:
                     run += math.dist(T[i], T[i - 1])
-                w.writerow(["%d" % i, "%.4f" % tx, "%.4f" % ty, "%.4f" % ax, "%.4f" % ay,
-                            "%.4f" % gaps[i], "%.4f" % run])
+                w.writerow(
+                    [
+                        "%d" % i,
+                        "%.4f" % tx,
+                        "%.4f" % ty,
+                        "%.4f" % ax,
+                        "%.4f" % ay,
+                        "%.4f" % gaps[i],
+                        "%.4f" % run,
+                    ]
+                )
         print("RESULT trace              %s (%d rows)" % (TRACE_PATH, len(T)))
     except OSError as e:
         print("RESULT trace              could not write %s: %s" % (TRACE_PATH, e))
@@ -172,12 +211,16 @@ def report(b):
         if i:
             run += math.dist(T[i], T[i - 1])
         if run + 1e-9 >= nxt:
-            print("RESULT   %6.2f | (%+6.2f, %+6.2f) | (%+6.2f, %+6.2f) | %5.3f m"
-                  % (run, tx, ty, ax, ay, gaps[i]))
+            print(
+                "RESULT   %6.2f | (%+6.2f, %+6.2f) | (%+6.2f, %+6.2f) | %5.3f m"
+                % (run, tx, ty, ax, ay, gaps[i])
+            )
             nxt += TRACE_EVERY_M
     print("RESULT samples            %d" % len(b.track))
-    print("RESULT start alignment    %+.1f deg (truth %+.1f, lio %+.1f)"
-          % (math.degrees(th), math.degrees(truth_yaw0), math.degrees(lio_yaw0)))
+    print(
+        "RESULT start alignment    %+.1f deg (truth %+.1f, lio %+.1f)"
+        % (math.degrees(th), math.degrees(truth_yaw0), math.degrees(lio_yaw0))
+    )
     print("RESULT path travelled     %.2f m (truth)" % dist)
     print("RESULT truth  end         (%+.2f, %+.2f) m from start" % T[-1])
     print("RESULT lio    end         (%+.2f, %+.2f) m from start" % L[-1])
@@ -220,12 +263,15 @@ def main():
         t = Twist()
         t.linear.x = vx
         t.angular.z = wz
-        print("leg %d/%d: vx=%.1f wz=%+.1f for %.1fs" % (i + 1, len(LEGS), vx, wz, secs),
-              flush=True)
+        print(
+            "leg %d/%d: vx=%.1f wz=%+.1f for %.1fs" % (i + 1, len(LEGS), vx, wz, secs), flush=True
+        )
         if not (b.spin(secs, t) and b.spin(1.0)):
             b.cmd.publish(Twist())
-            print("RESULT ABORT: robot fell (pelvis %.3f m, standing is 0.734) -- "
-                  "nothing after this measures odometry" % b.fallen)
+            print(
+                "RESULT ABORT: robot fell (pelvis %.3f m, standing is 0.734) -- "
+                "nothing after this measures odometry" % b.fallen
+            )
             rclpy.shutdown()
             return
     b.cmd.publish(Twist())

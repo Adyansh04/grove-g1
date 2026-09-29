@@ -6,6 +6,10 @@ which `g1_bringup/launch/world_model.launch.py` wires to the G1's topics. An exp
 robot through the building until the camera has seen what it can, and missions then name their
 targets ("the dustbin in the office") instead of carrying coordinates.
 
+`./scripts/demos/world-model.sh <mock|real|editor>` opens a section's commands at once, in split panes of
+your terminal, after tearing down any stack left running. `stop` ends it, and `--print` lists
+the commands instead.
+
 ## In simulation, with ground-truth masks
 
 The apartment world has six rooms and 44 textured props, with a ground-truth file for scoring.
@@ -20,21 +24,18 @@ Then, inside the container:
 ```bash
 ros2 launch g1_bringup bringup.launch.py mode:=mapping nav:=true world:=apartment headless:=true \
   arms_at_sides:=true
-ros2 run canopy_perception mock_detector --ros-args -r __node:=detector_head \
-  -p "phrases:=['sofa','dustbin','bed','desk','chair','dining table','bookshelf','mug']" \
-  -r object_poses:=/g1_sensor_relay/object_poses \
-  -r depth/image_raw:=/camera/aligned_depth_to_color/image_raw \
-  -r camera_info:=/camera/color/camera_info
-ros2 launch g1_bringup world_model.launch.py world_dir:=/root/data/worlds/apartment rviz:=true
+ros2 launch g1_bringup world_model.launch.py world_dir:=/root/data/worlds/apartment detector:=mock \
+  rviz:=true
 ros2 run g1_orchestration g1_bt_executor --ros-args \
   -p tree_file:=$(ros2 pkg prefix g1_orchestration)/share/g1_orchestration/trees/explore.xml
 ```
 
-The mock detector cuts masks from simulator ground truth, so a run scores the mapping rather than a
-detector on renders. Named `detector_<camera>`, it publishes where canopy reads that camera's
-masks. It matches a phrase to every numbered body of that class: "chair" finds
-`chair_1` to `chair_5`. `arms_at_sides:=true` hangs the arms beside the thighs: at zero the
-forearms point forward into both cameras' views, and a real detector maps the hands.
+`detector:=mock` starts a mock detector per camera, which cuts masks from simulator ground truth,
+so a run scores the mapping rather than a detector on renders. It looks for every label in
+`g1_bringup/worlds/apartment.truth.yaml`, each matching every numbered body of that class: "chair"
+finds `chair_1` to `chair_5`, while `armchair_1` is an armchair. `arms_at_sides:=true` hangs the
+arms beside the thighs: at zero the forearms point forward into both cameras' views, and a real
+detector maps the hands.
 
 With `mode:=mapping` there is no map to start from: `explore.xml` first walks to frontiers while
 slam_toolbox builds one, then visits viewpoints until the camera has seen every room, and saves
@@ -105,10 +106,8 @@ The host semantic server serves detection (YOLOE-26), image embeddings (SigLIP 2
 room descriptions (Gemini on its free tier, falling back to Qwen3.5-4B in llama.cpp):
 
 ```bash
-cd workspace/src/canopy
-./servers/setup.sh
-./servers/start-vlm.sh start            # the offline VLM, on 127.0.0.1:8080
-~/.local/share/canopy/.venv/bin/python servers/semantic_server.py
+./workspace/src/canopy/servers/setup.sh   # once
+./scripts/serve.sh canopy                 # the offline VLM on 127.0.0.1:8080, then the server
 ```
 
 Gemini needs a free API key in `~/.config/canopy/gemini.env`. The free tier limits each model
@@ -134,8 +133,7 @@ writes off what no standing pose can see, and each room reports those cells as
 
 In simulation a second D435i sits on the chest, 1.03 m up and 20° down (`g1_description`'s
 `config/cameras.yaml`), and sees walls, counters and shelves from the side. Pass
-`cameras:=head,chest` to both `bringup.launch.py` and `world_model.launch.py`, and run a mock
-detector per camera (`detector_chest`, on `/chest_camera/*` and
-`/g1_sensor_relay/chest/object_poses`). `cameras:=chest` alone saves the head camera's
+`cameras:=head,chest` to both `bringup.launch.py` and `world_model.launch.py`, and `detector:=mock`
+starts a mock for each. `cameras:=chest` alone saves the head camera's
 render and detector, but the chest camera sees little floor near the robot, so the camera pass
 takes longer.

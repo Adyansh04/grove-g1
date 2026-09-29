@@ -62,9 +62,7 @@ def _includes(setup_result):
     for action in actions:
         if not isinstance(action, IncludeLaunchDescription):
             continue
-        args = {
-            _resolve(context, k): _resolve(context, v) for k, v in action.launch_arguments
-        }
+        args = {_resolve(context, k): _resolve(context, v) for k, v in action.launch_arguments}
         found.append((os.path.basename(_included_path(context, action)), args))
     return found
 
@@ -134,9 +132,9 @@ def test_the_mode_config_still_wins_without_moveit(bringup):
 def test_the_arm_development_combination_is_not_blocked(bringup):
     """pin_pelvis is refused on the navigation modes but must stay available with MoveIt: a
     balancing robot sways, and the whole arm chain hangs off the pelvis."""
-    sim = dict(
-        _includes(_run_setup(bringup, mode="none", moveit="true", pin_pelvis="true"))
-    )["sim.launch.py"]
+    sim = dict(_includes(_run_setup(bringup, mode="none", moveit="true", pin_pelvis="true")))[
+        "sim.launch.py"
+    ]
     assert sim["pin_pelvis"] == "true"
 
 

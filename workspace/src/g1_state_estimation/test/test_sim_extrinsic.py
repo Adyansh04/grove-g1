@@ -40,10 +40,7 @@ def _rpy_to_matrix(roll, pitch, yaw):
 
 
 def _mat_mul(a, b):
-    return [
-        [sum(a[i][k] * b[k][j] for k in range(3)) for j in range(3)]
-        for i in range(3)
-    ]
+    return [[sum(a[i][k] * b[k][j] for k in range(3)) for j in range(3)] for i in range(3)]
 
 
 def _mat_vec(a, v):
@@ -119,9 +116,7 @@ def test_the_mjcf_site_is_where_the_urdf_says_the_sensor_imu_is():
     # and Livox's offset rather than copied.
     translation, rotation = _chain_from_urdf("mid360_link", "torso_link")
     imu_in_lidar = [-v for v in _LIVOX_LIDAR_IN_IMU]
-    expect = [
-        t + v for t, v in zip(translation, _mat_vec(rotation, imu_in_lidar), strict=True)
-    ]
+    expect = [t + v for t, v in zip(translation, _mat_vec(rotation, imu_in_lidar), strict=True)]
 
     pos, quat = _mjcf_site()
     for axis in range(3):
@@ -175,9 +170,7 @@ def test_the_mount_is_actually_upside_down():
 def test_the_imu_frame_inverts_the_livox_lever_arm():
     # mid360_imu in g1_common.xacro is hand-written as the inverse of Livox's offset; check the
     # sign flip.
-    xacro = (
-        pathlib.Path(get_package_share_directory("g1_description")) / "urdf" / "g1_common.xacro"
-    )
+    xacro = pathlib.Path(get_package_share_directory("g1_description")) / "urdf" / "g1_common.xacro"
     match = re.search(
         r'<child link="mid360_imu"/>\s*<origin xyz="([^"]+)"',
         xacro.read_text(),

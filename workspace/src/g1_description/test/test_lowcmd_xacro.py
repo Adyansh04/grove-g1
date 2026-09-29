@@ -101,8 +101,15 @@ def test_each_hand_is_its_own_component_in_wire_order(expanded_urdf_path, side):
     joints = hand.findall("joint")
     assert [j.get("name") for j in joints] == [
         f"{side}_hand_{suffix}_joint"
-        for suffix in ("thumb_0", "thumb_1", "thumb_2", "middle_0", "middle_1",
-                       "index_0", "index_1")
+        for suffix in (
+            "thumb_0",
+            "thumb_1",
+            "thumb_2",
+            "middle_0",
+            "middle_1",
+            "index_0",
+            "index_1",
+        )
     ]
     for joint in joints:
         assert [c.get("name") for c in joint.findall("command_interface")] == ["position"]

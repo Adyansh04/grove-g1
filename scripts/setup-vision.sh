@@ -92,12 +92,11 @@ DINO base and 180 MB for SAM 2.1 small.
 
 Serve the default backend:
 
-  ${VISION_HOME}/.venv/bin/python scripts/vision_server.py --port 5560
+  ./scripts/serve.sh vision
 
 Check it against saved frames instead of serving:
 
-  ${VISION_HOME}/.venv/bin/python scripts/vision_server.py --self-test frame.png \\
-      --phrases "red block,green cylinder"
+  ./scripts/serve.sh vision --self-test frame.png --phrases "red block,green cylinder"
 
 SAM 3 is the better model and its weights are gated. Request access at
 https://huggingface.co/facebook/sam3, sign in with

@@ -142,12 +142,14 @@ def _launch_setup(context, *args, **kwargs):
 
 
 def generate_launch_description():
-    return LaunchDescription([
-        DeclareLaunchArgument(
-            "sim",
-            default_value="false",
-            description="Take the LiDAR and IMU from the simulator via g1_livox_bridge "
-            "instead of from livox_ros_driver2. Defaults to the robot.",
-        ),
-        OpaqueFunction(function=_launch_setup),
-    ])
+    return LaunchDescription(
+        [
+            DeclareLaunchArgument(
+                "sim",
+                default_value="false",
+                description="Take the LiDAR and IMU from the simulator via g1_livox_bridge "
+                "instead of from livox_ros_driver2. Defaults to the robot.",
+            ),
+            OpaqueFunction(function=_launch_setup),
+        ]
+    )

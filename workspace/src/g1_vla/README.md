@@ -3,7 +3,9 @@
 The learned-grasp skill. A policy engine returns chunks of joint targets; `g1_vla_server`
 validates each chunk against the MoveIt planning scene and only then hands it to the trajectory
 controllers MoveIt already drives, so the skill adds no command path of its own. It takes no
-control authority either: the arm and hands must already be acquired.
+control authority either: the arm and hands must already be acquired. The pipeline runs end to
+end, but the base GR00T checkpoint does not grasp yet; see the
+[learned grasping guide](../../../docs/guides/learned-grasping.md).
 
 ```mermaid
 flowchart LR
@@ -14,7 +16,7 @@ flowchart LR
 ```
 
 ```bash
-colcon build --symlink-install --packages-select g1_vla
+./scripts/manage.sh build g1_vla
 ```
 
 ## Nodes
@@ -29,29 +31,31 @@ colcon build --symlink-install --packages-select g1_vla
 schema read at runtime, on a slow path with no timing or safety role. It speaks the policy
 server's wire protocol directly, so the container never needs the model's dependencies.
 
-`vla.launch.py` starts the server and the engine chosen by `engine:=mock|groot`, and
-`execution_mode:=trajectory|servo`. It needs `move_group` and the controllers already running.
+`vla.launch.py` starts the server and the engine chosen by `engine:=mock|groot` (default `mock`).
+`execution_mode:=trajectory|servo` (default `trajectory`) sets how a validated chunk runs:
+`trajectory` sends it as a `FollowJointTrajectory` goal without waiting, so the next chunk
+replaces it mid-motion; `servo` streams the arm's share as jog commands into a `servo_node` and
+keeps the hands on trajectories. Validation is the same in both, and the
+[learned grasping guide](../../../docs/guides/learned-grasping.md) covers the trade-off.
+`g1_bringup` passes the two arguments as `vla_engine` and `vla_execution_mode`, and starts the
+`servo_node` for `servo`. The launch needs `move_group` and the controllers already running.
 
 ## Interfaces
 
 | Direction | Name | Type |
 |---|---|---|
 | Action server | `~/grasp` | `g1_msgs/action/Grasp` |
-| Service client | `engine_service` | `g1_msgs/srv/GetActionChunk` |
+| Service client | `engine_service`, set by the launch to `/g1_vla_engine/get_action_chunk` | `g1_msgs/srv/GetActionChunk` |
 | Service client | `/check_state_validity` | `moveit_msgs/srv/GetStateValidity` |
-| Service client | `/get_planning_scene`, `/apply_planning_scene` | `moveit_msgs/srv` |
+| Service client | `/get_planning_scene`, `/apply_planning_scene` (exempt the grasping hand from the octomap during a goal) | `moveit_msgs/srv/GetPlanningScene`, `moveit_msgs/srv/ApplyPlanningScene` |
 | Action client | `/{arm_trajectory,left_hand,right_hand}_controller/follow_joint_trajectory` | `control_msgs/action/FollowJointTrajectory` |
-| Publisher (servo mode) | `servo_topic` | `control_msgs/msg/JointJog` |
-| Service client (servo mode) | `/servo_node/switch_command_type` | `moveit_msgs/srv/ServoCommandType` |
-| Subscriber | `/objects` | `vision_msgs/msg/Detection3DArray` |
-| Subscriber | `/joint_states` | `sensor_msgs/msg/JointState` |
-| Service server (engines) | `~/get_action_chunk` | `g1_msgs/srv/GetActionChunk` |
+| Publisher and service client (servo mode) | `servo_topic`, `/servo_node/switch_command_type` | `control_msgs/msg/JointJog`, `moveit_msgs/srv/ServoCommandType` |
+| Subscriber | `/objects`, `/joint_states` | `vision_msgs/msg/Detection3DArray`, `sensor_msgs/msg/JointState` |
+| Service server (engines) | `~/get_action_chunk`, remapped by the launch to the name above | `g1_msgs/srv/GetActionChunk` |
 
-The GR00T adapter also reads `/joint_states`, the image topics in `video_topics` (sensor QoS),
-and TF for the wrist poses.
-
-A chunk carries absolute joint positions for any subset of the 14 arm and 14 hand joints, and its
-`time_from_start` must increase.
+The GR00T adapter also reads `/joint_states`, the image topics in `video_topics` (sensor QoS), and
+TF for the wrist poses. A chunk carries absolute joint positions for any subset of the 14 arm and
+14 hand joints, and its `time_from_start` must increase.
 
 ## Parameters
 
@@ -73,16 +77,17 @@ A chunk carries absolute joint positions for any subset of the 14 arm and 14 han
 | `servo_publish_rate` | 50.0 | Jog commands per second while streaming a chunk |
 
 All but `servo_topic` are re-read at the start of every goal, so `ros2 param set` takes effect on
-the next grasp. `engine_service` and `execution_mode` are set by the launch file and kept out of
-the yaml, because a key under the node's name there would override the launch's `/**` value.
+the next grasp. `engine_service` and `execution_mode` come from the launch file and stay out of
+the yaml: a key under the node's name there would override the launch's `/**` value.
 
 Velocity limits come from `robot_description_planning.joint_limits`, which `vla.launch.py` loads
-from this package's `config/joint_limits.yaml`: MoveIt's limits with the arms at 1.0 rad/s
-instead of 0.8, since a chunk is timed at its training rate. Planned motions keep MoveIt's own
-limits. The server logs the resolved arm limit at startup.
+from `config/joint_limits.yaml`. That file raises MoveIt's arm limit from 0.8 rad/s to 1.0, since
+a chunk is timed at its training rate; planned motions keep MoveIt's limits. The server logs the
+resolved arm limit at startup.
 
-`config/g1_vla_mock_engine.yaml`: `joint_names`, `target_positions` (read per request, so a test
-can retarget it live), `steps_per_chunk`, `action_dt_s`, `step_rad`.
+`config/g1_vla_mock_engine.yaml`: `joint_names`, `target_positions`, `steps_per_chunk`,
+`action_dt_s` and `step_rad`. The default target swings the right arm out to the side, away from
+the bench, and `target_positions` is read per request so a test can retarget it live.
 
 `config/g1_vla_groot_adapter.yaml`:
 
@@ -96,26 +101,14 @@ can retarget it live), `steps_per_chunk`, `action_dt_s`, `step_rad`.
 | `max_image_age_s` | 5.0 | Oldest camera frame accepted |
 | `action_mode` | `absolute` | `relative_to_observation` only for a server that returns deltas |
 | `history_step_s` | 0.0333 | Wall time per step of frame history |
-| `state_joints`, `state_eef_frames`, `action_joints`, `video_topics` | | Map the checkpoint's modality keys to joints, TF frames and image topics |
-
-## Execution modes
-
-`execution_mode` is a launch argument. `trajectory` sends each validated chunk as a
-`FollowJointTrajectory` goal without waiting, so the next validated chunk replaces it mid-motion.
-`servo` streams the arm's share as jog commands into a running `servo_node` (`g1_bringup` starts
-one with `vla_execution_mode:=servo`) and adds proximity slowdown while the arm moves; the hands
-stay on the trajectory path. Validation is identical, and a refused chunk is never streamed.
-
-Servo tracks velocity, not position, so the arm can end up slightly off the validated path; its
-own collision monitor covers that by halting on proximity. Prefer trajectory mode unless that
-reaction is what you want.
+| `state_joints`, `state_eef_frames`, `action_joints`, `video_topics` | | Map the checkpoint's modality keys to joints, TF frames and image topics. The adapter logs every key the server reports and refuses to serve until every state and video key is mapped. |
 
 ## Failure behaviour
 
-A rejected chunk never reaches a controller, and the trajectory still running is cancelled, so
-the arm stops where it is; the server then asks the engine again. `max_rejected_chunks` in a row
-aborts the goal with a message starting `blocked:`. Every exit cancels motion and restores the
-hand's collision exemption. Moving away afterwards is the behavior tree's job.
+A rejected chunk never reaches a controller and cancels any trajectory still running, so the arm
+stops where it is. `max_rejected_chunks` in a row aborts the goal with a message starting
+`blocked:`. Every exit cancels any running trajectory and restores the hand's octomap exemption.
+Moving away afterwards is the behaviour tree's job.
 
 ## Running in simulation
 
@@ -123,20 +116,27 @@ hand's collision exemption. Moving away afterwards is the behavior tree's job.
 ros2 launch g1_bringup bringup.launch.py world:=manipulation pin_pelvis:=true \
     odometry:=ground_truth moveit:=true manipulation:=true vla:=true vla_engine:=mock \
     activate_arm:=true activate_arm_delay_s:=40.0
+```
+
+Once the log says `activation complete`, in another container shell:
+
+```bash
 ros2 action send_goal /g1_vla_server/grasp g1_msgs/action/Grasp \
     "{instruction: 'pick up the red block', object_id: red_block, arm: right}"
 ```
 
 The mock engine never grasps, so that goal ends on its timeout; it exists to exercise the gate.
-For a real policy, run `scripts/groot_server.py` on the host (set up by `scripts/setup-groot.sh`)
-and use `vla_engine:=groot`. The model's modality keys belong to its checkpoint, so the adapter
-logs every key the server reports and refuses to serve until every state and video key is mapped.
+`./scripts/demos/learned-grasping.sh mock|groot|servo` opens the bring-up and the
+`vla_grasp_in_place.xml` tree in panes. For a real policy, run `./scripts/setup-groot.sh` once,
+then `./scripts/serve.sh groot` on the host, and pass `vla_engine:=groot`.
 
 ## Tests
 
-| Test | Covers |
-|---|---|
-| `test_chunk_utils` | Chunk shape, the start-jump, segment-step and velocity checks, and the controller split |
-| `test_groot_adapter` | The adapter against a stub policy server: wire protocol, key mapping, and action integration. No simulator or GPU. |
-| `test_vla_grasp_mock` | Sim, `-L simulator`. Valid chunks reach the controllers and move the arm; a chunk aimed at a colliding pose is refused with the arm still where it started. |
-| `test_vla_grasp_servo` | Sim, `-L simulator`. The same two claims under the servo backend, plus servo halting for a collision while the arm is already moving. |
+`./scripts/manage.sh test g1_vla` skips the two simulator suites, which need `--sim`.
+
+| Test | Needs a simulator | Covers |
+|---|---|---|
+| `test_chunk_utils` | No | Chunk shape, the start-jump, segment-step and velocity checks, the controller split and the servo tracking velocity. |
+| `test_groot_adapter` | No | The adapter against a stub policy server: wire protocol, key mapping, and action integration. Needs no GPU. |
+| `test_vla_grasp_mock` | Yes | Valid chunks reach the controllers and move the arm; a chunk aimed at a colliding pose is refused with the arm still where it started. |
+| `test_vla_grasp_servo` | Yes | Validated chunks are streamed as jog commands, a blocked chunk never is, and servo halts for a collision while the arm is already moving. |

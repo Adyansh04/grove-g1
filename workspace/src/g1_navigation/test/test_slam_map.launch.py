@@ -62,20 +62,24 @@ def generate_test_description():
         # A pinned robot never travels, so the shipped keyframe thresholds would stop at one
         # scan. Overridden rather than copied, so every other value stays the shipped one.
         launch_arguments={
-            "params_overrides": json.dumps({
-                "minimum_travel_distance": 0.0,
-                "minimum_travel_heading": 0.0,
-                "map_update_interval": 1.0,
-            })
+            "params_overrides": json.dumps(
+                {
+                    "minimum_travel_distance": 0.0,
+                    "minimum_travel_heading": 0.0,
+                    "map_update_interval": 1.0,
+                }
+            )
         }.items(),
     )
     return (
-        LaunchDescription([
-            sim,
-            scan,
-            slam,
-            TimerAction(period=1.0, actions=[launch_testing.actions.ReadyToTest()]),
-        ]),
+        LaunchDescription(
+            [
+                sim,
+                scan,
+                slam,
+                TimerAction(period=1.0, actions=[launch_testing.actions.ReadyToTest()]),
+            ]
+        ),
         {},
     )
 

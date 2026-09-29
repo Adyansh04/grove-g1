@@ -17,7 +17,7 @@ ros2 launch g1_bringup bringup.launch.py world:=apartment mode:=localization nav
 | `apartment.truth.yaml` | Ground truth for scoring: room polygons and types, doorways, and for each object its label, synonyms, room, bounding box, support, and whether one of the standing robot's cameras (head and chest, from `g1_description`'s `cameras.yaml`) can see it from anywhere it can reach. |
 | `../mjcf/g1_apartment_scene.xml` | The scene. Asset paths start with `@GROVE_ASSETS@/`, which `sim.launch.py` replaces with `$GROVE_ASSETS_DIR` (default `/root/workspace/assets`) when it stages the scene. |
 | `../config/sim_sensors_apartment.yaml` | `sim_sensors.yaml` with every prop in `object_bodies`. `sim.launch.py` takes `sim_sensors_<world>.yaml` when one exists. |
-| `g1_navigation`: `maps/apartment.{pgm,yaml}` | The occupancy grid, which localization picks for `world:=apartment`. |
+| `../../g1_navigation/maps/apartment.{pgm,yaml}` | The occupancy grid, which localization picks for `world:=apartment`. |
 
 All but the plan are generated. The meshes and textures are not committed: `setup-world-assets.sh`
 fetches them into `workspace/assets/` (63 MB, plus a 265 MB download cache that can be deleted)
@@ -41,7 +41,7 @@ together; the map is rasterised from the scene, so a stale map would be a map of
 
 - The LiDAR sweep sees geom group 2 only; the camera draws groups 0 to 2. Each prop is a static
   body with its textured meshes in group 1 and one bounding box in group 2. The box is what the
-  LiDAR hits, the robot collides with and the simulator sizes ground truth from, and it is never
+  LiDAR hits, the robot collides with and the simulator sizes ground truth from. It is never
   drawn: `mj_ray` checks its material's alpha, which is 1, while the renderer skips a geom whose
   own rgba alpha is 0. A 360x32 sweep, timed on the host with a stand-in for the robot's geoms,
   takes 11 to 12 ms this way, 22 to 32 ms with the meshes in group 2, and 9 to 11 ms in the
@@ -54,8 +54,8 @@ together; the map is rasterised from the scene, so a stale map would be a map of
 - `book_2` sits on a tier at 1.66 m, above the head camera's view. Only the chest camera, whose
   view rises 9° above the horizon, sees it, from 4.0 to 4.5 m away, so a head-only run cannot map
   it. `crate_2`, 0.25 m tall, is below the 2D scan band, so it is missing from the map.
-- Doors are at least 1.2 m. The storage door was 1.0 m as a stress case, and Nav2 would not plan
-  through it: the robot wedged in the frame and every later goal failed.
+- Doors are at least 1.2 m: the robot is 0.9 m across, and Nav2 would not plan through a 1.0 m
+  door.
 
 ## Credits
 

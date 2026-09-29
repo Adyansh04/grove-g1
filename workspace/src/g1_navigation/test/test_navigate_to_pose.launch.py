@@ -43,24 +43,26 @@ GOAL_TIMEOUT_S = 180.0
 @pytest.mark.launch_test
 def generate_test_description():
     return (
-        LaunchDescription([
-            IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(
-                    os.path.join(
-                        get_package_share_directory("g1_navigation"),
-                        "launch",
-                        "nav_sim.launch.py",
-                    )
+        LaunchDescription(
+            [
+                IncludeLaunchDescription(
+                    PythonLaunchDescriptionSource(
+                        os.path.join(
+                            get_package_share_directory("g1_navigation"),
+                            "launch",
+                            "nav_sim.launch.py",
+                        )
+                    ),
+                    launch_arguments={
+                        "mode": "localization",
+                        "nav": "true",
+                        "headless": "true",
+                        "rviz": "false",
+                    }.items(),
                 ),
-                launch_arguments={
-                    "mode": "localization",
-                    "nav": "true",
-                    "headless": "true",
-                    "rviz": "false",
-                }.items(),
-            ),
-            TimerAction(period=1.0, actions=[launch_testing.actions.ReadyToTest()]),
-        ]),
+                TimerAction(period=1.0, actions=[launch_testing.actions.ReadyToTest()]),
+            ]
+        ),
         {},
     )
 
@@ -76,9 +78,7 @@ class NavigateToPoseTest(unittest.TestCase):
         cls.controllers = cls.node.create_client(
             ListControllers, "/controller_manager/list_controllers"
         )
-        cls.nav_active = cls.node.create_client(
-            Trigger, "/lifecycle_manager_navigation/is_active"
-        )
+        cls.nav_active = cls.node.create_client(Trigger, "/lifecycle_manager_navigation/is_active")
 
         cls.imu = []
         cls.node.create_subscription(

@@ -33,6 +33,7 @@
   <exec_depend>ament_index_python</exec_depend>
   <!-- launch/world_model.launch.py. -->
   <exec_depend>canopy</exec_depend>
+  <exec_depend>canopy_perception</exec_depend>
   <!-- activate_arm's clear-posture move goes out as a trajectory goal of its own. -->
   <exec_depend>control_msgs</exec_depend>
   <exec_depend>trajectory_msgs</exec_depend>
@@ -65,7 +66,6 @@
   <!-- test_explore_apartment. -->
   <test_depend>action_msgs</test_depend>
   <test_depend>canopy_msgs</test_depend>
-  <test_depend>canopy_perception</test_depend>
   <test_depend>g1_msgs</test_depend>
   <test_depend>g1_orchestration</test_depend>
   <test_depend>nav2_msgs</test_depend>
