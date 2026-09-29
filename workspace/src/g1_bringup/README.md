@@ -86,7 +86,11 @@ flowchart LR
 `world_model.launch.py` starts canopy with the G1's odometry and LiDAR topics and its own
 `config/world_model.yaml`. It takes `cameras` (`head`; bringup's names), `world_dir` (where to
 save and resume the world, empty for neither), and `detector`, `describe` and `rviz` (all
-`false`). `rviz:=true` opens `config/world_model.rviz`, canopy's view with the chest camera added.
+`false`). `detector:=true` starts canopy's detector per camera against the host semantic server;
+`detector:=mock` starts canopy_perception's mock per camera instead, with
+`config/mock_detector.yaml`, looking for every label in `worlds/<world>.truth.yaml` (`world`,
+default `apartment`). `rviz:=true` opens `config/world_model.rviz`, canopy's view with the chest
+camera added.
 [docs/guides/world-model.md](../../../docs/guides/world-model.md) runs it with an exploration tree.
 
 ## Running in simulation
@@ -167,6 +171,7 @@ others.
 | `config/sim_sensors.yaml` | LiDAR, IMU and camera parameters read by the patched simulator (the cameras by name and MJCF camera, mounted from `g1_description`'s `config/cameras.yaml`), the bodies that publish ground-truth poses, and the grasp weld for scenes that declare one. |
 | `config/sim_sensors_apartment.yaml` | The apartment's `sim_sensors.yaml`, tracking every prop; generated. `sim.launch.py` takes `sim_sensors_<world>.yaml` when one exists. |
 | `config/world_model.yaml` | The G1's values for canopy: the planner's footprint and clearances, and the gait's speeds. |
+| `config/mock_detector.yaml` | The mock detector's rate for `world_model.launch.py detector:=mock`. |
 | `config/g1_sensors.rviz` | RViz without navigation. Fixed frame `odom`. |
 | `config/world_model.rviz` | canopy's world-model view plus the chest camera's picture. |
 | `mjcf/*.xml` | One scene per world and a pinned variant of each (`lio` and `apartment` have none), plus the flat, walk and pinned overlays. Staged next to the vendored model at launch and removed on shutdown. |

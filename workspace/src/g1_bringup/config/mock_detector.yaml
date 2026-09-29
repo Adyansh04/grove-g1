@@ -1,0 +1,6 @@
+# The G1's values over canopy_perception's mock_detector.yaml, for world_model.launch.py's
+# detector:=mock. The phrases come from the world's truth file.
+/**:
+  ros__parameters:
+    # Nearer the real detector's once a second than the camera's 10 Hz.
+    mock_rate_hz: 2.0
