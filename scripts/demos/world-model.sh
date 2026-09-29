@@ -16,7 +16,6 @@ parse_args "$@"
 
 WORLD=/root/data/worlds/apartment
 CAMERAS="cameras:=head,chest"
-PHRASES="\"phrases:=['sofa','dustbin','bed','desk','chair','dining table','bookshelf','mug']\""
 BRINGUP="ros2 launch g1_bringup bringup.launch.py mode:=mapping nav:=true world:=apartment headless:=true arms_at_sides:=true $CAMERAS$LAUNCH_ARGS"
 EXPLORE="wait_for_nav2 && wait_for_service /canopy/next_viewpoint && ros2 run g1_orchestration g1_bt_executor --ros-args -p tree_file:=\$(ros2 pkg prefix g1_orchestration)/share/g1_orchestration/trees/explore.xml"
 ASK="ros2 service call /canopy/find_objects canopy_msgs/srv/FindObjects '{query: dustbin, room: office}'"
@@ -24,9 +23,7 @@ ASK="ros2 service call /canopy/find_objects canopy_msgs/srv/FindObjects '{query:
 case "$VARIANT" in
     mock)
         container bringup "$BRINGUP"
-        container head-detector "ros2 run canopy_perception mock_detector --ros-args -r __node:=detector_head -p $PHRASES -r object_poses:=/g1_sensor_relay/object_poses -r depth/image_raw:=/camera/aligned_depth_to_color/image_raw -r camera_info:=/camera/color/camera_info"
-        container chest-detector "ros2 run canopy_perception mock_detector --ros-args -r __node:=detector_chest -p $PHRASES -r object_poses:=/g1_sensor_relay/chest/object_poses -r depth/image_raw:=/chest_camera/aligned_depth_to_color/image_raw -r camera_info:=/chest_camera/color/camera_info"
-        container canopy "ros2 launch g1_bringup world_model.launch.py world_dir:=$WORLD rviz:=true $CAMERAS$LAUNCH_ARGS"
+        container canopy "ros2 launch g1_bringup world_model.launch.py world_dir:=$WORLD rviz:=true detector:=mock $CAMERAS$LAUNCH_ARGS"
         container explore "$EXPLORE"
         staged ask "wait_for_service /canopy/find_objects" "$ASK"
         ;;
