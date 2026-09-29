@@ -193,6 +193,9 @@ private:
         goals_running_.fetch_sub(1);
     }
 
+    /// The object id a detection carries, its first hypothesis's class id.
+    static const std::string& idOf(const vision_msgs::msg::Detection3D& detection);
+
     /**
      * @brief Stores the latest detection array and each id's newest sighting.
      */

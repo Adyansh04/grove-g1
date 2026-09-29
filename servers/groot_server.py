@@ -8,7 +8,7 @@ AutoModel.from_pretrained upcasts to fp32 in host RAM first, about 4 GB more at 
 30 GB machine gets the load OOM-killed in a way that reads as a CUDA fault. Patching here keeps
 the upstream checkout a clean tag.
 
-    ./scripts/groot_server.py --model-path nvidia/GR00T-N1.7-3B --embodiment-tag real_g1
+    ./scripts/serve.sh groot     # --model-path nvidia/GR00T-N1.7-3B --embodiment-tag real_g1
 
 Run scripts/setup-groot.sh first. Every argument is upstream's; see --help.
 """

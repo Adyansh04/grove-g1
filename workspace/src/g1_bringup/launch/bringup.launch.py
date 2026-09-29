@@ -69,8 +69,9 @@ def _include(path, **launch_args):
 # --- validation -----------------------------------------------------------------------------
 
 
-def _validate(mode, want_nav, want_moveit, want_manipulation, want_perception, want_vla,
-              pin_pelvis):
+def _validate(
+    mode, want_nav, want_moveit, want_manipulation, want_perception, want_vla, pin_pelvis
+):
     if mode not in MODES:
         raise RuntimeError(
             f"mode:={mode!r} is not a mode. 'none' is the simulator on its own; 'mapping' "
@@ -273,13 +274,13 @@ def _setup(context, *args, **kwargs):
     visualization = _visualization(context, want_rviz)
     navigating = mode != "none"
 
-    _validate(mode, want_nav, want_moveit, want_manipulation, want_perception, want_vla,
-              pin_pelvis)
+    _validate(mode, want_nav, want_moveit, want_manipulation, want_perception, want_vla, pin_pelvis)
 
     actions = [
         _simulator(
-            _sim_args(context, navigating, want_manipulation, want_perception, want_moveit,
-                      pin_pelvis)
+            _sim_args(
+                context, navigating, want_manipulation, want_perception, want_moveit, pin_pelvis
+            )
         )
     ]
     if navigating:
@@ -307,206 +308,208 @@ def _setup(context, *args, **kwargs):
 
 
 def generate_launch_description():
-    return LaunchDescription([
-        DeclareLaunchArgument(
-            "mode",
-            default_value="none",
-            description="'none' runs the simulator alone and never touches g1_navigation. "
-            "'mapping' adds the scan pipeline and slam_toolbox. 'localization' adds the scan "
-            "pipeline, map_server and AMCL against the world's committed map.",
-        ),
-        DeclareLaunchArgument(
-            "nav",
-            default_value="false",
-            description="Start the Nav2 servers and the base approach. Needs a map: "
-            "mode:=mapping explores while building one, mode:=localization uses the committed one.",
-        ),
-        DeclareLaunchArgument(
-            "rviz",
-            default_value="false",
-            description="Open RViz. mode:=none uses g1_bringup's sensor config (fixed frame "
-            "odom); the navigation modes use g1_navigation's, which adds the Nav2 display "
-            "group and is fixed on map.",
-        ),
-        DeclareLaunchArgument(
-            "visualization",
-            default_value="",
-            description="Everything drawn only for RViz: the annotated camera image, ground "
-            "truth, /object_markers and the grasp plan. false starts none of it. Empty follows "
-            "rviz, so an RViz opened by hand later needs visualization:=true.",
-        ),
-        DeclareLaunchArgument(
-            "moveit",
-            default_value="false",
-            description="Start move_group for arm planning. Works with any mode. Planning is "
-            "available immediately; executing a plan still needs activate_arm.launch.py.",
-        ),
-        DeclareLaunchArgument(
-            "manipulation",
-            default_value="false",
-            description="Start the pick and place skills and the object-pose source. Needs "
-            "moveit:=true, since the skills plan through move_group.",
-        ),
-        DeclareLaunchArgument(
-            "vla",
-            default_value="false",
-            description="Start the learned-grasp skill and its policy engine. Needs "
-            "manipulation:=true.",
-        ),
-        DeclareLaunchArgument(
-            "vla_engine",
-            default_value="mock",
-            description="Which policy engine answers with vla:=true. 'mock' needs no model; "
-            "'groot' talks to a policy server running outside the container.",
-        ),
-        DeclareLaunchArgument(
-            "vla_execution_mode",
-            default_value="trajectory",
-            choices=["trajectory", "servo"],
-            description="How the grasp skill executes a validated chunk. 'servo' streams it "
-            "through MoveIt Servo, which adds proximity slowdown while the arm is moving, and "
-            "starts a servo_node alongside move_group.",
-        ),
-        DeclareLaunchArgument(
-            "object_source",
-            default_value="sim_ground_truth",
-            description="Where object poses come from with manipulation:=true, when perception "
-            "is off. 'sim_ground_truth' reads MuJoCo bodies; 'hardware' refuses to configure, "
-            "because the robot has no detector of its own. perception:=true overrides this.",
-        ),
-        DeclareLaunchArgument(
-            "perception",
-            default_value="false",
-            description="Detect objects from the camera instead of reading them out of the "
-            "simulator. Requires manipulation:=true and forces sensors:=true.",
-        ),
-        DeclareLaunchArgument(
-            "detector",
-            default_value="mock",
-            choices=["mock", "vision"],
-            description="Which detector perception runs: 'mock' cuts masks from simulator "
-            "ground truth and needs no GPU, 'vision' asks the host vision server.",
-        ),
-        DeclareLaunchArgument(
-            "grasp_source",
-            default_value="fixed_top_down",
-            choices=["fixed_top_down", "generated"],
-            description="Where a pick's grasp comes from. 'generated' needs grasp_engine set to "
-            "something that answers.",
-        ),
-        DeclareLaunchArgument(
-            "grounding",
-            default_value="false",
-            description="Runs the instruction grounder beside the detector. Needs the host "
-            "vision server started with --vlm.",
-        ),
-        DeclareLaunchArgument(
-            "only_from_below",
-            default_value="false",
-            description="Makes the stand-in grasp generator offer nothing but a grasp reaching "
-            "up through the table, for testing that the filter refuses it.",
-        ),
-        DeclareLaunchArgument(
-            "grasp_offset",
-            default_value="[0.0, 0.0, 0.0, 0.0, 0.0, 0.0]",
-            description="The grasp generator's gripper frame to this robot's grasp frame, xyz "
-            "then rpy. Measure it against the candidates in RViz before trusting it.",
-        ),
-        DeclareLaunchArgument(
-            "grasp_engine",
-            default_value="none",
-            choices=["none", "mock", "graspgen"],
-            description="Who answers for six-degree-of-freedom grasps: nobody, a stand-in that "
-            "needs no GPU, or the GraspGenX server on the host.",
-        ),
-        DeclareLaunchArgument(
-            "phrases",
-            default_value="red block,blue block,green cylinder,blue sphere,yellow box,white cup,brown box",
-            description="Comma separated objects the detector looks for.",
-        ),
-        DeclareLaunchArgument(
-            "mock_latency_s",
-            default_value="0.0",
-            description="How far behind the camera the mock detector's masks are; the real one "
-            "runs a second or more behind.",
-        ),
-        DeclareLaunchArgument(
-            "mock_rate_hz",
-            default_value="10.0",
-            description="How often the mock detector answers; the real one manages about 1 Hz.",
-        ),
-        DeclareLaunchArgument(
-            "mock_margin_m",
-            default_value="0.005",
-            description="How far past an object's box the mock's mask may spill; positive "
-            "simulates a sloppy segmenter.",
-        ),
-        DeclareLaunchArgument(
-            "activate_arm",
-            default_value="false",
-            description="SIM CONVENIENCE: run scripts/activate_arm automatically once the "
-            "stack is up. Needs moveit:=true. Off by default: acquiring the arm is "
-            "deliberate, and on hardware it is the moment MoveIt starts driving real joints.",
-        ),
-        DeclareLaunchArgument(
-            "arms_at_sides",
-            default_value="false",
-            description="Hang the arms beside the thighs once the stack is up, through "
-            "scripts/activate_arm. For exploration: at zero the forearms point forward, into both "
-            "cameras' views, and a real detector maps the hands. Ignored when activate_arm runs.",
-        ),
-        DeclareLaunchArgument(
-            "activate_arm_delay_s",
-            default_value="25.0",
-            description="Seconds to wait before the automatic activation. The component has to "
-            "be loaded and /lowstate flowing first; too early and activate_arm fails loudly.",
-        ),
-        DeclareLaunchArgument(
-            "sensors",
-            default_value="false",
-            description="LiDAR sweep, the relay and the odom -> base_footprint -> pelvis "
-            "chain. Only meaningful with mode:=none; the navigation modes turn it on "
-            "themselves.",
-        ),
-        DeclareLaunchArgument(
-            "odometry",
-            default_value="fast_lio",
-            description="Which source publishes odom -> base_footprint. 'fast_lio' is the "
-            "pipeline the real robot runs, over the simulated Mid360. 'ground_truth' is exact "
-            "MuJoCo state, for isolating a fault to 'not the odometry'.",
-        ),
-        DeclareLaunchArgument(
-            "world",
-            default_value="navigation",
-            description="Which scene to stage. 'navigation' is the facility and 'apartment' "
-            "five furnished rooms; each has a committed map, which localization picks by "
-            "world, and against any other world it will not converge. 'manipulation' is one "
-            "object at arm's length, for a pick without navigating to the workbench first; "
-            "'tabletop' is five of different shapes, for perception.",
-        ),
-        DeclareLaunchArgument(
-            "cameras",
-            default_value="",
-            description="Comma-separated cameras the simulator renders: 'head' (manipulation's), "
-            "'chest' (mapping's), both, or empty for the world's sensor config.",
-        ),
-        DeclareLaunchArgument(
-            "headless",
-            default_value="true",
-            description="false shows the MuJoCo viewer. Its Reload button is fatal with "
-            "sensors on; see the README.",
-        ),
-        DeclareLaunchArgument(
-            "pin_pelvis",
-            default_value="false",
-            description="SIM-ONLY debugging aid: weld the pelvis and disable the walking "
-            "policy, to exercise the arm bridge with nothing driving the legs. mode:=none only.",
-        ),
-        DeclareLaunchArgument(
-            "sim_start_delay_s",
-            default_value="",
-            description="Seconds to delay the simulator's start. Empty means 2.0 for a bare "
-            "simulator and 4.0 when navigation or MoveIt starts beside it.",
-        ),
-        OpaqueFunction(function=_setup),
-    ])
+    return LaunchDescription(
+        [
+            DeclareLaunchArgument(
+                "mode",
+                default_value="none",
+                description="'none' runs the simulator alone and never touches g1_navigation. "
+                "'mapping' adds the scan pipeline and slam_toolbox. 'localization' adds the scan "
+                "pipeline, map_server and AMCL against the world's committed map.",
+            ),
+            DeclareLaunchArgument(
+                "nav",
+                default_value="false",
+                description="Start the Nav2 servers and the base approach. Needs a map: "
+                "mode:=mapping explores while building one, mode:=localization uses the committed one.",
+            ),
+            DeclareLaunchArgument(
+                "rviz",
+                default_value="false",
+                description="Open RViz. mode:=none uses g1_bringup's sensor config (fixed frame "
+                "odom); the navigation modes use g1_navigation's, which adds the Nav2 display "
+                "group and is fixed on map.",
+            ),
+            DeclareLaunchArgument(
+                "visualization",
+                default_value="",
+                description="Everything drawn only for RViz: the annotated camera image, ground "
+                "truth, /object_markers and the grasp plan. false starts none of it. Empty follows "
+                "rviz, so an RViz opened by hand later needs visualization:=true.",
+            ),
+            DeclareLaunchArgument(
+                "moveit",
+                default_value="false",
+                description="Start move_group for arm planning. Works with any mode. Planning is "
+                "available immediately; executing a plan still needs activate_arm.launch.py.",
+            ),
+            DeclareLaunchArgument(
+                "manipulation",
+                default_value="false",
+                description="Start the pick and place skills and the object-pose source. Needs "
+                "moveit:=true, since the skills plan through move_group.",
+            ),
+            DeclareLaunchArgument(
+                "vla",
+                default_value="false",
+                description="Start the learned-grasp skill and its policy engine. Needs "
+                "manipulation:=true.",
+            ),
+            DeclareLaunchArgument(
+                "vla_engine",
+                default_value="mock",
+                description="Which policy engine answers with vla:=true. 'mock' needs no model; "
+                "'groot' talks to a policy server running outside the container.",
+            ),
+            DeclareLaunchArgument(
+                "vla_execution_mode",
+                default_value="trajectory",
+                choices=["trajectory", "servo"],
+                description="How the grasp skill executes a validated chunk. 'servo' streams it "
+                "through MoveIt Servo, which adds proximity slowdown while the arm is moving, and "
+                "starts a servo_node alongside move_group.",
+            ),
+            DeclareLaunchArgument(
+                "object_source",
+                default_value="sim_ground_truth",
+                description="Where object poses come from with manipulation:=true, when perception "
+                "is off. 'sim_ground_truth' reads MuJoCo bodies; 'hardware' refuses to configure, "
+                "because the robot has no detector of its own. perception:=true overrides this.",
+            ),
+            DeclareLaunchArgument(
+                "perception",
+                default_value="false",
+                description="Detect objects from the camera instead of reading them out of the "
+                "simulator. Requires manipulation:=true and forces sensors:=true.",
+            ),
+            DeclareLaunchArgument(
+                "detector",
+                default_value="mock",
+                choices=["mock", "vision"],
+                description="Which detector perception runs: 'mock' cuts masks from simulator "
+                "ground truth and needs no GPU, 'vision' asks the host vision server.",
+            ),
+            DeclareLaunchArgument(
+                "grasp_source",
+                default_value="fixed_top_down",
+                choices=["fixed_top_down", "generated"],
+                description="Where a pick's grasp comes from. 'generated' needs grasp_engine set to "
+                "something that answers.",
+            ),
+            DeclareLaunchArgument(
+                "grounding",
+                default_value="false",
+                description="Runs the instruction grounder beside the detector. Needs the host "
+                "vision server started with --vlm.",
+            ),
+            DeclareLaunchArgument(
+                "only_from_below",
+                default_value="false",
+                description="Makes the stand-in grasp generator offer nothing but a grasp reaching "
+                "up through the table, for testing that the filter refuses it.",
+            ),
+            DeclareLaunchArgument(
+                "grasp_offset",
+                default_value="[0.0, 0.0, 0.0, 0.0, 0.0, 0.0]",
+                description="The grasp generator's gripper frame to this robot's grasp frame, xyz "
+                "then rpy. Measure it against the candidates in RViz before trusting it.",
+            ),
+            DeclareLaunchArgument(
+                "grasp_engine",
+                default_value="none",
+                choices=["none", "mock", "graspgen"],
+                description="Who answers for six-degree-of-freedom grasps: nobody, a stand-in that "
+                "needs no GPU, or the GraspGenX server on the host.",
+            ),
+            DeclareLaunchArgument(
+                "phrases",
+                default_value="red block,blue block,green cylinder,blue sphere,yellow box,white cup,brown box",
+                description="Comma separated objects the detector looks for.",
+            ),
+            DeclareLaunchArgument(
+                "mock_latency_s",
+                default_value="0.0",
+                description="How far behind the camera the mock detector's masks are; the real one "
+                "runs a second or more behind.",
+            ),
+            DeclareLaunchArgument(
+                "mock_rate_hz",
+                default_value="10.0",
+                description="How often the mock detector answers; the real one manages about 1 Hz.",
+            ),
+            DeclareLaunchArgument(
+                "mock_margin_m",
+                default_value="0.005",
+                description="How far past an object's box the mock's mask may spill; positive "
+                "simulates a sloppy segmenter.",
+            ),
+            DeclareLaunchArgument(
+                "activate_arm",
+                default_value="false",
+                description="SIM CONVENIENCE: run scripts/activate_arm automatically once the "
+                "stack is up. Needs moveit:=true. Off by default: acquiring the arm is "
+                "deliberate, and on hardware it is the moment MoveIt starts driving real joints.",
+            ),
+            DeclareLaunchArgument(
+                "arms_at_sides",
+                default_value="false",
+                description="Hang the arms beside the thighs once the stack is up, through "
+                "scripts/activate_arm. For exploration: at zero the forearms point forward, into both "
+                "cameras' views, and a real detector maps the hands. Ignored when activate_arm runs.",
+            ),
+            DeclareLaunchArgument(
+                "activate_arm_delay_s",
+                default_value="25.0",
+                description="Seconds to wait before the automatic activation. The component has to "
+                "be loaded and /lowstate flowing first; too early and activate_arm fails loudly.",
+            ),
+            DeclareLaunchArgument(
+                "sensors",
+                default_value="false",
+                description="LiDAR sweep, the relay and the odom -> base_footprint -> pelvis "
+                "chain. Only meaningful with mode:=none; the navigation modes turn it on "
+                "themselves.",
+            ),
+            DeclareLaunchArgument(
+                "odometry",
+                default_value="fast_lio",
+                description="Which source publishes odom -> base_footprint. 'fast_lio' is the "
+                "pipeline the real robot runs, over the simulated Mid360. 'ground_truth' is exact "
+                "MuJoCo state, for isolating a fault to 'not the odometry'.",
+            ),
+            DeclareLaunchArgument(
+                "world",
+                default_value="navigation",
+                description="Which scene to stage. 'navigation' is the facility and 'apartment' "
+                "five furnished rooms; each has a committed map, which localization picks by "
+                "world, and against any other world it will not converge. 'manipulation' is one "
+                "object at arm's length, for a pick without navigating to the workbench first; "
+                "'tabletop' is five of different shapes, for perception.",
+            ),
+            DeclareLaunchArgument(
+                "cameras",
+                default_value="",
+                description="Comma-separated cameras the simulator renders: 'head' (manipulation's), "
+                "'chest' (mapping's), both, or empty for the world's sensor config.",
+            ),
+            DeclareLaunchArgument(
+                "headless",
+                default_value="true",
+                description="false shows the MuJoCo viewer. Its Reload button is fatal with "
+                "sensors on; see the README.",
+            ),
+            DeclareLaunchArgument(
+                "pin_pelvis",
+                default_value="false",
+                description="SIM-ONLY debugging aid: weld the pelvis and disable the walking "
+                "policy, to exercise the arm bridge with nothing driving the legs. mode:=none only.",
+            ),
+            DeclareLaunchArgument(
+                "sim_start_delay_s",
+                default_value="",
+                description="Seconds to delay the simulator's start. Empty means 2.0 for a bare "
+                "simulator and 4.0 when navigation or MoveIt starts beside it.",
+            ),
+            OpaqueFunction(function=_setup),
+        ]
+    )

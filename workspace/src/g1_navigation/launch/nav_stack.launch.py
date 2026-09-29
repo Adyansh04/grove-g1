@@ -85,25 +85,27 @@ def _setup(context, *args, **kwargs):
 
 
 def generate_launch_description():
-    return LaunchDescription([
-        DeclareLaunchArgument(
-            "mode",
-            default_value="mapping",
-            description="'mapping' builds a new map with slam_toolbox; 'localization' runs "
-            "map_server + AMCL against maps/facility.",
-        ),
-        DeclareLaunchArgument(
-            "nav",
-            default_value="false",
-            description="Start the Nav2 servers and the base approach. With mode:=mapping they "
-            "plan on the map slam_toolbox is building, which is what exploration does.",
-        ),
-        DeclareLaunchArgument(
-            "use_composition",
-            default_value="true",
-            description="Run the navigation nodes in one component container, each with its "
-            "own executor. Set false for one process per node when a single node is crashing.",
-        ),
-        DeclareLaunchArgument("container_name", default_value="nav2_container"),
-        OpaqueFunction(function=_setup),
-    ])
+    return LaunchDescription(
+        [
+            DeclareLaunchArgument(
+                "mode",
+                default_value="mapping",
+                description="'mapping' builds a new map with slam_toolbox; 'localization' runs "
+                "map_server + AMCL against maps/facility.",
+            ),
+            DeclareLaunchArgument(
+                "nav",
+                default_value="false",
+                description="Start the Nav2 servers and the base approach. With mode:=mapping they "
+                "plan on the map slam_toolbox is building, which is what exploration does.",
+            ),
+            DeclareLaunchArgument(
+                "use_composition",
+                default_value="true",
+                description="Run the navigation nodes in one component container, each with its "
+                "own executor. Set false for one process per node when a single node is crashing.",
+            ),
+            DeclareLaunchArgument("container_name", default_value="nav2_container"),
+            OpaqueFunction(function=_setup),
+        ]
+    )

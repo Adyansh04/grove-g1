@@ -2,7 +2,7 @@
 g1_detector:
   ros__parameters:
     # The vision server runs on the host, since it needs torch and CUDA; compose is host-networked.
-    # Start it with scripts/vision_server.py.
+    # Start it with ./scripts/serve.sh vision.
     server_address: "tcp://127.0.0.1:5560"
 
     # Well past the slowest inference: this is what a stalled server costs before the node

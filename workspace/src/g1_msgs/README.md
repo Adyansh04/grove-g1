@@ -3,7 +3,8 @@
 The stack's own interfaces: the actions the behavior tree calls on `g1_locomotion`,
 `g1_manipulation` and `g1_vla`, and the services behind the learned grasp and open-vocabulary
 perception. The instance masks a detector publishes, and the world model's interfaces, are in
-`canopy_msgs`. `ament_cmake` with `rosidl_default_generators`, no source of its own.
+`canopy_msgs`. `ament_cmake` with `rosidl_default_generators`, no source and no tests of its own
+beyond CMake and XML lint.
 
 ```mermaid
 flowchart LR
@@ -16,15 +17,15 @@ flowchart LR
 ```
 
 ```bash
-colcon build --symlink-install --packages-select g1_msgs
+./scripts/manage.sh build g1_msgs
 ```
 
 ## Actions
 
 All seven are actions because each runs for seconds and must be cancellable. Every one except
-`SetArmPosture` publishes its phase as feedback, and `Pick`, `Place`, `ApproachObject` and
-`Retreat` prefix a failure message with it. The phase strings are constants in the `.action`
-files, so servers and tests share one definition.
+`SetArmPosture` publishes its phase as feedback. `Pick`, `Place`, `ApproachObject`, `Retreat` and
+`StepClear` also prefix a failure message with the phase. The phase strings are constants in the
+`.action` files, so servers and tests share one definition.
 
 | Action | Server | Goal | Notes |
 |---|---|---|---|

@@ -74,9 +74,7 @@ def _includes(setup_result):
     for action in actions:
         if not isinstance(action, IncludeLaunchDescription):
             continue
-        args = {
-            _resolve(context, k): _resolve(context, v) for k, v in action.launch_arguments
-        }
+        args = {_resolve(context, k): _resolve(context, v) for k, v in action.launch_arguments}
         found.append((os.path.basename(_included_path(context, action)), args))
     return found
 

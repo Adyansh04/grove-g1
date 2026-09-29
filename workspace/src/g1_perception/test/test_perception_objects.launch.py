@@ -67,7 +67,10 @@ def generate_test_description():
         }.items(),
     )
     return LaunchDescription(
-        [bringup, TimerAction(period=STACK_SETTLE_S, actions=[launch_testing.actions.ReadyToTest()])]
+        [
+            bringup,
+            TimerAction(period=STACK_SETTLE_S, actions=[launch_testing.actions.ReadyToTest()]),
+        ]
     )
 
 
@@ -199,6 +202,8 @@ class TestPerceptionObjects(unittest.TestCase):
         self.assertTrue(frames)
         detection = next(iter(frames[-1].values()))
         self.assertEqual(detection.header.frame_id, "odom")
-        age = (self.node.get_clock().now() - Time.from_msg(detection.header.stamp)).nanoseconds / 1e9
+        age = (
+            self.node.get_clock().now() - Time.from_msg(detection.header.stamp)
+        ).nanoseconds / 1e9
         self.assertLess(age, 5.0, "the newest object pose is older than any skill would accept")
         self.assertGreater(age, 0.0)

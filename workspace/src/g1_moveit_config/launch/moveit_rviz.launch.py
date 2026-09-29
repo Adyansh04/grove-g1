@@ -39,24 +39,26 @@ def _moveit_config():
 def generate_launch_description():
     moveit_config = _moveit_config()
 
-    return LaunchDescription([
-        DeclareLaunchArgument(
-            "rviz_config",
-            default_value=_config("g1_moveit.rviz"),
-            description="RViz config to open. The default starts on the both_arms group.",
-        ),
-        Node(
-            package="rviz2",
-            executable="rviz2",
-            name="rviz2_moveit",
-            output="screen",
-            arguments=["-d", LaunchConfiguration("rviz_config")],
-            parameters=[
-                moveit_config.robot_description,
-                moveit_config.robot_description_semantic,
-                moveit_config.robot_description_kinematics,
-                moveit_config.joint_limits,
-                moveit_config.planning_pipelines,
-            ],
-        ),
-    ])
+    return LaunchDescription(
+        [
+            DeclareLaunchArgument(
+                "rviz_config",
+                default_value=_config("g1_moveit.rviz"),
+                description="RViz config to open. The default starts on the both_arms group.",
+            ),
+            Node(
+                package="rviz2",
+                executable="rviz2",
+                name="rviz2_moveit",
+                output="screen",
+                arguments=["-d", LaunchConfiguration("rviz_config")],
+                parameters=[
+                    moveit_config.robot_description,
+                    moveit_config.robot_description_semantic,
+                    moveit_config.robot_description_kinematics,
+                    moveit_config.joint_limits,
+                    moveit_config.planning_pipelines,
+                ],
+            ),
+        ]
+    )

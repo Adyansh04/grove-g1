@@ -4,18 +4,16 @@ Pick and place are ROS actions served by `g1_manipulation`, and a BehaviorTree.C
 them with navigation. There are two versions: one where the object is already at arm's length, and
 the full mission that drives across the facility to reach it.
 
+`./scripts/demos/pick-and-place.sh <in-place|mission|sort>` opens a section's commands at once, in split panes of
+your terminal, after tearing down any stack left running. `stop` ends it, and `--print` lists
+the commands instead.
+
 Every command here runs inside the development container. Start it and open a shell from the
-repository root:
+repository root; the shell starts in `/root/workspace` with the workspace sourced:
 
 ```bash
 ./scripts/manage.sh start
 ./scripts/manage.sh exec
-```
-
-Then, in that shell:
-
-```bash
-cd /root/workspace && source install/setup.bash
 ```
 
 ## The short version
@@ -100,8 +98,8 @@ models; see [Open-vocabulary perception](open-vocabulary-grasping.md). The tree 
 for objects only at the two benches and idles it in between, so `/objects` is quiet during the
 walks.
 
-Nav2 parks within 0.5 m of a goal and the arm's reach window is about 0.11 m wide, so a base
-approach skill closes the rest against the measured object rather than against the map.
+Nav2 parks anywhere within 0.5 m of a goal, a wider spread than the band the arm reaches from, so
+a base approach skill closes the rest against the measured object rather than against the map.
 
 ## Watching the tree
 

@@ -41,8 +41,12 @@ SIM_SETTLE_S = 14.0
 MIN_UPRIGHT_Z = 0.64
 
 LEFT_ARM = [
-    "left_shoulder_pitch_joint", "left_shoulder_roll_joint", "left_shoulder_yaw_joint",
-    "left_elbow_joint", "left_wrist_roll_joint", "left_wrist_pitch_joint",
+    "left_shoulder_pitch_joint",
+    "left_shoulder_roll_joint",
+    "left_shoulder_yaw_joint",
+    "left_elbow_joint",
+    "left_wrist_roll_joint",
+    "left_wrist_pitch_joint",
     "left_wrist_yaw_joint",
 ]
 RIGHT_ARM = [name.replace("left_", "right_") for name in LEFT_ARM]
@@ -64,30 +68,30 @@ LEFT_HAND = [
 ]
 # A closed hand, written out rather than read from g1.srdf, so the expectation does not come
 # from a file under test.
-LEFT_HAND_CLOSED = dict(
-    zip(LEFT_HAND, [0.00, 0.55, 1.40, -1.20, -1.40, -1.20, -1.40], strict=True)
-)
+LEFT_HAND_CLOSED = dict(zip(LEFT_HAND, [0.00, 0.55, 1.40, -1.20, -1.40, -1.20, -1.40], strict=True))
 
 
 def generate_test_description():
-    return LaunchDescription([
-        IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(
-                os.path.join(
-                    get_package_share_directory("g1_moveit_config"),
-                    "launch",
-                    "moveit_sim.launch.py",
-                )
+    return LaunchDescription(
+        [
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(
+                    os.path.join(
+                        get_package_share_directory("g1_moveit_config"),
+                        "launch",
+                        "moveit_sim.launch.py",
+                    )
+                ),
+                launch_arguments={
+                    # The policy is holding the robot up while the arms move.
+                    "pin_pelvis": "false",
+                    "headless": "true",
+                    "sensors": "false",
+                }.items(),
             ),
-            launch_arguments={
-                # The policy is holding the robot up while the arms move.
-                "pin_pelvis": "false",
-                "headless": "true",
-                "sensors": "false",
-            }.items(),
-        ),
-        TimerAction(period=SIM_SETTLE_S, actions=[launch_testing.actions.ReadyToTest()]),
-    ])
+            TimerAction(period=SIM_SETTLE_S, actions=[launch_testing.actions.ReadyToTest()]),
+        ]
+    )
 
 
 class TestMoveItLowCmd(unittest.TestCase):
@@ -187,7 +191,9 @@ class TestMoveItLowCmd(unittest.TestCase):
     def _run_bringup_script(self, executable, timeout_s=60.0):
         proc = subprocess.Popen(
             ["ros2", "run", "g1_bringup", executable],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
         )
         deadline = time.monotonic() + timeout_s
         while proc.poll() is None and time.monotonic() < deadline:
@@ -254,9 +260,7 @@ class TestMoveItLowCmd(unittest.TestCase):
 
         execute = ExecuteTrajectory.Goal()
         execute.trajectory = planned.planned_trajectory
-        executed = self._await_goal(
-            self.execute_client, execute, timeout_s, "execute_trajectory"
-        )
+        executed = self._await_goal(self.execute_client, execute, timeout_s, "execute_trajectory")
         if executed is not None:
             planned.error_code = executed.error_code
         return planned

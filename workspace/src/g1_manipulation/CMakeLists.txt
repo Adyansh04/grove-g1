@@ -55,7 +55,14 @@ target_link_libraries(g1_object_pose_source_node PUBLIC
   ${visualization_msgs_TARGETS}
 )
 
-add_library(g1_manipulation_server_node src/g1_manipulation_server_node.cpp)
+add_library(g1_manipulation_server_node
+  src/g1_manipulation_server_node.cpp
+  src/manipulation_server/grasping.cpp
+  src/manipulation_server/hand.cpp
+  src/manipulation_server/motion.cpp
+  src/manipulation_server/objects.cpp
+  src/manipulation_server/scene.cpp
+)
 g1_target_defaults(g1_manipulation_server_node)
 target_link_libraries(g1_manipulation_server_node PUBLIC
   g1_grasp_filter

@@ -32,8 +32,13 @@ ARM_JOINTS = [
     f"{side}_{joint}"
     for side in ("left", "right")
     for joint in (
-        "shoulder_pitch_joint", "shoulder_roll_joint", "shoulder_yaw_joint", "elbow_joint",
-        "wrist_roll_joint", "wrist_pitch_joint", "wrist_yaw_joint",
+        "shoulder_pitch_joint",
+        "shoulder_roll_joint",
+        "shoulder_yaw_joint",
+        "elbow_joint",
+        "wrist_roll_joint",
+        "wrist_pitch_joint",
+        "wrist_yaw_joint",
     )
 ]
 
@@ -65,10 +70,12 @@ def _stack(sensors):
 
 @pytest.mark.launch_test
 def generate_test_description():
-    return LaunchDescription([
-        _stack("true"),
-        TimerAction(period=SIM_SETTLE_S, actions=[launch_testing.actions.ReadyToTest()]),
-    ])
+    return LaunchDescription(
+        [
+            _stack("true"),
+            TimerAction(period=SIM_SETTLE_S, actions=[launch_testing.actions.ReadyToTest()]),
+        ]
+    )
 
 
 class TestOctomapBlocksAPlan(unittest.TestCase):

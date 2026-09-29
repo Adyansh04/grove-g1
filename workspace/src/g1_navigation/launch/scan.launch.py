@@ -14,9 +14,7 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import LoadComposableNodes, Node
 from launch_ros.descriptions import ComposableNode
 
-PARAMS_FILE = os.path.join(
-    get_package_share_directory("g1_navigation"), "config", "scan.yaml"
-)
+PARAMS_FILE = os.path.join(get_package_share_directory("g1_navigation"), "config", "scan.yaml")
 
 
 def _arguments():

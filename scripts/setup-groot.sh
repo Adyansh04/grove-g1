@@ -59,7 +59,7 @@ git -C "${GROOT_HOME}" checkout --quiet "${GROOT_COMMIT}"
 
 if ! git -C "${GROOT_HOME}" diff --quiet; then
     echo "    the checkout has local modifications; leaving them alone." >&2
-    echo "    this repo does not need any: scripts/groot_server.py carries the one fix." >&2
+    echo "    this repo does not need any: servers/groot_server.py carries the one fix." >&2
 fi
 
 echo "==> torch wheels in ${WHEEL_CACHE}"
@@ -110,10 +110,9 @@ Done. Two things this script cannot do for you:
 
   2. The weights are ~11 GB and download on first run into ~/.cache/huggingface.
 
-Then serve the policy, from this repository so the load fix applies:
+Then serve the policy, through this repository's wrapper so the load fix applies:
 
-  ${GROOT_HOME}/.venv/bin/python scripts/groot_server.py \\
-      --model-path nvidia/GR00T-N1.7-3B --embodiment-tag real_g1 --port 5555
+  ./scripts/serve.sh groot
 
 and bring the stack up against it:
 
