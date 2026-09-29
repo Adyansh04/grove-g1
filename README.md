@@ -53,8 +53,7 @@ adds the arms, lives on the
 
 ### Exploring an apartment with canopy
 
-<!-- World-model demo video: paste its GitHub link (https://github.com/user-attachments/assets/...)
-     on its own line below this comment. -->
+https://github.com/user-attachments/assets/347d91c4-3810-4e02-85bc-f8b860215505
 
 ## Architecture
 
