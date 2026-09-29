@@ -12,8 +12,10 @@ import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
+from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
+from launch_ros.actions import Node
 
 
 def canopy(context):
@@ -44,7 +46,9 @@ def canopy(context):
                 "world_dir": LaunchConfiguration("world_dir"),
                 "detector": LaunchConfiguration("detector"),
                 "describe": LaunchConfiguration("describe"),
-                "rviz": LaunchConfiguration("rviz"),
+                # canopy's own view has no panel for the chest camera; this package opens one
+                # that does.
+                "rviz": "false",
             }.items(),
         )
     ]
@@ -63,5 +67,17 @@ def generate_launch_description():
             DeclareLaunchArgument("describe", default_value="false"),
             DeclareLaunchArgument("rviz", default_value="false"),
             OpaqueFunction(function=canopy),
+            Node(
+                package="rviz2",
+                executable="rviz2",
+                name="world_model_rviz",
+                arguments=[
+                    "-d",
+                    os.path.join(
+                        get_package_share_directory("g1_bringup"), "config", "world_model.rviz"
+                    ),
+                ],
+                condition=IfCondition(LaunchConfiguration("rviz")),
+            ),
         ]
     )
