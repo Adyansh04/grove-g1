@@ -45,7 +45,6 @@ from canopy_msgs.srv import GetApproachPose
 from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription, TimerAction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch_ros.actions import Node as LaunchNode
 from nav2_msgs.action import NavigateToPose, Spin
 from nav_msgs.msg import Odometry
 from rclpy.action import ActionClient
@@ -97,43 +96,9 @@ def load_truth():
         return yaml.safe_load(handle)
 
 
-def mock_detector(camera, phrases):
-    """Masks for one camera, cut from the ground truth the relay puts in that camera's frame.
-
-    Named as canopy names a camera's detector, so its masks land where the world model reads them.
-    """
-    head = camera == "head"
-    namespace = "/camera" if head else f"/{camera}_camera"
-    return LaunchNode(
-        package="canopy_perception",
-        executable="mock_detector",
-        name=f"detector_{camera}",
-        output="log",
-        parameters=[
-            os.path.join(
-                get_package_share_directory("canopy_perception"), "config", "mock_detector.yaml"
-            ),
-            {"phrases": phrases, "mock_rate_hz": 2.0},
-        ],
-        remappings=[
-            (
-                "object_poses",
-                "/g1_sensor_relay/object_poses"
-                if head
-                else f"/g1_sensor_relay/{camera}/object_poses",
-            ),
-            ("depth/image_raw", f"{namespace}/aligned_depth_to_color/image_raw"),
-            ("camera_info", f"{namespace}/color/camera_info"),
-        ],
-    )
-
-
 @pytest.mark.launch_test
 def generate_test_description():
-    truth = load_truth()
-    phrases = sorted({item["label"] for item in truth["objects"]})
     semantic = DETECTOR == "semantic"
-    mocks = [] if semantic else [mock_detector(name, phrases) for name in CAMERAS.split(",")]
     return (
         LaunchDescription(
             [
@@ -153,7 +118,6 @@ def generate_test_description():
                         "rviz": "false",
                     }.items(),
                 ),
-                *mocks,
                 IncludeLaunchDescription(
                     PythonLaunchDescriptionSource(
                         os.path.join(
@@ -165,7 +129,7 @@ def generate_test_description():
                     launch_arguments={
                         "world_dir": WORLD_DIR,
                         "cameras": CAMERAS,
-                        "detector": "true" if semantic else "false",
+                        "detector": "true" if semantic else "mock",
                         "describe": "true" if semantic else "false",
                     }.items(),
                 ),
