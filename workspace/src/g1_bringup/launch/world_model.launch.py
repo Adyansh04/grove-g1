@@ -12,7 +12,6 @@ import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
-from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -24,7 +23,10 @@ def canopy(context):
         for name in LaunchConfiguration("cameras").perform(context).split(",")
         if name.strip()
     ]
-    return [
+    # Read before the include: its arguments leak into this file's configurations, and it hands
+    # canopy rviz:=false.
+    rviz = LaunchConfiguration("rviz").perform(context).lower() in ("true", "1")
+    actions = [
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(
                 os.path.join(
@@ -52,6 +54,21 @@ def canopy(context):
             }.items(),
         )
     ]
+    if rviz:
+        actions.append(
+            Node(
+                package="rviz2",
+                executable="rviz2",
+                name="world_model_rviz",
+                arguments=[
+                    "-d",
+                    os.path.join(
+                        get_package_share_directory("g1_bringup"), "config", "world_model.rviz"
+                    ),
+                ],
+            )
+        )
+    return actions
 
 
 def generate_launch_description():
@@ -67,17 +84,5 @@ def generate_launch_description():
             DeclareLaunchArgument("describe", default_value="false"),
             DeclareLaunchArgument("rviz", default_value="false"),
             OpaqueFunction(function=canopy),
-            Node(
-                package="rviz2",
-                executable="rviz2",
-                name="world_model_rviz",
-                arguments=[
-                    "-d",
-                    os.path.join(
-                        get_package_share_directory("g1_bringup"), "config", "world_model.rviz"
-                    ),
-                ],
-                condition=IfCondition(LaunchConfiguration("rviz")),
-            ),
         ]
     )
