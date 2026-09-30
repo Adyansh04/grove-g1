@@ -62,5 +62,14 @@ risk = "observe"
 hide_fields = ["query_embedding"]
 defaults = { max_results = 5 }
 
+# Generic ROS tools, as ros2 topic/service/action/param/node would do: reads run freely; every
+# write needs the robot armed and the operator's approval, and the hard deny lists (every cmd_vel,
+# rt/lowcmd, controllers, velocity, trajectory and lifecycle types) always win over these.
+[ros_tools]
+service_call = ["*"]
+action_send = ["*"]
+publish = ["*"]
+param_set = ["*:*"]
+
 [models]
 file = "../../../nervros/profiles/example/models.toml"
