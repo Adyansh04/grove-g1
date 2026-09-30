@@ -221,13 +221,17 @@ behavior_server:
     min_rotational_vel: 0.3
     rotational_acc_lim: 1.0
 
-# The last check between Nav2 and the gait, for what the costmaps do not see: they read the cloud
-# from 0.30 m up, this reads it below, from 0.05 to 0.60 m, where a crate, a step or a chair's legs
-# are, and never what a hand carries. The controller and the behaviors publish /cmd_vel_raw, and
-# this passes it to /cmd_vel slowed so the body would not reach a return within
-# time_before_collision. The circle is the body with a margin, not the costmaps' 0.45 m, so the
-# close approaches Nav2 plans are left alone. g1_base_approach, which closes the last decimetres to
-# a table on purpose, writes /cmd_vel itself.
+# The last check between Nav2 and the gait. The controller and the behaviors publish /cmd_vel_raw,
+# and this passes it to /cmd_vel slowed so the body would not reach a return within
+# time_before_collision. It reads the cloud in two bands, and never between them, where a hand
+# carries: 0.05 to 0.60 m, a crate or a chair's legs, which the costmaps (from 0.30 m up) miss
+# below 0.30 m; and 1.05 to 1.40 m, a wall or a person up close. The lidar sits upside down 1.23 m
+# up and looks at most 52 degrees down, so the low band sees nothing nearer than 0.46 m (0.92 m at
+# the floor) and it forgets what leaves its view: it slows the robot towards a low thing seen from
+# afar, but only the high band stops it at a wall (measured: the low band alone let the robot walk
+# into one). The circle is the body with a margin, not the costmaps' 0.45 m, so the close
+# approaches Nav2 plans are left alone. g1_base_approach, which closes the last decimetres to a
+# table on purpose, writes /cmd_vel itself.
 collision_monitor:
   ros__parameters:
     use_sim_time: false
@@ -252,12 +256,18 @@ collision_monitor:
       visualize: true
       polygon_pub_topic: collision_monitor_body
       enabled: true
-    observation_sources: ["low_cloud"]
+    observation_sources: ["low_cloud", "high_cloud"]
     low_cloud:
       type: pointcloud
       topic: /livox/lidar
       min_height: 0.05
       max_height: 0.60
+      enabled: true
+    high_cloud:
+      type: pointcloud
+      topic: /livox/lidar
+      min_height: 1.05
+      max_height: 1.40
       enabled: true
 
 lifecycle_manager_navigation:

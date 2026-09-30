@@ -72,11 +72,18 @@ recovery is removed from both behavior trees: upstream's backup speed (0.05 m/s)
 
 Nav2's controller and behaviors publish `/cmd_vel_raw`, and `collision_monitor` passes it on to
 `/cmd_vel`, slowed so the body would not reach an obstacle within a second. It reads the LiDAR's
-cloud from 0.05 to 0.60 m, below the costmaps' band, so it sees what they cannot (`crate_2`, a
-step, a chair's legs) and never what a hand carries; a scan source saw the carried mug and slowed
-every carry to a stop. Its circle is 0.35 m, the body with a margin, not the costmaps' 0.45 m,
-which leaves the close approaches Nav2 plans alone. The simulated sweep never sees the robot's own
-links; the real one will see its legs in that band, so filter them before trusting it on hardware.
+cloud in two bands, and never between them, where a hand carries (a scan source saw the carried
+mug and slowed every carry to a stop): 0.05 to 0.60 m, below the costmaps' band, for a crate, a
+step or a chair's legs, and 1.05 to 1.40 m, for a wall or a person up close. The LiDAR hangs upside
+down 1.23 m up and looks at most 52 degrees down, so the low band sees nothing nearer than 0.46 m
+(0.92 m at the floor), and the monitor forgets what leaves its view: it slows the robot towards a
+low obstacle seen from afar but cannot stop it there, and nothing sees a table's edge up close.
+Driven at a wall at 0.2 m/s, the low band alone let the robot walk into it; with the high band it
+stopped 0.43 m short, the monitor asking for 0.08 m/s, less than the gait walks. The costmaps,
+which remember what they saw, stay the main protection. Its circle is 0.35 m, the body with a
+margin, not the costmaps' 0.45 m, which leaves the close approaches Nav2 plans alone. The simulated
+sweep never sees the robot's own links; the real one will see its legs and arms in these bands, so
+filter them before trusting it on hardware.
 
 Nav2 is not the only `/cmd_vel` writer. `nav2.launch.py` also starts `g1_locomotion`'s
 `g1_base_approach`, which walks the last stretch because Nav2 stops within 0.5 m of a goal
