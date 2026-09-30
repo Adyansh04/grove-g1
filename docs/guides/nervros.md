@@ -6,7 +6,7 @@ name in the view, asks canopy where things are, and
 does physical tasks as missions: behaviour trees that `nervros_executor` checks, you approve, and
 the executor runs. It runs on the host and answers with a local model unless you choose otherwise.
 
-`./scripts/demos/nervros.sh <app|chat|explore|facility>` opens a section's commands at once, in
+`./scripts/demos/nervros.sh <app|chat|explore|map|facility>` opens a section's commands at once, in
 split panes of your terminal, after tearing down any stack left running. `stop` ends it, and
 `--print` lists the commands instead.
 
@@ -128,6 +128,17 @@ appear, and the "Exploring" plot tracks the share seen. One run explores for up 
 saves the world; ask again to carry on. In the test run from empty, canopy called the apartment done
 after 22 minutes: all 6 rooms and 32 objects, with about 80% of the floor and 62% of the walls
 seen. canopy wrote the rest off as out of sight from anywhere the robot could reach.
+
+## Mapping a world from nothing
+
+`nervros.sh map` builds the map as the robot goes: SLAM instead of the saved map, and an empty
+world model in `data/worlds/mapped-apartment` (`name:=` names it, `world:=` picks another simulated
+world). Ask "Explore the building" and arm the robot: `ExploreBuilding` walks to canopy's frontiers
+first, while the viewer shows the map growing, the rooms turning green as the camera covers them,
+and the objects and viewpoints as they come. canopy saves the world, floor plan included, every
+minute and at the end of each run of up to 23 minutes; ask again to carry on. The editor serves the
+new world once it is first saved. Later, `nervros.sh app saved:=mapped-apartment` runs the robot on
+it, localizing on its floor plan. A name already mapped is kept: pick another or delete it.
 
 ## In the facility: pick and place
 
