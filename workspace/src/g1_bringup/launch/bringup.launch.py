@@ -166,8 +166,9 @@ def _manipulation(want_perception, visualization, world):
         # Perception's poses arrive seconds late when the detector shares the GPU with the
         # simulator. The scenes are static, so an old pose is still a true one.
         object_timeout_ms="8000.0" if want_perception else "1000.0",
-        # The navigation desk's ball sits by the edge, where the thumb hangs past the desk.
-        min_grip_height_m="0.035" if world == "navigation" else "0.080",
+        # The navigation desk's ball sits by the edge, where the thumb hangs past the desk; the
+        # apartment's mug is 81 mm tall, so the fingers take it 26 mm below its rim.
+        min_grip_height_m="0.035" if world in ("navigation", "apartment") else "0.080",
         grasp_source=LaunchConfiguration("grasp_source"),
         grasp_offset=LaunchConfiguration("grasp_offset"),
         visualization=visualization,

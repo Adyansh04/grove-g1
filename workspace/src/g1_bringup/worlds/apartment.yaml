@@ -62,6 +62,7 @@ lights:
 
 # Label synonyms for scoring open-vocabulary answers, by class.
 synonyms:
+  tray: [serving tray, box]
   sofa: [couch, settee]
   armchair: [chair, lounge chair]
   coffee_table: [table, low table]
@@ -123,13 +124,20 @@ props:
     - {body: kettle_1, asset: nv_kettle_005, pose: [-2.4, 5.55, 20], support: counter_1}
     - {body: stove_1, asset: nv_stove_066, pose: [-1.0, 5.58, 0]}
     - {body: dustbin_1, asset: gso_wastebasket, pose: [-0.35, 5.75, 0]}
-    - {body: dining_table_1, asset: ph_dining_table, pose: [-2.3, 2.6, 0]}
+    # Its proxy stops at the tabletop, 0.706 m, not the cloth's relief above it, so a mug set on
+    # the top rests where it is drawn.
+    - {body: dining_table_1, asset: ph_dining_table, pose: [-2.3, 2.6, 0], proxy_height: 0.706}
     - {body: chair_1, asset: ph_dining_chair_02, pose: [-2.8, 1.68, 180]}
     - {body: chair_2, asset: ph_dining_chair_02, pose: [-1.8, 1.68, 180]}
     - {body: chair_3, asset: ph_dining_chair_02, pose: [-2.8, 3.52, 0]}
     - {body: chair_4, asset: ph_dining_chair_02, pose: [-1.8, 3.52, 0]}
     - {body: mug_1, asset: gso_mug_ace, pose: [-2.75, 2.35, 30], support: dining_table_1}
     - {body: bowl_1, asset: gso_bowl_threshold, pose: [-1.9, 2.8, 0], support: dining_table_1}
+    # The mug the robot carries: a smaller copy of mug_1, 55 mm across so the hand closes round it,
+    # at 124 g, well inside the arm's torque; 80 mm in from the table's east edge, where the robot
+    # reaches it from beside the table with the left hand.
+    - {body: mug_4, asset: gso_mug_ace, scale: 0.6, pose: [-1.40, 2.62, 90],
+       free: {size: [0.056, 0.056, 0.081], mass: 0.124}, support: dining_table_1, z: 0.707}
   bedroom:
     - {body: bed_1, asset: ph_gothic_bed_01, pose: [5.3, 4.9, 0]}
     - {body: nightstand_1, asset: ph_classic_nightstand_01, pose: [4.22, 5.71, 0]}
@@ -146,6 +154,16 @@ props:
     - {body: chair_5, asset: ph_school_chair_01, pose: [6.5, -4.55, 0]}
     - {body: laptop_1, asset: gso_laptop, pose: [6.3, -5.35, 180], support: desk_1}
     - {body: mug_3, asset: gso_mug_cole, pose: [7.05, -5.25, 0], support: desk_1}
+    # Where the mug goes: a wooden tray at the desk's west end, 100 mm in from its north edge.
+    - body: tray_1
+      pose: [5.85, -5.07, 0]
+      support: desk_1
+      boxes:
+        - {size: [0.16, 0.16, 0.012], pos: [0.0, 0.0, 0.006], rgba: [0.52, 0.36, 0.22, 1]}
+        - {size: [0.16, 0.016, 0.064], pos: [0.0, 0.072, 0.032], rgba: [0.46, 0.31, 0.18, 1]}
+        - {size: [0.16, 0.016, 0.064], pos: [0.0, -0.072, 0.032], rgba: [0.46, 0.31, 0.18, 1]}
+        - {size: [0.016, 0.128, 0.064], pos: [0.072, 0.0, 0.032], rgba: [0.46, 0.31, 0.18, 1]}
+        - {size: [0.016, 0.128, 0.064], pos: [-0.072, 0.0, 0.032], rgba: [0.46, 0.31, 0.18, 1]}
     - {body: shelf_1, asset: ph_steel_frame_shelves_01, pose: [3.33, -3.4, 90]}
     - {body: cardboard_box_1, asset: ph_cardboard_box_01, pose: [3.33, -3.4, 0], support: shelf_1,
        z: 0.64}

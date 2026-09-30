@@ -316,6 +316,16 @@ objects:
   'on': dining_table_1
   observable_from_standing: true
   asset: gso_bowl_threshold
+- body: mug_4
+  label: mug
+  synonyms: [cup, coffee mug]
+  room: living
+  centre: [-1.4, 2.62, 0.7475]
+  size: [0.056, 0.056, 0.081]
+  yaw: 90.0
+  'on': dining_table_1
+  observable_from_standing: true
+  asset: gso_mug_ace
 - body: bed_1
   label: bed
   synonyms: [day bed, double bed]
@@ -446,6 +456,16 @@ objects:
   'on': desk_1
   observable_from_standing: true
   asset: gso_mug_cole
+- body: tray_1
+  label: tray
+  synonyms: [serving tray, box]
+  room: office
+  centre: [5.85, -5.07, 0.8201]
+  size: [0.16, 0.16, 0.064]
+  yaw: 0.0
+  'on': desk_1
+  observable_from_standing: true
+  asset: boxes
 - body: shelf_1
   label: shelf
   synonyms: [shelving unit, rack, shelves]

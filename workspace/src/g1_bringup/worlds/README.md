@@ -56,6 +56,16 @@ together; the map is rasterised from the scene, so a stale map would be a map of
   it. `crate_2`, 0.25 m tall, is below the 2D scan band, so it is missing from the map.
 - Doors are at least 1.2 m: the robot is 0.9 m across, and Nav2 would not plan through a 1.0 m
   door.
+- One prop moves: `mug_4`, the small mug on the dining table's east end, is `free:` in the plan.
+  It gets a free joint and one group 2 collision box instead of the proxy, `contype 3` so the
+  fingers touch it (every other prop is `contype 1`, which they pass through), 124 g, and two
+  carry welds, one per palm, which `grasp_weld` engages while the thumb and a finger touch it.
+  Its mesh is `mug_1`'s at `scale: 0.6`, 55 mm across so the hand closes round it, and the box
+  under it is square because a cylinder on a box rocks in MuJoCo. `tray_1`, a wooden tray built
+  from boxes, sits on the office desk to put it in. `dining_table_1` has `proxy_height: 0.706`:
+  its proxy would otherwise reach the cloth's relief at 0.76 m, and the mug would rest above the
+  top it is drawn on. `missions/pick_and_place_apartment.xml` in g1_orchestration carries the mug
+  from the table to the tray.
 
 ## Credits
 

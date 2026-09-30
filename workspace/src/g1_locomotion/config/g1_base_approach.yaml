@@ -34,8 +34,8 @@ g1_base_approach:
 
     # Objects to stand further back from: reaching over a surface to set something down sweeps
     # the wrist across its face.
-    standoff_object_ids: ["brown_box"]
-    standoff_target_x_m: [0.350]
+    standoff_object_ids: ["brown_box", "tray_1"]
+    standoff_target_x_m: [0.350, 0.350]
 
     # How close each axis has to get. The robot coasts 25 to 37 mm forward and 15 to 43 mm
     # laterally after the command stops, always toward the target.

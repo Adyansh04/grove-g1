@@ -89,7 +89,8 @@ def rotate(xy, yaw_deg):
 
 
 class Prop:
-    """One static body: a single asset, or boxes and positioned asset meshes (the counter)."""
+    """One body: a single asset, or boxes and positioned asset meshes (the counter). Static,
+    unless `free` makes it something the hands pick up: a free joint and one collision box."""
 
     def __init__(self, room, entry, manifest):
         self.room = room
@@ -104,6 +105,11 @@ class Prop:
         self.on = entry.get("support")
         self.z_override = entry.get("z")
         self.boxes = entry.get("boxes", [])
+        # A smaller copy of an asset, such as a mug a hand can close round.
+        self.scale = float(entry.get("scale", 1.0))
+        self.free = entry.get("free")
+        # A proxy lower than the mesh's bounding box: a table whose cloth rises above its top.
+        self.proxy_height = entry.get("proxy_height")
         if self.asset:
             self.meshes = [(self.asset, (0.0, 0.0, 0.0), 0.0)]
         else:
@@ -118,7 +124,7 @@ class Prop:
                 np.add(box["pos"], np.divide(box["size"], 2)),
             ]
         for asset, pos, yaw in self.meshes:
-            sx, sy, sz = manifest[asset]["bbox"]
+            sx, sy, sz = (v * self.scale for v in manifest[asset]["bbox"])
             for dx in (-sx / 2, sx / 2):
                 for dy in (-sy / 2, sy / 2):
                     x, y = rotate((dx, dy), yaw)
@@ -130,7 +136,13 @@ class Prop:
         if abs(lo[0] + hi[0]) > 1e-3 or abs(lo[1] + hi[1]) > 1e-3 or abs(lo[2]) > 1e-3:
             raise ValueError(f"{self.body}: parts must be centred on the footprint, from z=0")
         self.size = [float(v) for v in hi - lo]
+        if self.free:
+            # The collision box decides what the hand closes on and where the body rests.
+            self.size = [float(v) for v in self.free["size"]]
         self.z_base = 0.0
+
+    def mesh_name(self, asset, k):
+        return f"{asset}_{k}" if self.scale == 1.0 else f"{asset}_x{round(self.scale * 100)}_{k}"
 
     @property
     def centre(self):
@@ -243,12 +255,14 @@ def assets_xml(props, plan, manifest, root):
             f'    <material name="wall_flat" rgba="{fmt(*wall, 1)}" specular="0.1" '
             f'shininess="0.1" emission="{fmt(WALL_EMISSION)}"/>'
         )
-    for asset_id in sorted({asset for prop in props for asset, _, _ in prop.meshes}):
-        written = set()
+    written = set()
+    for asset_id, scale in sorted({(a, prop.scale) for prop in props for a, _, _ in prop.meshes}):
+        scaled = f' scale="{fmt(scale, scale, scale)}"' if scale != 1.0 else ""
         for k, part in enumerate(manifest[asset_id]["parts"]):
-            name = f"{asset_id}_{k}"
+            name = f"{asset_id}_{k}" if scale == 1.0 else f"{asset_id}_x{round(scale * 100)}_{k}"
             lines.append(
-                f'    <mesh name="{name}" file="{asset_path(asset_id, part["mesh"], root)}"/>'
+                f'    <mesh name="{name}" file="{asset_path(asset_id, part["mesh"], root)}"'
+                f"{scaled}/>"
             )
             material = (
                 f'    <material name="{name}" rgba="{fmt(*part["rgba"])}" '
@@ -271,10 +285,12 @@ def prop_xml(prop, manifest):
     half_h = prop.size[2] / 2.0
     quat = "" if prop.yaw % 360 == 0 else f' quat="{fmt(*yaw_quat(prop.yaw))}"'
     lines = [f'    <body name="{prop.body}" pos="{fmt(*prop.centre)}"{quat}>']
+    if prop.free:
+        lines.append(f'      <freejoint name="{prop.body}_joint"/>')
     for asset, (px, py, pz), yaw in prop.meshes:
         part_quat = "" if yaw % 360 == 0 else f' quat="{fmt(*yaw_quat(yaw))}"'
         for k in range(len(manifest[asset]["parts"])):
-            name = f"{asset}_{k}"
+            name = prop.mesh_name(asset, k)
             lines.append(
                 f'      <geom class="apt_visual" mesh="{name}" material="{name}" '
                 f'pos="{fmt(px, py, pz - half_h)}"{part_quat}/>'
@@ -286,9 +302,20 @@ def prop_xml(prop, manifest):
             f'      <geom class="apt_box" size="{fmt(*[s / 2 for s in box["size"]])}" '
             f'pos="{fmt(*pos)}" {look}/>'
         )
+    if prop.free:
+        # What the fingers close on and the weld carries; a box, since a cylinder on a box rocks.
+        lines.append(
+            f'      <geom class="apt_free" size="{fmt(*[s / 2 for s in prop.size])}" '
+            f'mass="{fmt(prop.free["mass"])}"/>'
+        )
     # Boxes collide and size the ground truth themselves; mesh-only props get a bounding box.
-    if not prop.boxes:
-        lines.append(f'      <geom class="apt_proxy" size="{fmt(*[s / 2 for s in prop.size])}"/>')
+    elif not prop.boxes:
+        size = list(prop.size)
+        pos = ""
+        if prop.proxy_height is not None:
+            size[2] = float(prop.proxy_height)
+            pos = f' pos="{fmt(0.0, 0.0, size[2] / 2 - half_h)}"'
+        lines.append(f'      <geom class="apt_proxy" size="{fmt(*[s / 2 for s in size])}"{pos}/>')
     lines.append("    </body>")
     return lines
 
@@ -332,6 +359,10 @@ def scene_xml(plan, props, manifest, root):
         '    <default class="apt_proxy">',
         f'      <geom type="box" group="{LIDAR_GROUP}" contype="1" conaffinity="1" '
         'material="proxy" rgba="0.9 0.5 0.1 0"/>',
+        "    </default>",
+        '    <default class="apt_free">',
+        f'      <geom type="box" group="{LIDAR_GROUP}" contype="3" conaffinity="3" '
+        'friction="1 0.005 0.0001" material="proxy" rgba="0.9 0.5 0.1 0"/>',
         "    </default>",
         '    <default class="apt_box">',
         f'      <geom type="box" group="{LIDAR_GROUP}" contype="1" conaffinity="1"/>',
@@ -413,14 +444,27 @@ def scene_xml(plan, props, manifest, root):
         '    <camera name="d435i" mode="fixed" fovy="58" resolution="848 480" pos="0 0 1"/>',
         '    <camera name="chest_d435i" mode="fixed" fovy="58" resolution="848 480" pos="0 0 1"/>',
         "  </worldbody>",
-        "</mujoco>",
-        "",
     ]
+    free = [prop.body for prop in props if prop.free]
+    if free:
+        # grasp_weld engages one while the thumb and another digit touch the body: the grasp is
+        # real contact, the weld stands in for the friction the walking scene does not model.
+        out += ["", "  <equality>"]
+        for body in free:
+            for side in ("left", "right"):
+                out.append(
+                    f'    <weld name="grasp_{side}_{body}" body1="{side}_hand_palm_link" '
+                    f'body2="{body}" active="false"/>'
+                )
+        out.append("  </equality>")
+    out += ["</mujoco>", ""]
     return "\n".join(out)
 
 
 def standalone(xml):
-    """The scene without the robot, with host asset paths: what compiles on the host."""
+    """The scene without the robot, with host asset paths: what compiles on the host. The welds
+    go too: their palms are the robot's."""
+    xml = re.sub(r"\n  <equality>.*?</equality>", "", xml, flags=re.S)
     return xml.replace('<include file="g1_29dof.xml"/>', "").replace(PLACEHOLDER, str(ASSETS))
 
 
