@@ -81,8 +81,8 @@ took about four minutes; the ball came to rest 5 cm from its target in the box.
 Stop is always on screen, top right, and so is Ctrl+Shift+S. It calls the executor's `StopAll`:
 the tree halts, every goal its skills started is cancelled, the arms and legs hold where they are,
 and a hand keeps what it holds. The button says so when it matters: "Stop · right hand keeps
-red_block". A pick stopped while it lifts still drops the object: the pick action opens the hand
-when it is cancelled. On the real robot the remote's emergency stop is the one that counts.
+red_block". A pick stopped once the hand has closed keeps the object in the hand. On the real
+robot the remote's emergency stop is the one that counts.
 
 ## The executor
 

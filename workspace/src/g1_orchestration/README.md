@@ -214,8 +214,9 @@ at). A stack whose bringup activates the arms (`activate_arm:=true`) needs
 `ok` is false if the mission thread has not halted in time (it can be inside a controller_manager
 call, which nothing interrupts) or a server still has a goal in flight after the wait; `message` says
 which, and how many servers were actually asked. g1_manipulation checks for a cancel between the
-phases of a pick and its clean up opens the hand on any failed or cancelled pick, so stopping during
-a pick's lift drops the object; stopping while walking with it does not.
+phases of a pick and between lift attempts; once the hand has closed on the object a cancelled pick
+keeps it, so stopping during the grasp or the lift does not drop it. The executor still counts that
+hand as unknown, since a halted leaf gets no result.
 
 ### Results and events
 
