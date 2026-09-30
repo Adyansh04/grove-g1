@@ -618,8 +618,11 @@ TEST(NervrosExecutor, ServesTheCatalogItsMacrosAndItsVersion)
 
     const auto json = nlohmann::json::parse(response->catalog_json);
     EXPECT_EQ(json.at("catalog_version").get<std::string>(), response->catalog_version);
-    EXPECT_EQ(json.at("skills").size(), 5U);
+    EXPECT_EQ(json.at("skills").size(), 6U);
     EXPECT_THAT(response->tree_nodes_model_xml, ::testing::HasSubstr("<SubTree ID=\"PickObject\""));
+    EXPECT_THAT(
+        response->tree_nodes_model_xml,
+        ::testing::HasSubstr("<SubTree ID=\"ExploreBuilding\""));
     EXPECT_THAT(response->tree_nodes_model_xml, ::testing::HasSubstr("<Action ID=\"Pick\""));
     EXPECT_THAT(response->bt_cpp_version, ::testing::StartsWith("4."));
     EXPECT_NE(

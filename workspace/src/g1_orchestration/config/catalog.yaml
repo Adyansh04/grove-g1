@@ -130,6 +130,22 @@ skills:
     max_duration_s: 360
     template: PlaceInto
 
+  - name: ExploreBuilding
+    description: >-
+      Explore the building so the world model learns its rooms and objects: walk to where the map
+      is still open, then to viewpoints until the camera has seen every room, then save. Explores
+      for up to 23 minutes and saves what it found; run it again to carry on. Use it when rooms or
+      objects are missing, or when find_objects reports a room as barely seen. Send it as a
+      mission of its own.
+    args: []
+    requires: []
+    effects: []
+    resources: [base]
+    idempotent: true
+    risk: motion
+    max_duration_s: 1500
+    template: ExploreBuilding
+
   - name: TuckForTravel
     description: >-
       Fold both arms against the body so they do not disturb the walk. An arm whose hand holds

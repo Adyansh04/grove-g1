@@ -161,6 +161,7 @@ keeps them in step (names, ports, limits, resources). The macros are flat: none 
 | `PickObject` | Needs the hand empty. Asks the detector for the object, closes the last stretch, picks, idles the detector, backs off 1.2 m. | `base`, arms |
 | `PlaceInto` | Needs the hand to hold something. Asks the detector for the container and for what the hand holds, closes in, places, backs off. | `base`, arms |
 | `TuckForTravel` | Tucks each arm whose hand is empty. | arms |
+| `ExploreBuilding` | The loop of `trees/explore.xml`: frontiers until the map is closed, then canopy's viewpoints until every room is seen, then clean up and save. Explores for up to 23 minutes, since a whole run is longer than a mission may be, and saves; running out of time is not a failure, a world model that cannot plan is. | `base` |
 
 `object_id` and `container_id` take a world-model id (`O17`) or, where there is none, the name the
 detector reports (`red_block`). The detector names what it finds by the lowercased id (`o17`),
