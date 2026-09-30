@@ -23,7 +23,7 @@ parse_args "$@"
 SAVED=/root/data/worlds/nervros-apartment
 EMPTY=/root/data/worlds/nervros-explore
 APARTMENT="ros2 launch g1_bringup bringup.launch.py mode:=localization nav:=true world:=apartment map:=$SAVED/map.yaml headless:=true rviz:=false arms_at_sides:=true cameras:=head,chest$LAUNCH_ARGS"
-CANOPY="ros2 launch g1_bringup world_model.launch.py rviz:=false detector:=mock cameras:=head,chest world_dir:="
+CANOPY="ros2 launch g1_bringup world_model.launch.py rviz:=false detector:=mock cameras:=head,chest segmenter:=true world_dir:="
 # Both stacks take the arms themselves at start with empty hands, so the executor may trust them.
 EXECUTOR="wait_for_nav2 && ros2 launch g1_orchestration nervros_executor.launch.py hands_empty_on_attach:=true"
 PROFILE="$ROOT/workspace/src/g1_bringup/config/nervros/nervros.toml"
