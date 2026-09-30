@@ -20,6 +20,14 @@ interfaces = [
 start_armed = false
 autonomy = "supervised"
 
+[world]
+map = { topic = "/map", type = "nav_msgs/msg/OccupancyGrid" }
+
+[viz]
+plan = { topic = "/plan", type = "nav_msgs/msg/Path" }
+# Its meshes are found through ROS_PACKAGE_PATH, which nervros.sh points at the colcon build.
+urdf = "../../../g1_description/urdf/g1_29dof_with_hand_rev_1_0.urdf"
+
 [mission]
 execute = "/nervros_executor/execute_mission"
 validate = "/nervros_executor/validate_mission"

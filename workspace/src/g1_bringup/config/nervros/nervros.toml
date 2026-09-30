@@ -4,6 +4,7 @@
 
 [robot]
 name = "Unitree G1 humanoid (simulated), in an apartment"
+persona = "apartment.md"
 
 [ros]
 domain_id = 1
@@ -23,11 +24,20 @@ autonomy = "supervised"
 [look]
 image = "/camera/color/image_raw"
 detections = { topic = "/detector_head/instance_masks", type = "canopy_msgs/msg/InstanceMaskArray" }
+about = "The head camera points about 48 degrees down: it sees the floor and low furniture within about 3 m, not the far side of a room or anything above waist height."
 
 [world]
 map = { topic = "/map", type = "nav_msgs/msg/OccupancyGrid" }
 rooms = { topic = "/canopy/rooms", type = "canopy_msgs/msg/RoomArray" }
 objects = { topic = "/canopy/objects", type = "canopy_msgs/msg/WorldObjectArray" }
+coverage = { topic = "/canopy/coverage", type = "nav_msgs/msg/OccupancyGrid" }
+trail = { topic = "/canopy/trail", type = "nav_msgs/msg/Path" }
+
+[viz]
+plan = { topic = "/plan", type = "nav_msgs/msg/Path" }
+camera_info = { topic = "/camera/color/camera_info", type = "sensor_msgs/msg/CameraInfo" }
+# Its meshes are found through ROS_PACKAGE_PATH, which nervros.sh points at the colcon build.
+urdf = "../../../g1_description/urdf/g1_29dof_with_hand_rev_1_0.urdf"
 
 [mission]
 execute = "/nervros_executor/execute_mission"
@@ -37,7 +47,7 @@ stop = "/nervros_executor/stop_all"
 state = "/nervros_executor/robot_state"
 max_replans = 2
 
-# SLAM starts the map where the robot stands, so the origin is its starting pose.
+# The saved map starts where the robot stood when it was mapped, which is where it starts now.
 [[place]]
 name = "start"
 aliases = ["where you started", "home"]
@@ -48,6 +58,7 @@ name = "find_objects"
 kind = "service"
 ros_name = "/canopy/find_objects"
 type = "canopy_msgs/srv/FindObjects"
+risk = "observe"
 hide_fields = ["query_embedding"]
 defaults = { max_results = 5 }
 
