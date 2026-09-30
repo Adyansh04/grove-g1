@@ -6,7 +6,7 @@ name in the view, asks canopy where things are, and
 does physical tasks as missions: behaviour trees that `nervros_executor` checks, you approve, and
 the executor runs. It runs on the host and answers with a local model unless you choose otherwise.
 
-`./scripts/demos/nervros.sh <app|chat|explore|map|facility>` opens a section's commands at once, in
+`./scripts/demos/nervros.sh <app|chat|explore|map>` opens a section's commands at once, in
 split panes of your terminal, after tearing down any stack left running. `stop` ends it, and
 `--print` lists the commands instead.
 
@@ -116,7 +116,13 @@ reads yours when it next looks. canopy saves the
 world itself every minute while its detector runs, so a save may first replay the edits over
 canopy's newer save; that is automatic.
 
-The apartment has no arm stack, so only walking skills run there.
+- "Bring the small white mug from the dining table to the tray on the office desk." `app` runs the
+  arm stack too: MoveIt, the manipulation skills and a mock detector that knows the mug and the
+  tray by their names in the scene, `mug_4` and `tray_1`. The agent walks to `dining_table_side`,
+  picks the mug with the left hand, carries it to `office_desk_tray` and sets it in the tray: in
+  the test run, 177 s. The world model's ids for the two do not reach that detector, so the
+  executor accepts only these names in a pick or a place (`arg_choices`), and a plan that names
+  another comes back with the names it takes.
 
 ## Exploring: watching the map fill in
 
@@ -139,20 +145,6 @@ and the objects and viewpoints as they come. canopy saves the world, floor plan 
 minute and at the end of each run of up to 23 minutes; ask again to carry on. The editor serves the
 new world once it is first saved. Later, `nervros.sh app saved:=mapped-apartment` runs the robot on
 it, localizing on its floor plan. A name already mapped is kept: pick another or delete it.
-
-## In the facility: pick and place
-
-`nervros.sh facility` starts the pick-and-place stack from the [pick and place](pick-and-place.md)
-guide, the executor, and the app with `g1_bringup/config/nervros/facility.toml`. The facility has
-no world model: the profile names the two benches as places, `workbench` and `storage`, and a
-short persona (`facility.md`) tells the model the detector's names for the objects, `red_block`
-and `brown_box`. The viewer shows the map, Nav2's path and the G1's model, so you can watch the arm
-reach and the hand close.
-
-Ask: "Pick up the red_block from the workbench and put it into the brown_box on the storage
-bench." The agent plans four steps: walk to the workbench, pick the ball, walk to the storage
-bench, place it into the box. In the test run the plan passed its checks at once and the mission
-took about four minutes; the ball came to rest 5 cm from its target in the box.
 
 ## Stopping
 

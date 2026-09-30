@@ -94,6 +94,18 @@ name = "start"
 aliases = ["where you started", "home"]
 pose = { x = 0.0, y = 0.0, yaw = 0.0 }
 
+# Where the robot stands to pick the mug off the dining table and to set it in the office desk's
+# tray, left hand: world (-0.85, 2.84, 180 deg) and (5.65, -4.40, -90 deg) in the saved map's frame.
+[[place]]
+name = "dining_table_side"
+aliases = ["beside the dining table", "the dining table's east end"]
+pose = { x = -1.313, y = 2.898, yaw = 3.135 }
+
+[[place]]
+name = "office_desk_tray"
+aliases = ["the office desk's tray", "in front of the office desk"]
+pose = { x = 5.139, y = -4.385, yaw = -1.577 }
+
 [[tool]]
 name = "find_objects"
 kind = "service"
