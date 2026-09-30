@@ -221,8 +221,48 @@ behavior_server:
     min_rotational_vel: 0.3
     rotational_acc_lim: 1.0
 
+# The last check between Nav2 and the gait, for what the costmaps do not see: they read the cloud
+# from 0.30 m up, this reads it below, from 0.05 to 0.60 m, where a crate, a step or a chair's legs
+# are, and never what a hand carries. The controller and the behaviors publish /cmd_vel_raw, and
+# this passes it to /cmd_vel slowed so the body would not reach a return within
+# time_before_collision. The circle is the body with a margin, not the costmaps' 0.45 m, so the
+# close approaches Nav2 plans are left alone. g1_base_approach, which closes the last decimetres to
+# a table on purpose, writes /cmd_vel itself.
+collision_monitor:
+  ros__parameters:
+    use_sim_time: false
+    base_frame_id: base_footprint
+    odom_frame_id: odom
+    cmd_vel_in_topic: /cmd_vel_raw
+    cmd_vel_out_topic: /cmd_vel
+    state_topic: collision_monitor_state
+    transform_tolerance: 0.3
+    source_timeout: 1.0
+    base_shift_correction: true
+    stop_pub_timeout: 2.0
+    enable_stamped_cmd_vel: false
+    polygons: ["body"]
+    body:
+      type: circle
+      radius: 0.35
+      action_type: approach
+      time_before_collision: 1.0
+      simulation_time_step: 0.1
+      min_points: 4
+      visualize: true
+      polygon_pub_topic: collision_monitor_body
+      enabled: true
+    observation_sources: ["low_cloud"]
+    low_cloud:
+      type: pointcloud
+      topic: /livox/lidar
+      min_height: 0.05
+      max_height: 0.60
+      enabled: true
+
 lifecycle_manager_navigation:
   ros__parameters:
     use_sim_time: false
     autostart: true
-    node_names: ["controller_server", "planner_server", "behavior_server", "bt_navigator"]
+    node_names: ["controller_server", "planner_server", "behavior_server", "bt_navigator",
+                 "collision_monitor"]

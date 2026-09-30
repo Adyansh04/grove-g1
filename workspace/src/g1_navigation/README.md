@@ -12,7 +12,9 @@ flowchart TB
     SLAM -- "map to odom" --> NAV2
     AMCL -- "map to odom" --> NAV2
     ODOM["g1_odometry_publisher"] -- "odom to base_footprint" --> NAV2
-    NAV2["Nav2"] -- "/cmd_vel" --> POL["the walking policy"]
+    NAV2["Nav2"] -- "/cmd_vel_raw" --> MON["collision_monitor"]
+    RELAY -- "/livox/lidar, 0.05 to 0.60 m" --> MON
+    MON -- "/cmd_vel" --> POL["the walking policy"]
     APPR["g1_base_approach"] -- "/cmd_vel" --> POL
 ```
 
@@ -25,7 +27,7 @@ flowchart TB
 | `scan.launch.py` | `pointcloud_to_laserscan`, flattening the LiDAR into the 2D scan SLAM and AMCL consume. |
 | `slam.launch.py` | `slam_toolbox` in online async mapping mode. |
 | `localization.launch.py` | `map_server` and AMCL against the committed map of `world`, or the one `map:=` names. |
-| `nav2.launch.py` | Planner, controller, behaviors, BT navigator, lifecycle manager and `g1_base_approach`. Included only with `nav:=true`. |
+| `nav2.launch.py` | Planner, controller, behaviors, BT navigator, collision monitor, lifecycle manager and `g1_base_approach`. Included only with `nav:=true`. |
 
 `g1_bringup`'s `bringup.launch.py` is the operator entry point. `nav_stack.launch.py` and
 `nav_sim.launch.py` default to `mode:=mapping` and also take `use_composition` and `container_name`,
@@ -68,6 +70,14 @@ recovery is removed from both behavior trees: upstream's backup speed (0.05 m/s)
 `behavior_plugins` has `drive_on_heading` for `nervros_executor`'s `WalkStraight`, which asks for
 0.3 m/s either way; the gait delivers about 0.21 m/s forward and 0.24 m/s back.
 
+Nav2's controller and behaviors publish `/cmd_vel_raw`, and `collision_monitor` passes it on to
+`/cmd_vel`, slowed so the body would not reach an obstacle within a second. It reads the LiDAR's
+cloud from 0.05 to 0.60 m, below the costmaps' band, so it sees what they cannot (`crate_2`, a
+step, a chair's legs) and never what a hand carries; a scan source saw the carried mug and slowed
+every carry to a stop. Its circle is 0.35 m, the body with a margin, not the costmaps' 0.45 m,
+which leaves the close approaches Nav2 plans alone. The simulated sweep never sees the robot's own
+links; the real one will see its legs in that band, so filter them before trusting it on hardware.
+
 Nav2 is not the only `/cmd_vel` writer. `nav2.launch.py` also starts `g1_locomotion`'s
 `g1_base_approach`, which walks the last stretch because Nav2 stops within 0.5 m of a goal
 (`xy_goal_tolerance`), wider than the band the arm reaches from. Nothing arbitrates between
@@ -95,7 +105,7 @@ the two: the mission tree runs `NavigateToPose` and `ApproachObject` in sequence
 
 | Path | Contents |
 |---|---|
-| `config/nav2_params.yaml` | Planner, controller, costmaps, behaviors, BT navigator. |
+| `config/nav2_params.yaml` | Planner, controller, costmaps, behaviors, BT navigator, collision monitor. |
 | `config/localization.yaml` | `map_server` and AMCL. |
 | `config/scan.yaml` | The point cloud to laser scan flatten, including the height band. |
 | `config/slam_mapping.yaml` | `slam_toolbox` online async. |
