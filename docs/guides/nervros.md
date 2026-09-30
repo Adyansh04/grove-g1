@@ -1,7 +1,7 @@
 # Talking to the robot with NervROS
 
 NervROS (`workspace/src/nervros`, its own repository) is an agent you talk to in a desktop app. It
-looks through the head camera and marks what the detector finds, asks canopy where things are, and
+looks through the chest camera and marks what the detector finds, asks canopy where things are, and
 does physical tasks as missions: behaviour trees that `nervros_executor` checks, you approve, and
 the executor runs. It runs on the host and answers with a local model unless you choose otherwise.
 
@@ -36,9 +36,9 @@ the executor.
 ```bash
 ros2 launch g1_bringup bringup.launch.py mode:=localization nav:=true world:=apartment \
   map:=/root/data/worlds/nervros-apartment/map.yaml headless:=true rviz:=false \
-  arms_at_sides:=true cameras:=head
+  arms_at_sides:=true cameras:=head,chest
 ros2 launch g1_bringup world_model.launch.py world_dir:=/root/data/worlds/nervros-apartment \
-  rviz:=false detector:=mock cameras:=head
+  rviz:=false detector:=mock cameras:=head,chest
 ros2 launch g1_orchestration nervros_executor.launch.py hands_empty_on_attach:=true
 ```
 
@@ -64,8 +64,9 @@ Things to ask:
 
 - "What do you see? Is there a sofa?" The agent calls `look` with the question: the detector's finds
   are drawn on the frame as numbered marks, the local vision model looks at that frame and
-  answers, and you see the frame in the chat. The head camera points down, which the profile tells
-  the vision model.
+  answers, and you see the frame in the chat. It looks through the chest camera, about 1 m up and
+  20 degrees down, which the profile tells the vision model; the head camera, pointing further
+  down, feeds canopy with it.
 - "Where is the dustbin?" `find_objects` asks canopy, which answers with ids, rooms, and how much of
   each room the camera has seen, so "not found" comes with how sure it is.
 - "Walk to the living room." The agent writes a plan, and a plan card appears with its steps. Arm

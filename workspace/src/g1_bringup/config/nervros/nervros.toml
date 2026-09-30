@@ -22,9 +22,9 @@ start_armed = false
 autonomy = "supervised"
 
 [look]
-image = "/camera/color/image_raw"
-detections = { topic = "/detector_head/instance_masks", type = "canopy_msgs/msg/InstanceMaskArray" }
-about = "The head camera points about 48 degrees down: it sees the floor and low furniture within about 3 m, not the far side of a room or anything above waist height."
+image = "/chest_camera/color/image_raw"
+detections = { topic = "/detector_chest/instance_masks", type = "canopy_msgs/msg/InstanceMaskArray" }
+about = "The chest camera is about 1 m up and points 20 degrees down: it sees the floor from about 1 m out to the far wall, and walls, furniture and shelves up to about 1.5 m high, not the floor at the robot's feet or anything higher."
 
 [world]
 map = { topic = "/map", type = "nav_msgs/msg/OccupancyGrid" }
@@ -35,7 +35,7 @@ trail = { topic = "/canopy/trail", type = "nav_msgs/msg/Path" }
 
 [viz]
 plan = { topic = "/plan", type = "nav_msgs/msg/Path" }
-camera_info = { topic = "/camera/color/camera_info", type = "sensor_msgs/msg/CameraInfo" }
+camera_info = { topic = "/chest_camera/color/camera_info", type = "sensor_msgs/msg/CameraInfo" }
 # Its meshes are found through ROS_PACKAGE_PATH, which nervros.sh points at the colcon build.
 urdf = "../../../g1_description/urdf/g1_29dof_with_hand_rev_1_0.urdf"
 
