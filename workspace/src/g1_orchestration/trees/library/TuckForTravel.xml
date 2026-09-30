@@ -1,0 +1,35 @@
+<?xml version="1.0"?>
+<!--
+  Fold both arms against the body, so the gait is not disturbed by them swinging out. Tucked sweeps
+  the least of any pose.
+
+  One leaf per arm, because both_arms fails to execute a named posture on this stack while either
+  arm alone succeeds. Each is retried, since OMPL sometimes samples a path that clips the live
+  octomap. An arm whose hand holds something is left alone: folding it in would drive the object
+  into the body. The executor keeps what each hand holds in the root blackboard (held_left and
+  held_right, empty when nothing, "?" when a hand may hold something it cannot name).
+-->
+<root BTCPP_format="4">
+  <BehaviorTree ID="TuckForTravel">
+    <Timeout name="give_up_after_the_limit" msec="120000">
+      <Sequence name="tuck_both">
+        <Fallback name="tuck_right_unless_it_holds_something">
+          <ScriptCondition name="right_hand_is_full" code="@held_right != ''"/>
+          <RetryUntilSuccessful name="tuck_right_with_retries" num_attempts="3">
+            <SetArmPosture name="tuck_right" group="right_arm" named_target="tucked"/>
+          </RetryUntilSuccessful>
+        </Fallback>
+        <Fallback name="tuck_left_unless_it_holds_something">
+          <ScriptCondition name="left_hand_is_full" code="@held_left != ''"/>
+          <RetryUntilSuccessful name="tuck_left_with_retries" num_attempts="3">
+            <SetArmPosture name="tuck_left" group="left_arm" named_target="tucked"/>
+          </RetryUntilSuccessful>
+        </Fallback>
+      </Sequence>
+    </Timeout>
+  </BehaviorTree>
+
+  <TreeNodesModel>
+    <SubTree ID="TuckForTravel"/>
+  </TreeNodesModel>
+</root>

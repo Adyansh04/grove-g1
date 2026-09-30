@@ -1,0 +1,50 @@
+<?xml version="1.0"?>
+<!--
+  Put down what a hand holds, into a container standing on a surface in front of the robot: ask the
+  detector for the container, close in, lower, release and back away. The robot must already be
+  standing within about half a metre of it.
+
+  Place confirms where the object landed, and fails unless the detector can see it again, so the
+  detector is asked for the held object too. The executor keeps what each hand holds, as
+  "id=phrase" with the id the detector knows it by, in the mission's root blackboard as held_left
+  and held_right; empty means nothing, and "?" a hand that may hold something the executor cannot
+  name (nothing is asked of the detector for it). The hand has to hold something, or there is
+  nothing to place. LookFor hands on the container's id as first_id.
+
+  Approach and place retry together: reaching with a load moves the base, and past about 0.1 m only
+  a new approach brings the target back into reach.
+-->
+<root BTCPP_format="4">
+  <BehaviorTree ID="PlaceInto">
+    <Timeout name="give_up_after_the_limit" msec="360000">
+      <Sequence name="place_into">
+        <ScriptCondition name="hand_must_hold_something_to_place"
+                         code="(arm == 'left' ? @held_left : @held_right) != ''"/>
+        <Script name="say_what_to_look_for"
+                code="wanted := container_id + '=' + phrase; held := (arm == 'left') ? @held_left : @held_right; load := (held == '?') ? '' : held"/>
+        <RetryUntilSuccessful name="find_it_with_retries" num_attempts="2">
+          <LookFor name="find_the_container_and_the_load" objects="{wanted}" also="{load}"
+                   first_id="{seen_as}"/>
+        </RetryUntilSuccessful>
+        <RetryUntilSuccessful name="place_with_retries" num_attempts="3">
+          <Sequence name="close_in_and_place">
+            <ApproachObject name="close_on_the_container" object_id="{seen_as}" arm="{arm}"
+                            use_current_heading="true"/>
+            <Place name="put_it_in" surface="{seen_as}" arm="{arm}"/>
+          </Sequence>
+        </RetryUntilSuccessful>
+        <Retreat name="back_off_the_container" distance="0.8"/>
+        <ClearCostmaps name="forget_the_container"/>
+        <StopLooking name="perception_off"/>
+      </Sequence>
+    </Timeout>
+  </BehaviorTree>
+
+  <TreeNodesModel>
+    <SubTree ID="PlaceInto">
+      <input_port name="container_id">The container: its world-model id such as O31, or where there is no world model the name the detector reports it under, such as brown_box.</input_port>
+      <input_port name="phrase">Plain words the detector finds the container by, such as brown box container.</input_port>
+      <input_port name="arm">Which hand holds the object: left or right.</input_port>
+    </SubTree>
+  </TreeNodesModel>
+</root>

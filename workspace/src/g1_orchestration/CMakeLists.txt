@@ -15,16 +15,36 @@ find_package(g1_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(lifecycle_msgs REQUIRED)
 find_package(nav2_msgs REQUIRED)
+find_package(OpenSSL REQUIRED)
 find_package(rcl_interfaces REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(std_srvs REQUIRED)
+find_package(TinyXML2 REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(vision_msgs REQUIRED)
+find_package(yaml-cpp REQUIRED)
 
-# --- library ---------------------------------------------------------------
+# --- libraries -------------------------------------------------------------
+
+# What a planner may ask for and whether a mission is allowed to run. No ROS and no leaves, so its
+# tests run in milliseconds and a service thread can share it with the mission thread.
+add_library(g1_mission_validation
+  src/catalog.cpp
+  src/macro_library.cpp
+  src/mission_validator.cpp
+  src/sha256.cpp
+  src/xml_canonical.cpp
+)
+g1_target_defaults(g1_mission_validation)
+target_link_libraries(g1_mission_validation PUBLIC
+  behaviortree_cpp::behaviortree_cpp
+  OpenSSL::Crypto
+  tinyxml2::tinyxml2
+  yaml-cpp
+)
 
 add_library(g1_bt_nodes
   src/arm_authority.cpp
@@ -80,7 +100,7 @@ target_link_libraries(g1_bt_node_model PUBLIC g1_bt_nodes)
 
 install(DIRECTORY include/ DESTINATION include)
 install(DIRECTORY config launch trees DESTINATION share/${PROJECT_NAME})
-install(TARGETS g1_bt_nodes EXPORT export_${PROJECT_NAME} DESTINATION lib)
+install(TARGETS g1_bt_nodes g1_mission_validation EXPORT export_${PROJECT_NAME} DESTINATION lib)
 install(TARGETS g1_bt_executor g1_bt_node_model DESTINATION lib/${PROJECT_NAME})
 
 # --- tests -----------------------------------------------------------------
@@ -104,6 +124,13 @@ if(BUILD_TESTING)
   ament_add_gmock(test_node_model test/test_node_model.cpp)
   target_link_libraries(test_node_model g1_bt_nodes)
   target_compile_definitions(test_node_model PRIVATE
+    G1_TREES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/trees")
+
+  # What a mission may say: the allowlist, the bounds, the worst case and the hash. No ROS.
+  ament_add_gmock(test_mission_validator test/test_mission_validator.cpp)
+  target_link_libraries(test_mission_validator g1_mission_validation)
+  target_compile_definitions(test_mission_validator PRIVATE
+    G1_CONFIG_DIR="${CMAKE_CURRENT_SOURCE_DIR}/config"
     G1_TREES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/trees")
 
   # controlledParts() against g1_bringup's activate_arm script, the other implementation.
