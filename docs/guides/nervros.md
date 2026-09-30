@@ -87,16 +87,30 @@ Things to ask:
   2 m, forward or backward) and `TurnInPlace` (up to 180 degrees). They go through Nav2's
   behaviors, which project the motion on the local costmap and stop the robot before it hits
   something: the step then fails and the agent says so. They never walk around anything.
+- "Check the robot's health." `health_check` runs the connection check, measures each camera's
+  frame rate, checks the robot knows where it is on the map and reads the executor's state, and
+  the agent tells you what is wrong first.
+- "Tell me if the chest camera drops below 5 Hz." `watch` keeps an eye on a topic in the
+  background, its rate, a field crossing a value or a log line, and the agent tells you in the chat
+  when it happens. "Which watches are running?" lists them, and you can cancel them.
+- "Plot the robot's forward speed." `plot` draws a number from a topic over time in the viewer's
+  Plots tab, below the 3D view.
+- "Remember this spot as the reading corner." `tag_place` saves where the robot stands and which
+  way it faces as a place, for "walk to the reading corner" later, in this session or the next. It
+  is kept in `~/.local/state/nervros/places/`, one file per robot; "forget the reading corner"
+  drops it.
 
 The viewer draws the map, the rooms coloured by how much of each the camera has seen, the objects,
-the G1's model with its joints as they are, Nav2's path and the chest camera's view in 3D, and
-beside it both cameras, in tabs, with the detector's boxes. The profile adds what the world-model
-RViz view shows: canopy's walls and floor plan, its doorways, viewpoints and visits, and the laser
-scan. The Layers tab (Ctrl+3) switches each of them on and off. Click an
-object, a room or a point on the map there and a bar above the message box offers "Go there", "What
-is it?" and the like; it fills in the message, which you send. The Mission tab under the camera
-shows each step of the running mission as a lane on the timeline. The dock's World tab (Ctrl+2)
-lists the rooms with how much of each has been seen.
+the G1's model with its joints as they are, Nav2's path and the chest camera's view in 3D. Beside
+it are the chest camera and, below it in tabs, the head camera and the last frame the agent looked
+at, each with the detector's boxes. The profile adds what the world-model RViz view shows: canopy's
+walls and floor plan, its doorways, viewpoints and visits, and the laser scan. The Layers tab
+(Ctrl+3) switches each of them on and off. Object names start off, since 50 of them bury the map;
+hover a box to see its name. Click an object, a room or a point on the map there and a bar above
+the message box offers "Go there", "What is it?" and the like; it fills in the message, which you
+send. The strip under the views holds the agent's log, the running mission's steps as lanes on the
+timeline, the exploration's progress and the plots. The dock's World tab (Ctrl+2) lists the rooms
+with how much of each has been seen.
 
 ## Fixing the world model
 
