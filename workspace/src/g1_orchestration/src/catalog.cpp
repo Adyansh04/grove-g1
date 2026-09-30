@@ -54,7 +54,11 @@ const std::set<std::string, std::less<>>& knownResources()
 
 const std::set<std::string, std::less<>>& knownFormats()
 {
-    static const std::set<std::string, std::less<>> formats{ "", "id", "phrase", "station" };
+    static const std::set<std::string, std::less<>> formats{ "",
+                                                             "id",
+                                                             "phrase",
+                                                             "station",
+                                                             "number" };
     return formats;
 }
 
@@ -87,6 +91,17 @@ std::string text(const YAML::Node& parent, const char* key, const std::string& w
         fail(where, std::format("'{}' must be text", key));
     }
     return node.as<std::string>();
+}
+
+double number(const YAML::Node& parent, const char* key, const std::string& where)
+{
+    const YAML::Node node  = required(parent, key, where);
+    double           value = 0.0;
+    if (!node.IsScalar() || !YAML::convert<double>::decode(node, value) || !std::isfinite(value))
+    {
+        fail(where, std::format("'{}' must be a number", key));
+    }
+    return value;
 }
 
 std::vector<std::string>
@@ -138,6 +153,19 @@ SkillArg parseArg(const YAML::Node& node, const std::string& skill)
     if (!knownTypes().contains(arg.type))
     {
         fail(where + " arg " + arg.name, "unknown type '" + arg.type + "'");
+    }
+    if (arg.format == "number")
+    {
+        arg.min = number(node, "min", where + " arg " + arg.name);
+        arg.max = number(node, "max", where + " arg " + arg.name);
+        if (!(arg.min < arg.max))
+        {
+            fail(where + " arg " + arg.name, "min must be less than max");
+        }
+    }
+    else if (node["min"].IsDefined() || node["max"].IsDefined())
+    {
+        fail(where + " arg " + arg.name, "only a number takes min and max");
     }
     return arg;
 }
@@ -195,6 +223,12 @@ nlohmann::ordered_json toJson(const SkillArg& arg)
     json["type"]        = arg.type;
     json["description"] = arg.description;
     json["enum"]        = arg.allowed;
+    if (arg.format == "number")
+    {
+        json["format"] = arg.format;
+        json["min"]    = arg.min;
+        json["max"]    = arg.max;
+    }
     if (!arg.default_from.empty())
     {
         json["default_from"] = arg.default_from;

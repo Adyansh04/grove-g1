@@ -64,8 +64,9 @@ about 0.15 m/s on both linear axes: commanded 0.10 m/s, the robot does not move.
 deadband and tracks near 1:1. `g1_controllers` clamps commands to 0.6 m/s and 0.9 rad/s.
 
 Any controller or recovery must therefore command speeds above the deadband. That is why reverse
-recovery is removed from both behavior trees and from `behavior_plugins`: upstream's backup speed
-(0.05 m/s) sits inside it.
+recovery is removed from both behavior trees: upstream's backup speed (0.05 m/s) sits inside it.
+`behavior_plugins` has `drive_on_heading` for `nervros_executor`'s `WalkStraight`, which asks for
+0.3 m/s either way; the gait delivers about 0.21 m/s forward and 0.24 m/s back.
 
 Nav2 is not the only `/cmd_vel` writer. `nav2.launch.py` also starts `g1_locomotion`'s
 `g1_base_approach`, which walks the last stretch because Nav2 stops within 0.5 m of a goal

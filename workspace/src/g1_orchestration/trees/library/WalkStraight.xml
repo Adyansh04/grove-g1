@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<!--
+  Walk straight forward or backward by a distance, through Nav2's drive_on_heading, which stops on
+  a predicted collision. One try: a collision abort must reach the agent rather than be retried or
+  cleared away, and clearing the costmap would blind the check for a moment.
+-->
+<root BTCPP_format="4">
+  <BehaviorTree ID="WalkStraight">
+    <Timeout name="give_up_after_the_limit" msec="35000">
+      <DriveStraight name="walk" direction="{direction}" distance="{distance_m}"/>
+    </Timeout>
+  </BehaviorTree>
+
+  <TreeNodesModel>
+    <SubTree ID="WalkStraight">
+      <input_port name="direction">forward or backward.</input_port>
+      <input_port name="distance_m">How far, in metres, from 0.1 to 2.0.</input_port>
+    </SubTree>
+  </TreeNodesModel>
+</root>

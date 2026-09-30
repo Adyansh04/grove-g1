@@ -15,12 +15,14 @@
 #include <algorithm>
 #include <behaviortree_cpp/contrib/json.hpp>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <iterator>
 #include <map>
 #include <memory>
 #include <rclcpp/rclcpp.hpp>
 #include <set>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -61,6 +63,10 @@ std::string exampleValue(const g1_orchestration::SkillArg& arg)
     if (arg.format == "station")
     {
         return "1.0;2.0;0.5";
+    }
+    if (arg.format == "number")
+    {
+        return std::format("{}", arg.min);
     }
     if (arg.format == "id")
     {
@@ -157,6 +163,8 @@ TEST(CatalogDrift, ResourcesCoverWhatTheMacroLeavesNeed)
         { "Retreat", g1_orchestration::kBaseResource },
         { "StepClear", g1_orchestration::kBaseResource },
         { "TurnTo", g1_orchestration::kBaseResource },
+        { "DriveStraight", g1_orchestration::kBaseResource },
+        { "TurnBy", g1_orchestration::kBaseResource },
         { "Pick", g1_orchestration::kRightArmResource },
         { "Place", g1_orchestration::kRightArmResource },
         { "SetArmPosture", g1_orchestration::kRightArmResource },
@@ -393,6 +401,31 @@ TEST(CatalogDrift, ThePhrasesAreFilledInFromTheWorldModelsLabelForTheObject)
         ::testing::UnorderedElementsAre(
             ::testing::Pair("PickObject.phrase", "label(object_id)"),
             ::testing::Pair("PlaceInto.phrase", "label(container_id)")));
+}
+
+TEST(CatalogDrift, ANumberNeedsARangeAndOnlyANumberHasOne)
+{
+    const auto skill = [](const std::string& arg) {
+        return "skills:\n  - name: Walk\n    description: d\n    args:\n" + arg +
+               "    requires: []\n    effects: []\n    resources: [base]\n    idempotent: false\n  "
+               "  risk: motion\n"
+               "    max_duration_s: 10\n    template: Walk\n";
+    };
+    const std::string ok = "      - {name: d, description: x, format: number, min: 0.1, max: 2}\n";
+    const Catalog     catalog = Catalog::parse(skill(ok));
+    EXPECT_DOUBLE_EQ(catalog.skills().front().args.front().max, 2.0);
+    const auto arg = nlohmann::json::parse(catalog.json()).at("skills").at(0).at("args").at(0);
+    EXPECT_EQ(arg.at("min"), 0.1);
+    EXPECT_EQ(arg.at("format"), "number");
+    for (const char* bad : {
+             "      - {name: d, description: x, format: number, min: 2, max: 2}\n",
+             "      - {name: d, description: x, format: number, max: 2}\n",
+             "      - {name: d, description: x, format: number, min: a, max: 2}\n",
+             "      - {name: d, description: x, min: 0, max: 2}\n",
+         })
+    {
+        EXPECT_THROW(Catalog::parse(skill(bad)), std::runtime_error) << bad;
+    }
 }
 
 TEST(CatalogDrift, TheVersionChangesWithTheText)

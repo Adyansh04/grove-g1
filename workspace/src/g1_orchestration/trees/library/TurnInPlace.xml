@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<!--
+  Turn on the spot by an angle relative to the current heading, through Nav2's spin. One try, as
+  for WalkStraight: a turn refused next to furniture must reach the agent.
+-->
+<root BTCPP_format="4">
+  <BehaviorTree ID="TurnInPlace">
+    <Timeout name="give_up_after_the_limit" msec="30000">
+      <TurnBy name="turn" degrees="{degrees}"/>
+    </Timeout>
+  </BehaviorTree>
+
+  <TreeNodesModel>
+    <SubTree ID="TurnInPlace">
+      <input_port name="degrees">How far to turn, in degrees, from -180 to 180; positive is left.</input_port>
+    </SubTree>
+  </TreeNodesModel>
+</root>

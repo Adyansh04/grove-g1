@@ -72,6 +72,10 @@ Things to ask:
 - "Walk to the living room." The agent writes a plan, and a plan card appears with its steps. Arm
   the robot with the switch in the top bar, then approve the plan in the chat or the dock. The card
   follows the mission step by step, and the agent tells you how it ended.
+- "Walk 1 metre forward, then turn left 90 degrees." Small exact moves are `WalkStraight` (0.1 to
+  2 m, forward or backward) and `TurnInPlace` (up to 180 degrees). They go through Nav2's
+  behaviors, which project the motion on the local costmap and stop the robot before it hits
+  something: the step then fails and the agent says so. They never walk around anything.
 
 The viewer draws the map, the rooms coloured by how much of each the camera has seen, the objects,
 the G1's model with its joints as they are, Nav2's path and the camera's view in 3D. Click an
@@ -123,8 +127,8 @@ timeouts and retries. It takes the arms before the first step when a skill needs
 them back when the mission ends unless a hand holds, or may hold, something: after a pick that was
 cut off, the executor does not trust that hand until a place with it succeeds, and the agent plans
 as if it were full. The skills a plan may use are in `config/catalog.yaml`, as macros in
-`trees/library/`: `GoToTarget`, `GoToPose`, `PickObject`, `PlaceInto`, `TuckForTravel` and
-`ExploreBuilding`.
+`trees/library/`: `GoToTarget`, `GoToPose`, `WalkStraight`, `TurnInPlace`, `PickObject`,
+`PlaceInto`, `TuckForTravel` and `ExploreBuilding`.
 
 A mission can also be sent by hand, which is how to check a tree without the agent:
 

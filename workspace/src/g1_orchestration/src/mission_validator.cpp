@@ -213,6 +213,14 @@ std::string problemWith(const SkillArg& arg, std::string_view value)
         return "must be x;y;yaw in the map frame, metres and radians, for example "
                "4.30;-5.60;1.5708";
     }
+    else if (arg.format == "number")
+    {
+        const auto number = realNumber(value);
+        if (!number || *number < arg.min || *number > arg.max)
+        {
+            return std::format("must be a number from {} to {}", arg.min, arg.max);
+        }
+    }
     return {};
 }
 

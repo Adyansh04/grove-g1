@@ -618,7 +618,7 @@ TEST(NervrosExecutor, ServesTheCatalogItsMacrosAndItsVersion)
 
     const auto json = nlohmann::json::parse(response->catalog_json);
     EXPECT_EQ(json.at("catalog_version").get<std::string>(), response->catalog_version);
-    EXPECT_EQ(json.at("skills").size(), 6U);
+    EXPECT_EQ(json.at("skills").size(), 8U);
     EXPECT_THAT(response->tree_nodes_model_xml, ::testing::HasSubstr("<SubTree ID=\"PickObject\""));
     EXPECT_THAT(
         response->tree_nodes_model_xml,

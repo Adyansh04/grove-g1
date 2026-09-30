@@ -59,6 +59,8 @@ image, so this package has its own action-client base.
 | `CleanUpWorld` | `/canopy/clean_up` | `timeout_s`; takes out what canopy can tell is not an object, marked so a person can restore it |
 | `SaveWorld` | `/canopy/save` | `timeout_s` |
 | `TurnTo` | Nav2 `/spin` | `yaw` in `frame`, `base_frame`, `yaw_rate`, `slack_s`; turns by the difference from the current heading |
+| `DriveStraight` | Nav2 `/drive_on_heading` | `direction` forward or backward, `distance` 0.1 to 2 m, `speed` (0.3, kept within 0.2 to 0.4), `slack_s`, `coast_m` (0.1, the gait's run-on after the stop, taken off the distance); fails on Nav2's collision stop |
+| `TurnBy` | Nav2 `/spin` | `degrees` -180 to 180, positive left, `yaw_rate`, `slack_s`; a relative turn, no TF |
 
 The leaves that wrap an action server also take `server_timeout_s` (default 10.0), how long to
 wait for the server to appear. Every port and its default is in the Groot2 palette,
@@ -160,8 +162,14 @@ keeps them in step (names, ports, limits, resources). The macros are flat: none 
 | `GoToPose` | The same walk to `x;y;yaw` in the `map` frame. | `base` |
 | `PickObject` | Needs the hand empty. Asks the detector for the object, closes the last stretch, picks, idles the detector, backs off 1.2 m. | `base`, arms |
 | `PlaceInto` | Needs the hand to hold something. Asks the detector for the container and for what the hand holds, closes in, places, backs off. | `base`, arms |
+| `WalkStraight` | Walks forward or backward a distance (0.1 to 2 m) with `DriveStraight`, one try. Nav2 projects the walk on the local costmap and stops it before a collision, which fails the step. | `base` |
+| `TurnInPlace` | Turns by an angle (-180 to 180 degrees, positive left) with `TurnBy`, one try. | `base` |
 | `TuckForTravel` | Tucks each arm whose hand is empty. | arms |
 | `ExploreBuilding` | The loop of `trees/explore.xml`: frontiers until the map is closed, then canopy's viewpoints until every room is seen, then clean up and save. Explores for up to 23 minutes, since a whole run is longer than a mission may be, and saves; running out of time is not a failure, a world model that cannot plan is. | `base` |
+
+An argument with `format: number` takes a decimal from its `min` to its `max`, which the validator
+checks and the catalog JSON carries. In the simulator a 1 m walk ended within 1 cm and a 90 degree
+turn within about 5 degrees.
 
 `object_id` and `container_id` take a world-model id (`O17`) or, where there is none, the name the
 detector reports (`red_block`). The detector names what it finds by the lowercased id (`o17`),

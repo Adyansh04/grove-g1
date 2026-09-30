@@ -64,6 +64,56 @@ skills:
     max_duration_s: 240
     template: GoToPose
 
+  - name: WalkStraight
+    description: >-
+      Walk straight forward or backward by a set distance and stop, without turning. Use it for
+      small exact moves such as "go 2 metres forward" or "back up half a metre"; to get to a place
+      use GoToPose or GoToTarget. The distance is measured from where the robot stands, along the
+      way it faces, and it ends within about 5 cm past it. Nav2 checks the way against what the
+      LiDAR sees, as a circle of 0.45 m around the body: if something is in the way the robot
+      stops where it is, part of the way, and the step fails. It never walks around anything and
+      does not see an arm held out or something carried, so tuck the arms first when they are out.
+    args:
+      - name: direction
+        type: string
+        description: Which way to walk, relative to where the robot faces.
+        enum: [forward, backward]
+      - name: distance_m
+        type: string
+        format: number
+        min: 0.1
+        max: 2.0
+        description: How far to walk, in metres, from 0.1 to 2.0. Always positive; direction says which way.
+    requires: []
+    effects: []
+    resources: [base]
+    idempotent: false
+    risk: motion
+    max_duration_s: 35
+    template: WalkStraight
+
+  - name: TurnInPlace
+    description: >-
+      Turn on the spot by an angle from where the robot faces now, and stop: positive turns left
+      (counter-clockwise seen from above), negative turns right, up to half a turn either way. Use
+      it for "turn right 90 degrees", "turn around" (180) or to face a direction before
+      WalkStraight; to face a place use GoToPose. It ends within about 5 degrees of the angle. It
+      fails at once, before turning, when something is within 0.45 m of the robot's centre.
+    args:
+      - name: degrees
+        type: string
+        format: number
+        min: -180
+        max: 180
+        description: How far to turn, in degrees, from -180 to 180; positive is left.
+    requires: []
+    effects: []
+    resources: [base]
+    idempotent: false
+    risk: motion
+    max_duration_s: 30
+    template: TurnInPlace
+
   - name: PickObject
     description: >-
       Pick an object up with one hand: look for it, close the last stretch to it, grasp and lift,

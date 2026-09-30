@@ -31,7 +31,8 @@ struct SkillArg
     /// What a planner writes: "string", or "world_id" for an id from the world model (canopy),
     /// which the planner checks against the live world model.
     std::string type;
-    /// How the executor checks a value beyond its type: "" (any text), "id", "phrase" or "station".
+    /// How the executor checks a value beyond its type: "" (any text), "id", "phrase", "station",
+    /// or "number" (a decimal from `min` to `max`).
     std::string format;
     std::string description;
     /// The only values allowed, or empty when any is.
@@ -39,6 +40,9 @@ struct SkillArg
     /// Names where a planner may get the value instead of asking a model, such as
     /// "label(object_id)". The executor still requires the argument in the mission.
     std::string default_from;
+    /// For a number, the least and the most it may be.
+    double min = 0.0;
+    double max = 0.0;
 };
 
 /**

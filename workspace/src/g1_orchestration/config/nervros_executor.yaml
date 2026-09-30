@@ -53,6 +53,7 @@ nervros_executor:
     stop_action_servers:
       - /navigate_to_pose:nav2_msgs/action/NavigateToPose
       - /spin:nav2_msgs/action/Spin
+      - /drive_on_heading:nav2_msgs/action/DriveOnHeading
       - /g1_base_approach/approach_object:g1_msgs/action/ApproachObject
       - /g1_base_approach/retreat:g1_msgs/action/Retreat
       - /g1_base_approach/step_clear:g1_msgs/action/StepClear

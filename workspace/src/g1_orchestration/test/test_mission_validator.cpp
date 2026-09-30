@@ -777,6 +777,30 @@ TEST(MissionValidator, HoldsIdsPhrasesAndStationsToTheirFormat)
         ::testing::IsEmpty());
 }
 
+TEST(MissionValidator, HoldsANumberToItsRange)
+{
+    const auto walk = [](const std::string& distance) {
+        return step(R"(ID="WalkStraight" direction="forward" distance_m=")" + distance + "\"");
+    };
+    for (const char* distance : { "0.1", "1", "1.5", "2.0" })
+    {
+        EXPECT_THAT(check(walk(distance)).diagnostics, ::testing::IsEmpty()) << distance;
+    }
+    for (const char* distance : { "0.05", "2.5", "-1", "nan", "inf", "two", "1m", "1,5" })
+    {
+        const Validation  validation = check(walk(distance));
+        const Diagnostic* bad        = find(validation, "BAD_ARG");
+        ASSERT_NE(bad, nullptr) << distance;
+        EXPECT_THAT(bad->message, ::testing::HasSubstr("from 0.1 to 2")) << distance;
+    }
+    const auto turn = [](const std::string& degrees) {
+        return step(R"(ID="TurnInPlace" degrees=")" + degrees + "\"");
+    };
+    EXPECT_THAT(check(turn("-90")).diagnostics, ::testing::IsEmpty());
+    EXPECT_THAT(check(turn("180")).diagnostics, ::testing::IsEmpty());
+    EXPECT_THAT(codesOf(check(turn("270"))), ::testing::Contains("BAD_ARG"));
+}
+
 TEST(MissionValidator, HoldsAWorldIdToTheShapeOfCanopysIds)
 {
     for (const char* id : { "R2", "O17", "O1234" })
