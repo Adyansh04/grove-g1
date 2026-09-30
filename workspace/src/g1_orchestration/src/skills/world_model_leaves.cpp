@@ -84,7 +84,7 @@ BT::PortsList NextViewpoint::providedPorts()
     };
 }
 
-BT::NodeStatus NextViewpoint::tick()
+BT::NodeStatus NextViewpoint::call()
 {
     using Service = canopy_msgs::srv::NextViewpoint;
 
@@ -171,7 +171,7 @@ BT::PortsList ReportViewpoint::providedPorts()
     };
 }
 
-BT::NodeStatus ReportViewpoint::tick()
+BT::NodeStatus ReportViewpoint::call()
 {
     using Service         = canopy_msgs::srv::ReportViewpoint;
     auto request          = std::make_shared<Service::Request>();
@@ -218,7 +218,7 @@ BT::PortsList ResolveTarget::providedPorts()
     };
 }
 
-BT::NodeStatus ResolveTarget::tick()
+BT::NodeStatus ResolveTarget::call()
 {
     using Service      = canopy_msgs::srv::GetApproachPose;
     auto       request = std::make_shared<Service::Request>();
@@ -226,6 +226,7 @@ BT::NodeStatus ResolveTarget::tick()
     if (!target || target->empty())
     {
         RCLCPP_ERROR(node_->get_logger(), "[%s] no target given", name().c_str());
+        setFailureText("no target was given");
         return BT::NodeStatus::FAILURE;
     }
     request->target     = *target;
@@ -238,12 +239,15 @@ BT::NodeStatus ResolveTarget::tick()
         getInput<double>("timeout_s").value_or(10.0));
     if (response == nullptr || !response->success)
     {
+        const std::string why =
+            response == nullptr ? "the world model did not answer" : response->message;
         RCLCPP_ERROR(
             node_->get_logger(),
             "[%s] cannot resolve '%s': %s",
             name().c_str(),
             target->c_str(),
-            response == nullptr ? "no answer" : response->message.c_str());
+            why.c_str());
+        setFailureText("cannot resolve '" + *target + "': " + why);
         return BT::NodeStatus::FAILURE;
     }
     const auto&  pose = response->pose.pose;
@@ -290,7 +294,7 @@ BT::PortsList CleanUpWorld::providedPorts()
     };
 }
 
-BT::NodeStatus SaveWorld::tick()
+BT::NodeStatus SaveWorld::call()
 {
     using Service       = std_srvs::srv::Trigger;
     const auto response = callService<Service>(
@@ -300,11 +304,9 @@ BT::NodeStatus SaveWorld::tick()
         getInput<double>("timeout_s").value_or(20.0));
     if (response == nullptr || !response->success)
     {
-        RCLCPP_ERROR(
-            node_->get_logger(),
-            "[%s] %s",
-            name().c_str(),
-            response == nullptr ? "no answer" : response->message.c_str());
+        const std::string why = response == nullptr ? "no answer" : response->message;
+        RCLCPP_ERROR(node_->get_logger(), "[%s] %s", name().c_str(), why.c_str());
+        setFailureText(why);
         return BT::NodeStatus::FAILURE;
     }
     RCLCPP_INFO(node_->get_logger(), "[%s] %s", name().c_str(), response->message.c_str());
@@ -378,6 +380,10 @@ BT::NodeStatus TurnTo::judgeResult(const WrappedResult& result)
     if (result.code != rclcpp_action::ResultCode::SUCCEEDED)
     {
         RCLCPP_WARN(node_->get_logger(), "[%s] spin did not finish", name().c_str());
+        const bool said = result.result && !result.result->error_msg.empty();
+        setFailureText(
+            said ? "the turn did not finish: " + result.result->error_msg :
+                   "the turn did not finish: " + describeResultCode(result.code));
         return BT::NodeStatus::FAILURE;
     }
     return BT::NodeStatus::SUCCESS;

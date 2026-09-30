@@ -12,7 +12,10 @@
 
 #include <behaviortree_cpp/action_node.h>
 
+#include <algorithm>
+#include <atomic>
 #include <chrono>
+#include <format>
 #include <future>
 #include <memory>
 #include <mutex>
@@ -21,6 +24,8 @@
 #include <rclcpp_action/rclcpp_action.hpp>
 #include <string>
 #include <utility>
+
+#include "g1_orchestration/leaf_report.hpp"
 
 namespace g1_orchestration
 {
@@ -31,7 +36,35 @@ namespace g1_orchestration
 struct RosContext
 {
     rclcpp::Node::SharedPtr node;
+    /// True while the mission has to wind down (a stop, a cancel, the watchdog). A leaf that would
+    /// start something then fails at once, so a tick that loops through retries and waits comes to
+    /// an end. Null in a tree that runs without an executor around it.
+    const std::atomic<bool>* stop = nullptr;
 };
+
+/// Whether a leaf should refuse to start what it is about to: the mission is winding down.
+inline bool windingDown(const std::atomic<bool>* stop) { return stop != nullptr && stop->load(); }
+
+/**
+ * @brief How a goal ended, in words, for a leaf's failure text.
+ *
+ * @param code The result code of a finished goal.
+ */
+inline std::string describeResultCode(rclcpp_action::ResultCode code)
+{
+    switch (code)
+    {
+        case rclcpp_action::ResultCode::SUCCEEDED:
+            return "the goal succeeded";
+        case rclcpp_action::ResultCode::ABORTED:
+            return "the server aborted the goal";
+        case rclcpp_action::ResultCode::CANCELED:
+            return "the goal was cancelled";
+        case rclcpp_action::ResultCode::UNKNOWN:
+            break;
+    }
+    return "the goal ended in an unknown state";
+}
 
 /**
  * @brief A BT leaf wrapping one ROS action client.
@@ -41,7 +74,7 @@ struct RosContext
  * @tparam ActionT The ROS action this leaf drives.
  */
 template <typename ActionT>
-class RosActionNode : public BT::StatefulActionNode
+class RosActionNode : public BT::StatefulActionNode, public LeafReport
 {
 public:
     using Goal          = typename ActionT::Goal;
@@ -53,6 +86,7 @@ public:
         std::string action_name)
       : BT::StatefulActionNode(instance_name, config)
       , node_(std::move(context.node))
+      , stop_(context.stop)
       , action_name_(std::move(action_name))
     {
         client_ = rclcpp_action::create_client<ActionT>(node_, action_name_);
@@ -73,6 +107,8 @@ public:
         return extra;
     }
 
+    [[nodiscard]] std::string actionServer() const override { return action_name_; }
+
 protected:
     /**
      * @brief Fills the goal from the leaf's ports.
@@ -92,26 +128,68 @@ protected:
      */
     virtual BT::NodeStatus judgeResult(const WrappedResult& result) = 0;
 
-    rclcpp::Node::SharedPtr node_;
+    rclcpp::Node::SharedPtr  node_;
+    const std::atomic<bool>* stop_;
 
 private:
+    /**
+     * @brief Waits for the server, in short slices so that a stop is seen within one of them.
+     *
+     * @param timeout_s The longest to wait.
+     * @return Whether the server is there.
+     */
+    bool waitForServer(double timeout_s)
+    {
+        using Clock         = std::chrono::steady_clock;
+        constexpr auto kNap = std::chrono::milliseconds(100);
+        const auto     end  = Clock::now() + std::chrono::duration_cast<Clock::duration>(
+                                            std::chrono::duration<double>(timeout_s));
+        for (;;)
+        {
+            if (client_->wait_for_action_server(std::min<Clock::duration>(
+                    std::max(end - Clock::now(), Clock::duration::zero()),
+                    kNap)))
+            {
+                return true;
+            }
+            if (Clock::now() >= end || windingDown(stop_))
+            {
+                return false;
+            }
+        }
+    }
+
     BT::NodeStatus onStart() override
     {
-        const double timeout = getInput<double>("server_timeout_s").value_or(10.0);
-        if (!client_->wait_for_action_server(std::chrono::duration<double>(timeout)))
+        setFailureText({});
+        if (windingDown(stop_))
         {
+            setFailureText("stopped");
+            return BT::NodeStatus::FAILURE;
+        }
+        const double timeout = getInput<double>("server_timeout_s").value_or(10.0);
+        if (!waitForServer(timeout))
+        {
+            if (windingDown(stop_))
+            {
+                setFailureText("stopped");
+                return BT::NodeStatus::FAILURE;
+            }
             RCLCPP_ERROR(
                 node_->get_logger(),
                 "[%s] no action server on '%s' after %.1f s",
                 name().c_str(),
                 action_name_.c_str(),
                 timeout);
+            setFailureText(
+                std::format("no action server on {} after {:.1f} s", action_name_, timeout));
             return BT::NodeStatus::FAILURE;
         }
 
         Goal goal;
         if (!fillGoal(goal))
         {
+            setFailureText(std::format("the ports for {} are unusable; see the log", action_name_));
             return BT::NodeStatus::FAILURE;
         }
 
@@ -170,6 +248,9 @@ private:
             if (answer.has_value() && *answer == nullptr)
             {
                 RCLCPP_ERROR(node_->get_logger(), "[%s] goal was rejected", name().c_str());
+                setFailureText(std::format(
+                    "{} rejected the goal (busy, or the goal is invalid)",
+                    action_name_));
                 return BT::NodeStatus::FAILURE;
             }
             return BT::NodeStatus::RUNNING;

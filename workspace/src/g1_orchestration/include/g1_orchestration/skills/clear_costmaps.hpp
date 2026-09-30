@@ -24,7 +24,7 @@ class ClearCostmaps : public ServiceLeaf
 public:
     ClearCostmaps(const std::string& name, const BT::NodeConfig& config, RosContext context);
     static BT::PortsList providedPorts();
-    BT::NodeStatus       tick() override;
+    BT::NodeStatus       call() override;
 };
 
 }  // namespace g1_orchestration

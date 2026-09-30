@@ -31,7 +31,7 @@ class NextViewpoint : public ServiceLeaf
 public:
     NextViewpoint(const std::string& name, const BT::NodeConfig& config, RosContext context);
     static BT::PortsList providedPorts();
-    BT::NodeStatus       tick() override;
+    BT::NodeStatus       call() override;
 };
 
 /**
@@ -43,7 +43,7 @@ class ReportViewpoint : public ServiceLeaf
 public:
     ReportViewpoint(const std::string& name, const BT::NodeConfig& config, RosContext context);
     static BT::PortsList providedPorts();
-    BT::NodeStatus       tick() override;
+    BT::NodeStatus       call() override;
 };
 
 /**
@@ -55,7 +55,7 @@ class ResolveTarget : public ServiceLeaf
 public:
     ResolveTarget(const std::string& name, const BT::NodeConfig& config, RosContext context);
     static BT::PortsList providedPorts();
-    BT::NodeStatus       tick() override;
+    BT::NodeStatus       call() override;
 };
 
 /// Saves the world model to disk. Succeeds only if the save did.
@@ -64,7 +64,7 @@ class SaveWorld : public ServiceLeaf
 public:
     SaveWorld(const std::string& name, const BT::NodeConfig& config, RosContext context);
     static BT::PortsList providedPorts();
-    BT::NodeStatus       tick() override;
+    BT::NodeStatus       call() override;
 };
 
 /// Has the world model take out what it can tell is not an object, once exploring is over and

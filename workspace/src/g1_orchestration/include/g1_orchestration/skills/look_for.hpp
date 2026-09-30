@@ -8,6 +8,7 @@
 
 #include <behaviortree_cpp/action_node.h>
 
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <memory>
@@ -19,6 +20,7 @@
 #include <vector>
 #include <vision_msgs/msg/detection3_d_array.hpp>
 
+#include "g1_orchestration/leaf_report.hpp"
 #include "g1_orchestration/service_leaf.hpp"
 
 namespace g1_orchestration
@@ -31,7 +33,7 @@ namespace g1_orchestration
  * Naming only what the task needs keeps each phrase to one track, and so keeps the bare-phrase
  * alias Pick and Place resolve by.
  */
-class LookFor : public BT::StatefulActionNode
+class LookFor : public BT::StatefulActionNode, public LeafReport
 {
 public:
     LookFor(const std::string& name, const BT::NodeConfig& config, RosContext context);
@@ -61,6 +63,7 @@ private:
     void reset();
 
     rclcpp::Node::SharedPtr                                             node_;
+    const std::atomic<bool>*                                            stop_;
     rclcpp::Node::SharedPtr                                             client_node_;
     std::optional<rclcpp::executors::SingleThreadedExecutor>            executor_;
     rclcpp::Client<rcl_interfaces::srv::SetParameters>::SharedPtr       set_phrases_;
@@ -84,7 +87,7 @@ class StopLooking : public ServiceLeaf
 public:
     StopLooking(const std::string& name, const BT::NodeConfig& config, RosContext context);
     static BT::PortsList providedPorts();
-    BT::NodeStatus       tick() override;
+    BT::NodeStatus       call() override;
 };
 
 }  // namespace g1_orchestration

@@ -24,7 +24,7 @@ class ClearOctomap : public ServiceLeaf
 public:
     ClearOctomap(const std::string& name, const BT::NodeConfig& config, RosContext context);
     static BT::PortsList providedPorts();
-    BT::NodeStatus       tick() override;
+    BT::NodeStatus       call() override;
 };
 
 }  // namespace g1_orchestration

@@ -34,6 +34,7 @@
             <input_port name="timeout_s" type="double" default="20.000000">Seconds to wait for the objects once the phrases are written. The write gets up to 5 s of its own.</input_port>
             <input_port name="detector" type="std::string" default="/g1_detector">Node whose `phrases` to write. Empty waits without narrowing anything.</input_port>
             <input_port name="also" type="std::string" default="">More objects to ask for, in the same form, without waiting on them: ones a later step needs to see, like the object Place confirms after letting go.</input_port>
+            <output_port name="first_id" type="std::string">The id the first entry of `objects` appears under on /objects: the slug of its id half, such as o17 for O17. For the leaves that follow, which look it up there.</output_port>
             <input_port name="objects" type="std::string">Comma-separated objects to ask the detector for and wait on: an id, or 'id=phrase' when the wording that finds it differs from the name the tree uses.</input_port>
         </Action>
         <Action ID="NavigateToPose">

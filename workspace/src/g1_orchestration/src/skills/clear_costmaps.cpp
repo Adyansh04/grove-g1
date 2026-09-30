@@ -34,7 +34,7 @@ BT::PortsList ClearCostmaps::providedPorts()
     };
 }
 
-BT::NodeStatus ClearCostmaps::tick()
+BT::NodeStatus ClearCostmaps::call()
 {
     using ClearEntireCostmap = nav2_msgs::srv::ClearEntireCostmap;
 

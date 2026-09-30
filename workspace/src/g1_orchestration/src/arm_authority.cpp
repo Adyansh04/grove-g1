@@ -9,6 +9,7 @@
 #include <controller_manager_msgs/srv/list_controllers.hpp>
 #include <controller_manager_msgs/srv/set_hardware_component_state.hpp>
 #include <controller_manager_msgs/srv/switch_controller.hpp>
+#include <cstdint>
 #include <lifecycle_msgs/msg/state.hpp>
 #include <map>
 #include <memory>
@@ -92,8 +93,16 @@ controllerStates(const rclcpp::Node::SharedPtr& node, double timeout_s)
     return states;
 }
 
+/// How a swap ended: not made, made now, or found already made.
+enum class Swap : std::uint8_t
+{
+    kFailed,
+    kSwitched,
+    kAlreadyHeld,
+};
+
 // Trades `outgoing` for `incoming` over the same joints, in one switch or not at all.
-bool swapArmController(
+Swap swapArmController(
     const rclcpp::Node::SharedPtr& node, const std::string& incoming, const std::string& outgoing,
     const rclcpp::Logger& logger, double timeout_s)
 {
@@ -102,7 +111,7 @@ bool swapArmController(
     if (states.empty())
     {
         RCLCPP_ERROR(logger, "controller_manager did not list its controllers; not switching");
-        return false;
+        return Swap::kFailed;
     }
 
     const auto state_of = [&states](const std::string& name) {
@@ -118,18 +127,20 @@ bool swapArmController(
             "%s cannot take the arms, so %s keeps them",
             incoming.c_str(),
             outgoing.c_str());
-        return false;
+        return Swap::kFailed;
     }
     if (plan.already_held)
     {
-        return true;
+        return Swap::kAlreadyHeld;
     }
     return switchController(
-        node,
-        { incoming },
-        plan.displace ? std::vector<std::string>{ outgoing } : std::vector<std::string>{},
-        timeout_s,
-        SwitchController::Request::STRICT);
+               node,
+               { incoming },
+               plan.displace ? std::vector<std::string>{ outgoing } : std::vector<std::string>{},
+               timeout_s,
+               SwitchController::Request::STRICT) ?
+               Swap::kSwitched :
+               Swap::kFailed;
 }
 
 }  // namespace
@@ -160,7 +171,7 @@ const std::vector<ControlledPart>& controlledParts()
     return parts;
 }
 
-bool acquireArm(const rclcpp::Logger& logger, double timeout_s)
+Acquired acquireArm(const rclcpp::Logger& logger, double timeout_s)
 {
     const rclcpp::Node::SharedPtr      node  = makeClientNode("g1_arm_authority_client");
     const std::vector<ControlledPart>& parts = controlledParts();
@@ -177,11 +188,14 @@ bool acquireArm(const rclcpp::Logger& logger, double timeout_s)
                                      "active",
                                      timeout_s);
 
-    if (!component_ready ||
-        !swapArmController(node, arm.controller, arm.displaces, logger, timeout_s))
+    const Swap swapped =
+        component_ready ?
+            swapArmController(node, arm.controller, arm.displaces, logger, timeout_s) :
+            Swap::kFailed;
+    if (swapped == Swap::kFailed)
     {
         RCLCPP_ERROR(logger, "could not acquire the arm. Is the control stack up?");
-        return false;
+        return Acquired::kFailed;
     }
 
     for (std::size_t i = 1; i < parts.size(); ++i)
@@ -210,7 +224,7 @@ bool acquireArm(const rclcpp::Logger& logger, double timeout_s)
 
     rclcpp::sleep_for(std::chrono::duration_cast<std::chrono::nanoseconds>(
         std::chrono::duration<double>(kAcquireSettleS)));
-    return true;
+    return swapped == Swap::kAlreadyHeld ? Acquired::kAlready : Acquired::kTaken;
 }
 
 void releaseArm(const rclcpp::Logger& logger, double timeout_s)

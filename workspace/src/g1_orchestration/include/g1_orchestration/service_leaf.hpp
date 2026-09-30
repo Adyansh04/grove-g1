@@ -17,6 +17,7 @@
 #include <string>
 #include <utility>
 
+#include "g1_orchestration/leaf_report.hpp"
 #include "g1_orchestration/ros_action_node.hpp"
 
 namespace g1_orchestration
@@ -72,18 +73,37 @@ typename ServiceT::Response::SharedPtr callService(
 /**
  * @brief Base for leaves that complete within one tick.
  *
- * Holds the tree's node for logging; the calls themselves use makeClientNode().
+ * Holds the tree's node for logging; the calls themselves use makeClientNode(). A call can block
+ * for its whole budget, so none is started once the mission is winding down.
  */
-class ServiceLeaf : public BT::SyncActionNode
+class ServiceLeaf : public BT::SyncActionNode, public LeafReport
 {
 public:
     ServiceLeaf(const std::string& name, const BT::NodeConfig& config, RosContext context)
       : BT::SyncActionNode(name, config)
       , node_(std::move(context.node))
+      , stop_(context.stop)
     {}
 
+    BT::NodeStatus tick() final
+    {
+        setFailureText({});
+        if (windingDown(stop_))
+        {
+            setFailureText("stopped");
+            return BT::NodeStatus::FAILURE;
+        }
+        return call();
+    }
+
 protected:
+    /// The leaf's work, which finishes within the tick.
+    virtual BT::NodeStatus call() = 0;
+
     rclcpp::Node::SharedPtr node_;
+
+private:
+    const std::atomic<bool>* stop_;
 };
 
 }  // namespace g1_orchestration
