@@ -120,7 +120,7 @@ Then pick a demo. Each guide explains what runs and why; each launcher opens its
 | [Learned grasping](docs/guides/learned-grasping.md) | A vision-language-action policy behind the planning-scene gate. Runs; does not grasp yet. | `learned-grasping.sh` |
 | [Open-vocabulary perception](docs/guides/open-vocabulary-grasping.md) | Objects named in text and measured in 3D, generated grasps, and instructions turned into phrases. | `open-vocabulary-grasping.sh` |
 | [Exploring and asking what is where](docs/guides/world-model.md) | canopy exploring an apartment: its rooms, its objects, and finding them by name. | `world-model.sh` |
-| [Talking to the robot with NervROS](docs/guides/nervros.md) | An agent you chat with: it looks, finds things, and runs missions you approve, pick and place included. | `nervros.sh` |
+| [Talking to the robot with NervROS](docs/guides/nervros.md) | An agent you chat with: it looks, finds and segments things, fixes the world model, runs missions you approve (pick and place included), and checks, watches and plots the robot for you. | `nervros.sh` |
 | [Checking the map by hand](workspace/src/canopy/editor/doc/guide.md) | canopy's map editor: what to check in a saved world and how to fix it. | `world-model.sh editor` |
 
 The launchers live in `scripts/demos/`. Run one without arguments to list its variants, then name
