@@ -22,9 +22,27 @@ start_armed = false
 autonomy = "supervised"
 
 [look]
+name = "chest"
 image = "/chest_camera/color/image_raw"
 detections = { topic = "/detector_chest/instance_masks", type = "canopy_msgs/msg/InstanceMaskArray" }
 about = "The chest camera is about 1 m up and points 20 degrees down: it sees the floor from about 1 m out to the far wall, and walls, furniture and shelves up to about 1.5 m high, not the floor at the robot's feet or anything higher."
+
+[look.cameras.head]
+image = "/camera/color/image_raw"
+detections = { topic = "/detector_head/instance_masks", type = "canopy_msgs/msg/InstanceMaskArray" }
+about = "The head camera is about 1.2 m up and points 48 degrees down: it sees the floor from about 0.3 m to 3.6 m ahead, the robot's hands and what lies on low furniture, nothing above its own height."
+
+# canopy's editor on the saved world (nervros.sh starts it): world edits by the agent and by hand,
+# which canopy reads again after a save.
+[editor]
+url = "http://127.0.0.1:8765"
+reload = "/canopy/reload"
+
+# Masks by a text prompt. The model backend asks Gemini's free tier (models.toml's segment role);
+# the service is canopy's segmenter, which needs ./scripts/serve.sh vision and so a free GPU.
+[segment]
+backend = "model"
+service = "/segmenter/segment"
 
 [world]
 map = { topic = "/map", type = "nav_msgs/msg/OccupancyGrid" }
@@ -38,6 +56,29 @@ plan = { topic = "/plan", type = "nav_msgs/msg/Path" }
 camera_info = { topic = "/chest_camera/color/camera_info", type = "sensor_msgs/msg/CameraInfo" }
 # Its meshes are found through ROS_PACKAGE_PATH, which nervros.sh points at the colcon build.
 urdf = "../../../g1_description/urdf/g1_29dof_with_hand_rev_1_0.urdf"
+
+# What world_model.rviz shows beyond the viewer's own map, rooms and objects.
+[[viz.layer]]
+name = "Walls"
+topic = "/canopy/walls"
+type = "nav_msgs/msg/OccupancyGrid"
+
+[[viz.layer]]
+name = "Floor plan"
+topic = "/canopy/floor_plan"
+type = "nav_msgs/msg/OccupancyGrid"
+hidden = true
+
+[[viz.layer]]
+name = "Doorways and viewpoints"
+topic = "/canopy/markers"
+type = "visualization_msgs/msg/MarkerArray"
+namespaces = ["doorways", "viewpoint", "visited", "visit_numbers", "glimpses", "camera_view"]
+
+[[viz.layer]]
+name = "Scan"
+topic = "/scan"
+type = "sensor_msgs/msg/LaserScan"
 
 [mission]
 execute = "/nervros_executor/execute_mission"
@@ -72,4 +113,4 @@ publish = ["*"]
 param_set = ["*:*"]
 
 [models]
-file = "../../../nervros/profiles/example/models.toml"
+file = "models.toml"

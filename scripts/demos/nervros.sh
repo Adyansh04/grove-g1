@@ -58,6 +58,9 @@ case "$VARIANT" in
         fi
         container executor "$EXECUTOR"
         host model "workspace/src/nervros/scripts/local-llm.sh start"
+        # The saved world, for the agent's world edits and the app's Edit world; the explore world
+        # has none until its first save.
+        [[ "$VARIANT" == explore ]] || host editor "python3 workspace/src/canopy/editor/canopy_editor.py data/worlds/nervros-apartment"
         if [[ "$VARIANT" == chat ]]; then
             host nervros "$AGENT_ENV && cargo run -p nervros-cli -- --profile $PROFILE chat"
         else

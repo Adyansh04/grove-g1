@@ -1,7 +1,8 @@
 # Talking to the robot with NervROS
 
 NervROS (`workspace/src/nervros`, its own repository) is an agent you talk to in a desktop app. It
-looks through the chest camera and marks what the detector finds, asks canopy where things are, and
+looks through the chest or head camera and marks what the detector finds, segments whatever you
+name in the view, asks canopy where things are, and
 does physical tasks as missions: behaviour trees that `nervros_executor` checks, you approve, and
 the executor runs. It runs on the host and answers with a local model unless you choose otherwise.
 
@@ -56,17 +57,27 @@ cargo run -p nervros-gui -- --profile ../g1_bringup/config/nervros/nervros.toml
 
 - `NERVROS_UDP_ONLY=1` turns Fast DDS shared memory off. The container runs as root, and shared
   memory between two users fails without an error: topics appear, but no data arrives.
-- The profile, `g1_bringup/config/nervros/nervros.toml`, names the G1's camera, detector, world
-  model topics, the executor and the models file, and a short persona (`apartment.md`). NervROS's
-  `docs/profile.md` explains each key.
+- The profile, `g1_bringup/config/nervros/nervros.toml`, names the G1's cameras, detectors, world
+  model topics, the executor and the models file (`models.toml` beside it), and a short persona
+  (`apartment.md`). NervROS's `docs/profile.md` explains each key.
 
 Things to ask:
 
 - "What do you see? Is there a sofa?" The agent calls `look` with the question: the detector's finds
   are drawn on the frame as numbered marks, the local vision model looks at that frame and
   answers, and you see the frame in the chat. It looks through the chest camera, about 1 m up and
-  20 degrees down, which the profile tells the vision model; the head camera, pointing further
-  down, feeds canopy with it.
+  20 degrees down, unless you name the head camera, which points further down at the floor ahead;
+  the profile tells both models what each camera sees.
+- "Give me a segmented image of just the floor." `segment` masks whatever you name, including
+  things no detector marks, such as the floor or a wall, and shows it cut out of the frame, or
+  tinted over it if you ask for an overlay. By default Gemini's free tier outlines it: 3.8 Flash in
+  5 to 30 s, up to 10 times a day, then Flash-Lite in about 2 s, coarser. The local server gives
+  pixel masks from Grounding DINO and SAM 2.1 in about a second (`./scripts/serve.sh vision`, and
+  "segment the floor with the local server"), but it does not fit on the GPU beside the local chat
+  model: use it with a cloud chat model, or with none from the command line, where
+  `./scripts/demos/nervros.sh --print chat`'s last command with `segment "the floor" --backend
+  service --out floor.jpg` in place of `chat` segments once. Without `~/.config/grove/gemini.env`
+  (the bare key) only the local server segments.
 - "Where is the dustbin?" `find_objects` asks canopy, which answers with ids, rooms, and how much of
   each room the camera has seen, so "not found" comes with how sure it is.
 - "Walk to the living room." The agent writes a plan, and a plan card appears with its steps. Arm
@@ -78,11 +89,32 @@ Things to ask:
   something: the step then fails and the agent says so. They never walk around anything.
 
 The viewer draws the map, the rooms coloured by how much of each the camera has seen, the objects,
-the G1's model with its joints as they are, Nav2's path and the camera's view in 3D. Click an
+the G1's model with its joints as they are, Nav2's path and the chest camera's view in 3D, and
+beside it both cameras, in tabs, with the detector's boxes. The profile adds what the world-model
+RViz view shows: canopy's walls and floor plan, its doorways, viewpoints and visits, and the laser
+scan. The Layers tab (Ctrl+3) switches each of them on and off. Click an
 object, a room or a point on the map there and a bar above the message box offers "Go there", "What
 is it?" and the like; it fills in the message, which you send. The Mission tab under the camera
 shows each step of the running mission as a lane on the timeline. The dock's World tab (Ctrl+2)
 lists the rooms with how much of each has been seen.
+
+## Fixing the world model
+
+`nervros.sh app` also starts canopy's world editor on the saved world. Edit world, in the top bar,
+swaps the viewer for the world on its floor plan, the way canopy's editor page draws it: click an
+object or a room, drag a box by its corners, its handle or its middle to resize, turn or move it,
+Add object and Split off drag out a box, Merge with joins two objects, and the World tab holds the
+selected thing's label, name, votes and the camera's view of it. C marks it checked, N goes to the
+next thing to review, Ctrl+Z undoes, Ctrl+S saves. The agent edits the same world when you ask:
+"the chair by the window is a stool", "O31 and O32 are one sofa", "call the study Anna's room". It
+reads with `review_world` and `inspect_object`, edits with `edit_world` and saves with
+`world_edits`, which has canopy read the world again. Edits ask for your approval but need no
+arming: they change what the robot knows, not what it does.
+
+Both go through the editor: the app shows the agent's edits within two seconds, and the agent
+reads yours when it next looks. canopy saves the
+world itself every minute while its detector runs, so a save may first replay the edits over
+canopy's newer save; that is automatic.
 
 The apartment has no arm stack, so only walking skills run there.
 

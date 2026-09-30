@@ -1,0 +1,59 @@
+# Models for NervROS on the G1, all free: the local model talks, plans and looks; Gemini's free
+# tier outlines what `segment` is asked for, which the local model cannot. Without the key file
+# the Gemini models are left out and `segment` needs its service backend.
+
+[[provider]]
+id = "local"
+kind = "openai_compat"
+base_url = "http://127.0.0.1:8081/v1"      # workspace/src/nervros/scripts/local-llm.sh
+timeout_s = 120
+
+[[provider]]
+id = "gemini"
+kind = "gemini_interactions"
+key = { file = "~/.config/grove/gemini.env" }
+
+[[model]]
+id = "qwen3.5-9b-local"
+provider = "local"
+model = "qwen3.5-9b"
+vision = true
+tools = true
+tool_choice = true
+structured = "json_schema"
+privacy = { local = true }
+
+# Google's free tier allows 5 a minute and 20 a day of 3.8 Flash, and 15 and 500 of the Flash-Lite
+# models, per project and model; canopy's describer draws on the same project, so these caps leave
+# it room. 3.8 Flash outlines best; at low thinking it answers in a few seconds.
+[[model]]
+id = "gemini-3.8-flash"
+provider = "gemini"
+model = "gemini-3.8-flash"
+vision = true
+limits = { rpm = 4, rpd = 10 }
+privacy = { trains = true }
+params = { generation_config = { thinking_level = "low" } }
+
+[[model]]
+id = "gemini-3.5-flash-lite"
+provider = "gemini"
+model = "gemini-3.5-flash-lite"
+vision = true
+limits = { rpm = 10, rpd = 250 }
+privacy = { trains = true }
+
+[[model]]
+id = "gemini-3.1-flash-lite"
+provider = "gemini"
+model = "gemini-3.1-flash-lite"
+vision = true
+limits = { rpm = 10, rpd = 250 }
+privacy = { trains = true }
+
+[roles]
+routine = ["qwen3.5-9b-local"]
+plan = ["qwen3.5-9b-local"]
+vision_check = ["qwen3.5-9b-local"]
+summarise = ["qwen3.5-9b-local"]
+segment = ["gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]
