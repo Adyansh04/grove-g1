@@ -6,9 +6,9 @@
 
 # A class_id on /objects. Read when the goal starts, so a retry never replays a stale pose.
 string object_id
-# Which arm must reach it. Only picks the side of the pelvis the object should end up on.
 string ARM_LEFT=left
 string ARM_RIGHT=right
+# Which arm must reach it. Only picks the side of the pelvis the object should end up on.
 string arm
 # Heading to hold while approaching, rad, in the odometry frame. Pass the staging NavigateToPose
 # goal's yaw: re-aiming at the object from a metre out walks in on a curve.
