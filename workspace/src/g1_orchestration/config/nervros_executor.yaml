@@ -43,6 +43,10 @@ nervros_executor:
     # Set this only where nothing can be in a hand at start, such as a simulator stack whose
     # bringup activates the arms (activate_arm:=true): the hands then count as empty.
     hands_empty_on_attach: false
+
+    # Skill.arg=a|b;... limits those arguments to those values, which the served catalog lists:
+    # where the mock detector finds objects by body name only, the names it knows.
+    arg_choices: ""
     # A dry run gives each leaf a share of its skill's catalog time, scaled by this factor, and
     # never less than dry_run_min_leaf_s, so a long mission dry-runs in seconds.
     dry_run_time_scale: 0.02

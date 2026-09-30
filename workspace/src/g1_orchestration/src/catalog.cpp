@@ -14,6 +14,7 @@
 #include <format>
 #include <fstream>
 #include <iterator>
+#include <ranges>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -321,6 +322,41 @@ Catalog Catalog::parse(std::string_view yaml_text)
         catalog.skills_.push_back(std::move(skill));
     }
     return catalog;
+}
+
+void Catalog::restrict(std::string_view choice)
+{
+    const auto equals = choice.find('=');
+    const auto dot    = choice.substr(0, equals).find('.');
+    if (equals == std::string_view::npos || dot == std::string_view::npos)
+    {
+        fail("arg_choices", std::format("'{}' is not Skill.arg=a|b", choice));
+    }
+    const std::string_view   skill_name = choice.substr(0, dot);
+    const std::string_view   arg_name   = choice.substr(dot + 1, equals - dot - 1);
+    std::vector<std::string> values;
+    for (const auto part : std::views::split(choice.substr(equals + 1), '|'))
+    {
+        if (!std::ranges::empty(part))
+        {
+            values.emplace_back(std::ranges::data(part), std::ranges::size(part));
+        }
+    }
+    if (values.empty())
+    {
+        fail("arg_choices", std::format("'{}' names no values", choice));
+    }
+    for (Skill& skill : skills_)
+    {
+        const auto arg = std::ranges::find(skill.args, arg_name, &SkillArg::name);
+        if (skill.name == skill_name && arg != skill.args.end())
+        {
+            arg->allowed = std::move(values);
+            text_sha256_ = sha256Hex(text_sha256_ + "\n" + std::string(choice));
+            return;
+        }
+    }
+    fail("arg_choices", std::format("no argument {}.{}", skill_name, arg_name));
 }
 
 void Catalog::bindPalette(std::string_view palette_xml)

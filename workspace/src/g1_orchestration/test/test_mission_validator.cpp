@@ -128,6 +128,31 @@ TEST(MissionValidator, AcceptsAMissionTheWayTheCompilerWritesIt)
     EXPECT_DOUBLE_EQ(validation.worst_case_s, 1500.0);
 }
 
+TEST(MissionValidator, AnArgumentLimitedToTheNamesTheDetectorKnowsRefusesOthers)
+{
+    Catalog           catalog = Catalog::load(std::string(G1_CONFIG_DIR) + "/catalog.yaml");
+    const std::string before  = catalog.json();
+    catalog.restrict("PickObject.object_id=mug_4");
+    EXPECT_NE(catalog.json(), before) << "the served catalog lists the values";
+    EXPECT_THROW(catalog.restrict("PickObject.nothing=x"), std::runtime_error);
+    EXPECT_THROW(catalog.restrict("PickObject.object_id="), std::runtime_error);
+    EXPECT_THROW(catalog.restrict("no shape"), std::runtime_error);
+    const MissionValidator validator(
+        std::move(catalog),
+        MacroLibrary::load(std::string(G1_TREES_DIR) + "/library"),
+        Limits{});
+    const auto pick = [](const std::string& id) {
+        return mission(
+            R"(<Sequence><SubTree ID="PickObject" name="s1_PickObject" object_id=")" + id +
+            R"(" phrase="small white mug" arm="left"/></Sequence>)");
+    };
+    EXPECT_TRUE(validator.validate(pick("mug_4")).ok());
+    const Validation  other = validator.validate(pick("O27"));
+    const Diagnostic* bad   = find(other, "BAD_ARG");
+    ASSERT_NE(bad, nullptr) << testing::PrintToString(codesOf(other));
+    EXPECT_THAT(bad->message, testing::HasSubstr("must be one of: mug_4"));
+}
+
 TEST(MissionValidator, AcceptsTheWorkedExampleShippedWithThePackage)
 {
     // The mission the simulator ran: what the compiler is checked against, so it has to stay valid.

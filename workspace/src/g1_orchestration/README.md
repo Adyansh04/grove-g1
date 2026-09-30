@@ -249,6 +249,7 @@ All in `config/nervros_executor.yaml`, commented there.
 | `max_duration_cap_s`, `watchdog_factor` | 1800, 1.2 | The most any mission may run, and the most its worst case may come to; a goal with no limit gets its worst case times the factor. |
 | `groot2_port` | 0 | Groot2 monitoring; 0 (the default) disables it. A debugging aid for a developer's own machine: it binds every interface, has no authentication, and Groot2's hooks can block or override a running node. Never on a network anyone else can reach. |
 | `hands_empty_on_attach` | false | Arms found already taken: trust the hands to be empty (a simulator that activates them at bringup), instead of treating them as unknown. |
+| `arg_choices` | `""` | `Skill.arg=a\|b;...` limits those arguments to those values, listed in the served catalog and checked by the validator: where the simulator's mock detector finds objects by body name only, the names it knows (`PickObject.object_id=mug_4;PlaceInto.container_id=tray_1` in the apartment). |
 | `catalog_file`, `macros_dir` | `config/catalog.yaml`, `trees/library` | Relative to the package share directory. |
 | `event_level` | `steps` | `steps` or `all`. |
 | `max_tree_depth`, `max_tree_nodes`, `max_tree_steps`, `max_xml_bytes` | 10, 200, 32, 131072 | Bounds on a mission's text. |

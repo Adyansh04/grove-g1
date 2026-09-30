@@ -16,6 +16,7 @@
 #include <format>
 #include <map>
 #include <optional>
+#include <ranges>
 #include <set>
 #include <stdexcept>
 #include <utility>
@@ -142,6 +143,15 @@ MissionExecutor::MissionExecutor(
     const std::string macros_dir = declare_parameter<std::string>("macros_dir", "trees/library");
     Catalog           catalog    = Catalog::load(resolve(catalog_file));
     MacroLibrary      library    = MacroLibrary::load(resolve(macros_dir));
+    // `Skill.arg=a|b;...`: here, the only names the simulator's mock detector finds.
+    const std::string choices = declare_parameter<std::string>("arg_choices", "");
+    for (const auto choice : std::views::split(std::string_view(choices), ';'))
+    {
+        if (!std::ranges::empty(choice))
+        {
+            catalog.restrict(std::string_view(std::ranges::data(choice), std::ranges::size(choice)));
+        }
+    }
 
     // The palette a planner or Groot2 may import: the leaves, then the skills built from them. The
     // catalog's version covers it, so a leaf whose ports change is a different catalog.

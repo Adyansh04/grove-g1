@@ -103,6 +103,15 @@ public:
      */
     void bindPalette(std::string_view palette_xml);
 
+    /**
+     * @brief Limits one argument to the values in `Skill.arg=a|b`: what the robot can do where it
+     *        is, such as the only objects its detector knows. Call before bindPalette(), since the
+     *        version covers the limit.
+     *
+     * @throws std::runtime_error For text of another shape, an unknown skill or argument.
+     */
+    void restrict(std::string_view choice);
+
     [[nodiscard]] const std::vector<Skill>& skills() const { return skills_; }
 
     /// The skill implemented by macro @p macro, or null.

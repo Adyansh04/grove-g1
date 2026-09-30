@@ -45,6 +45,14 @@ def generate_launch_description():
             ),
         ),
         DeclareLaunchArgument(
+            "arg_choices",
+            default_value=str(defaults["arg_choices"]),
+            description=(
+                "Skill.arg=a|b;... limits those arguments to those values: the names the "
+                "simulator's mock detector knows, such as PickObject.object_id=mug_4."
+            ),
+        ),
+        DeclareLaunchArgument(
             "event_level",
             default_value=str(defaults["event_level"]),
             description="steps for the mission's steps and skill leaves, all for every node.",
@@ -70,6 +78,7 @@ def generate_launch_description():
                 "groot2_port": LaunchConfiguration("groot2_port"),
                 "event_level": LaunchConfiguration("event_level"),
                 "hands_empty_on_attach": LaunchConfiguration("hands_empty_on_attach"),
+                "arg_choices": LaunchConfiguration("arg_choices"),
             },
         ],
     )
