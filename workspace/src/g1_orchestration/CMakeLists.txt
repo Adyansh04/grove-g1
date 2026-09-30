@@ -6,6 +6,7 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/g1_common.cmake)
 # --- dependencies ----------------------------------------------------------
 
 find_package(ament_cmake REQUIRED)
+find_package(ament_index_cpp REQUIRED)
 # v4, the same libbehaviortree_cpp Nav2's navigator links, so leaves here and Nav2's share it.
 find_package(behaviortree_cpp REQUIRED)
 find_package(canopy_msgs REQUIRED)
@@ -13,8 +14,10 @@ find_package(canopy_perception REQUIRED)
 find_package(controller_manager_msgs REQUIRED)
 find_package(g1_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(action_msgs REQUIRED)
 find_package(lifecycle_msgs REQUIRED)
 find_package(nav2_msgs REQUIRED)
+find_package(nervros_interfaces REQUIRED)
 find_package(OpenSSL REQUIRED)
 find_package(rcl_interfaces REQUIRED)
 find_package(rclcpp REQUIRED)
@@ -85,11 +88,33 @@ target_link_libraries(g1_bt_nodes PUBLIC
   ${vision_msgs_TARGETS}
 )
 
+# The mission executor: the node's logic without its main, so tests can run it in-process.
+add_library(g1_mission_executor
+  src/authority_port.cpp
+  src/mission_observer.cpp
+  src/nervros_executor.cpp
+  src/server_fleet.cpp
+)
+g1_target_defaults(g1_mission_executor)
+target_link_libraries(g1_mission_executor PUBLIC
+  ament_index_cpp::ament_index_cpp
+  g1_bt_nodes
+  g1_mission_validation
+  rclcpp::rclcpp
+  rclcpp_action::rclcpp_action
+  ${action_msgs_TARGETS}
+  ${nervros_interfaces_TARGETS}
+)
+
 # --- executables -----------------------------------------------------------
 
 add_executable(g1_bt_executor src/g1_bt_executor_main.cpp)
 g1_target_defaults(g1_bt_executor)
 target_link_libraries(g1_bt_executor PUBLIC g1_bt_nodes)
+
+add_executable(nervros_executor src/nervros_executor_main.cpp)
+g1_target_defaults(nervros_executor)
+target_link_libraries(nervros_executor PUBLIC g1_mission_executor)
 
 # Regenerates the checked-in Groot2 palette. Not run by the build; test_node_model catches drift.
 add_executable(g1_bt_node_model src/g1_bt_node_model_main.cpp)
@@ -100,8 +125,9 @@ target_link_libraries(g1_bt_node_model PUBLIC g1_bt_nodes)
 
 install(DIRECTORY include/ DESTINATION include)
 install(DIRECTORY config launch trees DESTINATION share/${PROJECT_NAME})
-install(TARGETS g1_bt_nodes g1_mission_validation EXPORT export_${PROJECT_NAME} DESTINATION lib)
-install(TARGETS g1_bt_executor g1_bt_node_model DESTINATION lib/${PROJECT_NAME})
+install(PROGRAMS scripts/send_mission.sh DESTINATION lib/${PROJECT_NAME})
+install(TARGETS g1_bt_nodes g1_mission_validation g1_mission_executor EXPORT export_${PROJECT_NAME} DESTINATION lib)
+install(TARGETS g1_bt_executor g1_bt_node_model nervros_executor DESTINATION lib/${PROJECT_NAME})
 
 # --- tests -----------------------------------------------------------------
 
@@ -109,6 +135,7 @@ if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
   ament_lint_auto_find_test_dependencies()
   find_package(ament_cmake_gmock REQUIRED)
+  find_package(control_msgs REQUIRED)
 
   # Every shipped tree parses against the registered leaves.
   ament_add_gmock(test_tree_loads test/test_tree_loads.cpp)
@@ -130,6 +157,25 @@ if(BUILD_TESTING)
   ament_add_gmock(test_mission_validator test/test_mission_validator.cpp)
   target_link_libraries(test_mission_validator g1_mission_validation)
   target_compile_definitions(test_mission_validator PRIVATE
+    G1_CONFIG_DIR="${CMAKE_CURRENT_SOURCE_DIR}/config"
+    G1_TREES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/trees")
+
+  # The catalog, the macro library and the registered leaves describe one robot.
+  ament_add_gmock(test_catalog_drift test/test_catalog_drift.cpp)
+  target_link_libraries(test_catalog_drift g1_bt_nodes g1_mission_validation)
+  target_compile_definitions(test_catalog_drift PRIVATE
+    G1_CONFIG_DIR="${CMAKE_CURRENT_SOURCE_DIR}/config"
+    G1_TREES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/trees")
+
+  # What the executor learns from a tree as it ticks. No ROS graph.
+  ament_add_gmock(test_mission_observer test/test_mission_observer.cpp)
+  target_link_libraries(test_mission_observer g1_mission_executor)
+
+  # The executor node against stand-in skill servers: one mission at a time, halts, stops,
+  # authority and what the hands hold. No simulator, but several seconds of DDS discovery.
+  ament_add_gmock(test_nervros_executor test/test_nervros_executor.cpp TIMEOUT 300)
+  target_link_libraries(test_nervros_executor g1_mission_executor ${control_msgs_TARGETS})
+  target_compile_definitions(test_nervros_executor PRIVATE
     G1_CONFIG_DIR="${CMAKE_CURRENT_SOURCE_DIR}/config"
     G1_TREES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/trees")
 

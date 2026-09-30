@@ -1,7 +1,9 @@
 # g1_orchestration
 
 Runs the behavior trees that compose navigation and manipulation into a mission, on
-BehaviorTree.CPP v4. `ament_cmake`, C++20.
+BehaviorTree.CPP v4. `ament_cmake`, C++20. Two executors share the leaves: `g1_bt_executor` runs a
+hand-written tree from a file and exits, and `nervros_executor` is the long-lived node a NervROS
+agent sends missions to.
 
 ```mermaid
 flowchart LR
@@ -30,6 +32,9 @@ image, so this package has its own action-client base.
 | `ports.hpp`, `port_types.hpp` | Ports used by more than one leaf, and the `Station` (`x;y;yaw`) and `Point3` (`x;y;z`) port types. |
 | `arm_authority.hpp`, `src/arm_authority.cpp` | Acquiring and releasing the arm and hands. |
 | `registration.hpp`, `src/registration.cpp` | Binds classes to the names trees use. |
+| `nervros_executor.*`, `mission_observer.*`, `server_fleet.*`, `authority_port.*` | The mission executor: the node, what it watches in a running tree, the action servers StopAll reaches, and the seam to `controller_manager`. |
+| `mission_validator.*`, `catalog.*`, `macro_library.*`, `sha256.*` | Whether a mission may run, and what it may name. No ROS, so a service thread and the mission thread share them. |
+| `config/catalog.yaml`, `trees/library/` | The skills a mission may use, and the macro subtree each one runs. |
 
 ## Leaves
 
@@ -45,7 +50,7 @@ image, so this package has its own action-client base.
 | `ClearCostmaps` | Nav2 costmap clear services | `timeout_s`, `global_service`, `local_service` |
 | `ClearOctomap` | MoveIt `/clear_octomap` | `timeout_s`, `service` |
 | `AcquireArm` / `ReleaseArm` | `controller_manager` services | `timeout_s` |
-| `LookFor` | the detector's `phrases`, then `/objects` | `objects` (`id` or `id=phrase`, comma-separated, waited on), `also` (asked for, not waited on), `detector`, `timeout_s`. Answers RUNNING while it waits. |
+| `LookFor` | the detector's `phrases`, then `/objects` | `objects` (`id` or `id=phrase`, comma-separated, waited on), `also` (asked for, not waited on), `detector`, `timeout_s`; out `first_id`, the first entry's id as the detector reports it (`O17` is `o17`). Answers RUNNING while it waits. |
 | `StopLooking` | the detector's `phrases` | `detector`, `timeout_s`; empties the list, which idles the detector |
 | `Grasp` | `/g1_vla_server/grasp` | `instruction`, `object_id`, `arm` |
 | `NextViewpoint` | `/canopy/next_viewpoint` | in `mode` (`frontier` or `coverage`), `retry_s`, `timeout_s`; out `goal`, `headings`, `viewpoint_id`, `room_id`, `outcome`. `outcome` is `viewpoint`, `stuck`, `done` or `error`. Fails on `done` or `error`, which ends a viewpoint loop; on `stuck` it succeeds and the tree steps clear before asking again. |
@@ -84,7 +89,7 @@ it. Anything that writes a velocity belongs in `g1_locomotion` and anything that
 3. Add the leaf, a header and a source under `skills/`. Derive from `SkillActionNode`, which
    already judges the `success`/`message` result, and write a constructor that names the action,
    `providedPorts()` and `fillGoal()`. Derive from `RosActionNode` instead when the result is not
-   that shape, as Nav2's is not, or from `ServiceLeaf` and override `tick()` for a call that
+   that shape, as Nav2's is not, or from `ServiceLeaf` and override `call()` for a call that
    finishes in one tick. `skills/pick.cpp` and `skills/clear_octomap.cpp` are minimal examples.
 4. Register it in `src/registration.cpp` with `registerLeaf<OpenDoor>(factory, "OpenDoor",
    context)`, and list the source in `CMakeLists.txt`.
@@ -107,6 +112,156 @@ fails if the palette drifts, and `test_tree_loads` fails if a tree names a leaf 
 | `vla_grasp_in_place.xml` | `world:=manipulation`, `vla:=true` | The learned grasp in place of a planned pick. |
 | `explore.xml` | Nav2, canopy's world model, a detector | Walks to frontiers until the LiDAR map is closed, then to camera viewpoints until every room has been seen, then cleans up and saves the world. Steps clear of furniture before each Nav2 motion. |
 | `TuckBothArms` | subtree of `pick_and_place.xml` | Both arms to `tucked`, each retried. One leaf per arm, because `both_arms` fails to execute a named posture on this stack while either arm alone succeeds. |
+
+## The mission executor
+
+`nervros_executor` runs the behavior trees an agent compiles from a plan, one mission at a time, and
+reports what it does. `g1_bt_executor` cannot: one process per tree has no status, no cancel but a
+signal, and no idea what the hands hold. The agent is [NervROS](https://github.com/Adyansh04/nervros);
+the contract is its `nervros_interfaces`.
+
+| Interface | Name | Notes |
+|---|---|---|
+| Action | `/nervros_executor/execute_mission` | `ExecuteMission`. Modes: execute, validate (load and check only), dry run (every leaf replaced by a stand-in that waits its share of the skill's catalog time). |
+| Service | `/nervros_executor/validate_mission` | The same checks without a goal, plus a load; returns the worst-case duration. |
+| Service | `/nervros_executor/get_catalog` | The skills as JSON, the palette (`TreeNodesModel`: every leaf's ports and the skills' subtrees), BehaviorTree.CPP's version, and the catalog's, which changes with the skills and with the palette. |
+| Service | `/nervros_executor/stop_all` | Halts the mission, cancels goals on every skill server, holds posture. Safe at any time. |
+| Topic | `/nervros_executor/robot_state` | `RobotState`, reliable and transient local, on change and at 1 Hz. |
+
+### What a mission may say
+
+One `Mission` tree of `Sequence`, `Fallback`, `RetryUntilSuccessful` (1 to 3 attempts), `Timeout`
+and `ForceSuccess` around `SubTree`s of the catalog's skills, and nothing else. That is an
+allowlist because a model must be able to arrange the macros in `trees/library` and never write a
+leaf. The document defines no other tree (BehaviorTree.CPP would let it redefine a registered
+macro; the executor registers its own copies with each mission's factory), has no `<include>`, and
+carries `tree_sha256`, the lowercase SHA-256 of the exact bytes of `tree_xml` (an empty hash does
+not match). No `Parallel`, reactive node, `Repeat`, `Script`, `SetBlackboard`, `AcquireArm` or
+`ReleaseArm`, no pre or post condition attribute (`_skipIf`, `_post`, ...), no leaf written
+directly. Each skill gets exactly its catalog arguments, in the shape it needs; depth, node count,
+step count (each step is a whole macro at load time) and size are capped, and so is the worst case:
+a mission that could run past `max_duration_cap_s` is turned away (`TOO_LONG`) instead of being cut
+off half done by the watchdog.
+
+Problems come back as `{code, line, node, message}` in `diagnostics_json`, worded for the model to
+fix its plan; the codes are in `mission_validator.hpp`. The worst case sums a `Sequence` and a
+`Fallback` (a fallback may try every branch, and a watchdog set from the slowest would fire on a
+mission still working), multiplies a retry by its attempts and caps each `Timeout`. A skill counts
+for its catalog `max_duration_s`, which is also the `Timeout` its macro is wrapped in.
+
+### Skills
+
+`config/catalog.yaml` is what a planner is told and `trees/library/` is what runs; `test_catalog_drift`
+keeps them in step (names, ports, limits, resources). The macros are flat: none names another.
+
+| Skill | Does | Needs |
+|---|---|---|
+| `GoToTarget` | Resolves a world-model id (`R2`, `O17`) to a pose facing it, clears costmaps, steps clear of furniture, walks (three tries), squares up. | `base` |
+| `GoToPose` | The same walk to `x;y;yaw` in the `map` frame. | `base` |
+| `PickObject` | Needs the hand empty. Asks the detector for the object, closes the last stretch, picks, idles the detector, backs off 1.2 m. | `base`, arms |
+| `PlaceInto` | Needs the hand to hold something. Asks the detector for the container and for what the hand holds, closes in, places, backs off. | `base`, arms |
+| `TuckForTravel` | Tucks each arm whose hand is empty. | arms |
+
+`object_id` and `container_id` take a world-model id (`O17`) or, where there is none, the name the
+detector reports (`red_block`). The detector names what it finds by the lowercased id (`o17`),
+`LookFor` hands that on as `first_id`, and the leaves after it use it. `phrase` is the words the
+detector looks for; the planner fills it from the world model's label (`default_from` in the
+catalog). The mock detector matches on the id only, so in the simulator the id must be the
+simulator's name.
+
+### Authority
+
+The arms and both hands are taken once, before the first tick, when any skill needs them, and not per
+skill: a released Dex3 hand goes limp and drops what it holds. `base` is a name only. However a
+mission ends (success, failure, cancel, watchdog, exception, stop) the arms are released only if no
+hand holds something, or may; otherwise they are kept, `RobotState` says so, and the next mission that
+needs them finds them held. `Pick` and `Place` results say what a hand holds (`holding_left`,
+`holding_right`, in the mission's own ids); `resources_held` lists `base`, `left_arm`, `right_arm`.
+The same is kept in the mission's root blackboard as `held_left` and `held_right` (`id=phrase`, with
+the id the detector knows it by, kept current as the mission picks and places) because `Place` fails
+unless the held object is on `/objects` after the release, so `PlaceInto` must ask the detector for
+it, `TuckForTravel` must not fold an arm that holds something, and `PickObject` and `PlaceInto` fail
+at once, before anything moves, on a hand that is full or empty the wrong way round.
+
+A hand can also be *unknown* (`?` in the blackboard; "unknown" in `RobotState.message`): it may hold
+something the executor cannot name. That is the case when the arms were already taken before this
+executor found them (it restarted while a hand held an object), and for the arm of a `Pick` that was
+halted while it ran, since the hand may have closed before the cancel arrived. An unknown hand counts
+as full: the arms are kept, `TuckForTravel` skips it, `PickObject` refuses it, and `PlaceInto` may use
+it. It stops being unknown when a `Place` with that arm succeeds, or when a later mission finds the
+arms free again because someone let go of them (`deactivate_arm`, once the hands have been looked
+at). A stack whose bringup activates the arms (`activate_arm:=true`) needs
+`hands_empty_on_attach:=true`, or the first mission finds them taken and trusts nothing.
+
+### Stopping
+
+`StopAll` does not wait on anything slow:
+
+1. The mission thread halts the tree, which cancels its leaves' goals. The leaves are also told to
+   start nothing more (one flag, set by a stop, a cancel, the watchdog or a shutdown), so a tick
+   that is inside a wait for a server, or looping through retries, ends at once instead of running
+   out its budget.
+2. Every goal on every server in `stop_action_servers` is cancelled, whoever sent it, and so is the
+   arm trajectory controller's, which then holds the arm where it is (no snap).
+3. It waits up to `stop_wait_s` for the halt, asks again for any goal accepted since, and waits for
+   the servers' status topics, the arm controller's included, to show no goal.
+4. The base needs nothing more: nothing writes `/cmd_vel`, and the policy zeroes a stale command
+   after 0.5 s and stands. **The hands are never touched**: cancelling a hand controller's goal
+   would loosen the grip.
+5. It returns `ok`, a message and `state_after` (`holding posture; right hand keeps red_block`), and
+   sets `RobotState.stopped` until the next executed mission starts.
+
+`ok` is false if the mission thread has not halted in time (it can be inside a controller_manager
+call, which nothing interrupts) or a server still has a goal in flight after the wait; `message` says
+which, and how many servers were actually asked. g1_manipulation checks for a cancel between the
+phases of a pick and its clean up opens the hand on any failed or cancelled pick, so stopping during
+a pick's lift drops the object; stopping while walking with it does not.
+
+### Results and events
+
+The result has `outcome`; for anything but success also `failed_node`, `failed_step_id` (the `s<N>`
+of the step's `s<N>_<Skill>` name) and `failure_reason`, the skill server's own message. The node is
+the last leaf to fail before the tree did, so a failure a retry recovered from is not blamed. A
+`Timeout` that ran out, the step's or the macro's, is `OUTCOME_TIMEOUT` like the watchdog; a cancel
+or stop is `OUTCOME_CANCELED`; both name the step that was running. Feedback carries the running
+nodes and the status transitions since the last message: `event_level: steps` keeps the step
+subtrees and the leaves that do something, `all` every node; a halt shows as RUNNING to IDLE.
+
+`StopAll` and `ValidateMission` answer while a mission ticks: the mission runs on a thread of its own.
+
+### Parameters
+
+All in `config/nervros_executor.yaml`, commented there.
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `tick_rate_hz` | 10 | Tick rate. |
+| `max_duration_cap_s`, `watchdog_factor` | 1800, 1.2 | The most any mission may run, and the most its worst case may come to; a goal with no limit gets its worst case times the factor. |
+| `groot2_port` | 0 | Groot2 monitoring; 0 (the default) disables it. A debugging aid for a developer's own machine: it binds every interface, has no authentication, and Groot2's hooks can block or override a running node. Never on a network anyone else can reach. |
+| `hands_empty_on_attach` | false | Arms found already taken: trust the hands to be empty (a simulator that activates them at bringup), instead of treating them as unknown. |
+| `catalog_file`, `macros_dir` | `config/catalog.yaml`, `trees/library` | Relative to the package share directory. |
+| `event_level` | `steps` | `steps` or `all`. |
+| `max_tree_depth`, `max_tree_nodes`, `max_tree_steps`, `max_xml_bytes` | 10, 200, 32, 131072 | Bounds on a mission's text. |
+| `feedback_period_s`, `cancel_settle_s`, `stop_wait_s` | 0.25, 0.5, 3.0 | Feedback rate; spin after a halt so cancels reach their servers; the most a stop waits. |
+| `authority_timeout_s` | 15 | Per-step budget for `controller_manager` calls. |
+| `dry_run_time_scale`, `dry_run_min_leaf_s` | 0.02, 0.05 | A dry run's share of a skill's catalog time per leaf, and its floor. |
+| `stop_action_servers` | the nine skill servers | As `/name:type`. `test_catalog_drift` fails if a leaf uses one that is not listed. |
+| `arm_controller_action` | the arm trajectory controller | Cancelled by `StopAll` to hold the arm. |
+
+### Running it
+
+```bash
+ros2 launch g1_orchestration nervros_executor.launch.py
+ros2 run g1_orchestration send_mission.sh src/g1_orchestration/trees/missions/pick_and_place.xml dry-run
+```
+
+It starts nothing else: the stack has to be up, as for `g1_bt_executor`. Give it 30 s or more to
+shut down (the launch does): it halts the mission, waits for the servers and hands the arms back.
+`send_mission.sh` hashes a
+file and sends it with `ros2 action send_goal --feedback`; the second argument is `execute` (the
+default), `validate`, `dry-run` or `check` (the service), and a third is the limit in seconds.
+`trees/missions/pick_and_place.xml` is a mission as the agent writes them, the one the simulator
+ran; a test keeps it valid.
 
 ## The arm bracket belongs to the executor
 
@@ -167,7 +322,7 @@ breakpoints and node substitution are PRO-only. The editor itself is unrestricte
 
 ## Tests
 
-None need a simulator. `./scripts/manage.sh test g1_orchestration` runs all four.
+None need a simulator. `./scripts/manage.sh test g1_orchestration` runs all of them.
 
 | Test | Covers |
 |---|---|
@@ -175,3 +330,7 @@ None need a simulator. `./scripts/manage.sh test g1_orchestration` runs all four
 | `test_action_leaf` | The action-leaf base, through `Retreat`, against a stand-in server on the two threads the executor uses: a rejected goal fails the leaf, an accepted one that succeeds reaches SUCCESS. `LookFor` against a stand-in detector: what it writes, the ids it waits on, and that it does not block a tick. |
 | `test_node_model` | The checked-in Groot2 palette matches the registered nodes and their ports. |
 | `test_authority_drift` | The acquire sequence against `g1_bringup`'s `activate_arm`: the same names, the arm first with the hands behind it, and the freeze controller still displaced in the same switch. Plus `planArmSwitch`, including that an incoming controller which is not loaded switches nothing at all. |
+| `test_mission_validator` | Every form a mission may not take is refused with its own code and line: an include, a wrong hash, another tree, each forbidden node, condition attributes, a leaf written directly, unbounded timeouts and retries, bad arguments. The worst case on known trees, the shipped worked example, and input that is not XML at all. SHA-256 against the standard vectors. |
+| `test_catalog_drift` | Catalog, macros and leaves agree: same names, ports, limits and resources; every macro loads with its leaves registered; the JSON has the shape the agent reads; `stop_action_servers` covers every action server a leaf uses. |
+| `test_mission_observer` | Events at both levels, halts against resets, the running step, and which failure ends a mission: the last leaf, not a retried one, with the step and the leaf's own words. |
+| `test_nervros_executor` | The node against stand-in skill servers, a detector and costmap services: refusals with diagnostics (bytes that are not UTF-8 included), dry runs, one mission at a time, cancel, watchdog and cap, a tick stuck waiting for a server that a stop, a cancel or the watchdog still ends, what `StopAll` says it did, arms taken once and kept while a hand holds an object or may, a pick then a place as two missions or one. |

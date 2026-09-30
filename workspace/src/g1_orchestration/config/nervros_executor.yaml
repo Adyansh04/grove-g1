@@ -1,0 +1,65 @@
+nervros_executor:
+  ros__parameters:
+    # How often the mission tree is ticked, in Hz. Must be positive and finite.
+    tick_rate_hz: 10.0
+    # The longest a mission may run, in seconds, whatever its goal asks for. It is the watchdog
+    # when a goal gives no limit and its worst case scaled by watchdog_factor is longer. A mission
+    # whose worst case comes to more than this is turned away (TOO_LONG): the watchdog would cut
+    # it off half done.
+    max_duration_cap_s: 1800.0
+    # The watchdog of a goal that names no limit, as a multiple of the mission's worst case.
+    watchdog_factor: 1.2
+    # ZeroMQ port Groot2 connects to for live monitoring; 0 disables it, and it is off by default.
+    # It is a debugging aid for a developer's own machine: it binds every interface, has no
+    # authentication, and Groot2's hooks can block or override a node of the running tree. Never
+    # turn it on where anyone else can reach the port. A port that cannot be bound only warns.
+    groot2_port: 0
+    # Where the skills and their macros live. A relative path is taken from this package's
+    # share directory.
+    catalog_file: config/catalog.yaml
+    macros_dir: trees/library
+    # Which transitions become events in the feedback: `steps` for the mission's steps and the
+    # skill leaves, `all` for every node of the tree.
+    event_level: steps
+    # Bounds on a mission's text: nesting of its tree, nodes in it, steps (SubTrees) in it, and
+    # bytes. A step is a whole macro at load time, with a client for every action leaf in it, so
+    # the step count is what bounds the work of loading a mission.
+    max_tree_depth: 10
+    max_tree_nodes: 200
+    max_tree_steps: 32
+    max_xml_bytes: 131072
+    # Seconds between feedback messages while a mission runs.
+    feedback_period_s: 0.25
+    # After a halt, seconds to keep spinning so the leaves' cancels reach their servers.
+    cancel_settle_s: 0.5
+    # The most StopAll waits for the mission to halt and the action servers to go quiet, and the
+    # most a halted mission waits for the same.
+    stop_wait_s: 3.0
+    # Per-step budget for controller_manager calls when taking or releasing the arms.
+    authority_timeout_s: 15.0
+    # When a mission needs the arms and finds them already taken, this executor cannot tell whether
+    # a hand holds something (it may have restarted mid-carry), and letting go of them would drop
+    # it. So it keeps the arms and treats both hands as full until a place with that arm succeeds.
+    # Set this only where nothing can be in a hand at start, such as a simulator stack whose
+    # bringup activates the arms (activate_arm:=true): the hands then count as empty.
+    hands_empty_on_attach: false
+    # A dry run gives each leaf a share of its skill's catalog time, scaled by this factor, and
+    # never less than dry_run_min_leaf_s, so a long mission dry-runs in seconds.
+    dry_run_time_scale: 0.02
+    dry_run_min_leaf_s: 0.05
+    # The action servers the leaves send goals to, as /name:type. StopAll cancels every goal on
+    # each, whoever sent it, and waits for them to go quiet. A leaf whose server is missing here
+    # is only stopped when its own mission is; test_catalog_drift keeps the two in step.
+    stop_action_servers:
+      - /navigate_to_pose:nav2_msgs/action/NavigateToPose
+      - /spin:nav2_msgs/action/Spin
+      - /g1_base_approach/approach_object:g1_msgs/action/ApproachObject
+      - /g1_base_approach/retreat:g1_msgs/action/Retreat
+      - /g1_base_approach/step_clear:g1_msgs/action/StepClear
+      - /g1_manipulation_server/pick:g1_msgs/action/Pick
+      - /g1_manipulation_server/place:g1_msgs/action/Place
+      - /g1_manipulation_server/set_arm_posture:g1_msgs/action/SetArmPosture
+      - /g1_vla_server/grasp:g1_msgs/action/Grasp
+    # The arm's trajectory controller. StopAll cancels its goal, which makes it hold the arm where
+    # it is. The hand controllers are deliberately absent: cancelling theirs lets go of the grip.
+    arm_controller_action: /arm_trajectory_controller/follow_joint_trajectory:control_msgs/action/FollowJointTrajectory
