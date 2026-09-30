@@ -15,3 +15,7 @@
 	path = workspace/src/canopy
 	url = https://github.com/Adyansh04/canopy.git
 	branch = main
+[submodule "workspace/src/nervros"]
+	path = workspace/src/nervros
+	url = https://github.com/Adyansh04/nervros.git
+	branch = main

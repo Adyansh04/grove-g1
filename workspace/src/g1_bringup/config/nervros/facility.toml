@@ -1,0 +1,50 @@
+# NervROS in the facility world, for pick and place. There is no world model here: objects go by
+# the names the detector reports (red_block, brown_box), and the benches are named places.
+# Read from the source tree: the paths below are relative to this file.
+
+[robot]
+name = "Unitree G1 humanoid (simulated), in a facility with a workbench and a storage bench"
+persona = "facility.md"
+
+[ros]
+domain_id = 1
+# The container runs as root; Fast DDS shared memory between users fails without an error.
+transport = "udp"
+interfaces = [
+    "/opt/ros/jazzy",
+    "../../../g1_msgs",
+    "../../../nervros/ros/nervros_interfaces",
+]
+
+[policy]
+start_armed = false
+autonomy = "supervised"
+
+[mission]
+execute = "/nervros_executor/execute_mission"
+validate = "/nervros_executor/validate_mission"
+catalog = "/nervros_executor/get_catalog"
+stop = "/nervros_executor/stop_all"
+state = "/nervros_executor/robot_state"
+max_replans = 2
+
+# The stations the pick-and-place mission uses: facing each bench from arm's reach.
+[[place]]
+name = "workbench"
+aliases = ["the workbench"]
+pose = { x = 4.30, y = -5.60, yaw = 1.5708 }
+
+[[place]]
+name = "storage"
+aliases = ["storage bench", "the storage bench"]
+pose = { x = 6.30, y = 5.70, yaw = 1.5708 }
+
+[[tool]]
+name = "objects"
+kind = "topic"
+ros_name = "/objects"
+type = "vision_msgs/msg/Detection3DArray"
+description = "What the detector sees now: each detection's results[0].hypothesis.class_id is the object's name, such as red_block, and its bbox centre is where it is. Empty until a skill asks the detector to look."
+
+[models]
+file = "../../../nervros/profiles/example/models.toml"

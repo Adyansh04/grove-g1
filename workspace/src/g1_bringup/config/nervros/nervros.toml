@@ -1,0 +1,55 @@
+# NervROS on the simulated G1: the agent runs on the host and reaches the container's graph over
+# UDP. Read from the source tree: the paths below are relative to this file.
+# NervROS: https://github.com/Adyansh04/nervros (workspace/src/nervros).
+
+[robot]
+name = "Unitree G1 humanoid (simulated), in an apartment"
+
+[ros]
+domain_id = 1
+# The container runs as root; Fast DDS shared memory between users fails without an error.
+transport = "udp"
+interfaces = [
+    "/opt/ros/jazzy",
+    "../../../g1_msgs",
+    "../../../canopy/canopy_msgs",
+    "../../../nervros/ros/nervros_interfaces",
+]
+
+[policy]
+start_armed = false
+autonomy = "supervised"
+
+[look]
+image = "/camera/color/image_raw"
+detections = { topic = "/detector_head/instance_masks", type = "canopy_msgs/msg/InstanceMaskArray" }
+
+[world]
+map = { topic = "/map", type = "nav_msgs/msg/OccupancyGrid" }
+rooms = { topic = "/canopy/rooms", type = "canopy_msgs/msg/RoomArray" }
+objects = { topic = "/canopy/objects", type = "canopy_msgs/msg/WorldObjectArray" }
+
+[mission]
+execute = "/nervros_executor/execute_mission"
+validate = "/nervros_executor/validate_mission"
+catalog = "/nervros_executor/get_catalog"
+stop = "/nervros_executor/stop_all"
+state = "/nervros_executor/robot_state"
+max_replans = 2
+
+# SLAM starts the map where the robot stands, so the origin is its starting pose.
+[[place]]
+name = "start"
+aliases = ["where you started", "home"]
+pose = { x = 0.0, y = 0.0, yaw = 0.0 }
+
+[[tool]]
+name = "find_objects"
+kind = "service"
+ros_name = "/canopy/find_objects"
+type = "canopy_msgs/srv/FindObjects"
+hide_fields = ["query_embedding"]
+defaults = { max_results = 5 }
+
+[models]
+file = "../../../nervros/profiles/example/models.toml"
