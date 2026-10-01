@@ -6,7 +6,13 @@
 # the local model; then, from workspace/src/nervros with the demo's environment:
 #   cargo run -p nervros-cli -- --profile ../g1_bringup/config/nervros/nervros.toml \
 #     eval ../g1_bringup/config/nervros/eval/apartment.toml
-# `--only <text>` runs the cases whose ids hold it. The report lands in the state directory's evals/.
+# `--only <text>` runs the cases whose ids hold it, `--repeat k` runs each k times for pass^k, and
+# `--models a,b` runs each on models.toml's a and b in turn. The report lands in the state
+# directory's evals/.
+
+# Moves and turns are judged on where the simulator says the pelvis is: the robot's own estimate on
+# the map can be off (AMCL has started 90 degrees out).
+truth = { topic = "/g1_sensor_relay/base_state" }
 
 # Looking and knowing
 
