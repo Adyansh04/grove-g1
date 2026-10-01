@@ -24,11 +24,10 @@
 #include <string_view>
 #include <vector>
 
+#include "g1_orchestration/mission_validator.hpp"
+
 namespace g1_orchestration
 {
-
-/// "s2" for a node named "s2_GoToPose", the step a planner numbered; empty for any other name.
-std::string stepIdOf(std::string_view name);
 
 /// The first step id in a node's path, or empty when the node sits outside every step.
 std::string stepOfPath(std::string_view path);

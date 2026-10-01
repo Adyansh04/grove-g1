@@ -167,6 +167,22 @@ TEST(MissionValidator, WritesNumberArgumentsAsDecimalsAndLeavesTheRest)
     EXPECT_EQ(g1_orchestration::withDecimalNumbers("<not xml", catalog), "<not xml");
 }
 
+TEST(MissionValidator, ListsAMissionsStepsInTheOrderTheyRunWithTheirArguments)
+{
+    const auto steps = g1_orchestration::missionSteps(mission(
+        R"(<Sequence><SubTree ID="TurnInPlace" name="s1_TurnInPlace" degrees="-90"/>)"
+        R"(<Fallback><SubTree ID="GoToTarget" name="s2_GoToTarget" target="R2"/>)"
+        R"(<SubTree ID="GoToPose" name="s3_GoToPose" station="1;2;0"/></Fallback></Sequence>)"));
+    ASSERT_EQ(steps.size(), 3U);
+    EXPECT_EQ(steps[0].id, "s1");
+    EXPECT_EQ(steps[0].macro, "TurnInPlace");
+    EXPECT_EQ(steps[0].args.at("degrees"), "-90");
+    EXPECT_EQ(steps[1].name, "s2_GoToTarget");
+    EXPECT_EQ(steps[2].args.at("station"), "1;2;0");
+    EXPECT_FALSE(steps[0].args.contains("name"));
+    EXPECT_TRUE(g1_orchestration::missionSteps("<not xml").empty());
+}
+
 TEST(MissionValidator, AcceptsTheWorkedExampleShippedWithThePackage)
 {
     // The mission the simulator ran: what the compiler is checked against, so it has to stay valid.

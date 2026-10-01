@@ -14,6 +14,7 @@
 #include <cmath>
 #include <filesystem>
 #include <format>
+#include <limits>
 #include <map>
 #include <optional>
 #include <ranges>
@@ -206,6 +207,82 @@ MissionExecutor::MissionExecutor(
         },
         state_group_);
 
+    // Declared whether or not the gate is on, so one config file serves both.
+    RobotHealth::Params health;
+    health_gate_     = declare_parameter<bool>("health_gate", true);
+    health.imu_topic = declare_parameter<std::string>("imu_topic", "/imu_sensor_broadcaster/imu");
+    health.imu_timeout_s =
+        positive(declare_parameter<double>("imu_timeout_s", 1.0), "imu_timeout_s");
+    health.max_tilt_deg = positive(declare_parameter<double>("max_tilt_deg", 45.0), "max_tilt_deg");
+    health.walk_controllers = declare_parameter<std::vector<std::string>>(
+        "walk_controllers",
+        std::vector<std::string>{ "agile_controller" });
+    health.stand_controllers = declare_parameter<std::vector<std::string>>(
+        "stand_controllers",
+        std::vector<std::string>{ "locomotion_freeze_controller" });
+    health.controller_manager =
+        declare_parameter<std::string>("controller_manager", "/controller_manager");
+    health.poll_s = positive(declare_parameter<double>("health_poll_s", 1.0), "health_poll_s");
+    if (health_gate_)
+    {
+        health_ = std::make_unique<RobotHealth>(*this, std::move(health), state_group_);
+    }
+
+    preview_group_         = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    preview_clients_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    MissionPreview::Params preview;
+    preview.planner_action =
+        declare_parameter<std::string>("planner_action", "/compute_path_to_pose");
+    preview.approach_service =
+        declare_parameter<std::string>("approach_service", "/canopy/get_approach_pose");
+    preview.map_frame  = declare_parameter<std::string>("map_frame", "map");
+    preview.base_frame = declare_parameter<std::string>("base_frame", "base_footprint");
+    preview.timeout_s =
+        positive(declare_parameter<double>("preview_timeout_s", 5.0), "preview_timeout_s");
+    preview_ = std::make_unique<MissionPreview>(*this, std::move(preview), preview_clients_group_);
+
+    TeleopDriver::Params teleop;
+    teleop.command_topic = declare_parameter<std::string>("teleop_command_topic", "/cmd_vel_raw");
+    teleop.max_x         = positive(declare_parameter<double>("teleop_max_x", 0.5), "teleop_max_x");
+    teleop.max_y         = positive(declare_parameter<double>("teleop_max_y", 0.3), "teleop_max_y");
+    teleop.max_yaw = positive(declare_parameter<double>("teleop_max_yaw", 0.8), "teleop_max_yaw");
+    teleop.accel_xy =
+        positive(declare_parameter<double>("teleop_accel_xy", 1.0), "teleop_accel_xy");
+    teleop.accel_yaw =
+        positive(declare_parameter<double>("teleop_accel_yaw", 2.0), "teleop_accel_yaw");
+    teleop.deadman_s =
+        positive(declare_parameter<double>("teleop_deadman_s", 0.4), "teleop_deadman_s");
+    teleop.idle_s  = positive(declare_parameter<double>("teleop_idle_s", 20.0), "teleop_idle_s");
+    teleop.rate_hz = positive(declare_parameter<double>("teleop_rate_hz", 20.0), "teleop_rate_hz");
+    teleop_        = std::make_unique<TeleopDriver>(*this, std::move(teleop), state_group_, [this] {
+        pushState();
+    });
+
+    rclcpp::SubscriptionOptions heartbeat_options;
+    heartbeat_options.callback_group = state_group_;
+    // Best effort: a late heartbeat is of no use, and the timeout spans several of them.
+    heartbeat_sub_ = create_subscription<nervros_interfaces::msg::Heartbeat>(
+        "~/heartbeat",
+        rclcpp::QoS(1).best_effort(),
+        [this](const nervros_interfaces::msg::Heartbeat::ConstSharedPtr& beat) {
+            const std::lock_guard<std::mutex> lock(heartbeat_mutex_);
+            if (heartbeat_client_.empty() || beat->client == heartbeat_client_)
+            {
+                heartbeat_ticks_ = Clock::now().time_since_epoch().count();
+            }
+        },
+        heartbeat_options);
+    const double deadman_hz =
+        positive(declare_parameter<double>("deadman_check_hz", 10.0), "deadman_check_hz");
+    max_heartbeat_timeout_s_ = positive(
+        declare_parameter<double>("max_heartbeat_timeout_s", 10.0),
+        "max_heartbeat_timeout_s");
+    health_trip_s_ = positive(declare_parameter<double>("health_trip_s", 0.5), "health_trip_s");
+    deadman_timer_ = create_wall_timer(
+        std::chrono::duration<double>(1.0 / deadman_hz),
+        [this] { deadman(); },
+        state_group_);
+
     action_server_ = rclcpp_action::create_server<ExecuteMission>(
         this,
         "~/execute_mission",
@@ -239,6 +316,23 @@ MissionExecutor::MissionExecutor(
         [this](
             const StopSrv::Request::SharedPtr&  request,
             const StopSrv::Response::SharedPtr& response) { onStopAll(request, response); },
+        rclcpp::ServicesQoS(),
+        stop_group_);
+    using PreviewSrv = nervros_interfaces::srv::PreviewMission;
+    using TeleopSrv  = nervros_interfaces::srv::Teleop;
+    preview_service_ = create_service<PreviewSrv>(
+        "~/preview_mission",
+        [this](
+            const PreviewSrv::Request::SharedPtr&  request,
+            const PreviewSrv::Response::SharedPtr& response) { onPreview(request, response); },
+        rclcpp::ServicesQoS(),
+        preview_group_);
+    // With StopAll, so that a stop and a request to drive are taken one at a time.
+    teleop_service_ = create_service<TeleopSrv>(
+        "~/teleop",
+        [this](
+            const TeleopSrv::Request::SharedPtr&  request,
+            const TeleopSrv::Response::SharedPtr& response) { onTeleop(request, response); },
         rclcpp::ServicesQoS(),
         stop_group_);
 
@@ -357,6 +451,7 @@ void MissionExecutor::startMission(const std::shared_ptr<GoalHandle>& handle)
     const std::lock_guard<std::mutex> worker_lock(worker_mutex_);
     bool                              refused_shutting_down = false;
     bool                              refused_busy          = false;
+    bool                              refused_teleop        = false;
     {
         // The check and the claim are one step, and the stop flags are cleared with the claim: a
         // stop that comes later is for this mission, and one that came earlier was not.
@@ -368,6 +463,10 @@ void MissionExecutor::startMission(const std::shared_ptr<GoalHandle>& handle)
         else if (running_)
         {
             refused_busy = true;
+        }
+        else if (teleop_->active() && handle->get_goal()->mode == ExecuteMission::Goal::MODE_EXECUTE)
+        {
+            refused_teleop = true;
         }
         else
         {
@@ -386,6 +485,17 @@ void MissionExecutor::startMission(const std::shared_ptr<GoalHandle>& handle)
               "",
               "The executor is shutting down and takes no more missions." },
             "the executor is shutting down");
+        return;
+    }
+    if (refused_teleop)
+    {
+        rejectGoal(
+            handle,
+            { code::kTeleopActive,
+              0,
+              "",
+              "The base is being driven by hand. End teleop before sending a mission." },
+            "teleop is driving the base");
         return;
     }
     if (refused_busy)
@@ -497,14 +607,22 @@ void MissionExecutor::onStopAll(
     const std::shared_ptr<nervros_interfaces::srv::StopAll::Request>&  request,
     const std::shared_ptr<nervros_interfaces::srv::StopAll::Response>& response)
 {
-    // Nothing may escape a service callback. A stop that fails part way still says what it knows.
+    *response = stopEverything(request->reason);
+}
+
+nervros_interfaces::srv::StopAll::Response MissionExecutor::stopEverything(const std::string& reason)
+{
+    nervros_interfaces::srv::StopAll::Response response;
+    // Nothing may escape: this runs in a service callback and in a timer. A stop that fails part
+    // way still says what it knows.
     try
     {
         const auto deadline  = Clock::now() + inClockUnits(stop_wait_s_);
         const auto remaining = [&deadline] {
             return Seconds(std::max(0.0, Seconds(deadline - Clock::now()).count()));
         };
-        RCLCPP_WARN(get_logger(), "stop requested: %s", request->reason.c_str());
+        RCLCPP_WARN(get_logger(), "stop requested: %s", reason.c_str());
+        teleop_->disable("stopped: " + reason);
         {
             const std::lock_guard<std::mutex> lock(live_mutex_);
             note_ = "stopping";
@@ -519,7 +637,7 @@ void MissionExecutor::onStopAll(
             mission = running_;
             if (mission)
             {
-                stop_reason_    = request->reason;
+                stop_reason_    = reason;
                 stop_requested_ = true;
                 halting_        = true;
             }
@@ -557,18 +675,145 @@ void MissionExecutor::onStopAll(
         }
         pushState();
 
-        response->ok = halted && busy.empty();
-        response->state_after =
+        response.ok = halted && busy.empty();
+        response.state_after =
             "holding posture" + (hands.empty() ? std::string("; hands empty") : hands);
-        response->message = describeStop(mission, halted, leaf_asked, arm_asked, busy);
+        response.message = describeStop(mission, halted, leaf_asked, arm_asked, busy);
     }
     catch (const std::exception& e)
     {
         RCLCPP_ERROR(get_logger(), "the stop failed part way: %s", e.what());
-        response->ok          = false;
-        response->message     = std::string("the stop failed part way: ") + e.what();
-        response->state_after = "unknown";
+        response.ok          = false;
+        response.message     = std::string("the stop failed part way: ") + e.what();
+        response.state_after = "unknown";
     }
+    return response;
+}
+
+void MissionExecutor::deadman()
+{
+    if (!running_ || deadman_fired_)
+    {
+        return;
+    }
+    const Clock::rep now     = Clock::now().time_since_epoch().count();
+    const Clock::rep timeout = heartbeat_timeout_ticks_.load();
+    const Clock::rep silent  = now - heartbeat_ticks_.load();
+    std::string      reason;
+    if (timeout != 0 && silent >= timeout)
+    {
+        reason = std::format(
+            "deadman: no heartbeat from the agent for {:.1f} s",
+            Seconds(Clock::duration(silent)).count());
+    }
+    else if (health_ && mission_walks_)
+    {
+        // A fall mid-walk, or the safety controller handing the legs to a freeze. A blip in a
+        // reading does not stop a mission; one that lasts does.
+        const Health health = health_->now();
+        if (health.can_walk)
+        {
+            unhealthy_since_ = 0;
+            return;
+        }
+        Clock::rep since = 0;
+        if (unhealthy_since_.compare_exchange_strong(since, now) ||
+            now - since < inClockUnits(health_trip_s_).count())
+        {
+            return;
+        }
+        reason = "the robot can no longer walk: " + health.reason;
+    }
+    if (reason.empty() || deadman_fired_.exchange(true))
+    {
+        return;
+    }
+    RCLCPP_ERROR(get_logger(), "%s; stopping the mission", reason.c_str());
+    stopEverything(reason);
+}
+
+std::optional<std::string>
+MissionExecutor::healthRefusal(const std::set<std::string>& resources) const
+{
+    if (!health_ || resources.empty())
+    {
+        return std::nullopt;
+    }
+    const Health health = health_->now();
+    const bool   walks  = resources.contains(kBaseResource);
+    if (walks ? health.can_walk : health.can_stand)
+    {
+        return std::nullopt;
+    }
+    return std::format(
+        "The robot cannot {} now: {}. Check on it before sending a mission.",
+        walks ? "walk" : "move its arms",
+        health.reason);
+}
+
+void MissionExecutor::onPreview(
+    const std::shared_ptr<nervros_interfaces::srv::PreviewMission::Request>&  request,
+    const std::shared_ptr<nervros_interfaces::srv::PreviewMission::Response>& response)
+{
+    try
+    {
+        const Validation validation = validator_->validate(request->tree_xml);
+        if (!validation.ok())
+        {
+            response->ok = false;
+            response->message =
+                "the mission is not valid: " + validation.diagnostics.front().message;
+            return;
+        }
+        std::string why;
+        response->steps   = preview_->preview(missionSteps(request->tree_xml), why);
+        response->ok      = why.empty();
+        response->message = why;
+    }
+    catch (const std::exception& e)
+    {
+        response->ok      = false;
+        response->message = std::string("the preview failed: ") + e.what();
+    }
+}
+
+void MissionExecutor::onTeleop(
+    const std::shared_ptr<nervros_interfaces::srv::Teleop::Request>&  request,
+    const std::shared_ptr<nervros_interfaces::srv::Teleop::Response>& response)
+{
+    if (!request->enable)
+    {
+        teleop_->disable("the operator ended it");
+        pushState();
+        response->ok      = true;
+        response->message = "teleop off";
+        return;
+    }
+    if (auto why = healthRefusal({ kBaseResource }))
+    {
+        response->ok      = false;
+        response->message = *why;
+        return;
+    }
+    {
+        // Under the same lock a mission is claimed with, so the two cannot both start.
+        const std::lock_guard<std::mutex> lock(stop_mutex_);
+        if (running_)
+        {
+            response->ok      = false;
+            response->message = "a mission is running; wait for it or stop it first";
+            return;
+        }
+        teleop_->enable();
+    }
+    {
+        const std::lock_guard<std::mutex> lock(live_mutex_);
+        stopped_ = false;
+    }
+    pushState();
+    response->ok      = true;
+    response->message = "teleop on: geometry_msgs/Twist on ~/teleop_cmd drives the base; a pause "
+                        "in them stops it";
 }
 
 std::string MissionExecutor::describeStop(
@@ -653,7 +898,9 @@ void MissionExecutor::run(const std::shared_ptr<GoalHandle>& handle)
         halted_ = true;
     }
     halted_cv_.notify_all();
-    deadline_ticks_ = 0;
+    deadline_ticks_          = 0;
+    heartbeat_timeout_ticks_ = 0;
+    mission_walks_           = false;
     {
         // Before the result goes out, or a client that sends the next goal at once is told we are
         // busy. Under the mutex a stop lands on this mission or on none, and the flags do not
@@ -884,6 +1131,21 @@ MissionExecutor::execute(const ExecuteMission::Goal& goal, const std::shared_ptr
             { { code::kBadMode, 0, "", "mode must be 0 (execute), 1 (validate) or 2 (dry run)." } });
     }
     const bool execute_mode = goal.mode == ExecuteMission::Goal::MODE_EXECUTE;
+    // The deadman's clock starts at acceptance: taking the arms can take seconds. The agent
+    // asks for its timeout, but a long one would be no deadman at all.
+    {
+        const std::lock_guard<std::mutex> lock(heartbeat_mutex_);
+        heartbeat_client_ = goal.heartbeat_client;
+    }
+    deadman_fired_   = false;
+    unhealthy_since_ = 0;
+    heartbeat_ticks_ = Clock::now().time_since_epoch().count();
+    heartbeat_timeout_ticks_ =
+        execute_mode && std::isfinite(goal.heartbeat_timeout_s) && goal.heartbeat_timeout_s > 0.0F ?
+            inClockUnits(
+                std::min(static_cast<double>(goal.heartbeat_timeout_s), max_heartbeat_timeout_s_))
+                .count() :
+            0;
 
     const Validation validation = validator_->validate(goal.tree_xml, goal.tree_sha256);
     if (!validation.ok())
@@ -900,6 +1162,22 @@ MissionExecutor::execute(const ExecuteMission::Goal& goal, const std::shared_ptr
     if (goal.mode == ExecuteMission::Goal::MODE_VALIDATE)
     {
         return {};
+    }
+    if (execute_mode)
+    {
+        std::set<std::string> needs;
+        for (const std::string& macro : validation.macros)
+        {
+            if (const Skill* skill = validator_->catalog().findByMacro(macro))
+            {
+                needs.insert(skill->resources.begin(), skill->resources.end());
+            }
+        }
+        if (auto why = healthRefusal(needs))
+        {
+            return rejected({ { code::kRobotCannotMove, 0, "", *why } });
+        }
+        mission_walks_ = needs.contains(kBaseResource);
     }
 
     {
@@ -1345,9 +1623,22 @@ void MissionExecutor::pushState()
         state.stamp        = now();
         state.mission_id   = mission_id_;
         state.mission_step = mission_step_;
-        if (base_held_)
+        state.teleop       = teleop_ && teleop_->active();
+        if (base_held_ || state.teleop)
         {
             state.resources_held.emplace_back(kBaseResource);
+        }
+        if (health_)
+        {
+            const Health health      = health_->now();
+            state.can_move           = health.can_walk;
+            state.cannot_move_reason = health.can_walk ? std::string() : health.reason;
+            state.tilt_deg           = static_cast<float>(health.tilt_deg);
+        }
+        else
+        {
+            state.can_move = true;
+            state.tilt_deg = std::numeric_limits<float>::quiet_NaN();
         }
         if (arms_held_)
         {

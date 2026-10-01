@@ -68,3 +68,40 @@ nervros_executor:
     # The arm's trajectory controller. StopAll cancels its goal, which makes it hold the arm where
     # it is. The hand controllers are deliberately absent: cancelling theirs lets go of the grip.
     arm_controller_action: /arm_trajectory_controller/follow_joint_trajectory:control_msgs/action/FollowJointTrajectory
+    # Every ExecuteMission goal names its own deadman timeout; this is how often it is checked.
+    deadman_check_hz: 10.0
+    # Health gate: a mission that walks needs the robot upright with its balance policy holding
+    # the legs; one that only moves the arms needs it upright with any controller holding them.
+    # Off only in tests that have no IMU or controller_manager.
+    health_gate: true
+    imu_topic: /imu_sensor_broadcaster/imu
+    imu_timeout_s: 1.0
+    # Past this tilt from upright the robot counts as fallen. Walking it rocks a few degrees.
+    max_tilt_deg: 45.0
+    walk_controllers: [agile_controller]
+    stand_controllers: [locomotion_freeze_controller]
+    controller_manager: /controller_manager
+    health_poll_s: 1.0
+    # PreviewMission: Nav2's planner only (never the controller), and the world model's approach
+    # pose, chained from the robot's pose in the map.
+    planner_action: /compute_path_to_pose
+    approach_service: /canopy/get_approach_pose
+    map_frame: map
+    base_frame: base_footprint
+    preview_timeout_s: 5.0
+    # Teleop: commands go to the collision monitor's input, as Nav2's do, so it still stops the
+    # robot short of what it sees. Speeds stay above the gait's 0.15 m/s deadband to move at all.
+    teleop_command_topic: /cmd_vel_raw
+    teleop_max_x: 0.5
+    teleop_max_y: 0.3
+    teleop_max_yaw: 0.8
+    teleop_accel_xy: 1.0
+    teleop_accel_yaw: 2.0
+    # A pause in commands longer than this brings the base to a stop; this long with none ends teleop.
+    teleop_deadman_s: 0.4
+    teleop_idle_s: 20.0
+    teleop_rate_hz: 20.0
+    # The most an agent may ask for as its deadman timeout; a longer one is no deadman.
+    max_heartbeat_timeout_s: 10.0
+    # How long the robot must stay unable to walk before a walking mission is stopped for it.
+    health_trip_s: 0.5

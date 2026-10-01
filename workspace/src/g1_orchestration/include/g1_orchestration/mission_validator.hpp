@@ -63,6 +63,8 @@ inline constexpr const char* kLoadError          = "LOAD_ERROR";
 inline constexpr const char* kBusy               = "BUSY";
 inline constexpr const char* kShuttingDown       = "SHUTTING_DOWN";
 inline constexpr const char* kBadMode            = "BAD_MODE";
+inline constexpr const char* kRobotCannotMove    = "ROBOT_CANNOT_MOVE";
+inline constexpr const char* kTeleopActive       = "TELEOP_ACTIVE";
 }  // namespace code
 
 /**
@@ -133,6 +135,24 @@ std::string diagnosticsJson(const std::vector<Diagnostic>& diagnostics);
  * validation to report, and text that does not parse comes back unchanged.
  */
 std::string withDecimalNumbers(const std::string& xml, const Catalog& catalog);
+
+/// "s2" for a node named "s2_GoToPose", the step a planner numbered; empty for any other name.
+std::string stepIdOf(std::string_view name);
+
+/// One SubTree of a mission: its step id ("s2"), its name, the macro it runs and its arguments.
+struct MissionStep
+{
+    std::string                        id;
+    std::string                        name;
+    std::string                        macro;
+    std::map<std::string, std::string> args;
+};
+
+/**
+ * @brief The skill steps of a mission's main tree, in document order, which is the order a
+ *        sequence runs them in. Text that does not parse, or has no main tree, gives none.
+ */
+std::vector<MissionStep> missionSteps(const std::string& xml);
 
 /**
  * @brief Checks missions against one catalog and one macro library.

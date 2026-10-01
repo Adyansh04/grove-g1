@@ -17,24 +17,6 @@
 namespace g1_orchestration
 {
 
-std::string stepIdOf(std::string_view name)
-{
-    if (name.size() < 3 || name.front() != 's')
-    {
-        return {};
-    }
-    std::size_t digits = 1;
-    while (digits < name.size() && std::isdigit(static_cast<unsigned char>(name[digits])) != 0)
-    {
-        ++digits;
-    }
-    if (digits == 1 || digits >= name.size() || name[digits] != '_')
-    {
-        return {};
-    }
-    return std::string(name.substr(0, digits));
-}
-
 std::string stepOfPath(std::string_view path)
 {
     for (std::size_t start = 0; start <= path.size();)

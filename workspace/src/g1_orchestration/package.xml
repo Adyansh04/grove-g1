@@ -17,6 +17,7 @@
   <depend>ament_index_cpp</depend>
   <depend>rclcpp</depend>
   <depend>rclcpp_action</depend>
+  <depend>sensor_msgs</depend>
   <depend>behaviortree_cpp</depend>
   <depend>canopy_msgs</depend>
   <depend>canopy_perception</depend>

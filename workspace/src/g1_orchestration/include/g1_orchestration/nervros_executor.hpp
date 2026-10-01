@@ -31,9 +31,12 @@
 #include <memory>
 #include <mutex>
 #include <nervros_interfaces/action/execute_mission.hpp>
+#include <nervros_interfaces/msg/heartbeat.hpp>
 #include <nervros_interfaces/msg/robot_state.hpp>
 #include <nervros_interfaces/srv/get_catalog.hpp>
+#include <nervros_interfaces/srv/preview_mission.hpp>
 #include <nervros_interfaces/srv/stop_all.hpp>
+#include <nervros_interfaces/srv/teleop.hpp>
 #include <nervros_interfaces/srv/validate_mission.hpp>
 #include <optional>
 #include <rclcpp/rclcpp.hpp>
@@ -45,8 +48,11 @@
 
 #include "g1_orchestration/authority_port.hpp"
 #include "g1_orchestration/mission_observer.hpp"
+#include "g1_orchestration/mission_preview.hpp"
 #include "g1_orchestration/mission_validator.hpp"
+#include "g1_orchestration/robot_health.hpp"
 #include "g1_orchestration/server_fleet.hpp"
+#include "g1_orchestration/teleop_driver.hpp"
 
 namespace g1_orchestration
 {
@@ -152,6 +158,20 @@ private:
     void onStopAll(
         const std::shared_ptr<nervros_interfaces::srv::StopAll::Request>&  request,
         const std::shared_ptr<nervros_interfaces::srv::StopAll::Response>& response);
+    void onPreview(
+        const std::shared_ptr<nervros_interfaces::srv::PreviewMission::Request>&  request,
+        const std::shared_ptr<nervros_interfaces::srv::PreviewMission::Response>& response);
+    void onTeleop(
+        const std::shared_ptr<nervros_interfaces::srv::Teleop::Request>&  request,
+        const std::shared_ptr<nervros_interfaces::srv::Teleop::Response>& response);
+    /// StopAll's work, for the service and for the deadman: halt, cancel, wait, hold.
+    nervros_interfaces::srv::StopAll::Response stopEverything(const std::string& reason);
+    /// Stops the running mission once its agent has been silent past its heartbeat timeout, or
+    /// a walking one once the robot can no longer walk.
+    void deadman();
+    /// Why the robot cannot run a mission that needs @p resources now, if it cannot.
+    [[nodiscard]] std::optional<std::string>
+    healthRefusal(const std::set<std::string>& resources) const;
 
     // --- one mission -------------------------------------------------------------------------
     void    run(const std::shared_ptr<GoalHandle>& handle);
@@ -245,8 +265,19 @@ private:
     rclcpp::Service<nervros_interfaces::srv::ValidateMission>::SharedPtr validate_service_;
     rclcpp::Service<nervros_interfaces::srv::GetCatalog>::SharedPtr      catalog_service_;
     rclcpp::Service<nervros_interfaces::srv::StopAll>::SharedPtr         stop_service_;
+    rclcpp::Service<nervros_interfaces::srv::PreviewMission>::SharedPtr  preview_service_;
+    rclcpp::Service<nervros_interfaces::srv::Teleop>::SharedPtr          teleop_service_;
     rclcpp::Publisher<RobotState>::SharedPtr                             state_pub_;
     rclcpp::TimerBase::SharedPtr                                         state_timer_;
+    rclcpp::Subscription<nervros_interfaces::msg::Heartbeat>::SharedPtr  heartbeat_sub_;
+    rclcpp::TimerBase::SharedPtr                                         deadman_timer_;
+    /// Planner and world-model calls for a preview, answered while the preview service waits.
+    rclcpp::CallbackGroup::SharedPtr preview_group_;
+    rclcpp::CallbackGroup::SharedPtr preview_clients_group_;
+    bool                             health_gate_ = true;
+    std::unique_ptr<RobotHealth>     health_;
+    std::unique_ptr<MissionPreview>  preview_;
+    std::unique_ptr<TeleopDriver>    teleop_;
 
     // --- shared between the mission thread, StopAll and the state publisher ------------------
     std::mutex  live_mutex_;
@@ -275,6 +306,21 @@ private:
     std::atomic<bool> halting_{ false };
     /// When the watchdog fires, in steady-clock ticks; 0 when no mission runs.
     std::atomic<std::chrono::steady_clock::rep> deadline_ticks_{ 0 };
+    /// The running mission's heartbeat timeout in steady-clock ticks; 0 for none.
+    std::atomic<std::chrono::steady_clock::rep> heartbeat_timeout_ticks_{ 0 };
+    /// When the last heartbeat came, in steady-clock ticks.
+    std::atomic<std::chrono::steady_clock::rep> heartbeat_ticks_{ 0 };
+    /// Set once the deadman has stopped the running mission, so it stops it once.
+    std::atomic<bool> deadman_fired_{ false };
+    /// The client whose heartbeats count for the running mission; empty counts any.
+    std::mutex  heartbeat_mutex_;
+    std::string heartbeat_client_;
+    double      max_heartbeat_timeout_s_ = 10.0;
+    /// Whether the running mission walks, so the deadman also watches that the robot still can.
+    std::atomic<bool> mission_walks_{ false };
+    /// Since when the robot has been unable to walk during it, in steady-clock ticks; 0 if able.
+    std::atomic<std::chrono::steady_clock::rep> unhealthy_since_{ 0 };
+    double                                      health_trip_s_ = 0.5;
     std::atomic<bool>                           shutting_down_{ false };
     std::mutex                                  halted_mutex_;
     std::condition_variable                     halted_cv_;

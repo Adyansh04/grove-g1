@@ -8,11 +8,13 @@
  */
 
 #include <gmock/gmock.h>
+#include <tf2_ros/static_transform_broadcaster.h>
 
 #include <algorithm>
 #include <atomic>
 #include <behaviortree_cpp/contrib/json.hpp>
 #include <chrono>
+#include <cmath>
 #include <condition_variable>
 #include <control_msgs/action/follow_joint_trajectory.hpp>
 #include <future>
@@ -22,6 +24,8 @@
 #include <g1_msgs/action/retreat.hpp>
 #include <g1_msgs/action/set_arm_posture.hpp>
 #include <g1_msgs/action/step_clear.hpp>
+#include <geometry_msgs/msg/transform_stamped.hpp>
+#include <geometry_msgs/msg/twist.hpp>
 #include <limits>
 #include <memory>
 #include <mutex>
@@ -29,13 +33,18 @@
 #include <nav2_msgs/action/spin.hpp>
 #include <nav2_msgs/srv/clear_entire_costmap.hpp>
 #include <nervros_interfaces/action/execute_mission.hpp>
+#include <nervros_interfaces/msg/heartbeat.hpp>
 #include <nervros_interfaces/msg/robot_state.hpp>
 #include <nervros_interfaces/srv/get_catalog.hpp>
+#include <nervros_interfaces/srv/preview_mission.hpp>
 #include <nervros_interfaces/srv/stop_all.hpp>
+#include <nervros_interfaces/srv/teleop.hpp>
 #include <nervros_interfaces/srv/validate_mission.hpp>
+#include <numbers>
 #include <optional>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
+#include <sensor_msgs/msg/imu.hpp>
 #include <string>
 #include <thread>
 #include <vector>
@@ -292,6 +301,8 @@ public:
             { "catalog_file", std::string(G1_CONFIG_DIR) + "/catalog.yaml" },
             { "macros_dir", std::string(G1_TREES_DIR) + "/library" },
             { "groot2_port", 0 },
+            // No IMU or controller_manager here; the gate's own tests turn it on with fakes.
+            { "health_gate", false },
             { "dry_run_time_scale", 0.0005 },
             { "cancel_settle_s", 0.1 },
             { "stop_wait_s", 1.5 },
@@ -1676,6 +1687,290 @@ TEST(NervrosExecutor, AGoalThatComesAfterShutdownIsTurnedAway)
     EXPECT_EQ(run->result->outcome, ExecuteMission::Result::OUTCOME_REJECTED);
     EXPECT_EQ(diagnostics(*run->result).at(0).at("code"), "SHUTTING_DOWN");
     EXPECT_EQ(harness.authority->acquired, 0);
+}
+
+// --- the deadman ------------------------------------------------------------------------------
+
+/// Publishes heartbeats as an agent does, until it is destroyed.
+class Heartbeats
+{
+public:
+    explicit Heartbeats(const rclcpp::Node::SharedPtr& node, std::string client = "test")
+      : client_(std::move(client))
+      , publisher_(node->create_publisher<nervros_interfaces::msg::Heartbeat>(
+            "/nervros_executor/heartbeat", rclcpp::QoS(1).best_effort()))
+      , thread_([this](const std::stop_token& stop) {
+          while (!stop.stop_requested())
+          {
+              nervros_interfaces::msg::Heartbeat beat;
+              beat.client = client_;
+              publisher_->publish(beat);
+              std::this_thread::sleep_for(100ms);
+          }
+      })
+    {}
+
+private:
+    std::string                                                      client_;
+    rclcpp::Publisher<nervros_interfaces::msg::Heartbeat>::SharedPtr publisher_;
+    std::jthread                                                     thread_;
+};
+
+TEST(NervrosExecutor, TheDeadmanStopsAMissionWhoseAgentFallsSilentAndHolds)
+{
+    FakeRobot robot;
+    robot.navigate->duration_ms = 20000;
+    Harness harness;
+    auto    goal             = makeGoal(mission("<Sequence>" + kWalk + "</Sequence>"));
+    goal.heartbeat_timeout_s = 0.5F;
+
+    const auto run = harness.execute(goal);
+
+    EXPECT_EQ(run->result->outcome, ExecuteMission::Result::OUTCOME_CANCELED);
+    EXPECT_THAT(run->result->failure_reason, ::testing::HasSubstr("deadman"));
+    EXPECT_LT(run->result->elapsed_s, 6.0F);
+    EXPECT_GE(robot.navigate->cancels, 1) << "the walk was not cancelled";
+    EXPECT_TRUE(harness.stateWhere([](const RobotState& s) { return s.stopped; }).stopped);
+}
+
+TEST(NervrosExecutor, HeartbeatsKeepAMissionRunningToItsEnd)
+{
+    FakeRobot robot;
+    robot.navigate->duration_ms = 1500;
+    Harness    harness;
+    Heartbeats beats(harness.client_node);
+    auto       goal          = makeGoal(mission("<Sequence>" + kWalk + "</Sequence>"));
+    goal.heartbeat_timeout_s = 0.5F;
+
+    const auto run = harness.execute(goal);
+
+    EXPECT_EQ(run->result->outcome, ExecuteMission::Result::OUTCOME_SUCCESS)
+        << run->result->failure_reason;
+}
+
+TEST(NervrosExecutor, AnotherClientsHeartbeatsDoNotKeepAMissionAlive)
+{
+    FakeRobot robot;
+    robot.navigate->duration_ms = 20000;
+    Harness    harness;
+    Heartbeats stranger(harness.client_node, "someone else");
+    auto       goal          = makeGoal(mission("<Sequence>" + kWalk + "</Sequence>"));
+    goal.heartbeat_timeout_s = 0.5F;
+    goal.heartbeat_client    = "test";
+
+    const auto run = harness.execute(goal);
+
+    EXPECT_THAT(run->result->failure_reason, ::testing::HasSubstr("deadman"));
+}
+
+TEST(NervrosExecutor, TheExecutorCapsTheTimeoutAnAgentAsksFor)
+{
+    FakeRobot robot;
+    robot.navigate->duration_ms = 20000;
+    Harness harness({ rclcpp::Parameter("max_heartbeat_timeout_s", 0.5) });
+    auto    goal             = makeGoal(mission("<Sequence>" + kWalk + "</Sequence>"));
+    goal.heartbeat_timeout_s = 1000.0F;
+
+    const auto run = harness.execute(goal);
+
+    EXPECT_THAT(run->result->failure_reason, ::testing::HasSubstr("deadman"));
+    EXPECT_LT(run->result->elapsed_s, 6.0F);
+}
+
+TEST(NervrosExecutor, AMissionWithoutAHeartbeatTimeoutHasNoDeadman)
+{
+    FakeRobot robot;
+    robot.navigate->duration_ms = 1500;
+    Harness harness;
+
+    const auto run = harness.execute(makeGoal(mission("<Sequence>" + kWalk + "</Sequence>")));
+
+    EXPECT_EQ(run->result->outcome, ExecuteMission::Result::OUTCOME_SUCCESS)
+        << run->result->failure_reason;
+}
+
+// --- the health gate --------------------------------------------------------------------------
+
+/// Publishes the body's orientation, tilted about x by a settable angle.
+class FakeImu
+{
+public:
+    explicit FakeImu(const rclcpp::Node::SharedPtr& node)
+      : publisher_(
+            node->create_publisher<sensor_msgs::msg::Imu>("/test_imu", rclcpp::SensorDataQoS()))
+      , thread_([this](const std::stop_token& stop) {
+          while (!stop.stop_requested())
+          {
+              const double          half = tilt_deg.load() * std::numbers::pi / 360.0;
+              sensor_msgs::msg::Imu msg;
+              msg.orientation.x = std::sin(half);
+              msg.orientation.w = std::cos(half);
+              publisher_->publish(msg);
+              std::this_thread::sleep_for(50ms);
+          }
+      })
+    {}
+
+    std::atomic<double> tilt_deg{ 0.0 };
+
+private:
+    rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr publisher_;
+    std::jthread                                        thread_;
+};
+
+TEST(NervrosExecutor, TheHealthGateRefusesToWalkAFallenRobotAndSaysWhy)
+{
+    FakeRobot robot;
+    Harness   harness({ rclcpp::Parameter("health_gate", true),
+                        rclcpp::Parameter("imu_topic", "/test_imu"),
+                        rclcpp::Parameter("controller_manager", "") });
+    FakeImu   imu(harness.client_node);
+    imu.tilt_deg = 90.0;
+    const RobotState down =
+        harness.stateWhere([](const RobotState& s) { return !s.can_move && s.tilt_deg > 80.0F; });
+    EXPECT_THAT(down.cannot_move_reason, ::testing::HasSubstr("fallen: tilted 90 degrees"));
+
+    const auto refused = harness.execute(makeGoal(mission("<Sequence>" + kWalk + "</Sequence>")));
+    EXPECT_EQ(refused->result->outcome, ExecuteMission::Result::OUTCOME_REJECTED);
+    EXPECT_EQ(diagnostics(*refused->result)[0]["code"], "ROBOT_CANNOT_MOVE");
+    EXPECT_THAT(refused->result->failure_reason, ::testing::HasSubstr("cannot walk"));
+    EXPECT_EQ(robot.navigate->goals, 0);
+
+    imu.tilt_deg = 3.0;
+    harness.stateWhere([](const RobotState& s) { return s.can_move; });
+    const auto run = harness.execute(makeGoal(mission("<Sequence>" + kWalk + "</Sequence>")));
+    EXPECT_EQ(run->result->outcome, ExecuteMission::Result::OUTCOME_SUCCESS)
+        << run->result->failure_reason;
+}
+
+TEST(NervrosExecutor, AFallMidWalkStopsTheMission)
+{
+    FakeRobot robot;
+    robot.navigate->duration_ms = 20000;
+    Harness harness({ rclcpp::Parameter("health_gate", true),
+                      rclcpp::Parameter("imu_topic", "/test_imu"),
+                      rclcpp::Parameter("controller_manager", ""),
+                      rclcpp::Parameter("health_trip_s", 0.3) });
+    FakeImu imu(harness.client_node);
+    harness.stateWhere([](const RobotState& s) { return s.can_move; });
+    harness.start(makeGoal(mission("<Sequence>" + kWalk + "</Sequence>")));
+    harness.waitUntilRunning();
+
+    imu.tilt_deg   = 95.0;
+    const auto run = harness.finished();
+
+    EXPECT_EQ(run->result->outcome, ExecuteMission::Result::OUTCOME_CANCELED);
+    EXPECT_THAT(run->result->failure_reason, ::testing::HasSubstr("can no longer walk: fallen"));
+    EXPECT_GE(robot.navigate->cancels, 1);
+}
+
+TEST(NervrosExecutor, TheHealthGateLetsADryRunThrough)
+{
+    Harness harness({ rclcpp::Parameter("health_gate", true),
+                      rclcpp::Parameter("imu_topic", "/test_imu"),
+                      rclcpp::Parameter("controller_manager", "") });
+
+    const auto run = harness.execute(
+        makeGoal(mission("<Sequence>" + kWalk + "</Sequence>"), ExecuteMission::Goal::MODE_DRY_RUN));
+
+    EXPECT_EQ(run->result->outcome, ExecuteMission::Result::OUTCOME_SUCCESS)
+        << run->result->failure_reason;
+}
+
+// --- teleop -----------------------------------------------------------------------------------
+
+TEST(NervrosExecutor, TeleopDrivesWithinItsLimitsStopsWhenCommandsPauseAndBlocksMissions)
+{
+    Harness    harness({ rclcpp::Parameter("teleop_command_topic", "/test_cmd_vel"),
+                         rclcpp::Parameter("teleop_deadman_s", 0.3) });
+    std::mutex mutex;
+    std::vector<geometry_msgs::msg::Twist> out;
+    auto sub = harness.client_node->create_subscription<geometry_msgs::msg::Twist>(
+        "/test_cmd_vel",
+        rclcpp::QoS(1).reliable(),
+        [&](const geometry_msgs::msg::Twist::ConstSharedPtr& msg) {
+            const std::lock_guard<std::mutex> lock(mutex);
+            out.push_back(*msg);
+        });
+    auto teleop = harness.client_node->create_client<nervros_interfaces::srv::Teleop>(
+        "/nervros_executor/teleop");
+    ASSERT_TRUE(teleop->wait_for_service(20s));
+    auto on    = std::make_shared<nervros_interfaces::srv::Teleop::Request>();
+    on->enable = true;
+    auto reply = teleop->async_send_request(on);
+    ASSERT_EQ(reply.wait_for(10s), std::future_status::ready);
+    ASSERT_TRUE(reply.get()->ok) << reply.get()->message;
+    EXPECT_TRUE(harness.stateWhere([](const RobotState& s) { return s.teleop; }).teleop);
+
+    auto cmd = harness.client_node->create_publisher<geometry_msgs::msg::Twist>(
+        "/nervros_executor/teleop_cmd",
+        rclcpp::QoS(1).reliable());
+    geometry_msgs::msg::Twist fast;
+    fast.linear.x = 2.0;  // past the 0.5 m/s limit
+    for (int i = 0; i < 30; ++i)
+    {
+        cmd->publish(fast);
+        std::this_thread::sleep_for(50ms);
+    }
+    {
+        const std::lock_guard<std::mutex> lock(mutex);
+        ASSERT_FALSE(out.empty());
+        const auto top = std::ranges::max(out, {}, [](const auto& t) { return t.linear.x; });
+        EXPECT_NEAR(top.linear.x, 0.5, 1e-9) << "not held to the speed limit";
+        EXPECT_LT(out.front().linear.x, 0.5) << "it snapped instead of ramping";
+    }
+
+    const auto refused = harness.execute(makeGoal(mission("<Sequence>" + kWalk + "</Sequence>")));
+    EXPECT_EQ(refused->result->outcome, ExecuteMission::Result::OUTCOME_REJECTED);
+    EXPECT_EQ(diagnostics(*refused->result)[0]["code"], "TELEOP_ACTIVE");
+
+    // The commands stop: within the deadman and the ramp-down, the base is told to stand.
+    EXPECT_TRUE(waitFor(
+        [&] {
+            const std::lock_guard<std::mutex> lock(mutex);
+            return !out.empty() && out.back().linear.x == 0.0;
+        },
+        5s));
+
+    harness.stopAll("button");
+    EXPECT_FALSE(harness.stateWhere([](const RobotState& s) { return !s.teleop; }).teleop);
+}
+
+// --- preview ----------------------------------------------------------------------------------
+
+TEST(NervrosExecutor, APreviewChainsTurnsAndWalksFromTheRobotsPoseWithoutMovingIt)
+{
+    Harness                              harness({ rclcpp::Parameter("preview_timeout_s", 0.3) });
+    tf2_ros::StaticTransformBroadcaster  tf(harness.client_node);
+    geometry_msgs::msg::TransformStamped pose;
+    pose.header.frame_id         = "map";
+    pose.child_frame_id          = "base_footprint";
+    pose.transform.translation.x = 1.0;
+    pose.transform.translation.y = 2.0;
+    pose.transform.rotation.w    = 1.0;
+    tf.sendTransform(pose);
+
+    auto preview = harness.client_node->create_client<nervros_interfaces::srv::PreviewMission>(
+        "/nervros_executor/preview_mission");
+    ASSERT_TRUE(preview->wait_for_service(20s));
+    auto request      = std::make_shared<nervros_interfaces::srv::PreviewMission::Request>();
+    request->tree_xml = mission(
+        R"(<Sequence><SubTree ID="TurnInPlace" name="s1_TurnInPlace" degrees="90"/>)"
+        R"(<SubTree ID="WalkStraight" name="s2_WalkStraight" direction="forward" distance_m="1.0"/>)"
+        R"(<SubTree ID="GoToPose" name="s3_GoToPose" station="4.0;5.0;0.0"/></Sequence>)");
+    auto reply = preview->async_send_request(request);
+    ASSERT_EQ(reply.wait_for(30s), std::future_status::ready);
+    const auto response = reply.get();
+
+    ASSERT_TRUE(response->ok) << response->message;
+    ASSERT_EQ(response->steps.size(), 3U);
+    EXPECT_EQ(response->steps[0].step_id, "s1");
+    EXPECT_THAT(response->steps[0].note, ::testing::HasSubstr("90 degrees left"));
+    EXPECT_NEAR(response->steps[1].goal.pose.position.x, 1.0, 1e-6);
+    EXPECT_NEAR(response->steps[1].goal.pose.position.y, 3.0, 1e-6) << "the walk ignored the turn";
+    EXPECT_EQ(response->steps[2].goal.header.frame_id, "map");
+    EXPECT_THAT(response->steps[2].note, ::testing::HasSubstr("planner is not up"));
+    EXPECT_TRUE(response->steps[2].path.poses.empty());
 }
 
 int main(int argc, char** argv)

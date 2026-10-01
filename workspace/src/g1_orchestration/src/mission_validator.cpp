@@ -821,6 +821,77 @@ private:
 
 }  // namespace
 
+std::string stepIdOf(std::string_view name)
+{
+    if (name.size() < 3 || name.front() != 's')
+    {
+        return {};
+    }
+    std::size_t digits = 1;
+    while (digits < name.size() && std::isdigit(static_cast<unsigned char>(name[digits])) != 0)
+    {
+        ++digits;
+    }
+    if (digits == 1 || digits >= name.size() || name[digits] != '_')
+    {
+        return {};
+    }
+    return std::string(name.substr(0, digits));
+}
+
+std::vector<MissionStep> missionSteps(const std::string& xml)
+{
+    tinyxml2::XMLDocument doc;
+    if (doc.Parse(xml.c_str()) != tinyxml2::XML_SUCCESS || doc.RootElement() == nullptr)
+    {
+        return {};
+    }
+    // The main tree, or the first one when none is named.
+    const char*                 main = doc.RootElement()->Attribute("main_tree_to_execute");
+    const tinyxml2::XMLElement* tree = doc.RootElement()->FirstChildElement("BehaviorTree");
+    while (main != nullptr && tree != nullptr &&
+           (tree->Attribute("ID") == nullptr || std::string_view(tree->Attribute("ID")) != main))
+    {
+        tree = tree->NextSiblingElement("BehaviorTree");
+    }
+    if (tree == nullptr)
+    {
+        return {};
+    }
+    std::vector<MissionStep>                 steps;
+    std::vector<const tinyxml2::XMLElement*> pending{ tree };
+    while (!pending.empty())
+    {
+        const tinyxml2::XMLElement* element = pending.back();
+        pending.pop_back();
+        const char* id   = element->Attribute("ID");
+        const char* name = element->Attribute("name");
+        if (std::string_view(element->Name()) == "SubTree" && id != nullptr && name != nullptr)
+        {
+            MissionStep step{ stepIdOf(name), name, id, {} };
+            for (const tinyxml2::XMLAttribute* a = element->FirstAttribute(); a != nullptr;
+                 a                               = a->Next())
+            {
+                if (std::string_view(a->Name()) != "ID" && std::string_view(a->Name()) != "name")
+                {
+                    step.args.emplace(a->Name(), a->Value());
+                }
+            }
+            steps.push_back(std::move(step));
+            continue;
+        }
+        // Children pushed last first, so the stack hands them out in document order.
+        std::vector<const tinyxml2::XMLElement*> children;
+        for (const tinyxml2::XMLElement* c = element->FirstChildElement(); c != nullptr;
+             c                             = c->NextSiblingElement())
+        {
+            children.push_back(c);
+        }
+        pending.insert(pending.end(), children.rbegin(), children.rend());
+    }
+    return steps;
+}
+
 std::string withDecimalNumbers(const std::string& xml, const Catalog& catalog)
 {
     tinyxml2::XMLDocument doc;

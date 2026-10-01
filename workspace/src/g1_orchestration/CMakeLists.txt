@@ -22,6 +22,7 @@ find_package(OpenSSL REQUIRED)
 find_package(rcl_interfaces REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
+find_package(sensor_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
 find_package(TinyXML2 REQUIRED)
 find_package(tf2 REQUIRED)
@@ -93,8 +94,11 @@ target_link_libraries(g1_bt_nodes PUBLIC
 add_library(g1_mission_executor
   src/authority_port.cpp
   src/mission_observer.cpp
+  src/mission_preview.cpp
   src/nervros_executor.cpp
+  src/robot_health.cpp
   src/server_fleet.cpp
+  src/teleop_driver.cpp
 )
 g1_target_defaults(g1_mission_executor)
 target_link_libraries(g1_mission_executor PUBLIC
@@ -105,6 +109,7 @@ target_link_libraries(g1_mission_executor PUBLIC
   rclcpp_action::rclcpp_action
   ${action_msgs_TARGETS}
   ${nervros_interfaces_TARGETS}
+  ${sensor_msgs_TARGETS}
 )
 
 # --- executables -----------------------------------------------------------
@@ -174,6 +179,9 @@ if(BUILD_TESTING)
 
   # The executor node against stand-in skill servers: one mission at a time, halts, stops,
   # authority and what the hands hold. No simulator, but several seconds of DDS discovery.
+  ament_add_gmock(test_executor_parts test/test_executor_parts.cpp)
+  target_link_libraries(test_executor_parts g1_mission_executor)
+
   ament_add_gmock(test_nervros_executor test/test_nervros_executor.cpp TIMEOUT 300)
   target_link_libraries(test_nervros_executor g1_mission_executor ${control_msgs_TARGETS})
   target_compile_definitions(test_nervros_executor PRIVATE
