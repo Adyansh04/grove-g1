@@ -5,6 +5,8 @@
 [robot]
 name = "Unitree G1 humanoid (simulated), in an apartment"
 persona = "apartment.md"
+# Per-motor winding temperatures from the hardware interface; the simulator reports none.
+diagnostics = "/diagnostics"
 
 [ros]
 domain_id = 1
@@ -91,6 +93,9 @@ preview = "/nervros_executor/preview_mission"
 # The executor stops a mission when these stop for heartbeat_timeout_s: NervROS gone or wedged.
 heartbeat = "/nervros_executor/heartbeat"
 heartbeat_timeout_s = 2.0
+# Driving by hand from the window's Robot tab, through the executor, which owns the base.
+teleop = "/nervros_executor/teleop"
+teleop_cmd = "/nervros_executor/teleop_cmd"
 
 # The saved map starts where the robot stood when it was mapped, which is where it starts now.
 [[place]]
