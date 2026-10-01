@@ -153,6 +153,20 @@ TEST(MissionValidator, AnArgumentLimitedToTheNamesTheDetectorKnowsRefusesOthers)
     EXPECT_THAT(bad->message, testing::HasSubstr("must be one of: mug_4"));
 }
 
+TEST(MissionValidator, WritesNumberArgumentsAsDecimalsAndLeavesTheRest)
+{
+    const Catalog     catalog = Catalog::load(std::string(G1_CONFIG_DIR) + "/catalog.yaml");
+    const std::string xml =
+        mission(R"(<Sequence><SubTree ID="TurnInPlace" name="s1_TurnInPlace" degrees="-90"/>)"
+                R"(<SubTree ID="WalkStraight" name="s2_WalkStraight" distance_m="1.5"/>)"
+                R"(<SubTree ID="TurnInPlace" name="s3_TurnInPlace" degrees="{turn}"/></Sequence>)");
+    const std::string out = g1_orchestration::withDecimalNumbers(xml, catalog);
+    EXPECT_THAT(out, testing::HasSubstr(R"(degrees="-90.0")"));
+    EXPECT_THAT(out, testing::HasSubstr(R"(distance_m="1.5")"));
+    EXPECT_THAT(out, testing::HasSubstr(R"(degrees="{turn}")"));
+    EXPECT_EQ(g1_orchestration::withDecimalNumbers("<not xml", catalog), "<not xml");
+}
+
 TEST(MissionValidator, AcceptsTheWorkedExampleShippedWithThePackage)
 {
     // The mission the simulator ran: what the compiler is checked against, so it has to stay valid.

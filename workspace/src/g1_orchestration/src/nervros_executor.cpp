@@ -777,11 +777,12 @@ BT::Blackboard::Ptr MissionExecutor::seededBlackboard()
 
 std::optional<Diagnostic> MissionExecutor::load(
     BT::BehaviorTreeFactory& factory, const std::string& xml, const BT::Blackboard::Ptr& blackboard,
-    BT::Tree& tree)
+    BT::Tree& tree) const
 {
     try
     {
-        tree = factory.createTreeFromText(xml, blackboard);
+        tree =
+            factory.createTreeFromText(withDecimalNumbers(xml, validator_->catalog()), blackboard);
         return std::nullopt;
     }
     catch (const std::exception& e)

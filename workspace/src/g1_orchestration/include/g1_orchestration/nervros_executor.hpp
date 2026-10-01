@@ -163,10 +163,10 @@ private:
     makeFactory(bool dry_run, const Validation& validation, const std::set<std::string>& used);
     /// A blackboard holding what each hand holds, as "id=phrase" or empty, for the macros to read.
     BT::Blackboard::Ptr seededBlackboard();
-    /// Loads @p xml into @p tree, or says why not.
-    static std::optional<Diagnostic> load(
+    /// Loads @p xml into @p tree, its number arguments written as decimals, or says why not.
+    std::optional<Diagnostic> load(
         BT::BehaviorTreeFactory& factory, const std::string& xml,
-        const BT::Blackboard::Ptr& blackboard, BT::Tree& tree);
+        const BT::Blackboard::Ptr& blackboard, BT::Tree& tree) const;
 
     bool  takeAuthority(const Validation& validation, Outcome& outcome);
     Ended tickLoop(

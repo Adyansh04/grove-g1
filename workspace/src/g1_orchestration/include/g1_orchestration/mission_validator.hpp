@@ -126,6 +126,15 @@ struct Validation
 std::string diagnosticsJson(const std::vector<Diagnostic>& diagnostics);
 
 /**
+ * @brief @p xml with every number argument of a catalog skill written as a decimal ("90.0").
+ *
+ * BehaviorTree.CPP 4.10 stores a SubTree literal that looks like an integer as an int, which the
+ * skill's double port then refuses as a type clash. A value that is not a number is left for
+ * validation to report, and text that does not parse comes back unchanged.
+ */
+std::string withDecimalNumbers(const std::string& xml, const Catalog& catalog);
+
+/**
  * @brief Checks missions against one catalog and one macro library.
  *
  * Immutable once built, so a service thread and the mission thread can share it.

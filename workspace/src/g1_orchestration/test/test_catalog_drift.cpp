@@ -29,6 +29,7 @@
 #include "g1_orchestration/catalog.hpp"
 #include "g1_orchestration/leaf_report.hpp"
 #include "g1_orchestration/macro_library.hpp"
+#include "g1_orchestration/mission_validator.hpp"
 #include "g1_orchestration/sha256.hpp"
 #include "g1_orchestration/skill_nodes.hpp"
 
@@ -233,7 +234,11 @@ TEST(CatalogDrift, EveryMacroLoadsWithEveryLeafItUsesRegistered)
         g1_orchestration::registerSkillNodes(factory, g1_orchestration::RosContext{ node });
         factory.registerBehaviorTreeFromText(macro->xml);
 
-        EXPECT_NO_THROW({ BT::Tree tree = factory.createTreeFromText(mission); }) << skill.macro;
+        // As the executor loads it: its number arguments written as decimals.
+        EXPECT_NO_THROW({
+            BT::Tree tree =
+                factory.createTreeFromText(g1_orchestration::withDecimalNumbers(mission, catalog));
+        }) << skill.macro;
     }
 }
 

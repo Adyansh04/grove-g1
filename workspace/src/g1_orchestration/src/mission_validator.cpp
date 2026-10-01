@@ -821,6 +821,61 @@ private:
 
 }  // namespace
 
+std::string withDecimalNumbers(const std::string& xml, const Catalog& catalog)
+{
+    tinyxml2::XMLDocument doc;
+    if (doc.Parse(xml.c_str()) != tinyxml2::XML_SUCCESS || doc.RootElement() == nullptr)
+    {
+        return xml;
+    }
+    bool                               changed = false;
+    std::vector<tinyxml2::XMLElement*> pending{ doc.RootElement() };
+    while (!pending.empty())
+    {
+        tinyxml2::XMLElement* element = pending.back();
+        pending.pop_back();
+        for (tinyxml2::XMLElement* child = element->FirstChildElement(); child != nullptr;
+             child                       = child->NextSiblingElement())
+        {
+            pending.push_back(child);
+        }
+        const char* id = element->Attribute("ID");
+        if (id == nullptr || std::string_view(element->Name()) != "SubTree")
+        {
+            continue;
+        }
+        const Skill* skill = catalog.findByMacro(id);
+        if (skill == nullptr)
+        {
+            continue;
+        }
+        for (const SkillArg& arg : skill->args)
+        {
+            const char* value = element->Attribute(arg.name.c_str());
+            const auto  number =
+                value != nullptr && arg.format == "number" ? realNumber(value) : std::nullopt;
+            if (!number)
+            {
+                continue;
+            }
+            std::string decimal = std::format("{}", *number);
+            if (decimal.find_first_of(".eE") == std::string::npos)
+            {
+                decimal += ".0";
+            }
+            element->SetAttribute(arg.name.c_str(), decimal.c_str());
+            changed = true;
+        }
+    }
+    if (!changed)
+    {
+        return xml;
+    }
+    tinyxml2::XMLPrinter printer;
+    doc.Print(&printer);
+    return printer.CStr();
+}
+
 std::string diagnosticsJson(const std::vector<Diagnostic>& diagnostics)
 {
     nlohmann::ordered_json array = nlohmann::ordered_json::array();
