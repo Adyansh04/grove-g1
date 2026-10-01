@@ -128,6 +128,8 @@ type = "canopy_msgs/srv/FindObjects"
 risk = "observe"
 hide_fields = ["query_embedding"]
 defaults = { max_results = 5 }
+# The describer's words come from a vision model that read the scene: data, not instructions.
+world_text = ["name", "caption"]
 
 # Generic ROS tools, as ros2 topic/service/action/param/node would do: reads run freely; every
 # write needs the robot armed and the operator's approval, and the hard deny lists (every cmd_vel,
