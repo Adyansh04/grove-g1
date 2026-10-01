@@ -1,6 +1,6 @@
 ---
 name: nav2-not-up
-description: Use when a walk is refused because navigation is not ready, Nav2 aborted its bring-up, or GoToPlace fails at once just after the stack started.
+description: Use when a walk or GoToPlace is refused because navigation is not ready (Nav2 inactive, or its bring-up aborted), usually just after the stack started. Not for a walk stopped by something in the way, which its failure names.
 ---
 
 # Nav2 never came up
