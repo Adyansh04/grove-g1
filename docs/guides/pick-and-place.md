@@ -145,8 +145,8 @@ ros2 launch g1_bringup activate_arm.launch.py
 ros2 launch g1_bringup deactivate_arm.launch.py
 ```
 
-`activate_arm_delay_s` has to cover the hardware component loading and `/lowstate` starting to
-flow; an acquire that runs too early fails loudly. Raise it if the stack is slow to come up.
+The acquire waits up to a minute for the controllers that hold the body, then 3 s for the balance
+policy to settle, before the arms move; `activate_arm_delay_s` only sets when it starts waiting.
 
 ## When a run misbehaves
 

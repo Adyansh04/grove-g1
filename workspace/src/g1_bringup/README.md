@@ -49,7 +49,7 @@ flowchart LR
 | `moveit` | `false` | `move_group`, in any mode. Executing a plan still needs the arm acquired. |
 | `activate_arm` | `false` | Run `activate_arm` automatically. Only with `moveit:=true`. |
 | `arms_at_sides` | `false` | Hang the arms beside the thighs through `activate_arm --posture sides --no-hands`, for exploration: at zero the forearms point forward into both cameras' views, and a real detector maps the hands. Ignored when `activate_arm` runs. |
-| `activate_arm_delay_s` | `25.0` | Seconds to wait before `activate_arm` or `arms_at_sides` runs. Too early and it fails, because the component is not loaded or `/lowstate` is not flowing yet. |
+| `activate_arm_delay_s` | `25.0` | Seconds to wait before `activate_arm` or `arms_at_sides` runs. It then waits up to 60 s for the waist, arm and leg controllers, and 3 s more for the balance policy, before the arms move. |
 | `rviz` | `false` | Open RViz for what is running. With `moveit:=true`: MoveIt's own window, plus one on `g1_navigation.rviz` if `nav:=true`. Without MoveIt: `g1_navigation.rviz` in the navigation modes, `g1_sensors.rviz` otherwise. |
 | `visualization` | empty | Everything drawn only for RViz: the annotated camera image, ground truth, `/object_markers` and the grasp plan. Empty follows `rviz`; an RViz opened by hand later needs `true`. |
 | `sensors` | `false` | LiDAR, IMU and camera, the relay and the `odom` to `base_footprint` chain. Forced on by the navigation modes, `manipulation` and `perception`. |

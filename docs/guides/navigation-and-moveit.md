@@ -116,9 +116,9 @@ ros2 launch g1_bringup bringup.launch.py \
   activate_arm:=true activate_arm_delay_s:=40.0 headless:=false
 ```
 
-`activate_arm:=true` runs the acquire once the stack is up, a simulation convenience. The delay
-has to cover the hardware component loading and `/lowstate` starting to flow; an acquire that runs
-too early fails loudly.
+`activate_arm:=true` runs the acquire once the stack is up, a simulation convenience. It waits up
+to a minute for the controllers that hold the body, then 3 s for the balance policy to settle,
+before the arms move.
 
 With both MoveIt and Nav2 up, `rviz:=true` opens two windows: MoveIt's for the arm, and one on the
 navigation config for the map and costmaps.
@@ -151,4 +151,4 @@ DDS graph. This tears it down and exits non-zero unless the graph is empty after
 | `world` | `navigation` | The facility the committed map was built from. |
 | `headless` | `true` | `false` opens the MuJoCo viewer and needs a display. |
 | `activate_arm` | `false` | Simulation convenience. Needs `moveit:=true`. |
-| `activate_arm_delay_s` | `25.0` | Raise it for larger stacks. |
+| `activate_arm_delay_s` | `25.0` | When the acquire starts waiting for the body's controllers. |
