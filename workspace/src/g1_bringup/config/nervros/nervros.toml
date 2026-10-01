@@ -100,11 +100,14 @@ pose = { x = 0.0, y = 0.0, yaw = 0.0 }
 name = "dining_table_side"
 aliases = ["beside the dining table", "the dining table's east end"]
 pose = { x = -1.313, y = 2.898, yaw = 3.135 }
+# The detector's names, which the world model does not know: a pick of mug_4 walks here first.
+near = ["mug_4"]
 
 [[place]]
 name = "office_desk_tray"
 aliases = ["the office desk's tray", "in front of the office desk"]
 pose = { x = 5.139, y = -4.385, yaw = -1.577 }
+near = ["tray_1"]
 
 [[tool]]
 name = "find_objects"

@@ -22,6 +22,9 @@ tools = true
 tool_choice = true
 structured = "json_schema"
 privacy = { local = true }
+# local-llm.sh starts llama.cpp with --ctx-size 16384: the conversation is compacted to fit.
+context = 16384
+stream = true
 
 # Google's free tier allows 5 a minute and 20 a day of 3.8 Flash, and 15 and 500 of the Flash-Lite
 # models, per project and model; canopy's describer draws on the same project, so these caps leave

@@ -81,8 +81,10 @@ Things to ask:
 - "Where is the dustbin?" `find_objects` asks canopy, which answers with ids, rooms, and how much of
   each room the camera has seen, so "not found" comes with how sure it is.
 - "Walk to the living room." The agent writes a plan, and a plan card appears with its steps. Arm
-  the robot with the switch in the top bar, then approve the plan in the chat or the dock. The card
-  follows the mission step by step, and the agent tells you how it ended.
+  the robot with the switch in the top bar, then approve the plan in the chat or the dock: that is
+  the one approval, and the agent never asks "shall I?" first, so deny what is wrong. The card
+  follows the mission step by step, and the agent tells you how it ended. When a mission fails, the
+  agent looks into why and proposes a changed plan for you to approve, up to twice.
 - "Walk 1 metre forward, then turn left 90 degrees." Small exact moves are `WalkStraight` (0.1 to
   2 m, forward or backward) and `TurnInPlace` (up to 180 degrees). They go through Nav2's
   behaviors, which project the motion on the local costmap and stop the robot before it hits
@@ -99,6 +101,11 @@ Things to ask:
   way it faces as a place, for "walk to the reading corner" later, in this session or the next. It
   is kept in `~/.local/state/nervros/places/`, one file per robot; "forget the reading corner"
   drops it.
+- "Remember that the kitchen door sticks." `memory` keeps what you ask it to across sessions, in
+  `~/.local/state/nervros/memory/`; the Agent tab (Ctrl+6) lists the notes with Forget.
+- "Every 30 minutes, walk to the bedroom and back, 4 times." `schedule` runs a plan again and
+  again: you approve it once for all its runs. A run is skipped while the robot is disarmed or busy,
+  and Stop cancels every schedule. The Mission tab lists them with Cancel.
 
 The viewer draws the map, the rooms coloured by how much of each the camera has seen, the objects,
 the G1's model with its joints as they are, Nav2's path and the chest camera's view in 3D. Beside
@@ -187,6 +194,30 @@ ros2 run g1_orchestration send_mission.sh $(ros2 pkg prefix g1_orchestration)/sh
 
 `validate` checks it, `dry-run` runs it with every skill replaced by a timed stand-in, and
 `execute` runs it.
+
+## Sessions and the model's context
+
+Every conversation is saved next to its log in `~/.local/state/nervros/logs/`. The Agent tab lists
+the recent ones, and Resume carries one on; from the command line, `nervros-cli chat --resume
+last`. The local model holds 16k tokens: the status bar shows how full the latest request was, the
+conversation is condensed before it fills (older turns summarised by the model), and `/compact` in
+the message box condenses it at once. Replies stream into the chat as they are written.
+
+## Testing the agent
+
+`g1_bringup/config/nervros/eval/apartment.toml` holds 39 requests an operator might make, from "what
+can you see" to a full pick and place, each with what the agent should do. Against the apartment
+stack with the arm (as `nervros.sh app` starts it) and the local model, from
+`workspace/src/nervros` with the demo's environment:
+
+```bash
+cargo run -p nervros-cli -- --profile ../g1_bringup/config/nervros/nervros.toml \
+  eval ../g1_bringup/config/nervros/eval/apartment.toml
+```
+
+Each case runs in a fresh session with every approval granted, and the robot carries its place
+and what it holds from case to case. The report lands in `~/.local/state/nervros/evals/`;
+`--only <text>` runs the cases whose ids hold it.
 
 ## Models
 
