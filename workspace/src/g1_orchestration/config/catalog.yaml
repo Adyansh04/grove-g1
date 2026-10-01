@@ -67,8 +67,9 @@ skills:
   - name: WalkStraight
     description: >-
       Walk straight forward or backward by a set distance and stop, without turning. Use it for
-      small exact moves such as "go 2 metres forward" or "back up half a metre"; to get to a place
-      use GoToPose or GoToTarget. The distance is measured from where the robot stands, along the
+      small exact moves such as "move 1 metre ahead", "go 2 metres forward" or "back up half a
+      metre"; a longer distance takes several steps of at most 2 m. To get to a place use GoToPose
+      or GoToTarget. The distance is measured from where the robot stands, along the
       way it faces, and it ends within about 5 cm past it. Nav2 checks the way against what the
       LiDAR sees, as a circle of 0.45 m around the body: if something is in the way the robot
       stops where it is, part of the way, and the step fails. It never walks around anything and
@@ -96,8 +97,8 @@ skills:
     description: >-
       Turn on the spot by an angle from where the robot faces now, and stop: positive turns left
       (counter-clockwise seen from above), negative turns right, up to half a turn either way. Use
-      it for "turn right 90 degrees", "turn around" (180) or to face a direction before
-      WalkStraight; to face a place use GoToPose. It ends within about 5 degrees of the angle. It
+      it for "turn right 90 degrees", "turn around" (180), "spin in place" (two steps of 180) or
+      to face a direction before WalkStraight; to face a place use GoToPose. It ends within about 5 degrees of the angle. It
       fails at once, before turning, when something is within 0.45 m of the robot's centre.
     args:
       - name: degrees
