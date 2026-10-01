@@ -80,6 +80,15 @@ Things to ask:
   (the bare key) only the local server segments.
 - "Where is the dustbin?" `find_objects` asks canopy, which answers with ids, rooms, and how much of
   each room the camera has seen, so "not found" comes with how sure it is.
+- "Point at the fridge's handle." `point` asks Gemini's free tier to point at what you name in the
+  newest frame, including things no detector marks, and draws rings where it points; a point on one
+  of the detector's marks says which, so the agent can use that object with other tools. "Look
+  closer at mark 2: what does its label say?" crops the mark from the full frame at a higher
+  resolution for the vision model.
+- "What happened to the mug today?" `recall` reads the missions the robot ran (kept in
+  `~/.local/state/nervros/`), canopy's history of the object (when it appeared, moved, went missing
+  or was seen again) and the notes you asked it to keep. A failed pick's report says where the
+  object was last seen too.
 - "Walk to the living room." The agent writes a plan, and a plan card appears with its steps. Arm
   the robot with the switch in the top bar, then approve the plan in the chat or the dock: that is
   the one approval, and the agent never asks "shall I?" first, so deny what is wrong. The card
@@ -105,7 +114,11 @@ Things to ask:
   `~/.local/state/nervros/memory/`; the Agent tab (Ctrl+6) lists the notes with Forget.
 - "Every 30 minutes, walk to the bedroom and back, 4 times." `schedule` runs a plan again and
   again: you approve it once for all its runs. A run is skipped while the robot is disarmed or busy,
-  and Stop cancels every schedule. The Mission tab lists them with Cancel.
+  and Stop cancels every schedule. The Mission tab lists them with Cancel. A request with a clock is
+  always a schedule, and the agent's every and times must match your words.
+- "When a mug appears in the kitchen, walk to the hallway." A schedule can wait for something
+  instead: an object of a kind turning up in a room, or a condition on a topic as `watch` takes
+  it. It runs once each time that becomes true, not for what holds already, for up to an hour.
 
 The viewer draws the map, the rooms coloured by how much of each the camera has seen, the objects,
 the G1's model with its joints as they are, Nav2's path and the chest camera's view in 3D. Beside
@@ -118,6 +131,40 @@ the message box offers "Go there", "What is it?" and the like; it fills in the m
 send. The strip under the views holds the agent's log, the running mission's steps as lanes on the
 timeline, the exploration's progress and the plots. The dock's World tab (Ctrl+2) lists the rooms
 with how much of each has been seen.
+
+## Plans and approvals
+
+A plan comes as a card with its steps, before anything moves. The executor previews it: the viewer
+draws where each walk ends and Nav2's path to it, and a step the preview finds unreachable is
+marked on the card. Each step shows how it went before on this robot ("11 of 11 · 2 s"), from the
+mission ledger. Before you see a plan, NervROS checks it against your words: left or right, forward
+or back, how far, how much and which hand. A plan that turns right when you said left goes back to
+the model once; if it comes back unchanged, the card shows the concern and Apply fixes. Edit, on the
+card, changes a step's argument or drops or moves a step; the changed plan is checked again before
+you can approve it. "Pick it up" as the first thing you say is not guessed at: the agent asks which
+thing.
+
+Approving a tool that does not move the robot, such as a parameter change, can cover the rest of
+the session (Allow for session); what moves the robot asks every time. When the app closes with a
+plan waiting, the next start shows it with Ask again, which checks it anew. A mission's end comes
+as a toast too, and the Mission tab keeps the recent missions with their steps and times, plans you
+asked to save by name, and the requests no skill could do (`nervros-cli missions`, `replay` and
+`gaps` read the same from the command line). When the local model's plans for one request fail
+their checks twice, a stronger model (Gemini's free tier, when the key is there) advises it how to
+fix them.
+
+Ctrl+K opens the command palette; its commands also run from the message box by name, such as
+`/compact` or `/stop`. An image pasted or dropped on the window goes with your next message, for
+the agent to look at.
+
+## The robot tab
+
+The dock's Robot tab (Ctrl+8) shows whether the robot is upright and able to walk, its tilt, where
+it is and in which room, what each hand holds, and its hottest motors from `/diagnostics`. Drive,
+there, hands the base to you: the executor takes it while no mission runs, W and S or the up and
+down arrows walk, A and D or the side arrows turn, Q and E step sideways, at a capped speed and
+through Nav2's collision monitor, which still stops the robot short of what it sees. The base
+stops as soon as the commands pause; Slow halves the speed.
 
 ## Fixing the world model
 
@@ -175,6 +222,11 @@ and a hand keeps what it holds. The button says so when it matters: "Stop · rig
 red_block". A pick stopped once the hand has closed keeps the object in the hand. On the real
 robot the remote's emergency stop is the one that counts.
 
+A mission stops by itself in two cases. The app sends the executor a heartbeat several times a
+second while a mission runs; if they stop for 2 s, because the app closed, crashed or hung, the
+executor stops the mission and the robot holds. And the executor refuses to start a walk, or stops
+one, when the robot has fallen or its balance controller is not running.
+
 ## The executor
 
 `nervros_executor` (`g1_orchestration`) runs one mission at a time. It checks every tree before
@@ -199,13 +251,20 @@ ros2 run g1_orchestration send_mission.sh $(ros2 pkg prefix g1_orchestration)/sh
 
 Every conversation is saved next to its log in `~/.local/state/nervros/logs/`. The Agent tab lists
 the recent ones, and Resume carries one on; from the command line, `nervros-cli chat --resume
-last`. The local model holds 16k tokens: the status bar shows how full the latest request was, the
-conversation is condensed before it fills (older turns summarised by the model), and `/compact` in
-the message box condenses it at once. Replies stream into the chat as they are written.
+last`. The local model holds 16k tokens: the status bar shows how full the latest request was, and
+how many model calls the session made with the share read from llama.cpp's prompt cache. Before the
+conversation fills, the results of earlier requests are cut to a line; if that is not enough, the
+model sums up the older part as goal, done, open and facts. `/compact` in the message box condenses
+it at once, and right-clicking one of your messages condenses everything up to it. Replies stream
+into the chat as they are written.
+
+For the G1's rare troubles the agent has skills, short procedures in
+`g1_bringup/config/nervros/skills/` that it reads when one fits: Nav2 that never came up, a camera
+or detector that gives nothing, a robot lost on its map, and a robot that fell.
 
 ## Testing the agent
 
-`g1_bringup/config/nervros/eval/apartment.toml` holds 39 requests an operator might make, from "what
+`g1_bringup/config/nervros/eval/apartment.toml` holds 44 requests an operator might make, from "what
 can you see" to a full pick and place, each with what the agent should do. Against the apartment
 stack with the arm (as `nervros.sh app` starts it) and the local model, from
 `workspace/src/nervros` with the demo's environment:
@@ -216,10 +275,20 @@ cargo run -p nervros-cli -- --profile ../g1_bringup/config/nervros/nervros.toml 
 ```
 
 Each case runs in a fresh session with every approval granted, and the robot carries its place
-and what it holds from case to case. The report lands in `~/.local/state/nervros/evals/`;
-`--only <text>` runs the cases whose ids hold it.
+and what it holds from case to case. Moves and turns are judged on where the simulator says the
+pelvis is, not on the robot's own estimate. The report lands in `~/.local/state/nervros/evals/`;
+`--only <text>` runs the cases whose ids hold it, `--repeat 3` runs each three times for pass^3,
+and `--models a,b` compares two entries of `models.toml`. The report gives each model's pass rate
+with its interval, its model calls, time and tokens per case, and the llama.cpp build and template
+it ran on.
+
+The window can be driven the same way: NervROS's `live_eval` test types prompts into the real app
+against the running stack, approves its cards, and saves the window at each step for a person to
+look over (its header says how).
 
 ## Models
 
 The app starts with the local model. NervROS can use other providers, set in its models file; this
-project uses free models only, and NervROS refuses a paid OpenRouter model at start-up.
+project uses free models only, and NervROS refuses a paid OpenRouter model at start-up. With
+Gemini's key in `~/.config/grove/gemini.env`, its free tier outlines for `segment`, points for
+`point` and advises the planner; without it those fall back or stay off, and the rest runs locally.
