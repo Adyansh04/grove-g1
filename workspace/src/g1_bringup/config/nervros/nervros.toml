@@ -2,6 +2,9 @@
 # UDP. Read from the source tree: the paths below are relative to this file.
 # NervROS: https://github.com/Adyansh04/nervros (workspace/src/nervros).
 
+# Procedures for rare situations, such as Nav2 that never came up; the agent reads one with `skill`.
+skills = ["skills"]
+
 [robot]
 name = "Unitree G1 humanoid (simulated), in an apartment"
 persona = "apartment.md"
