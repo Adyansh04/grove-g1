@@ -113,7 +113,7 @@ expect = { skills = ["TurnInPlace"], mission = "success", approvals_max = 1 }
 [[case]]
 id = "turn-back"
 say = ["Turn right 90 degrees."]
-expect = { skills = ["TurnInPlace"], mission = "success", approvals_max = 1, turned_deg = [60, 120] }
+expect = { skills = ["TurnInPlace"], mission = "success", approvals_max = 1, turned_deg = [-120, -60] }
 
 [[case]]
 id = "walk-3m"
