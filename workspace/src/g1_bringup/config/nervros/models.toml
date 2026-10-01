@@ -26,6 +26,9 @@ privacy = { local = true }
 # local-llm.sh starts llama.cpp with --ctx-size 16384: the conversation is compacted to fit.
 context = 16384
 stream = true
+# Qwen's sampling for non-thinking use, over llama.cpp's defaults (0.8, top_k 40, top_p 0.95,
+# min_p 0.05): on 16 eval cases, three trials each, pass^3 0.94 against 0.81 at the same cost.
+params = { temperature = 0.7, top_p = 0.8, top_k = 20, min_p = 0.0, presence_penalty = 1.0 }
 
 # Google's free tier allows 5 a minute and 20 a day of 3.8 Flash, and 15 and 500 of the Flash-Lite
 # models, per project and model; canopy's describer draws on the same project, so these caps leave
