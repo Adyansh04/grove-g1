@@ -52,6 +52,8 @@ rooms = { topic = "/canopy/rooms", type = "canopy_msgs/msg/RoomArray" }
 objects = { topic = "/canopy/objects", type = "canopy_msgs/msg/WorldObjectArray" }
 coverage = { topic = "/canopy/coverage", type = "nav_msgs/msg/OccupancyGrid" }
 trail = { topic = "/canopy/trail", type = "nav_msgs/msg/Path" }
+# What happened to an object: where it was, when it went missing, what it may have become.
+history = "/canopy/object_history"
 
 [viz]
 plan = { topic = "/plan", type = "nav_msgs/msg/Path" }
