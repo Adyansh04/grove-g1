@@ -87,6 +87,10 @@ catalog = "/nervros_executor/get_catalog"
 stop = "/nervros_executor/stop_all"
 state = "/nervros_executor/robot_state"
 max_replans = 2
+preview = "/nervros_executor/preview_mission"
+# The executor stops a mission when these stop for heartbeat_timeout_s: NervROS gone or wedged.
+heartbeat = "/nervros_executor/heartbeat"
+heartbeat_timeout_s = 2.0
 
 # The saved map starts where the robot stood when it was mapped, which is where it starts now.
 [[place]]
