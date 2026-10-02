@@ -63,12 +63,15 @@ function(_g1_add_clang_tidy_test)
     return()
   endif()
 
-  # Labelled so `--ctest-args -LE clang_tidy` skips it for a fast local loop. CI runs it.
+  # Labelled so `--ctest-args -LE clang_tidy` skips it for a fast local loop. CI runs it. Only the
+  # package's own files: the compile database also lists gtest's and gmock's sources.
   add_test(
     NAME clang_tidy_check_${PROJECT_NAME}
     COMMAND ${RUN_CLANG_TIDY_EXECUTABLE} -p ${CMAKE_BINARY_DIR} -quiet -j 4
+            "^${CMAKE_CURRENT_SOURCE_DIR}/"
   )
-  set_tests_properties(clang_tidy_check_${PROJECT_NAME} PROPERTIES LABELS clang_tidy TIMEOUT 900)
+  # g1_orchestration takes about 9 min on a workstation and over 15 on a CI runner.
+  set_tests_properties(clang_tidy_check_${PROJECT_NAME} PROPERTIES LABELS clang_tidy TIMEOUT 1800)
 endfunction()
 
 function(_g1_add_ruff_test)
