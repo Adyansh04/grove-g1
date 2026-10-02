@@ -102,6 +102,13 @@ heartbeat_timeout_s = 2.0
 teleop = "/nervros_executor/teleop"
 teleop_cmd = "/nervros_executor/teleop_cmd"
 
+# The plan checks hold these skills to the operator's words: g1_orchestration's skill names,
+# positive degrees turn left (ROS convention), and WalkStraight walks at most 2 m a step.
+[mission.checks]
+turn = { skill = "TurnInPlace", degrees = "degrees" }
+walk = { skill = "WalkStraight", metres = "distance_m", direction = "direction", max_m = 2.0 }
+arm = "arm"
+
 # The saved map starts where the robot stood when it was mapped, which is where it starts now.
 [[place]]
 name = "start"

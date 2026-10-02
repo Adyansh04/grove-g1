@@ -20,8 +20,6 @@ provider = "local"
 model = "qwen3.5-9b"
 vision = true
 tools = true
-tool_choice = true
-structured = "json_schema"
 privacy = { local = true }
 # local-llm.sh starts llama.cpp with --ctx-size 16384: the conversation is compacted to fit.
 context = 16384
