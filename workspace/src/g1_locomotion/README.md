@@ -61,6 +61,12 @@ and it is not part of arriving. Overshooting is recoverable, since the gait reve
 object under the robot's footprint (`min_forward_m`) ends the goal. On arrival the node holds zero
 for `settle_s`, re-measures, and closes again if the robot coasted out of the window.
 
+Stopped, the pelvis comes back over the feet, so a settled object reads 20 to 70 mm further than
+it did on the move: up to `settle_slack_m` beyond the window's far edge it counts as in reach,
+while the near edge, where the pregrasp has no IK, has no slack. Just outside the window
+sideways, a 0.15 s pulse at the floor speed (18 to 31 mm, measured) nudges the object in; forward
+the same pulse moves 3 to 7 mm, under the measurement's own scatter.
+
 ## Parameters
 
 Values are from `config/g1_base_approach.yaml`, which documents each one. The ones most likely to
@@ -70,8 +76,10 @@ need changing:
 |---|---|---|
 | `target_x_m`, `target_y_m` | 0.300, -0.220 | Where the object has to end up, in the base frame. y mirrors for the left arm. |
 | `forward_tolerance_m`, `lateral_tolerance_m` | 0.030, 0.040 | How close each axis has to get. |
-| `standoff_object_ids`, `standoff_target_x_m` | `[brown_box]`, `[0.350]` | Objects reached over rather than onto, approached from further back. |
+| `standoff_object_ids`, `standoff_target_x_m` | `[brown_box, tray_1]`, `[0.350, 0.350]` | Objects reached over rather than onto, approached from further back. |
 | `min_speed_x_mps`, `min_speed_y_mps` | 0.20, 0.25 | Speed floors, set by the gait's deadband. |
+| `settle_slack_m` | 0.040 | How far beyond the window's far edge a stopped robot may find the object. |
+| `nudge_band_m`, `nudge_y_s`, `max_nudges` | 0.050, 0.15, 12 | How far outside the window sideways an object is nudged in rather than driven, the pulse, and how many before driving again. |
 | `object_timeout_ms` | 30000 | How old an object's last sighting may be. Long, because the props stand still and the hand carrying the ball hides the box for the last half metre to the storage bench. |
 | `lookup_grace_s` | 5.0 | How long a missing pose or transform is waited out, standing still. |
 
@@ -99,5 +107,5 @@ before each walk and turn.
 
 | Test | Covers |
 |---|---|
-| `test_approach_planner` | The control law: the floor that makes it converge, the caps, all axes at once, signs, heading held but not required, recoverable and terminal overshoot, and the limits it refuses. |
+| `test_approach_planner` | The control law: the floor that makes it converge, the caps, all axes at once, signs, heading held but not required, recoverable and terminal overshoot, and the limits it refuses; the settle slack's far side only, and the sideways nudge's sign and band. |
 | `test_step_clear` | The step search on hand-built obstacle layouts: already clear, a wall beside, a wall ahead, a corner, a post, and a robot boxed in. |

@@ -70,6 +70,9 @@ private:
     /// Holds zero while the gait finishes its stride, so the next measurement is of a stopped robot.
     void settle();
 
+    /// Holds a velocity for `seconds`, then stops.
+    void pulse(double vx, double vy, double seconds);
+
     /// The base's pose in @p frame, or nothing if TF has not caught up.
     std::optional<geometry_msgs::msg::PoseStamped> basePose(const std::string& frame = "odom");
 
@@ -109,6 +112,7 @@ private:
     double      object_timeout_ms_ = 1500.0;
     double      retreat_speed_mps_ = 0.30;
     double      settle_s_          = 1.0;
+    int         max_nudges_        = 12;
     double      cmd_rate_hz_       = 20.0;
     double      lookup_grace_s_    = 3.0;
     double      default_timeout_s_ = 900.0;

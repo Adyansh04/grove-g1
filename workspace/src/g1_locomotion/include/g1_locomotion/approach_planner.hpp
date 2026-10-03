@@ -12,6 +12,7 @@
  */
 
 #include <cstdint>
+#include <optional>
 
 namespace g1_locomotion
 {
@@ -45,6 +46,13 @@ struct ApproachLimits
 
     /// Loose on purpose: it only keeps the robot roughly square to the surface.
     double heading_tolerance_rad = 0.350;
+
+    /// How far beyond the window's far edge a stopped robot may find the object: stopped, the
+    /// pelvis settles back over the feet, so the object reads further than it did on the move.
+    double settle_slack_m = 0.040;
+
+    /// How far outside the window sideways an object may settle and be nudged in, not driven.
+    double nudge_band_m = 0.050;
 };
 
 /**
@@ -64,6 +72,18 @@ struct GaitLimits
     /// Proportional gains, before the floors and ceilings clamp them.
     double speed_per_m      = 1.0;
     double yaw_rate_per_rad = 1.0;
+
+    /// A sideways nudge's length at the floor speed: too short to commit a stride.
+    double nudge_y_s = 0.15;
+};
+
+/**
+ * @brief A short sideways pulse, for an object that settled just outside the window.
+ */
+struct Nudge
+{
+    double vy_mps  = 0.0;
+    double seconds = 0.0;
 };
 
 /**
@@ -108,6 +128,21 @@ bool gaitLimitsAreUsable(const GaitLimits& gait);
 ApproachCommand planApproach(
     double object_x_m, double object_y_m, double heading_error_rad, const ApproachLimits& limits,
     const GaitLimits& gait);
+
+/**
+ * @brief Whether a stopped robot has the object in reach: the window, with the settle slack on
+ *        its far side.
+ */
+bool settledInReach(double object_x_m, double object_y_m, const ApproachLimits& limits);
+
+/**
+ * @brief The sideways pulse that nudges in an object that settled in reach ahead but just
+ *        outside the window sideways, at the lateral floor, toward the target.
+ * @return Nothing when it is in reach already, out of reach ahead, or further out sideways than
+ *         the nudge band, where a drive does better.
+ */
+std::optional<Nudge> planNudge(
+    double object_x_m, double object_y_m, const ApproachLimits& limits, const GaitLimits& gait);
 
 }  // namespace g1_locomotion
 

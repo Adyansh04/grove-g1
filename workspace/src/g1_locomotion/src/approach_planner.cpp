@@ -31,7 +31,8 @@ bool limitsAreUsable(const ApproachLimits& limits)
     return limits.target_x_m > 0.0 && limits.forward_tolerance_m > 0.0 &&
            limits.lateral_tolerance_m > 0.0 && limits.heading_tolerance_rad > 0.0 &&
            limits.min_forward_m >= 0.0 &&
-           limits.min_forward_m < limits.target_x_m - limits.forward_tolerance_m;
+           limits.min_forward_m < limits.target_x_m - limits.forward_tolerance_m &&
+           limits.settle_slack_m >= 0.0 && limits.nudge_band_m >= 0.0;
 }
 
 bool gaitLimitsAreUsable(const GaitLimits& gait)
@@ -39,7 +40,7 @@ bool gaitLimitsAreUsable(const GaitLimits& gait)
     return gait.min_speed_x_mps > 0.0 && gait.min_speed_y_mps > 0.0 &&
            gait.min_speed_x_mps <= gait.max_speed_x_mps &&
            gait.min_speed_y_mps <= gait.max_speed_y_mps && gait.max_yaw_rate_rps > 0.0 &&
-           gait.speed_per_m > 0.0 && gait.yaw_rate_per_rad > 0.0;
+           gait.speed_per_m > 0.0 && gait.yaw_rate_per_rad > 0.0 && gait.nudge_y_s > 0.0;
 }
 
 ApproachCommand planApproach(
@@ -91,6 +92,32 @@ ApproachCommand planApproach(
             gait.max_yaw_rate_rps);
     }
     return command;
+}
+
+bool settledInReach(double object_x_m, double object_y_m, const ApproachLimits& limits)
+{
+    const double forward = object_x_m - limits.target_x_m;
+    return object_x_m >= limits.min_forward_m && forward >= -limits.forward_tolerance_m &&
+           forward <= limits.forward_tolerance_m + limits.settle_slack_m &&
+           std::abs(object_y_m - limits.target_y_m) <= limits.lateral_tolerance_m;
+}
+
+std::optional<Nudge>
+planNudge(double object_x_m, double object_y_m, const ApproachLimits& limits, const GaitLimits& gait)
+{
+    if (!limitsAreUsable(limits) || !gaitLimitsAreUsable(gait) ||
+        settledInReach(object_x_m, object_y_m, limits))
+    {
+        return std::nullopt;
+    }
+    const double lateral = object_y_m - limits.target_y_m;
+    const double out_y   = std::abs(lateral) - limits.lateral_tolerance_m;
+    // In reach ahead once the sideways error is gone, and close enough sideways for a pulse.
+    if (!settledInReach(object_x_m, limits.target_y_m, limits) || out_y > limits.nudge_band_m)
+    {
+        return std::nullopt;
+    }
+    return Nudge{ std::copysign(gait.min_speed_y_mps, lateral), gait.nudge_y_s };
 }
 
 }  // namespace g1_locomotion

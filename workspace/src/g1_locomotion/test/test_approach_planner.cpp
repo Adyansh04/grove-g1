@@ -19,6 +19,8 @@ using g1_locomotion::GaitLimits;
 using g1_locomotion::gaitLimitsAreUsable;
 using g1_locomotion::limitsAreUsable;
 using g1_locomotion::planApproach;
+using g1_locomotion::planNudge;
+using g1_locomotion::settledInReach;
 
 /// The shipped window: the arm's measured band at the workbench.
 ApproachLimits defaults() { return ApproachLimits{}; }
@@ -191,6 +193,64 @@ TEST(ApproachPlanner, TheLeftArmWindowIsTheRightArmWindowMirrored)
 
     // And an object on the wrong side is driven across, not accepted.
     EXPECT_EQ(plan(0.270, 0.220, defaults()).state, ApproachState::kClosing);
+}
+
+TEST(ApproachSettled, JustBeyondTheFarEdgeIsInReachButNotBeyondTheSlack)
+{
+    const auto   limits = defaults();
+    const double edge   = limits.target_x_m + limits.forward_tolerance_m;
+    EXPECT_TRUE(settledInReach(limits.target_x_m, limits.target_y_m, limits));
+    EXPECT_TRUE(settledInReach(edge + 0.030, limits.target_y_m, limits));
+    EXPECT_FALSE(settledInReach(edge + limits.settle_slack_m + 0.005, limits.target_y_m, limits));
+    EXPECT_FALSE(settledInReach(
+        limits.target_x_m - limits.forward_tolerance_m - 0.005,
+        limits.target_y_m,
+        limits))
+        << "nearer than the window the pregrasp has no IK: no slack on that side";
+    EXPECT_FALSE(settledInReach(
+        limits.target_x_m,
+        limits.target_y_m + limits.lateral_tolerance_m + 0.005,
+        limits));
+}
+
+TEST(ApproachNudge, JustOutsideSidewaysIsNudgedTowardTheTarget)
+{
+    const auto limits = defaults();
+    const auto left   = planNudge(
+        limits.target_x_m,
+        limits.target_y_m + limits.lateral_tolerance_m + 0.020,
+        limits,
+        gait());
+    ASSERT_TRUE(left.has_value());
+    EXPECT_DOUBLE_EQ(left->vy_mps, gait().min_speed_y_mps);
+    EXPECT_DOUBLE_EQ(left->seconds, gait().nudge_y_s);
+    const auto right = planNudge(
+        limits.target_x_m + limits.forward_tolerance_m + 0.020,
+        limits.target_y_m - limits.lateral_tolerance_m - 0.020,
+        limits,
+        gait());
+    ASSERT_TRUE(right.has_value()) << "in reach ahead with the slack, so only sideways is out";
+    EXPECT_DOUBLE_EQ(right->vy_mps, -gait().min_speed_y_mps);
+}
+
+TEST(ApproachNudge, NoneInReachOutOfReachAheadOrFarOutSideways)
+{
+    const auto limits = defaults();
+    EXPECT_FALSE(planNudge(limits.target_x_m, limits.target_y_m, limits, gait()).has_value());
+    EXPECT_FALSE(planNudge(
+                     limits.target_x_m,
+                     limits.target_y_m + limits.lateral_tolerance_m + limits.nudge_band_m + 0.01,
+                     limits,
+                     gait())
+                     .has_value())
+        << "further out sideways, a drive does better";
+    EXPECT_FALSE(planNudge(
+                     limits.target_x_m + limits.forward_tolerance_m + limits.settle_slack_m + 0.02,
+                     limits.target_y_m + limits.lateral_tolerance_m + 0.02,
+                     limits,
+                     gait())
+                     .has_value())
+        << "out of reach ahead: only a drive closes that";
 }
 
 }  // namespace
