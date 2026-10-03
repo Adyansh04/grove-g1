@@ -17,6 +17,7 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <functional>
 #include <iterator>
 #include <map>
 #include <memory>
@@ -29,6 +30,7 @@
 #include "g1_orchestration/catalog.hpp"
 #include "g1_orchestration/leaf_report.hpp"
 #include "g1_orchestration/macro_library.hpp"
+#include "g1_orchestration/mission_preview.hpp"
 #include "g1_orchestration/mission_validator.hpp"
 #include "g1_orchestration/sha256.hpp"
 #include "g1_orchestration/skill_nodes.hpp"
@@ -475,6 +477,32 @@ TEST(CatalogDrift, RefusesACatalogThatIsBroken)
     std::string dup = readFile(kCatalogFile);
     dup.replace(dup.find("risk: motion"), std::string("risk: motion").size(), "risk: flying");
     EXPECT_THROW((void)parse(dup), std::runtime_error) << "an unknown risk";
+}
+
+TEST(CatalogDrift, ThePreviewBacksOffAsThePickAndPlaceTreesDo)
+{
+    for (const std::string macro : { "PickObject", "PlaceInto" })
+    {
+        tinyxml2::XMLDocument doc;
+        const std::string     file = std::format("{}/{}.xml", kLibraryDir, macro);
+        ASSERT_EQ(doc.LoadFile(file.c_str()), tinyxml2::XML_SUCCESS);
+        std::vector<double>                              distances;
+        std::function<void(const tinyxml2::XMLElement*)> visit =
+            [&](const tinyxml2::XMLElement* element) {
+                for (; element != nullptr; element = element->NextSiblingElement())
+                {
+                    if (std::string(element->Name()) == "Retreat")
+                    {
+                        distances.push_back(element->DoubleAttribute("distance"));
+                    }
+                    visit(element->FirstChildElement());
+                }
+            };
+        visit(doc.RootElement());
+        ASSERT_EQ(distances.size(), 1U) << macro << " backs off once";
+        EXPECT_DOUBLE_EQ(distances.front(), g1_orchestration::MissionPreview::backOffAfter(macro))
+            << macro;
+    }
 }
 
 int main(int argc, char** argv)

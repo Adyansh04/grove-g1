@@ -235,8 +235,12 @@ MissionExecutor::MissionExecutor(
         declare_parameter<std::string>("planner_action", "/compute_path_to_pose");
     preview.approach_service =
         declare_parameter<std::string>("approach_service", "/canopy/get_approach_pose");
-    preview.map_frame  = declare_parameter<std::string>("map_frame", "map");
-    preview.base_frame = declare_parameter<std::string>("base_frame", "base_footprint");
+    preview.clear_costmap_service = declare_parameter<std::string>(
+        "clear_costmap_service",
+        "/global_costmap/clear_entirely_global_costmap");
+    preview.clear_wait_s = positive(declare_parameter<double>("clear_wait_s", 1.5), "clear_wait_s");
+    preview.map_frame    = declare_parameter<std::string>("map_frame", "map");
+    preview.base_frame   = declare_parameter<std::string>("base_frame", "base_footprint");
     preview.timeout_s =
         positive(declare_parameter<double>("preview_timeout_s", 5.0), "preview_timeout_s");
     preview_ = std::make_unique<MissionPreview>(*this, std::move(preview), preview_clients_group_);

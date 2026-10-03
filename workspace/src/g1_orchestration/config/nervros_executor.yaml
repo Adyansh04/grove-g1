@@ -83,9 +83,12 @@ nervros_executor:
     controller_manager: /controller_manager
     health_poll_s: 1.0
     # PreviewMission: Nav2's planner only (never the controller), and the world model's approach
-    # pose, chained from the robot's pose in the map.
+    # pose, chained from the robot's pose in the map. A refused plan is asked again after a clear.
     planner_action: /compute_path_to_pose
     approach_service: /canopy/get_approach_pose
+    clear_costmap_service: /global_costmap/clear_entirely_global_costmap
+    # One update of the global costmap (1 Hz in g1_navigation's nav2_params.yaml).
+    clear_wait_s: 1.5
     map_frame: map
     base_frame: base_footprint
     preview_timeout_s: 5.0

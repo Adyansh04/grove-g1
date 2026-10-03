@@ -14,6 +14,7 @@
 #include <map>
 #include <numbers>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
+#include <thread>
 #include <utility>
 
 namespace g1_orchestration
@@ -60,11 +61,47 @@ MissionPreview::MissionPreview(
         params_.approach_service,
         rclcpp::ServicesQoS(),
         group);
+    clear_ = node.create_client<nav2_msgs::srv::ClearEntireCostmap>(
+        params_.clear_costmap_service,
+        rclcpp::ServicesQoS(),
+        group);
+}
+
+bool MissionPreview::clearCostmap()
+{
+    const auto budget = std::chrono::duration<double>(params_.timeout_s);
+    if (!clear_->wait_for_service(budget))
+    {
+        return false;
+    }
+    auto future =
+        clear_->async_send_request(std::make_shared<nav2_msgs::srv::ClearEntireCostmap::Request>());
+    if (future.wait_for(budget) != std::future_status::ready)
+    {
+        clear_->remove_pending_request(future);
+        return false;
+    }
+    // The planner sees the clear with the costmap's next update.
+    std::this_thread::sleep_for(std::chrono::duration<double>(params_.clear_wait_s));
+    return true;
 }
 
 Station MissionPreview::walkEnd(const Station& from, double metres)
 {
     return { from.x + metres * std::cos(from.yaw), from.y + metres * std::sin(from.yaw), from.yaw };
+}
+
+double MissionPreview::backOffAfter(const std::string& macro)
+{
+    if (macro == "PickObject")
+    {
+        return 1.2;
+    }
+    if (macro == "PlaceInto")
+    {
+        return 0.8;
+    }
+    return 0.0;
 }
 
 Station MissionPreview::turnEnd(const Station& from, double degrees)
@@ -165,8 +202,18 @@ MissionPreview::plan(const Station& from, const Station& to, std::string& why)
     const auto& wrapped = result.get();
     if (wrapped.code != rclcpp_action::ResultCode::SUCCEEDED || wrapped.result->path.poses.empty())
     {
-        why = wrapped.result && !wrapped.result->error_msg.empty() ? wrapped.result->error_msg :
-                                                                     "no path found";
+        if (wrapped.result && !wrapped.result->error_msg.empty())
+        {
+            why = wrapped.result->error_msg;
+        }
+        else if (wrapped.result && wrapped.result->error_code != Action::Result::NONE)
+        {
+            why = std::format("no path found (Nav2 error {})", wrapped.result->error_code);
+        }
+        else
+        {
+            why = "no path found";
+        }
         return std::nullopt;
     }
     return wrapped.result->path;
@@ -209,7 +256,13 @@ MissionPreview::preview(const std::vector<MissionStep>& steps, std::string& why)
             }
             if (end)
             {
-                if (auto path = plan(*at, *end, problem))
+                // The walk clears the costmaps before it plans: on a refusal, clear and ask again.
+                auto path = plan(*at, *end, problem);
+                if (!path && clearCostmap())
+                {
+                    path = plan(*at, *end, problem);
+                }
+                if (path)
                 {
                     preview.path = std::move(*path);
                     planned      = true;
@@ -236,7 +289,10 @@ MissionPreview::preview(const std::vector<MissionStep>& steps, std::string& why)
         }
         else if (step.macro == "PickObject" || step.macro == "PlaceInto")
         {
-            preview.note = "closes in on what it sees; ends within reach of it";
+            // The next walk starts where it backs off to, outside the furniture's inflated band.
+            const double back = backOffAfter(step.macro);
+            end               = walkEnd(*at, -back);
+            preview.note = std::format("closes in on what it sees, then backs off {:.1f} m", back);
         }
         else if (step.macro == "ExploreBuilding")
         {

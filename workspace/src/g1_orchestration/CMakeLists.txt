@@ -168,7 +168,7 @@ if(BUILD_TESTING)
 
   # The catalog, the macro library and the registered leaves describe one robot.
   ament_add_gmock(test_catalog_drift test/test_catalog_drift.cpp)
-  target_link_libraries(test_catalog_drift g1_bt_nodes g1_mission_validation)
+  target_link_libraries(test_catalog_drift g1_bt_nodes g1_mission_validation g1_mission_executor)
   target_compile_definitions(test_catalog_drift PRIVATE
     G1_CONFIG_DIR="${CMAKE_CURRENT_SOURCE_DIR}/config"
     G1_TREES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/trees")
