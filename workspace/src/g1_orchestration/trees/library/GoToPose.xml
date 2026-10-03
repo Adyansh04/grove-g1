@@ -1,0 +1,39 @@
+<?xml version="1.0"?>
+<!--
+  Walk to a fixed pose in the map frame and square up to its heading. `station` is "x;y;yaw" in
+  metres and radians, as NavigateToPose takes it.
+
+  Costmaps are cleared before each attempt because the last manipulation leaves phantom obstacles
+  in them, and StepClear first because the gait's drift can leave the robot inside Nav2's circle of
+  a piece of furniture, from where Nav2 will not start; it does nothing when the robot is clear.
+  Nav2 stops up to 0.5 rad short of the goal heading, so the turn is made separately, and a turn
+  that falls short still leaves the robot facing somewhere useful.
+
+  No arm authority: walking with the arms out is the planner's call (TuckForTravel).
+-->
+<root BTCPP_format="4">
+  <BehaviorTree ID="GoToPose">
+    <Timeout name="give_up_after_the_limit" msec="240000">
+      <Sequence name="go_to_pose">
+        <RetryUntilSuccessful name="walk_with_retries" num_attempts="3">
+          <Sequence name="clear_then_walk">
+            <ClearCostmaps name="forget_before_walking"/>
+            <ForceSuccess name="unless_boxed_in">
+              <StepClear name="step_clear_to_walk"/>
+            </ForceSuccess>
+            <NavigateToPose name="walk_there" goal="{station}" goal_yaw="{station_yaw}"/>
+          </Sequence>
+        </RetryUntilSuccessful>
+        <ForceSuccess name="turn_even_if_short">
+          <TurnTo name="face_the_goal_heading" yaw="{station_yaw}"/>
+        </ForceSuccess>
+      </Sequence>
+    </Timeout>
+  </BehaviorTree>
+
+  <TreeNodesModel>
+    <SubTree ID="GoToPose">
+      <input_port name="station">Where to stand and face, as x;y;yaw in the map frame (metres, radians).</input_port>
+    </SubTree>
+  </TreeNodesModel>
+</root>

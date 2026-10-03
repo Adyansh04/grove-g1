@@ -28,6 +28,9 @@
     <default class="apt_proxy">
       <geom type="box" group="2" contype="1" conaffinity="1" material="proxy" rgba="0.9 0.5 0.1 0"/>
     </default>
+    <default class="apt_free">
+      <geom type="box" group="2" contype="3" conaffinity="3" friction="1 0.005 0.0001" material="proxy" rgba="0.9 0.5 0.1 0"/>
+    </default>
     <default class="apt_box">
       <geom type="box" group="2" contype="1" conaffinity="1"/>
     </default>
@@ -69,8 +72,10 @@
     <mesh name="gso_laptop_0" file="@GROVE_ASSETS@/gso_laptop/mesh_0.obj"/>
     <texture name="gso_laptop_tex_0" type="2d" file="@GROVE_ASSETS@/gso_laptop/tex_0.png"/>
     <material name="gso_laptop_0" rgba="1 1 1 1" specular="0.3" shininess="0.3" texture="gso_laptop_tex_0"/>
-    <mesh name="gso_mug_ace_0" file="@GROVE_ASSETS@/gso_mug_ace/mesh_0.obj"/>
+    <mesh name="gso_mug_ace_x60_0" file="@GROVE_ASSETS@/gso_mug_ace/mesh_0.obj" scale="0.6 0.6 0.6"/>
     <texture name="gso_mug_ace_tex_0" type="2d" file="@GROVE_ASSETS@/gso_mug_ace/tex_0.png"/>
+    <material name="gso_mug_ace_x60_0" rgba="1 1 1 1" specular="0.3" shininess="0.3" texture="gso_mug_ace_tex_0"/>
+    <mesh name="gso_mug_ace_0" file="@GROVE_ASSETS@/gso_mug_ace/mesh_0.obj"/>
     <material name="gso_mug_ace_0" rgba="1 1 1 1" specular="0.3" shininess="0.3" texture="gso_mug_ace_tex_0"/>
     <mesh name="gso_mug_cole_0" file="@GROVE_ASSETS@/gso_mug_cole/mesh_0.obj"/>
     <texture name="gso_mug_cole_tex_0" type="2d" file="@GROVE_ASSETS@/gso_mug_cole/tex_0.png"/>
@@ -341,7 +346,7 @@
     </body>
     <body name="dining_table_1" pos="-2.3 2.6 0.38">
       <geom class="apt_visual" mesh="ph_dining_table_0" material="ph_dining_table_0" pos="0 0 -0.38"/>
-      <geom class="apt_proxy" size="0.9775 0.6024 0.38"/>
+      <geom class="apt_proxy" size="0.9775 0.6024 0.353" pos="0 0 -0.027"/>
     </body>
     <body name="chair_1" pos="-2.8 1.68 0.4867" quat="0 0 0 1">
       <geom class="apt_visual" mesh="ph_dining_chair_02_0" material="ph_dining_chair_02_0" pos="0 0 -0.4867"/>
@@ -366,6 +371,11 @@
     <body name="bowl_1" pos="-1.9 2.8 0.753">
       <geom class="apt_visual" mesh="gso_bowl_threshold_0" material="gso_bowl_threshold_0" pos="0 0 -0.0353"/>
       <geom class="apt_proxy" size="0.0849 0.0832 0.0353"/>
+    </body>
+    <body name="mug_4" pos="-1.4 2.62 0.7475" quat="0.7071 0 0 0.7071">
+      <freejoint name="mug_4_joint"/>
+      <geom class="apt_visual" mesh="gso_mug_ace_x60_0" material="gso_mug_ace_x60_0" pos="0 0 -0.0405"/>
+      <geom class="apt_free" size="0.028 0.028 0.0405" mass="0.124"/>
     </body>
 
     <!-- bedroom -->
@@ -426,6 +436,13 @@
       <geom class="apt_visual" mesh="gso_mug_cole_0" material="gso_mug_cole_0" pos="0 0 -0.0474"/>
       <geom class="apt_proxy" size="0.0828 0.0628 0.0474"/>
     </body>
+    <body name="tray_1" pos="5.85 -5.07 0.8201">
+      <geom class="apt_box" size="0.08 0.08 0.006" pos="0 0 -0.026" rgba="0.52 0.36 0.22 1"/>
+      <geom class="apt_box" size="0.08 0.008 0.032" pos="0 0.072 0" rgba="0.46 0.31 0.18 1"/>
+      <geom class="apt_box" size="0.08 0.008 0.032" pos="0 -0.072 0" rgba="0.46 0.31 0.18 1"/>
+      <geom class="apt_box" size="0.008 0.064 0.032" pos="0.072 0 0" rgba="0.46 0.31 0.18 1"/>
+      <geom class="apt_box" size="0.008 0.064 0.032" pos="-0.072 0 0" rgba="0.46 0.31 0.18 1"/>
+    </body>
     <body name="shelf_1" pos="3.33 -3.4 1.07" quat="0.7071 0 0 0.7071">
       <geom class="apt_visual" mesh="ph_steel_frame_shelves_01_0" material="ph_steel_frame_shelves_01_0" pos="0 0 -1.07"/>
       <geom class="apt_proxy" size="0.5486 0.251 1.07"/>
@@ -464,4 +481,9 @@
     <camera name="d435i" mode="fixed" fovy="58" resolution="848 480" pos="0 0 1"/>
     <camera name="chest_d435i" mode="fixed" fovy="58" resolution="848 480" pos="0 0 1"/>
   </worldbody>
+
+  <equality>
+    <weld name="grasp_left_mug_4" body1="left_hand_palm_link" body2="mug_4" active="false"/>
+    <weld name="grasp_right_mug_4" body1="right_hand_palm_link" body2="mug_4" active="false"/>
+  </equality>
 </mujoco>

@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<!--
+  Walk to something the world model knows by name (a room, or an object by id or label) and stop
+  facing it. ResolveTarget turns the name into a reachable pose facing the target; the rest is the
+  walk GoToPose makes, so the two share their reasons.
+
+  A target the world model does not know fails the macro at once, with the world model's own
+  message as the reason.
+-->
+<root BTCPP_format="4">
+  <BehaviorTree ID="GoToTarget">
+    <Timeout name="give_up_after_the_limit" msec="240000">
+      <Sequence name="go_to_target">
+        <ResolveTarget name="find_a_pose_facing_it" target="{target}" goal="{goal}" yaw="{yaw}"/>
+        <RetryUntilSuccessful name="walk_with_retries" num_attempts="3">
+          <Sequence name="clear_then_walk">
+            <ClearCostmaps name="forget_before_walking"/>
+            <ForceSuccess name="unless_boxed_in">
+              <StepClear name="step_clear_to_walk"/>
+            </ForceSuccess>
+            <NavigateToPose name="walk_there" goal="{goal}"/>
+          </Sequence>
+        </RetryUntilSuccessful>
+        <ForceSuccess name="turn_even_if_short">
+          <TurnTo name="face_the_target" yaw="{yaw}"/>
+        </ForceSuccess>
+      </Sequence>
+    </Timeout>
+  </BehaviorTree>
+
+  <TreeNodesModel>
+    <SubTree ID="GoToTarget">
+      <input_port name="target">The id of a room or an object in the world model, such as R2 or O17.</input_port>
+    </SubTree>
+  </TreeNodesModel>
+</root>

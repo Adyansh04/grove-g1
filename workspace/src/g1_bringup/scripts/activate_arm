@@ -5,6 +5,9 @@ G1LowCmdSystem is active from bring-up and holds the arms through arm_freeze_con
 swaps that for arm_trajectory_controller in one switch, because a joint the component sees
 unclaimed is left unpowered. The hands are separate components and follow, best-effort.
 
+Nothing moves until the whole body is held and the balance policy has carried the robot for a
+while: arms swinging while it takes over are what knocked the robot down at bring-up.
+
 The arms then move out to the sides unplanned: where they hang at bring-up is inside the octomap
 of any table in front, and MoveIt cannot plan from a start state in collision.
 
@@ -21,7 +24,11 @@ import time
 
 import rclpy
 from control_msgs.action import FollowJointTrajectory
-from controller_manager_msgs.srv import SetHardwareComponentState, SwitchController
+from controller_manager_msgs.srv import (
+    ListControllers,
+    SetHardwareComponentState,
+    SwitchController,
+)
 from lifecycle_msgs.msg import State
 from rclpy.action import ActionClient
 from rclpy.duration import Duration
@@ -32,6 +39,19 @@ from trajectory_msgs.msg import JointTrajectoryPoint
 CONTROLLER_NAME = "arm_trajectory_controller"
 # What holds the arms until the trajectory controller displaces it.
 ARM_FREEZE_CONTROLLER = "arm_freeze_controller"
+
+# What may hold each part of the body: the waist, the arms, and the legs, through the balance
+# policy or, with the pelvis pinned, a freeze.
+BODY_HOLDERS = (
+    ("waist_freeze_controller",),
+    (ARM_FREEZE_CONTROLLER, CONTROLLER_NAME),
+    ("agile_controller", "locomotion_freeze_controller"),
+)
+# How long the balance policy carries the robot before the arms move. The simulator lets go of its
+# start-up hold 0.5 s after the last joint is claimed; arms set moving within a second of that
+# tripped the safety controller in 6 of 19 bring-ups, and its freeze cannot balance.
+SETTLE_S = 3.0
+BODY_TIMEOUT_S = 60.0
 
 # Best-effort: a Dex3 that is absent or not publishing state must not cost the arm, and
 # G1Dex3System refuses to activate without fresh feedback.
@@ -120,6 +140,22 @@ def switch_controller(node, client, activate, deactivate, timeout_s):
     return result is not None and result.ok
 
 
+def wait_for_body(node, client, timeout_s):
+    """Until every part of the body is held, then SETTLE_S more for the balance policy."""
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        if client.wait_for_service(timeout_sec=1.0):
+            future = client.call_async(ListControllers.Request())
+            rclpy.spin_until_future_complete(node, future, timeout_sec=SERVICE_CALL_TIMEOUT_S)
+            result = future.result() if future.done() else None
+            active = {c.name for c in result.controller if c.state == "active"} if result else set()
+            if all(active.intersection(holders) for holders in BODY_HOLDERS):
+                time.sleep(SETTLE_S)
+                return True
+        time.sleep(COMPONENT_RETRY_PERIOD_S)
+    return False
+
+
 def retry_switch(node, client, activate, deactivate, retry_timeout_s):
     """Same patience the component activation gets; this switch is the whole arm acquire."""
     deadline = time.monotonic() + retry_timeout_s
@@ -182,6 +218,17 @@ def main(argv=None):
         controller_client = node.create_client(
             SwitchController, "/controller_manager/switch_controller"
         )
+        list_client = node.create_client(ListControllers, "/controller_manager/list_controllers")
+
+        node.get_logger().info(
+            "waiting for the body to be held and the balance policy to settle..."
+        )
+        if not wait_for_body(node, list_client, BODY_TIMEOUT_S):
+            node.get_logger().error(
+                f"the waist, arms and legs were not all held within {BODY_TIMEOUT_S:.0f} s; "
+                "leaving the arms alone"
+            )
+            return 1
 
         # One switch, not two: see this script's module docstring.
         node.get_logger().info(f"activating controller {CONTROLLER_NAME}...")

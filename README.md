@@ -10,6 +10,10 @@ and developed in simulation first. The simulator, `unitree_mujoco`, speaks the s
 the robot, so the hardware interface, navigation and control code run unchanged on the real G1:
 moving over is a change of DDS domain and network interface.
 
+Two companion projects, checked out here as submodules, complete it:
+[canopy](https://github.com/Adyansh04/canopy), the world model, and
+[NervROS](https://github.com/Adyansh04/nervros), an agent you talk to.
+
 The earlier Humble line, where Unitree's own leg controller walks the robot and this stack only
 adds the arms, lives on the
 [`humble-unitree`](https://github.com/Adyansh04/grove-g1/tree/humble-unitree) branch.
@@ -33,6 +37,9 @@ adds the arms, lives on the
   cameras have seen every room, and keeps the rooms, the objects in them and the camera coverage
   on the SLAM map. Missions then name their targets ("the dustbin in the office") instead of
   carrying coordinates.
+- [NervROS](https://github.com/Adyansh04/nervros) lets you talk to the robot. It looks through the
+  cameras, asks canopy where things are, and turns what you ask into missions you approve, which
+  `nervros_executor` checks and runs with the same skills as the hand-written trees.
 - A vision-language-action policy (GR00T N1.7) proposes arm motion, and each
   action chunk is checked against the planning scene before it runs. The pipeline works end to end,
   but the pretrained policy does not grasp yet: that needs demonstrations recorded on this robot.
@@ -55,13 +62,22 @@ adds the arms, lives on the
 
 https://github.com/user-attachments/assets/347d91c4-3810-4e02-85bc-f8b860215505
 
+### Talking to the robot with NervROS
+
+https://github.com/user-attachments/assets/dc4712e6-81cc-4f7a-b986-baae0cda8bf9
+
+*NervROS fetches a mug for the simulated G1: the plan, the approval, then the walk, the pick and
+the place, four times faster while the robot works. NervROS's
+[guide](https://github.com/Adyansh04/nervros/blob/main/docs/guide.md) has a video of each use.*
+
 ## Architecture
 
 ![Grove-G1 architecture](docs/media/architecture.svg)
 
-On the robot, the simulator becomes the physical G1 and the LiDAR front end becomes
-`livox_ros_driver2`. Everything above the DDS rail stays the same. Two rules shape the design,
-and both hold in simulation too:
+You talk to NervROS on the host. It plans with the robot's skills and hands each mission to
+`nervros_executor`, which ticks the same leaves as the demos' trees. On the robot, the simulator
+becomes the physical G1 and the LiDAR front end becomes `livox_ros_driver2`. Everything above the
+DDS rail stays the same. Two rules shape the design, and both hold in simulation too:
 
 - Only the hardware component writes `rt/lowcmd`. Each joint belongs to exactly one controller,
   and a joint no controller claims is unpowered, so owning a joint is what makes it hold.
@@ -85,18 +101,25 @@ and both hold in simulation too:
 | [`g1_manipulation`](workspace/src/g1_manipulation) | Pick and place as actions, and the object poses behind them. |
 | [`g1_perception`](workspace/src/g1_perception) | Objects named in text, measured from the camera, plus grasp generation and instruction grounding. |
 | [`g1_vla`](workspace/src/g1_vla) | Learned grasping: a policy's action chunks, checked against the planning scene before they run. |
-| [`g1_orchestration`](workspace/src/g1_orchestration) | The behaviour trees that turn navigation and manipulation into missions. |
+| [`g1_orchestration`](workspace/src/g1_orchestration) | The behaviour trees that turn navigation and manipulation into missions, and `nervros_executor`, which checks and runs NervROS's. |
 | [`g1_msgs`](workspace/src/g1_msgs) | The stack's own actions, services and messages. |
 
-The world model, [canopy](https://github.com/Adyansh04/canopy), is its own repository, checked out
-as a submodule in `workspace/src/canopy`. It holds the world model node, its detector front end and
-the host model servers it talks to, and it knows nothing about the G1: the G1's topics and values
-live in `g1_bringup/launch/world_model.launch.py`.
+### canopy and NervROS
+
+Two parts are their own repositories, checked out as submodules. Neither knows about the G1: the
+G1's side of each lives here.
+
+| Project | What it is | In this repository |
+|---|---|---|
+| [canopy](https://github.com/Adyansh04/canopy) | The world model: it explores a building until its cameras have seen every room, keeps the rooms, objects and camera coverage on the SLAM map, and has a map editor. | `workspace/src/canopy`; the G1's topics and values in `g1_bringup/launch/world_model.launch.py` |
+| [NervROS](https://github.com/Adyansh04/nervros) | A Rust agent you talk to, in a desktop app or a terminal: it looks through the cameras, asks canopy where things are, and turns requests into missions you approve. It runs on the host. | `workspace/src/nervros`; the G1's profile in `g1_bringup/config/nervros/`, its executor in `g1_orchestration` |
 
 ## Quick start
 
 You need Docker Engine with Compose v2, the NVIDIA driver and the NVIDIA Container Toolkit on the
-host. The GUI demos need an X11 desktop session; `manage.sh start` lets the container use it.
+host. The GUI demos need an X11 desktop session; `manage.sh start` lets the container use it. The
+NervROS demo also builds NervROS on the host, which needs ROS 2 Jazzy and Rust there: its
+[guide](docs/guides/nervros.md) says what to install.
 
 ```bash
 git clone --recurse-submodules https://github.com/Adyansh04/grove-g1.git
@@ -106,7 +129,8 @@ cp .env.example .env
 ./scripts/manage.sh build
 ```
 
-In an existing clone, `git submodule update --init` fetches the submodules, and
+The first `start` builds the dev image, the simulator included, which takes a while. In an
+existing clone, `git submodule update --init` fetches the submodules, and
 `git config submodule.recurse true` makes `git pull` keep them in step. Third-party code the
 stack changes lives in forks on their `grove` branches: `livox_ros_driver2` and
 `fast_lio_humanoid` in `workspace/src`, and the simulator, `unitree_mujoco`, in `workspace/vendor`.
@@ -120,6 +144,7 @@ Then pick a demo. Each guide explains what runs and why; each launcher opens its
 | [Learned grasping](docs/guides/learned-grasping.md) | A vision-language-action policy behind the planning-scene gate. Runs; does not grasp yet. | `learned-grasping.sh` |
 | [Open-vocabulary perception](docs/guides/open-vocabulary-grasping.md) | Objects named in text and measured in 3D, generated grasps, and instructions turned into phrases. | `open-vocabulary-grasping.sh` |
 | [Exploring and asking what is where](docs/guides/world-model.md) | canopy exploring an apartment: its rooms, its objects, and finding them by name. | `world-model.sh` |
+| [Talking to the robot with NervROS](docs/guides/nervros.md) | An agent you chat with: it looks, finds and segments things, fixes the world model, runs missions you approve (pick and place included), and checks, watches and plots the robot for you. | `nervros.sh` |
 | [Checking the map by hand](workspace/src/canopy/editor/doc/guide.md) | canopy's map editor: what to check in a saved world and how to fix it. | `world-model.sh editor` |
 
 The launchers live in `scripts/demos/`. Run one without arguments to list its variants, then name
@@ -187,7 +212,7 @@ cover.
 docs/              one guide per demo, and the README's media
 scripts/           the container, stack teardown, host model servers and demo launchers
 servers/           grove-g1's host-side model servers
-workspace/src/     ROS 2 packages, and the canopy, Livox and FAST-LIO submodules
+workspace/src/     ROS 2 packages, and the canopy, NervROS, Livox and FAST-LIO submodules
 workspace/vendor/  the simulator, our unitree_mujoco fork
 ```
 

@@ -1,0 +1,211 @@
+# The skills a NervROS mission may use. Each one is a macro subtree in trees/library, and
+# test_catalog_drift keeps the two in step: same names, same arguments, same time limit.
+#
+# GetCatalog serves this file as JSON, and catalog_version is the first 12 hex digits of the
+# SHA-256 of this text and the palette served beside it (every leaf's ports and the skills'), so
+# any edit here, or to a leaf's ports, changes what a planner sees. Write descriptions for a
+# language model: what the skill does, what it needs, what it leaves behind.
+#
+# Fields:
+#   template        ID of the macro subtree; what a mission's <SubTree ID="..."> says.
+#   args[].type     string, or world_id for an id from the world model (canopy: R2, O17), which a
+#                   planner checks against the live world model. The executor checks its shape.
+#   args[].format   How the executor checks a string beyond its type: id (letters, digits and
+#                   underscores), phrase (plain words), station (x;y;yaw).
+#   args[].enum     The only values allowed.
+#   args[].default_from  Where a planner may fill the value in instead of asking a model, such as
+#                   label(object_id): the world model's label for the object that argument names.
+#                   The mission itself still has to carry it.
+#   requires        What must hold before the skill runs.
+#   effects         What holds after it succeeds.
+#   resources       Authority the executor takes before the mission starts: base is a name only,
+#                   and both arms are taken together.
+#   risk            motion (the base or the arms move in free space) or manipulation (an object).
+#   max_duration_s  The macro's own Timeout. A step's worst case is at most this.
+#
+# Predicates in requires and effects (quoted, since the commas would split a flow list):
+#   at(x)            the robot stands at place x, and near(x) within reach of object or room x
+#   holding(arm, x)  the hand `arm` holds x; a capital letter such as X is any object
+#   hand_empty(arm)  the hand holds nothing
+#   inside(x, y)     x rests in container y
+# Anything that names an argument refers to its value in the step.
+
+skills:
+  - name: GoToTarget
+    description: >-
+      Walk to a room or an object in the world model and stop facing it. Use it to get within
+      reach of an object before PickObject or PlaceInto.
+    args:
+      - name: target
+        type: world_id
+        description: The id of a room or an object in the world model, such as R2 or O17.
+    requires: []
+    effects: ["near(target)"]
+    resources: [base]
+    idempotent: true
+    risk: motion
+    max_duration_s: 240
+    template: GoToTarget
+
+  - name: GoToPose
+    description: >-
+      Walk to a fixed place given as coordinates in the map frame, then turn to face the given
+      heading. Use it for a named place whose coordinates are known.
+    args:
+      - name: station
+        type: string
+        format: station
+        description: Where to stand and face, as x;y;yaw in the map frame, metres and radians, such as 4.30;-5.60;1.5708.
+    requires: []
+    effects: ["at(station)"]
+    resources: [base]
+    idempotent: true
+    risk: motion
+    max_duration_s: 240
+    template: GoToPose
+
+  - name: WalkStraight
+    description: >-
+      Walk straight forward or backward by a set distance and stop, without turning. Use it for
+      small exact moves such as "move 1 metre ahead", "go 2 metres forward" or "back up half a
+      metre"; a longer distance takes several steps of at most 2 m. To get to a place use GoToPose
+      or GoToTarget. The distance is measured from where the robot stands, along the
+      way it faces, and it ends within about 5 cm past it. Nav2 checks the way against what the
+      LiDAR sees, as a circle of 0.45 m around the body: if something is in the way the robot
+      stops where it is, part of the way, and the step fails. It never walks around anything and
+      does not see an arm held out or something carried, so tuck the arms first when they are out.
+    args:
+      - name: direction
+        type: string
+        description: Which way to walk, relative to where the robot faces.
+        enum: [forward, backward]
+      - name: distance_m
+        type: string
+        format: number
+        min: 0.1
+        max: 2.0
+        description: How far to walk, in metres, from 0.1 to 2.0. Always positive; direction says which way.
+    requires: []
+    effects: []
+    resources: [base]
+    idempotent: false
+    risk: motion
+    max_duration_s: 35
+    template: WalkStraight
+
+  - name: TurnInPlace
+    description: >-
+      Turn on the spot by an angle from where the robot faces now, and stop: positive turns left
+      (counter-clockwise seen from above), negative turns right, up to half a turn either way. Use
+      it for "turn right 90 degrees", "turn around" (180), "spin in place" (two steps of 180) or
+      to face a direction before WalkStraight; to face a place use GoToPose. It ends within about 5 degrees of the angle. It
+      fails at once, before turning, when something is within 0.45 m of the robot's centre.
+    args:
+      - name: degrees
+        type: string
+        format: number
+        min: -180
+        max: 180
+        description: How far to turn, in degrees, from -180 to 180; positive is left.
+    requires: []
+    effects: []
+    resources: [base]
+    idempotent: false
+    risk: motion
+    max_duration_s: 30
+    template: TurnInPlace
+
+  - name: PickObject
+    description: >-
+      Pick an object up with one hand: look for it, close the last stretch to it, grasp and lift,
+      then back away. The robot must already stand within about half a metre of the object, and
+      the object must lie on a surface, not on the floor. The hand keeps holding it afterwards,
+      even if the mission is stopped.
+    args:
+      - name: object_id
+        type: string
+        format: id
+        description: >-
+          The object to pick: its id in the world model (such as O17) or, where there is no world
+          model, the name the detector reports it under (such as red_block). Letters, digits and
+          underscores. The detector reports what it finds under the lowercased id, and the later
+          steps look for it there.
+      - name: phrase
+        type: string
+        format: phrase
+        default_from: label(object_id)
+        description: >-
+          Plain words the detector finds the object by, such as the world model's label for it
+          (red mug). Wording that names colour and kind tells look-alikes apart better.
+      - name: arm
+        type: string
+        description: Which hand picks it up.
+        enum: [left, right]
+    requires: ["near(object_id)", "hand_empty(arm)"]
+    effects: ["holding(arm, object_id)"]
+    resources: [base, left_arm, right_arm]
+    idempotent: false
+    risk: manipulation
+    max_duration_s: 420
+    template: PickObject
+
+  - name: PlaceInto
+    description: >-
+      Put the object a hand holds into a container: look for the container, close in, lower,
+      release, and back away. The robot must already stand within about half a metre of the
+      container, which must be a tray or box on a bench or table, not on the floor.
+    args:
+      - name: container_id
+        type: string
+        format: id
+        description: >-
+          The container: its id in the world model (such as O31) or, where there is no world
+          model, the name the detector reports it under (such as brown_box). Letters, digits and
+          underscores.
+      - name: phrase
+        type: string
+        format: phrase
+        default_from: label(container_id)
+        description: >-
+          Plain words the detector finds the container by, such as the world model's label for it
+          (basket). Wording that names colour and kind tells look-alikes apart better.
+      - name: arm
+        type: string
+        description: Which hand holds the object.
+        enum: [left, right]
+    requires: ["near(container_id)", "holding(arm, X)"]
+    effects: ["inside(X, container_id)", "hand_empty(arm)"]
+    resources: [base, left_arm, right_arm]
+    idempotent: false
+    risk: manipulation
+    max_duration_s: 360
+    template: PlaceInto
+
+  - name: ExploreBuilding
+    description: >-
+      Explore the building so the world model learns its rooms and objects: walk to where the map
+      is still open, then to viewpoints until the camera has seen every room, then save. Explores
+      for up to 23 minutes and saves what it found; run it again to carry on. Use it when rooms or
+      objects are missing, or when find_objects reports a room as barely seen. Send it as a
+      mission of its own.
+    args: []
+    requires: []
+    effects: []
+    resources: [base]
+    idempotent: true
+    risk: motion
+    max_duration_s: 1500
+    template: ExploreBuilding
+
+  - name: TuckForTravel
+    description: >-
+      Fold both arms against the body so they do not disturb the walk. An arm whose hand holds
+      something is left where it is. Use it before walking when the arms are out.
+    args: []
+    requires: []
+    effects: []
+    resources: [left_arm, right_arm]
+    idempotent: true
+    risk: motion
+    max_duration_s: 120
+    template: TuckForTravel

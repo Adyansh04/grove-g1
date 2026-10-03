@@ -54,9 +54,11 @@ The source's other parameters:
 | `~/set_arm_posture` | `group`, `named_target` | A named SRDF pose of `left_arm`, `right_arm`, `both_arms`, `left_hand` or `right_hand`. |
 
 `Pick` and `Place` publish their phase as feedback and name it in the result on failure. A failed
-or cancelled pick leaves the hand in `pinch_ready`, nothing attached and the collision exemptions
-restored, so a retry from the behaviour tree starts clean. A place that fails before the release
-leaves the object attached to the hand.
+pick, or one cancelled before the hand closes, leaves the hand in `pinch_ready`, nothing attached
+and the collision exemptions restored, so a retry from the behaviour tree starts clean. A pick
+cancelled once the hand has closed on the object keeps it: the hand stays shut, the object stays
+attached, nothing moves, and the result says which hand keeps what. A place that fails before the
+release leaves the object attached to the hand.
 
 ## How a pick runs
 

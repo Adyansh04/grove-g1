@@ -1,0 +1,154 @@
+# NervROS on the simulated G1: the agent runs on the host and reaches the container's graph over
+# UDP. Read from the source tree: the paths below are relative to this file.
+# NervROS: https://github.com/Adyansh04/nervros (workspace/src/nervros).
+
+# Procedures for rare situations, such as Nav2 that never came up; the agent reads one with `skill`.
+skills = ["skills"]
+
+[robot]
+name = "Unitree G1 humanoid (simulated), in an apartment"
+persona = "apartment.md"
+# Per-motor winding temperatures from the hardware interface; the simulator reports none.
+diagnostics = "/diagnostics"
+
+[ros]
+domain_id = 1
+# The container runs as root; Fast DDS shared memory between users fails without an error.
+transport = "udp"
+interfaces = [
+    "/opt/ros/jazzy",
+    "../../../g1_msgs",
+    "../../../canopy/canopy_msgs",
+    "../../../nervros/ros/nervros_interfaces",
+]
+
+[policy]
+start_armed = false
+autonomy = "supervised"
+
+[look]
+name = "chest"
+image = "/chest_camera/color/image_raw"
+detections = { topic = "/detector_chest/instance_masks", type = "canopy_msgs/msg/InstanceMaskArray" }
+about = "The chest camera is about 1 m up and points 20 degrees down: it sees the floor from about 1 m out to the far wall, and walls, furniture and shelves up to about 1.5 m high, not the floor at the robot's feet or anything higher."
+
+[look.cameras.head]
+image = "/camera/color/image_raw"
+detections = { topic = "/detector_head/instance_masks", type = "canopy_msgs/msg/InstanceMaskArray" }
+about = "The head camera is about 1.2 m up and points 48 degrees down: it sees the floor from about 0.3 m to 3.6 m ahead, the robot's hands and what lies on low furniture, nothing above its own height."
+
+# canopy's editor on the saved world (nervros.sh starts it): world edits by the agent and by hand,
+# which canopy reads again after a save.
+[editor]
+url = "http://127.0.0.1:8765"
+reload = "/canopy/reload"
+
+# Masks by a text prompt. The model backend asks Gemini's free tier (models.toml's segment role);
+# the service is canopy's segmenter, which needs ./scripts/serve.sh vision and so a free GPU.
+[segment]
+backend = "model"
+service = "/segmenter/segment"
+
+[world]
+map = { topic = "/map", type = "nav_msgs/msg/OccupancyGrid" }
+rooms = { topic = "/canopy/rooms", type = "canopy_msgs/msg/RoomArray" }
+objects = { topic = "/canopy/objects", type = "canopy_msgs/msg/WorldObjectArray" }
+coverage = { topic = "/canopy/coverage", type = "nav_msgs/msg/OccupancyGrid" }
+trail = { topic = "/canopy/trail", type = "nav_msgs/msg/Path" }
+# What happened to an object: where it was, when it went missing, what it may have become.
+history = "/canopy/object_history"
+
+[viz]
+plan = { topic = "/plan", type = "nav_msgs/msg/Path" }
+camera_info = { topic = "/chest_camera/color/camera_info", type = "sensor_msgs/msg/CameraInfo" }
+# Its meshes are found through ROS_PACKAGE_PATH, which nervros.sh points at the colcon build.
+urdf = "../../../g1_description/urdf/g1_29dof_with_hand_rev_1_0.urdf"
+
+# What world_model.rviz shows beyond the viewer's own map, rooms and objects.
+[[viz.layer]]
+name = "Walls"
+topic = "/canopy/walls"
+type = "nav_msgs/msg/OccupancyGrid"
+
+[[viz.layer]]
+name = "Floor plan"
+topic = "/canopy/floor_plan"
+type = "nav_msgs/msg/OccupancyGrid"
+hidden = true
+
+[[viz.layer]]
+name = "Doorways and viewpoints"
+topic = "/canopy/markers"
+type = "visualization_msgs/msg/MarkerArray"
+namespaces = ["doorways", "viewpoint", "visited", "visit_numbers", "glimpses", "camera_view"]
+
+[[viz.layer]]
+name = "Scan"
+topic = "/scan"
+type = "sensor_msgs/msg/LaserScan"
+
+[mission]
+execute = "/nervros_executor/execute_mission"
+validate = "/nervros_executor/validate_mission"
+catalog = "/nervros_executor/get_catalog"
+stop = "/nervros_executor/stop_all"
+state = "/nervros_executor/robot_state"
+max_replans = 2
+preview = "/nervros_executor/preview_mission"
+# The executor stops a mission when these stop for heartbeat_timeout_s: NervROS gone or wedged.
+heartbeat = "/nervros_executor/heartbeat"
+heartbeat_timeout_s = 2.0
+# Driving by hand from the window's Robot tab, through the executor, which owns the base.
+teleop = "/nervros_executor/teleop"
+teleop_cmd = "/nervros_executor/teleop_cmd"
+
+# The plan checks hold these skills to the operator's words: g1_orchestration's skill names,
+# positive degrees turn left (ROS convention), and WalkStraight walks at most 2 m a step.
+[mission.checks]
+turn = { skill = "TurnInPlace", degrees = "degrees" }
+walk = { skill = "WalkStraight", metres = "distance_m", direction = "direction", max_m = 2.0 }
+arm = "arm"
+
+# The saved map starts where the robot stood when it was mapped, which is where it starts now.
+[[place]]
+name = "start"
+aliases = ["where you started", "home"]
+pose = { x = 0.0, y = 0.0, yaw = 0.0 }
+
+# Where the robot stands to pick the mug off the dining table and to set it in the office desk's
+# tray, left hand: world (-0.85, 2.84, 180 deg) and (5.65, -4.40, -90 deg) in the saved map's frame.
+[[place]]
+name = "dining_table_side"
+aliases = ["beside the dining table", "the dining table's east end"]
+pose = { x = -1.313, y = 2.898, yaw = 3.135 }
+# The detector's names, which the world model does not know: a pick of mug_4 walks here first.
+near = ["mug_4"]
+
+[[place]]
+name = "office_desk_tray"
+aliases = ["the office desk's tray", "in front of the office desk"]
+pose = { x = 5.139, y = -4.385, yaw = -1.577 }
+near = ["tray_1"]
+
+[[tool]]
+name = "find_objects"
+kind = "service"
+ros_name = "/canopy/find_objects"
+type = "canopy_msgs/srv/FindObjects"
+risk = "observe"
+hide_fields = ["query_embedding"]
+defaults = { max_results = 5 }
+# The describer's words come from a vision model that read the scene: data, not instructions.
+world_text = ["name", "caption"]
+
+# Generic ROS tools, as ros2 topic/service/action/param/node would do: reads run freely; every
+# write needs the robot armed and the operator's approval, and the hard deny lists (every cmd_vel,
+# rt/lowcmd, controllers, velocity, trajectory and lifecycle types) always win over these.
+[ros_tools]
+service_call = ["*"]
+action_send = ["*"]
+publish = ["*"]
+param_set = ["*:*"]
+
+[models]
+file = "models.toml"

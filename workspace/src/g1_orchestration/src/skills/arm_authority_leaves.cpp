@@ -29,11 +29,15 @@ BT::PortsList AcquireArm::providedPorts()
     return { ports::serviceTimeout(kAuthorityTimeoutS, kAuthorityTimeoutDoc) };
 }
 
-BT::NodeStatus AcquireArm::tick()
+BT::NodeStatus AcquireArm::call()
 {
     const double timeout_s = getInput<double>("timeout_s").value_or(kAuthorityTimeoutS);
-    return acquireArm(node_->get_logger(), timeout_s) ? BT::NodeStatus::SUCCESS :
-                                                        BT::NodeStatus::FAILURE;
+    if (acquireArm(node_->get_logger(), timeout_s) != Acquired::kFailed)
+    {
+        return BT::NodeStatus::SUCCESS;
+    }
+    setFailureText("the arms could not be acquired; is the control stack up?");
+    return BT::NodeStatus::FAILURE;
 }
 
 ReleaseArm::ReleaseArm(const std::string& name, const BT::NodeConfig& config, RosContext context)
@@ -45,7 +49,7 @@ BT::PortsList ReleaseArm::providedPorts()
     return { ports::serviceTimeout(kAuthorityTimeoutS, kAuthorityTimeoutDoc) };
 }
 
-BT::NodeStatus ReleaseArm::tick()
+BT::NodeStatus ReleaseArm::call()
 {
     releaseArm(node_->get_logger(), getInput<double>("timeout_s").value_or(kAuthorityTimeoutS));
     return BT::NodeStatus::SUCCESS;

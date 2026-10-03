@@ -3,11 +3,13 @@
     ros2 launch g1_bringup world_model.launch.py world_dir:=/root/data/worlds/apartment rviz:=true
     ros2 launch g1_bringup world_model.launch.py cameras:=head,chest detector:=true describe:=true
     ros2 launch g1_bringup world_model.launch.py cameras:=head,chest detector:=mock
+    ros2 launch g1_bringup world_model.launch.py cameras:=head,chest segmenter:=true
 
 cameras takes bringup's names: head is the RealSense driver's /camera, any other name
 /<name>_camera, as the relay publishes them. detector:=true asks canopy's semantic server on the
 host; detector:=mock cuts the masks from the simulator's ground truth instead, for every label in
-worlds/<world>.truth.yaml.
+worlds/<world>.truth.yaml. segmenter:=true adds canopy's segmenter, a service that segments one
+camera's newest frame by a text prompt against the vision server on the host.
 """
 
 import os
@@ -98,6 +100,23 @@ def canopy(context):
     ]
     if mock:
         actions += mock_detectors(cameras, LaunchConfiguration("world").perform(context))
+    if LaunchConfiguration("segmenter").perform(context).lower() in ("true", "1"):
+        actions.append(
+            Node(
+                package="canopy_perception",
+                executable="segmenter",
+                name="segmenter",
+                output="log",
+                parameters=[
+                    os.path.join(SHARE, "config", "segmenter.yaml"),
+                    {
+                        "cameras": [
+                            f"{name}={namespace_of(name)}/color/image_raw" for name in cameras
+                        ]
+                    },
+                ],
+            )
+        )
     if rviz:
         actions.append(
             Node(
@@ -131,6 +150,11 @@ def generate_launch_description():
                 description="The world whose worlds/<world>.truth.yaml names what the mock finds.",
             ),
             DeclareLaunchArgument("describe", default_value="false"),
+            DeclareLaunchArgument(
+                "segmenter",
+                default_value="false",
+                description="true: canopy's segmenter, text-prompted masks on request.",
+            ),
             DeclareLaunchArgument("rviz", default_value="false"),
             OpaqueFunction(function=canopy),
         ]

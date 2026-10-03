@@ -86,15 +86,31 @@ def _servers():
         actions=[
             # controller_server subscribes to relative `odom`; unremapped it hears nothing and
             # treats the robot as stationary.
+            # The controller and the behaviors go through collision_monitor on their way to the
+            # gait's /cmd_vel.
             server(
                 "nav2_controller",
                 "controller_server",
                 "controller_server",
                 [params],
-                TF_REMAPPINGS + [("cmd_vel", "/cmd_vel"), ("odom", "/g1_odometry_publisher/odom")],
+                TF_REMAPPINGS
+                + [("cmd_vel", "/cmd_vel_raw"), ("odom", "/g1_odometry_publisher/odom")],
             ),
             server("nav2_planner", "planner_server", "planner_server", [params], TF_REMAPPINGS),
-            server("nav2_behaviors", "behavior_server", "behavior_server", [params], TF_REMAPPINGS),
+            server(
+                "nav2_behaviors",
+                "behavior_server",
+                "behavior_server",
+                [params],
+                TF_REMAPPINGS + [("cmd_vel", "/cmd_vel_raw")],
+            ),
+            server(
+                "nav2_collision_monitor",
+                "collision_monitor",
+                "collision_monitor",
+                [params],
+                TF_REMAPPINGS,
+            ),
             server(
                 "nav2_bt_navigator", "bt_navigator", "bt_navigator", [params, bt_xml], TF_REMAPPINGS
             ),

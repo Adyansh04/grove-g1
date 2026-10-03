@@ -72,6 +72,11 @@ BT::NodeStatus NavigateToPose::judgeResult(const WrappedResult& result)
     if (result.code != rclcpp_action::ResultCode::SUCCEEDED)
     {
         RCLCPP_ERROR(node_->get_logger(), "[%s] did not reach the goal", name().c_str());
+        // Nav2 says why in its result when it can; the result code is all there is when not.
+        const bool said = result.result && !result.result->error_msg.empty();
+        setFailureText(
+            said ? "Nav2 did not reach the goal: " + result.result->error_msg :
+                   "Nav2 did not reach the goal: " + describeResultCode(result.code));
         return BT::NodeStatus::FAILURE;
     }
     RCLCPP_INFO(node_->get_logger(), "[%s] arrived", name().c_str());

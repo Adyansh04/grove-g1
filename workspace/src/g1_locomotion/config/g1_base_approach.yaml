@@ -34,8 +34,8 @@ g1_base_approach:
 
     # Objects to stand further back from: reaching over a surface to set something down sweeps
     # the wrist across its face.
-    standoff_object_ids: ["brown_box"]
-    standoff_target_x_m: [0.350]
+    standoff_object_ids: ["brown_box", "tray_1"]
+    standoff_target_x_m: [0.350, 0.350]
 
     # How close each axis has to get. The robot coasts 25 to 37 mm forward and 15 to 43 mm
     # laterally after the command stops, always toward the target.
@@ -44,6 +44,15 @@ g1_base_approach:
 
     # Loose on purpose (20 degrees): heading only keeps the robot square to the surface.
     heading_tolerance_rad: 0.350
+
+    # How far beyond the window's far edge a stopped robot may find the object and still reach it.
+    settle_slack_m: 0.040
+
+    # An object settled up to nudge_band_m outside the window sideways is nudged in with pulses of
+    # nudge_y_s at the lateral floor, too short to commit a stride, up to max_nudges times.
+    nudge_band_m: 0.050
+    nudge_y_s: 0.15
+    max_nudges: 12
 
     # Nearer than this the object is under the robot and the tree has to re-stage through Nav2.
     min_forward_m: 0.050

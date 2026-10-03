@@ -341,6 +341,17 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
         result->message = phase + ": cancelled";
         goal_handle->canceled(result);
     };
+    // Once the hand has closed on the object a cancel keeps it: opening the hand would drop it,
+    // and the stop behind the cancel holds the arm where it is, so nothing moves.
+    const auto cancelled_holding = [&](const std::string& phase) {
+        // The object maps itself while held, as after a finished pick.
+        setHandContact(arm, { "<octomap>", goal->object_id }, false);
+        setHandContact(arm, { "<octomap>", goal->object_id }, true, /*include_links=*/false);
+        result->success = false;
+        result->message =
+            phase + ": cancelled; the " + goal->arm + " hand keeps " + goal->object_id;
+        goal_handle->canceled(result);
+    };
 
     feedback->phase = Pick::Feedback::PHASE_LOCATING;
     goal_handle->publish_feedback(feedback);
@@ -525,19 +536,26 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
 
     if (goal_handle->is_canceling())
     {
-        cancelled(Pick::Feedback::PHASE_LIFT);
+        cancelled_holding(Pick::Feedback::PHASE_LIFT);
         return;
     }
     feedback->phase = Pick::Feedback::PHASE_LIFT;
     goal_handle->publish_feedback(feedback);
     // Straight up from where the hand closed. A free planner with the table exempt would drag
     // the object across it, so each retry starts a new line from wherever the last one stopped.
+    // A stop cancels the arm's trajectory too and cuts a line short, so the cancel is checked
+    // before each attempt, not taken for a failed lift.
     geometry_msgs::msg::Pose lifted = descent_goal;
     lifted.position.z += lift_height_m_;
     double lift_fraction = 0.0;
     bool   lifted_some   = false;
     for (int attempt = 0; attempt < lift_attempts_; ++attempt)
     {
+        if (goal_handle->is_canceling())
+        {
+            cancelled_holding(Pick::Feedback::PHASE_LIFT);
+            return;
+        }
         lift_fraction = moveStraight(*arm_group, lifted, arm.grasp_frame, "lift", 0.0);
         lifted_some   = lifted_some || lift_fraction > 0.0;
         if (lift_fraction <= 0.0 || lift_fraction >= kLineComplete)
@@ -545,8 +563,18 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
             break;
         }
     }
+    if (goal_handle->is_canceling())
+    {
+        cancelled_holding(Pick::Feedback::PHASE_LIFT);
+        return;
+    }
     if (!lifted_some && !moveTo(*arm_group, lifted, arm.grasp_frame, "lift"))
     {
+        if (goal_handle->is_canceling())
+        {
+            cancelled_holding(Pick::Feedback::PHASE_LIFT);
+            return;
+        }
         fail(Pick::Feedback::PHASE_LIFT, "could not lift clear of the surface");
         return;
     }

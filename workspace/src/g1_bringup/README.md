@@ -49,7 +49,7 @@ flowchart LR
 | `moveit` | `false` | `move_group`, in any mode. Executing a plan still needs the arm acquired. |
 | `activate_arm` | `false` | Run `activate_arm` automatically. Only with `moveit:=true`. |
 | `arms_at_sides` | `false` | Hang the arms beside the thighs through `activate_arm --posture sides --no-hands`, for exploration: at zero the forearms point forward into both cameras' views, and a real detector maps the hands. Ignored when `activate_arm` runs. |
-| `activate_arm_delay_s` | `25.0` | Seconds to wait before `activate_arm` or `arms_at_sides` runs. Too early and it fails, because the component is not loaded or `/lowstate` is not flowing yet. |
+| `activate_arm_delay_s` | `25.0` | Seconds to wait before `activate_arm` or `arms_at_sides` runs. It then waits up to 60 s for the waist, arm and leg controllers, and 3 s more for the balance policy, before the arms move. |
 | `rviz` | `false` | Open RViz for what is running. With `moveit:=true`: MoveIt's own window, plus one on `g1_navigation.rviz` if `nav:=true`. Without MoveIt: `g1_navigation.rviz` in the navigation modes, `g1_sensors.rviz` otherwise. |
 | `visualization` | empty | Everything drawn only for RViz: the annotated camera image, ground truth, `/object_markers` and the grasp plan. Empty follows `rviz`; an RViz opened by hand later needs `true`. |
 | `sensors` | `false` | LiDAR, IMU and camera, the relay and the `odom` to `base_footprint` chain. Forced on by the navigation modes, `manipulation` and `perception`. |
@@ -88,12 +88,14 @@ with sensors on. `rviz.launch.py` takes `rviz_config` (required) and `node_name`
 
 `world_model.launch.py` starts canopy with the G1's odometry and LiDAR topics and its own
 `config/world_model.yaml`. It takes `cameras` (`head`; bringup's names), `world_dir` (where to
-save and resume the world, empty for neither), and `detector`, `describe` and `rviz` (all
-`false`). `detector:=true` starts canopy's detector per camera against the host semantic server;
+save and resume the world, empty for neither), and `detector`, `describe`, `segmenter` and `rviz`
+(all `false`). `detector:=true` starts canopy's detector per camera against the host semantic server;
 `detector:=mock` starts canopy_perception's mock per camera instead, with
 `config/mock_detector.yaml`, looking for every label in `worlds/<world>.truth.yaml` (`world`,
 default `apartment`). `describe:=true` names objects and types rooms through canopy_perception's
-describer. `rviz:=true` opens `config/world_model.rviz`, canopy's view with the chest camera added.
+describer. `segmenter:=true` starts canopy_perception's segmenter, a service that masks one
+camera's newest frame by a text prompt, against the vision server with `config/segmenter.yaml`
+(`./scripts/serve.sh vision`). `rviz:=true` opens `config/world_model.rviz`, canopy's view with the chest camera added.
 [docs/guides/world-model.md](../../../docs/guides/world-model.md) runs it with an exploration tree.
 
 ## Running in simulation
@@ -171,6 +173,7 @@ command that builds it. Each package's own tests catch a renamed launch file:
 | `config/sim_sensors_apartment.yaml` | The apartment's `sim_sensors.yaml`, tracking every prop; generated. `sim.launch.py` takes `sim_sensors_<world>.yaml` when one exists. |
 | `config/world_model.yaml` | The G1's values for canopy: the planner's radius, clearances, speeds and dwell time, and the approach standoff and margin. |
 | `config/mock_detector.yaml` | The mock detector's rate (`mock_rate_hz: 2.0`) for `world_model.launch.py detector:=mock`. |
+| `config/segmenter.yaml` | The segmenter's vision server (5560), thresholds and timeouts for `world_model.launch.py segmenter:=true`. |
 | `config/g1_sensors.rviz` | RViz without navigation. Fixed frame `odom`. |
 | `config/world_model.rviz` | canopy's world-model view plus the chest camera's picture. |
 | `mjcf/*.xml` | One scene per world and a pinned variant of each (`lio` and `apartment` have none), plus the flat, walk and pinned overlays. Staged next to the vendored model at launch and removed on shutdown. |

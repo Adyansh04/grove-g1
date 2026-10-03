@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <stdexcept>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <thread>
@@ -81,6 +82,7 @@ BaseApproachNode::BaseApproachNode()
     gait_.max_yaw_rate_rps = declare_parameter<double>("max_yaw_rate_rps", g.max_yaw_rate_rps);
     gait_.speed_per_m      = declare_parameter<double>("speed_per_m", g.speed_per_m);
     gait_.yaw_rate_per_rad = declare_parameter<double>("yaw_rate_per_rad", g.yaw_rate_per_rad);
+    gait_.nudge_y_s        = declare_parameter<double>("nudge_y_s", g.nudge_y_s);
 
     retreat_speed_mps_ = declare_parameter<double>("retreat_speed_mps", 0.30);
 
@@ -109,6 +111,9 @@ BaseApproachNode::BaseApproachNode()
     limits_.min_forward_m = declare_parameter<double>("min_forward_m", d.min_forward_m);
     limits_.heading_tolerance_rad =
         declare_parameter<double>("heading_tolerance_rad", d.heading_tolerance_rad);
+    limits_.settle_slack_m = declare_parameter<double>("settle_slack_m", d.settle_slack_m);
+    limits_.nudge_band_m   = declare_parameter<double>("nudge_band_m", d.nudge_band_m);
+    max_nudges_            = static_cast<int>(declare_parameter<std::int64_t>("max_nudges", 12));
 
     standoff_ids_ = declare_parameter<std::vector<std::string>>(
         "standoff_object_ids",
@@ -306,6 +311,19 @@ void BaseApproachNode::publish(double vx, double vy, double yaw_rate)
     twist.linear.y  = vy;
     twist.angular.z = yaw_rate;
     cmd_pub_->publish(twist);
+}
+
+void BaseApproachNode::pulse(double vx, double vy, double seconds)
+{
+    const auto until = std::chrono::steady_clock::now() +
+                       std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                           std::chrono::duration<double>(seconds));
+    while (rclcpp::ok() && std::chrono::steady_clock::now() < until)
+    {
+        publish(vx, vy, 0.0);
+        std::this_thread::sleep_for(tickPeriod());
+    }
+    publish(0.0, 0.0, 0.0);
 }
 
 void BaseApproachNode::settle()

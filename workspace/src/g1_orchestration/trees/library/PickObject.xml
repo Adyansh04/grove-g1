@@ -1,0 +1,52 @@
+<?xml version="1.0"?>
+<!--
+  Pick an object up: ask the detector for it, close the last stretch, grasp and lift, then back
+  away from the surface. The robot must already be standing within about half a metre of it.
+
+  LookFor takes "id=phrase", and a port cannot join two values, so the script builds it. The
+  detector reports what it finds under the slug of the id (O17 becomes o17), which LookFor hands
+  on as first_id, and that is what ApproachObject and Pick look up.
+
+  The hand has to be empty: the executor keeps what each hand holds in the root blackboard
+  (held_left and held_right, "?" for a hand that may hold something it cannot name, empty when
+  nothing), and a pick with a full hand would drop what it holds.
+
+  Each fallible step is retried once. A failed pick leaves the hand open and nothing attached, so
+  the retry starts clean; the approach can fall short and is safe to run again. The detector is
+  idled for the carry because left on it tracks the object in the hand as several objects. The
+  arm stays where the lift left it: every arm move with the object in hand risks dropping it.
+  Retreat is straight back, 1.2 m, so the next walk starts outside the surface's inflated
+  footprint even when the approach ended at an angle.
+-->
+<root BTCPP_format="4">
+  <BehaviorTree ID="PickObject">
+    <Timeout name="give_up_after_the_limit" msec="420000">
+      <Sequence name="pick_object">
+        <ScriptCondition name="hand_must_be_empty_to_pick"
+                         code="(arm == 'left' ? @held_left : @held_right) == ''"/>
+        <Script name="say_what_to_look_for" code="wanted := object_id + '=' + phrase"/>
+        <RetryUntilSuccessful name="find_it_with_retries" num_attempts="2">
+          <LookFor name="find_the_object" objects="{wanted}" first_id="{seen_as}"/>
+        </RetryUntilSuccessful>
+        <RetryUntilSuccessful name="approach_with_one_retry" num_attempts="2">
+          <ApproachObject name="close_on_the_object" object_id="{seen_as}" arm="{arm}"
+                          use_current_heading="true"/>
+        </RetryUntilSuccessful>
+        <RetryUntilSuccessful name="pick_with_one_retry" num_attempts="2">
+          <Pick name="pick_the_object" object_id="{seen_as}" arm="{arm}"/>
+        </RetryUntilSuccessful>
+        <StopLooking name="perception_off_for_the_carry"/>
+        <Retreat name="back_off_the_surface" distance="1.2"/>
+        <ClearCostmaps name="forget_the_surface"/>
+      </Sequence>
+    </Timeout>
+  </BehaviorTree>
+
+  <TreeNodesModel>
+    <SubTree ID="PickObject">
+      <input_port name="object_id">The object: its world-model id such as O17, or where there is no world model the name the detector reports it under, such as red_block.</input_port>
+      <input_port name="phrase">Plain words the detector finds it by, such as red mug or bright red plastic ball.</input_port>
+      <input_port name="arm">Which hand picks it: left or right.</input_port>
+    </SubTree>
+  </TreeNodesModel>
+</root>

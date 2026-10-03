@@ -166,8 +166,9 @@ def _manipulation(want_perception, visualization, world):
         # Perception's poses arrive seconds late when the detector shares the GPU with the
         # simulator. The scenes are static, so an old pose is still a true one.
         object_timeout_ms="8000.0" if want_perception else "1000.0",
-        # The navigation desk's ball sits by the edge, where the thumb hangs past the desk.
-        min_grip_height_m="0.035" if world == "navigation" else "0.080",
+        # The navigation desk's ball sits by the edge, where the thumb hangs past the desk; the
+        # apartment's mug is 81 mm tall, so the fingers take it 26 mm below its rim.
+        min_grip_height_m="0.035" if world in ("navigation", "apartment") else "0.080",
         grasp_source=LaunchConfiguration("grasp_source"),
         grasp_offset=LaunchConfiguration("grasp_offset"),
         visualization=visualization,
@@ -198,9 +199,8 @@ def _vla():
 
 
 def _activate_arm(delay_s, *args):
-    """Delayed rather than sequenced on an event: the component only accepts activation once
-    controller_manager has loaded it and /lowstate is flowing, and neither emits anything this
-    file can wait on. scripts/activate_arm still fails loudly if it runs too early."""
+    """Delayed rather than sequenced on an event: nothing here can wait on the controllers. The
+    script itself waits until the whole body is held and the balance policy has settled."""
     return TimerAction(
         period=delay_s,
         actions=[
@@ -460,8 +460,8 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "activate_arm_delay_s",
                 default_value="25.0",
-                description="Seconds to wait before the automatic activation. The component has to "
-                "be loaded and /lowstate flowing first; too early and activate_arm fails loudly.",
+                description="Seconds to wait before the automatic activation. It then waits up to "
+                "60 s for the body's controllers and lets the balance policy settle first.",
             ),
             DeclareLaunchArgument(
                 "sensors",

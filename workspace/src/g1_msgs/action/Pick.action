@@ -5,9 +5,9 @@
 
 # A class_id on /objects.
 string object_id
-# Selects the arm group, its hand group and the palm to attach to.
 string ARM_LEFT=left
 string ARM_RIGHT=right
+# Selects the arm group, its hand group and the palm to attach to.
 string arm
 ---
 bool success

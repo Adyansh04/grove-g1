@@ -1,0 +1,65 @@
+# Models for NervROS on the G1, all free: the local model talks, plans and looks; Gemini's free
+# tier outlines what `segment` is asked for, which the local model cannot, and advises when the
+# local model's plans for a request keep failing their checks. Without the key file the Gemini
+# models are left out: `segment` needs its service backend, and there is no advice.
+
+[[provider]]
+id = "local"
+kind = "openai_compat"
+base_url = "http://127.0.0.1:8081/v1"      # workspace/src/nervros/scripts/local-llm.sh
+timeout_s = 120
+
+[[provider]]
+id = "gemini"
+kind = "gemini_interactions"
+key = { file = "~/.config/grove/gemini.env" }
+
+[[model]]
+id = "qwen3.5-9b-local"
+provider = "local"
+model = "qwen3.5-9b"
+vision = true
+tools = true
+privacy = { local = true }
+# local-llm.sh starts llama.cpp with --ctx-size 16384: the conversation is compacted to fit.
+context = 16384
+stream = true
+# Qwen's sampling for non-thinking use, over llama.cpp's defaults (0.8, top_k 40, top_p 0.95,
+# min_p 0.05): on 16 eval cases, three trials each, pass^3 0.94 against 0.81 at the same cost.
+params = { temperature = 0.7, top_p = 0.8, top_k = 20, min_p = 0.0, presence_penalty = 1.0 }
+
+# Google's free tier allows 5 a minute and 20 a day of 3.8 Flash, and 15 and 500 of the Flash-Lite
+# models, per project and model; canopy's describer draws on the same project, so these caps leave
+# it room. 3.8 Flash outlines best; at low thinking it answers in a few seconds.
+[[model]]
+id = "gemini-3.8-flash"
+provider = "gemini"
+model = "gemini-3.8-flash"
+vision = true
+limits = { rpm = 4, rpd = 10 }
+privacy = { trains = true }
+params = { generation_config = { thinking_level = "low" } }
+
+[[model]]
+id = "gemini-3.5-flash-lite"
+provider = "gemini"
+model = "gemini-3.5-flash-lite"
+vision = true
+limits = { rpm = 10, rpd = 250 }
+privacy = { trains = true }
+
+[[model]]
+id = "gemini-3.1-flash-lite"
+provider = "gemini"
+model = "gemini-3.1-flash-lite"
+vision = true
+limits = { rpm = 10, rpd = 250 }
+privacy = { trains = true }
+
+[roles]
+routine = ["qwen3.5-9b-local"]
+# Asked only after two failed plans for one request, so 3.8 Flash's few requests a day suffice.
+plan = ["gemini-3.8-flash", "gemini-3.5-flash-lite"]
+vision_check = ["qwen3.5-9b-local"]
+summarise = ["qwen3.5-9b-local"]
+segment = ["gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]

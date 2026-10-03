@@ -57,6 +57,7 @@ object_bodies:
   - chair_4
   - mug_1
   - bowl_1
+  - mug_4
   - bed_1
   - nightstand_1
   - clock_1
@@ -70,6 +71,7 @@ object_bodies:
   - chair_5
   - laptop_1
   - mug_3
+  - tray_1
   - shelf_1
   - cardboard_box_1
   - dustbin_2

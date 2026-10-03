@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <canopy_perception/phrase.hpp>
 #include <chrono>
+#include <format>
 #include <memory>
 #include <rcl_interfaces/srv/set_parameters.hpp>
 #include <rclcpp/parameter.hpp>
@@ -52,6 +53,7 @@ std::string idOf(std::string_view entry)
 LookFor::LookFor(const std::string& name, const BT::NodeConfig& config, RosContext context)
   : BT::StatefulActionNode(name, config)
   , node_(std::move(context.node))
+  , stop_(context.stop)
 {}
 
 BT::PortsList LookFor::providedPorts()
@@ -74,11 +76,21 @@ BT::PortsList LookFor::providedPorts()
             20.0,
             "Seconds to wait for the objects once the phrases are written. The write gets up to "
             "5 s of its own."),
+        BT::OutputPort<std::string>(
+            "first_id",
+            "The id the first entry of `objects` appears under on /objects: the slug of its id "
+            "half, such as o17 for O17. For the leaves that follow, which look it up there."),
     };
 }
 
 BT::NodeStatus LookFor::onStart()
 {
+    setFailureText({});
+    if (windingDown(stop_))
+    {
+        setFailureText("stopped");
+        return BT::NodeStatus::FAILURE;
+    }
     const auto objects = getInput<std::string>("objects");
     phrases_.clear();
     wanted_.clear();
@@ -99,6 +111,7 @@ BT::NodeStatus LookFor::onStart()
         RCLCPP_ERROR(node_->get_logger(), "[%s] needs at least one object", name().c_str());
         return BT::NodeStatus::FAILURE;
     }
+    setOutput("first_id", wanted_.front());
     // Named first: splitString returns views into its argument.
     const std::string also = getInput<std::string>("also").value_or("");
     for (const auto& part : BT::splitString(also, ','))
@@ -153,6 +166,7 @@ BT::NodeStatus LookFor::onRunning()
     {
         return BT::NodeStatus::RUNNING;
     }
+    std::string missing;
     for (const std::string& id : wanted_)
     {
         if (!seen_.contains(id))
@@ -163,8 +177,10 @@ BT::NodeStatus LookFor::onRunning()
                 name().c_str(),
                 id.c_str(),
                 timeout_s_);
+            missing += (missing.empty() ? "" : ", ") + id;
         }
     }
+    setFailureText(std::format("nothing called {} on /objects after {:.1f} s", missing, timeout_s_));
     reset();
     return BT::NodeStatus::FAILURE;
 }
@@ -236,7 +252,7 @@ BT::PortsList StopLooking::providedPorts()
     };
 }
 
-BT::NodeStatus StopLooking::tick()
+BT::NodeStatus StopLooking::call()
 {
     const std::string detector = getInput<std::string>("detector").value_or("/g1_detector");
     auto              request  = std::make_shared<SetParameters::Request>();

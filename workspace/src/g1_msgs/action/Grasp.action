@@ -5,9 +5,9 @@
 string instruction
 # A class_id on /objects. Success is its measured lift, not the policy's say-so.
 string object_id
-# Selects the arm group and the hand allowed to touch the octomap while grasping.
 string ARM_LEFT=left
 string ARM_RIGHT=right
+# Selects the arm group and the hand allowed to touch the octomap while grasping.
 string arm
 ---
 bool success

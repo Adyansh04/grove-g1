@@ -19,6 +19,7 @@
 #include <vector>
 #include <vision_msgs/msg/detection3_d_array.hpp>
 
+#include "g1_orchestration/leaf_report.hpp"
 #include "g1_orchestration/skill_nodes.hpp"
 
 namespace
@@ -202,6 +203,25 @@ TEST(LookFor, WaitsForTheIdTheDetectorPublishes)
         BT::NodeStatus::SUCCESS);
 }
 
+TEST(LookFor, HandsOnTheIdItWaitsOnForTheLeavesThatFollow)
+{
+    auto                         tree_node = std::make_shared<rclcpp::Node>("test_look_for_client");
+    BT::BehaviorTreeFactory      factory;
+    g1_orchestration::RosContext context{ tree_node };
+    g1_orchestration::registerSkillNodes(factory, context);
+    BT::Tree tree = factory.createTreeFromText(
+        R"(<root BTCPP_format="4"><BehaviorTree ID="M">
+             <LookFor objects="O17=red mug,brown_box" detector="" first_id="{seen_as}"/>
+           </BehaviorTree></root>)");
+
+    tree.tickOnce();
+    const auto seen_as = tree.rootBlackboard()->get<std::string>("seen_as");
+    tree.haltTree();
+
+    // The id half's slug, which is what the detector names what it finds, and the first entry only.
+    EXPECT_EQ(seen_as, "o17");
+}
+
 TEST(LookFor, WritesTheObjectsAndTheAlsoEntriesVerbatim)
 {
     EXPECT_THAT(
@@ -230,6 +250,110 @@ TEST(LookFor, TicksWithoutBlocking)
     EXPECT_EQ(tree.tickOnce(), BT::NodeStatus::RUNNING);
     EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::seconds(1));
     tree.haltTree();
+}
+
+/// Builds a one-leaf tree over @p leaf_xml whose leaves may look at @p stop, and keeps the node alive.
+struct StopRig
+{
+    rclcpp::Node::SharedPtr node = std::make_shared<rclcpp::Node>("test_stop_gate_client");
+    BT::BehaviorTreeFactory factory;
+    BT::Tree                tree;
+    std::atomic<bool>       stop{ false };
+
+    explicit StopRig(const std::string& leaf_xml)
+    {
+        g1_orchestration::RosContext context{ node, &stop };
+        g1_orchestration::registerSkillNodes(factory, context);
+        tree = factory.createTreeFromText(
+            R"(<root BTCPP_format="4"><BehaviorTree ID="M">)" + leaf_xml + "</BehaviorTree></root>");
+    }
+
+    /// What the only leaf says about why it failed.
+    std::string failureText() const
+    {
+        const auto* report = dynamic_cast<const g1_orchestration::LeafReport*>(
+            tree.subtrees.front()->nodes.front().get());
+        return report != nullptr ? report->failureText() : "(not a report)";
+    }
+};
+
+TEST(StopGate, AnActionLeafRefusesToStartOnceTheMissionIsWindingDown)
+{
+    // No server exists, so without the gate this would wait its whole 20 s.
+    StopRig rig(R"(<Retreat distance="0.5" server_timeout_s="20.0"/>)");
+    rig.stop = true;
+
+    const auto start = std::chrono::steady_clock::now();
+    EXPECT_EQ(rig.tree.tickOnce(), BT::NodeStatus::FAILURE);
+
+    EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::seconds(1));
+    EXPECT_EQ(rig.failureText(), "stopped");
+}
+
+TEST(StopGate, AnActionLeafStopsWaitingForAServerWhenTheStopComesMidWait)
+{
+    StopRig     rig(R"(<Retreat distance="0.5" server_timeout_s="20.0"/>)");
+    std::thread stopper([&rig] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(300));
+        rig.stop = true;
+    });
+
+    const auto start = std::chrono::steady_clock::now();
+    EXPECT_EQ(rig.tree.tickOnce(), BT::NodeStatus::FAILURE);
+    const auto waited = std::chrono::steady_clock::now() - start;
+    stopper.join();
+
+    EXPECT_GE(waited, std::chrono::milliseconds(250));
+    EXPECT_LT(waited, std::chrono::seconds(2)) << "it saw the stop within a slice of the wait";
+    EXPECT_EQ(rig.failureText(), "stopped");
+}
+
+TEST(StopGate, AnActionLeafStillWaitsForItsServerWhenNoStopComes)
+{
+    StopRig rig(R"(<Retreat distance="0.5" server_timeout_s="0.5"/>)");
+
+    const auto start = std::chrono::steady_clock::now();
+    EXPECT_EQ(rig.tree.tickOnce(), BT::NodeStatus::FAILURE);
+
+    EXPECT_GE(std::chrono::steady_clock::now() - start, std::chrono::milliseconds(450));
+    EXPECT_THAT(rig.failureText(), ::testing::HasSubstr("no action server"));
+}
+
+TEST(StopGate, AServiceLeafStartsNoCallOnceTheMissionIsWindingDown)
+{
+    // Both service names empty: the call is a no-op that succeeds, unless the gate says no.
+    StopRig rig(R"(<ClearCostmaps global_service="" local_service=""/>)");
+    EXPECT_EQ(rig.tree.tickOnce(), BT::NodeStatus::SUCCESS);
+    rig.tree.haltTree();
+
+    rig.stop = true;
+    EXPECT_EQ(rig.tree.tickOnce(), BT::NodeStatus::FAILURE);
+    EXPECT_EQ(rig.failureText(), "stopped");
+    rig.stop = false;
+    EXPECT_EQ(rig.tree.tickOnce(), BT::NodeStatus::SUCCESS) << "and it is not stuck";
+}
+
+TEST(StopGate, LookForRefusesToStartOnceTheMissionIsWindingDown)
+{
+    StopRig rig(R"(<LookFor objects="red_block" detector="" timeout_s="30.0"/>)");
+    rig.stop = true;
+
+    EXPECT_EQ(rig.tree.tickOnce(), BT::NodeStatus::FAILURE);
+    EXPECT_EQ(rig.failureText(), "stopped");
+}
+
+TEST(StopGate, ATreeWithNoStopFlagRunsAsItAlwaysDid)
+{
+    auto                         node = std::make_shared<rclcpp::Node>("test_no_stop_client");
+    BT::BehaviorTreeFactory      factory;
+    g1_orchestration::RosContext context{ node };
+    g1_orchestration::registerSkillNodes(factory, context);
+    BT::Tree tree = factory.createTreeFromText(
+        R"(<root BTCPP_format="4"><BehaviorTree ID="M">
+             <ClearCostmaps global_service="" local_service=""/>
+           </BehaviorTree></root>)");
+
+    EXPECT_EQ(tree.tickOnce(), BT::NodeStatus::SUCCESS);
 }
 
 TEST(ActionLeaf, ARejectedGoalFailsTheLeafRatherThanRunningForever)

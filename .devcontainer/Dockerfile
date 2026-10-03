@@ -144,11 +144,9 @@ RUN mkdir -p /opt/onnxruntime && \
 RUN apt-get update && apt-get install -y ros-${ROS_DISTRO}-teleop-twist-keyboard \
     && rm -rf /var/lib/apt/lists/*
 
-# --- perception sim track ---------------------------------------
+# --- ros2_control extras ----------------------------------------
 
-ARG MUJOCO_ROS2_CONTROL_SHA=ae0b235affe8792cf8584cb7074e10038f26f57b
 RUN apt-get update && apt-get install -y \
-        ros-${ROS_DISTRO}-mujoco-vendor \
         ros-${ROS_DISTRO}-ros2-control-cmake \
         ros-${ROS_DISTRO}-backward-ros \
         ros-${ROS_DISTRO}-control-toolbox \
@@ -156,25 +154,6 @@ RUN apt-get update && apt-get install -y \
         ros-${ROS_DISTRO}-tinyxml2-vendor \
         ros-${ROS_DISTRO}-velocity-controllers \
     && rm -rf /var/lib/apt/lists/*
-
-# demos/_tests skipped: extra deps and example robots we do not use.
-RUN mkdir -p /opt/mujoco_ros2_control_ws/src && \
-    git init -q /opt/mujoco_ros2_control_ws/src/mujoco_ros2_control && \
-    cd /opt/mujoco_ros2_control_ws/src/mujoco_ros2_control && \
-    git remote add origin https://github.com/ros-controls/mujoco_ros2_control.git && \
-    git fetch --depth 1 origin ${MUJOCO_ROS2_CONTROL_SHA} && \
-    git checkout -q FETCH_HEAD && \
-    rm -rf .git && \
-    cd /opt/mujoco_ros2_control_ws && \
-    . /opt/ros/${ROS_DISTRO}/setup.sh && \
-    MAKEFLAGS=-j${BUILD_JOBS} colcon build --merge-install --parallel-workers 1 \
-        --cmake-args -DCMAKE_BUILD_TYPE=Release \
-        --packages-skip mujoco_ros2_control_demos mujoco_ros2_control_tests && \
-    rm -rf build log src
-
-# Overlay it for every shell. 99- already sorts after the base image's 10-ros-env.sh.
-RUN printf '. /opt/mujoco_ros2_control_ws/install/setup.sh\n' \
-      >> /etc/profile.d/99-grove-g1-env.sh
 
 # --- SLAM + Nav2 -------------------------------------------------
 

@@ -24,6 +24,14 @@
             <input_port name="service" type="std::string" default="/clear_octomap">move_group's octomap clear service. Empty skips it.</input_port>
             <input_port name="timeout_s" type="double" default="5.000000">Service budget.</input_port>
         </Action>
+        <Action ID="DriveStraight">
+            <input_port name="server_timeout_s" type="double" default="10.000000">How long to wait for the action server to appear.</input_port>
+            <input_port name="slack_s" type="double" default="8.000000">Seconds the allowance adds for the walk to start and settle.</input_port>
+            <input_port name="coast_m" type="double" default="0.100000">How far the gait carries on after Nav2 stops it, taken off the distance asked for: measured at 0.3 m/s in the simulator, a calibration for the real robot.</input_port>
+            <input_port name="speed" type="double" default="0.300000">Commanded speed, m/s, kept within 0.2 to 0.4: the gait barely moves below, and above the costmap's 3 m window makes the collision check abort.</input_port>
+            <input_port name="distance" type="double">How far to walk, m, from 0.1 to 2.0.</input_port>
+            <input_port name="direction" type="std::string">forward or backward, relative to the heading.</input_port>
+        </Action>
         <Action ID="Grasp">
             <input_port name="server_timeout_s" type="double" default="10.000000">How long to wait for the action server to appear.</input_port>
             <input_port name="object_id" type="std::string">Must match a class_id published on /objects.</input_port>
@@ -34,6 +42,7 @@
             <input_port name="timeout_s" type="double" default="20.000000">Seconds to wait for the objects once the phrases are written. The write gets up to 5 s of its own.</input_port>
             <input_port name="detector" type="std::string" default="/g1_detector">Node whose `phrases` to write. Empty waits without narrowing anything.</input_port>
             <input_port name="also" type="std::string" default="">More objects to ask for, in the same form, without waiting on them: ones a later step needs to see, like the object Place confirms after letting go.</input_port>
+            <output_port name="first_id" type="std::string">The id the first entry of `objects` appears under on /objects: the slug of its id half, such as o17 for O17. For the leaves that follow, which look it up there.</output_port>
             <input_port name="objects" type="std::string">Comma-separated objects to ask the detector for and wait on: an id, or 'id=phrase' when the wording that finds it differs from the name the tree uses.</input_port>
         </Action>
         <Action ID="NavigateToPose">
@@ -107,6 +116,12 @@
         <Action ID="StopLooking">
             <input_port name="timeout_s" type="double" default="5.000000">Budget for the write.</input_port>
             <input_port name="detector" type="std::string" default="/g1_detector">Node whose `phrases` to empty.</input_port>
+        </Action>
+        <Action ID="TurnBy">
+            <input_port name="server_timeout_s" type="double" default="10.000000">How long to wait for the action server to appear.</input_port>
+            <input_port name="slack_s" type="double" default="8.000000">Seconds the allowance adds for the turn to start and settle.</input_port>
+            <input_port name="yaw_rate" type="double" default="0.400000">Yaw rate, rad/s, the gait holds while turning. Sizes the time allowance.</input_port>
+            <input_port name="degrees" type="double">How far to turn, from -180 to 180; positive is left.</input_port>
         </Action>
         <Action ID="TurnTo">
             <input_port name="server_timeout_s" type="double" default="10.000000">How long to wait for the action server to appear.</input_port>

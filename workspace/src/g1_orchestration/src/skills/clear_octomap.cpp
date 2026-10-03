@@ -29,7 +29,7 @@ BT::PortsList ClearOctomap::providedPorts()
     };
 }
 
-BT::NodeStatus ClearOctomap::tick()
+BT::NodeStatus ClearOctomap::call()
 {
     const double      timeout_s = getInput<double>("timeout_s").value_or(5.0);
     const std::string service   = getInput<std::string>("service").value_or("");

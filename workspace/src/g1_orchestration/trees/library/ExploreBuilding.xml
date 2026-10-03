@@ -1,0 +1,121 @@
+<?xml version="1.0"?>
+<!--
+  Explore the building into the world model: walk to frontiers until the LiDAR map is closed, then
+  to viewpoints until the camera has seen every room, then tidy and save. canopy plans each
+  viewpoint from what the camera measured, and this only moves the robot. On a complete map the
+  frontier pass ends at once, and a world resumed with its coverage ends the second pass too.
+
+  A whole run takes 28 to 41 minutes, longer than one mission may, so this explores for up to 23
+  minutes and saves what it has; exploring again carries on where it stopped. Running out of time
+  is not a failure. A world model that cannot plan (no map or pose yet, or not running) is.
+
+  The same loop as trees/explore.xml, written out twice because a macro names no other tree. Needs
+  Nav2, canopy and a detector publishing masks. Viewpoints Nav2 cannot reach are reported and
+  avoided, never retried here.
+-->
+<root BTCPP_format="4">
+  <BehaviorTree ID="ExploreBuilding">
+    <Timeout name="give_up_after_the_limit" msec="1500000">
+      <Sequence name="explore_then_save">
+        <Script name="nothing_asked_yet" code="outcome := 'none'"/>
+        <Fallback name="explore_until_done_or_out_of_time">
+          <Timeout name="explore_for_23_minutes" msec="1380000">
+            <Sequence name="both_passes">
+              <ForceSuccess name="frontier_loop_ends_when_done">
+                <KeepRunningUntilFailure name="frontier_viewpoints">
+                  <Sequence name="one_frontier_viewpoint">
+                    <NextViewpoint name="next_frontier" mode="frontier" goal="{goal}"
+                                   headings="{headings}" viewpoint_id="{viewpoint}"
+                                   outcome="{outcome}"/>
+                    <Fallback name="step_off_or_visit_frontier">
+                      <Sequence name="step_off_when_stuck_at_frontier">
+                        <ScriptCondition name="stuck_at_frontier" code="outcome == 'stuck'"/>
+                        <ForceSuccess name="even_if_boxed_in_at_frontier">
+                          <StepClear name="step_clear_when_stuck_at_frontier" clearance="0.7"/>
+                        </ForceSuccess>
+                      </Sequence>
+                      <Fallback name="visit_or_report_unreached_frontier">
+                        <Sequence name="visit_frontier">
+                          <ForceSuccess name="unless_boxed_in_before_frontier">
+                            <StepClear name="step_clear_to_walk_to_frontier"/>
+                          </ForceSuccess>
+                          <NavigateToPose name="walk_to_frontier" goal="{goal}"/>
+                          <ForceSuccess name="unless_boxed_in_at_frontier">
+                            <StepClear name="step_clear_to_turn_at_frontier"/>
+                          </ForceSuccess>
+                          <LoopDouble name="each_frontier_heading" queue="{headings}" value="{heading}">
+                            <Sequence name="face_and_dwell_at_frontier">
+                              <ForceSuccess name="turn_even_if_short_at_frontier">
+                                <TurnTo name="face_frontier_heading" yaw="{heading}"/>
+                              </ForceSuccess>
+                              <Sleep name="dwell_at_frontier" msec="2500"/>
+                            </Sequence>
+                          </LoopDouble>
+                          <ReportViewpoint name="report_frontier_reached" viewpoint_id="{viewpoint}" reached="true"/>
+                        </Sequence>
+                        <ReportViewpoint name="report_frontier_unreached" viewpoint_id="{viewpoint}" reached="false"/>
+                      </Fallback>
+                    </Fallback>
+                  </Sequence>
+                </KeepRunningUntilFailure>
+              </ForceSuccess>
+              <ScriptCondition name="map_closed" code="outcome == 'done'"/>
+              <ForceSuccess name="coverage_loop_ends_when_done">
+                <KeepRunningUntilFailure name="coverage_viewpoints">
+                  <Sequence name="one_coverage_viewpoint">
+                    <NextViewpoint name="next_coverage_viewpoint" mode="coverage" goal="{goal}"
+                                   headings="{headings}" viewpoint_id="{viewpoint}"
+                                   outcome="{outcome}"/>
+                    <Fallback name="step_off_or_visit_viewpoint">
+                      <Sequence name="step_off_when_stuck">
+                        <ScriptCondition name="stuck" code="outcome == 'stuck'"/>
+                        <ForceSuccess name="even_if_boxed_in">
+                          <StepClear name="step_clear_when_stuck" clearance="0.7"/>
+                        </ForceSuccess>
+                      </Sequence>
+                      <Fallback name="visit_or_report_unreached">
+                        <Sequence name="visit">
+                          <ForceSuccess name="unless_boxed_in">
+                            <StepClear name="step_clear_to_walk"/>
+                          </ForceSuccess>
+                          <NavigateToPose name="walk_there" goal="{goal}"/>
+                          <ForceSuccess name="unless_boxed_in_there">
+                            <StepClear name="step_clear_to_turn"/>
+                          </ForceSuccess>
+                          <LoopDouble name="each_heading" queue="{headings}" value="{heading}">
+                            <Sequence name="face_and_dwell">
+                              <ForceSuccess name="turn_even_if_short">
+                                <TurnTo name="face_heading" yaw="{heading}"/>
+                              </ForceSuccess>
+                              <Sleep name="dwell_for_the_detector" msec="2500"/>
+                            </Sequence>
+                          </LoopDouble>
+                          <ReportViewpoint name="report_reached" viewpoint_id="{viewpoint}" reached="true"/>
+                        </Sequence>
+                        <ReportViewpoint name="report_unreached" viewpoint_id="{viewpoint}" reached="false"/>
+                      </Fallback>
+                    </Fallback>
+                  </Sequence>
+                </KeepRunningUntilFailure>
+              </ForceSuccess>
+              <ScriptCondition name="every_room_seen" code="outcome == 'done'"/>
+            </Sequence>
+          </Timeout>
+          <!-- Out of time, or a pass ended short of done: save and let the next run carry on.
+               Only a world model that cannot plan fails the skill. -->
+          <ScriptCondition name="unless_the_world_model_cannot_plan" code="outcome != 'error'"/>
+        </Fallback>
+        <!-- What the world model can tell is not an object goes before anyone checks the map by
+             hand; the save must not wait on it. -->
+        <ForceSuccess name="tidy_even_if_it_fails">
+          <CleanUpWorld name="clean_up_the_world"/>
+        </ForceSuccess>
+        <SaveWorld name="save_the_world"/>
+      </Sequence>
+    </Timeout>
+  </BehaviorTree>
+
+  <TreeNodesModel>
+    <SubTree ID="ExploreBuilding"/>
+  </TreeNodesModel>
+</root>

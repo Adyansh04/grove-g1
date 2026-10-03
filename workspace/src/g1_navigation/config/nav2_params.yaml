@@ -195,14 +195,18 @@ planner_server:
 
 behavior_server:
   ros__parameters:
-    costmap_topic: local_costmap/costmap_raw
-    footprint_topic: local_costmap/published_footprint
+    # Jazzy's names: Humble's costmap_topic and footprint_topic are ignored.
+    local_costmap_topic: local_costmap/costmap_raw
+    local_footprint_topic: local_costmap/published_footprint
     cycle_frequency: 10.0
-    # No backup or drive_on_heading: both reverse, which the gait does not do, and without the
-    # plugins no tree can call them. assisted_teleop has no caller.
-    behavior_plugins: ["spin", "wait"]
+    # drive_on_heading serves the executor's WalkStraight, both ways: the AGILE gait reverses at
+    # 0.3 m/s, and a negative distance and speed make it a backup, so no backup plugin.
+    # assisted_teleop has no caller.
+    behavior_plugins: ["spin", "drive_on_heading", "wait"]
     spin:
       plugin: "nav2_behaviors::Spin"
+    drive_on_heading:
+      plugin: "nav2_behaviors::DriveOnHeading"
     wait:
       plugin: "nav2_behaviors::Wait"
     global_frame: odom
@@ -210,13 +214,65 @@ behavior_server:
     transform_tolerance: 1.0
     use_sim_time: false
     simulate_ahead_time: 2.0
-    # Spin's own clamp; g1_controllers clamps yaw rate again at 0.9 rad/s.
-    max_rotational_vel: 1.57
-    min_rotational_vel: 1.2
-    rotational_acc_lim: 3.2
+    # Spin slows over the last 23 degrees (sqrt(2 * acc * remaining)) to 0.3 rad/s: at the
+    # controller's 0.9 rad/s cap it overshot a 90 degree turn by 14 and a 75 degree one by 21,
+    # since the gait lags the stop.
+    max_rotational_vel: 0.9
+    min_rotational_vel: 0.3
+    rotational_acc_lim: 1.0
+
+# The last check between Nav2 and the gait. The controller and the behaviors publish /cmd_vel_raw,
+# and this passes it to /cmd_vel slowed so the body would not reach a return within
+# time_before_collision. It reads the cloud in two bands, and never between them, where a hand
+# carries: 0.05 to 0.60 m, a crate or a chair's legs, which the costmaps (from 0.30 m up) miss
+# below 0.30 m; and 1.05 to 1.40 m, a wall or a person up close. The lidar sits upside down 1.23 m
+# up and looks at most 52 degrees down, so the low band sees nothing nearer than 0.46 m (0.92 m at
+# the floor) and it forgets what leaves its view: it slows the robot towards a low thing seen from
+# afar, but only the high band stops it at a wall (measured: the low band alone let the robot walk
+# into one). The circle is the body with a margin, not the costmaps' 0.45 m, so the close
+# approaches Nav2 plans are left alone. g1_base_approach, which closes the last decimetres to a
+# table on purpose, writes /cmd_vel itself.
+collision_monitor:
+  ros__parameters:
+    use_sim_time: false
+    base_frame_id: base_footprint
+    odom_frame_id: odom
+    cmd_vel_in_topic: /cmd_vel_raw
+    cmd_vel_out_topic: /cmd_vel
+    state_topic: collision_monitor_state
+    transform_tolerance: 0.3
+    source_timeout: 1.0
+    base_shift_correction: true
+    stop_pub_timeout: 2.0
+    enable_stamped_cmd_vel: false
+    polygons: ["body"]
+    body:
+      type: circle
+      radius: 0.35
+      action_type: approach
+      time_before_collision: 1.0
+      simulation_time_step: 0.1
+      min_points: 4
+      visualize: true
+      polygon_pub_topic: collision_monitor_body
+      enabled: true
+    observation_sources: ["low_cloud", "high_cloud"]
+    low_cloud:
+      type: pointcloud
+      topic: /livox/lidar
+      min_height: 0.05
+      max_height: 0.60
+      enabled: true
+    high_cloud:
+      type: pointcloud
+      topic: /livox/lidar
+      min_height: 1.05
+      max_height: 1.40
+      enabled: true
 
 lifecycle_manager_navigation:
   ros__parameters:
     use_sim_time: false
     autostart: true
-    node_names: ["controller_server", "planner_server", "behavior_server", "bt_navigator"]
+    node_names: ["controller_server", "planner_server", "behavior_server", "bt_navigator",
+                 "collision_monitor"]

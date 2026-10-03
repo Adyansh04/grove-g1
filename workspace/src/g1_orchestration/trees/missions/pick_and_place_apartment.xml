@@ -1,0 +1,29 @@
+<root BTCPP_format="4" main_tree_to_execute="Mission">
+  <!-- The apartment's pick and place, in the committed map's frame (world:=apartment with the
+       default map): the mug from the dining table's east end to the tray on the office desk,
+       with the left hand. -->
+  <BehaviorTree ID="Mission">
+    <Timeout msec="1800000">
+      <Sequence name="mission">
+        <Timeout msec="120000">
+          <SubTree ID="TuckForTravel" name="s1_TuckForTravel"/>
+        </Timeout>
+        <Timeout msec="240000">
+          <SubTree ID="GoToPose" name="s2_GoToPose" station="-0.85;2.84;3.1416"/>
+        </Timeout>
+        <Timeout msec="420000">
+          <SubTree ID="PickObject" name="s3_PickObject" object_id="mug_4" phrase="small white mug" arm="left"/>
+        </Timeout>
+        <Timeout msec="360000">
+          <SubTree ID="GoToPose" name="s4_GoToPose" station="5.65;-4.40;-1.5708"/>
+        </Timeout>
+        <Timeout msec="360000">
+          <SubTree ID="PlaceInto" name="s5_PlaceInto" container_id="tray_1" phrase="wooden tray" arm="left"/>
+        </Timeout>
+        <Timeout msec="120000">
+          <SubTree ID="TuckForTravel" name="s6_TuckForTravel"/>
+        </Timeout>
+      </Sequence>
+    </Timeout>
+  </BehaviorTree>
+</root>

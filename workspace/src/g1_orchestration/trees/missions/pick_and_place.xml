@@ -1,0 +1,26 @@
+<root BTCPP_format="4" main_tree_to_execute="Mission">
+  <BehaviorTree ID="Mission">
+    <Timeout msec="1800000">
+      <Sequence name="mission">
+        <Timeout msec="120000">
+          <SubTree ID="TuckForTravel" name="s1_TuckForTravel"/>
+        </Timeout>
+        <Timeout msec="240000">
+          <SubTree ID="GoToPose" name="s2_GoToPose" station="4.30;-5.60;1.5708"/>
+        </Timeout>
+        <Timeout msec="420000">
+          <SubTree ID="PickObject" name="s3_PickObject" object_id="red_block" phrase="bright red plastic ball" arm="right"/>
+        </Timeout>
+        <Timeout msec="240000">
+          <SubTree ID="GoToPose" name="s4_GoToPose" station="6.30;5.70;1.5708"/>
+        </Timeout>
+        <Timeout msec="360000">
+          <SubTree ID="PlaceInto" name="s5_PlaceInto" container_id="brown_box" phrase="brown box container" arm="right"/>
+        </Timeout>
+        <Timeout msec="120000">
+          <SubTree ID="TuckForTravel" name="s6_TuckForTravel"/>
+        </Timeout>
+      </Sequence>
+    </Timeout>
+  </BehaviorTree>
+</root>

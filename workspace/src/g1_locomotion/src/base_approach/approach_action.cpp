@@ -144,22 +144,46 @@ void BaseApproachNode::runApproach(const std::shared_ptr<GoalHandleApproach>& ha
 
         if (command.state == ApproachState::kArrived)
         {
-            // Stop, let the stride finish, then re-judge: the robot coasts, and a coast out of
-            // the window has to be closed again.
+            // Stop, let the stride finish, then re-judge: a coast out of the window is nudged
+            // back in sideways, or closed again.
             feedback->phase = ApproachObject::Feedback::PHASE_VERIFYING;
             handle->publish_feedback(feedback);
-            settle();
-
-            const auto settled = objectInBase(goal->object_id);
+            decltype(objectInBase(goal->object_id)) settled;
+            bool                                    in_reach = false;
+            for (int nudges = 0;; ++nudges)
+            {
+                settle();
+                settled = objectInBase(goal->object_id);
+                if (!settled)
+                {
+                    break;
+                }
+                in_reach         = settledInReach(settled->point.x, settled->point.y, limits);
+                const auto nudge = in_reach ?
+                                       std::nullopt :
+                                       planNudge(settled->point.x, settled->point.y, limits, gait_);
+                if (!nudge || nudges >= max_nudges_ || handle->is_canceling() ||
+                    std::chrono::steady_clock::now() > deadline)
+                {
+                    break;
+                }
+                RCLCPP_INFO(
+                    get_logger(),
+                    "settled just outside the window sideways at (%.3f, %.3f); nudging %+.2f m/s "
+                    "for %.2f s",
+                    settled->point.x,
+                    settled->point.y,
+                    nudge->vy_mps,
+                    nudge->seconds);
+                pulse(0.0, nudge->vy_mps, nudge->seconds);
+            }
             if (!settled)
             {
                 continue;
             }
-            const auto verdict =
-                planApproach(settled->point.x, settled->point.y, 0.0, limits, gait_);
             result->final_x_m = settled->point.x;
             result->final_y_m = settled->point.y;
-            if (verdict.state != ApproachState::kArrived)
+            if (!in_reach)
             {
                 RCLCPP_INFO(
                     get_logger(),

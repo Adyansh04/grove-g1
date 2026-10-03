@@ -15,6 +15,7 @@
 #include "g1_orchestration/skills/clear_octomap.hpp"
 #include "g1_orchestration/skills/grasp.hpp"
 #include "g1_orchestration/skills/look_for.hpp"
+#include "g1_orchestration/skills/motion_leaves.hpp"
 #include "g1_orchestration/skills/navigate_to_pose.hpp"
 #include "g1_orchestration/skills/pick.hpp"
 #include "g1_orchestration/skills/place.hpp"
@@ -48,6 +49,8 @@ void registerSkillNodes(BT::BehaviorTreeFactory& factory, const RosContext& cont
     registerLeaf<SaveWorld>(factory, "SaveWorld", context);
     registerLeaf<CleanUpWorld>(factory, "CleanUpWorld", context);
     registerLeaf<TurnTo>(factory, "TurnTo", context);
+    registerLeaf<DriveStraight>(factory, "DriveStraight", context);
+    registerLeaf<TurnBy>(factory, "TurnBy", context);
 }
 
 std::string nodeModelXml(const BT::BehaviorTreeFactory& factory)

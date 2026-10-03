@@ -11,6 +11,7 @@
  * executor releases on every exit, success or failure.
  */
 
+#include <cstdint>
 #include <memory>
 #include <rclcpp/rclcpp.hpp>
 #include <string>
@@ -64,6 +65,16 @@ struct ArmSwitchPlan
 ArmSwitchPlan planArmSwitch(const std::string& incoming_state, const std::string& outgoing_state);
 
 /**
+ * @brief How acquireArm found the arm.
+ */
+enum class Acquired : std::uint8_t
+{
+    kFailed,   ///< The arm could not be taken.
+    kTaken,    ///< This call took it from the freeze controller.
+    kAlready,  ///< Its trajectory controller was active already: someone else had taken it.
+};
+
+/**
  * @brief Takes the arm, then each hand.
  *
  * The arm is required; each hand is best-effort, so a missing or unpowered Dex3 leaves the arm
@@ -71,9 +82,10 @@ ArmSwitchPlan planArmSwitch(const std::string& incoming_state, const std::string
  *
  * @param logger Where progress and failures are reported.
  * @param timeout_s Per-step service budget.
- * @return false only if the arm could not be acquired; a hand that fails only warns.
+ * @return kFailed only if the arm could not be acquired; a hand that fails only warns. kAlready
+ *         says the arm was taken before this call, so what its hands hold is not known.
  */
-bool acquireArm(const rclcpp::Logger& logger, double timeout_s);
+Acquired acquireArm(const rclcpp::Logger& logger, double timeout_s);
 
 /**
  * @brief Hands each part back, in reverse: controllers first, then components.
