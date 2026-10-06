@@ -8,14 +8,10 @@ from typing import List
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, EmitEvent, RegisterEventHandler
-from launch.events import matches_action
+from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import LifecycleNode, Node
-from launch_ros.event_handlers import OnStateTransition
-from launch_ros.events.lifecycle import ChangeState
 from launch_ros.parameter_descriptions import ParameterValue
-from lifecycle_msgs.msg import Transition
 from moveit_configs_utils import MoveItConfigsBuilder
 
 SHARE = get_package_share_directory("g1_manipulation")
@@ -76,28 +72,6 @@ def _object_source():
             ("~/object_markers", "/object_markers"),
         ],
     )
-
-
-def _bring_up(node):
-    """Configures, then activates, through launch events: one node needs no lifecycle manager."""
-
-    def _transition(transition_id):
-        return EmitEvent(
-            event=ChangeState(
-                lifecycle_node_matcher=matches_action(node), transition_id=transition_id
-            )
-        )
-
-    return [
-        RegisterEventHandler(
-            OnStateTransition(
-                target_lifecycle_node=node,
-                goal_state="inactive",
-                entities=[_transition(Transition.TRANSITION_ACTIVATE)],
-            )
-        ),
-        _transition(Transition.TRANSITION_CONFIGURE),
-    ]
 
 
 def generate_launch_description():
@@ -168,6 +142,5 @@ def generate_launch_description():
             ),
             object_source,
         ]
-        + _bring_up(object_source)
         + [server]
     )

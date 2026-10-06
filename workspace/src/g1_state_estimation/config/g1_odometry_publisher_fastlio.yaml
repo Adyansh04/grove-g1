@@ -2,6 +2,9 @@
 # robot. An estimate, so it drifts, and map -> odom corrects it.
 g1_odometry_publisher:
   ros__parameters:
+    # Configures and activates itself on start, with no lifecycle manager.
+    autostart: true
+
     odometry_source: "fast_lio"
 
     odom_frame_id: "odom"

@@ -10,17 +10,10 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
-    EmitEvent,
     OpaqueFunction,
-    RegisterEventHandler,
 )
-from launch.event_handlers import OnProcessStart
-from launch.events import matches_action
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import LifecycleNode, Node
-from launch_ros.event_handlers import OnStateTransition
-from launch_ros.events.lifecycle import ChangeState
-from lifecycle_msgs.msg import Transition
 
 SHARE = get_package_share_directory("g1_state_estimation")
 RELAY_SHARE = get_package_share_directory("g1_sensor_relay")
@@ -106,39 +99,12 @@ def _odometry_publisher():
     )
 
 
-def _bring_up(node):
-    """Configure on start, activate once inactive."""
-
-    def _transition(transition_id):
-        return EmitEvent(
-            event=ChangeState(
-                lifecycle_node_matcher=matches_action(node), transition_id=transition_id
-            )
-        )
-
-    return [
-        RegisterEventHandler(
-            OnProcessStart(
-                target_action=node,
-                on_start=[_transition(Transition.TRANSITION_CONFIGURE)],
-            )
-        ),
-        RegisterEventHandler(
-            OnStateTransition(
-                target_lifecycle_node=node,
-                goal_state="inactive",
-                entities=[_transition(Transition.TRANSITION_ACTIVATE)],
-            )
-        ),
-    ]
-
-
 def _launch_setup(context, *args, **kwargs):
     sim = LaunchConfiguration("sim").perform(context).lower() == "true"
 
     odometry = _odometry_publisher()
     front_end = _sim_front_end() if sim else _hardware_front_end()
-    return front_end + [_fastlio(sim), odometry] + _bring_up(odometry)
+    return front_end + [_fastlio(sim), odometry]
 
 
 def generate_launch_description():
