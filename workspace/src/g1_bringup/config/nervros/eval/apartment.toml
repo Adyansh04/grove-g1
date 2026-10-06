@@ -33,7 +33,7 @@ expect = { tools = ["look"], mission = "none" }
 
 [[case]]
 id = "find-mug"
-say = ["Where is the small white mug?"]
+say = ["Where is the small red mug?"]
 expect = { tools = ["find_objects"], mission = "none", reply_has = ["mug"] }
 
 [[case]]
@@ -195,14 +195,14 @@ expect = { mission = "none", reply_has = ["which", "what"] }
 
 [[case]]
 id = "pick-place"
-say = ["Bring the small white mug from the dining table to the tray on the office desk."]
+say = ["Bring the small red mug from the dining table to the tray on the office desk."]
 max_s = 720
 expect = { skills = ["PickObject", "PlaceInto"], mission = "success", approvals_max = 1 }
 
 [[case]]
 id = "pick-again"
 # The mug is in the tray now: the pick fails, and the agent finds out why instead of rerunning.
-say = ["Bring the small white mug from the dining table to the tray again."]
+say = ["Bring the small red mug from the dining table to the tray again."]
 max_s = 600
 expect = { approvals_max = 2, reply_has = ["tray", "already", "not on", "isn't", "is not", "no longer"] }
 
@@ -268,7 +268,7 @@ expect = { tools = ["skill"], mission = "none" }
 
 [[case]]
 id = "recall-object"
-say = ["Where has the small white mug been today?"]
+say = ["Where has the small red mug been today?"]
 expect = { tools = ["recall"], mission = "none" }
 
 [[case]]

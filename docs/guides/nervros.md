@@ -186,7 +186,7 @@ reads yours when it next looks. canopy saves the
 world itself every minute while its detector runs, so a save may first replay the edits over
 canopy's newer save; that is automatic.
 
-- "Bring the small white mug from the dining table to the tray on the office desk." `app` runs the
+- "Bring the small red mug from the dining table to the tray on the office desk." `app` runs the
   arm stack too: MoveIt, the manipulation skills and a mock detector that knows the mug and the
   tray by their names in the scene, `mug_4` and `tray_1`. The agent walks to `dining_table_side`,
   picks the mug with the left hand, carries it to `office_desk_tray` and sets it in the tray: in

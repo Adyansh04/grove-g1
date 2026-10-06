@@ -45,7 +45,7 @@ MAP_NAME=$(take_arg name "mapped-$SIM_WORLD")
 SAVED=/root/data/worlds/$SAVED_NAME
 EMPTY=/root/data/worlds/nervros-explore
 # With the arm stack: the mock detector finds the mug and the tray by body name for the pick skills.
-ARMS="moveit:=true manipulation:=true perception:=true detector:=mock activate_arm:=true activate_arm_delay_s:=8.0 phrases:='mug_4=small white mug,tray_1=wooden tray'"
+ARMS="moveit:=true manipulation:=true perception:=true detector:=mock activate_arm:=true activate_arm_delay_s:=8.0 phrases:='mug_4=red mug,tray_1=wooden tray'"
 APARTMENT="ros2 launch g1_bringup bringup.launch.py mode:=localization nav:=true world:=$SIM_WORLD map:=$SAVED/map.yaml headless:=true rviz:=false cameras:=head,chest $ARMS$LAUNCH_ARGS"
 # Exploring needs no arms: at the sides, they stay out of both cameras' views.
 EXPLORING="ros2 launch g1_bringup bringup.launch.py mode:=localization nav:=true world:=$SIM_WORLD map:=$SAVED/map.yaml headless:=true rviz:=false arms_at_sides:=true cameras:=head,chest$LAUNCH_ARGS"
