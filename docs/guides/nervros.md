@@ -72,9 +72,11 @@ Things to ask:
   things no detector marks, such as the floor or a wall, and shows it cut out of the frame, or
   tinted over it if you ask for an overlay. By default Gemini's free tier outlines it: 3.8 Flash in
   5 to 30 s, up to 10 times a day, then Flash-Lite in about 2 s, coarser. The local server gives
-  pixel masks from Grounding DINO and SAM 2.1 in about a second (`./scripts/serve.sh vision`, and
-  "segment the floor with the local server"), but it does not fit on the GPU beside the local chat
-  model: use it with a cloud chat model, or with none from the command line, where
+  pixel masks from SAM 3.1 in about half a second (`./scripts/serve.sh canopy --detector sam3.1
+  --embedder none --describer none`, and "segment the floor with the local server"): on the
+  apartment's renders its floor masks matched the truth at IoU 0.95, Flash-Lite's outlines at 0.80.
+  It does not fit on the GPU beside the local chat model: use it with a cloud chat model, or with
+  none from the command line, where
   `./scripts/demos/nervros.sh --print chat`'s last command with `segment "the floor" --backend
   service --out floor.jpg` in place of `chat` segments once. Without `~/.config/grove/gemini.env`
   (the bare key) only the local server segments.
