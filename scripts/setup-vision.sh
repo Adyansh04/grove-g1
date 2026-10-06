@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #
-# Sets up the host-side vision server that g1_perception's detector talks to.
+# Sets up the host-side vision server: Grounded SAM 2, which g1_perception's detector can ask in
+# place of canopy's SAM 3.1, and the instruction grounder's vision-language model.
 #
 # Optional: the mock detector publishes the same instance masks from simulator ground truth, so
 # every sim test runs without a GPU.
@@ -25,8 +26,7 @@ TORCH_INDEX="https://download.pytorch.org/whl/cu128"
 TORCH_WHEEL="torch-2.9.0%2Bcu128-cp312-cp312-manylinux_2_28_x86_64.whl"
 VISION_WHEEL="torchvision-0.24.0%2Bcu128-cp312-cp312-manylinux_2_28_x86_64.whl"
 
-# transformers 5.x for Sam3Model, which 4.x lacks; the Grounding DINO and SAM 2.1 classes are the
-# same in both.
+# The same transformers as canopy's server, so a model behaves alike in both.
 DEPS=(
     "transformers==5.17.0"
     "accelerate==1.14.0"
@@ -77,12 +77,6 @@ print(f"    torch {torch.__version__}, cuda available: {torch.cuda.is_available(
 if torch.cuda.is_available():
     total = torch.cuda.get_device_properties(0).total_memory / 1024**3
     print(f"    {torch.cuda.get_device_name(0)}, {total:.1f} GiB")
-try:
-    from transformers import Sam3Model  # noqa: F401
-
-    print("    Sam3Model present: --backend sam3 works once the weights are downloadable")
-except ImportError:
-    print("    Sam3Model missing: this transformers is too old for --backend sam3")
 PY
 
 cat <<EOF
@@ -98,11 +92,9 @@ Check it against saved frames instead of serving:
 
   ./scripts/serve.sh vision --self-test frame.png --phrases "red block,green cylinder"
 
-SAM 3 is the better model and its weights are gated. Request access at
-https://huggingface.co/facebook/sam3, sign in with
-
-  ${VISION_HOME}/.venv/bin/hf auth login
-
-and then serve it with --backend sam3. Nothing in the ROS workspace changes: the instance-mask
-message is the same either way.
+SAM 3.1, g1_detector's default model, runs in canopy's semantic server instead
+(workspace/src/canopy/servers/setup.sh, then ./scripts/serve.sh canopy --detector sam3.1). This
+server keeps
+Grounded SAM 2 as the alternative and the instruction grounder (--vlm); with --backend none it
+loads no segmentation model at all.
 EOF

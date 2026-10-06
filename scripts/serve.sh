@@ -2,9 +2,11 @@
 # Starts a model server on the host, with the interpreter its setup script installed.
 #
 #   ./scripts/serve.sh groot [args]      the GR00T policy for learned grasping, on 5555
-#   ./scripts/serve.sh vision [args]     open-vocabulary masks and instruction grounding, on 5560
+#   ./scripts/serve.sh vision [args]     Grounded SAM 2 masks and instruction grounding, on 5560
 #   ./scripts/serve.sh graspgen [args]   GraspGenX grasps for the Dex3-1, on 5556
-#   ./scripts/serve.sh canopy [args]     canopy's semantic server on 5561, and its offline VLM
+#   ./scripts/serve.sh canopy [args]     canopy's semantic server on 5561 (SAM 3.1, or YOLOE-26 with
+#                                        --detector yoloe), and the offline VLM when its
+#                                        describers include openai
 #
 # The arguments go to the server after the defaults here, so they override them:
 #   ./scripts/serve.sh vision --vlm Qwen/Qwen3-VL-2B-Instruct
@@ -50,9 +52,19 @@ case "$server" in
         ;;
     canopy)
         require "$CANOPY_HOME/.venv/bin/python" workspace/src/canopy/servers/setup.sh
-        # The describer's fallback when Gemini refuses. It runs as a container of its own and is
+        # The describer's fallback when Gemini refuses, about 4 GB of VRAM, so only when a
+        # --describer list names it (the default does). It runs as a container of its own and is
         # left up for the next run; `start-vlm.sh stop` ends it.
-        "$CANOPY/servers/start-vlm.sh" start
+        describers="gemini,openai"
+        previous=""
+        for arg in "$@"; do
+            [[ "$previous" == --describer ]] && describers="$arg"
+            [[ "$arg" == --describer=* ]] && describers="${arg#*=}"
+            previous="$arg"
+        done
+        if [[ "$describers" == *openai* ]]; then
+            "$CANOPY/servers/start-vlm.sh" start
+        fi
         exec "$CANOPY_HOME/.venv/bin/python" "$CANOPY/servers/semantic_server.py" "$@"
         ;;
     *)

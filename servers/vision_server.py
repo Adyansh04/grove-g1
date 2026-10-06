@@ -4,14 +4,14 @@
 The models need torch and CUDA, which the ROS image does not carry, so g1_detector talks to this
 server over ZMQ, as servers/groot_server.py does for the policy.
 
-Two backends, chosen with --backend, behind one reply format:
+SAM 3.1, g1_detector's default, runs in canopy's semantic server (./scripts/serve.sh canopy
+--detector sam3.1, port 5561), which speaks this protocol too. This server keeps the alternatives, chosen with --backend:
 
-  grounded-sam2  Grounding DINO boxes refined into masks by SAM 2.1. Ungated; the default.
-  sam3           One model from text to instance masks. Better, but the weights are gated.
+  grounded-sam2  Grounding DINO boxes refined into masks by SAM 2.1. Ungated; the default here.
+  none           No segmentation: only `ground`, beside canopy's SAM 3.1.
 
     ./scripts/serve.sh vision                 # --port 5560
-    ./scripts/serve.sh vision --backend sam3
-    ./scripts/serve.sh vision --vlm Qwen/Qwen3-VL-2B-Instruct
+    ./scripts/serve.sh vision --backend none --vlm Qwen/Qwen3-VL-2B-Instruct
 
 With --vlm, a vision-language model is loaded on the first `ground` request. It turns an
 instruction such as "the mug left of the bowl" into noun phrases the detector can take.
@@ -45,10 +45,9 @@ try:
     from vision.grounding import GroundingBackend
     from vision.segmentation import (
         DEFAULT_DETECTOR,
-        DEFAULT_SAM3,
         DEFAULT_SEGMENTER,
         GroundedSam2Backend,
-        Sam3Backend,
+        NoBackend,
     )
     from vision.server import serve
 except ImportError as error:  # pragma: no cover - depends on the host environment
@@ -59,8 +58,8 @@ DTYPES = {"float32": torch.float32, "bfloat16": torch.bfloat16, "float16": torch
 
 
 def build_backend(args, device, dtype):
-    if args.backend == "sam3":
-        return Sam3Backend(device, dtype, args.sam3_model)
+    if args.backend == "none":
+        return NoBackend()
     return GroundedSam2Backend(device, dtype, args.detector_model, args.segmenter_model)
 
 
@@ -96,10 +95,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
-    parser.add_argument("--backend", choices=["grounded-sam2", "sam3"], default="grounded-sam2")
+    parser.add_argument("--backend", choices=["grounded-sam2", "none"], default="grounded-sam2")
     parser.add_argument("--detector-model", default=DEFAULT_DETECTOR)
     parser.add_argument("--segmenter-model", default=DEFAULT_SEGMENTER)
-    parser.add_argument("--sam3-model", default=DEFAULT_SAM3)
     parser.add_argument(
         "--vlm",
         default="",

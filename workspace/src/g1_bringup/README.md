@@ -67,7 +67,7 @@ flowchart LR
 | `manipulation` | `false` | The pick and place servers and the object-pose source. Needs `moveit:=true`. |
 | `object_source` | `sim_ground_truth` | Where `/objects` comes from: `sim_ground_truth`, or `hardware`, which refuses to configure. `perception:=true` overrides it. |
 | `perception` | `false` | Detect objects from the camera instead of reading them from the simulator. Needs `manipulation:=true`. |
-| `detector` | `mock` | `mock` cuts masks from simulator ground truth and needs no GPU; `vision` asks the host vision server. |
+| `detector` | `mock` | `mock` cuts masks from simulator ground truth and needs no GPU; `vision` asks canopy's semantic server on the host, run with SAM 3.1. |
 | `phrases` | `red block,blue block,green cylinder,blue sphere,yellow box,white cup,brown box` | Comma-separated objects the detector looks for. |
 | `grounding` | `false` | Run the instruction grounder beside the detector. Needs the host vision server started with `--vlm`. |
 | `mock_latency_s` | `0.0` | How far the mock detector's masks lag the camera. |
@@ -94,8 +94,8 @@ save and resume the world, empty for neither), and `detector`, `describe`, `segm
 `config/mock_detector.yaml`, looking for every label in `worlds/<world>.truth.yaml` (`world`,
 default `apartment`). `describe:=true` names objects and types rooms through canopy_perception's
 describer. `segmenter:=true` starts canopy_perception's segmenter, a service that masks one
-camera's newest frame by a text prompt, against the vision server with `config/segmenter.yaml`
-(`./scripts/serve.sh vision`). `rviz:=true` opens `config/world_model.rviz`, canopy's view with the chest camera added.
+camera's newest frame by a text prompt, against canopy's semantic server run with SAM 3.1
+(`./scripts/serve.sh canopy --detector sam3.1`) with `config/segmenter.yaml`. `rviz:=true` opens `config/world_model.rviz`, canopy's view with the chest camera added.
 [docs/guides/world-model.md](../../../docs/guides/world-model.md) runs it with an exploration tree.
 
 ## Running in simulation
@@ -173,7 +173,7 @@ command that builds it. Each package's own tests catch a renamed launch file:
 | `config/sim_sensors_apartment.yaml` | The apartment's `sim_sensors.yaml`, tracking every prop; generated. `sim.launch.py` takes `sim_sensors_<world>.yaml` when one exists. |
 | `config/world_model.yaml` | The G1's values for canopy: the planner's radius, clearances, speeds and dwell time, and the approach standoff and margin. |
 | `config/mock_detector.yaml` | The mock detector's rate (`mock_rate_hz: 2.0`) for `world_model.launch.py detector:=mock`. |
-| `config/segmenter.yaml` | The segmenter's vision server (5560), thresholds and timeouts for `world_model.launch.py segmenter:=true`. |
+| `config/segmenter.yaml` | The segmenter's model server (canopy's, 5561), thresholds and timeouts for `world_model.launch.py segmenter:=true`. |
 | `config/g1_sensors.rviz` | RViz without navigation. Fixed frame `odom`. |
 | `config/world_model.rviz` | canopy's world-model view plus the chest camera's picture. |
 | `mjcf/*.xml` | One scene per world and a pinned variant of each (`lio` and `apartment` have none), plus the flat, walk and pinned overlays. Staged next to the vendored model at launch and removed on shutdown. |

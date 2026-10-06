@@ -153,7 +153,8 @@ def generate_launch_description():
                 default_value="mock",
                 choices=["mock", "vision"],
                 description="mock cuts masks from simulator ground truth and needs no GPU; "
-                "vision asks the host server started by ./scripts/serve.sh vision.",
+                "vision asks canopy's semantic server on the host, started by "
+                "./scripts/serve.sh canopy --detector sam3.1.",
             ),
             DeclareLaunchArgument(
                 "phrases",

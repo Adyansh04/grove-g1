@@ -44,7 +44,8 @@ url = "http://127.0.0.1:8765"
 reload = "/canopy/reload"
 
 # Masks by a text prompt. The model backend asks Gemini's free tier (models.toml's segment role);
-# the service is canopy's segmenter, which needs ./scripts/serve.sh vision and so a free GPU.
+# the service is canopy's segmenter, which needs SAM 3.1 in canopy's server
+# (./scripts/serve.sh canopy --detector sam3.1) and so a free GPU.
 [segment]
 backend = "model"
 service = "/segmenter/segment"

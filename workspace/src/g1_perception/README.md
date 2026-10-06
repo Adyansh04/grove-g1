@@ -25,7 +25,7 @@ flowchart LR
 
 | Node | Does |
 |---|---|
-| `g1_detector` | canopy_perception's `detector`, configured by `config/g1_detector.yaml`: sends camera frames and the phrase list to the host vision server and publishes the instance masks it answers with. |
+| `g1_detector` | canopy_perception's `detector`, configured by `config/g1_detector.yaml`: sends camera frames and the phrase list to canopy's semantic server on the host, run with SAM 3.1 (Grounded SAM 2 from the vision server can stand in), and publishes the instance masks it answers with. |
 | `g1_detector` (mock) | canopy_perception's `mock_detector`: cuts the same masks out of simulator ground truth against the real rendered depth. No GPU, no server, no network. Simulation only. Launched as `g1_detector` too, so a tree writes the same `phrases` whichever detector runs. |
 | `g1_object_geometry` | Deprojects each mask, finds the surface the object stands on, fits a box, and tracks it across frames so an id keeps naming one object. |
 | `g1_graspgen_adapter` | Sends the depth frame, its intrinsics and one object's mask to [GraspGenX](https://github.com/NVlabs/GraspGenX) on the host and serves the grasps it answers with. The Dex3-1 goes as its sweep volume (`sweep_volume`, twelve numbers), not by name. Poses come back in the generator's own gripper frame, so the arm side applies one measured offset. Left-hand requests are refused, since mirroring a sweep volume describes a different gripper. Python, see below. |
@@ -126,19 +126,23 @@ ros2 launch g1_bringup bringup.launch.py world:=tabletop pin_pelvis:=true \
   odometry:=ground_truth moveit:=true manipulation:=true perception:=true detector:=mock
 ```
 
-Against the real models, after starting the host vision server (`./scripts/setup-vision.sh` once,
-then `./scripts/serve.sh vision`):
+Against the real models, after starting canopy's semantic server with SAM 3.1
+(`workspace/src/canopy/servers/setup.sh` once, then `./scripts/serve.sh canopy --detector sam3.1
+--embedder none --describer none`):
 
 ```bash
 ros2 launch g1_bringup bringup.launch.py world:=tabletop pin_pelvis:=true \
   odometry:=ground_truth moveit:=true manipulation:=true perception:=true detector:=vision \
-  phrases:="red block,white cup"
+  phrases:="red block,white cylinder"
 ```
+
+SAM 3.1 reads the words: the tabletop's `white_cup` is a plain cylinder, and "white cup" finds
+nothing.
 
 `ros2 topic echo --once /objects` shows what is seen. `rviz:=true` adds the annotated image, the
 ground truth and the grasp plan to MoveIt's window; the `visualization` argument behind them
-follows `rviz`. `./scripts/demos/open-vocabulary-grasping.sh mock|vision|graspgen|grounding` opens
-each variant in panes, and the
+follows `rviz`. `./scripts/demos/open-vocabulary-grasping.sh mock|vision|gsam2|graspgen|grounding`
+opens each variant in panes, and the
 [open-vocabulary perception guide](../../../docs/guides/open-vocabulary-grasping.md) covers the
 servers and the grasp and grounding variants.
 

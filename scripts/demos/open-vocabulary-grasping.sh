@@ -4,18 +4,23 @@
 #   ./scripts/demos/open-vocabulary-grasping.sh <variant> [name:=value...] [--print]
 #
 #   mock       masks cut from the simulator's truth; no GPU, no server
-#   vision     the real detector, served on the host (./scripts/setup-vision.sh first)
+#   vision     the real detector: SAM 3.1 in canopy's server on the host
+#              (workspace/src/canopy/servers/setup.sh first)
+#   gsam2      the same with Grounded SAM 2 from the vision server (./scripts/setup-vision.sh)
 #   graspgen   grasps from GraspGenX on the host, and a pick to send (./scripts/setup-graspgen.sh)
 #   grounding  an instruction turned into phrases by a VLM beside the detector
 #   stop       end whichever demo is running
 #
 # RViz shows the detections. name:=value arguments go to the bringup launch, such as
-# phrases:="red block,white cup". --print lists the commands instead of opening them.
+# phrases:="red block,white cylinder" (SAM 3.1 reads the words: the scene's "white cup" is a plain
+# cylinder). --print lists the commands instead of opening them.
 source "$(dirname "$0")/../lib/panes.sh"
 parse_args "$@"
 
 BRINGUP="ros2 launch g1_bringup bringup.launch.py world:=tabletop pin_pelvis:=true odometry:=ground_truth moveit:=true manipulation:=true perception:=true rviz:=true"
 OBJECTS="ros2 topic echo --once /objects"
+# SAM 3.1 alone: the detector needs neither the embedder nor the describers.
+SAM31="./scripts/serve.sh canopy --detector sam3.1 --embedder none --describer none"
 
 case "$VARIANT" in
     mock)
@@ -23,8 +28,14 @@ case "$VARIANT" in
         staged objects "" "$OBJECTS"
         ;;
     vision)
-        container bringup "wait_for_port 'the vision server' 5560 && $BRINGUP detector:=vision phrases:='red block,white cup'$LAUNCH_ARGS"
-        host detector "./scripts/serve.sh vision"
+        container bringup "wait_for_port 'the semantic server' 5561 && $BRINGUP detector:=vision phrases:='red block,white cylinder'$LAUNCH_ARGS"
+        host detector "$SAM31"
+        staged objects "" "$OBJECTS"
+        ;;
+    gsam2)
+        # On canopy's port, so the detector's config stays as it is.
+        container bringup "wait_for_port 'the vision server' 5561 && $BRINGUP detector:=vision phrases:='red block,white cup'$LAUNCH_ARGS"
+        host detector "./scripts/serve.sh vision --port 5561"
         staged objects "" "$OBJECTS"
         ;;
     graspgen)
@@ -34,9 +45,10 @@ case "$VARIANT" in
         staged pick wait_for_arm "ros2 action send_goal /g1_manipulation_server/pick g1_msgs/action/Pick '{object_id: red_block, arm: right}' --feedback"
         ;;
     grounding)
-        container bringup "wait_for_port 'the vision server' 5560 && $BRINGUP detector:=vision grounding:=true$LAUNCH_ARGS"
-        host detector "./scripts/serve.sh vision --vlm Qwen/Qwen3-VL-2B-Instruct"
-        staged ground "wait_for_service /ground_instruction" "ros2 service call /ground_instruction g1_msgs/srv/GroundInstruction \"{instruction: 'pick up the white cup next to the green cylinder'}\""
+        container bringup "wait_for_port 'the semantic server' 5561 && wait_for_port 'the vision server' 5560 && $BRINGUP detector:=vision grounding:=true$LAUNCH_ARGS"
+        host detector "$SAM31"
+        host grounder "./scripts/serve.sh vision --backend none --vlm Qwen/Qwen3-VL-2B-Instruct"
+        staged ground "wait_for_service /ground_instruction" "ros2 service call /ground_instruction g1_msgs/srv/GroundInstruction \"{instruction: 'pick up the red block next to the white cylinder'}\""
         staged objects "" "$OBJECTS"
         ;;
     *) usage ;;
