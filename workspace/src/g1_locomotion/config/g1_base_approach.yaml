@@ -28,8 +28,10 @@ g1_base_approach:
     cmd_rate_hz: 20.0
 
     # Where the object has to end up in the base frame. Every pick of the ball came from x 0.29 to
-    # 0.32; nearer, the pregrasp has no IK. target_y_m mirrors for the left arm.
-    target_x_m: 0.300
+    # 0.32; nearer, the pregrasp has no IK, or the resting hand meets the table's edge. Centred so
+    # the coast lands inside that band from a detector's estimate a centimetre or two off.
+    # target_y_m mirrors for the left arm.
+    target_x_m: 0.315
     target_y_m: -0.220
 
     # Objects to stand further back from: reaching over a surface to set something down sweeps

@@ -74,7 +74,7 @@ need changing:
 
 | Parameter | Value | Meaning |
 |---|---|---|
-| `target_x_m`, `target_y_m` | 0.300, -0.220 | Where the object has to end up, in the base frame. y mirrors for the left arm. |
+| `target_x_m`, `target_y_m` | 0.315, -0.220 | Where the object has to end up, in the base frame. y mirrors for the left arm. |
 | `forward_tolerance_m`, `lateral_tolerance_m` | 0.030, 0.040 | How close each axis has to get. |
 | `standoff_object_ids`, `standoff_target_x_m` | `[brown_box, tray_1]`, `[0.350, 0.350]` | Objects reached over rather than onto, approached from further back. |
 | `min_speed_x_mps`, `min_speed_y_mps` | 0.20, 0.25 | Speed floors, set by the gait's deadband. |
