@@ -295,3 +295,7 @@ The app starts with the local model. NervROS can use other providers, set in its
 project uses free models only, and NervROS refuses a paid OpenRouter model at start-up. With
 Gemini's key in `~/.config/grove/gemini.env`, its free tier outlines for `segment`, points for
 `point` and advises the planner; without it those fall back or stay off, and the rest runs locally.
+When the local model is not running, as when SAM 3.1 holds the GPU (the two do not fit in 12 GB
+together), the same free tier talks and looks instead: Gemini 3.1 Flash-Lite, then Gemma 4. Both
+have tight limits: Flash-Lite takes 15 requests a minute, and Gemma 16K input tokens a minute,
+which one or two agent calls use up. A `home` privacy mode keeps those models out.

@@ -1,7 +1,9 @@
 # Models for NervROS on the G1, all free: the local model talks, plans and looks; Gemini's free
 # tier outlines what `segment` is asked for, which the local model cannot, and advises when the
-# local model's plans for a request keep failing their checks. Without the key file the Gemini
-# models are left out: `segment` needs its service backend, and there is no advice.
+# local model's plans for a request keep failing their checks. Without the local model, as when
+# SAM 3.1 holds the GPU, Gemma 4 and Flash-Lite on the same free tier talk and look instead.
+# Without the key file the Gemini models are left out: `segment` needs its service backend, and
+# there is no advice.
 
 [[provider]]
 id = "local"
@@ -53,13 +55,26 @@ id = "gemini-3.1-flash-lite"
 provider = "gemini"
 model = "gemini-3.1-flash-lite"
 vision = true
+tools = true
 limits = { rpm = 10, rpd = 250 }
 privacy = { trains = true }
 
+# 30 a minute, 14,400 a day and 16K input tokens a minute on the free tier, shared with canopy's
+# describer.
+[[model]]
+id = "gemma-4-26b"
+provider = "gemini"
+model = "gemma-4-26b-a4b-it"
+vision = true
+tools = true
+limits = { rpm = 10, rpd = 2000 }
+privacy = { trains = true }
+
 [roles]
-routine = ["qwen3.5-9b-local"]
+# Gemma comes last: 16K input tokens a minute hold one or two agent calls.
+routine = ["qwen3.5-9b-local", "gemini-3.1-flash-lite", "gemma-4-26b"]
 # Asked only after two failed plans for one request, so 3.8 Flash's few requests a day suffice.
 plan = ["gemini-3.8-flash", "gemini-3.5-flash-lite"]
-vision_check = ["qwen3.5-9b-local"]
-summarise = ["qwen3.5-9b-local"]
+vision_check = ["qwen3.5-9b-local", "gemini-3.1-flash-lite", "gemma-4-26b"]
+summarise = ["qwen3.5-9b-local", "gemini-3.1-flash-lite"]
 segment = ["gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]
