@@ -127,29 +127,30 @@ geometry_msgs::msg::Pose topGraspGoal(
     return goal;
 }
 
-void G1ManipulationServer::clearOctomapKeeping(
-    const ArmContext& arm, const std::vector<std::string>& touchables)
+void G1ManipulationServer::clearOctomap()
 {
     if (!clear_octomap_->wait_for_service(std::chrono::milliseconds(200)))
     {
         RCLCPP_WARN(get_logger(), "no /clear_octomap; planning against whatever the map holds");
+        return;
     }
-    else
+    // Waited on, because the next plan runs against this map.
+    auto cleared =
+        clear_octomap_->async_send_request(std::make_shared<std_srvs::srv::Empty::Request>());
+    if (cleared.wait_for(kClearOctomapTimeout) != std::future_status::ready)
     {
-        // Waited on, because the next plan runs against this map.
-        auto cleared =
-            clear_octomap_->async_send_request(std::make_shared<std_srvs::srv::Empty::Request>());
-        if (cleared.wait_for(kClearOctomapTimeout) != std::future_status::ready)
-        {
-            RCLCPP_WARN(
-                get_logger(),
-                "/clear_octomap did not answer; the map may still hold voxels");
-        }
-        // The clear takes the surfaces as well as the stale voxels; one sensor update restores
-        // what the camera can see.
-        rclcpp::sleep_for(std::chrono::duration_cast<std::chrono::nanoseconds>(
-            std::chrono::duration<double>(octomap_rebuild_wait_s_)));
+        RCLCPP_WARN(get_logger(), "/clear_octomap did not answer; the map may still hold voxels");
     }
+    // The clear takes the surfaces as well as the stale voxels; one sensor update restores
+    // what the camera can see.
+    rclcpp::sleep_for(std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::duration<double>(octomap_rebuild_wait_s_)));
+}
+
+void G1ManipulationServer::clearOctomapKeeping(
+    const ArmContext& arm, const std::vector<std::string>& touchables)
+{
+    clearOctomap();
     setHandContact(arm, touchables, true);
 }
 
