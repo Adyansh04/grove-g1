@@ -192,7 +192,8 @@ canopy's newer save; that is automatic.
   picks the mug with the left hand, carries it to `office_desk_tray` and sets it in the tray: in
   the test run, 177 s. The world model's ids for the two do not reach that detector, so the
   executor accepts only these names in a pick or a place (`arg_choices`), and a plan that names
-  another comes back with the names it takes.
+  another comes back with the names it takes. It pins their phrases too, "red mug" and "wooden
+  tray", which a real detector finds them by.
 
 ## Exploring: watching the map fill in
 

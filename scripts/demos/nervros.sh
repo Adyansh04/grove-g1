@@ -55,8 +55,9 @@ MAPPED=/root/data/worlds/$MAP_NAME
 CANOPY="ros2 launch g1_bringup world_model.launch.py rviz:=false detector:=mock cameras:=head,chest segmenter:=true world_dir:="
 # Both stacks take the arms themselves at start with empty hands, so the executor may trust them.
 EXECUTOR="wait_for_nav2 && ros2 launch g1_orchestration nervros_executor.launch.py hands_empty_on_attach:=true"
-# The mock detector knows the mug and the tray by body name only, so the plans may name only those.
-ARM_EXECUTOR="wait_for_nav2 && wait_for_arm && ros2 launch g1_orchestration nervros_executor.launch.py hands_empty_on_attach:=true arg_choices:='PickObject.object_id=mug_4;PlaceInto.container_id=tray_1'"
+# The mock detector knows the mug and the tray by body name only, so the plans may name only those;
+# their phrases are what a real detector finds them by, so the plans carry those too.
+ARM_EXECUTOR="wait_for_nav2 && wait_for_arm && ros2 launch g1_orchestration nervros_executor.launch.py hands_empty_on_attach:=true arg_choices:='PickObject.object_id=mug_4;PickObject.phrase=red mug;PlaceInto.container_id=tray_1;PlaceInto.phrase=wooden tray'"
 PROFILE="$ROOT/workspace/src/g1_bringup/config/nervros/nervros.toml"
 # The graph runs as root in the container: host shared memory would fail, so UDP only. The build
 # goes outside the colcon workspace, which would otherwise crawl its tens of gigabytes. The viewer
