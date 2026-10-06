@@ -11,9 +11,9 @@ walks to frontiers, and everything is scored on the map the robot made. G1_EXPLO
 picks the cameras rendered and read (default head,chest), each with a detector of its own.
 
 G1_EXPLORE_TEST_DETECTOR=semantic swaps the mock for canopy_perception's detector asking canopy's
-servers/semantic_server.py on the host (YOLOE over the indoor word list, SigLIP 2 embeddings), and
-turns the describer on. Start the server, and servers/start-vlm.sh for its local describer, before
-the test.
+servers/semantic_server.py on the host (SAM 3.1 over its word list, SigLIP 2 embeddings), and
+turns the describer on. Start the server before the test. G1_EXPLORE_TEST_DETECTOR_PARAMS names a
+YAML over the detector's word list and threshold, such as config/detector_yoloe.yaml for YOLOE.
 
 G1_EXPLORE_TEST_EXPORT=1 copies the saved world over the one in G1_EXPLORE_TEST_EXPORT_DIR, a
 package and then a path inside its source directory (default canopy/doc/apartment), with a
@@ -69,6 +69,7 @@ BRINGUP_TIMEOUT_S = 240.0
 MAPPING = os.environ.get("G1_EXPLORE_TEST_MAPPING", "") == "1"
 CAMERAS = os.environ.get("G1_EXPLORE_TEST_CAMERAS", "head,chest")
 DETECTOR = os.environ.get("G1_EXPLORE_TEST_DETECTOR", "mock")
+DETECTOR_PARAMS = os.environ.get("G1_EXPLORE_TEST_DETECTOR_PARAMS", "")
 EXPORT = os.environ.get("G1_EXPLORE_TEST_EXPORT", "") == "1"
 EXPORT_DIR = os.environ.get("G1_EXPLORE_TEST_EXPORT_DIR", "canopy/doc/apartment")
 # Mapping first walks every frontier, which the committed map has none of.
@@ -130,6 +131,7 @@ def generate_test_description():
                         "world_dir": WORLD_DIR,
                         "cameras": CAMERAS,
                         "detector": "true" if semantic else "mock",
+                        "detector_params": DETECTOR_PARAMS,
                         "describe": "true" if semantic else "false",
                     }.items(),
                 ),

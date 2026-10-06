@@ -29,7 +29,8 @@ case "$VARIANT" in
         ;;
     real)
         container bringup "$BRINGUP"
-        host server "./scripts/serve.sh canopy"
+        # SAM 3.1 leaves no room for the offline describer on a 12 GB GPU.
+        host server "./scripts/serve.sh canopy --describer gemini"
         container canopy "wait_for_port 'the semantic server' 5561 && ros2 launch g1_bringup world_model.launch.py world_dir:=$WORLD rviz:=true detector:=true describe:=true $CAMERAS$LAUNCH_ARGS"
         container explore "$EXPLORE"
         staged ask "wait_for_service /canopy/find_objects" "$ASK"

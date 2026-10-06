@@ -9,7 +9,7 @@ cameras takes bringup's names: head is the RealSense driver's /camera, any other
 /<name>_camera, as the relay publishes them. detector:=true asks canopy's semantic server on the
 host; detector:=mock cuts the masks from the simulator's ground truth instead, for every label in
 worlds/<world>.truth.yaml. segmenter:=true adds canopy's segmenter, a service that segments one
-camera's newest frame by a text prompt against the vision server on the host.
+camera's newest frame by a text prompt against the same server.
 """
 
 import os
@@ -91,6 +91,7 @@ def canopy(context):
                 "world_dir": LaunchConfiguration("world_dir"),
                 # canopy's detector is the real one; this package starts the mock.
                 "detector": "false" if mock else detector,
+                "detector_params": LaunchConfiguration("detector_params"),
                 "describe": LaunchConfiguration("describe"),
                 # canopy's own view has no panel for the chest camera; this package opens one
                 # that does.
@@ -148,6 +149,12 @@ def generate_launch_description():
                 "world",
                 default_value="apartment",
                 description="The world whose worlds/<world>.truth.yaml names what the mock finds.",
+            ),
+            DeclareLaunchArgument(
+                "detector_params",
+                default_value="",
+                description="A YAML over canopy's detector.yaml for the real detector, such as "
+                "config/detector_yoloe.yaml.",
             ),
             DeclareLaunchArgument("describe", default_value="false"),
             DeclareLaunchArgument(
