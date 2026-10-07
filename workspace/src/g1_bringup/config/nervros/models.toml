@@ -1,8 +1,9 @@
 # Models for NervROS on the G1, all free: the local model talks, plans and looks; Gemini's free
 # tier outlines what `segment` is asked for, which the local model cannot, and advises when the
 # local model's plans for a request keep failing their checks. Without the local model, as when
-# SAM 3.1 holds the GPU, Gemma 4 and Flash-Lite on the same free tier talk and look instead.
-# Without the key file the Gemini models are left out: `segment` needs its service backend, and
+# SAM 3.1 holds the GPU, Flash-Lite and Gemma 4 on the same free tier talk and look instead, and
+# Nemotron 3 Super on OpenRouter's free tier talks when their quotas are spent. Without a key file
+# its provider's models are left out: without Gemini's, `segment` needs its service backend, and
 # there is no advice.
 
 [[provider]]
@@ -15,6 +16,15 @@ timeout_s = 120
 id = "gemini"
 kind = "gemini_interactions"
 key = { file = "~/.config/grove/gemini.env" }
+
+# free_only: NervROS refuses at start-up any model here that OpenRouter does not price at zero.
+[[provider]]
+id = "openrouter"
+kind = "openai_compat"
+base_url = "https://openrouter.ai/api/v1"
+key = { file = "~/.config/openrouter.key" }
+free_only = true
+headers = { "X-Title" = "NervROS" }
 
 [[model]]
 id = "qwen3.5-9b-local"
@@ -70,9 +80,23 @@ tools = true
 limits = { rpm = 10, rpd = 2000 }
 privacy = { trains = true }
 
+# Text only. Of OpenRouter's free models with tools on 7 Oct, the one that answered: its Gemma 4s
+# were rate-limited upstream and Inkling takes no plain API calls.
+[[model]]
+id = "nemotron-super-or"
+provider = "openrouter"
+model = "nvidia/nemotron-3-super-120b-a12b:free"
+tools = true
+limits = { rpm = 20, pool = "openrouter_free" }
+privacy = { trains = true }
+
+[pools]
+# A thousand free requests a day once the account holds credit.
+openrouter_free = { rpd = 1000 }
+
 [roles]
 # Gemma comes last: 16K input tokens a minute hold one or two agent calls.
-routine = ["qwen3.5-9b-local", "gemini-3.1-flash-lite", "gemma-4-26b"]
+routine = ["qwen3.5-9b-local", "gemini-3.1-flash-lite", "nemotron-super-or", "gemma-4-26b"]
 # Asked only after two failed plans for one request, so 3.8 Flash's few requests a day suffice.
 plan = ["gemini-3.8-flash", "gemini-3.5-flash-lite"]
 vision_check = ["qwen3.5-9b-local", "gemini-3.1-flash-lite", "gemma-4-26b"]

@@ -296,6 +296,9 @@ project uses free models only, and NervROS refuses a paid OpenRouter model at st
 Gemini's key in `~/.config/grove/gemini.env`, its free tier outlines for `segment`, points for
 `point` and advises the planner; without it those fall back or stay off, and the rest runs locally.
 When the local model is not running, as when SAM 3.1 holds the GPU (the two do not fit in 12 GB
-together), the same free tier talks and looks instead: Gemini 3.1 Flash-Lite, then Gemma 4. Both
-have tight limits: Flash-Lite takes 15 requests a minute, and Gemma 16K input tokens a minute,
-which one or two agent calls use up. A `home` privacy mode keeps those models out.
+together), free models elsewhere talk and look instead: Gemini 3.1 Flash-Lite, then Nemotron 3
+Super on OpenRouter's free tier (with `~/.config/openrouter.key`; NervROS refuses any model there
+that is not free), then Gemma 4. Flash-Lite takes 15 requests a minute and 250 a day here, and
+Gemma 16K input tokens a minute, which one or two agent calls use up. On the apartment suite this
+chain passed 39 of 44 cases, against 44 for the local model. A `home` privacy mode keeps these
+models out.
