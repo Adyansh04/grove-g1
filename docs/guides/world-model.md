@@ -126,17 +126,17 @@ yoloe`, which starts the offline VLM first, and launch with
 `detector_params:=/root/workspace/src/canopy/canopy_perception/config/detector_yoloe.yaml`.
 
 The acceptance test (`g1_bringup`'s `test_explore_apartment`) runs this way with
-`G1_EXPLORE_TEST_DETECTOR=semantic`, and `G1_EXPLORE_TEST_DETECTOR_PARAMS` for YOLOE's list. On
-the same day:
+`G1_EXPLORE_TEST_DETECTOR=semantic`, and `G1_EXPLORE_TEST_DETECTOR_PARAMS` for YOLOE's list:
 
 | Detector | Objects found | Not in the flat | Boxes (median IoU) | Time |
 |---|---|---|---|---|
-| SAM 3.1, 30 words (two runs) | 42 and 43 of 46 | 5 and 3 | 0.72 | 31-33 min |
+| SAM 3.1, 34 words (two runs) | 40 and 43 of 46 | 4 and 3 | 0.72 and 0.68 | 31 min |
 | YOLOE-26, 128 words | 39 of 46 | 22 | 0.67 | 34 min |
 
-Three of SAM 3.1's four misses are names: both bookshelves came back as shelving units and the
-wardrobe as a cabinet. YOLOE confuses furniture of one material (desk, cabinet, TV stand) and misses mugs and
-bowls on tables. A run makes 100 to 250 describe calls; Gemini's free tier covers several a day.
+SAM 3.1's misses are mostly names: the wardrobe came back as a cabinet and a crate as a cardboard
+box, and an object seen only once is dropped unconfirmed. YOLOE confuses furniture of one material
+(desk, cabinet, TV stand) and misses mugs and bowls on tables. A run makes 100 to 250 describe
+calls; Gemini's free tier covers several a day.
 
 ## What the camera cannot see
 
