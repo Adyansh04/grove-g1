@@ -2,7 +2,8 @@
 # grounding:=true.
 g1_instruction_grounder:
   ros__parameters:
-    # The detector's host vision server, which answers `ground` only when started with --vlm.
+    # The host vision server (./scripts/serve.sh vision), which answers `ground` only when started
+    # with --vlm; the detector itself asks canopy's server on 5561.
     server_address: "tcp://127.0.0.1:5560"
 
     # A VLM answer takes seconds; this is what a stalled server costs before the caller hears.

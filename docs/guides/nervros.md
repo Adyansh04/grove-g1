@@ -32,14 +32,16 @@ things are from the start. canopy writes into its world, so the demo gives it a 
 map. The robot localizes on that map's own grid, which the saved world needs to resume.
 
 In the container: the apartment with AMCL and Nav2, canopy on the copy with the mock detector, and
-the executor.
+the executor. The demo runs the mock, which needs no GPU: SAM 3.1 (5.6 GB, 8.5 GB while mapping)
+and the local model (about 7 GB) do not fit beside the simulator on a 12 GB GPU, and with SAM 3.1
+the chat moves to free cloud models (see Models).
 
 ```bash
 ros2 launch g1_bringup bringup.launch.py mode:=localization nav:=true world:=apartment \
   map:=/root/data/worlds/nervros-apartment/map.yaml headless:=true rviz:=false \
   arms_at_sides:=true cameras:=head,chest
 ros2 launch g1_bringup world_model.launch.py world_dir:=/root/data/worlds/nervros-apartment \
-  rviz:=false detector:=mock cameras:=head,chest
+  rviz:=false detector:=mock cameras:=head,chest segmenter:=true
 ros2 launch g1_orchestration nervros_executor.launch.py hands_empty_on_attach:=true
 ```
 
@@ -72,9 +74,11 @@ Things to ask:
   things no detector marks, such as the floor or a wall, and shows it cut out of the frame, or
   tinted over it if you ask for an overlay. By default Gemini's free tier outlines it: 3.8 Flash in
   5 to 30 s, up to 10 times a day, then Flash-Lite in about 2 s, coarser. The local server gives
-  pixel masks from Grounding DINO and SAM 2.1 in about a second (`./scripts/serve.sh vision`, and
-  "segment the floor with the local server"), but it does not fit on the GPU beside the local chat
-  model: use it with a cloud chat model, or with none from the command line, where
+  pixel masks from SAM 3.1 in about half a second (`./scripts/serve.sh canopy --detector sam3.1
+  --embedder none --describer none`, and "segment the floor with the local server"): on the
+  apartment's renders its floor masks matched the truth at IoU 0.95, Flash-Lite's outlines at 0.80.
+  It does not fit on the GPU beside the local chat model: use it with a cloud chat model, or with
+  none from the command line, where
   `./scripts/demos/nervros.sh --print chat`'s last command with `segment "the floor" --backend
   service --out floor.jpg` in place of `chat` segments once. Without `~/.config/grove/gemini.env`
   (the bare key) only the local server segments.
@@ -184,13 +188,14 @@ reads yours when it next looks. canopy saves the
 world itself every minute while its detector runs, so a save may first replay the edits over
 canopy's newer save; that is automatic.
 
-- "Bring the small white mug from the dining table to the tray on the office desk." `app` runs the
+- "Bring the small red mug from the dining table to the tray on the office desk." `app` runs the
   arm stack too: MoveIt, the manipulation skills and a mock detector that knows the mug and the
   tray by their names in the scene, `mug_4` and `tray_1`. The agent walks to `dining_table_side`,
   picks the mug with the left hand, carries it to `office_desk_tray` and sets it in the tray: in
   the test run, 177 s. The world model's ids for the two do not reach that detector, so the
   executor accepts only these names in a pick or a place (`arg_choices`), and a plan that names
-  another comes back with the names it takes.
+  another comes back with the names it takes. It pins their phrases too, "red mug" and "wooden
+  tray", which a real detector finds them by.
 
 ## Exploring: watching the map fill in
 
@@ -292,3 +297,11 @@ The app starts with the local model. NervROS can use other providers, set in its
 project uses free models only, and NervROS refuses a paid OpenRouter model at start-up. With
 Gemini's key in `~/.config/grove/gemini.env`, its free tier outlines for `segment`, points for
 `point` and advises the planner; without it those fall back or stay off, and the rest runs locally.
+When the local model is not running, as when SAM 3.1 holds the GPU (the two do not fit in 12 GB
+together), free models elsewhere talk and look instead: Gemini 3.5 and 3.1 Flash-Lite, then
+Nemotron 3 Super on OpenRouter's free tier (with `~/.config/openrouter.key`; NervROS refuses any
+model there that is not free), then Gemma 4. Each Flash-Lite takes 10 requests a minute and 250 a
+day here, and Gemma 16K input tokens a minute, which one or two agent calls use up; when every model
+is at its limit for the minute, a turn waits for the first to free up. On the apartment suite this
+chain passed 42 of 44 cases, as the local model does in most runs. A `home` privacy mode keeps
+these models out.

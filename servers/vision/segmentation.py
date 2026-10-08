@@ -1,4 +1,4 @@
-"""The Grounded SAM 2 and SAM 3 backends, behind one reply format."""
+"""The Grounded SAM 2 backend, and none for a server that only grounds instructions."""
 
 import torch
 
@@ -6,7 +6,6 @@ from .masks import drop_cross_phrase_duplicates, roi_and_crop
 
 DEFAULT_DETECTOR = "IDEA-Research/grounding-dino-base"
 DEFAULT_SEGMENTER = "facebook/sam2.1-hiera-small"
-DEFAULT_SAM3 = "facebook/sam3"
 
 
 class GroundedSam2Backend:
@@ -89,39 +88,13 @@ class GroundedSam2Backend:
         return instances
 
 
-class Sam3Backend:
-    """One model from text to instance masks. The weights are gated on Hugging Face."""
+class NoBackend:
+    """For a server kept only to ground instructions: SAM 3.1 segments in canopy's server."""
 
-    name = "sam3"
-
-    def __init__(self, device, dtype, model_id=DEFAULT_SAM3):
-        from transformers import Sam3Model, Sam3Processor
-
-        self._device = device
-        self._processor = Sam3Processor.from_pretrained(model_id)
-        self._model = Sam3Model.from_pretrained(model_id, dtype=dtype).to(device).eval()
+    name = "none"
 
     def segment(self, image, phrases, box_threshold, text_threshold):
-        del text_threshold  # one calibrated score, so the second threshold has nothing to do
-        instances = []
-        for phrase in phrases:
-            inputs = self._processor(images=image, text=phrase, return_tensors="pt").to(
-                self._device
-            )
-            with torch.inference_mode():
-                outputs = self._model(**inputs)
-            results = self._processor.post_process_instance_segmentation(
-                outputs,
-                threshold=box_threshold,
-                mask_threshold=0.5,
-                target_sizes=[image.shape[:2]],
-            )[0]
-            masks = results["masks"].cpu().numpy().astype(bool)
-            scores = results["scores"].float().cpu().numpy().tolist()
-            for mask, score in zip(masks, scores, strict=True):
-                cropped = roi_and_crop(mask)
-                if cropped is None:
-                    continue
-                roi, data = cropped
-                instances.append({"label": phrase, "score": float(score), "roi": roi, "mask": data})
-        return instances
+        raise ValueError(
+            "this server segments nothing (--backend none); "
+            "canopy's semantic server answers segment on 5561"
+        )

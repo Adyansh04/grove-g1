@@ -409,6 +409,9 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
         fail(Pick::Feedback::PHASE_PREGRASP, "the hand would not open to pinch_ready");
         return;
     }
+    // The walk leaves voxels where the arm's own links were, and a start state inside them
+    // fails every plan before it is searched: the map is rebuilt from where the arm is now.
+    clearOctomap();
     if (!moveTo(*arm_group, pregrasp_goal, arm.grasp_frame, "pregrasp"))
     {
         // Where, because the cause is usually where the base stopped.

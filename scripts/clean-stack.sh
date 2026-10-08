@@ -29,9 +29,10 @@ if [ ! -d /root/workspace ]; then
 fi
 
 # NAMED is the stack's own binaries. ANY_ROS catches anything else running from a ROS install or
-# with --ros-args, including composed nodes such as Nav2's, which never appear by name.
+# with --ros-args, including composed nodes such as Nav2's, which never appear by name, and ros2
+# CLI calls: an echo still waiting for a message keeps its hidden node and topic on the graph.
 NAMED='unitree_mujoco|ros2_control_node|move_group|g1_manipulation|g1_object_pose|g1_sensor_relay|g1_base_approach|g1_odometry|robot_state_publisher|rviz2|controller_manager|spawner|Xvfb|bt_executor|slam_toolbox|amcl|map_server|planner_server|controller_server|behavior_server|bt_navigator|lifecycle_manager|pointcloud_to_laserscan|planning_scene|transform_listener|activate_arm|deactivate_arm|nav_soak'
-ANY_ROS='component_container|rclcpp_components|--ros-args|/opt/ros/[a-z]+/lib/|ros2 run |ros2 launch |ros2 daemon'
+ANY_ROS='component_container|rclcpp_components|--ros-args|/opt/ros/[a-z]+/lib/|ros2 run |ros2 launch |ros2 daemon|bin/ros2 (topic|service|action|param|lifecycle|control|bag|node) '
 
 protected=" $$ $PPID "
 walk=$PPID

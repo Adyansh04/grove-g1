@@ -1,6 +1,9 @@
 # The object-pose source, loaded by g1_manipulation/launch/manipulation.launch.py.
 g1_object_pose_source:
   ros__parameters:
+    # Configures and activates itself on start, with no lifecycle manager.
+    autostart: true
+
     # object_source and publish_markers are launch arguments only: a node-named key here would
     # beat the launch override and pin them.
 

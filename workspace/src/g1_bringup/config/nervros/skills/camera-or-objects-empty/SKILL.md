@@ -15,10 +15,11 @@ dropped, or the detector is asked about too much to answer in time.
    were killed with `kill -9`. The operator stops everything, clears `/dev/shm` in the container
    (`rm -f /dev/shm/*`) and starts again. You cannot do this yourself.
 3. If the camera is fine but the objects list stays empty, call `log_tail` for `g1_detector`.
-   "The newest camera frame is N s old; not asking about it" on a loop means the detector is asked
-   for too many phrases: each costs about 0.25 s, and the answer must come within 1 s. Ask for
-   fewer things at a time, such as `look` with one `question`, or tell the operator to narrow the
-   detector's phrase list.
+   "The newest camera frame is N s old; not asking about it" on a loop means the detector's
+   answers come too late: SAM 3.1 takes about 0.45 s a frame and 40 ms a phrase, shared with the
+   world model's mapping, and a frame older than 2.5 s is not asked about. Ask for fewer things at
+   a time, such as `look` with one `question`, or tell the operator to narrow the detector's
+   phrase list.
 4. Otherwise, check where the robot is (the `lost-on-the-map` skill): an empty list often means
    the robot faces the wrong way.
 

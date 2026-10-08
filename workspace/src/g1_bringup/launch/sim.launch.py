@@ -17,14 +17,11 @@ from launch.actions import (
     RegisterEventHandler,
     TimerAction,
 )
-from launch.event_handlers import OnProcessExit, OnProcessStart, OnShutdown
-from launch.events import Shutdown, matches_action
+from launch.event_handlers import OnProcessExit, OnShutdown
+from launch.events import Shutdown
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import LifecycleNode, Node
-from launch_ros.event_handlers import OnStateTransition
-from launch_ros.events.lifecycle import ChangeState
-from lifecycle_msgs.msg import Transition
 
 BRINGUP_SHARE = get_package_share_directory("g1_bringup")
 STATE_SHARE = get_package_share_directory("g1_state_estimation")
@@ -250,32 +247,6 @@ def _sensor_nodes(sim_env, want_rviz, world, cameras):
     return actions
 
 
-def _bring_up(node):
-    """Configure on start, activate once inactive."""
-
-    def _transition(transition_id):
-        return EmitEvent(
-            event=ChangeState(
-                lifecycle_node_matcher=matches_action(node), transition_id=transition_id
-            )
-        )
-
-    return [
-        RegisterEventHandler(
-            OnProcessStart(
-                target_action=node, on_start=[_transition(Transition.TRANSITION_CONFIGURE)]
-            )
-        ),
-        RegisterEventHandler(
-            OnStateTransition(
-                target_lifecycle_node=node,
-                goal_state="inactive",
-                entities=[_transition(Transition.TRANSITION_ACTIVATE)],
-            )
-        ),
-    ]
-
-
 def _odometry_actions(odometry, sim_start_delay_s):
     """Exactly one branch runs: two writers on odom -> base_footprint is what `odometry` exists
     to prevent."""
@@ -303,7 +274,7 @@ def _odometry_actions(odometry, sim_start_delay_s):
         parameters=[os.path.join(STATE_SHARE, "config", "g1_odometry_publisher_converged.yaml")],
         remappings=[("~/base_state", "/g1_sensor_relay/base_state")],
     )
-    return [node] + _bring_up(node)
+    return [node]
 
 
 # --- simulator ------------------------------------------------------------------------------

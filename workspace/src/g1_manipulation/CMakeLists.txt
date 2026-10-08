@@ -8,6 +8,7 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/g1_common.cmake)
 find_package(ament_cmake REQUIRED)
 find_package(g1_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(lifecycle_msgs REQUIRED)
 find_package(moveit_core REQUIRED)
 find_package(moveit_msgs REQUIRED)
 find_package(moveit_ros_planning_interface REQUIRED)
@@ -87,7 +88,7 @@ target_link_libraries(g1_manipulation_server_node PUBLIC
 
 add_executable(g1_object_pose_source src/g1_object_pose_source_main.cpp)
 g1_target_defaults(g1_object_pose_source)
-target_link_libraries(g1_object_pose_source PUBLIC g1_object_pose_source_node)
+target_link_libraries(g1_object_pose_source PUBLIC g1_object_pose_source_node ${lifecycle_msgs_TARGETS})
 
 add_executable(g1_manipulation_server src/g1_manipulation_server_main.cpp)
 g1_target_defaults(g1_manipulation_server)

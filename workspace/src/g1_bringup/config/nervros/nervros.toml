@@ -26,15 +26,20 @@ interfaces = [
 start_armed = false
 autonomy = "supervised"
 
+# canopy's detector reads the world model's still frames, and SAM 3.1 marks one up to its 8 s
+# max_image_age_s plus a few seconds of inference after it was taken.
 [look]
 name = "chest"
 image = "/chest_camera/color/image_raw"
 detections = { topic = "/detector_chest/instance_masks", type = "canopy_msgs/msg/InstanceMaskArray" }
+detection_image = "/canopy/chest/still_image"
+max_age = "12s"
 about = "The chest camera is about 1 m up and points 20 degrees down: it sees the floor from about 1 m out to the far wall, and walls, furniture and shelves up to about 1.5 m high, not the floor at the robot's feet or anything higher."
 
 [look.cameras.head]
 image = "/camera/color/image_raw"
 detections = { topic = "/detector_head/instance_masks", type = "canopy_msgs/msg/InstanceMaskArray" }
+detection_image = "/canopy/head/still_image"
 about = "The head camera is about 1.2 m up and points 48 degrees down: it sees the floor from about 0.3 m to 3.6 m ahead, the robot's hands and what lies on low furniture, nothing above its own height."
 
 # canopy's editor on the saved world (nervros.sh starts it): world edits by the agent and by hand,
@@ -44,7 +49,8 @@ url = "http://127.0.0.1:8765"
 reload = "/canopy/reload"
 
 # Masks by a text prompt. The model backend asks Gemini's free tier (models.toml's segment role);
-# the service is canopy's segmenter, which needs ./scripts/serve.sh vision and so a free GPU.
+# the service is canopy's segmenter, which needs SAM 3.1 in canopy's server
+# (./scripts/serve.sh canopy) and so a free GPU.
 [segment]
 backend = "model"
 service = "/segmenter/segment"

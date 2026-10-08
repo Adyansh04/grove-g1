@@ -31,7 +31,8 @@ ros2 run g1_orchestration g1_bt_executor --ros-args \
 ```
 
 `detector:=mock` starts a mock detector per camera, which cuts masks from simulator ground truth,
-so a run scores the mapping rather than a detector on renders. It looks for every label in
+so a run scores the mapping rather than a detector on renders, and needs no GPU or model
+server. It looks for every label in
 `g1_bringup/worlds/apartment.truth.yaml`, each matching every numbered body of that class: "chair"
 finds `chair_1` to `chair_5`, while `armchair_1` is an armchair. `arms_at_sides:=true` hangs the
 arms beside the thighs: at zero the forearms point forward into both cameras' views, and a real
@@ -102,27 +103,41 @@ arrives:
 
 ## With real models
 
-The host semantic server serves detection (YOLOE-26), image embeddings (SigLIP 2) and object and
-room descriptions (Gemini on its free tier, falling back to Qwen3.5-4B in llama.cpp):
+The host semantic server serves detection (SAM 3.1), image embeddings (SigLIP 2) and object and
+room descriptions (Gemini on its free tier):
 
 ```bash
 ./workspace/src/canopy/servers/setup.sh   # once
-./scripts/serve.sh canopy                 # the offline VLM on 127.0.0.1:8080, then the server
+./scripts/serve.sh canopy --describer gemini
 ```
 
-Gemini needs a free API key in `~/.config/canopy/gemini.env`. The free tier limits each model
-separately, so the server spreads the calls over several, each under its own caps (canopy's
-`servers/README.md` lists them). Then launch the world
-model with `detector:=true describe:=true` in place of the mock: a detector per camera asks the
-server, each object gets a name and a caption, and a room whose objects do not settle its type is
-typed from the frames the robot took standing in it.
+SAM 3.1's weights are gated: request access at https://huggingface.co/facebook/sam3.1 and sign in
+with `hf auth login` before the setup. Gemini needs a free API key in
+`~/.config/canopy/gemini.env`. The free tier limits each model separately, so the server spreads
+the calls over several, each under its own caps (canopy's `servers/README.md` lists them). Then
+launch the world model with `detector:=true describe:=true` in place of the mock: a detector per
+camera asks the server about the frames the robot took standing still, each object gets a name and
+a caption, and a room whose objects do not settle its type is typed from those frames.
+
+SAM 3.1 and SigLIP 2 use about 8.5 GB of VRAM while mapping, which leaves no room on a 12 GB GPU
+for the offline describer (Qwen3.5-4B in llama.cpp, about 4 GB) beside the simulator: hence
+`--describer gemini`, and past Gemini's daily limits an object keeps its detector's word. YOLOE-26
+needs about 1.7 GB and leaves room for it: serve with `./scripts/serve.sh canopy --detector
+yoloe`, which starts the offline VLM first, and launch with
+`detector_params:=/root/workspace/src/canopy/canopy_perception/config/detector_yoloe.yaml`.
 
 The acceptance test (`g1_bringup`'s `test_explore_apartment`) runs this way with
-`G1_EXPLORE_TEST_DETECTOR=semantic`. On the apartment
-renders it finds about three quarters of the objects against the mock's all: YOLOE confuses
-furniture of one material (desk, cabinet, TV stand) and misses mugs and bowls on tables, while the
-describer usually names them right. A run makes 100 to 250 describe calls; Gemini's free tier
-covers several runs a day before the local VLM takes over.
+`G1_EXPLORE_TEST_DETECTOR=semantic`, and `G1_EXPLORE_TEST_DETECTOR_PARAMS` for YOLOE's list:
+
+| Detector | Objects found | Not in the flat | Boxes (median IoU) | Time |
+|---|---|---|---|---|
+| SAM 3.1, 34 words (two runs) | 40 and 43 of 46 | 4 and 3 | 0.72 and 0.68 | 31 min |
+| YOLOE-26, 128 words | 39 of 46 | 22 | 0.67 | 34 min |
+
+SAM 3.1's misses are mostly names: the wardrobe came back as a cabinet and a crate as a cardboard
+box, and an object seen only once is dropped unconfirmed. YOLOE confuses furniture of one material
+(desk, cabinet, TV stand) and misses mugs and bowls on tables. A run makes 100 to 250 describe
+calls; Gemini's free tier covers several a day.
 
 ## What the camera cannot see
 

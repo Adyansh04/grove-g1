@@ -2,6 +2,9 @@
 # pelvis state, which the robot has no equivalent of.
 g1_odometry_publisher:
   ros__parameters:
+    # Configures and activates itself on start, with no lifecycle manager.
+    autostart: true
+
     # From g1_sensor_relay's ~/base_state, so it needs sensors:=true.
     odometry_source: "ground_truth"
 

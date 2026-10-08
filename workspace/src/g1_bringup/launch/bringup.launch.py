@@ -387,7 +387,8 @@ def generate_launch_description():
                 default_value="mock",
                 choices=["mock", "vision"],
                 description="Which detector perception runs: 'mock' cuts masks from simulator "
-                "ground truth and needs no GPU, 'vision' asks the host vision server.",
+                "ground truth and needs no GPU, 'vision' asks canopy's semantic server on the "
+                "host, run with SAM 3.1.",
             ),
             DeclareLaunchArgument(
                 "grasp_source",

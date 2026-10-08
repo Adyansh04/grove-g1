@@ -440,6 +440,12 @@ private:
     void removeFromScene(const std::string& object_id);
 
     /**
+     * @brief Drops the octomap and waits octomap_rebuild_wait_s for the sensor to put the visible
+     * surfaces back. Any allowed-collision entry for the octomap goes with it.
+     */
+    void clearOctomap();
+
+    /**
      * @brief Drops the octomap, then exempts the arm's hand from @p touchables.
      *
      * The clear deletes the octomap's allowed-collision entries with it, so the exemption has to

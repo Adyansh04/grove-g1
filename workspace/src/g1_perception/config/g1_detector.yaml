@@ -1,9 +1,10 @@
 # The detector client, loaded by g1_perception/launch/perception.launch.py with detector:=vision.
 g1_detector:
   ros__parameters:
-    # The vision server runs on the host, since it needs torch and CUDA; compose is host-networked.
-    # Start it with ./scripts/serve.sh vision.
-    server_address: "tcp://127.0.0.1:5560"
+    # canopy's semantic server runs on the host, since it needs torch and CUDA; compose is
+    # host-networked. Start it with SAM 3.1: ./scripts/serve.sh canopy --detector sam3.1. 5560 is
+    # the vision server (./scripts/serve.sh vision), which keeps Grounded SAM 2 as the alternative.
+    server_address: "tcp://127.0.0.1:5561"
 
     # Well past the slowest inference: this is what a stalled server costs before the node
     # rebuilds its socket.
@@ -18,8 +19,8 @@ g1_detector:
     # detector share one GPU and frames arrive 1.4 to 1.9 s old; a moving scene wants less.
     max_image_age_s: 2.5
 
-    # Grounding DINO scores every object against every phrase, so this decides how many
-    # runners-up become tracks of their own. Widen the wording before lowering it. SAM 3 uses
-    # only box_threshold.
+    # SAM 3.1's score is its match times the phrase's presence: on the simulator's close-ups of mugs,
+    # bowls and trays, 0.40 was the lowest that named nothing else (recall 0.83). Grounded SAM 2
+    # also reads text_threshold.
     box_threshold: 0.40
     text_threshold: 0.25

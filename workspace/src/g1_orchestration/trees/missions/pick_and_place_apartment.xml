@@ -12,7 +12,7 @@
           <SubTree ID="GoToPose" name="s2_GoToPose" station="-0.85;2.84;3.1416"/>
         </Timeout>
         <Timeout msec="420000">
-          <SubTree ID="PickObject" name="s3_PickObject" object_id="mug_4" phrase="small white mug" arm="left"/>
+          <SubTree ID="PickObject" name="s3_PickObject" object_id="mug_4" phrase="red mug" arm="left"/>
         </Timeout>
         <Timeout msec="360000">
           <SubTree ID="GoToPose" name="s4_GoToPose" station="5.65;-4.40;-1.5708"/>

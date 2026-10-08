@@ -1,14 +1,14 @@
 # Open-vocabulary perception
 
-Name an object in plain text and get its 3D pose, with no dataset and no training. Two halves: a
-vision server on the host turns an RGB frame plus a list of noun phrases into one mask per object,
-and `g1_perception` in the container lifts those masks into the object poses the manipulation
-skills consume. The same server can turn an instruction into phrases, and a second host server
+Name an object in plain text and get its 3D pose, with no dataset and no training. Two halves:
+SAM 3.1 on the host turns an RGB frame plus a list of noun phrases into one mask per object, and
+`g1_perception` in the container lifts those masks into the object poses the manipulation skills
+consume. A vision-language model can turn an instruction into phrases, and a second host server
 proposes grasps.
 
-`./scripts/demos/open-vocabulary-grasping.sh <mock|vision|graspgen|grounding>` opens a section's commands at once, in split panes of
-your terminal, after tearing down any stack left running. `stop` ends it, and `--print` lists
-the commands instead.
+`./scripts/demos/open-vocabulary-grasping.sh <mock|vision|gsam2|graspgen|grounding>` opens a
+section's commands at once, in split panes of your terminal, after tearing down any stack left
+running. `stop` ends it, and `--print` lists the commands instead.
 
 Host commands run from the repository root. `ros2` commands run in a container shell, opened with
 `./scripts/manage.sh exec`, as in the other guides.
@@ -28,8 +28,12 @@ With the real models, once the server below is running:
 ```bash
 ros2 launch g1_bringup bringup.launch.py world:=tabletop pin_pelvis:=true \
   odometry:=ground_truth moveit:=true manipulation:=true perception:=true detector:=vision \
-  phrases:="red block,white cup"
+  phrases:="red block,white cylinder"
 ```
+
+Name things as they look: SAM 3.1 reads the words. The tabletop's `white_cup` is a plain white
+cylinder, so "white cup" finds nothing, where Grounded SAM 2 would take it anyway; the same goes
+for colours ("red mug" is never a yellow one).
 
 `perception:=true` makes the object-pose source take measured poses instead of the simulator's,
 and raises how old a pose the skills accept from 1 s to 8 s, because the detector answers in
@@ -55,34 +59,29 @@ phrase is in view, so it never jumps between objects.
 The switch behind all four is `visualization`, which follows `rviz`. `visualization:=false` keeps
 them off with RViz open, and then none of their nodes or publishers exist.
 
-## The vision server
+## The detector server
 
-On the host. It needs `uv`:
-
-```bash
-./scripts/setup-vision.sh
-```
-
-This creates a virtualenv at `~/ref/grove-vision/.venv`, sharing the torch wheel cache with
-`scripts/setup-groot.sh`. The weights download on first run: about 900 MB for Grounding DINO base
-and 180 MB for SAM 2.1 small.
+SAM 3.1 runs in canopy's semantic server, which also serves the world model's detector. On the
+host, with `uv`; its checkpoint is gated, so first request access at
+https://huggingface.co/facebook/sam3.1 and sign in with `hf auth login`:
 
 ```bash
-./scripts/serve.sh vision
+workspace/src/canopy/servers/setup.sh
+./scripts/serve.sh canopy --detector sam3.1 --embedder none --describer none
 ```
 
-Compose is host-networked, so the container reaches it at `tcp://127.0.0.1:5560`. The default
-backend needs about 2.4 GiB of VRAM on top of the simulator's.
-
-To check it against saved frames without binding a socket:
+Compose is host-networked, so the container reaches it at `tcp://127.0.0.1:5561`. Without the
+embedder and describers it needs about 5.6 GB of VRAM on top of the simulator's, and answers in
+about 0.45 s for the frame plus 0.04 s for each phrase on a laptop RTX 4080: ask only for what the
+task needs. To check it against saved frames without binding a socket:
 
 ```bash
-./scripts/serve.sh vision --self-test frame.png --phrases "red block,green cylinder"
+~/.local/share/canopy/.venv/bin/python workspace/src/canopy/servers/semantic_server.py \
+  --detector sam3.1 --embedder none --describer none \
+  --self-test frame.png --phrases "red block,green cylinder"
 ```
 
-The self-test prints each instance's score, region of interest and pixel count, then the peak
-VRAM, and exits non-zero when a phrase found nothing. Run it on frames from a new scene before
-trusting the detector there.
+Run it on frames from a new scene before trusting the detector there.
 
 ## The protocol
 
@@ -93,7 +92,9 @@ GR00T policy server uses. A request is `{"endpoint": <name>, "data": {...}}`.
 |---|---|---|
 | `ping` | nothing | `status`, `backend`, `device` |
 | `segment` | `image` uint8 (H, W, 3), `phrases`, optional `box_threshold` and `text_threshold` | `model`, `elapsed_ms`, `instances` |
-| `ground` | `image`, `instruction`; needs `--vlm` | `phrases`, `target`, `points`, `model`, `elapsed_ms` |
+| `ground` (vision server only) | `image`, `instruction`; needs `--vlm` | `phrases`, `target`, `points`, `model`, `elapsed_ms` |
+
+Both servers answer `segment` in this shape, so either can stand behind the detector.
 
 Each instance carries `label` (the phrase it was asked for, not the model's own wording), `score`,
 `roi` as `[x, y, width, height]`, and `mask`, a uint8 crop of that rectangle holding 0 or 255.
@@ -103,15 +104,26 @@ socket, so the server answers even when it cannot do the work.
 
 ## Swapping the model
 
-`--backend sam3` runs SAM 3 instead, one model from text straight to masks. Its weights are gated:
-request access at https://huggingface.co/facebook/sam3, then sign in with
+Every server answers `segment` with the same instance masks, so nothing in the ROS workspace
+changes with the model. Grounding DINO with SAM 2.1 runs in grove-g1's vision server
+(`./scripts/setup-vision.sh`, then `./scripts/serve.sh vision`, on 5560); the `gsam2` variant runs
+it on 5561, where the detector already looks. `./scripts/serve.sh canopy --detector yoloe` serves
+YOLOE-26 there instead.
 
-```bash
-~/ref/grove-vision/.venv/bin/hf auth login
-```
+How they compare on 88 close-ups of the apartment's small objects, rendered from the G1's cameras,
+and live in the tabletop world:
 
-Nothing in the ROS workspace changes with the backend; the instance-mask message is the same
-either way.
+| | SAM 3.1 | Grounding DINO + SAM 2.1 | YOLOE-26 |
+|---|---|---|---|
+| Found by name: precision, recall (threshold) | 1.00, 0.83 (0.4) | 0.93, 0.88 (0.4) | 1.00, 0.66 (0.3) |
+| Mask IoU | 0.98 | 0.97 | 0.88 |
+| "red mug" asked of a yellow one | refused, every time | matched, every time | matched 3 % |
+| Time a request, GPU memory | 0.53 s, 5.6 GB | 0.74 s, 3.2 GB | 23 ms, 1 GB |
+| Live: detections a second, pose error | 0.8-1.0, 2.2 mm | 0.4, 2.2 mm | |
+
+SAM 3.1 is the default for its masks and for reading a description; Grounded SAM 2 is as good on a
+bare name at about half the memory. YOLOE wants `box_threshold` 0.3 and misses a third of the
+objects close up, but it is fast enough to run on every frame.
 
 ## Grasps
 
@@ -175,14 +187,16 @@ different gripper.
 ## Instructions
 
 A detector takes a noun phrase. Turning "pick up the mug to the left of the bowl" into one is a
-different job, and a vision-language model does it. Start the server with one:
+different job, and a vision-language model does it, in the vision server. Beside SAM 3.1 it needs
+no segmentation model of its own, and in bfloat16 it takes about 4.5 GB, where float32's 8.5 GB
+and SAM 3.1's 5.6 GB do not fit on a 12 GB GPU:
 
 ```bash
-./scripts/serve.sh vision --vlm Qwen/Qwen3-VL-2B-Instruct
+./scripts/serve.sh vision --backend none --vlm Qwen/Qwen3-VL-2B-Instruct --dtype bfloat16
 ```
 
-The model loads on the first grounding request rather than at startup, so segmentation is
-unaffected until something asks. Then run the grounder beside the detector:
+The model loads on the first grounding request rather than at startup. Then run the grounder
+beside the detector:
 
 ```bash
 ros2 launch g1_bringup bringup.launch.py world:=tabletop pin_pelvis:=true \
@@ -192,7 +206,7 @@ ros2 launch g1_bringup bringup.launch.py world:=tabletop pin_pelvis:=true \
 
 ```bash
 ros2 service call /ground_instruction g1_msgs/srv/GroundInstruction \
-  "{instruction: 'pick up the white cup next to the green cylinder'}"
+  "{instruction: 'pick up the red block next to the white cylinder'}"
 ```
 
 The answer holds the phrases, the one the instruction is about, and image points where the model

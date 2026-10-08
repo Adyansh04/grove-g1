@@ -45,7 +45,7 @@ MAP_NAME=$(take_arg name "mapped-$SIM_WORLD")
 SAVED=/root/data/worlds/$SAVED_NAME
 EMPTY=/root/data/worlds/nervros-explore
 # With the arm stack: the mock detector finds the mug and the tray by body name for the pick skills.
-ARMS="moveit:=true manipulation:=true perception:=true detector:=mock activate_arm:=true activate_arm_delay_s:=8.0 phrases:='mug_4=small white mug,tray_1=wooden tray'"
+ARMS="moveit:=true manipulation:=true perception:=true detector:=mock activate_arm:=true activate_arm_delay_s:=8.0 phrases:='mug_4=red mug,tray_1=wooden tray'"
 APARTMENT="ros2 launch g1_bringup bringup.launch.py mode:=localization nav:=true world:=$SIM_WORLD map:=$SAVED/map.yaml headless:=true rviz:=false cameras:=head,chest $ARMS$LAUNCH_ARGS"
 # Exploring needs no arms: at the sides, they stay out of both cameras' views.
 EXPLORING="ros2 launch g1_bringup bringup.launch.py mode:=localization nav:=true world:=$SIM_WORLD map:=$SAVED/map.yaml headless:=true rviz:=false arms_at_sides:=true cameras:=head,chest$LAUNCH_ARGS"
@@ -55,8 +55,9 @@ MAPPED=/root/data/worlds/$MAP_NAME
 CANOPY="ros2 launch g1_bringup world_model.launch.py rviz:=false detector:=mock cameras:=head,chest segmenter:=true world_dir:="
 # Both stacks take the arms themselves at start with empty hands, so the executor may trust them.
 EXECUTOR="wait_for_nav2 && ros2 launch g1_orchestration nervros_executor.launch.py hands_empty_on_attach:=true"
-# The mock detector knows the mug and the tray by body name only, so the plans may name only those.
-ARM_EXECUTOR="wait_for_nav2 && wait_for_arm && ros2 launch g1_orchestration nervros_executor.launch.py hands_empty_on_attach:=true arg_choices:='PickObject.object_id=mug_4;PlaceInto.container_id=tray_1'"
+# The mock detector knows the mug and the tray by body name only, so the plans may name only those;
+# their phrases are what a real detector finds them by, so the plans carry those too.
+ARM_EXECUTOR="wait_for_nav2 && wait_for_arm && ros2 launch g1_orchestration nervros_executor.launch.py hands_empty_on_attach:=true arg_choices:='PickObject.object_id=mug_4;PickObject.phrase=red mug;PlaceInto.container_id=tray_1;PlaceInto.phrase=wooden tray'"
 PROFILE="$ROOT/workspace/src/g1_bringup/config/nervros/nervros.toml"
 # The graph runs as root in the container: host shared memory would fail, so UDP only. The build
 # goes outside the colcon workspace, which would otherwise crawl its tens of gigabytes. The viewer
