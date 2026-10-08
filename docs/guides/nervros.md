@@ -301,5 +301,5 @@ Nemotron 3 Super on OpenRouter's free tier (with `~/.config/openrouter.key`; Ner
 model there that is not free), then Gemma 4. Each Flash-Lite takes 10 requests a minute and 250 a
 day here, and Gemma 16K input tokens a minute, which one or two agent calls use up; when every model
 is at its limit for the minute, a turn waits for the first to free up. On the apartment suite this
-chain passed 38 of 44 cases, against 42 to 44 for the local model: it walks to look where the map
-already answers more often. A `home` privacy mode keeps these models out.
+chain passed 42 of 44 cases, as the local model does in most runs. A `home` privacy mode keeps
+these models out.
