@@ -90,7 +90,8 @@ unseen or another one with the same phrase is seen too, so it never jumps betwee
 | `track_match_radius_m` | 0.08 | How far an object may move between detections and still be itself, when its phrase names more than one. |
 | `track_timeout_s` | 6.0 | How long an unseen track keeps its id and its alias. |
 
-`config/g1_detector.yaml` holds `server_address` (`tcp://127.0.0.1:5560`), `zmq_timeout_ms`
+`config/g1_detector.yaml` holds `server_address` (`tcp://127.0.0.1:5561`, canopy's SAM 3.1
+server), `zmq_timeout_ms`
 (20000), `detect_rate_hz` (1.0), `max_image_age_s` (2.5), `box_threshold` (0.40) and
 `text_threshold` (0.25). `phrases` is a launch argument rather than a file key, and
 `ros2 param set` changes it while the node runs. Both detectors re-read it every pass, and an

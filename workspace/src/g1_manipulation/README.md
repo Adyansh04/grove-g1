@@ -23,7 +23,7 @@ either. The arm and hands must be acquired before a goal executes; for a mission
 | Node | Role |
 |---|---|
 | `g1_manipulation_server` | The `pick`, `place` and `set_arm_posture` actions. One goal at a time across all three. Subscribes to `/objects` and `/joint_states`, reads TF, and calls `move_group` and its `/clear_octomap`, `/get_planning_scene` and `/apply_planning_scene` services. |
-| `g1_object_pose_source` | Lifecycle node that republishes object poses on `/objects` in `odom`, from the configured source. It transforms them from the detector's frame through TF rather than relabelling them, and forwards the capture stamp, so a skill can judge how old a pose is. `manipulation.launch.py` configures and activates it. |
+| `g1_object_pose_source` | Lifecycle node that republishes object poses on `/objects` in `odom`, from the configured source. It transforms them from the detector's frame through TF rather than relabelling them, and forwards the capture stamp, so a skill can judge how old a pose is. It configures and activates itself (`autostart`), so no launch event can leave it inactive. |
 
 ## Object poses
 

@@ -1,7 +1,8 @@
 """Runs a detector and the node that turns its masks into object poses.
 
-`mock` cuts masks from simulator ground truth and needs no GPU; `vision` asks the host vision
-server. Both publish the same mask topic, so the geometry node cannot tell them apart.
+`mock` cuts masks from simulator ground truth and needs no GPU; `vision` asks a host model
+server: canopy's, with SAM 3.1, by default. Both publish the same mask topic, so the geometry node
+cannot tell them apart.
 """
 
 import os
