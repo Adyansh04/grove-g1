@@ -188,10 +188,11 @@ different gripper.
 
 A detector takes a noun phrase. Turning "pick up the mug to the left of the bowl" into one is a
 different job, and a vision-language model does it, in the vision server. Beside SAM 3.1 it needs
-no segmentation model of its own:
+no segmentation model of its own, and in bfloat16 it takes about 4.5 GB, where float32's 8.5 GB
+and SAM 3.1's 5.6 GB do not fit on a 12 GB GPU:
 
 ```bash
-./scripts/serve.sh vision --backend none --vlm Qwen/Qwen3-VL-2B-Instruct
+./scripts/serve.sh vision --backend none --vlm Qwen/Qwen3-VL-2B-Instruct --dtype bfloat16
 ```
 
 The model loads on the first grounding request rather than at startup. Then run the grounder

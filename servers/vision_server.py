@@ -11,9 +11,10 @@ SAM 3.1, g1_detector's default, runs in canopy's semantic server (./scripts/serv
   none           No segmentation: only `ground`, beside canopy's SAM 3.1.
 
     ./scripts/serve.sh vision                 # --port 5560
-    ./scripts/serve.sh vision --backend none --vlm Qwen/Qwen3-VL-2B-Instruct
+    ./scripts/serve.sh vision --backend none --vlm Qwen/Qwen3-VL-2B-Instruct --dtype bfloat16
 
-With --vlm, a vision-language model is loaded on the first `ground` request. It turns an
+With --vlm, a vision-language model is loaded on the first `ground` request; in bfloat16 it fits
+beside SAM 3.1 on a 12 GB GPU. It turns an
 instruction such as "the mug left of the bowl" into noun phrases the detector can take.
 
 Run scripts/setup-vision.sh first.

@@ -47,7 +47,8 @@ case "$VARIANT" in
     grounding)
         container bringup "wait_for_port 'the semantic server' 5561 && wait_for_port 'the vision server' 5560 && $BRINGUP detector:=vision grounding:=true$LAUNCH_ARGS"
         host detector "$SAM31"
-        host grounder "./scripts/serve.sh vision --backend none --vlm Qwen/Qwen3-VL-2B-Instruct"
+        # In bfloat16, about 4.5 GB: in float32 (8.5 GB) the VLM and SAM 3.1 do not fit in 12 GB.
+        host grounder "./scripts/serve.sh vision --backend none --vlm Qwen/Qwen3-VL-2B-Instruct --dtype bfloat16"
         staged ground "wait_for_service /ground_instruction" "ros2 service call /ground_instruction g1_msgs/srv/GroundInstruction \"{instruction: 'pick up the red block next to the white cylinder'}\""
         staged objects "" "$OBJECTS"
         ;;
