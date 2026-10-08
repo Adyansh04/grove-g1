@@ -31,7 +31,8 @@ ros2 run g1_orchestration g1_bt_executor --ros-args \
 ```
 
 `detector:=mock` starts a mock detector per camera, which cuts masks from simulator ground truth,
-so a run scores the mapping rather than a detector on renders. It looks for every label in
+so a run scores the mapping rather than a detector on renders, and needs no GPU or model
+server. It looks for every label in
 `g1_bringup/worlds/apartment.truth.yaml`, each matching every numbered body of that class: "chair"
 finds `chair_1` to `chair_5`, while `armchair_1` is an armchair. `arms_at_sides:=true` hangs the
 arms beside the thighs: at zero the forearms point forward into both cameras' views, and a real

@@ -52,10 +52,8 @@ case "$server" in
         ;;
     canopy)
         require "$CANOPY_HOME/.venv/bin/python" workspace/src/canopy/servers/setup.sh
-        # The describer's fallback when Gemini refuses takes about 4 GB of VRAM: SAM 3.1 and the
-        # simulator leave a 12 GB GPU no room for it, so it starts beside YOLOE, or when a
-        # --describer list names openai. It runs as a container of its own, left up for the next
-        # run; one left up beside SAM 3.1 is stopped, since those 4 GB are SAM 3.1's.
+        # The offline describer's 4 GB fit beside YOLOE but not beside SAM 3.1 and the simulator: it
+        # starts with YOLOE or a --describer list naming openai; beside SAM 3.1 one left up stops.
         describers=""
         detector="sam3.1"
         previous=""

@@ -32,14 +32,16 @@ things are from the start. canopy writes into its world, so the demo gives it a 
 map. The robot localizes on that map's own grid, which the saved world needs to resume.
 
 In the container: the apartment with AMCL and Nav2, canopy on the copy with the mock detector, and
-the executor.
+the executor. The demo runs the mock, which needs no GPU: SAM 3.1 (5.6 GB, 8.5 GB while mapping)
+and the local model (about 7 GB) do not fit beside the simulator on a 12 GB GPU, and with SAM 3.1
+the chat moves to free cloud models (see Models).
 
 ```bash
 ros2 launch g1_bringup bringup.launch.py mode:=localization nav:=true world:=apartment \
   map:=/root/data/worlds/nervros-apartment/map.yaml headless:=true rviz:=false \
   arms_at_sides:=true cameras:=head,chest
 ros2 launch g1_bringup world_model.launch.py world_dir:=/root/data/worlds/nervros-apartment \
-  rviz:=false detector:=mock cameras:=head,chest
+  rviz:=false detector:=mock cameras:=head,chest segmenter:=true
 ros2 launch g1_orchestration nervros_executor.launch.py hands_empty_on_attach:=true
 ```
 
