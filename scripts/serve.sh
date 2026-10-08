@@ -5,8 +5,8 @@
 #   ./scripts/serve.sh vision [args]     Grounded SAM 2 masks and instruction grounding, on 5560
 #   ./scripts/serve.sh graspgen [args]   GraspGenX grasps for the Dex3-1, on 5556
 #   ./scripts/serve.sh canopy [args]     canopy's semantic server on 5561 (SAM 3.1, or YOLOE-26 with
-#                                        --detector yoloe), and the offline VLM when its
-#                                        describers include openai
+#                                        --detector yoloe), and the offline VLM with YOLOE or when
+#                                        a --describer list names openai
 #
 # The arguments go to the server after the defaults here, so they override them:
 #   ./scripts/serve.sh vision --vlm Qwen/Qwen3-VL-2B-Instruct
@@ -52,18 +52,24 @@ case "$server" in
         ;;
     canopy)
         require "$CANOPY_HOME/.venv/bin/python" workspace/src/canopy/servers/setup.sh
-        # The describer's fallback when Gemini refuses, about 4 GB of VRAM, so only when a
-        # --describer list names it (the default does). It runs as a container of its own and is
-        # left up for the next run; `start-vlm.sh stop` ends it.
-        describers="gemini,openai"
+        # The describer's fallback when Gemini refuses takes about 4 GB of VRAM: SAM 3.1 and the
+        # simulator leave a 12 GB GPU no room for it, so it starts beside YOLOE, or when a
+        # --describer list names openai. It runs as a container of its own, left up for the next
+        # run; one left up beside SAM 3.1 is stopped, since those 4 GB are SAM 3.1's.
+        describers=""
+        detector="sam3.1"
         previous=""
         for arg in "$@"; do
             [[ "$previous" == --describer ]] && describers="$arg"
             [[ "$arg" == --describer=* ]] && describers="${arg#*=}"
+            [[ "$previous" == --detector ]] && detector="$arg"
+            [[ "$arg" == --detector=* ]] && detector="${arg#*=}"
             previous="$arg"
         done
-        if [[ "$describers" == *openai* ]]; then
+        if [[ "$describers" == *openai* || ( -z "$describers" && "$detector" == yoloe* ) ]]; then
             "$CANOPY/servers/start-vlm.sh" start
+        elif [[ "$detector" == sam3.1 ]]; then
+            "$CANOPY/servers/start-vlm.sh" stop >/dev/null
         fi
         exec "$CANOPY_HOME/.venv/bin/python" "$CANOPY/servers/semantic_server.py" "$@"
         ;;
