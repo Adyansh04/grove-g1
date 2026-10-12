@@ -46,11 +46,11 @@ SAVED=/root/data/worlds/$SAVED_NAME
 EMPTY=/root/data/worlds/nervros-explore
 # With the arm stack: the mock detector finds the mug and the tray by body name for the pick skills.
 ARMS="moveit:=true manipulation:=true perception:=true detector:=mock activate_arm:=true activate_arm_delay_s:=8.0 phrases:='mug_4=red mug,tray_1=wooden tray'"
-APARTMENT="ros2 launch g1_bringup bringup.launch.py mode:=localization nav:=true world:=$SIM_WORLD map:=$SAVED/map.yaml headless:=true rviz:=false cameras:=head,chest $ARMS$LAUNCH_ARGS"
+APARTMENT="ros2 launch g1_bringup bringup.launch.py mode:=localization nav:=true keepout:=true world:=$SIM_WORLD map:=$SAVED/map.yaml headless:=true rviz:=false cameras:=head,chest $ARMS$LAUNCH_ARGS"
 # Exploring needs no arms: at the sides, they stay out of both cameras' views.
-EXPLORING="ros2 launch g1_bringup bringup.launch.py mode:=localization nav:=true world:=$SIM_WORLD map:=$SAVED/map.yaml headless:=true rviz:=false arms_at_sides:=true cameras:=head,chest$LAUNCH_ARGS"
+EXPLORING="ros2 launch g1_bringup bringup.launch.py mode:=localization nav:=true keepout:=true world:=$SIM_WORLD map:=$SAVED/map.yaml headless:=true rviz:=false arms_at_sides:=true cameras:=head,chest$LAUNCH_ARGS"
 # SLAM builds the map as the robot explores; canopy saves its floor plan with the world.
-MAPPING="ros2 launch g1_bringup bringup.launch.py mode:=mapping nav:=true world:=$SIM_WORLD headless:=true rviz:=false arms_at_sides:=true cameras:=head,chest$LAUNCH_ARGS"
+MAPPING="ros2 launch g1_bringup bringup.launch.py mode:=mapping nav:=true keepout:=true world:=$SIM_WORLD headless:=true rviz:=false arms_at_sides:=true cameras:=head,chest$LAUNCH_ARGS"
 MAPPED=/root/data/worlds/$MAP_NAME
 CANOPY="ros2 launch g1_bringup world_model.launch.py rviz:=false detector:=mock cameras:=head,chest segmenter:=true world_dir:="
 # Both stacks take the arms themselves at start with empty hands, so the executor may trust them.

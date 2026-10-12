@@ -156,5 +156,10 @@ action_send = ["*"]
 publish = ["*"]
 param_set = ["*:*"]
 
+# Keep-out zones, added in chat ("keep out of the kitchen"), also go to Nav2 as this mask, which
+# g1_navigation's keepout filters read with keepout:=true, so its own paths stay out of them.
+[geofence]
+mask = "/keepout_filter_mask"
+
 [models]
 file = "models.toml"

@@ -51,6 +51,13 @@ def _arguments():
         ),
         DeclareLaunchArgument("autostart", default_value="true"),
         DeclareLaunchArgument(
+            "keepout",
+            default_value="false",
+            description="Keep paths out of the zones on /keepout_filter_mask, the mask NervROS "
+            "publishes from its keep-out zones. Off by default: enabled with no mask, the "
+            "filters warn every 2 s.",
+        ),
+        DeclareLaunchArgument(
             "use_composition",
             default_value="false",
             description="Rejected if true: composed, the nested costmap parameters never arrive.",
@@ -97,6 +104,13 @@ def _servers():
                 + [("cmd_vel", "/cmd_vel_raw"), ("odom", "/g1_odometry_publisher/odom")],
             ),
             server("nav2_planner", "planner_server", "planner_server", [params], TF_REMAPPINGS),
+            server(
+                "nav2_map_server",
+                "costmap_filter_info_server",
+                "costmap_filter_info_server",
+                [params],
+                [],
+            ),
             server(
                 "nav2_behaviors",
                 "behavior_server",

@@ -27,7 +27,7 @@ flowchart TB
 | `scan.launch.py` | `pointcloud_to_laserscan`, flattening the LiDAR into the 2D scan SLAM and AMCL consume. |
 | `slam.launch.py` | `slam_toolbox` in online async mapping mode. |
 | `localization.launch.py` | `map_server` and AMCL against the committed map of `world`, or the one `map:=` names. |
-| `nav2.launch.py` | Planner, controller, behaviors, BT navigator, collision monitor, lifecycle manager and `g1_base_approach`. Included only with `nav:=true`. |
+| `nav2.launch.py` | Planner, controller, behaviors, BT navigator, collision monitor, the keepout filter's info server, lifecycle manager and `g1_base_approach`. Included only with `nav:=true`. |
 
 `g1_bringup`'s `bringup.launch.py` is the operator entry point. `nav_stack.launch.py` and
 `nav_sim.launch.py` default to `mode:=mapping` and also take `use_composition` and `container_name`,
@@ -35,6 +35,12 @@ which the bring-up entry point does not pass.
 
 `nav_stack.launch.py` stages no simulator. Both callers stage exactly one, and a second would put
 two writers on `rt/lowcmd`; `test_launch_threading` asserts it.
+
+`keepout:=true`, on any entry point, turns on the keepout filter in both costmaps. It reads
+`/keepout_filter_mask`, an `OccupancyGrid` on the map's grid with keep-out cells at 100, which
+NervROS publishes from its keep-out zones (`[geofence] mask` in
+`g1_bringup/config/nervros/nervros.toml`); `scripts/demos/nervros.sh` sets it. It is off by
+default because, enabled with no mask, the filters warn every 2 s.
 
 ## Running
 
