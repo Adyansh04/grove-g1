@@ -22,7 +22,8 @@
 source "$(dirname "$0")/../lib/panes.sh"
 parse_args "$@"
 
-# A name:=value this script reads itself, taken out of what goes to the bringup launch.
+# A name:=value this script reads itself, into TAKEN, taken out of what goes to the bringup
+# launch. Not in a $(...): a subshell would leave LAUNCH_ARGS as it was.
 take_arg() {
     local name=$1 value=$2 kept="" arg
     for arg in $LAUNCH_ARGS; do
@@ -33,11 +34,14 @@ take_arg() {
         fi
     done
     LAUNCH_ARGS=$kept
-    printf '%s' "$value"
+    TAKEN=$value
 }
-SAVED_NAME=$(take_arg saved nervros-apartment)
-SIM_WORLD=$(take_arg world apartment)
-MAP_NAME=$(take_arg name "mapped-$SIM_WORLD")
+take_arg saved nervros-apartment
+SAVED_NAME=$TAKEN
+take_arg world apartment
+SIM_WORLD=$TAKEN
+take_arg name "mapped-$SIM_WORLD"
+MAP_NAME=$TAKEN
 [[ "$SAVED_NAME$MAP_NAME" =~ ^[A-Za-z0-9_-]+$ ]] || { echo "world names are letters, digits, - and _" >&2; exit 1; }
 
 # canopy writes into its world_dir, so it gets a copy of the committed semantic map, never the
