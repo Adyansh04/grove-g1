@@ -128,6 +128,7 @@ the contract is its `nervros_interfaces`.
 | Service | `/nervros_executor/validate_mission` | The same checks without a goal, plus a load; returns the worst-case duration. |
 | Service | `/nervros_executor/get_catalog` | The skills as JSON, the palette (`TreeNodesModel`: every leaf's ports and the skills' subtrees), BehaviorTree.CPP's version, and the catalog's, which changes with the skills and with the palette. |
 | Service | `/nervros_executor/stop_all` | Halts the mission, cancels goals on every skill server, holds posture. Safe at any time. |
+| Service | `/nervros_executor/pause_mission` | `PauseMission`: pauses the running mission, or resumes it (below). |
 | Topic | `/nervros_executor/robot_state` | `RobotState`, reliable and transient local, on change and at 1 Hz. |
 
 ### What a mission may say
@@ -140,7 +141,8 @@ macro; the executor registers its own copies with each mission's factory), has n
 carries `tree_sha256`, the lowercase SHA-256 of the exact bytes of `tree_xml` (an empty hash does
 not match). No `Parallel`, reactive node, `Repeat`, `Script`, `SetBlackboard`, `AcquireArm` or
 `ReleaseArm`, no pre or post condition attribute (`_skipIf`, `_post`, ...), no leaf written
-directly. Each skill gets exactly its catalog arguments, in the shape it needs; depth, node count,
+directly. Each skill gets exactly its catalog arguments, in the shape it needs, or an earlier step's
+output (below); depth, node count,
 step count (each step is a whole macro at load time) and size are capped, and so is the worst case:
 a mission that could run past `max_duration_cap_s` is turned away (`TOO_LONG`) instead of being cut
 off half done by the watchdog.
@@ -158,13 +160,14 @@ keeps them in step (names, ports, limits, resources). The macros are flat: none 
 
 | Skill | Does | Needs |
 |---|---|---|
-| `GoToTarget` | Resolves a world-model id (`R2`, `O17`) to a pose facing it, clears costmaps, steps clear of furniture, walks (three tries), squares up. | `base` |
+| `GoToTarget` | Resolves a world-model id (`R2`, `O17`), or plain words for the nearest match (`red mug`), to a pose facing it, clears costmaps, steps clear of furniture, walks (three tries), squares up. Hands on `target_id`, the id it walked to. | `base` |
 | `GoToPose` | The same walk to `x;y;yaw` in the `map` frame. | `base` |
 | `PickObject` | Needs the hand empty. Asks the detector for the object, closes the last stretch, picks, idles the detector, backs off 1.2 m. | `base`, arms |
 | `PlaceInto` | Needs the hand to hold something. Asks the detector for the container and for what the hand holds, closes in, places, backs off. | `base`, arms |
 | `WalkStraight` | Walks forward or backward a distance (0.1 to 2 m) with `DriveStraight`, one try. Nav2 projects the walk on the local costmap and stops it before a collision, which fails the step. | `base` |
 | `TurnInPlace` | Turns by an angle (-180 to 180 degrees, positive left) with `TurnBy`, one try. | `base` |
 | `TuckForTravel` | Tucks each arm whose hand is empty. | arms |
+| `FindInView` | Asks the detector for a phrase and waits for it on `/objects`, then idles the detector; moves nothing. Hands on `object_id`, the name the detector reports it under (`red_mug`). | none |
 | `ExploreBuilding` | The loop of `trees/explore.xml`: frontiers until the map is closed, then canopy's viewpoints until every room is seen, then clean up and save. Explores for up to 23 minutes, since a whole run is longer than a mission may be, and saves; running out of time is not a failure, a world model that cannot plan is. | `base` |
 
 An argument with `format: number` takes a decimal from its `min` to its `max`, which the validator
@@ -177,6 +180,14 @@ detector reports (`red_block`). The detector names what it finds by the lowercas
 detector looks for; the planner fills it from the world model's label (`default_from` in the
 catalog). The mock detector matches on the id only, so in the simulator the id must be the
 simulator's name.
+
+A skill's `outputs` are ports of its macro that a later step can take. The step hands one on under
+its own step's key, `target_id="{s1_target_id}"`, and a later step's argument is that key,
+`object_id="{s1_target_id}"`. The validator checks the key is written once, by a step earlier in the
+document, and that the output fits the argument: an id from the world model for a `world_id`, an id
+for an `id`, the same format otherwise, never a catalog `enum` (an `arg_choices` list is fine: what a
+step found on the robot is a name the robot knows). A dry run seeds every output key, since the
+macros' scripts read them.
 
 ### Authority
 
@@ -227,6 +238,21 @@ phases of a pick and between lift attempts; once the hand has closed on the obje
 keeps it, so stopping during the grasp or the lift does not drop it. The executor still counts that
 hand as unknown, since a halted leaf gets no result.
 
+### Pausing
+
+`PauseMission` with `pause: true` closes a gate the action leaves look at before they send a goal,
+then halts the running step from the decorators around it down, which cancels its goals: Nav2 stops
+the base and the arm trajectory controller holds the arm; the hands are not touched. A step whose
+skill has `risk: manipulation` (a pick or a place) is let end first, and the gate holds the next step
+until then. Paused, the mission thread ticks nothing but still answers a stop, a cancel, the deadman
+and the robot's health; the watchdog does not count the pause, and `max_pause_s` ends a forgotten
+one. `pause: false` opens the gate and ticks again: the halted step starts from its beginning, with
+a fresh timeout. `DriveStraight` and `TurnBy` keep the distance or angle their feedback reported
+(the walk adds its coast), so a resumed `WalkStraight` or `TurnInPlace` does only the rest.
+`RobotState.paused`, the feedback's `paused` and `message` ("pausing once s3_PickObject ends",
+"paused during s2_GoToPose") say where it stands. A tree with a `Timeout` around the whole mission
+keeps counting it while paused; NervROS's trees have none.
+
 ### Results and events
 
 The result has `outcome`; for anything but success also `failed_node`, `failed_step_id` (the `s<N>`
@@ -254,6 +280,7 @@ All in `config/nervros_executor.yaml`, commented there.
 | `event_level` | `steps` | `steps` or `all`. |
 | `max_tree_depth`, `max_tree_nodes`, `max_tree_steps`, `max_xml_bytes` | 10, 200, 32, 131072 | Bounds on a mission's text. |
 | `feedback_period_s`, `cancel_settle_s`, `stop_wait_s` | 0.25, 0.5, 3.0 | Feedback rate; spin after a halt so cancels reach their servers; the most a stop waits. |
+| `max_pause_s` | 600 | The longest a mission may stay paused before it ends (`OUTCOME_CANCELED`). |
 | `authority_timeout_s` | 15 | Per-step budget for `controller_manager` calls. |
 | `dry_run_time_scale`, `dry_run_min_leaf_s` | 0.02, 0.05 | A dry run's share of a skill's catalog time per leaf, and its floor. |
 | `stop_action_servers` | the nine skill servers | As `/name:type`. `test_catalog_drift` fails if a leaf uses one that is not listed. |

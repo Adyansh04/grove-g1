@@ -9,6 +9,7 @@
  * collision, which a raw velocity command would not.
  */
 
+#include <atomic>
 #include <nav2_msgs/action/drive_on_heading.hpp>
 #include <nav2_msgs/action/spin.hpp>
 #include <string>
@@ -22,6 +23,7 @@ namespace g1_orchestration
  * @brief Walks straight forward or backward by a distance with Nav2's drive_on_heading.
  *
  * On a predicted collision Nav2 stops the robot where it is and the leaf fails: it never detours.
+ * Halted by a pause, it keeps how far it got, and walks only the rest once resumed.
  */
 class DriveStraight : public RosActionNode<nav2_msgs::action::DriveOnHeading>
 {
@@ -32,12 +34,21 @@ public:
 protected:
     bool           fillGoal(Goal& goal) override;
     BT::NodeStatus judgeResult(const WrappedResult& result) override;
+    void           onFeedback(const Feedback& feedback) override;
+    void           onHaltedWithGoal(bool pausing, bool finished) override;
+    bool           nothingLeft() override;
+
+private:
+    /// Metres walked by goals a pause cut short, and by the running goal so far.
+    double              done_m_ = 0.0;
+    std::atomic<double> goal_m_{ 0.0 };
 };
 
 /**
  * @brief Turns on the spot by an angle relative to where the robot faces, with Nav2's spin.
  *
- * Unlike TurnTo it needs no TF: the angle is relative.
+ * Unlike TurnTo it needs no TF: the angle is relative. Halted by a pause, it keeps how far it
+ * turned, and turns only the rest once resumed.
  */
 class TurnBy : public RosActionNode<nav2_msgs::action::Spin>
 {
@@ -48,6 +59,14 @@ public:
 protected:
     bool           fillGoal(Goal& goal) override;
     BT::NodeStatus judgeResult(const WrappedResult& result) override;
+    void           onFeedback(const Feedback& feedback) override;
+    void           onHaltedWithGoal(bool pausing, bool finished) override;
+    bool           nothingLeft() override;
+
+private:
+    /// Degrees turned by goals a pause cut short, and by the running goal so far.
+    double              done_deg_ = 0.0;
+    std::atomic<double> goal_deg_{ 0.0 };
 };
 
 }  // namespace g1_orchestration

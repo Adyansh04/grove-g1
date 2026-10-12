@@ -154,6 +154,49 @@ std::vector<const tinyxml2::XMLElement*> childrenOf(const tinyxml2::XMLElement& 
     return children;
 }
 
+bool isPhrase(std::string_view value)
+{
+    return !value.empty() && value.size() <= kMaxPhrase && std::ranges::all_of(value, [](char c) {
+        return std::isalnum(static_cast<unsigned char>(c)) != 0 || c == ' ' || c == '-' ||
+               c == '_' || c == '\'';
+    });
+}
+
+/// The blackboard key a whole value names, "s1_target_id" for "{s1_target_id}", or nothing.
+std::optional<std::string_view> referenceIn(std::string_view value)
+{
+    if (value.size() < 3 || value.front() != '{' || value.back() != '}')
+    {
+        return std::nullopt;
+    }
+    return value.substr(1, value.size() - 2);
+}
+
+/// Why an earlier step's output cannot be this argument, or empty when it can.
+std::string mismatch(const SkillArg& arg, const SkillArg& out)
+{
+    // A list that restrict() narrowed is what a planner may write, not what the robot can do: a
+    // value an earlier step found on the robot stands in for one. The catalog's own lists stay.
+    if (!arg.allowed.empty() && !arg.narrowed)
+    {
+        return "takes only " + join(arg.allowed) + ", so it cannot take another step's output";
+    }
+    if (arg.type == "world_id" && out.type != "world_id")
+    {
+        return std::format("takes an id from the world model, and {} is not one", out.name);
+    }
+    if (arg.format == "id" && out.type != "world_id" && out.format != "id")
+    {
+        return std::format("takes an id, and {} is not one", out.name);
+    }
+    if (arg.type != "world_id" && arg.format != "id" && !arg.format.empty() &&
+        arg.format != out.format)
+    {
+        return std::format("takes a {}, and {} is not one", arg.format, out.name);
+    }
+    return {};
+}
+
 /// Why @p value cannot be this argument, or empty when it can.
 std::string problemWith(const SkillArg& arg, std::string_view value)
 {
@@ -180,7 +223,12 @@ std::string problemWith(const SkillArg& arg, std::string_view value)
                             std::ranges::all_of(value.substr(1), [](char c) {
                                 return std::isdigit(static_cast<unsigned char>(c)) != 0;
                             });
-        if (!shaped)
+        if (arg.format == "phrase" && !shaped && !isPhrase(value))
+        {
+            return "must be an id from the world model, such as R2 or O17, or plain words "
+                   "(letters, digits, spaces, hyphens), at most 80 characters";
+        }
+        if (arg.format != "phrase" && !shaped)
         {
             return "must be an id from the world model: a capital letter and a number, such as "
                    "R2 for a room or O17 for an object";
@@ -198,11 +246,7 @@ std::string problemWith(const SkillArg& arg, std::string_view value)
     }
     else if (arg.format == "phrase")
     {
-        const bool plain = value.size() <= kMaxPhrase && std::ranges::all_of(value, [](char c) {
-                               return std::isalnum(static_cast<unsigned char>(c)) != 0 ||
-                                      c == ' ' || c == '-' || c == '_' || c == '\'';
-                           });
-        if (!plain)
+        if (!isPhrase(value))
         {
             return "must be plain words (letters, digits, spaces, hyphens), at most 80 "
                    "characters, with no commas, equals signs or semicolons";
@@ -736,17 +780,18 @@ private:
                         "remapping.",
                         name));
             }
-            else if (std::ranges::none_of(skill->args, [&name](const SkillArg& arg) {
-                         return arg.name == name;
-                     }))
+            else if (!named(skill->args, name) && !named(skill->outputs, name))
             {
                 add(code::kUnknownArg,
                     node,
                     std::format(
-                        "{} has no argument {}. Its arguments are: {}.",
+                        "{} has no argument {}. Its arguments are: {}{}.",
                         id,
                         name,
-                        argNames(*skill)));
+                        argNames(skill->args),
+                        skill->outputs.empty() ?
+                            "" :
+                            std::format("; it hands on: {}", argNames(skill->outputs))));
             }
         }
         for (const SkillArg& arg : skill->args)
@@ -758,6 +803,10 @@ private:
                     node,
                     std::format("{} needs the argument {}: {}", id, arg.name, arg.description));
             }
+            else if (const auto key = referenceIn(value))
+            {
+                checkReference(node, *skill, arg, *key);
+            }
             else if (const std::string problem = problemWith(arg, value); !problem.empty())
             {
                 add(code::kBadArg,
@@ -765,14 +814,93 @@ private:
                     std::format("The argument {} of {} {}.", arg.name, id, problem));
             }
         }
+        // After the arguments, so a step never takes what it hands on itself.
+        for (const SkillArg& out : skill->outputs)
+        {
+            if (const char* value = node.Attribute(out.name.c_str()); value != nullptr)
+            {
+                checkOutput(node, *skill, out, stepIdOf(instance), value);
+            }
+        }
         return skill->max_duration_s;
     }
 
-    static std::string argNames(const Skill& skill)
+    static bool named(const std::vector<SkillArg>& list, std::string_view name)
+    {
+        return std::ranges::any_of(list, [&name](const SkillArg& a) { return a.name == name; });
+    }
+
+    /// An argument that takes an earlier step's output: it has to be one, of a fitting kind.
+    void checkReference(
+        const tinyxml2::XMLElement& node, const Skill& skill, const SkillArg& arg,
+        std::string_view key)
+    {
+        const auto from = written_.find(key);
+        if (from == written_.end())
+        {
+            add(code::kBadArg,
+                node,
+                std::format(
+                    "The argument {} of {} takes {{{}}}, which no earlier step hands on. A step "
+                    "hands on an output under its own id, such as {{s1_target_id}} for the "
+                    "target_id of s1_GoToTarget, and only steps after it can take it.",
+                    arg.name,
+                    skill.macro,
+                    key));
+        }
+        else if (const std::string why = mismatch(arg, *from->second); !why.empty())
+        {
+            add(code::kBadArg,
+                node,
+                std::format("The argument {} of {} {}.", arg.name, skill.macro, why));
+        }
+    }
+
+    /// An output a step hands on: under its own step's key, and that key written once.
+    void checkOutput(
+        const tinyxml2::XMLElement& node, const Skill& skill, const SkillArg& out,
+        const std::string& step, std::string_view value)
+    {
+        const std::string key = step + "_" + out.name;
+        if (step.empty())
+        {
+            add(code::kBadName,
+                node,
+                std::format(
+                    "{} hands on {} only from a step named like s2_{}: the output's key is named "
+                    "after the step.",
+                    skill.macro,
+                    out.name,
+                    skill.macro));
+        }
+        else if (value != "{" + key + "}")
+        {
+            add(code::kBadArg,
+                node,
+                std::format(
+                    "The output {} of {} must be written {{{}}}: a step hands on what it finds "
+                    "under its own id.",
+                    out.name,
+                    skill.macro,
+                    key));
+        }
+        else if (!written_.emplace(key, &out).second)
+        {
+            add(code::kDuplicateName,
+                node,
+                std::format("Two steps hand on {}. Give each step its own id.", key));
+        }
+        else
+        {
+            out_->outputs.insert(key);
+        }
+    }
+
+    static std::string argNames(const std::vector<SkillArg>& list)
     {
         std::vector<std::string> names;
-        names.reserve(skill.args.size());
-        for (const SkillArg& arg : skill.args)
+        names.reserve(list.size());
+        for (const SkillArg& arg : list)
         {
             names.push_back(arg.name);
         }
@@ -810,13 +938,15 @@ private:
     const tinyxml2::XMLElement*              mission_ = nullptr;
     std::vector<const tinyxml2::XMLElement*> models_;
     std::set<std::string>                    step_names_;
-    double                                   worst_case_s_   = 0.0;
-    int                                      nodes_          = 0;
-    int                                      steps_          = 0;
-    bool                                     too_many_       = false;
-    bool                                     too_many_steps_ = false;
-    bool                                     too_deep_       = false;
-    bool                                     truncated_      = false;
+    /// The outputs earlier steps hand on, by key, as the catalog declares them.
+    std::map<std::string, const SkillArg*, std::less<>> written_;
+    double                                              worst_case_s_   = 0.0;
+    int                                                 nodes_          = 0;
+    int                                                 steps_          = 0;
+    bool                                                too_many_       = false;
+    bool                                                too_many_steps_ = false;
+    bool                                                too_deep_       = false;
+    bool                                                truncated_      = false;
 };
 
 }  // namespace

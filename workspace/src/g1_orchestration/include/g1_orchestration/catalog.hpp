@@ -23,7 +23,7 @@ inline constexpr const char* kLeftArmResource  = "left_arm";
 inline constexpr const char* kRightArmResource = "right_arm";
 
 /**
- * @brief One argument of a skill.
+ * @brief One argument of a skill, or one of its outputs.
  */
 struct SkillArg
 {
@@ -32,11 +32,15 @@ struct SkillArg
     /// which the planner checks against the live world model.
     std::string type;
     /// How the executor checks a value beyond its type: "" (any text), "id", "phrase", "station",
-    /// or "number" (a decimal from `min` to `max`).
+    /// or "number" (a decimal from `min` to `max`). A world_id with "phrase" also takes plain
+    /// words the world model searches for, such as red mug.
     std::string format;
     std::string description;
     /// The only values allowed, or empty when any is.
     std::vector<std::string> allowed;
+    /// Whether `allowed` comes from restrict(), what the robot can do where it is, rather than
+    /// from the catalog: a value an earlier step found on the robot may then stand in for one.
+    bool narrowed = false;
     /// Names where a planner may get the value instead of asking a model, such as
     /// "label(object_id)". The executor still requires the argument in the mission.
     std::string default_from;
@@ -50,9 +54,11 @@ struct SkillArg
  */
 struct Skill
 {
-    std::string              name;
-    std::string              description;
-    std::vector<SkillArg>    args;
+    std::string           name;
+    std::string           description;
+    std::vector<SkillArg> args;
+    /// What it hands on: each a port of its macro that a later step can take as an argument.
+    std::vector<SkillArg>    outputs;
     std::vector<std::string> preconditions;
     std::vector<std::string> effects;
     std::vector<std::string> resources;

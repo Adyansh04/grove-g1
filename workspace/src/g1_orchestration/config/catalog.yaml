@@ -11,11 +11,15 @@
 #   args[].type     string, or world_id for an id from the world model (canopy: R2, O17), which a
 #                   planner checks against the live world model. The executor checks its shape.
 #   args[].format   How the executor checks a string beyond its type: id (letters, digits and
-#                   underscores), phrase (plain words), station (x;y;yaw).
+#                   underscores), phrase (plain words), station (x;y;yaw). A world_id with phrase
+#                   also takes plain words the world model searches for (kitchen, red mug).
 #   args[].enum     The only values allowed.
 #   args[].default_from  Where a planner may fill the value in instead of asking a model, such as
 #                   label(object_id): the world model's label for the object that argument names.
 #                   The mission itself still has to carry it.
+#   outputs         What the skill hands on, each a port of its macro, typed like an argument. A
+#                   mission gives a step's output a key named after the step, {s2_target_id}, and a
+#                   later step takes that key as an argument: the executor checks the two match.
 #   requires        What must hold before the skill runs.
 #   effects         What holds after it succeeds.
 #   resources       Authority the executor takes before the mission starts: base is a name only,
@@ -34,11 +38,19 @@ skills:
   - name: GoToTarget
     description: >-
       Walk to a room or an object in the world model and stop facing it. Use it to get within
-      reach of an object before PickObject or PlaceInto.
+      reach of an object before PickObject or PlaceInto. Given what an object is rather than its
+      id, it walks to the nearest one, and target_id says which it was.
     args:
       - name: target
         type: world_id
-        description: The id of a room or an object in the world model, such as R2 or O17.
+        format: phrase
+        description: >-
+          The id of a room or an object in the world model, such as R2 or O17; or a room's name,
+          or what an object is in plain words (red mug), for the nearest one.
+    outputs:
+      - name: target_id
+        type: world_id
+        description: The id of the room or object it walked to, such as O17 for the nearest red mug.
     requires: []
     effects: ["near(target)"]
     resources: [base]
@@ -114,6 +126,30 @@ skills:
     risk: motion
     max_duration_s: 30
     template: TurnInPlace
+
+  - name: FindInView
+    description: >-
+      Look for something with the camera PickObject and PlaceInto use, from where the robot
+      stands, without moving, and hand on the name the detector reports it under, for a later
+      PickObject or PlaceInto to take. Fails when nothing that matches is in view within about
+      20 seconds.
+    args:
+      - name: phrase
+        type: string
+        format: phrase
+        description: Plain words the detector finds it by, such as red mug.
+    outputs:
+      - name: object_id
+        type: string
+        format: id
+        description: The name the detector reports it under, such as red_mug.
+    requires: []
+    effects: []
+    resources: []
+    idempotent: true
+    risk: observe
+    max_duration_s: 60
+    template: FindInView
 
   - name: PickObject
     description: >-

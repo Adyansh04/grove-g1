@@ -236,7 +236,11 @@ MissionPreview::preview(const std::vector<MissionStep>& steps, std::string& why)
         preview.name    = step.name;
         std::optional<Station> end;
         bool                   planned = false;
-        if (step.macro == "GoToPose" || step.macro == "GoToTarget")
+        if (step.macro == "GoToTarget" && argOf(step, "target").starts_with('{'))
+        {
+            preview.note = "walks to what an earlier step finds, known only when it runs";
+        }
+        else if (step.macro == "GoToPose" || step.macro == "GoToTarget")
         {
             std::string problem;
             if (step.macro == "GoToPose")

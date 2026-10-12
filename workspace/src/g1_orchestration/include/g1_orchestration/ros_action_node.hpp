@@ -7,7 +7,8 @@
  *
  * Hand-rolled because BehaviorTree.ROS2 is not in this image. Halting cancels the goal, so a
  * halted skill does not leave an arm mid-trajectory. The tree ticks on one thread and the
- * executor runs the client callbacks on another; only `result_` is shared, under `mutex_`.
+ * executor runs the client callbacks on another; only `result_` is shared, under `mutex_`. While
+ * the mission is paused a leaf that is about to send its goal waits instead.
  */
 
 #include <behaviortree_cpp/action_node.h>
@@ -23,12 +24,50 @@
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include "g1_orchestration/leaf_report.hpp"
 
 namespace g1_orchestration
 {
+
+/**
+ * @brief Whether the mission is paused, as its leaves see it.
+ *
+ * Closed, it holds every leaf about to send a goal: the leaf waits, RUNNING, and sends it once
+ * the gate opens. The one step a pause lets finish, a pick or a place, runs on.
+ */
+class PauseGate
+{
+public:
+    /// Holds the leaves of every step but @p finishing, the name of a step allowed to end first.
+    void close(std::string finishing = {})
+    {
+        const std::lock_guard<std::mutex> lock(mutex_);
+        closed_    = true;
+        finishing_ = std::move(finishing);
+    }
+
+    void open()
+    {
+        const std::lock_guard<std::mutex> lock(mutex_);
+        closed_ = false;
+        finishing_.clear();
+    }
+
+    /// Whether the leaf at @p path, which begins with its step's name, has to wait.
+    [[nodiscard]] bool holds(std::string_view path) const
+    {
+        const std::lock_guard<std::mutex> lock(mutex_);
+        return closed_ && (finishing_.empty() || path.substr(0, path.find('/')) != finishing_);
+    }
+
+private:
+    mutable std::mutex mutex_;
+    bool               closed_ = false;
+    std::string        finishing_;
+};
 
 /**
  * @brief What every leaf here needs from the tree.
@@ -40,6 +79,8 @@ struct RosContext
     /// start something then fails at once, so a tick that loops through retries and waits comes to
     /// an end. Null in a tree that runs without an executor around it.
     const std::atomic<bool>* stop = nullptr;
+    /// Closed while the mission is paused. Null in a tree that runs without an executor.
+    const PauseGate* pause = nullptr;
 };
 
 /// Whether a leaf should refuse to start what it is about to: the mission is winding down.
@@ -78,6 +119,7 @@ class RosActionNode : public BT::StatefulActionNode, public LeafReport
 {
 public:
     using Goal          = typename ActionT::Goal;
+    using Feedback      = typename ActionT::Feedback;
     using GoalHandle    = rclcpp_action::ClientGoalHandle<ActionT>;
     using WrappedResult = typename GoalHandle::WrappedResult;
 
@@ -87,6 +129,7 @@ public:
       : BT::StatefulActionNode(instance_name, config)
       , node_(std::move(context.node))
       , stop_(context.stop)
+      , pause_(context.pause)
       , action_name_(std::move(action_name))
     {
         client_ = rclcpp_action::create_client<ActionT>(node_, action_name_);
@@ -128,10 +171,28 @@ protected:
      */
     virtual BT::NodeStatus judgeResult(const WrappedResult& result) = 0;
 
+    /// The running goal's feedback, on the thread that runs the client's callbacks.
+    virtual void onFeedback(const Feedback& /*feedback*/) {}
+
+    /**
+     * @brief The leaf was halted while its goal was out.
+     *
+     * @param pausing The mission is pausing, so the leaf runs again once it is resumed.
+     * @param finished The goal had already succeeded when the halt came.
+     */
+    virtual void onHaltedWithGoal(bool /*pausing*/, bool /*finished*/) {}
+
+    /// Whether there is nothing left to do, as for a walk resumed after it covered its distance:
+    /// the leaf then succeeds without sending a goal.
+    virtual bool nothingLeft() { return false; }
+
     rclcpp::Node::SharedPtr  node_;
     const std::atomic<bool>* stop_;
+    const PauseGate*         pause_;
 
 private:
+    [[nodiscard]] bool held() const { return pause_ != nullptr && pause_->holds(fullPath()); }
+
     /**
      * @brief Waits for the server, in short slices so that a stop is seen within one of them.
      *
@@ -162,10 +223,25 @@ private:
     BT::NodeStatus onStart() override
     {
         setFailureText({});
+        setGoalSent(false);
         if (windingDown(stop_))
         {
             setFailureText("stopped");
             return BT::NodeStatus::FAILURE;
+        }
+        if (held())
+        {
+            waiting_ = true;
+            return BT::NodeStatus::RUNNING;
+        }
+        return startGoal();
+    }
+
+    BT::NodeStatus startGoal()
+    {
+        if (nothingLeft())
+        {
+            return BT::NodeStatus::SUCCESS;
         }
         const double timeout = getInput<double>("server_timeout_s").value_or(10.0);
         if (!waitForServer(timeout))
@@ -204,8 +280,14 @@ private:
             const std::lock_guard<std::mutex> lock(mutex_);
             result_ = result;
         };
+        options.feedback_callback = [this](
+                                        const typename GoalHandle::SharedPtr& /*handle*/,
+                                        const std::shared_ptr<const Feedback>& feedback) {
+            onFeedback(*feedback);
+        };
 
         goal_future_ = client_->async_send_goal(goal, options);
+        setGoalSent(true);
         RCLCPP_INFO(
             node_->get_logger(),
             "[%s] sent goal to %s",
@@ -234,6 +316,21 @@ private:
 
     BT::NodeStatus onRunning() override
     {
+        if (waiting_)
+        {
+            if (windingDown(stop_))
+            {
+                waiting_ = false;
+                setFailureText("stopped");
+                return BT::NodeStatus::FAILURE;
+            }
+            if (held())
+            {
+                return BT::NodeStatus::RUNNING;
+            }
+            waiting_ = false;
+            return startGoal();
+        }
         // Never spin here: an executor owns this node.
         std::optional<WrappedResult> result;
         {
@@ -261,10 +358,18 @@ private:
 
     void onHalted() override
     {
+        if (waiting_)
+        {
+            // Held by a pause, it never sent its goal.
+            waiting_ = false;
+            return;
+        }
         bool have_result = false;
+        bool succeeded   = false;
         {
             const std::lock_guard<std::mutex> lock(mutex_);
             have_result = result_.has_value();
+            succeeded   = have_result && result_->code == rclcpp_action::ResultCode::SUCCEEDED;
             result_.reset();
         }
 
@@ -274,6 +379,10 @@ private:
             // Not once the result is in: rclcpp_action forgets a finished goal, and cancelling
             // a forgotten goal throws.
             const auto answer = serverAnswer();
+            if (answer.has_value() && *answer != nullptr)
+            {
+                onHaltedWithGoal(held(), succeeded);
+            }
             if (!have_result && answer.has_value() && *answer != nullptr)
             {
                 RCLCPP_WARN(node_->get_logger(), "[%s] halted; cancelling the goal", name().c_str());
@@ -293,6 +402,8 @@ private:
     std::shared_future<typename GoalHandle::SharedPtr> goal_future_;
     std::mutex                                         mutex_;
     std::optional<WrappedResult>                       result_;
+    /// Held by a pause before its goal went out.
+    bool waiting_ = false;
 };
 
 }  // namespace g1_orchestration

@@ -120,6 +120,13 @@ void readFile(const std::filesystem::path& file, std::vector<Macro>& into)
                     const char* port_name = port->Attribute("name");
                     model.ports.emplace_back(port_name != nullptr ? port_name : "");
                 }
+                for (const tinyxml2::XMLElement* port = entry->FirstChildElement("output_port");
+                     port != nullptr;
+                     port = port->NextSiblingElement("output_port"))
+                {
+                    const char* port_name = port->Attribute("name");
+                    model.outputs.emplace_back(port_name != nullptr ? port_name : "");
+                }
                 models.push_back(std::move(model));
             }
         }
@@ -145,8 +152,9 @@ void readFile(const std::filesystem::path& file, std::vector<Macro>& into)
         {
             fail(file, macro.id + " has no <SubTree> entry in <TreeNodesModel>");
         }
-        macro.model = model->model;
-        macro.ports = model->ports;
+        macro.model   = model->model;
+        macro.ports   = model->ports;
+        macro.outputs = model->outputs;
         into.push_back(std::move(macro));
     }
 }
