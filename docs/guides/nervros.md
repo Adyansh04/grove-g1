@@ -232,6 +232,22 @@ second while a mission runs; if they stop for 2 s, because the app closed, crash
 executor stops the mission and the robot holds. And the executor refuses to start a walk, or stops
 one, when the robot has fallen or its balance controller is not running.
 
+**Pause** (beside Stop while a mission runs), or typing "pause", "wait" or "hold on", halts the
+running step instead: the robot stops where it is, the arms hold and the hands keep their grip, and
+a pick or a place finishes first. **Resume**, or "resume", "continue", "carry on" or "go on", goes
+on: a walk to a place sets out again, and a straight walk or a turn does only what was left of it.
+A pause longer than ten minutes ends the mission.
+
+## Keep-out zones
+
+"Keep the robot out of the kitchen", or out of a metre around the vase, adds a keep-out zone
+around a room, an object, a place or corners on the map. The agent then refuses a walk that would
+end in a zone or pass through one, and Nav2 plans around the zones too: the demo launches Nav2 with
+`keepout:=true`, and NervROS publishes the zones as a keep-out mask on `/keepout_filter_mask`
+for both costmaps' keepout filter. The 3D view draws the zones in red, and the World tab lists them
+with Add and Remove; removing one asks for your approval. Zones added in chat are kept for the next
+session; the profile's own (`[[geofence.zone]]`) stay until the profile changes.
+
 ## The executor
 
 `nervros_executor` (`g1_orchestration`) runs one mission at a time. It checks every tree before
@@ -240,8 +256,11 @@ timeouts and retries. It takes the arms before the first step when a skill needs
 them back when the mission ends unless a hand holds, or may hold, something: after a pick that was
 cut off, the executor does not trust that hand until a place with it succeeds, and the agent plans
 as if it were full. The skills a plan may use are in `config/catalog.yaml`, as macros in
-`trees/library/`: `GoToTarget`, `GoToPose`, `WalkStraight`, `TurnInPlace`, `PickObject`,
-`PlaceInto`, `TuckForTravel` and `ExploreBuilding`.
+`trees/library/`: `GoToTarget`, `GoToPose`, `WalkStraight`, `TurnInPlace`, `FindInView`,
+`PickObject`, `PlaceInto`, `TuckForTravel` and `ExploreBuilding`. A step can take what an earlier
+one found: `FindInView` hands on the name the detector reports an object under, and a walk to what
+an object is, among several, the id of the nearest one it walked to, so "find a red mug and pick it
+up" is one mission.
 
 A mission can also be sent by hand, which is how to check a tree without the agent:
 

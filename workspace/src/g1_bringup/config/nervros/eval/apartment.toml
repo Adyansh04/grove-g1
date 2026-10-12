@@ -155,6 +155,21 @@ say = ["Go back to where you started."]
 max_s = 300
 expect = { mission = "success", approvals_max = 1 }
 
+# Keep-out zones
+
+[[case]]
+id = "keep-out"
+# Added in chat, then a walk into it is refused before any mission is planned to run.
+say = ["Keep the robot out of the kitchen.", "Go to the kitchen."]
+max_s = 300
+expect = { tools = ["geofence"], mission = "none", reply_has = ["keep", "zone"] }
+
+[[case]]
+id = "keep-out-remove"
+# Removing a zone widens where the robot may go, so it is approved like a world edit.
+say = ["Remove the keep-out zone around the kitchen."]
+expect = { tools = ["geofence"], mission = "none", approvals_max = 1 }
+
 # Places the operator names
 
 [[case]]
