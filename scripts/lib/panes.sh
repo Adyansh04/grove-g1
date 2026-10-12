@@ -94,17 +94,18 @@ wait_for() {
     printf ' ready\n'
 }
 
-# Active, not merely up: an inactive bt_navigator rejects the first goal.
+# Active, not merely up: an inactive bt_navigator rejects the first goal. Each probe is cut off: a
+# call made before the service existed can wait on it for ever, though the service came up.
 wait_for_nav2() {
-    wait_for Nav2 "ros2 service call /lifecycle_manager_navigation/is_active std_srvs/srv/Trigger | grep -q success=True"
+    wait_for Nav2 "timeout 10 ros2 service call /lifecycle_manager_navigation/is_active std_srvs/srv/Trigger | grep -q success=True"
 }
 
 wait_for_service() {
-    wait_for "$1" "ros2 service list --no-daemon | grep -qx '$1'"
+    wait_for "$1" "timeout 10 ros2 service list --no-daemon | grep -qx '$1'"
 }
 
 wait_for_controller() {
-    wait_for "$1" "ros2 control list_controllers | grep -qE '^$1 .*\\<active\\>'"
+    wait_for "$1" "timeout 10 ros2 control list_controllers | grep -qE '^$1 .*\\<active\\>'"
 }
 
 # A host server, by the port it binds once its model has loaded.
