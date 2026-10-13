@@ -255,7 +255,7 @@ second while a mission runs; if they stop for 2 s, because the app closed, crash
 executor stops the mission and the robot holds. And the executor refuses to start a walk, or stops
 one, when the robot has fallen or its balance controller is not running.
 
-<!-- video: 16-pause-resume.mp4 -->
+https://github.com/user-attachments/assets/d6e4dc59-a2c3-4b54-87cb-25c1abc4c190
 
 **Pause** (beside Stop while a mission runs, and on the plan card), typing "pause", "wait" or
 "hold on", or `/pause` in the terminal halts the running step instead: the robot stops where it
@@ -269,7 +269,7 @@ and a pause longer than ten minutes ends the mission (`max_pause_s` in
 
 ## Keep-out zones
 
-<!-- video: 15-keep-out.mp4 -->
+https://github.com/user-attachments/assets/696fc57c-44bb-4984-a8cc-5d2f2e68e7ce
 
 "Keep the robot out of the bedroom", or out of a metre around the vase, adds a keep-out zone
 around a room, an object, a place or corners on the map. The agent then refuses a walk that would
@@ -298,7 +298,7 @@ as if it were full. The skills a plan may use are in `config/catalog.yaml`, as m
 `trees/library/`: `GoToTarget`, `GoToPose`, `WalkStraight`, `TurnInPlace`, `FindInView`,
 `PickObject`, `PlaceInto`, `TuckForTravel` and `ExploreBuilding`.
 
-<!-- video: 17-find-and-pick.mp4 -->
+https://github.com/user-attachments/assets/9b4cfc4f-5355-43bb-a4c8-de9aff755d4a
 
 A step can take what an earlier one found: `FindInView` hands on the name the detector reports an
 object under, and a walk to what an object is, among several, the id of the nearest one it walked
@@ -337,7 +337,7 @@ or detector that gives nothing, a robot lost on its map, and a robot that fell.
 
 ## The robot's own description
 
-<!-- video: 18-self-description.mp4 -->
+https://github.com/user-attachments/assets/cdadbd00-b26b-4e14-a006-65d56f2dea02
 
 The persona, `g1_bringup/config/nervros/apartment.md`, tells the model what the robot is. **Draft
 from the robot** in the Doctor tab, or
