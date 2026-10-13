@@ -388,8 +388,9 @@ void Catalog::restrict(std::string_view choice)
         const auto arg = std::ranges::find(skill.args, arg_name, &SkillArg::name);
         if (skill.name == skill_name && arg != skill.args.end())
         {
+            // Narrowing a list the catalog already had keeps its rule: no output stands in.
+            arg->narrowed = arg->narrowed || arg->allowed.empty();
             arg->allowed  = std::move(values);
-            arg->narrowed = true;
             text_sha256_  = sha256Hex(text_sha256_ + "\n" + std::string(choice));
             return;
         }

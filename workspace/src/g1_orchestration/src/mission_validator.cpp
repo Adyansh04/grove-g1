@@ -176,8 +176,9 @@ std::optional<std::string_view> referenceIn(std::string_view value)
 std::string mismatch(const SkillArg& arg, const SkillArg& out)
 {
     // A list that restrict() narrowed is what a planner may write, not what the robot can do: a
-    // value an earlier step found on the robot stands in for one. The catalog's own lists stay.
-    if (!arg.allowed.empty() && !arg.narrowed)
+    // value an earlier step found on the robot stands in for one, but not a world model's id,
+    // which a list of the robot's own names was narrowed to keep out. The catalog's lists stay.
+    if (!arg.allowed.empty() && (!arg.narrowed || out.type == "world_id"))
     {
         return "takes only " + join(arg.allowed) + ", so it cannot take another step's output";
     }
@@ -641,7 +642,20 @@ private:
         double below = 0.0;
         for (const tinyxml2::XMLElement* child : children)
         {
+            // What may not run to its end while the mission goes on: a Fallback's branch, which
+            // another can stand in for, and what a ForceSuccess holds.
+            const tinyxml2::XMLElement* branch = tag == "Fallback"     ? child :
+                                                 tag == "ForceSuccess" ? &node :
+                                                                         nullptr;
+            if (branch != nullptr)
+            {
+                branches_.push_back(branch);
+            }
             below += walk(*child, depth + 1);
+            if (branch != nullptr)
+            {
+                branches_.pop_back();
+            }
         }
         const double cost = multiplier * below;
         return cap_s ? std::min(*cap_s, cost) : cost;
@@ -825,6 +839,17 @@ private:
         return skill->max_duration_s;
     }
 
+    /// Whether output @p key is written wherever the step now walked runs: every branch its
+    /// step may not finish in holds this step too.
+    [[nodiscard]] bool surelyWritten(std::string_view key) const
+    {
+        const auto under = written_under_.find(key);
+        return under == written_under_.end() ||
+               std::ranges::all_of(under->second, [this](const tinyxml2::XMLElement* branch) {
+                   return std::ranges::find(branches_, branch) != branches_.end();
+               });
+    }
+
     static bool named(const std::vector<SkillArg>& list, std::string_view name)
     {
         return std::ranges::any_of(list, [&name](const SkillArg& a) { return a.name == name; });
@@ -844,6 +869,18 @@ private:
                     "The argument {} of {} takes {{{}}}, which no earlier step hands on. A step "
                     "hands on an output under its own id, such as {{s1_target_id}} for the "
                     "target_id of s1_GoToTarget, and only steps after it can take it.",
+                    arg.name,
+                    skill.macro,
+                    key));
+        }
+        else if (!surelyWritten(key))
+        {
+            add(code::kBadArg,
+                node,
+                std::format(
+                    "The argument {} of {} takes {{{}}}, but the step that hands it on may not run "
+                    "to its end: it is under a ForceSuccess, or in a Fallback branch another can "
+                    "stand in for. Take it only from a step that must succeed.",
                     arg.name,
                     skill.macro,
                     key));
@@ -892,6 +929,7 @@ private:
         }
         else
         {
+            written_under_.emplace(key, branches_);
             out_->outputs.insert(key);
         }
     }
@@ -940,13 +978,17 @@ private:
     std::set<std::string>                    step_names_;
     /// The outputs earlier steps hand on, by key, as the catalog declares them.
     std::map<std::string, const SkillArg*, std::less<>> written_;
-    double                                              worst_case_s_   = 0.0;
-    int                                                 nodes_          = 0;
-    int                                                 steps_          = 0;
-    bool                                                too_many_       = false;
-    bool                                                too_many_steps_ = false;
-    bool                                                too_deep_       = false;
-    bool                                                truncated_      = false;
+    /// The branches each output's step may not finish in.
+    std::map<std::string, std::vector<const tinyxml2::XMLElement*>, std::less<>> written_under_;
+    /// Those around the node being walked.
+    std::vector<const tinyxml2::XMLElement*> branches_;
+    double                                   worst_case_s_   = 0.0;
+    int                                      nodes_          = 0;
+    int                                      steps_          = 0;
+    bool                                     too_many_       = false;
+    bool                                     too_many_steps_ = false;
+    bool                                     too_deep_       = false;
+    bool                                     truncated_      = false;
 };
 
 }  // namespace
