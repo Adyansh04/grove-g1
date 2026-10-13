@@ -37,7 +37,7 @@ and the local model (about 7 GB) do not fit beside the simulator on a 12 GB GPU,
 the chat moves to free cloud models (see Models).
 
 ```bash
-ros2 launch g1_bringup bringup.launch.py mode:=localization nav:=true world:=apartment \
+ros2 launch g1_bringup bringup.launch.py mode:=localization nav:=true keepout:=true world:=apartment \
   map:=/root/data/worlds/nervros-apartment/map.yaml headless:=true rviz:=false \
   arms_at_sides:=true cameras:=head,chest
 ros2 launch g1_bringup world_model.launch.py world_dir:=/root/data/worlds/nervros-apartment \
@@ -195,7 +195,7 @@ canopy's newer save; that is automatic.
   the test run, 177 s. The world model's ids for the two do not reach that detector, so the
   executor accepts only these names in a pick or a place (`arg_choices`), and a plan that names
   another comes back with the names it takes. It pins their phrases too, "red mug" and "wooden
-  tray", which a real detector finds them by.
+  tray", which a real detector finds them by, and a look to `mug` or `tray`.
 
 ## Exploring: watching the map fill in
 
@@ -259,8 +259,9 @@ as if it were full. The skills a plan may use are in `config/catalog.yaml`, as m
 `trees/library/`: `GoToTarget`, `GoToPose`, `WalkStraight`, `TurnInPlace`, `FindInView`,
 `PickObject`, `PlaceInto`, `TuckForTravel` and `ExploreBuilding`. A step can take what an earlier
 one found: `FindInView` hands on the name the detector reports an object under, and a walk to what
-an object is, among several, the id of the nearest one it walked to, so "find a red mug and pick it
-up" is one mission.
+an object is, among several, the id of the nearest one it walked to, so "find a mug and pick it up"
+is one mission. The demo's mock detector knows things by their kind in the scene, so there a look
+is for `mug` or `tray`, and the executor refuses other words.
 
 A mission can also be sent by hand, which is how to check a tree without the agent:
 
@@ -288,7 +289,7 @@ or detector that gives nothing, a robot lost on its map, and a robot that fell.
 
 ## Testing the agent
 
-`g1_bringup/config/nervros/eval/apartment.toml` holds 44 requests an operator might make, from "what
+`g1_bringup/config/nervros/eval/apartment.toml` holds 46 requests an operator might make, from "what
 can you see" to a full pick and place, each with what the agent should do. Against the apartment
 stack with the arm (as `nervros.sh app` starts it) and the local model, from
 `workspace/src/nervros` with the demo's environment:

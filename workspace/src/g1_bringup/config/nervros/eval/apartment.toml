@@ -60,7 +60,8 @@ expect = { tools = ["topic_sample"], mission = "none", reply_has = ["hz"] }
 
 [[case]]
 id = "ros-nodes"
-# Nav2 runs in one component container here: an answer that names only the container is wrong.
+# AMCL and the map server run in /nav2_container, Nav2's servers outside it and none named nav2:
+# an answer that names only the container is wrong.
 say = ["Which Nav2 nodes are running?"]
 expect = { tools = ["ros_graph"], mission = "none", reply_has_all = ["amcl", "controller_server", "bt_navigator"] }
 
