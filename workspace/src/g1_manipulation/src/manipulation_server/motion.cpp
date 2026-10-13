@@ -300,7 +300,8 @@ bool G1ManipulationServer::moveTo(
     return true;
 }
 
-bool G1ManipulationServer::moveToNamed(MoveGroup& group, const std::string& named_target)
+bool G1ManipulationServer::moveToNamed(
+    MoveGroup& group, const std::string& named_target, const std::function<bool()>& cancelled)
 {
     setStartStateInBounds(group);
     if (!group.setNamedTarget(named_target))
@@ -320,6 +321,11 @@ bool G1ManipulationServer::moveToNamed(MoveGroup& group, const std::string& name
     if (planned != moveit::core::MoveItErrorCode::SUCCESS)
     {
         RCLCPP_ERROR(get_logger(), "'%s': planning failed (%d)", named_target.c_str(), planned.val);
+        return false;
+    }
+    // A cancel that came while planning, such as a pause, holds the arm before it moves.
+    if (cancelled && cancelled())
+    {
         return false;
     }
     return group.execute(plan) == moveit::core::MoveItErrorCode::SUCCESS;

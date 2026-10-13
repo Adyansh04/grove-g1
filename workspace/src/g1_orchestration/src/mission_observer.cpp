@@ -113,6 +113,7 @@ void MissionObserver::callback(
         if (step_started)
         {
             current_step_ = node.name();
+            step_started_ = std::chrono::steady_clock::now();
         }
         // A leaf that failed, or a Timeout that ran out. The last of these before the tree fails
         // is what ended it: an earlier one may have been retried, or made optional. A Timeout
@@ -212,6 +213,12 @@ std::string MissionObserver::currentStep() const
 {
     const std::lock_guard<std::mutex> lock(mutex_);
     return current_step_;
+}
+
+std::chrono::steady_clock::time_point MissionObserver::stepStarted() const
+{
+    const std::lock_guard<std::mutex> lock(mutex_);
+    return step_started_;
 }
 
 }  // namespace g1_orchestration

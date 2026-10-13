@@ -903,9 +903,17 @@ void G1ManipulationServer::executeSetArmPosture(
         goal_handle->abort(result);
         return;
     }
-    if (!moveToNamed(*group, goal->named_target))
+    if (!moveToNamed(*group, goal->named_target, [&goal_handle] {
+            return goal_handle->is_canceling();
+        }))
     {
         result->success = false;
+        if (goal_handle->is_canceling())
+        {
+            result->message = "cancelled: the arm holds where it is";
+            goal_handle->canceled(result);
+            return;
+        }
         result->message = "could not reach '" + goal->named_target + "'";
         goal_handle->abort(result);
         return;

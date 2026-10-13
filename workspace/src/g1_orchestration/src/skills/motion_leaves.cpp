@@ -92,8 +92,10 @@ void DriveStraight::onHaltedWithGoal(bool pausing, bool finished)
     }
     const double distance = getInput<double>("distance").value_or(0.0);
     // The gait carries on a little after Nav2 stops it, as fillGoal allows for.
+    // Cancelled at speed the gait coasts on; only just set out, it coasts no further than it
+    // walked.
     const double coast =
-        goal_m_ > 0.0 ? std::max(0.0, getInput<double>("coast_m").value_or(0.1)) : 0.0;
+        std::min(std::max(0.0, getInput<double>("coast_m").value_or(0.1)), goal_m_.load());
     done_m_ = finished ? distance : std::min(distance, done_m_ + goal_m_ + coast);
 }
 

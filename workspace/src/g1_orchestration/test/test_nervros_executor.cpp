@@ -2114,7 +2114,7 @@ TEST(NervrosExecutor, APauseLetsAPickEndAndHoldsTheStepAfterIt)
     const RobotState pausing = harness.stateWhere([](const RobotState& s) {
         return s.message.find("pausing once s1_PickObject ends") != std::string::npos;
     });
-    EXPECT_TRUE(pausing.paused) << pausing.message;
+    EXPECT_FALSE(pausing.paused) << "the pick still moves, so it is not paused yet";
     const RobotState paused = harness.stateWhere([](const RobotState& s) {
         return s.message.find("paused during s2_GoToPose") != std::string::npos;
     });
@@ -2130,6 +2130,75 @@ TEST(NervrosExecutor, APauseLetsAPickEndAndHoldsTheStepAfterIt)
         << run->result->failure_reason;
     EXPECT_EQ(robot.navigate->goals, 1);
     EXPECT_EQ(robot.pick->goals, 1) << "the pick was not done twice";
+}
+
+TEST(NervrosExecutor, APauseCancelsTheArmControllersGoalSoTheArmHolds)
+{
+    FakeRobot robot;
+    robot.navigate->duration_ms = 3000;
+    Harness harness;
+    auto    trajectory = rclcpp_action::create_client<control_msgs::action::FollowJointTrajectory>(
+        harness.client_node,
+        "/arm_trajectory_controller/follow_joint_trajectory");
+    ASSERT_TRUE(trajectory->wait_for_action_server(10s));
+    harness.start(makeGoal(mission("<Sequence>" + kWalk + "</Sequence>")));
+    ASSERT_TRUE(waitFor([&robot] { return robot.navigate->goals == 1; }));
+    std::promise<rclcpp_action::ResultCode>                                             ended;
+    rclcpp_action::Client<control_msgs::action::FollowJointTrajectory>::SendGoalOptions options;
+    options.result_callback = [&ended](const auto& wrapped) { ended.set_value(wrapped.code); };
+    (void)trajectory->async_send_goal(control_msgs::action::FollowJointTrajectory::Goal(), options);
+    ASSERT_TRUE(waitFor([&robot] { return robot.arm_controller->goals == 1; }));
+
+    (void)harness.pause(true);
+
+    auto future = ended.get_future();
+    ASSERT_EQ(future.wait_for(10s), std::future_status::ready);
+    EXPECT_EQ(future.get(), rclcpp_action::ResultCode::CANCELED);
+    (void)harness.pause(false);
+    EXPECT_EQ(harness.finished()->result->outcome, ExecuteMission::Result::OUTCOME_SUCCESS);
+}
+
+TEST(NervrosExecutor, APauseHaltsAStepWhateverItIsNamed)
+{
+    FakeRobot robot;
+    robot.navigate->duration_ms = 3000;
+    Harness           harness;
+    const std::string walk = R"(<SubTree ID="GoToPose" name="walk_there" station="1.0;2.0;0.5"/>)";
+    harness.start(makeGoal(mission("<Sequence>" + walk + "</Sequence>")));
+    ASSERT_TRUE(waitFor([&robot] { return robot.navigate->goals == 1; }));
+
+    (void)harness.pause(true);
+
+    ASSERT_TRUE(waitFor([&robot] { return robot.navigate->cancels == 1; }))
+        << "the walk was not halted";
+    EXPECT_TRUE(harness.stateWhere([](const RobotState& s) { return s.paused; }).paused);
+    robot.navigate->duration_ms = 100;
+    (void)harness.pause(false);
+    EXPECT_EQ(harness.finished()->result->outcome, ExecuteMission::Result::OUTCOME_SUCCESS);
+    EXPECT_EQ(robot.navigate->goals, 2);
+}
+
+TEST(NervrosExecutor, AResumedStepGetsBackFromTheWatchdogTheTimeItHadRun)
+{
+    FakeRobot robot;
+    robot.navigate->duration_ms = 1500;
+    Harness harness;
+    // 2.5 s for a 1.5 s walk, cut short at 1.2 s and walked again in full.
+    harness.start(makeGoal(
+        mission("<Sequence>" + kWalk + "</Sequence>"),
+        ExecuteMission::Goal::MODE_EXECUTE,
+        2.5F));
+    ASSERT_TRUE(waitFor([&robot] { return robot.navigate->goals == 1; }));
+    std::this_thread::sleep_for(1200ms);
+
+    (void)harness.pause(true);
+    ASSERT_TRUE(waitFor([&robot] { return robot.navigate->cancels == 1; }));
+    (void)harness.pause(false);
+    const auto run = harness.finished();
+
+    EXPECT_EQ(run->result->outcome, ExecuteMission::Result::OUTCOME_SUCCESS)
+        << run->result->failure_reason;
+    EXPECT_EQ(robot.navigate->goals, 2);
 }
 
 TEST(NervrosExecutor, AResumedStraightWalkCoversOnlyWhatWasLeft)

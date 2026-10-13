@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <format>
 #include <future>
 #include <memory>
@@ -269,16 +270,22 @@ private:
             return BT::NodeStatus::FAILURE;
         }
 
+        std::uint64_t sent = 0;
         {
             const std::lock_guard<std::mutex> lock(mutex_);
             result_.reset();
+            sent = ++goals_;
         }
 
         typename rclcpp_action::Client<ActionT>::SendGoalOptions options;
-        // Lands on the executor's thread, not this one.
-        options.result_callback = [this](const WrappedResult& result) {
+        // Lands on the executor's thread, not this one. Only this goal's: a goal halted before,
+        // as by a pause, can still answer after its step has set out again.
+        options.result_callback = [this, sent](const WrappedResult& result) {
             const std::lock_guard<std::mutex> lock(mutex_);
-            result_ = result;
+            if (sent == goals_)
+            {
+                result_ = result;
+            }
         };
         options.feedback_callback = [this](
                                         const typename GoalHandle::SharedPtr& /*handle*/,
@@ -371,6 +378,7 @@ private:
             have_result = result_.has_value();
             succeeded   = have_result && result_->code == rclcpp_action::ResultCode::SUCCEEDED;
             result_.reset();
+            ++goals_;
         }
 
         // Must not throw: BT.CPP halts from ~Tree(), and terminating there skips the arm release.
@@ -402,6 +410,8 @@ private:
     std::shared_future<typename GoalHandle::SharedPtr> goal_future_;
     std::mutex                                         mutex_;
     std::optional<WrappedResult>                       result_;
+    /// Counts the goals sent and the halts, so a result is kept only for the goal now out.
+    std::uint64_t goals_ = 0;
     /// Held by a pause before its goal went out.
     bool waiting_ = false;
 };

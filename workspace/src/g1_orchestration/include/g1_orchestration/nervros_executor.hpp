@@ -151,6 +151,8 @@ private:
         std::optional<std::chrono::steady_clock::time_point> since;
         /// The pick or place the pause waits for, while it runs.
         std::string finishing;
+        /// How long the halted step had run: it does that again, so the watchdog gives it back.
+        std::chrono::steady_clock::duration redone{};
     };
 
     // --- ROS surface -------------------------------------------------------------------------
@@ -232,6 +234,9 @@ private:
         std::chrono::steady_clock::time_point begin, bool paused);
     /// Halts the tree and spins until its cancels have gone out and the servers are quiet.
     std::string halt(BT::Tree& tree);
+    /// After a halt: asks again for the goals still in flight and holds the arm, then waits for
+    /// the servers to go quiet; those that did not.
+    std::vector<std::string> sweepAfterHalt();
     /// What StopAll tells the caller, from what actually happened.
     [[nodiscard]] std::string describeStop(
         bool mission, bool halted, std::size_t leaf_servers_asked, std::size_t arm_asked,
