@@ -8,7 +8,7 @@ flowchart LR
     REL["g1_sensor_relay<br/>(simulation only)"] -- "~/object_poses" --> SRC
     PER["g1_perception"] -- "object poses" --> SRC
     SRC["g1_object_pose_source<br/>lifecycle"] -- "/objects" --> SRV
-    BT["g1_bt_executor"] -- "Pick, Place,<br/>SetArmPosture" --> SRV
+    BT["g1_bt_executor"] -- "Pick, Place,<br/>SetArmPosture, MoveHand" --> SRV
     SRV["g1_manipulation_server"] -- "plan + execute" --> MG["move_group"]
     MG --> JTC["arm_trajectory_controller<br/>left/right_hand_controller"]
     JTC -- "/joint_states<br/>(position + effort)" --> SRV
@@ -22,7 +22,7 @@ either. The arm and hands must be acquired before a goal executes; for a mission
 
 | Node | Role |
 |---|---|
-| `g1_manipulation_server` | The `pick`, `place` and `set_arm_posture` actions. One goal at a time across all three. Subscribes to `/objects` and `/joint_states`, reads TF, and calls `move_group` and its `/clear_octomap`, `/get_planning_scene` and `/apply_planning_scene` services. |
+| `g1_manipulation_server` | The `pick`, `place`, `set_arm_posture` and `move_hand` actions. One goal at a time across all four. Subscribes to `/objects` and `/joint_states`, reads TF, and calls `move_group` and its `/clear_octomap`, `/get_planning_scene` and `/apply_planning_scene` services. |
 | `g1_object_pose_source` | Lifecycle node that republishes object poses on `/objects` in `odom`, from the configured source. It transforms them from the detector's frame through TF rather than relabelling them, and forwards the capture stamp, so a skill can judge how old a pose is. It configures and activates itself (`autostart`), so no launch event can leave it inactive. |
 
 ## Object poses
@@ -52,6 +52,7 @@ The source's other parameters:
 | `~/pick` | `object_id`, `arm` | The pose is read from `/objects` when the goal starts, falling back on a sighting under `sighting_memory_s` old. |
 | `~/place` | `surface_object_id` or `pose`, `arm` | Prefer the surface: it is read from `/objects` and the object is stood on it. A `pose` is where the object ends up. Refused when the arm holds nothing. |
 | `~/set_arm_posture` | `group`, `named_target` | A named SRDF pose of `left_arm`, `right_arm`, `both_arms`, `left_hand` or `right_hand`. |
+| `~/move_hand` | `arm`, `target`, `offset`, `mode`, `speed` | The hand to a point (`reach`), or on the line from the shoulder to it (`point`), facing whichever way gets it there with the least change of pose, planned against the scene from where the arm is, at `move_hand_speed` of the usual speed, raised to end within `move_hand_max_s`. Refused past `move_hand_max_reach_m` from the shoulder. For pointing, and the gestures a taught skill makes; it never moves a hand's fingers. |
 
 `Pick` and `Place` publish their phase as feedback and name it in the result on failure. A failed
 pick, or one cancelled before the hand closes, leaves the hand in `pinch_ready`, nothing attached
@@ -134,8 +135,8 @@ explained in comments. `config/g1_object_pose_source.yaml` holds the source's fr
 | `visualization` | false | Markers and `~/grasp_plan`. |
 
 Tunables can be changed with `ros2 param set` between goals; a set during a goal is refused.
-`velocity_scaling`, `grasp_rpy`, `grasp_source`, `grasp_service`, `publish_markers` and
-`graspgen_to_grasp_frame_xyz_rpy` are read-only.
+`velocity_scaling`, `grasp_rpy`, `grasp_source`, `grasp_service`, `publish_markers`,
+`graspgen_to_grasp_frame_xyz_rpy` and the `move_hand_*_shoulder` links are read-only.
 
 ## Running
 
@@ -157,7 +158,7 @@ missions.
 | Test | Simulator | Covers |
 |---|---|---|
 | `test_object_pose_source_node` | no | Source selection, the hardware refusal, frame verification, stamp passthrough, silence until activated. |
-| `test_grasp_geometry` | no | Arm resolution and the grasp goal's position and mirrored orientation. |
+| `test_grasp_geometry` | no | Arm resolution, the grasp goal's position and mirrored orientation, and where a pointing hand goes. |
 | `test_grasp_filter` | no | Approach tilt and the gripper offset for generated grasps. |
 | `test_grip_check` | no | What counts as a finger pressing, and when the hand is holding. |
 | `test_hand_contact` | no | The allowed-collision-matrix edit behind the hand's contact exemptions. |

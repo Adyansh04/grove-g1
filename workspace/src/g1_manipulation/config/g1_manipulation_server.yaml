@@ -83,6 +83,21 @@ g1_manipulation_server:
     # The arm lags its trajectory by several centimetres at speed, and that lag is clearance MoveIt
     # never checked, so it moves slowly.
     velocity_scaling: 0.15
+    # MoveHand, for pointing and gestures: the farthest from the shoulder a hand is sent, the
+    # distance a pointing hand stands from it, and the share of velocity_scaling it moves at.
+    move_hand_max_reach_m: 0.48
+    move_hand_point_reach_m: 0.40
+    move_hand_speed: 0.6
+    # s. The longest a hand move may take: a slower speed is raised to fit, up to velocity_scaling,
+    # since a taught skill gives each move 45 s and one at a fifth of this speed took 44.
+    move_hand_max_s: 30.0
+    # A hand sent to a point may face any way: IK is tried in this many orientations besides its
+    # own, and the arm plans to the solution nearest its pose now. A position-only goal leaves
+    # MoveIt sampling orientations it cannot reach.
+    move_hand_orientations: 32
+    # The links a pointing arm's line starts at.
+    move_hand_left_shoulder: left_shoulder_pitch_link
+    move_hand_right_shoulder: right_shoulder_pitch_link
     planning_time_s: 10.0
     # Samples within planning_time_s: ValidateSolution rejects some paths OMPL accepts, quickly.
     planning_attempts: 5
