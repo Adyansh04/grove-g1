@@ -15,6 +15,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "g1_orchestration/catalog.hpp"
@@ -856,23 +857,163 @@ TEST(MissionValidator, HoldsANumberToItsRange)
     EXPECT_THAT(codesOf(check(turn("270"))), ::testing::Contains("BAD_ARG"));
 }
 
-TEST(MissionValidator, HoldsAWorldIdToTheShapeOfCanopysIds)
+TEST(MissionValidator, HoldsAWorldIdToTheShapeOfCanopysIdsOrToPlainWordsWhereItTakesThem)
 {
-    for (const char* id : { "R2", "O17", "O1234" })
+    // GoToTarget also takes what to search for, as the world model's approach service does.
+    for (const char* id : { "R2", "O17", "O1234", "kitchen", "red mug", "living-room" })
     {
         EXPECT_THAT(
             check(step(std::string(R"(ID="GoToTarget" target=")") + id + "\"")).diagnostics,
             ::testing::IsEmpty())
             << id;
     }
-    for (const char* id : { "kitchen", "o17", "O", "17", "O1x", "R 2", "O17;O18" })
+    for (const char* id : { "O17;O18", "red, mug", "a=b", "" })
     {
         const Validation validation =
             check(step(std::string(R"(ID="GoToTarget" target=")") + id + "\""));
-        const Diagnostic* bad = find(validation, "BAD_ARG");
-        ASSERT_NE(bad, nullptr) << id;
-        EXPECT_THAT(bad->message, ::testing::HasSubstr("world model")) << id;
+        ASSERT_NE(find(validation, "BAD_ARG"), nullptr) << id;
     }
+    const Validation long_one =
+        check(step(R"(ID="GoToTarget" target=")" + std::string(81, 'a') + "\""));
+    EXPECT_NE(find(long_one, "BAD_ARG"), nullptr);
+}
+
+// --- what one step hands on to the next ------------------------------------------------------
+
+constexpr const char* kFind =
+    R"(<SubTree ID="FindInView" name="s1_FindInView" phrase="red mug" object_id="{s1_object_id}"/>)";
+
+std::string pickTaking(const std::string& object_id, const std::string& arm = "right")
+{
+    return R"(<SubTree ID="PickObject" name="s2_PickObject" object_id=")" + object_id +
+           R"(" phrase="red mug" arm=")" + arm + R"("/>)";
+}
+
+TEST(MissionValidator, LetsAStepTakeWhatAnEarlierStepHandsOn)
+{
+    const Validation found = check(
+        mission(std::string("<Sequence>") + kFind + pickTaking("{s1_object_id}") + "</Sequence>"));
+    EXPECT_THAT(found.diagnostics, ::testing::IsEmpty()) << found.diagnostics.front().message;
+    EXPECT_THAT(found.outputs, ::testing::ElementsAre("s1_object_id"));
+
+    // An id from the world model is an id too.
+    const Validation walked = check(mission(
+        R"(<Sequence><SubTree ID="GoToTarget" name="s1_GoToTarget" target="red mug" target_id="{s1_target_id}"/>)" +
+        pickTaking("{s1_target_id}") + "</Sequence>"));
+    EXPECT_THAT(walked.diagnostics, ::testing::IsEmpty()) << walked.diagnostics.front().message;
+}
+
+TEST(MissionValidator, RefusesAReferenceNoEarlierStepHandsOn)
+{
+    // Later, never written, or not handed on at all.
+    for (const std::string& body :
+         { pickTaking("{s3_object_id}") +
+               R"(<SubTree ID="FindInView" name="s3_FindInView" phrase="red mug" object_id="{s3_object_id}"/>)",
+           pickTaking("{s7_object_id}"),
+           std::string(R"(<SubTree ID="FindInView" name="s1_FindInView" phrase="red mug"/>)") +
+               pickTaking("{s1_object_id}"),
+           pickTaking("{held_left}") })
+    {
+        const Validation  validation = check(mission("<Sequence>" + body + "</Sequence>"));
+        const Diagnostic* bad        = find(validation, "BAD_ARG");
+        ASSERT_NE(bad, nullptr) << body;
+        EXPECT_THAT(bad->message, ::testing::HasSubstr("no earlier step hands on")) << body;
+    }
+}
+
+TEST(MissionValidator, RefusesAnOutputFromAStepThatMayNotRunToItsEnd)
+{
+    // Made optional, or a Fallback's first try: the pick after it could read a key never written.
+    for (const std::string& body :
+         { std::string("<ForceSuccess>") + kFind + "</ForceSuccess>" + pickTaking("{s1_object_id}"),
+           std::string("<Fallback>") + kFind + pickTaking("{s1_object_id}") + "</Fallback>" })
+    {
+        const Validation  validation = check(mission("<Sequence>" + body + "</Sequence>"));
+        const Diagnostic* bad        = find(validation, "BAD_ARG");
+        ASSERT_NE(bad, nullptr) << body;
+        EXPECT_THAT(bad->message, ::testing::HasSubstr("may not run to its end")) << body;
+    }
+    // Within the same ForceSuccess the pick runs only after the look succeeded.
+    const Validation inside = check(mission(
+        std::string("<Sequence><ForceSuccess><Sequence>") + kFind + pickTaking("{s1_object_id}") +
+        "</Sequence></ForceSuccess></Sequence>"));
+    EXPECT_THAT(inside.diagnostics, ::testing::IsEmpty()) << inside.diagnostics.front().message;
+}
+
+TEST(MissionValidator, HandsAnOutputOnOnlyUnderItsOwnStepsKeyAndOnce)
+{
+    const Validation other = check(mission(
+        R"(<Sequence><SubTree ID="FindInView" name="s1_FindInView" phrase="red mug" object_id="{held_left}"/></Sequence>)"));
+    ASSERT_NE(find(other, "BAD_ARG"), nullptr);
+    EXPECT_THAT(find(other, "BAD_ARG")->message, ::testing::HasSubstr("{s1_object_id}"));
+
+    const Validation unnamed = check(mission(
+        R"(<Sequence><SubTree ID="FindInView" name="find" phrase="red mug" object_id="{find_object_id}"/></Sequence>)"));
+    EXPECT_THAT(codesOf(unnamed), ::testing::Contains("BAD_NAME"));
+
+    const Validation twice = check(mission(
+        std::string("<Sequence>") + kFind +
+        R"(<SubTree ID="FindInView" name="s1_FindInViewAgain" phrase="mug" object_id="{s1_object_id}"/></Sequence>)"));
+    EXPECT_THAT(codesOf(twice), ::testing::Contains("DUPLICATE_NAME"));
+}
+
+TEST(MissionValidator, RefusesAnOutputOfTheWrongKindForTheArgument)
+{
+    // The arm is one of two words, and a detector's name is no world-model id.
+    const Validation arm = check(mission(
+        std::string("<Sequence>") + kFind + pickTaking("red_block", "{s1_object_id}") +
+        "</Sequence>"));
+    ASSERT_NE(find(arm, "BAD_ARG"), nullptr);
+    EXPECT_THAT(find(arm, "BAD_ARG")->message, ::testing::HasSubstr("takes only left, right"));
+
+    const Validation target = check(mission(
+        std::string("<Sequence>") + kFind +
+        R"(<SubTree ID="GoToTarget" name="s2_GoToTarget" target="{s1_object_id}"/></Sequence>)"));
+    ASSERT_NE(find(target, "BAD_ARG"), nullptr);
+    EXPECT_THAT(
+        find(target, "BAD_ARG")->message,
+        ::testing::HasSubstr("an id from the world model"));
+}
+
+TEST(MissionValidator, LetsAFoundObjectStandInForTheNamesTheRobotWasNarrowedTo)
+{
+    Catalog catalog = Catalog::load(std::string(G1_CONFIG_DIR) + "/catalog.yaml");
+    catalog.restrict("PickObject.object_id=mug_4");
+    const MissionValidator narrowed(
+        std::move(catalog),
+        MacroLibrary::load(std::string(G1_TREES_DIR) + "/library"),
+        Limits{});
+
+    EXPECT_THAT(
+        narrowed
+            .validate(mission(
+                std::string("<Sequence>") + kFind + pickTaking("{s1_object_id}") + "</Sequence>"))
+            .diagnostics,
+        ::testing::IsEmpty());
+    EXPECT_THAT(
+        codesOf(narrowed.validate(mission("<Sequence>" + pickTaking("red_block") + "</Sequence>"))),
+        ::testing::Contains("BAD_ARG"));
+    // A world model's id is what the names were narrowed to keep out.
+    const Validation walked = narrowed.validate(mission(
+        R"(<Sequence><SubTree ID="GoToTarget" name="s1_GoToTarget" target="red mug" target_id="{s1_target_id}"/>)" +
+        pickTaking("{s1_target_id}") + "</Sequence>"));
+    ASSERT_NE(find(walked, "BAD_ARG"), nullptr);
+    EXPECT_THAT(find(walked, "BAD_ARG")->message, ::testing::HasSubstr("takes only mug_4"));
+}
+
+TEST(MissionValidator, NarrowingAListTheCatalogHasLetsNoOutputStandIn)
+{
+    Catalog catalog = Catalog::load(std::string(G1_CONFIG_DIR) + "/catalog.yaml");
+    catalog.restrict("PickObject.arm=left");
+    const MissionValidator narrowed(
+        std::move(catalog),
+        MacroLibrary::load(std::string(G1_TREES_DIR) + "/library"),
+        Limits{});
+    const Validation arm = narrowed.validate(mission(
+        std::string("<Sequence>") + kFind + pickTaking("red_block", "{s1_object_id}") +
+        "</Sequence>"));
+    ASSERT_NE(find(arm, "BAD_ARG"), nullptr);
+    EXPECT_THAT(find(arm, "BAD_ARG")->message, ::testing::HasSubstr("takes only left"));
 }
 
 TEST(MissionValidator, RejectsAnArgumentThatPointsAtTheBlackboard)

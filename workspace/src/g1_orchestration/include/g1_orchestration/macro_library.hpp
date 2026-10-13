@@ -27,8 +27,10 @@ struct Macro
     std::string xml;
     /// Its `<SubTree>` entry in the `<TreeNodesModel>`, canonically printed.
     std::string model;
-    /// Names of the ports the model declares.
+    /// Names of the input ports the model declares.
     std::vector<std::string> ports;
+    /// Names of the output ports it declares: what a step hands on to later ones.
+    std::vector<std::string> outputs;
     /// Every tag inside the body, repeated as often as it occurs.
     std::vector<std::string> tags;
 };

@@ -115,6 +115,8 @@ struct Validation
     std::set<std::string> macros;
     /// Name of each SubTree in the Mission tree, and the macro it runs.
     std::map<std::string, std::string> steps;
+    /// The keys steps hand outputs on under, such as s1_target_id.
+    std::set<std::string> outputs;
 
     [[nodiscard]] bool ok() const { return diagnostics.empty(); }
 };
@@ -176,7 +178,9 @@ public:
      * anything but Sequence, Fallback, RetryUntilSuccessful (1 to 3 attempts), Timeout (positive)
      * and ForceSuccess around catalog skills, with pre or post condition attributes, or larger than
      * the limits (bytes, depth, nodes, steps, and a worst case past the longest a mission may run);
-     * any tree besides Mission; and a `<TreeNodesModel>` that is not the library's.
+     * any tree besides Mission; and a `<TreeNodesModel>` that is not the library's. An argument
+     * may take `{s1_out}`, the output `out` that an earlier step (in document order) hands on
+     * under its own id, when the two are of a kind; nothing else may name a blackboard entry.
      *
      * @param xml The mission, as it will be run.
      * @param expected_sha256 The hash it was approved under, or nothing to skip that check. An

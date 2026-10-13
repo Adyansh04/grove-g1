@@ -14,6 +14,7 @@ from launch.actions import (
     OpaqueFunction,
     SetEnvironmentVariable,
 )
+from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.descriptions import ParameterFile
@@ -50,6 +51,13 @@ def _arguments():
             description="Parameters for every server launched here.",
         ),
         DeclareLaunchArgument("autostart", default_value="true"),
+        DeclareLaunchArgument(
+            "keepout",
+            default_value="false",
+            description="Keep paths out of the zones on /keepout_filter_mask, the mask NervROS "
+            "publishes from its keep-out zones. Off by default: enabled with no mask, the "
+            "filters warn every 2 s.",
+        ),
         DeclareLaunchArgument(
             "use_composition",
             default_value="false",
@@ -120,6 +128,27 @@ def _servers():
                 "lifecycle_manager_navigation",
                 [params, {"autostart": LaunchConfiguration("autostart")}],
                 [],
+            ),
+            # Only with keepout: the filter reads the mask once this server names it, so who
+            # reads the mask says whether the zones reach Nav2.
+            GroupAction(
+                condition=IfCondition(LaunchConfiguration("keepout")),
+                actions=[
+                    server(
+                        "nav2_map_server",
+                        "costmap_filter_info_server",
+                        "costmap_filter_info_server",
+                        [params],
+                        [],
+                    ),
+                    server(
+                        "nav2_lifecycle_manager",
+                        "lifecycle_manager",
+                        "lifecycle_manager_filters",
+                        [params, {"autostart": LaunchConfiguration("autostart")}],
+                        [],
+                    ),
+                ],
             ),
         ]
     )

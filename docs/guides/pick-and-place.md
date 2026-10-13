@@ -4,9 +4,10 @@ Pick and place are ROS actions served by `g1_manipulation`, and a BehaviorTree.C
 them with navigation. There are two versions: one where the object is already at arm's length, and
 the full mission that drives across the facility to reach it.
 
-`./scripts/demos/pick-and-place.sh <in-place|mission|sort>` opens a section's commands at once, in split panes of
-your terminal, after tearing down any stack left running. `stop` ends it, and `--print` lists
-the commands instead.
+`./scripts/demos/pick-and-place.sh <in-place|mission|sort>` opens a section's commands at once, in
+split panes of tilix (a window each in another terminal), after tearing down any stack left running.
+`stop` ends it, and `--print` lists the commands instead. Arguments after the section, such as
+`rviz:=false`, go to the bringup launch.
 
 Every command here runs inside the development container. Start it and open a shell from the
 repository root; the shell starts in `/root/workspace` with the workspace sourced:
@@ -135,9 +136,9 @@ configure, because the robot has no detector of its own.
 
 ## Arm authority
 
-The skills execute only while the arm is acquired. Every tree acquires it first, and the executor
-releases it on every exit, including a failed tree and Ctrl-C. `activate_arm:=true` also acquires
-it at bring-up and swings both arms out to the sides, where MoveIt can plan from; it is a
+The skills execute only while the arm is acquired. Every tree here acquires it first, and the
+executor releases it on every exit, including a failed tree and Ctrl-C. `activate_arm:=true` also
+acquires it at bring-up and swings both arms out to the sides, where MoveIt can plan from; it is a
 simulation convenience. By hand:
 
 ```bash
@@ -147,6 +148,16 @@ ros2 launch g1_bringup deactivate_arm.launch.py
 
 The acquire waits up to a minute for the controllers that hold the body, then 3 s for the balance
 policy to settle, before the arms move; `activate_arm_delay_s` only sets when it starts waiting.
+
+## Missions from an agent
+
+`mission.launch.py` runs the trees above with `g1_bt_executor`. A NervROS agent sends
+`nervros_executor` missions instead, built from the skills in `g1_orchestration/config/catalog.yaml`
+(`GoToTarget`, `FindInView`, `PickObject`, `PlaceInto` and the rest; see [NervROS](nervros.md)).
+That executor can pause and resume a mission: the robot stops where it is, the arm holds, a hand
+keeps its grip, a pick or a place finishes first, and a walk sets out again on resume. A step can
+take what an earlier one found: `FindInView` hands on the detector's name for an object, which
+`PickObject` takes. Unlike `g1_bt_executor`, it keeps the arms while a hand holds something.
 
 ## When a run misbehaves
 

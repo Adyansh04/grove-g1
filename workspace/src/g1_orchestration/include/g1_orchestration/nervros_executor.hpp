@@ -19,6 +19,10 @@
  * callbacks and tree destruction never overlap. A tick can still take long, in a blocking call,
  * so a stop, a cancel or the watchdog also sets a flag the leaves look at before they start
  * anything (RosContext::stop).
+ *
+ * A pause halts the running step and holds every leaf that would start something (PauseGate),
+ * so the base stops and the arms hold where they are; a hand keeps its grip. A step that handles
+ * an object is let finish first. Resuming runs the halted step again from its start.
  */
 
 #include <behaviortree_cpp/bt_factory.h>
@@ -34,6 +38,7 @@
 #include <nervros_interfaces/msg/heartbeat.hpp>
 #include <nervros_interfaces/msg/robot_state.hpp>
 #include <nervros_interfaces/srv/get_catalog.hpp>
+#include <nervros_interfaces/srv/pause_mission.hpp>
 #include <nervros_interfaces/srv/preview_mission.hpp>
 #include <nervros_interfaces/srv/stop_all.hpp>
 #include <nervros_interfaces/srv/teleop.hpp>
@@ -51,6 +56,7 @@
 #include "g1_orchestration/mission_preview.hpp"
 #include "g1_orchestration/mission_validator.hpp"
 #include "g1_orchestration/robot_health.hpp"
+#include "g1_orchestration/ros_action_node.hpp"
 #include "g1_orchestration/server_fleet.hpp"
 #include "g1_orchestration/teleop_driver.hpp"
 
@@ -135,6 +141,18 @@ private:
         kStopped,
         kTimeout,
         kShutdown,
+        kPausedTooLong,
+    };
+
+    /// Where a pause stands, on the mission thread.
+    struct Pausing
+    {
+        /// When the running step was halted, once it has been.
+        std::optional<std::chrono::steady_clock::time_point> since;
+        /// The pick or place the pause waits for, while it runs.
+        std::string finishing;
+        /// How long the halted step had run: it does that again, so the watchdog gives it back.
+        std::chrono::steady_clock::duration redone{};
     };
 
     // --- ROS surface -------------------------------------------------------------------------
@@ -164,6 +182,9 @@ private:
     void onTeleop(
         const std::shared_ptr<nervros_interfaces::srv::Teleop::Request>&  request,
         const std::shared_ptr<nervros_interfaces::srv::Teleop::Response>& response);
+    void onPause(
+        const std::shared_ptr<nervros_interfaces::srv::PauseMission::Request>&  request,
+        const std::shared_ptr<nervros_interfaces::srv::PauseMission::Response>& response);
     /// StopAll's work, for the service and for the deadman: halt, cancel, wait, hold.
     nervros_interfaces::srv::StopAll::Response stopEverything(const std::string& reason);
     /// Stops the running mission once its agent has been silent past its heartbeat timeout, or
@@ -194,15 +215,28 @@ private:
         double limit_s, std::chrono::steady_clock::time_point begin, BT::NodeStatus& status);
     /// Why the mission has to end now, if it does: shutdown, a stop, a cancel or the watchdog.
     [[nodiscard]] std::optional<Ended> interruption(
-        const std::shared_ptr<GoalHandle>& handle, std::chrono::steady_clock::time_point begin,
-        double limit_s) const;
+        const std::shared_ptr<GoalHandle>&    handle,
+        std::chrono::steady_clock::time_point deadline) const;
+    /**
+     * @brief Follows the operator's last pause or resume: holds the leaves, lets a pick or a place
+     *        end, halts the running step, or lets the mission go on.
+     *
+     * @param deadline The watchdog's, moved on by the time a pause took.
+     * @return Whether to tick the tree.
+     */
+    bool followPause(
+        BT::Tree& tree, const MissionObserver& observer, Pausing& pausing,
+        std::chrono::steady_clock::time_point& deadline);
     /// Raises the stop flag once the running mission is past its limit, even inside a long tick.
     void        watchdog();
     static void sendFeedback(
         const std::shared_ptr<GoalHandle>& handle, MissionObserver& observer,
-        std::chrono::steady_clock::time_point begin);
+        std::chrono::steady_clock::time_point begin, bool paused);
     /// Halts the tree and spins until its cancels have gone out and the servers are quiet.
     std::string halt(BT::Tree& tree);
+    /// After a halt: asks again for the goals still in flight and holds the arm, then waits for
+    /// the servers to go quiet; those that did not.
+    std::vector<std::string> sweepAfterHalt();
     /// What StopAll tells the caller, from what actually happened.
     [[nodiscard]] std::string describeStop(
         bool mission, bool halted, std::size_t leaf_servers_asked, std::size_t arm_asked,
@@ -238,6 +272,7 @@ private:
     double                 feedback_period_s_;
     double                 cancel_settle_s_;
     double                 stop_wait_s_;
+    double                 max_pause_s_;
     MissionObserver::Level event_level_;
 
     std::unique_ptr<MissionValidator> validator_;
@@ -267,6 +302,7 @@ private:
     rclcpp::Service<nervros_interfaces::srv::StopAll>::SharedPtr         stop_service_;
     rclcpp::Service<nervros_interfaces::srv::PreviewMission>::SharedPtr  preview_service_;
     rclcpp::Service<nervros_interfaces::srv::Teleop>::SharedPtr          teleop_service_;
+    rclcpp::Service<nervros_interfaces::srv::PauseMission>::SharedPtr    pause_service_;
     rclcpp::Publisher<RobotState>::SharedPtr                             state_pub_;
     rclcpp::TimerBase::SharedPtr                                         state_timer_;
     rclcpp::Subscription<nervros_interfaces::msg::Heartbeat>::SharedPtr  heartbeat_sub_;
@@ -304,6 +340,12 @@ private:
     rclcpp_action::GoalUUID goal_id_{};
     /// Set by a stop, a cancel, the watchdog or a shutdown: what the leaves look at.
     std::atomic<bool> halting_{ false };
+    /// The operator's last word: true to pause the running mission, false to go on with it.
+    std::atomic<bool> pause_wanted_{ false };
+    /// True from a pause until the resume, also while a pick or place it waits for ends.
+    std::atomic<bool> paused_{ false };
+    /// Closed while paused: a leaf about to start something waits instead.
+    PauseGate pause_gate_;
     /// When the watchdog fires, in steady-clock ticks; 0 when no mission runs.
     std::atomic<std::chrono::steady_clock::rep> deadline_ticks_{ 0 };
     /// The running mission's heartbeat timeout in steady-clock ticks; 0 for none.

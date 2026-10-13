@@ -18,6 +18,7 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <functional>
 #include <g1_msgs/action/pick.hpp>
 #include <g1_msgs/action/place.hpp>
 #include <g1_msgs/action/set_arm_posture.hpp>
@@ -309,9 +310,12 @@ private:
     /**
      * @brief Plans and executes to a named SRDF pose.
      *
-     * @return False on a planning or an execution failure, logged.
+     * @param cancelled Asked once the plan is made: true leaves the arm where it is.
+     * @return False on a planning or an execution failure, logged, or when cancelled.
      */
-    bool moveToNamed(MoveGroup& group, const std::string& named_target);
+    bool moveToNamed(
+        MoveGroup& group, const std::string& named_target,
+        const std::function<bool()>& cancelled = {});
 
     /**
      * @brief Walks @p link toward @p pose in a straight line, however far it gets.

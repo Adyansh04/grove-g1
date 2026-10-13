@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<!--
+  Look for something from where the robot stands, without moving: ask the detector for the phrase
+  and wait for it on /objects, then idle the detector again. LookFor hands on the id the detector
+  reports it under (the slug of the phrase, red_mug for red mug), which PickObject and PlaceInto
+  look it up by. One retry, as PickObject's own look has: a detector that was idle can take a
+  moment to answer.
+-->
+<root BTCPP_format="4">
+  <BehaviorTree ID="FindInView">
+    <Timeout name="give_up_after_the_limit" msec="60000">
+      <Sequence name="find_in_view">
+        <RetryUntilSuccessful name="find_it_with_retries" num_attempts="2">
+          <LookFor name="find_the_object" objects="{phrase}" first_id="{object_id}"/>
+        </RetryUntilSuccessful>
+        <StopLooking name="detector_off_again"/>
+      </Sequence>
+    </Timeout>
+  </BehaviorTree>
+
+  <!-- A step that hands nothing on writes its own key: an output with no default must be
+       remapped, and BT.CPP refuses the tree otherwise. -->
+  <TreeNodesModel>
+    <SubTree ID="FindInView">
+      <input_port name="phrase">Plain words the detector finds it by, such as red mug.</input_port>
+      <output_port name="object_id" default="{object_id}">The name the detector reports it under, such as red_mug.</output_port>
+    </SubTree>
+  </TreeNodesModel>
+</root>

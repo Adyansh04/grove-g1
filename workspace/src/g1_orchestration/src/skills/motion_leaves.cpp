@@ -14,6 +14,9 @@ namespace
 constexpr double kMinDistanceM = 0.1;
 constexpr double kMaxDistanceM = 2.0;
 constexpr double kMaxTurnDeg   = 180.0;
+/// Less than this left of a walk or a turn when it resumes after a pause, and it counts as done.
+constexpr double kNothingLeftM   = 0.05;
+constexpr double kNothingLeftDeg = 3.0;
 
 }  // namespace
 
@@ -62,18 +65,54 @@ bool DriveStraight::fillGoal(Goal& goal)
     const double sign  = direction == "backward" ? -1.0 : 1.0;
     const double speed = std::clamp(getInput<double>("speed").value_or(0.3), 0.2, 0.4);
     const double slack = std::max(0.0, getInput<double>("slack_s").value_or(8.0));
+    // After a pause, only what is left of the distance.
+    const double left = *distance - done_m_;
     // A short walk barely reaches speed, so it coasts less: at most half of it is taken off.
-    const double coast = std::clamp(getInput<double>("coast_m").value_or(0.1), 0.0, *distance / 2);
-    goal.target.x      = sign * (*distance - coast);
+    const double coast = std::clamp(getInput<double>("coast_m").value_or(0.1), 0.0, left / 2);
+    goal.target.x      = sign * (left - coast);
     goal.speed         = static_cast<float>(sign * speed);
     // Half the commanded speed is what the gait still delivers on a bad day. Never zero: Nav2
     // reads a zero allowance as no limit.
-    goal.time_allowance = rclcpp::Duration::from_seconds(slack + (*distance / (0.5 * speed)));
+    goal.time_allowance = rclcpp::Duration::from_seconds(slack + (left / (0.5 * speed)));
+    goal_m_             = 0.0;
     return true;
+}
+
+void DriveStraight::onFeedback(const Feedback& feedback)
+{
+    goal_m_ = std::abs(static_cast<double>(feedback.distance_traveled));
+}
+
+void DriveStraight::onHaltedWithGoal(bool pausing, bool finished)
+{
+    if (!pausing)
+    {
+        done_m_ = 0.0;
+        return;
+    }
+    const double distance = getInput<double>("distance").value_or(0.0);
+    // The gait carries on a little after Nav2 stops it, as fillGoal allows for.
+    // Cancelled at speed the gait coasts on; only just set out, it coasts no further than it
+    // walked.
+    const double coast =
+        std::min(std::max(0.0, getInput<double>("coast_m").value_or(0.1)), goal_m_.load());
+    done_m_ = finished ? distance : std::min(distance, done_m_ + goal_m_ + coast);
+}
+
+bool DriveStraight::nothingLeft()
+{
+    if (done_m_ > 0.0 && getInput<double>("distance").value_or(0.0) - done_m_ < kNothingLeftM)
+    {
+        done_m_ = 0.0;
+        return true;
+    }
+    return false;
 }
 
 BT::NodeStatus DriveStraight::judgeResult(const WrappedResult& result)
 {
+    // Done either way: a later run walks the whole distance again.
+    done_m_ = 0.0;
     if (result.code == rclcpp_action::ResultCode::SUCCEEDED)
     {
         return BT::NodeStatus::SUCCESS;
@@ -132,16 +171,46 @@ bool TurnBy::fillGoal(Goal& goal)
         setFailureText(std::format("a turn needs an angle from -{0} to {0} degrees", kMaxTurnDeg));
         return false;
     }
-    const double radians = *degrees * M_PI / 180.0;
+    // After a pause, only what is left of the angle.
+    const double radians = std::copysign(std::abs(*degrees) - done_deg_, *degrees) * M_PI / 180.0;
     goal.target_yaw      = static_cast<float>(radians);
     const double rate    = std::max(0.05, getInput<double>("yaw_rate").value_or(0.4));
     const double slack   = std::max(0.0, getInput<double>("slack_s").value_or(8.0));
     goal.time_allowance  = rclcpp::Duration::from_seconds(slack + (std::abs(radians) / rate));
+    goal_deg_            = 0.0;
     return true;
+}
+
+void TurnBy::onFeedback(const Feedback& feedback)
+{
+    goal_deg_ = std::abs(static_cast<double>(feedback.angular_distance_traveled)) * 180.0 / M_PI;
+}
+
+void TurnBy::onHaltedWithGoal(bool pausing, bool finished)
+{
+    if (!pausing)
+    {
+        done_deg_ = 0.0;
+        return;
+    }
+    const double degrees = std::abs(getInput<double>("degrees").value_or(0.0));
+    done_deg_            = finished ? degrees : std::min(degrees, done_deg_ + goal_deg_);
+}
+
+bool TurnBy::nothingLeft()
+{
+    if (done_deg_ > 0.0 &&
+        std::abs(getInput<double>("degrees").value_or(0.0)) - done_deg_ < kNothingLeftDeg)
+    {
+        done_deg_ = 0.0;
+        return true;
+    }
+    return false;
 }
 
 BT::NodeStatus TurnBy::judgeResult(const WrappedResult& result)
 {
+    done_deg_ = 0.0;
     if (result.code == rclcpp_action::ResultCode::SUCCEEDED)
     {
         return BT::NodeStatus::SUCCESS;

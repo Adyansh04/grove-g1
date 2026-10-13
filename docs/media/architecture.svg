@@ -64,7 +64,7 @@
 <rect class="card" x="44" y="88" width="220" height="40"/>
 <path d="M44.5,96 v24" stroke="var(--agent)" stroke-width="3.5" stroke-linecap="round"/>
 <text class="t" x="57" y="105">you</text>
-<text class="s" x="57" y="119">chat, click in 3D, approve, Stop</text>
+<text class="s" x="57" y="119">chat, click, approve, pause, Stop</text>
 <rect class="card dash" x="300" y="88" width="360" height="40"/>
 <path d="M300.5,96 v24" stroke="var(--agent)" stroke-width="3.5" stroke-linecap="round"/>
 <text class="t" x="313" y="105">NervROS</text>
@@ -87,7 +87,7 @@
 <rect class="card" x="512" y="220" width="404" height="42"/>
 <path d="M512.5,228 v26" stroke="var(--man)" stroke-width="3.5" stroke-linecap="round"/>
 <text class="t" x="525" y="238">nervros_executor</text>
-<text class="s" x="525" y="252">NervROS missions: validate, preview, run, stop</text>
+<text class="s" x="525" y="252">NervROS missions: validate, preview, run, pause, stop</text>
 <rect class="band" x="28" y="306" width="288" height="244"/>
 <path d="M39,306.5 h266" stroke="var(--nav)" stroke-width="2.5" stroke-linecap="round" opacity=".85"/>
 <text class="grp" x="41" y="327" fill="var(--nav)">NAVIGATION</text>

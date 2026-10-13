@@ -29,6 +29,7 @@
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <nav2_msgs/action/drive_on_heading.hpp>
 #include <nav2_msgs/action/navigate_to_pose.hpp>
 #include <nav2_msgs/action/spin.hpp>
 #include <nav2_msgs/srv/clear_entire_costmap.hpp>
@@ -36,6 +37,7 @@
 #include <nervros_interfaces/msg/heartbeat.hpp>
 #include <nervros_interfaces/msg/robot_state.hpp>
 #include <nervros_interfaces/srv/get_catalog.hpp>
+#include <nervros_interfaces/srv/pause_mission.hpp>
 #include <nervros_interfaces/srv/preview_mission.hpp>
 #include <nervros_interfaces/srv/stop_all.hpp>
 #include <nervros_interfaces/srv/teleop.hpp>
@@ -130,6 +132,9 @@ public:
     std::atomic<int> reject_cancels{ 0 };
     std::string      message = "done";
 
+    /// Metres a second a walk reports as covered, for the actions whose feedback has a distance.
+    std::atomic<double> metres_per_s{ 1.0 };
+
     /// The `object_id` of the newest goal, for the actions that have one.
     std::string lastObjectId()
     {
@@ -137,20 +142,38 @@ public:
         return last_object_id_;
     }
 
+    /// Every goal so far, oldest first.
+    std::vector<typename ActionT::Goal> sent()
+    {
+        const std::lock_guard<std::mutex> lock(id_mutex_);
+        return sent_;
+    }
+
 private:
     void execute(const std::shared_ptr<Handle>& handle)
     {
         ++goals;
-        if constexpr (requires { handle->get_goal()->object_id; })
         {
             const std::lock_guard<std::mutex> lock(id_mutex_);
-            last_object_id_ = handle->get_goal()->object_id;
+            sent_.push_back(*handle->get_goal());
+            if constexpr (requires { handle->get_goal()->object_id; })
+            {
+                last_object_id_ = handle->get_goal()->object_id;
+            }
         }
         auto       result = std::make_shared<typename ActionT::Result>();
-        const auto end =
-            std::chrono::steady_clock::now() + std::chrono::milliseconds(duration_ms.load());
+        const auto start  = std::chrono::steady_clock::now();
+        const auto end    = start + std::chrono::milliseconds(duration_ms.load());
         while (std::chrono::steady_clock::now() < end)
         {
+            if constexpr (requires(typename ActionT::Feedback f) { f.distance_traveled; })
+            {
+                auto feedback               = std::make_shared<typename ActionT::Feedback>();
+                feedback->distance_traveled = static_cast<float>(
+                    metres_per_s *
+                    std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count());
+                handle->publish_feedback(feedback);
+            }
             if (honor_cancel && handle->is_canceling())
             {
                 ++cancels;
@@ -185,6 +208,7 @@ private:
     std::vector<std::jthread>                          threads_;
     std::mutex                                         id_mutex_;
     std::string                                        last_object_id_;
+    std::vector<typename ActionT::Goal>                sent_;
 };
 
 /// The detector's parameter, and /objects with whatever ids the test says are in view.
@@ -348,7 +372,10 @@ public:
             "/nervros_executor/validate_mission");
         catalog = client_node->create_client<nervros_interfaces::srv::GetCatalog>(
             "/nervros_executor/get_catalog");
+        pauser = client_node->create_client<nervros_interfaces::srv::PauseMission>(
+            "/nervros_executor/pause_mission");
         EXPECT_TRUE(client->wait_for_action_server(20s));
+        EXPECT_TRUE(pauser->wait_for_service(20s));
         EXPECT_TRUE(stop->wait_for_service(20s));
         EXPECT_TRUE(validate->wait_for_service(20s));
         EXPECT_TRUE(catalog->wait_for_service(20s));
@@ -446,6 +473,24 @@ public:
         return future.get();
     }
 
+    /// Pauses the running mission, or resumes it with @p on false.
+    nervros_interfaces::srv::PauseMission::Response::SharedPtr pause(bool on)
+    {
+        auto request    = std::make_shared<nervros_interfaces::srv::PauseMission::Request>();
+        request->pause  = on;
+        request->reason = "test";
+        auto future     = pauser->async_send_request(request);
+        EXPECT_EQ(future.wait_for(10s), std::future_status::ready);
+        return future.get();
+    }
+
+    /// Whether any feedback of the goal started last said it was paused.
+    bool feedbackSaidPaused()
+    {
+        const std::lock_guard<std::mutex> lock(run_mutex_);
+        return std::ranges::any_of(run_->feedback, [](const auto& f) { return f.paused; });
+    }
+
     RobotState latestState()
     {
         const auto end = std::chrono::steady_clock::now() + 5s;
@@ -488,6 +533,7 @@ public:
     rclcpp::Client<nervros_interfaces::srv::StopAll>::SharedPtr         stop;
     rclcpp::Client<nervros_interfaces::srv::ValidateMission>::SharedPtr validate;
     rclcpp::Client<nervros_interfaces::srv::GetCatalog>::SharedPtr      catalog;
+    rclcpp::Client<nervros_interfaces::srv::PauseMission>::SharedPtr    pauser;
     rclcpp::Subscription<RobotState>::SharedPtr                         state_sub;
     std::mutex                                                          state_mutex;
     std::vector<RobotState>                                             states;
@@ -542,7 +588,10 @@ public:
                 node,
                 "/navigate_to_pose");
         }
-        spin           = std::make_unique<FakeServer<nav2_msgs::action::Spin>>(node, "/spin");
+        spin  = std::make_unique<FakeServer<nav2_msgs::action::Spin>>(node, "/spin");
+        drive = std::make_unique<FakeServer<nav2_msgs::action::DriveOnHeading>>(
+            node,
+            "/drive_on_heading");
         arm_controller = std::make_unique<FakeServer<control_msgs::action::FollowJointTrajectory>>(
             node,
             "/arm_trajectory_controller/follow_joint_trajectory");
@@ -572,6 +621,7 @@ public:
     std::unique_ptr<FakeServer<g1_msgs::action::StepClear>>                     step_clear;
     std::unique_ptr<FakeServer<nav2_msgs::action::NavigateToPose>>              navigate;
     std::unique_ptr<FakeServer<nav2_msgs::action::Spin>>                        spin;
+    std::unique_ptr<FakeServer<nav2_msgs::action::DriveOnHeading>>              drive;
     std::unique_ptr<FakeServer<control_msgs::action::FollowJointTrajectory>>    arm_controller;
     std::vector<rclcpp::Service<nav2_msgs::srv::ClearEntireCostmap>::SharedPtr> clears;
 
@@ -629,7 +679,7 @@ TEST(NervrosExecutor, ServesTheCatalogItsMacrosAndItsVersion)
 
     const auto json = nlohmann::json::parse(response->catalog_json);
     EXPECT_EQ(json.at("catalog_version").get<std::string>(), response->catalog_version);
-    EXPECT_EQ(json.at("skills").size(), 8U);
+    EXPECT_EQ(json.at("skills").size(), 9U);
     EXPECT_THAT(response->tree_nodes_model_xml, ::testing::HasSubstr("<SubTree ID=\"PickObject\""));
     EXPECT_THAT(
         response->tree_nodes_model_xml,
@@ -663,6 +713,21 @@ TEST(NervrosExecutor, ValidateMissionSaysWhyATreeIsRefusedAndHowLongAGoodOneTake
     const auto refused = refusal.get();
     EXPECT_FALSE(refused->ok);
     EXPECT_EQ(nlohmann::json::parse(refused->diagnostics_json).at(0).at("code"), "FORBIDDEN_NODE");
+}
+
+TEST(NervrosExecutor, LoadsAStepThatHandsNothingOn)
+{
+    Harness harness;
+    auto    request = std::make_shared<nervros_interfaces::srv::ValidateMission::Request>();
+    request->tree_xml =
+        mission(R"(<Sequence><SubTree ID="GoToTarget" name="s1_GoToTarget" target="R2"/>)"
+                R"(<SubTree ID="FindInView" name="s2_FindInView" phrase="mug"/></Sequence>)");
+
+    auto answer = harness.validate->async_send_request(request);
+
+    ASSERT_EQ(answer.wait_for(20s), std::future_status::ready);
+    const auto verdict = answer.get();
+    EXPECT_TRUE(verdict->ok) << verdict->diagnostics_json;
 }
 
 TEST(NervrosExecutor, RejectsAForbiddenMissionWithDiagnosticsAndRunsNothing)
@@ -1971,6 +2036,247 @@ TEST(NervrosExecutor, APreviewChainsTurnsAndWalksFromTheRobotsPoseWithoutMovingI
     EXPECT_EQ(response->steps[2].goal.header.frame_id, "map");
     EXPECT_THAT(response->steps[2].note, ::testing::HasSubstr("planner is not up"));
     EXPECT_TRUE(response->steps[2].path.poses.empty());
+}
+
+// --- step outputs ----------------------------------------------------------------------------
+
+TEST(NervrosExecutor, AStepTakesTheIdAnEarlierStepFound)
+{
+    FakeRobot         robot;
+    Harness           harness;
+    const std::string find =
+        R"(<SubTree ID="FindInView" name="s1_FindInView" phrase="red block" object_id="{s1_object_id}"/>)";
+    const std::string pick =
+        R"(<SubTree ID="PickObject" name="s2_PickObject" object_id="{s1_object_id}" phrase="bright red plastic ball" arm="right"/>)";
+
+    const auto run = harness.execute(makeGoal(mission("<Sequence>" + find + pick + "</Sequence>")));
+
+    ASSERT_EQ(run->result->outcome, ExecuteMission::Result::OUTCOME_SUCCESS)
+        << run->result->failure_reason;
+    EXPECT_EQ(robot.pick->lastObjectId(), "red_block") << "the pick took what the look found";
+}
+
+TEST(NervrosExecutor, ADryRunOfStepsThatHandOnRunsThroughWithNothingFound)
+{
+    Harness           harness;
+    const std::string find =
+        R"(<SubTree ID="FindInView" name="s1_FindInView" phrase="red block" object_id="{s1_object_id}"/>)";
+    const std::string pick =
+        R"(<SubTree ID="PickObject" name="s2_PickObject" object_id="{s1_object_id}" phrase="red block" arm="right"/>)";
+
+    const auto run = harness.execute(makeGoal(
+        mission("<Sequence>" + find + pick + "</Sequence>"),
+        ExecuteMission::Goal::MODE_DRY_RUN));
+
+    EXPECT_EQ(run->result->outcome, ExecuteMission::Result::OUTCOME_SUCCESS)
+        << run->result->failure_reason;
+}
+
+// --- pause and resume ---------------------------------------------------------------------------
+
+TEST(NervrosExecutor, APauseWithNoMissionRunningSaysSo)
+{
+    Harness harness;
+
+    const auto answer = harness.pause(true);
+
+    EXPECT_FALSE(answer->ok);
+    EXPECT_THAT(answer->message, ::testing::HasSubstr("no mission is running"));
+}
+
+TEST(NervrosExecutor, APauseHaltsTheWalkAndAResumeSetsOutAgain)
+{
+    FakeRobot robot;
+    robot.navigate->duration_ms = 3000;
+    Harness harness;
+    harness.start(makeGoal(mission("<Sequence>" + kWalk + "</Sequence>")));
+    ASSERT_TRUE(waitFor([&robot] { return robot.navigate->goals == 1; }));
+
+    const auto paused = harness.pause(true);
+
+    EXPECT_TRUE(paused->ok) << paused->message;
+    ASSERT_TRUE(waitFor([&robot] { return robot.navigate->cancels == 1; }))
+        << "the walk was not halted";
+    const RobotState state = harness.stateWhere([](const RobotState& s) { return s.paused; });
+    EXPECT_TRUE(state.paused);
+    EXPECT_THAT(state.message, ::testing::HasSubstr("paused during s2_GoToPose"));
+    EXPECT_THAT(state.resources_held, ::testing::ElementsAre("base")) << "it keeps the base";
+    std::this_thread::sleep_for(1s);
+    EXPECT_EQ(robot.navigate->goals, 1) << "nothing set out while paused";
+
+    robot.navigate->duration_ms = 100;
+    EXPECT_TRUE(harness.pause(false)->ok);
+    const auto run = harness.finished();
+
+    ASSERT_EQ(run->result->outcome, ExecuteMission::Result::OUTCOME_SUCCESS)
+        << run->result->failure_reason;
+    EXPECT_EQ(robot.navigate->goals, 2) << "the walk set out again";
+    EXPECT_TRUE(harness.feedbackSaidPaused());
+    EXPECT_FALSE(harness.stateWhere([](const RobotState& s) { return !s.paused; }).paused);
+}
+
+TEST(NervrosExecutor, APauseLetsAPickEndAndHoldsTheStepAfterIt)
+{
+    FakeRobot robot;
+    robot.pick->duration_ms = 1500;
+    Harness           harness;
+    const std::string walk = R"(<SubTree ID="GoToPose" name="s2_GoToPose" station="1.0;2.0;0.5"/>)";
+    harness.start(makeGoal(mission("<Sequence>" + kPick + walk + "</Sequence>")));
+    ASSERT_TRUE(waitFor([&robot] { return robot.pick->goals == 1; }));
+
+    (void)harness.pause(true);
+
+    const RobotState pausing = harness.stateWhere([](const RobotState& s) {
+        return s.message.find("pausing once s1_PickObject ends") != std::string::npos;
+    });
+    EXPECT_FALSE(pausing.paused) << "the pick still moves, so it is not paused yet";
+    const RobotState paused = harness.stateWhere([](const RobotState& s) {
+        return s.message.find("paused during s2_GoToPose") != std::string::npos;
+    });
+    EXPECT_THAT(paused.message, ::testing::HasSubstr("paused during s2_GoToPose"));
+    EXPECT_EQ(robot.pick->cancels, 0) << "the pick ran to its end";
+    EXPECT_EQ(robot.retreat->goals, 1) << "and backed off, as a pick does";
+    EXPECT_EQ(robot.navigate->goals, 0) << "the walk waits for the resume";
+
+    (void)harness.pause(false);
+    const auto run = harness.finished();
+
+    ASSERT_EQ(run->result->outcome, ExecuteMission::Result::OUTCOME_SUCCESS)
+        << run->result->failure_reason;
+    EXPECT_EQ(robot.navigate->goals, 1);
+    EXPECT_EQ(robot.pick->goals, 1) << "the pick was not done twice";
+}
+
+TEST(NervrosExecutor, APauseCancelsTheArmControllersGoalSoTheArmHolds)
+{
+    FakeRobot robot;
+    robot.navigate->duration_ms = 3000;
+    Harness harness;
+    auto    trajectory = rclcpp_action::create_client<control_msgs::action::FollowJointTrajectory>(
+        harness.client_node,
+        "/arm_trajectory_controller/follow_joint_trajectory");
+    ASSERT_TRUE(trajectory->wait_for_action_server(10s));
+    harness.start(makeGoal(mission("<Sequence>" + kWalk + "</Sequence>")));
+    ASSERT_TRUE(waitFor([&robot] { return robot.navigate->goals == 1; }));
+    std::promise<rclcpp_action::ResultCode>                                             ended;
+    rclcpp_action::Client<control_msgs::action::FollowJointTrajectory>::SendGoalOptions options;
+    options.result_callback = [&ended](const auto& wrapped) { ended.set_value(wrapped.code); };
+    (void)trajectory->async_send_goal(control_msgs::action::FollowJointTrajectory::Goal(), options);
+    ASSERT_TRUE(waitFor([&robot] { return robot.arm_controller->goals == 1; }));
+
+    (void)harness.pause(true);
+
+    auto future = ended.get_future();
+    ASSERT_EQ(future.wait_for(10s), std::future_status::ready);
+    EXPECT_EQ(future.get(), rclcpp_action::ResultCode::CANCELED);
+    (void)harness.pause(false);
+    EXPECT_EQ(harness.finished()->result->outcome, ExecuteMission::Result::OUTCOME_SUCCESS);
+}
+
+TEST(NervrosExecutor, APauseHaltsAStepWhateverItIsNamed)
+{
+    FakeRobot robot;
+    robot.navigate->duration_ms = 3000;
+    Harness           harness;
+    const std::string walk = R"(<SubTree ID="GoToPose" name="walk_there" station="1.0;2.0;0.5"/>)";
+    harness.start(makeGoal(mission("<Sequence>" + walk + "</Sequence>")));
+    ASSERT_TRUE(waitFor([&robot] { return robot.navigate->goals == 1; }));
+
+    (void)harness.pause(true);
+
+    ASSERT_TRUE(waitFor([&robot] { return robot.navigate->cancels == 1; }))
+        << "the walk was not halted";
+    EXPECT_TRUE(harness.stateWhere([](const RobotState& s) { return s.paused; }).paused);
+    robot.navigate->duration_ms = 100;
+    (void)harness.pause(false);
+    EXPECT_EQ(harness.finished()->result->outcome, ExecuteMission::Result::OUTCOME_SUCCESS);
+    EXPECT_EQ(robot.navigate->goals, 2);
+}
+
+TEST(NervrosExecutor, AResumedStepGetsBackFromTheWatchdogTheTimeItHadRun)
+{
+    FakeRobot robot;
+    robot.navigate->duration_ms = 1500;
+    Harness harness;
+    // 2.5 s for a 1.5 s walk, cut short at 1.2 s and walked again in full.
+    harness.start(makeGoal(
+        mission("<Sequence>" + kWalk + "</Sequence>"),
+        ExecuteMission::Goal::MODE_EXECUTE,
+        2.5F));
+    ASSERT_TRUE(waitFor([&robot] { return robot.navigate->goals == 1; }));
+    std::this_thread::sleep_for(1200ms);
+
+    (void)harness.pause(true);
+    ASSERT_TRUE(waitFor([&robot] { return robot.navigate->cancels == 1; }));
+    (void)harness.pause(false);
+    const auto run = harness.finished();
+
+    EXPECT_EQ(run->result->outcome, ExecuteMission::Result::OUTCOME_SUCCESS)
+        << run->result->failure_reason;
+    EXPECT_EQ(robot.navigate->goals, 2);
+}
+
+TEST(NervrosExecutor, AResumedStraightWalkCoversOnlyWhatWasLeft)
+{
+    FakeRobot robot;
+    robot.drive->duration_ms  = 4000;
+    robot.drive->metres_per_s = 0.5;
+    Harness           harness;
+    const std::string walk =
+        R"(<SubTree ID="WalkStraight" name="s1_WalkStraight" direction="forward" distance_m="2.0"/>)";
+    harness.start(makeGoal(mission("<Sequence>" + walk + "</Sequence>")));
+    ASSERT_TRUE(waitFor([&robot] { return robot.drive->goals == 1; }));
+    std::this_thread::sleep_for(1200ms);
+
+    (void)harness.pause(true);
+    ASSERT_TRUE(waitFor([&robot] { return robot.drive->cancels == 1; }));
+    robot.drive->duration_ms = 100;
+    (void)harness.pause(false);
+    const auto run = harness.finished();
+
+    ASSERT_EQ(run->result->outcome, ExecuteMission::Result::OUTCOME_SUCCESS)
+        << run->result->failure_reason;
+    const auto goals = robot.drive->sent();
+    ASSERT_EQ(goals.size(), 2U);
+    // 2 m less the gait's coast; then what is left after about 0.6 m and the coast.
+    EXPECT_NEAR(goals[0].target.x, 1.9, 1e-6);
+    EXPECT_LT(goals[1].target.x, goals[0].target.x - 0.4) << "it walked the whole way again";
+    EXPECT_GT(goals[1].target.x, 0.5);
+}
+
+TEST(NervrosExecutor, APauseLongerThanTheLimitEndsTheMission)
+{
+    FakeRobot robot;
+    robot.navigate->duration_ms = 5000;
+    Harness harness({ rclcpp::Parameter("max_pause_s", 1.0) });
+    harness.start(makeGoal(mission("<Sequence>" + kWalk + "</Sequence>")));
+    ASSERT_TRUE(waitFor([&robot] { return robot.navigate->goals == 1; }));
+
+    (void)harness.pause(true);
+    const auto run = harness.finished();
+
+    EXPECT_EQ(run->result->outcome, ExecuteMission::Result::OUTCOME_CANCELED);
+    EXPECT_THAT(run->result->failure_reason, ::testing::HasSubstr("paused for longer than 1 s"));
+    EXPECT_EQ(run->result->failed_step_id, "s2");
+    EXPECT_EQ(robot.navigate->goals, 1);
+}
+
+TEST(NervrosExecutor, AStopWhilePausedEndsTheMission)
+{
+    FakeRobot robot;
+    robot.navigate->duration_ms = 5000;
+    Harness harness;
+    harness.start(makeGoal(mission("<Sequence>" + kWalk + "</Sequence>")));
+    ASSERT_TRUE(waitFor([&robot] { return robot.navigate->goals == 1; }));
+    (void)harness.pause(true);
+    (void)harness.stateWhere([](const RobotState& s) { return s.paused; });
+
+    (void)harness.stopAll("button");
+    const auto run = harness.finished();
+
+    EXPECT_EQ(run->result->outcome, ExecuteMission::Result::OUTCOME_CANCELED);
+    EXPECT_THAT(run->result->failure_reason, ::testing::HasSubstr("stopped: button"));
+    EXPECT_FALSE(harness.stateWhere([](const RobotState& s) { return !s.paused; }).paused);
 }
 
 int main(int argc, char** argv)

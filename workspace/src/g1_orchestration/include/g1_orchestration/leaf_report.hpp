@@ -34,11 +34,16 @@ public:
     /// The action server this leaf sends goals to, or empty for a leaf that calls a service.
     [[nodiscard]] virtual std::string actionServer() const { return {}; }
 
+    /// Whether its latest start sent a goal: not while a pause held it back.
+    [[nodiscard]] bool goalSent() const { return goal_sent_; }
+
 protected:
     void setFailureText(std::string text) { failure_text_ = std::move(text); }
+    void setGoalSent(bool sent) { goal_sent_ = sent; }
 
 private:
     std::string failure_text_;
+    bool        goal_sent_ = false;
 };
 
 }  // namespace g1_orchestration

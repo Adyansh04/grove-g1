@@ -141,6 +141,28 @@ TEST(CatalogDrift, TheArgumentsAreThePortsTheMacroDeclares)
     }
 }
 
+TEST(CatalogDrift, TheOutputsAreThePortsTheMacroHandsOn)
+{
+    const Catalog      catalog = Catalog::load(kCatalogFile);
+    const MacroLibrary library = MacroLibrary::load(kLibraryDir);
+
+    for (const Skill& skill : catalog.skills())
+    {
+        const Macro* macro = library.find(skill.macro);
+        ASSERT_NE(macro, nullptr) << skill.macro;
+        std::vector<std::string> outputs;
+        outputs.reserve(skill.outputs.size());
+        for (const auto& out : skill.outputs)
+        {
+            outputs.push_back(out.name);
+        }
+        std::vector<std::string> ports = macro->outputs;
+        std::ranges::sort(outputs);
+        std::ranges::sort(ports);
+        EXPECT_EQ(outputs, ports) << skill.name;
+    }
+}
+
 TEST(CatalogDrift, EachMacroIsOneTimeoutAndItsLimitIsTheCatalogs)
 {
     const Catalog      catalog = Catalog::load(kCatalogFile);
@@ -227,6 +249,10 @@ TEST(CatalogDrift, EveryMacroLoadsWithEveryLeafItUsesRegistered)
         {
             step += " " + arg.name + "=\"" + exampleValue(arg) + "\"";
         }
+        for (const auto& out : skill.outputs)
+        {
+            step += " " + out.name + "=\"{s1_" + out.name + "}\"";
+        }
         step += "/>";
         const std::string mission = R"(<root BTCPP_format="4" main_tree_to_execute="Mission">
   <BehaviorTree ID="Mission"><Sequence>)" +
@@ -283,6 +309,7 @@ TEST(CatalogDrift, TheJsonHasTheShapeThePlannerReads)
         for (const char* key : { "name",
                                  "description",
                                  "args",
+                                 "outputs",
                                  "requires",
                                  "effects",
                                  "resources",

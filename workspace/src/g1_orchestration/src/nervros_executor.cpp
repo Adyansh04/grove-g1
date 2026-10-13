@@ -6,6 +6,9 @@
 #include "g1_orchestration/nervros_executor.hpp"
 
 #include <behaviortree_cpp/actions/test_node.h>
+#include <behaviortree_cpp/control_node.h>
+#include <behaviortree_cpp/decorator_node.h>
+#include <behaviortree_cpp/decorators/subtree_node.h>
 #include <behaviortree_cpp/loggers/groot2_publisher.h>
 
 #include <algorithm>
@@ -20,10 +23,12 @@
 #include <ranges>
 #include <set>
 #include <stdexcept>
+#include <string_view>
 #include <utility>
 #include <vector>
 
 #include "g1_orchestration/catalog.hpp"
+#include "g1_orchestration/leaf_report.hpp"
 #include "g1_orchestration/macro_library.hpp"
 #include "g1_orchestration/registration.hpp"
 #include "g1_orchestration/skill_nodes.hpp"
@@ -104,6 +109,63 @@ std::set<std::string> skillLeavesOf(const BT::BehaviorTreeFactory& factory)
     return leaves;
 }
 
+/// A step as the tree holds it: its SubTree node, and the outermost node that is the step's
+/// alone, the decorators wrapped around it up to the Sequence or Fallback that holds it.
+struct StepNodes
+{
+    BT::TreeNode*    top     = nullptr;
+    BT::SubTreeNode* subtree = nullptr;
+};
+
+/// Step @p name under @p node, which is @p top's or the top of a step itself; with no name, the
+/// step that runs.
+// The mission tree's depth is capped by the validator, so the recursion is bounded.
+// NOLINTNEXTLINE(misc-no-recursion)
+StepNodes findStep(BT::TreeNode* node, BT::TreeNode* top, std::string_view name)
+{
+    if (node == nullptr)
+    {
+        return {};
+    }
+    if (auto* subtree = dynamic_cast<BT::SubTreeNode*>(node))
+    {
+        const bool wanted =
+            name.empty() ? subtree->status() == BT::NodeStatus::RUNNING : subtree->name() == name;
+        return wanted ? StepNodes{ top, subtree } : StepNodes{};
+    }
+    if (auto* control = dynamic_cast<BT::ControlNode*>(node))
+    {
+        for (BT::TreeNode* child : control->children())
+        {
+            if (StepNodes found = findStep(child, child, name); found.subtree != nullptr)
+            {
+                return found;
+            }
+        }
+        return {};
+    }
+    if (auto* decorator = dynamic_cast<BT::DecoratorNode*>(node))
+    {
+        return findStep(decorator->child(), top, name);
+    }
+    return {};
+}
+
+/// What the leaves of @p step begin their paths with, which the pause gate goes by: its name, or
+/// for a SubTree without one, the instance name BT.CPP gives it.
+std::string pathOf(const BT::TreeNode& step)
+{
+    std::string prefix;
+    BT::applyRecursiveVisitor(&step, [&prefix](const BT::TreeNode* node) {
+        const std::string& path = node->fullPath();
+        if (const auto slash = path.find('/'); prefix.empty() && slash != std::string::npos)
+        {
+            prefix = path.substr(0, slash);
+        }
+    });
+    return prefix.empty() ? step.name() : prefix;
+}
+
 }  // namespace
 
 MissionExecutor::MissionExecutor(
@@ -127,6 +189,7 @@ MissionExecutor::MissionExecutor(
     cancel_settle_s_ =
         positive(declare_parameter<double>("cancel_settle_s", 0.5), "cancel_settle_s");
     stop_wait_s_ = positive(declare_parameter<double>("stop_wait_s", 3.0), "stop_wait_s");
+    max_pause_s_ = positive(declare_parameter<double>("max_pause_s", 600.0), "max_pause_s");
     event_level_ = parseLevel(declare_parameter<std::string>("event_level", "steps"));
     const double authority_timeout_s =
         positive(declare_parameter<double>("authority_timeout_s", 15.0), "authority_timeout_s");
@@ -340,6 +403,16 @@ MissionExecutor::MissionExecutor(
         rclcpp::ServicesQoS(),
         stop_group_);
 
+    using PauseSrv = nervros_interfaces::srv::PauseMission;
+    // With StopAll, so a pause and a stop are taken one at a time.
+    pause_service_ = create_service<PauseSrv>(
+        "~/pause_mission",
+        [this](
+            const PauseSrv::Request::SharedPtr&  request,
+            const PauseSrv::Response::SharedPtr& response) { onPause(request, response); },
+        rclcpp::ServicesQoS(),
+        stop_group_);
+
     pushState();
     RCLCPP_INFO(
         get_logger(),
@@ -478,6 +551,7 @@ void MissionExecutor::startMission(const std::shared_ptr<GoalHandle>& handle)
             goal_id_        = handle->get_goal_id();
             stop_requested_ = false;
             halting_        = false;
+            pause_wanted_   = false;
         }
     }
     if (refused_shutting_down)
@@ -820,6 +894,36 @@ void MissionExecutor::onTeleop(
                         "in them stops it";
 }
 
+void MissionExecutor::onPause(
+    const std::shared_ptr<nervros_interfaces::srv::PauseMission::Request>&  request,
+    const std::shared_ptr<nervros_interfaces::srv::PauseMission::Response>& response)
+{
+    // The mission thread does the halting between ticks; the claim and the flags are one step, as
+    // for a stop, so a pause lands on the mission that was running or on none.
+    const std::lock_guard<std::mutex> lock(stop_mutex_);
+    if (!running_)
+    {
+        response->ok      = false;
+        response->message = "no mission is running";
+        return;
+    }
+    response->ok = true;
+    if (request->pause == pause_wanted_.load())
+    {
+        response->message = request->pause ? "already paused, or pausing" : "not paused";
+        return;
+    }
+    pause_wanted_ = request->pause;
+    RCLCPP_INFO(
+        get_logger(),
+        "%s requested: %s",
+        request->pause ? "pause" : "resume",
+        request->reason.c_str());
+    response->message = request->pause ? "pausing: the running step halts now, or once a pick or "
+                                         "place it is in the middle of ends" :
+                                         "resuming: the halted step starts again";
+}
+
 std::string MissionExecutor::describeStop(
     bool mission, bool halted, std::size_t leaf_servers_asked, std::size_t arm_asked,
     const std::vector<std::string>& busy) const
@@ -872,6 +976,8 @@ void MissionExecutor::run(const std::shared_ptr<GoalHandle>& handle)
 
     // The arms go back only when both hands are empty, and the state is idle before the result
     // is out, so a client that acts on the result sees the robot as it is.
+    paused_ = false;
+    pause_gate_.open();
     try
     {
         finish(goal->mode == ExecuteMission::Goal::MODE_EXECUTE);
@@ -913,6 +1019,7 @@ void MissionExecutor::run(const std::shared_ptr<GoalHandle>& handle)
         stop_requested_ = false;
         halting_        = false;
         running_        = false;
+        pause_wanted_   = false;
     }
 
     // This thread is not an executor's, so an exception here would end the process: the client of
@@ -957,7 +1064,7 @@ BT::BehaviorTreeFactory MissionExecutor::makeFactory(
     BT::BehaviorTreeFactory factory;
     if (!dry_run)
     {
-        registerSkillNodes(factory, RosContext{ skills_node_, &halting_ });
+        registerSkillNodes(factory, RosContext{ skills_node_, &halting_, &pause_gate_ });
     }
     else
     {
@@ -1159,6 +1266,15 @@ MissionExecutor::execute(const ExecuteMission::Goal& goal, const std::shared_ptr
     BT::BehaviorTreeFactory factory = makeFactory(!execute_mode, validation, validation.macros);
     BT::Tree                tree;
     const auto              blackboard = seededBlackboard();
+    if (!execute_mode)
+    {
+        // A dry run's stand-ins hand nothing on, and the macros' scripts read what a later step
+        // takes: each output gets its key's name as a value.
+        for (const std::string& key : validation.outputs)
+        {
+            blackboard->set<std::string>(key, key);
+        }
+    }
     if (auto problem = load(factory, goal.tree_xml, blackboard, tree))
     {
         return rejected({ std::move(*problem) });
@@ -1271,7 +1387,8 @@ MissionExecutor::execute(const ExecuteMission::Goal& goal, const std::shared_ptr
     {
         winding_down = halt(tree);
     }
-    sendFeedback(handle, *observer, begin);
+    // As it stands: a mission stopped while paused has not gone on.
+    sendFeedback(handle, *observer, begin, paused_);
     const std::optional<Failure> failure = observer->failure();
     observer.reset();
     groot2.reset();
@@ -1314,6 +1431,11 @@ MissionExecutor::execute(const ExecuteMission::Goal& goal, const std::shared_ptr
             outcome.reason = "the executor is shutting down" + tail;
             running_step(outcome);
             return outcome;
+        case Ended::kPausedTooLong:
+            outcome.code   = ExecuteMission::Result::OUTCOME_CANCELED;
+            outcome.reason = std::format("paused for longer than {:.0f} s", max_pause_s_) + tail;
+            running_step(outcome);
+            return outcome;
     }
 
     if (status == BT::NodeStatus::SUCCESS)
@@ -1336,7 +1458,7 @@ MissionExecutor::execute(const ExecuteMission::Goal& goal, const std::shared_ptr
 }
 
 std::optional<MissionExecutor::Ended> MissionExecutor::interruption(
-    const std::shared_ptr<GoalHandle>& handle, Clock::time_point begin, double limit_s) const
+    const std::shared_ptr<GoalHandle>& handle, Clock::time_point deadline) const
 {
     if (shutting_down_)
     {
@@ -1350,7 +1472,7 @@ std::optional<MissionExecutor::Ended> MissionExecutor::interruption(
     {
         return Ended::kCanceled;
     }
-    if (Clock::now() - begin >= inClockUnits(limit_s))
+    if (Clock::now() >= deadline)
     {
         return Ended::kTimeout;
     }
@@ -1372,27 +1494,39 @@ MissionExecutor::Ended MissionExecutor::tickLoop(
 {
     const auto period      = inClockUnits(1.0 / tick_rate_hz_);
     auto       next_report = begin;
+    auto       deadline    = begin + inClockUnits(limit_s);
+    Pausing    pausing;
     for (;;)
     {
-        if (const auto why = interruption(handle, begin, limit_s))
+        // While paused the watchdog waits: its limit is for running, and a pause has its own.
+        if (const auto why =
+                interruption(handle, pausing.since ? Clock::time_point::max() : deadline))
         {
             return *why;
         }
+        if (pausing.since && Clock::now() - *pausing.since >= inClockUnits(max_pause_s_))
+        {
+            return Ended::kPausedTooLong;
+        }
         const auto tick_start = Clock::now();
 
-        status = tree.tickOnce();
-        if (tick_start >= next_report || status != BT::NodeStatus::RUNNING)
+        const bool tick = followPause(tree, observer, pausing, deadline);
+        if (tick)
         {
-            sendFeedback(handle, observer, begin);
+            status = tree.tickOnce();
+        }
+        if (tick_start >= next_report || (tick && status != BT::NodeStatus::RUNNING))
+        {
+            sendFeedback(handle, observer, begin, paused_);
             next_report = tick_start + inClockUnits(feedback_period_s_);
         }
-        if (status != BT::NodeStatus::RUNNING)
+        if (tick && status != BT::NodeStatus::RUNNING)
         {
             // Once the mission is told to wind down the leaves refuse to start anything, and a
             // tree that then fails has failed for that, not for anything it did.
             if (status == BT::NodeStatus::FAILURE)
             {
-                if (const auto why = interruption(handle, begin, limit_s))
+                if (const auto why = interruption(handle, deadline))
                 {
                     return *why;
                 }
@@ -1414,13 +1548,100 @@ MissionExecutor::Ended MissionExecutor::tickLoop(
     }
 }
 
+bool MissionExecutor::followPause(
+    BT::Tree& tree, const MissionObserver& observer, Pausing& pausing, Clock::time_point& deadline)
+{
+    const auto note = [this](std::string text) {
+        {
+            const std::lock_guard<std::mutex> lock(live_mutex_);
+            note_ = std::move(text);
+        }
+        pushState();
+    };
+    if (!pause_wanted_)
+    {
+        if (pausing.since || !pausing.finishing.empty())
+        {
+            if (pausing.since)
+            {
+                // The limit is for running: the pause, and what the halted step does again, are
+                // given back.
+                deadline += Clock::now() - *pausing.since + pausing.redone;
+                deadline_ticks_ = deadline.time_since_epoch().count();
+            }
+            pausing = {};
+            pause_gate_.open();
+            paused_ = false;
+            RCLCPP_INFO(get_logger(), "resumed");
+            note({});
+        }
+        return true;
+    }
+    if (pausing.since)
+    {
+        return false;
+    }
+    // The running step by its name, or one named otherwise by what runs.
+    std::string step  = observer.currentStep();
+    StepNodes   nodes = findStep(tree.rootNode(), tree.rootNode(), step);
+    const bool  by_name =
+        nodes.subtree != nullptr && nodes.subtree->status() == BT::NodeStatus::RUNNING;
+    if (!by_name)
+    {
+        nodes = findStep(tree.rootNode(), tree.rootNode(), {});
+        step  = nodes.subtree != nullptr ? pathOf(*nodes.subtree) : std::string();
+    }
+    const bool   busy = nodes.subtree != nullptr;
+    const Skill* skill =
+        busy ? validator_->catalog().findByMacro(nodes.subtree->subtreeID()) : nullptr;
+    // Halted half way, a pick or a place could leave an object in the air: the one running when
+    // the pause came ends first, and the gate holds the next step until then. Until it ends the
+    // robot still moves, so it is not reported paused.
+    if (skill != nullptr && skill->risk == "manipulation" &&
+        (pausing.finishing.empty() || pausing.finishing == step))
+    {
+        if (pausing.finishing.empty())
+        {
+            pausing.finishing = step;
+            pause_gate_.close(step);
+            RCLCPP_INFO(get_logger(), "pausing once %s ends", step.c_str());
+            note("pausing once " + step + " ends");
+        }
+        return true;
+    }
+    // Halted from its top, the step starts afresh on resume: its timeout and retries too.
+    pause_gate_.close();
+    if (busy && nodes.top != nullptr)
+    {
+        if (by_name)
+        {
+            pausing.redone = Clock::now() - observer.stepStarted();
+        }
+        nodes.top->haltNode();
+        spinLeaves(Seconds(cancel_settle_s_));
+        if (const std::vector<std::string> left = sweepAfterHalt(); !left.empty())
+        {
+            RCLCPP_WARN(get_logger(), "still winding down after the pause: %s", join(left).c_str());
+        }
+    }
+    pausing.finishing.clear();
+    pausing.since   = Clock::now();
+    paused_         = true;
+    deadline_ticks_ = 0;
+    RCLCPP_INFO(get_logger(), "paused%s%s", busy ? " during " : "", busy ? step.c_str() : "");
+    note(busy ? "paused during " + step : std::string("paused"));
+    return false;
+}
+
 void MissionExecutor::sendFeedback(
-    const std::shared_ptr<GoalHandle>& handle, MissionObserver& observer, Clock::time_point begin)
+    const std::shared_ptr<GoalHandle>& handle, MissionObserver& observer, Clock::time_point begin,
+    bool paused)
 {
     auto feedback           = std::make_shared<ExecuteMission::Feedback>();
     feedback->elapsed_s     = static_cast<float>(Seconds(Clock::now() - begin).count());
     feedback->running_nodes = observer.running();
     feedback->events        = observer.takeEvents();
+    feedback->paused        = paused;
     handle->publish_feedback(feedback);
 }
 
@@ -1434,6 +1655,29 @@ void MissionExecutor::spinLeaves(Seconds span)
     }
 }
 
+std::vector<std::string> MissionExecutor::sweepAfterHalt()
+{
+    // A goal sent just before the halt can have been accepted only after it, when the leaf no
+    // longer had a handle to cancel it by: whatever is still in flight now is asked to stop. And
+    // as for a stop, the arm's controller holds the arm where it is, which a skill server that
+    // runs its trajectory to the end would not.
+    if (!leaf_servers_->busy().empty())
+    {
+        (void)leaf_servers_->cancelAll();
+    }
+    (void)arm_controller_->cancelAll();
+    const auto deadline  = Clock::now() + inClockUnits(stop_wait_s_);
+    const auto remaining = [&deadline] {
+        return Seconds(std::max(0.0, Seconds(deadline - Clock::now()).count()));
+    };
+    std::vector<std::string> busy = leaf_servers_->settle(remaining());
+    for (std::string& server : arm_controller_->settle(remaining()))
+    {
+        busy.push_back(std::move(server));
+    }
+    return busy;
+}
+
 std::string MissionExecutor::halt(BT::Tree& tree)
 {
     // haltTree cancels each leaf's goal; the spin lets those requests reach their servers and the
@@ -1445,13 +1689,7 @@ std::string MissionExecutor::halt(BT::Tree& tree)
         halted_ = true;
     }
     halted_cv_.notify_all();
-    // A goal sent just before the halt can have been accepted only after it, when the leaf no
-    // longer had a handle to cancel it by. Whatever is still in flight now is asked to stop.
-    if (!leaf_servers_->busy().empty())
-    {
-        (void)leaf_servers_->cancelAll();
-    }
-    const std::vector<std::string> busy = leaf_servers_->settle(Seconds(stop_wait_s_));
+    const std::vector<std::string> busy = sweepAfterHalt();
     if (busy.empty())
     {
         return {};
@@ -1548,7 +1786,9 @@ void MissionExecutor::noteLeafSuccess(const BT::TreeNode& node)
 
 void MissionExecutor::noteLeafHalted(const BT::TreeNode& node)
 {
-    if (node.registrationName() != "Pick")
+    // One a pause held back never sent its goal, so it cannot have closed the hand.
+    const auto* report = dynamic_cast<const LeafReport*>(&node);
+    if (node.registrationName() != "Pick" || (report != nullptr && !report->goalSent()))
     {
         return;
     }
@@ -1653,6 +1893,7 @@ void MissionExecutor::pushState()
         state.holding_left  = hands_.left.id;
         state.holding_right = hands_.right.id;
         state.stopped       = stopped_;
+        state.paused        = paused_;
         if (!note_.empty())
         {
             state.message = note_;

@@ -39,7 +39,10 @@ adds the arms, lives on the
   carrying coordinates.
 - [NervROS](https://github.com/Adyansh04/nervros) lets you talk to the robot. It looks through the
   cameras, asks canopy where things are, and turns what you ask into missions you approve, which
-  `nervros_executor` checks and runs with the same skills as the hand-written trees.
+  `nervros_executor` checks and runs with the same skills as the hand-written trees. It keeps the
+  robot out of rooms and objects you name, with Nav2 planning around them, pauses and resumes a
+  mission, and lets a step use what an earlier one found, so "find a mug and pick it up" is one
+  mission.
 - A vision-language-action policy (GR00T N1.7) proposes arm motion, and each
   action chunk is checked against the planning scene before it runs. The pipeline works end to end,
   but the pretrained policy does not grasp yet: that needs demonstrations recorded on this robot.
@@ -68,7 +71,7 @@ https://github.com/user-attachments/assets/dc4712e6-81cc-4f7a-b986-baae0cda8bf9
 
 *NervROS fetches a mug for the simulated G1: the plan, the approval, then the walk, the pick and
 the place, four times faster while the robot works. NervROS's
-[guide](https://github.com/Adyansh04/nervros/blob/main/docs/guide.md) has a video of each use.*
+[guide](https://github.com/Adyansh04/nervros/blob/main/docs/guide.md) has a video of most uses.*
 
 ## Architecture
 
@@ -95,13 +98,13 @@ DDS rail stays the same. Two rules shape the design, and both hold in simulation
 | [`g1_controllers`](workspace/src/g1_controllers) | The locomotion policy, its chained safety controller and the freeze controllers. |
 | [`g1_state_estimation`](workspace/src/g1_state_estimation) | Odometry (`odom` to `base_footprint`) and the TF chain Nav2 needs. |
 | [`g1_sensor_relay`](workspace/src/g1_sensor_relay) | The LiDAR, cameras, IMU and object poses sampled inside the simulator. |
-| [`g1_navigation`](workspace/src/g1_navigation) | SLAM Toolbox mapping, AMCL localization and Nav2. |
+| [`g1_navigation`](workspace/src/g1_navigation) | SLAM Toolbox mapping, AMCL localization and Nav2, with the keepout filter NervROS's zones feed (`keepout:=true`). |
 | [`g1_locomotion`](workspace/src/g1_locomotion) | Walks the base into arm's reach of a measured object, and back out. |
 | [`g1_moveit_config`](workspace/src/g1_moveit_config) | MoveIt: arm and hand planning groups, kinematics, the octomap. |
 | [`g1_manipulation`](workspace/src/g1_manipulation) | Pick and place as actions, and the object poses behind them. |
 | [`g1_perception`](workspace/src/g1_perception) | Objects named in text, measured from the camera, plus grasp generation and instruction grounding. |
 | [`g1_vla`](workspace/src/g1_vla) | Learned grasping: a policy's action chunks, checked against the planning scene before they run. |
-| [`g1_orchestration`](workspace/src/g1_orchestration) | The behaviour trees that turn navigation and manipulation into missions, and `nervros_executor`, which checks and runs NervROS's. |
+| [`g1_orchestration`](workspace/src/g1_orchestration) | The behaviour trees that turn navigation and manipulation into missions, and `nervros_executor`, which checks and runs NervROS's, pauses and resumes them, and hands one step's result to the next. |
 | [`g1_msgs`](workspace/src/g1_msgs) | The stack's own actions, services and messages. |
 
 ### canopy and NervROS
@@ -118,8 +121,8 @@ G1's side of each lives here.
 
 You need Docker Engine with Compose v2, the NVIDIA driver and the NVIDIA Container Toolkit on the
 host. The GUI demos need an X11 desktop session; `manage.sh start` lets the container use it. The
-NervROS demo also builds NervROS on the host, which needs ROS 2 Jazzy and Rust there: its
-[guide](docs/guides/nervros.md) says what to install.
+NervROS demo also builds NervROS on the host, which needs ROS 2 Jazzy and Rust there:
+[NervROS's README](workspace/src/nervros/README.md#quick-start) lists what to install.
 
 ```bash
 git clone --recurse-submodules https://github.com/Adyansh04/grove-g1.git
@@ -129,7 +132,9 @@ cp .env.example .env
 ./scripts/manage.sh build
 ```
 
-The first `start` builds the dev image, the simulator included, which takes a while. In an
+The first `start` builds the dev image, the simulator included, which takes a while. The
+apartment the world-model and NervROS demos use needs its meshes once, about 330 MB:
+`./scripts/setup-world-assets.sh` on the host. In an
 existing clone, `git submodule update --init` fetches the submodules, and
 `git config submodule.recurse true` makes `git pull` keep them in step. Third-party code the
 stack changes lives in forks on their `grove` branches: `livox_ros_driver2` and
@@ -144,7 +149,7 @@ Then pick a demo. Each guide explains what runs and why; each launcher opens its
 | [Learned grasping](docs/guides/learned-grasping.md) | A vision-language-action policy behind the planning-scene gate. Runs; does not grasp yet. | `learned-grasping.sh` |
 | [Open-vocabulary perception](docs/guides/open-vocabulary-grasping.md) | Objects named in text and measured in 3D, generated grasps, and instructions turned into phrases. | `open-vocabulary-grasping.sh` |
 | [Exploring and asking what is where](docs/guides/world-model.md) | canopy exploring an apartment: its rooms, its objects, and finding them by name. | `world-model.sh` |
-| [Talking to the robot with NervROS](docs/guides/nervros.md) | An agent you chat with: it looks, finds and segments things, fixes the world model, runs missions you approve (pick and place included), and checks, watches and plots the robot for you. | `nervros.sh` |
+| [Talking to the robot with NervROS](docs/guides/nervros.md) | An agent you chat with: it looks, finds and segments things, fixes the world model, runs missions you approve (pick and place included), keeps the robot out of zones you name, pauses and resumes missions, and checks, watches and plots the robot for you. | `nervros.sh` |
 | [Checking the map by hand](workspace/src/canopy/editor/doc/guide.md) | canopy's map editor: what to check in a saved world and how to fix it. | `world-model.sh editor` |
 
 The launchers live in `scripts/demos/`. Run one without arguments to list its variants, then name
@@ -152,8 +157,9 @@ one: `./scripts/demos/pick-and-place.sh in-place`. It tears down any stack left 
 command in a pane of one tilix window (or a window each in another terminal), and makes commands
 that need the stack wait for it. `stop` ends the demo. A launcher that opens RViz or the
 simulator's viewer first checks that the container can reach your display, and prints the `xhost`
-fix if it cannot. `ros2 launch g1_bringup bringup.launch.py --show-args` lists every launch
-argument with its description.
+fix if it cannot. `ros2 launch g1_bringup bringup.launch.py --show-args` lists bringup's own
+arguments with their descriptions; the launch files it includes declare more, such as `keepout`
+(`ros2 launch g1_navigation nav2.launch.py --show-args`) and `map` (`localization.launch.py`).
 
 ## Development
 

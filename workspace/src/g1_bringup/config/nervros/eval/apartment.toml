@@ -60,8 +60,10 @@ expect = { tools = ["topic_sample"], mission = "none", reply_has = ["hz"] }
 
 [[case]]
 id = "ros-nodes"
+# AMCL and the map server run in /nav2_container, Nav2's servers outside it and none named nav2:
+# an answer that names only the container is wrong.
 say = ["Which Nav2 nodes are running?"]
-expect = { tools = ["ros_graph"], mission = "none" }
+expect = { tools = ["ros_graph"], mission = "none", reply_has_all = ["amcl", "controller_server", "bt_navigator"] }
 
 [[case]]
 id = "ros-logs"
@@ -153,6 +155,21 @@ id = "go-start"
 say = ["Go back to where you started."]
 max_s = 300
 expect = { mission = "success", approvals_max = 1 }
+
+# Keep-out zones
+
+[[case]]
+id = "keep-out"
+# Added in chat, then a walk into it is refused before any mission is planned to run.
+say = ["Keep the robot out of the bedroom.", "Go to the bedroom."]
+max_s = 300
+expect = { tools = ["geofence"], mission = "none", tool_said = ["added the keep-out zone"] }
+
+[[case]]
+id = "keep-out-remove"
+# Removing a zone widens where the robot may go, so it is approved like a world edit.
+say = ["Remove the keep-out zone around the bedroom."]
+expect = { tools = ["geofence"], mission = "none", approvals_max = 1, tool_said = ["removed the keep-out zone"] }
 
 # Places the operator names
 

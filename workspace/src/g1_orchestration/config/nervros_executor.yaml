@@ -35,6 +35,9 @@ nervros_executor:
     # The most StopAll waits for the mission to halt and the action servers to go quiet, and the
     # most a halted mission waits for the same.
     stop_wait_s: 3.0
+    # The longest a mission may stay paused (PauseMission) before it is ended. The watchdog does
+    # not count a pause, so this is what stops a forgotten one holding the robot for ever.
+    max_pause_s: 600.0
     # Per-step budget for controller_manager calls when taking or releasing the arms.
     authority_timeout_s: 15.0
     # When a mission needs the arms and finds them already taken, this executor cannot tell whether

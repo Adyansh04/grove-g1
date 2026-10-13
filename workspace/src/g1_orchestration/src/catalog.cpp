@@ -198,6 +198,28 @@ Skill parseSkill(const YAML::Node& node)
     {
         skill.args.push_back(parseArg(arg, skill.name));
     }
+    if (const YAML::Node outputs = node["outputs"]; outputs.IsDefined() && !outputs.IsNull())
+    {
+        if (!outputs.IsSequence())
+        {
+            fail(where, "'outputs' must be a list");
+        }
+        for (const YAML::Node& output : outputs)
+        {
+            SkillArg out = parseArg(output, skill.name);
+            if (!out.allowed.empty() || !out.default_from.empty() || out.format == "number")
+            {
+                fail(where + " output " + out.name, "an output takes no enum, default or range");
+            }
+            if (std::ranges::any_of(skill.args, [&out](const SkillArg& a) {
+                    return a.name == out.name;
+                }))
+            {
+                fail(where + " output " + out.name, "shares its name with an argument");
+            }
+            skill.outputs.push_back(std::move(out));
+        }
+    }
 
     if (!knownRisks().contains(skill.risk))
     {
@@ -224,11 +246,19 @@ nlohmann::ordered_json toJson(const SkillArg& arg)
     json["type"]        = arg.type;
     json["description"] = arg.description;
     json["enum"]        = arg.allowed;
-    if (arg.format == "number")
+    // A planner may then let an earlier step's output stand in for one of these.
+    if (arg.narrowed)
+    {
+        json["narrowed"] = true;
+    }
+    if (!arg.format.empty())
     {
         json["format"] = arg.format;
-        json["min"]    = arg.min;
-        json["max"]    = arg.max;
+    }
+    if (arg.format == "number")
+    {
+        json["min"] = arg.min;
+        json["max"] = arg.max;
     }
     if (!arg.default_from.empty())
     {
@@ -246,6 +276,13 @@ nlohmann::ordered_json toJson(const Skill& skill)
     for (const SkillArg& arg : skill.args)
     {
         json["args"].push_back(toJson(arg));
+    }
+    json["outputs"] = nlohmann::ordered_json::array();
+    for (const SkillArg& out : skill.outputs)
+    {
+        nlohmann::ordered_json output = toJson(out);
+        output.erase("enum");
+        json["outputs"].push_back(std::move(output));
     }
     json["requires"]   = skill.preconditions;
     json["effects"]    = skill.effects;
@@ -351,8 +388,10 @@ void Catalog::restrict(std::string_view choice)
         const auto arg = std::ranges::find(skill.args, arg_name, &SkillArg::name);
         if (skill.name == skill_name && arg != skill.args.end())
         {
-            arg->allowed = std::move(values);
-            text_sha256_ = sha256Hex(text_sha256_ + "\n" + std::string(choice));
+            // Narrowing a list the catalog already had keeps its rule: no output stands in.
+            arg->narrowed = arg->narrowed || arg->allowed.empty();
+            arg->allowed  = std::move(values);
+            text_sha256_  = sha256Hex(text_sha256_ + "\n" + std::string(choice));
             return;
         }
     }

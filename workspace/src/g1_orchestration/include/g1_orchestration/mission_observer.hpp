@@ -14,6 +14,7 @@
 #include <behaviortree_cpp/bt_factory.h>
 #include <behaviortree_cpp/loggers/abstract_logger.h>
 
+#include <chrono>
 #include <functional>
 #include <mutex>
 #include <nervros_interfaces/msg/node_event.hpp>
@@ -95,6 +96,9 @@ public:
     /// The step that started running most recently, such as "s2_GoToPose".
     [[nodiscard]] std::string currentStep() const;
 
+    /// When that step started.
+    [[nodiscard]] std::chrono::steady_clock::time_point stepStarted() const;
+
 private:
     [[nodiscard]] bool
     wanted(const BT::TreeNode& node, BT::NodeStatus prev, BT::NodeStatus status) const;
@@ -111,9 +115,10 @@ private:
     std::vector<nervros_interfaces::msg::NodeEvent> events_;
     std::set<std::string>                           running_;
     /// Nodes whose last transition was a halt, so a Timeout can tell it fired.
-    std::set<std::string>  halted_;
-    std::optional<Failure> failure_;
-    std::string            current_step_;
+    std::set<std::string>                 halted_;
+    std::optional<Failure>                failure_;
+    std::string                           current_step_;
+    std::chrono::steady_clock::time_point step_started_;
 };
 
 }  // namespace g1_orchestration

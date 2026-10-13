@@ -98,6 +98,8 @@ execute = "/nervros_executor/execute_mission"
 validate = "/nervros_executor/validate_mission"
 catalog = "/nervros_executor/get_catalog"
 stop = "/nervros_executor/stop_all"
+# Pause and resume from the chat ("pause", "resume") and the window's Pause button.
+pause = "/nervros_executor/pause_mission"
 state = "/nervros_executor/robot_state"
 max_replans = 2
 preview = "/nervros_executor/preview_mission"
@@ -155,6 +157,11 @@ service_call = ["*"]
 action_send = ["*"]
 publish = ["*"]
 param_set = ["*:*"]
+
+# Keep-out zones, added in chat ("keep out of the kitchen"), also go to Nav2 as this mask, which
+# g1_navigation's keepout filters read with keepout:=true, so its own paths stay out of them.
+[geofence]
+mask = "/keepout_filter_mask"
 
 [models]
 file = "models.toml"
