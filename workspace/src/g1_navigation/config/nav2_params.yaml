@@ -298,5 +298,12 @@ lifecycle_manager_navigation:
   ros__parameters:
     use_sim_time: false
     autostart: true
-    node_names: ["costmap_filter_info_server", "controller_server", "planner_server",
-                 "behavior_server", "bt_navigator", "collision_monitor"]
+    node_names: ["controller_server", "planner_server", "behavior_server", "bt_navigator",
+                 "collision_monitor"]
+
+# Up only with keepout:=true, as the info server it manages.
+lifecycle_manager_filters:
+  ros__parameters:
+    use_sim_time: false
+    autostart: true
+    node_names: ["costmap_filter_info_server"]

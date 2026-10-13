@@ -14,6 +14,7 @@ from launch.actions import (
     OpaqueFunction,
     SetEnvironmentVariable,
 )
+from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.descriptions import ParameterFile
@@ -105,13 +106,6 @@ def _servers():
             ),
             server("nav2_planner", "planner_server", "planner_server", [params], TF_REMAPPINGS),
             server(
-                "nav2_map_server",
-                "costmap_filter_info_server",
-                "costmap_filter_info_server",
-                [params],
-                [],
-            ),
-            server(
                 "nav2_behaviors",
                 "behavior_server",
                 "behavior_server",
@@ -134,6 +128,27 @@ def _servers():
                 "lifecycle_manager_navigation",
                 [params, {"autostart": LaunchConfiguration("autostart")}],
                 [],
+            ),
+            # Only with keepout: the filter reads the mask once this server names it, so who
+            # reads the mask says whether the zones reach Nav2.
+            GroupAction(
+                condition=IfCondition(LaunchConfiguration("keepout")),
+                actions=[
+                    server(
+                        "nav2_map_server",
+                        "costmap_filter_info_server",
+                        "costmap_filter_info_server",
+                        [params],
+                        [],
+                    ),
+                    server(
+                        "nav2_lifecycle_manager",
+                        "lifecycle_manager",
+                        "lifecycle_manager_filters",
+                        [params, {"autostart": LaunchConfiguration("autostart")}],
+                        [],
+                    ),
+                ],
             ),
         ]
     )

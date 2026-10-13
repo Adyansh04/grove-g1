@@ -27,7 +27,7 @@ flowchart TB
 | `scan.launch.py` | `pointcloud_to_laserscan`, flattening the LiDAR into the 2D scan SLAM and AMCL consume. |
 | `slam.launch.py` | `slam_toolbox` in online async mapping mode. |
 | `localization.launch.py` | `map_server` and AMCL against the committed map of `world`, or the one `map:=` names. |
-| `nav2.launch.py` | Planner, controller, behaviors, BT navigator, collision monitor, the keepout filter's info server, lifecycle manager and `g1_base_approach`. Included only with `nav:=true`. |
+| `nav2.launch.py` | Planner, controller, behaviors, BT navigator, collision monitor, lifecycle manager and `g1_base_approach`; with `keepout:=true` also the keepout filter's info server and its own lifecycle manager. Included only with `nav:=true`. |
 
 `g1_bringup`'s `bringup.launch.py` is the operator entry point. `nav_stack.launch.py` and
 `nav_sim.launch.py` default to `mode:=mapping` and also take `use_composition` and `container_name`,
@@ -40,7 +40,9 @@ two writers on `rt/lowcmd`; `test_launch_threading` asserts it.
 `/keepout_filter_mask`, an `OccupancyGrid` on the map's grid with keep-out cells at 100, which
 NervROS publishes from its keep-out zones (`[geofence] mask` in
 `g1_bringup/config/nervros/nervros.toml`); `scripts/demos/nervros.sh` sets it. It is off by
-default because, enabled with no mask, the filters warn every 2 s.
+default because, enabled with no mask, the filters warn every 2 s. The filter info server runs
+only with it, so the filters subscribe to the mask only then, and `nervros-cli doctor` can tell
+from the mask's readers whether the zones reach Nav2.
 
 ## Running
 
