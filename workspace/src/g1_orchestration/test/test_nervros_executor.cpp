@@ -715,6 +715,21 @@ TEST(NervrosExecutor, ValidateMissionSaysWhyATreeIsRefusedAndHowLongAGoodOneTake
     EXPECT_EQ(nlohmann::json::parse(refused->diagnostics_json).at(0).at("code"), "FORBIDDEN_NODE");
 }
 
+TEST(NervrosExecutor, LoadsAStepThatHandsNothingOn)
+{
+    Harness harness;
+    auto    request = std::make_shared<nervros_interfaces::srv::ValidateMission::Request>();
+    request->tree_xml =
+        mission(R"(<Sequence><SubTree ID="GoToTarget" name="s1_GoToTarget" target="R2"/>)"
+                R"(<SubTree ID="FindInView" name="s2_FindInView" phrase="mug"/></Sequence>)");
+
+    auto answer = harness.validate->async_send_request(request);
+
+    ASSERT_EQ(answer.wait_for(20s), std::future_status::ready);
+    const auto verdict = answer.get();
+    EXPECT_TRUE(verdict->ok) << verdict->diagnostics_json;
+}
+
 TEST(NervrosExecutor, RejectsAForbiddenMissionWithDiagnosticsAndRunsNothing)
 {
     Harness harness;

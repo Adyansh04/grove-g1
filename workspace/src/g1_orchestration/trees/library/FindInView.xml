@@ -18,10 +18,12 @@
     </Timeout>
   </BehaviorTree>
 
+  <!-- A step that hands nothing on writes its own key: an output with no default must be
+       remapped, and BT.CPP refuses the tree otherwise. -->
   <TreeNodesModel>
     <SubTree ID="FindInView">
       <input_port name="phrase">Plain words the detector finds it by, such as red mug.</input_port>
-      <output_port name="object_id">The name the detector reports it under, such as red_mug.</output_port>
+      <output_port name="object_id" default="{object_id}">The name the detector reports it under, such as red_mug.</output_port>
     </SubTree>
   </TreeNodesModel>
 </root>
