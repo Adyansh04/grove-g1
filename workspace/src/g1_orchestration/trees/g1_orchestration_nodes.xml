@@ -45,6 +45,19 @@
             <output_port name="first_id" type="std::string">The id the first entry of `objects` appears under on /objects: the slug of its id half, such as o17 for O17. For the leaves that follow, which look it up there.</output_port>
             <input_port name="objects" type="std::string">Comma-separated objects to ask the detector for and wait on: an id, or 'id=phrase' when the wording that finds it differs from the name the tree uses.</input_port>
         </Action>
+        <Action ID="MoveHand">
+            <input_port name="speed" type="double" default="0.000000">A share of the server's speed, 0 for all of it.</input_port>
+            <input_port name="mode" type="std::string" default="point">'point' at it, or 'reach' to it.</input_port>
+            <input_port name="find_service" type="std::string" default="/canopy/find_objects">The world model's object search.</input_port>
+            <input_port name="offset_z" type="double" default="0.000000">Added upward, m.</input_port>
+            <input_port name="server_timeout_s" type="double" default="10.000000">How long to wait for the action server to appear.</input_port>
+            <input_port name="world_frame" type="std::string" default="map">The frame the world model's objects are in.</input_port>
+            <input_port name="offset_y" type="double" default="0.000000">Added to the left, m.</input_port>
+            <input_port name="offset_x" type="double" default="0.000000">Added forward, m.</input_port>
+            <input_port name="frame" type="std::string" default="">A frame of the robot, such as torso_link, when there is no target.</input_port>
+            <input_port name="target" type="std::string" default="">An object of the world model, by id or words; or leave it for frame.</input_port>
+            <input_port name="arm" type="std::string" default="right">'left' or 'right'.</input_port>
+        </Action>
         <Action ID="NavigateToPose">
             <output_port name="goal_yaw" type="double">The goal's heading, for an ApproachObject that has to hold it.</output_port>
             <input_port name="behavior_tree" type="std::string" default="">Nav2 tree to drive with. Empty uses its default.</input_port>
@@ -130,6 +143,9 @@
             <input_port name="base_frame" type="std::string" default="base_footprint">The robot's base frame.</input_port>
             <input_port name="frame" type="std::string" default="map">Frame of `yaw`.</input_port>
             <input_port name="yaw" type="double">Heading to face, rad, in `frame`.</input_port>
+        </Action>
+        <Action ID="Wait">
+            <input_port name="seconds" type="double">How long, 0 to 60 s.</input_port>
         </Action>
     </TreeNodesModel>
 </root>

@@ -67,6 +67,7 @@ nervros_executor:
       - /g1_manipulation_server/pick:g1_msgs/action/Pick
       - /g1_manipulation_server/place:g1_msgs/action/Place
       - /g1_manipulation_server/set_arm_posture:g1_msgs/action/SetArmPosture
+      - /g1_manipulation_server/move_hand:g1_msgs/action/MoveHand
       - /g1_vla_server/grasp:g1_msgs/action/Grasp
     # The arm's trajectory controller. StopAll cancels its goal, which makes it hold the arm where
     # it is. The hand controllers are deliberately absent: cancelling theirs lets go of the grip.

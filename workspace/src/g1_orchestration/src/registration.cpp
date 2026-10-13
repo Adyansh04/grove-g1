@@ -16,12 +16,14 @@
 #include "g1_orchestration/skills/grasp.hpp"
 #include "g1_orchestration/skills/look_for.hpp"
 #include "g1_orchestration/skills/motion_leaves.hpp"
+#include "g1_orchestration/skills/move_hand.hpp"
 #include "g1_orchestration/skills/navigate_to_pose.hpp"
 #include "g1_orchestration/skills/pick.hpp"
 #include "g1_orchestration/skills/place.hpp"
 #include "g1_orchestration/skills/retreat.hpp"
 #include "g1_orchestration/skills/set_arm_posture.hpp"
 #include "g1_orchestration/skills/step_clear.hpp"
+#include "g1_orchestration/skills/wait.hpp"
 #include "g1_orchestration/skills/world_model_leaves.hpp"
 
 namespace g1_orchestration
@@ -51,6 +53,8 @@ void registerSkillNodes(BT::BehaviorTreeFactory& factory, const RosContext& cont
     registerLeaf<TurnTo>(factory, "TurnTo", context);
     registerLeaf<DriveStraight>(factory, "DriveStraight", context);
     registerLeaf<TurnBy>(factory, "TurnBy", context);
+    registerLeaf<MoveHand>(factory, "MoveHand", context);
+    registerLeaf<Wait>(factory, "Wait", context);
 }
 
 std::string nodeModelXml(const BT::BehaviorTreeFactory& factory)

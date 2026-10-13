@@ -69,6 +69,8 @@ add_library(g1_bt_nodes
   src/skills/set_arm_posture.cpp
   src/skills/world_model_leaves.cpp
   src/skills/motion_leaves.cpp
+  src/skills/move_hand.cpp
+  src/skills/wait.cpp
 )
 g1_target_defaults(g1_bt_nodes)
 target_link_libraries(g1_bt_nodes PUBLIC

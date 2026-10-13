@@ -47,6 +47,8 @@ image, so this package has its own action-client base.
 | `Pick` | `/g1_manipulation_server/pick` | `object_id`, `arm` |
 | `Place` | `/g1_manipulation_server/place` | `surface` (preferred), or `target` as `"x;y;z"` with `frame_id`; `arm` |
 | `SetArmPosture` | `/g1_manipulation_server/set_arm_posture` | `group`, `named_target` |
+| `MoveHand` | `/g1_manipulation_server/move_hand` | `arm`; `target` (a world-model object, by id or words, looked up with `find_service`) or `frame` (one of the robot's); `offset_x`, `offset_y`, `offset_z`; `mode` (`point` or `reach`); `speed`. For pointing and gestures. |
+| `Wait` | nothing | `seconds`, 0 to 60. Answers RUNNING while it waits, and fails at once when the mission winds down. |
 | `ClearCostmaps` | Nav2 costmap clear services | `timeout_s`, `global_service`, `local_service` |
 | `ClearOctomap` | MoveIt `/clear_octomap` | `timeout_s`, `service` |
 | `AcquireArm` / `ReleaseArm` | `controller_manager` services | `timeout_s` |
@@ -287,7 +289,7 @@ All in `config/nervros_executor.yaml`, commented there.
 | `max_pause_s` | 600 | The longest a mission may stay paused before it ends (`OUTCOME_CANCELED`). |
 | `authority_timeout_s` | 15 | Per-step budget for `controller_manager` calls. |
 | `dry_run_time_scale`, `dry_run_min_leaf_s` | 0.02, 0.05 | A dry run's share of a skill's catalog time per leaf, and its floor. |
-| `stop_action_servers` | the nine skill servers | As `/name:type`. `test_catalog_drift` fails if a leaf uses one that is not listed. |
+| `stop_action_servers` | every skill server | As `/name:type`. `test_catalog_drift` fails if a leaf uses one that is not listed. |
 | `arm_controller_action` | the arm trajectory controller | Cancelled by `StopAll` to hold the arm. |
 
 ### Running it
