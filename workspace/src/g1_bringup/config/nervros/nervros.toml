@@ -103,6 +103,10 @@ pause = "/nervros_executor/pause_mission"
 state = "/nervros_executor/robot_state"
 max_replans = 2
 preview = "/nervros_executor/preview_mission"
+# Skills the agent teaches the robot from the executor's learnable leaves (pointing, gestures,
+# looking around); the first mission with one, approved as usual, keeps it.
+define_skill = "/nervros_executor/define_skill"
+forget_skill = "/nervros_executor/forget_skill"
 # The executor stops a mission when these stop for heartbeat_timeout_s: NervROS gone or wedged.
 heartbeat = "/nervros_executor/heartbeat"
 heartbeat_timeout_s = 2.0

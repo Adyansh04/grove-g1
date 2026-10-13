@@ -37,8 +37,10 @@ find_package(yaml-cpp REQUIRED)
 # tests run in milliseconds and a service thread can share it with the mission thread.
 add_library(g1_mission_validation
   src/catalog.cpp
+  src/learned_skills.cpp
   src/macro_library.cpp
   src/mission_validator.cpp
+  src/repertoire.cpp
   src/sha256.cpp
   src/xml_canonical.cpp
 )
@@ -165,6 +167,13 @@ if(BUILD_TESTING)
   ament_add_gmock(test_mission_validator test/test_mission_validator.cpp)
   target_link_libraries(test_mission_validator g1_mission_validation)
   target_compile_definitions(test_mission_validator PRIVATE
+    G1_CONFIG_DIR="${CMAKE_CURRENT_SOURCE_DIR}/config"
+    G1_TREES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/trees")
+
+  # What a taught skill may be built from, and where kept ones live. No ROS.
+  ament_add_gmock(test_learned_skills test/test_learned_skills.cpp)
+  target_link_libraries(test_learned_skills g1_mission_validation)
+  target_compile_definitions(test_learned_skills PRIVATE
     G1_CONFIG_DIR="${CMAKE_CURRENT_SOURCE_DIR}/config"
     G1_TREES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/trees")
 

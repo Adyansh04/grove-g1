@@ -131,6 +131,8 @@ the contract is its `nervros_interfaces`.
 | Service | `/nervros_executor/get_catalog` | The skills as JSON, the palette (`TreeNodesModel`: every leaf's ports and the skills' subtrees), BehaviorTree.CPP's version, and the catalog's, which changes with the skills and with the palette. |
 | Service | `/nervros_executor/stop_all` | Halts the mission, cancels goals on every skill server, holds posture. Safe at any time. |
 | Service | `/nervros_executor/pause_mission` | `PauseMission`: pauses the running mission, or resumes it (below). |
+| Service | `/nervros_executor/define_skill` | `DefineSkill`: a skill an agent teaches, checked and served as a draft, or kept (below). |
+| Service | `/nervros_executor/forget_skill` | `ForgetSkill`: drops a taught skill, and its file when it was kept. |
 | Topic | `/nervros_executor/robot_state` | `RobotState`, reliable and transient local, on change and at 1 Hz. |
 
 ### What a mission may say
@@ -191,6 +193,32 @@ taking it is not in), and that the output fits the argument: an id from the worl
 `world_id`, an id for an `id`, the same format otherwise, never a catalog `enum`. An `arg_choices`
 list takes what a step found on the robot, a name the robot knows, but not a world model's id. A
 dry run seeds every output key, since the macros' scripts read them.
+
+### Taught skills
+
+An agent may teach the robot a skill none of the catalog's does, such as pointing at something or
+looking around a room, through `define_skill`. Its body is held to more than a person's macro: only
+`Sequence`, `Fallback`, `RetryUntilSuccessful` (1 to 3), `Timeout` and `ForceSuccess` around the
+`learnable_leaves`, whose servers check every goal themselves (Nav2 with its costmaps and the
+keepout filter, MoveIt against the scene, the bounded walk and turn, the detector, a wait), and on
+each leaf only the inputs `learnable_leaves` lists, so which server, frame or timeout a leaf uses
+is never the skill's to change; every attribute is a literal or one of the skill's own arguments
+(`arm="{arm}"`, and never one called `name`, which a `SubTree` keeps for its step); depth, size
+and time (1 s at least) are capped, and the name may not be one of a skill, a macro or any node
+the executor registers. Its resources follow from its leaves, and its body is wrapped in a
+`Timeout` of its time, as a library macro is. One that moves an arm runs only while both hands are
+empty, as `TuckForTravel` does: an arm swung with something in its hand could drive it into the
+body.
+
+A new skill is a draft: served, with `learned: draft` and what it was `taught_for` in the catalog,
+until the executor stops. The agent keeps it (`keep`, the same request again) after a mission that
+used it succeeded; a kept skill is written to `learned_skills_dir` as `<name>.json` and loads with
+the executor, checked again, so one whose leaf has gone, or whose file is named for another skill,
+is left out with a warning. A draft never replaces a kept skill (forget that first), and forgetting
+removes the file whatever the executor held. A mission is checked and run
+against the skills as they were when it started; a define or a forget meanwhile serves the next
+one. `GetCatalog`'s JSON also carries `learnable`, each leaf with its ports and the authority it
+takes, for the agent to teach from.
 
 ### Authority
 
@@ -269,6 +297,9 @@ or stop is `OUTCOME_CANCELED`; both name the step that was running. Feedback car
 nodes and the status transitions since the last message: `event_level: steps` keeps the step
 subtrees and the leaves that do something, `all` every node; a halt shows as RUNNING to IDLE.
 
+The result's `outputs_json` holds what the steps handed on (`{"s1_target_id": "o17"}`), so an agent
+that waits on a mission can use what it found.
+
 `StopAll` and `ValidateMission` answer while a mission ticks: the mission runs on a thread of its own.
 
 ### Parameters
@@ -291,6 +322,9 @@ All in `config/nervros_executor.yaml`, commented there.
 | `dry_run_time_scale`, `dry_run_min_leaf_s` | 0.02, 0.05 | A dry run's share of a skill's catalog time per leaf, and its floor. |
 | `stop_action_servers` | every skill server | As `/name:type`. `test_catalog_drift` fails if a leaf uses one that is not listed. |
 | `arm_controller_action` | the arm trajectory controller | Cancelled by `StopAll` to hold the arm. |
+| `learnable_leaves` | nine leaves | What a taught skill may be built from, as `Leaf:holds:inputs`: the authority it needs (`base`, `arms` or empty) and the only inputs a skill may set. |
+| `max_learned_duration_s`, `max_learned_nodes`, `max_learned_skills` | 300, 40, 32 | The longest and largest a taught skill may be, and how many there may be. |
+| `learned_skills_dir` | `""` | Where kept skills live, a JSON file each; empty keeps them only until the executor stops. `nervros.sh` uses `/root/data/skills/g1`. |
 
 ### Running it
 
@@ -374,6 +408,7 @@ None need a simulator. `./scripts/manage.sh test g1_orchestration` runs all of t
 | `test_action_leaf` | The action-leaf base, through `Retreat`, against a stand-in server on the two threads the executor uses: a rejected goal fails the leaf, an accepted one that succeeds reaches SUCCESS. `LookFor` against a stand-in detector: what it writes, the ids it waits on, and that it does not block a tick. |
 | `test_node_model` | The checked-in Groot2 palette matches the registered nodes and their ports. |
 | `test_authority_drift` | The acquire sequence against `g1_bringup`'s `activate_arm`: the same names, the arm first with the hands behind it, and the freeze controller still displaced in the same switch. Plus `planArmSwitch`, including that an incoming controller which is not loaded switches nothing at all. |
+| `test_learned_skills` | What a taught skill may be: learnable leaves and control nodes only, attributes literal or bound to its own arguments, bounded retries and time, a name of its own; the authority it takes from its leaves; a draft kept on disk and loaded again until forgotten; the set with a taught skill validates a mission that uses it, while one taken before keeps its own skills. |
 | `test_mission_validator` | Every form a mission may not take is refused with its own code and line: an include, a wrong hash, another tree, each forbidden node, condition attributes, a leaf written directly, unbounded timeouts and retries, bad arguments. The worst case on known trees, the shipped worked example, and input that is not XML at all. SHA-256 against the standard vectors. |
 | `test_catalog_drift` | Catalog, macros and leaves agree: same names, ports, limits and resources; every macro loads with its leaves registered; the JSON has the shape the agent reads; `stop_action_servers` covers every action server a leaf uses. |
 | `test_mission_observer` | Events at both levels, halts against resets, the running step, and which failure ends a mission: the last leaf, not a retried one, with the step and the leaf's own words. |

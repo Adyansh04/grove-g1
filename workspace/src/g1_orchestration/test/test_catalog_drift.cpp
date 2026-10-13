@@ -29,9 +29,11 @@
 
 #include "g1_orchestration/catalog.hpp"
 #include "g1_orchestration/leaf_report.hpp"
+#include "g1_orchestration/learned_skills.hpp"
 #include "g1_orchestration/macro_library.hpp"
 #include "g1_orchestration/mission_preview.hpp"
 #include "g1_orchestration/mission_validator.hpp"
+#include "g1_orchestration/registration.hpp"
 #include "g1_orchestration/sha256.hpp"
 #include "g1_orchestration/skill_nodes.hpp"
 
@@ -332,6 +334,22 @@ TEST(CatalogDrift, TheJsonHasTheShapeThePlannerReads)
             EXPECT_TRUE(arg.at("enum").is_array());
         }
     }
+}
+
+TEST(CatalogDrift, EveryLearnableLeafOpensOnlyPortsItHas)
+{
+    const YAML::Node params = YAML::LoadFile(
+        std::string(G1_CONFIG_DIR) +
+        "/nervros_executor.yaml")["nervros_executor"]["ros__parameters"];
+    std::vector<std::string> entries;
+    // An entry that YAML reads as a map stops the executor at start-up.
+    ASSERT_NO_THROW(entries = params["learnable_leaves"].as<std::vector<std::string>>());
+    auto                    node = std::make_shared<rclcpp::Node>("test_learnable_leaves");
+    BT::BehaviorTreeFactory factory;
+    g1_orchestration::registerSkillNodes(factory, g1_orchestration::RosContext{ node });
+    const auto learnable =
+        g1_orchestration::Learnable::parse(entries, g1_orchestration::nodeModelXml(factory));
+    EXPECT_EQ(learnable.leaves.size(), entries.size());
 }
 
 TEST(CatalogDrift, StopAllCoversEveryActionServerALeafUses)
