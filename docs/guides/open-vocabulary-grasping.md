@@ -7,8 +7,9 @@ consume. A vision-language model can turn an instruction into phrases, and a sec
 proposes grasps.
 
 `./scripts/demos/open-vocabulary-grasping.sh <mock|vision|gsam2|graspgen|grounding>` opens a
-section's commands at once, in split panes of your terminal, after tearing down any stack left
-running. `stop` ends it, and `--print` lists the commands instead.
+section's commands at once, in split panes of tilix (a window each in another terminal), after
+tearing down any stack left running. `stop` ends it, and `--print` lists the commands instead.
+Arguments after the section, such as `rviz:=false`, go to the bringup launch.
 
 Host commands run from the repository root. `ros2` commands run in a container shell, opened with
 `./scripts/manage.sh exec`, as in the other guides.
@@ -162,7 +163,7 @@ ros2 service call /g1_grasp_engine/generate_grasps g1_msgs/srv/GenerateGrasps \
 
 That call only returns candidates; the arm side filters and executes them. Add
 `grasp_source:=generated activate_arm:=true activate_arm_delay_s:=40.0 rviz:=true` to the launch
-and send a pick:
+and, once it prints `activation complete`, send a pick:
 
 ```bash
 ros2 action send_goal /g1_manipulation_server/pick g1_msgs/action/Pick \

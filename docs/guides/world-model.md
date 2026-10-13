@@ -6,13 +6,14 @@ which `g1_bringup/launch/world_model.launch.py` wires to the G1's topics. An exp
 robot through the building until the camera has seen what it can, and missions then name their
 targets ("the dustbin in the office") instead of carrying coordinates.
 
-`./scripts/demos/world-model.sh <mock|real|editor>` opens a section's commands at once, in split panes of
-your terminal, after tearing down any stack left running. `stop` ends it, and `--print` lists
-the commands instead.
+`./scripts/demos/world-model.sh <mock|real|editor>` opens a section's commands at once, in split
+panes of tilix (a window each in another terminal), after tearing down any stack left running.
+`stop` ends it, and `--print` lists the commands instead. Arguments after the section, such as
+`rviz:=false`, go to both launches.
 
 ## In simulation, with ground-truth masks
 
-The apartment world has six rooms and 44 textured props, with a ground-truth file for scoring.
+The apartment world has six rooms and 46 props, with a ground-truth file for scoring.
 Fetch its assets once on the host (about 330 MB; nothing is committed):
 
 ```bash
@@ -23,9 +24,9 @@ Then, inside the container:
 
 ```bash
 ros2 launch g1_bringup bringup.launch.py mode:=mapping nav:=true world:=apartment headless:=true \
-  arms_at_sides:=true
+  arms_at_sides:=true cameras:=head,chest
 ros2 launch g1_bringup world_model.launch.py world_dir:=/root/data/worlds/apartment detector:=mock \
-  rviz:=true
+  rviz:=true cameras:=head,chest
 ros2 run g1_orchestration g1_bt_executor --ros-args \
   -p tree_file:=$(ros2 pkg prefix g1_orchestration)/share/g1_orchestration/trees/explore.xml
 ```
@@ -60,11 +61,10 @@ the furniture solid (`map.pgm`, `map.yaml`), a picture of it with the rooms and 
 
 The models get some of it wrong. Before the world is saved, `explore.xml`'s `CleanUpWorld` has
 canopy take out what it can tell is no object: the floor mapped as a table, or a piece of a sofa
-seen as a chair inside it. Those two rules took out no real object in four runs of the test flat.
-The rest is for a person. canopy's map editor lists what deserves a second look, with the camera's
-view of each object: a weakly seen phantom, a label the describer disagrees with, a room typed with
-little confidence. Each fix is a click or two, and what the clean-up took out is listed with why,
-to restore. Run it on the host once the run is over:
+seen as a chair inside it. The rest is for a person. canopy's map editor lists what deserves a
+second look, with the camera's view of each object: a weakly seen phantom, a label the describer
+disagrees with, a room typed with little confidence. Each fix is a click or two, and what the
+clean-up took out is listed with why, to restore. Run it on the host once the run is over:
 
 ```bash
 python3 workspace/src/canopy/editor/canopy_editor.py data/worlds/apartment   # http://127.0.0.1:8765/
@@ -100,6 +100,9 @@ arrives:
 <NavigateToPose goal="{goal}"/>
 <TurnTo yaw="{yaw}"/>
 ```
+
+A NervROS mission gets this sequence as one skill, `GoToTarget`: it takes an id or plain words
+("red mug", for the nearest match) and hands on the id it walked to, `target_id`, for a later step.
 
 ## With real models
 
@@ -147,8 +150,9 @@ writes off what no standing pose can see, and each room reports those cells as
 `unobservable_cells`, so a shelf's top tier is listed as unseen rather than silently missing.
 
 In simulation a second D435i sits on the chest, 1.03 m up and 20° down (`g1_description`'s
-`config/cameras.yaml`), and sees walls, counters and shelves from the side. Pass
-`cameras:=head,chest` to both `bringup.launch.py` and `world_model.launch.py`, and `detector:=mock`
-starts a mock for each. `cameras:=chest` alone saves the head camera's
+`config/cameras.yaml`), and sees walls, counters and shelves from the side. The commands above,
+the demo and the acceptance test pass `cameras:=head,chest` to both `bringup.launch.py` and
+`world_model.launch.py`, and `detector:=mock` starts a mock for each; without it only the head
+camera is used. `cameras:=chest` alone saves the head camera's
 render and detector, but the chest camera sees little floor near the robot, so the camera pass
 takes longer.

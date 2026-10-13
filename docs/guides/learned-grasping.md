@@ -4,9 +4,10 @@ A vision-language-action policy proposes joint targets, and every chunk it propo
 against MoveIt's live planning scene before any of it reaches a controller. The instruction is
 plain text: "pick up the red block".
 
-`./scripts/demos/learned-grasping.sh <mock|groot|servo>` opens a section's commands at once, in split panes of
-your terminal, after tearing down any stack left running. `stop` ends it, and `--print` lists
-the commands instead.
+`./scripts/demos/learned-grasping.sh <mock|groot|servo>` opens a section's commands at once, in
+split panes of tilix (a window each in another terminal), after tearing down any stack left running.
+`stop` ends it, and `--print` lists the commands instead. Arguments after the section, such as
+`rviz:=false`, go to the bringup launch.
 
 ## What works and what does not
 
@@ -29,6 +30,8 @@ ros2 launch g1_bringup bringup.launch.py \
   world:=manipulation pin_pelvis:=true odometry:=ground_truth \
   activate_arm:=true activate_arm_delay_s:=40.0
 ```
+
+Once the launch prints `activation complete`:
 
 ```bash
 ros2 launch g1_orchestration mission.launch.py tree:=vla_grasp_in_place.xml

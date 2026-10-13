@@ -3,9 +3,10 @@
 Two demos that share a world. The first builds a map and drives to a goal under Nav2; the second
 plans arm motions against an octomap built from the same LiDAR. They can run together.
 
-`./scripts/demos/navigation-and-moveit.sh <sim|mapping|navigate|arm|both>` opens a section's commands at once, in split panes of
-your terminal, after tearing down any stack left running. `stop` ends it, and `--print` lists
-the commands instead.
+`./scripts/demos/navigation-and-moveit.sh <sim|mapping|navigate|arm|both>` opens a section's
+commands at once, in split panes of tilix (a window each in another terminal), after tearing down
+any stack left running. `stop` ends it, and `--print` lists the commands instead. Arguments after
+the section, such as `rviz:=false`, go to the bringup launch.
 
 Every command here runs inside the development container. Start it and open a shell from the
 repository root; the shell starts in `/root/workspace` with the workspace sourced:
@@ -23,8 +24,10 @@ Useful for checking the robot stands up before adding anything else.
 ros2 launch g1_bringup bringup.launch.py headless:=false
 ```
 
-`headless:=false` opens the MuJoCo viewer and needs a local X11 display. Leave it at the default
-`true` over SSH or on a machine without one. Restart the simulator rather than resetting or
+`headless:=false` opens the MuJoCo viewer and needs a local X11 display, as `rviz:=true` does;
+the launcher refuses either until the container may use the display, which `manage.sh start`
+grants (`xhost +local:docker`). Leave `headless` at the default `true` over SSH or on a machine
+without one. Restart the simulator rather than resetting or
 reloading it from the viewer: Reset (Backspace) re-applies the weld that holds the robot up at
 startup and nothing releases it again, and Reload with sensors on stops the sensors for good and
 can crash the simulator.
@@ -70,8 +73,15 @@ ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose \
   "{pose: {header: {frame_id: map}, pose: {position: {x: 2.5, y: -2.5}, orientation: {w: 1.0}}}}"
 ```
 
-The committed map belongs to the `navigation` world, which is the default. Localization against
-any other scene will not converge.
+Keep-out zones: `keepout:=true` turns on Nav2's keepout filter in both costmaps and starts its
+`costmap_filter_info_server` with its own `lifecycle_manager_filters`, which exist only with it.
+The filter reads the `OccupancyGrid` on `/keepout_filter_mask`, whose cells at 100 are off limits,
+which NervROS publishes from its zones ([NervROS](nervros.md#keep-out-zones)). Leave it off
+otherwise: with no mask the filters warn every 2 s.
+
+Committed maps exist for the `navigation` world, the default, and the `apartment` world.
+Localization picks the one for `world:=`, or the file `map:=<map.yaml>` names; on any other scene
+it will not converge.
 
 To rule odometry out rather than debug it, `odometry:=ground_truth` swaps FAST-LIO for exact
 MuJoCo state. `fast_lio` is the default because it is what the real robot runs.
@@ -148,7 +158,8 @@ DDS graph. This tears it down and exits non-zero unless the graph is empty after
 | `sensors` | `false` | LiDAR sweep, relay and the odom chain. Forced on by the navigation modes, `manipulation` and `perception`. |
 | `rviz` | `false` | Config follows the mode. |
 | `odometry` | `fast_lio` | `ground_truth` reads MuJoCo state directly. |
-| `world` | `navigation` | The facility the committed map was built from. |
+| `world` | `navigation` | `navigation` (the facility) or `apartment`; each has a committed map for `mode:=localization`. |
+| `keepout` | `false` | Nav2's keepout filter in both costmaps, fed by NervROS's `/keepout_filter_mask`. |
 | `headless` | `true` | `false` opens the MuJoCo viewer and needs a display. |
 | `activate_arm` | `false` | Simulation convenience. Needs `moveit:=true`. |
 | `activate_arm_delay_s` | `25.0` | When the acquire starts waiting for the body's controllers. |
