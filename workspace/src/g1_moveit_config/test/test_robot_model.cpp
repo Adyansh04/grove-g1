@@ -135,6 +135,28 @@ TEST_F(RobotModelTest, NamedPosturesKeepRoomBeforeSelfCollision)
     }
 }
 
+TEST_F(RobotModelTest, TheThumbTipMayTouchTheFingerTips)
+{
+    // Closed on a small object the fingers stop unevenly and the thumb tip meets a finger tip; a
+    // hand checked against itself there refused every lift from that grip as starting in
+    // collision. The `closed` posture alone does not show it, so the pairs are pinned.
+    std::set<std::pair<std::string, std::string>> disabled;
+    for (const auto& pair : srdf_->getDisabledCollisionPairs())
+    {
+        disabled.insert({ pair.link1_, pair.link2_ });
+        disabled.insert({ pair.link2_, pair.link1_ });
+    }
+    for (const std::string& side : { "left", "right" })
+    {
+        for (const std::string& finger : { "index", "middle" })
+        {
+            const std::string tip = side + "_hand_" + finger + "_1_link";
+            EXPECT_TRUE(disabled.contains({ tip, side + "_hand_thumb_2_link" }))
+                << tip << " / " << side << "_hand_thumb_2_link is checked";
+        }
+    }
+}
+
 TEST_F(RobotModelTest, PlansInThePelvisFrame)
 {
     // No floating base and no virtual joint. Pinned because adding one moves every pose goal
