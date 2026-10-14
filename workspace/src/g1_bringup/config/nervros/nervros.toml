@@ -147,6 +147,7 @@ name = "find_objects"
 kind = "service"
 ros_name = "/canopy/find_objects"
 type = "canopy_msgs/srv/FindObjects"
+description = """Finds objects in the world model, best first: by id, label, name or words in `query`, in a `room` (an id or a name) when given. A query that names no thing in particular (empty, or "objects") lists every object there, and the reply's `message` counts them all, though it lists `max_results` at most: that is how many objects a room has."""
 risk = "observe"
 hide_fields = ["query_embedding"]
 defaults = { max_results = 5 }
@@ -166,6 +167,18 @@ param_set = ["*:*"]
 # g1_navigation's keepout filters read with keepout:=true, so its own paths stay out of them.
 [geofence]
 mask = "/keepout_filter_mask"
+
+# The incident investigator: this robot's known traps, beside the ones NervROS carries, and what
+# opens an incident when it goes. A camera is watched by its camera_info, which the relay sends
+# with every frame, so the watch costs none of an image's bandwidth.
+[incidents]
+playbooks = ["playbooks"]
+watch = [
+    { name = "chest camera", topic = "/chest_camera/color/camera_info", type = "sensor_msgs/msg/CameraInfo", min_hz = 1.0 },
+    { name = "head camera", topic = "/camera/color/camera_info", type = "sensor_msgs/msg/CameraInfo", min_hz = 1.0 },
+    { name = "lidar", topic = "/scan", type = "sensor_msgs/msg/LaserScan", min_hz = 2.0 },
+]
+nodes = ["detector_chest", "detector_head", "nervros_executor", "g1_manipulation_server", "controller_server"]
 
 [models]
 file = "models.toml"

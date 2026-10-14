@@ -1,0 +1,32 @@
+# Processes killed with kill -9 leave Fast DDS's port locks in the container's /dev/shm. Shared
+# memory then fails, and the cameras' megabyte images fall back to UDP and drop: depth stops
+# matching the masks although the relay stamps both alike, and the colour images come slower than
+# the camera_info sent with each. It looks like a camera fault. A loaded machine also makes depth
+# miss its masks now and then, so the dropped images are what tell them apart.
+id = "stale-shared-memory"
+title = "Fast DDS shared memory went stale"
+explains = ["topic_silent", "mission_failed", "asked"]
+verdict = "Shared memory failed, so the cameras' large images go over UDP and drop: depth frames miss their masks and the colour rate swings."
+fix = "Stop everything (./scripts/clean-stack.sh), clear /dev/shm in the container (rm -f /dev/shm/*), and start again. The agent cannot do this."
+procedure = "camera-or-objects-empty"
+
+[[check]]
+name = "depth against the masks"
+log = "no depth frame within tolerance of the mask stamp"
+node = "g1_object_geometry"
+at_least = 3
+
+[[check]]
+name = "the chest camera's images"
+topic = "/chest_camera/color/image_raw"
+type = "sensor_msgs/msg/Image"
+condition = "rate_below"
+hz = 6.0
+
+[[check]]
+name = "the chest camera, still sending"
+topic = "/chest_camera/color/camera_info"
+type = "sensor_msgs/msg/CameraInfo"
+condition = "rate_below"
+hz = 6.0
+not = true

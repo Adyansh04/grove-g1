@@ -1,0 +1,19 @@
+# AMCL can settle far off, even turned 90 degrees, and Nav2 then "arrives" at the wrong place:
+# everything after it fails as if perception were broken. In simulation the relay's base_state is
+# where the robot truly stands. A map starts where the robot stood when it was made, up to half a
+# metre from the simulator's origin, so only a gap past that counts.
+id = "robot-lost"
+title = "The robot is lost on the map"
+explains = ["mission_failed", "asked"]
+verdict = "Localization settled far from where the simulator has the robot, so a walk ends somewhere else and what should be there is not."
+fix = "Set the robot's pose again (2D Pose Estimate in RViz) or restart the stack before any walk; replanning the same mission fails the same way."
+procedure = "lost-on-the-map"
+
+[[check]]
+name = "map to pelvis, against the simulator"
+pose_gap = ["map", "pelvis"]
+topic = "/g1_sensor_relay/base_state"
+type = "nav_msgs/msg/Odometry"
+field = "pose.pose"
+metres = 1.0
+degrees = 30

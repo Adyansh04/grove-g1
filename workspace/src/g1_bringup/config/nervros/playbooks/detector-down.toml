@@ -1,0 +1,14 @@
+id = "detector-down"
+title = "A camera's detector is not running"
+explains = ["node_gone", "mission_failed", "asked"]
+match = "any"
+verdict = "A detector stopped, so looks through its camera find nothing and the world model learns no new objects."
+fix = "The operator starts the world model again (world_model.launch.py), or the stack; the agent cannot."
+
+[[check]]
+name = "the chest camera's detector"
+node_missing = "detector_chest"
+
+[[check]]
+name = "the head camera's detector"
+node_missing = "detector_head"

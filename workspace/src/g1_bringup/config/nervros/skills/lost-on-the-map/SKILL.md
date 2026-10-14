@@ -10,8 +10,9 @@ place. Everything after that fails as if perception were broken.
 
 1. Call `tf` for `map` to `pelvis` and note x, y and the heading.
 2. In simulation, call `topic_sample` on `/g1_sensor_relay/base_state`: it is where the robot
-   truly stands (its frame is labelled odom; it is the simulator's world within about 1 cm).
-3. If the two disagree by more than about 0.5 m or 20 degrees, the robot is lost. Do not replan
+   truly stands (its frame is labelled odom; it is the simulator's world within about 1 cm). The
+   map starts where the robot stood when it was made, up to half a metre from that world's origin.
+3. If the two disagree by more than about 1 m or 30 degrees, the robot is lost. Do not replan
    the same mission: it would fail the same way.
 4. Call `look` to see what the camera sees now, and compare it with what should be at the place.
 

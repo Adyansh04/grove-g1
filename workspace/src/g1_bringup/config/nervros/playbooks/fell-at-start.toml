@@ -1,0 +1,23 @@
+# Nav2 failing at start is almost always the robot: it fell as the simulator released it, often as
+# the arms moved, and Nav2 aborts its bring-up 60 s later because odometry never settles.
+id = "fell-at-start"
+title = "The robot fell at start, so Nav2 never came up"
+explains = ["mission_failed", "error_burst", "asked"]
+match = "any"
+verdict = "The robot fell while the simulator released it: odometry would not latch on a tilted body, and Nav2 aborted its bring-up waiting for it."
+fix = "The operator stops the stack (./scripts/clean-stack.sh) and starts it again; never plan a walk until robot_state says the robot can move."
+procedure = "nav2-not-up"
+
+[[check]]
+name = "the odometry"
+log = "not latching the odom origin"
+node = "g1_odometry_publisher"
+
+[[check]]
+name = "the locomotion safety controller"
+log = "left the policy's trained range"
+
+[[check]]
+name = "Nav2's lifecycle manager"
+log = "aborting bringup"
+node = "lifecycle_manager"

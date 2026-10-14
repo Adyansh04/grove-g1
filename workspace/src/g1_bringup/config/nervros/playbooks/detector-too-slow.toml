@@ -1,0 +1,14 @@
+# Each phrase costs the detector time; asked about too many, every frame is too old by the time
+# it answers, so it skips them all and /objects stays empty. It looks like a camera fault.
+id = "detector-too-slow"
+title = "The detector is asked about too much to keep up"
+explains = ["mission_failed", "asked"]
+verdict = "The detector's frames are too old by the time it could answer, so it skips every one and finds nothing: it is asked about too many things at once."
+fix = "Ask about fewer things at a time (a look with one question), or narrow the detector's phrase list."
+procedure = "camera-or-objects-empty"
+
+[[check]]
+name = "the detectors"
+log = "not asking about it"
+node = "detector"
+at_least = 2

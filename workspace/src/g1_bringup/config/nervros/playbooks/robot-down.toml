@@ -1,0 +1,15 @@
+# A humanoid that is down must not be asked to walk; the executor says why it cannot.
+id = "robot-down"
+title = "The robot fell or cannot walk"
+explains = ["mission_failed", "error_burst", "asked"]
+verdict = "The robot cannot walk (it fell, or a controller stopped), so anything that moves the base is refused or stopped."
+fix = "In simulation the operator stops the stack (./scripts/clean-stack.sh) and starts it again; plan nothing that moves until robot_state says it can move."
+procedure = "robot-fell"
+
+[[check]]
+name = "the executor's robot state"
+topic = "/nervros_executor/robot_state"
+type = "nervros_interfaces/msg/RobotState"
+condition = "value"
+field = "can_move"
+value = false
