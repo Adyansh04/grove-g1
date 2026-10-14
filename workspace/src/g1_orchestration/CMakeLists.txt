@@ -157,6 +157,10 @@ if(BUILD_TESTING)
   ament_add_gmock(test_action_leaf test/test_action_leaf.cpp TIMEOUT 120)
   target_link_libraries(test_action_leaf g1_bt_nodes)
 
+  # The words for why Nav2 did not reach a goal. No ROS graph.
+  ament_add_gmock(test_navigate_to_pose test/test_navigate_to_pose.cpp)
+  target_link_libraries(test_navigate_to_pose g1_bt_nodes)
+
   # The checked-in Groot2 palette matches the registered leaves.
   ament_add_gmock(test_node_model test/test_node_model.cpp)
   target_link_libraries(test_node_model g1_bt_nodes)

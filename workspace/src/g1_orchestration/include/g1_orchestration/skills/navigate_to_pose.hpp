@@ -6,6 +6,7 @@
  * @brief BT leaf that drives the base to a pose through Nav2.
  */
 
+#include <cstdint>
 #include <nav2_msgs/action/navigate_to_pose.hpp>
 #include <string>
 
@@ -16,9 +17,15 @@ namespace g1_orchestration
 {
 
 /**
+ * @brief Why Nav2 did not reach a goal, from the planner's or controller's code the navigator
+ * passes on; empty for a code it has no words for.
+ */
+std::string describeNavigationCode(std::uint16_t code);
+
+/**
  * @brief Drives the base to a pose through Nav2.
  *
- * Not a SkillActionNode: Nav2's result is empty, so the result code is the outcome.
+ * Not a SkillActionNode: Nav2's result holds only a code, worded by describeNavigationCode().
  */
 class NavigateToPose : public RosActionNode<nav2_msgs::action::NavigateToPose>
 {
