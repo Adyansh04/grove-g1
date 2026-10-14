@@ -41,8 +41,7 @@ itself:
 ros2 launch g1_orchestration mission.launch.py tree:=pick_and_place_in_place.xml
 ```
 
-The robot picks the block up, holds it at the `carry` posture, sets it down beside where it
-started, and tucks the arm.
+The robot picks the block up, sets it down beside where it started, and tucks the arm.
 
 ## How the hand holds an object
 
@@ -119,7 +118,7 @@ default of 10 Hz.
 
 | Tree | World | What it does |
 |---|---|---|
-| `pick_and_place_in_place.xml` | `manipulation` | Picks the block within reach, holds it at `carry`, sets it down beside where it was. |
+| `pick_and_place_in_place.xml` | `manipulation` | Picks the block within reach and sets it down beside where it was. |
 | `pick_and_place.xml` | `navigation` | Navigate, approach, pick, carry, place in the box on the storage bench. |
 | `sort_into_box.xml` | `tabletop` | Picks the red block from beside a blue one of the same shape and drops it in the box. |
 | `vla_grasp_in_place.xml` | `manipulation` | The learned grasp, covered in [its own guide](learned-grasping.md). |

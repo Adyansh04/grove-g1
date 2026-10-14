@@ -111,7 +111,7 @@ fails if the palette drifts, and `test_tree_loads` fails if a tree names a leaf 
 | Tree | Needs | What it does |
 |---|---|---|
 | `pick_and_place.xml` | Nav2, `world:=navigation`, perception | Acquire, tuck, drive to a staging pose, look, close the last gap, pick, back off, drive to storage, look, close again, place, back off, tuck, release. |
-| `pick_and_place_in_place.xml` | `world:=manipulation` | Pick the block, hold it at `carry`, put it down at a fixed `odom` target, tuck, release. No driving. |
+| `pick_and_place_in_place.xml` | `world:=manipulation` | Pick the block, put it down at a fixed `odom` target, tuck, release. No driving. |
 | `sort_into_box.xml` | `world:=tabletop`, perception | Pick the red block from a cluttered table and drop it in the box. |
 | `vla_grasp_in_place.xml` | `world:=manipulation`, `vla:=true` | The learned grasp in place of a planned pick. |
 | `explore.xml` | Nav2, canopy's world model, a detector | Walks to frontiers until the LiDAR map is closed, then to camera viewpoints until every room has been seen, then cleans up and saves the world. Steps clear of furniture before each Nav2 motion. |
