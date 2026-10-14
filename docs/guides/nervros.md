@@ -49,6 +49,7 @@ ros2 launch g1_bringup bringup.launch.py mode:=localization nav:=true keepout:=t
 ros2 launch g1_bringup world_model.launch.py rviz:=false detector:=mock cameras:=head,chest \
   segmenter:=true world_dir:=/root/data/worlds/nervros-apartment
 ros2 launch g1_orchestration nervros_executor.launch.py hands_empty_on_attach:=true \
+  learned_skills_dir:=/root/data/skills/g1 \
   arg_choices:='PickObject.object_id=mug_4;PickObject.phrase=red mug;PlaceInto.container_id=tray_1;PlaceInto.phrase=wooden tray;FindInView.phrase=mug|tray'
 ```
 
@@ -193,6 +194,33 @@ Ctrl+K opens the command palette; its commands also run from the message box by 
 `/compact` or `/stop`. An image pasted or dropped on the window goes with your next message, for
 the agent to look at.
 
+## Programs, searches and taught skills
+
+What takes a loop, a count or a measurement the agent writes as a short program and runs as a job.
+"Count the chairs in every room" or "which room has the most objects?" reads canopy's world model
+and moves nothing, so it runs at once. "Walk to the office and then the living room, and look for
+a mug in each" walks and looks: the approval names what it may run, "may move the base
+(GoToPlace) and look (FindInView), for at most 10 min", and the chat shows a card with its latest
+lines and Stop. Every mission it sends is checked like a plan, and an empty look in one room does
+not end the others. In the apartment demo the mock detector knows only `mug` and `tray`, so a look
+asks for one of those.
+
+"Find the red mug" ranks where to look (where canopy saw it and how long ago, where such things
+usually are, the rooms the camera has seen least of, and how far each is), walks to each place and
+looks until the detector sees it. "Where could my keys be? Don't move" lists the places without
+walking.
+
+The executor lets the agent teach the robot a skill no macro has, from the leaves listed in
+`g1_orchestration`'s `learnable_leaves`: Nav2's walk, the bounded walk and turn, the detector's
+look, named arm postures, `Wait`, and `MoveHand`, which plans one hand with MoveIt to a point, or
+onto the line from the shoulder to it, within 0.48 m of the shoulder and at 60 % of the arm's
+usual speed. "Point at the red mug with your right hand" has no skill, so the agent teaches
+`PointAt`; the executor checks it, the plan with its first try is approved as any plan, and once
+that mission succeeds the skill is kept in `data/skills/g1` (`nervros.sh` sets
+`learned_skills_dir`) and loads with the executor from then on. A taught skill holds no authority
+of its own: the mission takes the arm as for any arm skill, and a stop cancels its MoveIt goal. The
+Mission tab lists the taught skills with Forget.
+
 ## The robot tab
 
 The dock's Robot tab (Ctrl+8) shows whether the robot is upright and able to walk, its tilt, where
@@ -261,8 +289,10 @@ https://github.com/user-attachments/assets/d6e4dc59-a2c3-4b54-87cb-25c1abc4c190
 "hold on", or `/pause` in the terminal halts the running step instead: the robot stops where it
 is, the arms hold and the hands keep their grip, and a pick or a place finishes first. **Resume**,
 or "resume", "continue", "carry on" or "go on", goes on: a walk to a place sets out again, and a
-straight walk or a turn does only what was left of it. The words count only while a mission runs;
-otherwise they go to the model. The heartbeat still stops a paused mission whose window closed,
+straight walk or a turn does only what was left of it. "wait", "continue" and the like count only
+while a mission runs, otherwise they go to the model; a plain "pause" or "resume" always goes to
+the executor, which says when nothing runs. The heartbeat still stops a paused mission whose
+window closed,
 and a pause longer than ten minutes ends the mission (`max_pause_s` in
 `g1_orchestration/config/nervros_executor.yaml`). The executor's side is the
 `/nervros_executor/pause_mission` service.
@@ -296,7 +326,8 @@ them back when the mission ends unless a hand holds, or may hold, something: aft
 cut off, the executor does not trust that hand until a place with it succeeds, and the agent plans
 as if it were full. The skills a plan may use are in `config/catalog.yaml`, as macros in
 `trees/library/`: `GoToTarget`, `GoToPose`, `WalkStraight`, `TurnInPlace`, `FindInView`,
-`PickObject`, `PlaceInto`, `TuckForTravel` and `ExploreBuilding`.
+`PickObject`, `PlaceInto`, `TuckForTravel` and `ExploreBuilding`, and the ones an agent taught
+(above).
 
 https://github.com/user-attachments/assets/9b4cfc4f-5355-43bb-a4c8-de9aff755d4a
 
@@ -320,6 +351,28 @@ ros2 run g1_orchestration send_mission.sh $(ros2 pkg prefix g1_orchestration)/sh
 `validate` checks it, `dry-run` runs it with every skill replaced by a timed stand-in, and
 `execute` runs it.
 
+## When something goes wrong
+
+NervROS records the robot's last minutes and opens an incident when a mission fails, a camera or
+the lidar goes quiet, a watched node stops (the detectors, the executor, the manipulation server,
+Nav2's controller) or a node logs errors in a burst. It then runs the playbooks that may explain it:
+NervROS's own and this project's in `g1_bringup/config/nervros/playbooks/`, each a few read-only
+checks of a trap this stack has fallen into before:
+
+| Playbook | What it checks |
+|---|---|
+| `stale-shared-memory` | `g1_object_geometry` finding no depth frame for a mask's stamp again and again, while the chest camera's images come under 6 Hz and its `camera_info` keeps its rate: Fast DDS shared memory left stale by `kill -9`. A loaded machine also makes depth miss its masks now and then; the dropped images tell the two apart. |
+| `detector-too-slow` | A detector skipping frames as too old: it is asked about too much at once. |
+| `robot-lost` | `map` to `pelvis` against the relay's `base_state`, the simulator's truth: more than 1 m or 30 degrees apart, since a map starts where the robot stood when it was made, up to half a metre from the simulator's origin. |
+| `robot-down`, `fell-at-start` | The executor's `can_move`, and the odometry, the locomotion safety trip and Nav2's aborted bring-up in the log. |
+| `camera-silent`, `detector-down`, `executor-down` | A camera's `camera_info` under 0.5 Hz, a detector or the executor gone from the graph. |
+
+"Why did that fail?" or "is something wrong with the robot?" gets the cause the checks found, what
+each saw, what they ruled out and the minutes before it; the Doctor tab lists the incidents, and
+`nervros-cli --profile ../g1_bringup/config/nervros/nervros.toml why` checks the stack from a
+terminal. The cameras are watched by their `camera_info`, which the relay sends with every frame,
+so watching them costs none of an image's bandwidth.
+
 ## Sessions and the model's context
 
 Every conversation is saved next to its log in `~/.local/state/nervros/logs/`. The Agent tab lists
@@ -333,7 +386,8 @@ into the chat as they are written.
 
 For the G1's rare troubles the agent has skills, short procedures in
 `g1_bringup/config/nervros/skills/` that it reads when one fits: Nav2 that never came up, a camera
-or detector that gives nothing, a robot lost on its map, and a robot that fell.
+or detector that gives nothing, a robot lost on its map, and a robot that fell. The playbooks
+above check the same troubles by themselves and name the skill with the long form.
 
 ## The robot's own description
 
@@ -364,8 +418,15 @@ pelvis is, not on the robot's own estimate. The report lands in `~/.local/state/
 `--only <text>` runs the cases whose ids hold it, `--repeat 3` runs each three times for pass^3,
 and `--models a,b` compares two entries of `models.toml`. The report gives each model's pass rate
 with its interval, its mean model calls, time and tokens per trial, and the llama.cpp build and
-template it ran on. Each model and trial keeps its own keep-out zones under the run's `zones/`, so
-the two keep-out cases, run in order (`--only keep-out`), never touch your own.
+template it ran on. Each model and trial keeps its own robot files (keep-out zones, missions,
+notes, programs, incidents) under the run's `state/`, so the two keep-out cases, run in order
+(`--only keep-out`), never touch your own.
+
+Two smaller suites sit beside it. `eval/jobs.toml` asks for programs, searches and taught skills,
+each more than one way; a kept skill carries to the cases after it, so they run in order.
+`eval/incidents.toml` breaks one thing per case (a detector stopped with SIGSTOP, the sensor relay
+paused, localization told the robot faces a quarter turn away, a second node under a detector's
+name) with the case's `inject`, mends it with `restore`, and wants the agent to name the cause.
 
 Without the simulator, `nervros-cli --profile ../g1_bringup/config/nervros/nervros.toml record
 g1.toml` writes the running stack as a scripted robot: the graph, the nodes each container hosts,
