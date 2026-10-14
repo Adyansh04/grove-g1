@@ -1,0 +1,80 @@
+# Faults put into the G1 apartment stack, each asked about in its own words: the agent must find
+# the cause with `why` or the health check, from the playbooks in ../playbooks, and say it. Each
+# case breaks one thing with `inject` and mends it with `restore`, so the stack is whole for the
+# next. A stopped process (SIGSTOP) stays a stopped process until SIGCONT: it leaves the graph
+# once its DDS lease runs out, about 20 s on, and comes back when continued.
+#
+# Needs the apartment demo's stack (as eval/jobs.toml says) and the local model; then, from
+# workspace/src/nervros with the demo's environment:
+#   cargo run -p nervros-cli -- --profile ../g1_bringup/config/nervros/nervros.toml \
+#     eval ../g1_bringup/config/nervros/eval/incidents.toml
+
+# The sensor relay stops: every camera goes quiet at once, which opens an incident by itself.
+
+[[case]]
+id = "cameras-quiet"
+inject = '''docker exec ros_dev_jazzy pkill -STOP -f "__node:=g1_sensor_relay"'''
+restore = '''docker exec ros_dev_jazzy pkill -CONT -f "__node:=g1_sensor_relay"'''
+say = ["The robot seems blind. What is going on?"]
+max_s = 240
+expect = { reply_has = ["camera"], mission = "none" }
+
+# Localization told the robot faces a quarter turn from where it does, then set back where the
+# simulator has it (relocalize.py).
+
+[[case]]
+id = "lost-on-the-map"
+inject = '''docker exec ros_dev_jazzy bash -c 'source /opt/ros/jazzy/setup.bash && python3 /root/workspace/src/g1_bringup/config/nervros/eval/relocalize.py 90' '''
+restore = '''docker exec ros_dev_jazzy bash -c 'source /opt/ros/jazzy/setup.bash && python3 /root/workspace/src/g1_bringup/config/nervros/eval/relocalize.py' '''
+say = ["Before I send it anywhere: does the robot know where it is?"]
+max_s = 240
+expect = { reply_has = ["lost", "localiz", "off", "pose"], mission = "none" }
+
+[[case]]
+id = "lost-on-the-map-why"
+inject = '''docker exec ros_dev_jazzy bash -c 'source /opt/ros/jazzy/setup.bash && python3 /root/workspace/src/g1_bringup/config/nervros/eval/relocalize.py 90' '''
+restore = '''docker exec ros_dev_jazzy bash -c 'source /opt/ros/jazzy/setup.bash && python3 /root/workspace/src/g1_bringup/config/nervros/eval/relocalize.py' '''
+say = ["Something is off with navigation. Find out what."]
+max_s = 240
+expect = { reply_has = ["lost", "localiz", "turned", "pose"], mission = "none" }
+
+# A second node under one name, as a second stack would start.
+
+[[case]]
+id = "two-of-a-node"
+inject = '''docker exec -d ros_dev_jazzy bash -c 'source /opt/ros/jazzy/setup.bash && exec python3 -c "import rclpy; rclpy.init(); rclpy.spin(rclpy.create_node(\"detector_chest\"))"' && sleep 8'''
+restore = '''docker exec ros_dev_jazzy pkill -f "create_node"'''
+say = ["Missions keep acting strangely, as if something answers twice. Check the robot."]
+max_s = 240
+expect = { reply_has = ["twice", "duplicate", "two copies", "same name"], mission = "none", not_tools = ["service_call"] }
+
+# The detector's own warning, said as it says it when asked about too much at once: the mock
+# detector answers at once, so the symptom is put on /rosout instead.
+
+[[case]]
+id = "detector-too-slow"
+# /rosout is transient local, so its readers match only a publisher that is too.
+inject = '''docker exec ros_dev_jazzy bash -c 'source /opt/ros/jazzy/setup.bash && for i in 1 2 3; do timeout 15 ros2 topic pub --once --qos-durability transient_local --qos-reliability reliable /rosout rcl_interfaces/msg/Log "{level: 30, name: detector_chest, msg: \"the newest camera frame is 9.4 s old; not asking about it\"}"; done' '''
+say = ["The robot finds no objects at all. Why?"]
+max_s = 240
+expect = { reply_has = ["too much", "too many", "overwhelm", "fewer"], mission = "none" }
+
+# A detector that hangs: looks through its camera find nothing. Last, since a process that comes
+# back after its DDS lease ran out may stay missing from a long-running node's graph, such as this
+# eval's, though a fresh one sees it.
+
+[[case]]
+id = "head-detector-hung"
+inject = '''docker exec ros_dev_jazzy pkill -STOP -f "__node:=detector_head" && sleep 25'''
+restore = '''docker exec ros_dev_jazzy pkill -CONT -f "__node:=detector_head"'''
+say = ["Why can't the robot find anything with its head camera?"]
+max_s = 240
+expect = { reply_has = ["detector"], mission = "none" }
+
+[[case]]
+id = "head-detector-hung-vague"
+inject = '''docker exec ros_dev_jazzy pkill -STOP -f "__node:=detector_head" && sleep 25'''
+restore = '''docker exec ros_dev_jazzy pkill -CONT -f "__node:=detector_head"'''
+say = ["Is something wrong with the robot?"]
+max_s = 240
+expect = { reply_has = ["detector"], mission = "none" }
