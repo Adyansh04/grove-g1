@@ -97,10 +97,11 @@ def generate_launch_description():
                 description="Also start MoveIt Servo, the streaming command path for the arms. "
                 "Off by default: it and a planned motion would both drive the same controller.",
             ),
+            # No `name=`: it would remap every node in the process, and move_group's own helper
+            # nodes would all become move_group. The executable names itself.
             Node(
                 package="moveit_ros_move_group",
                 executable="move_group",
-                name="move_group",
                 output="screen",
                 parameters=[
                     _moveit_config().to_dict(),

@@ -77,10 +77,11 @@ def _object_source():
 def generate_launch_description():
     object_source = _object_source()
 
+    # No `name=`: it would remap every node in the process, and MoveIt's own helper nodes would
+    # all become g1_manipulation_server. The server names itself.
     server = Node(
         package="g1_manipulation",
         executable="g1_manipulation_server",
-        name="g1_manipulation_server",
         output="screen",
         parameters=[
             _moveit_config().to_dict(),

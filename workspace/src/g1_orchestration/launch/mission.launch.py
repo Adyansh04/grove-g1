@@ -45,10 +45,11 @@ def generate_launch_description():
         ),
     ]
 
+    # No `name=`: it would remap every node in the process, and the leaves' client nodes would all
+    # become g1_bt_executor. The executable names itself.
     executor = Node(
         package="g1_orchestration",
         executable="g1_bt_executor",
-        name="g1_bt_executor",
         output="screen",
         parameters=[
             PARAMS_FILE,
