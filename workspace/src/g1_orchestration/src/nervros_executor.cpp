@@ -1519,7 +1519,11 @@ MissionExecutor::execute(const ExecuteMission::Goal& goal, const std::shared_ptr
         ended  = Ended::kShutdown;
     }
 
-    outcome.outputs = outputsJson(*blackboard, validation.outputs);
+    // A dry run fills each output with its own key; only a real run hands anything on.
+    if (execute_mode)
+    {
+        outcome.outputs = outputsJson(*blackboard, validation.outputs);
+    }
     // Where the mission was, taken before the halt clears it.
     const std::string step = observer->currentStep();
     std::string       winding_down;
