@@ -230,6 +230,16 @@ def main(argv=None):
             )
             return 1
 
+        # Acquired already, as by activate_arm:=true: switching again only failed, and moving the
+        # arms now could cross a skill that holds them.
+        future = list_client.call_async(ListControllers.Request())
+        rclpy.spin_until_future_complete(node, future, timeout_sec=SERVICE_CALL_TIMEOUT_S)
+        listed = future.result() if future.done() else None
+        active = {c.name for c in listed.controller if c.state == "active"} if listed else set()
+        if CONTROLLER_NAME in active and ARM_FREEZE_CONTROLLER not in active:
+            node.get_logger().info("the arm is acquired already; nothing moves.")
+            return 0
+
         # One switch, not two: see this script's module docstring.
         node.get_logger().info(f"activating controller {CONTROLLER_NAME}...")
         if not retry_switch(

@@ -10,7 +10,11 @@ Python for the same reason as activate_arm: one-shot sequencing, not a control l
 import sys
 
 import rclpy
-from controller_manager_msgs.srv import SetHardwareComponentState, SwitchController
+from controller_manager_msgs.srv import (
+    ListControllers,
+    SetHardwareComponentState,
+    SwitchController,
+)
 from lifecycle_msgs.msg import State
 from rclpy.node import Node
 
@@ -59,6 +63,16 @@ def set_component_state(node, client, name, target_state_id, target_label, timeo
     return result is not None and result.ok
 
 
+def active_controllers(node, client, timeout_s):
+    """The names of the active controllers, or None when the controller manager does not answer."""
+    if not client.wait_for_service(timeout_sec=timeout_s):
+        return None
+    future = client.call_async(ListControllers.Request())
+    rclpy.spin_until_future_complete(node, future, timeout_sec=timeout_s)
+    result = future.result() if future.done() else None
+    return {c.name for c in result.controller if c.state == "active"} if result else None
+
+
 def main(argv=None):
     rclpy.init()
     node = Node("g1_bringup_deactivate_arm")
@@ -69,6 +83,15 @@ def main(argv=None):
         component_client = node.create_client(
             SetHardwareComponentState, "/controller_manager/set_hardware_component_state"
         )
+        list_client = node.create_client(ListControllers, "/controller_manager/list_controllers")
+
+        # Released already: switching again only failed, and read as an error.
+        active = active_controllers(node, list_client, SERVICE_CALL_TIMEOUT_S)
+        if active is not None and ARM_FREEZE_CONTROLLER in active and CONTROLLER_NAME not in active:
+            node.get_logger().info(
+                f"nothing to release: the arms are on {ARM_FREEZE_CONTROLLER} already."
+            )
+            return 0
 
         for component, controller in HANDS:
             node.get_logger().info(f"releasing hand {component}...")
