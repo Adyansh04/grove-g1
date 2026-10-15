@@ -1,9 +1,10 @@
 # Host model servers
 
-Models that need torch and CUDA run on the host, outside the ROS image, and the container talks to
+Models that need torch and CUDA run on the host, outside the ROS image. The container talks to
 them over ZeroMQ on 127.0.0.1 (Compose is host-networked). All are optional: the simulator tests use
-a mock engine, detector or grasp source instead. Set each up once, then start it with
-`./scripts/serve.sh`:
+a mock engine, detector or grasp source instead.
+
+Set each up once, then start it with `./scripts/serve.sh`:
 
 | Server | Setup | Start | Port | Serves |
 |---|---|---|---|---|
@@ -13,19 +14,19 @@ a mock engine, detector or grasp source instead. Set each up once, then start it
 | canopy's semantic server | `workspace/src/canopy/servers/setup.sh` | `./scripts/serve.sh canopy` | 5561 (5562 for `describe`) | SAM 3.1 detection, embeddings and descriptions to the world model, and masks to `g1_perception` and canopy's segmenter. |
 
 Arguments after the server's name reach the server, after `serve.sh`'s defaults, so they override
-them. `serve.sh canopy --detector yoloe`, or a `--describer` list that names `openai`, also starts
-canopy's local VLM in a container on 127.0.0.1:8080 and leaves it running;
-`workspace/src/canopy/servers/start-vlm.sh stop` ends it. Beside SAM 3.1, the default, and the
-simulator a 12 GB GPU has no room for it, so `serve.sh canopy` stops one left running and the
-describer asks Gemini (`--describer gemini`).
+them.
 
-- `groot_server.py` wraps upstream's entry point to load the checkpoint in bf16; see
-  [learned grasping](../docs/guides/learned-grasping.md).
-- `vision_server.py` is the command line and `vision/` its parts: masks, the segmentation
-  backends, grounding and the ZMQ loop. The protocol and the backends are in
-  [open-vocabulary perception](../docs/guides/open-vocabulary-grasping.md).
+`serve.sh canopy --detector yoloe`, or a `--describer` list that names `openai`, also starts canopy's
+local VLM in a container on 127.0.0.1:8080 and leaves it running.
+`workspace/src/canopy/servers/start-vlm.sh stop` ends it.
 
-There is no test suite here; `./scripts/manage.sh lint` runs ruff over this directory.
+Beside SAM 3.1, the default, and the simulator, a 12 GB GPU has no room for the VLM. So
+`serve.sh canopy` stops one left running, and the describer asks Gemini (`--describer gemini`).
+
+- `groot_server.py` wraps upstream's entry point to load the checkpoint in bf16. See [learned grasping](../docs/guides/learned-grasping.md).
+- `vision_server.py` is the command line and `vision/` its parts: masks, the segmentation backends, grounding and the ZMQ loop. The protocol and the backends are in [open-vocabulary perception](../docs/guides/open-vocabulary-grasping.md).
+
+There is no test suite here. `./scripts/manage.sh lint` runs ruff over this directory.
 
 ## Why Python
 

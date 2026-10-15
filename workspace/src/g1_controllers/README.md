@@ -14,9 +14,10 @@ The controller design and interface naming are adapted from NVIDIA's
 [isaac_ros_deploy](https://github.com/NVIDIA-ISAAC-ROS/isaac_ros_deploy) `InferenceController`,
 `SafetyController` and `FreezeController` (Apache-2.0). Their reference-interface names
 (`<controller>/<joint>/{position,velocity,effort,kp,kd}_raw`) and `kp`/`kd` command-interface
-spelling are kept, so their controllers chain onto this stack unchanged. The policy under `policy/`
-is NVIDIA's [WBC-AGILE](https://github.com/nvidia-isaac/WBC-AGILE) G1 velocity policy, also
-Apache-2.0; its licence ships beside it.
+spelling are kept, so their controllers chain onto this stack unchanged.
+
+The policy under `policy/` is NVIDIA's [WBC-AGILE](https://github.com/nvidia-isaac/WBC-AGILE) G1
+velocity policy, also Apache-2.0. Its licence ships beside it.
 
 ## How the pieces fit
 
@@ -25,9 +26,9 @@ Apache-2.0; its licence ships beside it.
               (policy, 50 Hz)       (blend + clamp)        (hardware component)
 ```
 
-The component leaves any unclaimed joint unpowered, and `ros2_control` refuses a switch that gives
-one joint two controllers, so `config/lowcmd_controllers.yaml` keeps all 29 motors claimed by
-exactly one controller at every instant:
+The component leaves any unclaimed joint unpowered. `ros2_control` refuses a switch that gives one
+joint two controllers. So `config/lowcmd_controllers.yaml` keeps all 29 motors claimed by exactly one
+controller at every instant:
 
 | Controller | Joints | When active |
 |---|---|---|
@@ -38,10 +39,11 @@ exactly one controller at every instant:
 | `locomotion_freeze_controller` | 12 legs + waist roll/pitch | emergency only; loaded inactive |
 
 `arm_freeze_controller` and `arm_trajectory_controller` claim identical joints and trade in one
-`switch_controller` call, which `ros2_control` applies within a single update cycle; two calls
-would leave the arms unclaimed, and so unpowered, in between. `locomotion_freeze_controller` claims
-exactly the safety controller's joints: a wider set could not activate while the arm and waist are
-owned, so the emergency switch would fail.
+`switch_controller` call, which `ros2_control` applies within a single update cycle. Two calls would
+leave the arms unclaimed, and so unpowered, in between.
+
+`locomotion_freeze_controller` claims exactly the safety controller's joints: a wider set could not
+activate while the arm and waist are owned, so the emergency switch would fail.
 
 ## Topics and services
 
@@ -55,16 +57,16 @@ owned, so the emergency switch would fail.
 
 `policy/unitree_g1_velocity_e2e.onnx` is end-to-end:
 
-- It is stateful. Seven of its twelve inputs (the last action and six histories) come back out as
-  outputs, so the runner feeds them straight in again and keeps no ring buffers of its own.
-- `action_joint_pos` is an absolute radian target, not a scaled action. The graph applies its own
-  scale and default-pose offset.
+- It is stateful. Seven of its twelve inputs (the last action and six histories) come back out as outputs. So the runner feeds them straight in again and keeps no ring buffers of its own.
+- `action_joint_pos` is an absolute radian target, not a scaled action. The graph applies its own scale and default-pose offset.
 - The gains come out of the graph, per joint, and are forwarded rather than configured.
 
 Its two joint orderings differ from each other and from the SDK's motor order, so the controller
-binds every interface by joint name. `AgilePolicy`'s constructor checks the model's input and
-output names and counts, and throws on a mismatch. Inference is single-threaded on CPU with plain
-`onnxruntime`, about 0.3 ms worst case against a 5 ms tick.
+binds every interface by joint name. `AgilePolicy`'s constructor checks the model's input and output
+names and counts, and throws on a mismatch.
+
+Inference is single-threaded on CPU with plain `onnxruntime`, about 0.3 ms worst case against a 5 ms
+tick.
 
 ## Parameters
 
@@ -77,8 +79,8 @@ output names and counts, and throws on a mismatch. Inference is single-threaded 
 | `imu_sensor_name` | `imu` | Sensor whose orientation and angular velocity the policy observes. |
 | `decimation` | 4 | Controller-manager ticks per inference: 50 Hz at the 200 Hz update rate. The controller warns if that is not the 50 Hz the policy was trained at. |
 | `command_prefix` / `command_suffix` | `locomotion_safety_controller` / `_raw` | Chain target. Empty writes straight to the component. |
-| `cmd_vel_timeout` | 0.5 | Seconds before a silent publisher is treated as a zero command; 0 disables. |
-| `max_linear_speed` / `max_angular_speed` | 0.6 / 0.9 | Command clamps, m/s and rad/s; 0 disables. |
+| `cmd_vel_timeout` | 0.5 | Seconds before a silent publisher is treated as a zero command. 0 disables. |
+| `max_linear_speed` / `max_angular_speed` | 0.6 / 0.9 | Command clamps, m/s and rad/s. 0 disables. |
 
 `G1SafetyController`:
 
@@ -87,19 +89,22 @@ output names and counts, and throws on a mismatch. Inference is single-threaded 
 | `joints` | 12 legs + waist roll/pitch | Joints to blend. Their order fixes the reference-interface layout. |
 | `blend_ratio` | 1.0 | 0 holds the activation pose, 1 follows the policy. Settable at runtime. The code default is 0: start first hardware bring-up there and raise it by hand. |
 | `max_blend_ratio_speed` | 20.0 | Rate limit on that ratio, per second. Fast, so the blend completes before the simulator drops its startup pelvis weld. |
-| `max_velocity` | `[-1.0]` | Per-joint rad/s clamp, one value or one per joint; non-positive leaves a joint unclamped. |
+| `max_velocity` | `[-1.0]` | Per-joint rad/s clamp, one value or one per joint. Non-positive leaves a joint unclamped. |
 | `kp` / `kd` | `[100.0]` / `[2.0]` | Fallback gains: used where nothing upstream wrote, and for the hold after an emergency. |
-| `mean_velocity_limit` / `max_velocity_limit` | 10.0 / 35.0 | Divergence thresholds in rad/s; non-positive disables that check. |
+| `mean_velocity_limit` / `max_velocity_limit` | 10.0 / 35.0 | Divergence thresholds in rad/s. Non-positive disables that check. |
 | `emergency_controller` | `locomotion_freeze_controller` | Switched in when the detector fires, while this controller holds the last safe pose. Empty disables the switch. |
 | `preceding_controllers` | `[agile_controller]` | Controllers chained into this one, deactivated in the same switch: `ros2_control` refuses to deactivate a controller another active one still writes into. |
 
 The switch is STRICT, so the freeze takes over from all of them in one update cycle or nothing
-changes. A best-effort switch could take the policy and this controller down and still drop a
-freeze that cannot activate, which would leave the legs unpowered. A refusal, such as one sent
-before the freeze has loaded, is logged and sent again each second while the hold lasts.
+changes. A best-effort switch could take the policy and this controller down and still drop a freeze
+that cannot activate, which would leave the legs unpowered. A refusal, such as one sent before the
+freeze has loaded, is logged and sent again each second while the hold lasts.
 
-`G1FreezeController` takes `joints` and one `kp` and `kd` for all of them: 10/1 for
-`waist_freeze_controller` and `locomotion_freeze_controller`, 300/4 for `arm_freeze_controller`.
+`G1FreezeController` takes `joints` and one `kp` and `kd` for all of them:
+
+- 10/1 for `waist_freeze_controller` and `locomotion_freeze_controller`.
+- 300/4 for `arm_freeze_controller`.
+
 The arm value matches the position-only gains of the shoulders and elbows, so the MoveIt handover
 keeps their stiffness. `on_configure` rejects an empty joint list and non-positive gains.
 
@@ -111,19 +116,16 @@ ros2 launch g1_bringup sim.launch.py
 
 The pelvis is unpinned by default, because the policy balances the robot. `pin_pelvis:=true`, for
 simulation only, welds it and runs `locomotion_freeze_controller` in the policy's place.
+
 `control.launch.py` activates the policy and its safety controller in one switch
-(`--activate-as-group`): a chainable controller's reference interfaces only become claimable inside
+(`--activate-as-group`). A chainable controller's reference interfaces only become claimable inside
 the switch that activates it.
 
 ## What simulation does not validate
 
-- Displacement. `test_agile_walk` runs with `sensors:=false`, so no simulator ground truth reaches
-  ROS and it asserts uprightness rather than distance travelled. The gait envelope is measured
-  against MuJoCo directly instead.
-- Hardware timing. The update loop runs SCHED_FIFO (`thread_priority: 80`); whether the robot's own
-  computer holds the 5 ms tick is unmeasured.
-- `MotionSwitcherClient`. Entry to `rt/lowcmd` on a real G1 is untested; see
-  [g1_hardware_interface](../g1_hardware_interface/README.md).
+- Displacement. `test_agile_walk` runs with `sensors:=false`, so no simulator ground truth reaches ROS and it asserts uprightness rather than distance travelled. The gait envelope is measured against MuJoCo directly instead.
+- Hardware timing. The update loop runs SCHED_FIFO (`thread_priority: 80`). Whether the robot's own computer holds the 5 ms tick is unmeasured.
+- `MotionSwitcherClient`. Entry to `rt/lowcmd` on a real G1 is untested. See [g1_hardware_interface](../g1_hardware_interface/README.md).
 
 ## Tests
 
@@ -136,9 +138,10 @@ the switch that activates it.
 | `test_agile_policy` | The ONNX contract and both joint tables, against the installed policy. |
 | `test_safety_blend` | The blend-and-slew arithmetic, including that the rate clamp survives a blend-ratio step. |
 | `test_freeze_pluginlib` | All three controllers resolve through pluginlib, the path `controller_manager` uses. |
-| `test_joint_ownership` | Reads this package's controller config against `g1_description`'s joint list: every body motor has exactly one owner whether the arm is frozen or acquired, the arm pair claims identical joints, the emergency freeze claims the safety controller's joints, and its switch deactivates every controller chained into the safety controller. |
+| `test_joint_ownership` | Reads this package's controller config against `g1_description`'s joint list. Every body motor has exactly one owner whether the arm is frozen or acquired. The arm pair claims identical joints. The emergency freeze claims the safety controller's joints, and its switch deactivates every controller chained into the safety controller. |
 
-Behaviour is covered by `g1_bringup`'s `test_agile_walk`, which stands the robot on the policy with
-an unpinned pelvis, walks and turns it on command, and checks that the safety controller never
-latched, and `test_emergency_freeze`, which makes it latch and checks that the freeze takes the
-legs from the policy. Both need the simulator: see [g1_bringup](../g1_bringup/README.md#tests).
+Behaviour is covered by two `g1_bringup` tests. Both need the simulator: see
+[g1_bringup](../g1_bringup/README.md#tests).
+
+- `test_agile_walk` stands the robot on the policy with an unpinned pelvis, walks and turns it on command, and checks that the safety controller never latched.
+- `test_emergency_freeze` makes the safety controller latch and checks that the freeze takes the legs from the policy.

@@ -1,8 +1,8 @@
 # worlds
 
-Floor plans that `tools/build_world.py` turns into simulator worlds. One so far, `apartment`: five
-furnished rooms and a hallway, about 20 by 12 m, for the semantic map and camera-coverage
-exploration.
+Floor plans that `tools/build_world.py` turns into simulator worlds. There is one so far,
+`apartment`: five furnished rooms and a hallway, about 20 by 12 m, for the semantic map and
+camera-coverage exploration.
 
 ```bash
 ./scripts/setup-world-assets.sh    # on the host, once
@@ -19,11 +19,18 @@ ros2 launch g1_bringup bringup.launch.py world:=apartment mode:=localization nav
 | `../config/sim_sensors_apartment.yaml` | `sim_sensors.yaml` with every prop in `object_bodies`. `sim.launch.py` takes `sim_sensors_<world>.yaml` when one exists. |
 | `../../g1_navigation/maps/apartment.{pgm,yaml}` | The occupancy grid, which localization picks for `world:=apartment`. |
 
-All but the plan are generated. The meshes and textures are not committed: `setup-world-assets.sh`
+All but the plan are generated. The meshes and textures are not committed. `setup-world-assets.sh`
 fetches them into `workspace/assets/` (63 MB, plus a 265 MB download cache that can be deleted)
-through `tools/world_assets.py`, in a host venv at `~/ref/grove-worldgen`, which it creates if
-missing. Every model becomes one OBJ per material and 1K diffuse PNGs, in metres, Z up, origin at
-the centre of its footprint on the floor, front facing -y, and at most 20k triangles per mesh.
+through `tools/world_assets.py`. It runs that in a host venv at `~/ref/grove-worldgen`, which it
+creates if missing.
+
+Every model becomes one OBJ per material and 1K diffuse PNGs:
+
+- In metres, Z up.
+- Origin at the centre of its footprint on the floor.
+- Front facing -y.
+- At most 20k triangles per mesh.
+
 `workspace/assets/manifest.yaml` records each one's source, licence and bounding box.
 
 ## Regenerating
@@ -35,41 +42,33 @@ After editing the plan or an asset:
 ```
 
 The output is deterministic, so an unchanged plan gives byte-identical files. Commit all five
-together; the map is rasterised from the scene, so a stale map would be a map of another world.
+together. The map is rasterised from the scene, so a stale map would be a map of another world.
 
 ## How the scene is built
 
-- The LiDAR sweep sees geom group 2 only; the camera draws groups 0 to 2. Each prop is a static
-  body with its textured meshes in group 1 and one bounding box in group 2. The box is what the
-  LiDAR hits, the robot collides with and the simulator sizes ground truth from. It is never
-  drawn: `mj_ray` checks its material's alpha, which is 1, while the renderer skips a geom whose
-  own rgba alpha is 0. A 360x32 sweep, timed on the host with a stand-in for the robot's geoms,
-  takes 11 to 12 ms this way, 22 to 32 ms with the meshes in group 2, and 9 to 11 ms in the
-  facility.
-- MuJoCo 3.3.6 smears a 2D texture across the vertical faces of a box, so walls are plain group 2
-  boxes dressed with textured group 1 planes, and the counter's carcass is untextured.
-- Poses are quaternions: `g1_29dof.xml` sets `angle="radian"` for the whole model, so an `euler`
-  in degrees would be read as radians.
+- The LiDAR sweep sees geom group 2 only. The camera draws groups 0 to 2.
+- Each prop is a static body with its textured meshes in group 1 and one bounding box in group 2. The box is what the LiDAR hits, the robot collides with and the simulator sizes ground truth from.
+- The box is never drawn. `mj_ray` checks its material's alpha, which is 1, while the renderer skips a geom whose own rgba alpha is 0.
+- A 360x32 sweep, timed on the host with a stand-in for the robot's geoms, takes 11 to 12 ms this way. It takes 22 to 32 ms with the meshes in group 2, and 9 to 11 ms in the facility.
+- MuJoCo 3.3.6 smears a 2D texture across the vertical faces of a box. So walls are plain group 2 boxes dressed with textured group 1 planes, and the counter's carcass is untextured.
+- Poses are quaternions. `g1_29dof.xml` sets `angle="radian"` for the whole model, so an `euler` in degrees would be read as radians.
 - The renderer honours eight lights and the headlight takes one, so the plan has seven.
-- `book_2` sits on a tier at 1.66 m, above the head camera's view. Only the chest camera, whose
-  view rises 9° above the horizon, sees it, from 4.0 to 4.5 m away, so a head-only run cannot map
-  it. `crate_2`, 0.25 m tall, is below the 2D scan band, so it is missing from the map.
-- Doors are at least 1.2 m: the robot is 0.9 m across, and Nav2 would not plan through a 1.0 m
-  door.
-- One prop moves: `mug_4`, the small mug on the dining table's east end, is `free:` in the plan.
-  It gets a free joint and one group 2 collision box instead of the proxy, `contype 3` so the
-  fingers touch it (every other prop is `contype 1`, which they pass through), 124 g, and two
-  carry welds, one per palm, which `grasp_weld` engages while the thumb and a finger touch it.
-  Its mesh is `mug_1`'s at `scale: 0.6`, 55 mm across so the hand closes round it, and the box
-  under it is square because a cylinder on a box rocks in MuJoCo. `tray_1`, a wooden tray built
-  from boxes, sits on the office desk to put it in. `dining_table_1` has `proxy_height: 0.706`:
-  its proxy would otherwise reach the cloth's relief at 0.76 m, and the mug would rest above the
-  top it is drawn on. `missions/pick_and_place_apartment.xml` in g1_orchestration carries the mug
-  from the table to the tray.
+- `book_2` sits on a tier at 1.66 m, above the head camera's view. Only the chest camera, whose view rises 9° above the horizon, sees it, from 4.0 to 4.5 m away. So a head-only run cannot map it.
+- `crate_2`, 0.25 m tall, is below the 2D scan band, so it is missing from the map.
+- Doors are at least 1.2 m. The robot is 0.9 m across, and Nav2 would not plan through a 1.0 m door.
+- One prop moves: `mug_4`, the small mug on the dining table's east end, is `free:` in the plan. It gets:
+  - A free joint and one group 2 collision box instead of the proxy.
+  - `contype 3` so the fingers touch it (every other prop is `contype 1`, which they pass through).
+  - A mass of 124 g.
+  - Two carry welds, one per palm, which `grasp_weld` engages while the thumb and a finger touch it.
+- The mug's mesh is `mug_1`'s at `scale: 0.6`, 55 mm across so the hand closes round it. The box under it is square because a cylinder on a box rocks in MuJoCo.
+- `tray_1`, a wooden tray built from boxes, sits on the office desk to put the mug in.
+- `dining_table_1` has `proxy_height: 0.706`. Its proxy would otherwise reach the cloth's relief at 0.76 m, and the mug would rest above the top it is drawn on.
+- `missions/pick_and_place_apartment.xml` in g1_orchestration carries the mug from the table to the tray.
 
 ## Credits
 
-Poly Haven assets are CC0; NVIDIA's kitchen set and Google Scanned Objects are CC BY 4.0.
+Poly Haven assets are CC0. NVIDIA's kitchen set and Google Scanned Objects are CC BY 4.0.
 
 | Asset | Author | Source | Licence |
 |---|---|---|---|

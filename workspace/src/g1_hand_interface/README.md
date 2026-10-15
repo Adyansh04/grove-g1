@@ -10,14 +10,15 @@ flowchart LR
     H -- "rt/dex3/side/state" --> P
 ```
 
-Separate from `g1_hardware_interface` so a hand fault cannot take the arms down with it. Like that
-component, it links the SDK's own CycloneDDS with `DT_RPATH` pinned at the SDK's `lib/`, so ROS's
-CycloneDDS (same SONAME, different ABI) is never bound in its place. `domain_id` and
-`network_interface` must match `g1_hardware_interface`'s, because `ChannelFactory` is per process
-and only its first `Init` takes effect.
+It is separate from `g1_hardware_interface` so a hand fault cannot take the arms down with it.
+
+Like that component, it links the SDK's own CycloneDDS with `DT_RPATH` pinned at the SDK's `lib/`, so
+ROS's CycloneDDS (same SONAME, different ABI) is never bound in its place. `domain_id` and
+`network_interface` must match `g1_hardware_interface`'s, because `ChannelFactory` is per process and
+only its first `Init` takes effect.
 
 `g1_description`'s `g1_common.xacro` declares the components as `G1Dex3SystemLeft` and
-`G1Dex3SystemRight`. `controller_manager` loads them inactive; `activate_arm` activates them.
+`G1Dex3SystemRight`. `controller_manager` loads them inactive. `activate_arm` activates them.
 
 ## Interfaces
 
@@ -44,7 +45,7 @@ component's own, and the YAML matches them except for `kp` and `kd`.
 | `side` | required | `left` or `right`. Picks the channels and the joint prefix. |
 | `domain_id` | required | SDK DDS domain. Must match `g1_hardware_interface`'s. |
 | `network_interface` | `""` | Must stay empty: a non-empty value makes the SDK discard `CYCLONEDDS_URI`. |
-| `kp` / `kd` | 1.5 / 0.2 | Finger PD gains, sent in every driven frame. The YAML sets 2.3 / 0.25: 2.3 lets a thumb stalled about 0.6 rad short of its target press at the joint's 1.4 Nm rating. |
+| `kp` / `kd` | 1.5 / 0.2 | Finger PD gains, sent in every driven frame. The YAML sets 2.3 / 0.25. 2.3 lets a thumb stalled about 0.6 rad short of its target press at the joint's 1.4 Nm rating. |
 | `command_publish_rate` | 100.0 | Hz. What Unitree's own teleop uses. |
 | `max_joint_velocity_rad_s` | 3.0 | Slew clamp on the commanded position. |
 | `state_timeout_ms` | 200.0 | State older than this errors the component while active. |
@@ -57,34 +58,24 @@ one.
 
 ## Wire format notes
 
-- `motor_cmd` is an unbounded sequence, not a fixed array. Unresized, DDS accepts the message and
-  nothing moves. `on_init` resizes the preallocated frame once, so the write path never allocates.
-- Joint order is positional and matches the URDF: thumb_0, thumb_1, thumb_2, middle_0, middle_1,
-  index_0, index_1, for both hands. `on_init` refuses any other order, since the failure is a hand
-  that closes the wrong fingers. Unitree's `Dex3_1_Right_JointIndex` enum lists index before
-  middle; do not copy it.
-- There is no blend weight: the first write takes full authority. The component seeds its command
-  from the measured position on activate and slews toward the target.
-- The motors' own timeout is armed only in the release frame. While driving, the controller is the
-  heartbeat, and arming it would stop the fingers a second after any hiccup in the control loop.
-- Limits are the URDF's, which match Unitree's published spec. Their SDK example allows a wider
-  `thumb_1` (0.724 rad against 0.611), so the conservative pair wins.
+- `motor_cmd` is an unbounded sequence, not a fixed array. Unresized, DDS accepts the message and nothing moves. `on_init` resizes the preallocated frame once, so the write path never allocates.
+- Joint order is positional and matches the URDF: thumb_0, thumb_1, thumb_2, middle_0, middle_1, index_0, index_1, for both hands. `on_init` refuses any other order, since the failure is a hand that closes the wrong fingers. Unitree's `Dex3_1_Right_JointIndex` enum lists index before middle. Do not copy it.
+- There is no blend weight. The first write takes full authority. The component seeds its command from the measured position on activate and slews toward the target.
+- The motors' own timeout is armed only in the release frame. While driving, the controller is the heartbeat, and arming it would stop the fingers a second after any hiccup in the control loop.
+- Limits are the URDF's, which match Unitree's published spec. Their SDK example allows a wider `thumb_1` (0.724 rad against 0.611), so the conservative pair wins.
 
 ## In simulation
 
 The component speaks Unitree's published Dex3 contract, and `unitree_mujoco` answers the same two
-channels, so it is not swapped out for sim. The responder is the simulator's `dex3_handler.cc`
-(`workspace/vendor/unitree_mujoco/simulate/src`), on the finger joints its G1 model adds. It runs
-the hardware's PD from the `kp` and `kd` in the command and clamps to the URDF's effort limits.
+channels, so it is not swapped out for sim.
 
-- The fingers are driven through `qfrc_applied`, not MuJoCo actuators: the vendored SDK bridge
-  sizes itself from the actuator count and indexes a fixed 35-slot `LowCmd`, which 29 body motors
-  plus 14 fingers would overrun.
-- `status = Lock` holds the finger where it is rather than going limp, as on hardware. The same
-  applies before any command arrives, and one second after the last one.
-- Finger contact exists only where a scene opts in. The palm and fingers have collision primitives
-  on their own contact bit (`contype` 2), so only the props and tables a scene marks `contype` 3
-  can touch them.
+The responder is the simulator's `dex3_handler.cc` (`workspace/vendor/unitree_mujoco/simulate/src`),
+on the finger joints its G1 model adds. It runs the hardware's PD from the `kp` and `kd` in the
+command and clamps to the URDF's effort limits.
+
+- The fingers are driven through `qfrc_applied`, not MuJoCo actuators. The vendored SDK bridge sizes itself from the actuator count and indexes a fixed 35-slot `LowCmd`, which 29 body motors plus 14 fingers would overrun.
+- `status = Lock` holds the finger where it is rather than going limp, as on hardware. The same applies before any command arrives, and one second after the last one.
+- Finger contact exists only where a scene opts in. The palm and fingers have collision primitives on their own contact bit (`contype` 2), so only the props and tables a scene marks `contype` 3 can touch them.
 
 ## Tests
 

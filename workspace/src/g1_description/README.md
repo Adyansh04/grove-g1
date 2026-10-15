@@ -54,12 +54,10 @@ It also adds frames to Unitree's URDF:
 
 ## Parameters
 
-`config/lowcmd_params.yaml` sets the body component's parameters, described in
-[g1_hardware_interface](../g1_hardware_interface/README.md#parameters), and a
-`position_only_kp` and `position_only_kd` per joint. `config/dex3_params.yaml` sets the hand
-parameters, described in [g1_hand_interface](../g1_hand_interface/README.md#parameters), and each
-finger's `min` and `max`, copied from the URDF. The hands' `domain_id` and `network_interface` must
-equal the body component's.
+- `config/lowcmd_params.yaml` sets the body component's parameters, described in [g1_hardware_interface](../g1_hardware_interface/README.md#parameters), and a `position_only_kp` and `position_only_kd` per joint.
+- `config/dex3_params.yaml` sets the hand parameters, described in [g1_hand_interface](../g1_hand_interface/README.md#parameters), and each finger's `min` and `max`, copied from the URDF.
+
+The hands' `domain_id` and `network_interface` must equal the body component's.
 
 ## Inspecting the model
 
@@ -79,7 +77,7 @@ own MJCF instead.
 
 | Test | Checks |
 |---|---|
-| `test_lowcmd_xacro` | Expands the xacro, validates it with `check_urdf`, and asserts the `<ros2_control>` blocks: all 29 body joints in SDK order, each with the five command interfaces and its `position_only_*` gains; the Dex3 wire order on each hand; and that both hands carry the body component's `domain_id` and `network_interface`. |
+| `test_lowcmd_xacro` | Expands the xacro, validates it with `check_urdf`, and asserts the `<ros2_control>` blocks. All 29 body joints in SDK order, each with the five command interfaces and its `position_only_*` gains. The Dex3 wire order on each hand. Both hands carry the body component's `domain_id` and `network_interface`. |
 | `test_motor_order` | `kG1JointNames` in `g1_hardware_interface` lists the 29 motors in SDK order and names only joints the vendored URDF has. |
 | `test_sensor_mounts` | The simulator's compile-time LiDAR mount (`kMountXyz`, `kMountRpy` in `sensor_publisher.cc`) matches the URDF's `mid360_joint`, and the head entry in `config/cameras.yaml` matches `d435_joint`. The simulator links no ROS, so it cannot ask TF where a sensor is. |
 | `xmllint_description_g1_description` | Every URDF and xacro is well-formed XML, which xacro does not enforce. |
