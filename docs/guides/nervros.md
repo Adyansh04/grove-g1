@@ -226,7 +226,7 @@ the agent to look at.
 
 ## Programs, searches and taught skills
 
-<!-- video: Counting and walking with a program.mp4 -->
+https://github.com/user-attachments/assets/c46fbd2f-89fd-4069-83ee-c0dcf27b8c6f
 
 For anything that takes a loop, a count or a measurement, the agent writes a short program and runs
 it as a job.
@@ -243,14 +243,14 @@ it as a job.
 - In the apartment demo the mock detector knows only `mug` and `tray`, so a look asks for one of
   those.
 
-<!-- video: Finding something.mp4 -->
+https://github.com/user-attachments/assets/51157255-5ddb-487b-b77f-5181f9481dd7
 
 "Find the red mug" ranks where to look: where canopy saw it and how long ago, where such things
 usually are, the rooms the camera has seen least of, and how far each is. It then walks to each
 place and looks until the detector sees it. "Where could my keys be? Don't move" lists the places
 without walking: canopy has never seen keys, so the clip ranks the rooms keys are usually in.
 
-<!-- video: Teaching a skill.mp4 -->
+https://github.com/user-attachments/assets/4e1bf457-9f63-498c-b293-d18661542491
 
 The executor lets the agent teach the robot a skill no macro has, from the leaves listed in
 `g1_orchestration`'s `learnable_leaves`: Nav2's walk, the bounded walk and turn, the detector's
@@ -346,7 +346,7 @@ A mission also stops by itself in two cases:
 - The executor refuses to start a walk, or stops one, when the robot has fallen or its balance
   controller is not running.
 
-https://github.com/user-attachments/assets/d6e4dc59-a2c3-4b54-87cb-25c1abc4c190
+https://github.com/user-attachments/assets/7bf2d1ef-5c5e-4873-b48f-7222fd3dc6f3
 
 **Pause** (beside Stop while a mission runs, and on the plan card), typing "pause", "wait" or "hold
 on", or `/pause` in the terminal halts the running step instead. The robot stops where it is, the
@@ -363,7 +363,7 @@ straight walk or a turn does only what was left of it.
 
 ## Keep-out zones
 
-https://github.com/user-attachments/assets/696fc57c-44bb-4984-a8cc-5d2f2e68e7ce
+https://github.com/user-attachments/assets/3df05f4a-344a-4d54-a824-6ecfa8bebf57
 
 "Keep the robot out of the bedroom", or out of a metre around the vase, adds a keep-out zone around
 a room, an object, a place or corners on the map. The agent then refuses a walk that would end in a
@@ -398,7 +398,7 @@ timeouts and retries.
   `GoToTarget`, `GoToPose`, `WalkStraight`, `TurnInPlace`, `FindInView`, `PickObject`, `PlaceInto`,
   `TuckForTravel` and `ExploreBuilding`, plus the ones an agent taught (above).
 
-https://github.com/user-attachments/assets/9b4cfc4f-5355-43bb-a4c8-de9aff755d4a
+https://github.com/user-attachments/assets/99be5972-bc7b-457b-ae5c-feb447bf00e3
 
 A step can take what an earlier one found, so "find a mug and pick it up" is one mission.
 `FindInView` hands on the name the detector reports an object under, and a walk to a kind of
@@ -425,7 +425,7 @@ ros2 run g1_orchestration send_mission.sh $(ros2 pkg prefix g1_orchestration)/sh
 
 ## When something goes wrong
 
-<!-- video: When something goes wrong.mp4 -->
+https://github.com/user-attachments/assets/eb499b8c-4e19-487d-939e-51b98aa5eefa
 
 In the clip the head camera's detector is stopped from outside. The incident opens by itself, "Why
 can't the robot find anything with its head camera?" names the stopped `detector_head`, and the
@@ -476,7 +476,7 @@ playbooks above check the same troubles by themselves and name the skill with th
 
 ## The robot's own description
 
-https://github.com/user-attachments/assets/cdadbd00-b26b-4e14-a006-65d56f2dea02
+https://github.com/user-attachments/assets/32d93917-9227-47be-83e7-5b408e125657
 
 The persona, `g1_bringup/config/nervros/apartment.md`, tells the model what the robot is.
 **Draft from the robot** in the Doctor tab, or
