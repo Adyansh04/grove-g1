@@ -225,6 +225,8 @@ A taught skill's body is held to more than a person's macro:
 
 - It uses only `Sequence`, `Fallback`, `RetryUntilSuccessful` (1 to 3), `Timeout` and `ForceSuccess` around the `learnable_leaves`. Their servers check every goal themselves (Nav2 with its costmaps and the keepout filter, MoveIt against the scene, the bounded walk and turn, the detector, a wait).
 - On each leaf it sets only the inputs `learnable_leaves` lists, so which server, frame or timeout a leaf uses is never the skill's to change.
+- Of inputs listed `a|b` it sets exactly one: MoveHand takes a `target` or a `frame`, never both or neither.
+- A `world_id` argument feeds only an input listed as `input(world_id)`, MoveHand's `target`, so an object's id never goes in as a frame.
 - Every attribute is a literal or one of the skill's own arguments (`arm="{arm}"`). No argument may be called `name`, which a `SubTree` keeps for its step.
 - Depth, size and time (1 s at least) are capped.
 - The name may not be one of a skill, a macro or any node the executor registers.
@@ -246,7 +248,8 @@ A new skill is a draft.
 - A mission is checked and run against the skills as they were when it started. A define or a forget meanwhile serves the next one.
 
 `GetCatalog`'s JSON also carries `learnable`: each leaf with its ports and the authority it takes,
-for the agent to teach from.
+and its `one_of` groups and `world_ids` inputs, for the agent to teach from and check a body
+before the operator is asked.
 
 ### Authority
 
@@ -378,7 +381,7 @@ All in `config/nervros_executor.yaml`, commented there.
 | `dry_run_time_scale`, `dry_run_min_leaf_s` | 0.02, 0.05 | A dry run's share of a skill's catalog time per leaf, and its floor. |
 | `stop_action_servers` | every skill server | As `/name:type`. `test_catalog_drift` fails if a leaf uses one that is not listed. |
 | `arm_controller_action` | the arm trajectory controller | Cancelled by `StopAll` to hold the arm. |
-| `learnable_leaves` | nine leaves | What a taught skill may be built from, as `Leaf:holds:inputs`: the authority it needs (`base`, `arms` or empty) and the only inputs a skill may set. |
+| `learnable_leaves` | nine leaves | What a taught skill may be built from, as `Leaf:holds:inputs`: the authority it needs (`base`, `arms` or empty) and the only inputs a skill may set. `a\|b` lists two of which exactly one is set; `input(world_id)` marks one that takes a world-model id. |
 | `max_learned_duration_s`, `max_learned_nodes`, `max_learned_skills` | 300, 40, 32 | The longest and largest a taught skill may be, and how many there may be. |
 | `learned_skills_dir` | `""` | Where kept skills live, a JSON file each. Empty keeps them only until the executor stops. `nervros.sh` uses `/root/data/skills/g1`. |
 

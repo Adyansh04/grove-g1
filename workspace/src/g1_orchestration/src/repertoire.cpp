@@ -93,21 +93,31 @@ void Repertoire::rebuildLocked()
     std::string        palette = library.withModelsIn(leaf_palette_xml_);
     catalog.bindPalette(palette, bodies);
 
-    // What a planner needs to teach a skill: the leaves it may build from and what each holds.
-    nlohmann::ordered_json json   = nlohmann::ordered_json::parse(catalog.json());
-    nlohmann::ordered_json leaves = nlohmann::ordered_json::object();
-    for (const auto& [leaf, holds] : learned_.learnable().leaves)
+    // What a planner needs to teach a skill: the leaves it may build from, what each holds, and
+    // the rules on their inputs, so it can check a body before the operator is asked.
+    const Learnable&       learnable = learned_.learnable();
+    nlohmann::ordered_json json      = nlohmann::ordered_json::parse(catalog.json());
+    nlohmann::ordered_json leaves    = nlohmann::ordered_json::object();
+    for (const auto& [leaf, holds] : learnable.leaves)
     {
         nlohmann::ordered_json ports = nlohmann::ordered_json::object();
-        for (const auto& [port, what] : learned_.learnable().ports.at(leaf))
+        for (const auto& [port, what] : learnable.ports.at(leaf))
         {
             ports[port] = what;
         }
         leaves[leaf] = { { "holds", holds }, { "ports", ports } };
+        if (const auto groups = learnable.one_of.find(leaf); groups != learnable.one_of.end())
+        {
+            leaves[leaf]["one_of"] = groups->second;
+        }
+        if (const auto ids = learnable.world_ids.find(leaf); ids != learnable.world_ids.end())
+        {
+            leaves[leaf]["world_ids"] = ids->second;
+        }
     }
     json["learnable"] = { { "leaves", leaves },
-                          { "max_duration_s", learned_.learnable().max_duration_s },
-                          { "max_nodes", learned_.learnable().max_nodes } };
+                          { "max_duration_s", learnable.max_duration_s },
+                          { "max_nodes", learnable.max_nodes } };
     current_          = std::make_shared<const SkillSet>(
         SkillSet{ MissionValidator(std::move(catalog), library, limits_),
                   json.dump(),

@@ -34,6 +34,8 @@ constexpr std::size_t kMaxDescription  = 600;
 constexpr std::size_t kMaxArgNameChars = 32;
 constexpr std::size_t kMaxBodyBytes    = 16384;
 constexpr int         kMaxAttempts     = 3;
+/// After an input in `learnable_leaves`: it takes a world-model id.
+constexpr std::string_view kWorldIdMark = "(world_id)";
 
 bool isSkillName(std::string_view name)
 {
@@ -222,14 +224,19 @@ private:
             const std::string_view arg = boundArg(value);
             if (!arg.empty())
             {
-                const bool known = std::ranges::any_of(definition_->args, [arg](const SkillArg& s) {
-                    return s.name == arg;
-                });
-                if (!known)
+                const auto known =
+                    std::ranges::find_if(definition_->args, [arg](const SkillArg& s) {
+                        return s.name == arg;
+                    });
+                if (known == definition_->args.end())
                 {
                     add(code::kBadArg,
                         node,
                         std::format("{{{}}} is not one of the skill's arguments", arg));
+                }
+                else if (known->type == "world_id")
+                {
+                    worldId(node, tag, name, arg);
                 }
             }
             else if (value.find_first_of("{}") != std::string_view::npos)
@@ -240,6 +247,71 @@ private:
                         "{}=\"{}\": a value is a literal or one argument, as {{arm}}",
                         name,
                         value));
+            }
+        }
+        oneOf(node, tag, ports);
+    }
+
+    /// A world-model id fed to an input that takes none, such as an object's id as MoveHand's
+    /// frame: the leaf would fail only once it runs, after the operator approved it.
+    void worldId(
+        const tinyxml2::XMLElement& node, std::string_view tag, std::string_view input,
+        std::string_view arg)
+    {
+        const auto typed = learnable_->world_ids.find(tag);
+        if (typed == learnable_->world_ids.end() || typed->second.contains(input))
+        {
+            return;
+        }
+        std::string takers;
+        for (const std::string& port : typed->second)
+        {
+            takers += (takers.empty() ? "" : " or ") + port;
+        }
+        add(code::kBadArg,
+            node,
+            std::format(
+                "{{{}}} is a world-model id, and {}'s {} takes none{}",
+                arg,
+                tag,
+                input,
+                takers.empty() ? std::string() : "; give it to " + takers));
+    }
+
+    /// Each group of inputs of which a leaf takes exactly one, set or bound.
+    void oneOf(
+        const tinyxml2::XMLElement& node, std::string_view tag,
+        const std::map<std::string, std::string, std::less<>>& ports)
+    {
+        const auto groups = learnable_->one_of.find(tag);
+        if (groups == learnable_->one_of.end())
+        {
+            return;
+        }
+        for (const auto& group : groups->second)
+        {
+            std::string choices;
+            std::size_t set = 0;
+            for (const std::string& port : group)
+            {
+                const char* value = node.Attribute(port.c_str());
+                set += value != nullptr && *value != '\0' ? 1 : 0;
+                const auto what = ports.find(port);
+                choices += std::format(
+                    "{}{} ({})",
+                    choices.empty() ? "" : " or ",
+                    port,
+                    what != ports.end() ? what->second : "");
+            }
+            if (set == 0)
+            {
+                add(code::kMissingAttribute, node, std::format("{} needs one of {}", tag, choices));
+            }
+            else if (set > 1)
+            {
+                add(code::kForbiddenAttribute,
+                    node,
+                    std::format("{} takes only one of {}", tag, choices));
             }
         }
     }
@@ -391,16 +463,39 @@ Learnable Learnable::parse(const std::vector<std::string>& entries, std::string_
         }
         // Only the ports listed: the rest, such as which server or frame, stay as the leaf has them.
         auto&             allowed = out.ports[leaf];
+        auto&             world   = out.world_ids[leaf];
         std::stringstream list(entry.substr(second + 1));
-        for (std::string port; std::getline(list, port, ',');)
+        for (std::string item; std::getline(list, item, ',');)
         {
-            const auto found = ports->second.find(port);
-            if (found == ports->second.end())
+            std::vector<std::string> group;
+            std::stringstream        alternatives(item);
+            for (std::string port; std::getline(alternatives, port, '|');)
             {
-                throw std::runtime_error(
-                    std::format("learnable leaves: {} has no input {} ('{}')", leaf, port, entry));
+                const bool takes_id = port.ends_with(kWorldIdMark);
+                if (takes_id)
+                {
+                    port.resize(port.size() - kWorldIdMark.size());
+                }
+                const auto found = ports->second.find(port);
+                if (found == ports->second.end())
+                {
+                    throw std::runtime_error(std::format(
+                        "learnable leaves: {} has no input {} ('{}')",
+                        leaf,
+                        port,
+                        entry));
+                }
+                allowed.emplace(*found);
+                if (takes_id)
+                {
+                    world.insert(port);
+                }
+                group.push_back(port);
             }
-            allowed.emplace(*found);
+            if (group.size() > 1)
+            {
+                out.one_of[leaf].push_back(std::move(group));
+            }
         }
     }
     return out;

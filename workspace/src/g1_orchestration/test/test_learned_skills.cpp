@@ -109,7 +109,7 @@ TEST(LearnedSkill, AGestureOfLearnableLeavesIsBuiltWithTheAuthorityItsLeavesTake
 TEST(LearnedSkill, ALeafOpensOnlyTheInputsItsEntryLists)
 {
     const Learnable narrow =
-        Learnable::parse({ "MoveHand:arms:arm,target,mode", "Wait::seconds" }, kPalette);
+        Learnable::parse({ "MoveHand:arms:arm,target(world_id),mode", "Wait::seconds" }, kPalette);
     EXPECT_THAT(narrow.ports.at("MoveHand"), ::testing::SizeIs(3));
     SkillDefinition d = pointAt();
     d.body_xml        = R"(<MoveHand arm="{arm}" target="{object}" frame="torso_link"/>)";
@@ -119,6 +119,42 @@ TEST(LearnedSkill, ALeafOpensOnlyTheInputsItsEntryLists)
     EXPECT_EQ(problems.front().code, "UNKNOWN_ATTRIBUTE");
     EXPECT_THROW(Learnable::parse({ "MoveHand:arms:find_service" }, kPalette), std::runtime_error);
     EXPECT_TRUE(Learnable::parse({ "Wait::" }, kPalette).ports.at("Wait").empty());
+}
+
+TEST(LearnedSkill, MoveHandTakesATargetOrAFrameAndAWorldIdOnlyAsItsTarget)
+{
+    const Learnable rules = Learnable::parse(
+        { "MoveHand:arms:arm,target(world_id)|frame,mode", "Wait::seconds" },
+        kPalette);
+    EXPECT_THAT(rules.ports.at("MoveHand"), ::testing::SizeIs(4));
+    const auto check = [&rules](const std::string& body) {
+        SkillDefinition d = pointAt();
+        d.body_xml        = body;
+        std::vector<Diagnostic> problems;
+        const bool              built = buildLearned(d, rules, {}, problems).has_value();
+        EXPECT_EQ(built, problems.empty());
+        return problems;
+    };
+    EXPECT_TRUE(check(R"(<MoveHand arm="{arm}" target="{object}" mode="point"/>)").empty());
+    EXPECT_TRUE(check(R"(<MoveHand arm="{arm}" frame="torso_link"/>)").empty());
+
+    // What a model taught on 15 Oct: each failed only when the step ran, after two approvals.
+    const auto both = check(R"(<MoveHand arm="{arm}" target="{object}" frame="map"/>)");
+    ASSERT_THAT(both, ::testing::SizeIs(1));
+    EXPECT_EQ(both.front().code, "FORBIDDEN_ATTRIBUTE");
+    EXPECT_THAT(both.front().message, HasSubstr("only one of target"));
+    EXPECT_EQ(check(R"(<MoveHand arm="{arm}" mode="point"/>)").front().code, "MISSING_ATTRIBUTE");
+    const auto as_frame = check(R"(<MoveHand arm="{arm}" frame="{object}"/>)");
+    ASSERT_THAT(as_frame, ::testing::SizeIs(1));
+    EXPECT_EQ(as_frame.front().code, "BAD_ARG");
+    EXPECT_THAT(as_frame.front().message, HasSubstr("give it to target"));
+    EXPECT_EQ(
+        check(
+            R"(<Sequence><MoveHand arm="{arm}" target="{object}"/><Wait seconds="{object}"/></Sequence>)")
+            .front()
+            .code,
+        "BAD_ARG")
+        << "a leaf whose inputs are listed takes no world id unless one is marked";
 }
 
 TEST(LearnedSkill, OnlyTheControlNodesAndLearnableLeavesWithLiteralsOrItsArgumentsPass)
