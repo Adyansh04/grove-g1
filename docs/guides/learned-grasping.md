@@ -4,8 +4,8 @@ A vision-language-action policy proposes joint targets, and every chunk it propo
 against MoveIt's live planning scene before any of it reaches a controller. The instruction is
 plain text: "pick up the red block".
 
-`./scripts/demos/learned-grasping.sh <mock|groot|servo>` opens a section's commands at once, in
-split panes of tilix (a window each in another terminal), after tearing down any stack left running.
+`./scripts/demos/learned-grasping.sh <mock|groot|servo>` tears down any stack left running, then
+opens a section's commands at once, in split panes of tilix (a window each in another terminal).
 `stop` ends it, and `--print` lists the commands instead. Arguments after the section, such as
 `rviz:=false`, go to the bringup launch.
 
@@ -78,9 +78,9 @@ Serve the policy from this repository:
 
 That runs `servers/groot_server.py` with `--model-path nvidia/GR00T-N1.7-3B --embodiment-tag
 real_g1 --port 5555`; arguments after `groot` override them. `groot_server.py` wraps upstream's
-entry point to load the checkpoint in bf16. Upstream upcasts to
-fp32 in host memory first, about 4 GB more at peak, which on a 30 GB machine gets the load
-OOM-killed with an error that reads like a CUDA fault.
+entry point to load the checkpoint in bf16. Upstream upcasts to fp32 in host memory first, about
+4 GB more at peak. On a 30 GB machine that gets the load OOM-killed, with an error that reads like
+a CUDA fault.
 
 Then bring the stack up against it, in the container:
 
@@ -97,13 +97,17 @@ state and video key is mapped in `g1_vla/config/g1_vla_groot_adapter.yaml`.
 
 ## How a chunk is validated
 
-Each chunk is checked in order: shape and finiteness, how far its first waypoint is from the arm's
-measured pose, the step between consecutive waypoints, the speed that spacing implies, then a
-`/check_state_validity` call per waypoint against move_group's live scene.
+Each chunk is checked in order:
+
+1. shape and finiteness,
+2. how far its first waypoint is from the arm's measured pose,
+3. the step between consecutive waypoints,
+4. the speed that spacing implies,
+5. a `/check_state_validity` call per waypoint against move_group's live scene.
 
 A rejected chunk never reaches a controller, and the trajectory still running is cancelled, so the
-arm stops where the refusal found it; the server then asks the engine again. After
-`max_rejected_chunks` refusals in a row the goal aborts with a message starting `blocked:`.
+arm stops where the refusal found it. The server then asks the engine again. After
+`max_rejected_chunks` refusals in a row, the goal aborts with a message starting `blocked:`.
 Feedback counts the chunks executed and the chunks refused.
 
 In trajectory mode the server does not wait for a chunk to finish. It sends a fresh one at most

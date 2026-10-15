@@ -1,15 +1,19 @@
 # Open-vocabulary perception
 
-Name an object in plain text and get its 3D pose, with no dataset and no training. Two halves:
-SAM 3.1 on the host turns an RGB frame plus a list of noun phrases into one mask per object, and
-`g1_perception` in the container lifts those masks into the object poses the manipulation skills
-consume. A vision-language model can turn an instruction into phrases, and a second host server
-proposes grasps.
+Name an object in plain text and get its 3D pose, with no dataset and no training. It works in two
+halves:
 
-`./scripts/demos/open-vocabulary-grasping.sh <mock|vision|gsam2|graspgen|grounding>` opens a
-section's commands at once, in split panes of tilix (a window each in another terminal), after
-tearing down any stack left running. `stop` ends it, and `--print` lists the commands instead.
-Arguments after the section, such as `rviz:=false`, go to the bringup launch.
+1. SAM 3.1, on the host, turns an RGB frame plus a list of noun phrases into one mask per object.
+2. `g1_perception`, in the container, lifts those masks into the object poses the manipulation
+   skills consume.
+
+A vision-language model can turn an instruction into phrases, and a second host server proposes
+grasps.
+
+`./scripts/demos/open-vocabulary-grasping.sh <mock|vision|gsam2|graspgen|grounding>` tears down any
+stack left running, then opens a section's commands at once, in split panes of tilix (a window each
+in another terminal). `stop` ends it, and `--print` lists the commands instead. Arguments after the
+section, such as `rviz:=false`, go to the bringup launch.
 
 Host commands run from the repository root. `ros2` commands run in a container shell, opened with
 `./scripts/manage.sh exec`, as in the other guides.
@@ -36,8 +40,8 @@ Name things as they look: SAM 3.1 reads the words. The tabletop's `white_cup` is
 cylinder, so "white cup" finds nothing, where Grounded SAM 2 would take it anyway; the same goes
 for colours ("red mug" is never a yellow one).
 
-`perception:=true` makes the object-pose source take measured poses instead of the simulator's,
-and raises how old a pose the skills accept from 1 s to 8 s, because the detector answers in
+`perception:=true` makes the object-pose source take measured poses instead of the simulator's. It
+also raises how old a pose the skills accept from 1 s to 8 s, because the detector answers in
 seconds. Each phrase costs the server a model pass, so ask only for what the task needs; the
 mission trees narrow the list themselves.
 
@@ -72,8 +76,8 @@ workspace/src/canopy/servers/setup.sh
 ```
 
 Compose is host-networked, so the container reaches it at `tcp://127.0.0.1:5561`. Without the
-embedder and describers it needs about 5.6 GB of VRAM on top of the simulator's, and answers in
-about 0.45 s for the frame plus 0.04 s for each phrase on a laptop RTX 4080: ask only for what the
+embedder and describers it needs about 5.6 GB of VRAM on top of the simulator's. On a laptop RTX
+4080 it answers in about 0.45 s for the frame plus 0.04 s for each phrase, so ask only for what the
 task needs. To check it against saved frames without binding a socket:
 
 ```bash
@@ -179,11 +183,15 @@ one reaching up through the table, so the filtering can be tested without a GPU.
 ### The one calibration
 
 GraspGenX returns poses of its own gripper frame, where +z is the approach and the fingers close
-along x. That frame is not a link of this robot. Run a pick against a known object: `grasp_plan`
-draws the candidates in the generator's frame and the goal's axes after the offset. Read the offset
-to `right_hand_grasp_frame` off the two and pass it as `grasp_offset`, xyz then rpy; the arm side
-applies it. Left-hand requests are refused rather than mirrored: a mirrored sweep volume is a
-different gripper.
+along x. That frame is not a link of this robot, so it needs one offset:
+
+1. Run a pick against a known object. `grasp_plan` draws the candidates in the generator's frame,
+   and the goal's axes after the offset.
+2. Read the offset to `right_hand_grasp_frame` off the two, and pass it as `grasp_offset`, xyz then
+   rpy. The arm side applies it.
+
+Left-hand requests are refused rather than mirrored: a mirrored sweep volume is a different
+gripper.
 
 ## Instructions
 
