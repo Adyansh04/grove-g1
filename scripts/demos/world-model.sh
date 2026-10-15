@@ -9,12 +9,14 @@
 #   stop     end whichever demo is running
 #
 # Both explorations read the head and chest cameras, as the acceptance test does.
-# name:=value arguments go to both launches, such as rviz:=false. --print lists the commands
-# instead of opening them. Fetch the apartment's assets once first: ./scripts/setup-world-assets.sh
+# name:=value arguments go to both launches, such as rviz:=false; world_dir:= saves nothing.
+# --print lists the commands instead of opening them. Fetch the apartment's assets once first:
+# ./scripts/setup-world-assets.sh
 source "$(dirname "$0")/../lib/panes.sh"
 parse_args "$@"
 
-WORLD=/root/data/worlds/apartment
+WORLD=" world_dir:=/root/data/worlds/apartment"
+[[ "$UNSET_ARGS" != *" world_dir "* ]] || WORLD=""
 CAMERAS="cameras:=head,chest"
 BRINGUP="ros2 launch g1_bringup bringup.launch.py mode:=mapping nav:=true world:=apartment headless:=true arms_at_sides:=true $CAMERAS$LAUNCH_ARGS"
 EXPLORE="wait_for_nav2 && wait_for_service /canopy/next_viewpoint && ros2 run g1_orchestration g1_bt_executor --ros-args -p tree_file:=\$(ros2 pkg prefix g1_orchestration)/share/g1_orchestration/trees/explore.xml"
@@ -23,7 +25,7 @@ ASK="ros2 service call /canopy/find_objects canopy_msgs/srv/FindObjects '{query:
 case "$VARIANT" in
     mock)
         container bringup "$BRINGUP"
-        container canopy "ros2 launch g1_bringup world_model.launch.py world_dir:=$WORLD rviz:=true detector:=mock $CAMERAS$LAUNCH_ARGS"
+        container canopy "ros2 launch g1_bringup world_model.launch.py$WORLD rviz:=true detector:=mock $CAMERAS$LAUNCH_ARGS"
         container explore "$EXPLORE"
         staged ask "wait_for_service /canopy/find_objects" "$ASK"
         ;;
@@ -31,7 +33,7 @@ case "$VARIANT" in
         container bringup "$BRINGUP"
         # SAM 3.1 leaves no room for the offline describer on a 12 GB GPU.
         host server "./scripts/serve.sh canopy --describer gemini"
-        container canopy "wait_for_port 'the semantic server' 5561 && ros2 launch g1_bringup world_model.launch.py world_dir:=$WORLD rviz:=true detector:=true describe:=true $CAMERAS$LAUNCH_ARGS"
+        container canopy "wait_for_port 'the semantic server' 5561 && ros2 launch g1_bringup world_model.launch.py$WORLD rviz:=true detector:=true describe:=true $CAMERAS$LAUNCH_ARGS"
         container explore "$EXPLORE"
         staged ask "wait_for_service /canopy/find_objects" "$ASK"
         ;;
