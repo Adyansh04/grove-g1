@@ -116,6 +116,8 @@ private:
     double      cmd_rate_hz_       = 20.0;
     double      lookup_grace_s_    = 3.0;
     double      default_timeout_s_ = 900.0;
+    double      stall_s_           = 20.0;
+    double      stall_progress_m_  = 0.05;
 
     StepClearLimits step_limits_;
     double          step_speed_mps_             = 0.30;

@@ -82,6 +82,7 @@ need changing:
 | `nudge_band_m`, `nudge_y_s`, `max_nudges` | 0.050, 0.15, 12 | How far outside the window sideways an object is nudged in rather than driven, the pulse, and how many before driving again. |
 | `object_timeout_ms` | 30000 | How old an object's last sighting may be. Long, because the props stand still and the hand carrying the ball hides the box for the last half metre to the storage bench. |
 | `lookup_grace_s` | 5.0 | How long a missing pose or transform is waited out, standing still. |
+| `stall_s`, `stall_progress_m` | 20.0, 0.05 | Closing gives up once it has got no closer by `stall_progress_m` for `stall_s`, as when something blocks the way. |
 
 The speed limits belong to the walking policy and need re-measuring for a different one; the reach
 window belongs to the arm.

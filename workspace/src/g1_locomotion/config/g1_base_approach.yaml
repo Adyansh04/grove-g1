@@ -67,6 +67,10 @@ g1_base_approach:
     lookup_grace_s: 5.0
 
     default_timeout_s: 900.0
+    # Closing gives up once it has got no closer by stall_progress_m (m) for stall_s (s): blocked by
+    # a chair it walked on the spot for seven minutes.
+    stall_s: 20.0
+    stall_progress_m: 0.05
 
     # Stepping out of Nav2's collision band. Nav2 checks a 0.45 m circle and will not move the
     # robot once an obstacle is inside it, though the body is still clear.
