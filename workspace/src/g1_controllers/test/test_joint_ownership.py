@@ -75,6 +75,26 @@ def test_the_emergency_freeze_takes_over_exactly_what_it_replaces(controllers):
     assert claimed(controllers, "locomotion_freeze_controller") == safety
 
 
+def test_the_emergency_switch_takes_down_every_controller_chained_into_the_safety_one(
+    controllers,
+):
+    """ros2_control refuses to deactivate a controller another active one still writes into, so
+    a chained controller the switch leaves out keeps the freeze from ever taking over."""
+    chained = sorted(
+        name
+        for name, section in controllers.items()
+        if section["ros__parameters"].get("command_prefix") == "locomotion_safety_controller"
+    )
+    listed = controllers["locomotion_safety_controller"]["ros__parameters"].get(
+        "preceding_controllers", []
+    )
+    assert chained, "nothing chains into the safety controller; this test reads the wrong key"
+    assert sorted(listed) == chained, (
+        f"the emergency switch deactivates {sorted(listed)}, but {chained} write into the safety "
+        "controller"
+    )
+
+
 def test_the_configured_emergency_controller_is_the_one_that_exists(controllers):
     configured = controllers["locomotion_safety_controller"]["ros__parameters"][
         "emergency_controller"

@@ -84,7 +84,9 @@ flowchart LR
 `sim.launch.py` takes `headless`, `world`, `sensors`, `cameras`, `odometry`, `pin_pelvis` and
 `sim_start_delay_s` (default `2.0`) with the meanings above, plus `rviz` to open `g1_sensors.rviz`
 with sensors on. `rviz.launch.py` takes `rviz_config` (required) and `node_name` (`rviz2`).
-`control.launch.py` takes `pin_pelvis`, which `sim.launch.py` sets.
+`control.launch.py` takes `pin_pelvis`, which `sim.launch.py` sets, and `controllers_overrides`
+(empty), a params file layered over `g1_controllers`' controller config, which `sim.launch.py`
+passes on for tests such as `test_emergency_freeze`.
 
 `world_model.launch.py` starts canopy with the G1's odometry and LiDAR topics and its own
 `config/world_model.yaml`. It takes `cameras` (`head`; bringup's names), `world_dir` (where to
@@ -194,6 +196,7 @@ Controller configuration lives in `g1_controllers/config/lowcmd_controllers.yaml
 | `test_lidar_geometry` | yes | The LiDAR measures the room it is in. |
 | `test_fastlio_odometry` | yes | FAST-LIO's `odom` against the simulator's pelvis pose, standing and walking. |
 | `test_agile_walk` | yes | The AGILE policy stands the robot unpinned and walks and turns it on `/cmd_vel`, and the safety controller never latches. |
+| `test_emergency_freeze` | yes | With its divergence limit tightened, the safety controller latches and hands the legs to `locomotion_freeze_controller`, taking the policy down in the same switch; every leg joint stays claimed and the arms and waist keep their owners. |
 | `test_explore_apartment` | yes | canopy's acceptance run: explores the apartment on its committed map and scores rooms, camera coverage and objects against its ground truth. Tens of minutes; needs the fetched assets. |
 | `test_explore_apartment_mapping` | yes | The same from no map, with slam_toolbox building it. |
 | `xmllint_scenes_g1_bringup` | no | The MJCF scenes are valid XML, which MuJoCo's parser does not enforce. |
@@ -203,8 +206,8 @@ The simulator suites serialise on a shared resource lock, with a `sim_settle_gap
 DDS drain. MuJoCo syncs to CPU time while the policy runs on a wall timer, so on a loaded machine
 the robot can topple. Re-run a failing suite alone before calling it a regression.
 
-The LiDAR, FAST-LIO and AGILE suites live here rather than beside the code they exercise, because
-those packages are dependencies of this one.
+The LiDAR, FAST-LIO, AGILE and emergency suites live here rather than beside the code they
+exercise, because those packages are dependencies of this one.
 
 The explore tests take their options from the environment: `G1_EXPLORE_TEST_DETECTOR=semantic`
 for the real models (start canopy's servers first) and `G1_EXPLORE_TEST_CAMERAS` (default

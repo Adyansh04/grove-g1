@@ -7,6 +7,7 @@
  */
 
 #include <atomic>
+#include <chrono>
 #include <string>
 #include <vector>
 
@@ -42,7 +43,8 @@ namespace g1_controllers
  * The blend ratio moves toward `blend_ratio` at `max_blend_ratio_speed` per second, and each
  * joint's output is then rate-limited by `max_velocity`. Reference interfaces follow upstream's
  * `<controller>/<joint>/<type>_raw` naming. If joint velocities leave the trained range, the last
- * safe pose is held on the fallback gains and `emergency_controller` is switched in.
+ * safe pose is held on the fallback gains and `emergency_controller` is switched in, in place of
+ * this controller and the `preceding_controllers` chained into it.
  */
 class G1SafetyController : public controller_interface::ChainableControllerInterface
 {
@@ -94,6 +96,9 @@ private:
 
     /**
      * @brief Asks controller_manager for the emergency controller, off the update thread.
+     *
+     * A refused switch changed nothing, so it is sent again each second for as long as this
+     * controller stays active and holding.
      */
     void requestEmergencySwitch();
 
@@ -112,6 +117,9 @@ private:
     double max_velocity_limit_  = 0.0;
     /// Empty disables the switch, leaving the frozen-pose hold as the only response.
     std::string emergency_controller_;
+    /// Chained into this controller. ros2_control refuses to deactivate a controller whose
+    /// reference interfaces an active one still claims, so the switch takes these down with it.
+    std::vector<std::string> preceding_controllers_;
 
     /// Pose the blend starts from, captured at activation.
     std::vector<double> activation_position_;
@@ -119,7 +127,9 @@ private:
     std::vector<double> integrated_position_;
 
     std::atomic<bool> emergency_latched_{ false };
-    bool              emergency_switch_sent_ = false;
+    /// Both touched only from this node's timer and service callbacks, which never overlap.
+    bool                                  switch_pending_ = false;
+    std::chrono::steady_clock::time_point next_switch_attempt_;
 
     std::vector<std::size_t> position_state_indices_;
     std::vector<std::size_t> velocity_state_indices_;

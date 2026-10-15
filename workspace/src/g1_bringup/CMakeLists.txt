@@ -54,6 +54,12 @@ if(BUILD_TESTING)
   set_tests_properties(test_agile_walk PROPERTIES
     RESOURCE_LOCK mujoco_sim LABELS simulator COST 100)
 
+  # The safety controller's emergency handover through the real chain, its detector tightened
+  # so it fires as the policy blends in.
+  add_launch_test(test/test_emergency_freeze.launch.py TARGET test_emergency_freeze TIMEOUT 240)
+  set_tests_properties(test_emergency_freeze PROPERTIES
+    RESOURCE_LOCK mujoco_sim LABELS simulator COST 60)
+
   # canopy's acceptance run: explores the apartment and scores rooms, coverage and objects against
   # its ground truth. Tens of minutes; the timeouts sit above the test's own worst case (about
   # 3830 s, and 5330 s from no map) so it can fail with a message rather than be killed.

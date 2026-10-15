@@ -89,13 +89,13 @@ def _robot_state_publisher():
     )
 
 
-def _control_node():
+def _control_node(overrides):
     """`ros2 run` rather than launch_ros Node: under Node, arm_trajectory_controller's
-    parameters reliably declare empty."""
+    parameters reliably declare empty. A later params file wins, so overrides go last."""
     command = (
         "ros2 run controller_manager ros2_control_node --ros-args "
         "-r '~/robot_description:=/robot_description' "
-        f"--params-file {CONTROLLERS_YAML}"
+        f"--params-file {CONTROLLERS_YAML}" + (f" --params-file {overrides}" if overrides else "")
     )
     return ExecuteProcess(
         cmd=["bash", "-c", _SIGNAL_FORWARDING_WRAPPER.format(command=command)],
@@ -107,7 +107,7 @@ def _control_node():
 def _launch_setup(context, *args, **kwargs):
     # A welded pelvis gives the policy observations its own actions cannot move, so it diverges.
     pin_pelvis = LaunchConfiguration("pin_pelvis").perform(context).lower() in ("true", "1")
-    control_node = _control_node()
+    control_node = _control_node(LaunchConfiguration("controllers_overrides").perform(context))
     return [
         _robot_state_publisher(),
         control_node,
@@ -130,6 +130,12 @@ def generate_launch_description():
                 default_value="false",
                 description="SIM-ONLY, set by sim.launch.py: freeze the legs instead of running "
                 "the balance policy.",
+            ),
+            DeclareLaunchArgument(
+                "controllers_overrides",
+                default_value="",
+                description="A params file layered over g1_controllers' lowcmd_controllers.yaml, "
+                "for tests such as test_emergency_freeze. Empty adds none.",
             ),
             OpaqueFunction(function=_launch_setup),
         ]

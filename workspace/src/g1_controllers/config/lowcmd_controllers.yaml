@@ -140,6 +140,9 @@ locomotion_safety_controller:
     mean_velocity_limit: 10.0
     max_velocity_limit: 35.0
     emergency_controller: locomotion_freeze_controller
+    # Chained into this controller, so the emergency switch deactivates them with it:
+    # ros2_control refuses to deactivate a controller another active one still writes into.
+    preceding_controllers: [agile_controller]
     joints:
       - left_hip_pitch_joint
       - left_hip_roll_joint

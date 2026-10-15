@@ -49,7 +49,7 @@ owned, so the emergency switch would fail.
 |---|---|---|---|
 | `/cmd_vel` (`cmd_vel_topic`) | `geometry_msgs/msg/Twist` | `agile_controller`, subscribes | Reliable, volatile, depth 1. |
 | `~/inferring` | `std_msgs/msg/Bool` | `agile_controller`, publishes | Transient local, depth 1. False on activation, true from the first successful inference. |
-| `/controller_manager/switch_controller` | `controller_manager_msgs/srv/SwitchController` | `locomotion_safety_controller`, calls | The emergency handover, sent off the update thread. |
+| `/controller_manager/switch_controller` | `controller_manager_msgs/srv/SwitchController` | `locomotion_safety_controller`, calls | The emergency handover, sent off the update thread: one STRICT switch, retried each second while it is refused. |
 
 ## The policy contract
 
@@ -90,7 +90,13 @@ output names and counts, and throws on a mismatch. Inference is single-threaded 
 | `max_velocity` | `[-1.0]` | Per-joint rad/s clamp, one value or one per joint; non-positive leaves a joint unclamped. |
 | `kp` / `kd` | `[100.0]` / `[2.0]` | Fallback gains: used where nothing upstream wrote, and for the hold after an emergency. |
 | `mean_velocity_limit` / `max_velocity_limit` | 10.0 / 35.0 | Divergence thresholds in rad/s; non-positive disables that check. |
-| `emergency_controller` | `locomotion_freeze_controller` | Switched in when the detector fires. Empty disables the switch. |
+| `emergency_controller` | `locomotion_freeze_controller` | Switched in when the detector fires, while this controller holds the last safe pose. Empty disables the switch. |
+| `preceding_controllers` | `[agile_controller]` | Controllers chained into this one, deactivated in the same switch: `ros2_control` refuses to deactivate a controller another active one still writes into. |
+
+The switch is STRICT, so the freeze takes over from all of them in one update cycle or nothing
+changes. A best-effort switch could take the policy and this controller down and still drop a
+freeze that cannot activate, which would leave the legs unpowered. A refusal, such as one sent
+before the freeze has loaded, is logged and sent again each second while the hold lasts.
 
 `G1FreezeController` takes `joints` and one `kp` and `kd` for all of them: 10/1 for
 `waist_freeze_controller` and `locomotion_freeze_controller`, 300/4 for `arm_freeze_controller`.
@@ -130,8 +136,9 @@ the switch that activates it.
 | `test_agile_policy` | The ONNX contract and both joint tables, against the installed policy. |
 | `test_safety_blend` | The blend-and-slew arithmetic, including that the rate clamp survives a blend-ratio step. |
 | `test_freeze_pluginlib` | All three controllers resolve through pluginlib, the path `controller_manager` uses. |
-| `test_joint_ownership` | Reads this package's controller config against `g1_description`'s joint list: every body motor has exactly one owner whether the arm is frozen or acquired, the arm pair claims identical joints, and the emergency freeze claims the safety controller's joints. |
+| `test_joint_ownership` | Reads this package's controller config against `g1_description`'s joint list: every body motor has exactly one owner whether the arm is frozen or acquired, the arm pair claims identical joints, the emergency freeze claims the safety controller's joints, and its switch deactivates every controller chained into the safety controller. |
 
 Behaviour is covered by `g1_bringup`'s `test_agile_walk`, which stands the robot on the policy with
 an unpinned pelvis, walks and turns it on command, and checks that the safety controller never
-latched. It needs the simulator: see [g1_bringup](../g1_bringup/README.md#tests).
+latched, and `test_emergency_freeze`, which makes it latch and checks that the freeze takes the
+legs from the policy. Both need the simulator: see [g1_bringup](../g1_bringup/README.md#tests).
