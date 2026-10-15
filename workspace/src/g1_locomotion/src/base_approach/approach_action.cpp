@@ -94,7 +94,7 @@ void BaseApproachNode::runApproach(const std::shared_ptr<GoalHandleApproach>& ha
         if (std::chrono::steady_clock::now() > deadline)
         {
             publish(0.0, 0.0, 0.0);
-            result->message = "closing: gave up after " + std::to_string(timeout_s) + " s";
+            result->message = std::format("closing: gave up after {:.0f} s", timeout_s);
             handle->abort(result);
             return;
         }
@@ -108,8 +108,10 @@ void BaseApproachNode::runApproach(const std::shared_ptr<GoalHandleApproach>& ha
             publish(0.0, 0.0, 0.0);
             if (blind_for() > lookup_grace_s_)
             {
-                result->message = "locating: no fresh pose for '" + goal->object_id +
-                                  "' on /objects after " + std::to_string(lookup_grace_s_) + " s";
+                result->message = std::format(
+                    "locating: no fresh pose for '{}' on /objects after {:.0f} s",
+                    goal->object_id,
+                    lookup_grace_s_);
                 handle->abort(result);
                 return;
             }
@@ -131,9 +133,10 @@ void BaseApproachNode::runApproach(const std::shared_ptr<GoalHandleApproach>& ha
         if (command.state == ApproachState::kOvershot)
         {
             publish(0.0, 0.0, 0.0);
-            result->message = "closing: the object is " + std::to_string(object->point.x) +
-                              " m ahead, under the robot's own footprint; re-stage "
-                              "through Nav2";
+            result->message = std::format(
+                "closing: the object is {:.2f} m ahead, under the robot's own footprint; "
+                "re-stage through Nav2",
+                object->point.x);
             handle->abort(result);
             return;
         }
@@ -199,8 +202,8 @@ void BaseApproachNode::runApproach(const std::shared_ptr<GoalHandleApproach>& ha
             }
 
             result->success = true;
-            result->message = "the object is at (" + std::to_string(settled->point.x) + ", " +
-                              std::to_string(settled->point.y) + ")";
+            result->message =
+                std::format("the object is at ({:.3f}, {:.3f})", settled->point.x, settled->point.y);
             RCLCPP_INFO(get_logger(), "%s", result->message.c_str());
             handle->succeed(result);
             return;
