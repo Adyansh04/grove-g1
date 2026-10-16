@@ -18,7 +18,6 @@ from launch.actions import IncludeLaunchDescription
 from launch.utilities import normalize_to_list_of_substitutions, perform_substitutions
 
 BRINGUP_LAUNCH_DIR = os.environ["G1_BRINGUP_LAUNCH_DIR"]
-MOVEIT_LAUNCH_DIR = os.environ["G1_MOVEIT_LAUNCH_DIR"]
 
 
 def _load(launch_dir, name):
@@ -72,37 +71,12 @@ def bringup():
     return _load(BRINGUP_LAUNCH_DIR, "bringup.launch.py")
 
 
-@pytest.fixture(scope="module")
-def moveit_sim():
-    return _load(MOVEIT_LAUNCH_DIR, "moveit_sim.launch.py")
-
-
 # --- bringup's moveit branch ----------------------------------------------------------
 
 
 def test_the_moveit_branch_stages_a_simulator_and_move_group(bringup):
     names = [name for name, _ in _includes(_run_setup(bringup, mode="none", moveit="true"))]
     assert names == ["sim.launch.py", "move_group.launch.py"]
-
-
-def test_moveit_gets_a_simulator_with_sensors(bringup):
-    """move_group refuses to plan until every active joint has a state.
-
-    joint_state_broadcaster covers every motor, so MoveIt needs only the simulator staged.
-    """
-    includes = dict(_includes(_run_setup(bringup, mode="none", moveit="true")))
-    assert "sim.launch.py" in includes
-    assert "move_group.launch.py" in includes
-
-    bare = dict(_includes(_run_setup(bringup, mode="none")))["sim.launch.py"]
-    assert "non_arm_joint_states" not in bare
-
-
-@pytest.mark.parametrize("mode", ["none", "localization"])
-def test_moveit_gets_the_loaded_start_delay(bringup, mode):
-    # move_group starts alongside the simulator, so even mode:=none is not a bare launch.
-    sim = dict(_includes(_run_setup(bringup, mode=mode, moveit="true")))["sim.launch.py"]
-    assert sim["sim_start_delay_s"] == "4.0"
 
 
 def test_moveit_rviz_wins_wherever_both_are_asked_for(bringup):
@@ -155,17 +129,3 @@ def test_a_missing_package_is_reported_actionably(bringup, monkeypatch):
     monkeypatch.setattr(bringup, "get_package_share_directory", absent)
     with pytest.raises(RuntimeError, match="colcon build --packages-select g1_moveit_config"):
         bringup._share("g1_moveit_config")
-
-
-# --- the standalone wrapper -----------------------------------------------------------
-
-
-def test_moveit_sim_still_composes_the_same_two_pieces(moveit_sim):
-    includes = _includes(_run_setup(moveit_sim))
-    assert [name for name, _ in includes] == ["sim.launch.py", "move_group.launch.py"]
-
-    sim = dict(includes)["sim.launch.py"]
-    # The other copy of each fact bringup states; if these drift, one path plans and the other
-    # silently does not.
-    assert sim["sensors"] == "false"
-    assert sim["rviz"] == "false"

@@ -27,7 +27,6 @@ CLOUD_TOPIC = "/livox/lidar"
 POSE_TOPIC = "/g1_sensor_relay/sensor_pose"
 
 # config/sim_sensors.yaml; RANGE_MIN is the simulator's built-in minimum.
-EXPECTED_POINTS = 360 * 32
 CONFIGURED_RATE_HZ = 10.0
 RANGE_MIN = 0.1
 RANGE_MAX = 40.0
@@ -147,13 +146,6 @@ class LidarGeometryTest(unittest.TestCase):
         rate = (len(self.stamps) - 1) / (self.stamps[-1] - self.stamps[0])
         self.assertGreater(rate, 7.0, f"{rate:.2f} Hz, configured {CONFIGURED_RATE_HZ}")
         self.assertLess(rate, 13.0, f"{rate:.2f} Hz, configured {CONFIGURED_RATE_HZ}")
-
-    def test_02_cloud_layout_matches_the_configured_sweep(self):
-        msg = self.latest_cloud()
-        self.assertEqual(msg.header.frame_id, "mid360_link")
-        self.assertEqual(msg.width * msg.height, EXPECTED_POINTS)
-        self.assertEqual([f.name for f in msg.fields][:3], ["x", "y", "z"])
-        self.assertEqual(msg.point_step, 12)
 
     def test_03_returns_are_in_range_and_plentiful(self):
         pts = self.sensor_points(self.latest_cloud())

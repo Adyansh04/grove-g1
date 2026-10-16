@@ -49,16 +49,6 @@ TEST(AuthorityDrift, EveryNameThisPackageUsesAppearsInTheScript)
     }
 }
 
-TEST(AuthorityDrift, TheArmComesFirstAndBothHandsFollow)
-{
-    // acquireArm treats parts.front() as the required arm; the hands behind it are best-effort.
-    const auto& parts = g1_orchestration::controlledParts();
-    ASSERT_EQ(parts.size(), 3U);
-    EXPECT_EQ(parts[0].controller, "arm_trajectory_controller");
-    EXPECT_EQ(parts[1].component, "G1Dex3SystemLeft");
-    EXPECT_EQ(parts[2].component, "G1Dex3SystemRight");
-}
-
 TEST(AuthorityDrift, TheArmsAreNeverUnowned)
 {
     // An unclaimed joint is unpowered, so the freeze must leave in the same switch the

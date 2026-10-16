@@ -128,8 +128,8 @@ The mission tree runs `NavigateToPose` and `ApproachObject` in sequence, never t
 
 `g1_navigation.rviz` has a Nav2 group and a folded Sensors group. `g1_bringup`'s `g1_sensors.rviz`
 carries the same Sensors group with fixed frame `odom` for `mode:=none`, where no `map` frame
-exists. `test_rviz_configs` keeps the two in step. The config lives here because its AMCL particle
-display comes from `nav2_rviz_plugins`, a dependency `g1_bringup` should not take.
+exists. The config lives here because its AMCL particle display comes from `nav2_rviz_plugins`, a
+dependency `g1_bringup` should not take.
 
 ## Tests
 
@@ -143,8 +143,7 @@ display comes from `nav2_rviz_plugins`, a dependency `g1_bringup` should not tak
 | `test_navigate_to_pose` | yes | The acceptance gate: the robot reaches a goal on its own, stays upright, and never trips the emergency freeze with the full sensor pipeline running. |
 | `test_scan_pipeline` | yes | The frame chain and the scan. |
 | `test_slam_map` | yes | slam_toolbox owning `map` to `odom`, and the map's geometry. |
-| `test_launch_threading` | no | Arguments surviving every include boundary, for both callers: the include set, the single container, the uncomposed Nav2 pin, and that no simulator is staged. |
-| `test_rviz_configs` | no | The Sensors display group not drifting between the two configs. |
+| `test_launch_threading` | no | Arguments surviving every include boundary, for both callers: the include set, the container, the uncomposed Nav2 pin, and that no simulator is staged. |
 | `test_no_sim_time` | no | No shipped config enables `use_sim_time`. There is no `/clock` on this track. |
 
 `test_navigate_to_pose` drives the real gait and is timing-sensitive. It has no retry wrapper, so a

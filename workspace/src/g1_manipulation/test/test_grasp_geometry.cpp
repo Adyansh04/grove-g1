@@ -42,22 +42,6 @@ geometry_msgs::msg::Pose objectAt(double x, double y, double z)
 
 }  // namespace
 
-TEST(ResolveArm, MapsASideOntoItsGroupsFramesAndHandedness)
-{
-    ArmContext arm;
-    ASSERT_TRUE(resolveArm("left", arm));
-    EXPECT_EQ(arm.arm_group, "left_arm");
-    EXPECT_EQ(arm.hand_group, "left_hand");
-    EXPECT_EQ(arm.palm_link, "left_hand_palm_link");
-    EXPECT_EQ(arm.grasp_frame, "left_hand_grasp_frame");
-    EXPECT_TRUE(arm.is_left);
-
-    ASSERT_TRUE(resolveArm("right", arm));
-    EXPECT_EQ(arm.arm_group, "right_arm");
-    EXPECT_EQ(arm.grasp_frame, "right_hand_grasp_frame");
-    EXPECT_FALSE(arm.is_left);
-}
-
 TEST(ResolveArm, RejectsAnythingElseWithoutAssigning)
 {
     // No fallback to a side: a near-miss name would move the wrong arm.

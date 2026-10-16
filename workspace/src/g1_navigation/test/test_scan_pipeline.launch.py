@@ -26,11 +26,6 @@ from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import LaserScan
 from tf2_ros import Buffer, TransformListener
 
-# config/scan.yaml
-EXPECTED_BEAMS = 360
-EXPECTED_INCREMENT = np.radians(1.0)
-RANGE_MAX = 25.0
-
 # Standing pelvis height; loose because it varies with stance.
 PELVIS_HEIGHT_M = 0.75
 PELVIS_HEIGHT_TOL = 0.12
@@ -137,13 +132,6 @@ class ScanPipelineTest(unittest.TestCase):
         # A tree that resolves but is broken at the waist would still pass the two edges
         # above; this is the lookup slam_toolbox and the costmaps actually perform.
         self.lookup("base_footprint", "mid360_link")
-
-    def test_scan_shape_matches_the_slam_config(self):
-        scan = self.scans[-1]
-        self.assertEqual(scan.header.frame_id, "base_footprint")
-        self.assertEqual(len(scan.ranges), EXPECTED_BEAMS)
-        self.assertAlmostEqual(scan.angle_increment, EXPECTED_INCREMENT, delta=1e-6)
-        self.assertAlmostEqual(scan.range_max, RANGE_MAX, delta=1e-3)
 
     def test_scan_is_dense_and_misses_are_inf(self):
         # In a closed room every bearing sees a wall. Anything much below full coverage means

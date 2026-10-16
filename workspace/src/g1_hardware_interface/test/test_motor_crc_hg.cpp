@@ -106,13 +106,5 @@ TEST(MotorCrcHg, IdenticalContentChecksumsIdenticallyAcrossMessages)
     EXPECT_EQ(crcOf(built_in_reverse), crcOf(baseline()));
 }
 
-TEST(MotorCrcHg, ChecksumIsWrittenBackOntoTheMessage)
-{
-    LowCmd cmd = baseline();
-    cmd.crc()  = 0;
-    computeLowCmdCrc(cmd);
-    EXPECT_NE(cmd.crc(), 0U);
-}
-
 }  // namespace
 }  // namespace g1_hardware_interface

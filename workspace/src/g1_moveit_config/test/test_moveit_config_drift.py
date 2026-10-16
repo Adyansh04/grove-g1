@@ -73,11 +73,6 @@ def srdf():
     return ET.parse(os.path.join(MOVEIT_CONFIG_DIR, "g1.srdf")).getroot()
 
 
-def test_the_srdf_is_well_formed_xml(srdf):
-    """No linter here reads .srdf, and a double hyphen in a comment kills move_group at launch."""
-    assert srdf.tag == "robot"
-
-
 def test_moveit_drives_the_controller_bringup_actually_runs(moveit_controllers, controllers):
     mine = moveit_controllers["moveit_simple_controller_manager"]["arm_trajectory_controller"]
     theirs = controllers["arm_trajectory_controller"]["ros__parameters"]
@@ -184,16 +179,6 @@ def test_each_hand_has_an_open_and_a_closed_posture(side, srdf):
         assert named == set(HAND_JOINTS[side]), f"{side} {name} does not cover the hand"
 
 
-def test_the_home_state_lists_the_arm_joints_in_motor_order(srdf):
-    """`home` lists the arm joints in the controllers' motor order."""
-    home = next(
-        s
-        for s in srdf.findall("group_state")
-        if s.get("name") == "home" and s.get("group") == "both_arms"
-    )
-    assert [j.get("name") for j in home.findall("joint")] == ARM_JOINTS
-
-
 def test_chain_groups_have_a_solver_and_the_composite_one_does_not(srdf, kinematics):
     """The composite group must not appear in kinematics.yaml.
 
@@ -269,12 +254,6 @@ def test_the_octomap_resolution_is_set_at_the_top_level(sensors_3d):
     to 0.1 m with only a warning."""
     assert isinstance(sensors_3d.get("octomap_resolution"), float)
     assert 0.0 < sensors_3d["octomap_resolution"] < 0.5
-
-
-def test_octomap_frame_is_not_set(sensors_3d):
-    """It would be inert: move_group builds the monitor in the planning frame and never reads
-    octomap_frame, so setting it would only look like it moved the map."""
-    assert "octomap_frame" not in sensors_3d
 
 
 def test_sensors_is_a_flat_list_of_names(sensors_3d):

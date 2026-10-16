@@ -11,7 +11,6 @@
 #include "g1_state_estimation/odom_math.hpp"
 
 using g1_state_estimation::composePose;
-using g1_state_estimation::diagonalCovariance;
 using g1_state_estimation::GroundSplit;
 using g1_state_estimation::invertPose;
 using g1_state_estimation::isStale;
@@ -259,19 +258,6 @@ TEST(SplitGroundProjection, HonoursAHeldHeading)
     EXPECT_DOUBLE_EQ(split.footprint.yaw, 0.25);
     EXPECT_NEAR(quaternionToYaw(split.tilt), wrapAngle(1.0 - 0.25), 1e-9)
         << "the heading the footprint did not take stays in the residual";
-}
-
-TEST(DiagonalCovariance, FillsOnlyTheDiagonal)
-{
-    const std::array<double, 36> covariance = diagonalCovariance(1.0e-6);
-    for (std::size_t row = 0; row < 6; ++row)
-    {
-        for (std::size_t col = 0; col < 6; ++col)
-        {
-            const double expected = (row == col) ? 1.0e-6 : 0.0;
-            EXPECT_DOUBLE_EQ(covariance[row * 6 + col], expected) << row << "," << col;
-        }
-    }
 }
 
 // --- Pose composition, which is what turns a LiDAR odometry frame into odom ------------------

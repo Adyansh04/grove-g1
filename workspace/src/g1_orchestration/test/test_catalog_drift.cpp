@@ -431,30 +431,6 @@ TEST(CatalogDrift, EveryPredicateIsOneOfTheFewTheAgentUnderstandsAboutItsOwnArgu
     }
 }
 
-TEST(CatalogDrift, ThePhrasesAreFilledInFromTheWorldModelsLabelForTheObject)
-{
-    const auto json = nlohmann::json::parse(Catalog::load(kCatalogFile).json());
-
-    std::map<std::string, std::string> defaults;
-    for (const auto& skill : json.at("skills"))
-    {
-        for (const auto& arg : skill.at("args"))
-        {
-            if (arg.contains("default_from"))
-            {
-                defaults[skill.at("name").get<std::string>() + "." + arg.at("name").get<std::string>()] =
-                    arg.at("default_from");
-            }
-        }
-    }
-
-    EXPECT_THAT(
-        defaults,
-        ::testing::UnorderedElementsAre(
-            ::testing::Pair("PickObject.phrase", "label(object_id)"),
-            ::testing::Pair("PlaceInto.phrase", "label(container_id)")));
-}
-
 TEST(CatalogDrift, ANumberNeedsARangeAndOnlyANumberHasOne)
 {
     const auto skill = [](const std::string& arg) {

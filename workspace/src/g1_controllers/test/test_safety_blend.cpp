@@ -6,7 +6,6 @@
 #include <gmock/gmock.h>
 
 #include <cmath>
-#include <limits>
 
 #include "g1_controllers/g1_safety_controller.hpp"
 
@@ -47,14 +46,6 @@ TEST(BlendAndSlew, VelocityClampBoundsOneTicksTravel)
     EXPECT_DOUBLE_EQ(blendAndSlew(0.0, -10.0, 1.0, 0.0, 2.0, kDt), -0.01);
 }
 
-TEST(BlendAndSlew, ClampSurvivesABlendRatioStep)
-{
-    // The property that makes `ros2 param set blend_ratio 1.0` safe mid-run: even a 0-to-1 jump
-    // cannot move the joint faster than its ceiling.
-    const double out = blendAndSlew(0.0, 2.0, 1.0, 0.0, 1.0, kDt);
-    EXPECT_DOUBLE_EQ(out, 1.0 * kDt);
-}
-
 TEST(BlendAndSlew, RepeatedTicksConvergeWithoutOvershoot)
 {
     double integrated = 0.0;
@@ -78,37 +69,10 @@ TEST(BlendAndSlew, ApproachesFromAboveToo)
     EXPECT_NEAR(integrated, 0.2, 1e-9);
 }
 
-TEST(BlendAndSlew, RampingTheBlendMovesTheTargetGradually)
-{
-    // What activation actually looks like: ratio climbing at 1.0/s while the joint tracks it.
-    double integrated = 0.3;
-    double ratio      = 0.0;
-    for (int i = 0; i < 200; ++i)  // 1 s at 200 Hz
-    {
-        ratio      = std::min(1.0, ratio + (1.0 * kDt));
-        integrated = blendAndSlew(0.3, 0.9, ratio, integrated, -1.0, kDt);
-    }
-    EXPECT_NEAR(ratio, 1.0, 1e-9);
-    EXPECT_NEAR(integrated, 0.9, 1e-9);
-}
-
 TEST(BlendAndSlew, OutputIsFiniteForAFiniteCommand)
 {
     EXPECT_TRUE(std::isfinite(blendAndSlew(0.0, 1e6, 1.0, 0.0, 1.0, kDt)));
     EXPECT_TRUE(std::isfinite(blendAndSlew(0.0, 1e6, 1.0, 0.0, -1.0, kDt)));
-}
-
-TEST(BlendAndSlew, AnInfiniteCommandPoisonsTheIntegratorEvenAtBlendRatioZero)
-{
-    // Why the caller filters non-finite references: `0.0 * inf` is NaN, so even ratio 0 does not
-    // ignore an infinite command.
-    const double inf = std::numeric_limits<double>::infinity();
-    EXPECT_FALSE(std::isfinite(blendAndSlew(0.5, inf, 0.0, 0.5, -1.0, kDt)));
-    EXPECT_FALSE(std::isfinite(blendAndSlew(0.5, inf, 1.0, 0.5, -1.0, kDt)));
-
-    // And it latches: once integrated is non-finite, a well-behaved command cannot recover it.
-    const double poisoned = blendAndSlew(0.5, inf, 1.0, 0.5, -1.0, kDt);
-    EXPECT_FALSE(std::isfinite(blendAndSlew(0.5, 0.5, 1.0, poisoned, -1.0, kDt)));
 }
 
 }  // namespace

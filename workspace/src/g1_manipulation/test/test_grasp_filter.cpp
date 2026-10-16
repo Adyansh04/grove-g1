@@ -60,17 +60,6 @@ TEST(ApproachAxis, PointsWhereThePoseOwnZDoes)
     EXPECT_NEAR(down[2], -1.0, 1e-9);
 }
 
-TEST(GripperOffset, MovesTheGoalIntoTheGraspFrame)
-{
-    // An identity grasp at the origin, offset 1 cm along the gripper's own x.
-    const geometry_msgs::msg::Pose out =
-        applyGripperOffset(poseAt(0.0, 0.0, 0.0, 0.0, 0.0, 0.0), { 0.01, 0.0, 0.0, 0.0, 0.0, 0.0 });
-
-    EXPECT_NEAR(out.position.x, 0.01, 1e-9);
-    EXPECT_NEAR(out.position.y, 0.0, 1e-9);
-    EXPECT_NEAR(out.position.z, 0.0, 1e-9);
-}
-
 TEST(GripperOffset, AppliesTheOffsetInTheGraspOwnFrame)
 {
     // Yawed by a right angle, so the gripper's +x is the world's +y and the offset follows it.

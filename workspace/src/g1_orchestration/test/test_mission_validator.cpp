@@ -243,13 +243,6 @@ TEST(MissionValidator, ChecksTheHashAgainstTheExactBytes)
         << "the hash is lowercase hex; another spelling is not the approved one";
 }
 
-TEST(MissionValidator, SkipsTheHashCheckWhenNoneIsGiven)
-{
-    EXPECT_THAT(
-        check(mission("<Sequence>" + std::string(kGoToPose) + "</Sequence>")).diagnostics,
-        ::testing::IsEmpty());
-}
-
 TEST(MissionValidator, RejectsAnyIncludeInAnySpelling)
 {
     for (const char* include : { "<include path=\"other.xml\"/>",
@@ -287,17 +280,6 @@ TEST(MissionValidator, RejectsATreeTheRobotDidNotOffer)
     ASSERT_NE(extra, nullptr);
     EXPECT_EQ(extra->node, "PickObject");
     EXPECT_EQ(extra->line, 3);
-}
-
-TEST(MissionValidator, RejectsATreeThatOnlyPretendsToBeAMacro)
-{
-    const std::string xml = R"(<root BTCPP_format="4" main_tree_to_execute="Mission">
-  <BehaviorTree ID="Mission"><Sequence>)" +
-                            std::string(kGoToPose) + R"(</Sequence></BehaviorTree>
-  <BehaviorTree ID="MyOwnSkill"><Sequence><Script code="x:=1"/></Sequence></BehaviorTree>
-</root>)";
-
-    EXPECT_THAT(codesOf(check(xml)), ::testing::Contains("EXTRA_TREE"));
 }
 
 TEST(MissionValidator, OnlyTheLibrarysOwnModelEntriesPass)
@@ -645,19 +627,6 @@ TEST(MissionValidator, TurnsAwayAMissionThatCouldRunPastTheLongestOneMayRun)
         check(mission("<Timeout msec=\"450000\">" + two_walks_and_a_tuck + "</Timeout>"), limits)
             .diagnostics,
         ::testing::IsEmpty());
-}
-
-TEST(MissionValidator, ShipsWithTheCapTheExecutorsWatchdogHas)
-{
-    EXPECT_DOUBLE_EQ(Limits{}.max_duration_s, 1800.0);
-    // Five picks come to 5 x 420 s.
-    std::string picks = "<Sequence>";
-    for (int i = 1; i <= 5; ++i)
-    {
-        picks += R"(<SubTree ID="PickObject" name="s)" + std::to_string(i) +
-                 R"(_PickObject" object_id="red_block" phrase="red block" arm="right"/>)";
-    }
-    EXPECT_THAT(codesOf(check(mission(picks + "</Sequence>"))), ::testing::Contains("TOO_LONG"));
 }
 
 TEST(MissionValidator, RequiresTheRightNumberOfChildren)

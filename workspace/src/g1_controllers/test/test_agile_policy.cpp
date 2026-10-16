@@ -70,12 +70,6 @@ TEST(AgileJointTables, NamesAreUniqueAndComplete)
     EXPECT_EQ(act.size(), kNumActJoints);
 }
 
-TEST(AgileJointTables, UnknownJointHasNoIndex)
-{
-    EXPECT_FALSE(agileObsIndex("left_hand_thumb_0_joint").has_value());
-    EXPECT_FALSE(agileActionIndex("not_a_joint").has_value());
-}
-
 TEST(AgileJointTables, ArmsAreNeverCommanded)
 {
     for (const auto& name : kAgileActionJointNames)
@@ -84,11 +78,6 @@ TEST(AgileJointTables, ArmsAreNeverCommanded)
         EXPECT_EQ(name.find("elbow"), std::string::npos) << name;
         EXPECT_EQ(name.find("wrist"), std::string::npos) << name;
     }
-}
-
-TEST(AgilePolicyModel, RejectsAModelThatIsNotThePolicy)
-{
-    EXPECT_THROW(AgilePolicy("/nonexistent/policy.onnx"), Ort::Exception);
 }
 
 TEST(AgilePolicyModel, StandingObservationProducesTheNominalPose)

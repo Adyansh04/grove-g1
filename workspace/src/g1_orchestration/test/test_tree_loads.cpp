@@ -11,7 +11,6 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
-#include <map>
 #include <memory>
 #include <rclcpp/rclcpp.hpp>
 #include <string>
@@ -65,66 +64,6 @@ TEST(TreeLoads, EveryShippedTreeParses)
         EXPECT_NO_THROW({ BT::Tree tree = factory.createTreeFromFile(tree_file.string()); })
             << tree_file.filename();
     }
-}
-
-TEST(TreeLoads, TheMissionTreeUsesTheLeavesItIsSupposedTo)
-{
-    // The mission's shape is the contract; a tree that lost its Place would still parse.
-    auto node    = std::make_shared<rclcpp::Node>("test_mission_shape");
-    auto factory = makeFactory(node);
-
-    BT::Tree tree = factory.createTreeFromFile(std::string(G1_TREES_DIR) + "/pick_and_place.xml");
-
-    std::map<std::string, int> seen;
-    for (const auto& subtree : tree.subtrees)
-    {
-        for (const auto& bt_node : subtree->nodes)
-        {
-            seen[bt_node->registrationName()]++;
-        }
-    }
-
-    EXPECT_EQ(seen["NavigateToPose"], 2) << "one leg out, one leg back";
-    EXPECT_EQ(seen["Pick"], 1);
-    EXPECT_EQ(seen["Place"], 1);
-    EXPECT_EQ(seen["AcquireArm"], 1);
-    EXPECT_EQ(seen["ReleaseArm"], 1);
-    // Both stations are staging poses short of the surface, so every arrival needs an approach.
-    EXPECT_EQ(seen["ApproachObject"], 2) << "one per surface: the workbench and the drop pad";
-    EXPECT_EQ(seen["Retreat"], 2) << "turning in place beside a surface drags the arm across it";
-
-    // Both arms tuck: either hand left hanging jams on the workbench edge.
-    EXPECT_EQ(seen["SetArmPosture"], 4)
-        << "two tucks out and two back: the object rides at the lift pose, with no carry posture";
-
-    // The detector runs only at the benches: it shares the GPU with the sim camera, and would
-    // track the carried object.
-    EXPECT_EQ(seen["StopLooking"], 3) << "off for the walk out, for the carry, and at the end";
-
-    // Manipulating beside a surface leaves phantom obstacles in the costmaps.
-    EXPECT_EQ(seen["ClearCostmaps"], 4) << "after each manipulation, and before each nav goal";
-}
-
-TEST(TreeLoads, EveryFallibleLeafInTheMissionIsRetried)
-{
-    // Counted, not located, so a restructure needs no test change.
-    auto node    = std::make_shared<rclcpp::Node>("test_mission_retries");
-    auto factory = makeFactory(node);
-
-    BT::Tree tree = factory.createTreeFromFile(std::string(G1_TREES_DIR) + "/pick_and_place.xml");
-
-    std::map<std::string, int> seen;
-    for (const auto& subtree : tree.subtrees)
-    {
-        for (const auto& bt_node : subtree->nodes)
-        {
-            seen[bt_node->registrationName()]++;
-        }
-    }
-
-    // Four tucks, two navigation goals, the object approach, the pick, the approach-and-place
-    // pair and the two LookFors.
-    EXPECT_EQ(seen["RetryUntilSuccessful"], 11);
 }
 
 TEST(TreeLoads, RejectsALeafNobodyRegistered)

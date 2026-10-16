@@ -678,17 +678,16 @@ TEST(NervrosExecutor, ServesTheCatalogItsMacrosAndItsVersion)
     const auto response = future.get();
 
     const auto json = nlohmann::json::parse(response->catalog_json);
+    const auto file = g1_orchestration::Catalog::load(std::string(G1_CONFIG_DIR) + "/catalog.yaml");
     EXPECT_EQ(json.at("catalog_version").get<std::string>(), response->catalog_version);
-    EXPECT_EQ(json.at("skills").size(), 9U);
+    EXPECT_EQ(json.at("skills").size(), nlohmann::json::parse(file.json()).at("skills").size());
     EXPECT_THAT(response->tree_nodes_model_xml, ::testing::HasSubstr("<SubTree ID=\"PickObject\""));
     EXPECT_THAT(
         response->tree_nodes_model_xml,
         ::testing::HasSubstr("<SubTree ID=\"ExploreBuilding\""));
     EXPECT_THAT(response->tree_nodes_model_xml, ::testing::HasSubstr("<Action ID=\"Pick\""));
     EXPECT_THAT(response->bt_cpp_version, ::testing::StartsWith("4."));
-    EXPECT_NE(
-        response->catalog_version,
-        g1_orchestration::Catalog::load(std::string(G1_CONFIG_DIR) + "/catalog.yaml").version())
+    EXPECT_NE(response->catalog_version, file.version())
         << "the version covers the palette served beside the catalog, not the file alone";
 }
 

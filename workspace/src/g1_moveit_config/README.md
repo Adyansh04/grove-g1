@@ -221,9 +221,9 @@ other. `test_robot_model` asserts those stay enabled.
 
 | Test | Needs a simulator | Covers |
 |---|---|---|
-| `test_moveit_config_drift` | no | This package against `g1_controllers`' controller config and `g1_description`'s hand clamp. The composite-group solver rule. SRDF well-formedness. The octomap sensor config. |
-| `test_robot_model` | no | Group composition and order. The planning frame. No hand or waist joints in an arm group. The collision matrix's adjacent and cross-arm pairs. The end effectors and the named poses. |
-| `test_launch_threading` | no | The arguments `g1_bringup`'s `moveit:=true` branch threads into the simulator, the RViz choice, and what `moveit_sim.launch.py` composes. |
+| `test_moveit_config_drift` | no | This package against `g1_controllers`' controller config and `g1_description`'s hand clamp. The hands' postures and the dual-arm group. The composite-group solver rule. The octomap sensor config. |
+| `test_robot_model` | no | The planning frame. No hand or waist joints in an arm group. The collision matrix's adjacent, cross-arm and thumb-to-fingertip pairs. The end effectors and the named poses. |
+| `test_launch_threading` | no | What `g1_bringup`'s `moveit:=true` branch stages, the RViz choice, and that a workspace without this package still launches. |
 | `test_octomap_blocks_a_plan` | yes | The octomap fills from the LiDAR and MoveIt collision-checks against it: a reach into a mapped obstacle is rejected, with `<octomap>` named in the contact. |
 | `test_moveit_lowcmd` | yes | MoveIt with the pelvis unpinned. Every motor claimed before the acquire. The freeze traded for the trajectory controller and back. Both arms moving without the balance policy losing the robot. Both hands activating. The left hand closing and opening through MoveIt. |
 

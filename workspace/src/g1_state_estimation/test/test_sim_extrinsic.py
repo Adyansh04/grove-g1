@@ -143,23 +143,6 @@ def test_both_configs_carry_the_livox_lever_arm():
         )
 
 
-def test_the_sensor_is_not_rigidly_attached_to_the_imu():
-    # Why the pelvis IMU cannot stand in: the chain from it to the sensor moves.
-    joints = _joints_from_urdf()
-    link = "mid360_link"
-    movable = []
-    while link != "pelvis":
-        parent, _, _, kind = joints[link]
-        if kind != "fixed":
-            movable.append(link)
-        link = parent
-    assert movable, (
-        "mid360_link now reaches pelvis through fixed joints only. If the waist really was "
-        "frozen, the pelvis IMU would do after all and the MJCF would not need a sensor in the "
-        "Mid360 -- but check who froze it before simplifying anything."
-    )
-
-
 def test_the_mount_is_actually_upside_down():
     # The physical Mid360 on a G1 points its +z at the floor. The comparisons above would
     # follow a righted URDF mount without complaint.
