@@ -273,7 +273,8 @@ say = [
     "Sum up what you found in three sentences.",
 ]
 max_s = 900
-expect = { mission = "none", compacted = true }
+# No compaction expected: at 32k (local-llm.sh) these thirteen answers fit the window.
+expect = { mission = "none" }
 
 # Skills, history, pointing, triggers and refusals
 

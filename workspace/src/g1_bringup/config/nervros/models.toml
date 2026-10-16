@@ -33,8 +33,9 @@ model = "qwen3.5-9b"
 vision = true
 tools = true
 privacy = { local = true }
-# local-llm.sh starts llama.cpp with --ctx-size 16384: the conversation is compacted to fit.
-context = 16384
+# local-llm.sh starts llama.cpp with --ctx-size 32768 and an 8-bit KV cache, in the VRAM 16384
+# took at 16 bits: the tools and persona take about 12k of it.
+context = 32768
 stream = true
 # Qwen's sampling for non-thinking use, over llama.cpp's defaults (0.8, top_k 40, top_p 0.95,
 # min_p 0.05): on 16 eval cases, three trials each, pass^3 0.94 against 0.81 at the same cost.
