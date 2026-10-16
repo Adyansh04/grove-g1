@@ -67,6 +67,10 @@ inline constexpr const char* kRobotCannotMove    = "ROBOT_CANNOT_MOVE";
 inline constexpr const char* kTeleopActive       = "TELEOP_ACTIVE";
 }  // namespace code
 
+/// Whether @p tag is a control node a Mission tree, or a taught skill's body, may use: Sequence,
+/// Fallback, RetryUntilSuccessful, Timeout and ForceSuccess.
+bool isControlNode(std::string_view tag);
+
 /**
  * @brief One thing wrong with a mission.
  */

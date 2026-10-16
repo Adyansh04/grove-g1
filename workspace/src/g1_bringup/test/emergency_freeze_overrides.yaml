@@ -1,0 +1,5 @@
+# test_emergency_freeze: a peak joint speed this low trips the divergence detector as soon as the
+# policy blends in, so the emergency switch runs without the robot having to fall first.
+locomotion_safety_controller:
+  ros__parameters:
+    max_velocity_limit: 0.01

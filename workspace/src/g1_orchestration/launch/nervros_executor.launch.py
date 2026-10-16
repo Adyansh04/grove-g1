@@ -57,6 +57,14 @@ def generate_launch_description():
             default_value=str(defaults["event_level"]),
             description="steps for the mission's steps and skill leaves, all for every node.",
         ),
+        DeclareLaunchArgument(
+            "learned_skills_dir",
+            default_value=str(defaults["learned_skills_dir"]),
+            description=(
+                "Where the skills an agent taught and kept live, a JSON file each, such as "
+                "/root/data/skills/g1; empty keeps them only until the executor stops."
+            ),
+        ),
     ]
 
     # No `name=`: it would remap every node in the process, and the skills node and the leaves'
@@ -78,6 +86,7 @@ def generate_launch_description():
                 "groot2_port": LaunchConfiguration("groot2_port"),
                 "event_level": LaunchConfiguration("event_level"),
                 "hands_empty_on_attach": LaunchConfiguration("hands_empty_on_attach"),
+                "learned_skills_dir": LaunchConfiguration("learned_skills_dir"),
                 "arg_choices": LaunchConfiguration("arg_choices"),
             },
         ],

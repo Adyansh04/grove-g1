@@ -44,13 +44,6 @@ constexpr double      kMaxStationM   = 1000.0;
 /// A little over a full turn, for a yaw written as an angle rather than wrapped.
 constexpr double kMaxStationYaw = 2.0 * std::numbers::pi + 1.0;
 
-/// The nodes a Mission tree may use besides SubTree.
-bool isControl(std::string_view tag)
-{
-    return tag == "Sequence" || tag == "Fallback" || tag == "RetryUntilSuccessful" ||
-           tag == "Timeout" || tag == "ForceSuccess";
-}
-
 /// What to tell a planner about a node it must not write, when it is a likely thing to try.
 const char* whyForbidden(std::string_view tag)
 {
@@ -599,14 +592,14 @@ private:
             return checkSubTree(node);
         }
         const auto children = childrenOf(node);
-        if (!isControl(tag))
+        if (!isControlNode(tag))
         {
             rejectTag(node, tag);
         }
 
         double                multiplier = 1.0;
         std::optional<double> cap_s;
-        if (isControl(tag))
+        if (isControlNode(tag))
         {
             std::string_view own;
             if (tag == "RetryUntilSuccessful")
@@ -993,6 +986,12 @@ private:
 
 }  // namespace
 
+bool isControlNode(std::string_view tag)
+{
+    return tag == "Sequence" || tag == "Fallback" || tag == "RetryUntilSuccessful" ||
+           tag == "Timeout" || tag == "ForceSuccess";
+}
+
 std::string stepIdOf(std::string_view name)
 {
     if (name.size() < 3 || name.front() != 's')
@@ -1164,7 +1163,7 @@ MissionValidator::MissionValidator(Catalog catalog, MacroLibrary library, Limits
     {
         for (const std::string& tag : macro.tags)
         {
-            if (!isControl(tag))
+            if (!isControlNode(tag))
             {
                 internal_tags_.insert(tag);
             }

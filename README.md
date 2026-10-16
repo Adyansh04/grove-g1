@@ -20,30 +20,30 @@ adds the arms, lives on the
 
 ## What it does
 
-- A learned locomotion policy walks and balances the robot. It runs at 50 Hz as a `ros2_control`
-  controller and drives the legs and waist over `rt/lowcmd`. One hardware component owns all 29
-  body motors, and the 14 arm joints belong to an ordinary `JointTrajectoryController`, so MoveIt
-  moves the arms while the policy keeps the robot up.
-- SLAM Toolbox maps a building, AMCL localizes against the saved map, and Nav2 drives to a goal.
-  Odometry comes from FAST-LIO2 on the Mid360 LiDAR.
-- MoveIt plans for either arm or both, collision-checked against a live octomap
-  from the LiDAR, and each Dex3-1 hand is a planning group with named postures. Pick and place
-  are actions, and a BehaviorTree.CPP tree strings them together with navigation: drive to a bench,
-  close the last half metre on the measured object, pick a ball, carry it across the building and
-  drop it into a box.
-- Objects are named in plain text, segmented in the head camera and placed in 3D
+- **Walking.** A learned locomotion policy walks and balances the robot. It runs at 50 Hz as a
+  `ros2_control` controller and drives the legs and waist over `rt/lowcmd`. One hardware component
+  owns all 29 body motors. The 14 arm joints belong to an ordinary `JointTrajectoryController`, so
+  MoveIt moves the arms while the policy keeps the robot up.
+- **Navigation.** SLAM Toolbox maps a building, AMCL localizes against the saved map, and Nav2
+  drives to a goal. Odometry comes from FAST-LIO2 on the Mid360 LiDAR.
+- **Manipulation.** MoveIt plans for either arm or both, collision-checked against a live octomap
+  from the LiDAR, and each Dex3-1 hand is a planning group with named postures. Pick and place are
+  actions. A BehaviorTree.CPP tree strings them together with navigation: drive to a bench, close
+  the last half metre on the measured object, pick a ball, carry it across the building and drop it
+  into a box.
+- **Perception.** Objects are named in plain text, segmented in the head camera and placed in 3D
   with the aligned depth image. Without `perception:=true`, their poses come from the simulator.
-- [canopy](https://github.com/Adyansh04/canopy) explores a building until its
-  cameras have seen every room, and keeps the rooms, the objects in them and the camera coverage
-  on the SLAM map. Missions then name their targets ("the dustbin in the office") instead of
-  carrying coordinates.
-- [NervROS](https://github.com/Adyansh04/nervros) lets you talk to the robot. It looks through the
-  cameras, asks canopy where things are, and turns what you ask into missions you approve, which
-  `nervros_executor` checks and runs with the same skills as the hand-written trees. It keeps the
-  robot out of rooms and objects you name, with Nav2 planning around them, pauses and resumes a
-  mission, and lets a step use what an earlier one found, so "find a mug and pick it up" is one
+- **World model.** [canopy](https://github.com/Adyansh04/canopy) explores a building until its
+  cameras have seen every room. It keeps the rooms, the objects in them and the camera coverage on
+  the SLAM map, so missions name their targets ("the dustbin in the office") instead of carrying
+  coordinates.
+- **Talking to it.** [NervROS](https://github.com/Adyansh04/nervros) looks through the cameras,
+  asks canopy where things are, and turns what you ask into missions you approve.
+  `nervros_executor` checks and runs them with the same skills as the hand-written trees. It keeps
+  the robot out of rooms and objects you name (Nav2 plans around them too), pauses and resumes
+  missions, and lets a step use what an earlier one found, so "find a mug and pick it up" is one
   mission.
-- A vision-language-action policy (GR00T N1.7) proposes arm motion, and each
+- **Learned grasping.** A vision-language-action policy (GR00T N1.7) proposes arm motion, and each
   action chunk is checked against the planning scene before it runs. The pipeline works end to end,
   but the pretrained policy does not grasp yet: that needs demonstrations recorded on this robot.
 
@@ -67,7 +67,7 @@ https://github.com/user-attachments/assets/347d91c4-3810-4e02-85bc-f8b860215505
 
 ### Talking to the robot with NervROS
 
-https://github.com/user-attachments/assets/dc4712e6-81cc-4f7a-b986-baae0cda8bf9
+https://github.com/user-attachments/assets/0c9381e1-ae1e-4391-a63d-53ef5df6179c
 
 *NervROS fetches a mug for the simulated G1: the plan, the approval, then the walk, the pick and
 the place, four times faster while the robot works. NervROS's
@@ -132,15 +132,17 @@ cp .env.example .env
 ./scripts/manage.sh build
 ```
 
-The first `start` builds the dev image, the simulator included, which takes a while. The
-apartment the world-model and NervROS demos use needs its meshes once, about 330 MB:
-`./scripts/setup-world-assets.sh` on the host. In an
-existing clone, `git submodule update --init` fetches the submodules, and
-`git config submodule.recurse true` makes `git pull` keep them in step. Third-party code the
-stack changes lives in forks on their `grove` branches: `livox_ros_driver2` and
-`fast_lio_humanoid` in `workspace/src`, and the simulator, `unitree_mujoco`, in `workspace/vendor`.
+- The first `start` builds the dev image, the simulator included, which takes a while.
+- The apartment that the world-model and NervROS demos use needs its meshes once, about 330 MB:
+  run `./scripts/setup-world-assets.sh` on the host.
+- In an existing clone, `git submodule update --init` fetches the submodules, and
+  `git config submodule.recurse true` makes `git pull` keep them in step.
+- Third-party code the stack changes lives in forks, on their `grove` branches:
+  `livox_ros_driver2` and `fast_lio_humanoid` in `workspace/src`, and the simulator,
+  `unitree_mujoco`, in `workspace/vendor`.
 
-Then pick a demo. Each guide explains what runs and why; each launcher opens its commands at once.
+Then pick a demo. Each guide explains what runs and why, and each launcher opens its commands at
+once.
 
 | Guide | What it covers | Launcher |
 |---|---|---|
@@ -149,16 +151,20 @@ Then pick a demo. Each guide explains what runs and why; each launcher opens its
 | [Learned grasping](docs/guides/learned-grasping.md) | A vision-language-action policy behind the planning-scene gate. Runs; does not grasp yet. | `learned-grasping.sh` |
 | [Open-vocabulary perception](docs/guides/open-vocabulary-grasping.md) | Objects named in text and measured in 3D, generated grasps, and instructions turned into phrases. | `open-vocabulary-grasping.sh` |
 | [Exploring and asking what is where](docs/guides/world-model.md) | canopy exploring an apartment: its rooms, its objects, and finding them by name. | `world-model.sh` |
-| [Talking to the robot with NervROS](docs/guides/nervros.md) | An agent you chat with: it looks, finds and segments things, fixes the world model, runs missions you approve (pick and place included), keeps the robot out of zones you name, pauses and resumes missions, and checks, watches and plots the robot for you. | `nervros.sh` |
+| [Talking to the robot with NervROS](docs/guides/nervros.md) | An agent you chat with: it looks, finds things, fixes the world model, runs missions you approve (pick and place included), keeps the robot out of zones you name, and watches the robot for you. | `nervros.sh` |
 | [Checking the map by hand](workspace/src/canopy/editor/doc/guide.md) | canopy's map editor: what to check in a saved world and how to fix it. | `world-model.sh editor` |
 
 The launchers live in `scripts/demos/`. Run one without arguments to list its variants, then name
-one: `./scripts/demos/pick-and-place.sh in-place`. It tears down any stack left running, opens each
-command in a pane of one tilix window (or a window each in another terminal), and makes commands
-that need the stack wait for it. `stop` ends the demo. A launcher that opens RViz or the
-simulator's viewer first checks that the container can reach your display, and prints the `xhost`
-fix if it cannot. `ros2 launch g1_bringup bringup.launch.py --show-args` lists bringup's own
-arguments with their descriptions; the launch files it includes declare more, such as `keepout`
+one: `./scripts/demos/pick-and-place.sh in-place`. A launcher:
+
+- tears down any stack left running,
+- opens each command in a pane of one tilix window (or a window each in another terminal),
+- makes commands that need the stack wait for it,
+- checks, before it opens RViz or the simulator's viewer, that the container can reach your
+  display, and prints the `xhost` fix if it cannot.
+
+`stop` ends the demo. `ros2 launch g1_bringup bringup.launch.py --show-args` lists bringup's own
+arguments with their descriptions. The launch files it includes declare more, such as `keepout`
 (`ros2 launch g1_navigation nav2.launch.py --show-args`) and `map` (`localization.launch.py`).
 
 ## Development
@@ -186,12 +192,17 @@ The container runs privileged, on the host network, with `/dev` mounted: DDS dis
 simulator and the ROS graph runs over loopback, and device access has to work. Project
 dependencies go in `.devcontainer/Dockerfile`, followed by `./scripts/manage.sh recreate`.
 
-To point the container at a real G1, set three variables in `.env`; no rebuild is needed.
-`GROVE_G1_CYCLONEDDS_URI=file:///etc/cyclonedds/cyclonedds.hardware.xml` selects the hardware
-profile, `GROVE_G1_ROBOT_NIC` names the network interface that reaches the robot, and
-`GROVE_G1_ROS_DOMAIN_ID` sets its domain. They carry a prefix because the base image's
-`/etc/profile.d/10-ros-env.sh` overwrites the plain names. `sim.launch.py` refuses to start unless
-`CYCLONEDDS_URI` pins loopback, so the simulator cannot come up pointed at a robot.
+To point the container at a real G1, set three variables in `.env`; no rebuild is needed:
+
+| Variable | Sets |
+|---|---|
+| `GROVE_G1_CYCLONEDDS_URI=file:///etc/cyclonedds/cyclonedds.hardware.xml` | the hardware DDS profile |
+| `GROVE_G1_ROBOT_NIC` | the network interface that reaches the robot |
+| `GROVE_G1_ROS_DOMAIN_ID` | the robot's domain |
+
+They carry a prefix because the base image's `/etc/profile.d/10-ros-env.sh` overwrites the plain
+names. `sim.launch.py` refuses to start unless `CYCLONEDDS_URI` pins loopback, so the simulator
+cannot come up pointed at a robot.
 
 ## Tests
 

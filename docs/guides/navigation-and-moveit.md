@@ -3,10 +3,10 @@
 Two demos that share a world. The first builds a map and drives to a goal under Nav2; the second
 plans arm motions against an octomap built from the same LiDAR. They can run together.
 
-`./scripts/demos/navigation-and-moveit.sh <sim|mapping|navigate|arm|both>` opens a section's
-commands at once, in split panes of tilix (a window each in another terminal), after tearing down
-any stack left running. `stop` ends it, and `--print` lists the commands instead. Arguments after
-the section, such as `rviz:=false`, go to the bringup launch.
+`./scripts/demos/navigation-and-moveit.sh <sim|mapping|navigate|arm|both>` tears down any stack
+left running, then opens a section's commands at once, in split panes of tilix (a window each in
+another terminal). `stop` ends it, and `--print` lists the commands instead. Arguments after the
+section, such as `rviz:=false`, go to the bringup launch.
 
 Every command here runs inside the development container. Start it and open a shell from the
 repository root; the shell starts in `/root/workspace` with the workspace sourced:
@@ -24,13 +24,16 @@ Useful for checking the robot stands up before adding anything else.
 ros2 launch g1_bringup bringup.launch.py headless:=false
 ```
 
-`headless:=false` opens the MuJoCo viewer and needs a local X11 display, as `rviz:=true` does;
-the launcher refuses either until the container may use the display, which `manage.sh start`
-grants (`xhost +local:docker`). Leave `headless` at the default `true` over SSH or on a machine
-without one. Restart the simulator rather than resetting or
-reloading it from the viewer: Reset (Backspace) re-applies the weld that holds the robot up at
-startup and nothing releases it again, and Reload with sensors on stops the sensors for good and
-can crash the simulator.
+`headless:=false` opens the MuJoCo viewer and needs a local X11 display, as `rviz:=true` does. The
+launcher refuses either until the container may use the display, which `manage.sh start` grants
+(`xhost +local:docker`). Leave `headless` at the default `true` over SSH or on a machine without a
+display.
+
+Restart the simulator rather than resetting or reloading it from the viewer:
+
+- Reset (Backspace) re-applies the weld that holds the robot up at startup, and nothing releases it
+  again.
+- Reload with sensors on stops the sensors for good and can crash the simulator.
 
 ## Building a map
 
@@ -57,10 +60,11 @@ ros2 run nav2_map_server map_saver_cli -f /root/workspace/src/g1_navigation/maps
 ## Localizing and navigating
 
 `mode:=localization` runs map_server and AMCL against the world's committed map. `nav:=true` adds
-the Nav2 servers and the base approach, in either navigation mode. Trees with fixed goals, such as
-the pick-and-place missions, want `localization`: on a map slam_toolbox is still building, a loop
-closure can move the goal under the planner. Exploration runs on `mapping`
-([world-model.md](world-model.md)).
+the Nav2 servers and the base approach, in either navigation mode.
+
+Trees with fixed goals, such as the pick-and-place missions, want `localization`: on a map that
+slam_toolbox is still building, a loop closure can move the goal under the planner. Exploration
+runs on `mapping` ([world-model.md](world-model.md)).
 
 ```bash
 ros2 launch g1_bringup bringup.launch.py mode:=localization nav:=true rviz:=true
@@ -73,11 +77,11 @@ ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose \
   "{pose: {header: {frame_id: map}, pose: {position: {x: 2.5, y: -2.5}, orientation: {w: 1.0}}}}"
 ```
 
-Keep-out zones: `keepout:=true` turns on Nav2's keepout filter in both costmaps and starts its
+Keep-out zones: `keepout:=true` turns on Nav2's keepout filter in both costmaps, and starts its
 `costmap_filter_info_server` with its own `lifecycle_manager_filters`, which exist only with it.
-The filter reads the `OccupancyGrid` on `/keepout_filter_mask`, whose cells at 100 are off limits,
-which NervROS publishes from its zones ([NervROS](nervros.md#keep-out-zones)). Leave it off
-otherwise: with no mask the filters warn every 2 s.
+The filter reads the `OccupancyGrid` on `/keepout_filter_mask`, whose cells at 100 are off limits.
+NervROS publishes it from its zones ([NervROS](nervros.md#keep-out-zones)). Leave `keepout` off
+otherwise: with no mask, the filters warn every 2 s.
 
 Committed maps exist for the `navigation` world, the default, and the `apartment` world.
 Localization picks the one for `world:=`, or the file `map:=<map.yaml>` names; on any other scene
@@ -98,9 +102,10 @@ ros2 launch g1_bringup bringup.launch.py moveit:=true sensors:=true rviz:=true
 `sensors:=true` puts the LiDAR octomap in the planning scene. The navigation modes, `manipulation`
 and `perception` turn it on themselves, so it only has to be passed for a MoveIt-only run.
 
-Acquiring takes the arm and both hands together; a hand that is absent or unpowered is logged and
-the arm stays usable. It then swings both arms out to the sides, since where they hang at bring-up
-is inside the octomap of anything in front, and MoveIt cannot plan from a start in collision.
+Acquiring takes the arm and both hands together. A hand that is absent or unpowered is logged, and
+the arm stays usable. The acquire then swings both arms out to the sides: where they hang at
+bring-up is inside the octomap of anything in front, and MoveIt cannot plan from a start in
+collision.
 
 ```bash
 ros2 launch g1_bringup activate_arm.launch.py

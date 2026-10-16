@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <!--
-  Pick the block up, carry it, put it down beside where it was. No navigation: for the
+  Pick the block up and put it down beside where it was. No navigation: for the
   `manipulation` world, where the block starts at arm's length.
 
   Coordinates are in odom, the frame /objects publishes in. AcquireArm is idempotent, so it is
@@ -15,7 +15,8 @@
         <Pick name="pick_the_block" object_id="red_block" arm="right"/>
       </RetryUntilSuccessful>
 
-      <SetArmPosture name="hold_it_close" group="right_arm" named_target="carry"/>
+      <!-- No `carry` posture: from this stance it holds the block 20 mm below the top at the
+           table's near corner, which strips it from the fingertips. Place plans from the lift. -->
 
       <!-- The top's near edge is at x 0.26, so the 60 mm block needs x 0.29 or more to stay on;
            z 0.845 is its centre resting on the 0.80 top. -->

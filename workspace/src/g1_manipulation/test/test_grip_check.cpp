@@ -108,7 +108,10 @@ TEST(GripCheck, TorqueAtTheTargetIsNotAGrip)
     load(hand, "thumb_2", 0.0, 1.2);
     load(hand, "index_1", 0.0, 1.2);
 
-    EXPECT_FALSE(verifyGrip(hand, kMinError, kMinEffort).holding);
+    const auto verdict = verifyGrip(hand, kMinError, kMinEffort);
+    EXPECT_FALSE(verdict.holding);
+    // Not "unloaded": the fingers push hard enough, they just are not blocked.
+    EXPECT_THAT(verdict.why, testing::HasSubstr("no finger is blocked"));
 }
 
 TEST(GripCheck, ThumbRollDoesNotCountAsAFinger)

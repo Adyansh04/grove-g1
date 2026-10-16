@@ -37,6 +37,8 @@
 #include <nervros_interfaces/action/execute_mission.hpp>
 #include <nervros_interfaces/msg/heartbeat.hpp>
 #include <nervros_interfaces/msg/robot_state.hpp>
+#include <nervros_interfaces/srv/define_skill.hpp>
+#include <nervros_interfaces/srv/forget_skill.hpp>
 #include <nervros_interfaces/srv/get_catalog.hpp>
 #include <nervros_interfaces/srv/pause_mission.hpp>
 #include <nervros_interfaces/srv/preview_mission.hpp>
@@ -55,6 +57,7 @@
 #include "g1_orchestration/mission_observer.hpp"
 #include "g1_orchestration/mission_preview.hpp"
 #include "g1_orchestration/mission_validator.hpp"
+#include "g1_orchestration/repertoire.hpp"
 #include "g1_orchestration/robot_health.hpp"
 #include "g1_orchestration/ros_action_node.hpp"
 #include "g1_orchestration/server_fleet.hpp"
@@ -131,6 +134,8 @@ private:
         std::string  failed_step;
         std::string  reason;
         std::string  diagnostics = "[]";
+        /// What the steps handed on, as a JSON object by key.
+        std::string outputs = "{}";
     };
 
     /// Why the tick loop stopped.
@@ -185,6 +190,12 @@ private:
     void onPause(
         const std::shared_ptr<nervros_interfaces::srv::PauseMission::Request>&  request,
         const std::shared_ptr<nervros_interfaces::srv::PauseMission::Response>& response);
+    void onDefineSkill(
+        const std::shared_ptr<nervros_interfaces::srv::DefineSkill::Request>&  request,
+        const std::shared_ptr<nervros_interfaces::srv::DefineSkill::Response>& response);
+    void onForgetSkill(
+        const std::shared_ptr<nervros_interfaces::srv::ForgetSkill::Request>&  request,
+        const std::shared_ptr<nervros_interfaces::srv::ForgetSkill::Response>& response);
     /// StopAll's work, for the service and for the deadman: halt, cancel, wait, hold.
     nervros_interfaces::srv::StopAll::Response stopEverything(const std::string& reason);
     /// Stops the running mission once its agent has been silent past its heartbeat timeout, or
@@ -199,17 +210,19 @@ private:
     Outcome execute(const ExecuteMission::Goal& goal, const std::shared_ptr<GoalHandle>& handle);
     static Outcome rejected(const std::vector<Diagnostic>& diagnostics);
 
-    /// A factory with the real leaves, or with stand-ins that only wait, and the macros @p used.
-    BT::BehaviorTreeFactory
-    makeFactory(bool dry_run, const Validation& validation, const std::set<std::string>& used);
+    /// A factory with the real leaves, or with stand-ins that only wait, and the macros @p used,
+    /// from the skill set @p skills.
+    BT::BehaviorTreeFactory makeFactory(
+        const SkillSet& skills, bool dry_run, const Validation& validation,
+        const std::set<std::string>& used);
     /// A blackboard holding what each hand holds, as "id=phrase" or empty, for the macros to read.
     BT::Blackboard::Ptr seededBlackboard();
     /// Loads @p xml into @p tree, its number arguments written as decimals, or says why not.
-    std::optional<Diagnostic> load(
-        BT::BehaviorTreeFactory& factory, const std::string& xml,
-        const BT::Blackboard::Ptr& blackboard, BT::Tree& tree) const;
+    static std::optional<Diagnostic> load(
+        const SkillSet& skills, BT::BehaviorTreeFactory& factory, const std::string& xml,
+        const BT::Blackboard::Ptr& blackboard, BT::Tree& tree);
 
-    bool  takeAuthority(const Validation& validation, Outcome& outcome);
+    bool  takeAuthority(const SkillSet& skills, const Validation& validation, Outcome& outcome);
     Ended tickLoop(
         BT::Tree& tree, MissionObserver& observer, const std::shared_ptr<GoalHandle>& handle,
         double limit_s, std::chrono::steady_clock::time_point begin, BT::NodeStatus& status);
@@ -275,11 +288,11 @@ private:
     double                 max_pause_s_;
     MissionObserver::Level event_level_;
 
-    std::unique_ptr<MissionValidator> validator_;
-    std::string                       palette_xml_;
-    /// Built once at start, so a catalog that cannot be written as JSON stops the executor there.
-    std::string                    catalog_json_;
-    std::shared_ptr<AuthorityPort> authority_;
+    /// The library's skills and the learned ones; each mission keeps the set it started with.
+    std::unique_ptr<Repertoire> repertoire_;
+    /// The set the running mission was checked against, read by the mission thread alone.
+    std::shared_ptr<const SkillSet> mission_skills_;
+    std::shared_ptr<AuthorityPort>  authority_;
 
     rclcpp::CallbackGroup::SharedPtr action_group_;
     rclcpp::CallbackGroup::SharedPtr stop_group_;
@@ -303,6 +316,8 @@ private:
     rclcpp::Service<nervros_interfaces::srv::PreviewMission>::SharedPtr  preview_service_;
     rclcpp::Service<nervros_interfaces::srv::Teleop>::SharedPtr          teleop_service_;
     rclcpp::Service<nervros_interfaces::srv::PauseMission>::SharedPtr    pause_service_;
+    rclcpp::Service<nervros_interfaces::srv::DefineSkill>::SharedPtr     define_skill_service_;
+    rclcpp::Service<nervros_interfaces::srv::ForgetSkill>::SharedPtr     forget_skill_service_;
     rclcpp::Publisher<RobotState>::SharedPtr                             state_pub_;
     rclcpp::TimerBase::SharedPtr                                         state_timer_;
     rclcpp::Subscription<nervros_interfaces::msg::Heartbeat>::SharedPtr  heartbeat_sub_;

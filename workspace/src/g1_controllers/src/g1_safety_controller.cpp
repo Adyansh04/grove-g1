@@ -6,6 +6,7 @@
 #include "g1_controllers/g1_safety_controller.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <limits>
 #include <pluginlib/class_list_macros.hpp>
@@ -21,6 +22,10 @@ namespace
 /// NaN marks a reference nothing upstream wrote. Infinity is rejected too: it would latch the
 /// integrator at NaN, even at blend ratio 0, since `0.0 * inf` is NaN.
 bool unwritten(double value) { return !std::isfinite(value); }
+
+/// Long enough not to flood controller_manager with a refusal that persists, short enough that a
+/// freeze still loading at startup takes over moments after it is ready.
+constexpr auto kSwitchRetryPeriod = std::chrono::seconds(1);
 
 /// Expands a single-value or per-joint parameter to one entry per joint.
 bool expandToJoints(const std::vector<double>& values, std::size_t joints, std::vector<double>& out)
@@ -61,6 +66,7 @@ controller_interface::CallbackReturn G1SafetyController::on_init()
     auto_declare<double>("mean_velocity_limit", 10.0);
     auto_declare<double>("max_velocity_limit", 35.0);
     auto_declare<std::string>("emergency_controller", "");
+    auto_declare<std::vector<std::string>>("preceding_controllers", {});
     return controller_interface::CallbackReturn::SUCCESS;
 }
 
@@ -96,9 +102,10 @@ G1SafetyController::on_configure(const rclcpp_lifecycle::State& /*previous_state
     target_blend_ratio_.store(
         std::clamp(get_node()->get_parameter("blend_ratio").as_double(), 0.0, 1.0));
 
-    mean_velocity_limit_  = get_node()->get_parameter("mean_velocity_limit").as_double();
-    max_velocity_limit_   = get_node()->get_parameter("max_velocity_limit").as_double();
-    emergency_controller_ = get_node()->get_parameter("emergency_controller").as_string();
+    mean_velocity_limit_   = get_node()->get_parameter("mean_velocity_limit").as_double();
+    max_velocity_limit_    = get_node()->get_parameter("max_velocity_limit").as_double();
+    emergency_controller_  = get_node()->get_parameter("emergency_controller").as_string();
+    preceding_controllers_ = get_node()->get_parameter("preceding_controllers").as_string_array();
 
     activation_position_.assign(n, 0.0);
     integrated_position_.assign(n, 0.0);
@@ -260,8 +267,9 @@ G1SafetyController::on_activate(const rclcpp_lifecycle::State& /*previous_state*
         reference_interfaces_.begin(),
         reference_interfaces_.end(),
         std::numeric_limits<double>::quiet_NaN());
-    blend_ratio_           = 0.0;
-    emergency_switch_sent_ = false;
+    blend_ratio_         = 0.0;
+    switch_pending_      = false;
+    next_switch_attempt_ = {};
     emergency_latched_.store(false);
 
     if (switch_client_)
@@ -354,18 +362,44 @@ void G1SafetyController::latchEmergency(const char* reason)
 
 void G1SafetyController::requestEmergencySwitch()
 {
-    if (!emergency_latched_.load() || emergency_switch_sent_ || !switch_client_ ||
+    if (!emergency_latched_.load() || switch_pending_ ||
+        std::chrono::steady_clock::now() < next_switch_attempt_ || !switch_client_ ||
         !switch_client_->service_is_ready())
     {
         return;
     }
-    emergency_switch_sent_ = true;
+    switch_pending_ = true;
 
-    auto request = std::make_shared<controller_manager_msgs::srv::SwitchController::Request>();
+    using controller_manager_msgs::srv::SwitchController;
+    auto request                    = std::make_shared<SwitchController::Request>();
     request->activate_controllers   = { emergency_controller_ };
-    request->deactivate_controllers = { get_node()->get_name() };
-    request->strictness = controller_manager_msgs::srv::SwitchController::Request::BEST_EFFORT;
-    switch_client_->async_send_request(request);
+    request->deactivate_controllers = preceding_controllers_;
+    request->deactivate_controllers.emplace_back(get_node()->get_name());
+    // All or nothing. Best effort could take the legs' owners down and still drop a freeze that
+    // cannot activate, leaving them unpowered; a refusal keeps this controller holding.
+    request->strictness = SwitchController::Request::STRICT;
+    switch_client_->async_send_request(
+        request,
+        // rclcpp matches the callback signature exactly, so the future is taken by value.
+        // NOLINTNEXTLINE(performance-unnecessary-value-param)
+        [this](rclcpp::Client<SwitchController>::SharedFuture future) {
+            const auto& response = future.get();
+            if (response->ok)
+            {
+                RCLCPP_WARN(
+                    get_node()->get_logger(),
+                    "'%s' holds the legs now",
+                    emergency_controller_.c_str());
+                return;
+            }
+            RCLCPP_ERROR(
+                get_node()->get_logger(),
+                "the switch to '%s' was refused, still holding the last safe pose: %s",
+                emergency_controller_.c_str(),
+                response->message.c_str());
+            next_switch_attempt_ = std::chrono::steady_clock::now() + kSwitchRetryPeriod;
+            switch_pending_      = false;
+        });
 }
 
 controller_interface::return_type G1SafetyController::update_and_write_commands(

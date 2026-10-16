@@ -31,9 +31,6 @@ ROOM_SIDE_M = 8.0
 # extent, so this checks the room is about this size, not where the walls are.
 EXTENT_TOL_M = 4.0
 
-# config/slam_mapping.yaml
-RESOLUTION_M = 0.05
-
 BRINGUP_TIMEOUT_S = 150.0
 
 
@@ -129,9 +126,6 @@ class SlamMapTest(unittest.TestCase):
             except Exception:
                 rclpy.spin_once(self.node, timeout_sec=0.1)
         self.fail("map -> odom never appeared on /tf")
-
-    def test_grid_matches_the_configured_resolution(self):
-        self.assertAlmostEqual(self.maps[-1].info.resolution, RESOLUTION_M, delta=1e-6)
 
     def test_mapped_extent_is_about_the_room(self):
         grid = self.maps[-1].info

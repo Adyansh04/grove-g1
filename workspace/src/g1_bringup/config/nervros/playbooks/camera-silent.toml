@@ -1,0 +1,23 @@
+# The relay sends each camera's info with every frame, so its rate is the camera's, at a sliver of
+# the bandwidth an image takes.
+id = "camera-silent"
+title = "A camera sends no frames"
+explains = ["topic_silent", "mission_failed", "asked"]
+match = "any"
+verdict = "A camera stopped sending frames, so looks and its detector have nothing to see: the sensor relay or the simulator's renderer stopped."
+fix = "The operator checks that g1_sensor_relay and the simulator run, and restarts the stack if either is down; the agent cannot."
+procedure = "camera-or-objects-empty"
+
+[[check]]
+name = "the chest camera"
+topic = "/chest_camera/color/camera_info"
+type = "sensor_msgs/msg/CameraInfo"
+condition = "rate_below"
+hz = 0.5
+
+[[check]]
+name = "the head camera"
+topic = "/camera/color/camera_info"
+type = "sensor_msgs/msg/CameraInfo"
+condition = "rate_below"
+hz = 0.5

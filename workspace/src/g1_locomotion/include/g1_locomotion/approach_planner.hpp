@@ -144,6 +144,32 @@ bool settledInReach(double object_x_m, double object_y_m, const ApproachLimits& 
 std::optional<Nudge> planNudge(
     double object_x_m, double object_y_m, const ApproachLimits& limits, const GaitLimits& gait);
 
+/**
+ * @brief Whether a closing approach still gets closer: blocked, by a chair it walks into, it
+ *        commands the same velocity until its deadline.
+ */
+class ApproachProgress
+{
+public:
+    /// Getting @p progress_m closer counts as progress; stalled once @p stall_s pass without it.
+    ApproachProgress(double progress_m, double stall_s)
+      : progress_m_(progress_m)
+      , stall_s_(stall_s)
+    {}
+
+    /// Takes the remaining error at @p now_s; true once stalled.
+    bool stalled(double forward_error_m, double lateral_error_m, double now_s);
+
+    /// The least remaining error so far, m.
+    [[nodiscard]] double closestM() const { return best_m_; }
+
+private:
+    double progress_m_;
+    double stall_s_;
+    double best_m_  = -1.0;
+    double since_s_ = 0.0;
+};
+
 }  // namespace g1_locomotion
 
 #endif  // G1_LOCOMOTION__APPROACH_PLANNER_HPP_

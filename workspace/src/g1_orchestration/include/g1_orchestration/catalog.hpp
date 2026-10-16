@@ -10,6 +10,7 @@
  */
 
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -69,6 +70,11 @@ struct Skill
     double max_duration_s = 0.0;
     /// ID of the macro subtree that implements it.
     std::string macro;
+    /// For a skill a planner taught: "draft" until a mission with it succeeds, then "kept";
+    /// empty for the library's.
+    std::string learned;
+    /// For a learned skill: the operator's request it was taught for.
+    std::string taught_for;
 
     /// Whether running it needs the arms.
     [[nodiscard]] bool needsArms() const;
@@ -106,8 +112,10 @@ public:
      * version a planner caches the catalog under.
      *
      * @param palette_xml The `<TreeNodesModel>` document `GetCatalog` serves.
+     * @param bodies The taught skills' macros, which the palette does not show: a skill taught
+     *        again with a new body is a new catalog.
      */
-    void bindPalette(std::string_view palette_xml);
+    void bindPalette(std::string_view palette_xml, std::string_view bodies = {});
 
     /**
      * @brief Limits one argument to the values in `Skill.arg=a|b`: what the robot can do where it
@@ -123,6 +131,14 @@ public:
     /// The skill implemented by macro @p macro, or null.
     [[nodiscard]] const Skill* findByMacro(std::string_view macro) const;
 
+    /**
+     * @brief This catalog with @p extra skills after its own, such as the learned ones. The
+     *        version covers them; bind the palette again afterwards.
+     *
+     * @throws std::runtime_error When a name or a macro of @p extra is taken.
+     */
+    [[nodiscard]] Catalog withSkills(const std::vector<Skill>& extra) const;
+
     /// The catalog as the JSON `GetCatalog` serves: `catalog_version` and `skills`.
     [[nodiscard]] std::string json() const;
 
@@ -132,6 +148,13 @@ private:
     std::string        version_;
     std::vector<Skill> skills_;
 };
+
+/**
+ * @brief What is wrong with an argument the catalog would refuse: its type, format or range.
+ *
+ * @return Nothing for a sound one.
+ */
+std::optional<std::string> argProblem(const SkillArg& arg);
 
 }  // namespace g1_orchestration
 

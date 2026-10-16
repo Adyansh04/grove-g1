@@ -376,6 +376,10 @@
   <!-- Added by hand, with its right-hand twin: the closing thumb reaches back over the wrist,
        so left checked, every plan made with a closed hand starts in collision. -->
   <disable_collisions link1="left_hand_thumb_1_link" link2="left_wrist_roll_link" reason="Never"/>
+  <!-- Also by hand, with the right-hand twins: closed on a small object the thumb tip meets the
+       finger tips, and every lift from that grip was refused as starting in collision. -->
+  <disable_collisions link1="left_hand_index_1_link" link2="left_hand_thumb_2_link" reason="Never"/>
+  <disable_collisions link1="left_hand_middle_1_link" link2="left_hand_thumb_2_link" reason="Never"/>
   <disable_collisions link1="left_hip_pitch_link" link2="left_hip_roll_link" reason="Adjacent"/>
   <disable_collisions link1="left_hip_roll_link" link2="left_hip_yaw_link" reason="Adjacent"/>
   <disable_collisions link1="left_hip_yaw_link" link2="left_knee_link" reason="Adjacent"/>
@@ -402,6 +406,8 @@
   <disable_collisions link1="right_hand_thumb_0_link" link2="right_hand_thumb_1_link" reason="Adjacent"/>
   <disable_collisions link1="right_hand_thumb_1_link" link2="right_hand_thumb_2_link" reason="Adjacent"/>
   <disable_collisions link1="right_hand_thumb_1_link" link2="right_wrist_roll_link" reason="Never"/>
+  <disable_collisions link1="right_hand_index_1_link" link2="right_hand_thumb_2_link" reason="Never"/>
+  <disable_collisions link1="right_hand_middle_1_link" link2="right_hand_thumb_2_link" reason="Never"/>
   <disable_collisions link1="right_hip_pitch_link" link2="right_hip_roll_link" reason="Adjacent"/>
   <disable_collisions link1="right_hip_roll_link" link2="right_hip_yaw_link" reason="Adjacent"/>
   <disable_collisions link1="right_hip_yaw_link" link2="right_knee_link" reason="Adjacent"/>

@@ -130,12 +130,17 @@ void G1ManipulationServer::declareParameters()
         { "approach_standoff_m", &approach_standoff_m_ },
         { "ik_timeout_s", &ik_timeout_s_ },
         { "cartesian_step_m", &cartesian_step_m_ },
+        { "move_hand_max_reach_m", &move_hand_max_reach_m_ },
+        { "move_hand_point_reach_m", &move_hand_point_reach_m_ },
+        { "move_hand_speed", &move_hand_speed_ },
+        { "move_hand_max_s", &move_hand_max_s_ },
     };
     live_ints_ = {
         { "settle_attempts", &settle_attempts_ },
         { "lift_attempts", &lift_attempts_ },
         { "planning_attempts", &planning_attempts_ },
         { "max_grasp_candidates", &max_grasp_candidates_ },
+        { "move_hand_orientations", &move_hand_orientations_ },
     };
     for (const auto& [name, value] : live_doubles_)
     {
@@ -156,6 +161,10 @@ void G1ManipulationServer::declareParameters()
     velocity_scaling_ = declare_parameter<double>("velocity_scaling", velocity_scaling_, fixed);
     grasp_rpy_ = declare_parameter<std::vector<double>>("grasp_rpy", { -M_PI_2, 0.0, 0.0 }, fixed);
     grasp_source_ = declare_parameter<std::string>("grasp_source", "fixed_top_down", fixed);
+    move_hand_left_shoulder_ =
+        declare_parameter<std::string>("move_hand_left_shoulder", move_hand_left_shoulder_, fixed);
+    move_hand_right_shoulder_ =
+        declare_parameter<std::string>("move_hand_right_shoulder", move_hand_right_shoulder_, fixed);
     declare_parameter<std::string>("grasp_service", "/g1_grasp_engine/generate_grasps", fixed);
     declare_parameter<bool>("publish_markers", false, fixed);
     const std::vector<double> offset = declare_parameter<std::vector<double>>(
@@ -283,6 +292,22 @@ void G1ManipulationServer::initialize()
         [this](const std::shared_ptr<GoalHandle<SetArmPosture>>& handle) {
             std::thread{ [this, handle] {
                 runGuarded([&] { executeSetArmPosture(handle); }, handle);
+            } }.detach();
+        });
+
+    move_hand_server_ = rclcpp_action::create_server<MoveHand>(
+        this,
+        "~/move_hand",
+        [this](const rclcpp_action::GoalUUID&, const std::shared_ptr<const MoveHand::Goal>&) {
+            return acquire() ? rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE :
+                               rclcpp_action::GoalResponse::REJECT;
+        },
+        [](const std::shared_ptr<GoalHandle<MoveHand>>&) {
+            return rclcpp_action::CancelResponse::ACCEPT;
+        },
+        [this](const std::shared_ptr<GoalHandle<MoveHand>>& handle) {
+            std::thread{ [this, handle] {
+                runGuarded([&] { executeMoveHand(handle); }, handle);
             } }.detach();
         });
 

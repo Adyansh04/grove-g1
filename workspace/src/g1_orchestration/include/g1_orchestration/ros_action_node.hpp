@@ -266,7 +266,12 @@ private:
         Goal goal;
         if (!fillGoal(goal))
         {
-            setFailureText(std::format("the ports for {} are unusable; see the log", action_name_));
+            // A leaf that said why, such as an object the world model does not know, keeps it.
+            if (failureText().empty())
+            {
+                setFailureText(
+                    std::format("the ports for {} are unusable; see the log", action_name_));
+            }
             return BT::NodeStatus::FAILURE;
         }
 

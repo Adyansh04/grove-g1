@@ -10,6 +10,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <g1_msgs/action/move_hand.hpp>
 #include <g1_msgs/action/retreat.hpp>
 #include <memory>
 #include <rclcpp/rclcpp.hpp>
@@ -366,6 +367,39 @@ TEST(ActionLeaf, AnAcceptedGoalThatSucceedsSucceedsTheLeaf)
 {
     // The counterpart: a leaf wired to fail on everything would pass the test above.
     EXPECT_EQ(runRetreatLeaf(true), BT::NodeStatus::SUCCESS);
+}
+
+TEST(ActionLeaf, ALeafThatSaysWhyItCannotFillItsGoalKeepsItsReason)
+{
+    using MoveHand = g1_msgs::action::MoveHand;
+    // Neither a target nor a frame: MoveHand says so, rather than "the ports are unusable".
+    auto server_node = std::make_shared<rclcpp::Node>("test_move_hand_server");
+    auto server      = rclcpp_action::create_server<MoveHand>(
+        server_node,
+        "/g1_manipulation_server/move_hand",
+        [](const rclcpp_action::GoalUUID&, const std::shared_ptr<const MoveHand::Goal>&) {
+            return rclcpp_action::GoalResponse::REJECT;
+        },
+        [](const std::shared_ptr<rclcpp_action::ServerGoalHandle<MoveHand>>&) {
+            return rclcpp_action::CancelResponse::ACCEPT;
+        },
+        [](const std::shared_ptr<rclcpp_action::ServerGoalHandle<MoveHand>>&) {});
+    StopRig rig(R"(<MoveHand arm="right" server_timeout_s="20.0"/>)");
+    rclcpp::executors::SingleThreadedExecutor executor;
+    executor.add_node(server_node);
+    executor.add_node(rig.node);
+    std::atomic<bool> done{ false };
+    std::thread       spinner([&executor, &done] {
+        while (!done)
+        {
+            executor.spin_once(std::chrono::milliseconds(10));
+        }
+    });
+
+    EXPECT_EQ(rig.tree.tickOnce(), BT::NodeStatus::FAILURE);
+    done = true;
+    spinner.join();
+    EXPECT_THAT(rig.failureText(), ::testing::HasSubstr("give either a target"));
 }
 
 int main(int argc, char** argv)

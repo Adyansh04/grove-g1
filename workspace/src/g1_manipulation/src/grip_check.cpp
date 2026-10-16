@@ -53,12 +53,17 @@ verifyGrip(const std::vector<JointGrip>& joints, double min_error_rad, double mi
     double                worst     = 0.0;
     double                hardest   = 0.0;
     double                strongest = 0.0;
+    // How far the strongest-pushing joint stands from its target: pushing at the target is a
+    // finger holding itself up, not one an object blocks.
+    double strongest_short = 0.0;
     for (const JointGrip& joint : joints)
     {
         const std::string finger = fingerOf(joint.name);
-        if (!finger.empty() && std::isfinite(joint.effort))
+        if (!finger.empty() && std::isfinite(joint.effort) && std::isfinite(joint.target) &&
+            std::isfinite(joint.position) && std::abs(joint.effort) > strongest)
         {
-            strongest = std::max(strongest, std::abs(joint.effort));
+            strongest       = std::abs(joint.effort);
+            strongest_short = std::abs(joint.target - joint.position);
         }
         if (finger.empty() || !isLoaded(joint, min_error_rad, min_effort_nm))
         {
@@ -83,6 +88,15 @@ verifyGrip(const std::vector<JointGrip>& joints, double min_error_rad, double mi
     else if (pressing.size() == 1)
     {
         verdict.why = "only the " + *pressing.begin() + " is pressing; nothing opposes it";
+    }
+    else if (strongest >= min_effort_nm)
+    {
+        verdict.why = std::format(
+            "no finger is blocked: the strongest pushes {:.2f} Nm but stands {:.2f} rad from its "
+            "target, where a grip stops a finger {:.2f} rad short or more",
+            strongest,
+            strongest_short,
+            min_error_rad);
     }
     else
     {

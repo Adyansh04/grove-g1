@@ -253,4 +253,17 @@ TEST(ApproachNudge, NoneInReachOutOfReachAheadOrFarOutSideways)
         << "out of reach ahead: only a drive closes that";
 }
 
+TEST(ApproachProgress, ABlockedApproachStallsAndOneThatClosesDoesNot)
+{
+    g1_locomotion::ApproachProgress progress(0.05, 20.0);
+    EXPECT_FALSE(progress.stalled(0.80, 0.0, 0.0));
+    // Closing: each step gains more than the progress margin.
+    EXPECT_FALSE(progress.stalled(0.60, 0.0, 15.0));
+    EXPECT_FALSE(progress.stalled(0.40, 0.0, 30.0));
+    // Blocked: it wavers by less than the margin for longer than the stall time.
+    EXPECT_FALSE(progress.stalled(0.42, 0.03, 45.0));
+    EXPECT_TRUE(progress.stalled(0.38, 0.0, 51.0));
+    EXPECT_NEAR(progress.closestM(), 0.40, 1e-9);
+}
+
 }  // namespace

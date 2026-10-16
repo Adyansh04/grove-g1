@@ -37,8 +37,10 @@ find_package(yaml-cpp REQUIRED)
 # tests run in milliseconds and a service thread can share it with the mission thread.
 add_library(g1_mission_validation
   src/catalog.cpp
+  src/learned_skills.cpp
   src/macro_library.cpp
   src/mission_validator.cpp
+  src/repertoire.cpp
   src/sha256.cpp
   src/xml_canonical.cpp
 )
@@ -69,6 +71,8 @@ add_library(g1_bt_nodes
   src/skills/set_arm_posture.cpp
   src/skills/world_model_leaves.cpp
   src/skills/motion_leaves.cpp
+  src/skills/move_hand.cpp
+  src/skills/wait.cpp
 )
 g1_target_defaults(g1_bt_nodes)
 target_link_libraries(g1_bt_nodes PUBLIC
@@ -153,6 +157,10 @@ if(BUILD_TESTING)
   ament_add_gmock(test_action_leaf test/test_action_leaf.cpp TIMEOUT 120)
   target_link_libraries(test_action_leaf g1_bt_nodes)
 
+  # The words for why Nav2 did not reach a goal. No ROS graph.
+  ament_add_gmock(test_navigate_to_pose test/test_navigate_to_pose.cpp)
+  target_link_libraries(test_navigate_to_pose g1_bt_nodes)
+
   # The checked-in Groot2 palette matches the registered leaves.
   ament_add_gmock(test_node_model test/test_node_model.cpp)
   target_link_libraries(test_node_model g1_bt_nodes)
@@ -163,6 +171,13 @@ if(BUILD_TESTING)
   ament_add_gmock(test_mission_validator test/test_mission_validator.cpp)
   target_link_libraries(test_mission_validator g1_mission_validation)
   target_compile_definitions(test_mission_validator PRIVATE
+    G1_CONFIG_DIR="${CMAKE_CURRENT_SOURCE_DIR}/config"
+    G1_TREES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/trees")
+
+  # What a taught skill may be built from, and where kept ones live. No ROS.
+  ament_add_gmock(test_learned_skills test/test_learned_skills.cpp)
+  target_link_libraries(test_learned_skills g1_mission_validation)
+  target_compile_definitions(test_learned_skills PRIVATE
     G1_CONFIG_DIR="${CMAKE_CURRENT_SOURCE_DIR}/config"
     G1_TREES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/trees")
 

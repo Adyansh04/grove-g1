@@ -26,6 +26,22 @@ interfaces = [
 start_armed = false
 autonomy = "supervised"
 
+# The executor's services have tools of their own (run_mission, stop, teach_skill): called raw
+# they skip the plan check, and qwen once called stop_all to "check" the robot.
+[[policy.rule]]
+tool = "service_call"
+arg = "service"
+matches = "/nervros_executor/*"
+then = "deny"
+reason = "the executor answers through run_mission, stop, pause and teach_skill, not service_call"
+
+[[policy.rule]]
+tool = "action_goal"
+arg = "action"
+matches = "/nervros_executor/*"
+then = "deny"
+reason = "missions go through run_mission, where they are checked and approved"
+
 # canopy's detector reads the world model's still frames, and SAM 3.1 marks one up to its 8 s
 # max_image_age_s plus a few seconds of inference after it was taken.
 [look]
@@ -103,6 +119,10 @@ pause = "/nervros_executor/pause_mission"
 state = "/nervros_executor/robot_state"
 max_replans = 2
 preview = "/nervros_executor/preview_mission"
+# Skills the agent teaches the robot from the executor's learnable leaves (pointing, gestures,
+# looking around); the first mission with one, approved as usual, keeps it.
+define_skill = "/nervros_executor/define_skill"
+forget_skill = "/nervros_executor/forget_skill"
 # The executor stops a mission when these stop for heartbeat_timeout_s: NervROS gone or wedged.
 heartbeat = "/nervros_executor/heartbeat"
 heartbeat_timeout_s = 2.0
@@ -143,6 +163,7 @@ name = "find_objects"
 kind = "service"
 ros_name = "/canopy/find_objects"
 type = "canopy_msgs/srv/FindObjects"
+description = """Finds objects in the world model, best first: by id, label, name or words in `query`, in a `room` (an id or a name) when given. A query that names no thing in particular (empty, or "objects") lists every object there, and the reply's `message` counts them all, though it lists `max_results` at most: that is how many objects a room has."""
 risk = "observe"
 hide_fields = ["query_embedding"]
 defaults = { max_results = 5 }
@@ -162,6 +183,18 @@ param_set = ["*:*"]
 # g1_navigation's keepout filters read with keepout:=true, so its own paths stay out of them.
 [geofence]
 mask = "/keepout_filter_mask"
+
+# The incident investigator: this robot's known traps, beside the ones NervROS carries, and what
+# opens an incident when it goes. A camera is watched by its camera_info, which the relay sends
+# with every frame, so the watch costs none of an image's bandwidth.
+[incidents]
+playbooks = ["playbooks"]
+watch = [
+    { name = "chest camera", topic = "/chest_camera/color/camera_info", type = "sensor_msgs/msg/CameraInfo", min_hz = 1.0 },
+    { name = "head camera", topic = "/camera/color/camera_info", type = "sensor_msgs/msg/CameraInfo", min_hz = 1.0 },
+    { name = "lidar", topic = "/scan", type = "sensor_msgs/msg/LaserScan", min_hz = 2.0 },
+]
+nodes = ["detector_chest", "detector_head", "nervros_executor", "g1_manipulation_server", "controller_server"]
 
 [models]
 file = "models.toml"

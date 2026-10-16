@@ -17,6 +17,8 @@
 #include <thread>
 #include <utility>
 
+#include "g1_orchestration/skills/navigate_to_pose.hpp"
+
 namespace g1_orchestration
 {
 namespace
@@ -208,7 +210,11 @@ MissionPreview::plan(const Station& from, const Station& to, std::string& why)
         }
         else if (wrapped.result && wrapped.result->error_code != Action::Result::NONE)
         {
-            why = std::format("no path found (Nav2 error {})", wrapped.result->error_code);
+            why = describeNavigationCode(wrapped.result->error_code);
+            if (why.empty())
+            {
+                why = std::format("no path found (Nav2 error {})", wrapped.result->error_code);
+            }
         }
         else
         {

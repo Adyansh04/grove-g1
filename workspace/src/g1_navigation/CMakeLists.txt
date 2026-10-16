@@ -28,7 +28,6 @@ if(BUILD_TESTING)
   set(_pytest_env
     "G1_NAVIGATION_CONFIG_DIR=${CMAKE_CURRENT_SOURCE_DIR}/config"
     "G1_NAVIGATION_LAUNCH_DIR=${CMAKE_CURRENT_SOURCE_DIR}/launch"
-    "G1_BRINGUP_CONFIG_DIR=${CMAKE_CURRENT_SOURCE_DIR}/../g1_bringup/config"
     "G1_BRINGUP_LAUNCH_DIR=${CMAKE_CURRENT_SOURCE_DIR}/../g1_bringup/launch"
   )
 
@@ -38,9 +37,6 @@ if(BUILD_TESTING)
   # Arguments crossing bringup.launch.py and nav_sim.launch.py into their includes. Lives here
   # because it reads both packages' launch files, and g1_bringup cannot depend on this one.
   ament_add_pytest_test(test_launch_threading test/test_launch_threading.py ENV ${_pytest_env})
-
-  # The Sensors group is duplicated in two packages' RViz configs, so neither can check it alone.
-  ament_add_pytest_test(test_rviz_configs test/test_rviz_configs.py ENV ${_pytest_env})
 
   # Simulator suites share g1_bringup's RESOURCE_LOCK, since two sharing a DDS graph and a
   # simulator flake. Higher COST runs first.

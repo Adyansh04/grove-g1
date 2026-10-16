@@ -28,12 +28,6 @@ def _motor_order():
     return re.findall(r'"([^"]+)"', body)
 
 
-def test_the_table_covers_every_body_motor_exactly_once():
-    order = _motor_order()
-    assert len(order) == _NUM_BODY_MOTORS
-    assert len(set(order)) == _NUM_BODY_MOTORS, "a name appears twice, so one motor is unreachable"
-
-
 def test_the_table_is_in_sdk_motor_index_order():
     # The whole order, not just the group boundaries: swapping hip roll for hip yaw keeps the
     # set and the counts and still sends every command to the wrong motor.

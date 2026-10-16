@@ -67,6 +67,7 @@ nervros_executor:
       - /g1_manipulation_server/pick:g1_msgs/action/Pick
       - /g1_manipulation_server/place:g1_msgs/action/Place
       - /g1_manipulation_server/set_arm_posture:g1_msgs/action/SetArmPosture
+      - /g1_manipulation_server/move_hand:g1_msgs/action/MoveHand
       - /g1_vla_server/grasp:g1_msgs/action/Grasp
     # The arm's trajectory controller. StopAll cancels its goal, which makes it hold the arm where
     # it is. The hand controllers are deliberately absent: cancelling theirs lets go of the grip.
@@ -111,3 +112,28 @@ nervros_executor:
     max_heartbeat_timeout_s: 10.0
     # How long the robot must stay unable to walk before a walking mission is stopped for it.
     health_trip_s: 0.5
+    # Learned skills: what an agent may build a skill from (DefineSkill), as Leaf:holds:inputs.
+    # These leaves' servers check every goal (Nav2 with its costmaps and the keepout filter, MoveIt
+    # against the scene, the executor's bounded walk and turn), so a planner's arrangement of them
+    # cannot do what the leaves refuse. holds is base, arms or empty; inputs are the only ports a
+    # taught skill may set, so which server, frame or timeout each leaf uses stays as it is here.
+    # A taught skill's values are literals or its own arguments, so no leaf here hands one on.
+    # a|b: exactly one of the two is set. port(world_id): the only kind of input a world_id
+    # argument may feed, so an object's id never goes in as a frame.
+    # Quoted: an entry that ends in a colon would read as a map.
+    learnable_leaves:
+      - "NavigateToPose:base:goal"
+      - "TurnTo:base:yaw"
+      - "DriveStraight:base:distance,direction"
+      - "TurnBy:base:degrees"
+      - "LookFor::objects,also"
+      - "StopLooking::"
+      - "SetArmPosture:arms:group,named_target"
+      - "MoveHand:arms:arm,target(world_id)|frame,offset_x,offset_y,offset_z,mode,speed"
+      - "Wait::seconds"
+    # The most a learned skill may take, s, and its size in nodes.
+    max_learned_duration_s: 300.0
+    max_learned_nodes: 40
+    max_learned_skills: 32
+    # Where kept skills live, a JSON file each; empty keeps them in memory only.
+    learned_skills_dir: ""

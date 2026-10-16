@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstddef>
+#include <format>
 #include <future>
 #include <moveit_msgs/msg/robot_state.hpp>
 #include <thread>
@@ -43,7 +44,7 @@ G1VlaServer::awaitChunk(ChunkFuture& pending, std::string& why) const
 {
     if (!settled(pending, engine_timeout_s_))
     {
-        why = "the policy engine did not answer within " + std::to_string(engine_timeout_s_) + " s";
+        why = std::format("the policy engine did not answer within {:.1f} s", engine_timeout_s_);
         return std::nullopt;
     }
     GetActionChunk::Response::SharedPtr response = pending.get();

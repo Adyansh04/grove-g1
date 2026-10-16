@@ -1,0 +1,9 @@
+id = "executor-down"
+title = "The mission executor is not running"
+explains = ["node_gone", "mission_failed", "asked"]
+verdict = "The mission executor is gone, so no mission can be checked or run."
+fix = "The operator starts it again (ros2 launch g1_orchestration nervros_executor.launch.py, as nervros.sh does); the agent cannot."
+
+[[check]]
+name = "the executor"
+node_missing = "nervros_executor"

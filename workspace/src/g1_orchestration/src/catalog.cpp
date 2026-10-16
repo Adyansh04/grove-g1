@@ -299,10 +299,33 @@ nlohmann::ordered_json toJson(const Skill& skill)
         json["max_duration_s"] = skill.max_duration_s;
     }
     json["template"] = skill.macro;
+    if (!skill.learned.empty())
+    {
+        json["learned"]    = skill.learned;
+        json["taught_for"] = skill.taught_for;
+    }
     return json;
 }
 
 }  // namespace
+
+std::optional<std::string> argProblem(const SkillArg& arg)
+{
+    if (!knownTypes().contains(arg.type))
+    {
+        return "unknown type '" + arg.type + "'; it is string or world_id";
+    }
+    if (!knownFormats().contains(arg.format) || arg.format == "station")
+    {
+        return "unknown format '" + arg.format + "'; it is empty, id, phrase or number";
+    }
+    if (arg.format == "number" &&
+        (!std::isfinite(arg.min) || !std::isfinite(arg.max) || arg.min >= arg.max))
+    {
+        return std::string("a number needs min less than max");
+    }
+    return std::nullopt;
+}
 
 bool Skill::needsArms() const
 {
@@ -398,9 +421,30 @@ void Catalog::restrict(std::string_view choice)
     fail("arg_choices", std::format("no argument {}.{}", skill_name, arg_name));
 }
 
-void Catalog::bindPalette(std::string_view palette_xml)
+Catalog Catalog::withSkills(const std::vector<Skill>& extra) const
 {
-    version_ = sha256Hex(text_sha256_ + "\n" + std::string(palette_xml)).substr(0, kVersionDigits);
+    Catalog     out = *this;
+    std::string covered;
+    for (const Skill& skill : extra)
+    {
+        if (std::ranges::any_of(out.skills_, [&skill](const Skill& s) {
+                return s.name == skill.name || s.macro == skill.macro;
+            }))
+        {
+            fail("skill " + skill.name, "its name or macro is taken");
+        }
+        covered += toJson(skill).dump();
+        out.skills_.push_back(skill);
+    }
+    out.text_sha256_ = sha256Hex(text_sha256_ + "\n" + covered);
+    return out;
+}
+
+void Catalog::bindPalette(std::string_view palette_xml, std::string_view bodies)
+{
+    version_ =
+        sha256Hex(text_sha256_ + "\n" + std::string(palette_xml) + "\n" + std::string(bodies))
+            .substr(0, kVersionDigits);
 }
 
 const Skill* Catalog::findByMacro(std::string_view macro) const

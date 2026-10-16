@@ -61,6 +61,7 @@ add_library(g1_manipulation_server_node
   src/manipulation_server/grasping.cpp
   src/manipulation_server/hand.cpp
   src/manipulation_server/motion.cpp
+  src/manipulation_server/move_hand.cpp
   src/manipulation_server/objects.cpp
   src/manipulation_server/scene.cpp
 )
@@ -73,6 +74,7 @@ target_link_libraries(g1_manipulation_server_node PUBLIC
   rclcpp_action::rclcpp_action
   tf2::tf2
   tf2_geometry_msgs::tf2_geometry_msgs
+  moveit_core::moveit_planning_scene
   moveit_ros_planning_interface::moveit_move_group_interface
   moveit_ros_planning_interface::moveit_planning_scene_interface
   ${g1_msgs_TARGETS}

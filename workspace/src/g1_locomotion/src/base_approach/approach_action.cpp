@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstddef>
+#include <format>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <thread>
 
@@ -71,10 +72,12 @@ void BaseApproachNode::runApproach(const std::shared_ptr<GoalHandleApproach>& ha
         goal->use_current_heading ? tf2::getYaw(start_pose->pose.orientation) : goal->working_yaw;
 
     // Feedback at about 2 Hz, not every tick.
-    const int  feedback_every = std::max(1, static_cast<int>(cmd_rate_hz_ / 2.0));
-    int        tick           = 0;
-    auto       last_measured  = std::chrono::steady_clock::now();
-    const auto blind_for      = [&last_measured] {
+    const int        feedback_every = std::max(1, static_cast<int>(cmd_rate_hz_ / 2.0));
+    ApproachProgress progress(stall_progress_m_, stall_s_);
+    const auto       began         = std::chrono::steady_clock::now();
+    int              tick          = 0;
+    auto             last_measured = std::chrono::steady_clock::now();
+    const auto       blind_for     = [&last_measured] {
         return std::chrono::duration<double>(std::chrono::steady_clock::now() - last_measured)
             .count();
     };
@@ -91,7 +94,7 @@ void BaseApproachNode::runApproach(const std::shared_ptr<GoalHandleApproach>& ha
         if (std::chrono::steady_clock::now() > deadline)
         {
             publish(0.0, 0.0, 0.0);
-            result->message = "closing: gave up after " + std::to_string(timeout_s) + " s";
+            result->message = std::format("closing: gave up after {:.0f} s", timeout_s);
             handle->abort(result);
             return;
         }
@@ -105,8 +108,10 @@ void BaseApproachNode::runApproach(const std::shared_ptr<GoalHandleApproach>& ha
             publish(0.0, 0.0, 0.0);
             if (blind_for() > lookup_grace_s_)
             {
-                result->message = "locating: no fresh pose for '" + goal->object_id +
-                                  "' on /objects after " + std::to_string(lookup_grace_s_) + " s";
+                result->message = std::format(
+                    "locating: no fresh pose for '{}' on /objects after {:.0f} s",
+                    goal->object_id,
+                    lookup_grace_s_);
                 handle->abort(result);
                 return;
             }
@@ -128,9 +133,10 @@ void BaseApproachNode::runApproach(const std::shared_ptr<GoalHandleApproach>& ha
         if (command.state == ApproachState::kOvershot)
         {
             publish(0.0, 0.0, 0.0);
-            result->message = "closing: the object is " + std::to_string(object->point.x) +
-                              " m ahead, under the robot's own footprint; re-stage "
-                              "through Nav2";
+            result->message = std::format(
+                "closing: the object is {:.2f} m ahead, under the robot's own footprint; "
+                "re-stage through Nav2",
+                object->point.x);
             handle->abort(result);
             return;
         }
@@ -177,6 +183,8 @@ void BaseApproachNode::runApproach(const std::shared_ptr<GoalHandleApproach>& ha
                     nudge->seconds);
                 pulse(0.0, nudge->vy_mps, nudge->seconds);
             }
+            // The settle took its time: closing again starts its own watch.
+            progress = ApproachProgress(stall_progress_m_, stall_s_);
             if (!settled)
             {
                 continue;
@@ -194,8 +202,8 @@ void BaseApproachNode::runApproach(const std::shared_ptr<GoalHandleApproach>& ha
             }
 
             result->success = true;
-            result->message = "the object is at (" + std::to_string(settled->point.x) + ", " +
-                              std::to_string(settled->point.y) + ")";
+            result->message =
+                std::format("the object is at ({:.3f}, {:.3f})", settled->point.x, settled->point.y);
             RCLCPP_INFO(get_logger(), "%s", result->message.c_str());
             handle->succeed(result);
             return;
@@ -217,6 +225,20 @@ void BaseApproachNode::runApproach(const std::shared_ptr<GoalHandleApproach>& ha
                 command.yaw_rate_rps);
         }
         ++tick;
+
+        // Blocked short of the object, as by a chair, it would walk on the spot until its deadline.
+        const double now_s =
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - began).count();
+        if (progress.stalled(command.forward_error_m, command.lateral_error_m, now_s))
+        {
+            publish(0.0, 0.0, 0.0);
+            result->message = std::format(
+                "closing: no closer for {:.0f} s, {:.2f} m short: something may block the way",
+                stall_s_,
+                progress.closestM());
+            handle->abort(result);
+            return;
+        }
 
         publish(command.vx_mps, command.vy_mps, command.yaw_rate_rps);
         std::this_thread::sleep_for(tickPeriod());

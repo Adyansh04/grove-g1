@@ -1,0 +1,18 @@
+# Move one hand to a point, planned by MoveIt against the planning scene from where the arm is
+# now: for pointing at something and for gestures a learned skill makes. The arm must be acquired.
+# "left" or "right".
+string arm
+# Where, in any frame TF knows; the server transforms it into its planning frame.
+geometry_msgs/PointStamped target
+# Added to the target in the planning frame's axes, which are the robot's (x forward, y left,
+# z up), m.
+geometry_msgs/Vector3 offset
+# "reach" takes the hand to the target plus the offset. "point" puts it on the line from the
+# shoulder to that point, the server's pointing reach from the shoulder, so the arm points at it.
+string mode
+# A fraction of the server's speed for these moves, above 0 and at most 1; 0 takes the whole.
+float64 speed
+---
+bool success
+string message
+---

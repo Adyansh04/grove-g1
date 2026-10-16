@@ -4,8 +4,8 @@ Pick and place are ROS actions served by `g1_manipulation`, and a BehaviorTree.C
 them with navigation. There are two versions: one where the object is already at arm's length, and
 the full mission that drives across the facility to reach it.
 
-`./scripts/demos/pick-and-place.sh <in-place|mission|sort>` opens a section's commands at once, in
-split panes of tilix (a window each in another terminal), after tearing down any stack left running.
+`./scripts/demos/pick-and-place.sh <in-place|mission|sort>` tears down any stack left running, then
+opens a section's commands at once, in split panes of tilix (a window each in another terminal).
 `stop` ends it, and `--print` lists the commands instead. Arguments after the section, such as
 `rviz:=false`, go to the bringup launch.
 
@@ -41,8 +41,7 @@ itself:
 ros2 launch g1_orchestration mission.launch.py tree:=pick_and_place_in_place.xml
 ```
 
-The robot picks the block up, holds it at the `carry` posture, sets it down beside where it
-started, and tucks the arm.
+The robot picks the block up, sets it down beside where it started, and tucks the arm.
 
 ## How the hand holds an object
 
@@ -72,11 +71,11 @@ contact ends. The grasp that engages it is still a contact grasp. That world als
 `min_grip_height_m` to 0.035 m, because its ball sits by the desk edge, where the thumb hangs past
 the desk.
 
-The server's parameters, `min_grip_height_m` included, can be changed with
-`ros2 param set /g1_manipulation_server <name> <value>` between goals; a set while a goal runs is
-refused. `velocity_scaling`, `grasp_rpy`, `grasp_service`, `publish_markers`, `grasp_source` and
-`graspgen_to_grasp_frame_xyz_rpy` are fixed at startup. `g1_manipulation/README.md` describes
-them.
+The server's parameters, `min_grip_height_m` included, can be changed between goals with
+`ros2 param set /g1_manipulation_server <name> <value>`; a set while a goal runs is refused. Six are
+fixed at startup: `velocity_scaling`, `grasp_rpy`, `grasp_service`, `publish_markers`,
+`grasp_source` and `graspgen_to_grasp_frame_xyz_rpy`. `g1_manipulation/README.md` describes them
+all.
 
 ## The full mission
 
@@ -94,13 +93,13 @@ ros2 launch g1_bringup bringup.launch.py \
 ros2 launch g1_orchestration mission.launch.py tree:=pick_and_place.xml
 ```
 
-`perception:=true` with the default `detector:=mock` needs no GPU. `detector:=vision` uses the real
-models; see [Open-vocabulary perception](open-vocabulary-grasping.md). The tree asks the detector
-for objects only at the two benches and idles it in between, so `/objects` is quiet during the
-walks.
-
-Nav2 parks anywhere within 0.5 m of a goal, a wider spread than the band the arm reaches from, so
-a base approach skill closes the rest against the measured object rather than against the map.
+- `perception:=true` with the default `detector:=mock` needs no GPU. `detector:=vision` uses the
+  real models; see [Open-vocabulary perception](open-vocabulary-grasping.md).
+- The tree asks the detector for objects only at the two benches and idles it in between, so
+  `/objects` is quiet during the walks.
+- Nav2 parks anywhere within 0.5 m of a goal, a wider spread than the band the arm reaches from,
+  so a base approach skill closes the rest against the measured object rather than against the
+  map.
 
 ## Watching the tree
 
@@ -119,7 +118,7 @@ default of 10 Hz.
 
 | Tree | World | What it does |
 |---|---|---|
-| `pick_and_place_in_place.xml` | `manipulation` | Picks the block within reach, holds it at `carry`, sets it down beside where it was. |
+| `pick_and_place_in_place.xml` | `manipulation` | Picks the block within reach and sets it down beside where it was. |
 | `pick_and_place.xml` | `navigation` | Navigate, approach, pick, carry, place in the box on the storage bench. |
 | `sort_into_box.xml` | `tabletop` | Picks the red block from beside a blue one of the same shape and drops it in the box. |
 | `vla_grasp_in_place.xml` | `manipulation` | The learned grasp, covered in [its own guide](learned-grasping.md). |
@@ -154,10 +153,13 @@ policy to settle, before the arms move; `activate_arm_delay_s` only sets when it
 `mission.launch.py` runs the trees above with `g1_bt_executor`. A NervROS agent sends
 `nervros_executor` missions instead, built from the skills in `g1_orchestration/config/catalog.yaml`
 (`GoToTarget`, `FindInView`, `PickObject`, `PlaceInto` and the rest; see [NervROS](nervros.md)).
-That executor can pause and resume a mission: the robot stops where it is, the arm holds, a hand
-keeps its grip, a pick or a place finishes first, and a walk sets out again on resume. A step can
-take what an earlier one found: `FindInView` hands on the detector's name for an object, which
-`PickObject` takes. Unlike `g1_bt_executor`, it keeps the arms while a hand holds something.
+That executor:
+
+- can pause and resume a mission: the robot stops where it is, the arm holds, a hand keeps its
+  grip, a pick or a place finishes first, and a walk sets out again on resume;
+- lets a step take what an earlier one found: `FindInView` hands on the detector's name for an
+  object, which `PickObject` takes;
+- keeps the arms while a hand holds something, unlike `g1_bt_executor`.
 
 ## When a run misbehaves
 

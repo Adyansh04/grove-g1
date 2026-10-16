@@ -129,6 +129,8 @@ BaseApproachNode::BaseApproachNode()
 
     lookup_grace_s_    = declare_parameter<double>("lookup_grace_s", 3.0);
     default_timeout_s_ = declare_parameter<double>("default_timeout_s", 900.0);
+    stall_s_           = declare_parameter<double>("stall_s", 20.0);
+    stall_progress_m_  = declare_parameter<double>("stall_progress_m", 0.05);
 
     if (!limitsAreUsable(limits_))
     {

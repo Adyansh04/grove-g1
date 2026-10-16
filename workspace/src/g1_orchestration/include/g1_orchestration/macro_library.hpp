@@ -53,6 +53,21 @@ public:
      */
     static MacroLibrary load(const std::filesystem::path& dir);
 
+    /**
+     * @brief The macros of one file's text, as load() reads each file.
+     *
+     * @param label What the text is called in an error, such as its file's name.
+     * @throws std::runtime_error For text load() would refuse.
+     */
+    static std::vector<Macro> parse(std::string_view text, std::string_view label);
+
+    /**
+     * @brief This library with @p extra macros after its own.
+     *
+     * @throws std::runtime_error When an ID of @p extra is taken.
+     */
+    [[nodiscard]] MacroLibrary withMacros(const std::vector<Macro>& extra) const;
+
     /// The macro with this ID, or null.
     [[nodiscard]] const Macro* find(std::string_view id) const;
 

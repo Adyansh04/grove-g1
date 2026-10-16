@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstddef>
+#include <format>
 #include <functional>
 #include <g1_manipulation/hand_contact.hpp>
 #include <moveit/robot_model/joint_model_group.hpp>
@@ -350,7 +351,7 @@ G1VlaServer::Outcome G1VlaServer::runGrasp(
         }
         if (now() > deadline)
         {
-            outcome.message = "timed out after " + std::to_string(timeout_s_) + " s";
+            outcome.message = std::format("timed out after {:.0f} s", timeout_s_);
             return outcome;
         }
 

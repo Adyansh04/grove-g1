@@ -71,11 +71,11 @@ std::string readText(const std::filesystem::path& file)
     return text.str();
 }
 
-void readFile(const std::filesystem::path& file, std::vector<Macro>& into)
+/// The macros of @p text into @p into; @p file names it in an error.
+void readMacros(std::string_view text, const std::filesystem::path& file, std::vector<Macro>& into)
 {
-    const std::string     text = readText(file);
     tinyxml2::XMLDocument doc;
-    if (doc.Parse(text.c_str(), text.size()) != tinyxml2::XML_SUCCESS)
+    if (doc.Parse(text.data(), text.size()) != tinyxml2::XML_SUCCESS)
     {
         fail(file, doc.ErrorStr());
     }
@@ -95,7 +95,7 @@ void readFile(const std::filesystem::path& file, std::vector<Macro>& into)
         {
             Macro macro;
             macro.id   = idOf(*child, file);
-            macro.xml  = text;
+            macro.xml  = std::string(text);
             macro.tags = tagsUnder(*child);
             macro.tags.erase(macro.tags.begin());
             if (std::ranges::find(macro.tags, "SubTree") != macro.tags.end())
@@ -166,7 +166,7 @@ MacroLibrary MacroLibrary::load(const std::filesystem::path& dir)
     MacroLibrary library;
     for (const std::filesystem::path& file : xmlFilesIn(dir))
     {
-        readFile(file, library.macros_);
+        readMacros(readText(file), file, library.macros_);
     }
     for (std::size_t i = 0; i < library.macros_.size(); ++i)
     {
@@ -180,6 +180,27 @@ MacroLibrary MacroLibrary::load(const std::filesystem::path& dir)
         }
     }
     return library;
+}
+
+std::vector<Macro> MacroLibrary::parse(std::string_view text, std::string_view label)
+{
+    std::vector<Macro> macros;
+    readMacros(text, std::filesystem::path(label), macros);
+    return macros;
+}
+
+MacroLibrary MacroLibrary::withMacros(const std::vector<Macro>& extra) const
+{
+    MacroLibrary out = *this;
+    for (const Macro& macro : extra)
+    {
+        if (out.find(macro.id) != nullptr)
+        {
+            throw std::runtime_error("macro library: " + macro.id + " defined twice");
+        }
+        out.macros_.push_back(macro);
+    }
+    return out;
 }
 
 const Macro* MacroLibrary::find(std::string_view id) const

@@ -24,6 +24,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 VARIANT=""
 # Appended to a demo's main launch; a repeated name:=value takes the later value.
 LAUNCH_ARGS=""
+# Names given as name:= with no value: back to the launch file's own default, which a demo
+# drops its own value for. ros2 launch refuses an empty value.
+UNSET_ARGS=" "
 PRINT=false
 
 PANE_WHERE=()
@@ -45,6 +48,7 @@ parse_args() {
         case "$arg" in
             --print) PRINT=true ;;
             -h | --help | help) usage 0 ;;
+            *:=) UNSET_ARGS+="${arg%:=} " ;;
             *:=*) LAUNCH_ARGS+=" $(printf '%q' "$arg")" ;;
             *)
                 [[ -z "$VARIANT" ]] || usage

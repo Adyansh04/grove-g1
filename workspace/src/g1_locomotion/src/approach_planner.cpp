@@ -120,4 +120,16 @@ planNudge(double object_x_m, double object_y_m, const ApproachLimits& limits, co
     return Nudge{ std::copysign(gait.min_speed_y_mps, lateral), gait.nudge_y_s };
 }
 
+bool ApproachProgress::stalled(double forward_error_m, double lateral_error_m, double now_s)
+{
+    const double remaining = std::hypot(forward_error_m, lateral_error_m);
+    if (best_m_ < 0.0 || remaining < best_m_ - progress_m_)
+    {
+        best_m_  = remaining;
+        since_s_ = now_s;
+        return false;
+    }
+    return now_s - since_s_ > stall_s_;
+}
+
 }  // namespace g1_locomotion

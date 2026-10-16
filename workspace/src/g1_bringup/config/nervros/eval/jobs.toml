@@ -1,0 +1,90 @@
+# Robot programs, searches and taught skills on the G1 in the apartment, each asked more than one
+# way. Each case runs in a fresh session, armed, with every approval granted; the robot's place,
+# what it holds and the skills it was taught carry from case to case, so the order matters.
+#
+# Needs the apartment demo's stack with the arm (`nervros.sh app`'s bringup, canopy, executor) and
+# the local model; then, from workspace/src/nervros with the demo's environment:
+#   cargo run -p nervros-cli -- --profile ../g1_bringup/config/nervros/nervros.toml \
+#     eval ../g1_bringup/config/nervros/eval/jobs.toml
+
+truth = { topic = "/g1_sensor_relay/base_state" }
+
+# Programs that read the world model: no walking.
+
+[[case]]
+id = "count-chairs"
+say = ["Count the chairs in every room."]
+expect = { tools = ["program"], mission = "none", reply_has = ["chair"] }
+
+[[case]]
+id = "mugs-where"
+say = ["How many mugs does the robot know of, and which rooms are they in?"]
+expect = { mission = "none", reply_has = ["mug"] }
+
+[[case]]
+id = "most-objects"
+say = ["Which room has the most objects in it?"]
+expect = { mission = "none" }
+
+# Walking and looking in several rooms: one approval for all of it, and an empty look in the first
+# room must not end the tour, as a program or a mission with optional looks does.
+
+[[case]]
+id = "walk-and-look"
+say = ["Walk to the office and then the living room, and look for a mug in each."]
+max_s = 600
+expect = { approvals_max = 1, reply_has_all = ["office", "living room"] }
+
+[[case]]
+id = "check-rooms-for-mugs"
+say = ["Check the bedroom and the study for mugs with the camera."]
+max_s = 600
+expect = { approvals_max = 1, reply_has_all = ["bedroom", "study"] }
+
+# Searching: the red mug and the tray are in the world model; keys are not.
+
+[[case]]
+id = "find-red-mug"
+say = ["Find the red mug."]
+max_s = 600
+expect = { tools = ["search"], approvals_max = 1, mission = "success" }
+
+[[case]]
+id = "where-keys"
+say = ["Where could my keys be? Do not move, just tell me where you would look."]
+expect = { tools = ["search"], mission = "none" }
+
+[[case]]
+id = "look-for-tray"
+say = ["Look for the tray."]
+max_s = 600
+expect = { tools = ["search"], approvals_max = 1, mission = "success" }
+
+# Taught skills: no skill points or waves, so the agent teaches one, tries it, and keeps it.
+
+[[case]]
+id = "teach-point"
+say = ["Point at the red mug with your right hand."]
+max_s = 400
+expect = { tools = ["teach_skill"], mission = "success" }
+
+[[case]]
+id = "use-point"
+# PointAt was kept: the agent uses it rather than teaching it again.
+say = ["Now point at the tray with your left hand."]
+max_s = 400
+expect = { not_tools = ["teach_skill"], mission = "success" }
+
+[[case]]
+id = "teach-wave"
+say = ["Wave at me."]
+max_s = 400
+expect = { tools = ["teach_skill"], mission = "success" }
+
+[[case]]
+id = "look-around"
+# Turns and looks the catalog has: teaching is not needed, and a look that finds nothing must
+# not end it.
+say = ["Turn around once, slowly, stopping to look every quarter turn."]
+max_s = 400
+expect = { skills = ["TurnInPlace"], mission = "success" }

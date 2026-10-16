@@ -15,6 +15,7 @@ find_package(trajectory_msgs REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "action/ApproachObject.action"
   "action/Grasp.action"
+  "action/MoveHand.action"
   "action/Pick.action"
   "action/Place.action"
   "action/Retreat.action"

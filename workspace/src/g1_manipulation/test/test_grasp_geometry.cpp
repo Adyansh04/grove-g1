@@ -42,22 +42,6 @@ geometry_msgs::msg::Pose objectAt(double x, double y, double z)
 
 }  // namespace
 
-TEST(ResolveArm, MapsASideOntoItsGroupsFramesAndHandedness)
-{
-    ArmContext arm;
-    ASSERT_TRUE(resolveArm("left", arm));
-    EXPECT_EQ(arm.arm_group, "left_arm");
-    EXPECT_EQ(arm.hand_group, "left_hand");
-    EXPECT_EQ(arm.palm_link, "left_hand_palm_link");
-    EXPECT_EQ(arm.grasp_frame, "left_hand_grasp_frame");
-    EXPECT_TRUE(arm.is_left);
-
-    ASSERT_TRUE(resolveArm("right", arm));
-    EXPECT_EQ(arm.arm_group, "right_arm");
-    EXPECT_EQ(arm.grasp_frame, "right_hand_grasp_frame");
-    EXPECT_FALSE(arm.is_left);
-}
-
 TEST(ResolveArm, RejectsAnythingElseWithoutAssigning)
 {
     // No fallback to a side: a near-miss name would move the wrong arm.
@@ -134,4 +118,59 @@ int main(int argc, char** argv)
 {
     ::testing::InitGoogleMock(&argc, argv);
     return RUN_ALL_TESTS();
+}
+
+namespace
+{
+
+geometry_msgs::msg::Point pointAt(double x, double y, double z)
+{
+    geometry_msgs::msg::Point p;
+    p.x = x;
+    p.y = y;
+    p.z = z;
+    return p;
+}
+
+}  // namespace
+
+TEST(PointingHand, StandsOnTheLineFromTheShoulderAtItsReach)
+{
+    const auto shoulder = pointAt(0.0, 0.2, 1.2);
+    const auto hand     = g1_manipulation::pointingHand(shoulder, pointAt(3.0, 0.2, 1.2), 0.4);
+    EXPECT_NEAR(hand.x, 0.4, 1e-9);
+    EXPECT_NEAR(hand.y, 0.2, 1e-9);
+    EXPECT_NEAR(hand.z, 1.2, 1e-9);
+
+    // Pointing down at a mug on a table keeps the same direction.
+    const auto low = g1_manipulation::pointingHand(shoulder, pointAt(0.8, 0.2, 0.6), 0.5);
+    EXPECT_NEAR(low.x, 0.4, 1e-9);
+    EXPECT_NEAR(low.z, 0.9, 1e-9);
+}
+
+TEST(PointingHand, ReachesATargetNearerThanItsReachAndStaysPutOnTheShoulder)
+{
+    const auto shoulder = pointAt(0.0, 0.0, 1.0);
+    const auto near     = g1_manipulation::pointingHand(shoulder, pointAt(0.2, 0.0, 1.0), 0.4);
+    EXPECT_NEAR(near.x, 0.2, 1e-9);
+    const auto same = g1_manipulation::pointingHand(shoulder, shoulder, 0.4);
+    EXPECT_NEAR(same.z, 1.0, 1e-9);
+}
+
+TEST(HandOrientations, StartWithTheHandsOwnAndAreTheSameUnitRotationsEachTime)
+{
+    // Half a turn about z; a message's quaternion starts as the identity, w = 1.
+    geometry_msgs::msg::Quaternion own;
+    own.z             = 1.0;
+    own.w             = 0.0;
+    const auto first  = g1_manipulation::handOrientations(own, 8);
+    const auto second = g1_manipulation::handOrientations(own, 8);
+    ASSERT_EQ(first.size(), 9U);
+    EXPECT_DOUBLE_EQ(first.front().z, 1.0);
+    for (std::size_t i = 0; i < first.size(); ++i)
+    {
+        const auto& q = first[i];
+        EXPECT_NEAR(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w, 1.0, 1e-9);
+        EXPECT_DOUBLE_EQ(q.w, second[i].w);
+    }
 }

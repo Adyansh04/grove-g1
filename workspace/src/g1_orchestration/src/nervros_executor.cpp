@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <ament_index_cpp/get_package_share_directory.hpp>
 #include <array>
+#include <behaviortree_cpp/contrib/json.hpp>
 #include <cmath>
 #include <filesystem>
 #include <format>
@@ -47,6 +48,26 @@ constexpr const char* kPackage = "g1_orchestration";
 /// What the macros read from held_left and held_right for a hand that may hold something they
 /// cannot name. An id from the detector is a slug, so it can never be this.
 constexpr const char* kUnknownHeld = "?";
+
+/// What the steps handed on before the mission ended, by key, as a JSON object of text.
+std::string outputsJson(const BT::Blackboard& blackboard, const std::set<std::string>& keys)
+{
+    nlohmann::json out = nlohmann::json::object();
+    for (const std::string& key : keys)
+    {
+        // An entry a step never wrote, or not as text, hands nothing on.
+        const auto any = blackboard.getAnyLocked(key);
+        if (!any || any->empty())
+        {
+            continue;
+        }
+        if (const auto value = any->tryCast<std::string>())
+        {
+            out[key] = *value;
+        }
+    }
+    return out.dump();
+}
 
 std::filesystem::path resolve(const std::string& configured)
 {
@@ -219,14 +240,39 @@ MissionExecutor::MissionExecutor(
 
     // The palette a planner or Groot2 may import: the leaves, then the skills built from them. The
     // catalog's version covers it, so a leaf whose ports change is a different catalog.
+    std::string leaf_palette;
+    NameSet     node_ids;
     {
         BT::BehaviorTreeFactory scratch;
         registerSkillNodes(scratch, RosContext{});
-        palette_xml_ = library.withModelsIn(nodeModelXml(scratch));
+        leaf_palette = nodeModelXml(scratch);
+        for (const auto& [id, _] : scratch.manifests())
+        {
+            node_ids.insert(id);
+        }
     }
-    catalog.bindPalette(palette_xml_);
-    validator_ = std::make_unique<MissionValidator>(std::move(catalog), std::move(library), limits);
-    catalog_json_ = validator_->catalog().json();
+    Learnable learnable = Learnable::parse(
+        declare_parameter<std::vector<std::string>>("learnable_leaves", std::vector<std::string>{}),
+        leaf_palette);
+    learnable.max_duration_s = positive(
+        declare_parameter<double>("max_learned_duration_s", learnable.max_duration_s),
+        "max_learned_duration_s");
+    learnable.max_nodes =
+        static_cast<int>(declare_parameter<int>("max_learned_nodes", learnable.max_nodes));
+    const auto max_learned = static_cast<std::size_t>(
+        std::max<std::int64_t>(0, declare_parameter<int>("max_learned_skills", 32)));
+    const std::string learned_dir = declare_parameter<std::string>("learned_skills_dir", "");
+    repertoire_                   = std::make_unique<Repertoire>(
+        std::move(catalog),
+        std::move(library),
+        std::move(leaf_palette),
+        std::move(node_ids),
+        limits,
+        LearnedSkills(learned_dir, std::move(learnable), max_learned));
+    for (const std::string& skipped : repertoire_->load())
+    {
+        RCLCPP_WARN(get_logger(), "a learned skill was left out: %s", skipped.c_str());
+    }
 
     if (!authority_)
     {
@@ -412,13 +458,31 @@ MissionExecutor::MissionExecutor(
             const PauseSrv::Response::SharedPtr& response) { onPause(request, response); },
         rclcpp::ServicesQoS(),
         stop_group_);
+    define_skill_service_ = create_service<nervros_interfaces::srv::DefineSkill>(
+        "~/define_skill",
+        [this](
+            const nervros_interfaces::srv::DefineSkill::Request::SharedPtr&  request,
+            const nervros_interfaces::srv::DefineSkill::Response::SharedPtr& response) {
+            onDefineSkill(request, response);
+        },
+        rclcpp::ServicesQoS(),
+        query_group_);
+    forget_skill_service_ = create_service<nervros_interfaces::srv::ForgetSkill>(
+        "~/forget_skill",
+        [this](
+            const nervros_interfaces::srv::ForgetSkill::Request::SharedPtr&  request,
+            const nervros_interfaces::srv::ForgetSkill::Response::SharedPtr& response) {
+            onForgetSkill(request, response);
+        },
+        rclcpp::ServicesQoS(),
+        query_group_);
 
     pushState();
     RCLCPP_INFO(
         get_logger(),
         "ready: %zu skills (catalog %s), stop covers %zu action servers",
-        validator_->catalog().skills().size(),
-        validator_->catalog().version().c_str(),
+        repertoire_->current()->validator.catalog().skills().size(),
+        repertoire_->current()->validator.catalog().version().c_str(),
         leaf_servers_->names().size());
 }
 
@@ -641,13 +705,15 @@ void MissionExecutor::onValidate(
     // Nothing may escape a service callback: it would end the executor's thread and the process.
     try
     {
-        Validation validation = validator_->validate(request->tree_xml);
+        const auto skills     = repertoire_->current();
+        Validation validation = skills->validator.validate(request->tree_xml);
         if (validation.ok())
         {
             BT::BehaviorTreeFactory factory =
-                makeFactory(/*dry_run=*/true, validation, validation.macros);
+                makeFactory(*skills, /*dry_run=*/true, validation, validation.macros);
             BT::Tree tree;
-            if (auto problem = load(factory, request->tree_xml, BT::Blackboard::create(), tree))
+            if (auto problem =
+                    load(*skills, factory, request->tree_xml, BT::Blackboard::create(), tree))
             {
                 validation.diagnostics.push_back(std::move(*problem));
             }
@@ -675,10 +741,75 @@ void MissionExecutor::onCatalog(
     const std::shared_ptr<nervros_interfaces::srv::GetCatalog::Request>& /*request*/,
     const std::shared_ptr<nervros_interfaces::srv::GetCatalog::Response>& response)
 {
-    response->catalog_json         = catalog_json_;
-    response->tree_nodes_model_xml = palette_xml_;
+    const auto skills              = repertoire_->current();
+    response->catalog_json         = skills->catalog_json;
+    response->tree_nodes_model_xml = skills->palette_xml;
     response->bt_cpp_version       = BT::LibraryVersionString();
-    response->catalog_version      = validator_->catalog().version();
+    response->catalog_version      = skills->validator.catalog().version();
+}
+
+void MissionExecutor::onDefineSkill(
+    const std::shared_ptr<nervros_interfaces::srv::DefineSkill::Request>&  request,
+    const std::shared_ptr<nervros_interfaces::srv::DefineSkill::Response>& response)
+{
+    // Nothing may escape a service callback: it would end the executor's thread and the process.
+    try
+    {
+        nlohmann::json definition = {
+            { "name", request->name },
+            { "description", request->description },
+            { "args",
+              nlohmann::json::parse(request->args_json.empty() ? "[]" : request->args_json) },
+            { "body_xml", request->body_xml },
+            { "max_duration_s", request->max_duration_s },
+            { "taught_for", request->taught_for },
+            { "taught_s",
+              std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch())
+                  .count() },
+        };
+        const auto problems =
+            repertoire_->define(SkillDefinition::fromJson(definition.dump()), request->keep);
+        response->ok               = problems.empty();
+        response->diagnostics_json = diagnosticsJson(problems);
+        response->message =
+            problems.empty() ?
+                std::format("{} is {}", request->name, request->keep ? "kept" : "a draft") :
+                problems.front().message;
+        if (problems.empty())
+        {
+            RCLCPP_INFO(
+                get_logger(),
+                "learned skill %s: %s",
+                request->name.c_str(),
+                request->keep ? "kept" : "draft");
+        }
+    }
+    catch (const std::exception& e)
+    {
+        response->ok      = false;
+        response->message = std::string("the skill could not be read: ") + e.what();
+        response->diagnostics_json =
+            diagnosticsJson({ { code::kBadStructure, 0, request->name, response->message } });
+    }
+    response->catalog_version = repertoire_->current()->validator.catalog().version();
+}
+
+void MissionExecutor::onForgetSkill(
+    const std::shared_ptr<nervros_interfaces::srv::ForgetSkill::Request>&  request,
+    const std::shared_ptr<nervros_interfaces::srv::ForgetSkill::Response>& response)
+{
+    try
+    {
+        response->ok      = repertoire_->forget(request->name);
+        response->message = response->ok ? request->name + " is forgotten" :
+                                           "no learned skill is called " + request->name;
+    }
+    catch (const std::exception& e)
+    {
+        response->ok      = false;
+        response->message = std::string("the skill could not be forgotten: ") + e.what();
+    }
+    response->catalog_version = repertoire_->current()->validator.catalog().version();
 }
 
 void MissionExecutor::onStopAll(
@@ -835,7 +966,7 @@ void MissionExecutor::onPreview(
 {
     try
     {
-        const Validation validation = validator_->validate(request->tree_xml);
+        const Validation validation = repertoire_->current()->validator.validate(request->tree_xml);
         if (!validation.ok())
         {
             response->ok = false;
@@ -993,6 +1124,7 @@ void MissionExecutor::run(const std::shared_ptr<GoalHandle>& handle)
     result->failed_step_id   = outcome.failed_step;
     result->failure_reason   = outcome.reason;
     result->diagnostics_json = outcome.diagnostics;
+    result->outputs_json     = outcome.outputs;
     result->elapsed_s        = static_cast<float>(Seconds(Clock::now() - begin).count());
     RCLCPP_INFO(
         get_logger(),
@@ -1059,7 +1191,8 @@ MissionExecutor::Outcome MissionExecutor::rejected(const std::vector<Diagnostic>
 }
 
 BT::BehaviorTreeFactory MissionExecutor::makeFactory(
-    bool dry_run, const Validation& validation, const std::set<std::string>& used)
+    const SkillSet& skills, bool dry_run, const Validation& validation,
+    const std::set<std::string>& used)
 {
     BT::BehaviorTreeFactory factory;
     if (!dry_run)
@@ -1080,8 +1213,8 @@ BT::BehaviorTreeFactory MissionExecutor::makeFactory(
             std::make_shared<std::map<std::string, std::shared_ptr<BT::TestNodeConfig>>>();
         for (const auto& [step, macro_id] : validation.steps)
         {
-            const Macro* macro = validator_->library().find(macro_id);
-            const Skill* skill = validator_->catalog().findByMacro(macro_id);
+            const Macro* macro = skills.validator.library().find(macro_id);
+            const Skill* skill = skills.validator.catalog().findByMacro(macro_id);
             if (macro == nullptr || skill == nullptr)
             {
                 continue;
@@ -1118,7 +1251,7 @@ BT::BehaviorTreeFactory MissionExecutor::makeFactory(
     }
     for (const std::string& id : used)
     {
-        factory.registerBehaviorTreeFromText(validator_->library().find(id)->xml);
+        factory.registerBehaviorTreeFromText(skills.validator.library().find(id)->xml);
     }
     return factory;
 }
@@ -1134,13 +1267,14 @@ BT::Blackboard::Ptr MissionExecutor::seededBlackboard()
 }
 
 std::optional<Diagnostic> MissionExecutor::load(
-    BT::BehaviorTreeFactory& factory, const std::string& xml, const BT::Blackboard::Ptr& blackboard,
-    BT::Tree& tree) const
+    const SkillSet& skills, BT::BehaviorTreeFactory& factory, const std::string& xml,
+    const BT::Blackboard::Ptr& blackboard, BT::Tree& tree)
 {
     try
     {
-        tree =
-            factory.createTreeFromText(withDecimalNumbers(xml, validator_->catalog()), blackboard);
+        tree = factory.createTreeFromText(
+            withDecimalNumbers(xml, skills.validator.catalog()),
+            blackboard);
         return std::nullopt;
     }
     catch (const std::exception& e)
@@ -1152,13 +1286,14 @@ std::optional<Diagnostic> MissionExecutor::load(
     }
 }
 
-bool MissionExecutor::takeAuthority(const Validation& validation, Outcome& outcome)
+bool MissionExecutor::takeAuthority(
+    const SkillSet& skills, const Validation& validation, Outcome& outcome)
 {
     bool base = false;
     bool arms = false;
     for (const std::string& id : validation.macros)
     {
-        if (const Skill* skill = validator_->catalog().findByMacro(id))
+        if (const Skill* skill = skills.validator.catalog().findByMacro(id))
         {
             base = base ||
                    std::ranges::find(skill->resources, kBaseResource) != skill->resources.end();
@@ -1258,14 +1393,18 @@ MissionExecutor::execute(const ExecuteMission::Goal& goal, const std::shared_ptr
                 .count() :
             0;
 
-    const Validation validation = validator_->validate(goal.tree_xml, goal.tree_sha256);
+    // The skills it is checked and built against stay its own, whatever the robot learns meanwhile.
+    mission_skills_             = repertoire_->current();
+    const SkillSet&  skills     = *mission_skills_;
+    const Validation validation = skills.validator.validate(goal.tree_xml, goal.tree_sha256);
     if (!validation.ok())
     {
         return rejected(validation.diagnostics);
     }
-    BT::BehaviorTreeFactory factory = makeFactory(!execute_mode, validation, validation.macros);
-    BT::Tree                tree;
-    const auto              blackboard = seededBlackboard();
+    BT::BehaviorTreeFactory factory =
+        makeFactory(skills, !execute_mode, validation, validation.macros);
+    BT::Tree   tree;
+    const auto blackboard = seededBlackboard();
     if (!execute_mode)
     {
         // A dry run's stand-ins hand nothing on, and the macros' scripts read what a later step
@@ -1275,7 +1414,7 @@ MissionExecutor::execute(const ExecuteMission::Goal& goal, const std::shared_ptr
             blackboard->set<std::string>(key, key);
         }
     }
-    if (auto problem = load(factory, goal.tree_xml, blackboard, tree))
+    if (auto problem = load(skills, factory, goal.tree_xml, blackboard, tree))
     {
         return rejected({ std::move(*problem) });
     }
@@ -1288,7 +1427,7 @@ MissionExecutor::execute(const ExecuteMission::Goal& goal, const std::shared_ptr
         std::set<std::string> needs;
         for (const std::string& macro : validation.macros)
         {
-            if (const Skill* skill = validator_->catalog().findByMacro(macro))
+            if (const Skill* skill = skills.validator.catalog().findByMacro(macro))
             {
                 needs.insert(skill->resources.begin(), skill->resources.end());
             }
@@ -1321,7 +1460,7 @@ MissionExecutor::execute(const ExecuteMission::Goal& goal, const std::shared_ptr
     {
         return rejected({ shutting_down });
     }
-    if (execute_mode && !takeAuthority(validation, outcome))
+    if (execute_mode && !takeAuthority(skills, validation, outcome))
     {
         return outcome;
     }
@@ -1380,6 +1519,11 @@ MissionExecutor::execute(const ExecuteMission::Goal& goal, const std::shared_ptr
         ended  = Ended::kShutdown;
     }
 
+    // A dry run fills each output with its own key; only a real run hands anything on.
+    if (execute_mode)
+    {
+        outcome.outputs = outputsJson(*blackboard, validation.outputs);
+    }
     // Where the mission was, taken before the halt clears it.
     const std::string step = observer->currentStep();
     std::string       winding_down;
@@ -1593,7 +1737,9 @@ bool MissionExecutor::followPause(
     }
     const bool   busy = nodes.subtree != nullptr;
     const Skill* skill =
-        busy ? validator_->catalog().findByMacro(nodes.subtree->subtreeID()) : nullptr;
+        busy && mission_skills_ ?
+            mission_skills_->validator.catalog().findByMacro(nodes.subtree->subtreeID()) :
+            nullptr;
     // Halted half way, a pick or a place could leave an object in the air: the one running when
     // the pause came ends first, and the gate holds the next step until then. Until it ends the
     // robot still moves, so it is not reported paused.

@@ -362,7 +362,12 @@ def _launch_setup(context, *args, **kwargs):
             PythonLaunchDescriptionSource(
                 os.path.join(BRINGUP_SHARE, "launch", "control.launch.py")
             ),
-            launch_arguments={"pin_pelvis": "true" if pin_pelvis else "false"}.items(),
+            launch_arguments={
+                "pin_pelvis": "true" if pin_pelvis else "false",
+                "controllers_overrides": LaunchConfiguration("controllers_overrides").perform(
+                    context
+                ),
+            }.items(),
         )
     )
     return actions
@@ -416,6 +421,12 @@ def generate_launch_description():
                 default_value="false",
                 description="SIM-ONLY: weld the robot in place and freeze the legs instead of "
                 "running the policy, to exercise the arms alone.",
+            ),
+            DeclareLaunchArgument(
+                "controllers_overrides",
+                default_value="",
+                description="Passed to control.launch.py: a params file layered over the "
+                "controller config, for tests such as test_emergency_freeze.",
             ),
             DeclareLaunchArgument(
                 "sim_start_delay_s",

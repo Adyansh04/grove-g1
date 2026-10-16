@@ -2,9 +2,12 @@
 
 The stack's own interfaces: the actions the behavior tree calls on `g1_locomotion`,
 `g1_manipulation` and `g1_vla`, and the services behind the learned grasp and open-vocabulary
-perception. The instance masks a detector publishes, and the world model's interfaces, are in
-`canopy_msgs`. `ament_cmake` with `rosidl_default_generators`, no source and no tests of its own
-beyond CMake and XML lint.
+perception.
+
+The instance masks a detector publishes, and the world model's interfaces, are in `canopy_msgs`.
+
+`ament_cmake` with `rosidl_default_generators`, no source and no tests of its own beyond CMake and
+XML lint.
 
 ```mermaid
 flowchart LR
@@ -22,16 +25,17 @@ flowchart LR
 
 ## Actions
 
-All seven are actions because each runs for seconds and must be cancellable. Every one except
-`SetArmPosture` publishes its phase as feedback. `Pick`, `Place`, `ApproachObject`, `Retreat` and
-`StepClear` also prefix a failure message with the phase. The phase strings are constants in the
-`.action` files, so servers and tests share one definition.
+All seven are actions because each runs for seconds and must be cancellable.
+
+- Every one except `SetArmPosture` publishes its phase as feedback.
+- `Pick`, `Place`, `ApproachObject`, `Retreat` and `StepClear` also prefix a failure message with the phase.
+- The phase strings are constants in the `.action` files, so servers and tests share one definition.
 
 | Action | Server | Goal | Notes |
 |---|---|---|---|
 | `Pick` | `g1_manipulation_server` | `object_id`, `arm` | The pose is read from `/objects` when the goal starts, so a retry re-reads it. An object not seen recently fails the goal. |
 | `Place` | `g1_manipulation_server` | `surface_object_id` or `pose`, `arm` | `pose` is where the object ends up, not the palm, and is transformed into the planning frame on arrival. Prefer the surface: it comes from `/objects`, the stream the approach drove against. |
-| `SetArmPosture` | `g1_manipulation_server` | `group`, `named_target` | Named SRDF poses only; an unknown name fails the goal. |
+| `SetArmPosture` | `g1_manipulation_server` | `group`, `named_target` | Named SRDF poses only. An unknown name fails the goal. |
 | `ApproachObject` | `g1_base_approach` | `object_id`, `arm`, `working_yaw`, `use_current_heading`, `timeout_s` | Walks the base until the object is inside the arm's reach window, judged in the base frame. Nav2 only parks within 0.5 m. |
 | `Retreat` | `g1_base_approach` | `distance_m`, `timeout_s` | Reverses clear of a surface and stops, without turning. |
 | `StepClear` | `g1_base_approach` | `clearance_m`, `timeout_s` | Turns, then walks straight out of the band where Nav2 counts the robot as touching an obstacle. Succeeds at once when already clear. |
@@ -41,8 +45,8 @@ All seven are actions because each runs for seconds and must be cancellable. Eve
 
 | Service | Server | Notes |
 |---|---|---|
-| `GetActionChunk` | a `g1_vla` policy engine | `instruction` in, one chunk of absolute joint positions out. Positions may name any subset of the arm and hand joints; `time_from_start` must increase. `new_episode` marks a goal's first request. |
-| `GenerateGrasps` | a `g1_perception` grasp source | Object id and hand in, poses and scores out, best first. Poses are in the generator's own gripper frame; the caller applies one measured offset. |
+| `GetActionChunk` | a `g1_vla` policy engine | `instruction` in, one chunk of absolute joint positions out. Positions may name any subset of the arm and hand joints. `time_from_start` must increase. `new_episode` marks a goal's first request. |
+| `GenerateGrasps` | a `g1_perception` grasp source | Object id and hand in, poses and scores out, best first. Poses are in the generator's own gripper frame. The caller applies one measured offset. |
 | `GroundInstruction` | `g1_instruction_grounder` | Instruction in, detector phrases and the target phrase out, plus optional exemplar pixels. |
 
 ## Messages

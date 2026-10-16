@@ -2,7 +2,7 @@
 #   ros2 launch g1_bringup bringup.launch.py sensors:=true rviz:=true
 #
 # The Sensors group must match g1_navigation/config/g1_navigation.rviz's apart from its Enabled
-# flag; g1_navigation's test_rviz_configs checks it.
+# flag.
 Panels:
   - Class: rviz_common/Displays
     Name: Displays

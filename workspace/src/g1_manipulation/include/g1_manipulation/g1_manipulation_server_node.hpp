@@ -19,6 +19,7 @@
 #include <atomic>
 #include <cstdint>
 #include <functional>
+#include <g1_msgs/action/move_hand.hpp>
 #include <g1_msgs/action/pick.hpp>
 #include <g1_msgs/action/place.hpp>
 #include <g1_msgs/action/set_arm_posture.hpp>
@@ -76,6 +77,21 @@ geometry_msgs::msg::Pose topGraspGoal(
     const geometry_msgs::msg::Pose& object_pose, double object_height_m, double depth_below_top_m,
     double min_grip_height_m, const std::vector<double>& rpy, bool is_left);
 
+/**
+ * @brief Where a hand pointing at @p target goes: on the line from @p shoulder to it,
+ *        @p reach_m from the shoulder, or at the target itself when that is nearer.
+ */
+geometry_msgs::msg::Point pointingHand(
+    const geometry_msgs::msg::Point& shoulder, const geometry_msgs::msg::Point& target,
+    double reach_m);
+
+/**
+ * @brief Orientations to try a hand at a point in: @p current first, then @p count more spread
+ *        evenly at random over all of them, the same ones every time.
+ */
+std::vector<geometry_msgs::msg::Quaternion>
+handOrientations(const geometry_msgs::msg::Quaternion& current, int count);
+
 class G1ManipulationServer : public rclcpp::Node
 {
 public:
@@ -100,6 +116,7 @@ private:
     using Pick          = g1_msgs::action::Pick;
     using Place         = g1_msgs::action::Place;
     using SetArmPosture = g1_msgs::action::SetArmPosture;
+    using MoveHand      = g1_msgs::action::MoveHand;
     using MoveGroup     = moveit::planning_interface::MoveGroupInterface;
     using Detection     = vision_msgs::msg::Detection3D;
 
@@ -153,6 +170,11 @@ private:
      * @brief Moves one planning group to a named SRDF pose.
      */
     void executeSetArmPosture(const std::shared_ptr<GoalHandle<SetArmPosture>>& goal_handle);
+
+    /**
+     * @brief Moves one hand to a point, or points it at one, planned against the scene.
+     */
+    void executeMoveHand(const std::shared_ptr<GoalHandle<MoveHand>>& goal_handle);
 
     /**
      * @brief Claims the arm for one goal.
@@ -521,6 +543,7 @@ private:
     rclcpp_action::Server<Pick>::SharedPtr          pick_server_;
     rclcpp_action::Server<Place>::SharedPtr         place_server_;
     rclcpp_action::Server<SetArmPosture>::SharedPtr posture_server_;
+    rclcpp_action::Server<MoveHand>::SharedPtr      move_hand_server_;
 
     std::string planning_frame_;
 
@@ -569,6 +592,13 @@ private:
     double              approach_standoff_m_{ 0.12 };
     double              ik_timeout_s_{ 0.05 };
     double              cartesian_step_m_{ 0.005 };
+    double              move_hand_max_reach_m_{ 0.48 };
+    double              move_hand_point_reach_m_{ 0.40 };
+    double              move_hand_speed_{ 0.6 };
+    double              move_hand_max_s_{ 30.0 };
+    int                 move_hand_orientations_{ 32 };
+    std::string         move_hand_left_shoulder_{ "left_shoulder_pitch_link" };
+    std::string         move_hand_right_shoulder_{ "right_shoulder_pitch_link" };
     /// Generator gripper frame to `<side>_hand_grasp_frame`; see grasp_filter.hpp.
     std::array<double, 6> graspgen_offset_{};
 
@@ -576,7 +606,7 @@ private:
     /// measures against this, since a close onto a measured width stops short of `closed`.
     double last_close_fraction_{ 1.0 };
 
-    /// One goal at a time across all three servers: MoveGroupInterface is not thread-safe, and two
+    /// One goal at a time across all its servers: MoveGroupInterface is not thread-safe, and two
     /// goals would share one arm_trajectory_controller.
     std::atomic<bool> busy_{ false };
     std::atomic<int>  goals_running_{ 0 };

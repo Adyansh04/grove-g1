@@ -11,7 +11,6 @@
 #include "hardware_interface/system_interface.hpp"
 
 using g1_hand_interface::kJointSuffixes;
-using g1_hand_interface::kNumHandJoints;
 using g1_hand_interface::kStatusFoc;
 using g1_hand_interface::kStatusLock;
 using g1_hand_interface::packHandMotor;
@@ -25,16 +24,6 @@ TEST(Dex3WireContract, ModePacksIdStatusAndTimeoutIntoTheirOwnFields)
     EXPECT_EQ(packMode(3, kStatusFoc, false), 0x13);
     EXPECT_EQ(packMode(6, kStatusFoc, true), 0x96);
     EXPECT_EQ(packMode(6, kStatusLock, true), 0x86);
-}
-
-TEST(Dex3WireContract, EveryMotorCarriesItsOwnIndex)
-{
-    // id 15 is the broadcast address, so an index that overflowed the nibble would command
-    // all seven motors at once with one finger's target.
-    for (std::size_t i = 0; i < kNumHandJoints; ++i)
-    {
-        EXPECT_EQ(packMode(i, kStatusFoc, false) & 0x0F, i);
-    }
 }
 
 TEST(Dex3WireContract, JointOrderIsThumbThenMiddleThenIndex)

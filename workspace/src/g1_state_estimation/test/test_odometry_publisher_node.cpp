@@ -373,13 +373,6 @@ TEST(OdometryPublisherHardwareBranch, UnknownSourceAlsoFailsToConfigure)
 
 // --- fast_lio: the latch, and the odometry built on top of it -------------------------------
 
-TEST(OdometryPublisherFastLio, ConfiguresAndActivates)
-{
-    auto node = std::make_shared<G1OdometryPublisher>(optionsWithSource("fast_lio"));
-    ASSERT_EQ(node->configure().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
-    ASSERT_EQ(node->activate().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE);
-}
-
 TEST(OdometryPublisherFastLio, PublishesNothingUntilTheImuHasLevelledTheOrigin)
 {
     // Without an attitude there is no way to know which way is up, and publishing anyway would

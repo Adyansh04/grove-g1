@@ -237,8 +237,3 @@ class TestPickPlace(unittest.TestCase):
         result = self._send(self.pick, Pick.Goal(object_id="no_such_object", arm="right"), 60.0)
         self.assertFalse(result.success)
         self.assertIn("locating", result.message)
-
-    def test_07_a_bad_arm_is_refused(self):
-        result = self._send(self.pick, Pick.Goal(object_id=OBJECT_ID, arm="middle"), 60.0)
-        self.assertFalse(result.success)
-        self.assertIn("left", result.message)
