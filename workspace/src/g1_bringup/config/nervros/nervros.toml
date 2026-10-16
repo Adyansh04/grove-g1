@@ -26,6 +26,22 @@ interfaces = [
 start_armed = false
 autonomy = "supervised"
 
+# The executor's services have tools of their own (run_mission, stop, teach_skill): called raw
+# they skip the plan check, and qwen once called stop_all to "check" the robot.
+[[policy.rule]]
+tool = "service_call"
+arg = "service"
+matches = "/nervros_executor/*"
+then = "deny"
+reason = "the executor answers through run_mission, stop, pause and teach_skill, not service_call"
+
+[[policy.rule]]
+tool = "action_goal"
+arg = "action"
+matches = "/nervros_executor/*"
+then = "deny"
+reason = "missions go through run_mission, where they are checked and approved"
+
 # canopy's detector reads the world model's still frames, and SAM 3.1 marks one up to its 8 s
 # max_image_age_s plus a few seconds of inference after it was taken.
 [look]
