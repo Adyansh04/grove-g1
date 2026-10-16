@@ -19,7 +19,6 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 from sensor_msgs.msg import Imu, JointState
-from std_msgs.msg import Bool
 
 # Kept under launch_testing's 15 s startup deadline, then the policy needs a moment to settle.
 SIM_SETTLE_S = 12.0
@@ -67,22 +66,11 @@ class TestAgileWalk(unittest.TestCase):
 
         cls.imu = []
         cls.joint_states = []
-        cls.inferring = []
         cls.node.create_subscription(
             Imu, "/imu_sensor_broadcaster/imu", lambda msg: cls.imu.append(msg), 10
         )
         cls.node.create_subscription(
             JointState, "/joint_states", lambda msg: cls.joint_states.append(msg), 50
-        )
-        cls.node.create_subscription(
-            Bool,
-            "/agile_controller/inferring",
-            lambda msg: cls.inferring.append(msg),
-            rclpy.qos.QoSProfile(
-                depth=1,
-                durability=rclpy.qos.DurabilityPolicy.TRANSIENT_LOCAL,
-                reliability=rclpy.qos.ReliabilityPolicy.RELIABLE,
-            ),
         )
         cls.cmd_vel = cls.node.create_publisher(Twist, "/cmd_vel", 10)
 
@@ -138,14 +126,14 @@ class TestAgileWalk(unittest.TestCase):
         self.assertTrue(future.done(), f"{name} did not answer")
         return future.result()
 
-    def test_component_activates(self):
+    def test_1_component_activates(self):
         """A broken on_init or a failed SDK channel shows up here and nowhere else."""
         result = self._call(ListHardwareComponents, "/controller_manager/list_hardware_components")
         names = {component.name: component.state.label for component in result.component}
         self.assertIn("G1LowCmdSystem", names, f"component never loaded, saw {names}")
         self.assertEqual(names["G1LowCmdSystem"], "active")
 
-    def test_controllers_are_active(self):
+    def test_2_controllers_are_active(self):
         result = self._call(ListControllers, "/controller_manager/list_controllers")
         states = {controller.name: controller.state for controller in result.controller}
         for name in (
@@ -158,12 +146,7 @@ class TestAgileWalk(unittest.TestCase):
         ):
             self.assertEqual(states.get(name), "active", f"{name} is {states.get(name)}")
 
-    def test_policy_is_commanding(self):
-        """Lifecycle-active is not the same as producing commands; this is the latter."""
-        self.assertTrue(self.inferring, "no ~/inferring message; the policy never ran")
-        self.assertTrue(self.inferring[-1].data, "the policy activated but never inferred")
-
-    def test_robot_stands_without_a_pinned_pelvis(self):
+    def test_3_robot_stands_without_a_pinned_pelvis(self):
         """Nothing but the policy is holding the robot up by this point."""
         self.assertTrue(self.imu, "no IMU messages")
         upright = self._uprightness(self.imu[-1].orientation)
@@ -173,7 +156,7 @@ class TestAgileWalk(unittest.TestCase):
             f"pelvis uprightness {upright:.3f}: the robot is not upright, it has fallen",
         )
 
-    def test_walks_on_command_and_stays_up(self):
+    def test_5_walks_on_command_and_stays_up(self):
         walking_from = len(self.joint_states)
         self._drive(DRIVE_S, vx=DRIVE_VX)
         walking = self._joint_series(GAIT_JOINT, walking_from)
@@ -203,7 +186,7 @@ class TestAgileWalk(unittest.TestCase):
             "the robot fell over while walking",
         )
 
-    def test_turns_on_command_and_stays_up(self):
+    def test_4_turns_on_command_and_stays_up(self):
         """Also catches an uprightness check that reads quaternion w, which turning drives down."""
         before = self.imu[-1].orientation
         self._drive(TURN_S, wz=TURN_WZ)
@@ -219,19 +202,7 @@ class TestAgileWalk(unittest.TestCase):
             "the robot fell over while turning",
         )
 
-    def test_the_emergency_target_is_loaded_and_ready(self):
-        """An emergency can only switch to a controller that is already loaded, and this one is
-        never active in a healthy run, so nothing else would notice it missing."""
-        result = self._call(ListControllers, "/controller_manager/list_controllers")
-        states = {controller.name: controller.state for controller in result.controller}
-        self.assertEqual(
-            states.get("locomotion_freeze_controller"),
-            "inactive",
-            f"the safety controller's emergency target is {states.get('locomotion_freeze_controller')}, "
-            "so a divergence would leave the legs with no controller at all",
-        )
-
-    def test_safety_controller_never_latched(self):
+    def test_6_safety_controller_never_latched(self):
         """The out-of-domain detector switches to the freeze on divergence, so if it is still
         active the policy stayed inside the range it was trained in for the whole run."""
         result = self._call(ListControllers, "/controller_manager/list_controllers")

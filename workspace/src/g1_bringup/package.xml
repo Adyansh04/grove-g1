@@ -61,7 +61,6 @@
   <test_depend>nav_msgs</test_depend>
   <test_depend>sensor_msgs</test_depend>
   <test_depend>geometry_msgs</test_depend>
-  <test_depend>std_msgs</test_depend>
   <test_depend>tf2_msgs</test_depend>
   <!-- test_explore_apartment. -->
   <test_depend>action_msgs</test_depend>
