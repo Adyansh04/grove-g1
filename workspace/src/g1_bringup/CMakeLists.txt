@@ -24,19 +24,6 @@ if(BUILD_TESTING)
   ament_lint_auto_find_test_dependencies()
   find_package(launch_testing_ament_cmake REQUIRED)
 
-  # ament_cmake_xmllint only covers package.xml, and MuJoCo loads scenes that are not valid XML,
-  # such as a "--" inside a comment.
-  find_program(XMLLINT_EXECUTABLE xmllint)
-  if(XMLLINT_EXECUTABLE)
-    file(GLOB _scene_files "${CMAKE_CURRENT_SOURCE_DIR}/mjcf/*.xml")
-    add_test(
-      NAME xmllint_scenes_${PROJECT_NAME}
-      COMMAND ${XMLLINT_EXECUTABLE} --noout ${_scene_files}
-    )
-  else()
-    message(WARNING "xmllint not found; skipping xmllint_scenes_${PROJECT_NAME}")
-  endif()
-
   # MuJoCo syncs to CPU time and the policy runs on wall timers, so the simulator suites are load
   # sensitive: RESOURCE_LOCK serialises them within this ctest run and COST starts the heavy ones
   # first. CI skips the `simulator` label, since on shared cores they measure the runner.

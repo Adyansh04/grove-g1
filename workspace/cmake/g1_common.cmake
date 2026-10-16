@@ -76,8 +76,10 @@ endfunction()
 
 function(_g1_add_ruff_test)
   set(_targets "")
+  # Only directories that hold Python: a C++ package's test/ would register a check of nothing.
   foreach(_dir IN LISTS G1_PYTHON_DIRS)
-    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${_dir}")
+    file(GLOB_RECURSE _python CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/${_dir}/*.py")
+    if(_python)
       list(APPEND _targets "${CMAKE_CURRENT_SOURCE_DIR}/${_dir}")
     endif()
   endforeach()

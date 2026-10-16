@@ -208,7 +208,7 @@ Controller configuration lives in `g1_controllers/config/lowcmd_controllers.yaml
 | `test_emergency_freeze` | yes | With its divergence limit tightened, the safety controller latches and hands the legs to `locomotion_freeze_controller`, taking the policy down in the same switch. Every leg joint stays claimed, and the arms and waist keep their owners. |
 | `test_explore_apartment` | yes | canopy's acceptance run: explores the apartment on its committed map and scores rooms, camera coverage and objects against its ground truth. Tens of minutes. Needs the fetched assets. |
 | `test_explore_apartment_mapping` | yes | The same from no map, with slam_toolbox building it. |
-| `xmllint_scenes_g1_bringup` | no | The MJCF scenes are valid XML, which MuJoCo's parser does not enforce. |
+| `xmllint` | no | Every XML file is valid, the MJCF scenes too, which MuJoCo's parser does not enforce. |
 | `ruff_check_g1_bringup` | no | Lints the launch files, tests, scripts and tools. |
 
 The simulator suites serialise on a shared resource lock, with a `sim_settle_gap` pause to let DDS
