@@ -58,6 +58,13 @@ detections = { topic = "/detector_head/instance_masks", type = "canopy_msgs/msg/
 detection_image = "/canopy/head/still_image"
 about = "The head camera is about 1.2 m up and points 48 degrees down: it sees the floor from about 0.3 m to 3.6 m ahead, the robot's hands and what lies on low furniture, nothing above its own height."
 
+# Both cameras' frames as their view changes, for `when`: a day of a walking robot fits the 2 GB.
+[keyframes]
+period_s = 2.0
+keep_h = 24.0
+max_mb = 2000
+edge_px = 640
+
 # canopy's editor on the saved world (nervros.sh starts it): world edits by the agent and by hand,
 # which canopy reads again after a save.
 [editor]
