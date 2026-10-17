@@ -32,6 +32,7 @@
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
+#include <format>
 #include <memory>
 #include <mutex>
 #include <nervros_interfaces/action/execute_mission.hpp>
@@ -136,6 +137,8 @@ private:
         std::string  diagnostics = "[]";
         /// What the steps handed on, as a JSON object by key.
         std::string outputs = "{}";
+        /// Set when the robot or the executor ended the mission, not the plan.
+        std::uint8_t cause = ExecuteMission::Result::CAUSE_NONE;
     };
 
     /// Why the tick loop stopped.
@@ -196,8 +199,10 @@ private:
     void onForgetSkill(
         const std::shared_ptr<nervros_interfaces::srv::ForgetSkill::Request>&  request,
         const std::shared_ptr<nervros_interfaces::srv::ForgetSkill::Response>& response);
-    /// StopAll's work, for the service and for the deadman: halt, cancel, wait, hold.
-    nervros_interfaces::srv::StopAll::Response stopEverything(const std::string& reason);
+    /// StopAll's work, for the service and for the deadman: halt, cancel, wait, hold. @p cause
+    /// goes into the stopped mission's result.
+    nervros_interfaces::srv::StopAll::Response
+    stopEverything(const std::string& reason, std::uint8_t cause);
     /// Stops the running mission once its agent has been silent past its heartbeat timeout, or
     /// a walking one once the robot can no longer walk.
     void deadman();
@@ -329,6 +334,9 @@ private:
     std::unique_ptr<RobotHealth>     health_;
     std::unique_ptr<MissionPreview>  preview_;
     std::unique_ptr<TeleopDriver>    teleop_;
+    /// RobotState's boot_id: when this executor started, in nanoseconds since the epoch.
+    const std::string boot_id_ =
+        std::format("{:x}", std::chrono::system_clock::now().time_since_epoch().count());
 
     // --- shared between the mission thread, StopAll and the state publisher ------------------
     std::mutex  live_mutex_;
@@ -352,6 +360,7 @@ private:
     std::atomic<bool>       running_{ false };
     std::atomic<bool>       stop_requested_{ false };
     std::string             stop_reason_;
+    std::uint8_t            stop_cause_ = ExecuteMission::Result::CAUSE_NONE;
     rclcpp_action::GoalUUID goal_id_{};
     /// Set by a stop, a cancel, the watchdog or a shutdown: what the leaves look at.
     std::atomic<bool> halting_{ false };

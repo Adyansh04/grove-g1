@@ -225,6 +225,7 @@ private:
     {
         setFailureText({});
         setGoalSent(false);
+        setServerMissing(false);
         if (windingDown(stop_))
         {
             setFailureText("stopped");
@@ -260,6 +261,7 @@ private:
                 timeout);
             setFailureText(
                 std::format("no action server on {} after {:.1f} s", action_name_, timeout));
+            setServerMissing(true);
             return BT::NodeStatus::FAILURE;
         }
 

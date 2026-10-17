@@ -866,6 +866,7 @@ TEST(NervrosExecutor, ARunningMissionRefusesASecondWithAReason)
 
     EXPECT_EQ(second->outcome, ExecuteMission::Result::OUTCOME_REJECTED);
     EXPECT_EQ(diagnostics(*second).at(0).at("code"), "BUSY");
+    EXPECT_EQ(second->cause, ExecuteMission::Result::CAUSE_BUSY);
     EXPECT_THAT(second->failure_reason, ::testing::HasSubstr("already running"));
     harness.cancelRunning();
     harness.finished();
@@ -935,6 +936,7 @@ TEST(NervrosExecutor, StopAllHaltsARunningMissionAndHoldsUntilTheNextOne)
     EXPECT_THAT(stopped->state_after, ::testing::StartsWith("holding posture"));
     EXPECT_EQ(run->result->outcome, ExecuteMission::Result::OUTCOME_CANCELED);
     EXPECT_THAT(run->result->failure_reason, ::testing::HasSubstr("stopped: button"));
+    EXPECT_EQ(run->result->cause, ExecuteMission::Result::CAUSE_NONE) << "a stop asked for";
     const RobotState state =
         harness.stateWhere([](const RobotState& s) { return s.stopped && s.mission_id.empty(); });
     EXPECT_TRUE(state.stopped);
@@ -967,6 +969,7 @@ TEST(NervrosExecutor, PublishesItsStateLatchedAndAtOneHertz)
     Harness harness;
 
     const RobotState first = harness.latestState();
+    EXPECT_FALSE(first.boot_id.empty());
     EXPECT_TRUE(first.mission_id.empty());
     EXPECT_FALSE(first.stopped);
     EXPECT_THAT(first.message, ::testing::StartsWith("idle"));
@@ -974,6 +977,7 @@ TEST(NervrosExecutor, PublishesItsStateLatchedAndAtOneHertz)
     const std::lock_guard<std::mutex> lock(harness.state_mutex);
     EXPECT_GE(harness.states.size(), 3U)
         << "the initial state and at least two of the periodic ones";
+    EXPECT_EQ(harness.states.back().boot_id, first.boot_id) << "one boot, one id";
 }
 
 // --- against stand-in skill servers -----------------------------------------------------------
@@ -1077,6 +1081,7 @@ TEST(NervrosExecutor, ReportsAFailureWithTheStepTheLeafAndTheServersOwnWords)
     EXPECT_EQ(run->result->failed_step_id, "s1");
     EXPECT_EQ(run->result->failed_node, "s1_PickObject/pick_the_object");
     EXPECT_THAT(run->result->failure_reason, ::testing::HasSubstr("no usable grasp"));
+    EXPECT_EQ(run->result->cause, ExecuteMission::Result::CAUSE_NONE) << "the skill's own failure";
     EXPECT_EQ(robot.pick->goals, 2) << "the macro retries a failed pick once";
     // The pick failed, so the hand is empty and the arms go back.
     EXPECT_EQ(harness.authority->acquired, 1);
@@ -1792,6 +1797,7 @@ TEST(NervrosExecutor, TheDeadmanStopsAMissionWhoseAgentFallsSilentAndHolds)
 
     EXPECT_EQ(run->result->outcome, ExecuteMission::Result::OUTCOME_CANCELED);
     EXPECT_THAT(run->result->failure_reason, ::testing::HasSubstr("deadman"));
+    EXPECT_EQ(run->result->cause, ExecuteMission::Result::CAUSE_DEADMAN);
     EXPECT_LT(run->result->elapsed_s, 6.0F);
     EXPECT_GE(robot.navigate->cancels, 1) << "the walk was not cancelled";
     EXPECT_TRUE(harness.stateWhere([](const RobotState& s) { return s.stopped; }).stopped);
@@ -1897,6 +1903,7 @@ TEST(NervrosExecutor, TheHealthGateRefusesToWalkAFallenRobotAndSaysWhy)
     const auto refused = harness.execute(makeGoal(mission("<Sequence>" + kWalk + "</Sequence>")));
     EXPECT_EQ(refused->result->outcome, ExecuteMission::Result::OUTCOME_REJECTED);
     EXPECT_EQ(diagnostics(*refused->result)[0]["code"], "ROBOT_CANNOT_MOVE");
+    EXPECT_EQ(refused->result->cause, ExecuteMission::Result::CAUSE_ROBOT);
     EXPECT_THAT(refused->result->failure_reason, ::testing::HasSubstr("cannot walk"));
     EXPECT_EQ(robot.navigate->goals, 0);
 
@@ -1925,6 +1932,7 @@ TEST(NervrosExecutor, AFallMidWalkStopsTheMission)
 
     EXPECT_EQ(run->result->outcome, ExecuteMission::Result::OUTCOME_CANCELED);
     EXPECT_THAT(run->result->failure_reason, ::testing::HasSubstr("can no longer walk: fallen"));
+    EXPECT_EQ(run->result->cause, ExecuteMission::Result::CAUSE_ROBOT);
     EXPECT_GE(robot.navigate->cancels, 1);
 }
 

@@ -184,7 +184,8 @@ Failure MissionObserver::describe(const BT::TreeNode& node) const
     if (const auto* report = dynamic_cast<const LeafReport*>(&node);
         report != nullptr && !report->failureText().empty())
     {
-        failure.reason = report->failureText();
+        failure.reason         = report->failureText();
+        failure.server_missing = report->serverMissing();
         return failure;
     }
     failure.reason = std::format("{} failed", node.name());
