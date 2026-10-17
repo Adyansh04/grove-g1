@@ -169,6 +169,26 @@ none from the command line. There, `./scripts/demos/nervros.sh --print chat`'s l
   drops it.
 - "Remember that the kitchen door sticks." `memory` keeps what you ask it to across sessions, in
   `~/.local/state/nervros/memory/`. The Agent tab (Ctrl+6) lists the notes with Forget.
+- "Keep the robot in the bedroom." `goal` keeps an outcome across missions and sessions, with what
+  holds once it is met in the world model's ids, such as `at(R3)` or `inside(O27, O261)`. NervROS
+  checks it itself after every mission the agent runs, and at start; the agent plans the missions
+  toward it, the first at once, which you approve as usual, until it holds or its five missions are
+  used. The world model may give an object the robot moved another id, so for `inside` and `on` an
+  object of the same kind seen there after the goal's own object was last seen counts, once that
+  object is gone from where it was or when the one there was seen after the goal was set. The Agent
+  tab lists the goals with Drop.
+- "When did the red mug leave the dining table?" The cameras keep a frame each time their view
+  changes, for a day in this demo, and `when` asks a vision model which first shows it, around the
+  moments the world model saw the mug move; a second model then checks that frame alone, or its
+  neighbours until one shows it. It answers with the time and the frame.
+- "Tell me when someone puts a box on the sofa." A watch can wait for what a camera shows: a
+  vision model looks every 15 seconds, and two yes in a row post to the chat.
+- "Check on the living room and the bedroom." `patrol` walks the round, turns once around in each
+  room so the cameras sweep it, and reports what it saw there and what moved or went missing in
+  the world model meanwhile.
+- "How did today go?" `digest` counts the missions by how they ended, sets apart the runs the
+  robot itself cut short, and gives each skill's record, the incidents and the goals.
+  `nervros-cli digest` prints the same.
 - "Every 30 minutes, walk to the bedroom and back, 4 times." `schedule` runs a plan again and
   again, and you approve it once for all its runs. A run is skipped while the robot is disarmed or
   busy, and Stop cancels every schedule. The Mission tab lists them with Cancel. A request with a
@@ -394,6 +414,11 @@ timeouts and retries.
   mission ends, unless a hand holds, or may hold, something.
 - After a pick that was cut off, the executor does not trust that hand until a place with it
   succeeds, and the agent plans as if the hand were full.
+- Each result says when the robot or the executor, not the plan, ended a mission (`cause`): the
+  robot could not move or fell mid-walk, the deadman, a shutdown, a skill server that was not up,
+  teleop or another mission. `RobotState.boot_id` is new each time the executor starts. NervROS
+  keeps such runs out of its skills' records and does not count them against the request, and a
+  mission it was running when it stopped is kept as interrupted.
 - The skills a plan may use are in `config/catalog.yaml`, as macros in `trees/library/`:
   `GoToTarget`, `GoToPose`, `WalkStraight`, `TurnInPlace`, `FindInView`, `PickObject`, `PlaceInto`,
   `TuckForTravel` and `ExploreBuilding`, plus the ones an agent taught (above).
@@ -537,6 +562,13 @@ project uses free models only, and NervROS refuses a paid OpenRouter model at st
 - With Gemini's key in `~/.config/grove/gemini.env`, its free tier outlines for `segment`, points
   for `point` and advises the planner. Without it those fall back or stay off, and the rest runs
   locally.
+- With the same key, Gemini Robotics-ER 2 checks a finished mission through both cameras' start
+  and end frames when the detector cannot settle it, finds the frame for `when`, and looks at a
+  plan whose steps have failed before. Its free 20 requests a day are split by use (10, 6 and 4),
+  and a use whose share is spent goes to the Flash-Lites, then Gemma 4, then the local model. A
+  check's "no" flags a success; its "yes" never clears what the world model found missing.
+- After a step fails again, the `plan` model may propose a lasting fix: a note, a keep-out zone
+  or a parameter. The Agent tab lists it to accept, which runs it as yours, or to dismiss.
 - When the local model is not running, as when SAM 3.1 holds the GPU (the two do not fit in 12 GB
   together), free models elsewhere talk and look instead: Gemini 3.5 and 3.1 Flash-Lite, then
   Nemotron 3 Super on OpenRouter's free tier (with `~/.config/openrouter.key`; NervROS refuses any
