@@ -1,10 +1,12 @@
 # Models for NervROS on the G1, all free: the local model talks, plans and looks; Gemini's free
 # tier outlines what `segment` is asked for, which the local model cannot, and advises when the
-# local model's plans for a request keep failing their checks. Without the local model, as when
-# SAM 3.1 holds the GPU, the Flash-Lites and Gemma 4 on the same free tier talk and look instead,
-# and Nemotron 3 Super on OpenRouter's free tier talks when their quotas are spent. Without a key
-# file its provider's models are left out: without Gemini's, `segment` needs its service backend,
-# and there is no advice.
+# local model's plans for a request keep failing their checks. Gemini Robotics-ER 2 judges what
+# the cameras show where it counts: whether a mission did what it says, when something happened,
+# and a flagged plan against the scene. Without the local model, as when SAM 3.1 holds the GPU,
+# the Flash-Lites and Gemma 4 on the same free tier talk and look instead, and Nemotron 3 Super on
+# OpenRouter's free tier talks when their quotas are spent. Without a key file its provider's
+# models are left out: without Gemini's, `segment` needs its service backend, and there is no
+# advice.
 
 [[provider]]
 id = "local"
@@ -82,6 +84,52 @@ tools = true
 limits = { rpm = 10, rpd = 2000 }
 privacy = { trains = true }
 
+# A camera watch's own share of the Flash-Lites, so watches cannot spend what the other roles fall
+# back on: with the ids above, 14 a minute and 400 a day of each model's 15 and 500.
+[[model]]
+id = "watch-3.5-flash-lite"
+provider = "gemini"
+model = "gemini-3.5-flash-lite"
+vision = true
+limits = { rpm = 4, rpd = 150 }
+privacy = { trains = true }
+
+[[model]]
+id = "watch-3.1-flash-lite"
+provider = "gemini"
+model = "gemini-3.1-flash-lite"
+vision = true
+limits = { rpm = 4, rpd = 150 }
+privacy = { trains = true }
+
+# Gemini Robotics-ER 2 reads a scene better than the general models (a cup in the bin, the frame
+# where a door opened), but the free tier allows 5 a minute and 20 a day. One id per use splits that
+# day between them; a use whose share is gone falls through to Gemma 4, the Flash-Lites, then the
+# local model.
+[[model]]
+id = "er2-witness"
+provider = "gemini"
+model = "gemini-robotics-er-2-preview"
+vision = true
+limits = { rpm = 2, rpd = 10, pool = "er2" }
+privacy = { trains = true }
+
+[[model]]
+id = "er2-moment"
+provider = "gemini"
+model = "gemini-robotics-er-2-preview"
+vision = true
+limits = { rpm = 2, rpd = 6, pool = "er2" }
+privacy = { trains = true }
+
+[[model]]
+id = "er2-scene"
+provider = "gemini"
+model = "gemini-robotics-er-2-preview"
+vision = true
+limits = { rpm = 1, rpd = 4, pool = "er2" }
+privacy = { trains = true }
+
 # Text only. Of OpenRouter's free models with tools on 7 Oct, the one that answered: its Gemma 4s
 # were rate-limited upstream and Inkling takes no plain API calls.
 [[model]]
@@ -95,6 +143,7 @@ privacy = { trains = true }
 [pools]
 # A thousand free requests a day once the account holds credit.
 openrouter_free = { rpd = 1000 }
+er2 = { rpd = 20 }
 
 [roles]
 # Gemma comes last: 16K input tokens a minute hold one or two agent calls.
@@ -115,3 +164,13 @@ vision_check = [
 ]
 summarise = ["qwen3.5-9b-local", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]
 segment = ["gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]
+# Gemma 4 comes last in the vision chains: on 17 Oct its image requests ran into the 60 s timeout
+# and it answered text with "high demand", which made each camera watch's look a minute late.
+# Start and end frames of both cameras, four images in one request.
+witness = ["er2-witness", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemma-4-26b"]
+# Up to a dozen frames, more than Gemma's 16K tokens a minute hold.
+moment = ["er2-moment", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]
+# A look every 15 s while the view changes, none while it stays as it was after a no; at most two
+# watches. Their own Flash-Lite ids cap what they spend, then the local model looks.
+watch = ["watch-3.5-flash-lite", "watch-3.1-flash-lite"]
+scene_check = ["er2-scene", "gemini-3.5-flash-lite", "gemma-4-26b"]

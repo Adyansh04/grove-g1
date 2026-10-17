@@ -37,13 +37,18 @@ public:
     /// Whether its latest start sent a goal: not while a pause held it back.
     [[nodiscard]] bool goalSent() const { return goal_sent_; }
 
+    /// Whether it last failed because its server was not up: no test of the skill.
+    [[nodiscard]] bool serverMissing() const { return server_missing_; }
+
 protected:
     void setFailureText(std::string text) { failure_text_ = std::move(text); }
     void setGoalSent(bool sent) { goal_sent_ = sent; }
+    void setServerMissing(bool missing) { server_missing_ = missing; }
 
 private:
     std::string failure_text_;
-    bool        goal_sent_ = false;
+    bool        goal_sent_      = false;
+    bool        server_missing_ = false;
 };
 
 }  // namespace g1_orchestration

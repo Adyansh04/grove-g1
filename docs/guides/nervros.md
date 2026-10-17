@@ -169,6 +169,47 @@ none from the command line. There, `./scripts/demos/nervros.sh --print chat`'s l
   drops it.
 - "Remember that the kitchen door sticks." `memory` keeps what you ask it to across sessions, in
   `~/.local/state/nervros/memory/`. The Agent tab (Ctrl+6) lists the notes with Forget.
+- "Keep the robot in the bedroom." `goal` keeps an outcome across missions and sessions, with what
+  holds once it is met in the world model's ids, such as `at(R3)` or `inside(O27, O261)`. NervROS
+  checks it itself after every mission the agent runs, and at start; the agent plans the missions
+  toward it, the first at once, which you approve as usual, until it holds or its five missions are
+  used. The world model may give an object the robot moved another id, so for `inside` and `on` an
+  object of the same kind seen there after the goal's own object was last seen counts, once that
+  object is gone from where it was or when the one there was seen after the goal was set. The Agent
+  tab lists the goals with Drop.
+
+https://github.com/user-attachments/assets/2cbd5b3b-22d3-4f12-84ce-f697941a21d9
+
+In the clip, "set a goal to keep the red mug on the wooden tray, then work toward it": the goal is
+approved, one pick-and-place runs toward it (four times faster), the camera agrees the mug is in
+the tray, and the report ends "goal 1 (keep the red mug on the wooden tray): met".
+
+- "Tell me when someone puts a box on the sofa." A watch can wait for what a camera shows: a
+  vision model looks every 15 seconds, and two yes in a row post to the chat.
+- "When did the red mug leave the dining table?" The cameras keep a frame each time their view
+  changes, for a day in this demo, and `when` asks a vision model which first shows it, around the
+  moments the world model saw the mug move; a second model then checks that frame alone, or its
+  neighbours until one shows it. It answers with the time and the frame.
+
+https://github.com/user-attachments/assets/1ebe06cc-de7a-490f-b902-597ea91f72d6
+
+In the clip "tell me when the head camera shows a red mug" fires once the robot stands at the
+dining table, and "when did the head camera first show the red mug?" answers with the frame where
+the mug comes into view.
+
+- "Check on the living room and the bedroom." `patrol` walks the round, turns once around in each
+  room so the cameras sweep it, and reports what it saw there and what moved or went missing in
+  the world model meanwhile.
+- "How did today go?" `digest` counts the missions by how they ended, sets apart the runs the
+  robot itself cut short, and gives each skill's record, the incidents and the goals.
+  `nervros-cli digest` prints the same.
+
+https://github.com/user-attachments/assets/e0343475-e62f-4f6a-8e6a-5a693125325d
+
+In the clip the patrol looks around each room and reports what it saw, room by room ("the bedroom
+(R3): a bed, a clock, a nightstand and a potted plant"), and the digest then sums up the day.
+Gemini 3.5 Flash-Lite answered in the goal and patrol clips, the local Qwen3.5-9B in the watch.
+
 - "Every 30 minutes, walk to the bedroom and back, 4 times." `schedule` runs a plan again and
   again, and you approve it once for all its runs. A run is skipped while the robot is disarmed or
   busy, and Stop cancels every schedule. The Mission tab lists them with Cancel. A request with a
@@ -205,10 +246,18 @@ A plan comes as a card with its steps, before anything moves.
 - Before you see a plan, NervROS checks it against your words: left or right, forward or back, how
   far, how much and which hand. A plan that turns right when you said left goes back to the model
   once. If it comes back unchanged, the card shows the concern, and Apply fixes it.
+- A plan with a step that has worked at most half the time before also goes to the scene check,
+  a vision model shown what the cameras see now. It can only add doubts, which show under the step
+  and in the approval.
 - **Edit**, on the card, changes a step's argument or drops or moves a step. The changed plan is
   checked again before you can approve it.
 - The check also covers keep-out zones and steps that take an earlier step's result.
 - "Pick it up" as the first thing you say is not guessed at: the agent asks which thing.
+
+https://github.com/user-attachments/assets/91718cec-719c-4fad-96ff-6c210f32c287
+
+In the clip `FindInView` for the tray had worked once in five, and the scene check's doubt, "there
+is no tray in the current view", shows on the card before anything moves.
 
 Approving a tool that does not move the robot, such as a parameter change, can cover the rest of
 the session (Allow for session). What moves the robot asks every time. When the app closes with a
@@ -394,9 +443,20 @@ timeouts and retries.
   mission ends, unless a hand holds, or may hold, something.
 - After a pick that was cut off, the executor does not trust that hand until a place with it
   succeeds, and the agent plans as if the hand were full.
+- Each result says when the robot or the executor, not the plan, ended a mission (`cause`): the
+  robot could not move or fell mid-walk, the deadman, a shutdown, a skill server that was not up,
+  teleop or another mission. `RobotState.boot_id` is new each time the executor starts. NervROS
+  keeps such runs out of its skills' records and does not count them against the request, and a
+  mission it was running when it stopped is kept as interrupted.
 - The skills a plan may use are in `config/catalog.yaml`, as macros in `trees/library/`:
   `GoToTarget`, `GoToPose`, `WalkStraight`, `TurnInPlace`, `FindInView`, `PickObject`, `PlaceInto`,
   `TuckForTravel` and `ExploreBuilding`, plus the ones an agent taught (above).
+
+https://github.com/user-attachments/assets/3c3d470d-7af2-498e-b83c-8c70945c5c65
+
+In the clip a walk NervROS was running when it stopped is marked at start, and a walk approved
+while the base is driven by hand from the Robot tab comes back with `cause` teleop: the report says
+it could not start, and the Mission tab dims both runs.
 
 https://github.com/user-attachments/assets/99be5972-bc7b-457b-ae5c-feb447bf00e3
 
@@ -537,6 +597,11 @@ project uses free models only, and NervROS refuses a paid OpenRouter model at st
 - With Gemini's key in `~/.config/grove/gemini.env`, its free tier outlines for `segment`, points
   for `point` and advises the planner. Without it those fall back or stay off, and the rest runs
   locally.
+- With the same key, Gemini Robotics-ER 2 checks a finished mission through both cameras' start
+  and end frames when the detector cannot settle it, finds the frame for `when`, and looks at a
+  plan whose steps have failed before. Its free 20 requests a day are split by use (10, 6 and 4),
+  and a use whose share is spent goes to the Flash-Lites, then Gemma 4, then the local model. A
+  check's "no" flags a success; its "yes" never clears what the world model found missing.
 - When the local model is not running, as when SAM 3.1 holds the GPU (the two do not fit in 12 GB
   together), free models elsewhere talk and look instead: Gemini 3.5 and 3.1 Flash-Lite, then
   Nemotron 3 Super on OpenRouter's free tier (with `~/.config/openrouter.key`; NervROS refuses any
@@ -547,3 +612,10 @@ project uses free models only, and NervROS refuses a paid OpenRouter model at st
 - On the apartment suite this chain passed 42 of the 44 cases it had then, as the local model does
   in most runs.
 - A `home` privacy mode keeps these models out.
+- After a step fails again, the `plan` model may propose a lasting fix: a note, a keep-out zone
+  or a parameter. The Agent tab lists it to accept, which runs it as yours, or to dismiss.
+
+https://github.com/user-attachments/assets/c23c8e5b-65c4-4367-88e8-5c94d21a6e42
+
+In the clip the Agent tab holds two proposed fixes: Accept on the note adds it to Memory, with the
+step's record before and since, and Dismiss turns the parameter change down.

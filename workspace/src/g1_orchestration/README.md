@@ -351,6 +351,12 @@ node is the last leaf to fail before the tree did, so a failure a retry recovere
 A `Timeout` that ran out, the step's or the macro's, is `OUTCOME_TIMEOUT`, like the watchdog. A cancel
 or stop is `OUTCOME_CANCELED`. Both name the step that was running.
 
+`cause` says when the robot or the executor ended the mission rather than the plan: `CAUSE_ROBOT`
+(refused by the health gate, or a fall mid-walk), `CAUSE_DEADMAN`, `CAUSE_SHUTDOWN`,
+`CAUSE_NO_SERVER` (a leaf's action server was not up), `CAUSE_TELEOP` and `CAUSE_BUSY`. A stop or
+cancel a client asked for is `CAUSE_NONE`, as is any failure of the plan's own. NervROS leaves such
+runs out of the skills' track records. `RobotState.boot_id` is new each time the executor starts.
+
 Feedback carries the running nodes and the status transitions since the last message.
 `event_level: steps` keeps the step subtrees and the leaves that do something. `all` keeps every
 node. A halt shows as RUNNING to IDLE.

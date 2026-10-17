@@ -276,6 +276,14 @@ struct StopRig
             tree.subtrees.front()->nodes.front().get());
         return report != nullptr ? report->failureText() : "(not a report)";
     }
+
+    /// Whether the only leaf says its server was not up.
+    bool serverMissing() const
+    {
+        const auto* report = dynamic_cast<const g1_orchestration::LeafReport*>(
+            tree.subtrees.front()->nodes.front().get());
+        return report != nullptr && report->serverMissing();
+    }
 };
 
 TEST(StopGate, AnActionLeafRefusesToStartOnceTheMissionIsWindingDown)
@@ -289,6 +297,7 @@ TEST(StopGate, AnActionLeafRefusesToStartOnceTheMissionIsWindingDown)
 
     EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::seconds(1));
     EXPECT_EQ(rig.failureText(), "stopped");
+    EXPECT_FALSE(rig.serverMissing()) << "a stop, not a missing server";
 }
 
 TEST(StopGate, AnActionLeafStopsWaitingForAServerWhenTheStopComesMidWait)
@@ -318,6 +327,7 @@ TEST(StopGate, AnActionLeafStillWaitsForItsServerWhenNoStopComes)
 
     EXPECT_GE(std::chrono::steady_clock::now() - start, std::chrono::milliseconds(450));
     EXPECT_THAT(rig.failureText(), ::testing::HasSubstr("no action server"));
+    EXPECT_TRUE(rig.serverMissing());
 }
 
 TEST(StopGate, AServiceLeafStartsNoCallOnceTheMissionIsWindingDown)

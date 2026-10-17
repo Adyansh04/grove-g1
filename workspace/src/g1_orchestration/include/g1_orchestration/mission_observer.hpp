@@ -45,6 +45,8 @@ struct Failure
     std::string reason;
     /// The node was a Timeout: the mission or a step ran out of time.
     bool timed_out = false;
+    /// The leaf's action server was not up.
+    bool server_missing = false;
 };
 
 class MissionObserver : public BT::StatusChangeLogger

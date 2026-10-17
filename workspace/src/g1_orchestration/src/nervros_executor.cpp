@@ -187,6 +187,29 @@ std::string pathOf(const BT::TreeNode& step)
     return prefix.empty() ? step.name() : prefix;
 }
 
+/// The cause a rejection's code names: NONE for a problem of the plan's own.
+std::uint8_t causeOf(std::string_view code)
+{
+    using Result = nervros_interfaces::action::ExecuteMission::Result;
+    if (code == code::kRobotCannotMove)
+    {
+        return Result::CAUSE_ROBOT;
+    }
+    if (code == code::kShuttingDown)
+    {
+        return Result::CAUSE_SHUTDOWN;
+    }
+    if (code == code::kTeleopActive)
+    {
+        return Result::CAUSE_TELEOP;
+    }
+    if (code == code::kBusy)
+    {
+        return Result::CAUSE_BUSY;
+    }
+    return Result::CAUSE_NONE;
+}
+
 }  // namespace
 
 MissionExecutor::MissionExecutor(
@@ -690,6 +713,7 @@ void MissionExecutor::rejectGoal(
     result->outcome          = ExecuteMission::Result::OUTCOME_REJECTED;
     result->failure_reason   = reason;
     result->diagnostics_json = diagnosticsJson({ diagnostic });
+    result->cause            = causeOf(diagnostic.code);
     RCLCPP_WARN(
         get_logger(),
         "rejecting goal %s: %s",
@@ -816,10 +840,11 @@ void MissionExecutor::onStopAll(
     const std::shared_ptr<nervros_interfaces::srv::StopAll::Request>&  request,
     const std::shared_ptr<nervros_interfaces::srv::StopAll::Response>& response)
 {
-    *response = stopEverything(request->reason);
+    *response = stopEverything(request->reason, ExecuteMission::Result::CAUSE_NONE);
 }
 
-nervros_interfaces::srv::StopAll::Response MissionExecutor::stopEverything(const std::string& reason)
+nervros_interfaces::srv::StopAll::Response
+MissionExecutor::stopEverything(const std::string& reason, std::uint8_t cause)
 {
     nervros_interfaces::srv::StopAll::Response response;
     // Nothing may escape: this runs in a service callback and in a timer. A stop that fails part
@@ -844,9 +869,15 @@ nervros_interfaces::srv::StopAll::Response MissionExecutor::stopEverything(const
         {
             const std::lock_guard<std::mutex> lock(stop_mutex_);
             mission = running_;
+            // The first stop says why: a later one, as the operator's after a deadman, does not
+            // rename it.
+            if (mission && !stop_requested_)
+            {
+                stop_reason_ = reason;
+                stop_cause_  = cause;
+            }
             if (mission)
             {
-                stop_reason_    = reason;
                 stop_requested_ = true;
                 halting_        = true;
             }
@@ -909,6 +940,7 @@ void MissionExecutor::deadman()
     const Clock::rep timeout = heartbeat_timeout_ticks_.load();
     const Clock::rep silent  = now - heartbeat_ticks_.load();
     std::string      reason;
+    std::uint8_t     cause = ExecuteMission::Result::CAUSE_DEADMAN;
     if (timeout != 0 && silent >= timeout)
     {
         reason = std::format(
@@ -932,13 +964,14 @@ void MissionExecutor::deadman()
             return;
         }
         reason = "the robot can no longer walk: " + health.reason;
+        cause  = ExecuteMission::Result::CAUSE_ROBOT;
     }
     if (reason.empty() || deadman_fired_.exchange(true))
     {
         return;
     }
     RCLCPP_ERROR(get_logger(), "%s; stopping the mission", reason.c_str());
-    stopEverything(reason);
+    stopEverything(reason, cause);
 }
 
 std::optional<std::string>
@@ -1124,6 +1157,7 @@ void MissionExecutor::run(const std::shared_ptr<GoalHandle>& handle)
     result->failed_step_id   = outcome.failed_step;
     result->failure_reason   = outcome.reason;
     result->diagnostics_json = outcome.diagnostics;
+    result->cause            = outcome.cause;
     result->outputs_json     = outcome.outputs;
     result->elapsed_s        = static_cast<float>(Seconds(Clock::now() - begin).count());
     RCLCPP_INFO(
@@ -1187,6 +1221,7 @@ MissionExecutor::Outcome MissionExecutor::rejected(const std::vector<Diagnostic>
     outcome.code        = ExecuteMission::Result::OUTCOME_REJECTED;
     outcome.reason      = diagnostics.empty() ? "rejected" : diagnostics.front().message;
     outcome.diagnostics = diagnosticsJson(diagnostics);
+    outcome.cause       = diagnostics.empty() ? outcome.cause : causeOf(diagnostics.front().code);
     return outcome;
 }
 
@@ -1562,6 +1597,7 @@ MissionExecutor::execute(const ExecuteMission::Goal& goal, const std::shared_ptr
             const std::lock_guard<std::mutex> lock(stop_mutex_);
             outcome.code   = ExecuteMission::Result::OUTCOME_CANCELED;
             outcome.reason = "stopped: " + stop_reason_ + tail;
+            outcome.cause  = stop_cause_;
             running_step(outcome);
             return outcome;
         }
@@ -1573,6 +1609,7 @@ MissionExecutor::execute(const ExecuteMission::Goal& goal, const std::shared_ptr
         case Ended::kShutdown:
             outcome.code   = ExecuteMission::Result::OUTCOME_CANCELED;
             outcome.reason = "the executor is shutting down" + tail;
+            outcome.cause  = ExecuteMission::Result::CAUSE_SHUTDOWN;
             running_step(outcome);
             return outcome;
         case Ended::kPausedTooLong:
@@ -1593,6 +1630,10 @@ MissionExecutor::execute(const ExecuteMission::Goal& goal, const std::shared_ptr
         outcome.failed_node = failure->path;
         outcome.failed_step = failure->step;
         outcome.reason      = failure->reason + tail;
+        if (failure->server_missing)
+        {
+            outcome.cause = ExecuteMission::Result::CAUSE_NO_SERVER;
+        }
     }
     else
     {
@@ -2011,6 +2052,7 @@ void MissionExecutor::pushState()
         const std::lock_guard<std::mutex> lock(live_mutex_);
         RobotState                        state;
         state.stamp        = now();
+        state.boot_id      = boot_id_;
         state.mission_id   = mission_id_;
         state.mission_step = mission_step_;
         state.teleop       = teleop_ && teleop_->active();
