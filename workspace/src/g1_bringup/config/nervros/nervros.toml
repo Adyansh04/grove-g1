@@ -21,6 +21,9 @@ interfaces = [
     "../../../canopy/canopy_msgs",
     "../../../nervros/ros/nervros_interfaces",
 ]
+# The motions NervROS runs itself (routes, waits, straight hand moves): nervros_watchdog, started
+# with the executor, cancels them if NervROS goes quiet.
+open_goals = "/nervros/open_goals"
 
 [policy]
 start_armed = false
@@ -116,6 +119,39 @@ name = "Scan"
 topic = "/scan"
 type = "sensor_msgs/msg/LaserScan"
 
+# Nav2's collision monitor as it shows its polygons: the body circle it keeps the robot's
+# distance with, and the slow and stop polygons NervROS shapes (empty until it does).
+[[viz.layer]]
+name = "Collision: body"
+topic = "/collision_monitor_body"
+type = "geometry_msgs/msg/PolygonStamped"
+color = [76, 201, 196]
+
+[[viz.layer]]
+name = "Collision: slow"
+topic = "/collision_monitor_nervros_slow"
+type = "geometry_msgs/msg/PolygonStamped"
+color = [243, 166, 43]
+
+[[viz.layer]]
+name = "Collision: stop"
+topic = "/collision_monitor_nervros_stop"
+type = "geometry_msgs/msg/PolygonStamped"
+color = [230, 60, 60]
+
+# Nav2's costmaps, hidden by default: switched on in the Layers tab when a walk is stuck.
+[[viz.layer]]
+name = "Global costmap"
+topic = "/global_costmap/costmap"
+type = "nav_msgs/msg/OccupancyGrid"
+hidden = true
+
+[[viz.layer]]
+name = "Local costmap"
+topic = "/local_costmap/costmap"
+type = "nav_msgs/msg/OccupancyGrid"
+hidden = true
+
 [mission]
 execute = "/nervros_executor/execute_mission"
 validate = "/nervros_executor/validate_mission"
@@ -136,6 +172,8 @@ heartbeat_timeout_s = 2.0
 # Driving by hand from the window's Robot tab, through the executor, which owns the base.
 teleop = "/nervros_executor/teleop"
 teleop_cmd = "/nervros_executor/teleop_cmd"
+# The executor holds the arms; it lends them for an arm move NervROS runs itself through MoveIt.
+lend = "/nervros_executor/lend_resources"
 
 # The plan checks hold these skills to the operator's words: g1_orchestration's skill names,
 # positive degrees turn left (ROS convention), and WalkStraight walks at most 2 m a step.
@@ -186,10 +224,25 @@ action_send = ["*"]
 publish = ["*"]
 param_set = ["*:*"]
 
-# Keep-out zones, added in chat ("keep out of the kitchen"), also go to Nav2 as this mask, which
-# g1_navigation's keepout filters read with keepout:=true, so its own paths stay out of them.
+# Zones added in chat: "keep out of the kitchen", "make the hallway a slow zone at 40%". The gait
+# stalls under about 0.15 m/s of the controller's 0.6 m/s, so a slow zone keeps at least 30%.
 [geofence]
-mask = "/keepout_filter_mask"
+slowest_percent = 30
+top_speed_mps = 0.6
+
+# Nav2. The zones reach its costmap filters, which g1_navigation starts with keepout:=true: the
+# keep-out mask through its filter info server, the speed mask through the info NervROS publishes.
+[nav2]
+keepout_mask = "/keepout_filter_mask"
+
+[nav2.speed_zones]
+mask = "/speed_filter_mask"
+info = "/speed_filter_info"
+
+# MoveIt plans in the pelvis frame: the G1's model has no virtual joint to the world.
+[moveit]
+move_group = "/move_group"
+planning_frame = "pelvis"
 
 # The incident investigator: this robot's known traps, beside the ones NervROS carries, and what
 # opens an incident when it goes. A camera is watched by its camera_info, which the relay sends

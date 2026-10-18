@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<!--
+  Move one arm to a named pose of g1.srdf and hold it there. Retried once, since OMPL sometimes
+  samples a path that clips the live octomap.
+-->
+<root BTCPP_format="4">
+  <BehaviorTree ID="ArmTo">
+    <Timeout name="give_up_after_the_limit" msec="60000">
+      <RetryUntilSuccessful name="move_with_a_retry" num_attempts="2">
+        <SetArmPosture name="move_the_arm" group="{arm}" named_target="{pose}"/>
+      </RetryUntilSuccessful>
+    </Timeout>
+  </BehaviorTree>
+
+  <TreeNodesModel>
+    <SubTree ID="ArmTo">
+      <input_port name="arm">Which arm: left_arm or right_arm.</input_port>
+      <input_port name="pose">A named pose of that arm in g1.srdf.</input_port>
+    </SubTree>
+  </TreeNodesModel>
+</root>

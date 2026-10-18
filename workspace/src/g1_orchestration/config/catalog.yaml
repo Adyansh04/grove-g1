@@ -233,6 +233,53 @@ skills:
     max_duration_s: 1500
     template: ExploreBuilding
 
+  - name: ArmTo
+    description: >-
+      Move one arm to a named pose and hold it there: home (down by the side), ready (raised,
+      elbow bent), reach_front (out in front), carry (close in front, as when carrying something),
+      tucked (folded against the body) or zero. Use it for "raise your right arm" or "hold your
+      left arm out"; TuckForTravel folds both arms for walking.
+    args:
+      - name: arm
+        type: string
+        enum: [left_arm, right_arm]
+        description: Which arm.
+      - name: pose
+        type: string
+        enum: [home, ready, reach_front, carry, tucked, zero]
+        description: The pose.
+    requires: []
+    effects: []
+    resources: [left_arm, right_arm]
+    idempotent: true
+    risk: motion
+    max_duration_s: 60
+    template: ArmTo
+
+  - name: HandTo
+    description: >-
+      Bring one hand to just above an object, 10 cm over its top, without grasping it: to show
+      which one is meant, or to get ready over it. The robot does not walk: stand within reach
+      first (GoToTarget). Given what an object is rather than its id, it reaches over the nearest
+      one.
+    args:
+      - name: arm
+        type: string
+        enum: [left, right]
+        description: Which hand.
+      - name: target
+        type: world_id
+        format: phrase
+        description: >-
+          The id of an object in the world model, such as O17, or what it is in plain words.
+    requires: []
+    effects: []
+    resources: [left_arm, right_arm]
+    idempotent: true
+    risk: motion
+    max_duration_s: 60
+    template: HandTo
+
   - name: TuckForTravel
     description: >-
       Fold both arms against the body so they do not disturb the walk. An arm whose hand holds

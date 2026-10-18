@@ -1,0 +1,8 @@
+nervros_watchdog:
+  ros__parameters:
+    # The profile's [ros] open_goals, where NervROS keeps the goals of the motions it runs itself.
+    open_goals_topic: /nervros/open_goals
+    # NervROS sends them twice a second while any is open.
+    timeout_s: 2.0
+    # MoveIt is told to stop with the cancels, so an arm move NervROS started ends too.
+    moveit_stop_topic: /trajectory_execution_event

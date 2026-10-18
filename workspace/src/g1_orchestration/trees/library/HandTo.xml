@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<!--
+  Bring one hand to just above an object of the world model, 10 cm over its top, as a reach
+  without a grasp: the object itself would be in the way of the hand.
+-->
+<root BTCPP_format="4">
+  <BehaviorTree ID="HandTo">
+    <Timeout name="give_up_after_the_limit" msec="60000">
+      <MoveHand name="reach_above_it" arm="{arm}" target="{target}" mode="reach" offset_z="0.10"/>
+    </Timeout>
+  </BehaviorTree>
+
+  <TreeNodesModel>
+    <SubTree ID="HandTo">
+      <input_port name="arm">Which hand: left or right.</input_port>
+      <input_port name="target">An object of the world model, by id or in plain words.</input_port>
+    </SubTree>
+  </TreeNodesModel>
+</root>

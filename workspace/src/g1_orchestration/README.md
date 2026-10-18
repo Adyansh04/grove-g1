@@ -184,6 +184,8 @@ keeps them in step (names, ports, limits, resources). The macros are flat: none 
 | `WalkStraight` | Walks forward or backward a distance (0.1 to 2 m) with `DriveStraight`, one try. Nav2 projects the walk on the local costmap and stops it before a collision, which fails the step. | `base` |
 | `TurnInPlace` | Turns by an angle (-180 to 180 degrees, positive left) with `TurnBy`, one try. | `base` |
 | `TuckForTravel` | Tucks each arm whose hand is empty. | arms |
+| `ArmTo` | Moves one arm (`left_arm`, `right_arm`) to a named pose of `g1.srdf` with `SetArmPosture`, one retry. | arms |
+| `HandTo` | Brings one hand 10 cm over an object (an id, or plain words for the nearest) with `MoveHand`, without grasping. | arms |
 | `FindInView` | Asks the detector for a phrase and waits for it on `/objects`, then idles the detector. Moves nothing. Hands on `object_id`, the name the detector reports it under (`red_mug`). | none |
 | `ExploreBuilding` | The loop of `trees/explore.xml`: frontiers until the map is closed, then canopy's viewpoints until every room is seen, then clean up and save. Explores for up to 23 minutes, since a whole run is longer than a mission may be, and saves. Running out of time is not a failure. A world model that cannot plan is. | `base` |
 
@@ -302,7 +304,7 @@ Otherwise the first mission finds them taken and trusts nothing.
 `StopAll` does not wait on anything slow:
 
 1. The mission thread halts the tree, which cancels its leaves' goals. The leaves are also told to start nothing more. One flag does this, set by a stop, a cancel, the watchdog or a shutdown. A tick that is inside a wait for a server, or looping through retries, then ends at once instead of running out its budget.
-2. Every goal on every server in `stop_action_servers` is cancelled, whoever sent it. So is the arm trajectory controller's goal, which then holds the arm where it is (no snap).
+2. Every goal on every server in `stop_action_servers` and `agent_action_servers` is cancelled, whoever sent it. Arms lent to NervROS are taken back. So is the arm trajectory controller's goal, which then holds the arm where it is (no snap).
 3. It waits up to `stop_wait_s` for the halt and asks again for any goal accepted since. Then it waits for the servers' status topics, the arm controller's included, to show no goal.
 4. The base needs nothing more. Nothing writes `/cmd_vel`, and the policy zeroes a stale command after 0.5 s and stands. **The hands are never touched**: cancelling a hand controller's goal would loosen the grip.
 5. It returns `ok`, a message and `state_after` (`holding posture; right hand keeps red_block`). It sets `RobotState.stopped` until the next executed mission starts.
@@ -386,12 +388,23 @@ All in `config/nervros_executor.yaml`, commented there.
 | `authority_timeout_s` | 15 | Per-step budget for `controller_manager` calls. |
 | `dry_run_time_scale`, `dry_run_min_leaf_s` | 0.02, 0.05 | A dry run's share of a skill's catalog time per leaf, and its floor. |
 | `stop_action_servers` | every skill server | As `/name:type`. `test_catalog_drift` fails if a leaf uses one that is not listed. |
+| `agent_action_servers` | NervROS's own motions' servers | As `/name:type`: the servers NervROS sends its own steps to (routes, waits, MoveIt moves). `StopAll` cancels their goals too. |
+| `max_lend_s`, `lend_heartbeat_timeout_s` | 120, 2.0 | `LendResources`: the longest the arms are lent for one of NervROS's own arm moves, and how long its heartbeat may stop before they are taken back. |
 | `arm_controller_action` | the arm trajectory controller | Cancelled by `StopAll` to hold the arm. |
 | `learnable_leaves` | nine leaves | What a taught skill may be built from, as `Leaf:holds:inputs`: the authority it needs (`base`, `arms` or empty) and the only inputs a skill may set. `a\|b` lists two of which exactly one is set; `input(world_id)` marks one that takes a world-model id. |
 | `max_learned_duration_s`, `max_learned_nodes`, `max_learned_skills` | 300, 40, 32 | The longest and largest a taught skill may be, and how many there may be. |
 | `learned_skills_dir` | `""` | Where kept skills live, a JSON file each. Empty keeps them only until the executor stops. `nervros.sh` uses `/root/data/skills/g1`. |
 
+`~/lend_resources` (`LendResources`) lends the arms to an arm move NervROS runs itself through
+MoveIt: they are taken as for a mission, missions and driving by hand are refused while they are
+lent, and they are let go of as at a mission's end when given back, on `StopAll`, on a heartbeat
+silent for `lend_heartbeat_timeout_s`, or after `max_s` (at most `max_lend_s`). A hand that holds
+something keeps its arm held.
+
 ### Running it
+
+The launch file also starts `nervros_watchdog` (`config/nervros_watchdog.yaml`), which cancels
+NervROS's own goals and stops MoveIt if NervROS goes quiet with a motion running.
 
 ```bash
 ros2 launch g1_orchestration nervros_executor.launch.py

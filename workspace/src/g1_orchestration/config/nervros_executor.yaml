@@ -69,6 +69,18 @@ nervros_executor:
       - /g1_manipulation_server/set_arm_posture:g1_msgs/action/SetArmPosture
       - /g1_manipulation_server/move_hand:g1_msgs/action/MoveHand
       - /g1_vla_server/grasp:g1_msgs/action/Grasp
+    # The servers the agent's own motions use, outside any mission (NervROS's native steps):
+    # StopAll cancels every goal on them too.
+    agent_action_servers:
+      - /navigate_through_poses:nav2_msgs/action/NavigateThroughPoses
+      - /follow_path:nav2_msgs/action/FollowPath
+      - /wait:nav2_msgs/action/Wait
+      - /move_action:moveit_msgs/action/MoveGroup
+      - /execute_trajectory:moveit_msgs/action/ExecuteTrajectory
+    # LendResources: the longest the arms are lent for one motion of the agent's own, and how long
+    # its heartbeat may stop before they are taken back.
+    max_lend_s: 120.0
+    lend_heartbeat_timeout_s: 2.0
     # The arm's trajectory controller. StopAll cancels its goal, which makes it hold the arm where
     # it is. The hand controllers are deliberately absent: cancelling theirs lets go of the grip.
     arm_controller_action: /arm_trajectory_controller/follow_joint_trajectory:control_msgs/action/FollowJointTrajectory

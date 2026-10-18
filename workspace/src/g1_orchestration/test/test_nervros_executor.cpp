@@ -37,6 +37,7 @@
 #include <nervros_interfaces/msg/heartbeat.hpp>
 #include <nervros_interfaces/msg/robot_state.hpp>
 #include <nervros_interfaces/srv/get_catalog.hpp>
+#include <nervros_interfaces/srv/lend_resources.hpp>
 #include <nervros_interfaces/srv/pause_mission.hpp>
 #include <nervros_interfaces/srv/preview_mission.hpp>
 #include <nervros_interfaces/srv/stop_all.hpp>
@@ -2006,6 +2007,60 @@ TEST(NervrosExecutor, TeleopDrivesWithinItsLimitsStopsWhenCommandsPauseAndBlocks
 
     harness.stopAll("button");
     EXPECT_FALSE(harness.stateWhere([](const RobotState& s) { return !s.teleop; }).teleop);
+}
+
+// --- lending ----------------------------------------------------------------------------------
+
+TEST(NervrosExecutor, LentArmsKeepMissionsOutAndComeBackWhenGivenBackSilentOrStopped)
+{
+    Harness harness({ rclcpp::Parameter("lend_heartbeat_timeout_s", 0.5) });
+    auto    lend = harness.client_node->create_client<nervros_interfaces::srv::LendResources>(
+        "/nervros_executor/lend_resources");
+    ASSERT_TRUE(lend->wait_for_service(20s));
+    const auto ask = [&](bool on) {
+        auto request       = std::make_shared<nervros_interfaces::srv::LendResources::Request>();
+        request->client    = "agent";
+        request->resources = { "left_arm", "right_arm" };
+        request->lend      = on;
+        request->max_s     = 30.0;
+        auto reply         = lend->async_send_request(request);
+        EXPECT_EQ(reply.wait_for(10s), std::future_status::ready);
+        return reply.get();
+    };
+    const auto held = [](const RobotState& s) {
+        return std::ranges::find(s.resources_held, "left_arm") != s.resources_held.end();
+    };
+
+    {
+        Heartbeats beats(harness.client_node, "agent");
+        const auto lent = ask(true);
+        ASSERT_TRUE(lent->granted) << lent->reason;
+        EXPECT_EQ(harness.authority->acquired, 1);
+        EXPECT_TRUE(held(harness.stateWhere(held)));
+
+        const auto refused =
+            harness.execute(makeGoal(mission("<Sequence>" + kWalk + "</Sequence>")));
+        EXPECT_EQ(refused->result->outcome, ExecuteMission::Result::OUTCOME_REJECTED);
+        EXPECT_EQ(diagnostics(*refused->result)[0]["code"], "BUSY");
+
+        const auto back = ask(false);
+        EXPECT_TRUE(back->granted);
+        EXPECT_EQ(harness.authority->released, 1);
+        EXPECT_FALSE(held(harness.stateWhere([&](const RobotState& s) { return !held(s); })));
+    }
+
+    // No heartbeat: taken back within the timeout.
+    ASSERT_TRUE(ask(true)->granted);
+    EXPECT_TRUE(waitFor([&] { return harness.authority->released == 2; }, 5s));
+
+    // A stop takes them back too.
+    {
+        Heartbeats beats(harness.client_node, "agent");
+        ASSERT_TRUE(ask(true)->granted);
+        harness.stopAll("button");
+        EXPECT_EQ(harness.authority->released, 3);
+        EXPECT_FALSE(ask(false)->reason.empty()) << "nothing should still be lent";
+    }
 }
 
 // --- preview ----------------------------------------------------------------------------------
