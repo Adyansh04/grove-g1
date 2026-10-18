@@ -1,0 +1,111 @@
+# The NervROS agent with Nav2 and MoveIt on the G1 in the apartment: the stacks' tools, and the
+# motions NervROS runs itself beside the executor's skills. Each case runs in a fresh session,
+# armed, with every approval granted; the robot's place carries from case to case, so the order
+# matters: walks first, then the changes that would hold a walk back, each undone at the end.
+#
+# Needs the apartment demo's stack with the arm (`nervros.sh app`'s bringup, canopy, executor) and
+# the local model; then, from workspace/src/nervros with the demo's environment:
+#   cargo run -p nervros-cli -- --profile ../g1_bringup/config/nervros/nervros.toml \
+#     eval ../g1_bringup/config/nervros/eval/integrations.toml
+
+truth = { topic = "/g1_sensor_relay/base_state" }
+
+# Reading the stacks
+
+[[case]]
+id = "nav-status"
+say = ["Is navigation up, and how well does the robot know where it is?"]
+expect = { tools = ["nav_status"], mission = "none" }
+
+[[case]]
+id = "nav-check"
+say = ["Could you walk to the office desk tray from here, and how far is it? Don't move."]
+expect = { tools = ["nav_check"], mission = "none", moved_m = [0.0, 0.2] }
+
+[[case]]
+id = "arm-status"
+say = ["Where are the arms now, and which poses can they move to?"]
+expect = { tools = ["arm_status"], mission = "none" }
+
+[[case]]
+id = "arm-preview"
+say = ["Show me how the left arm would move to the ready pose, without moving it."]
+expect = { tools = ["arm_check"], mission = "none", approvals_max = 0 }
+
+# Motions NervROS runs itself, alone and with the executor's
+
+[[case]]
+id = "route"
+say = ["Walk through the hallway to the office desk tray without stopping on the way."]
+max_s = 300
+expect = { skills = ["WalkRoute"], mission = "success", approvals_max = 1, moved_m = [3.0, 20.0] }
+
+[[case]]
+id = "wait-then-turn"
+say = ["Wait 5 seconds, then turn right 90 degrees."]
+expect = { skills = ["Wait", "TurnInPlace"], mission = "success", approvals_max = 1, turned_deg = [-120, -60] }
+
+[[case]]
+id = "hand-up"
+say = ["Raise your right hand 5 centimetres."]
+expect = { skills = ["HandLine"], mission = "success", approvals_max = 1 }
+
+[[case]]
+id = "arm-ready"
+say = ["Put your right arm in the ready pose."]
+expect = { skills = ["ArmTo"], mission = "success", approvals_max = 1 }
+
+[[case]]
+id = "tuck"
+say = ["Tuck your arms in for walking."]
+expect = { skills = ["TuckForTravel"], mission = "success", approvals_max = 1 }
+
+# Changing how the robot moves: tools, never missions
+
+[[case]]
+id = "slow-zone"
+say = ["Make the hallway a slow zone at 40 percent of top speed."]
+expect = { tools = ["geofence"], mission = "none" }
+
+[[case]]
+id = "slow-zone-remove"
+say = ["Remove the hallway slow zone."]
+expect = { tools = ["geofence"], mission = "none", approvals_max = 1 }
+
+[[case]]
+id = "monitor-status"
+say = ["What does the collision monitor watch, and is it on?"]
+expect = { tools = ["collision_monitor"], mission = "none" }
+
+[[case]]
+id = "monitor-shape"
+say = ["Shape the collision monitor's stop polygon as a box from 0.3 to 0.9 metres ahead of the robot, 0.6 metres wide."]
+expect = { tools = ["collision_monitor"], mission = "none" }
+
+[[case]]
+id = "monitor-off"
+say = ["Turn the collision monitor's stop polygon off again."]
+expect = { tools = ["collision_monitor"], mission = "none", approvals_max = 1 }
+
+[[case]]
+id = "costmaps"
+say = ["The costmaps still show an obstacle that has gone. Clear them."]
+expect = { tools = ["nav_admin"], mission = "none", approvals_max = 1 }
+
+[[case]]
+id = "arm-speed"
+say = ["Make the arm moves you run yourself slower: 10 percent of top speed."]
+expect = { tools = ["arm_settings"], mission = "none" }
+
+[[case]]
+id = "scene-obstacle"
+say = ["Add a box obstacle 30 centimetres on a side to the arms' planning scene, at x 1, y 1, z 0.8 on the map, then take it out again."]
+expect = { tools = ["scene"], mission = "none" }
+
+# Procedures the stacks bring
+
+[[case]]
+id = "skill-held-back"
+say = ["The robot keeps stopping short of doorways though nothing is in the way. Why?"]
+# The procedure's checks, whether or not the agent opens it first.
+expect = { tools = ["nav_status", "collision_monitor"], mission = "none" }
