@@ -1,4 +1,5 @@
-"""Starts the mission executor a NervROS agent sends behavior trees to.
+"""Starts the mission executor a NervROS agent sends behavior trees to, and the watchdog that
+cancels the motions NervROS runs itself if it goes quiet.
 
 Starts nothing else: the simulator, Nav2, MoveIt and the skill servers come from g1_bringup, and
 the executor takes the arms itself when a mission needs them.
@@ -15,6 +16,9 @@ from launch_ros.actions import Node
 
 PARAMS_FILE = os.path.join(
     get_package_share_directory("g1_orchestration"), "config", "nervros_executor.yaml"
+)
+WATCHDOG_PARAMS = os.path.join(
+    get_package_share_directory("g1_orchestration"), "config", "nervros_watchdog.yaml"
 )
 
 
@@ -92,4 +96,11 @@ def generate_launch_description():
         ],
     )
 
-    return LaunchDescription(arguments + [executor])
+    watchdog = Node(
+        package="nervros_watchdog",
+        executable="nervros_watchdog",
+        output="screen",
+        parameters=[WATCHDOG_PARAMS],
+    )
+
+    return LaunchDescription(arguments + [executor, watchdog])

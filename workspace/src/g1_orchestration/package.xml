@@ -38,8 +38,11 @@
   <depend>vision_msgs</depend>
 
   <exec_depend>control_msgs</exec_depend>
+  <!-- The agent's own arm moves, which StopAll cancels by type name. -->
+  <exec_depend>moveit_msgs</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
+  <exec_depend>nervros_watchdog</exec_depend>
 
   <!-- ament_lint_common intentionally not used to avoid clang-format conflicts. -->
   <test_depend>ament_lint_auto</test_depend>

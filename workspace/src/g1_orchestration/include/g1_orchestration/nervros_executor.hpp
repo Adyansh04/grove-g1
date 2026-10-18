@@ -41,6 +41,7 @@
 #include <nervros_interfaces/srv/define_skill.hpp>
 #include <nervros_interfaces/srv/forget_skill.hpp>
 #include <nervros_interfaces/srv/get_catalog.hpp>
+#include <nervros_interfaces/srv/lend_resources.hpp>
 #include <nervros_interfaces/srv/pause_mission.hpp>
 #include <nervros_interfaces/srv/preview_mission.hpp>
 #include <nervros_interfaces/srv/stop_all.hpp>
@@ -199,6 +200,16 @@ private:
     void onForgetSkill(
         const std::shared_ptr<nervros_interfaces::srv::ForgetSkill::Request>&  request,
         const std::shared_ptr<nervros_interfaces::srv::ForgetSkill::Response>& response);
+    void onLend(
+        const std::shared_ptr<nervros_interfaces::srv::LendResources::Request>&  request,
+        const std::shared_ptr<nervros_interfaces::srv::LendResources::Response>& response);
+    /// Ends the lend, if there is one, and lets go of the arms as a mission's end does unless a
+    /// hand may hold something. Returns whether anything was lent.
+    bool takeBack(const std::string& why);
+    /// Takes back a lend whose client has gone quiet or whose time has run out.
+    void checkLend();
+    /// Lets go of the arms unless a hand may hold something.
+    void letGoOfArms();
     /// StopAll's work, for the service and for the deadman: halt, cancel, wait, hold. @p cause
     /// goes into the stopped mission's result.
     nervros_interfaces::srv::StopAll::Response
@@ -323,10 +334,13 @@ private:
     rclcpp::Service<nervros_interfaces::srv::PauseMission>::SharedPtr    pause_service_;
     rclcpp::Service<nervros_interfaces::srv::DefineSkill>::SharedPtr     define_skill_service_;
     rclcpp::Service<nervros_interfaces::srv::ForgetSkill>::SharedPtr     forget_skill_service_;
-    rclcpp::Publisher<RobotState>::SharedPtr                             state_pub_;
-    rclcpp::TimerBase::SharedPtr                                         state_timer_;
-    rclcpp::Subscription<nervros_interfaces::msg::Heartbeat>::SharedPtr  heartbeat_sub_;
-    rclcpp::TimerBase::SharedPtr                                         deadman_timer_;
+    rclcpp::Service<nervros_interfaces::srv::LendResources>::SharedPtr   lend_service_;
+    /// Its own group: taking the arms takes seconds, and neither a stop nor a query waits on it.
+    rclcpp::CallbackGroup::SharedPtr                                    lend_group_;
+    rclcpp::Publisher<RobotState>::SharedPtr                            state_pub_;
+    rclcpp::TimerBase::SharedPtr                                        state_timer_;
+    rclcpp::Subscription<nervros_interfaces::msg::Heartbeat>::SharedPtr heartbeat_sub_;
+    rclcpp::TimerBase::SharedPtr                                        deadman_timer_;
     /// Planner and world-model calls for a preview, answered while the preview service waits.
     rclcpp::CallbackGroup::SharedPtr preview_group_;
     rclcpp::CallbackGroup::SharedPtr preview_clients_group_;
@@ -356,12 +370,19 @@ private:
 
     // A mission starts and ends, and a stop lands, under stop_mutex_: a stop is then always
     // for the mission that was running when it was asked for, and cannot end the next one.
-    std::mutex              stop_mutex_;
-    std::atomic<bool>       running_{ false };
-    std::atomic<bool>       stop_requested_{ false };
-    std::string             stop_reason_;
-    std::uint8_t            stop_cause_ = ExecuteMission::Result::CAUSE_NONE;
-    rclcpp_action::GoalUUID goal_id_{};
+    std::mutex        stop_mutex_;
+    std::atomic<bool> running_{ false };
+    /// The client the arms are lent to, empty when they are not: claimed under this mutex like a
+    /// mission, so a lend and a mission exclude each other.
+    std::string lent_to_;
+    /// When the lend runs out, in steady-clock ticks; 0 when nothing is lent.
+    std::atomic<std::chrono::steady_clock::rep> lent_until_{ 0 };
+    double                                      max_lend_s_               = 120.0;
+    double                                      lend_heartbeat_timeout_s_ = 2.0;
+    std::atomic<bool>                           stop_requested_{ false };
+    std::string                                 stop_reason_;
+    std::uint8_t                                stop_cause_ = ExecuteMission::Result::CAUSE_NONE;
+    rclcpp_action::GoalUUID                     goal_id_{};
     /// Set by a stop, a cancel, the watchdog or a shutdown: what the leaves look at.
     std::atomic<bool> halting_{ false };
     /// The operator's last word: true to pause the running mission, false to go on with it.

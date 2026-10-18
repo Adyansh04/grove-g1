@@ -1,0 +1,18 @@
+# MoveIt sends trajectories to the arm's trajectory controller, which runs only while the executor
+# holds the arms: during a mission, or lent to NervROS for an arm move of its own.
+id = "arm-controllers-off"
+title = "The arm's controller does not take MoveIt's moves"
+explains = ["mission_failed", "asked"]
+match = "any"
+verdict = "MoveIt could not reach the arm's trajectory controller: the arms were not taken, or were given back, when the move ran."
+fix = "Run the arm move as a mission step, so the executor takes or lends the arms; if the executor refused to lend them, end what holds them first. Restart the arm stack (activate_arm) if missions cannot take them either."
+procedure = "arm-cannot-reach"
+
+[[check]]
+name = "MoveIt's controller manager"
+log = "Action client not connected to action server"
+node = "move_group"
+
+[[check]]
+name = "the arm move"
+failure_has = "the controllers did not follow the plan"

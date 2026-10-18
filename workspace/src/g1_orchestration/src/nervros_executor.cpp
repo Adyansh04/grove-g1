@@ -315,6 +315,9 @@ MissionExecutor::MissionExecutor(
     const auto stop_servers = declare_parameter<std::vector<std::string>>(
         "stop_action_servers",
         std::vector<std::string>{});
+    const auto agent_servers = declare_parameter<std::vector<std::string>>(
+        "agent_action_servers",
+        std::vector<std::string>{});
     const std::string arm_action = declare_parameter<std::string>("arm_controller_action", "");
     if (stop_servers.empty() || arm_action.empty())
     {
@@ -323,7 +326,10 @@ MissionExecutor::MissionExecutor(
             "stop_action_servers or arm_controller_action is empty: StopAll will only cancel what "
             "this executor's own mission sent, and will not hold the arm");
     }
-    leaf_servers_   = std::make_unique<ServerFleet>(*this, stop_servers, status_group_);
+    // The agent's own motions are stopped with the mission's: StopAll means every motion.
+    std::vector<std::string> stopped = stop_servers;
+    stopped.insert(stopped.end(), agent_servers.begin(), agent_servers.end());
+    leaf_servers_   = std::make_unique<ServerFleet>(*this, stopped, status_group_);
     arm_controller_ = std::make_unique<ServerFleet>(
         *this,
         arm_action.empty() ? std::vector<std::string>{} : std::vector<std::string>{ arm_action },
@@ -414,6 +420,10 @@ MissionExecutor::MissionExecutor(
         declare_parameter<double>("max_heartbeat_timeout_s", 10.0),
         "max_heartbeat_timeout_s");
     health_trip_s_ = positive(declare_parameter<double>("health_trip_s", 0.5), "health_trip_s");
+    max_lend_s_    = positive(declare_parameter<double>("max_lend_s", 120.0), "max_lend_s");
+    lend_heartbeat_timeout_s_ = positive(
+        declare_parameter<double>("lend_heartbeat_timeout_s", 2.0),
+        "lend_heartbeat_timeout_s");
     deadman_timer_ = create_wall_timer(
         std::chrono::duration<double>(1.0 / deadman_hz),
         [this] { deadman(); },
@@ -499,6 +509,17 @@ MissionExecutor::MissionExecutor(
         },
         rclcpp::ServicesQoS(),
         query_group_);
+
+    lend_group_   = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    lend_service_ = create_service<nervros_interfaces::srv::LendResources>(
+        "~/lend_resources",
+        [this](
+            const nervros_interfaces::srv::LendResources::Request::SharedPtr&  request,
+            const nervros_interfaces::srv::LendResources::Response::SharedPtr& response) {
+            onLend(request, response);
+        },
+        rclcpp::ServicesQoS(),
+        lend_group_);
 
     pushState();
     RCLCPP_INFO(
@@ -616,6 +637,7 @@ void MissionExecutor::startMission(const std::shared_ptr<GoalHandle>& handle)
     bool                              refused_shutting_down = false;
     bool                              refused_busy          = false;
     bool                              refused_teleop        = false;
+    std::string                       lent_to;
     {
         // The check and the claim are one step, and the stop flags are cleared with the claim: a
         // stop that comes later is for this mission, and one that came earlier was not.
@@ -631,6 +653,10 @@ void MissionExecutor::startMission(const std::shared_ptr<GoalHandle>& handle)
         else if (teleop_->active() && handle->get_goal()->mode == ExecuteMission::Goal::MODE_EXECUTE)
         {
             refused_teleop = true;
+        }
+        else if (!lent_to_.empty() && handle->get_goal()->mode == ExecuteMission::Goal::MODE_EXECUTE)
+        {
+            lent_to = lent_to_;
         }
         else
         {
@@ -650,6 +676,18 @@ void MissionExecutor::startMission(const std::shared_ptr<GoalHandle>& handle)
               "",
               "The executor is shutting down and takes no more missions." },
             "the executor is shutting down");
+        return;
+    }
+    if (!lent_to.empty())
+    {
+        rejectGoal(
+            handle,
+            { code::kBusy,
+              0,
+              "",
+              "The arms are lent to " + lent_to +
+                  " for a motion of its own; it gives them back when it is done." },
+            "the arms are lent to " + lent_to);
         return;
     }
     if (refused_teleop)
@@ -905,6 +943,9 @@ MissionExecutor::stopEverything(const std::string& reason, std::uint8_t cause)
             busy.push_back(std::move(server));
         }
 
+        // A lend ends with the stop: what was lent is let go of as at a mission's end.
+        (void)takeBack("stopped: " + reason);
+
         // (4) to (6) Nothing else moves the base or the arm now; the hands were never touched.
         std::string hands;
         {
@@ -932,6 +973,7 @@ MissionExecutor::stopEverything(const std::string& reason, std::uint8_t cause)
 
 void MissionExecutor::deadman()
 {
+    checkLend();
     if (!running_ || deadman_fired_)
     {
         return;
@@ -972,6 +1014,179 @@ void MissionExecutor::deadman()
     }
     RCLCPP_ERROR(get_logger(), "%s; stopping the mission", reason.c_str());
     stopEverything(reason, cause);
+}
+
+void MissionExecutor::onLend(
+    const std::shared_ptr<nervros_interfaces::srv::LendResources::Request>&  request,
+    const std::shared_ptr<nervros_interfaces::srv::LendResources::Response>& response)
+{
+    const std::string& client = request->client;
+    if (!request->lend)
+    {
+        response->granted = true;
+        response->reason  = takeBack(client + " gave them back") ? "" : "nothing was lent";
+        return;
+    }
+    const auto refuse = [&response](const std::string& why) {
+        response->granted = false;
+        response->reason  = why;
+    };
+    if (client.empty())
+    {
+        refuse("say who borrows them");
+        return;
+    }
+    const std::set<std::string> wanted(request->resources.begin(), request->resources.end());
+    const bool arms = wanted.contains(kLeftArmResource) || wanted.contains(kRightArmResource);
+    if (auto why = healthRefusal(wanted))
+    {
+        refuse(*why);
+        return;
+    }
+    {
+        // Claimed as a mission is, under the same lock: a lend and a mission exclude each other.
+        const std::lock_guard<std::mutex> lock(stop_mutex_);
+        if (shutting_down_)
+        {
+            refuse("the executor is shutting down");
+            return;
+        }
+        if (running_)
+        {
+            refuse("a mission is running");
+            return;
+        }
+        if (teleop_->active())
+        {
+            refuse("the base is being driven by hand");
+            return;
+        }
+        if (!lent_to_.empty() && lent_to_ != client)
+        {
+            refuse("they are lent to " + lent_to_);
+            return;
+        }
+        lent_to_ = client;
+    }
+    {
+        const std::lock_guard<std::mutex> lock(heartbeat_mutex_);
+        heartbeat_client_ = client;
+    }
+    heartbeat_ticks_     = Clock::now().time_since_epoch().count();
+    const double limit_s = std::isfinite(request->max_s) && request->max_s > 0.0 ?
+                               std::min(request->max_s, max_lend_s_) :
+                               max_lend_s_;
+    lent_until_          = (Clock::now() + inClockUnits(limit_s)).time_since_epoch().count();
+    bool held            = false;
+    {
+        const std::lock_guard<std::mutex> lock(live_mutex_);
+        held = arms_held_;
+    }
+    if (arms && !held)
+    {
+        Acquired taken = Acquired::kFailed;
+        try
+        {
+            taken = authority_->acquire();
+        }
+        catch (const std::exception& e)
+        {
+            RCLCPP_ERROR(get_logger(), "taking the arms to lend them threw: %s", e.what());
+        }
+        if (taken == Acquired::kFailed)
+        {
+            (void)takeBack("the arms could not be taken");
+            refuse("the arms could not be taken; is the control stack up?");
+            return;
+        }
+        const std::lock_guard<std::mutex> lock(live_mutex_);
+        arms_held_ = true;
+        if (taken == Acquired::kAlready && !hands_empty_on_attach_)
+        {
+            // As for a mission: someone else took them, so what the hands hold is not known.
+            hands_.left.unknown  = hands_.left.id.empty();
+            hands_.right.unknown = hands_.right.id.empty();
+            syncBlackboardLocked();
+        }
+    }
+    bool stopped_meanwhile = false;
+    {
+        const std::lock_guard<std::mutex> lock(stop_mutex_);
+        stopped_meanwhile = lent_to_ != client;
+    }
+    if (stopped_meanwhile)
+    {
+        // The stop let go of nothing: the arms were not yet held when it came.
+        letGoOfArms();
+        pushState();
+        refuse("a stop came while the arms were being taken");
+        return;
+    }
+    {
+        const std::lock_guard<std::mutex> lock(live_mutex_);
+        note_    = "arms lent to " + client;
+        stopped_ = false;
+    }
+    pushState();
+    RCLCPP_INFO(get_logger(), "lent the arms to %s for up to %.0f s", client.c_str(), limit_s);
+    response->granted = true;
+}
+
+bool MissionExecutor::takeBack(const std::string& why)
+{
+    std::string client;
+    {
+        const std::lock_guard<std::mutex> lock(stop_mutex_);
+        if (lent_to_.empty())
+        {
+            return false;
+        }
+        client = std::exchange(lent_to_, std::string());
+    }
+    lent_until_ = 0;
+    RCLCPP_INFO(get_logger(), "took back what %s borrowed: %s", client.c_str(), why.c_str());
+    {
+        const std::lock_guard<std::mutex> lock(live_mutex_);
+        note_.clear();
+    }
+    letGoOfArms();
+    pushState();
+    return true;
+}
+
+void MissionExecutor::letGoOfArms()
+{
+    bool release = false;
+    {
+        const std::lock_guard<std::mutex> lock(live_mutex_);
+        release = arms_held_ && !mayHoldSomethingLocked();
+    }
+    if (release)
+    {
+        authority_->release();
+        const std::lock_guard<std::mutex> lock(live_mutex_);
+        arms_held_ = false;
+    }
+}
+
+void MissionExecutor::checkLend()
+{
+    const Clock::rep until = lent_until_.load();
+    if (until == 0)
+    {
+        return;
+    }
+    const Clock::rep now    = Clock::now().time_since_epoch().count();
+    const Clock::rep silent = now - heartbeat_ticks_.load();
+    if (now >= until)
+    {
+        (void)takeBack("its time ran out");
+    }
+    else if (silent >= inClockUnits(lend_heartbeat_timeout_s_).count())
+    {
+        (void)takeBack(
+            std::format("no heartbeat for {:.1f} s", Seconds(Clock::duration(silent)).count()));
+    }
 }
 
 std::optional<std::string>
@@ -1044,6 +1259,13 @@ void MissionExecutor::onTeleop(
         {
             response->ok      = false;
             response->message = "a mission is running; wait for it or stop it first";
+            return;
+        }
+        if (!lent_to_.empty())
+        {
+            response->ok = false;
+            response->message =
+                "the arms are lent to " + lent_to_ + "; wait for it or stop it first";
             return;
         }
         teleop_->enable();

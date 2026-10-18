@@ -392,7 +392,8 @@ TEST(CatalogDrift, StopAllCoversEveryActionServerALeafUses)
 
 TEST(CatalogDrift, EveryPredicateIsOneOfTheFewTheAgentUnderstandsAboutItsOwnArguments)
 {
-    const std::set<std::string> vocabulary = { "at", "near", "holding", "hand_empty", "inside" };
+    const std::set<std::string> vocabulary = { "at",         "near",   "holding",
+                                               "hand_empty", "inside", "arm_at" };
     const Catalog               catalog    = Catalog::load(kCatalogFile);
 
     for (const Skill& skill : catalog.skills())
