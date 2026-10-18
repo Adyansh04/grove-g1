@@ -168,7 +168,7 @@ none from the command line. There, `./scripts/demos/nervros.sh --print chat`'s l
   is kept in `~/.local/state/nervros/places/`, one file per robot, and "forget the reading corner"
   drops it.
 - "Remember that the kitchen door sticks." `memory` keeps what you ask it to across sessions, in
-  `~/.local/state/nervros/memory/`. The Agent tab (Ctrl+6) lists the notes with Forget.
+  `~/.local/state/nervros/memory/`. The Agent tab (Ctrl+9) lists the notes with Forget.
 - "Keep the robot in the bedroom." `goal` keeps an outcome across missions and sessions, with what
   holds once it is met in the world model's ids, such as `at(R3)` or `inside(O27, O261)`. NervROS
   checks it itself after every mission the agent runs, and at start; the agent plans the missions
@@ -225,16 +225,23 @@ The viewer draws the map, the rooms coloured by how much of each the camera has 
 the G1's model with its joints as they are, Nav2's path and the chest camera's view in 3D. Beside it
 is the chest camera and, below it in tabs, the head camera and the last frame the agent looked at,
 each with the detector's boxes. The profile adds what the world-model RViz view shows: canopy's
-walls and floor plan, its doorways, viewpoints and visits, and the laser scan.
+walls and floor plan, its doorways, viewpoints and visits, and the laser scan; and Nav2's and
+MoveIt's: the collision monitor's polygons, both costmaps (off at start; free space clear, the cost
+from faint blue to indigo, the robot's radius in violet, obstacles in coral) and the obstacles in
+MoveIt's planning scene.
 
-- The Layers tab (Ctrl+3) switches each of these on and off. Object names start off, since 50 of
-  them bury the map; hover a box to see its name.
+- The Layers tab (Ctrl+6) switches each of these on and off, under Robot, Navigation, Arms, World
+  model and Sensors, each beside its colour. Object names start off, since 50 of them bury the
+  map; hover a box to see its name.
+- The Tree tab (Ctrl+2) draws the mission's behaviour tree: a card per step with its arguments,
+  time limit and tries, the nodes running inside it and their times, and why a step failed. The
+  Library tab (Ctrl+7) keeps the recent missions, saved plans, programs and taught skills.
 - Click an object, a room or a point on the map, and a bar above the message box offers "Go there",
   "What is it?" and the like. Go there plans the walk at once, for you to approve; the others fill
   in a message for you to send.
 - The strip under the views holds the agent's log, the running mission's steps as lanes on the
   timeline, the exploration's progress and the plots.
-- The dock's World tab (Ctrl+2) lists the rooms with how much of each has been seen.
+- The dock's World tab (Ctrl+4) lists the rooms with how much of each has been seen.
 
 ## Plans and approvals
 
@@ -263,7 +270,7 @@ Approving a tool that does not move the robot, such as a parameter change, can c
 the session (Allow for session). What moves the robot asks every time. When the app closes with a
 plan waiting, the next start shows it with Ask again, which checks it anew.
 
-A mission's end comes as a toast too. The Mission tab keeps the recent missions with their steps
+A mission's end comes as a toast too. The Library tab keeps the recent missions with their steps
 and times, the plans you asked to save by name, and the requests no skill could do.
 `nervros-cli missions` and `gaps` read the same from the command line, and `replay` prints a
 session. When the local model's plans for one request fail their checks twice, a stronger model
@@ -316,14 +323,14 @@ usual speed.
   `learned_skills_dir`) and loads with the executor from then on.
 - A taught skill holds no authority of its own: the mission takes the arm as for any arm skill,
   and a stop cancels its MoveIt goal.
-- The Mission tab lists the taught skills with Forget.
+- The Library tab lists the taught skills with Forget.
 
 Gemini 3.5 Flash-Lite answered in the programs and teaching clips, the local Qwen3.5-9B in the
 search.
 
 ## The robot tab
 
-The dock's Robot tab (Ctrl+8) shows whether the robot is upright and able to walk, its tilt, where
+The dock's Robot tab (Ctrl+5) shows whether the robot is upright and able to walk, its tilt, where
 it is and in which room, what each hand holds, and its hottest motors from `/diagnostics`.
 
 **Drive**, there, hands the base to you: the executor takes it while no mission runs. W and S walk,
@@ -425,7 +432,7 @@ the zones as a keep-out mask on `/keepout_filter_mask` for both costmaps' keepou
   and its `lifecycle_manager_filters`.
 - Without it, the agent still refuses walks into a zone, but Nav2's paths cross it.
 - With it, Nav2 warns every 2 s until NervROS publishes the mask, which is expected. The Doctor tab
-  (Ctrl+7) or `nervros-cli doctor` then says "Nav2 reads it".
+  (Ctrl+0) or `nervros-cli doctor` then says "Nav2 reads it".
 
 "Make the hallway a slow zone at 30%" adds a slow zone instead: NervROS publishes it on
 `/speed_filter_mask`, with the filter info on `/speed_filter_info`, for the global costmap's speed
@@ -434,9 +441,10 @@ inside it. The profile keeps slow zones at 30% or more: under about 0.15 m/s the
 not walk at all. That floor counts each slowdown alone: a slow zone and the collision monitor's
 `nervros_slow` polygon together can still come under it, and the robot then stands still.
 
-The 3D view draws keep-out zones in red and slow zones in amber with their speed, and the World
-tab lists them with Add and Remove. Removing a keep-out zone asks for your approval every time. A plan saved or scheduled before a zone was added is checked
-again when it runs. Zones added in chat are kept for the next session, in
+The 3D view draws keep-out zones in red and slow zones in amber with their speed. The World tab
+lists them, with **Keep out** and **Slow zone** to start a new one and Remove on each; removing a
+keep-out zone asks for your approval every time. A plan saved or scheduled before a zone was added
+is checked again when it runs. Zones added in chat are kept for the next session, in
 `~/.local/state/nervros/zones/`, one file per robot; the profile's own (`[[geofence.zone]]`) stay
 until the profile changes.
 
@@ -470,7 +478,7 @@ https://github.com/user-attachments/assets/3c3d470d-7af2-498e-b83c-8c70945c5c65
 
 In the clip a walk NervROS was running when it stopped is marked at start, and a walk approved
 while the base is driven by hand from the Robot tab comes back with `cause` teleop: the report says
-it could not start, and the Mission tab dims both runs.
+it could not start, and the Library tab dims both runs.
 
 https://github.com/user-attachments/assets/99be5972-bc7b-457b-ae5c-feb447bf00e3
 

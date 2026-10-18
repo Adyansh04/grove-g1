@@ -144,12 +144,14 @@ color = [230, 60, 60]
 name = "Global costmap"
 topic = "/global_costmap/costmap"
 type = "nav_msgs/msg/OccupancyGrid"
+style = "costmap"
 hidden = true
 
 [[viz.layer]]
 name = "Local costmap"
 topic = "/local_costmap/costmap"
 type = "nav_msgs/msg/OccupancyGrid"
+style = "costmap"
 hidden = true
 
 [mission]
