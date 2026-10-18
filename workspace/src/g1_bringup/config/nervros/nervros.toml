@@ -139,6 +139,14 @@ topic = "/collision_monitor_nervros_stop"
 type = "geometry_msgs/msg/PolygonStamped"
 color = [230, 60, 60]
 
+# The footprint the costmaps keep clear, a 0.45 m circle: wider than the monitor's body.
+[[viz.layer]]
+name = "Footprint"
+topic = "/local_costmap/published_footprint"
+type = "geometry_msgs/msg/PolygonStamped"
+color = [200, 205, 215]
+hidden = true
+
 # Nav2's costmaps, hidden by default: switched on in the Layers tab when a walk is stuck.
 [[viz.layer]]
 name = "Global costmap"

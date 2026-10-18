@@ -1,0 +1,27 @@
+# Nav2's costmaps mark obstacles from the MID-360's cloud. When it goes quiet the obstacle layer
+# says its observation buffer is stale, and the controller will not drive on an old costmap.
+id = "costmap-stale"
+title = "Nav2's costmaps are not updating"
+explains = ["mission_failed", "topic_silent", "asked"]
+match = "any"
+verdict = "Nav2's costmaps stopped updating, so it will not drive on obstacles that may be old: the lidar's cloud went quiet, or a costmap node stalled."
+fix = "The operator checks that the lidar driver and the simulator run, and restarts the stack if either is down; clearing the costmaps (nav_admin, approved) helps only once the cloud is back."
+
+[[check]]
+name = "the obstacle layer"
+log = "observation buffer has not been updated"
+node = "costmap"
+
+[[check]]
+name = "the local costmap"
+topic = "/local_costmap/costmap"
+type = "nav_msgs/msg/OccupancyGrid"
+condition = "rate_below"
+hz = 0.5
+
+[[check]]
+name = "the lidar's cloud"
+topic = "/livox/lidar"
+type = "sensor_msgs/msg/PointCloud2"
+condition = "rate_below"
+hz = 2.0
