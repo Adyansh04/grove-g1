@@ -1,0 +1,18 @@
+# The navigation servers can be paused through nav_admin, and they deactivate when their lifecycle
+# manager resets them: walks then fail at once, before the robot moves.
+id = "navigation-not-active"
+title = "Nav2's navigation servers are not active"
+explains = ["mission_failed", "asked"]
+match = "any"
+verdict = "Nav2's navigation servers are paused or were reset, so no walk can start."
+fix = "Resume them (nav_admin, navigation resume, which the operator approves), or restart the stack if they do not come back."
+
+[[check]]
+name = "the navigation lifecycle manager"
+log = "Deactivating"
+node = "lifecycle_manager_navigation"
+level = "info"
+
+[[check]]
+name = "the walk's server"
+failure_has = "did not take the goal"

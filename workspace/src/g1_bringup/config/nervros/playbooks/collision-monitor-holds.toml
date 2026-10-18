@@ -1,0 +1,23 @@
+# Nav2's collision monitor sits between the controller and the legs: a polygon NervROS shaped, or
+# the body circle, slows or stops a walk though the plan and the costmaps are clear. On the G1 a
+# slowdown under about 0.15 m/s stops the legs altogether.
+id = "collision-monitor-holds"
+title = "The collision monitor holds the robot back"
+explains = ["mission_failed", "asked"]
+match = "any"
+verdict = "Nav2's collision monitor stopped or slowed the robot: something is inside one of its polygons, or a shaped polygon reaches what the robot has to pass close to."
+fix = "Check the polygons (collision_monitor status); the operator may shrink or turn off the one in the way. On the G1 a slow zone and the slow polygon together can stop the legs."
+procedure = "robot-held-back"
+
+[[check]]
+name = "the collision monitor stopping the robot"
+log = "Robot to stop due to"
+node = "collision_monitor"
+level = "info"
+
+[[check]]
+name = "the collision monitor slowing the robot"
+log = "Robot to slowdown for"
+node = "collision_monitor"
+level = "info"
+at_least = 5

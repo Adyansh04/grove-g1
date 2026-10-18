@@ -32,6 +32,7 @@
 #   holding(arm, x)  the hand `arm` holds x; a capital letter such as X is any object
 #   hand_empty(arm)  the hand holds nothing
 #   inside(x, y)     x rests in container y
+#   arm_at(arm, p)   the arm group is at its named pose p
 # Anything that names an argument refers to its value in the step.
 
 skills:
@@ -249,7 +250,7 @@ skills:
         enum: [home, ready, reach_front, carry, tucked, zero]
         description: The pose.
     requires: []
-    effects: []
+    effects: ["arm_at(arm, pose)"]
     resources: [left_arm, right_arm]
     idempotent: true
     risk: motion
