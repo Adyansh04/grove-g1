@@ -54,9 +54,9 @@ def _arguments():
         DeclareLaunchArgument(
             "keepout",
             default_value="false",
-            description="Keep paths out of the zones on /keepout_filter_mask, the mask NervROS "
-            "publishes from its keep-out zones. Off by default: enabled with no mask, the "
-            "filters warn every 2 s.",
+            description="Read NervROS's zones: keep paths out of its keep-out zones "
+            "(/keepout_filter_mask) and slow down in its slow zones (/speed_filter_mask). Off by "
+            "default: enabled with no mask, the filters warn every 2 s.",
         ),
         DeclareLaunchArgument(
             "use_composition",

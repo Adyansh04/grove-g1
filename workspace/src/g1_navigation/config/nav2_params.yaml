@@ -12,9 +12,12 @@ bt_navigator:
     transform_tolerance: 1.0
     # controller_server gets its odometry through a remap in nav2.launch.py instead.
     odom_topic: /g1_odometry_publisher/odom
-    navigators: ["navigate_to_pose"]
+    # Through poses: NervROS's route walk, one goal through several places.
+    navigators: ["navigate_to_pose", "navigate_through_poses"]
     navigate_to_pose:
       plugin: "nav2_bt_navigator::NavigateToPoseNavigator"
+    navigate_through_poses:
+      plugin: "nav2_bt_navigator::NavigateThroughPosesNavigator"
     # The tree paths are set by nav2.launch.py. Never write a find-pkg-share substitution in
     # this file, even in a comment: ParameterFile(allow_substs=True) expands comments too.
     bt_loop_duration: 10
@@ -185,12 +188,19 @@ global_costmap:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 2.5
         inflation_radius: 0.85
-      # NervROS's keep-out zones; see costmap_filter_info_server.
-      filters: ["keepout_filter"]
+      # NervROS's zones: keep-out zones through costmap_filter_info_server, slow zones through
+      # the filter info NervROS publishes itself (the G1 profile's [nav2.speed_zones]). Only this
+      # costmap slows the robot, so one filter publishes /speed_limit.
+      filters: ["keepout_filter", "speed_filter"]
       keepout_filter:
         plugin: "nav2_costmap_2d::KeepoutFilter"
         enabled: $(var keepout)
         filter_info_topic: "/costmap_filter_info"
+      speed_filter:
+        plugin: "nav2_costmap_2d::SpeedFilter"
+        enabled: $(var keepout)
+        filter_info_topic: "/speed_filter_info"
+        speed_limit_topic: "/speed_limit"
       always_send_full_costmap: True
 
 planner_server:
@@ -257,7 +267,9 @@ collision_monitor:
     base_shift_correction: true
     stop_pub_timeout: 2.0
     enable_stamped_cmd_vel: false
-    polygons: ["body"]
+    # nervros_slow and nervros_stop take their shapes from NervROS (its collision_monitor tool), off
+    # until it gives them one: a polygon with no shape detects nothing. The body circle stays fixed.
+    polygons: ["body", "nervros_slow", "nervros_stop"]
     body:
       type: circle
       radius: 0.35
@@ -268,6 +280,25 @@ collision_monitor:
       visualize: true
       polygon_pub_topic: collision_monitor_body
       enabled: true
+    nervros_slow:
+      type: polygon
+      polygon_sub_topic: nervros/collision_slow
+      polygon_subscribe_transient_local: true
+      action_type: slowdown
+      slowdown_ratio: 0.4
+      min_points: 4
+      visualize: true
+      polygon_pub_topic: collision_monitor_nervros_slow
+      enabled: false
+    nervros_stop:
+      type: polygon
+      polygon_sub_topic: nervros/collision_stop
+      polygon_subscribe_transient_local: true
+      action_type: stop
+      min_points: 4
+      visualize: true
+      polygon_pub_topic: collision_monitor_nervros_stop
+      enabled: false
     observation_sources: ["low_cloud", "high_cloud"]
     low_cloud:
       type: pointcloud
@@ -282,9 +313,9 @@ collision_monitor:
       max_height: 1.40
       enabled: true
 
-# Names the mask NervROS publishes from its keep-out zones (the G1 profile's [geofence] mask) for
-# both costmaps' keepout filters, which read it only with nav2.launch.py's keepout:=true: enabled
-# without a mask, they warn every 2 s. Cells at 100 are lethal.
+# Names the mask NervROS publishes from its keep-out zones (the G1 profile's [nav2] keepout_mask)
+# for both costmaps' keepout filters, which read it only with nav2.launch.py's keepout:=true:
+# enabled without a mask, they warn every 2 s. Cells at 100 are lethal.
 costmap_filter_info_server:
   ros__parameters:
     use_sim_time: false

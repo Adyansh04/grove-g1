@@ -36,10 +36,11 @@ which the bring-up entry point does not pass.
 `nav_stack.launch.py` stages no simulator. Both callers stage exactly one, and a second would put two
 writers on `rt/lowcmd`. `test_launch_threading` asserts it.
 
-`keepout:=true`, on any entry point, turns on the keepout filter in both costmaps.
-`scripts/demos/nervros.sh` sets it.
+`keepout:=true`, on any entry point, turns on the keepout filter in both costmaps and the speed
+filter in the global one. `scripts/demos/nervros.sh` sets it.
 
-- It reads `/keepout_filter_mask`, an `OccupancyGrid` on the map's grid with keep-out cells at 100. NervROS publishes it from its keep-out zones (`[geofence] mask` in `g1_bringup/config/nervros/nervros.toml`).
+- The keepout filter reads `/keepout_filter_mask`, an `OccupancyGrid` on the map's grid with keep-out cells at 100. NervROS publishes it from its keep-out zones (`[nav2] keepout_mask` in `g1_bringup/config/nervros/nervros.toml`).
+- The speed filter reads `/speed_filter_mask`, each cell the per cent of the top speed a slow zone allows (0 for none), named by the `CostmapFilterInfo` NervROS publishes on `/speed_filter_info` (`[nav2.speed_zones]`). It publishes `/speed_limit`, which the controller follows.
 - It is off by default because, enabled with no mask, the filters warn every 2 s.
 - The filter info server runs only with it, so the filters subscribe to the mask only then. `nervros-cli doctor` can tell from the mask's readers whether the zones reach Nav2.
 
@@ -97,6 +98,13 @@ The monitor's limits:
 
 Its circle is 0.35 m, the body with a margin, not the costmaps' 0.45 m. This leaves the close
 approaches Nav2 plans alone.
+
+Beside it, two polygons NervROS shapes from chat (`collision_monitor`): `nervros_slow` slows the
+robot to 40% and `nervros_stop` stops it. Both take their shape on `nervros/collision_slow` and
+`nervros/collision_stop` (latched) and stay off until shaped, since a polygon with no shape
+detects nothing. The robot's own `body` circle is never reshaped.
+
+`navigate_through_poses` is on for NervROS's routes (`WalkRoute`).
 
 The simulated sweep never sees the robot's own links. The real one will see its legs and arms in
 these bands, so filter them before trusting it on hardware.
