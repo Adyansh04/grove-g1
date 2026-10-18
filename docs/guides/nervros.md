@@ -427,8 +427,15 @@ the zones as a keep-out mask on `/keepout_filter_mask` for both costmaps' keepou
 - With it, Nav2 warns every 2 s until NervROS publishes the mask, which is expected. The Doctor tab
   (Ctrl+7) or `nervros-cli doctor` then says "Nav2 reads it".
 
-The 3D view draws the zones in red, and the World tab lists them with Add and Remove. Removing one
-asks for your approval every time. A plan saved or scheduled before a zone was added is checked
+"Make the hallway a slow zone at 30%" adds a slow zone instead: NervROS publishes it on
+`/speed_filter_mask`, with the filter info on `/speed_filter_info`, for the global costmap's speed
+filter (also on with `keepout:=true`), and the robot walks no faster than that share of 0.6 m/s
+inside it. The profile keeps slow zones at 30% or more: under about 0.15 m/s the G1's gait does
+not walk at all. That floor counts each slowdown alone: a slow zone and the collision monitor's
+`nervros_slow` polygon together can still come under it, and the robot then stands still.
+
+The 3D view draws keep-out zones in red and slow zones in amber with their speed, and the World
+tab lists them with Add and Remove. Removing a keep-out zone asks for your approval every time. A plan saved or scheduled before a zone was added is checked
 again when it runs. Zones added in chat are kept for the next session, in
 `~/.local/state/nervros/zones/`, one file per robot; the profile's own (`[[geofence.zone]]`) stay
 until the profile changes.
@@ -450,7 +457,14 @@ timeouts and retries.
   mission it was running when it stopped is kept as interrupted.
 - The skills a plan may use are in `config/catalog.yaml`, as macros in `trees/library/`:
   `GoToTarget`, `GoToPose`, `WalkStraight`, `TurnInPlace`, `FindInView`, `PickObject`, `PlaceInto`,
-  `TuckForTravel` and `ExploreBuilding`, plus the ones an agent taught (above).
+  `TuckForTravel`, `ArmTo`, `HandTo` and `ExploreBuilding`, plus the ones an agent taught (above).
+- NervROS runs some steps itself through Nav2 and MoveIt, beside these: a route through places
+  without stopping (`WalkRoute`), a wait, a short straight hand move (`HandLine`) and a grip. For an
+  arm step the executor lends NervROS the arms (`~/lend_resources`) and takes them back after it;
+  while they are lent it refuses missions and driving by hand. `StopAll` cancels these steps' goals
+  too.
+- The launch file also starts `nervros_watchdog`, which cancels a step NervROS runs itself when
+  NervROS goes quiet with it running, two seconds after its last word.
 
 https://github.com/user-attachments/assets/3c3d470d-7af2-498e-b83c-8c70945c5c65
 
