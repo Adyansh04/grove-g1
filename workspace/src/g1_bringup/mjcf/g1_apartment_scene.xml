@@ -86,6 +86,9 @@
     <mesh name="gso_mug_room_essentials_0" file="@GROVE_ASSETS@/gso_mug_room_essentials/mesh_0.obj"/>
     <texture name="gso_mug_room_essentials_tex_0" type="2d" file="@GROVE_ASSETS@/gso_mug_room_essentials/tex_0.png"/>
     <material name="gso_mug_room_essentials_0" rgba="1 1 1 1" specular="0.3" shininess="0.3" texture="gso_mug_room_essentials_tex_0"/>
+    <mesh name="gso_organizer_tray_0" file="@GROVE_ASSETS@/gso_organizer_tray/mesh_0.obj"/>
+    <texture name="gso_organizer_tray_tex_0" type="2d" file="@GROVE_ASSETS@/gso_organizer_tray/tex_0.png"/>
+    <material name="gso_organizer_tray_0" rgba="1 1 1 1" specular="0.3" shininess="0.3" texture="gso_organizer_tray_tex_0"/>
     <mesh name="gso_serum_box_0" file="@GROVE_ASSETS@/gso_serum_box/mesh_0.obj"/>
     <texture name="gso_serum_box_tex_0" type="2d" file="@GROVE_ASSETS@/gso_serum_box/tex_0.png"/>
     <material name="gso_serum_box_0" rgba="1 1 1 1" specular="0.3" shininess="0.3" texture="gso_serum_box_tex_0"/>
@@ -480,12 +483,13 @@
       <geom class="apt_visual" mesh="gso_toy_robot_0" material="gso_toy_robot_0" pos="0 0 -0.0405"/>
       <geom class="apt_free" size="0.033 0.023 0.0405" mass="0.08"/>
     </body>
-    <body name="tray_1" pos="5.85 -5.07 0.8201">
-      <geom class="apt_box" size="0.08 0.08 0.006" pos="0 0 -0.026" rgba="0.52 0.36 0.22 1"/>
-      <geom class="apt_box" size="0.08 0.008 0.032" pos="0 0.072 0" rgba="0.46 0.31 0.18 1"/>
-      <geom class="apt_box" size="0.08 0.008 0.032" pos="0 -0.072 0" rgba="0.46 0.31 0.18 1"/>
-      <geom class="apt_box" size="0.008 0.064 0.032" pos="0.072 0 0" rgba="0.46 0.31 0.18 1"/>
-      <geom class="apt_box" size="0.008 0.064 0.032" pos="-0.072 0 0" rgba="0.46 0.31 0.18 1"/>
+    <body name="tray_1" pos="5.85 -5.07 0.8166">
+      <geom class="apt_visual" mesh="gso_organizer_tray_0" material="gso_organizer_tray_0" pos="0 0 -0.0285"/>
+      <geom class="apt_proxy" size="0.15 0.072 0.004" pos="0 0 -0.0245"/>
+      <geom class="apt_proxy" size="0.15 0.004 0.0285" pos="0 0.0715 0"/>
+      <geom class="apt_proxy" size="0.15 0.004 0.0285" pos="0 -0.0715 0"/>
+      <geom class="apt_proxy" size="0.004 0.0675 0.0285" pos="0.146 0 0"/>
+      <geom class="apt_proxy" size="0.004 0.0675 0.0285" pos="-0.146 0 0"/>
     </body>
     <body name="shelf_1" pos="3.33 -3.4 1.07" quat="0.7071 0 0 0.7071">
       <geom class="apt_visual" mesh="ph_steel_frame_shelves_01_0" material="ph_steel_frame_shelves_01_0" pos="0 0 -1.07"/>

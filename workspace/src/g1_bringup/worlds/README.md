@@ -62,7 +62,7 @@ together. The map is rasterised from the scene, so a stale map would be a map of
   - Its mass, 60 to 124 g.
   - Two carry welds, one per palm, which `grasp_weld` engages while the thumb and a finger touch it.
 - The mug's mesh is `mug_1`'s at `scale: 0.6`, 55 mm across so the hand closes round it. The box under it is square because a cylinder on a box rocks in MuJoCo.
-- `tray_1`, a wooden tray built from boxes, sits on the office desk to put the mug in.
+- `tray_1`, a scanned wooden desk organizer, sits on the office desk to put things in. Its floor and walls are boxes with `hidden: true`, which collide and reach the LiDAR like a proxy but are never drawn, so an object placed in it rests inside the mesh the camera sees. SAM 3.1 finds it as "wooden tray" (0.92 to 0.94).
 - `dining_table_1` has `proxy_height: 0.706`. Its proxy would otherwise reach the cloth's relief at 0.76 m, and the mug would rest above the top it is drawn on.
 - `missions/pick_and_place_apartment.xml` in g1_orchestration carries the mug from the table to the tray.
 
@@ -119,3 +119,4 @@ Poly Haven assets are CC0. NVIDIA's kitchen set and Google Scanned Objects are C
 | `gso_toy_dinosaur` Nintendo Yoshi Action Figure | Google Research | [GSO, MJCF by Kevin Zakka](https://github.com/kevinzakka/mujoco_scanned_objects/tree/main/models/Nintendo_Yoshi_Action_Figure) | CC BY 4.0 |
 | `gso_serum_box` Perricone MD Vitamin C Ester Serum | Google Research | [GSO, MJCF by Kevin Zakka](https://github.com/kevinzakka/mujoco_scanned_objects/tree/main/models/Perricone_MD_Vitamin_C_Ester_Serum) | CC BY 4.0 |
 | `gso_toy_elephant` Elephant | Google Research | [GSO, MJCF by Kevin Zakka](https://github.com/kevinzakka/mujoco_scanned_objects/tree/main/models/Elephant) | CC BY 4.0 |
+| `gso_organizer_tray` Design Ideas Drawer Store Organizer | Google Research | [GSO, MJCF by Kevin Zakka](https://github.com/kevinzakka/mujoco_scanned_objects/tree/main/models/Design_Ideas_Drawer_Store_Organizer) | CC BY 4.0 |

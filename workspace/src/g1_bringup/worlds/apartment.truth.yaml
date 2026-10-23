@@ -520,12 +520,12 @@ objects:
   label: tray
   synonyms: [serving tray, box]
   room: office
-  centre: [5.85, -5.07, 0.8201]
-  size: [0.16, 0.16, 0.064]
+  centre: [5.85, -5.07, 0.8166]
+  size: [0.3071, 0.1515, 0.057]
   yaw: 0.0
   'on': desk_1
   observable_from_standing: true
-  asset: boxes
+  asset: boxes+gso_organizer_tray
 - body: shelf_1
   label: shelf
   synonyms: [shelving unit, rack, shelves]
