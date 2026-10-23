@@ -1,7 +1,8 @@
 # Talking to the robot with NervROS
 
 NervROS (`workspace/src/nervros`, its own repository) is an agent you talk to in a desktop app. It
-runs on the host and answers with a local model unless you choose otherwise. It can:
+runs on the host and answers with Claude Haiku 5.5, on a key with a budget it never passes, and
+with a local model and free cloud models after it. It can:
 
 - look through the chest or head camera and mark what the detector finds,
 - segment whatever you name in the view,
@@ -45,8 +46,7 @@ own grid, which the saved world needs to resume.
 In the container, the demo runs the apartment with AMCL, Nav2 and the arm stack (MoveIt and the
 pick and place skills), canopy on the copy with the mock detector, and the executor. The mock
 detector needs no GPU. SAM 3.1 (5.6 GB, 8.5 GB while mapping) and the local model (about 7 GB) do
-not fit beside the simulator on a 12 GB GPU, and with SAM 3.1 the chat moves to free cloud models
-(see [Models](#models)).
+not fit beside the simulator on a 12 GB GPU; Claude talks without either (see [Models](#models)).
 
 ```bash
 ros2 launch g1_bringup bringup.launch.py mode:=localization nav:=true keepout:=true world:=apartment \
@@ -273,8 +273,8 @@ plan waiting, the next start shows it with Ask again, which checks it anew.
 A mission's end comes as a toast too. The Library tab keeps the recent missions with their steps
 and times, the plans you asked to save by name, and the requests no skill could do.
 `nervros-cli missions` and `gaps` read the same from the command line, and `replay` prints a
-session. When the local model's plans for one request fail their checks twice, a stronger model
-(Gemini's free tier, when the key is there) advises it how to fix them.
+session. When the plans for one request fail their checks twice, a stronger model (Claude Sonnet
+5.5, then Gemini's free tier) advises how to fix them.
 
 Ctrl+K opens the command palette. Its commands also run from the message box by name, such as
 `/compact` or `/stop`. An image pasted or dropped on the window goes with your next message, for
@@ -544,8 +544,9 @@ Every conversation is saved next to its log in `~/.local/state/nervros/logs/`. T
 the recent ones, and Resume carries one on; from the command line, use
 `nervros-cli chat --resume last`.
 
-The local model holds 16k tokens. The status bar shows how full the latest request was, and how
-many model calls the session made, with the share read from llama.cpp's prompt cache. Before the
+Haiku holds 90k tokens here (past 100k its price rises fivefold), and the local model 32k. The
+status bar shows how full the latest request was, and how many model calls the session made, with
+the share read from the prompt cache. Before the
 conversation fills, the results of earlier requests are cut to a line; if that is not enough, the
 model sums up the older part as goal, done, open and facts. `/compact` in the message box condenses
 it at once, and right-clicking one of your messages condenses everything up to it. Replies stream
@@ -613,8 +614,16 @@ look over (its header says how).
 
 ## Models
 
-The app starts with the local model. NervROS can use other providers, set in its models file. This
-project uses free models only, and NervROS refuses a paid OpenRouter model at start-up.
+The models file (`g1_bringup/config/nervros/models.toml`) sets who answers. This project uses free
+models only, but for one paid key with a budget, and NervROS refuses a paid OpenRouter model at
+start-up.
+
+- Claude Haiku 5.5 talks, looks and summarises first, and Claude Sonnet 5.5 advises the planner,
+  with the key in `~/api_keys/claude_api.key`. Each call's tokens are priced and added up in
+  `~/.config/nervros/claude-spend.json`, which every NervROS on the machine shares; no call starts
+  once $95 of the key's $100 is spent, and the free models below take over.
+  `nervros-cli models` prints the spend. On the apartment suite against a recorded robot, Haiku
+  passed 34 of 46 cases where the local model passed 32, faster, for $0.19.
 
 - With Gemini's key in `~/api_keys/gemini.env`, its free tier outlines for `segment`, points
   for `point` and advises the planner. Without it those fall back or stay off, and the rest runs
@@ -624,8 +633,8 @@ project uses free models only, and NervROS refuses a paid OpenRouter model at st
   plan whose steps have failed before. Its free 20 requests a day are split by use (10, 6 and 4),
   and a use whose share is spent goes to the Flash-Lites, then Gemma 4, then the local model. A
   check's "no" flags a success; its "yes" never clears what the world model found missing.
-- When the local model is not running, as when SAM 3.1 holds the GPU (the two do not fit in 12 GB
-  together), free models elsewhere talk and look instead: Gemini 3.5 and 3.1 Flash-Lite, then
+- After Claude, or without its key, the local model talks and looks. When it is not running, as
+  when SAM 3.1 holds the GPU (the two do not fit in 12 GB together), free models elsewhere do: Gemini 3.5 and 3.1 Flash-Lite, then
   Nemotron 3 Super on OpenRouter's free tier (with `~/api_keys/openrouter.key`, then a second key in
   `~/api_keys/openrouter_2.key`; NervROS refuses any model there that is not free), then Gemma 4.
 - Each Flash-Lite takes 10 requests a minute and 250 a day here, and Gemma 16K input tokens a
