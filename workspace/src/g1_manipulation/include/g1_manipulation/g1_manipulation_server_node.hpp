@@ -157,7 +157,8 @@ private:
     {
         geometry_msgs::msg::Pose grasp;
         geometry_msgs::msg::Pose pregrasp;
-        std::string              origin;  ///< What produced it, for the log and the markers.
+        std::string              origin;     ///< What produced it, for the log and the markers.
+        geometry_msgs::msg::Pose candidate;  ///< A generated grasp's own pose, for the markers.
     };
 
     /// A generated candidate the filter looked at, in the planning frame, and what it decided.
@@ -327,9 +328,9 @@ private:
      * @brief The grasp to attempt, from the configured grasp source.
      *
      * `fixed_top_down` is graspFrameGoal() approached from straight above. `generated` asks the
-     * grasp service and keeps, best first, up to `grasp_tries` candidates that are scored, not
-     * reaching up through the surface, and solvable at both the grasp and the pregrasp. There is
-     * no fallback between the two sources.
+     * grasp service and keeps up to `grasp_tries` candidates that are scored, not reaching up
+     * through the surface, and solvable at the grasp: those that also solve at the pregrasp first,
+     * each group best first. There is no fallback between the two sources.
      *
      * @param[out] why Why there is nothing to attempt, when it returns nothing.
      * @param[out] verdicts Every candidate the filter judged, for drawing; null skips the record.

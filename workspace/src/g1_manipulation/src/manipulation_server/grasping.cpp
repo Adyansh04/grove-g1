@@ -216,6 +216,9 @@ std::vector<G1ManipulationServer::GraspPlan> G1ManipulationServer::chooseGrasps(
     int                    considered = 0;
     int                    reachable  = 0;
     std::vector<GraspPlan> plans;
+    // Solvable at the grasp only: a 50 ms solve near the edge of reach misses pregrasps OMPL's
+    // own goal sampling finds, so these follow the ones that solve at both ends.
+    std::vector<GraspPlan> grasp_only;
     for (std::size_t i = 0; i < response->grasps.size() && considered < max_grasp_candidates_ &&
                             std::cmp_less(plans.size(), grasp_tries_);
          ++i)
@@ -246,33 +249,47 @@ std::vector<G1ManipulationServer::GraspPlan> G1ManipulationServer::chooseGrasps(
         // Back along the approach, not straight up: a side grasp has a ceiling above it.
         const std::array<double, 3> axis = approachAxis(*in_planning_frame);
         GraspPlan                   plan;
-        plan.grasp    = goal;
-        plan.pregrasp = goal;
+        plan.grasp     = goal;
+        plan.pregrasp  = goal;
+        plan.candidate = *in_planning_frame;
         plan.pregrasp.position.x -= axis[0] * approach_standoff_m_;
         plan.pregrasp.position.y -= axis[1] * approach_standoff_m_;
         plan.pregrasp.position.z -= axis[2] * approach_standoff_m_;
-        // The arm starts at the pregrasp, so both ends need a solution. Reset per solve: a failed
-        // setFromIK leaves the state where it gave up.
-        attempt                 = *state;
-        const bool grasp_solves = attempt.setFromIK(jmg, goal, arm.grasp_frame, ik_timeout_s_);
-        attempt                 = *state;
-        if (!grasp_solves || !attempt.setFromIK(jmg, plan.pregrasp, arm.grasp_frame, ik_timeout_s_))
+        // Reset per solve: a failed setFromIK leaves the state where it gave up.
+        attempt = *state;
+        if (!attempt.setFromIK(jmg, goal, arm.grasp_frame, ik_timeout_s_))
         {
             record(*in_planning_frame, ConsideredGrasp::Verdict::kUnreachable);
             continue;
         }
         ++reachable;
-        // The best is the one drawn as chosen; the rest wait in case MoveIt finds no way to it.
-        if (plans.empty())
-        {
-            record(*in_planning_frame, ConsideredGrasp::Verdict::kChosen);
-        }
         plan.origin = std::format(
             "generated candidate {} of {}, score {:.2f}",
             i,
             response->grasps.size(),
             i < response->scores.size() ? response->scores[i] : 0.0F);
+        attempt = *state;
+        if (attempt.setFromIK(jmg, plan.pregrasp, arm.grasp_frame, ik_timeout_s_))
+        {
+            plans.push_back(std::move(plan));
+        }
+        else
+        {
+            grasp_only.push_back(std::move(plan));
+        }
+    }
+    for (GraspPlan& plan : grasp_only)
+    {
+        if (std::cmp_greater_equal(plans.size(), grasp_tries_))
+        {
+            break;
+        }
         plans.push_back(std::move(plan));
+    }
+    // The first is the one drawn as chosen; the rest wait in case MoveIt finds no way to it.
+    if (!plans.empty())
+    {
+        record(plans.front().candidate, ConsideredGrasp::Verdict::kChosen);
     }
     if (plans.empty())
     {
