@@ -89,7 +89,9 @@ G1ObjectGeometry::G1ObjectGeometry(const rclcpp::NodeOptions& options)
     const std::vector<std::string> self_frames{ "right_hand_palm_link", "left_hand_palm_link",
                                                 "right_wrist_yaw_link", "left_wrist_yaw_link",
                                                 "right_elbow_link",     "left_elbow_link" };
-    self_frames_ = declare_parameter<std::vector<std::string>>("self_frames", self_frames);
+    self_frames_          = declare_parameter<std::vector<std::string>>("self_frames", self_frames);
+    surface_band_m_       = declare_parameter<double>("surface_band_m", 0.03);
+    max_surface_extent_m_ = declare_parameter<double>("max_surface_extent_m", 3.0);
 
     objects_pub_ =
         create_publisher<vision_msgs::msg::Detection3DArray>("~/object_poses", objectsQos());
@@ -165,6 +167,14 @@ std::optional<OrientedBox> G1ObjectGeometry::measure(
     const std::vector<std::uint8_t> eroded = erodeMask(mask, mask_erosion_px_);
     std::vector<Point3>             points =
         deproject(view, mask, eroded, intrinsics, min_depth_m_, max_depth_m_);
+    // Larger than anything a hand takes, it is a table or a desk: measured as its top, over the
+    // depth the gate below would cut.
+    const std::optional<OrientedBox> surface =
+        fitSurface(points, up, surface_band_m_, min_extent_m_, max_surface_extent_m_);
+    if (surface && std::max(surface->size_x, surface->size_y) > max_extent_m_)
+    {
+        return surface;
+    }
     // Counted after the gate, so a mask half on the background cannot pass on points it drops.
     gateByMedianDepth(points, depth_gate_m_);
     if (static_cast<int>(points.size()) < min_points_)

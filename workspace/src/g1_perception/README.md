@@ -82,6 +82,10 @@ An instance whose fitted box holds one of the robot's own frames (`self_frames`:
 and elbows) is the robot and is dropped before tracking: a phrase such as "toy robot" can fit the
 arm in view, and the alias would then follow the arm.
 
+An instance wider than `max_extent_m` whose points mostly share one height is a surface, a table
+or a desk: it is published as a box `surface_band_m` thick, its top the surface's, over the part in
+view, for PlaceOn to set things down on.
+
 ## Parameters
 
 `config/g1_object_geometry.yaml` documents every key. The ones worth knowing:

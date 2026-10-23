@@ -129,6 +129,19 @@ void gateByMedianDepth(std::vector<Point3>& points, double gate_m);
     std::span<const Point3> points, const Point3& up, std::optional<double> support_height,
     double min_extent_m, double max_extent_m);
 
+/**
+ * @brief Fits a horizontal surface seen from above, a table or a desk, as a box @p band_m thick
+ *        whose top is the height most of the points share.
+ *
+ * A table's mask is mostly its top; its edge, legs and what stands on it fall outside the band.
+ *
+ * @return Nothing when fewer than half the points share one height, or the footprint is outside
+ *         the extent bounds.
+ */
+[[nodiscard]] std::optional<OrientedBox> fitSurface(
+    std::span<const Point3> points, const Point3& up, double band_m, double min_extent_m,
+    double max_extent_m);
+
 /// Whether @p point lies inside @p box, faces included; both in the frame the box was fitted in.
 [[nodiscard]] bool boxHolds(const OrientedBox& box, const Point3& point);
 

@@ -348,6 +348,52 @@ std::optional<OrientedBox> fitOrientedBox(
     return box;
 }
 
+std::optional<OrientedBox> fitSurface(
+    std::span<const Point3> points, const Point3& up, double band_m, double min_extent_m,
+    double max_extent_m)
+{
+    std::vector<double> heights;
+    heights.reserve(points.size());
+    for (const Point3& point : points)
+    {
+        heights.push_back(dot(point, up));
+    }
+    std::ranges::sort(heights);
+    // The densest window of band_m over the sorted heights.
+    std::size_t best_end   = 0;
+    std::size_t best_count = 0;
+    std::size_t start      = 0;
+    for (std::size_t end = 0; end < heights.size(); ++end)
+    {
+        while (heights[end] - heights[start] > band_m)
+        {
+            ++start;
+        }
+        if (end - start + 1 > best_count)
+        {
+            best_count = end - start + 1;
+            best_end   = end;
+        }
+    }
+    if (best_count == 0 || 2 * best_count < points.size())
+    {
+        return std::nullopt;
+    }
+    const double        top    = heights[best_end];
+    const double        bottom = top - band_m;
+    std::vector<Point3> plane;
+    plane.reserve(best_count);
+    for (const Point3& point : points)
+    {
+        const double height = dot(point, up);
+        if (height >= bottom && height <= top)
+        {
+            plane.push_back(point);
+        }
+    }
+    return fitOrientedBox(plane, up, bottom, min_extent_m, max_extent_m);
+}
+
 bool boxHolds(const OrientedBox& box, const Point3& point)
 {
     const Point3 offset{ point.x - box.centre.x, point.y - box.centre.y, point.z - box.centre.z };
