@@ -131,7 +131,9 @@ nervros_executor:
     # taught skill may set, so which server, frame or timeout each leaf uses stays as it is here.
     # A taught skill's values are literals or its own arguments, so no leaf here hands one on.
     # a|b: exactly one of the two is set. port(world_id): the only kind of input a world_id
-    # argument may feed, so an object's id never goes in as a frame.
+    # argument may feed, so an object's id never goes in as a frame. port=a/b: the only values the
+    # port takes, so a taught skill's argument fed to it is planned with them and `left_arm` is
+    # caught before anything runs.
     # Quoted: an entry that ends in a colon would read as a map.
     learnable_leaves:
       - "NavigateToPose:base:goal"
@@ -141,7 +143,7 @@ nervros_executor:
       - "LookFor::objects,also"
       - "StopLooking::"
       - "SetArmPosture:arms:group,named_target"
-      - "MoveHand:arms:arm,target(world_id)|frame,offset_x,offset_y,offset_z,mode,speed"
+      - "MoveHand:arms:arm=left/right,target(world_id)|frame,offset_x,offset_y,offset_z,mode=reach/point,speed"
       - "Wait::seconds"
     # The most a learned skill may take, s, and its size in nodes.
     max_learned_duration_s: 300.0

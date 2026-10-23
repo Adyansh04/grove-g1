@@ -142,6 +142,12 @@ public:
 
     [[nodiscard]] int            nodes() const { return nodes_; }
     [[nodiscard]] const NameSet& holds() const { return holds_; }
+    /// The values each argument takes, for those fed to an input with fixed values.
+    [[nodiscard]] const std::map<std::string, std::vector<std::string>, std::less<>>&
+    argValues() const
+    {
+        return arg_values_;
+    }
 
 private:
     void add(const char* code, const tinyxml2::XMLElement& node, std::string message)
@@ -221,7 +227,18 @@ private:
                 add(code::kUnknownAttribute, node, std::format("{} has no input {}", tag, name));
                 continue;
             }
-            const std::string_view arg = boundArg(value);
+            const std::string_view arg   = boundArg(value);
+            const auto*            fixed = fixedValues(tag, name);
+            if (fixed != nullptr && arg.empty() && std::ranges::find(*fixed, value) == fixed->end())
+            {
+                add(code::kBadArg,
+                    node,
+                    std::format("{}.{} takes only {}, not '{}'", tag, name, joined(*fixed), value));
+            }
+            if (fixed != nullptr && !arg.empty())
+            {
+                arg_values_.try_emplace(std::string(arg), *fixed);
+            }
             if (!arg.empty())
             {
                 const auto known =
@@ -316,11 +333,35 @@ private:
         }
     }
 
-    const SkillDefinition*   definition_;
-    const Learnable*         learnable_;
-    std::vector<Diagnostic>* problems_;
-    int                      nodes_ = 0;
-    NameSet                  holds_;
+    const SkillDefinition*                                       definition_;
+    const Learnable*                                             learnable_;
+    std::vector<Diagnostic>*                                     problems_;
+    int                                                          nodes_ = 0;
+    NameSet                                                      holds_;
+    std::map<std::string, std::vector<std::string>, std::less<>> arg_values_;
+
+    /// The values a leaf's input takes, or null when it takes any.
+    [[nodiscard]] const std::vector<std::string>*
+    fixedValues(std::string_view tag, std::string_view input) const
+    {
+        const auto leaf = learnable_->values.find(tag);
+        if (leaf == learnable_->values.end())
+        {
+            return nullptr;
+        }
+        const auto port = leaf->second.find(input);
+        return port == leaf->second.end() ? nullptr : &port->second;
+    }
+
+    static std::string joined(const std::vector<std::string>& values)
+    {
+        std::string out;
+        for (const std::string& v : values)
+        {
+            out += (out.empty() ? "" : " or ") + v;
+        }
+        return out;
+    }
 };
 
 /// The skill's macro file: its body under a Timeout of its time, and its ports' model. One that
@@ -471,6 +512,19 @@ Learnable Learnable::parse(const std::vector<std::string>& entries, std::string_
             std::stringstream        alternatives(item);
             for (std::string port; std::getline(alternatives, port, '|');)
             {
+                std::vector<std::string> only;
+                if (const auto eq = port.find('='); eq != std::string::npos)
+                {
+                    std::stringstream listed(port.substr(eq + 1));
+                    for (std::string value; std::getline(listed, value, '/');)
+                    {
+                        if (!value.empty())
+                        {
+                            only.push_back(value);
+                        }
+                    }
+                    port.resize(eq);
+                }
                 const bool takes_id = port.ends_with(kWorldIdMark);
                 if (takes_id)
                 {
@@ -489,6 +543,10 @@ Learnable Learnable::parse(const std::vector<std::string>& entries, std::string_
                 if (takes_id)
                 {
                     world.insert(port);
+                }
+                if (!only.empty())
+                {
+                    out.values[leaf][port] = std::move(only);
                 }
                 group.push_back(port);
             }
@@ -620,11 +678,21 @@ std::optional<LearnedSkill> buildLearned(
     }
 
     LearnedSkill learned;
-    learned.definition   = definition;
-    Skill& skill         = learned.skill;
-    skill.name           = definition.name;
-    skill.description    = definition.description;
-    skill.args           = definition.args;
+    learned.definition = definition;
+    Skill& skill       = learned.skill;
+    skill.name         = definition.name;
+    skill.description  = definition.description;
+    skill.args         = definition.args;
+    // An argument fed to an input with fixed values takes only those, so a plan that gives it
+    // another is refused when it is checked, not when it runs.
+    for (SkillArg& arg : skill.args)
+    {
+        if (const auto only = check.argValues().find(arg.name);
+            only != check.argValues().end() && arg.allowed.empty())
+        {
+            arg.allowed = only->second;
+        }
+    }
     skill.macro          = definition.name;
     skill.max_duration_s = definition.max_duration_s;
     skill.taught_for     = definition.taught_for;

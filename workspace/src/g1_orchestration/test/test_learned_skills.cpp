@@ -5,6 +5,7 @@
 
 #include <gmock/gmock.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -155,6 +156,33 @@ TEST(LearnedSkill, MoveHandTakesATargetOrAFrameAndAWorldIdOnlyAsItsTarget)
             .code,
         "BAD_ARG")
         << "a leaf whose inputs are listed takes no world id unless one is marked";
+}
+
+TEST(LearnedSkill, AnInputsValuesHoldItsLiteralsAndTheArgumentFedToIt)
+{
+    const Learnable rules = Learnable::parse(
+        { "MoveHand:arms:arm=left/right,target(world_id)|frame,mode=reach/point", "Wait::seconds" },
+        kPalette);
+    EXPECT_THAT(rules.values.at("MoveHand").at("arm"), ::testing::ElementsAre("left", "right"));
+    EXPECT_TRUE(rules.ports.at("MoveHand").contains("arm")) << "the values leave the port's name";
+
+    // Every taught PointAt of 23 Oct first ran with arm=left_arm, refused only once it ran.
+    std::vector<Diagnostic> problems;
+    const auto              learned = buildLearned(pointAt(), rules, {}, problems);
+    ASSERT_TRUE(learned.has_value());
+    const auto arm = std::ranges::find_if(learned->skill.args, [](const SkillArg& a) {
+        return a.name == "arm";
+    });
+    ASSERT_NE(arm, learned->skill.args.end());
+    EXPECT_THAT(arm->allowed, ::testing::ElementsAre("left", "right"));
+
+    SkillDefinition literal = pointAt();
+    literal.body_xml        = R"(<MoveHand arm="left_arm" target="{object}" mode="point"/>)";
+    problems.clear();
+    EXPECT_FALSE(buildLearned(literal, rules, {}, problems).has_value());
+    ASSERT_THAT(problems, ::testing::SizeIs(1));
+    EXPECT_EQ(problems.front().code, "BAD_ARG");
+    EXPECT_THAT(problems.front().message, HasSubstr("takes only left or right, not 'left_arm'"));
 }
 
 TEST(LearnedSkill, OnlyTheControlNodesAndLearnableLeavesWithLiteralsOrItsArgumentsPass)

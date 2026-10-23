@@ -48,16 +48,21 @@ struct Learnable
     /// For each leaf whose entry lists its inputs, those that take a world-model id: a skill's
     /// `world_id` argument may feed only these.
     std::map<std::string, NameSet, std::less<>> world_ids;
-    int                                         max_nodes      = 40;
-    int                                         max_depth      = 8;
-    double                                      max_duration_s = 300.0;
+    /// Per leaf, the only values an input takes, as MoveHand's arm: a literal must be one, and a
+    /// skill argument fed to it takes only these.
+    std::map<std::string, std::map<std::string, std::vector<std::string>, std::less<>>, std::less<>>
+           values;
+    int    max_nodes      = 40;
+    int    max_depth      = 8;
+    double max_duration_s = 300.0;
 
     /**
      * @brief The learnable leaves from `Leaf:holds:port,port` entries: the authority it needs
      *        (`base`, `arms` or empty) and the only input ports a learned skill may set, each
      *        described as the palette describes it. `a|b` lists inputs of which exactly one is
-     *        set, and `port(world_id)` one that takes a world-model id. `Leaf` and `Leaf:holds`
-     *        open every input, unchecked for world ids.
+     *        set, `port(world_id)` one that takes a world-model id, and `port=a/b` one that
+     *        takes only those values. `Leaf` and `Leaf:holds` open every input, unchecked for
+     *        world ids.
      *
      * @param palette_xml The `<TreeNodesModel>` document of the leaves.
      * @throws std::runtime_error For an entry of another shape, a leaf the palette lacks, or a

@@ -229,6 +229,7 @@ A taught skill's body is held to more than a person's macro:
 - On each leaf it sets only the inputs `learnable_leaves` lists, so which server, frame or timeout a leaf uses is never the skill's to change.
 - Of inputs listed `a|b` it sets exactly one: MoveHand takes a `target` or a `frame`, never both or neither.
 - A `world_id` argument feeds only an input listed as `input(world_id)`, MoveHand's `target`, so an object's id never goes in as a frame.
+- An input listed `input=a/b` takes only those values: a literal must be one, and an argument fed to it is published with them as its `enum`, so a plan that passes MoveHand's `arm` as `left_arm` is refused when it is checked, not when it runs.
 - Every attribute is a literal or one of the skill's own arguments (`arm="{arm}"`). No argument may be called `name`, which a `SubTree` keeps for its step.
 - Depth, size and time (1 s at least) are capped.
 - The name may not be one of a skill, a macro or any node the executor registers.
