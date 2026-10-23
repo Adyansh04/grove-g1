@@ -259,10 +259,11 @@ skills:
 
   - name: HandTo
     description: >-
-      Bring one hand to just above an object, 10 cm over its top, without grasping it: to show
-      which one is meant, or to get ready over it. The robot does not walk: stand within reach
-      first (GoToTarget). Given what an object is rather than its id, it reaches over the nearest
-      one.
+      Bring one hand to just above an object, 10 cm over its top, without grasping it. The robot
+      does not walk, and the top must be within about 0.48 m of the shoulder, nearer than
+      GoToTarget usually stops, so it fails on most objects the robot has only walked up to. It is
+      not a first step before another arm skill, and it does not point from a distance. Given what
+      an object is rather than its id, it reaches over the nearest one.
     args:
       - name: arm
         type: string

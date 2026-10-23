@@ -185,7 +185,7 @@ keeps them in step (names, ports, limits, resources). The macros are flat: none 
 | `TurnInPlace` | Turns by an angle (-180 to 180 degrees, positive left) with `TurnBy`, one try. | `base` |
 | `TuckForTravel` | Tucks each arm whose hand is empty. | arms |
 | `ArmTo` | Moves one arm (`left_arm`, `right_arm`) to a named pose of `g1.srdf` with `SetArmPosture`, one retry. | arms |
-| `HandTo` | Brings one hand 10 cm over an object (an id, or plain words for the nearest) with `MoveHand`, without grasping. | arms |
+| `HandTo` | Brings one hand 10 cm over an object within reach, about 0.48 m from the shoulder (an id, or plain words for the nearest), with `MoveHand`, without grasping. | arms |
 | `FindInView` | Asks the detector for a phrase and waits for it on `/objects`, then idles the detector. Moves nothing. Hands on `object_id`, the name the detector reports it under (`red_mug`). | none |
 | `ExploreBuilding` | The loop of `trees/explore.xml`: frontiers until the map is closed, then canopy's viewpoints until every room is seen, then clean up and save. Explores for up to 23 minutes, since a whole run is longer than a mission may be, and saves. Running out of time is not a failure. A world model that cannot plan is. | `base` |
 
