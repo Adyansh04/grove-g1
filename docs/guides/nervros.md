@@ -120,7 +120,7 @@ truth at IoU 0.95, and Flash-Lite's outlines at 0.80.
 SAM 3.1 does not fit on the GPU beside the local chat model: use it with a cloud chat model, or with
 none from the command line. There, `./scripts/demos/nervros.sh --print chat`'s last command, with
 `segment "the floor" --backend service --out floor.jpg` in place of `chat`, segments once. Without
-`~/.config/grove/gemini.env` (the bare key), only the local server segments.
+`~/api_keys/gemini.env` (the bare key), only the local server segments.
 
 ### Things to ask: walking and the arm
 
@@ -616,7 +616,7 @@ look over (its header says how).
 The app starts with the local model. NervROS can use other providers, set in its models file. This
 project uses free models only, and NervROS refuses a paid OpenRouter model at start-up.
 
-- With Gemini's key in `~/.config/grove/gemini.env`, its free tier outlines for `segment`, points
+- With Gemini's key in `~/api_keys/gemini.env`, its free tier outlines for `segment`, points
   for `point` and advises the planner. Without it those fall back or stay off, and the rest runs
   locally.
 - With the same key, Gemini Robotics-ER 2 checks a finished mission through both cameras' start
@@ -626,8 +626,8 @@ project uses free models only, and NervROS refuses a paid OpenRouter model at st
   check's "no" flags a success; its "yes" never clears what the world model found missing.
 - When the local model is not running, as when SAM 3.1 holds the GPU (the two do not fit in 12 GB
   together), free models elsewhere talk and look instead: Gemini 3.5 and 3.1 Flash-Lite, then
-  Nemotron 3 Super on OpenRouter's free tier (with `~/.config/openrouter.key`; NervROS refuses any
-  model there that is not free), then Gemma 4.
+  Nemotron 3 Super on OpenRouter's free tier (with `~/api_keys/openrouter.key`, then a second key in
+  `~/api_keys/openrouter_2.key`; NervROS refuses any model there that is not free), then Gemma 4.
 - Each Flash-Lite takes 10 requests a minute and 250 a day here, and Gemma 16K input tokens a
   minute, which one or two agent calls use up. When every model is at its limit for the minute, a
   turn waits for the first to free up.

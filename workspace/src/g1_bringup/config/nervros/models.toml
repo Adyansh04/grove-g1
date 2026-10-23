@@ -17,14 +17,23 @@ timeout_s = 120
 [[provider]]
 id = "gemini"
 kind = "gemini_interactions"
-key = { file = "~/.config/grove/gemini.env" }
+key = { file = "~/api_keys/gemini.env" }
 
 # free_only: NervROS refuses at start-up any model here that OpenRouter does not price at zero.
 [[provider]]
 id = "openrouter"
 kind = "openai_compat"
 base_url = "https://openrouter.ai/api/v1"
-key = { file = "~/.config/openrouter.key" }
+key = { file = "~/api_keys/openrouter.key" }
+free_only = true
+headers = { "X-Title" = "NervROS" }
+
+# A second key: its free requests take over when the first key's are spent or it expires.
+[[provider]]
+id = "openrouter2"
+kind = "openai_compat"
+base_url = "https://openrouter.ai/api/v1"
+key = { file = "~/api_keys/openrouter_2.key" }
 free_only = true
 headers = { "X-Title" = "NervROS" }
 
@@ -140,9 +149,18 @@ tools = true
 limits = { rpm = 20, pool = "openrouter_free" }
 privacy = { trains = true }
 
+[[model]]
+id = "nemotron-super-or2"
+provider = "openrouter2"
+model = "nvidia/nemotron-3-super-120b-a12b:free"
+tools = true
+limits = { rpm = 20, pool = "openrouter2_free" }
+privacy = { trains = true }
+
 [pools]
 # A thousand free requests a day once the account holds credit.
 openrouter_free = { rpd = 1000 }
+openrouter2_free = { rpd = 1000 }
 er2 = { rpd = 20 }
 
 [roles]
@@ -152,6 +170,7 @@ routine = [
     "gemini-3.5-flash-lite",
     "gemini-3.1-flash-lite",
     "nemotron-super-or",
+    "nemotron-super-or2",
     "gemma-4-26b",
 ]
 # Asked only after two failed plans for one request, so 3.8 Flash's few requests a day suffice.
