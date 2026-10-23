@@ -178,7 +178,7 @@ none from the command line. There, `./scripts/demos/nervros.sh --print chat`'s l
   object is gone from where it was or when the one there was seen after the goal was set. The Agent
   tab lists the goals with Drop.
 
-https://github.com/user-attachments/assets/2cbd5b3b-22d3-4f12-84ce-f697941a21d9
+https://github.com/user-attachments/assets/10d6d147-e73b-4931-9cc2-6c3a182c3a80
 
 In the clip, "set a goal to keep the red mug on the wooden tray, then work toward it": the goal is
 approved, one pick-and-place runs toward it (four times faster), the camera agrees the mug is in
@@ -191,7 +191,7 @@ the tray, and the report ends "goal 1 (keep the red mug on the wooden tray): met
   moments the world model saw the mug move; a second model then checks that frame alone, or its
   neighbours until one shows it. It answers with the time and the frame.
 
-https://github.com/user-attachments/assets/1ebe06cc-de7a-490f-b902-597ea91f72d6
+https://github.com/user-attachments/assets/acc1f8e6-f69e-4266-8383-2b0140183b48
 
 In the clip "tell me when the head camera shows a red mug" fires once the robot stands at the
 dining table, and "when did the head camera first show the red mug?" answers with the frame where
@@ -204,7 +204,7 @@ the mug comes into view.
   robot itself cut short, and gives each skill's record, the incidents and the goals.
   `nervros-cli digest` prints the same.
 
-https://github.com/user-attachments/assets/e0343475-e62f-4f6a-8e6a-5a693125325d
+https://github.com/user-attachments/assets/1985cf24-50be-4564-ad91-6a3d72b33dab
 
 In the clip the patrol looks around each room and reports what it saw, room by room ("the bedroom
 (R3): a bed, a clock, a nightstand and a potted plant"), and the digest then sums up the day.
@@ -261,7 +261,7 @@ A plan comes as a card with its steps, before anything moves.
 - The check also covers keep-out zones and steps that take an earlier step's result.
 - "Pick it up" as the first thing you say is not guessed at: the agent asks which thing.
 
-https://github.com/user-attachments/assets/91718cec-719c-4fad-96ff-6c210f32c287
+https://github.com/user-attachments/assets/85774bca-b1a2-4f62-b0fc-e8783486f8da
 
 In the clip `FindInView` for the tray had worked once in five, and the scene check's doubt, "there
 is no tray in the current view", shows on the card before anything moves.
@@ -282,7 +282,7 @@ the agent to look at.
 
 ## Programs, searches and taught skills
 
-https://github.com/user-attachments/assets/c46fbd2f-89fd-4069-83ee-c0dcf27b8c6f
+https://github.com/user-attachments/assets/03296eae-10bb-4b21-8b7c-201bb878d21f
 
 For anything that takes a loop, a count or a measurement, the agent writes a short program and runs
 it as a job.
@@ -299,14 +299,14 @@ it as a job.
 - In the apartment demo the mock detector knows only `mug` and `tray`, so a look asks for one of
   those.
 
-https://github.com/user-attachments/assets/51157255-5ddb-487b-b77f-5181f9481dd7
+https://github.com/user-attachments/assets/cb019286-ab57-4c49-adeb-b7a85e22029a
 
 "Find the red mug" ranks where to look: where canopy saw it and how long ago, where such things
 usually are, the rooms the camera has seen least of, and how far each is. It then walks to each
 place and looks until the detector sees it. "Where could my keys be? Don't move" lists the places
 without walking: canopy has never seen keys, so the clip ranks the rooms keys are usually in.
 
-https://github.com/user-attachments/assets/4e1bf457-9f63-498c-b293-d18661542491
+https://github.com/user-attachments/assets/fcd62896-e299-45ff-b1ab-977cfc2155af
 
 The executor lets the agent teach the robot a skill no macro has, from the leaves listed in
 `g1_orchestration`'s `learnable_leaves`: Nav2's walk, the bounded walk and turn, the detector's
@@ -402,7 +402,7 @@ A mission also stops by itself in two cases:
 - The executor refuses to start a walk, or stops one, when the robot has fallen or its balance
   controller is not running.
 
-https://github.com/user-attachments/assets/7bf2d1ef-5c5e-4873-b48f-7222fd3dc6f3
+https://github.com/user-attachments/assets/e031c8b7-4071-4cc1-ad3d-c61edbb67d27
 
 **Pause** (beside Stop while a mission runs, and on the plan card), typing "pause", "wait" or "hold
 on", or `/pause` in the terminal halts the running step instead. The robot stops where it is, the
@@ -419,7 +419,7 @@ straight walk or a turn does only what was left of it.
 
 ## Keep-out zones
 
-https://github.com/user-attachments/assets/3df05f4a-344a-4d54-a824-6ecfa8bebf57
+https://github.com/user-attachments/assets/7606defe-a7a7-434b-aa79-ef1fa0cc6ee3
 
 "Keep the robot out of the bedroom", or out of a metre around the vase, adds a keep-out zone around
 a room, an object, a place or corners on the map. The agent then refuses a walk that would end in a
@@ -474,13 +474,13 @@ timeouts and retries.
 - The launch file also starts `nervros_watchdog`, which cancels a step NervROS runs itself when
   NervROS goes quiet with it running, two seconds after its last word.
 
-https://github.com/user-attachments/assets/3c3d470d-7af2-498e-b83c-8c70945c5c65
+https://github.com/user-attachments/assets/04c65502-d726-4362-a398-13405b45e4fe
 
 In the clip a walk NervROS was running when it stopped is marked at start, and a walk approved
 while the base is driven by hand from the Robot tab comes back with `cause` teleop: the report says
 it could not start, and the Library tab dims both runs.
 
-https://github.com/user-attachments/assets/99be5972-bc7b-457b-ae5c-feb447bf00e3
+https://github.com/user-attachments/assets/10a5c176-eb65-4fcb-a171-437b025a433e
 
 A step can take what an earlier one found, so "find a mug and pick it up" is one mission.
 `FindInView` hands on the name the detector reports an object under, and a walk to a kind of
@@ -507,7 +507,7 @@ ros2 run g1_orchestration send_mission.sh $(ros2 pkg prefix g1_orchestration)/sh
 
 ## When something goes wrong
 
-https://github.com/user-attachments/assets/eb499b8c-4e19-487d-939e-51b98aa5eefa
+https://github.com/user-attachments/assets/df2c5600-4c68-4bab-b255-30d26d98203f
 
 In the clip the head camera's detector is stopped from outside. The incident opens by itself, "Why
 can't the robot find anything with its head camera?" names the stopped `detector_head`, and the
@@ -558,7 +558,7 @@ playbooks above check the same troubles by themselves and name the skill with th
 
 ## The robot's own description
 
-https://github.com/user-attachments/assets/32d93917-9227-47be-83e7-5b408e125657
+https://github.com/user-attachments/assets/525ce149-80a5-4615-8504-96a5b42ab892
 
 The persona, `g1_bringup/config/nervros/apartment.md`, tells the model what the robot is.
 **Draft from the robot** in the Doctor tab, or
@@ -637,7 +637,7 @@ project uses free models only, and NervROS refuses a paid OpenRouter model at st
 - After a step fails again, the `plan` model may propose a lasting fix: a note, a keep-out zone
   or a parameter. The Agent tab lists it to accept, which runs it as yours, or to dismiss.
 
-https://github.com/user-attachments/assets/c23c8e5b-65c4-4367-88e8-5c94d21a6e42
+https://github.com/user-attachments/assets/567fafc8-2e19-4207-bde7-3f6a30db206a
 
 In the clip the Agent tab holds two proposed fixes: Accept on the note adds it to Memory, with the
 step's record before and since, and Dismiss turns the parameter change down.

@@ -67,7 +67,7 @@ https://github.com/user-attachments/assets/347d91c4-3810-4e02-85bc-f8b860215505
 
 ### Talking to the robot with NervROS
 
-https://github.com/user-attachments/assets/0c9381e1-ae1e-4391-a63d-53ef5df6179c
+https://github.com/user-attachments/assets/9db9e88d-0e8f-4cfe-8ed9-3682b3a96143
 
 *NervROS fetches a mug for the simulated G1: the plan, the approval, then the walk, the pick and
 the place, four times faster while the robot works. NervROS's
