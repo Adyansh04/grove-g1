@@ -64,6 +64,13 @@ def _arguments():
             description="Rejected if true: composed, the nested costmap parameters never arrive.",
         ),
         DeclareLaunchArgument("log_level", default_value="info"),
+        DeclareLaunchArgument(
+            "collision_high_cloud",
+            default_value="/livox/lidar",
+            description="The cloud collision_monitor's high band reads. With MoveIt up, "
+            "/filtered_cloud, its LiDAR cloud less the robot and what it holds: a hand carrying "
+            "something off a desk rises into the band and reads as an obstacle ahead.",
+        ),
     ]
 
 
@@ -116,7 +123,7 @@ def _servers():
                 "nav2_collision_monitor",
                 "collision_monitor",
                 "collision_monitor",
-                [params],
+                [params, {"high_cloud.topic": LaunchConfiguration("collision_high_cloud")}],
                 TF_REMAPPINGS,
             ),
             server(
