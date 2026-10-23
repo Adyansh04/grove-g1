@@ -74,7 +74,9 @@ class GraspGenAdapter(Node):
 
         self._depth = {}
         self._info = None
+        self._latest = None
         self._masks = None
+        self._masks_depth = None
 
         self.create_subscription(InstanceMaskArray, "tracked_masks", self._on_masks, MASK_QOS)
         # Best effort, as the relay publishes: a reliable subscriber would never match.
@@ -108,14 +110,26 @@ class GraspGenAdapter(Node):
     def _on_depth(self, msg):
         key = (msg.header.stamp.sec, msg.header.stamp.nanosec)
         self._depth[key] = msg
-        while len(self._depth) > 40:
+        # Seconds of frames at camera rate: masks arrive a detector's latency after their frame.
+        while len(self._depth) > 120:
             self._depth.pop(next(iter(self._depth)))
 
     def _on_info(self, msg):
         self._info = msg
 
     def _on_masks(self, msg):
-        self._masks = msg
+        self._latest = msg
+        self._pair_latest()
+
+    def _pair_latest(self):
+        # Kept with its depth frame: the detector answers up to seconds behind the camera, and a
+        # grasp request can come later still, after the frame has left the history. Best-effort
+        # depth may also arrive after its masks, so a request tries again.
+        if self._latest is None:
+            return
+        depth = self._frame_for(self._latest)
+        if depth is not None:
+            self._masks, self._masks_depth = self._latest, depth
 
     def _sweep_params(self):
         if len(self._sweep) != 12:
@@ -173,13 +187,13 @@ class GraspGenAdapter(Node):
             )
             return response
 
-        masks = self._masks
+        self._pair_latest()
+        masks, depth = self._masks, self._masks_depth
         if masks is None or self._info is None:
-            response.message = "no tracked masks or camera_info yet; is perception running?"
-            return response
-        depth = self._frame_for(masks)
-        if depth is None:
-            response.message = "the depth frame those masks were cut from is no longer held"
+            response.message = (
+                "no tracked masks with their depth frame, or no camera_info yet; is perception "
+                "running?"
+            )
             return response
 
         wanted = request.object_id
