@@ -128,16 +128,18 @@ TEST(LearnedSkill, MoveHandTakesATargetOrAFrameAndAWorldIdOnlyAsItsTarget)
         { "MoveHand:arms:arm,target(world_id)|frame,mode", "Wait::seconds" },
         kPalette);
     EXPECT_THAT(rules.ports.at("MoveHand"), ::testing::SizeIs(4));
-    const auto check = [&rules](const std::string& body) {
-        SkillDefinition d = pointAt();
-        d.body_xml        = body;
-        std::vector<Diagnostic> problems;
-        const bool              built = buildLearned(d, rules, {}, problems).has_value();
-        EXPECT_EQ(built, problems.empty());
-        return problems;
-    };
+    const auto check =
+        [&rules](const std::string& body, std::vector<SkillArg> args = pointAt().args) {
+            SkillDefinition d = pointAt();
+            d.args            = std::move(args);
+            d.body_xml        = body;
+            std::vector<Diagnostic> problems;
+            const bool              built = buildLearned(d, rules, {}, problems).has_value();
+            EXPECT_EQ(built, problems.empty());
+            return problems;
+        };
     EXPECT_TRUE(check(R"(<MoveHand arm="{arm}" target="{object}" mode="point"/>)").empty());
-    EXPECT_TRUE(check(R"(<MoveHand arm="{arm}" frame="torso_link"/>)").empty());
+    EXPECT_TRUE(check(R"(<MoveHand arm="{arm}" frame="torso_link"/>)", { arg("arm") }).empty());
 
     // What a model taught on 15 Oct: each failed only when the step ran, after two approvals.
     const auto both = check(R"(<MoveHand arm="{arm}" target="{object}" frame="map"/>)");
@@ -177,12 +179,25 @@ TEST(LearnedSkill, AnInputsValuesHoldItsLiteralsAndTheArgumentFedToIt)
     EXPECT_THAT(arm->allowed, ::testing::ElementsAre("left", "right"));
 
     SkillDefinition literal = pointAt();
+    literal.args            = { arg("object", "world_id") };
     literal.body_xml        = R"(<MoveHand arm="left_arm" target="{object}" mode="point"/>)";
     problems.clear();
     EXPECT_FALSE(buildLearned(literal, rules, {}, problems).has_value());
     ASSERT_THAT(problems, ::testing::SizeIs(1));
     EXPECT_EQ(problems.front().code, "BAD_ARG");
     EXPECT_THAT(problems.front().message, HasSubstr("takes only left or right, not 'left_arm'"));
+}
+
+TEST(LearnedSkill, AnArgumentTheBodyNeverUsesIsRefused)
+{
+    // The plan's arm would go nowhere, and MoveHand would point with its default hand.
+    SkillDefinition d = pointAt();
+    d.body_xml        = R"(<MoveHand mode="point" target="{object}"/>)";
+    std::vector<Diagnostic> problems;
+    EXPECT_FALSE(buildLearned(d, learnable(), {}, problems).has_value());
+    ASSERT_THAT(problems, ::testing::SizeIs(1));
+    EXPECT_EQ(problems.front().code, "BAD_ARG");
+    EXPECT_THAT(problems.front().message, HasSubstr("'arm' is never used"));
 }
 
 TEST(LearnedSkill, OnlyTheControlNodesAndLearnableLeavesWithLiteralsOrItsArgumentsPass)

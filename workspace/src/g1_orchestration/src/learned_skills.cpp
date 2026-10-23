@@ -142,6 +142,8 @@ public:
 
     [[nodiscard]] int            nodes() const { return nodes_; }
     [[nodiscard]] const NameSet& holds() const { return holds_; }
+    /// The arguments some attribute binds.
+    [[nodiscard]] const NameSet& used() const { return used_; }
     /// The values each argument takes, for those fed to an input with fixed values.
     [[nodiscard]] const std::map<std::string, std::vector<std::string>, std::less<>>&
     argValues() const
@@ -241,6 +243,7 @@ private:
             }
             if (!arg.empty())
             {
+                used_.emplace(arg);
                 const auto known =
                     std::ranges::find_if(definition_->args, [arg](const SkillArg& s) {
                         return s.name == arg;
@@ -338,6 +341,7 @@ private:
     std::vector<Diagnostic>*                                     problems_;
     int                                                          nodes_ = 0;
     NameSet                                                      holds_;
+    NameSet                                                      used_;
     std::map<std::string, std::vector<std::string>, std::less<>> arg_values_;
 
     /// The values a leaf's input takes, or null when it takes any.
@@ -667,6 +671,19 @@ std::optional<LearnedSkill> buildLearned(
     }
     BodyCheck check(definition, learnable, problems);
     check.walk(*body, 1);
+    // A plan's value for an argument the body never reads would go nowhere, and the leaf would
+    // fall back to its own default, such as MoveHand's hand.
+    for (const SkillArg& arg : definition.args)
+    {
+        if (!check.used().contains(arg.name))
+        {
+            add(code::kBadArg,
+                std::format(
+                    "argument '{}' is never used: give it to a leaf input as {{{}}}, or drop it",
+                    arg.name,
+                    arg.name));
+        }
+    }
     if (check.nodes() > learnable.max_nodes)
     {
         add(code::kTooManyNodes,
