@@ -80,7 +80,7 @@ and send a pick: RViz draws every candidate it weighed from
 \`unitree_g1\` gripper, the Dex3-1, and g1_perception sends its sweep volume rather than its name,
 so the server needs no assets for it.
 
-The poses it returns are in its own gripper frame, which is not a link of this robot. Measuring
-that offset against the arrows is the one calibration this path needs; see
-docs/guides/open-vocabulary-grasping.md.
+The poses it returns are in its own gripper frame, which is not a link of this robot; the
+grasp_offset launch argument's default maps it onto the grasp frame, measured for this hand (see
+docs/guides/open-vocabulary-grasping.md).
 EOF

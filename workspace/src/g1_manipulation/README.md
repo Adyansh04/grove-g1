@@ -125,7 +125,7 @@ explained in comments. `config/g1_object_pose_source.yaml` holds the source's fr
 | `object_timeout_ms` | 1000.0 | How old a pose may be. Bringup passes 8000 with perception. |
 | `min_grip_height_m` | 0.080 | Lowest grip above the surface. Bringup passes 0.035 for the navigation world, whose ball sits where the thumb hangs past the desk edge. |
 | `grasp_source` | `fixed_top_down` | See above. |
-| `grasp_offset` | zeros | Sets `graspgen_to_grasp_frame_xyz_rpy`: generator gripper frame to grasp frame, xyz then rpy, measured for the hand the generator serves (see [the open-vocabulary guide](../../../docs/guides/open-vocabulary-grasping.md)). |
+| `grasp_offset` | `[0, 0, 0.07, π/2, 0, π]` | Sets `graspgen_to_grasp_frame_xyz_rpy`: generator gripper frame to grasp frame, xyz then rpy, measured for GraspGenX's Dex3 (see [the open-vocabulary guide](../../../docs/guides/open-vocabulary-grasping.md)). |
 | `visualization` | false | Markers and `~/grasp_plan`. |
 
 Tunables can be changed with `ros2 param set` between goals. A set during a goal is refused.

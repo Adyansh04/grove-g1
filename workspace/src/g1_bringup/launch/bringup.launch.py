@@ -411,9 +411,9 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "grasp_offset",
-                default_value="[0.0, 0.0, 0.0, 0.0, 0.0, 0.0]",
+                default_value="[0.0, 0.0, 0.07, 1.5707963, 0.0, 3.1415927]",
                 description="The grasp generator's gripper frame to this robot's grasp frame, xyz "
-                "then rpy. Measure it against the candidates in RViz before trusting it.",
+                "then rpy, measured for GraspGenX's Dex3 (see g1_manipulation's launch).",
             ),
             DeclareLaunchArgument(
                 "grasp_engine",
