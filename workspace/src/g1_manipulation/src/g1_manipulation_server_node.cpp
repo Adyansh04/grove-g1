@@ -942,10 +942,17 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
     const auto landed = waitForObject(held_id, place_confirm_timeout_s_);
     if (!landed)
     {
-        fail(
-            Place::Feedback::PHASE_RETREAT,
-            held_id + " is not on /objects after the release, so where it landed cannot be "
-                      "confirmed");
+        // Lowered to within max_place_offset_m and let go: a detector that cannot pick it out
+        // from here is no sign it fell, and a failure would have the tree place again with an
+        // empty hand. One seen off the target still fails below.
+        RCLCPP_WARN(
+            get_logger(),
+            "%s is not on /objects after the release; placed, unconfirmed",
+            held_id.c_str());
+        result->success = true;
+        result->message = "placed with the " + goal->arm + " hand; the detector has not seen " +
+                          held_id + " since, so where it rests is unconfirmed";
+        goal_handle->succeed(result);
         return;
     }
     const geometry_msgs::msg::Point&         aim   = expected ? *expected : target->position;
