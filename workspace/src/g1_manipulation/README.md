@@ -52,7 +52,7 @@ The source's other parameters:
 | `~/pick` | `object_id`, `arm` | The pose is read from `/objects` when the goal starts, falling back on a sighting under `sighting_memory_s` old. |
 | `~/place` | `surface_object_id` or `pose`, `arm` | Prefer the surface: it is read from `/objects` and the object is stood on it. A `pose` is where the object ends up. Refused when the arm holds nothing. |
 | `~/set_arm_posture` | `group`, `named_target` | A named SRDF pose of `left_arm`, `right_arm`, `both_arms`, `left_hand` or `right_hand`. |
-| `~/move_hand` | `arm`, `target`, `offset`, `mode`, `speed` | The hand to a point (`reach`), or onto the line from the shoulder to it (`point`). It faces whichever way gets it there with the least change of pose. Planned against the scene from where the arm is, at `move_hand_speed` of the usual speed, raised to end within `move_hand_max_s`. Refused past `move_hand_max_reach_m` from the shoulder. For pointing, and the gestures a taught skill makes. It never moves a hand's fingers. |
+| `~/move_hand` | `arm`, `target`, `offset`, `mode`, `speed` | The hand to a point (`reach`), or onto the line from the shoulder to it (`point`); a pointing hand that line leaves in front of the torso steps out to its own side by `move_hand_point_side_steps_m`, and a refusal names the other hand when the target is on its side. It faces whichever way gets it there with the least change of pose. Planned against the scene from where the arm is, at `move_hand_speed` of the usual speed, raised to end within `move_hand_max_s`. Refused past `move_hand_max_reach_m` from the shoulder. For pointing, and the gestures a taught skill makes. It never moves a hand's fingers. |
 
 `Pick` and `Place` publish their phase as feedback and name it in the result on failure.
 
@@ -130,7 +130,8 @@ explained in comments. `config/g1_object_pose_source.yaml` holds the source's fr
 
 Tunables can be changed with `ros2 param set` between goals. A set during a goal is refused.
 `velocity_scaling`, `grasp_rpy`, `grasp_source`, `grasp_service`, `publish_markers`,
-`graspgen_to_grasp_frame_xyz_rpy` and the `move_hand_*_shoulder` links are read-only.
+`graspgen_to_grasp_frame_xyz_rpy`, the `move_hand_*_shoulder` links and
+`move_hand_point_side_steps_m` are read-only.
 
 ## Running
 

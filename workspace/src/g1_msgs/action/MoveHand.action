@@ -8,7 +8,8 @@ geometry_msgs/PointStamped target
 # z up), m.
 geometry_msgs/Vector3 offset
 # "reach" takes the hand to the target plus the offset. "point" puts it on the line from the
-# shoulder to that point, the server's pointing reach from the shoulder, so the arm points at it.
+# shoulder to that point, the server's pointing reach from the shoulder, so the arm points at it;
+# where that line leaves the hand in front of the torso, it steps out to its own side.
 string mode
 # A fraction of the server's speed for these moves, above 0 and at most 1; 0 takes the whole.
 float64 speed

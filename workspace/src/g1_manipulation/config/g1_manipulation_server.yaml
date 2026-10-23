@@ -95,9 +95,12 @@ g1_manipulation_server:
     # own, and the arm plans to the solution nearest its pose now. A position-only goal leaves
     # MoveIt sampling orientations it cannot reach.
     move_hand_orientations: 32
-    # The links a pointing arm's line starts at.
+    # The links a pointing arm's line starts at; the two set which way is out.
     move_hand_left_shoulder: left_shoulder_pitch_link
     move_hand_right_shoulder: right_shoulder_pitch_link
+    # m. A target near the body's middle puts the pointing hand in front of the torso: it steps
+    # out to its own side by these, in turn, until a pose clears the body.
+    move_hand_point_side_steps_m: [0.06, 0.12, 0.18]
     planning_time_s: 10.0
     # Samples within planning_time_s: ValidateSolution rejects some paths OMPL accepts, quickly.
     planning_attempts: 5

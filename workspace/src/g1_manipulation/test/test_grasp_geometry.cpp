@@ -157,6 +157,26 @@ TEST(PointingHand, ReachesATargetNearerThanItsReachAndStaysPutOnTheShoulder)
     EXPECT_NEAR(same.z, 1.0, 1e-9);
 }
 
+TEST(PointingHands, StepOutAwayFromTheOtherShoulderWithinReach)
+{
+    const auto left  = pointAt(0.0, 0.15, 1.2);
+    const auto right = pointAt(0.0, -0.15, 1.2);
+    const auto hand  = pointAt(0.3, -0.05, 0.9);
+    const auto out   = g1_manipulation::pointingHands(hand, left, right, { 0.06, 0.12, 0.5 }, 0.48);
+    // The 0.5 m step would leave the hand out of reach.
+    ASSERT_EQ(out.size(), 3U);
+    EXPECT_NEAR(out[0].y, -0.05, 1e-9);
+    EXPECT_NEAR(out[1].y, 0.01, 1e-9);
+    EXPECT_NEAR(out[2].y, 0.07, 1e-9);
+    EXPECT_NEAR(out[2].x, 0.3, 1e-9);
+    EXPECT_NEAR(out[2].z, 0.9, 1e-9);
+
+    // The right hand steps the other way.
+    const auto mirrored = g1_manipulation::pointingHands(hand, right, left, { 0.06 }, 0.48);
+    ASSERT_EQ(mirrored.size(), 2U);
+    EXPECT_NEAR(mirrored[1].y, -0.11, 1e-9);
+}
+
 TEST(HandOrientations, StartWithTheHandsOwnAndAreTheSameUnitRotationsEachTime)
 {
     // Half a turn about z; a message's quaternion starts as the identity, w = 1.

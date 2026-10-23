@@ -165,6 +165,10 @@ void G1ManipulationServer::declareParameters()
         declare_parameter<std::string>("move_hand_left_shoulder", move_hand_left_shoulder_, fixed);
     move_hand_right_shoulder_ =
         declare_parameter<std::string>("move_hand_right_shoulder", move_hand_right_shoulder_, fixed);
+    move_hand_point_side_steps_m_ = declare_parameter<std::vector<double>>(
+        "move_hand_point_side_steps_m",
+        move_hand_point_side_steps_m_,
+        fixed);
     declare_parameter<std::string>("grasp_service", "/g1_grasp_engine/generate_grasps", fixed);
     declare_parameter<bool>("publish_markers", false, fixed);
     const std::vector<double> offset = declare_parameter<std::vector<double>>(

@@ -86,6 +86,16 @@ geometry_msgs::msg::Point pointingHand(
     double reach_m);
 
 /**
+ * @brief The places a pointing hand is tried at: @p hand first, then stepped out by each of
+ *        @p steps_m horizontally, away from @p other (the other shoulder), while within
+ *        @p max_reach_m of @p shoulder. A target near the body's middle puts @p hand in front of
+ *        the torso, where no pose of the arm clears it.
+ */
+std::vector<geometry_msgs::msg::Point> pointingHands(
+    const geometry_msgs::msg::Point& hand, const geometry_msgs::msg::Point& shoulder,
+    const geometry_msgs::msg::Point& other, const std::vector<double>& steps_m, double max_reach_m);
+
+/**
  * @brief Orientations to try a hand at a point in: @p current first, then @p count more spread
  *        evenly at random over all of them, the same ones every time.
  */
@@ -599,6 +609,8 @@ private:
     int                 move_hand_orientations_{ 32 };
     std::string         move_hand_left_shoulder_{ "left_shoulder_pitch_link" };
     std::string         move_hand_right_shoulder_{ "right_shoulder_pitch_link" };
+    /// m. The steps out to its own side a pointing hand tries; see pointingHands().
+    std::vector<double> move_hand_point_side_steps_m_{ 0.06, 0.12, 0.18 };
     /// Generator gripper frame to `<side>_hand_grasp_frame`; see grasp_filter.hpp.
     std::array<double, 6> graspgen_offset_{};
 
