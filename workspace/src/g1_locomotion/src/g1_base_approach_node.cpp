@@ -5,6 +5,8 @@
 
 #include "g1_locomotion/g1_base_approach_node.hpp"
 
+#include <tf2/utils.h>
+
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -70,9 +72,11 @@ BaseApproachNode::BaseApproachNode()
   , tf_buffer_(get_clock())
   , tf_listener_(tf_buffer_)
 {
-    cmd_topic_         = declare_parameter<std::string>("cmd_vel_topic", "/cmd_vel");
-    base_frame_        = declare_parameter<std::string>("base_frame", "base_footprint");
-    object_timeout_ms_ = declare_parameter<double>("object_timeout_ms", 1500.0);
+    cmd_topic_            = declare_parameter<std::string>("cmd_vel_topic", "/cmd_vel");
+    base_frame_           = declare_parameter<std::string>("base_frame", "base_footprint");
+    object_timeout_ms_    = declare_parameter<double>("object_timeout_ms", 1500.0);
+    surface_min_extent_m_ = declare_parameter<double>("surface_min_extent_m", 0.40);
+    surface_edge_x_m_     = declare_parameter<double>("surface_edge_x_m", 0.22);
 
     const GaitLimits g;
     gait_.min_speed_x_mps  = declare_parameter<double>("min_speed_x_mps", g.min_speed_x_mps);
@@ -163,15 +167,15 @@ BaseApproachNode::BaseApproachNode()
                 {
                     continue;
                 }
-                geometry_msgs::msg::PointStamped& seen =
-                    sightings_[detection.results.front().hypothesis.class_id];
-                seen.header = msg->header;
-                seen.point  = detection.results.front().pose.pose.position;
+                Sighting& seen   = sightings_[detection.results.front().hypothesis.class_id];
+                seen.pose.header = msg->header;
+                seen.pose.pose   = detection.results.front().pose.pose;
+                seen.size        = detection.bbox.size;
             }
             // Track ids come and go, so aged-out sightings are dropped.
             const rclcpp::Time newest(msg->header.stamp);
             std::erase_if(sightings_, [&](const auto& entry) {
-                return (newest - rclcpp::Time(entry.second.header.stamp)).seconds() * 1e3 >
+                return (newest - rclcpp::Time(entry.second.pose.header.stamp)).seconds() * 1e3 >
                        object_timeout_ms_;
             });
         });
@@ -373,11 +377,12 @@ std::optional<geometry_msgs::msg::PoseStamped> BaseApproachNode::basePose(const 
 }
 
 std::optional<geometry_msgs::msg::PointStamped>
-BaseApproachNode::objectInBase(const std::string& object_id)
+BaseApproachNode::objectInBase(const std::string& object_id, bool* surface)
 {
     // The last sighting, not the newest message: a detector pass that misses a standing prop
     // says nothing about where it went.
     geometry_msgs::msg::PointStamped seen;
+    Sighting                         box;
     {
         const std::lock_guard<std::mutex> lock(objects_mutex_);
         const auto                        found = sightings_.find(object_id);
@@ -391,7 +396,14 @@ BaseApproachNode::objectInBase(const std::string& object_id)
                 object_id.c_str());
             return std::nullopt;
         }
-        seen = found->second;
+        box         = found->second;
+        seen.header = box.pose.header;
+        seen.point  = box.pose.pose.position;
+    }
+    const bool wide = std::max(box.size.x, box.size.y) > surface_min_extent_m_;
+    if (surface != nullptr)
+    {
+        *surface = wide;
     }
 
     const double age_ms = (now() - rclcpp::Time(seen.header.stamp)).seconds() * 1e3;
@@ -409,6 +421,25 @@ BaseApproachNode::objectInBase(const std::string& object_id)
 
     try
     {
+        if (wide)
+        {
+            // A table's centre is out of reach: its edge nearest the base is what to close on.
+            const auto base = tf_buffer_.lookupTransform(
+                seen.header.frame_id,
+                base_frame_,
+                tf2::TimePointZero,
+                tf2::durationFromSec(0.5));
+            const auto edge = nearestOnFootprint(
+                seen.point.x,
+                seen.point.y,
+                tf2::getYaw(box.pose.pose.orientation),
+                0.5 * box.size.x,
+                0.5 * box.size.y,
+                base.transform.translation.x,
+                base.transform.translation.y);
+            seen.point.x = edge[0];
+            seen.point.y = edge[1];
+        }
         // Latest transform: a standing object's odom pose stays valid, and what matters is
         // where it is from the base now.
         seen.header.stamp = rclcpp::Time(0, 0, get_clock()->get_clock_type());

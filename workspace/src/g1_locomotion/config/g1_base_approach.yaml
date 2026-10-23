@@ -42,6 +42,11 @@ g1_base_approach:
     target_x_m: 0.315
     target_y_m: -0.220
 
+    # m. An object wider than this is a surface, a table or a desk: its footprint's nearest point
+    # is closed on, straight ahead, to surface_edge_x_m, where the hand reaches 13 cm onto it.
+    surface_min_extent_m: 0.40
+    surface_edge_x_m: 0.22
+
     # Objects to stand further back from: reaching over a surface to set something down sweeps
     # the wrist across its face.
     standoff_object_ids: ["brown_box", "tray_1"]

@@ -18,6 +18,7 @@ using g1_locomotion::ApproachState;
 using g1_locomotion::GaitLimits;
 using g1_locomotion::gaitLimitsAreUsable;
 using g1_locomotion::limitsAreUsable;
+using g1_locomotion::nearestOnFootprint;
 using g1_locomotion::planApproach;
 using g1_locomotion::planNudge;
 using g1_locomotion::settledInReach;
@@ -30,6 +31,21 @@ GaitLimits     gait() { return GaitLimits{}; }
 auto plan(double x, double y, const ApproachLimits& limits)
 {
     return planApproach(x, y, 0.0, limits, gait());
+}
+
+TEST(NearestOnFootprint, ATableIsReachedAtItsNearEdgeAndAPointOnItIsItself)
+{
+    // A 1.6 x 0.9 table, turned a quarter, so its long side runs along y.
+    const double quarter = std::acos(0.0);
+    const auto   edge    = nearestOnFootprint(0.0, 0.0, quarter, 0.8, 0.45, 2.0, 0.3);
+    EXPECT_NEAR(edge[0], 0.45, 1e-9);
+    EXPECT_NEAR(edge[1], 0.3, 1e-9);
+    const auto inside = nearestOnFootprint(0.0, 0.0, quarter, 0.8, 0.45, 0.1, -0.5);
+    EXPECT_NEAR(inside[0], 0.1, 1e-9);
+    EXPECT_NEAR(inside[1], -0.5, 1e-9);
+    const auto corner = nearestOnFootprint(0.0, 0.0, 0.0, 0.8, 0.45, 2.0, 2.0);
+    EXPECT_NEAR(corner[0], 0.8, 1e-9);
+    EXPECT_NEAR(corner[1], 0.45, 1e-9);
 }
 
 TEST(ApproachPlanner, ObjectInTheWindowIsArrivedAndCommandsNothing)

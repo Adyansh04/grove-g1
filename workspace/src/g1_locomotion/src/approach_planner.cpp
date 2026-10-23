@@ -132,4 +132,14 @@ bool ApproachProgress::stalled(double forward_error_m, double lateral_error_m, d
     return now_s - since_s_ > stall_s_;
 }
 
+std::array<double, 2> nearestOnFootprint(
+    double cx, double cy, double yaw, double half_x, double half_y, double px, double py)
+{
+    const double c     = std::cos(yaw);
+    const double s     = std::sin(yaw);
+    const double along = std::clamp((c * (px - cx)) + (s * (py - cy)), -half_x, half_x);
+    const double cross = std::clamp((-s * (px - cx)) + (c * (py - cy)), -half_y, half_y);
+    return { cx + (c * along) - (s * cross), cy + (s * along) + (c * cross) };
+}
+
 }  // namespace g1_locomotion

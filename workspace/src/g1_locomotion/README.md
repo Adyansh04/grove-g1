@@ -30,7 +30,9 @@ It writes `/cmd_vel`, the topic Nav2 writes. The mission tree never runs the two
 | `/objects` | in | `vision_msgs/msg/Detection3DArray`, sensor QoS |
 | `/cmd_vel` | out | `geometry_msgs/msg/Twist` (`cmd_vel_topic`) |
 
-- `ApproachObject` walks until the object sits in the arm's reach window.
+- `ApproachObject` walks until the object sits in the arm's reach window. A surface, an object
+  wider than `surface_min_extent_m` such as a table, is closed on by its nearest edge, straight
+  ahead, to `surface_edge_x_m`: its centre is out of reach.
 - `Retreat` reverses straight back by a set distance, at most 2 m, without turning. It stops
   short while `retreat_gap_m` is left between the body and a lethal cell straight behind, and
   succeeds then once it has backed `retreat_min_m` (0.15 m): a home's aisle can be narrower than the

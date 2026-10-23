@@ -76,12 +76,18 @@ private:
     /// The base's pose in @p frame, or nothing if TF has not caught up.
     std::optional<geometry_msgs::msg::PoseStamped> basePose(const std::string& frame = "odom");
 
-    /// The named object's position in the base frame, or nothing if it is missing or stale.
-    std::optional<geometry_msgs::msg::PointStamped> objectInBase(const std::string& object_id);
+    /// The named object's position in the base frame, or nothing if it is missing or stale. For
+    /// a surface, wider than surface_min_extent_m, its footprint's point nearest the base, and
+    /// @p surface says so.
+    std::optional<geometry_msgs::msg::PointStamped>
+    objectInBase(const std::string& object_id, bool* surface = nullptr);
 
     /// The reach window for this goal: mirrored for the left arm, widened for objects that have
     /// to be reached over rather than onto.
     ApproachLimits limitsFor(const ApproachObject::Goal& goal) const;
+
+    /// @p limits aimed at a surface's edge: surface_edge_x_m ahead, no sideways target.
+    ApproachLimits edgeLimits(const ApproachLimits& limits, double edge_y_m) const;
 
     void runApproach(const std::shared_ptr<GoalHandleApproach>& handle);
 
@@ -143,11 +149,18 @@ private:
     std::mutex                                   costmap_mutex_;
     nav_msgs::msg::OccupancyGrid::ConstSharedPtr costmap_;
 
-    std::mutex objects_mutex_;
-    /// Each object id's newest reported position, stamped when it was seen.
-    std::map<std::string, geometry_msgs::msg::PointStamped> sightings_;
-    tf2_ros::Buffer                                         tf_buffer_;
-    tf2_ros::TransformListener                              tf_listener_;
+    /// An object as /objects last reported it: its box, stamped when it was seen.
+    struct Sighting
+    {
+        geometry_msgs::msg::PoseStamped pose;
+        geometry_msgs::msg::Vector3     size;
+    };
+    std::mutex                      objects_mutex_;
+    std::map<std::string, Sighting> sightings_;
+    tf2_ros::Buffer                 tf_buffer_;
+    tf2_ros::TransformListener      tf_listener_;
+    double                          surface_min_extent_m_ = 0.40;
+    double                          surface_edge_x_m_     = 0.22;
 
     /// One goal across both actions: two would be two writers on /cmd_vel.
     std::atomic<bool> busy_{ false };
