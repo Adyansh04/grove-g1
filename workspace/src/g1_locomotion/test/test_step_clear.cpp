@@ -46,6 +46,19 @@ bool pathStaysClear(const std::vector<ObstaclePoint>& points, const StepClearPla
     return true;
 }
 
+TEST(ClearanceBehind, SeesOnlyWhatIsInTheCorridorStraightBack)
+{
+    std::vector<ObstaclePoint> points;
+    wall(points, -0.5, 0.4, 0.5, 0.4);    // The counter ahead, when facing +y.
+    wall(points, -0.5, -0.8, 0.5, -0.8);  // A chair's back behind.
+    wall(points, 0.6, -0.3, 0.6, 0.3);    // A cabinet beside, outside the corridor.
+    const double up = std::numbers::pi / 2.0;
+
+    EXPECT_NEAR(clearanceBehind(points, 0.0, 0.0, up, 0.3), 0.8, 1e-9);
+    EXPECT_NEAR(clearanceBehind(points, 0.0, 0.0, -up, 0.3), 0.4, 1e-9);
+    EXPECT_TRUE(std::isinf(clearanceBehind({}, 0.0, 0.0, up, 0.3)));
+}
+
 TEST(StepClear, StaysPutWhenAlreadyClear)
 {
     std::vector<ObstaclePoint> points;

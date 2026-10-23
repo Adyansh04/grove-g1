@@ -109,15 +109,18 @@ private:
 
     std::string cmd_topic_;
     std::string base_frame_;
-    double      object_timeout_ms_ = 1500.0;
-    double      retreat_speed_mps_ = 0.30;
-    double      settle_s_          = 1.0;
-    int         max_nudges_        = 12;
-    double      cmd_rate_hz_       = 20.0;
-    double      lookup_grace_s_    = 3.0;
-    double      default_timeout_s_ = 900.0;
-    double      stall_s_           = 20.0;
-    double      stall_progress_m_  = 0.05;
+    double      object_timeout_ms_     = 1500.0;
+    double      retreat_speed_mps_     = 0.30;
+    double      retreat_settle_slop_m_ = 0.05;
+    double      retreat_gap_m_         = 0.15;
+    double      retreat_min_m_         = 0.30;
+    double      settle_s_              = 1.0;
+    int         max_nudges_            = 12;
+    double      cmd_rate_hz_           = 20.0;
+    double      lookup_grace_s_        = 3.0;
+    double      default_timeout_s_     = 900.0;
+    double      stall_s_               = 20.0;
+    double      stall_progress_m_      = 0.05;
 
     StepClearLimits step_limits_;
     double          step_speed_mps_             = 0.30;

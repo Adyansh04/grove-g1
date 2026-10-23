@@ -22,6 +22,13 @@ g1_base_approach:
 
     # Reverse speed for a retreat, which backs away from a surface blind.
     retreat_speed_mps: 0.30
+    # How far short of its distance a retreat may read once the gait has settled and still count:
+    # the last stride sways the pelvis back by 2-3 cm after the stop.
+    retreat_settle_slop_m: 0.05
+    # A retreat stops while this much is left between the body (step_clear.body_radius_m) and the
+    # nearest lethal cell straight behind, and still counts once it has backed retreat_min_m.
+    retreat_gap_m: 0.15
+    retreat_min_m: 0.30
 
     # Zero held while the gait finishes its stride, before the object is re-measured.
     settle_s: 1.0

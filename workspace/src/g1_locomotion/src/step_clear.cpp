@@ -33,6 +33,24 @@ double clearanceAt(std::span<const ObstaclePoint> obstacles, double x, double y)
     return nearest;
 }
 
+double clearanceBehind(
+    std::span<const ObstaclePoint> obstacles, double x, double y, double yaw, double half_width_m)
+{
+    double nearest = std::numeric_limits<double>::infinity();
+    for (const ObstaclePoint& obstacle : obstacles)
+    {
+        const double dx      = obstacle.x - x;
+        const double dy      = obstacle.y - y;
+        const double ahead   = (dx * std::cos(yaw)) + (dy * std::sin(yaw));
+        const double lateral = (-dx * std::sin(yaw)) + (dy * std::cos(yaw));
+        if (ahead < 0.0 && std::abs(lateral) <= half_width_m)
+        {
+            nearest = std::min(nearest, -ahead);
+        }
+    }
+    return nearest;
+}
+
 StepClearPlan planStepClear(
     std::span<const ObstaclePoint> obstacles, double x, double y, double yaw, double wanted_m,
     const StepClearLimits& limits)

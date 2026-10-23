@@ -84,7 +84,10 @@ BaseApproachNode::BaseApproachNode()
     gait_.yaw_rate_per_rad = declare_parameter<double>("yaw_rate_per_rad", g.yaw_rate_per_rad);
     gait_.nudge_y_s        = declare_parameter<double>("nudge_y_s", g.nudge_y_s);
 
-    retreat_speed_mps_ = declare_parameter<double>("retreat_speed_mps", 0.30);
+    retreat_speed_mps_     = declare_parameter<double>("retreat_speed_mps", 0.30);
+    retreat_settle_slop_m_ = declare_parameter<double>("retreat_settle_slop_m", 0.05);
+    retreat_gap_m_         = declare_parameter<double>("retreat_gap_m", 0.15);
+    retreat_min_m_         = declare_parameter<double>("retreat_min_m", 0.30);
 
     const StepClearLimits c;
     step_limits_.body_radius_m =
