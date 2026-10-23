@@ -7,6 +7,10 @@
 #             executor and the NervROS app: look, find things, walk to rooms and objects, and
 #             carry the mug from the dining table to the tray on the office desk
 #   chat      the same, with NervROS in the terminal instead of the app
+#   fetch     the apartment with the real detector (SAM 3.1) and grasp generator (GraspGenX) on
+#             the host, no local model: things nobody mapped, found by a phrase; search for one,
+#             pick it up, put it on a table or into the tray (needs their servers' setup, see
+#             docs/guides/open-vocabulary-grasping.md)
 #   explore   the apartment with an empty world model: ask the robot to explore and watch the map
 #             fill in, in the app's World tab and viewer
 #   map       map a world from nothing: SLAM instead of a saved map, and a new world model that
@@ -51,6 +55,10 @@ EMPTY=/root/data/worlds/nervros-explore
 # With the arm stack: the mock detector finds the mug and the tray by body name for the pick skills.
 ARMS="moveit:=true manipulation:=true perception:=true detector:=mock activate_arm:=true activate_arm_delay_s:=8.0 phrases:='mug_4=red mug,tray_1=wooden tray'"
 APARTMENT="ros2 launch g1_bringup bringup.launch.py mode:=localization nav:=true keepout:=true world:=$SIM_WORLD map:=$SAVED/map.yaml headless:=true rviz:=false cameras:=head,chest $ARMS$LAUNCH_ARGS"
+# Fetching: SAM 3.1 finds whatever a skill asks for by phrase, and GraspGenX grasps for the right
+# hand; the trees set the phrases, so one is enough to start.
+FETCH_ARMS="moveit:=true manipulation:=true perception:=true detector:=vision grasp_engine:=graspgen grasp_source:=generated activate_arm:=true activate_arm_delay_s:=8.0 phrases:='wooden tray'"
+FETCH="ros2 launch g1_bringup bringup.launch.py mode:=localization nav:=true keepout:=true world:=$SIM_WORLD map:=$SAVED/map.yaml headless:=true rviz:=false cameras:=head,chest $FETCH_ARMS$LAUNCH_ARGS"
 # Exploring needs no arms: at the sides, they stay out of both cameras' views.
 EXPLORING="ros2 launch g1_bringup bringup.launch.py mode:=localization nav:=true keepout:=true world:=$SIM_WORLD map:=$SAVED/map.yaml headless:=true rviz:=false arms_at_sides:=true cameras:=head,chest$LAUNCH_ARGS"
 # SLAM builds the map as the robot explores; canopy saves its floor plan with the world.
@@ -65,6 +73,8 @@ EXECUTOR="wait_for_nav2 && ros2 launch g1_orchestration nervros_executor.launch.
 # and a look is for what they are; their phrases are what a real detector finds them by, so the
 # plans carry those too.
 ARM_EXECUTOR="wait_for_nav2 && wait_for_arm && ros2 launch g1_orchestration nervros_executor.launch.py hands_empty_on_attach:=true $LEARNED arg_choices:='PickObject.object_id=mug_4;PickObject.phrase=red mug;PlaceInto.container_id=tray_1;PlaceInto.phrase=wooden tray;FindInView.phrase=mug|tray'"
+# The real detector finds anything by phrase, so no argument is pinned.
+FETCH_EXECUTOR="wait_for_nav2 && wait_for_arm && ros2 launch g1_orchestration nervros_executor.launch.py hands_empty_on_attach:=true $LEARNED"
 PROFILE="$ROOT/workspace/src/g1_bringup/config/nervros/nervros.toml"
 # The graph runs as root in the container: host shared memory would fail, so UDP only. The build
 # goes outside the colcon workspace, which would otherwise crawl its tens of gigabytes. The viewer
@@ -118,6 +128,17 @@ case "$VARIANT" in
         else
             host nervros "$AGENT_ENV && cargo run -p nervros-gui -- --profile $PROFILE"
         fi
+        ;;
+    fetch)
+        prepare_worlds
+        container bringup "$FETCH"
+        container canopy "$CANOPY$SAVED"
+        container executor "$FETCH_EXECUTOR"
+        # Claude talks (models.toml), so the GPU holds SAM 3.1 and GraspGenX beside the simulator.
+        host detector "./scripts/serve.sh canopy"
+        host grasps "./scripts/serve.sh graspgen"
+        host editor "python3 workspace/src/canopy/editor/canopy_editor.py data/worlds/$SAVED_NAME"
+        host nervros "$AGENT_ENV && cargo run -p nervros-gui -- --profile $PROFILE"
         ;;
     map)
         prepare_worlds
