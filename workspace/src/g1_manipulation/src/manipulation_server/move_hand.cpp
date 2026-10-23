@@ -309,6 +309,11 @@ void G1ManipulationServer::executeMoveHand(const std::shared_ptr<GoalHandle<Move
         target.position.y,
         target.position.z,
         planning_frame_);
+    if (const double out = distance(hand, target.position); out > 1e-3)
+    {
+        result->message +=
+            std::format(", {:.2f} m out to its side of the line, which crossed the body", out);
+    }
     goal_handle->succeed(result);
 }
 
