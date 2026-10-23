@@ -41,7 +41,9 @@ git -C "${GRASPGEN_HOME}" checkout --quiet --detach "${target}"
 echo "    at $(git -C "${GRASPGEN_HOME}" rev-parse --short HEAD)"
 
 echo "==> dependencies, including the serving extra the ZMQ server needs"
-(cd "${GRASPGEN_HOME}" && uv sync --extra serve)
+# labmaze (dm-control's, through scene-synthesizer) has wheels only up to Python 3.12, and
+# building it needs Bazel.
+(cd "${GRASPGEN_HOME}" && uv python pin 3.12 && uv sync --extra serve)
 
 echo "==> checking the install"
 (cd "${GRASPGEN_HOME}" && uv run python - <<'PY'
