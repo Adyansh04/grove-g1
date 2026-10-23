@@ -109,6 +109,7 @@ void G1ManipulationServer::declareParameters()
         { "max_grasp_offset_m", &max_grasp_offset_m_ },
         { "max_grasp_width_m", &max_grasp_width_m_ },
         { "scene_object_padding_m", &scene_object_padding_m_ },
+        { "max_place_offset_m", &max_place_offset_m_ },
         { "grasp_refresh_max_shift_m", &grasp_refresh_max_shift_m_ },
         { "reaim_clearance_m", &reaim_clearance_m_ },
         { "settle_wait_s", &settle_wait_s_ },
@@ -789,7 +790,8 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
     }
     // A container is aimed at its centre; on a table the object goes where the hand reaches,
     // kept as an offset on the surface so the re-aim below finds the same spot.
-    geometry_msgs::msg::Point spot;
+    geometry_msgs::msg::Point       spot;
+    geometry_msgs::msg::PoseStamped fixed_spot;
     if (surface)
     {
         geometry_msgs::msg::Point reach;
@@ -803,6 +805,14 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
             place_container_max_m_);
         target = atOffset(*target, spot);
         target->position.z += 0.5 * (surface->bbox.size.z + held_height);
+        // On a table the box is only the part in view, and its centre moves as the robot does:
+        // the spot is kept where it was chosen, in the /objects frame.
+        if (std::max(surface->bbox.size.x, surface->bbox.size.y) > place_container_max_m_)
+        {
+            fixed_spot.header = surface->header;
+            fixed_spot.pose   = atOffset(surface->results.front().pose.pose, spot);
+            fixed_spot.pose.position.z += 0.5 * (surface->bbox.size.z + held_height);
+        }
     }
     // The hand keeps the hold the pick made, a generated side grasp or top-down, and carries the
     // object to the target; a top-down hand on a side-held object would turn it over.
@@ -840,16 +850,23 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
     std::optional<geometry_msgs::msg::Point> expected;
     if (surface)
     {
-        if (const auto fresh = lookUpObject(goal->surface_object_id, /*report=*/false))
+        std::optional<geometry_msgs::msg::PoseStamped> aim;
+        if (!fixed_spot.header.frame_id.empty())
         {
-            const double lift = 0.5 * (fresh->bbox.size.z + held_height);
-            expected          = fresh->results.front().pose.pose.position;
-            expected->z += lift;
-            if (auto moved =
-                    toPlanningFrame(fresh->results.front().pose.pose, fresh->header.frame_id))
+            aim = fixed_spot;
+        }
+        else if (const auto fresh = lookUpObject(goal->surface_object_id, /*report=*/false))
+        {
+            aim.emplace();
+            aim->header = fresh->header;
+            aim->pose   = atOffset(fresh->results.front().pose.pose, spot);
+            aim->pose.position.z += 0.5 * (fresh->bbox.size.z + held_height);
+        }
+        if (aim)
+        {
+            expected = aim->pose.position;
+            if (auto moved = toPlanningFrame(aim->pose, aim->header.frame_id))
             {
-                moved = atOffset(*moved, spot);
-                moved->position.z += lift;
                 const geometry_msgs::msg::Pose regrasp = placing(*moved);
                 const double                   shift   = std::hypot(
                     regrasp.position.x - place_goal.position.x,
@@ -879,14 +896,9 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
     goal_handle->publish_feedback(feedback);
     clearOctomapKeeping(arm, touchables);
     lowered = true;
-    // No refusal on a miss: a release a little off still lands the object, and the landing check
-    // judges it.
-    if (!descendOnto(
-            *arm_group,
-            preplace,
-            place_goal,
-            arm.grasp_frame,
-            std::numeric_limits<double>::infinity()))
+    // A release a little off still lands the object, and the landing check judges it; far off,
+    // the hand keeps it rather than dropping it in the air.
+    if (!descendOnto(*arm_group, preplace, place_goal, arm.grasp_frame, max_place_offset_m_))
     {
         fail(Place::Feedback::PHASE_LOWER, "could not lower onto the target");
         return;

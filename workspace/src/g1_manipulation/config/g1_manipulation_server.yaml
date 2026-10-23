@@ -25,6 +25,9 @@ g1_manipulation_server:
     # m. Added to each side of the object's box in the planning scene, not to its height: the
     # measured box runs short and the arm lags its plan, so an unpadded box gets brushed.
     scene_object_padding_m: 0.02
+    # m. A place whose lowering ends further than this from its target fails holding the object:
+    # a little off still lands it, a lowering cut short would drop it in the air.
+    max_place_offset_m: 0.08
     # GraspGenX describes the right Dex3 only: with grasp_source generated, the left hand still
     # grasps from the object's box.
     generated_grasp_arms: [right]
