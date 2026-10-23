@@ -103,6 +103,10 @@ double MissionPreview::backOffAfter(const std::string& macro)
     {
         return 0.8;
     }
+    if (macro == "PlaceOn")
+    {
+        return 0.5;
+    }
     return 0.0;
 }
 
@@ -297,12 +301,16 @@ MissionPreview::preview(const std::vector<MissionStep>& steps, std::string& why)
                 std::abs(degrees),
                 degrees < 0 ? "right" : "left");
         }
-        else if (step.macro == "PickObject" || step.macro == "PlaceInto")
+        else if (step.macro == "PickObject" || step.macro == "PlaceInto" || step.macro == "PlaceOn")
         {
             // The next walk starts where it backs off to, outside the furniture's inflated band.
             const double back = backOffAfter(step.macro);
             end               = walkEnd(*at, -back);
-            preview.note = std::format("closes in on what it sees, then backs off {:.1f} m", back);
+            preview.note      = std::format(
+                "{}, then backs off {:.1f} m",
+                step.macro == "PlaceOn" ? "sets it down where the hand reaches" :
+                                               "closes in on what it sees",
+                back);
         }
         else if (step.macro == "ExploreBuilding")
         {

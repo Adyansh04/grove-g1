@@ -392,8 +392,8 @@ TEST(CatalogDrift, StopAllCoversEveryActionServerALeafUses)
 
 TEST(CatalogDrift, EveryPredicateIsOneOfTheFewTheAgentUnderstandsAboutItsOwnArguments)
 {
-    const std::set<std::string> vocabulary = { "at",         "near",   "holding",
-                                               "hand_empty", "inside", "arm_at" };
+    const std::set<std::string> vocabulary = { "at",     "near", "holding", "hand_empty",
+                                               "inside", "on",   "arm_at" };
     const Catalog               catalog    = Catalog::load(kCatalogFile);
 
     for (const Skill& skill : catalog.skills())
@@ -503,7 +503,7 @@ TEST(CatalogDrift, RefusesACatalogThatIsBroken)
 
 TEST(CatalogDrift, ThePreviewBacksOffAsThePickAndPlaceTreesDo)
 {
-    for (const std::string macro : { "PickObject", "PlaceInto" })
+    for (const std::string macro : { "PickObject", "PlaceInto", "PlaceOn" })
     {
         tinyxml2::XMLDocument doc;
         const std::string     file = std::format("{}/{}.xml", kLibraryDir, macro);

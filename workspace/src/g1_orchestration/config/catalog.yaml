@@ -32,6 +32,7 @@
 #   holding(arm, x)  the hand `arm` holds x; a capital letter such as X is any object
 #   hand_empty(arm)  the hand holds nothing
 #   inside(x, y)     x rests in container y
+#   on(x, y)         x rests on surface y
 #   arm_at(arm, p)   the arm group is at its named pose p
 # Anything that names an argument refers to its value in the step.
 
@@ -217,6 +218,39 @@ skills:
     risk: manipulation
     max_duration_s: 360
     template: PlaceInto
+
+  - name: PlaceOn
+    description: >-
+      Put the object a hand holds down on a table, desk, counter or other surface, where the hand
+      reaches (near the edge when the edge is nearest), release it and back away. The robot must
+      already stand at the surface's edge, facing it, as GoToTarget leaves it. For a tray, box or
+      basket, PlaceInto.
+    args:
+      - name: surface_id
+        type: string
+        format: id
+        description: >-
+          The surface: its id in the world model (such as O12) or, where there is no world model,
+          the name the detector reports it under (such as dining_table). Letters, digits and
+          underscores.
+      - name: phrase
+        type: string
+        format: phrase
+        default_from: label(surface_id)
+        description: >-
+          Plain words the detector finds the surface by, such as the world model's label for it
+          (dining table).
+      - name: arm
+        type: string
+        description: Which hand holds the object.
+        enum: [left, right]
+    requires: ["near(surface_id)", "holding(arm, X)"]
+    effects: ["on(X, surface_id)", "hand_empty(arm)"]
+    resources: [base, left_arm, right_arm]
+    idempotent: false
+    risk: manipulation
+    max_duration_s: 300
+    template: PlaceOn
 
   - name: ExploreBuilding
     description: >-
