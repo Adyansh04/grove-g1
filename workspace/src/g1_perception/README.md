@@ -112,7 +112,7 @@ view, for PlaceOn to set things down on.
 | `zmq_timeout_ms` | 20000 |
 | `detect_rate_hz` | 1.0 |
 | `max_image_age_s` | 2.5 |
-| `box_threshold` | 0.40 |
+| `box_threshold` | 0.50 |
 | `text_threshold` | 0.25 |
 
 `phrases` is a launch argument rather than a file key, and `ros2 param set` changes it while the node
