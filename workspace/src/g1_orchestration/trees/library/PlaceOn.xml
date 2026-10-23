@@ -1,13 +1,14 @@
 <?xml version="1.0"?>
 <!--
   Put down what a hand holds on a table, desk, counter or other surface in front of the robot: ask
-  the detector for the surface, set the object down where the hand reaches (at the edge when the
-  edge is nearest), release and back away. The robot must already stand at the surface's edge,
-  facing it, as GoToTarget leaves it. Into a tray or box is PlaceInto.
+  the detector for the surface, close on its nearest edge, set the object down where the hand
+  reaches, release and back away. The robot must stand facing the surface within about a metre,
+  as GoToTarget or a place in front of it leaves it. Into a tray or box is PlaceInto.
 
-  No approach: a table's detected centre is out of the arm's reach, and Place puts the object where
-  the hand reaches on a surface wider than a container. As in PlaceInto, the detector is asked for
-  the held object too, so Place can confirm where it landed; held_left and held_right name it.
+  ApproachObject closes on a surface's edge, not its centre, which is out of the arm's reach; Place
+  then puts the object where the hand reaches on a surface wider than a container. Approach and
+  place retry together, as in PlaceInto. The detector is asked for the held object too, so Place
+  can confirm where it landed; held_left and held_right name it.
 -->
 <root BTCPP_format="4">
   <BehaviorTree ID="PlaceOn">
@@ -22,7 +23,11 @@
                    first_id="{seen_as}"/>
         </RetryUntilSuccessful>
         <RetryUntilSuccessful name="place_with_retries" num_attempts="2">
-          <Place name="put_it_down" surface="{seen_as}" arm="{arm}"/>
+          <Sequence name="close_in_and_place">
+            <ApproachObject name="close_on_the_surface" object_id="{seen_as}" arm="{arm}"
+                            use_current_heading="true"/>
+            <Place name="put_it_down" surface="{seen_as}" arm="{arm}"/>
+          </Sequence>
         </RetryUntilSuccessful>
         <Retreat name="back_off_the_surface" distance="0.5"/>
         <ClearCostmaps name="forget_the_surface"/>

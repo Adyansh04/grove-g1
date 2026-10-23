@@ -181,7 +181,7 @@ keeps them in step (names, ports, limits, resources). The macros are flat: none 
 | `GoToPose` | The same walk to `x;y;yaw` in the `map` frame. | `base` |
 | `PickObject` | Needs the hand empty. Asks the detector for the object, closes the last stretch, picks, idles the detector, backs off 1.2 m. | `base`, arms |
 | `PlaceInto` | Needs the hand to hold something. Asks the detector for the container and for what the hand holds, closes in, places, backs off. | `base`, arms |
-| `PlaceOn` | Needs the hand to hold something. Asks the detector for the surface and for what the hand holds, sets it down where the hand reaches on a surface wider than a container (at its edge when that is nearest), backs off. No approach: the robot already stands at the edge. | `base`, arms |
+| `PlaceOn` | Needs the hand to hold something. Asks the detector for the surface and for what the hand holds, closes on the surface's nearest edge, sets the object down where the hand reaches on a surface wider than a container, backs off. | `base`, arms |
 | `WalkStraight` | Walks forward or backward a distance (0.1 to 2 m) with `DriveStraight`, one try. Nav2 projects the walk on the local costmap and stops it before a collision, which fails the step. | `base` |
 | `TurnInPlace` | Turns by an angle (-180 to 180 degrees, positive left) with `TurnBy`, one try. | `base` |
 | `TuckForTravel` | Tucks each arm whose hand is empty. | arms |

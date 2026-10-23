@@ -221,10 +221,10 @@ skills:
 
   - name: PlaceOn
     description: >-
-      Put the object a hand holds down on a table, desk, counter or other surface, where the hand
-      reaches (near the edge when the edge is nearest), release it and back away. The robot must
-      already stand at the surface's edge, facing it, as GoToTarget leaves it. For a tray, box or
-      basket, PlaceInto.
+      Put the object a hand holds down on a table, desk, counter or other surface: close on its
+      nearest edge, set the object down where the hand reaches, release it and back away. The
+      robot must stand facing the surface within about a metre, as GoToPlace to it or to a place
+      in front of it leaves it. For a tray, box or basket, PlaceInto.
     args:
       - name: surface_id
         type: string
