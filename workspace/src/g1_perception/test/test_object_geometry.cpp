@@ -19,6 +19,7 @@
 namespace
 {
 
+using g1_perception::boxHolds;
 using g1_perception::deproject;
 using g1_perception::DepthView;
 using g1_perception::erodeMask;
@@ -26,6 +27,7 @@ using g1_perception::fitOrientedBox;
 using g1_perception::gateByMedianDepth;
 using g1_perception::Intrinsics;
 using g1_perception::MaskView;
+using g1_perception::OrientedBox;
 using g1_perception::Point3;
 using g1_perception::supportHeight;
 using g1_perception::supportRing;
@@ -307,6 +309,21 @@ TEST(FitOrientedBox, RefusesTooFewPoints)
     const std::vector<Point3> points{ { 0.0, 0.0, 0.8 }, { 0.01, 0.0, 0.8 } };
 
     EXPECT_FALSE(fitOrientedBox(points, kUp, 0.79, 0.01, 0.40).has_value());
+}
+
+TEST(BoxHolds, TellsInsideFromOutsideAlongEachTiltedAxis)
+{
+    const std::vector<Point3>        points = rotatedTopFace(0.06, 0.04, 0.80, 0.5);
+    const std::optional<OrientedBox> box    = fitOrientedBox(points, kUp, 0.70, 0.01, 0.40);
+    ASSERT_TRUE(box.has_value());
+
+    EXPECT_TRUE(boxHolds(*box, box->centre));
+    EXPECT_TRUE(boxHolds(*box, { box->centre.x, box->centre.y, 0.79 }));
+    EXPECT_FALSE(boxHolds(*box, { box->centre.x, box->centre.y, 0.85 }));
+    const Point3 past{ box->centre.x + (0.6 * box->size_x * box->axis_x.x),
+                       box->centre.y + (0.6 * box->size_x * box->axis_x.y),
+                       box->centre.z };
+    EXPECT_FALSE(boxHolds(*box, past));
 }
 
 }  // namespace

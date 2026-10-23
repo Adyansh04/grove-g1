@@ -348,4 +348,13 @@ std::optional<OrientedBox> fitOrientedBox(
     return box;
 }
 
+bool boxHolds(const OrientedBox& box, const Point3& point)
+{
+    const Point3 offset{ point.x - box.centre.x, point.y - box.centre.y, point.z - box.centre.z };
+    const Point3 up = cross(box.axis_x, box.axis_y);
+    return std::abs(dot(offset, box.axis_x)) <= 0.5 * box.size_x &&
+           std::abs(dot(offset, box.axis_y)) <= 0.5 * box.size_y &&
+           std::abs(dot(offset, up)) <= 0.5 * box.size_z;
+}
+
 }  // namespace g1_perception

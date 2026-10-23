@@ -129,6 +129,9 @@ void gateByMedianDepth(std::vector<Point3>& points, double gate_m);
     std::span<const Point3> points, const Point3& up, std::optional<double> support_height,
     double min_extent_m, double max_extent_m);
 
+/// Whether @p point lies inside @p box, faces included; both in the frame the box was fitted in.
+[[nodiscard]] bool boxHolds(const OrientedBox& box, const Point3& point);
+
 }  // namespace g1_perception
 
 #endif  // G1_PERCEPTION__OBJECT_GEOMETRY_HPP_

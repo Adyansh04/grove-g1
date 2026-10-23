@@ -86,6 +86,10 @@ G1ObjectGeometry::G1ObjectGeometry(const rclcpp::NodeOptions& options)
     min_score_                 = declare_parameter<double>("min_score", 0.30);
     transform_timeout_s_       = declare_parameter<double>("transform_timeout_s", 0.2);
     publish_bare_phrase_alias_ = declare_parameter<bool>("publish_bare_phrase_alias", true);
+    const std::vector<std::string> self_frames{ "right_hand_palm_link", "left_hand_palm_link",
+                                                "right_wrist_yaw_link", "left_wrist_yaw_link",
+                                                "right_elbow_link",     "left_elbow_link" };
+    self_frames_ = declare_parameter<std::vector<std::string>>("self_frames", self_frames);
 
     objects_pub_ =
         create_publisher<vision_msgs::msg::Detection3DArray>("~/object_poses", objectsQos());
@@ -256,6 +260,24 @@ void G1ObjectGeometry::onMasks(const canopy_msgs::msg::InstanceMaskArray::ConstS
                                      camera_info->k[2],
                                      camera_info->k[5] };
 
+        // A phrase can fit the robot's own arm ("toy robot", "white box"). The up frame's wait
+        // above means the robot's transforms at this stamp are in, so these do not wait.
+        std::vector<std::pair<std::string, Point3>> self_points;
+        for (const std::string& frame : self_frames_)
+        {
+            try
+            {
+                const geometry_msgs::msg::Vector3 at =
+                    tf_buffer_.lookupTransform(masks->header.frame_id, frame, masks->header.stamp)
+                        .transform.translation;
+                self_points.emplace_back(frame, Point3{ at.x, at.y, at.z });
+            }
+            catch (const tf2::TransformException& error)
+            {
+                RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 10000, "%s", error.what());
+            }
+        }
+
         for (std::size_t index = 0; index < masks->instances.size(); ++index)
         {
             const canopy_msgs::msg::InstanceMask& instance = masks->instances[index];
@@ -266,6 +288,20 @@ void G1ObjectGeometry::onMasks(const canopy_msgs::msg::InstanceMaskArray::ConstS
             const std::optional<OrientedBox> box = measure(instance, *depth, intrinsics, up);
             if (!box.has_value())
             {
+                continue;
+            }
+            const auto self = std::ranges::find_if(self_points, [&](const auto& frame) {
+                return boxHolds(*box, frame.second);
+            });
+            if (self != self_points.end())
+            {
+                RCLCPP_INFO_THROTTLE(
+                    get_logger(),
+                    *get_clock(),
+                    5000,
+                    "instance '%s' holds the robot's own %s: not an object",
+                    instance.label.c_str(),
+                    self->first.c_str());
                 continue;
             }
             const geometry_msgs::msg::Pose in_camera = poseFrom(*box);

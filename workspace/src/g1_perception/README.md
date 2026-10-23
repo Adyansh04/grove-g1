@@ -78,6 +78,10 @@ without knowing its index (`publish_bare_phrase_alias: false` turns that off). T
 first object seen alone under its phrase. It is withheld from any frame where that object is unseen
 or another one with the same phrase is seen too, so it never jumps between objects.
 
+An instance whose fitted box holds one of the robot's own frames (`self_frames`: the palms, wrists
+and elbows) is the robot and is dropped before tracking: a phrase such as "toy robot" can fit the
+arm in view, and the alias would then follow the arm.
+
 ## Parameters
 
 `config/g1_object_geometry.yaml` documents every key. The ones worth knowing:
