@@ -87,7 +87,7 @@ BaseApproachNode::BaseApproachNode()
     retreat_speed_mps_     = declare_parameter<double>("retreat_speed_mps", 0.30);
     retreat_settle_slop_m_ = declare_parameter<double>("retreat_settle_slop_m", 0.05);
     retreat_gap_m_         = declare_parameter<double>("retreat_gap_m", 0.15);
-    retreat_min_m_         = declare_parameter<double>("retreat_min_m", 0.30);
+    retreat_min_m_         = declare_parameter<double>("retreat_min_m", 0.15);
 
     const StepClearLimits c;
     step_limits_.body_radius_m =

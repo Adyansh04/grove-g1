@@ -26,9 +26,10 @@ g1_base_approach:
     # the last stride sways the pelvis back by 2-3 cm after the stop.
     retreat_settle_slop_m: 0.05
     # A retreat stops while this much is left between the body (step_clear.body_radius_m) and the
-    # nearest lethal cell straight behind, and still counts once it has backed retreat_min_m.
+    # nearest lethal cell straight behind, and still counts once it has backed retreat_min_m: the
+    # walk that follows steps clear of the rest (StepClear).
     retreat_gap_m: 0.15
-    retreat_min_m: 0.30
+    retreat_min_m: 0.15
 
     # Zero held while the gait finishes its stride, before the object is re-measured.
     settle_s: 1.0

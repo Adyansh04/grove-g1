@@ -113,7 +113,7 @@ private:
     double      retreat_speed_mps_     = 0.30;
     double      retreat_settle_slop_m_ = 0.05;
     double      retreat_gap_m_         = 0.15;
-    double      retreat_min_m_         = 0.30;
+    double      retreat_min_m_         = 0.15;
     double      settle_s_              = 1.0;
     int         max_nudges_            = 12;
     double      cmd_rate_hz_           = 20.0;
