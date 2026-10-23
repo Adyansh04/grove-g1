@@ -146,7 +146,8 @@ props:
     # Things the robot finds by asking SAM 3.1 for them, none in the kept map; on the simulator's
     # renders it found each at 0.74-0.95 by a plain phrase (small box, toy elephant, action figure,
     # green toy, toy robot). Each is within the Dex3's 40-90 mm, faces where the robot stands, and
-    # sits 8-11 cm in from its surface's edge. A small plant pot was dropped: SAM saw a mug.
+    # sits 8-11 cm in from its surface's front edge and away from its ends, where a push from the
+    # hand would tip it off. A small plant pot was dropped: SAM saw a mug.
     - {body: box_1, asset: gso_serum_box, pose: [-3.0, 5.40, 0],
        free: {size: [0.080, 0.056, 0.105], mass: 0.08}, support: counter_1}
     - {body: toy_elephant_1, asset: gso_toy_elephant, scale: 0.3, pose: [-1.9, -5.48, 180],
@@ -172,8 +173,8 @@ props:
     - {body: desk_1, asset: ph_metal_office_desk, pose: [6.5, -5.445, 180]}
     - {body: chair_5, asset: ph_school_chair_01, pose: [6.5, -4.55, 0]}
     - {body: laptop_1, asset: gso_laptop, pose: [6.3, -5.35, 180], support: desk_1}
-    - {body: mug_3, asset: gso_mug_cole, pose: [7.05, -5.25, 0], support: desk_1}
-    - {body: toy_robot_1, asset: gso_toy_robot, pose: [7.35, -5.05, 180],
+    - {body: mug_3, asset: gso_mug_cole, pose: [7.35, -5.40, 0], support: desk_1}
+    - {body: toy_robot_1, asset: gso_toy_robot, pose: [7.10, -5.08, 180],
        free: {size: [0.066, 0.046, 0.081], mass: 0.08}, support: desk_1}
     # Where things go: a desk organizer at the desk's west end, 100 mm in from its north edge. Its
     # floor and walls are hidden boxes inside the scanned mesh, which a placed object rests in.

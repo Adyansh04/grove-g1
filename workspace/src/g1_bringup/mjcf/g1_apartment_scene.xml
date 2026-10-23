@@ -474,11 +474,11 @@
       <geom class="apt_visual" mesh="gso_laptop_0" material="gso_laptop_0" pos="0 0 -0.0969"/>
       <geom class="apt_proxy" size="0.1663 0.1877 0.0969"/>
     </body>
-    <body name="mug_3" pos="7.05 -5.25 0.8356">
+    <body name="mug_3" pos="7.35 -5.4 0.8359">
       <geom class="apt_visual" mesh="gso_mug_cole_0" material="gso_mug_cole_0" pos="0 0 -0.0474"/>
       <geom class="apt_proxy" size="0.0828 0.0628 0.0474"/>
     </body>
-    <body name="toy_robot_1" pos="7.35 -5.05 0.8284" quat="0 0 0 1">
+    <body name="toy_robot_1" pos="7.1 -5.08 0.8286" quat="0 0 0 1">
       <freejoint name="toy_robot_1_joint"/>
       <geom class="apt_visual" mesh="gso_toy_robot_0" material="gso_toy_robot_0" pos="0 0 -0.0405"/>
       <geom class="apt_free" size="0.033 0.023 0.0405" mass="0.08"/>

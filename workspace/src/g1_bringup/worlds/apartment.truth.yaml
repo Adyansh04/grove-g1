@@ -500,7 +500,7 @@ objects:
   label: mug
   synonyms: [cup, coffee mug]
   room: office
-  centre: [7.05, -5.25, 0.8356]
+  centre: [7.35, -5.4, 0.8359]
   size: [0.1657, 0.1255, 0.0948]
   yaw: 0.0
   'on': desk_1
@@ -510,7 +510,7 @@ objects:
   label: toy robot
   synonyms: [robot toy, toy, figurine]
   room: office
-  centre: [7.35, -5.05, 0.8284]
+  centre: [7.1, -5.08, 0.8286]
   size: [0.066, 0.046, 0.081]
   yaw: 180.0
   'on': desk_1

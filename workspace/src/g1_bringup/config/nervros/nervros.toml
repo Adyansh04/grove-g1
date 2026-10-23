@@ -214,13 +214,13 @@ pose = { x = 5.139, y = -4.385, yaw = -1.577 }
 near = ["tray_1"]
 
 # Where to stand to see and reach the surfaces small things are left on, 0.6 m in front of each:
-# world (7.35, -4.45, -90), (4.02, 4.98, 90), (6.65, 4.98, 90), (-3.0, 4.80, 90), (-1.9, -4.88,
+# world (7.25, -4.45, -90), (4.02, 4.98, 90), (6.65, 4.98, 90), (-3.0, 4.80, 90), (-1.9, -4.88,
 # -90). The cameras see a table top only from about 0.1 to 1.3 m ahead, so one spot covers a
 # nightstand but not a whole desk.
 [[place]]
 name = "office_desk_east"
 aliases = ["the office desk's east end", "the east end of the office desk"]
-pose = { x = 6.839, y = -4.446, yaw = -1.577 }
+pose = { x = 6.739, y = -4.446, yaw = -1.577 }
 
 [[place]]
 name = "nightstand_west"
