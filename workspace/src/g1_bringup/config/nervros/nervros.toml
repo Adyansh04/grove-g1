@@ -213,6 +213,35 @@ aliases = ["the office desk's tray", "in front of the office desk"]
 pose = { x = 5.139, y = -4.385, yaw = -1.577 }
 near = ["tray_1"]
 
+# Where to stand to see and reach the surfaces small things are left on, 0.6 m in front of each:
+# world (7.35, -4.45, -90), (4.02, 4.98, 90), (6.65, 4.98, 90), (-3.0, 4.80, 90), (-1.9, -4.88,
+# -90). The cameras see a table top only from about 0.1 to 1.3 m ahead, so one spot covers a
+# nightstand but not a whole desk.
+[[place]]
+name = "office_desk_east"
+aliases = ["the office desk's east end", "the east end of the office desk"]
+pose = { x = 6.839, y = -4.446, yaw = -1.577 }
+
+[[place]]
+name = "nightstand_west"
+aliases = ["the nightstand west of the bed", "the left nightstand"]
+pose = { x = 3.571, y = 5.005, yaw = 1.564 }
+
+[[place]]
+name = "nightstand_east"
+aliases = ["the nightstand east of the bed", "the right nightstand"]
+pose = { x = 6.201, y = 4.988, yaw = 1.564 }
+
+[[place]]
+name = "kitchen_counter"
+aliases = ["in front of the kitchen counter", "the counter"]
+pose = { x = -3.450, y = 4.872, yaw = 1.564 }
+
+[[place]]
+name = "tv_cabinet"
+aliases = ["in front of the TV cabinet", "the TV stand"]
+pose = { x = -2.414, y = -4.815, yaw = -1.577 }
+
 [[tool]]
 name = "find_objects"
 kind = "service"
