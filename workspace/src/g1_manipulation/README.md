@@ -76,7 +76,7 @@ The steps follow the feedback phases.
 
 ## How a place runs
 
-1. `preplace`: the target is the named surface from `/objects` (or a recent sighting) plus half its height and half the held object's, or the given `pose`. Clear the octomap, exempt the hand and the held object, plan above the target and settle. Then re-aim at the surface's fresh pose, since reaching with a load moves the base.
+1. `preplace`: the target is the named surface from `/objects` (or a recent sighting) plus half its height and half the held object's, or the given `pose`. The hand keeps the hold the pick made, a generated side grasp or top-down: it moves by what brings the attached object's box to the target. Clear the octomap, exempt the hand and the held object, plan above the target and settle. Then re-aim at the surface's fresh pose, since reaching with a load moves the base.
 2. `lower`: descend onto the target.
 3. `release`: open to `pinch_ready` and detach.
 4. `retreat`: back straight out. The released object must then reappear on `/objects` within `place_confirm_timeout_s`, inside the surface's footprint (or within `place_tolerance_m` of a `pose`).

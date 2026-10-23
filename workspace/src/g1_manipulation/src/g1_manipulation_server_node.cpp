@@ -694,9 +694,10 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
     MoveGroup* hand_group = groupFor(arm.hand_group);
 
     // What this arm holds, from the planning scene; the attach in executePick put it there.
-    std::string                          held_id;
-    double                               held_height = 0.0;
-    const moveit::core::JointModelGroup* arm_links =
+    std::string                               held_id;
+    double                                    held_height = 0.0;
+    moveit_msgs::msg::AttachedCollisionObject held;
+    const moveit::core::JointModelGroup*      arm_links =
         arm_group->getRobotModel()->getJointModelGroup(arm.arm_group);
     for (const auto& [id, attached] : planning_scene_.getAttachedObjects())
     {
@@ -705,6 +706,7 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
         {
             held_id     = id;
             held_height = attached.object.primitives.front().dimensions[2];
+            held        = attached;
             break;
         }
     }
@@ -787,7 +789,13 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
         target = atOffset(*target, spot);
         target->position.z += 0.5 * (surface->bbox.size.z + held_height);
     }
-    geometry_msgs::msg::Pose place_goal = graspFrameGoal(*target, held_height, arm);
+    // The hand keeps the hold the pick made, a generated side grasp or top-down, and carries the
+    // object to the target; a top-down hand on a side-held object would turn it over.
+    const auto placing = [&](const geometry_msgs::msg::Pose& object_target) {
+        return heldPlaceGoal(*arm_group, arm, held, object_target.position)
+            .value_or(graspFrameGoal(object_target, held_height, arm));
+    };
+    geometry_msgs::msg::Pose place_goal = placing(*target);
     geometry_msgs::msg::Pose preplace   = place_goal;
     preplace.position.z += place_approach_height_m_;
 
@@ -827,7 +835,7 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
             {
                 moved = atOffset(*moved, spot);
                 moved->position.z += lift;
-                const geometry_msgs::msg::Pose regrasp = graspFrameGoal(*moved, held_height, arm);
+                const geometry_msgs::msg::Pose regrasp = placing(*moved);
                 const double                   shift   = std::hypot(
                     regrasp.position.x - place_goal.position.x,
                     regrasp.position.y - place_goal.position.y);

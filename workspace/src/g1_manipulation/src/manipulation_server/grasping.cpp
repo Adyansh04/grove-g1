@@ -5,6 +5,7 @@
 
 #include <tf2/LinearMath/Matrix3x3.h>
 #include <tf2/LinearMath/Quaternion.h>
+#include <tf2/LinearMath/Transform.h>
 #include <tf2/LinearMath/Vector3.h>
 
 #include <algorithm>
@@ -75,6 +76,28 @@ geometry_msgs::msg::Pose G1ManipulationServer::graspFrameGoal(
         min_grip_height_m_,
         grasp_rpy_,
         arm.is_left);
+}
+
+std::optional<geometry_msgs::msg::Pose> G1ManipulationServer::heldPlaceGoal(
+    MoveGroup& group, const ArmContext& arm, const moveit_msgs::msg::AttachedCollisionObject& held,
+    const geometry_msgs::msg::Point& object_at)
+{
+    if (held.object.header.frame_id != arm.palm_link || held.object.primitive_poses.empty())
+    {
+        return std::nullopt;
+    }
+    tf2::Transform palm;
+    tf2::Transform origin;
+    tf2::Transform box;
+    tf2::fromMsg(group.getCurrentPose(arm.palm_link).pose, palm);
+    tf2::fromMsg(held.object.pose, origin);
+    tf2::fromMsg(held.object.primitive_poses.front(), box);
+    const tf2::Vector3       now  = (palm * origin * box).getOrigin();
+    geometry_msgs::msg::Pose goal = group.getCurrentPose(arm.grasp_frame).pose;
+    goal.position.x += object_at.x - now.x();
+    goal.position.y += object_at.y - now.y();
+    goal.position.z += object_at.z - now.z();
+    return goal;
 }
 
 std::optional<g1_msgs::srv::GenerateGrasps::Response> G1ManipulationServer::requestGrasps(

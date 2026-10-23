@@ -27,6 +27,7 @@
 #include <geometry_msgs/msg/pose.hpp>
 #include <map>
 #include <memory>
+#include <moveit_msgs/msg/attached_collision_object.hpp>
 #include <moveit_msgs/msg/collision_object.hpp>
 #include <moveit_msgs/srv/apply_planning_scene.hpp>
 #include <moveit_msgs/srv/get_planning_scene.hpp>
@@ -309,6 +310,18 @@ private:
     geometry_msgs::msg::Pose graspFrameGoal(
         const geometry_msgs::msg::Pose& object_pose, double object_height_m,
         const ArmContext& arm) const;
+
+    /**
+     * @brief The grasp-frame goal that brings the held object's box centre to @p object_at, the
+     *        hand turned as it holds it now, so a place keeps the hold the pick made.
+     *
+     * @param held The attached object, as the planning scene returns it: relative to the palm.
+     * @return Nothing when the attach is not relative to the palm; graspFrameGoal() then.
+     */
+    static std::optional<geometry_msgs::msg::Pose> heldPlaceGoal(
+        MoveGroup& group, const ArmContext& arm,
+        const moveit_msgs::msg::AttachedCollisionObject& held,
+        const geometry_msgs::msg::Point&                 object_at);
 
     /**
      * @brief The grasp to attempt, from the configured grasp source.
