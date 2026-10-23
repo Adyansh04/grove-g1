@@ -64,7 +64,7 @@ The source's other parameters:
 
 The steps follow the feedback phases.
 
-1. `locating`: read the object, add its box to the planning scene and choose a grasp.
+1. `locating`: read the object, refuse it when it is wider than `max_grasp_width_m` across its narrower side, add its box to the planning scene and choose a grasp.
 2. `pregrasp`: move the hand to `pinch_ready` and the arm to `approach_height_m` above the grasp, then settle out the arm's gravity droop in clear air.
 3. `approach`:
    - Re-read the object and follow a shift under `grasp_refresh_max_shift_m`.
@@ -125,6 +125,8 @@ explained in comments. `config/g1_object_pose_source.yaml` holds the source's fr
 | `object_timeout_ms` | 1000.0 | How old a pose may be. Bringup passes 8000 with perception. |
 | `min_grip_height_m` | 0.080 | Lowest grip above the surface. Bringup passes 0.035 for the navigation world, whose ball sits where the thumb hangs past the desk edge. |
 | `grasp_source` | `fixed_top_down` | See above. |
+| `generated_grasp_arms` | `[right]` | The arms a `generated` source serves; GraspGenX describes the right Dex3 only, so the left still grasps from the object's box. |
+| `max_grasp_width_m` | 0.090 | The widest object a hand closes round; a wider one is refused before the arm moves. |
 | `grasp_offset` | `[0, 0, 0.07, π/2, 0, π]` | Sets `graspgen_to_grasp_frame_xyz_rpy`: generator gripper frame to grasp frame, xyz then rpy, measured for GraspGenX's Dex3 (see [the open-vocabulary guide](../../../docs/guides/open-vocabulary-grasping.md)). |
 | `visualization` | false | Markers and `~/grasp_plan`. |
 

@@ -7,10 +7,13 @@
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2/LinearMath/Vector3.h>
 
+#include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <format>
 #include <memory>
 #include <string>
+#include <tf2/utils.hpp>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <utility>
 #include <vector>
@@ -108,11 +111,48 @@ std::optional<g1_msgs::srv::GenerateGrasps::Response> G1ManipulationServer::requ
     return std::move(*response);
 }
 
+geometry_msgs::msg::Point placeOffset(
+    const geometry_msgs::msg::Pose& surface, const geometry_msgs::msg::Vector3& size,
+    const geometry_msgs::msg::Point& preferred, double margin_m, double container_m)
+{
+    geometry_msgs::msg::Point offset;
+    if (std::max(size.x, size.y) <= container_m)
+    {
+        return offset;
+    }
+    const double yaw = tf2::getYaw(surface.orientation);
+    const double dx  = preferred.x - surface.position.x;
+    const double dy  = preferred.y - surface.position.y;
+    // Into the surface's frame, then kept inside its footprint less the margin.
+    const double local_x = std::cos(yaw) * dx + std::sin(yaw) * dy;
+    const double local_y = -std::sin(yaw) * dx + std::cos(yaw) * dy;
+    const double half_x  = std::max(0.0, 0.5 * size.x - margin_m);
+    const double half_y  = std::max(0.0, 0.5 * size.y - margin_m);
+    offset.x             = std::clamp(local_x, -half_x, half_x);
+    offset.y             = std::clamp(local_y, -half_y, half_y);
+    return offset;
+}
+
+geometry_msgs::msg::Pose
+atOffset(const geometry_msgs::msg::Pose& surface, const geometry_msgs::msg::Point& offset)
+{
+    const double             yaw = tf2::getYaw(surface.orientation);
+    geometry_msgs::msg::Pose out = surface;
+    out.position.x += std::cos(yaw) * offset.x - std::sin(yaw) * offset.y;
+    out.position.y += std::sin(yaw) * offset.x + std::cos(yaw) * offset.y;
+    return out;
+}
+
 std::optional<G1ManipulationServer::GraspPlan> G1ManipulationServer::chooseGrasp(
     const Detection& detection, const geometry_msgs::msg::Pose& object_pose, const ArmContext& arm,
     std::string& why, std::vector<ConsideredGrasp>* verdicts)
 {
-    if (grasp_source_ != "generated")
+    // GraspGenX describes one hand; the other keeps the grasp from the object's box.
+    const bool generated =
+        grasp_source_ == "generated" &&
+        std::ranges::find(generated_grasp_arms_, arm.is_left ? "left" : "right") !=
+            generated_grasp_arms_.end();
+    if (!generated)
     {
         GraspPlan plan;
         plan.grasp    = graspFrameGoal(object_pose, detection.bbox.size.z, arm);

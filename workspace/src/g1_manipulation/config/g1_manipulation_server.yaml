@@ -20,6 +20,11 @@ g1_manipulation_server:
 
     # Still this far off after the last descent, the pick is refused rather than closing on air.
     max_grasp_offset_m: 0.020
+    # m. The widest a Dex3 closes round, thumb to fingers; a wider object is refused before moving.
+    max_grasp_width_m: 0.090
+    # GraspGenX describes the right Dex3 only: with grasp_source generated, the left hand still
+    # grasps from the object's box.
+    generated_grasp_arms: [right]
 
     # How far the object may shift between being located and the descent, and still be followed.
     # Larger than body sway means a different object or a bad frame.
@@ -37,6 +42,13 @@ g1_manipulation_server:
 
     # Preplace height above the place pose, lower than the pick's because the target is raised.
     place_approach_height_m: 0.15
+    # m. On a surface wider than place_container_max_m, a table rather than a tray, the object goes
+    # where the hand reaches: this far ahead in the planning frame and place_side_m to the hand's
+    # side, kept place_edge_margin_m inside the surface's edge.
+    place_reach_m: 0.35
+    place_side_m: 0.15
+    place_edge_margin_m: 0.05
+    place_container_max_m: 0.40
 
     # Hand closing. Spans are measured between the thumb and index links; closure is linear in
     # between. The close starts grip_start_margin_m outside the widest measured side (never wider

@@ -9,6 +9,7 @@
 #include <tf2/LinearMath/Vector3.h>
 
 #include <cmath>
+#include <numbers>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <vector>
 
@@ -175,6 +176,45 @@ TEST(PointingHands, StepOutAwayFromTheOtherShoulderWithinReach)
     const auto mirrored = g1_manipulation::pointingHands(hand, right, left, { 0.06 }, 0.48);
     ASSERT_EQ(mirrored.size(), 2U);
     EXPECT_NEAR(mirrored[1].y, -0.11, 1e-9);
+}
+
+TEST(PlaceOffset, AContainerGetsItsCentreAndATableTheSpotTheHandReaches)
+{
+    geometry_msgs::msg::Pose surface;
+    surface.position                  = pointAt(0.6, 0.0, 0.4);
+    const auto                  reach = pointAt(0.35, -0.15, 0.0);
+    geometry_msgs::msg::Vector3 tray;
+    tray.x          = 0.30;
+    tray.y          = 0.15;
+    const auto into = g1_manipulation::placeOffset(surface, tray, reach, 0.05, 0.40);
+    EXPECT_NEAR(std::hypot(into.x, into.y), 0.0, 1e-9);
+
+    // A table from x 0 to 1.2: the reach point lies on it and is kept.
+    geometry_msgs::msg::Vector3 table;
+    table.x         = 1.2;
+    table.y         = 2.0;
+    const auto spot = g1_manipulation::placeOffset(surface, table, reach, 0.05, 0.40);
+    const auto at   = g1_manipulation::atOffset(surface, spot);
+    EXPECT_NEAR(at.position.x, 0.35, 1e-9);
+    EXPECT_NEAR(at.position.y, -0.15, 1e-9);
+
+    // One starting past the reach point: the spot is its near edge, less the margin.
+    surface.position = pointAt(1.0, 0.0, 0.4);
+    const auto edge  = g1_manipulation::atOffset(
+        surface,
+        g1_manipulation::placeOffset(surface, table, reach, 0.05, 0.40));
+    EXPECT_NEAR(edge.position.x, 0.45, 1e-9);
+}
+
+TEST(PlaceOffset, AnOffsetTurnsWithItsSurface)
+{
+    geometry_msgs::msg::Pose surface;
+    surface.position      = pointAt(1.0, 2.0, 0.4);
+    surface.orientation.z = std::sin(std::numbers::pi / 4.0);
+    surface.orientation.w = std::cos(std::numbers::pi / 4.0);
+    const auto at         = g1_manipulation::atOffset(surface, pointAt(0.1, 0.0, 0.0));
+    EXPECT_NEAR(at.position.x, 1.0, 1e-9);
+    EXPECT_NEAR(at.position.y, 2.1, 1e-9);
 }
 
 TEST(HandOrientations, StartWithTheHandsOwnAndAreTheSameUnitRotationsEachTime)

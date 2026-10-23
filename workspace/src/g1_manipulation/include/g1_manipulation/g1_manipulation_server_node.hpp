@@ -96,6 +96,24 @@ std::vector<geometry_msgs::msg::Point> pointingHands(
     const geometry_msgs::msg::Point& other, const std::vector<double>& steps_m, double max_reach_m);
 
 /**
+ * @brief Where on a surface an object is put, as an offset from the surface's centre in its own
+ *        frame, so a base that moves during the reach re-aims at the same spot. A surface no wider
+ *        than @p container_m is a container, and the offset is zero. On a wider one, a table,
+ *        @p preferred (in @p surface's frame of reference) held inside the footprint less
+ *        @p margin_m: the spot the hand reaches, at the edge when the edge is nearest.
+ *
+ * @param surface The surface's centre pose.
+ * @param size The surface's box, metres.
+ */
+geometry_msgs::msg::Point placeOffset(
+    const geometry_msgs::msg::Pose& surface, const geometry_msgs::msg::Vector3& size,
+    const geometry_msgs::msg::Point& preferred, double margin_m, double container_m);
+
+/// @p surface moved by @p offset in its own frame, its orientation kept.
+geometry_msgs::msg::Pose
+atOffset(const geometry_msgs::msg::Pose& surface, const geometry_msgs::msg::Point& offset);
+
+/**
  * @brief Orientations to try a hand at a point in: @p current first, then @p count more spread
  *        evenly at random over all of them, the same ones every time.
  */
@@ -562,11 +580,16 @@ private:
     double              object_timeout_s_{ 1.0 };
     double              approach_height_m_{ 0.22 };
     double              place_approach_height_m_{ 0.15 };
+    double              place_reach_m_{ 0.35 };
+    double              place_side_m_{ 0.15 };
+    double              place_edge_margin_m_{ 0.05 };
+    double              place_container_max_m_{ 0.40 };
     double              grasp_depth_below_top_m_{ 0.020 };
     double              min_grip_height_m_{ 0.080 };
     double              settle_tolerance_m_{ 0.010 };
     int                 settle_attempts_{ 2 };
     double              max_grasp_offset_m_{ 0.020 };
+    double              max_grasp_width_m_{ 0.090 };
     double              grasp_refresh_max_shift_m_{ 0.050 };
     double              reaim_clearance_m_{ 0.08 };
     double              settle_wait_s_{ 0.8 };
@@ -595,20 +618,22 @@ private:
     int                 planning_attempts_{ 5 };
     std::vector<double> grasp_rpy_;
     std::string         grasp_source_;
-    double              grasp_timeout_s_{ 20.0 };
-    double              min_grasp_score_{ 0.5 };
-    int                 max_grasp_candidates_{ 20 };
-    double              max_approach_tilt_rad_{ 0.0 };
-    double              approach_standoff_m_{ 0.12 };
-    double              ik_timeout_s_{ 0.05 };
-    double              cartesian_step_m_{ 0.005 };
-    double              move_hand_max_reach_m_{ 0.48 };
-    double              move_hand_point_reach_m_{ 0.40 };
-    double              move_hand_speed_{ 0.6 };
-    double              move_hand_max_s_{ 30.0 };
-    int                 move_hand_orientations_{ 32 };
-    std::string         move_hand_left_shoulder_{ "left_shoulder_pitch_link" };
-    std::string         move_hand_right_shoulder_{ "right_shoulder_pitch_link" };
+    /// The arms a `generated` grasp source serves; the rest grasp from the object's box.
+    std::vector<std::string> generated_grasp_arms_{ "right" };
+    double                   grasp_timeout_s_{ 20.0 };
+    double                   min_grasp_score_{ 0.5 };
+    int                      max_grasp_candidates_{ 20 };
+    double                   max_approach_tilt_rad_{ 0.0 };
+    double                   approach_standoff_m_{ 0.12 };
+    double                   ik_timeout_s_{ 0.05 };
+    double                   cartesian_step_m_{ 0.005 };
+    double                   move_hand_max_reach_m_{ 0.48 };
+    double                   move_hand_point_reach_m_{ 0.40 };
+    double                   move_hand_speed_{ 0.6 };
+    double                   move_hand_max_s_{ 30.0 };
+    int                      move_hand_orientations_{ 32 };
+    std::string              move_hand_left_shoulder_{ "left_shoulder_pitch_link" };
+    std::string              move_hand_right_shoulder_{ "right_shoulder_pitch_link" };
     /// m. The steps out to its own side a pointing hand tries; see pointingHands().
     std::vector<double> move_hand_point_side_steps_m_{ 0.06, 0.12, 0.18 };
     /// Generator gripper frame to `<side>_hand_grasp_frame`; see grasp_filter.hpp.

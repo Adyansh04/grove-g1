@@ -99,10 +99,15 @@ void G1ManipulationServer::declareParameters()
     live_doubles_ = {
         { "approach_height_m", &approach_height_m_ },
         { "place_approach_height_m", &place_approach_height_m_ },
+        { "place_reach_m", &place_reach_m_ },
+        { "place_side_m", &place_side_m_ },
+        { "place_edge_margin_m", &place_edge_margin_m_ },
+        { "place_container_max_m", &place_container_max_m_ },
         { "grasp_depth_below_top_m", &grasp_depth_below_top_m_ },
         { "min_grip_height_m", &min_grip_height_m_ },
         { "settle_tolerance_m", &settle_tolerance_m_ },
         { "max_grasp_offset_m", &max_grasp_offset_m_ },
+        { "max_grasp_width_m", &max_grasp_width_m_ },
         { "grasp_refresh_max_shift_m", &grasp_refresh_max_shift_m_ },
         { "reaim_clearance_m", &reaim_clearance_m_ },
         { "settle_wait_s", &settle_wait_s_ },
@@ -160,7 +165,11 @@ void G1ManipulationServer::declareParameters()
     fixed.read_only   = true;
     velocity_scaling_ = declare_parameter<double>("velocity_scaling", velocity_scaling_, fixed);
     grasp_rpy_ = declare_parameter<std::vector<double>>("grasp_rpy", { -M_PI_2, 0.0, 0.0 }, fixed);
-    grasp_source_ = declare_parameter<std::string>("grasp_source", "fixed_top_down", fixed);
+    grasp_source_         = declare_parameter<std::string>("grasp_source", "fixed_top_down", fixed);
+    generated_grasp_arms_ = declare_parameter<std::vector<std::string>>(
+        "generated_grasp_arms",
+        generated_grasp_arms_,
+        fixed);
     move_hand_left_shoulder_ =
         declare_parameter<std::string>("move_hand_left_shoulder", move_hand_left_shoulder_, fixed);
     move_hand_right_shoulder_ =
@@ -400,6 +409,20 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     if (!object_pose)
     {
         fail(Pick::Feedback::PHASE_LOCATING, "could not transform the object pose");
+        return;
+    }
+    // The Dex3 closes round so much at most: a wider object would be pushed, not held.
+    if (const double across = std::min(detection->bbox.size.x, detection->bbox.size.y);
+        across > max_grasp_width_m_)
+    {
+        fail(
+            Pick::Feedback::PHASE_LOCATING,
+            std::format(
+                "'{}' is {:.0f} mm across at its narrowest; the hand closes round {:.0f} mm at "
+                "most",
+                goal->object_id,
+                across * 1000.0,
+                max_grasp_width_m_ * 1000.0));
         return;
     }
     moveit_msgs::msg::CollisionObject object = publishCollisionObject(*detection, *object_pose);
@@ -732,9 +755,21 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
         fail(Place::Feedback::PHASE_PREPLACE, "could not transform the target pose");
         return;
     }
-    // A surface reports its centre; the object goes on top of it.
+    // A container is aimed at its centre; on a table the object goes where the hand reaches,
+    // kept as an offset on the surface so the re-aim below finds the same spot.
+    geometry_msgs::msg::Point spot;
     if (surface)
     {
+        geometry_msgs::msg::Point reach;
+        reach.x = place_reach_m_;
+        reach.y = arm.is_left ? place_side_m_ : -place_side_m_;
+        spot    = placeOffset(
+            *target,
+            surface->bbox.size,
+            reach,
+            place_edge_margin_m_,
+            place_container_max_m_);
+        target = atOffset(*target, spot);
         target->position.z += 0.5 * (surface->bbox.size.z + held_height);
     }
     geometry_msgs::msg::Pose place_goal = graspFrameGoal(*target, held_height, arm);
@@ -775,6 +810,7 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
             if (auto moved =
                     toPlanningFrame(fresh->results.front().pose.pose, fresh->header.frame_id))
             {
+                moved = atOffset(*moved, spot);
                 moved->position.z += lift;
                 const geometry_msgs::msg::Pose regrasp = graspFrameGoal(*moved, held_height, arm);
                 const double                   shift   = std::hypot(
