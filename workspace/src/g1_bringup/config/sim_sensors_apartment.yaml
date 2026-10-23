@@ -58,9 +58,14 @@ object_bodies:
   - mug_1
   - bowl_1
   - mug_4
+  - box_1
+  - toy_elephant_1
   - bed_1
   - nightstand_1
   - clock_1
+  - action_figure_1
+  - nightstand_2
+  - toy_dinosaur_1
   - wardrobe_1
   - potted_plant_2
   - bed_2
@@ -71,6 +76,7 @@ object_bodies:
   - chair_5
   - laptop_1
   - mug_3
+  - toy_robot_1
   - tray_1
   - shelf_1
   - cardboard_box_1

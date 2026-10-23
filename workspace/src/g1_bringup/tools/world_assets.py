@@ -128,6 +128,12 @@ MODELS = {
     },
     "gso_laptop": {"class": "laptop", "gso": "Travel_Mate_P_series_Notebook"},
     "gso_alarm_clock": {"class": "clock", "gso": "Crosley_Alarm_Clock_Vintage_Metal"},
+    # Things a hand can carry, each within the Dex3's 40-90 mm and found by SAM 3.1 from a phrase.
+    "gso_toy_robot": {"class": "toy_robot", "gso": "Android_Figure_Orange"},
+    "gso_action_figure": {"class": "action_figure", "gso": "Nintendo_Mario_Action_Figure"},
+    "gso_toy_dinosaur": {"class": "toy_dinosaur", "gso": "Nintendo_Yoshi_Action_Figure"},
+    "gso_serum_box": {"class": "box", "gso": "Perricone_MD_Vitamin_C_Ester_Serum"},
+    "gso_toy_elephant": {"class": "toy_elephant", "gso": "Elephant"},
 }
 
 # Tiling diffuse maps for floors, walls and the countertop, by Poly Haven id.

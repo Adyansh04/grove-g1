@@ -57,6 +57,9 @@
     <texture name="tex_plaster_wall" type="2d" file="@GROVE_ASSETS@/tex_plaster_wall/diffuse.png"/>
     <material name="tex_plaster_wall" texture="tex_plaster_wall" texuniform="true" texrepeat="0.5 0.5" specular="0.1" shininess="0.1" emission="0.2"/>
     <material name="wall_flat" rgba="0.6936 0.6596 0.6142 1" specular="0.1" shininess="0.1" emission="0.2"/>
+    <mesh name="gso_action_figure_0" file="@GROVE_ASSETS@/gso_action_figure/mesh_0.obj"/>
+    <texture name="gso_action_figure_tex_0" type="2d" file="@GROVE_ASSETS@/gso_action_figure/tex_0.png"/>
+    <material name="gso_action_figure_0" rgba="1 1 1 1" specular="0.3" shininess="0.3" texture="gso_action_figure_tex_0"/>
     <mesh name="gso_alarm_clock_0" file="@GROVE_ASSETS@/gso_alarm_clock/mesh_0.obj"/>
     <texture name="gso_alarm_clock_tex_0" type="2d" file="@GROVE_ASSETS@/gso_alarm_clock/tex_0.png"/>
     <material name="gso_alarm_clock_0" rgba="1 1 1 1" specular="0.3" shininess="0.3" texture="gso_alarm_clock_tex_0"/>
@@ -83,6 +86,18 @@
     <mesh name="gso_mug_room_essentials_0" file="@GROVE_ASSETS@/gso_mug_room_essentials/mesh_0.obj"/>
     <texture name="gso_mug_room_essentials_tex_0" type="2d" file="@GROVE_ASSETS@/gso_mug_room_essentials/tex_0.png"/>
     <material name="gso_mug_room_essentials_0" rgba="1 1 1 1" specular="0.3" shininess="0.3" texture="gso_mug_room_essentials_tex_0"/>
+    <mesh name="gso_serum_box_0" file="@GROVE_ASSETS@/gso_serum_box/mesh_0.obj"/>
+    <texture name="gso_serum_box_tex_0" type="2d" file="@GROVE_ASSETS@/gso_serum_box/tex_0.png"/>
+    <material name="gso_serum_box_0" rgba="1 1 1 1" specular="0.3" shininess="0.3" texture="gso_serum_box_tex_0"/>
+    <mesh name="gso_toy_dinosaur_0" file="@GROVE_ASSETS@/gso_toy_dinosaur/mesh_0.obj"/>
+    <texture name="gso_toy_dinosaur_tex_0" type="2d" file="@GROVE_ASSETS@/gso_toy_dinosaur/tex_0.png"/>
+    <material name="gso_toy_dinosaur_0" rgba="1 1 1 1" specular="0.3" shininess="0.3" texture="gso_toy_dinosaur_tex_0"/>
+    <mesh name="gso_toy_elephant_x30_0" file="@GROVE_ASSETS@/gso_toy_elephant/mesh_0.obj" scale="0.3 0.3 0.3"/>
+    <texture name="gso_toy_elephant_tex_0" type="2d" file="@GROVE_ASSETS@/gso_toy_elephant/tex_0.png"/>
+    <material name="gso_toy_elephant_x30_0" rgba="1 1 1 1" specular="0.3" shininess="0.3" texture="gso_toy_elephant_tex_0"/>
+    <mesh name="gso_toy_robot_0" file="@GROVE_ASSETS@/gso_toy_robot/mesh_0.obj"/>
+    <texture name="gso_toy_robot_tex_0" type="2d" file="@GROVE_ASSETS@/gso_toy_robot/tex_0.png"/>
+    <material name="gso_toy_robot_0" rgba="1 1 1 1" specular="0.3" shininess="0.3" texture="gso_toy_robot_tex_0"/>
     <mesh name="gso_wastebasket_0" file="@GROVE_ASSETS@/gso_wastebasket/mesh_0.obj"/>
     <texture name="gso_wastebasket_tex_0" type="2d" file="@GROVE_ASSETS@/gso_wastebasket/tex_0.png"/>
     <material name="gso_wastebasket_0" rgba="1 1 1 1" specular="0.3" shininess="0.3" texture="gso_wastebasket_tex_0"/>
@@ -377,6 +392,16 @@
       <geom class="apt_visual" mesh="gso_mug_ace_x60_0" material="gso_mug_ace_x60_0" pos="0 0 -0.0405"/>
       <geom class="apt_free" size="0.028 0.028 0.0405" mass="0.124"/>
     </body>
+    <body name="box_1" pos="-3 5.4 0.9535">
+      <freejoint name="box_1_joint"/>
+      <geom class="apt_visual" mesh="gso_serum_box_0" material="gso_serum_box_0" pos="0 0 -0.0525"/>
+      <geom class="apt_free" size="0.04 0.028 0.0525" mass="0.08"/>
+    </body>
+    <body name="toy_elephant_1" pos="-1.9 -5.48 0.7209" quat="0 0 0 1">
+      <freejoint name="toy_elephant_1_joint"/>
+      <geom class="apt_visual" mesh="gso_toy_elephant_x30_0" material="gso_toy_elephant_x30_0" pos="0 0 -0.0405"/>
+      <geom class="apt_free" size="0.0285 0.0315 0.0405" mass="0.06"/>
+    </body>
 
     <!-- bedroom -->
     <body name="bed_1" pos="5.3 4.9 0.7669">
@@ -390,6 +415,20 @@
     <body name="clock_1" pos="4.22 5.68 0.7821">
       <geom class="apt_visual" mesh="gso_alarm_clock_0" material="gso_alarm_clock_0" pos="0 0 -0.0811"/>
       <geom class="apt_proxy" size="0.0548 0.027 0.0811"/>
+    </body>
+    <body name="action_figure_1" pos="4.02 5.58 0.752">
+      <freejoint name="action_figure_1_joint"/>
+      <geom class="apt_visual" mesh="gso_action_figure_0" material="gso_action_figure_0" pos="0 0 -0.051"/>
+      <geom class="apt_free" size="0.0315 0.027 0.051" mass="0.1"/>
+    </body>
+    <body name="nightstand_2" pos="6.45 5.71 0.35">
+      <geom class="apt_visual" mesh="ph_classic_nightstand_01_0" material="ph_classic_nightstand_01_0" pos="0 0 -0.35"/>
+      <geom class="apt_proxy" size="0.2839 0.2121 0.35"/>
+    </body>
+    <body name="toy_dinosaur_1" pos="6.55 5.58 0.7575">
+      <freejoint name="toy_dinosaur_1_joint"/>
+      <geom class="apt_visual" mesh="gso_toy_dinosaur_0" material="gso_toy_dinosaur_0" pos="0 0 -0.0565"/>
+      <geom class="apt_free" size="0.0345 0.0325 0.0565" mass="0.1"/>
     </body>
     <body name="wardrobe_1" pos="8.36 4.3 1.1804" quat="0.7071 0 0 -0.7071">
       <geom class="apt_visual" mesh="ph_gothic_cabinet_01_0" material="ph_gothic_cabinet_01_0" pos="0 0 -1.1804"/>
@@ -435,6 +474,11 @@
     <body name="mug_3" pos="7.05 -5.25 0.8356">
       <geom class="apt_visual" mesh="gso_mug_cole_0" material="gso_mug_cole_0" pos="0 0 -0.0474"/>
       <geom class="apt_proxy" size="0.0828 0.0628 0.0474"/>
+    </body>
+    <body name="toy_robot_1" pos="7.35 -5.05 0.8284" quat="0 0 0 1">
+      <freejoint name="toy_robot_1_joint"/>
+      <geom class="apt_visual" mesh="gso_toy_robot_0" material="gso_toy_robot_0" pos="0 0 -0.0405"/>
+      <geom class="apt_free" size="0.033 0.023 0.0405" mass="0.08"/>
     </body>
     <body name="tray_1" pos="5.85 -5.07 0.8201">
       <geom class="apt_box" size="0.08 0.08 0.006" pos="0 0 -0.026" rgba="0.52 0.36 0.22 1"/>
@@ -485,5 +529,15 @@
   <equality>
     <weld name="grasp_left_mug_4" body1="left_hand_palm_link" body2="mug_4" active="false"/>
     <weld name="grasp_right_mug_4" body1="right_hand_palm_link" body2="mug_4" active="false"/>
+    <weld name="grasp_left_box_1" body1="left_hand_palm_link" body2="box_1" active="false"/>
+    <weld name="grasp_right_box_1" body1="right_hand_palm_link" body2="box_1" active="false"/>
+    <weld name="grasp_left_toy_elephant_1" body1="left_hand_palm_link" body2="toy_elephant_1" active="false"/>
+    <weld name="grasp_right_toy_elephant_1" body1="right_hand_palm_link" body2="toy_elephant_1" active="false"/>
+    <weld name="grasp_left_action_figure_1" body1="left_hand_palm_link" body2="action_figure_1" active="false"/>
+    <weld name="grasp_right_action_figure_1" body1="right_hand_palm_link" body2="action_figure_1" active="false"/>
+    <weld name="grasp_left_toy_dinosaur_1" body1="left_hand_palm_link" body2="toy_dinosaur_1" active="false"/>
+    <weld name="grasp_right_toy_dinosaur_1" body1="right_hand_palm_link" body2="toy_dinosaur_1" active="false"/>
+    <weld name="grasp_left_toy_robot_1" body1="left_hand_palm_link" body2="toy_robot_1" active="false"/>
+    <weld name="grasp_right_toy_robot_1" body1="right_hand_palm_link" body2="toy_robot_1" active="false"/>
   </equality>
 </mujoco>

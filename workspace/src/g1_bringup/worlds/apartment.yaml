@@ -90,6 +90,11 @@ synonyms:
   book: [novel, paperback]
   laptop: [notebook computer, computer]
   clock: [alarm clock]
+  toy_robot: [robot toy, toy, figurine]
+  action_figure: [figure, figurine, toy]
+  toy_dinosaur: [dinosaur toy, toy, figurine]
+  box: [small box, carton]
+  toy_elephant: [elephant, toy]
 
 props:
   living:
@@ -138,10 +143,24 @@ props:
     # reaches it from beside the table with the left hand.
     - {body: mug_4, asset: gso_mug_ace, scale: 0.6, pose: [-1.40, 2.62, 90],
        free: {size: [0.056, 0.056, 0.081], mass: 0.124}, support: dining_table_1, z: 0.707}
+    # Things the robot finds by asking SAM 3.1 for them, none in the kept map; on the simulator's
+    # renders it found each at 0.74-0.95 by a plain phrase (small box, toy elephant, action figure,
+    # green toy, toy robot). Each is within the Dex3's 40-90 mm, faces where the robot stands, and
+    # sits 8-11 cm in from its surface's edge. A small plant pot was dropped: SAM saw a mug.
+    - {body: box_1, asset: gso_serum_box, pose: [-3.0, 5.40, 0],
+       free: {size: [0.080, 0.056, 0.105], mass: 0.08}, support: counter_1}
+    - {body: toy_elephant_1, asset: gso_toy_elephant, scale: 0.3, pose: [-1.9, -5.48, 180],
+       free: {size: [0.057, 0.063, 0.081], mass: 0.06}, support: cabinet_1}
   bedroom:
     - {body: bed_1, asset: ph_gothic_bed_01, pose: [5.3, 4.9, 0]}
     - {body: nightstand_1, asset: ph_classic_nightstand_01, pose: [4.22, 5.71, 0]}
     - {body: clock_1, asset: gso_alarm_clock, pose: [4.22, 5.68, 0], support: nightstand_1}
+    - {body: action_figure_1, asset: gso_action_figure, pose: [4.02, 5.58, 0],
+       free: {size: [0.063, 0.054, 0.102], mass: 0.1}, support: nightstand_1}
+    # The bed's other side, so a search can try one nightstand and then the next.
+    - {body: nightstand_2, asset: ph_classic_nightstand_01, pose: [6.45, 5.71, 0]}
+    - {body: toy_dinosaur_1, asset: gso_toy_dinosaur, pose: [6.55, 5.58, 0],
+       free: {size: [0.069, 0.065, 0.113], mass: 0.1}, support: nightstand_2}
     - {body: wardrobe_1, asset: ph_gothic_cabinet_01, pose: [8.36, 4.3, -90]}
     - {body: potted_plant_2, asset: ph_potted_plant_01, pose: [3.45, 1.4, 0]}
   study:
@@ -154,6 +173,8 @@ props:
     - {body: chair_5, asset: ph_school_chair_01, pose: [6.5, -4.55, 0]}
     - {body: laptop_1, asset: gso_laptop, pose: [6.3, -5.35, 180], support: desk_1}
     - {body: mug_3, asset: gso_mug_cole, pose: [7.05, -5.25, 0], support: desk_1}
+    - {body: toy_robot_1, asset: gso_toy_robot, pose: [7.35, -5.05, 180],
+       free: {size: [0.066, 0.046, 0.081], mass: 0.08}, support: desk_1}
     # Where the mug goes: a wooden tray at the desk's west end, 100 mm in from its north edge.
     - body: tray_1
       pose: [5.85, -5.07, 0]

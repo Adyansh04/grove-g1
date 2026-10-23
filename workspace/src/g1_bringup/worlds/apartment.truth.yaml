@@ -326,6 +326,26 @@ objects:
   'on': dining_table_1
   observable_from_standing: true
   asset: gso_mug_ace
+- body: box_1
+  label: box
+  synonyms: [small box, carton]
+  room: living
+  centre: [-3.0, 5.4, 0.9535]
+  size: [0.08, 0.056, 0.105]
+  yaw: 0.0
+  'on': counter_1
+  observable_from_standing: true
+  asset: gso_serum_box
+- body: toy_elephant_1
+  label: toy elephant
+  synonyms: [elephant, toy]
+  room: living
+  centre: [-1.9, -5.48, 0.7209]
+  size: [0.057, 0.063, 0.081]
+  yaw: 180.0
+  'on': cabinet_1
+  observable_from_standing: true
+  asset: gso_toy_elephant
 - body: bed_1
   label: bed
   synonyms: [day bed, double bed]
@@ -356,6 +376,36 @@ objects:
   'on': nightstand_1
   observable_from_standing: true
   asset: gso_alarm_clock
+- body: action_figure_1
+  label: action figure
+  synonyms: [figure, figurine, toy]
+  room: bedroom
+  centre: [4.02, 5.58, 0.752]
+  size: [0.063, 0.054, 0.102]
+  yaw: 0.0
+  'on': nightstand_1
+  observable_from_standing: true
+  asset: gso_action_figure
+- body: nightstand_2
+  label: nightstand
+  synonyms: [bedside table, night table]
+  room: bedroom
+  centre: [6.45, 5.71, 0.35]
+  size: [0.5678, 0.4242, 0.7]
+  yaw: 0.0
+  'on': null
+  observable_from_standing: true
+  asset: ph_classic_nightstand_01
+- body: toy_dinosaur_1
+  label: toy dinosaur
+  synonyms: [dinosaur toy, toy, figurine]
+  room: bedroom
+  centre: [6.55, 5.58, 0.7575]
+  size: [0.069, 0.065, 0.113]
+  yaw: 0.0
+  'on': nightstand_2
+  observable_from_standing: true
+  asset: gso_toy_dinosaur
 - body: wardrobe_1
   label: wardrobe
   synonyms: [closet, armoire, cupboard]
@@ -456,6 +506,16 @@ objects:
   'on': desk_1
   observable_from_standing: true
   asset: gso_mug_cole
+- body: toy_robot_1
+  label: toy robot
+  synonyms: [robot toy, toy, figurine]
+  room: office
+  centre: [7.35, -5.05, 0.8284]
+  size: [0.066, 0.046, 0.081]
+  yaw: 180.0
+  'on': desk_1
+  observable_from_standing: true
+  asset: gso_toy_robot
 - body: tray_1
   label: tray
   synonyms: [serving tray, box]
