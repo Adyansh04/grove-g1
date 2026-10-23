@@ -64,8 +64,8 @@ The source's other parameters:
 
 The steps follow the feedback phases.
 
-1. `locating`: read the object, refuse it when it is wider than `max_grasp_width_m` across its narrower side, add its box to the planning scene and choose a grasp.
-2. `pregrasp`: move the hand to `pinch_ready` and the arm to `approach_height_m` above the grasp, then settle out the arm's gravity droop in clear air.
+1. `locating`: read the object, refuse it when it is wider than `max_grasp_width_m` across its narrower side, add its box to the planning scene and choose a grasp: for generated grasps up to `grasp_tries`, best first, each solvable at the grasp and the pregrasp.
+2. `pregrasp`: move the hand to `pinch_ready` and the arm to `approach_height_m` above the grasp (the next generated grasp's pregrasp when MoveIt finds no way to one), then settle out the arm's gravity droop in clear air.
 3. `approach`:
    - Re-read the object and follow a shift under `grasp_refresh_max_shift_m`.
    - Plan to a staging point `reaim_clearance_m` above the grasp while the object is still in the scene.

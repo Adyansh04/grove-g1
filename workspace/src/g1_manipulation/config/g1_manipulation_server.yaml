@@ -129,6 +129,9 @@ g1_manipulation_server:
     grasp_timeout_s: 35.0
     min_grasp_score: 0.5
     max_grasp_candidates: 20
+    # Usable candidates kept, best first: when MoveIt finds no way to one's pregrasp, the next is
+    # tried before the pick fails.
+    grasp_tries: 3
     # Past a right angle a grasp reaches up through the surface.
     max_approach_tilt_deg: 75.0
     # Pregrasp distance back along a generated grasp's own approach axis.

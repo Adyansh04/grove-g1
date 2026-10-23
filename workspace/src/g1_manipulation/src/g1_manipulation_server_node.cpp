@@ -146,6 +146,7 @@ void G1ManipulationServer::declareParameters()
         { "lift_attempts", &lift_attempts_ },
         { "planning_attempts", &planning_attempts_ },
         { "max_grasp_candidates", &max_grasp_candidates_ },
+        { "grasp_tries", &grasp_tries_ },
         { "move_hand_orientations", &move_hand_orientations_ },
     };
     for (const auto& [name, value] : live_doubles_)
@@ -430,23 +431,17 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
 
     std::string                  why;
     std::vector<ConsideredGrasp> verdicts;
-    const auto                   chosen =
-        chooseGrasp(*detection, *object_pose, arm, why, grasp_plan_pub_ ? &verdicts : nullptr);
+    const std::vector<GraspPlan> plans =
+        chooseGrasps(*detection, *object_pose, arm, why, grasp_plan_pub_ ? &verdicts : nullptr);
     if (grasp_plan_pub_)
     {
-        publishGraspPlan(chosen ? &*chosen : nullptr, verdicts);
+        publishGraspPlan(plans.empty() ? nullptr : &plans.front(), verdicts);
     }
-    if (!chosen)
+    if (plans.empty())
     {
         fail(Pick::Feedback::PHASE_LOCATING, "no usable grasp: " + why);
         return;
     }
-    RCLCPP_INFO(
-        get_logger(),
-        "picking '%s' with the %s grasp",
-        goal->object_id.c_str(),
-        chosen->origin.c_str());
-    const geometry_msgs::msg::Pose& pregrasp_goal = chosen->pregrasp;
 
     // Cancels are honoured between phases; a trajectory already executing cannot be unwound here.
     if (goal_handle->is_canceling())
@@ -465,19 +460,38 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     // The walk leaves voxels where the arm's own links were, and a start state inside them
     // fails every plan before it is searched: the map is rebuilt from where the arm is now.
     clearOctomap();
-    if (!moveTo(*arm_group, pregrasp_goal, arm.grasp_frame, "pregrasp"))
+    // A pregrasp that solves can still have no collision-free way to it: the next one may.
+    const GraspPlan* chosen = nullptr;
+    for (const GraspPlan& plan : plans)
+    {
+        RCLCPP_INFO(
+            get_logger(),
+            "picking '%s' with the %s grasp",
+            goal->object_id.c_str(),
+            plan.origin.c_str());
+        if (moveTo(*arm_group, plan.pregrasp, arm.grasp_frame, "pregrasp"))
+        {
+            chosen = &plan;
+            break;
+        }
+    }
+    if (chosen == nullptr)
     {
         // Where, because the cause is usually where the base stopped.
+        const geometry_msgs::msg::Point& at = plans.back().pregrasp.position;
         fail(
             Pick::Feedback::PHASE_PREGRASP,
             std::format(
-                "could not reach the pregrasp pose at ({:.3f} {:.3f} {:.3f}) in {}",
-                pregrasp_goal.position.x,
-                pregrasp_goal.position.y,
-                pregrasp_goal.position.z,
+                "could not reach the pregrasp pose of any of {} grasps, the last at ({:.3f} "
+                "{:.3f} {:.3f}) in {}",
+                plans.size(),
+                at.x,
+                at.y,
+                at.z,
                 planning_frame_));
         return;
     }
+    const geometry_msgs::msg::Pose& pregrasp_goal = chosen->pregrasp;
     // The droop comes out up here in clear air, not by dragging the hand sideways at the object.
     if (!settleOnPose(*arm_group, pregrasp_goal, arm.grasp_frame, "pregrasp"))
     {

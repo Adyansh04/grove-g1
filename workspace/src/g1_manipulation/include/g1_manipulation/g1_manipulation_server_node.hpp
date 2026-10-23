@@ -314,13 +314,14 @@ private:
      * @brief The grasp to attempt, from the configured grasp source.
      *
      * `fixed_top_down` is graspFrameGoal() approached from straight above. `generated` asks the
-     * grasp service and keeps the best candidate that is scored, not reaching up through the
-     * surface, and solvable. There is no fallback between the two.
+     * grasp service and keeps, best first, up to `grasp_tries` candidates that are scored, not
+     * reaching up through the surface, and solvable at both the grasp and the pregrasp. There is
+     * no fallback between the two sources.
      *
      * @param[out] why Why there is nothing to attempt, when it returns nothing.
      * @param[out] verdicts Every candidate the filter judged, for drawing; null skips the record.
      */
-    std::optional<GraspPlan> chooseGrasp(
+    std::vector<GraspPlan> chooseGrasps(
         const Detection& detection, const geometry_msgs::msg::Pose& object_pose,
         const ArmContext& arm, std::string& why, std::vector<ConsideredGrasp>* verdicts);
 
@@ -624,6 +625,7 @@ private:
     double                   grasp_timeout_s_{ 20.0 };
     double                   min_grasp_score_{ 0.5 };
     int                      max_grasp_candidates_{ 20 };
+    int                      grasp_tries_{ 3 };
     double                   max_approach_tilt_rad_{ 0.0 };
     double                   approach_standoff_m_{ 0.12 };
     double                   ik_timeout_s_{ 0.05 };

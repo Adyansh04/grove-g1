@@ -143,7 +143,7 @@ atOffset(const geometry_msgs::msg::Pose& surface, const geometry_msgs::msg::Poin
     return out;
 }
 
-std::optional<G1ManipulationServer::GraspPlan> G1ManipulationServer::chooseGrasp(
+std::vector<G1ManipulationServer::GraspPlan> G1ManipulationServer::chooseGrasps(
     const Detection& detection, const geometry_msgs::msg::Pose& object_pose, const ArmContext& arm,
     std::string& why, std::vector<ConsideredGrasp>* verdicts)
 {
@@ -159,25 +159,25 @@ std::optional<G1ManipulationServer::GraspPlan> G1ManipulationServer::chooseGrasp
         plan.pregrasp = plan.grasp;
         plan.pregrasp.position.z += approach_height_m_;
         plan.origin = "top-down";
-        return plan;
+        return { plan };
     }
 
     const auto response = requestGrasps(idOf(detection), arm, why);
     if (!response)
     {
-        return std::nullopt;
+        return {};
     }
     MoveGroup* group = groupFor(arm.arm_group);
     if (group == nullptr)
     {
         why = "no planning group called " + arm.arm_group;
-        return std::nullopt;
+        return {};
     }
     const moveit::core::RobotStatePtr state = group->getCurrentState();
     if (state == nullptr)
     {
         why = "no current state to solve a grasp against";
-        return std::nullopt;
+        return {};
     }
     const moveit::core::JointModelGroup* jmg = state->getJointModelGroup(arm.arm_group);
     // One scratch state for every candidate: a RobotState copy allocates per joint and link.
@@ -190,9 +190,12 @@ std::optional<G1ManipulationServer::GraspPlan> G1ManipulationServer::chooseGrasp
                 verdicts->push_back({ pose, verdict });
             }
         };
-    int considered = 0;
-    int reachable  = 0;
-    for (std::size_t i = 0; i < response->grasps.size() && considered < max_grasp_candidates_; ++i)
+    int                    considered = 0;
+    int                    reachable  = 0;
+    std::vector<GraspPlan> plans;
+    for (std::size_t i = 0; i < response->grasps.size() && considered < max_grasp_candidates_ &&
+                            std::cmp_less(plans.size(), grasp_tries_);
+         ++i)
     {
         // Sorted best first, so the first one under the bar ends the list.
         if (i < response->scores.size() && response->scores[i] < min_grasp_score_)
@@ -217,16 +220,6 @@ std::optional<G1ManipulationServer::GraspPlan> G1ManipulationServer::chooseGrasp
 
         const geometry_msgs::msg::Pose goal =
             applyGripperOffset(*in_planning_frame, graspgen_offset_);
-        // Reset per solve: a failed setFromIK leaves the state where it gave up.
-        attempt = *state;
-        if (!attempt.setFromIK(jmg, goal, arm.grasp_frame, ik_timeout_s_))
-        {
-            record(*in_planning_frame, ConsideredGrasp::Verdict::kUnreachable);
-            continue;
-        }
-        ++reachable;
-        record(*in_planning_frame, ConsideredGrasp::Verdict::kChosen);
-
         // Back along the approach, not straight up: a side grasp has a ceiling above it.
         const std::array<double, 3> axis = approachAxis(*in_planning_frame);
         GraspPlan                   plan;
@@ -235,20 +228,38 @@ std::optional<G1ManipulationServer::GraspPlan> G1ManipulationServer::chooseGrasp
         plan.pregrasp.position.x -= axis[0] * approach_standoff_m_;
         plan.pregrasp.position.y -= axis[1] * approach_standoff_m_;
         plan.pregrasp.position.z -= axis[2] * approach_standoff_m_;
+        // The arm starts at the pregrasp, so both ends need a solution. Reset per solve: a failed
+        // setFromIK leaves the state where it gave up.
+        attempt                 = *state;
+        const bool grasp_solves = attempt.setFromIK(jmg, goal, arm.grasp_frame, ik_timeout_s_);
+        attempt                 = *state;
+        if (!grasp_solves || !attempt.setFromIK(jmg, plan.pregrasp, arm.grasp_frame, ik_timeout_s_))
+        {
+            record(*in_planning_frame, ConsideredGrasp::Verdict::kUnreachable);
+            continue;
+        }
+        ++reachable;
+        // The best is the one drawn as chosen; the rest wait in case MoveIt finds no way to it.
+        if (plans.empty())
+        {
+            record(*in_planning_frame, ConsideredGrasp::Verdict::kChosen);
+        }
         plan.origin = std::format(
             "generated candidate {} of {}, score {:.2f}",
             i,
             response->grasps.size(),
             i < response->scores.size() ? response->scores[i] : 0.0F);
-        return plan;
+        plans.push_back(std::move(plan));
     }
-
-    why = std::format(
-        "none of the {} candidates considered were usable ({} reachable) out of {} offered",
-        considered,
-        reachable,
-        response->grasps.size());
-    return std::nullopt;
+    if (plans.empty())
+    {
+        why = std::format(
+            "none of the {} candidates considered were usable ({} reachable) out of {} offered",
+            considered,
+            reachable,
+            response->grasps.size());
+    }
+    return plans;
 }
 
 void G1ManipulationServer::publishGraspPlan(
