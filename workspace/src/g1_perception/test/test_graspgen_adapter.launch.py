@@ -200,6 +200,14 @@ class TestGraspGenAdapter(unittest.TestCase):
         self.assertFalse(result.ok)
         self.assertIn("right", result.message)
 
+    def test_05_the_bare_name_on_objects_is_the_track_it_names(self):
+        self._publish_scene()
+
+        # LookFor hands on red_block, which /objects lists beside the track red_block_0.
+        result = self._call(object_id="red_block")
+
+        self.assertTrue(result.ok, result.message)
+
 
 @launch_testing.post_shutdown_test()
 class TestShutdown(unittest.TestCase):

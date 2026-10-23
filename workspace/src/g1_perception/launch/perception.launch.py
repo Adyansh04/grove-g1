@@ -122,6 +122,7 @@ def _nodes(context, *args, **kwargs):
         parameters=[_config("g1_graspgen_adapter.yaml")],
         remappings=[
             ("tracked_masks", TRACKED_MASKS),
+            ("object_poses", OBJECT_POSES),
             ("depth/image_raw", DEPTH_IMAGE),
             ("depth/camera_info", DEPTH_INFO),
             ("~/generate_grasps", GRASP_SERVICE),

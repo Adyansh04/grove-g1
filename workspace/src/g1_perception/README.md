@@ -52,7 +52,7 @@ object poses are `vision_msgs/Detection3DArray`.
 | `g1_detector` | `/camera/color/image_raw` | `/g1_perception/instance_masks` |
 | `g1_detector` (mock) | `/g1_sensor_relay/object_poses`, `/camera/aligned_depth_to_color/image_raw`, `/camera/color/camera_info` | `/g1_perception/instance_masks` |
 | `g1_object_geometry` | `/g1_perception/instance_masks`, `/camera/aligned_depth_to_color/image_raw` (32FC1, metres), `/camera/aligned_depth_to_color/camera_info` | `/g1_object_geometry/object_poses`, in the camera frame<br>`/g1_object_geometry/tracked_masks`, the input masks relabelled with object ids |
-| `g1_graspgen_adapter` | `/g1_object_geometry/tracked_masks`, the depth image and its `camera_info` | `/g1_grasp_engine/generate_grasps` (`g1_msgs/GenerateGrasps`) |
+| `g1_graspgen_adapter` | `/g1_object_geometry/tracked_masks` and `object_poses` (which track a bare name such as `toy_robot` holds to), the depth image and its `camera_info` | `/g1_grasp_engine/generate_grasps` (`g1_msgs/GenerateGrasps`) |
 | `g1_mock_grasp_source` | `/objects` | `/g1_grasp_engine/generate_grasps` |
 | `g1_instruction_grounder` | `/camera/color/image_raw` | `/ground_instruction` (`g1_msgs/GroundInstruction`). Writes `phrases` on `/g1_detector`. |
 | `g1_perception_visualizer` | `/camera/color/image_raw`, `/camera/color/camera_info`, `/g1_object_geometry/tracked_masks`, `/g1_object_geometry/object_poses`, `/g1_sensor_relay/object_poses` | `/g1_perception_visualizer/annotated_image` (rgb8): masks tinted per object, fitted boxes, `id score` labels, and `unmeasured` on an instance the geometry rejected.<br>`/g1_perception_visualizer/ground_truth` (`MarkerArray`, transient local, in `fixed_frame`): a box per object labelled `<n> mm off` or `not seen`. |
