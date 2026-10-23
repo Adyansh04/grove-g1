@@ -135,7 +135,8 @@ case "$VARIANT" in
         container canopy "$CANOPY$SAVED"
         container executor "$FETCH_EXECUTOR"
         # Claude talks (models.toml), so the GPU holds SAM 3.1 and GraspGenX beside the simulator.
-        host detector "./scripts/serve.sh canopy"
+        # Only masks: the embedder's memory goes to the simulator and GraspGenX instead.
+        host detector "./scripts/serve.sh canopy --embedder none"
         host grasps "./scripts/serve.sh graspgen"
         host editor "python3 workspace/src/canopy/editor/canopy_editor.py data/worlds/$SAVED_NAME"
         host nervros "$AGENT_ENV && cargo run -p nervros-gui -- --profile $PROFILE"
