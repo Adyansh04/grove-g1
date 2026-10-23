@@ -461,19 +461,34 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     // fails every plan before it is searched: the map is rebuilt from where the arm is now.
     clearOctomap();
     // A pregrasp that solves can still have no collision-free way to it: the next one may.
-    const GraspPlan* chosen = nullptr;
-    for (const GraspPlan& plan : plans)
-    {
-        RCLCPP_INFO(
-            get_logger(),
-            "picking '%s' with the %s grasp",
-            goal->object_id.c_str(),
-            plan.origin.c_str());
-        if (moveTo(*arm_group, plan.pregrasp, arm.grasp_frame, "pregrasp"))
+    const auto first_reached = [&]() -> const GraspPlan* {
+        for (const GraspPlan& plan : plans)
         {
-            chosen = &plan;
-            break;
+            RCLCPP_INFO(
+                get_logger(),
+                "picking '%s' with the %s grasp",
+                goal->object_id.c_str(),
+                plan.origin.c_str());
+            if (moveTo(*arm_group, plan.pregrasp, arm.grasp_frame, "pregrasp"))
+            {
+                return &plan;
+            }
         }
+        return nullptr;
+    };
+    const GraspPlan* chosen = first_reached();
+    if (chosen == nullptr)
+    {
+        // Every plan fails at its start when a finger stands in voxels it cast itself: lift the
+        // hand straight out of them, exempt for that move alone, and plan again.
+        RCLCPP_WARN(
+            get_logger(),
+            "pregrasp: no way to any pregrasp; lifting the hand clear and retrying");
+        setHandContact(arm, { "<octomap>" }, true);
+        backOff(arm, *arm_group);
+        setHandContact(arm, { "<octomap>" }, false);
+        clearOctomap();
+        chosen = first_reached();
     }
     if (chosen == nullptr)
     {

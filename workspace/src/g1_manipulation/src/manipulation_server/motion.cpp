@@ -358,12 +358,6 @@ G1ManipulationServer::planWithinBudget(MoveGroup& group, MoveGroup::Plan& plan)
             planning_attempts_,
             result.val,
             std::chrono::duration<double>(deadline - Clock::now()).count());
-        // A start in collision is the arm's own fresh voxels, which the octomap's self-filter
-        // trails as the arm moves: the map is rebuilt from where the arm is now, as before a pick.
-        if (result == moveit::core::MoveItErrorCode::START_STATE_IN_COLLISION)
-        {
-            clearOctomap();
-        }
     }
     group.setPlanningTime(planning_time_s_);
     return result;
