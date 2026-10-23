@@ -83,11 +83,14 @@ moveit_msgs::msg::CollisionObject G1ManipulationServer::publishCollisionObject(
     object.id              = idOf(detection);
     object.header.frame_id = planning_frame_;
 
-    // A box whatever the real shape: the planner only needs a conservative volume.
+    // A box whatever the real shape: the planner only needs a conservative volume. Padded
+    // sideways, since perception measures short and the arm lags its plan; not up, or the carried
+    // box would sink into the table the place stands it on.
+    const double                    pad = 2.0 * scene_object_padding_m_;
     shape_msgs::msg::SolidPrimitive primitive;
     primitive.type       = shape_msgs::msg::SolidPrimitive::BOX;
-    primitive.dimensions = { std::max(detection.bbox.size.x, kMinPrimitiveExtent),
-                             std::max(detection.bbox.size.y, kMinPrimitiveExtent),
+    primitive.dimensions = { std::max(detection.bbox.size.x + pad, kMinPrimitiveExtent),
+                             std::max(detection.bbox.size.y + pad, kMinPrimitiveExtent),
                              std::max(detection.bbox.size.z, kMinPrimitiveExtent) };
 
     object.primitives.push_back(primitive);

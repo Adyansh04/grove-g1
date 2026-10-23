@@ -22,6 +22,9 @@ g1_manipulation_server:
     max_grasp_offset_m: 0.020
     # m. The widest a Dex3 closes round, thumb to fingers; a wider object is refused before moving.
     max_grasp_width_m: 0.090
+    # m. Added to each side of the object's box in the planning scene, not to its height: the
+    # measured box runs short and the arm lags its plan, so an unpadded box gets brushed.
+    scene_object_padding_m: 0.02
     # GraspGenX describes the right Dex3 only: with grasp_source generated, the left hand still
     # grasps from the object's box.
     generated_grasp_arms: [right]

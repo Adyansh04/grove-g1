@@ -127,6 +127,7 @@ explained in comments. `config/g1_object_pose_source.yaml` holds the source's fr
 | `grasp_source` | `fixed_top_down` | See above. |
 | `generated_grasp_arms` | `[right]` | The arms a `generated` source serves; GraspGenX describes the right Dex3 only, so the left still grasps from the object's box. |
 | `max_grasp_width_m` | 0.090 | The widest object a hand closes round; a wider one is refused before the arm moves. |
+| `scene_object_padding_m` | 0.02 | Added to each side of the object's planning-scene box (not its height): the measured box runs short and the arm lags its plan. |
 | `grasp_offset` | `[0, 0, 0.07, π/2, 0, π]` | Sets `graspgen_to_grasp_frame_xyz_rpy`: generator gripper frame to grasp frame, xyz then rpy, measured for GraspGenX's Dex3 (see [the open-vocabulary guide](../../../docs/guides/open-vocabulary-grasping.md)). |
 | `visualization` | false | Markers and `~/grasp_plan`. |
 

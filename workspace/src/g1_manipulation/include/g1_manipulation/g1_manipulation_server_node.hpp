@@ -590,6 +590,7 @@ private:
     int                 settle_attempts_{ 2 };
     double              max_grasp_offset_m_{ 0.020 };
     double              max_grasp_width_m_{ 0.090 };
+    double              scene_object_padding_m_{ 0.02 };
     double              grasp_refresh_max_shift_m_{ 0.050 };
     double              reaim_clearance_m_{ 0.08 };
     double              settle_wait_s_{ 0.8 };
