@@ -75,6 +75,17 @@ std::optional<std::int64_t> wholeNumber(const char* text)
     return std::nullopt;
 }
 
+/// "a or b or c".
+std::string joined(const std::vector<std::string>& values)
+{
+    std::string out;
+    for (const std::string& v : values)
+    {
+        out += (out.empty() ? "" : " or ") + v;
+    }
+    return out;
+}
+
 /// Walks a body, collecting its problems and the authority its leaves need.
 class BodyCheck
 {
@@ -355,16 +366,6 @@ private:
         }
         const auto port = leaf->second.find(input);
         return port == leaf->second.end() ? nullptr : &port->second;
-    }
-
-    static std::string joined(const std::vector<std::string>& values)
-    {
-        std::string out;
-        for (const std::string& v : values)
-        {
-            out += (out.empty() ? "" : " or ") + v;
-        }
-        return out;
     }
 };
 
@@ -682,6 +683,25 @@ std::optional<LearnedSkill> buildLearned(
                     "argument '{}' is never used: give it to a leaf input as {{{}}}, or drop it",
                     arg.name,
                     arg.name));
+        }
+        // A declared value the leaf refuses would pass the plan check and fail when it runs.
+        const auto only = check.argValues().find(arg.name);
+        if (only == check.argValues().end())
+        {
+            continue;
+        }
+        for (const std::string& value : arg.allowed)
+        {
+            if (std::ranges::find(only->second, value) == only->second.end())
+            {
+                add(code::kBadArg,
+                    std::format(
+                        "argument '{}' allows '{}', which its leaf input does not take: it takes "
+                        "only {}",
+                        arg.name,
+                        value,
+                        joined(only->second)));
+            }
         }
     }
     if (check.nodes() > learnable.max_nodes)

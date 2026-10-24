@@ -186,6 +186,13 @@ TEST(LearnedSkill, AnInputsValuesHoldItsLiteralsAndTheArgumentFedToIt)
     ASSERT_THAT(problems, ::testing::SizeIs(1));
     EXPECT_EQ(problems.front().code, "BAD_ARG");
     EXPECT_THAT(problems.front().message, HasSubstr("takes only left or right, not 'left_arm'"));
+
+    SkillDefinition declared = pointAt();
+    declared.args[1].allowed = { "left", "left_arm" };
+    problems.clear();
+    EXPECT_FALSE(buildLearned(declared, rules, {}, problems).has_value());
+    ASSERT_THAT(problems, ::testing::SizeIs(1));
+    EXPECT_THAT(problems.front().message, HasSubstr("allows 'left_arm', which its leaf input"));
 }
 
 TEST(LearnedSkill, AnArgumentTheBodyNeverUsesIsRefused)
