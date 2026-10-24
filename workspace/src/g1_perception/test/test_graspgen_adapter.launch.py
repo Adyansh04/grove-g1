@@ -15,6 +15,7 @@ from canopy_msgs.msg import InstanceMask, InstanceMaskArray
 from launch import LaunchDescription
 from launch.actions import ExecuteProcess, TimerAction
 from launch_ros.actions import Node
+from rclpy.duration import Duration
 from rclpy.node import Node as RclpyNode
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import CameraInfo, Image
@@ -116,8 +117,8 @@ class TestGraspGenAdapter(unittest.TestCase):
             depth = self._publish_once(label)
         return depth
 
-    def _publish_once(self, label):
-        stamp = self.node.get_clock().now().to_msg()
+    def _publish_once(self, label, behind_s=0.0, masks=True):
+        stamp = (self.node.get_clock().now() - Duration(seconds=behind_s)).to_msg()
 
         depth = Image()
         depth.header.stamp = stamp
@@ -135,18 +136,19 @@ class TestGraspGenAdapter(unittest.TestCase):
         info.k = [432.98, 0.0, 32.0, 0.0, 432.98, 24.0, 0.0, 0.0, 1.0]
         self.info.publish(info)
 
-        masks = InstanceMaskArray()
-        masks.header = depth.header
-        masks.image_width, masks.image_height = WIDTH, HEIGHT
-        masks.model = "stub"
-        instance = InstanceMask()
-        instance.label = label
-        instance.score = 0.9
-        instance.roi.x_offset, instance.roi.y_offset = 20, 16
-        instance.roi.width, instance.roi.height = 12, 10
-        instance.data = [255] * (12 * 10)
-        masks.instances.append(instance)
-        self.masks.publish(masks)
+        if masks:
+            cut = InstanceMaskArray()
+            cut.header = depth.header
+            cut.image_width, cut.image_height = WIDTH, HEIGHT
+            cut.model = "stub"
+            instance = InstanceMask()
+            instance.label = label
+            instance.score = 0.9
+            instance.roi.x_offset, instance.roi.y_offset = 20, 16
+            instance.roi.width, instance.roi.height = 12, 10
+            instance.data = [255] * (12 * 10)
+            cut.instances.append(instance)
+            self.masks.publish(cut)
 
         for _ in range(10):
             rclpy.spin_once(self.node, timeout_sec=0.1)
@@ -207,6 +209,18 @@ class TestGraspGenAdapter(unittest.TestCase):
         result = self._call(object_id="red_block")
 
         self.assertTrue(result.ok, result.message)
+
+    def test_06_masks_long_behind_the_camera_are_refused(self):
+        self.assertTrue(self._await_subscribers(), "the adapter never subscribed")
+        for _ in range(5):
+            self._publish_once(OBJECT_ID, behind_s=10.0)
+        for _ in range(5):
+            self._publish_once(OBJECT_ID, masks=False)
+
+        result = self._call()
+
+        self.assertFalse(result.ok)
+        self.assertIn("behind the camera", result.message)
 
 
 @launch_testing.post_shutdown_test()

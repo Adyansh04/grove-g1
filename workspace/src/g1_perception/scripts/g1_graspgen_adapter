@@ -14,7 +14,6 @@ from geometry_msgs.msg import Pose
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import CameraInfo, Image
-from vision_msgs.msg import Detection3DArray
 
 from g1_msgs.srv import GenerateGrasps
 from g1_perception.host_clients import GraspClient
@@ -78,16 +77,15 @@ class GraspGenAdapter(Node):
         self._sweep = [float(value) for value in self._param("sweep_volume", [])]
         self._gripper_type = int(self._param("gripper_type", 2))
         self._fingertip_depth = float(self._param("fingertip_depth_m", 0.07))
+        self._max_mask_age_ns = int(float(self._param("max_mask_age_s", 5.0)) * 1e9)
 
         self._depth = {}
         self._info = None
         self._latest = None
         self._masks = None
         self._masks_depth = None
-        self._objects = {}
 
         self.create_subscription(InstanceMaskArray, "tracked_masks", self._on_masks, MASK_QOS)
-        self.create_subscription(Detection3DArray, "object_poses", self._on_objects, MASK_QOS)
         # Best effort, as the relay publishes: a reliable subscriber would never match.
         self.create_subscription(Image, "depth/image_raw", self._on_depth, qos_profile_sensor_data)
         self.create_subscription(
@@ -126,37 +124,19 @@ class GraspGenAdapter(Node):
     def _on_info(self, msg):
         self._info = msg
 
-    def _on_objects(self, msg):
-        # Published with the tracked masks, under the same stamp.
-        self._objects[(msg.header.stamp.sec, msg.header.stamp.nanosec)] = msg
-        while len(self._objects) > 20:
-            self._objects.pop(next(iter(self._objects)))
-
-    def _track(self, masks, wanted):
+    @staticmethod
+    def _track(masks, wanted):
         """The label of the tracked instance `wanted` names, or None.
 
-        Skills ask by the names on /objects: a track's id, or the bare name the geometry also lists
-        the track it holds to under, as a copy of that track's detection. A bare name with one
-        track of it in these masks is that track; with several, the one whose detection the alias
-        copies.
+        Skills ask by the names on /objects: a track's id, or the bare name the geometry lists
+        beside the one track of it. With several, /objects withholds the bare name, and so does
+        this.
         """
         labels = {instance.label for instance in masks.instances}
-        tracks = sorted(label for label in labels if label != wanted and phrase_of(label) == wanted)
-        if not tracks:
-            return wanted if wanted in labels else None
+        tracks = [label for label in labels if label != wanted and phrase_of(label) == wanted]
         if len(tracks) == 1:
             return tracks[0]
-        objects = self._objects.get((masks.header.stamp.sec, masks.header.stamp.nanosec))
-        detections = objects.detections if objects is not None else []
-        alias = next((d for d in detections if d.id == wanted), None)
-        return next(
-            (
-                d.id
-                for d in detections
-                if alias is not None and d.id in tracks and d.bbox.center == alias.bbox.center
-            ),
-            None,
-        )
+        return wanted if not tracks and wanted in labels else None
 
     def _on_masks(self, msg):
         self._latest = msg
@@ -234,6 +214,21 @@ class GraspGenAdapter(Node):
             response.message = (
                 "no tracked masks with their depth frame, or no camera_info yet; is perception "
                 "running?"
+            )
+            return response
+
+        # Measured against the newest depth frame, on the camera's own clock: masks long behind
+        # it may show the object where it no longer stands.
+        newest = next(reversed(self._depth), None)
+        behind_ns = (
+            (newest[0] - masks.header.stamp.sec) * 10**9 + newest[1] - masks.header.stamp.nanosec
+            if newest is not None
+            else 0
+        )
+        if behind_ns > self._max_mask_age_ns:
+            response.message = (
+                f"the last masks are {behind_ns / 1e9:.1f} s behind the camera; the detector has "
+                "not seen the object since"
             )
             return response
 
