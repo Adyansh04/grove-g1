@@ -644,9 +644,10 @@ private:
     std::vector<std::string> generated_grasp_arms_{ "right" };
     double                   grasp_timeout_s_{ 20.0 };
     double                   min_grasp_score_{ 0.5 };
-    int                      max_grasp_candidates_{ 20 };
+    int                      max_grasp_candidates_{ 50 };
     int                      grasp_tries_{ 3 };
     double                   max_approach_tilt_rad_{ 0.0 };
+    double                   min_approach_forward_{ -0.3 };
     double                   approach_standoff_m_{ 0.12 };
     double                   ik_timeout_s_{ 0.05 };
     double                   cartesian_step_m_{ 0.005 };

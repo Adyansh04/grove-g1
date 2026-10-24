@@ -131,12 +131,15 @@ g1_manipulation_server:
     # Longer than the adapter's own zmq_timeout_ms (30 s), or a slow generator reads as silent.
     grasp_timeout_s: 35.0
     min_grasp_score: 0.5
-    max_grasp_candidates: 20
+    max_grasp_candidates: 50
     # Usable candidates kept, best first: when MoveIt finds no way to one's pregrasp, the next is
     # tried before the pick fails.
     grasp_tries: 3
     # Past a right angle a grasp reaches up through the surface.
     max_approach_tilt_deg: 75.0
+    # The approach axis's forward share in the planning frame, at least: under it the hand comes
+    # back at the robot from beyond the object.
+    min_approach_forward: -0.3
     # Pregrasp distance back along a generated grasp's own approach axis.
     approach_standoff_m: 0.12
     # Per candidate, so this is a filter rather than a solve.

@@ -108,6 +108,7 @@ void G1ManipulationServer::declareParameters()
         { "settle_tolerance_m", &settle_tolerance_m_ },
         { "max_grasp_offset_m", &max_grasp_offset_m_ },
         { "max_grasp_width_m", &max_grasp_width_m_ },
+        { "min_approach_forward", &min_approach_forward_ },
         { "scene_object_padding_m", &scene_object_padding_m_ },
         { "max_place_offset_m", &max_place_offset_m_ },
         { "grasp_refresh_max_shift_m", &grasp_refresh_max_shift_m_ },

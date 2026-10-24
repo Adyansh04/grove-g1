@@ -238,7 +238,10 @@ std::vector<G1ManipulationServer::GraspPlan> G1ManipulationServer::chooseGrasps(
         }
         // The generator's +z is the approach; past the limit the hand reaches up through the
         // surface.
-        if (approachTiltRad(*in_planning_frame) > max_approach_tilt_rad_)
+        // Coming back at the robot from beyond the object, the hand reaches round it: rarely
+        // reachable, and the reach sweeps the object.
+        if (approachTiltRad(*in_planning_frame) > max_approach_tilt_rad_ ||
+            approachAxis(*in_planning_frame)[0] < min_approach_forward_)
         {
             record(*in_planning_frame, ConsideredGrasp::Verdict::kTilted);
             continue;
