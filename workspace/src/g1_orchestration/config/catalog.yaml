@@ -34,6 +34,7 @@
 #   inside(x, y)     x rests in container y
 #   on(x, y)         x rests on surface y
 #   arm_at(arm, p)   the arm group is at its named pose p
+#   still()          an effect: the skill holds the base only to keep it where it is
 # Anything that names an argument refers to its value in the step.
 
 skills:
