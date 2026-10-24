@@ -143,8 +143,10 @@ none from the command line. There, `./scripts/demos/nervros.sh --print chat`'s l
     names it takes.
   - It also pins their phrases, "red mug" and "wooden tray", which a real detector finds them by,
     and a look to `mug` or `tray`.
-- "Walk to the red mug, look for a mug there, and pick up the one you find with your left hand."
-  One mission walks, looks with `FindInView` and picks (see [The executor](#the-executor)).
+- "Walk to the kitchen counter, look for a small box there, and pick up the one you find with your
+  left hand." One mission walks, looks with `FindInView` and picks (see
+  [The executor](#the-executor)). The box is in no map; on the `fetch` variant SAM 3.1 outlines it
+  from the phrase.
 
 ### Things to ask: the robot and ROS
 
@@ -180,9 +182,9 @@ none from the command line. There, `./scripts/demos/nervros.sh --print chat`'s l
 
 https://github.com/user-attachments/assets/10d6d147-e73b-4931-9cc2-6c3a182c3a80
 
-In the clip, "set a goal to keep the red mug on the wooden tray, then work toward it": the goal is
-approved, one pick-and-place runs toward it (four times faster), the camera agrees the mug is in
-the tray, and the report ends "goal 1 (keep the red mug on the wooden tray): met".
+In the clip, "the orange toy robot is on the office desk. Set a goal to keep it on the dining
+table, then work toward it": the robot looks at the desk, picks the toy, carries it and sets it
+down on the table, and canopy, seeing it there under a new id, has the goal met.
 
 - "Tell me when someone puts a box on the sofa." A watch can wait for what a camera shows: a
   vision model looks every 15 seconds, and two yes in a row post to the chat.
@@ -193,9 +195,9 @@ the tray, and the report ends "goal 1 (keep the red mug on the wooden tray): met
 
 https://github.com/user-attachments/assets/acc1f8e6-f69e-4266-8383-2b0140183b48
 
-In the clip "tell me when the head camera shows a red mug" fires once the robot stands at the
-dining table, and "when did the head camera first show the red mug?" answers with the frame where
-the mug comes into view.
+In the clip "tell me when the head camera shows a green toy" fires once the robot stands at the
+right nightstand ("a green Yoshi toy"), and "when did a camera first show the green toy?" answers
+with the frame where the toy comes into view, 57 s earlier.
 
 - "Check on the living room and the bedroom." `patrol` walks the round, turns once around in each
   room so the cameras sweep it, and reports what it saw there and what moved or went missing in
@@ -243,6 +245,31 @@ MoveIt's planning scene.
   timeline, the exploration's progress and the plots.
 - The dock's World tab (Ctrl+4) lists the rooms with how much of each has been seen.
 
+## Fetching things the map does not know
+
+https://github.com/user-attachments/assets/PLACEHOLDER-fetching-something-new
+
+```bash
+./scripts/demos/nervros.sh fetch
+```
+
+The `fetch` variant runs the arm's detector on SAM 3.1 and the right hand's grasps on GraspGenX,
+both served on the host (`./scripts/serve.sh canopy --embedder none` and `serve.sh graspgen`;
+`--print` lists every pane), and Claude Haiku 5.5 as the agent: the GPU has no room left for the
+local model. Five scanned objects stand where the kept map has never seen them: a small box on the
+kitchen counter, a toy elephant on the TV cabinet, an action figure and a green toy dinosaur on the
+two nightstands, and an orange toy robot on the office desk.
+
+- "Find the orange toy robot: look on the nightstands first, then on the office desk, and put it on
+  the dining table": a program looks from the places in front of each surface in that order, then
+  a mission picks it with the right hand on a GraspGen grasp and sets it down with `PlaceOn`, which
+  closes on the table's edge first.
+- The left hand picks top-down, box-like things only; `tray_1` takes the left hand, as the desk
+  chair leaves the right no room there.
+- Name colour and kind where toys look alike: SAM 3.1 gives "toy robot" to the other toys too,
+  "orange toy robot" only to it.
+- A placed object turns up in canopy by itself once the camera sees it there.
+
 ## Plans and approvals
 
 A plan comes as a card with its steps, before anything moves.
@@ -289,10 +316,10 @@ it as a job.
 
 - "Count the chairs in every room" or "which room has the most objects?" reads canopy's world model
   and moves nothing, so it runs at once.
-- "Run a program that looks for a mug in the office, room R4, then at the dining table, and stops
-  at the first place where the camera sees one" walks and looks. The approval names what it may
-  run, "may move the base (GoToPlace) and look (FindInView), for at most 5 min", and the chat shows
-  a card with its latest lines and Stop.
+- "Run a program that goes to each named place in the bedroom and tells me at which of them the
+  camera sees a toy" walks and looks: `places()` names each place's room. The approval names what
+  it may run, "may move the base (GoToPlace) and look (FindInView), for at most 15 min", and the
+  chat shows a card with its latest lines and Stop.
 - Every mission a program sends is checked like a plan, and an empty look in one place does not
   end the others: in the clip the office look saw nothing, and the program found the mug at the
   dining table.
@@ -301,10 +328,12 @@ it as a job.
 
 https://github.com/user-attachments/assets/cb019286-ab57-4c49-adeb-b7a85e22029a
 
-"Find the red mug" ranks where to look: where canopy saw it and how long ago, where such things
-usually are, the rooms the camera has seen least of, and how far each is. It then walks to each
-place and looks until the detector sees it. "Where could my keys be? Don't move" lists the places
-without walking: canopy has never seen keys, so the clip ranks the rooms keys are usually in.
+"Search for the toy elephant" ranks where to look: where canopy saw it and how long ago, the rooms
+such things usually are in, looked at from the named places in them, the rooms the camera has seen
+least of, and how far each is. It then walks to each place and looks until the detector sees it:
+in the clip from where it stood, beside the dining table, then the TV cabinet, where it saw it.
+"Where could the toy elephant be? Don't move" names the places without walking. To look in an
+order you give, the agent writes a program instead.
 
 https://github.com/user-attachments/assets/fcd62896-e299-45ff-b1ab-977cfc2155af
 
@@ -314,7 +343,8 @@ look, named arm postures, `Wait`, and `MoveHand`. `MoveHand` plans one hand with
 or onto the line from the shoulder to it, within 0.48 m of the shoulder and at 60 % of the arm's
 usual speed.
 
-- "Point at the red mug with your right hand" has no skill, so the agent teaches `PointAt`. The
+- "Point at the kettle on the kitchen counter with your right hand" has no skill, so the agent
+  teaches `PointAt`. The
   executor checks it, and you approve the teaching, then the plan with its first try.
 - `MoveHand` takes a `target` or a robot `frame`, never both. Models sometimes give it both, or an
   object's id as the frame; the executor finds that only when the step runs, so that first try
