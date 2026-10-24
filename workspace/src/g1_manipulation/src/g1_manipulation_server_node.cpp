@@ -679,6 +679,23 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     {
         RCLCPP_INFO(get_logger(), "lift: %s", after_lift.c_str());
     }
+    // Where it is says what the fingers cannot: seen in a frame taken after the lift and not risen
+    // with the hand, the hand came up without it. Held, the hand hides it or carries it up.
+    if (const auto after = sightingAfter(goal->object_id, now(), place_confirm_timeout_s_))
+    {
+        const double rise = after->results.front().pose.pose.position.z -
+                            detection->results.front().pose.pose.position.z;
+        if (rise < 0.5 * lift_height_m_)
+        {
+            fail(
+                Pick::Feedback::PHASE_LIFT,
+                std::format(
+                    "the hand rose without {}: it is seen {:.0f} mm from where it stood",
+                    goal->object_id,
+                    1000.0 * std::abs(rise)));
+            return;
+        }
+    }
 
     // The hand goes back to respecting the map, but the object maps itself while held, so it
     // stays exempt from its own voxels until the place.

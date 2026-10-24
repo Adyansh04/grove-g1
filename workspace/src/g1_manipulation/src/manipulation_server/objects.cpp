@@ -170,6 +170,31 @@ G1ManipulationServer::waitForObject(const std::string& object_id, double timeout
     return lookUpObject(object_id);
 }
 
+std::optional<G1ManipulationServer::Detection> G1ManipulationServer::sightingAfter(
+    const std::string& object_id, const rclcpp::Time& since, double timeout_s)
+{
+    const rclcpp::Time deadline = now() + rclcpp::Duration::from_seconds(timeout_s);
+    while (now() < deadline)
+    {
+        {
+            const std::lock_guard<std::mutex> lock(objects_mutex_);
+            if (rclcpp::Time(objects_.header.stamp) > since)
+            {
+                for (const Detection& detection : objects_.detections)
+                {
+                    if (!detection.results.empty() && idOf(detection) == object_id)
+                    {
+                        return detection;
+                    }
+                }
+                return std::nullopt;
+            }
+        }
+        rclcpp::sleep_for(kObjectPollPeriod);
+    }
+    return std::nullopt;
+}
+
 std::optional<G1ManipulationServer::Detection>
 G1ManipulationServer::lastSighting(const std::string& object_id)
 {
