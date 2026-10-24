@@ -145,6 +145,12 @@ void gateByMedianDepth(std::vector<Point3>& points, double gate_m);
 /// Whether @p point lies inside @p box, faces included; both in the frame the box was fitted in.
 [[nodiscard]] bool boxHolds(const OrientedBox& box, const Point3& point);
 
+/**
+ * @brief The diagonal of the points' bounding rectangle across @p up, metres: no box fitted to
+ *        any of them is wider. One pass, where a fit sorts.
+ */
+[[nodiscard]] double spreadAcross(std::span<const Point3> points, const Point3& up);
+
 }  // namespace g1_perception
 
 #endif  // G1_PERCEPTION__OBJECT_GEOMETRY_HPP_

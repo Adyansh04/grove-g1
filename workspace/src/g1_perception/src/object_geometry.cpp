@@ -394,6 +394,27 @@ std::optional<OrientedBox> fitSurface(
     return fitOrientedBox(plane, up, bottom, min_extent_m, max_extent_m);
 }
 
+double spreadAcross(std::span<const Point3> points, const Point3& up)
+{
+    Point3 first;
+    Point3 second;
+    planeBasis(normalised(up), first, second);
+    double low_first   = std::numeric_limits<double>::max();
+    double high_first  = std::numeric_limits<double>::lowest();
+    double low_second  = std::numeric_limits<double>::max();
+    double high_second = std::numeric_limits<double>::lowest();
+    for (const Point3& point : points)
+    {
+        const double along_first  = dot(point, first);
+        const double along_second = dot(point, second);
+        low_first                 = std::min(low_first, along_first);
+        high_first                = std::max(high_first, along_first);
+        low_second                = std::min(low_second, along_second);
+        high_second               = std::max(high_second, along_second);
+    }
+    return points.empty() ? 0.0 : std::hypot(high_first - low_first, high_second - low_second);
+}
+
 bool boxHolds(const OrientedBox& box, const Point3& point)
 {
     const Point3 offset{ point.x - box.centre.x, point.y - box.centre.y, point.z - box.centre.z };

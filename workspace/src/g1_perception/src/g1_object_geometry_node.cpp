@@ -168,12 +168,15 @@ std::optional<OrientedBox> G1ObjectGeometry::measure(
     std::vector<Point3>             points =
         deproject(view, mask, eroded, intrinsics, min_depth_m_, max_depth_m_);
     // Larger than anything a hand takes, it is a table or a desk: measured as its top, over the
-    // depth the gate below would cut.
-    const std::optional<OrientedBox> surface =
-        fitSurface(points, up, surface_band_m_, min_extent_m_, max_surface_extent_m_);
-    if (surface && std::max(surface->size_x, surface->size_y) > max_extent_m_)
+    // depth the gate below would cut. Fitted only where the points spread that wide.
+    if (spreadAcross(points, up) > max_extent_m_)
     {
-        return surface;
+        const std::optional<OrientedBox> surface =
+            fitSurface(points, up, surface_band_m_, min_extent_m_, max_surface_extent_m_);
+        if (surface && std::max(surface->size_x, surface->size_y) > max_extent_m_)
+        {
+            return surface;
+        }
     }
     // Counted after the gate, so a mask half on the background cannot pass on points it drops.
     gateByMedianDepth(points, depth_gate_m_);

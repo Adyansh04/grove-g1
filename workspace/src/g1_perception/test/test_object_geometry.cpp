@@ -30,6 +30,7 @@ using g1_perception::Intrinsics;
 using g1_perception::MaskView;
 using g1_perception::OrientedBox;
 using g1_perception::Point3;
+using g1_perception::spreadAcross;
 using g1_perception::supportHeight;
 using g1_perception::supportRing;
 
@@ -342,6 +343,18 @@ TEST(FitSurface, RefusesPointsWithNoHeightTheyMostlyShare)
     }
 
     EXPECT_FALSE(fitSurface(points, kUp, 0.03, 0.01, 3.0).has_value());
+}
+
+TEST(SpreadAcross, BoundsEveryBoxFittedToThePoints)
+{
+    const std::vector<Point3>        table = rotatedTopFace(1.0, 0.6, 0.75, 0.2);
+    const std::optional<OrientedBox> top   = fitSurface(table, kUp, 0.03, 0.01, 3.0);
+    ASSERT_TRUE(top.has_value());
+    EXPECT_GE(spreadAcross(table, kUp), std::max(top->size_x, top->size_y));
+    // Height does not count: a tall thin box spreads as little as its footprint.
+    const std::vector<Point3> mug{ { 0.0, 0.0, 0.70 }, { 0.06, 0.0, 0.80 }, { 0.0, 0.08, 0.90 } };
+    EXPECT_NEAR(spreadAcross(mug, kUp), 0.10, 1e-9);
+    EXPECT_DOUBLE_EQ(spreadAcross({}, kUp), 0.0);
 }
 
 TEST(BoxHolds, TellsInsideFromOutsideAlongEachTiltedAxis)
