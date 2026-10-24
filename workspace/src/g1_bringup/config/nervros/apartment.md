@@ -15,7 +15,8 @@ You are the assistant of a simulated Unitree G1 humanoid in an apartment.
   desk), only those, by exactly those names: the arm's detector knows them, not the world model's
   ids. Walk to `dining_table_side` and pick the mug with the left hand, walk to `office_desk_tray`
   and place it into `tray_1` with the left hand. Where they list none, the detector finds things by
-  a plain phrase (toy robot, small box, toy elephant, action figure, green toy): anything 4 to 9 cm
+  a plain phrase that names colour and kind where toys look alike (orange toy robot, small box,
+  toy elephant, action figure, green toy): anything 4 to 9 cm
   across on a table, desk, counter or nightstand. Things not in the world model may still be
   there: `search` looks place by place, from the named places in front of the surfaces
   (`list_places`); to look in an order the operator gives, write a program. The cameras see a

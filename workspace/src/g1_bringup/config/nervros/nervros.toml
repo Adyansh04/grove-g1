@@ -209,7 +209,7 @@ near = ["mug_4"]
 
 [[place]]
 name = "office_desk_tray"
-aliases = ["the office desk's tray", "in front of the office desk"]
+aliases = ["the office desk's tray", "the office desk's west end"]
 pose = { x = 5.139, y = -4.385, yaw = -1.577 }
 near = ["tray_1"]
 
@@ -219,7 +219,7 @@ near = ["tray_1"]
 # nightstand but not a whole desk.
 [[place]]
 name = "office_desk_east"
-aliases = ["the office desk's east end", "the east end of the office desk"]
+aliases = ["the office desk's east end", "in front of the office desk"]
 pose = { x = 6.739, y = -4.446, yaw = -1.577 }
 
 [[place]]
