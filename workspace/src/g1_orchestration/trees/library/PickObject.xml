@@ -16,7 +16,7 @@
   idled for the carry because left on it tracks the object in the hand as several objects. The
   arm stays where the lift left it: every arm move with the object in hand risks dropping it.
   Retreat is straight back, 1.2 m, so the next walk starts outside the surface's inflated
-  footprint even when the approach ended at an angle.
+  footprint even when the approach ended at an angle; it stops short of anything behind.
 -->
 <root BTCPP_format="4">
   <BehaviorTree ID="PickObject">

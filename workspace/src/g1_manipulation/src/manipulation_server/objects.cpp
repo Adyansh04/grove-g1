@@ -4,8 +4,10 @@
  */
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cmath>
+#include <functional>
 #include <initializer_list>
 #include <std_msgs/msg/header.hpp>
 #include <string>
@@ -48,7 +50,7 @@ const std::string& G1ManipulationServer::idOf(const vision_msgs::msg::Detection3
 }
 
 std::optional<geometry_msgs::msg::Pose> G1ManipulationServer::toPlanningFrame(
-    const geometry_msgs::msg::Pose& pose, const std::string& frame_id)
+    const geometry_msgs::msg::Pose& pose, const std::string& frame_id, const rclcpp::Time& seen)
 {
     if (frame_id.empty() || frame_id == planning_frame_)
     {
@@ -57,14 +59,21 @@ std::optional<geometry_msgs::msg::Pose> G1ManipulationServer::toPlanningFrame(
 
     geometry_msgs::msg::PoseStamped in;
     in.header.frame_id = frame_id;
-    // Latest transform, not the pose's stamp: a standing object's odom pose stays valid, and the
-    // question is where it is from where the robot stands now.
-    in.header.stamp = rclcpp::Time(0);
-    in.pose         = pose;
+    in.header.stamp    = seen;
+    in.pose            = pose;
 
     try
     {
-        return tf_buffer_.transform(in, planning_frame_, std::chrono::milliseconds(500)).pose;
+        // Where it was when seen, held still in the world, from where the robot stands now: the
+        // question is always the latter, and the body sways between an image and a plan.
+        return tf_buffer_
+            .transform(
+                in,
+                planning_frame_,
+                tf2::TimePointZero,
+                world_frame_,
+                std::chrono::milliseconds(500))
+            .pose;
     }
     catch (const tf2::TransformException& e)
     {
@@ -168,6 +177,47 @@ G1ManipulationServer::waitForObject(const std::string& object_id, double timeout
         rclcpp::sleep_for(kObjectPollPeriod);
     }
     return lookUpObject(object_id);
+}
+
+std::vector<G1ManipulationServer::Detection> G1ManipulationServer::sightingsAfter(
+    const std::string& object_id, const rclcpp::Time& since, double timeout_s,
+    const std::function<bool()>& stop)
+{
+    // Its tracks too, red_mug_2 for red_mug: the bare name is withheld while a look-alike is in
+    // view, and the hand beside an object can be one.
+    const auto answers = [&object_id](const std::string& id) {
+        if (id == object_id)
+        {
+            return true;
+        }
+        const std::size_t cut = id.rfind('_');
+        return cut != std::string::npos && id.compare(0, cut, object_id) == 0 &&
+               cut + 1 < id.size() &&
+               std::all_of(id.begin() + static_cast<std::ptrdiff_t>(cut) + 1, id.end(), [](char c) {
+                   return std::isdigit(static_cast<unsigned char>(c)) != 0;
+               });
+    };
+    const rclcpp::Time deadline = now() + rclcpp::Duration::from_seconds(timeout_s);
+    while (now() < deadline && !stop())
+    {
+        {
+            const std::lock_guard<std::mutex> lock(objects_mutex_);
+            if (rclcpp::Time(objects_.header.stamp) > since)
+            {
+                std::vector<Detection> seen;
+                for (const Detection& detection : objects_.detections)
+                {
+                    if (!detection.results.empty() && answers(idOf(detection)))
+                    {
+                        seen.push_back(detection);
+                    }
+                }
+                return seen;
+            }
+        }
+        rclcpp::sleep_for(kObjectPollPeriod);
+    }
+    return {};
 }
 
 std::optional<G1ManipulationServer::Detection>

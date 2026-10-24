@@ -199,6 +199,10 @@ map smears.
 There is no time decay, so a voxel the sensor cannot currently see is never forgotten.
 `/clear_octomap` (`std_srvs/Empty`) resets the map.
 
+The robot's own links are filtered out of the cloud, padded by `padding_offset` (4 cm): at 2 cm a
+finger's points, its pose a cloud behind, came back as a voxel on the finger, and every plan from
+that hand failed at its start.
+
 The updater reads the LiDAR, not the depth camera. `depth_image_proc`'s converter cannot receive the
 camera relay's best-effort images.
 

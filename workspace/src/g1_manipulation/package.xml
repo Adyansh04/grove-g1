@@ -42,6 +42,8 @@
   <test_depend>ament_cmake_lint_cmake</test_depend>
   <test_depend>ament_cmake_xmllint</test_depend>
   <test_depend>ament_cmake_gmock</test_depend>
+  <test_depend>ament_cmake_pytest</test_depend>
+  <test_depend>python3-yaml</test_depend>
   <!-- Repeated for the launch tests' Python imports: their environment is built from test
        dependencies, and a plain <depend> does not put these on it. -->
   <test_depend>g1_msgs</test_depend>

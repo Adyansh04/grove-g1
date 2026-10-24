@@ -27,7 +27,7 @@ flowchart LR
 | `g1_detector` | canopy_perception's `detector`, configured by `config/g1_detector.yaml`. Sends camera frames and the phrase list to canopy's semantic server on the host, run with SAM 3.1 (Grounded SAM 2 from the vision server can stand in). Publishes the instance masks it answers with. |
 | `g1_detector` (mock) | canopy_perception's `mock_detector`: cuts the same masks out of simulator ground truth against the real rendered depth. No GPU, no server, no network. Simulation only. Launched as `g1_detector` too, so a tree writes the same `phrases` whichever detector runs. |
 | `g1_object_geometry` | Deprojects each mask, finds the surface the object stands on, fits a box, and tracks it across frames so an id keeps naming one object. |
-| `g1_graspgen_adapter` | Sends the depth frame, its intrinsics and one object's mask to [GraspGenX](https://github.com/NVlabs/GraspGenX) on the host and serves the grasps it answers with. The Dex3-1 goes as its sweep volume (`sweep_volume`, twelve numbers), not by name. Poses come back in the generator's own gripper frame, so the arm side applies one measured offset. Left-hand requests are refused, since mirroring a sweep volume describes a different gripper. Python, see below. |
+| `g1_graspgen_adapter` | Sends the depth frame, its intrinsics and one object's mask to [GraspGenX](https://github.com/NVlabs/GraspGenX) on the host and serves the grasps it answers with. The Dex3-1 goes as its sweep volume (`sweep_volume`, twelve numbers), not by name. Poses come back in the generator's own gripper frame, so the arm side applies one measured offset. Left-hand requests are refused, since mirroring a sweep volume describes a different gripper. A bare name such as `toy_robot` is the one track of it in view, as on `/objects`; masks more than `max_mask_age_s` behind the newest depth frame are refused. Python, see below. |
 | `g1_mock_grasp_source` | Answers the same service from `/objects` alone: three sensible grasps and one reaching up through the table. No GPU. |
 | `g1_instruction_grounder` | Asks a vision-language model on the host to turn an instruction into the noun phrases the detector can be asked for. The detector takes "red block", not "the mug to the left of the bowl". Writes them onto the detector's `phrases`, its whole control interface. Needs `grounding:=true` and a vision server started with `--vlm`. Python, see below. |
 | `g1_perception_visualizer` | Draws each detection on the frame it was cut from, and the simulator's ground truth labelled with how far off perception is. Only runs with `visualization:=true`. |
@@ -78,6 +78,14 @@ without knowing its index (`publish_bare_phrase_alias: false` turns that off). T
 first object seen alone under its phrase. It is withheld from any frame where that object is unseen
 or another one with the same phrase is seen too, so it never jumps between objects.
 
+An instance whose fitted box holds one of the robot's own frames (`self_frames`: the palms, wrists
+and elbows) is the robot and is dropped before tracking: a phrase such as "toy robot" can fit the
+arm in view, and the alias would then follow the arm.
+
+An instance wider than `max_extent_m` whose points mostly share one height is a surface, a table
+or a desk: it is published as a box `surface_band_m` thick, its top the surface's, over the part in
+view (at most `max_surface_extent_m` across), for PlaceOn to set things down on.
+
 ## Parameters
 
 `config/g1_object_geometry.yaml` documents every key. The ones worth knowing:
@@ -104,7 +112,7 @@ or another one with the same phrase is seen too, so it never jumps between objec
 | `zmq_timeout_ms` | 20000 |
 | `detect_rate_hz` | 1.0 |
 | `max_image_age_s` | 2.5 |
-| `box_threshold` | 0.40 |
+| `box_threshold` | 0.50 |
 | `text_threshold` | 0.25 |
 
 `phrases` is a launch argument rather than a file key, and `ros2 param set` changes it while the node
@@ -173,5 +181,5 @@ covers the servers and the grasp and grounding variants.
 | `test_perception_visualizer` | No | Which drawn instance counts as measured, including a rejected one whose raw label equals an alias. |
 | `test_visualizer` | No | The visualizer on synthetic frames. The annotated image. Ground truth moved into `odom` and labelled with the error. An empty frame left untouched. Masks that arrive before their frame. |
 | `test_grounder` | No | The grounder against a stub. An instruction becomes phrases. The target is one of them. The phrases actually reach the detector's parameter. Exemplar points survive. An empty instruction is refused. |
-| `test_graspgen_adapter` | No | The grasp adapter against a stub generator. The request encoding the real server would reject. The frame and stamp of the answer. Ordering by confidence. An unknown object. A left-hand request refused rather than mirrored. |
+| `test_graspgen_adapter` | No | The grasp adapter against a stub generator. The request encoding the real server would reject. The frame and stamp of the answer. Ordering by confidence. An unknown object. A left-hand request refused rather than mirrored. A bare name taken as its track. Masks long behind the camera refused. |
 | `test_perception_objects` | Yes | Measured poses against the simulator's own for every tabletop prop: position and size, both names published, and the stamp being the measurement's rather than the publisher's. |

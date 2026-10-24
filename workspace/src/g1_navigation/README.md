@@ -87,7 +87,9 @@ It reads the LiDAR's cloud in two bands, and never between them, where a hand ca
 saw the carried mug and slowed every carry to a stop.)
 
 - 0.05 to 0.60 m, below the costmaps' band, for a crate, a step or a chair's legs.
-- 1.05 to 1.40 m, for a wall or a person up close.
+- 1.05 to 1.40 m, for a wall or a person up close. With MoveIt up (`collision_high_cloud`, which
+  `bringup.launch.py` sets), this band reads `/filtered_cloud`, MoveIt's cloud less the robot and
+  what it holds: something lifted off a desk or a counter rides above 1.05 m.
 
 The monitor's limits:
 

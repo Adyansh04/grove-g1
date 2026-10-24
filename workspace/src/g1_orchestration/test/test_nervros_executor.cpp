@@ -71,6 +71,7 @@ class FakeAuthority : public g1_orchestration::AuthorityPort
 public:
     g1_orchestration::Acquired acquire() override
     {
+        overlaps += releasing ? 1 : 0;
         ++acquired;
         std::this_thread::sleep_for(std::chrono::milliseconds(acquire_delay_ms.load()));
         if (!acquire_ok)
@@ -80,10 +81,26 @@ public:
         return already_active ? g1_orchestration::Acquired::kAlready :
                                 g1_orchestration::Acquired::kTaken;
     }
-    void release() override { ++released; }
+    void release() override
+    {
+        // Counts a take that lands while a release is still under way.
+        releasing = true;
+        std::this_thread::sleep_for(std::chrono::milliseconds(release_delay_ms.load()));
+        ++released;
+        releasing = false;
+    }
+    g1_orchestration::ClosedHands closedHands() override
+    {
+        return { .left = left_closed, .right = right_closed };
+    }
 
     std::atomic<int>  acquired{ 0 };
     std::atomic<int>  released{ 0 };
+    std::atomic<bool> left_closed{ false };
+    std::atomic<bool> right_closed{ false };
+    std::atomic<int>  release_delay_ms{ 0 };
+    std::atomic<bool> releasing{ false };
+    std::atomic<int>  overlaps{ 0 };
     std::atomic<bool> acquire_ok{ true };
     /// The arms were taken by someone else before the executor came.
     std::atomic<bool> already_active{ false };
@@ -2013,8 +2030,9 @@ TEST(NervrosExecutor, TeleopDrivesWithinItsLimitsStopsWhenCommandsPauseAndBlocks
 
 TEST(NervrosExecutor, LentArmsKeepMissionsOutAndComeBackWhenGivenBackSilentOrStopped)
 {
-    Harness harness({ rclcpp::Parameter("lend_heartbeat_timeout_s", 0.5) });
-    auto    lend = harness.client_node->create_client<nervros_interfaces::srv::LendResources>(
+    FakeRobot robot;
+    Harness   harness({ rclcpp::Parameter("lend_heartbeat_timeout_s", 0.5) });
+    auto      lend = harness.client_node->create_client<nervros_interfaces::srv::LendResources>(
         "/nervros_executor/lend_resources");
     ASSERT_TRUE(lend->wait_for_service(20s));
     const auto ask = [&](bool on) {
@@ -2045,22 +2063,68 @@ TEST(NervrosExecutor, LentArmsKeepMissionsOutAndComeBackWhenGivenBackSilentOrSto
 
         const auto back = ask(false);
         EXPECT_TRUE(back->granted);
-        EXPECT_EQ(harness.authority->released, 1);
         EXPECT_FALSE(held(harness.stateWhere([&](const RobotState& s) { return !held(s); })));
+        EXPECT_EQ(harness.authority->released, 1);
     }
 
     // No heartbeat: taken back within the timeout.
     ASSERT_TRUE(ask(true)->granted);
     EXPECT_TRUE(waitFor([&] { return harness.authority->released == 2; }, 5s));
 
-    // A stop takes them back too.
+    // A stop takes them back too, and answers without waiting for the release.
     {
         Heartbeats beats(harness.client_node, "agent");
         ASSERT_TRUE(ask(true)->granted);
+        harness.authority->release_delay_ms = 1500;
+        const auto started                  = std::chrono::steady_clock::now();
         harness.stopAll("button");
-        EXPECT_EQ(harness.authority->released, 3);
+        EXPECT_LT(std::chrono::steady_clock::now() - started, 1500ms);
         EXPECT_FALSE(ask(false)->reason.empty()) << "nothing should still be lent";
+        EXPECT_TRUE(waitFor([&] { return harness.authority->released == 3; }, 5s));
     }
+
+    // A mission that needs the arms waits for the release before taking them again.
+    harness.authority->release_delay_ms = 0;
+    ASSERT_TRUE(ask(true)->granted);
+    harness.authority->release_delay_ms = 1000;
+    {
+        Heartbeats beats(harness.client_node, "agent");
+        EXPECT_TRUE(ask(false)->granted);
+    }
+    const int  acquired = harness.authority->acquired;
+    const auto run      = harness.execute(makeGoal(mission("<Sequence>" + kTuck + "</Sequence>")));
+    EXPECT_EQ(run->result->outcome, ExecuteMission::Result::OUTCOME_SUCCESS)
+        << run->result->failure_reason;
+    EXPECT_EQ(harness.authority->released, 5) << "the lend's release, then the mission's";
+    EXPECT_EQ(harness.authority->acquired, acquired + 1);
+    EXPECT_LT(harness.authority->overlaps, 1) << "taken while still being released";
+}
+
+TEST(NervrosExecutor, AHandClosedDuringALendKeepsItsArmHeld)
+{
+    Harness harness;
+    auto    lend = harness.client_node->create_client<nervros_interfaces::srv::LendResources>(
+        "/nervros_executor/lend_resources");
+    ASSERT_TRUE(lend->wait_for_service(20s));
+    Heartbeats beats(harness.client_node, "agent");
+    const auto ask = [&](bool on) {
+        auto request       = std::make_shared<nervros_interfaces::srv::LendResources::Request>();
+        request->client    = "agent";
+        request->resources = { "left_arm", "right_arm" };
+        request->lend      = on;
+        auto reply         = lend->async_send_request(request);
+        EXPECT_EQ(reply.wait_for(10s), std::future_status::ready);
+        return reply.get();
+    };
+    ASSERT_TRUE(ask(true)->granted);
+    harness.authority->right_closed = true;  // The borrower closed the right hand on something.
+    ASSERT_TRUE(ask(false)->granted);
+
+    const RobotState state = harness.stateWhere([](const RobotState& s) {
+        return s.message.find("right hand unknown") != std::string::npos;
+    });
+    EXPECT_THAT(state.message, ::testing::HasSubstr("right hand unknown"));
+    EXPECT_EQ(harness.authority->released, 0) << "a released hand would drop what it closed on";
 }
 
 // --- preview ----------------------------------------------------------------------------------

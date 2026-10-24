@@ -1,7 +1,8 @@
 # Talking to the robot with NervROS
 
 NervROS (`workspace/src/nervros`, its own repository) is an agent you talk to in a desktop app. It
-runs on the host and answers with a local model unless you choose otherwise. It can:
+runs on the host and answers with Claude Haiku 5.5, on a key with a budget it never passes, and
+with a local model and free cloud models after it. It can:
 
 - look through the chest or head camera and mark what the detector finds,
 - segment whatever you name in the view,
@@ -9,12 +10,13 @@ runs on the host and answers with a local model unless you choose otherwise. It 
 - do physical tasks as missions: behaviour trees that `nervros_executor` checks, you approve, and
   the executor runs.
 
-`./scripts/demos/nervros.sh <app|chat|explore|map>` tears down any stack left running, then opens
+`./scripts/demos/nervros.sh <app|chat|fetch|explore|map>` tears down any stack left running, then opens
 a section's commands at once, in split panes of tilix (a window each in another terminal). `stop`
 ends it, and `--print` lists the commands instead.
 
 - `chat` is `app`'s stack, with NervROS in the terminal instead of the window.
-- `saved:=<a world under data/worlds>` runs `app`, `chat` or `explore` on another saved world.
+- `saved:=<a world under data/worlds>` runs `app`, `chat`, `fetch` or `explore` on another saved
+  world.
 - `map` takes `name:=` and `world:=`.
 - Any other `name:=value` goes to the bringup launch.
 
@@ -45,8 +47,7 @@ own grid, which the saved world needs to resume.
 In the container, the demo runs the apartment with AMCL, Nav2 and the arm stack (MoveIt and the
 pick and place skills), canopy on the copy with the mock detector, and the executor. The mock
 detector needs no GPU. SAM 3.1 (5.6 GB, 8.5 GB while mapping) and the local model (about 7 GB) do
-not fit beside the simulator on a 12 GB GPU, and with SAM 3.1 the chat moves to free cloud models
-(see [Models](#models)).
+not fit beside the simulator on a 12 GB GPU; Claude talks without either (see [Models](#models)).
 
 ```bash
 ros2 launch g1_bringup bringup.launch.py mode:=localization nav:=true keepout:=true world:=apartment \
@@ -120,7 +121,7 @@ truth at IoU 0.95, and Flash-Lite's outlines at 0.80.
 SAM 3.1 does not fit on the GPU beside the local chat model: use it with a cloud chat model, or with
 none from the command line. There, `./scripts/demos/nervros.sh --print chat`'s last command, with
 `segment "the floor" --backend service --out floor.jpg` in place of `chat`, segments once. Without
-`~/.config/grove/gemini.env` (the bare key), only the local server segments.
+`~/api_keys/gemini.env` (the bare key), only the local server segments.
 
 ### Things to ask: walking and the arm
 
@@ -143,8 +144,10 @@ none from the command line. There, `./scripts/demos/nervros.sh --print chat`'s l
     names it takes.
   - It also pins their phrases, "red mug" and "wooden tray", which a real detector finds them by,
     and a look to `mug` or `tray`.
-- "Walk to the red mug, look for a mug there, and pick up the one you find with your left hand."
-  One mission walks, looks with `FindInView` and picks (see [The executor](#the-executor)).
+- "Walk to the kitchen counter, look for a small box there, and pick up the one you find with your
+  left hand." One mission walks, looks with `FindInView` and picks (see
+  [The executor](#the-executor)). The box is in no map; on the `fetch` variant SAM 3.1 outlines it
+  from the phrase.
 
 ### Things to ask: the robot and ROS
 
@@ -178,11 +181,11 @@ none from the command line. There, `./scripts/demos/nervros.sh --print chat`'s l
   object is gone from where it was or when the one there was seen after the goal was set. The Agent
   tab lists the goals with Drop.
 
-https://github.com/user-attachments/assets/2cbd5b3b-22d3-4f12-84ce-f697941a21d9
+https://github.com/user-attachments/assets/6fbc7a91-cd80-4578-8cd8-4fb2435d7989
 
-In the clip, "set a goal to keep the red mug on the wooden tray, then work toward it": the goal is
-approved, one pick-and-place runs toward it (four times faster), the camera agrees the mug is in
-the tray, and the report ends "goal 1 (keep the red mug on the wooden tray): met".
+In the clip, "the orange toy robot is on the office desk. Set a goal to keep it on the dining
+table, then work toward it": the robot looks at the desk, picks the toy, carries it and sets it
+down on the table, and canopy, seeing it there under a new id, has the goal met.
 
 - "Tell me when someone puts a box on the sofa." A watch can wait for what a camera shows: a
   vision model looks every 15 seconds, and two yes in a row post to the chat.
@@ -191,11 +194,11 @@ the tray, and the report ends "goal 1 (keep the red mug on the wooden tray): met
   moments the world model saw the mug move; a second model then checks that frame alone, or its
   neighbours until one shows it. It answers with the time and the frame.
 
-https://github.com/user-attachments/assets/1ebe06cc-de7a-490f-b902-597ea91f72d6
+https://github.com/user-attachments/assets/e5a1eff8-b8b4-4d54-8923-e983354753eb
 
-In the clip "tell me when the head camera shows a red mug" fires once the robot stands at the
-dining table, and "when did the head camera first show the red mug?" answers with the frame where
-the mug comes into view.
+In the clip "tell me when the head camera shows a green toy" fires once the robot stands at the
+right nightstand ("a green Yoshi toy"), and "when did a camera first show the green toy?" answers
+with the frame where the toy comes into view, 57 s earlier.
 
 - "Check on the living room and the bedroom." `patrol` walks the round, turns once around in each
   room so the cameras sweep it, and reports what it saw there and what moved or went missing in
@@ -204,7 +207,7 @@ the mug comes into view.
   robot itself cut short, and gives each skill's record, the incidents and the goals.
   `nervros-cli digest` prints the same.
 
-https://github.com/user-attachments/assets/e0343475-e62f-4f6a-8e6a-5a693125325d
+https://github.com/user-attachments/assets/1985cf24-50be-4564-ad91-6a3d72b33dab
 
 In the clip the patrol looks around each room and reports what it saw, room by room ("the bedroom
 (R3): a bed, a clock, a nightstand and a potted plant"), and the digest then sums up the day.
@@ -243,6 +246,31 @@ MoveIt's planning scene.
   timeline, the exploration's progress and the plots.
 - The dock's World tab (Ctrl+4) lists the rooms with how much of each has been seen.
 
+## Fetching things the map does not know
+
+https://github.com/user-attachments/assets/3176b4dd-79dc-41d9-a13b-8f13cce7205a
+
+```bash
+./scripts/demos/nervros.sh fetch
+```
+
+The `fetch` variant runs the arm's detector on SAM 3.1 and the right hand's grasps on GraspGenX,
+both served on the host (`./scripts/serve.sh canopy --embedder none` and `serve.sh graspgen`;
+`--print` lists every pane), and Claude Haiku 5.5 as the agent: the GPU has no room left for the
+local model. Five scanned objects stand where the kept map has never seen them: a small box on the
+kitchen counter, a toy elephant on the TV cabinet, an action figure and a green toy dinosaur on the
+two nightstands, and an orange toy robot on the office desk.
+
+- "Find the orange toy robot: look on the nightstands first, then on the office desk, and put it on
+  the dining table": a program looks from the places in front of each surface in that order, then
+  a mission picks it with the right hand on a GraspGen grasp and sets it down with `PlaceOn`, which
+  closes on the table's edge first.
+- The left hand picks top-down, box-like things only; `tray_1` takes the left hand, as the desk
+  chair leaves the right no room there.
+- Name colour and kind where toys look alike: SAM 3.1 gives "toy robot" to the other toys too,
+  "orange toy robot" only to it.
+- A placed object turns up in canopy by itself once the camera sees it there.
+
 ## Plans and approvals
 
 A plan comes as a card with its steps, before anything moves.
@@ -261,7 +289,7 @@ A plan comes as a card with its steps, before anything moves.
 - The check also covers keep-out zones and steps that take an earlier step's result.
 - "Pick it up" as the first thing you say is not guessed at: the agent asks which thing.
 
-https://github.com/user-attachments/assets/91718cec-719c-4fad-96ff-6c210f32c287
+https://github.com/user-attachments/assets/85774bca-b1a2-4f62-b0fc-e8783486f8da
 
 In the clip `FindInView` for the tray had worked once in five, and the scene check's doubt, "there
 is no tray in the current view", shows on the card before anything moves.
@@ -273,8 +301,8 @@ plan waiting, the next start shows it with Ask again, which checks it anew.
 A mission's end comes as a toast too. The Library tab keeps the recent missions with their steps
 and times, the plans you asked to save by name, and the requests no skill could do.
 `nervros-cli missions` and `gaps` read the same from the command line, and `replay` prints a
-session. When the local model's plans for one request fail their checks twice, a stronger model
-(Gemini's free tier, when the key is there) advises it how to fix them.
+session. When the plans for one request fail their checks twice, a stronger model (Claude Sonnet
+5.5, then Gemini's free tier) advises how to fix them.
 
 Ctrl+K opens the command palette. Its commands also run from the message box by name, such as
 `/compact` or `/stop`. An image pasted or dropped on the window goes with your next message, for
@@ -282,31 +310,33 @@ the agent to look at.
 
 ## Programs, searches and taught skills
 
-https://github.com/user-attachments/assets/c46fbd2f-89fd-4069-83ee-c0dcf27b8c6f
+https://github.com/user-attachments/assets/5a4f3361-bdf6-4973-9475-4ec477f817d5
 
 For anything that takes a loop, a count or a measurement, the agent writes a short program and runs
 it as a job.
 
 - "Count the chairs in every room" or "which room has the most objects?" reads canopy's world model
   and moves nothing, so it runs at once.
-- "Run a program that looks for a mug in the office, room R4, then at the dining table, and stops
-  at the first place where the camera sees one" walks and looks. The approval names what it may
-  run, "may move the base (GoToPlace) and look (FindInView), for at most 5 min", and the chat shows
-  a card with its latest lines and Stop.
+- "Run a program that goes to each named place in the bedroom and tells me at which of them the
+  camera sees a toy" walks and looks: `places()` names each place's room. The approval names what
+  it may run, "may move the base (GoToPlace) and look (FindInView), for at most 15 min", and the
+  chat shows a card with its latest lines and Stop.
 - Every mission a program sends is checked like a plan, and an empty look in one place does not
   end the others: in the clip the office look saw nothing, and the program found the mug at the
   dining table.
 - In the apartment demo the mock detector knows only `mug` and `tray`, so a look asks for one of
   those.
 
-https://github.com/user-attachments/assets/51157255-5ddb-487b-b77f-5181f9481dd7
+https://github.com/user-attachments/assets/e713cf11-8a43-46bc-83fd-697840a3555f
 
-"Find the red mug" ranks where to look: where canopy saw it and how long ago, where such things
-usually are, the rooms the camera has seen least of, and how far each is. It then walks to each
-place and looks until the detector sees it. "Where could my keys be? Don't move" lists the places
-without walking: canopy has never seen keys, so the clip ranks the rooms keys are usually in.
+"Search for the toy elephant" ranks where to look: where canopy saw it and how long ago, the rooms
+such things usually are in, looked at from the named places in them, the rooms the camera has seen
+least of, and how far each is. It then walks to each place and looks until the detector sees it:
+in the clip from where it stood, beside the dining table, then the TV cabinet, where it saw it.
+"Where could the toy elephant be? Don't move" names the places without walking. To look in an
+order you give, the agent writes a program instead.
 
-https://github.com/user-attachments/assets/4e1bf457-9f63-498c-b293-d18661542491
+https://github.com/user-attachments/assets/f1b6d84f-b106-4ce3-aa96-f8939f821a61
 
 The executor lets the agent teach the robot a skill no macro has, from the leaves listed in
 `g1_orchestration`'s `learnable_leaves`: Nav2's walk, the bounded walk and turn, the detector's
@@ -314,7 +344,8 @@ look, named arm postures, `Wait`, and `MoveHand`. `MoveHand` plans one hand with
 or onto the line from the shoulder to it, within 0.48 m of the shoulder and at 60 % of the arm's
 usual speed.
 
-- "Point at the red mug with your right hand" has no skill, so the agent teaches `PointAt`. The
+- "Point at the kettle on the kitchen counter with your right hand" has no skill, so the agent
+  teaches `PointAt`. The
   executor checks it, and you approve the teaching, then the plan with its first try.
 - `MoveHand` takes a `target` or a robot `frame`, never both. Models sometimes give it both, or an
   object's id as the frame; the executor finds that only when the step runs, so that first try
@@ -402,7 +433,7 @@ A mission also stops by itself in two cases:
 - The executor refuses to start a walk, or stops one, when the robot has fallen or its balance
   controller is not running.
 
-https://github.com/user-attachments/assets/7bf2d1ef-5c5e-4873-b48f-7222fd3dc6f3
+https://github.com/user-attachments/assets/e031c8b7-4071-4cc1-ad3d-c61edbb67d27
 
 **Pause** (beside Stop while a mission runs, and on the plan card), typing "pause", "wait" or "hold
 on", or `/pause` in the terminal halts the running step instead. The robot stops where it is, the
@@ -419,7 +450,7 @@ straight walk or a turn does only what was left of it.
 
 ## Keep-out zones
 
-https://github.com/user-attachments/assets/3df05f4a-344a-4d54-a824-6ecfa8bebf57
+https://github.com/user-attachments/assets/7606defe-a7a7-434b-aa79-ef1fa0cc6ee3
 
 "Keep the robot out of the bedroom", or out of a metre around the vase, adds a keep-out zone around
 a room, an object, a place or corners on the map. The agent then refuses a walk that would end in a
@@ -465,7 +496,8 @@ timeouts and retries.
   mission it was running when it stopped is kept as interrupted.
 - The skills a plan may use are in `config/catalog.yaml`, as macros in `trees/library/`:
   `GoToTarget`, `GoToPose`, `WalkStraight`, `TurnInPlace`, `FindInView`, `PickObject`, `PlaceInto`,
-  `TuckForTravel`, `ArmTo`, `HandTo` and `ExploreBuilding`, plus the ones an agent taught (above).
+  `PlaceOn`, `TuckForTravel`, `ArmTo`, `HandTo` and `ExploreBuilding`, plus the ones an agent taught
+  (above).
 - NervROS runs some steps itself through Nav2 and MoveIt, beside these: a route through places
   without stopping (`WalkRoute`), a wait, a short straight hand move (`HandLine`) and a grip. For an
   arm step the executor lends NervROS the arms (`~/lend_resources`) and takes them back after it;
@@ -474,13 +506,13 @@ timeouts and retries.
 - The launch file also starts `nervros_watchdog`, which cancels a step NervROS runs itself when
   NervROS goes quiet with it running, two seconds after its last word.
 
-https://github.com/user-attachments/assets/3c3d470d-7af2-498e-b83c-8c70945c5c65
+https://github.com/user-attachments/assets/04c65502-d726-4362-a398-13405b45e4fe
 
 In the clip a walk NervROS was running when it stopped is marked at start, and a walk approved
 while the base is driven by hand from the Robot tab comes back with `cause` teleop: the report says
 it could not start, and the Library tab dims both runs.
 
-https://github.com/user-attachments/assets/99be5972-bc7b-457b-ae5c-feb447bf00e3
+https://github.com/user-attachments/assets/b34c20fb-27b6-4e0f-be4e-a7ced5621dcb
 
 A step can take what an earlier one found, so "find a mug and pick it up" is one mission.
 `FindInView` hands on the name the detector reports an object under, and a walk to a kind of
@@ -507,7 +539,7 @@ ros2 run g1_orchestration send_mission.sh $(ros2 pkg prefix g1_orchestration)/sh
 
 ## When something goes wrong
 
-https://github.com/user-attachments/assets/eb499b8c-4e19-487d-939e-51b98aa5eefa
+https://github.com/user-attachments/assets/df2c5600-4c68-4bab-b255-30d26d98203f
 
 In the clip the head camera's detector is stopped from outside. The incident opens by itself, "Why
 can't the robot find anything with its head camera?" names the stopped `detector_head`, and the
@@ -531,6 +563,10 @@ fallen into before:
 | `robot-lost` | `map` to `pelvis` against the relay's `base_state`, the simulator's truth: more than 1 m or 30 degrees apart, since a map starts where the robot stood when it was made, up to half a metre from the simulator's origin. |
 | `robot-down`, `fell-at-start` | The executor's `can_move`, and the odometry, the locomotion safety trip and Nav2's aborted bring-up in the log. |
 | `camera-silent`, `detector-down`, `executor-down` | A camera's `camera_info` under 0.5 Hz, a detector or the executor gone from the graph. |
+| `costmap-stale` | The obstacle layer's buffer gone stale, with the local costmap under 0.5 Hz or the lidar's cloud under 2 Hz. |
+| `collision-monitor-holds` | The collision monitor stopping the robot, or slowing it again and again. |
+| `navigation-not-active` | Nav2's navigation servers deactivated, and a walk's goal refused. |
+| `arm-controllers-off` | MoveIt's moves not reaching the arm's trajectory controller, which runs only while the executor holds the arms. |
 
 "Why did that fail?" or "is something wrong with the robot?" gets the cause the checks found, what
 each saw, what they ruled out, and the minutes before it. The Doctor tab lists the incidents, and
@@ -544,8 +580,9 @@ Every conversation is saved next to its log in `~/.local/state/nervros/logs/`. T
 the recent ones, and Resume carries one on; from the command line, use
 `nervros-cli chat --resume last`.
 
-The local model holds 16k tokens. The status bar shows how full the latest request was, and how
-many model calls the session made, with the share read from llama.cpp's prompt cache. Before the
+Haiku holds 90k tokens here (past 100k its price rises fivefold), and the local model 32k. The
+status bar shows how full the latest request was, and how many model calls the session made, with
+the share read from the prompt cache. Before the
 conversation fills, the results of earlier requests are cut to a line; if that is not enough, the
 model sums up the older part as goal, done, open and facts. `/compact` in the message box condenses
 it at once, and right-clicking one of your messages condenses everything up to it. Replies stream
@@ -558,7 +595,7 @@ playbooks above check the same troubles by themselves and name the skill with th
 
 ## The robot's own description
 
-https://github.com/user-attachments/assets/32d93917-9227-47be-83e7-5b408e125657
+https://github.com/user-attachments/assets/525ce149-80a5-4615-8504-96a5b42ab892
 
 The persona, `g1_bringup/config/nervros/apartment.md`, tells the model what the robot is.
 **Draft from the robot** in the Doctor tab, or
@@ -592,13 +629,16 @@ cargo run -p nervros-cli -- --profile ../g1_bringup/config/nervros/nervros.toml 
   incidents) under the run's `state/`, so the two keep-out cases, run in order
   (`--only keep-out`), never touch your own.
 
-Two smaller suites sit beside it:
+Three smaller suites sit beside it:
 
 - `eval/jobs.toml` asks for programs, searches and taught skills, each more than one way. A kept
   skill carries to the cases after it, so they run in order.
 - `eval/incidents.toml` breaks one thing per case with the case's `inject` (a detector stopped with
   SIGSTOP, the sensor relay paused, localization told the robot faces a quarter turn away, a second
   node under a detector's name), mends it with `restore`, and wants the agent to name the cause.
+- `eval/integrations.toml` uses Nav2's and MoveIt's tools and the motions NervROS runs itself
+  beside the executor's skills: walks first, then the changes that would hold a walk back, each
+  undone at the end, so its cases run in order.
 
 Without the simulator, `nervros-cli --profile ../g1_bringup/config/nervros/nervros.toml record
 g1.toml` writes the running stack as a scripted robot: the graph, the nodes each container hosts,
@@ -613,10 +653,18 @@ look over (its header says how).
 
 ## Models
 
-The app starts with the local model. NervROS can use other providers, set in its models file. This
-project uses free models only, and NervROS refuses a paid OpenRouter model at start-up.
+The models file (`g1_bringup/config/nervros/models.toml`) sets who answers. This project uses free
+models only, but for one paid key with a budget, and NervROS refuses a paid OpenRouter model at
+start-up.
 
-- With Gemini's key in `~/.config/grove/gemini.env`, its free tier outlines for `segment`, points
+- Claude Haiku 5.5 talks, looks and summarises first, and Claude Sonnet 5.5 advises the planner,
+  with the key in `~/api_keys/claude_api.key`. Each call's tokens are priced and added up in
+  `~/.config/nervros/claude-spend.json`, which every NervROS on the machine shares; no call starts
+  once $95 of the key's $100 is spent, and the free models below take over.
+  `nervros-cli models` prints the spend. On the apartment suite against a recorded robot, Haiku
+  passed 34 of 46 cases where the local model passed 32, faster, for $0.19.
+
+- With Gemini's key in `~/api_keys/gemini.env`, its free tier outlines for `segment`, points
   for `point` and advises the planner. Without it those fall back or stay off, and the rest runs
   locally.
 - With the same key, Gemini Robotics-ER 2 checks a finished mission through both cameras' start
@@ -624,10 +672,10 @@ project uses free models only, and NervROS refuses a paid OpenRouter model at st
   plan whose steps have failed before. Its free 20 requests a day are split by use (10, 6 and 4),
   and a use whose share is spent goes to the Flash-Lites, then Gemma 4, then the local model. A
   check's "no" flags a success; its "yes" never clears what the world model found missing.
-- When the local model is not running, as when SAM 3.1 holds the GPU (the two do not fit in 12 GB
-  together), free models elsewhere talk and look instead: Gemini 3.5 and 3.1 Flash-Lite, then
-  Nemotron 3 Super on OpenRouter's free tier (with `~/.config/openrouter.key`; NervROS refuses any
-  model there that is not free), then Gemma 4.
+- After Claude, or without its key, the local model talks and looks. When it is not running, as
+  when SAM 3.1 holds the GPU (the two do not fit in 12 GB together), free models elsewhere do: Gemini 3.5 and 3.1 Flash-Lite, then
+  Nemotron 3 Super on OpenRouter's free tier (with `~/api_keys/openrouter.key`, then a second key in
+  `~/api_keys/openrouter_2.key`; NervROS refuses any model there that is not free), then Gemma 4.
 - Each Flash-Lite takes 10 requests a minute and 250 a day here, and Gemma 16K input tokens a
   minute, which one or two agent calls use up. When every model is at its limit for the minute, a
   turn waits for the first to free up.
@@ -637,7 +685,7 @@ project uses free models only, and NervROS refuses a paid OpenRouter model at st
 - After a step fails again, the `plan` model may propose a lasting fix: a note, a keep-out zone
   or a parameter. The Agent tab lists it to accept, which runs it as yours, or to dismiss.
 
-https://github.com/user-attachments/assets/c23c8e5b-65c4-4367-88e8-5c94d21a6e42
+https://github.com/user-attachments/assets/567fafc8-2e19-4207-bde7-3f6a30db206a
 
 In the clip the Agent tab holds two proposed fixes: Accept on the note adds it to Memory, with the
 step's record before and since, and Dismiss turns the parameter change down.

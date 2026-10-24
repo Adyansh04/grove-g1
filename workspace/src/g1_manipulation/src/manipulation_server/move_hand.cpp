@@ -48,6 +48,31 @@ geometry_msgs::msg::Point pointingHand(
     return hand;
 }
 
+std::vector<geometry_msgs::msg::Point> pointingHands(
+    const geometry_msgs::msg::Point& hand, const geometry_msgs::msg::Point& shoulder,
+    const geometry_msgs::msg::Point& other, const std::vector<double>& steps_m, double max_reach_m)
+{
+    std::vector<geometry_msgs::msg::Point> out{ hand };
+    const double                           out_x = shoulder.x - other.x;
+    const double                           out_y = shoulder.y - other.y;
+    const double                           side  = std::hypot(out_x, out_y);
+    if (side < 1e-6)
+    {
+        return out;
+    }
+    for (const double step : steps_m)
+    {
+        geometry_msgs::msg::Point stepped = hand;
+        stepped.x += out_x / side * step;
+        stepped.y += out_y / side * step;
+        if (distance(shoulder, stepped) <= max_reach_m)
+        {
+            out.push_back(stepped);
+        }
+    }
+    return out;
+}
+
 std::vector<geometry_msgs::msg::Quaternion>
 handOrientations(const geometry_msgs::msg::Quaternion& current, int count)
 {
@@ -101,19 +126,26 @@ void G1ManipulationServer::executeMoveHand(const std::shared_ptr<GoalHandle<Move
 
     geometry_msgs::msg::Point aim;
     geometry_msgs::msg::Point shoulder;
+    geometry_msgs::msg::Point other;
     try
     {
         aim = tf_buffer_.transform(goal->target, planning_frame_, tf2::durationFromSec(0.5)).point;
-        const auto at = tf_buffer_
-                            .lookupTransform(
-                                planning_frame_,
-                                arm.is_left ? move_hand_left_shoulder_ : move_hand_right_shoulder_,
-                                tf2::TimePointZero,
-                                tf2::durationFromSec(0.5))
-                            .transform.translation;
-        shoulder.x = at.x;
-        shoulder.y = at.y;
-        shoulder.z = at.z;
+        const auto at = [this](const std::string& link) {
+            const auto t = tf_buffer_
+                               .lookupTransform(
+                                   planning_frame_,
+                                   link,
+                                   tf2::TimePointZero,
+                                   tf2::durationFromSec(0.5))
+                               .transform.translation;
+            geometry_msgs::msg::Point p;
+            p.x = t.x;
+            p.y = t.y;
+            p.z = t.z;
+            return p;
+        };
+        shoulder = at(arm.is_left ? move_hand_left_shoulder_ : move_hand_right_shoulder_);
+        other    = at(arm.is_left ? move_hand_right_shoulder_ : move_hand_left_shoulder_);
     }
     catch (const tf2::TransformException& e)
     {
@@ -124,8 +156,9 @@ void G1ManipulationServer::executeMoveHand(const std::shared_ptr<GoalHandle<Move
     aim.y += goal->offset.y;
     aim.z += goal->offset.z;
 
+    const bool                      pointing = goal->mode == "point";
     const geometry_msgs::msg::Point hand =
-        goal->mode == "point" ? pointingHand(shoulder, aim, move_hand_point_reach_m_) : aim;
+        pointing ? pointingHand(shoulder, aim, move_hand_point_reach_m_) : aim;
     if (const double reach = distance(shoulder, hand); reach > move_hand_max_reach_m_)
     {
         refuse(std::format(
@@ -158,25 +191,51 @@ void G1ManipulationServer::executeMoveHand(const std::shared_ptr<GoalHandle<Move
         state->update();
         return !body.isStateColliding(*state, group_model->getName());
     };
+    // The nearest place to the line that clears the body: target.position keeps it.
+    std::vector<geometry_msgs::msg::Point> places{ hand };
+    if (pointing)
+    {
+        places = pointingHands(
+            hand,
+            shoulder,
+            other,
+            move_hand_point_side_steps_m_,
+            move_hand_max_reach_m_);
+    }
     std::vector<std::pair<double, moveit::core::RobotState>> solutions;
     geometry_msgs::msg::Pose                                 target;
-    target.position = hand;
-    for (const auto& q : handOrientations(own, move_hand_orientations_))
+    for (const auto& place : places)
     {
-        target.orientation               = q;
-        moveit::core::RobotState attempt = *now;
-        if (attempt.setFromIK(jmg, target, arm.palm_link, ik_timeout_s_, free))
+        target.position = place;
+        for (const auto& q : handOrientations(own, move_hand_orientations_))
         {
-            solutions.emplace_back(attempt.distance(*now, jmg), attempt);
+            target.orientation               = q;
+            moveit::core::RobotState attempt = *now;
+            if (attempt.setFromIK(jmg, target, arm.palm_link, ik_timeout_s_, free))
+            {
+                solutions.emplace_back(attempt.distance(*now, jmg), attempt);
+            }
+        }
+        if (!solutions.empty())
+        {
+            break;
         }
     }
     if (solutions.empty())
     {
+        // Past the body's middle the target is the other hand's to point at.
+        const double across = (aim.x - (shoulder.x + other.x) / 2.0) * (shoulder.x - other.x) +
+                              (aim.y - (shoulder.y + other.y) / 2.0) * (shoulder.y - other.y);
+        const std::string hint =
+            pointing && across < 0.0 ?
+                std::format("; the target is on the {} hand's side", arm.is_left ? "right" : "left") :
+                "";
         refuse(std::format(
-            "no way of holding the hand reaches ({:.2f}, {:.2f}, {:.2f})",
+            "no way of holding the hand reaches ({:.2f}, {:.2f}, {:.2f}){}",
             hand.x,
             hand.y,
-            hand.z));
+            hand.z,
+            hint));
         return;
     }
     // The least change of pose first; one the scene blocks fails its plan at once.
@@ -246,10 +305,15 @@ void G1ManipulationServer::executeMoveHand(const std::shared_ptr<GoalHandle<Move
     result->message = std::format(
         "{} hand at ({:.2f}, {:.2f}, {:.2f}) in {}",
         goal->arm,
-        hand.x,
-        hand.y,
-        hand.z,
+        target.position.x,
+        target.position.y,
+        target.position.z,
         planning_frame_);
+    if (const double out = distance(hand, target.position); out > 1e-3)
+    {
+        result->message +=
+            std::format(", {:.2f} m out to its side of the line, which crossed the body", out);
+    }
     goal_handle->succeed(result);
 }
 

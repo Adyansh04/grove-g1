@@ -11,6 +11,7 @@
  * linear axes only: heading just keeps the robot square to the surface while it closes.
  */
 
+#include <array>
 #include <cstdint>
 #include <optional>
 
@@ -169,6 +170,14 @@ private:
     double best_m_  = -1.0;
     double since_s_ = 0.0;
 };
+
+/**
+ * @brief The point of a box's footprint nearest (@p px, @p py), all in one frame: a surface is
+ *        approached by its edge, its centre being out of reach.
+ * @param yaw The box's heading; @p half_x and @p half_y run along and across it.
+ */
+std::array<double, 2> nearestOnFootprint(
+    double cx, double cy, double yaw, double half_x, double half_y, double px, double py);
 
 }  // namespace g1_locomotion
 

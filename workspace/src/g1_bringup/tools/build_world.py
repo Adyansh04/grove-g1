@@ -297,11 +297,13 @@ def prop_xml(prop, manifest):
             )
     for box in prop.boxes:
         pos = (box["pos"][0], box["pos"][1], box["pos"][2] - half_h)
+        size = f'size="{fmt(*[s / 2 for s in box["size"]])}" pos="{fmt(*pos)}"'
+        # A hidden box shapes a scanned container for physics; the mesh is what the camera sees.
+        if box.get("hidden"):
+            lines.append(f'      <geom class="apt_proxy" {size}/>')
+            continue
         look = f'material="{box["texture"]}"' if "texture" in box else f'rgba="{fmt(*box["rgba"])}"'
-        lines.append(
-            f'      <geom class="apt_box" size="{fmt(*[s / 2 for s in box["size"]])}" '
-            f'pos="{fmt(*pos)}" {look}/>'
-        )
+        lines.append(f'      <geom class="apt_box" {size} {look}/>')
     if prop.free:
         # What the fingers close on and the weld carries; a box, since a cylinder on a box rocks.
         lines.append(

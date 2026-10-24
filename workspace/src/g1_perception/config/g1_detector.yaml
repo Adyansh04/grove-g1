@@ -19,8 +19,9 @@ g1_detector:
     # detector share one GPU and frames arrive 1.4 to 1.9 s old; a moving scene wants less.
     max_image_age_s: 2.5
 
-    # SAM 3.1's score is its match times the phrase's presence: on the simulator's close-ups of mugs,
-    # bowls and trays, 0.40 was the lowest that named nothing else (recall 0.83). Grounded SAM 2
-    # also reads text_threshold.
-    box_threshold: 0.40
+    # SAM 3.1's score is its match times the phrase's presence. On the simulator's renders the things
+    # asked for score 0.66 to 0.95, and a similar thing under another name up to 0.45 (the toy
+    # dinosaur as a "toy robot"), so a search stops at the right toy. Grounded SAM 2 also reads
+    # text_threshold.
+    box_threshold: 0.50
     text_threshold: 0.25

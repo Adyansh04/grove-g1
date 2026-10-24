@@ -52,7 +52,7 @@ The source's other parameters:
 | `~/pick` | `object_id`, `arm` | The pose is read from `/objects` when the goal starts, falling back on a sighting under `sighting_memory_s` old. |
 | `~/place` | `surface_object_id` or `pose`, `arm` | Prefer the surface: it is read from `/objects` and the object is stood on it. A `pose` is where the object ends up. Refused when the arm holds nothing. |
 | `~/set_arm_posture` | `group`, `named_target` | A named SRDF pose of `left_arm`, `right_arm`, `both_arms`, `left_hand` or `right_hand`. |
-| `~/move_hand` | `arm`, `target`, `offset`, `mode`, `speed` | The hand to a point (`reach`), or onto the line from the shoulder to it (`point`). It faces whichever way gets it there with the least change of pose. Planned against the scene from where the arm is, at `move_hand_speed` of the usual speed, raised to end within `move_hand_max_s`. Refused past `move_hand_max_reach_m` from the shoulder. For pointing, and the gestures a taught skill makes. It never moves a hand's fingers. |
+| `~/move_hand` | `arm`, `target`, `offset`, `mode`, `speed` | The hand to a point (`reach`), or onto the line from the shoulder to it (`point`); a pointing hand that line leaves in front of the torso steps out to its own side by `move_hand_point_side_steps_m`, and a refusal names the other hand when the target is on its side. It faces whichever way gets it there with the least change of pose. Planned against the scene from where the arm is, at `move_hand_speed` of the usual speed, raised to end within `move_hand_max_s`. Refused past `move_hand_max_reach_m` from the shoulder. For pointing, and the gestures a taught skill makes. It never moves a hand's fingers. |
 
 `Pick` and `Place` publish their phase as feedback and name it in the result on failure.
 
@@ -64,22 +64,22 @@ The source's other parameters:
 
 The steps follow the feedback phases.
 
-1. `locating`: read the object, add its box to the planning scene and choose a grasp.
-2. `pregrasp`: move the hand to `pinch_ready` and the arm to `approach_height_m` above the grasp, then settle out the arm's gravity droop in clear air.
+1. `locating`: read the object, refuse it when it is wider than `max_grasp_width_m` across its narrower side, add its box to the planning scene and choose a grasp: for generated grasps up to `grasp_tries` of the best `max_grasp_candidates` that approach no steeper than `max_approach_tilt_deg`, not back at the robot (`min_approach_forward`), and solve at the grasp, those that also solve at the pregrasp first.
+2. `pregrasp`: move the hand to `pinch_ready` and the arm to `approach_height_m` above the grasp (the next generated grasp's pregrasp when MoveIt finds no way to one), then settle out the arm's gravity droop in clear air.
 3. `approach`:
    - Re-read the object and follow a shift under `grasp_refresh_max_shift_m`.
    - Plan to a staging point `reaim_clearance_m` above the grasp while the object is still in the scene.
    - Remove the object, clear the octomap, exempt the hand from it and walk the last stretch as a straight line.
    - A miss backs straight up and retries from staging, up to `settle_attempts` more times. If it is still more than `max_grasp_offset_m` off, the pick is refused.
 4. `grasp`: start outside the widest measured side and creep in `grip_search_step_m` at a time until the thumb opposes a finger. Then hold every finger at its stall plus `grip_hold_bias_rad`. If the grip check below passes, attach the object to the palm.
-5. `lift`: straight up by `lift_height_m`. The held object stays exempt from the voxels it casts.
+5. `lift`: straight up by `lift_height_m`. The held object stays exempt from the voxels it casts. Seen in the first frame after the lift without having risen half of `lift_height_m`, the object was left behind and the pick fails: a cradled object loads the fingers too little to tell.
 
 ## How a place runs
 
-1. `preplace`: the target is the named surface from `/objects` (or a recent sighting) plus half its height and half the held object's, or the given `pose`. Clear the octomap, exempt the hand and the held object, plan above the target and settle. Then re-aim at the surface's fresh pose, since reaching with a load moves the base.
-2. `lower`: descend onto the target.
+1. `preplace`: the target is the named surface from `/objects` (or a recent sighting) plus half its height and half the held object's, or the given `pose`. The hand keeps the hold the pick made, a generated side grasp or top-down: it moves by what brings the attached object's box to the target. Clear the octomap, exempt the hand and the held object, plan above the target and settle. Then re-aim, since reaching with a load moves the base: at a container's fresh pose, or at the spot on a table where it was chosen, which stays put in the `/objects` frame while the table's box, only the part in view, moves.
+2. `lower`: descend onto the target; a lowering that ends more than `max_place_offset_m` off fails with the object still held.
 3. `release`: open to `pinch_ready` and detach.
-4. `retreat`: back straight out. The released object must then reappear on `/objects` within `place_confirm_timeout_s`, inside the surface's footprint (or within `place_tolerance_m` of a `pose`).
+4. `retreat`: back straight out. A released object seen again on `/objects` within `place_confirm_timeout_s` has to be inside the surface's footprint (or within `place_tolerance_m` of a `pose`); one not seen again counts as placed, unconfirmed, since the lowering ended on target.
 
 ## Grasp geometry
 
@@ -108,7 +108,7 @@ reads a grip from `/joint_states` instead. A finger presses when it is at least
 `grasp_source` chooses:
 
 - `fixed_top_down` (default) descends on the object's centre with the hand at `grasp_rpy`.
-- `generated` asks the grasp service (`grasp_service`) and takes the best candidate that passes `min_grasp_score`, `max_approach_tilt_deg` and inverse kinematics. It stages `approach_standoff_m` back along its own approach axis.
+- `generated` asks the grasp service (`grasp_service`) and takes the best candidate that passes `min_grasp_score`, `max_approach_tilt_deg` and inverse kinematics. It stages `approach_standoff_m` back along its own approach axis. The grasps come in the camera's frame at their image's time and reach the planning frame through `world_frame`, past the body's sway since.
 
 There is no fallback between them. With `visualization:=true` every pick draws its candidates and
 choice on `~/grasp_plan`.
@@ -125,12 +125,16 @@ explained in comments. `config/g1_object_pose_source.yaml` holds the source's fr
 | `object_timeout_ms` | 1000.0 | How old a pose may be. Bringup passes 8000 with perception. |
 | `min_grip_height_m` | 0.080 | Lowest grip above the surface. Bringup passes 0.035 for the navigation world, whose ball sits where the thumb hangs past the desk edge. |
 | `grasp_source` | `fixed_top_down` | See above. |
-| `grasp_offset` | zeros | Sets `graspgen_to_grasp_frame_xyz_rpy`: generator gripper frame to grasp frame, xyz then rpy, measured for the hand the generator serves (see [the open-vocabulary guide](../../../docs/guides/open-vocabulary-grasping.md)). |
+| `generated_grasp_arms` | `[right]` | The arms a `generated` source serves; GraspGenX describes the right Dex3 only, so the left still grasps from the object's box. |
+| `max_grasp_width_m` | 0.090 | The widest object a hand closes round; a wider one is refused before the arm moves. |
+| `scene_object_padding_m` | 0.02 | Added to each side of the object's planning-scene box (not its height): the measured box runs short and the arm lags its plan. |
+| `grasp_offset` | `[0, 0, 0.07, π/2, 0, π]` | Sets `graspgen_to_grasp_frame_xyz_rpy`: generator gripper frame to grasp frame, xyz then rpy, measured for GraspGenX's Dex3 (see [the open-vocabulary guide](../../../docs/guides/open-vocabulary-grasping.md)). |
 | `visualization` | false | Markers and `~/grasp_plan`. |
 
 Tunables can be changed with `ros2 param set` between goals. A set during a goal is refused.
 `velocity_scaling`, `grasp_rpy`, `grasp_source`, `grasp_service`, `publish_markers`,
-`graspgen_to_grasp_frame_xyz_rpy` and the `move_hand_*_shoulder` links are read-only.
+`graspgen_to_grasp_frame_xyz_rpy`, `world_frame`, the `move_hand_*_shoulder` links and
+`move_hand_point_side_steps_m` are read-only.
 
 ## Running
 

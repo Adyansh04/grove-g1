@@ -69,7 +69,10 @@ case "$server" in
         elif [[ "$detector" == sam3.1 ]]; then
             "$CANOPY/servers/start-vlm.sh" stop >/dev/null
         fi
-        exec "$CANOPY_HOME/.venv/bin/python" "$CANOPY/servers/semantic_server.py" "$@"
+        # Keys kept in ~/api_keys win over canopy's default; a later --set still overrides them.
+        keys=()
+        [[ -f "$HOME/api_keys/gemini.env" ]] && keys=(--set "gemini.key_file=$HOME/api_keys/gemini.env")
+        exec "$CANOPY_HOME/.venv/bin/python" "$CANOPY/servers/semantic_server.py" "${keys[@]}" "$@"
         ;;
     *)
         sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'

@@ -348,4 +348,80 @@ std::optional<OrientedBox> fitOrientedBox(
     return box;
 }
 
+std::optional<OrientedBox> fitSurface(
+    std::span<const Point3> points, const Point3& up, double band_m, double min_extent_m,
+    double max_extent_m)
+{
+    std::vector<double> heights;
+    heights.reserve(points.size());
+    for (const Point3& point : points)
+    {
+        heights.push_back(dot(point, up));
+    }
+    std::ranges::sort(heights);
+    // The densest window of band_m over the sorted heights.
+    std::size_t best_end   = 0;
+    std::size_t best_count = 0;
+    std::size_t start      = 0;
+    for (std::size_t end = 0; end < heights.size(); ++end)
+    {
+        while (heights[end] - heights[start] > band_m)
+        {
+            ++start;
+        }
+        if (end - start + 1 > best_count)
+        {
+            best_count = end - start + 1;
+            best_end   = end;
+        }
+    }
+    if (best_count == 0 || 2 * best_count < points.size())
+    {
+        return std::nullopt;
+    }
+    const double        top    = heights[best_end];
+    const double        bottom = top - band_m;
+    std::vector<Point3> plane;
+    plane.reserve(best_count);
+    for (const Point3& point : points)
+    {
+        const double height = dot(point, up);
+        if (height >= bottom && height <= top)
+        {
+            plane.push_back(point);
+        }
+    }
+    return fitOrientedBox(plane, up, bottom, min_extent_m, max_extent_m);
+}
+
+double spreadAcross(std::span<const Point3> points, const Point3& up)
+{
+    Point3 first;
+    Point3 second;
+    planeBasis(normalised(up), first, second);
+    double low_first   = std::numeric_limits<double>::max();
+    double high_first  = std::numeric_limits<double>::lowest();
+    double low_second  = std::numeric_limits<double>::max();
+    double high_second = std::numeric_limits<double>::lowest();
+    for (const Point3& point : points)
+    {
+        const double along_first  = dot(point, first);
+        const double along_second = dot(point, second);
+        low_first                 = std::min(low_first, along_first);
+        high_first                = std::max(high_first, along_first);
+        low_second                = std::min(low_second, along_second);
+        high_second               = std::max(high_second, along_second);
+    }
+    return points.empty() ? 0.0 : std::hypot(high_first - low_first, high_second - low_second);
+}
+
+bool boxHolds(const OrientedBox& box, const Point3& point)
+{
+    const Point3 offset{ point.x - box.centre.x, point.y - box.centre.y, point.z - box.centre.z };
+    const Point3 up = cross(box.axis_x, box.axis_y);
+    return std::abs(dot(offset, box.axis_x)) <= 0.5 * box.size_x &&
+           std::abs(dot(offset, box.axis_y)) <= 0.5 * box.size_y &&
+           std::abs(dot(offset, up)) <= 0.5 * box.size_z;
+}
+
 }  // namespace g1_perception

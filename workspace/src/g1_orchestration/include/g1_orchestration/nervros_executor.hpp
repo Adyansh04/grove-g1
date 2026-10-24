@@ -204,12 +204,18 @@ private:
         const std::shared_ptr<nervros_interfaces::srv::LendResources::Request>&  request,
         const std::shared_ptr<nervros_interfaces::srv::LendResources::Response>& response);
     /// Ends the lend, if there is one, and lets go of the arms as a mission's end does unless a
-    /// hand may hold something. Returns whether anything was lent.
+    /// hand may hold something. Returns whether anything was lent. The letting go runs on a
+    /// thread of its own, since its controller calls can take seconds; missions and lends wait
+    /// for it.
     bool takeBack(const std::string& why);
     /// Takes back a lend whose client has gone quiet or whose time has run out.
     void checkLend();
-    /// Lets go of the arms unless a hand may hold something.
-    void letGoOfArms();
+    /// Waits until the arms a lend gave back are let go of; the caller holds @p lock on
+    /// stop_mutex_.
+    void awaitRelease(std::unique_lock<std::mutex>& lock);
+    /// Lets go of the arms unless a hand holds something, or may: one the executor knows of, or
+    /// one whose fingers stand closed. Returns whether the arms are still held.
+    bool letGoOfArms();
     /// StopAll's work, for the service and for the deadman: halt, cancel, wait, hold. @p cause
     /// goes into the stopped mission's result.
     nervros_interfaces::srv::StopAll::Response
@@ -375,6 +381,9 @@ private:
     /// The client the arms are lent to, empty when they are not: claimed under this mutex like a
     /// mission, so a lend and a mission exclude each other.
     std::string lent_to_;
+    /// True while the arms a lend gave back are being let go of; released_cv_ says when it ends.
+    bool                    releasing_ = false;
+    std::condition_variable released_cv_;
     /// When the lend runs out, in steady-clock ticks; 0 when nothing is lent.
     std::atomic<std::chrono::steady_clock::rep> lent_until_{ 0 };
     double                                      max_lend_s_               = 120.0;
@@ -415,8 +424,10 @@ private:
 
     /// Guards worker_, which the action callback and shutdown() both touch.
     std::mutex worker_mutex_;
-    /// Last, so it joins before anything it uses is destroyed.
+    /// Last, so they join before anything they use is destroyed. releaser_ lets go of the arms
+    /// after a lend; a new one is started only after the last has finished.
     std::jthread worker_;
+    std::jthread releaser_;
 };
 
 }  // namespace g1_orchestration

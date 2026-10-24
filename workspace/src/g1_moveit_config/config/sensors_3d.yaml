@@ -33,8 +33,10 @@ mid360_cloud:
   point_subsample: 2
 
   # Self-filter padding on the robot's own collision geometry. Generous on the scale because the
-  # meshes become convex hulls, so nothing between the fingers is ever mapped regardless.
-  padding_offset: 0.02
+  # meshes become convex hulls, so nothing between the fingers is ever mapped regardless. 4 cm
+  # on the offset: at 2 cm a finger's own points, its pose a cloud behind, came back as a voxel
+  # on the finger and every plan from that hand failed at its start.
+  padding_offset: 0.04
   padding_scale: 1.2
 
   # The planner does not need a 30 Hz map, and every update walks the shape mask.

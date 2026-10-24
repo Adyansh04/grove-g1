@@ -117,10 +117,11 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "grasp_offset",
-                default_value="[0.0, 0.0, 0.0, 0.0, 0.0, 0.0]",
+                default_value="[0.0, 0.0, 0.07, 1.5707963, 0.0, 3.1415927]",
                 description="The generator's gripper frame to <side>_hand_grasp_frame, xyz then "
-                "rpy, measured for the hand the generator serves. Zero says they coincide, which "
-                "is an assumption until it is measured against the candidates in RViz.",
+                "rpy: GraspGenX's fingertip point, 7 cm along its approach, on the grasp frame, "
+                "with the Dex3 palm's axes from its own description. The tabletop block is picked "
+                "with three fingers pressing.",
             ),
             DeclareLaunchArgument(
                 "object_timeout_ms",

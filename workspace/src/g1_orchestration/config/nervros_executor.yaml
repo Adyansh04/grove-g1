@@ -40,6 +40,17 @@ nervros_executor:
     max_pause_s: 600.0
     # Per-step budget for controller_manager calls when taking or releasing the arms.
     authority_timeout_s: 15.0
+    # Before letting go of the arms, the fingers are read once: a hand whose finger_joints stand
+    # past finger_closed_rad (rad) counts as holding something, and keeps its arm held. Its open
+    # and pinch_ready states hold these joints at 0, its closed state at 1.2.
+    finger_joints:
+      - left_hand_index_0_joint
+      - left_hand_middle_0_joint
+      - right_hand_index_0_joint
+      - right_hand_middle_0_joint
+    finger_closed_rad: 0.3
+    # s to wait for /joint_states; with none, both hands count as closed.
+    finger_read_timeout_s: 2.0
     # When a mission needs the arms and finds them already taken, this executor cannot tell whether
     # a hand holds something (it may have restarted mid-carry), and letting go of them would drop
     # it. So it keeps the arms and treats both hands as full until a place with that arm succeeds.
@@ -131,7 +142,9 @@ nervros_executor:
     # taught skill may set, so which server, frame or timeout each leaf uses stays as it is here.
     # A taught skill's values are literals or its own arguments, so no leaf here hands one on.
     # a|b: exactly one of the two is set. port(world_id): the only kind of input a world_id
-    # argument may feed, so an object's id never goes in as a frame.
+    # argument may feed, so an object's id never goes in as a frame. port=a/b: the only values the
+    # port takes, so a taught skill's argument fed to it is planned with them and `left_arm` is
+    # caught before anything runs.
     # Quoted: an entry that ends in a colon would read as a map.
     learnable_leaves:
       - "NavigateToPose:base:goal"
@@ -141,7 +154,7 @@ nervros_executor:
       - "LookFor::objects,also"
       - "StopLooking::"
       - "SetArmPosture:arms:group,named_target"
-      - "MoveHand:arms:arm,target(world_id)|frame,offset_x,offset_y,offset_z,mode,speed"
+      - "MoveHand:arms:arm=left/right,target(world_id)|frame,offset_x,offset_y,offset_z,mode=reach/point,speed"
       - "Wait::seconds"
     # The most a learned skill may take, s, and its size in nodes.
     max_learned_duration_s: 300.0
