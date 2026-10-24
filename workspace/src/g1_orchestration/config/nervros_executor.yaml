@@ -40,6 +40,17 @@ nervros_executor:
     max_pause_s: 600.0
     # Per-step budget for controller_manager calls when taking or releasing the arms.
     authority_timeout_s: 15.0
+    # Before letting go of the arms, the fingers are read once: a hand whose finger_joints stand
+    # past finger_closed_rad (rad) counts as holding something, and keeps its arm held. Its open
+    # and pinch_ready states hold these joints at 0, its closed state at 1.2.
+    finger_joints:
+      - left_hand_index_0_joint
+      - left_hand_middle_0_joint
+      - right_hand_index_0_joint
+      - right_hand_middle_0_joint
+    finger_closed_rad: 0.3
+    # s to wait for /joint_states; with none, both hands count as closed.
+    finger_read_timeout_s: 2.0
     # When a mission needs the arms and finds them already taken, this executor cannot tell whether
     # a hand holds something (it may have restarted mid-carry), and letting go of them would drop
     # it. So it keeps the arms and treats both hands as full until a place with that arm succeeds.
