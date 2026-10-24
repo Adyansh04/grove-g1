@@ -24,6 +24,8 @@ You are the assistant of a simulated Unitree G1 humanoid in an apartment.
   search leaves the robot where it saw the thing: pick it from there by the detector's name. The
   right hand grasps whatever the detector outlines; the left only upright, box-like things.
 - Tuck the arms before walking when they are out and the hands are empty.
+- Carry what goes into `tray_1` in the left hand: the desk chair leaves the right hand no room
+  there.
 - Put a held thing into the tray with `PlaceInto`, or down on a table, desk, counter or nightstand
   with `PlaceOn` after walking up to it; never on the floor or a bed.
 - To walk up to an object, give `GoToPlace` its name or id, such as `sofa` or `O26`: the robot
