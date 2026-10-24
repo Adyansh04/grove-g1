@@ -181,7 +181,7 @@ none from the command line. There, `./scripts/demos/nervros.sh --print chat`'s l
   object is gone from where it was or when the one there was seen after the goal was set. The Agent
   tab lists the goals with Drop.
 
-https://github.com/user-attachments/assets/10d6d147-e73b-4931-9cc2-6c3a182c3a80
+https://github.com/user-attachments/assets/6fbc7a91-cd80-4578-8cd8-4fb2435d7989
 
 In the clip, "the orange toy robot is on the office desk. Set a goal to keep it on the dining
 table, then work toward it": the robot looks at the desk, picks the toy, carries it and sets it
@@ -194,7 +194,7 @@ down on the table, and canopy, seeing it there under a new id, has the goal met.
   moments the world model saw the mug move; a second model then checks that frame alone, or its
   neighbours until one shows it. It answers with the time and the frame.
 
-https://github.com/user-attachments/assets/acc1f8e6-f69e-4266-8383-2b0140183b48
+https://github.com/user-attachments/assets/e5a1eff8-b8b4-4d54-8923-e983354753eb
 
 In the clip "tell me when the head camera shows a green toy" fires once the robot stands at the
 right nightstand ("a green Yoshi toy"), and "when did a camera first show the green toy?" answers
@@ -248,7 +248,7 @@ MoveIt's planning scene.
 
 ## Fetching things the map does not know
 
-https://github.com/user-attachments/assets/PLACEHOLDER-fetching-something-new
+https://github.com/user-attachments/assets/3176b4dd-79dc-41d9-a13b-8f13cce7205a
 
 ```bash
 ./scripts/demos/nervros.sh fetch
@@ -310,7 +310,7 @@ the agent to look at.
 
 ## Programs, searches and taught skills
 
-https://github.com/user-attachments/assets/03296eae-10bb-4b21-8b7c-201bb878d21f
+https://github.com/user-attachments/assets/5a4f3361-bdf6-4973-9475-4ec477f817d5
 
 For anything that takes a loop, a count or a measurement, the agent writes a short program and runs
 it as a job.
@@ -327,7 +327,7 @@ it as a job.
 - In the apartment demo the mock detector knows only `mug` and `tray`, so a look asks for one of
   those.
 
-https://github.com/user-attachments/assets/cb019286-ab57-4c49-adeb-b7a85e22029a
+https://github.com/user-attachments/assets/e713cf11-8a43-46bc-83fd-697840a3555f
 
 "Search for the toy elephant" ranks where to look: where canopy saw it and how long ago, the rooms
 such things usually are in, looked at from the named places in them, the rooms the camera has seen
@@ -336,7 +336,7 @@ in the clip from where it stood, beside the dining table, then the TV cabinet, w
 "Where could the toy elephant be? Don't move" names the places without walking. To look in an
 order you give, the agent writes a program instead.
 
-https://github.com/user-attachments/assets/fcd62896-e299-45ff-b1ab-977cfc2155af
+https://github.com/user-attachments/assets/f1b6d84f-b106-4ce3-aa96-f8939f821a61
 
 The executor lets the agent teach the robot a skill no macro has, from the leaves listed in
 `g1_orchestration`'s `learnable_leaves`: Nav2's walk, the bounded walk and turn, the detector's
@@ -512,7 +512,7 @@ In the clip a walk NervROS was running when it stopped is marked at start, and a
 while the base is driven by hand from the Robot tab comes back with `cause` teleop: the report says
 it could not start, and the Library tab dims both runs.
 
-https://github.com/user-attachments/assets/10a5c176-eb65-4fcb-a171-437b025a433e
+https://github.com/user-attachments/assets/b34c20fb-27b6-4e0f-be4e-a7ced5621dcb
 
 A step can take what an earlier one found, so "find a mug and pick it up" is one mission.
 `FindInView` hands on the name the detector reports an object under, and a walk to a kind of
