@@ -4,6 +4,7 @@
  */
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cmath>
 #include <initializer_list>
@@ -170,9 +171,22 @@ G1ManipulationServer::waitForObject(const std::string& object_id, double timeout
     return lookUpObject(object_id);
 }
 
-std::optional<G1ManipulationServer::Detection> G1ManipulationServer::sightingAfter(
+std::vector<G1ManipulationServer::Detection> G1ManipulationServer::sightingsAfter(
     const std::string& object_id, const rclcpp::Time& since, double timeout_s)
 {
+    // Its tracks too, red_mug_2 for red_mug: the bare name is withheld while a look-alike is in
+    // view, and the hand beside an object can be one.
+    const auto answers = [&object_id](const std::string& id) {
+        if (id == object_id)
+        {
+            return true;
+        }
+        const std::size_t cut = id.rfind('_');
+        return cut != std::string::npos && id.substr(0, cut) == object_id && cut + 1 < id.size() &&
+               std::all_of(id.begin() + static_cast<std::ptrdiff_t>(cut) + 1, id.end(), [](char c) {
+                   return std::isdigit(static_cast<unsigned char>(c)) != 0;
+               });
+    };
     const rclcpp::Time deadline = now() + rclcpp::Duration::from_seconds(timeout_s);
     while (now() < deadline)
     {
@@ -180,19 +194,20 @@ std::optional<G1ManipulationServer::Detection> G1ManipulationServer::sightingAft
             const std::lock_guard<std::mutex> lock(objects_mutex_);
             if (rclcpp::Time(objects_.header.stamp) > since)
             {
+                std::vector<Detection> seen;
                 for (const Detection& detection : objects_.detections)
                 {
-                    if (!detection.results.empty() && idOf(detection) == object_id)
+                    if (!detection.results.empty() && answers(idOf(detection)))
                     {
-                        return detection;
+                        seen.push_back(detection);
                     }
                 }
-                return std::nullopt;
+                return seen;
             }
         }
         rclcpp::sleep_for(kObjectPollPeriod);
     }
-    return std::nullopt;
+    return {};
 }
 
 std::optional<G1ManipulationServer::Detection>

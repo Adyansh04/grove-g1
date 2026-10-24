@@ -270,10 +270,10 @@ private:
      */
     std::optional<Detection> waitForObject(const std::string& object_id, double timeout_s);
 
-    /// The object as /objects reports it in the first message captured after @p since, or
-    /// nothing when that message lacks it or none comes within @p timeout_s.
-    std::optional<Detection>
-    sightingAfter(const std::string& object_id, const rclcpp::Time& since, double timeout_s);
+    /// The object and its tracks as /objects reports them in the first message captured after
+    /// @p since; empty when that message lacks them or none comes within @p timeout_s.
+    std::vector<Detection>
+    sightingsAfter(const std::string& object_id, const rclcpp::Time& since, double timeout_s);
 
     /**
      * @brief The last sighting of @p object_id, if within sighting_memory_s.

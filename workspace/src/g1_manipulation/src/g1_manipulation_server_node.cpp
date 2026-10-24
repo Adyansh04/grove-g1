@@ -681,11 +681,13 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     }
     // Where it is says what the fingers cannot: seen in a frame taken after the lift and not risen
     // with the hand, the hand came up without it. Held, the hand hides it or carries it up.
-    if (const auto after = sightingAfter(goal->object_id, now(), place_confirm_timeout_s_))
+    const geometry_msgs::msg::Point& stood = detection->results.front().pose.pose.position;
+    for (const Detection& after : sightingsAfter(goal->object_id, now(), place_confirm_timeout_s_))
     {
-        const double rise = after->results.front().pose.pose.position.z -
-                            detection->results.front().pose.pose.position.z;
-        if (rise < 0.5 * lift_height_m_)
+        const geometry_msgs::msg::Point& at   = after.results.front().pose.pose.position;
+        const double                     rise = at.z - stood.z;
+        if (rise < 0.5 * lift_height_m_ &&
+            std::hypot(at.x - stood.x, at.y - stood.y) < max_grasp_width_m_)
         {
             fail(
                 Pick::Feedback::PHASE_LIFT,
