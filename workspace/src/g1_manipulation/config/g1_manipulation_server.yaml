@@ -2,10 +2,14 @@
 #
 # `object_timeout_ms`, `grasp_source`, `min_grip_height_m` and `graspgen_to_grasp_frame_xyz_rpy`
 # are launch arguments, because their right values depend on what the stack is launched with.
-# Everything else except velocity_scaling, grasp_rpy, grasp_service and publish_markers can be set
-# live between goals.
+# Everything else except velocity_scaling, grasp_rpy, grasp_service, publish_markers and
+# world_frame can be set live between goals.
 g1_manipulation_server:
   ros__parameters:
+    # A frame the world holds still in: a grasp seen in an earlier camera image reaches the
+    # planning frame (the pelvis) through it, past the body's sway since.
+    world_frame: "odom"
+
     # Pregrasp height above the grasp. The hand clears the workbench octomap from about 0.185 up.
     approach_height_m: 0.22
 

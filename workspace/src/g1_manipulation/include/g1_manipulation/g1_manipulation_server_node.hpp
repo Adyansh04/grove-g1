@@ -305,12 +305,16 @@ private:
     [[nodiscard]] bool isHolding(const ArmContext& arm, std::string& why, bool opposed = false);
 
     /**
-     * @brief Transforms a pose into the planning frame at the latest transform.
+     * @brief Transforms a pose into the planning frame as the robot stands now.
      *
+     * @param seen When the pose was seen, for one in a frame that moves with the robot, such as a
+     *        camera's: it is carried through world_frame from then. Zero for the latest of both,
+     *        as for a pose in a frame the world holds still in.
      * @return nullopt with the reason logged.
      */
-    std::optional<geometry_msgs::msg::Pose>
-    toPlanningFrame(const geometry_msgs::msg::Pose& pose, const std::string& frame_id);
+    std::optional<geometry_msgs::msg::Pose> toPlanningFrame(
+        const geometry_msgs::msg::Pose& pose, const std::string& frame_id,
+        const rclcpp::Time& seen = rclcpp::Time(0));
 
     /**
      * @brief topGraspGoal() with this server's depth, minimum height and orientation.
@@ -596,6 +600,9 @@ private:
     rclcpp_action::Server<MoveHand>::SharedPtr      move_hand_server_;
 
     std::string planning_frame_;
+    /// A frame the world holds still in, through which a pose seen earlier reaches the planning
+    /// frame as the robot stands now.
+    std::string world_frame_ = "odom";
 
     // Defaults for the parameters of the same name; config/g1_manipulation_server.yaml documents
     // each one.

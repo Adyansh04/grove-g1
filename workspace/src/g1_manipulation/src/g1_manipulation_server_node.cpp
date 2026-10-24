@@ -183,6 +183,7 @@ void G1ManipulationServer::declareParameters()
         move_hand_point_side_steps_m_,
         fixed);
     declare_parameter<std::string>("grasp_service", "/g1_grasp_engine/generate_grasps", fixed);
+    world_frame_ = declare_parameter<std::string>("world_frame", world_frame_, fixed);
     declare_parameter<bool>("publish_markers", false, fixed);
     const std::vector<double> offset = declare_parameter<std::vector<double>>(
         "graspgen_to_grasp_frame_xyz_rpy",

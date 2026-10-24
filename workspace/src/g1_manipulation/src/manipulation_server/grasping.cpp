@@ -230,8 +230,10 @@ std::vector<G1ManipulationServer::GraspPlan> G1ManipulationServer::chooseGrasps(
         }
         ++considered;
 
-        const auto in_planning_frame =
-            toPlanningFrame(response->grasps[i], response->header.frame_id);
+        const auto in_planning_frame = toPlanningFrame(
+            response->grasps[i],
+            response->header.frame_id,
+            rclcpp::Time(response->header.stamp));
         if (!in_planning_frame)
         {
             continue;

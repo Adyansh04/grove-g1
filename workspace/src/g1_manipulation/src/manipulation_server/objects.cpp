@@ -50,7 +50,7 @@ const std::string& G1ManipulationServer::idOf(const vision_msgs::msg::Detection3
 }
 
 std::optional<geometry_msgs::msg::Pose> G1ManipulationServer::toPlanningFrame(
-    const geometry_msgs::msg::Pose& pose, const std::string& frame_id)
+    const geometry_msgs::msg::Pose& pose, const std::string& frame_id, const rclcpp::Time& seen)
 {
     if (frame_id.empty() || frame_id == planning_frame_)
     {
@@ -59,14 +59,21 @@ std::optional<geometry_msgs::msg::Pose> G1ManipulationServer::toPlanningFrame(
 
     geometry_msgs::msg::PoseStamped in;
     in.header.frame_id = frame_id;
-    // Latest transform, not the pose's stamp: a standing object's odom pose stays valid, and the
-    // question is where it is from where the robot stands now.
-    in.header.stamp = rclcpp::Time(0);
-    in.pose         = pose;
+    in.header.stamp    = seen;
+    in.pose            = pose;
 
     try
     {
-        return tf_buffer_.transform(in, planning_frame_, std::chrono::milliseconds(500)).pose;
+        // Where it was when seen, held still in the world, from where the robot stands now: the
+        // question is always the latter, and the body sways between an image and a plan.
+        return tf_buffer_
+            .transform(
+                in,
+                planning_frame_,
+                tf2::TimePointZero,
+                world_frame_,
+                std::chrono::milliseconds(500))
+            .pose;
     }
     catch (const tf2::TransformException& e)
     {
