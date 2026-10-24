@@ -183,12 +183,13 @@ one reaching up through the table, so the filtering can be tested without a GPU.
 ### The one calibration
 
 GraspGenX returns poses of its own gripper frame, where +z is the approach and the fingers close
-along x. That frame is not a link of this robot, so it needs one offset:
-
-1. Run a pick against a known object. `grasp_plan` draws the candidates in the generator's frame,
-   and the goal's axes after the offset.
-2. Read the offset to `right_hand_grasp_frame` off the two, and pass it as `grasp_offset`, xyz then
-   rpy. The arm side applies it.
+along x. That frame is not a link of this robot, so `grasp_offset` maps it onto
+`right_hand_grasp_frame`. The default, `[0, 0, 0.07, π/2, 0, π]`, puts the generator's fingertip
+point, 7 cm along its approach, on the grasp frame, with the palm's axes from GraspGenX's own Dex3
+description: the tabletop block is picked with three fingers pressing. GraspGenX describes an
+older Dex3 than this robot's (its palm origin and finger spacing differ), so the fingertip point
+is the part to match rather than the palm. To check it again, run a pick against a known object:
+`grasp_plan` draws the candidates in the generator's frame and the goal's axes after the offset.
 
 Left-hand requests are refused rather than mirrored: a mirrored sweep volume is a different
 gripper.

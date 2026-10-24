@@ -27,6 +27,7 @@
 #include <geometry_msgs/msg/pose.hpp>
 #include <map>
 #include <memory>
+#include <moveit_msgs/msg/attached_collision_object.hpp>
 #include <moveit_msgs/msg/collision_object.hpp>
 #include <moveit_msgs/srv/apply_planning_scene.hpp>
 #include <moveit_msgs/srv/get_planning_scene.hpp>
@@ -86,6 +87,34 @@ geometry_msgs::msg::Point pointingHand(
     double reach_m);
 
 /**
+ * @brief The places a pointing hand is tried at: @p hand first, then stepped out by each of
+ *        @p steps_m horizontally, away from @p other (the other shoulder), while within
+ *        @p max_reach_m of @p shoulder. A target near the body's middle puts @p hand in front of
+ *        the torso, where no pose of the arm clears it.
+ */
+std::vector<geometry_msgs::msg::Point> pointingHands(
+    const geometry_msgs::msg::Point& hand, const geometry_msgs::msg::Point& shoulder,
+    const geometry_msgs::msg::Point& other, const std::vector<double>& steps_m, double max_reach_m);
+
+/**
+ * @brief Where on a surface an object is put, as an offset from the surface's centre in its own
+ *        frame, so a base that moves during the reach re-aims at the same spot. A surface no wider
+ *        than @p container_m is a container, and the offset is zero. On a wider one, a table,
+ *        @p preferred (in @p surface's frame of reference) held inside the footprint less
+ *        @p margin_m: the spot the hand reaches, at the edge when the edge is nearest.
+ *
+ * @param surface The surface's centre pose.
+ * @param size The surface's box, metres.
+ */
+geometry_msgs::msg::Point placeOffset(
+    const geometry_msgs::msg::Pose& surface, const geometry_msgs::msg::Vector3& size,
+    const geometry_msgs::msg::Point& preferred, double margin_m, double container_m);
+
+/// @p surface moved by @p offset in its own frame, its orientation kept.
+geometry_msgs::msg::Pose
+atOffset(const geometry_msgs::msg::Pose& surface, const geometry_msgs::msg::Point& offset);
+
+/**
  * @brief Orientations to try a hand at a point in: @p current first, then @p count more spread
  *        evenly at random over all of them, the same ones every time.
  */
@@ -128,7 +157,8 @@ private:
     {
         geometry_msgs::msg::Pose grasp;
         geometry_msgs::msg::Pose pregrasp;
-        std::string              origin;  ///< What produced it, for the log and the markers.
+        std::string              origin;     ///< What produced it, for the log and the markers.
+        geometry_msgs::msg::Pose candidate;  ///< A generated grasp's own pose, for the markers.
     };
 
     /// A generated candidate the filter looked at, in the planning frame, and what it decided.
@@ -240,6 +270,13 @@ private:
      */
     std::optional<Detection> waitForObject(const std::string& object_id, double timeout_s);
 
+    /// The object and its tracks as /objects reports them in the first message captured after
+    /// @p since; empty when that message lacks them, none comes within @p timeout_s, or @p stop
+    /// turns true first.
+    std::vector<Detection> sightingsAfter(
+        const std::string& object_id, const rclcpp::Time& since, double timeout_s,
+        const std::function<bool()>& stop);
+
     /**
      * @brief The last sighting of @p object_id, if within sighting_memory_s.
      *
@@ -268,12 +305,16 @@ private:
     [[nodiscard]] bool isHolding(const ArmContext& arm, std::string& why, bool opposed = false);
 
     /**
-     * @brief Transforms a pose into the planning frame at the latest transform.
+     * @brief Transforms a pose into the planning frame as the robot stands now.
      *
+     * @param seen When the pose was seen, for one in a frame that moves with the robot, such as a
+     *        camera's: it is carried through world_frame from then. Zero for the latest of both,
+     *        as for a pose in a frame the world holds still in.
      * @return nullopt with the reason logged.
      */
-    std::optional<geometry_msgs::msg::Pose>
-    toPlanningFrame(const geometry_msgs::msg::Pose& pose, const std::string& frame_id);
+    std::optional<geometry_msgs::msg::Pose> toPlanningFrame(
+        const geometry_msgs::msg::Pose& pose, const std::string& frame_id,
+        const rclcpp::Time& seen = rclcpp::Time(0));
 
     /**
      * @brief topGraspGoal() with this server's depth, minimum height and orientation.
@@ -283,16 +324,29 @@ private:
         const ArmContext& arm) const;
 
     /**
+     * @brief The grasp-frame goal that brings the held object's box centre to @p object_at, the
+     *        hand turned as it holds it now, so a place keeps the hold the pick made.
+     *
+     * @param held The attached object, as the planning scene returns it: relative to the palm.
+     * @return Nothing when the attach is not relative to the palm; graspFrameGoal() then.
+     */
+    static std::optional<geometry_msgs::msg::Pose> heldPlaceGoal(
+        MoveGroup& group, const ArmContext& arm,
+        const moveit_msgs::msg::AttachedCollisionObject& held,
+        const geometry_msgs::msg::Point&                 object_at);
+
+    /**
      * @brief The grasp to attempt, from the configured grasp source.
      *
      * `fixed_top_down` is graspFrameGoal() approached from straight above. `generated` asks the
-     * grasp service and keeps the best candidate that is scored, not reaching up through the
-     * surface, and solvable. There is no fallback between the two.
+     * grasp service and keeps up to `grasp_tries` candidates that are scored, not reaching up
+     * through the surface, and solvable at the grasp: those that also solve at the pregrasp first,
+     * each group best first. There is no fallback between the two sources.
      *
      * @param[out] why Why there is nothing to attempt, when it returns nothing.
      * @param[out] verdicts Every candidate the filter judged, for drawing; null skips the record.
      */
-    std::optional<GraspPlan> chooseGrasp(
+    std::vector<GraspPlan> chooseGrasps(
         const Detection& detection, const geometry_msgs::msg::Pose& object_pose,
         const ArmContext& arm, std::string& why, std::vector<ConsideredGrasp>* verdicts);
 
@@ -546,17 +600,27 @@ private:
     rclcpp_action::Server<MoveHand>::SharedPtr      move_hand_server_;
 
     std::string planning_frame_;
+    /// A frame the world holds still in, through which a pose seen earlier reaches the planning
+    /// frame as the robot stands now.
+    std::string world_frame_ = "odom";
 
     // Defaults for the parameters of the same name; config/g1_manipulation_server.yaml documents
     // each one.
     double              object_timeout_s_{ 1.0 };
     double              approach_height_m_{ 0.22 };
     double              place_approach_height_m_{ 0.15 };
+    double              place_reach_m_{ 0.35 };
+    double              place_side_m_{ 0.15 };
+    double              place_edge_margin_m_{ 0.05 };
+    double              place_container_max_m_{ 0.40 };
     double              grasp_depth_below_top_m_{ 0.020 };
     double              min_grip_height_m_{ 0.080 };
     double              settle_tolerance_m_{ 0.010 };
     int                 settle_attempts_{ 2 };
     double              max_grasp_offset_m_{ 0.020 };
+    double              max_grasp_width_m_{ 0.090 };
+    double              scene_object_padding_m_{ 0.02 };
+    double              max_place_offset_m_{ 0.08 };
     double              grasp_refresh_max_shift_m_{ 0.050 };
     double              reaim_clearance_m_{ 0.08 };
     double              settle_wait_s_{ 0.8 };
@@ -585,20 +649,26 @@ private:
     int                 planning_attempts_{ 5 };
     std::vector<double> grasp_rpy_;
     std::string         grasp_source_;
-    double              grasp_timeout_s_{ 20.0 };
-    double              min_grasp_score_{ 0.5 };
-    int                 max_grasp_candidates_{ 20 };
-    double              max_approach_tilt_rad_{ 0.0 };
-    double              approach_standoff_m_{ 0.12 };
-    double              ik_timeout_s_{ 0.05 };
-    double              cartesian_step_m_{ 0.005 };
-    double              move_hand_max_reach_m_{ 0.48 };
-    double              move_hand_point_reach_m_{ 0.40 };
-    double              move_hand_speed_{ 0.6 };
-    double              move_hand_max_s_{ 30.0 };
-    int                 move_hand_orientations_{ 32 };
-    std::string         move_hand_left_shoulder_{ "left_shoulder_pitch_link" };
-    std::string         move_hand_right_shoulder_{ "right_shoulder_pitch_link" };
+    /// The arms a `generated` grasp source serves; the rest grasp from the object's box.
+    std::vector<std::string> generated_grasp_arms_{ "right" };
+    double                   grasp_timeout_s_{ 20.0 };
+    double                   min_grasp_score_{ 0.5 };
+    int                      max_grasp_candidates_{ 50 };
+    int                      grasp_tries_{ 3 };
+    double                   max_approach_tilt_rad_{ 0.0 };
+    double                   min_approach_forward_{ -0.3 };
+    double                   approach_standoff_m_{ 0.12 };
+    double                   ik_timeout_s_{ 0.05 };
+    double                   cartesian_step_m_{ 0.005 };
+    double                   move_hand_max_reach_m_{ 0.48 };
+    double                   move_hand_point_reach_m_{ 0.40 };
+    double                   move_hand_speed_{ 0.6 };
+    double                   move_hand_max_s_{ 30.0 };
+    int                      move_hand_orientations_{ 32 };
+    std::string              move_hand_left_shoulder_{ "left_shoulder_pitch_link" };
+    std::string              move_hand_right_shoulder_{ "right_shoulder_pitch_link" };
+    /// m. The steps out to its own side a pointing hand tries; see pointingHands().
+    std::vector<double> move_hand_point_side_steps_m_{ 0.06, 0.12, 0.18 };
     /// Generator gripper frame to `<side>_hand_grasp_frame`; see grasp_filter.hpp.
     std::array<double, 6> graspgen_offset_{};
 

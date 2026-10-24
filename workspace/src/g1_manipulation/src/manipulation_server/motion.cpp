@@ -352,10 +352,11 @@ G1ManipulationServer::planWithinBudget(MoveGroup& group, MoveGroup::Plan& plan)
         }
         RCLCPP_WARN(
             get_logger(),
-            "%s: plan %d of %d failed with %.1f s of budget left",
+            "%s: plan %d of %d failed (%d) with %.1f s of budget left",
             group.getName().c_str(),
             attempt,
             planning_attempts_,
+            result.val,
             std::chrono::duration<double>(deadline - Clock::now()).count());
     }
     group.setPlanningTime(planning_time_s_);

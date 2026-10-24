@@ -88,7 +88,7 @@ Localization has a committed map for `navigation` and `apartment` only.
 | `mock_margin_m` | `0.005` | How far past an object's box the mock's mask may spill. |
 | `grasp_source` | `fixed_top_down` | `fixed_top_down`, or `generated`, which needs a `grasp_engine` that answers. |
 | `grasp_engine` | `none` | `none`, `mock` (no GPU) or `graspgen` (the GraspGenX server on the host). |
-| `grasp_offset` | `[0.0, 0.0, 0.0, 0.0, 0.0, 0.0]` | The grasp generator's gripper frame to this robot's grasp frame, xyz then rpy. |
+| `grasp_offset` | `[0.0, 0.0, 0.07, 1.5707963, 0.0, 3.1415927]` | The grasp generator's gripper frame to this robot's grasp frame, xyz then rpy, measured for GraspGenX's Dex3. |
 | `only_from_below` | `false` | Test aid: the mock generator offers only grasps from under the table, which the filter must refuse. |
 | `vla` | `false` | The learned-grasp skill and its policy engine. Needs `manipulation:=true`. |
 | `vla_engine` | `mock` | `mock` needs no model. `groot` talks to a policy server outside the container. |

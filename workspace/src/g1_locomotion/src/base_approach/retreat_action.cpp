@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <format>
 #include <thread>
 
 #include "g1_locomotion/g1_base_approach_node.hpp"
@@ -47,6 +48,7 @@ void BaseApproachNode::runRetreat(const std::shared_ptr<GoalHandleRetreat>& hand
             here->pose.position.y - start->pose.position.y);
     };
     double     last_travelled = 0.0;
+    bool       blocked        = false;
     const auto blind_until    = [&,
                               grace =
                                   std::chrono::duration_cast<std::chrono::steady_clock::duration>(
@@ -90,6 +92,20 @@ void BaseApproachNode::runRetreat(const std::shared_ptr<GoalHandleRetreat>& hand
             continue;
         }
 
+        // Never into what the costmap holds behind: a home's aisle is narrower than the back-off
+        // a table wants, and the walk that follows steps clear of the rest.
+        if (const auto around = surroundings();
+            around && clearanceBehind(
+                          around->obstacles,
+                          around->x,
+                          around->y,
+                          around->yaw,
+                          step_limits_.body_radius_m) < step_limits_.body_radius_m + retreat_gap_m_)
+        {
+            blocked = true;
+            break;
+        }
+
         publish(-retreat_speed_mps_, 0.0, 0.0);
         if (tick++ % feedback_every == 0)
         {
@@ -103,10 +119,28 @@ void BaseApproachNode::runRetreat(const std::shared_ptr<GoalHandleRetreat>& hand
     // The last good reading if TF is still down, or a completed retreat reads as 0 m.
     const double backed = travelled().value_or(last_travelled);
     result->travelled_m = backed;
-    result->success     = backed >= goal->distance_m;
-    result->message     = result->success ? "reversed " + std::to_string(backed) + " m clear" :
-                                            "backing_off: only made " + std::to_string(backed) +
-                                            " m of " + std::to_string(goal->distance_m);
+    // The stride's last sway after the stop can read a few cm short of a distance reached.
+    const bool far_enough = backed + retreat_settle_slop_m_ >= goal->distance_m;
+    result->success       = far_enough || (blocked && backed >= retreat_min_m_);
+    if (far_enough)
+    {
+        result->message = std::format("reversed {:.2f} m clear", backed);
+    }
+    else if (result->success)
+    {
+        result->message = std::format(
+            "reversed {:.2f} m of {:.2f}: something is behind",
+            backed,
+            goal->distance_m);
+    }
+    else
+    {
+        result->message = std::format(
+            "backing_off: only made {:.2f} m of {:.2f}{}",
+            backed,
+            goal->distance_m,
+            blocked ? ", with something close behind" : "");
+    }
     RCLCPP_INFO(get_logger(), "%s", result->message.c_str());
     if (result->success)
     {

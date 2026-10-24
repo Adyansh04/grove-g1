@@ -13,7 +13,7 @@ ends it, and `--print` lists the commands instead. Arguments after the section, 
 
 ## In simulation, with ground-truth masks
 
-The apartment world has six rooms and 46 props, with a ground-truth file for scoring.
+The apartment world has six rooms and 52 props, with a ground-truth file for scoring.
 Fetch its assets once on the host (about 330 MB; nothing is committed):
 
 ```bash
@@ -148,7 +148,8 @@ needs about 1.7 GB and leaves room for the offline describer: serve with
 `detector_params:=/root/workspace/src/canopy/canopy_perception/config/detector_yoloe.yaml`.
 
 The acceptance test (`g1_bringup`'s `test_explore_apartment`) runs this way with
-`G1_EXPLORE_TEST_DETECTOR=semantic`, and `G1_EXPLORE_TEST_DETECTOR_PARAMS` for YOLOE's list:
+`G1_EXPLORE_TEST_DETECTOR=semantic`, and `G1_EXPLORE_TEST_DETECTOR_PARAMS` for YOLOE's list. These
+runs scored the world's first 46 props, before the small things to fetch were added:
 
 | Detector | Objects found | Not in the flat | Boxes (median IoU) | Time |
 |---|---|---|---|---|

@@ -32,7 +32,9 @@
 #   holding(arm, x)  the hand `arm` holds x; a capital letter such as X is any object
 #   hand_empty(arm)  the hand holds nothing
 #   inside(x, y)     x rests in container y
+#   on(x, y)         x rests on surface y
 #   arm_at(arm, p)   the arm group is at its named pose p
+#   still()          an effect: the skill holds the base only to keep it where it is
 # Anything that names an argument refers to its value in the step.
 
 skills:
@@ -218,6 +220,39 @@ skills:
     max_duration_s: 360
     template: PlaceInto
 
+  - name: PlaceOn
+    description: >-
+      Put the object a hand holds down on a table, desk, counter or other surface: close on its
+      nearest edge, set the object down where the hand reaches, release it and back away. The
+      robot must stand facing the surface within about a metre, as GoToPlace to it or to a place
+      in front of it leaves it. For a tray, box or basket, PlaceInto.
+    args:
+      - name: surface_id
+        type: string
+        format: id
+        description: >-
+          The surface: its id in the world model (such as O12) or, where there is no world model,
+          the name the detector reports it under (such as dining_table). Letters, digits and
+          underscores.
+      - name: phrase
+        type: string
+        format: phrase
+        default_from: label(surface_id)
+        description: >-
+          Plain words the detector finds the surface by, such as the world model's label for it
+          (dining table).
+      - name: arm
+        type: string
+        description: Which hand holds the object.
+        enum: [left, right]
+    requires: ["near(surface_id)", "holding(arm, X)"]
+    effects: ["on(X, surface_id)", "hand_empty(arm)"]
+    resources: [base, left_arm, right_arm]
+    idempotent: false
+    risk: manipulation
+    max_duration_s: 300
+    template: PlaceOn
+
   - name: ExploreBuilding
     description: >-
       Explore the building so the world model learns its rooms and objects: walk to where the map
@@ -259,10 +294,11 @@ skills:
 
   - name: HandTo
     description: >-
-      Bring one hand to just above an object, 10 cm over its top, without grasping it: to show
-      which one is meant, or to get ready over it. The robot does not walk: stand within reach
-      first (GoToTarget). Given what an object is rather than its id, it reaches over the nearest
-      one.
+      Bring one hand to just above an object, 10 cm over its top, without grasping it. The robot
+      does not walk, and the top must be within about 0.48 m of the shoulder, nearer than
+      GoToTarget usually stops, so it fails on most objects the robot has only walked up to. It is
+      not a first step before another arm skill, and it does not point from a distance. Given what
+      an object is rather than its id, it reaches over the nearest one.
     args:
       - name: arm
         type: string

@@ -5,6 +5,18 @@ g1_object_geometry:
     # look like the objects moving.
     up_frame: "odom"
 
+    # An instance wider than max_extent_m is a surface, a table or a desk, when most of its points
+    # share one height within surface_band_m: it is published as a box that thick, its top the
+    # surface's, over the part the camera sees. PlaceOn sets things down on it.
+    surface_band_m: 0.03
+    max_surface_extent_m: 3.0
+
+    # The robot's own frames. A phrase can fit the arm in view ("toy robot"), and an instance whose
+    # box holds one of these is the robot. A grasped object's centre sits about 7 cm from the palm
+    # frame, so a held object is kept.
+    self_frames: [right_hand_palm_link, left_hand_palm_link, right_wrist_yaw_link,
+                  left_wrist_yaw_link, right_elbow_link, left_elbow_link]
+
     # Edge depth blends object and background, and the relay's depth is bilinear-filtered. 2 px
     # is the thinnest erosion that removes it on a 6 cm object at 0.5 m.
     mask_erosion_px: 2
@@ -32,6 +44,7 @@ g1_object_geometry:
     min_points: 150
 
     # Box extents outside these are noise (small) or a mask run onto the table (large).
+    # max_extent_m is also the approach's and the place's table width (test_config_drift).
     min_extent_m: 0.01
     max_extent_m: 0.40
 

@@ -139,14 +139,16 @@ def _sim_args(context, navigating, want_manipulation, want_perception, want_move
     }
 
 
-def _navigation(mode, want_nav):
+def _navigation(mode, want_nav, want_moveit):
     """nav_stack.launch.py stages no simulator of its own, which is what makes including it
     beside _simulator() safe. use_composition and container_name are not declared here and not
-    forwarded, so nav_stack's own defaults apply."""
+    forwarded, so nav_stack's own defaults apply. With MoveIt up, the collision monitor's high
+    band reads its self-filtered cloud, so what a hand carries is not an obstacle."""
     return _include(
         os.path.join(_share("g1_navigation"), "launch", "nav_stack.launch.py"),
         mode=mode,
         nav="true" if want_nav else "false",
+        collision_high_cloud="/filtered_cloud" if want_moveit else "/livox/lidar",
     )
 
 
@@ -284,7 +286,7 @@ def _setup(context, *args, **kwargs):
         )
     ]
     if navigating:
-        actions.append(_navigation(mode, want_nav))
+        actions.append(_navigation(mode, want_nav, want_moveit))
     if want_moveit:
         actions.append(_moveit())
     if want_perception:
@@ -411,9 +413,9 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "grasp_offset",
-                default_value="[0.0, 0.0, 0.0, 0.0, 0.0, 0.0]",
+                default_value="[0.0, 0.0, 0.07, 1.5707963, 0.0, 3.1415927]",
                 description="The grasp generator's gripper frame to this robot's grasp frame, xyz "
-                "then rpy. Measure it against the candidates in RViz before trusting it.",
+                "then rpy, measured for GraspGenX's Dex3 (see g1_manipulation's launch).",
             ),
             DeclareLaunchArgument(
                 "grasp_engine",

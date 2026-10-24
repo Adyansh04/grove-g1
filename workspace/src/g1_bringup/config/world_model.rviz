@@ -1,175 +1,654 @@
-# canopy's canopy.rviz with the G1's chest camera added; keep the two in step.
 Panels:
-- Class: rviz_common/Displays
-  Name: Displays
-  Property Tree Widget:
+  - Class: rviz_common/Displays
+    Help Height: 70
+    Name: Displays
+    Property Tree Widget:
+      Expanded:
+        - /World model1
+      Splitter Ratio: 0.550000011920929
+    Tree Height: 446
+  - Class: rviz_common/Views
     Expanded:
-    - /World model1
-    Splitter Ratio: 0.55
-  Tree Height: 560
-- Class: rviz_common/Views
-  Name: Views
+      - /Current View1
+    Name: Views
+    Splitter Ratio: 0.5
 Visualization Manager:
-  Class: ''
-  Name: root
+  Class: ""
   Displays:
-  - Class: rviz_default_plugins/Map
-    Name: Map as SLAM builds it
-    Enabled: false
-    Topic:
-      Value: /map
-      Depth: 1
-      Durability Policy: Transient Local
-      Reliability Policy: Reliable
-    Alpha: 0.9
-    Color Scheme: map
-    Draw Behind: true
-  - Class: rviz_default_plugins/Map
-    Name: Floor plan (walls closed, furniture solid)
-    Enabled: true
-    Topic:
-      Value: /canopy/floor_plan
-      Depth: 1
-      Durability Policy: Transient Local
-      Reliability Policy: Reliable
-    Alpha: 0.9
-    Color Scheme: map
-    Draw Behind: true
-  - Class: rviz_common/Group
-    Name: World model
-    Enabled: true
-    Displays:
-    - Class: rviz_default_plugins/Map
-      Name: Camera coverage (red = still to see, cyan = written off)
-      Enabled: true
-      Topic:
-        Value: /canopy/coverage
-        Depth: 1
-        Durability Policy: Volatile
-        Reliability Policy: Reliable
-      Alpha: 0.5
-      Color Scheme: costmap
-      Draw Behind: false
-    - Class: rviz_default_plugins/Map
-      Name: Walls the rooms are cut on
+    - Alpha: 0.8999999761581421
+      Binary representation: false
+      Binary threshold: 100
+      Class: rviz_default_plugins/Map
+      Color Scheme: map
+      Draw Behind: true
       Enabled: false
+      Name: Map as SLAM builds it
       Topic:
-        Value: /canopy/walls
         Depth: 1
         Durability Policy: Transient Local
+        Filter size: 10
+        History Policy: Keep Last
         Reliability Policy: Reliable
-      Alpha: 0.7
-      Color Scheme: map
-      Draw Behind: false
-    - Class: rviz_default_plugins/MarkerArray
-      Name: Rooms, objects, next viewpoint
-      Enabled: true
-      Namespaces:
-        room_areas: true
-        room_outlines: true
-        room_names: true
-        doorways: true
-        objects: true
-        object_names: true
-        viewpoint: true
-        visited: true
-        visit_numbers: true
-        glimpses: true
-        camera_view: true
-      Topic:
-        Value: /canopy/markers
-        Depth: 1
+        Value: /map
+      Update Topic:
+        Depth: 5
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
-  - Class: rviz_default_plugins/RobotModel
-    Name: Robot
-    Enabled: true
-    Description Topic:
-      Value: /robot_description
-      Depth: 1
-      Durability Policy: Transient Local
-      Reliability Policy: Reliable
-    Alpha: 1
-  - Class: rviz_default_plugins/Path
-    Name: Robot's trail
-    Enabled: true
-    Topic:
-      Value: /canopy/trail
-      Depth: 1
-      Durability Policy: Transient Local
-      Reliability Policy: Reliable
-    Color: 80; 200; 255
-    Line Style: Lines
-    Line Width: 0.03
-  - Class: rviz_default_plugins/Path
-    Name: Planned path
-    Enabled: true
-    Topic:
-      Value: /plan
-      Depth: 5
-      Durability Policy: Volatile
-      Reliability Policy: Reliable
-    Color: 255; 220; 60
-    Line Style: Billboards
-    Line Width: 0.04
-  - Class: rviz_default_plugins/LaserScan
-    Name: Scan
-    Enabled: false
-    Topic:
-      Value: /scan
-      Depth: 5
-      Durability Policy: Volatile
-      Reliability Policy: Best Effort
-    Color: 25; 255; 0
-    Size (m): 0.05
-  - Class: rviz_default_plugins/TF
-    Name: TF
-    Enabled: false
-  - Class: rviz_default_plugins/Image
-    Name: Head camera
-    Enabled: true
-    Topic:
-      Value: /camera/color/image_raw
-      Depth: 5
-      Durability Policy: Volatile
-      Reliability Policy: Best Effort
-    Normalize Range: true
-  - Class: rviz_default_plugins/Image
-    Name: Chest camera
-    Enabled: true
-    Topic:
-      Value: /chest_camera/color/image_raw
-      Depth: 5
-      Durability Policy: Volatile
-      Reliability Policy: Best Effort
-    Normalize Range: true
+        Value: /map_updates
+      Use Timestamp: false
+      Value: false
+    - Alpha: 0.8999999761581421
+      Binary representation: false
+      Binary threshold: 100
+      Class: rviz_default_plugins/Map
+      Color Scheme: map
+      Draw Behind: true
+      Enabled: true
+      Name: Floor plan (walls closed, furniture solid)
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /canopy/floor_plan
+      Update Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /canopy/floor_plan_updates
+      Use Timestamp: false
+      Value: true
+    - Class: rviz_common/Group
+      Displays:
+        - Alpha: 0.5
+          Binary representation: false
+          Binary threshold: 100
+          Class: rviz_default_plugins/Map
+          Color Scheme: costmap
+          Draw Behind: false
+          Enabled: true
+          Name: Camera coverage (red = still to see, cyan = written off)
+          Topic:
+            Depth: 1
+            Durability Policy: Volatile
+            Filter size: 10
+            History Policy: Keep Last
+            Reliability Policy: Reliable
+            Value: /canopy/coverage
+          Update Topic:
+            Depth: 5
+            Durability Policy: Volatile
+            History Policy: Keep Last
+            Reliability Policy: Reliable
+            Value: /canopy/coverage_updates
+          Use Timestamp: false
+          Value: true
+        - Alpha: 0.699999988079071
+          Binary representation: false
+          Binary threshold: 100
+          Class: rviz_default_plugins/Map
+          Color Scheme: map
+          Draw Behind: false
+          Enabled: false
+          Name: Walls the rooms are cut on
+          Topic:
+            Depth: 1
+            Durability Policy: Transient Local
+            Filter size: 10
+            History Policy: Keep Last
+            Reliability Policy: Reliable
+            Value: /canopy/walls
+          Update Topic:
+            Depth: 5
+            Durability Policy: Volatile
+            History Policy: Keep Last
+            Reliability Policy: Reliable
+            Value: /canopy/walls_updates
+          Use Timestamp: false
+          Value: false
+        - Class: rviz_default_plugins/MarkerArray
+          Enabled: true
+          Name: Rooms, objects, next viewpoint
+          Namespaces:
+            camera_view: true
+            room_areas: true
+            room_names: true
+            room_outlines: true
+            viewpoint: true
+            visit_numbers: true
+            visited: true
+          Topic:
+            Depth: 1
+            Durability Policy: Volatile
+            History Policy: Keep Last
+            Reliability Policy: Reliable
+            Value: /canopy/markers
+          Value: true
+      Enabled: true
+      Name: World model
+    - Alpha: 1
+      Class: rviz_default_plugins/RobotModel
+      Collision Enabled: false
+      Description File: ""
+      Description Source: Topic
+      Description Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /robot_description
+      Enabled: true
+      Links:
+        All Links Enabled: true
+        Expand Joint Details: false
+        Expand Link Details: false
+        Expand Tree: false
+        Link Tree Style: Links in Alphabetic Order
+        camera_color_optical_frame:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        camera_depth_optical_frame:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        chest_camera_color_optical_frame:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        chest_camera_depth_optical_frame:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        chest_camera_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        chest_camera_visual:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        d435_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        d435_visual:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        head_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        imu_in_pelvis:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        imu_in_torso:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        left_ankle_pitch_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        left_ankle_roll_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        left_elbow_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        left_hand_grasp_frame:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        left_hand_index_0_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        left_hand_index_1_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        left_hand_middle_0_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        left_hand_middle_1_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        left_hand_palm_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        left_hand_thumb_0_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        left_hand_thumb_1_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        left_hand_thumb_2_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        left_hip_pitch_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        left_hip_roll_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        left_hip_yaw_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        left_knee_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        left_shoulder_pitch_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        left_shoulder_roll_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        left_shoulder_yaw_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        left_wrist_pitch_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        left_wrist_roll_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        left_wrist_yaw_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        logo_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        mid360_imu:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        mid360_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        mid360_visual:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        pelvis:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        pelvis_contour_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        right_ankle_pitch_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        right_ankle_roll_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        right_elbow_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        right_hand_grasp_frame:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        right_hand_index_0_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        right_hand_index_1_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        right_hand_middle_0_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        right_hand_middle_1_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        right_hand_palm_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        right_hand_thumb_0_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        right_hand_thumb_1_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        right_hand_thumb_2_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        right_hip_pitch_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        right_hip_roll_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        right_hip_yaw_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        right_knee_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        right_shoulder_pitch_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        right_shoulder_roll_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        right_shoulder_yaw_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        right_wrist_pitch_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        right_wrist_roll_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        right_wrist_yaw_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        torso_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        waist_roll_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        waist_yaw_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+      Mass Properties:
+        Inertia: false
+        Mass: false
+      Name: Robot
+      TF Prefix: ""
+      Update Interval: 0
+      Value: true
+      Visual Enabled: true
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz_default_plugins/Path
+      Color: 80; 200; 255
+      Enabled: true
+      Head Diameter: 0.30000001192092896
+      Head Length: 0.20000000298023224
+      Length: 0.30000001192092896
+      Line Style: Lines
+      Line Width: 0.029999999329447746
+      Name: Robot's trail
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Pose Color: 255; 85; 255
+      Pose Style: None
+      Radius: 0.029999999329447746
+      Shaft Diameter: 0.10000000149011612
+      Shaft Length: 0.10000000149011612
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /canopy/trail
+      Value: true
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz_default_plugins/Path
+      Color: 255; 220; 60
+      Enabled: true
+      Head Diameter: 0.30000001192092896
+      Head Length: 0.20000000298023224
+      Length: 0.30000001192092896
+      Line Style: Billboards
+      Line Width: 0.03999999910593033
+      Name: Planned path
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Pose Color: 255; 85; 255
+      Pose Style: None
+      Radius: 0.029999999329447746
+      Shaft Diameter: 0.10000000149011612
+      Shaft Length: 0.10000000149011612
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /plan
+      Value: true
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Autocompute Value Bounds:
+        Max Value: 10
+        Min Value: -10
+        Value: true
+      Axis: Z
+      Channel Name: intensity
+      Class: rviz_default_plugins/LaserScan
+      Color: 25; 255; 0
+      Color Transformer: ""
+      Decay Time: 0
+      Enabled: false
+      Invert Rainbow: false
+      Max Color: 255; 255; 255
+      Max Intensity: 4096
+      Min Color: 0; 0; 0
+      Min Intensity: 0
+      Name: Scan
+      Position Transformer: ""
+      Selectable: true
+      Size (Pixels): 3
+      Size (m): 0.05000000074505806
+      Style: Flat Squares
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /scan
+      Use Fixed Frame: true
+      Use rainbow: true
+      Value: false
+    - Class: rviz_default_plugins/TF
+      Enabled: false
+      Filter (blacklist): ""
+      Filter (whitelist): ""
+      Frame Timeout: 15
+      Frames:
+        All Enabled: true
+      Marker Scale: 1
+      Name: TF
+      Show Arrows: true
+      Show Axes: true
+      Show Names: false
+      Tree:
+        {}
+      Update Interval: 0
+      Value: false
+    - Class: rviz_default_plugins/Image
+      Enabled: true
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: Head camera
+      Normalize Range: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /camera/color/image_raw
+      Value: true
+    - Class: rviz_default_plugins/Image
+      Enabled: true
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: Chest camera
+      Normalize Range: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /chest_camera/color/image_raw
+      Value: true
+  Enabled: true
   Global Options:
     Background Color: 38; 38; 42
     Fixed Frame: map
     Frame Rate: 15
+  Name: root
   Tools:
-  - Class: rviz_default_plugins/MoveCamera
-  - Class: rviz_default_plugins/Measure
-  - Class: rviz_default_plugins/SetGoal
-    Topic:
-      Value: /goal_pose
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Measure
+      Line color: 128; 128; 0
+    - Class: rviz_default_plugins/SetGoal
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /goal_pose
+  Transformation:
+    Current:
+      Class: rviz_default_plugins/TF
   Value: true
   Views:
     Current:
-      Class: rviz_default_plugins/TopDownOrtho
-      Name: Current View
       Angle: 0
+      Class: rviz_default_plugins/TopDownOrtho
+      Enable Stereo Rendering:
+        Stereo Eye Separation: 0.05999999865889549
+        Stereo Focal Distance: 1
+        Swap Stereo Eyes: false
+        Value: false
+      Invert Z Axis: false
+      Name: Current View
+      Near Clip Distance: 0.009999999776482582
       Scale: 55
+      Target Frame: <Fixed Frame>
+      Value: TopDownOrtho (rviz_default_plugins)
       X: 5
       Y: 0
-      Target Frame: <Fixed Frame>
+    Saved: ~
 Window Geometry:
-  Height: 950
-  Width: 1600
+  Chest camera:
+    collapsed: false
   Displays:
     collapsed: false
   Head camera:
     collapsed: false
-  Chest camera:
+  Height: 1545
+  Hide Left Dock: false
+  Hide Right Dock: false
+  QMainWindow State: 000000ff00000000fd00000002000000000000019b000003b9fc0200000002fb000000100044006900730070006c00610079007301000002350000023f000000c700fffffffb0000000a00560069006500770073010000047a00000174000000a000ffffff0000000200000f00000001f4fc0100000002fb000000160048006500610064002000630061006d0065007200610100000000000007370000008500fffffffb0000001800430068006500730074002000630061006d006500720061010000073d000007c30000008800ffffff00000d5f000003b900000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  Views:
     collapsed: false
+  Width: 3840
+  X: 0
+  Y: 27

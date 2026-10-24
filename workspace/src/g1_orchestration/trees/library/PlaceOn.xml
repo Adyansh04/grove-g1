@@ -1,0 +1,46 @@
+<?xml version="1.0"?>
+<!--
+  Put down what a hand holds on a table, desk, counter or other surface in front of the robot: ask
+  the detector for the surface, close on its nearest edge, set the object down where the hand
+  reaches, release and back away. The robot must stand facing the surface within about a metre,
+  as GoToTarget or a place in front of it leaves it. Into a tray or box is PlaceInto.
+
+  ApproachObject closes on a surface's edge, not its centre, which is out of the arm's reach; Place
+  then puts the object where the hand reaches on a surface wider than a container. Approach and
+  place retry together, as in PlaceInto. The detector is asked for the held object too, so Place
+  can confirm where it landed; held_left and held_right name it.
+-->
+<root BTCPP_format="4">
+  <BehaviorTree ID="PlaceOn">
+    <Timeout name="give_up_after_the_limit" msec="300000">
+      <Sequence name="place_on">
+        <ScriptCondition name="hand_must_hold_something_to_place"
+                         code="(arm == 'left' ? @held_left : @held_right) != ''"/>
+        <Script name="say_what_to_look_for"
+                code="wanted := surface_id + '=' + phrase; held := (arm == 'left') ? @held_left : @held_right; load := (held == '?') ? '' : held"/>
+        <RetryUntilSuccessful name="find_it_with_retries" num_attempts="2">
+          <LookFor name="find_the_surface_and_the_load" objects="{wanted}" also="{load}"
+                   first_id="{seen_as}"/>
+        </RetryUntilSuccessful>
+        <RetryUntilSuccessful name="place_with_retries" num_attempts="2">
+          <Sequence name="close_in_and_place">
+            <ApproachObject name="close_on_the_surface" object_id="{seen_as}" arm="{arm}"
+                            use_current_heading="true"/>
+            <Place name="put_it_down" surface="{seen_as}" arm="{arm}"/>
+          </Sequence>
+        </RetryUntilSuccessful>
+        <Retreat name="back_off_the_surface" distance="0.5"/>
+        <ClearCostmaps name="forget_the_surface"/>
+        <StopLooking name="perception_off"/>
+      </Sequence>
+    </Timeout>
+  </BehaviorTree>
+
+  <TreeNodesModel>
+    <SubTree ID="PlaceOn">
+      <input_port name="surface_id">The surface: its world-model id such as O12, or where there is no world model the name the detector reports it under, such as dining_table.</input_port>
+      <input_port name="phrase">Plain words the detector finds the surface by, such as dining table.</input_port>
+      <input_port name="arm">Which hand holds the object: left or right.</input_port>
+    </SubTree>
+  </TreeNodesModel>
+</root>

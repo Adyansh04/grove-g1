@@ -17,6 +17,14 @@
 namespace g1_locomotion
 {
 
+ApproachLimits BaseApproachNode::edgeLimits(const ApproachLimits& limits, double edge_y_m) const
+{
+    ApproachLimits edge = limits;
+    edge.target_x_m     = surface_edge_x_m_;
+    edge.target_y_m     = edge_y_m;
+    return edge;
+}
+
 ApproachLimits BaseApproachNode::limitsFor(const ApproachObject::Goal& goal) const
 {
     ApproachLimits limits = limits_;
@@ -99,8 +107,9 @@ void BaseApproachNode::runApproach(const std::shared_ptr<GoalHandleApproach>& ha
             return;
         }
 
-        const auto object = objectInBase(goal->object_id);
-        const auto here   = basePose();
+        bool       surface = false;
+        const auto object  = objectInBase(goal->object_id, &surface);
+        const auto here    = basePose();
         if (!object || !here)
         {
             // Stand still without a measurement, for up to lookup_grace_s: TF and detections
@@ -120,10 +129,12 @@ void BaseApproachNode::runApproach(const std::shared_ptr<GoalHandleApproach>& ha
         }
         last_measured = std::chrono::steady_clock::now();
 
-        // Judged in the base frame, which is what the arm's reach is defined in.
+        // Judged in the base frame, which is what the arm's reach is defined in. A surface is
+        // closed on straight ahead, its edge to surface_edge_x_m: anywhere along it will do.
+        const ApproachLimits aim   = surface ? edgeLimits(limits, object->point.y) : limits;
         const double heading_error = wrap(working_yaw - tf2::getYaw(here->pose.orientation));
         const auto   command =
-            planApproach(object->point.x, object->point.y, heading_error, limits, gait_);
+            planApproach(object->point.x, object->point.y, heading_error, aim, gait_);
 
         result->final_x_m         = object->point.x;
         result->final_y_m         = object->point.y;
@@ -159,15 +170,16 @@ void BaseApproachNode::runApproach(const std::shared_ptr<GoalHandleApproach>& ha
             for (int nudges = 0;; ++nudges)
             {
                 settle();
-                settled = objectInBase(goal->object_id);
+                settled = objectInBase(goal->object_id, &surface);
                 if (!settled)
                 {
                     break;
                 }
-                in_reach         = settledInReach(settled->point.x, settled->point.y, limits);
+                const ApproachLimits held = surface ? edgeLimits(limits, settled->point.y) : limits;
+                in_reach         = settledInReach(settled->point.x, settled->point.y, held);
                 const auto nudge = in_reach ?
                                        std::nullopt :
-                                       planNudge(settled->point.x, settled->point.y, limits, gait_);
+                                       planNudge(settled->point.x, settled->point.y, held, gait_);
                 if (!nudge || nudges >= max_nudges_ || handle->is_canceling() ||
                     std::chrono::steady_clock::now() > deadline)
                 {

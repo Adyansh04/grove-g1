@@ -79,7 +79,13 @@ def _setup(context, *args, **kwargs):
         # a goal can shift a little under a loop closure. A fixed goal pose wants localization.
         # Explicit, because an included file inherits the parent's configurations and Nav2 must
         # run uncomposed. The scan and localization nodes above still compose.
-        actions.append(_include("nav2.launch.py", use_composition="false"))
+        actions.append(
+            _include(
+                "nav2.launch.py",
+                use_composition="false",
+                collision_high_cloud=LaunchConfiguration("collision_high_cloud"),
+            )
+        )
 
     return actions
 
@@ -92,6 +98,12 @@ def generate_launch_description():
                 default_value="mapping",
                 description="'mapping' builds a new map with slam_toolbox; 'localization' runs "
                 "map_server + AMCL against maps/facility.",
+            ),
+            DeclareLaunchArgument(
+                "collision_high_cloud",
+                default_value="/livox/lidar",
+                description="Passed to nav2.launch.py: the cloud collision_monitor's high band "
+                "reads, /filtered_cloud when MoveIt runs.",
             ),
             DeclareLaunchArgument(
                 "nav",

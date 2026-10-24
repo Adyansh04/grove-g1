@@ -5,12 +5,16 @@
 
 #include <tf2/LinearMath/Matrix3x3.h>
 #include <tf2/LinearMath/Quaternion.h>
+#include <tf2/LinearMath/Transform.h>
 #include <tf2/LinearMath/Vector3.h>
 
+#include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <format>
 #include <memory>
 #include <string>
+#include <tf2/utils.hpp>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <utility>
 #include <vector>
@@ -74,6 +78,28 @@ geometry_msgs::msg::Pose G1ManipulationServer::graspFrameGoal(
         arm.is_left);
 }
 
+std::optional<geometry_msgs::msg::Pose> G1ManipulationServer::heldPlaceGoal(
+    MoveGroup& group, const ArmContext& arm, const moveit_msgs::msg::AttachedCollisionObject& held,
+    const geometry_msgs::msg::Point& object_at)
+{
+    if (held.object.header.frame_id != arm.palm_link || held.object.primitive_poses.empty())
+    {
+        return std::nullopt;
+    }
+    tf2::Transform palm;
+    tf2::Transform origin;
+    tf2::Transform box;
+    tf2::fromMsg(group.getCurrentPose(arm.palm_link).pose, palm);
+    tf2::fromMsg(held.object.pose, origin);
+    tf2::fromMsg(held.object.primitive_poses.front(), box);
+    const tf2::Vector3       now  = (palm * origin * box).getOrigin();
+    geometry_msgs::msg::Pose goal = group.getCurrentPose(arm.grasp_frame).pose;
+    goal.position.x += object_at.x - now.x();
+    goal.position.y += object_at.y - now.y();
+    goal.position.z += object_at.z - now.z();
+    return goal;
+}
+
 std::optional<g1_msgs::srv::GenerateGrasps::Response> G1ManipulationServer::requestGrasps(
     const std::string& object_id, const ArmContext& arm, std::string& why)
 {
@@ -108,36 +134,73 @@ std::optional<g1_msgs::srv::GenerateGrasps::Response> G1ManipulationServer::requ
     return std::move(*response);
 }
 
-std::optional<G1ManipulationServer::GraspPlan> G1ManipulationServer::chooseGrasp(
+geometry_msgs::msg::Point placeOffset(
+    const geometry_msgs::msg::Pose& surface, const geometry_msgs::msg::Vector3& size,
+    const geometry_msgs::msg::Point& preferred, double margin_m, double container_m)
+{
+    geometry_msgs::msg::Point offset;
+    if (std::max(size.x, size.y) <= container_m)
+    {
+        return offset;
+    }
+    const double yaw = tf2::getYaw(surface.orientation);
+    const double dx  = preferred.x - surface.position.x;
+    const double dy  = preferred.y - surface.position.y;
+    // Into the surface's frame, then kept inside its footprint less the margin.
+    const double local_x = std::cos(yaw) * dx + std::sin(yaw) * dy;
+    const double local_y = -std::sin(yaw) * dx + std::cos(yaw) * dy;
+    const double half_x  = std::max(0.0, 0.5 * size.x - margin_m);
+    const double half_y  = std::max(0.0, 0.5 * size.y - margin_m);
+    offset.x             = std::clamp(local_x, -half_x, half_x);
+    offset.y             = std::clamp(local_y, -half_y, half_y);
+    return offset;
+}
+
+geometry_msgs::msg::Pose
+atOffset(const geometry_msgs::msg::Pose& surface, const geometry_msgs::msg::Point& offset)
+{
+    const double             yaw = tf2::getYaw(surface.orientation);
+    geometry_msgs::msg::Pose out = surface;
+    out.position.x += std::cos(yaw) * offset.x - std::sin(yaw) * offset.y;
+    out.position.y += std::sin(yaw) * offset.x + std::cos(yaw) * offset.y;
+    return out;
+}
+
+std::vector<G1ManipulationServer::GraspPlan> G1ManipulationServer::chooseGrasps(
     const Detection& detection, const geometry_msgs::msg::Pose& object_pose, const ArmContext& arm,
     std::string& why, std::vector<ConsideredGrasp>* verdicts)
 {
-    if (grasp_source_ != "generated")
+    // GraspGenX describes one hand; the other keeps the grasp from the object's box.
+    const bool generated =
+        grasp_source_ == "generated" &&
+        std::ranges::find(generated_grasp_arms_, arm.is_left ? "left" : "right") !=
+            generated_grasp_arms_.end();
+    if (!generated)
     {
         GraspPlan plan;
         plan.grasp    = graspFrameGoal(object_pose, detection.bbox.size.z, arm);
         plan.pregrasp = plan.grasp;
         plan.pregrasp.position.z += approach_height_m_;
         plan.origin = "top-down";
-        return plan;
+        return { plan };
     }
 
     const auto response = requestGrasps(idOf(detection), arm, why);
     if (!response)
     {
-        return std::nullopt;
+        return {};
     }
     MoveGroup* group = groupFor(arm.arm_group);
     if (group == nullptr)
     {
         why = "no planning group called " + arm.arm_group;
-        return std::nullopt;
+        return {};
     }
     const moveit::core::RobotStatePtr state = group->getCurrentState();
     if (state == nullptr)
     {
         why = "no current state to solve a grasp against";
-        return std::nullopt;
+        return {};
     }
     const moveit::core::JointModelGroup* jmg = state->getJointModelGroup(arm.arm_group);
     // One scratch state for every candidate: a RobotState copy allocates per joint and link.
@@ -150,9 +213,15 @@ std::optional<G1ManipulationServer::GraspPlan> G1ManipulationServer::chooseGrasp
                 verdicts->push_back({ pose, verdict });
             }
         };
-    int considered = 0;
-    int reachable  = 0;
-    for (std::size_t i = 0; i < response->grasps.size() && considered < max_grasp_candidates_; ++i)
+    int                    considered = 0;
+    int                    reachable  = 0;
+    std::vector<GraspPlan> plans;
+    // Solvable at the grasp only: a 50 ms solve near the edge of reach misses pregrasps OMPL's
+    // own goal sampling finds, so these follow the ones that solve at both ends.
+    std::vector<GraspPlan> grasp_only;
+    for (std::size_t i = 0; i < response->grasps.size() && considered < max_grasp_candidates_ &&
+                            std::cmp_less(plans.size(), grasp_tries_);
+         ++i)
     {
         // Sorted best first, so the first one under the bar ends the list.
         if (i < response->scores.size() && response->scores[i] < min_grasp_score_)
@@ -161,15 +230,20 @@ std::optional<G1ManipulationServer::GraspPlan> G1ManipulationServer::chooseGrasp
         }
         ++considered;
 
-        const auto in_planning_frame =
-            toPlanningFrame(response->grasps[i], response->header.frame_id);
+        const auto in_planning_frame = toPlanningFrame(
+            response->grasps[i],
+            response->header.frame_id,
+            rclcpp::Time(response->header.stamp));
         if (!in_planning_frame)
         {
             continue;
         }
         // The generator's +z is the approach; past the limit the hand reaches up through the
         // surface.
-        if (approachTiltRad(*in_planning_frame) > max_approach_tilt_rad_)
+        // Coming back at the robot from beyond the object, the hand reaches round it: rarely
+        // reachable, and the reach sweeps the object.
+        if (approachTiltRad(*in_planning_frame) > max_approach_tilt_rad_ ||
+            approachAxis(*in_planning_frame)[0] < min_approach_forward_)
         {
             record(*in_planning_frame, ConsideredGrasp::Verdict::kTilted);
             continue;
@@ -177,6 +251,15 @@ std::optional<G1ManipulationServer::GraspPlan> G1ManipulationServer::chooseGrasp
 
         const geometry_msgs::msg::Pose goal =
             applyGripperOffset(*in_planning_frame, graspgen_offset_);
+        // Back along the approach, not straight up: a side grasp has a ceiling above it.
+        const std::array<double, 3> axis = approachAxis(*in_planning_frame);
+        GraspPlan                   plan;
+        plan.grasp     = goal;
+        plan.pregrasp  = goal;
+        plan.candidate = *in_planning_frame;
+        plan.pregrasp.position.x -= axis[0] * approach_standoff_m_;
+        plan.pregrasp.position.y -= axis[1] * approach_standoff_m_;
+        plan.pregrasp.position.z -= axis[2] * approach_standoff_m_;
         // Reset per solve: a failed setFromIK leaves the state where it gave up.
         attempt = *state;
         if (!attempt.setFromIK(jmg, goal, arm.grasp_frame, ik_timeout_s_))
@@ -185,30 +268,43 @@ std::optional<G1ManipulationServer::GraspPlan> G1ManipulationServer::chooseGrasp
             continue;
         }
         ++reachable;
-        record(*in_planning_frame, ConsideredGrasp::Verdict::kChosen);
-
-        // Back along the approach, not straight up: a side grasp has a ceiling above it.
-        const std::array<double, 3> axis = approachAxis(*in_planning_frame);
-        GraspPlan                   plan;
-        plan.grasp    = goal;
-        plan.pregrasp = goal;
-        plan.pregrasp.position.x -= axis[0] * approach_standoff_m_;
-        plan.pregrasp.position.y -= axis[1] * approach_standoff_m_;
-        plan.pregrasp.position.z -= axis[2] * approach_standoff_m_;
         plan.origin = std::format(
             "generated candidate {} of {}, score {:.2f}",
             i,
             response->grasps.size(),
             i < response->scores.size() ? response->scores[i] : 0.0F);
-        return plan;
+        attempt = *state;
+        if (attempt.setFromIK(jmg, plan.pregrasp, arm.grasp_frame, ik_timeout_s_))
+        {
+            plans.push_back(std::move(plan));
+        }
+        else
+        {
+            grasp_only.push_back(std::move(plan));
+        }
     }
-
-    why = std::format(
-        "none of the {} candidates considered were usable ({} reachable) out of {} offered",
-        considered,
-        reachable,
-        response->grasps.size());
-    return std::nullopt;
+    for (GraspPlan& plan : grasp_only)
+    {
+        if (std::cmp_greater_equal(plans.size(), grasp_tries_))
+        {
+            break;
+        }
+        plans.push_back(std::move(plan));
+    }
+    // The first is the one drawn as chosen; the rest wait in case MoveIt finds no way to it.
+    if (!plans.empty())
+    {
+        record(plans.front().candidate, ConsideredGrasp::Verdict::kChosen);
+    }
+    if (plans.empty())
+    {
+        why = std::format(
+            "none of the {} candidates considered were usable ({} reachable) out of {} offered",
+            considered,
+            reachable,
+            response->grasps.size());
+    }
+    return plans;
 }
 
 void G1ManipulationServer::publishGraspPlan(

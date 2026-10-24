@@ -26,3 +26,7 @@ g1_graspgen_adapter:
 
     # Instances with fewer points than this are skipped by the server rather than guessed at.
     min_object_points: 100
+
+    # s. Masks further behind the newest depth frame are refused: the object may have moved
+    # since the detector last saw it.
+    max_mask_age_s: 5.0

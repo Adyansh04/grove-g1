@@ -19,14 +19,18 @@
 namespace
 {
 
+using g1_perception::boxHolds;
 using g1_perception::deproject;
 using g1_perception::DepthView;
 using g1_perception::erodeMask;
 using g1_perception::fitOrientedBox;
+using g1_perception::fitSurface;
 using g1_perception::gateByMedianDepth;
 using g1_perception::Intrinsics;
 using g1_perception::MaskView;
+using g1_perception::OrientedBox;
 using g1_perception::Point3;
+using g1_perception::spreadAcross;
 using g1_perception::supportHeight;
 using g1_perception::supportRing;
 
@@ -307,6 +311,65 @@ TEST(FitOrientedBox, RefusesTooFewPoints)
     const std::vector<Point3> points{ { 0.0, 0.0, 0.8 }, { 0.01, 0.0, 0.8 } };
 
     EXPECT_FALSE(fitOrientedBox(points, kUp, 0.79, 0.01, 0.40).has_value());
+}
+
+TEST(FitSurface, FindsATableTopPastItsEdgeAndWhatStandsOnIt)
+{
+    std::vector<Point3> points = rotatedTopFace(1.0, 0.6, 0.75, 0.2);
+    // A quarter as many points again on the front edge below the top, and on a mug standing on it.
+    const std::vector<Point3> edge = rotatedTopFace(1.0, 0.1, 0.70, 0.2);
+    const std::vector<Point3> mug  = rotatedTopFace(0.08, 0.08, 0.85, 0.0);
+    for (std::size_t i = 0; i < edge.size(); i += 4)
+    {
+        points.push_back({ edge[i].x, edge[i].y, 0.70 - (0.5 * std::abs(edge[i].y)) });
+        points.push_back(mug[i]);
+    }
+
+    const std::optional<OrientedBox> surface = fitSurface(points, kUp, 0.03, 0.01, 3.0);
+
+    ASSERT_TRUE(surface.has_value());
+    EXPECT_NEAR(surface->centre.z + (0.5 * surface->size_z), 0.75, 0.005);
+    EXPECT_NEAR(std::max(surface->size_x, surface->size_y), 1.0, 0.02);
+    EXPECT_NEAR(std::min(surface->size_x, surface->size_y), 0.6, 0.02);
+}
+
+TEST(FitSurface, RefusesPointsWithNoHeightTheyMostlyShare)
+{
+    std::vector<Point3> points;
+    points.reserve(100);
+    for (int i = 0; i < 100; ++i)
+    {
+        points.push_back({ 0.01 * i, 0.0, 0.5 + (0.01 * i) });
+    }
+
+    EXPECT_FALSE(fitSurface(points, kUp, 0.03, 0.01, 3.0).has_value());
+}
+
+TEST(SpreadAcross, BoundsEveryBoxFittedToThePoints)
+{
+    const std::vector<Point3>        table = rotatedTopFace(1.0, 0.6, 0.75, 0.2);
+    const std::optional<OrientedBox> top   = fitSurface(table, kUp, 0.03, 0.01, 3.0);
+    ASSERT_TRUE(top.has_value());
+    EXPECT_GE(spreadAcross(table, kUp), std::max(top->size_x, top->size_y));
+    // Height does not count: a tall thin box spreads as little as its footprint.
+    const std::vector<Point3> mug{ { 0.0, 0.0, 0.70 }, { 0.06, 0.0, 0.80 }, { 0.0, 0.08, 0.90 } };
+    EXPECT_NEAR(spreadAcross(mug, kUp), 0.10, 1e-9);
+    EXPECT_DOUBLE_EQ(spreadAcross({}, kUp), 0.0);
+}
+
+TEST(BoxHolds, TellsInsideFromOutsideAlongEachTiltedAxis)
+{
+    const std::vector<Point3>        points = rotatedTopFace(0.06, 0.04, 0.80, 0.5);
+    const std::optional<OrientedBox> box    = fitOrientedBox(points, kUp, 0.70, 0.01, 0.40);
+    ASSERT_TRUE(box.has_value());
+
+    EXPECT_TRUE(boxHolds(*box, box->centre));
+    EXPECT_TRUE(boxHolds(*box, { box->centre.x, box->centre.y, 0.79 }));
+    EXPECT_FALSE(boxHolds(*box, { box->centre.x, box->centre.y, 0.85 }));
+    const Point3 past{ box->centre.x + (0.6 * box->size_x * box->axis_x.x),
+                       box->centre.y + (0.6 * box->size_x * box->axis_x.y),
+                       box->centre.z };
+    EXPECT_FALSE(boxHolds(*box, past));
 }
 
 }  // namespace

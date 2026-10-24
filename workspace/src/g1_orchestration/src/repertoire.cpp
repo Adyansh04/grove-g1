@@ -114,6 +114,10 @@ void Repertoire::rebuildLocked()
         {
             leaves[leaf]["world_ids"] = ids->second;
         }
+        if (const auto values = learnable.values.find(leaf); values != learnable.values.end())
+        {
+            leaves[leaf]["values"] = values->second;
+        }
     }
     json["learnable"] = { { "leaves", leaves },
                           { "max_duration_s", learnable.max_duration_s },

@@ -56,13 +56,13 @@ together. The map is rasterised from the scene, so a stale map would be a map of
 - `book_2` sits on a tier at 1.66 m, above the head camera's view. Only the chest camera, whose view rises 9° above the horizon, sees it, from 4.0 to 4.5 m away. So a head-only run cannot map it.
 - `crate_2`, 0.25 m tall, is below the 2D scan band, so it is missing from the map.
 - Doors are at least 1.2 m. The robot is 0.9 m across, and Nav2 would not plan through a 1.0 m door.
-- One prop moves: `mug_4`, the small mug on the dining table's east end, is `free:` in the plan. It gets:
+- Six props move, each `free:` in the plan: `mug_4`, the small mug on the dining table's east end, and five things the robot is meant to find by asking SAM 3.1 for them, none of them in the kept map: `box_1` on the kitchen counter, `toy_elephant_1` on the TV cabinet, `action_figure_1` on the bedroom nightstand, `toy_dinosaur_1` on the second nightstand (`nightstand_2`, the bed's other side) and `toy_robot_1` on the office desk, 0.4 m in from its east end so a push cannot tip it off. On the simulator's renders SAM 3.1 found each at 0.74 to 0.95 by a plain phrase (small box, toy elephant, action figure, green toy, toy robot). Each gets:
   - A free joint and one group 2 collision box instead of the proxy.
   - `contype 3` so the fingers touch it (every other prop is `contype 1`, which they pass through).
-  - A mass of 124 g.
+  - Its mass, 60 to 124 g.
   - Two carry welds, one per palm, which `grasp_weld` engages while the thumb and a finger touch it.
 - The mug's mesh is `mug_1`'s at `scale: 0.6`, 55 mm across so the hand closes round it. The box under it is square because a cylinder on a box rocks in MuJoCo.
-- `tray_1`, a wooden tray built from boxes, sits on the office desk to put the mug in.
+- `tray_1`, a scanned wooden desk organizer, sits on the office desk to put things in. Its floor and walls are boxes with `hidden: true`, which collide and reach the LiDAR like a proxy but are never drawn, so an object placed in it rests inside the mesh the camera sees. SAM 3.1 finds it as "wooden tray" (0.92 to 0.94).
 - `dining_table_1` has `proxy_height: 0.706`. Its proxy would otherwise reach the cloth's relief at 0.76 m, and the mug would rest above the top it is drawn on.
 - `missions/pick_and_place_apartment.xml` in g1_orchestration carries the mug from the table to the tray.
 
@@ -114,3 +114,9 @@ Poly Haven assets are CC0. NVIDIA's kitchen set and Google Scanned Objects are C
 | `gso_mug_cole` Cole Hardware Mug Classic Blue | Google Research | [GSO, MJCF by Kevin Zakka](https://github.com/kevinzakka/mujoco_scanned_objects/tree/main/models/Cole_Hardware_Mug_Classic_Blue) | CC BY 4.0 |
 | `gso_mug_room_essentials` Room Essentials Mug White Yellow | Google Research | [GSO, MJCF by Kevin Zakka](https://github.com/kevinzakka/mujoco_scanned_objects/tree/main/models/Room_Essentials_Mug_White_Yellow) | CC BY 4.0 |
 | `gso_wastebasket` Hefty Waste Basket Decorative Bronze... | Google Research | [GSO, MJCF by Kevin Zakka](https://github.com/kevinzakka/mujoco_scanned_objects/tree/main/models/Hefty_Waste_Basket_Decorative_Bronze_85_liter) | CC BY 4.0 |
+| `gso_toy_robot` Android Figure Orange | Google Research | [GSO, MJCF by Kevin Zakka](https://github.com/kevinzakka/mujoco_scanned_objects/tree/main/models/Android_Figure_Orange) | CC BY 4.0 |
+| `gso_action_figure` Nintendo Mario Action Figure | Google Research | [GSO, MJCF by Kevin Zakka](https://github.com/kevinzakka/mujoco_scanned_objects/tree/main/models/Nintendo_Mario_Action_Figure) | CC BY 4.0 |
+| `gso_toy_dinosaur` Nintendo Yoshi Action Figure | Google Research | [GSO, MJCF by Kevin Zakka](https://github.com/kevinzakka/mujoco_scanned_objects/tree/main/models/Nintendo_Yoshi_Action_Figure) | CC BY 4.0 |
+| `gso_serum_box` Perricone MD Vitamin C Ester Serum | Google Research | [GSO, MJCF by Kevin Zakka](https://github.com/kevinzakka/mujoco_scanned_objects/tree/main/models/Perricone_MD_Vitamin_C_Ester_Serum) | CC BY 4.0 |
+| `gso_toy_elephant` Elephant | Google Research | [GSO, MJCF by Kevin Zakka](https://github.com/kevinzakka/mujoco_scanned_objects/tree/main/models/Elephant) | CC BY 4.0 |
+| `gso_organizer_tray` Design Ideas Drawer Store Organizer | Google Research | [GSO, MJCF by Kevin Zakka](https://github.com/kevinzakka/mujoco_scanned_objects/tree/main/models/Design_Ideas_Drawer_Store_Organizer) | CC BY 4.0 |

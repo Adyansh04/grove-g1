@@ -181,11 +181,12 @@ keeps them in step (names, ports, limits, resources). The macros are flat: none 
 | `GoToPose` | The same walk to `x;y;yaw` in the `map` frame. | `base` |
 | `PickObject` | Needs the hand empty. Asks the detector for the object, closes the last stretch, picks, idles the detector, backs off 1.2 m. | `base`, arms |
 | `PlaceInto` | Needs the hand to hold something. Asks the detector for the container and for what the hand holds, closes in, places, backs off. | `base`, arms |
+| `PlaceOn` | Needs the hand to hold something. Asks the detector for the surface and for what the hand holds, closes on the surface's nearest edge, sets the object down where the hand reaches on a surface wider than a container, backs off. | `base`, arms |
 | `WalkStraight` | Walks forward or backward a distance (0.1 to 2 m) with `DriveStraight`, one try. Nav2 projects the walk on the local costmap and stops it before a collision, which fails the step. | `base` |
 | `TurnInPlace` | Turns by an angle (-180 to 180 degrees, positive left) with `TurnBy`, one try. | `base` |
 | `TuckForTravel` | Tucks each arm whose hand is empty. | arms |
 | `ArmTo` | Moves one arm (`left_arm`, `right_arm`) to a named pose of `g1.srdf` with `SetArmPosture`, one retry. | arms |
-| `HandTo` | Brings one hand 10 cm over an object (an id, or plain words for the nearest) with `MoveHand`, without grasping. | arms |
+| `HandTo` | Brings one hand 10 cm over an object within reach, about 0.48 m from the shoulder (an id, or plain words for the nearest), with `MoveHand`, without grasping. | arms |
 | `FindInView` | Asks the detector for a phrase and waits for it on `/objects`, then idles the detector. Moves nothing. Hands on `object_id`, the name the detector reports it under (`red_mug`). | none |
 | `ExploreBuilding` | The loop of `trees/explore.xml`: frontiers until the map is closed, then canopy's viewpoints until every room is seen, then clean up and save. Explores for up to 23 minutes, since a whole run is longer than a mission may be, and saves. Running out of time is not a failure. A world model that cannot plan is. | `base` |
 
@@ -229,7 +230,8 @@ A taught skill's body is held to more than a person's macro:
 - On each leaf it sets only the inputs `learnable_leaves` lists, so which server, frame or timeout a leaf uses is never the skill's to change.
 - Of inputs listed `a|b` it sets exactly one: MoveHand takes a `target` or a `frame`, never both or neither.
 - A `world_id` argument feeds only an input listed as `input(world_id)`, MoveHand's `target`, so an object's id never goes in as a frame.
-- Every attribute is a literal or one of the skill's own arguments (`arm="{arm}"`). No argument may be called `name`, which a `SubTree` keeps for its step.
+- An input listed `input=a/b` takes only those values: a literal must be one, and an argument fed to it is published with them as its `enum`, so a plan that passes MoveHand's `arm` as `left_arm` is refused when it is checked, not when it runs.
+- Every attribute is a literal or one of the skill's own arguments (`arm="{arm}"`), and every argument feeds some input: one the body never uses would take a plan's value and do nothing with it. No argument may be called `name`, which a `SubTree` keeps for its step.
 - Depth, size and time (1 s at least) are capped.
 - The name may not be one of a skill, a macro or any node the executor registers.
 - Its resources follow from its leaves.
@@ -270,7 +272,7 @@ The mission's root blackboard keeps the same information as `held_left` and `hel
 (`id=phrase`, with the id the detector knows it by, kept current as the mission picks and places).
 The skills rely on it:
 
-- `Place` fails unless the held object is on `/objects` after the release, so `PlaceInto` must ask the detector for it.
+- `Place` checks where the held object lands on `/objects` after the release, so `PlaceInto` and `PlaceOn` ask the detector for it; one it cannot see again counts as placed, unconfirmed.
 - `TuckForTravel` must not fold an arm that holds something.
 - `PickObject` and `PlaceInto` fail at once, before anything moves, on a hand that is full or empty the wrong way round.
 
@@ -282,13 +284,17 @@ hold something the executor cannot name. A hand is unknown in two cases:
 
 - The arms were already taken before this executor found them (it restarted while a hand held an object).
 - It is the arm of a `Pick` that was halted while it ran, since the hand may have closed before the cancel arrived.
+- Its fingers stood closed when the arms were about to be let go of, at a mission's or a lend's
+  end: a borrower's grip or a grasp policy may have closed it on something. The fingers are read
+  once from `/joint_states` (`finger_joints` past `finger_closed_rad`); with no reading within
+  `finger_read_timeout_s`, both hands count as closed.
 
 An unknown hand counts as full:
 
 - The arms are kept.
 - `TuckForTravel` skips it.
 - `PickObject` refuses it.
-- `PlaceInto` may use it.
+- `PlaceInto` and `PlaceOn` may use it.
 
 It stops being unknown when a `Place` with that arm succeeds. It also stops when a later mission finds
 the arms free again because someone let go of them (`deactivate_arm`, once the hands have been looked
@@ -386,6 +392,7 @@ All in `config/nervros_executor.yaml`, commented there.
 | `feedback_period_s`, `cancel_settle_s`, `stop_wait_s` | 0.25, 0.5, 3.0 | Feedback rate. Spin after a halt so cancels reach their servers. The most a stop waits. |
 | `max_pause_s` | 600 | The longest a mission may stay paused before it ends (`OUTCOME_CANCELED`). |
 | `authority_timeout_s` | 15 | Per-step budget for `controller_manager` calls. |
+| `finger_joints`, `finger_closed_rad`, `finger_read_timeout_s` | each hand's index and middle base joints, 0.3, 2.0 | A hand whose finger joints stand past this when the arms are about to be let go of counts as holding something, and keeps its arm held. |
 | `dry_run_time_scale`, `dry_run_min_leaf_s` | 0.02, 0.05 | A dry run's share of a skill's catalog time per leaf, and its floor. |
 | `stop_action_servers` | every skill server | As `/name:type`. `test_catalog_drift` fails if a leaf uses one that is not listed. |
 | `agent_action_servers` | NervROS's own motions' servers | As `/name:type`: the servers NervROS sends its own steps to (routes, waits, MoveIt moves). `StopAll` cancels their goals too. |

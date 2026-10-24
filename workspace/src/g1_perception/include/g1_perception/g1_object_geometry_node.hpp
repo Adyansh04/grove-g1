@@ -94,6 +94,10 @@ private:
     double      min_score_{ 0.30 };
     double      transform_timeout_s_{ 0.2 };
     bool        publish_bare_phrase_alias_{ true };
+    /// The robot's own frames: an instance whose box holds one is the robot, not an object.
+    std::vector<std::string> self_frames_;
+    double                   surface_band_m_{ 0.03 };
+    double                   max_surface_extent_m_{ 3.0 };
 };
 
 }  // namespace g1_perception

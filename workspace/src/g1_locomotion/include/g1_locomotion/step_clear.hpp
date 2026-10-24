@@ -55,6 +55,14 @@ struct StepClearPlan
 double clearanceAt(std::span<const ObstaclePoint> obstacles, double x, double y);
 
 /**
+ * @brief How far the base at (@p x, @p y) facing @p yaw can back straight up before its centre
+ *        meets an obstacle in the corridor @p half_width_m to either side of its line.
+ * @return Infinity when nothing is behind it.
+ */
+double clearanceBehind(
+    std::span<const ObstaclePoint> obstacles, double x, double y, double yaw, double half_width_m);
+
+/**
  * @brief The straight step that brings the clearance up to @p wanted_m soonest.
  *
  * On the way the clearance may not drop below the body radius, or below where it started when

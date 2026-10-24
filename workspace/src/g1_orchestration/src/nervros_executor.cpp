@@ -237,6 +237,17 @@ MissionExecutor::MissionExecutor(
     event_level_ = parseLevel(declare_parameter<std::string>("event_level", "steps"));
     const double authority_timeout_s =
         positive(declare_parameter<double>("authority_timeout_s", 15.0), "authority_timeout_s");
+    ControllerManagerAuthority::Fingers fingers;
+    fingers.joints = declare_parameter<std::vector<std::string>>(
+        "finger_joints",
+        { "left_hand_index_0_joint",
+          "left_hand_middle_0_joint",
+          "right_hand_index_0_joint",
+          "right_hand_middle_0_joint" });
+    fingers.closed_rad =
+        positive(declare_parameter<double>("finger_closed_rad", 0.3), "finger_closed_rad");
+    fingers.timeout_s =
+        positive(declare_parameter<double>("finger_read_timeout_s", 2.0), "finger_read_timeout_s");
 
     Limits limits;
     limits.max_depth = static_cast<int>(declare_parameter<int>("max_tree_depth", limits.max_depth));
@@ -299,8 +310,10 @@ MissionExecutor::MissionExecutor(
 
     if (!authority_)
     {
-        authority_ =
-            std::make_shared<ControllerManagerAuthority>(get_logger(), authority_timeout_s);
+        authority_ = std::make_shared<ControllerManagerAuthority>(
+            get_logger(),
+            authority_timeout_s,
+            std::move(fingers));
     }
 
     action_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
@@ -557,23 +570,16 @@ void MissionExecutor::shutdown()
             worker_.join();
         }
     }
-    bool release = false;
+    if (releaser_.joinable())
     {
-        const std::lock_guard<std::mutex> lock(live_mutex_);
-        release = arms_held_ && !mayHoldSomethingLocked();
-        if (arms_held_ && !release)
-        {
-            RCLCPP_WARN(
-                get_logger(),
-                "shutting down with the arms acquired: a hand holds something, or may. Release "
-                "them with deactivate_arm once it is put down.");
-        }
+        releaser_.join();
     }
-    if (release)
+    if (letGoOfArms())
     {
-        authority_->release();
-        const std::lock_guard<std::mutex> lock(live_mutex_);
-        arms_held_ = false;
+        RCLCPP_WARN(
+            get_logger(),
+            "shutting down with the arms acquired: a hand holds something, or may. Release them "
+            "with deactivate_arm once it is put down.");
     }
 }
 
@@ -1045,7 +1051,8 @@ void MissionExecutor::onLend(
     }
     {
         // Claimed as a mission is, under the same lock: a lend and a mission exclude each other.
-        const std::lock_guard<std::mutex> lock(stop_mutex_);
+        std::unique_lock<std::mutex> lock(stop_mutex_);
+        awaitRelease(lock);
         if (shutting_down_)
         {
             refuse("the executor is shutting down");
@@ -1141,7 +1148,8 @@ bool MissionExecutor::takeBack(const std::string& why)
         {
             return false;
         }
-        client = std::exchange(lent_to_, std::string());
+        client     = std::exchange(lent_to_, std::string());
+        releasing_ = true;
     }
     lent_until_ = 0;
     RCLCPP_INFO(get_logger(), "took back what %s borrowed: %s", client.c_str(), why.c_str());
@@ -1149,24 +1157,62 @@ bool MissionExecutor::takeBack(const std::string& why)
         const std::lock_guard<std::mutex> lock(live_mutex_);
         note_.clear();
     }
-    letGoOfArms();
-    pushState();
+    // Off the caller's thread, which may be StopAll's or the deadman's. No lend is granted while
+    // releasing_ is set, so the last releaser has finished and the assignment does not wait.
+    releaser_ = std::jthread([this] {
+        (void)letGoOfArms();
+        {
+            const std::lock_guard<std::mutex> lock(stop_mutex_);
+            releasing_ = false;
+        }
+        released_cv_.notify_all();
+        pushState();
+    });
     return true;
 }
 
-void MissionExecutor::letGoOfArms()
+void MissionExecutor::awaitRelease(std::unique_lock<std::mutex>& lock)
 {
-    bool release = false;
+    released_cv_.wait(lock, [this] { return !releasing_; });
+}
+
+bool MissionExecutor::letGoOfArms()
+{
+    const auto kept = [this] {
+        RCLCPP_INFO(
+            get_logger(),
+            "keeping the arms: a hand holds something, or may%s",
+            describeHandsLocked("holds").c_str());
+        return true;
+    };
     {
         const std::lock_guard<std::mutex> lock(live_mutex_);
-        release = arms_held_ && !mayHoldSomethingLocked();
+        if (!arms_held_)
+        {
+            return false;
+        }
+        if (mayHoldSomethingLocked())
+        {
+            return kept();
+        }
     }
-    if (release)
+    // A hand closed by something the executor does not follow, a borrower's grip or a grasp
+    // policy, may hold what it closed on, and a released hand drops it.
+    const ClosedHands closed = authority_->closedHands();
     {
-        authority_->release();
         const std::lock_guard<std::mutex> lock(live_mutex_);
-        arms_held_ = false;
+        hands_.left.unknown  = hands_.left.unknown || closed.left;
+        hands_.right.unknown = hands_.right.unknown || closed.right;
+        if (mayHoldSomethingLocked())
+        {
+            syncBlackboardLocked();
+            return kept();
+        }
     }
+    authority_->release();
+    const std::lock_guard<std::mutex> lock(live_mutex_);
+    arms_held_ = false;
+    return false;
 }
 
 void MissionExecutor::checkLend()
@@ -1546,6 +1592,12 @@ std::optional<Diagnostic> MissionExecutor::load(
 bool MissionExecutor::takeAuthority(
     const SkillSet& skills, const Validation& validation, Outcome& outcome)
 {
+    {
+        // Arms a lend gave back may still be being let go of; taking them meanwhile would race
+        // the release, and finish() would release them a second time.
+        std::unique_lock<std::mutex> lock(stop_mutex_);
+        awaitRelease(lock);
+    }
     bool base = false;
     bool arms = false;
     for (const std::string& id : validation.macros)
@@ -2111,24 +2163,7 @@ void MissionExecutor::finish(bool execute_mode)
 {
     if (execute_mode)
     {
-        bool release = false;
-        {
-            const std::lock_guard<std::mutex> lock(live_mutex_);
-            release = arms_held_ && !mayHoldSomethingLocked();
-            if (arms_held_ && !release)
-            {
-                RCLCPP_INFO(
-                    get_logger(),
-                    "keeping the arms: a hand holds something, or may%s",
-                    describeHandsLocked("holds").c_str());
-            }
-        }
-        if (release)
-        {
-            authority_->release();
-            const std::lock_guard<std::mutex> lock(live_mutex_);
-            arms_held_ = false;
-        }
+        (void)letGoOfArms();
     }
     {
         const std::lock_guard<std::mutex> lock(live_mutex_);

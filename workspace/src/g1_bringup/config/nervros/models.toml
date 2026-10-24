@@ -1,12 +1,11 @@
-# Models for NervROS on the G1, all free: the local model talks, plans and looks; Gemini's free
-# tier outlines what `segment` is asked for, which the local model cannot, and advises when the
-# local model's plans for a request keep failing their checks. Gemini Robotics-ER 2 judges what
-# the cameras show where it counts: whether a mission did what it says, when something happened,
-# and a flagged plan against the scene. Without the local model, as when SAM 3.1 holds the GPU,
-# the Flash-Lites and Gemma 4 on the same free tier talk and look instead, and Nemotron 3 Super on
-# OpenRouter's free tier talks when their quotas are spent. Without a key file its provider's
-# models are left out: without Gemini's, `segment` needs its service backend, and there is no
-# advice.
+# Models for NervROS on the G1. Claude Haiku 5.5 talks and looks first, and Sonnet 5.5 advises when
+# a request's plans keep failing their checks, paid against a budget no call passes; so the GPU
+# needs no local model beside the simulator and SAM 3.1. After them come the free models: the local
+# model, then the Flash-Lites and Gemma 4 on Gemini's free tier and Nemotron 3 Super on
+# OpenRouter's. Gemini's free tier outlines what `segment` is asked for, and Gemini Robotics-ER 2
+# judges what the cameras show where it counts: whether a mission did what it says, when something
+# happened, and a flagged plan against the scene. Without a key file its provider's models are left
+# out: without Gemini's, `segment` needs its service backend.
 
 [[provider]]
 id = "local"
@@ -17,16 +16,33 @@ timeout_s = 120
 [[provider]]
 id = "gemini"
 kind = "gemini_interactions"
-key = { file = "~/.config/grove/gemini.env" }
+key = { file = "~/api_keys/gemini.env" }
 
 # free_only: NervROS refuses at start-up any model here that OpenRouter does not price at zero.
 [[provider]]
 id = "openrouter"
 kind = "openai_compat"
 base_url = "https://openrouter.ai/api/v1"
-key = { file = "~/.config/openrouter.key" }
+key = { file = "~/api_keys/openrouter.key" }
 free_only = true
 headers = { "X-Title" = "NervROS" }
+
+# A second key: its free requests take over when the first key's are spent or it expires.
+[[provider]]
+id = "openrouter2"
+kind = "openai_compat"
+base_url = "https://openrouter.ai/api/v1"
+key = { file = "~/api_keys/openrouter_2.key" }
+free_only = true
+headers = { "X-Title" = "NervROS" }
+
+# Claude, paid against a hard budget: the key's $100 of credit less a margin for calls in flight,
+# counted in one file every NervROS on this machine shares.
+[[provider]]
+id = "anthropic"
+kind = "anthropic"
+key = { file = "~/api_keys/claude_api.key" }
+budget = { usd = 95.0, spent_file = "~/.config/nervros/claude-spend.json" }
 
 [[model]]
 id = "qwen3.5-9b-local"
@@ -140,29 +156,68 @@ tools = true
 limits = { rpm = 20, pool = "openrouter_free" }
 privacy = { trains = true }
 
+# Past 100K prompt tokens Haiku's price rises fivefold: the conversation is condensed before.
+[[model]]
+id = "claude-haiku-5.5"
+provider = "anthropic"
+model = "claude-haiku-5-5"
+vision = true
+tools = true
+max_tokens = 16000
+context = 90000
+price = { input = 0.10, output = 0.50, cache_read = 0.01, cache_write = 0.125 }
+
+[[model]]
+id = "claude-sonnet-5.5"
+provider = "anthropic"
+model = "claude-sonnet-5-5"
+vision = true
+tools = true
+max_tokens = 16000
+context = 64000
+price = { input = 2.0, output = 10.0, cache_read = 0.20, cache_write = 2.50 }
+
+[[model]]
+id = "nemotron-super-or2"
+provider = "openrouter2"
+model = "nvidia/nemotron-3-super-120b-a12b:free"
+tools = true
+limits = { rpm = 20, pool = "openrouter2_free" }
+privacy = { trains = true }
+
 [pools]
 # A thousand free requests a day once the account holds credit.
 openrouter_free = { rpd = 1000 }
+openrouter2_free = { rpd = 1000 }
 er2 = { rpd = 20 }
 
 [roles]
 # Gemma comes last: 16K input tokens a minute hold one or two agent calls.
 routine = [
+    "claude-haiku-5.5",
     "qwen3.5-9b-local",
     "gemini-3.5-flash-lite",
     "gemini-3.1-flash-lite",
     "nemotron-super-or",
+    "nemotron-super-or2",
     "gemma-4-26b",
 ]
-# Asked only after two failed plans for one request, so 3.8 Flash's few requests a day suffice.
-plan = ["gemini-3.8-flash", "gemini-3.5-flash-lite"]
+# Asked only after two failed plans for one request, so Sonnet's price and 3.8 Flash's few
+# requests a day both suffice.
+plan = ["claude-sonnet-5.5", "gemini-3.8-flash", "gemini-3.5-flash-lite"]
 vision_check = [
+    "claude-haiku-5.5",
     "qwen3.5-9b-local",
     "gemini-3.5-flash-lite",
     "gemini-3.1-flash-lite",
     "gemma-4-26b",
 ]
-summarise = ["qwen3.5-9b-local", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]
+summarise = [
+    "claude-haiku-5.5",
+    "qwen3.5-9b-local",
+    "gemini-3.5-flash-lite",
+    "gemini-3.1-flash-lite",
+]
 segment = ["gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]
 # Gemma 4 comes last in the vision chains: on 17 Oct its image requests ran into the 60 s timeout
 # and it answered text with "high demand", which made each camera watch's look a minute late.
