@@ -44,6 +44,7 @@ g1_object_geometry:
     min_points: 150
 
     # Box extents outside these are noise (small) or a mask run onto the table (large).
+    # max_extent_m is also the approach's and the place's table width (test_config_drift).
     min_extent_m: 0.01
     max_extent_m: 0.40
 

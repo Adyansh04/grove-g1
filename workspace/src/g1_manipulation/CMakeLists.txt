@@ -131,6 +131,10 @@ if(BUILD_TESTING)
   ament_add_gmock(test_grip_check test/test_grip_check.cpp)
   target_link_libraries(test_grip_check g1_grip_check)
 
+  find_package(ament_cmake_pytest REQUIRED)
+  ament_add_pytest_test(test_config_drift test/test_config_drift.py
+    ENV "G1_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/..")
+
   find_package(launch_testing_ament_cmake REQUIRED)
 
   add_launch_test(test/test_generated_grasp_pick.launch.py TARGET test_generated_grasp_pick

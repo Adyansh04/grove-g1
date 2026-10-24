@@ -54,6 +54,7 @@ g1_manipulation_server:
     place_reach_m: 0.35
     place_side_m: 0.15
     place_edge_margin_m: 0.05
+    # Perception's max_extent_m, held equal by test_config_drift.
     place_container_max_m: 0.40
 
     # Hand closing. Spans are measured between the thumb and index links; closure is linear in
