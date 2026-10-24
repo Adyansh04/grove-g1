@@ -20,8 +20,9 @@
 #
 # NervROS runs on the host (workspace/src/nervros) and answers with a local model, which
 # local-llm.sh starts in its own container. The first run builds the app, which takes about
-# twenty minutes. name:=value arguments go to the bringup launch, but saved:= (app and chat: the
-# saved world under data/worlds to run on, nervros-apartment by default) and name:= (map).
+# twenty minutes. name:=value arguments go to the bringup launch, but saved:= (app, chat, fetch
+# and explore: the saved world under data/worlds to run on, nervros-apartment by default) and
+# name:= (map).
 # --print lists the commands instead of opening them.
 source "$(dirname "$0")/../lib/panes.sh"
 parse_args "$@"

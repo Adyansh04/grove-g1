@@ -10,12 +10,13 @@ with a local model and free cloud models after it. It can:
 - do physical tasks as missions: behaviour trees that `nervros_executor` checks, you approve, and
   the executor runs.
 
-`./scripts/demos/nervros.sh <app|chat|explore|map>` tears down any stack left running, then opens
+`./scripts/demos/nervros.sh <app|chat|fetch|explore|map>` tears down any stack left running, then opens
 a section's commands at once, in split panes of tilix (a window each in another terminal). `stop`
 ends it, and `--print` lists the commands instead.
 
 - `chat` is `app`'s stack, with NervROS in the terminal instead of the window.
-- `saved:=<a world under data/worlds>` runs `app`, `chat` or `explore` on another saved world.
+- `saved:=<a world under data/worlds>` runs `app`, `chat`, `fetch` or `explore` on another saved
+  world.
 - `map` takes `name:=` and `world:=`.
 - Any other `name:=value` goes to the bringup launch.
 
@@ -495,7 +496,8 @@ timeouts and retries.
   mission it was running when it stopped is kept as interrupted.
 - The skills a plan may use are in `config/catalog.yaml`, as macros in `trees/library/`:
   `GoToTarget`, `GoToPose`, `WalkStraight`, `TurnInPlace`, `FindInView`, `PickObject`, `PlaceInto`,
-  `TuckForTravel`, `ArmTo`, `HandTo` and `ExploreBuilding`, plus the ones an agent taught (above).
+  `PlaceOn`, `TuckForTravel`, `ArmTo`, `HandTo` and `ExploreBuilding`, plus the ones an agent taught
+  (above).
 - NervROS runs some steps itself through Nav2 and MoveIt, beside these: a route through places
   without stopping (`WalkRoute`), a wait, a short straight hand move (`HandLine`) and a grip. For an
   arm step the executor lends NervROS the arms (`~/lend_resources`) and takes them back after it;
@@ -561,6 +563,10 @@ fallen into before:
 | `robot-lost` | `map` to `pelvis` against the relay's `base_state`, the simulator's truth: more than 1 m or 30 degrees apart, since a map starts where the robot stood when it was made, up to half a metre from the simulator's origin. |
 | `robot-down`, `fell-at-start` | The executor's `can_move`, and the odometry, the locomotion safety trip and Nav2's aborted bring-up in the log. |
 | `camera-silent`, `detector-down`, `executor-down` | A camera's `camera_info` under 0.5 Hz, a detector or the executor gone from the graph. |
+| `costmap-stale` | The obstacle layer's buffer gone stale, with the local costmap under 0.5 Hz or the lidar's cloud under 2 Hz. |
+| `collision-monitor-holds` | The collision monitor stopping the robot, or slowing it again and again. |
+| `navigation-not-active` | Nav2's navigation servers deactivated, and a walk's goal refused. |
+| `arm-controllers-off` | MoveIt's moves not reaching the arm's trajectory controller, which runs only while the executor holds the arms. |
 
 "Why did that fail?" or "is something wrong with the robot?" gets the cause the checks found, what
 each saw, what they ruled out, and the minutes before it. The Doctor tab lists the incidents, and
@@ -623,13 +629,16 @@ cargo run -p nervros-cli -- --profile ../g1_bringup/config/nervros/nervros.toml 
   incidents) under the run's `state/`, so the two keep-out cases, run in order
   (`--only keep-out`), never touch your own.
 
-Two smaller suites sit beside it:
+Three smaller suites sit beside it:
 
 - `eval/jobs.toml` asks for programs, searches and taught skills, each more than one way. A kept
   skill carries to the cases after it, so they run in order.
 - `eval/incidents.toml` breaks one thing per case with the case's `inject` (a detector stopped with
   SIGSTOP, the sensor relay paused, localization told the robot faces a quarter turn away, a second
   node under a detector's name), mends it with `restore`, and wants the agent to name the cause.
+- `eval/integrations.toml` uses Nav2's and MoveIt's tools and the motions NervROS runs itself
+  beside the executor's skills: walks first, then the changes that would hold a walk back, each
+  undone at the end, so its cases run in order.
 
 Without the simulator, `nervros-cli --profile ../g1_bringup/config/nervros/nervros.toml record
 g1.toml` writes the running stack as a scripted robot: the graph, the nodes each container hosts,
