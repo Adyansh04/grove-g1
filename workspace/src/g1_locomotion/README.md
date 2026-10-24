@@ -36,7 +36,8 @@ It writes `/cmd_vel`, the topic Nav2 writes. The mission tree never runs the two
 - `Retreat` reverses straight back by a set distance, at most 2 m, without turning. It stops
   short while `retreat_gap_m` is left between the body and a lethal cell straight behind, and
   succeeds then once it has backed `retreat_min_m` (0.15 m): a home's aisle can be narrower than the
-  back-off a table wants.
+  back-off a table wants. Within `retreat_settle_slop_m` of its distance it counts as done, since
+  the last stride sways the pelvis back after the stop.
 - `StepClear` takes a clearance of at most 0.7 m.
 
 One goal runs at a time across all three.

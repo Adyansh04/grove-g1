@@ -108,7 +108,7 @@ reads a grip from `/joint_states` instead. A finger presses when it is at least
 `grasp_source` chooses:
 
 - `fixed_top_down` (default) descends on the object's centre with the hand at `grasp_rpy`.
-- `generated` asks the grasp service (`grasp_service`) and takes the best candidate that passes `min_grasp_score`, `max_approach_tilt_deg` and inverse kinematics. It stages `approach_standoff_m` back along its own approach axis.
+- `generated` asks the grasp service (`grasp_service`) and takes the best candidate that passes `min_grasp_score`, `max_approach_tilt_deg` and inverse kinematics. It stages `approach_standoff_m` back along its own approach axis. The grasps come in the camera's frame at their image's time and reach the planning frame through `world_frame`, past the body's sway since.
 
 There is no fallback between them. With `visualization:=true` every pick draws its candidates and
 choice on `~/grasp_plan`.
@@ -133,7 +133,7 @@ explained in comments. `config/g1_object_pose_source.yaml` holds the source's fr
 
 Tunables can be changed with `ros2 param set` between goals. A set during a goal is refused.
 `velocity_scaling`, `grasp_rpy`, `grasp_source`, `grasp_service`, `publish_markers`,
-`graspgen_to_grasp_frame_xyz_rpy`, the `move_hand_*_shoulder` links and
+`graspgen_to_grasp_frame_xyz_rpy`, `world_frame`, the `move_hand_*_shoulder` links and
 `move_hand_point_side_steps_m` are read-only.
 
 ## Running

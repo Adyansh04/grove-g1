@@ -272,7 +272,7 @@ The mission's root blackboard keeps the same information as `held_left` and `hel
 (`id=phrase`, with the id the detector knows it by, kept current as the mission picks and places).
 The skills rely on it:
 
-- `Place` fails unless the held object is on `/objects` after the release, so `PlaceInto` must ask the detector for it.
+- `Place` checks where the held object lands on `/objects` after the release, so `PlaceInto` and `PlaceOn` ask the detector for it; one it cannot see again counts as placed, unconfirmed.
 - `TuckForTravel` must not fold an arm that holds something.
 - `PickObject` and `PlaceInto` fail at once, before anything moves, on a hand that is full or empty the wrong way round.
 
@@ -284,6 +284,10 @@ hold something the executor cannot name. A hand is unknown in two cases:
 
 - The arms were already taken before this executor found them (it restarted while a hand held an object).
 - It is the arm of a `Pick` that was halted while it ran, since the hand may have closed before the cancel arrived.
+- Its fingers stood closed when the arms were about to be let go of, at a mission's or a lend's
+  end: a borrower's grip or a grasp policy may have closed it on something. The fingers are read
+  once from `/joint_states` (`finger_joints` past `finger_closed_rad`); with no reading within
+  `finger_read_timeout_s`, both hands count as closed.
 
 An unknown hand counts as full:
 
@@ -388,6 +392,7 @@ All in `config/nervros_executor.yaml`, commented there.
 | `feedback_period_s`, `cancel_settle_s`, `stop_wait_s` | 0.25, 0.5, 3.0 | Feedback rate. Spin after a halt so cancels reach their servers. The most a stop waits. |
 | `max_pause_s` | 600 | The longest a mission may stay paused before it ends (`OUTCOME_CANCELED`). |
 | `authority_timeout_s` | 15 | Per-step budget for `controller_manager` calls. |
+| `finger_joints`, `finger_closed_rad`, `finger_read_timeout_s` | each hand's index and middle base joints, 0.3, 2.0 | A hand whose finger joints stand past this when the arms are about to be let go of counts as holding something, and keeps its arm held. |
 | `dry_run_time_scale`, `dry_run_min_leaf_s` | 0.02, 0.05 | A dry run's share of a skill's catalog time per leaf, and its floor. |
 | `stop_action_servers` | every skill server | As `/name:type`. `test_catalog_drift` fails if a leaf uses one that is not listed. |
 | `agent_action_servers` | NervROS's own motions' servers | As `/name:type`: the servers NervROS sends its own steps to (routes, waits, MoveIt moves). `StopAll` cancels their goals too. |

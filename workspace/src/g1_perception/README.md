@@ -27,7 +27,7 @@ flowchart LR
 | `g1_detector` | canopy_perception's `detector`, configured by `config/g1_detector.yaml`. Sends camera frames and the phrase list to canopy's semantic server on the host, run with SAM 3.1 (Grounded SAM 2 from the vision server can stand in). Publishes the instance masks it answers with. |
 | `g1_detector` (mock) | canopy_perception's `mock_detector`: cuts the same masks out of simulator ground truth against the real rendered depth. No GPU, no server, no network. Simulation only. Launched as `g1_detector` too, so a tree writes the same `phrases` whichever detector runs. |
 | `g1_object_geometry` | Deprojects each mask, finds the surface the object stands on, fits a box, and tracks it across frames so an id keeps naming one object. |
-| `g1_graspgen_adapter` | Sends the depth frame, its intrinsics and one object's mask to [GraspGenX](https://github.com/NVlabs/GraspGenX) on the host and serves the grasps it answers with. The Dex3-1 goes as its sweep volume (`sweep_volume`, twelve numbers), not by name. Poses come back in the generator's own gripper frame, so the arm side applies one measured offset. Left-hand requests are refused, since mirroring a sweep volume describes a different gripper. Python, see below. |
+| `g1_graspgen_adapter` | Sends the depth frame, its intrinsics and one object's mask to [GraspGenX](https://github.com/NVlabs/GraspGenX) on the host and serves the grasps it answers with. The Dex3-1 goes as its sweep volume (`sweep_volume`, twelve numbers), not by name. Poses come back in the generator's own gripper frame, so the arm side applies one measured offset. Left-hand requests are refused, since mirroring a sweep volume describes a different gripper. A bare name such as `toy_robot` is the one track of it in view, as on `/objects`; masks more than `max_mask_age_s` behind the newest depth frame are refused. Python, see below. |
 | `g1_mock_grasp_source` | Answers the same service from `/objects` alone: three sensible grasps and one reaching up through the table. No GPU. |
 | `g1_instruction_grounder` | Asks a vision-language model on the host to turn an instruction into the noun phrases the detector can be asked for. The detector takes "red block", not "the mug to the left of the bowl". Writes them onto the detector's `phrases`, its whole control interface. Needs `grounding:=true` and a vision server started with `--vlm`. Python, see below. |
 | `g1_perception_visualizer` | Draws each detection on the frame it was cut from, and the simulator's ground truth labelled with how far off perception is. Only runs with `visualization:=true`. |
@@ -52,7 +52,7 @@ object poses are `vision_msgs/Detection3DArray`.
 | `g1_detector` | `/camera/color/image_raw` | `/g1_perception/instance_masks` |
 | `g1_detector` (mock) | `/g1_sensor_relay/object_poses`, `/camera/aligned_depth_to_color/image_raw`, `/camera/color/camera_info` | `/g1_perception/instance_masks` |
 | `g1_object_geometry` | `/g1_perception/instance_masks`, `/camera/aligned_depth_to_color/image_raw` (32FC1, metres), `/camera/aligned_depth_to_color/camera_info` | `/g1_object_geometry/object_poses`, in the camera frame<br>`/g1_object_geometry/tracked_masks`, the input masks relabelled with object ids |
-| `g1_graspgen_adapter` | `/g1_object_geometry/tracked_masks` and `object_poses` (which track a bare name such as `toy_robot` holds to), the depth image and its `camera_info` | `/g1_grasp_engine/generate_grasps` (`g1_msgs/GenerateGrasps`) |
+| `g1_graspgen_adapter` | `/g1_object_geometry/tracked_masks`, the depth image and its `camera_info` | `/g1_grasp_engine/generate_grasps` (`g1_msgs/GenerateGrasps`) |
 | `g1_mock_grasp_source` | `/objects` | `/g1_grasp_engine/generate_grasps` |
 | `g1_instruction_grounder` | `/camera/color/image_raw` | `/ground_instruction` (`g1_msgs/GroundInstruction`). Writes `phrases` on `/g1_detector`. |
 | `g1_perception_visualizer` | `/camera/color/image_raw`, `/camera/color/camera_info`, `/g1_object_geometry/tracked_masks`, `/g1_object_geometry/object_poses`, `/g1_sensor_relay/object_poses` | `/g1_perception_visualizer/annotated_image` (rgb8): masks tinted per object, fitted boxes, `id score` labels, and `unmeasured` on an instance the geometry rejected.<br>`/g1_perception_visualizer/ground_truth` (`MarkerArray`, transient local, in `fixed_frame`): a box per object labelled `<n> mm off` or `not seen`. |
@@ -84,7 +84,7 @@ arm in view, and the alias would then follow the arm.
 
 An instance wider than `max_extent_m` whose points mostly share one height is a surface, a table
 or a desk: it is published as a box `surface_band_m` thick, its top the surface's, over the part in
-view, for PlaceOn to set things down on.
+view (at most `max_surface_extent_m` across), for PlaceOn to set things down on.
 
 ## Parameters
 
@@ -181,5 +181,5 @@ covers the servers and the grasp and grounding variants.
 | `test_perception_visualizer` | No | Which drawn instance counts as measured, including a rejected one whose raw label equals an alias. |
 | `test_visualizer` | No | The visualizer on synthetic frames. The annotated image. Ground truth moved into `odom` and labelled with the error. An empty frame left untouched. Masks that arrive before their frame. |
 | `test_grounder` | No | The grounder against a stub. An instruction becomes phrases. The target is one of them. The phrases actually reach the detector's parameter. Exemplar points survive. An empty instruction is refused. |
-| `test_graspgen_adapter` | No | The grasp adapter against a stub generator. The request encoding the real server would reject. The frame and stamp of the answer. Ordering by confidence. An unknown object. A left-hand request refused rather than mirrored. |
+| `test_graspgen_adapter` | No | The grasp adapter against a stub generator. The request encoding the real server would reject. The frame and stamp of the answer. Ordering by confidence. An unknown object. A left-hand request refused rather than mirrored. A bare name taken as its track. Masks long behind the camera refused. |
 | `test_perception_objects` | Yes | Measured poses against the simulator's own for every tabletop prop: position and size, both names published, and the stamp being the measurement's rather than the publisher's. |
