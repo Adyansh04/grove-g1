@@ -466,6 +466,12 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     const auto first_reached = [&]() -> const GraspPlan* {
         for (const GraspPlan& plan : plans)
         {
+            // A stop cancels the trajectory, which reads as a failed move: the next plan would
+            // set the arm moving again after it.
+            if (goal_handle->is_canceling())
+            {
+                return nullptr;
+            }
             RCLCPP_INFO(
                 get_logger(),
                 "picking '%s' with the %s grasp",
@@ -479,7 +485,7 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
         return nullptr;
     };
     const GraspPlan* chosen = first_reached();
-    if (chosen == nullptr)
+    if (chosen == nullptr && !goal_handle->is_canceling())
     {
         // Every plan fails at its start when a finger stands in voxels it cast itself: lift the
         // hand straight out of them, exempt for that move alone, and plan again.
@@ -491,6 +497,11 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
         setHandContact(arm, { "<octomap>" }, false);
         clearOctomap();
         chosen = first_reached();
+    }
+    if (goal_handle->is_canceling())
+    {
+        cancelled(Pick::Feedback::PHASE_PREGRASP);
+        return;
     }
     if (chosen == nullptr)
     {
@@ -683,7 +694,16 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     // Where it is says what the fingers cannot: seen in a frame taken after the lift and not risen
     // with the hand, the hand came up without it. Held, the hand hides it or carries it up.
     const geometry_msgs::msg::Point& stood = detection->results.front().pose.pose.position;
-    for (const Detection& after : sightingsAfter(goal->object_id, now(), place_confirm_timeout_s_))
+    const std::vector<Detection>     after_lift =
+        sightingsAfter(goal->object_id, now(), place_confirm_timeout_s_, [&goal_handle] {
+            return goal_handle->is_canceling();
+        });
+    if (goal_handle->is_canceling())
+    {
+        cancelled_holding(Pick::Feedback::PHASE_LIFT);
+        return;
+    }
+    for (const Detection& after : after_lift)
     {
         const geometry_msgs::msg::Point& at   = after.results.front().pose.pose.position;
         const double                     rise = at.z - stood.z;

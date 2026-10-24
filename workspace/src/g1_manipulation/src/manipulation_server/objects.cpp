@@ -7,6 +7,7 @@
 #include <cctype>
 #include <chrono>
 #include <cmath>
+#include <functional>
 #include <initializer_list>
 #include <std_msgs/msg/header.hpp>
 #include <string>
@@ -172,7 +173,8 @@ G1ManipulationServer::waitForObject(const std::string& object_id, double timeout
 }
 
 std::vector<G1ManipulationServer::Detection> G1ManipulationServer::sightingsAfter(
-    const std::string& object_id, const rclcpp::Time& since, double timeout_s)
+    const std::string& object_id, const rclcpp::Time& since, double timeout_s,
+    const std::function<bool()>& stop)
 {
     // Its tracks too, red_mug_2 for red_mug: the bare name is withheld while a look-alike is in
     // view, and the hand beside an object can be one.
@@ -182,13 +184,14 @@ std::vector<G1ManipulationServer::Detection> G1ManipulationServer::sightingsAfte
             return true;
         }
         const std::size_t cut = id.rfind('_');
-        return cut != std::string::npos && id.substr(0, cut) == object_id && cut + 1 < id.size() &&
+        return cut != std::string::npos && id.compare(0, cut, object_id) == 0 &&
+               cut + 1 < id.size() &&
                std::all_of(id.begin() + static_cast<std::ptrdiff_t>(cut) + 1, id.end(), [](char c) {
                    return std::isdigit(static_cast<unsigned char>(c)) != 0;
                });
     };
     const rclcpp::Time deadline = now() + rclcpp::Duration::from_seconds(timeout_s);
-    while (now() < deadline)
+    while (now() < deadline && !stop())
     {
         {
             const std::lock_guard<std::mutex> lock(objects_mutex_);
