@@ -55,6 +55,8 @@ privacy = { local = true }
 # took at 16 bits: the tools and persona take about 12k of it.
 context = 32768
 stream = true
+# A streamed reply is timed by its silences, not whole, so this is what ends a reply that loops.
+max_tokens = 4096
 # Qwen's sampling for non-thinking use, over llama.cpp's defaults (0.8, top_k 40, top_p 0.95,
 # min_p 0.05): on 16 eval cases, three trials each, pass^3 0.94 against 0.81 at the same cost.
 params = { temperature = 0.7, top_p = 0.8, top_k = 20, min_p = 0.0, presence_penalty = 1.0 }
