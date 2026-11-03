@@ -225,8 +225,8 @@ expect = { approvals_max = 2, reply_has = ["tray", "already", "not on", "isn't",
 
 [[case]]
 id = "cannot-place"
-# Only the tray takes the mug in this demo: the agent says so instead of failing a plan.
-say = ["Now put the mug on the sofa."]
+# The profile forbids placing on a bed: the agent says so instead of planning it.
+say = ["Now put the mug on the bed."]
 expect = { mission = "none", approvals_max = 0 }
 
 [[case]]
