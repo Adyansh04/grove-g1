@@ -292,7 +292,7 @@ expect = { tools = ["recall"], mission = "none" }
 [[case]]
 id = "point-unknown"
 # Something no detector marks: the agent points at it rather than guessing.
-say = ["Point at the handle of the fridge."]
+say = ["Show me where the handle of the fridge is in the camera image."]
 expect = { tools = ["point"], mission = "none" }
 
 [[case]]

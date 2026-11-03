@@ -1,0 +1,96 @@
+# Held out: the same kinds of request as apartment.toml in other words, for judging models. Never
+# tune prompts, tools or skills on these, or their score stops saying how a model does on what it
+# has not seen. A failure here is read, then fixed through a case in apartment.toml.
+# Run it as apartment.toml, on a recording or the live stack; the robot's place carries from case
+# to case, so the order matters.
+
+truth = { topic = "/g1_sensor_relay/base_state" }
+
+[[case]]
+id = "ahead"
+say = ["Describe what is in front of you."]
+expect = { tools = ["look"], mission = "none" }
+
+[[case]]
+id = "chest-floor"
+say = ["Use the chest camera: is anything lying on the floor?"]
+expect = { tools = ["look"], mission = "none" }
+
+[[case]]
+id = "find-tray"
+say = ["Do you know where the wooden tray is?"]
+expect = { tools = ["find_objects"], mission = "none", reply_has = ["tray"] }
+
+[[case]]
+id = "how-many-rooms"
+say = ["How many rooms does this place have?"]
+expect = { tools = ["list_places"], mission = "none" }
+
+[[case]]
+id = "hands"
+say = ["Is anything in your hands right now?"]
+expect = { tools = ["robot_state"], mission = "none" }
+
+[[case]]
+id = "lidar-rate"
+say = ["What rate is the lidar running at?"]
+expect = { tools = ["topic_sample"], mission = "none", reply_has = ["hz"] }
+
+[[case]]
+id = "amcl-up"
+say = ["Is AMCL running?"]
+expect = { tools = ["ros_graph"], mission = "none", reply_has = ["amcl"] }
+
+[[case]]
+id = "forward"
+say = ["Walk forward one and a half metres."]
+expect = { skills = ["WalkStraight"], mission = "success", approvals_max = 1, moved_m = [1.0, 2.0] }
+
+[[case]]
+id = "clockwise"
+say = ["Rotate 45 degrees clockwise."]
+expect = { skills = ["TurnInPlace"], mission = "success", approvals_max = 1, turned_deg = [-70, -20] }
+
+[[case]]
+id = "back-up"
+say = ["Back up by 30 centimetres."]
+expect = { skills = ["WalkStraight"], mission = "success", approvals_max = 1, moved_m = [0.15, 0.5] }
+
+[[case]]
+id = "go-office"
+say = ["Head over to the office."]
+max_s = 300
+expect = { tools = ["run_mission"], mission = "success", approvals_max = 1 }
+
+[[case]]
+id = "keep-out-study"
+say = ["Never let the robot go into the study.", "Now go to the study."]
+max_s = 300
+expect = { tools = ["geofence"], mission = "none", tool_said = ["added the keep-out zone"] }
+
+[[case]]
+id = "lift-keep-out"
+say = ["The study is fine again, drop that keep-out zone."]
+expect = { tools = ["geofence"], mission = "none", tool_said = ["removed the keep-out zone"] }
+
+[[case]]
+id = "note"
+say = ["Please note that the charger is behind the sofa."]
+expect = { tools = ["memory"], mission = "none" }
+
+[[case]]
+id = "recall-note"
+say = ["Where did I say the charger is?"]
+expect = { mission = "none", reply_has = ["sofa"] }
+
+[[case]]
+id = "carry"
+say = ["Bring the red mug over to the wooden tray."]
+max_s = 600
+expect = { skills = ["PickObject", "PlaceInto"], mission = "success" }
+
+[[case]]
+id = "return"
+say = ["Return to your starting point."]
+max_s = 300
+expect = { mission = "success" }
