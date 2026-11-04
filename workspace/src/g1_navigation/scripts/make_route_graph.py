@@ -13,6 +13,7 @@ on one graph.
 
 import argparse
 import collections
+import itertools
 import json
 import math
 from pathlib import Path
@@ -51,7 +52,7 @@ def load_map(yaml_path):
 def clearance_of(free):
     """Returns each cell's distance to the nearest cell that is not free, in cells."""
     clearance = np.where(free, np.inf, 0.0)
-    queue = collections.deque(zip(*np.nonzero(~free)))
+    queue = collections.deque(zip(*np.nonzero(~free), strict=True))
     height, width = free.shape
     while queue:
         row, col = queue.popleft()
@@ -117,9 +118,9 @@ def bridge(nodes, edges, room, spacing):
         if len(counts) == 1:
             return
         small = min(counts, key=counts.get)
-        starts = [n for n, g in zip(nodes, groups) if g == small]
-        others = {n: i for i, (n, g) in enumerate(zip(nodes, groups)) if g != small}
-        came_from = {s: None for s in starts}
+        starts = [n for n, g in zip(nodes, groups, strict=True) if g == small]
+        others = {n: i for i, (n, g) in enumerate(zip(nodes, groups, strict=True)) if g != small}
+        came_from = dict.fromkeys(starts)
         queue = collections.deque(starts)
         end = None
         while queue and end is None:
@@ -154,7 +155,7 @@ def bridge(nodes, edges, room, spacing):
         chain = [i for i, n in enumerate(nodes) if n == end]
         last = chain[0]
         walked = 0
-        for before, cell in zip(path, path[1:]):
+        for before, cell in itertools.pairwise(path):
             walked += math.dist(before, cell)
             if walked >= spacing or came_from[cell] is None:
                 walked = 0
