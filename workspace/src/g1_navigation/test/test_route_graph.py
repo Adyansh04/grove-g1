@@ -23,7 +23,7 @@ def test_every_lane_fits_the_robot_and_all_are_one():
     maker = _maker()
     free, resolution, origin = maker.load_map(PACKAGE / "maps" / "apartment.yaml")
     room = maker.clearance_of(free) * resolution >= ROBOT_RADIUS_M
-    graph = json.loads((CONFIG / "route_graph.geojson").read_text())
+    graph = json.loads((CONFIG / "route_graph_apartment.geojson").read_text())
 
     def cell(xy):
         return (

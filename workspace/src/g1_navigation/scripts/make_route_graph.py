@@ -3,7 +3,7 @@
 
 Python: an offline tool that runs once per map, far from any control loop.
 
-    make_route_graph.py maps/apartment.yaml config/route_graph.geojson
+    make_route_graph.py maps/apartment.yaml config/route_graph_apartment.geojson
 
 Nodes sit along the middle of free space, as far from walls as they can be, and edges join nodes
 that see each other with room to spare: a controller stops short of an edge that grazes the

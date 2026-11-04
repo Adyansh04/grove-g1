@@ -14,7 +14,7 @@ from launch.actions import (
     OpaqueFunction,
     SetEnvironmentVariable,
 )
-from launch.conditions import IfCondition
+from launch.conditions import IfCondition, LaunchConfigurationNotEquals
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.descriptions import ParameterFile
@@ -64,6 +64,11 @@ def _arguments():
             description="Rejected if true: composed, the nested costmap parameters never arrive.",
         ),
         DeclareLaunchArgument("log_level", default_value="info"),
+        DeclareLaunchArgument(
+            "route_graph",
+            default_value="",
+            description="The route graph route_server walks by, a GeoJSON file; empty runs none.",
+        ),
         DeclareLaunchArgument(
             "collision_high_cloud",
             default_value="/livox/lidar",
@@ -130,18 +135,32 @@ def _servers():
                 "nav2_bt_navigator", "bt_navigator", "bt_navigator", [params, bt_xml], TF_REMAPPINGS
             ),
             server(
-                "nav2_route",
-                "route_server",
-                "route_server",
-                [params, {"graph_filepath": os.path.join(SHARE, "config", "route_graph.geojson")}],
-                TF_REMAPPINGS,
-            ),
-            server(
                 "nav2_lifecycle_manager",
                 "lifecycle_manager",
                 "lifecycle_manager_navigation",
                 [params, {"autostart": LaunchConfiguration("autostart")}],
                 [],
+            ),
+            # Only where the world has a graph, under a manager of its own: a graph that will not
+            # load leaves Nav2 up without its lanes.
+            GroupAction(
+                condition=LaunchConfigurationNotEquals("route_graph", ""),
+                actions=[
+                    server(
+                        "nav2_route",
+                        "route_server",
+                        "route_server",
+                        [params, {"graph_filepath": LaunchConfiguration("route_graph")}],
+                        TF_REMAPPINGS,
+                    ),
+                    server(
+                        "nav2_lifecycle_manager",
+                        "lifecycle_manager",
+                        "lifecycle_manager_route",
+                        [params, {"autostart": LaunchConfiguration("autostart")}],
+                        [],
+                    ),
+                ],
             ),
             # Only with keepout: the filter reads the mask once this server names it, so who
             # reads the mask says whether the zones reach Nav2.

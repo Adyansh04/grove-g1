@@ -109,11 +109,12 @@ detects nothing. The robot's own `body` circle is never reshaped.
 
 `navigate_through_poses` is on for NervROS's routes (`WalkRoute`).
 
-`route_server` loads `config/route_graph.geojson`, for NervROS's walks along fixed lanes
-(`WalkGraph`). The graph comes from the map; after changing a map, make it again in the container:
+`route_server` runs for a world with a graph, `config/route_graph_<world>.geojson`, under its own
+lifecycle manager, for NervROS's walks along fixed lanes (`WalkGraph`). The graph comes from the
+map; after changing a map, make it again in the container:
 
 ```bash
-python3 scripts/make_route_graph.py maps/apartment.yaml config/route_graph.geojson
+python3 scripts/make_route_graph.py maps/apartment.yaml config/route_graph_apartment.geojson
 ```
 
 The simulated sweep never sees the robot's own links. The real one will see its legs and arms in

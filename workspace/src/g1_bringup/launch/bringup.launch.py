@@ -139,7 +139,13 @@ def _sim_args(context, navigating, want_manipulation, want_perception, want_move
     }
 
 
-def _navigation(mode, want_nav, want_moveit):
+def _route_graph(world):
+    """The world's route graph, where it has one."""
+    graph = os.path.join(_share("g1_navigation"), "config", f"route_graph_{world}.geojson")
+    return graph if os.path.isfile(graph) else ""
+
+
+def _navigation(mode, want_nav, want_moveit, world):
     """nav_stack.launch.py stages no simulator of its own, which is what makes including it
     beside _simulator() safe. use_composition and container_name are not declared here and not
     forwarded, so nav_stack's own defaults apply. With MoveIt up, the collision monitor's high
@@ -149,6 +155,7 @@ def _navigation(mode, want_nav, want_moveit):
         mode=mode,
         nav="true" if want_nav else "false",
         collision_high_cloud="/filtered_cloud" if want_moveit else "/livox/lidar",
+        route_graph=_route_graph(world),
     )
 
 
@@ -286,7 +293,8 @@ def _setup(context, *args, **kwargs):
         )
     ]
     if navigating:
-        actions.append(_navigation(mode, want_nav, want_moveit))
+        world = LaunchConfiguration("world").perform(context)
+        actions.append(_navigation(mode, want_nav, want_moveit, world))
     if want_moveit:
         actions.append(_moveit())
     if want_perception:
