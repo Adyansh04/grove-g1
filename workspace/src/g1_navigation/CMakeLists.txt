@@ -34,6 +34,9 @@ if(BUILD_TESTING)
   # No /clock on this track, and every upstream config adapted here ships use_sim_time: True.
   ament_add_pytest_test(test_no_sim_time test/test_no_sim_time.py ENV ${_pytest_env})
 
+  # The committed route graph against the map it came from.
+  ament_add_pytest_test(test_route_graph test/test_route_graph.py ENV ${_pytest_env})
+
   # Arguments crossing bringup.launch.py and nav_sim.launch.py into their includes. Lives here
   # because it reads both packages' launch files, and g1_bringup cannot depend on this one.
   ament_add_pytest_test(test_launch_threading test/test_launch_threading.py ENV ${_pytest_env})

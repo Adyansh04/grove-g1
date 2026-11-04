@@ -6,9 +6,10 @@ Python: an offline tool that runs once per map, far from any control loop.
     make_route_graph.py maps/apartment.yaml config/route_graph.geojson
 
 Nodes sit along the middle of free space, as far from walls as they can be, and edges join nodes
-that see each other with room for the robot on the way. Where that leaves a doorway unjoined, a
-chain of nodes through it joins the two sides, so every part of the map the robot fits through is
-on one graph.
+that see each other with room to spare: a controller stops short of an edge that grazes the
+costmap's inscribed cost. Where that leaves a doorway unjoined, a chain of nodes through it joins
+the two sides, keeping as far from the door frame as the doorway allows, so every part of the map
+the robot fits through is on one graph.
 """
 
 import argparse
@@ -22,6 +23,10 @@ import numpy as np
 
 SPACING_M = 0.8
 REACH_M = 1.6
+# Room to spare on an open lane, beyond the robot's radius, m.
+MARGIN_M = 0.2
+# How far a doorway's chain gives up room at a time, looking for the widest way through, m.
+NARROWING_M = 0.02
 EIGHT = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
 
 
@@ -110,8 +115,50 @@ def groups_of(count, edges):
     return [find(i) for i in range(count)]
 
 
-def bridge(nodes, edges, room, spacing):
-    """Adds chains of nodes through doorways until no reachable part of the graph stands alone."""
+def way_between(starts, targets, room):
+    """Returns the cells from a target back to a start, through `room`; none if there is no way."""
+    came_from = dict.fromkeys(starts)
+    queue = collections.deque(starts)
+    while queue:
+        cell = queue.popleft()
+        for d_row, d_col in EIGHT:
+            step = (cell[0] + d_row, cell[1] + d_col)
+            inside = 0 <= step[0] < room.shape[0] and 0 <= step[1] < room.shape[1]
+            if step in came_from or not inside or not room[step]:
+                continue
+            came_from[step] = cell
+            if step in targets:
+                path = [step]
+                while came_from[path[-1]] is not None:
+                    path.append(came_from[path[-1]])
+                return path
+            queue.append(step)
+    return None
+
+
+def add_chain(nodes, edges, path, room, spacing):
+    """Adds nodes along `path`, each seeing the one before, joining its two ends."""
+    index_of = {cell: i for i, cell in enumerate(nodes)}
+
+    def node(cell):
+        if cell not in index_of:
+            index_of[cell] = len(nodes)
+            nodes.append(cell)
+        return index_of[cell]
+
+    last = path[0]
+    for before, cell in itertools.pairwise(path):
+        if math.dist(last, cell) >= spacing or not clear_between(room, last, cell):
+            edges.add((node(last), node(before)))
+            last = before
+    edges.add((node(last), node(path[-1])))
+
+
+def bridge(nodes, edges, clearance, floor, top, spacing):
+    """Joins the graph's parts through the widest way each has, down to clearance `floor`.
+
+    Returns the nodes left in parts no way reaches, a closet or an island, out of the graph.
+    """
     while True:
         groups = groups_of(len(nodes), edges)
         counts = collections.Counter(groups)
@@ -119,51 +166,22 @@ def bridge(nodes, edges, room, spacing):
             return
         small = min(counts, key=counts.get)
         starts = [n for n, g in zip(nodes, groups, strict=True) if g == small]
-        others = {n: i for i, (n, g) in enumerate(zip(nodes, groups, strict=True)) if g != small}
-        came_from = dict.fromkeys(starts)
-        queue = collections.deque(starts)
-        end = None
-        while queue and end is None:
-            cell = queue.popleft()
-            for d_row, d_col in EIGHT:
-                next_cell = (cell[0] + d_row, cell[1] + d_col)
-                if (
-                    next_cell not in came_from
-                    and 0 <= next_cell[0] < room.shape[0]
-                    and 0 <= next_cell[1] < room.shape[1]
-                    and room[next_cell]
-                ):
-                    came_from[next_cell] = cell
-                    if next_cell in others:
-                        end = next_cell
-                        break
-                    queue.append(next_cell)
-        if end is None:
-            # Not reachable from the rest by a robot of this size: a closet, or an island.
-            drop = {i for i, g in enumerate(groups) if g == small}
-            keep = [i for i in range(len(nodes)) if i not in drop]
-            renumber = {old: new for new, old in enumerate(keep)}
-            edges.intersection_update({e for e in edges if not drop.intersection(e)})
-            moved = {(renumber[i], renumber[j]) for i, j in edges}
-            edges.clear()
-            edges.update(moved)
-            nodes[:] = [nodes[i] for i in keep]
+        targets = {n for n, g in zip(nodes, groups, strict=True) if g != small}
+        path = None
+        for width in np.arange(top, floor - 1e-9, -NARROWING_M):
+            room = clearance >= width
+            path = way_between(starts, targets, room)
+            if path:
+                break
+        if path:
+            add_chain(nodes, edges, path, room, spacing)
             continue
-        path = [end]
-        while came_from[path[-1]] is not None:
-            path.append(came_from[path[-1]])
-        chain = [i for i, n in enumerate(nodes) if n == end]
-        last = chain[0]
-        walked = 0
-        for before, cell in itertools.pairwise(path):
-            walked += math.dist(before, cell)
-            if walked >= spacing or came_from[cell] is None:
-                walked = 0
-                index = nodes.index(cell) if cell in nodes else len(nodes)
-                if index == len(nodes):
-                    nodes.append(cell)
-                edges.add((last, index))
-                last = index
+        keep = [i for i, g in enumerate(groups) if g != small]
+        renumber = {old: new for new, old in enumerate(keep)}
+        moved = {(renumber[i], renumber[j]) for i, j in edges if i in renumber and j in renumber}
+        edges.clear()
+        edges.update(moved)
+        nodes[:] = [nodes[i] for i in keep]
 
 
 def geojson(nodes, edges, resolution, origin):
@@ -213,12 +231,12 @@ def main():
     parser.add_argument("--robot-radius", type=float, default=0.45, help="metres, as the costmaps")
     args = parser.parse_args()
     free, resolution, origin = load_map(args.map)
-    clearance = clearance_of(free)
-    room = clearance * resolution >= args.robot_radius
+    clearance = clearance_of(free) * resolution
+    open_room = clearance >= args.robot_radius + MARGIN_M
     spacing = SPACING_M / resolution
-    nodes = spread_nodes(clearance, room, spacing)
-    edges = join_by_sight(nodes, room, REACH_M / resolution)
-    bridge(nodes, edges, room, spacing)
+    nodes = spread_nodes(clearance, open_room, spacing)
+    edges = join_by_sight(nodes, open_room, REACH_M / resolution)
+    bridge(nodes, edges, clearance, args.robot_radius, args.robot_radius + MARGIN_M, spacing)
     args.out.write_text(json.dumps(geojson(nodes, edges, resolution, origin)) + "\n")
     groups = len(set(groups_of(len(nodes), edges)))
     print(f"{len(nodes)} nodes, {len(edges)} edges both ways, {groups} connected part(s)")
