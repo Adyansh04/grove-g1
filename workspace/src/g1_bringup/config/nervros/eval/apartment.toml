@@ -271,6 +271,7 @@ expect = { skills = ["WalkGraph"], mission = "success", approvals_max = 1 }
 
 [[case]]
 id = "arm-line"
+# Needs the live stack: a recording holds no MoveIt, so on one this fails for the robot's sake.
 say = ["Is the way clear for the right hand to go straight up 10 centimetres? Do not move it."]
 expect = { tools = ["arm_check"], mission = "none" }
 
