@@ -325,11 +325,24 @@ costmap_filter_info_server:
     base: 0.0
     multiplier: 1.0
 
+# Walks along fixed lanes for NervROS's WalkGraph. Its graph comes from the map, through
+# scripts/make_route_graph.py; nav2.launch.py names the file.
+route_server:
+  ros__parameters:
+    use_sim_time: false
+    base_frame: base_footprint
+    route_frame: map
+    edge_cost_functions: ["DistanceScorer"]
+    DistanceScorer:
+      plugin: "nav2_route::DistanceScorer"
+    smooth_corners: true
+    smoothing_radius: 0.3
+
 lifecycle_manager_navigation:
   ros__parameters:
     use_sim_time: false
     autostart: true
-    node_names: ["controller_server", "planner_server", "behavior_server", "bt_navigator",
+    node_names: ["route_server", "controller_server", "planner_server", "behavior_server", "bt_navigator",
                  "collision_monitor"]
 
 # Up only with keepout:=true, as the info server it manages.

@@ -130,6 +130,13 @@ def _servers():
                 "nav2_bt_navigator", "bt_navigator", "bt_navigator", [params, bt_xml], TF_REMAPPINGS
             ),
             server(
+                "nav2_route",
+                "route_server",
+                "route_server",
+                [params, {"graph_filepath": os.path.join(SHARE, "config", "route_graph.geojson")}],
+                TF_REMAPPINGS,
+            ),
+            server(
                 "nav2_lifecycle_manager",
                 "lifecycle_manager",
                 "lifecycle_manager_navigation",

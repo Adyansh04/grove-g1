@@ -2,7 +2,8 @@
 
 SLAM Toolbox mapping, AMCL localization and Nav2 for the G1 on the `unitree_mujoco` track.
 Configuration, launch files and glue: the nodes themselves are upstream. `ament_cmake`. The Python is
-launch files, tests and `nav_diag.py`, a 20 Hz diagnostic recorder with no part in control.
+launch files, tests, `nav_diag.py`, a 20 Hz diagnostic recorder with no part in control, and
+`make_route_graph.py`, run offline once per map.
 
 ```mermaid
 flowchart TB
@@ -107,6 +108,13 @@ robot to 40% and `nervros_stop` stops it. Both take their shape on `nervros/coll
 detects nothing. The robot's own `body` circle is never reshaped.
 
 `navigate_through_poses` is on for NervROS's routes (`WalkRoute`).
+
+`route_server` loads `config/route_graph.geojson`, for NervROS's walks along fixed lanes
+(`WalkGraph`). The graph comes from the map; after changing a map, make it again in the container:
+
+```bash
+python3 scripts/make_route_graph.py maps/apartment.yaml config/route_graph.geojson
+```
 
 The simulated sweep never sees the robot's own links. The real one will see its legs and arms in
 these bands, so filter them before trusting it on hardware.
