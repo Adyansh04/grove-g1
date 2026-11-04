@@ -77,6 +77,10 @@ ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose \
   "{pose: {header: {frame_id: map}, pose: {position: {x: 2.5, y: -2.5}, orientation: {w: 1.0}}}}"
 ```
 
+Route server: a world with a graph, `g1_navigation/config/route_graph_<world>.geojson` (the
+apartment has one), also runs `route_server` under its own `lifecycle_manager_route`, for NervROS's
+walks along fixed lanes. A graph that will not load leaves Nav2 up without them.
+
 Keep-out zones: `keepout:=true` turns on Nav2's keepout filter in both costmaps, and starts its
 `costmap_filter_info_server` with its own `lifecycle_manager_filters`, which exist only with it.
 The filter reads the `OccupancyGrid` on `/keepout_filter_mask`, whose cells at 100 are off limits.
