@@ -235,6 +235,50 @@ say = ["Go back to where you started."]
 max_s = 300
 expect = { mission = "success" }
 
+# What the debugging tools answer: the ros2 verbs, Nav2's lanes, MoveIt's checks
+
+[[case]]
+id = "action-ends"
+say = ["Which node serves the navigate_to_pose action, and who are its clients?"]
+expect = { tools = ["ros_graph"], mission = "none", reply_has = ["bt_navigator"] }
+
+[[case]]
+id = "find-by-type"
+say = ["Which topics carry sensor_msgs/msg/LaserScan?"]
+expect = { tools = ["ros_graph"], mission = "none", reply_has = ["/scan"] }
+
+[[case]]
+id = "topic-delay"
+say = ["How old is the lidar scan by the time it arrives?"]
+expect = { tools = ["topic_sample"], mission = "none" }
+
+[[case]]
+id = "lifecycle-states"
+say = ["Which managed nodes are active right now?"]
+expect = { tools = ["ros_graph"], mission = "none", reply_has = ["active"] }
+
+[[case]]
+id = "record-bag"
+say = ["Record the lidar scan for 3 seconds, name it scan-check, and tell me when it is saved."]
+max_s = 120
+expect = { tools = ["bag"], mission = "none" }
+
+[[case]]
+id = "lanes"
+say = ["Keep to the marked lanes and walk to the bedroom."]
+max_s = 300
+expect = { skills = ["WalkGraph"], mission = "success", approvals_max = 1 }
+
+[[case]]
+id = "arm-line"
+say = ["Is the way clear for the right hand to go straight up 10 centimetres? Do not move it."]
+expect = { tools = ["arm_check"], mission = "none" }
+
+[[case]]
+id = "controllers"
+say = ["Which arm and leg controllers are running?"]
+expect = { mission = "none", reply_has = ["controller"] }
+
 # Memory and patrols
 
 [[case]]
