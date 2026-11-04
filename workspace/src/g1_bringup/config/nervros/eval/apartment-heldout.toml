@@ -42,6 +42,21 @@ say = ["Is AMCL running?"]
 expect = { tools = ["ros_graph"], mission = "none", reply_has = ["amcl"] }
 
 [[case]]
+id = "how-far"
+say = ["How far away is the bedroom? Don't go there, just tell me."]
+expect = { tools = ["nav_check"], mission = "none", approvals_max = 0 }
+
+[[case]]
+id = "unknown-thing"
+say = ["Have you seen a blue dragon anywhere? Stay where you are."]
+expect = { tools = ["find_objects"], mission = "none", approvals_max = 0 }
+
+[[case]]
+id = "two-readings"
+say = ["Check two things for me: the lidar's rate and whether Nav2's planner is up."]
+expect = { tools = ["topic_sample", "ros_graph"], mission = "none", reply_has = ["hz"] }
+
+[[case]]
 id = "forward"
 say = ["Walk forward one and a half metres."]
 expect = { skills = ["WalkStraight"], mission = "success", approvals_max = 1, moved_m = [1.0, 2.0] }
@@ -55,6 +70,13 @@ expect = { skills = ["TurnInPlace"], mission = "success", approvals_max = 1, tur
 id = "back-up"
 say = ["Back up by 30 centimetres."]
 expect = { skills = ["WalkStraight"], mission = "success", approvals_max = 1, moved_m = [0.15, 0.5] }
+
+[[case]]
+id = "walk-turn-walk"
+# One plan with its legs in order, not three missions.
+say = ["Walk forward a metre, turn left 90 degrees, then walk forward another metre."]
+max_s = 300
+expect = { skills = ["WalkStraight", "TurnInPlace"], mission = "success", approvals_max = 1, turned_deg = [60, 120] }
 
 [[case]]
 id = "go-office"
@@ -74,6 +96,13 @@ say = ["The study is fine again, drop that keep-out zone."]
 expect = { tools = ["geofence"], mission = "none", tool_said = ["removed the keep-out zone"] }
 
 [[case]]
+id = "walk-up-to-it"
+# "It" is only in the turn before.
+say = ["Where is the wooden tray?", "Walk up to it."]
+max_s = 300
+expect = { tools = ["find_objects", "run_mission"], mission = "success", approvals_max = 1 }
+
+[[case]]
 id = "note"
 say = ["Please note that the charger is behind the sofa."]
 expect = { tools = ["memory"], mission = "none" }
@@ -88,6 +117,30 @@ id = "carry"
 say = ["Bring the red mug over to the wooden tray."]
 max_s = 600
 expect = { skills = ["PickObject", "PlaceInto"], mission = "success" }
+
+[[case]]
+id = "desk-place"
+# Judged on the plan: on the live stack the mug is in the tray by now, so its pick may fail.
+say = ["Take the red mug and set it down on the office desk instead."]
+max_s = 600
+expect = { skills = ["PickObject", "PlaceOn"], approvals_max = 1 }
+
+[[case]]
+id = "no-floor"
+say = ["Actually, just put the mug on the floor next to you."]
+expect = { mission = "none", approvals_max = 0 }
+
+[[case]]
+id = "that-over-there"
+say = ["Move that over there."]
+expect = { mission = "none", approvals_max = 0, reply_has = ["which", "what", "where"] }
+
+[[case]]
+id = "room-tour"
+# One plan through every room, in the order given.
+say = ["Go through the living room, then the hallway, then stop in the bedroom."]
+max_s = 600
+expect = { mission = "success", approvals_max = 1 }
 
 [[case]]
 id = "return"
