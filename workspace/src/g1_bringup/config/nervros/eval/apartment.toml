@@ -83,7 +83,7 @@ expect = { tools = ["health_check"], mission = "none" }
 [[case]]
 id = "watch"
 say = ["Tell me if the chest camera drops below 5 Hz.", "Cancel all watches."]
-expect = { tools = ["watch", "watches"], mission = "none" }
+expect = { tools = ["watch", "background"], mission = "none" }
 
 [[case]]
 id = "plot-speed"
@@ -252,7 +252,7 @@ expect = { tools = ["memory"], mission = "none" }
 id = "patrol"
 say = ["Every minute, turn left 90 degrees, 2 times in all.", "Which schedules are running?", "Cancel all schedules."]
 max_s = 300
-expect = { tools = ["schedule"], approvals_max = 1 }
+expect = { tools = ["schedule", "background"], approvals_max = 1 }
 
 # A long session: many results in one context
 
@@ -302,7 +302,7 @@ say = [
     "Cancel all schedules.",
 ]
 max_s = 300
-expect = { tools = ["schedule"], approvals_max = 1, mission = "none" }
+expect = { tools = ["schedule", "background"], approvals_max = 1, mission = "none" }
 
 [[case]]
 id = "refuse-wall"
