@@ -84,6 +84,7 @@ def _setup(context, *args, **kwargs):
                 "nav2.launch.py",
                 use_composition="false",
                 collision_high_cloud=LaunchConfiguration("collision_high_cloud"),
+                route_graph=LaunchConfiguration("route_graph"),
             )
         )
 
@@ -98,6 +99,11 @@ def generate_launch_description():
                 default_value="mapping",
                 description="'mapping' builds a new map with slam_toolbox; 'localization' runs "
                 "map_server + AMCL against maps/facility.",
+            ),
+            DeclareLaunchArgument(
+                "route_graph",
+                default_value="",
+                description="Passed to nav2.launch.py: the route graph, empty for no route server.",
             ),
             DeclareLaunchArgument(
                 "collision_high_cloud",

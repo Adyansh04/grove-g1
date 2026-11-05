@@ -23,6 +23,7 @@
   <exec_depend>nav2_collision_monitor</exec_depend>
   <exec_depend>nav2_controller</exec_depend>
   <exec_depend>nav2_lifecycle_manager</exec_depend>
+  <exec_depend>nav2_route</exec_depend>
   <exec_depend>nav2_map_server</exec_depend>
   <exec_depend>nav2_navfn_planner</exec_depend>
   <exec_depend>nav2_planner</exec_depend>

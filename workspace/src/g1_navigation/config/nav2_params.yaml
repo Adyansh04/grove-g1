@@ -325,12 +325,32 @@ costmap_filter_info_server:
     base: 0.0
     multiplier: 1.0
 
+# Walks along fixed lanes for NervROS's WalkGraph. Its graph comes from the map, through
+# scripts/make_route_graph.py; up only for a world that has one, as the argument route_graph says.
+route_server:
+  ros__parameters:
+    use_sim_time: false
+    base_frame: base_footprint
+    route_frame: map
+    edge_cost_functions: ["DistanceScorer"]
+    DistanceScorer:
+      plugin: "nav2_route::DistanceScorer"
+    smooth_corners: true
+    smoothing_radius: 0.3
+
 lifecycle_manager_navigation:
   ros__parameters:
     use_sim_time: false
     autostart: true
     node_names: ["controller_server", "planner_server", "behavior_server", "bt_navigator",
                  "collision_monitor"]
+
+# Up only with a route graph, as the server it manages.
+lifecycle_manager_route:
+  ros__parameters:
+    use_sim_time: false
+    autostart: true
+    node_names: ["route_server"]
 
 # Up only with keepout:=true, as the info server it manages.
 lifecycle_manager_filters:

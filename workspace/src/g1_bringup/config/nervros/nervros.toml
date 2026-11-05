@@ -273,6 +273,7 @@ top_speed_mps = 0.6
 # keep-out mask through its filter info server, the speed mask through the info NervROS publishes.
 [nav2]
 keepout_mask = "/keepout_filter_mask"
+route_server = true
 
 [nav2.speed_zones]
 mask = "/speed_filter_mask"

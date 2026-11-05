@@ -83,7 +83,7 @@ expect = { tools = ["health_check"], mission = "none" }
 [[case]]
 id = "watch"
 say = ["Tell me if the chest camera drops below 5 Hz.", "Cancel all watches."]
-expect = { tools = ["watch", "watches"], mission = "none" }
+expect = { tools = ["watch", "background"], mission = "none" }
 
 [[case]]
 id = "plot-speed"
@@ -225,8 +225,8 @@ expect = { approvals_max = 2, reply_has = ["tray", "already", "not on", "isn't",
 
 [[case]]
 id = "cannot-place"
-# Only the tray takes the mug in this demo: the agent says so instead of failing a plan.
-say = ["Now put the mug on the sofa."]
+# The profile forbids placing on a bed: the agent says so instead of planning it.
+say = ["Now put the mug on the bed."]
 expect = { mission = "none", approvals_max = 0 }
 
 [[case]]
@@ -234,6 +234,51 @@ id = "go-start-end"
 say = ["Go back to where you started."]
 max_s = 300
 expect = { mission = "success" }
+
+# What the debugging tools answer: the ros2 verbs, Nav2's lanes, MoveIt's checks
+
+[[case]]
+id = "action-ends"
+say = ["Which node serves the navigate_to_pose action, and who are its clients?"]
+expect = { tools = ["ros_graph"], mission = "none", reply_has = ["bt_navigator"] }
+
+[[case]]
+id = "find-by-type"
+say = ["Which topics carry sensor_msgs/msg/LaserScan?"]
+expect = { tools = ["ros_graph"], mission = "none", reply_has = ["/scan"] }
+
+[[case]]
+id = "topic-delay"
+say = ["How old is the lidar scan by the time it arrives?"]
+expect = { tools = ["topic_sample"], mission = "none" }
+
+[[case]]
+id = "lifecycle-states"
+say = ["Which managed nodes are active right now?"]
+expect = { tools = ["ros_graph"], mission = "none", reply_has = ["active"] }
+
+[[case]]
+id = "record-bag"
+say = ["Record the lidar scan for 3 seconds, name it scan-check, and tell me when it is saved."]
+max_s = 120
+expect = { tools = ["bag"], mission = "none" }
+
+[[case]]
+id = "lanes"
+say = ["Keep to the marked lanes and walk to the bedroom."]
+max_s = 300
+expect = { skills = ["WalkGraph"], mission = "success", approvals_max = 1 }
+
+[[case]]
+id = "arm-line"
+# Needs the live stack: a recording holds no MoveIt, so on one this fails for the robot's sake.
+say = ["Is the way clear for the right hand to go straight up 10 centimetres? Do not move it."]
+expect = { tools = ["arm_check"], mission = "none" }
+
+[[case]]
+id = "controllers"
+say = ["Which arm and leg controllers are running?"]
+expect = { mission = "none", reply_has = ["controller"] }
 
 # Memory and patrols
 
@@ -252,7 +297,7 @@ expect = { tools = ["memory"], mission = "none" }
 id = "patrol"
 say = ["Every minute, turn left 90 degrees, 2 times in all.", "Which schedules are running?", "Cancel all schedules."]
 max_s = 300
-expect = { tools = ["schedule"], approvals_max = 1 }
+expect = { tools = ["schedule", "background"], approvals_max = 1 }
 
 # A long session: many results in one context
 
@@ -292,7 +337,7 @@ expect = { tools = ["recall"], mission = "none" }
 [[case]]
 id = "point-unknown"
 # Something no detector marks: the agent points at it rather than guessing.
-say = ["Point at the handle of the fridge."]
+say = ["Show me where the handle of the fridge is in the camera image."]
 expect = { tools = ["point"], mission = "none" }
 
 [[case]]
@@ -302,7 +347,7 @@ say = [
     "Cancel all schedules.",
 ]
 max_s = 300
-expect = { tools = ["schedule"], approvals_max = 1, mission = "none" }
+expect = { tools = ["schedule", "background"], approvals_max = 1, mission = "none" }
 
 [[case]]
 id = "refuse-wall"

@@ -229,6 +229,14 @@ def test_an_explicit_start_delay_beats_the_branch_default(bringup, mode):
     assert args["sim_start_delay_s"] == "9.5"
 
 
+def test_only_a_world_with_a_route_graph_gets_one(bringup, tmp_path, monkeypatch):
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "route_graph_apartment.geojson").write_text("{}")
+    monkeypatch.setattr(bringup, "_share", lambda package: str(tmp_path))
+    assert bringup._route_graph("apartment").endswith("route_graph_apartment.geojson")
+    assert bringup._route_graph("navigation") == ""
+
+
 @pytest.mark.parametrize("mode", ["none", "mapping", "localization"])
 def test_world_threads_through_unchanged(bringup, mode):
     assert _sim_args(_run_setup(bringup, mode=mode, world="perception"))["world"] == "perception"
