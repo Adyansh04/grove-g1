@@ -2,14 +2,12 @@ name: ${COMPOSE_PROJECT_NAME:-ros2_project_template}
 
 services:
   ros-dev:
-    # Derived development image (distinct from BASE_IMAGE)
-    image: ${DEV_IMAGE_REPO:-adyansh04/ros-dev-workspace}:${ROS_DISTRO:-jazzy}
+    # The image CI publishes. manage.sh sets the tag (scripts/dev-image-tag.sh), pulls it, and
+    # builds from the Dockerfile only when no published image matches.
+    image: ${DEV_IMAGE_REPO:-ghcr.io/adyansh04/grove-g1-dev}:${DEV_IMAGE_TAG:-local}
     build:
       context: .
       dockerfile: .devcontainer/Dockerfile
-      args:
-        # Base image from your pre-built upstream images
-        BASE_IMAGE: ${BASE_IMAGE_REPO:-adyansh04/ros-dev}:${ROS_DISTRO:-jazzy}${BASE_IMAGE_TAG_SUFFIX:--latest}
 
     # Keep the container running and attachable
     tty: true

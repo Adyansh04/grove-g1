@@ -132,7 +132,9 @@ cp .env.example .env
 ./scripts/manage.sh build
 ```
 
-- The first `start` builds the dev image, the simulator included, which takes a while.
+- The first `start` pulls the dev image CI publishes, `ghcr.io/adyansh04/grove-g1-dev` (about
+  10 GB), tagged by what it is built from (`./scripts/dev-image-tag.sh`). It builds the image
+  from the Dockerfile instead only when the Dockerfile was changed and CI has not built it yet.
 - The apartment that the world-model and NervROS demos use needs its meshes once, about 330 MB:
   run `./scripts/setup-world-assets.sh` on the host.
 - In an existing clone, `git submodule update --init` fetches the submodules, and
@@ -220,7 +222,8 @@ need the simulator.
 CI builds the workspace and runs the non-simulator tests on every pull request and every push to
 `main`, in the image from `.github/ci.Dockerfile`. The simulator suites stay local: on a shared
 runner they measure the runner rather than the stack, so run them before merging anything they
-cover.
+cover. CI also builds the dev image whenever its inputs change and publishes it on GHCR, which
+`manage.sh start` pulls.
 
 ## Repository layout
 
