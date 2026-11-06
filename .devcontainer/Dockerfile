@@ -1,5 +1,7 @@
 
-ARG BASE_IMAGE=adyansh04/ros-dev:jazzy
+# Pinned by digest: the tag moves, and the published image's tag (scripts/dev-image-tag.sh) hashes
+# this file, so the same tag must always mean the same base.
+ARG BASE_IMAGE=adyansh04/ros-dev:jazzy-latest@sha256:f78b9a41143f1e2bfa5d02c719688f42c4cd37b07312c5717f7c37d4a32c7903
 FROM ${BASE_IMAGE}
 
 ARG ROS_DISTRO=jazzy
