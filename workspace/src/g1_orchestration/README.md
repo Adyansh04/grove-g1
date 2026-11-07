@@ -39,6 +39,11 @@ has its own action-client base.
 | `registration.hpp`, `src/registration.cpp` | Binds classes to the names trees use. |
 | `nervros_executor.*`, `mission_observer.*`, `server_fleet.*`, `authority_port.*` | The mission executor: the node, what it watches in a running tree, the action servers StopAll reaches, and the seam to `controller_manager`. |
 | `mission_validator.*`, `catalog.*`, `macro_library.*`, `sha256.*` | Decide whether a mission may run and what it may name. They use no ROS, so a service thread and the mission thread share them. |
+| `learned_skills.*`, `repertoire.*` | The skills an agent teaches: checking and keeping them, and the catalog, macros and validator a mission is checked against, replaced as a whole when one is taught. |
+| `mission_preview.*` | The `PreviewMission` service: each step's end pose and Nav2 path, without moving. |
+| `robot_health.*` | Whether the robot is upright and held by the controllers a mission, a lend or teleop needs. |
+| `teleop_driver.*` | Driving the base by hand: ramped velocity commands, with a deadman. |
+| `xml_canonical.*`, `text_values.hpp` | The text forms the checks share: canonical XML for comparing macros, strict number parsing, and the retry bounds. |
 | `config/catalog.yaml`, `trees/library/` | The skills a mission may use, and the macro subtree each one runs. |
 
 ## Leaves
@@ -132,13 +137,18 @@ The agent is [NervROS](https://github.com/Adyansh04/nervros). The contract is it
 
 | Interface | Name | Notes |
 |---|---|---|
-| Action | `/nervros_executor/execute_mission` | `ExecuteMission`. Modes: execute, validate (load and check only), and dry run (every leaf replaced by a stand-in that waits its share of the skill's catalog time). |
+| Action | `/nervros_executor/execute_mission` | `ExecuteMission`. Modes: execute, validate (load and check only), and dry run (every leaf replaced by a stand-in that waits its share of the skill's catalog time). A dry run of a mission that uses a macro looping until a leaf fails, such as `ExploreBuilding`, is refused: a stand-in never fails. |
 | Service | `/nervros_executor/validate_mission` | The same checks without a goal, plus a load. Returns the worst-case duration. |
 | Service | `/nervros_executor/get_catalog` | The skills as JSON, the palette (`TreeNodesModel`: every leaf's ports and the skills' subtrees), BehaviorTree.CPP's version, and the catalog's version, which changes with the skills and with the palette. |
 | Service | `/nervros_executor/stop_all` | Halts the mission, cancels goals on every skill server, holds posture. Safe at any time. |
 | Service | `/nervros_executor/pause_mission` | `PauseMission`: pauses the running mission, or resumes it (below). |
 | Service | `/nervros_executor/define_skill` | `DefineSkill`: a skill an agent teaches, checked and served as a draft, or kept (below). |
 | Service | `/nervros_executor/forget_skill` | `ForgetSkill`: drops a taught skill, and its file when it was kept. |
+| Service | `/nervros_executor/preview_mission` | `PreviewMission`: where each step of a plan would take the robot, for the picture beside its approval card. |
+| Service | `/nervros_executor/teleop` | `Teleop`: turns driving by hand on or off; refused while a mission runs or the arms are lent. |
+| Service | `/nervros_executor/lend_resources` | `LendResources`: lends the arms to an agent's own arm moves, and takes them back; only the borrower gives them back. |
+| Topic (in) | `/nervros_executor/heartbeat` | `Heartbeat`, best effort: the deadman of a mission that asked for one. |
+| Topic (in) | `/nervros_executor/teleop_cmd` | `geometry_msgs/Twist` while teleop is on, ramped onto `teleop_command_topic` (`/cmd_vel_raw`). |
 | Topic | `/nervros_executor/robot_state` | `RobotState`, reliable and transient local, on change and at 1 Hz. |
 
 ### What a mission may say
@@ -312,13 +322,14 @@ Otherwise the first mission finds them taken and trusts nothing.
 1. The mission thread halts the tree, which cancels its leaves' goals. The leaves are also told to start nothing more. One flag does this, set by a stop, a cancel, the watchdog or a shutdown. A tick that is inside a wait for a server, or looping through retries, then ends at once instead of running out its budget.
 2. Every goal on every server in `stop_action_servers` and `agent_action_servers` is cancelled, whoever sent it. Arms lent to NervROS are taken back. So is the arm trajectory controller's goal, which then holds the arm where it is (no snap).
 3. It waits up to `stop_wait_s` for the halt and asks again for any goal accepted since. Then it waits for the servers' status topics, the arm controller's included, to show no goal.
-4. The base needs nothing more. Nothing writes `/cmd_vel`, and the policy zeroes a stale command after 0.5 s and stands. **The hands are never touched**: cancelling a hand controller's goal would loosen the grip.
+4. The base needs nothing more. Teleop, if it drives, is switched off and ramps `/cmd_vel_raw` down to zero at its deceleration limit; nothing else of the executor's writes the base's velocity, and the policy zeroes a stale command after 0.5 s and stands. Until teleop's ramp ends, a new mission or lend is turned away. **The hands are never touched**: cancelling a hand controller's goal would loosen the grip.
 5. It returns `ok`, a message and `state_after` (`holding posture; right hand keeps red_block`). It sets `RobotState.stopped` until the next executed mission starts.
 
-`ok` is false in two cases:
+`ok` is false in three cases:
 
 - The mission thread has not halted in time. It can be inside a controller_manager call, which nothing interrupts.
-- A server still has a goal in flight after the wait.
+- A server still has a goal in flight after the wait, or could not be reached.
+- `stop_action_servers` or `arm_controller_action` is empty, so the stop could not reach the skills or the arm.
 
 `message` says which, and how many servers were actually asked.
 
@@ -390,6 +401,8 @@ All in `config/nervros_executor.yaml`, commented there.
 | `event_level` | `steps` | `steps` or `all`. |
 | `max_tree_depth`, `max_tree_nodes`, `max_tree_steps`, `max_xml_bytes` | 10, 200, 32, 131072 | Bounds on a mission's text. |
 | `feedback_period_s`, `cancel_settle_s`, `stop_wait_s` | 0.25, 0.5, 3.0 | Feedback rate. Spin after a halt so cancels reach their servers. The most a stop waits. |
+| `teleop_max_x_mps`, `teleop_max_y_mps`, `teleop_max_yaw_radps` | 0.5, 0.3, 0.8 | The fastest teleop drives the base forward, sideways and round. |
+| `teleop_accel_xy_mps2`, `teleop_accel_yaw_radps2` | 1.0, 2.0 | How quickly teleop ramps the base's speed up and down. |
 | `max_pause_s` | 600 | The longest a mission may stay paused before it ends (`OUTCOME_CANCELED`). |
 | `authority_timeout_s` | 15 | Per-step budget for `controller_manager` calls. |
 | `finger_joints`, `finger_closed_rad`, `finger_read_timeout_s` | each hand's index and middle base joints, 0.3, 2.0 | A hand whose finger joints stand past this when the arms are about to be let go of counts as holding something, and keeps its arm held. |
@@ -432,10 +445,14 @@ A test keeps it valid.
 
 ## The arm bracket belongs to the executor
 
-The manipulation trees take the arm with `AcquireArm` first. `g1_bt_executor` releases the arm and
-hands on every exit path (success, tree failure, an exception while loading, SIGINT or SIGTERM)
-through an RAII guard around the whole tree; `nervros_executor` keeps them while a hand holds
-something (see Authority). `ReleaseArm` also exists as a leaf for handing the arm back early.
+The manipulation trees take the arm with `AcquireArm` first. `g1_bt_executor` releases arms the run
+took on every exit path (success, tree failure, an exception, SIGINT or SIGTERM) through an RAII
+guard around the whole tree, but keeps them while a finger reading says a hand may hold something
+(`finger_joints`, `finger_closed_rad` in `config/g1_bt_executor.yaml`), since a released hand drops
+it. Arms taken before the run, by a bringup with `activate_arm:=true` or another executor, are
+left as they are. `ReleaseArm` hands the arms back early with the same finger check, and fails
+with the arms still held when a hand may hold something. `nervros_executor` keeps them while a hand
+holds something (see Authority).
 
 Acquiring trades `arm_freeze_controller` for `arm_trajectory_controller` in one `STRICT`
 `switch_controller` call.
@@ -496,12 +513,15 @@ and node substitution are PRO-only. The editor itself is unrestricted.
 
 ## Tests
 
-None need a simulator. `./scripts/manage.sh test g1_orchestration` runs all of them.
+`./scripts/manage.sh test g1_orchestration` runs all but the simulator suite;
+`./scripts/manage.sh test --sim g1_orchestration` runs that one, after `clean-stack.sh`.
 
 | Test | Covers |
 |---|---|
 | `test_tree_loads` | Every shipped tree parses against the registered leaves. `pick_and_place.xml` keeps the leaves and retry wrappers it is supposed to. An unknown leaf is rejected. `Station` and `Point3` parse and refuse a short string. |
 | `test_action_leaf` | The action-leaf base, through `Retreat`, against a stand-in server on the two threads the executor uses. A rejected goal fails the leaf, and an accepted one that succeeds reaches SUCCESS. `LookFor` against a stand-in detector: what it writes, the ids it waits on, and that it does not block a tick. |
+| `test_navigate_to_pose` | The words for why Nav2 did not reach a goal. No ROS graph. |
+| `test_executor_parts` | The executor's health, teleop and preview logic, without ROS running: tilt and what each mission needs held, teleop's limits and ramps, where a walk or turn ends. |
 | `test_node_model` | The checked-in Groot2 palette matches the registered nodes and their ports. |
 | `test_authority_drift` | The acquire sequence against `g1_bringup`'s `activate_arm`: the same names, the arm first with the hands behind it, and the freeze controller still displaced in the same switch. Also `planArmSwitch`, including that an incoming controller which is not loaded switches nothing at all. |
 | `test_learned_skills` | What a taught skill may be: learnable leaves and control nodes only, attributes literal or bound to its own arguments, bounded retries and time, a name of its own. The authority it takes from its leaves. A draft kept on disk and loaded again until forgotten. The set with a taught skill validates a mission that uses it, while one taken before keeps its own skills. |
@@ -509,3 +529,4 @@ None need a simulator. `./scripts/manage.sh test g1_orchestration` runs all of t
 | `test_catalog_drift` | Catalog, macros and leaves agree: same names, ports, limits and resources. Every macro loads with its leaves registered. The JSON has the shape the agent reads. `stop_action_servers` covers every action server a leaf uses. |
 | `test_mission_observer` | Events at both levels. Halts against resets. The running step. Which failure ends a mission: the last leaf, not a retried one, with the step and the leaf's own words. |
 | `test_nervros_executor` | The node against stand-in skill servers, a detector and costmap services. Refusals with diagnostics (bytes that are not UTF-8 included). Dry runs. One mission at a time. Cancel, watchdog and cap. A tick stuck waiting for a server that a stop, a cancel or the watchdog still ends. What `StopAll` says it did. Arms taken once and kept while a hand holds an object or may. A pick then a place as two missions or one. |
+| `test_nervros_executor_sim` | The node on the simulator with Nav2 and the arm stack: `StopAll` ends a walk and the base stands; a pause holds a walk and a resume carries it on; arms lent, kept alive by heartbeats and given back are taken again by the next mission. |

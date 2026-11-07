@@ -5,7 +5,11 @@
 
 #include "g1_orchestration/skills/move_hand.hpp"
 
+#include <algorithm>
+#include <canopy_msgs/msg/world_object.hpp>
 #include <canopy_msgs/srv/find_objects.hpp>
+#include <cmath>
+#include <cstdint>
 #include <string>
 
 #include "g1_orchestration/ports.hpp"
@@ -13,6 +17,16 @@
 
 namespace g1_orchestration
 {
+
+namespace
+{
+
+/// The farthest a hand is sent from its target along any axis, in metres: about an arm's reach.
+constexpr double kMaxOffsetM = 1.5;
+/// How many matches are asked for: the first that is still there is the one.
+constexpr std::uint32_t kCandidates = 5;
+
+}  // namespace
 
 MoveHand::MoveHand(const std::string& name, const BT::NodeConfig& config, RosContext context)
   : SkillActionNode(name, config, std::move(context), "/g1_manipulation_server/move_hand")
@@ -61,31 +75,59 @@ bool MoveHand::fillGoal(Goal& goal)
     goal.offset.x = getInput<double>("offset_x").value_or(0.0);
     goal.offset.y = getInput<double>("offset_y").value_or(0.0);
     goal.offset.z = getInput<double>("offset_z").value_or(0.0);
+    // A taught or hand-written literal is checked only here: past an arm's reach is a slip.
+    const auto within = [](double v, double most) {
+        return std::isfinite(v) && std::abs(v) <= most;
+    };
+    if (!within(goal.offset.x, kMaxOffsetM) || !within(goal.offset.y, kMaxOffsetM) ||
+        !within(goal.offset.z, kMaxOffsetM) || !std::isfinite(goal.speed) || goal.speed < 0.0)
+    {
+        setFailureText(
+            "offsets take finite numbers within an arm's reach, speed one of at least 0");
+        return false;
+    }
     if (!frame.empty())
     {
         goal.target.header.frame_id = frame;
         return true;
     }
     using Service        = canopy_msgs::srv::FindObjects;
+    using Object         = canopy_msgs::msg::WorldObject;
     auto request         = std::make_shared<Service::Request>();
     request->query       = target;
-    request->max_results = 1;
+    request->max_results = kCandidates;
     const auto found     = callService<Service>(
         makeClientNode("g1_move_hand_client"),
         getInput<std::string>("find_service").value_or("/canopy/find_objects"),
         request,
         5.0);
-    if (found == nullptr || found->objects.empty())
+    // A stale or removed object's pose is where it was: the hand goes only where one is now.
+    const Object* live = nullptr;
+    if (found != nullptr)
+    {
+        const auto it = std::ranges::find_if(found->objects, [](const Object& o) {
+            return o.state == Object::STATE_ACTIVE;
+        });
+        live          = it == found->objects.end() ? nullptr : &*it;
+    }
+    if (live == nullptr)
     {
         setFailureText(
             "the world model knows nothing called '" + target + "'" +
-            (found == nullptr ? std::string(": it did not answer") :
-                                std::string("; a point by the robot is a frame, such as "
-                                            "torso_link, with offset_x, offset_y and offset_z")));
+            (found == nullptr        ? std::string(": it did not answer") :
+             !found->objects.empty() ? std::string(" that is still there") :
+                                       std::string("; a point by the robot is a frame, such as "
+                                                   "torso_link, with offset_x, offset_y and "
+                                                   "offset_z")));
         return false;
     }
     goal.target.header.frame_id = getInput<std::string>("world_frame").value_or("map");
-    goal.target.point           = found->objects.front().pose.position;
+    goal.target.point           = live->pose.position;
+    // Its centre is inside it: a hand reaching for it goes to its top, as HandTo says.
+    if (goal.mode == "reach")
+    {
+        goal.target.point.z += std::max(live->size.z, 0.0) / 2.0;
+    }
     return true;
 }
 

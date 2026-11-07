@@ -65,6 +65,8 @@ public:
         std::function<void(const std::string&)> on_step;
         /// A leaf reported SUCCESS.
         std::function<void(const BT::TreeNode&)> on_success;
+        /// A leaf reported FAILURE.
+        std::function<void(const BT::TreeNode&)> on_failure;
         /// A node was halted while it ran, whoever halted it: the executor, or a Timeout.
         std::function<void(const BT::TreeNode&)> on_halt;
     };
@@ -107,6 +109,8 @@ private:
     [[nodiscard]] Failure describe(const BT::TreeNode& node) const;
     /// Whether a Timeout is failing because it halted its child, not because the child failed.
     [[nodiscard]] bool ranOut(const BT::TreeNode& timeout) const;
+    /// Queues an event of @p node going from @p prev to @p status; under mutex_.
+    void push(const BT::TreeNode& node, BT::NodeStatus prev, BT::NodeStatus status);
 
     rclcpp::Clock::SharedPtr clock_;
     Level                    level_;

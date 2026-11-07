@@ -183,7 +183,8 @@ TEST(CatalogDrift, EachMacroIsOneTimeoutAndItsLimitIsTheCatalogs)
 
 TEST(CatalogDrift, ResourcesCoverWhatTheMacroLeavesNeed)
 {
-    // What moving each leaf takes control of. A leaf missing here is one the catalog cannot vouch for.
+    // What moving each leaf takes control of. A leaf in neither this map nor `quiet` fails the
+    // test, so a new motion leaf cannot slip past unchecked.
     const std::map<std::string, std::string> needs = {
         { "NavigateToPose", g1_orchestration::kBaseResource },
         { "ApproachObject", g1_orchestration::kBaseResource },
@@ -196,9 +197,16 @@ TEST(CatalogDrift, ResourcesCoverWhatTheMacroLeavesNeed)
         { "Place", g1_orchestration::kRightArmResource },
         { "SetArmPosture", g1_orchestration::kRightArmResource },
         { "Grasp", g1_orchestration::kRightArmResource },
+        { "MoveHand", g1_orchestration::kRightArmResource },
     };
-    const Catalog      catalog = Catalog::load(kCatalogFile);
-    const MacroLibrary library = MacroLibrary::load(kLibraryDir);
+    // Leaves that move nothing: they read or write the world model, the detector or the costmaps.
+    const std::set<std::string> quiet = {
+        "LookFor",         "StopLooking",   "ClearCostmaps", "ClearOctomap", "NextViewpoint",
+        "ReportViewpoint", "ResolveTarget", "SaveWorld",     "CleanUpWorld", "Wait",
+    };
+    const BT::BehaviorTreeFactory builtin;
+    const Catalog                 catalog = Catalog::load(kCatalogFile);
+    const MacroLibrary            library = MacroLibrary::load(kLibraryDir);
 
     for (const Skill& skill : catalog.skills())
     {
@@ -209,6 +217,10 @@ TEST(CatalogDrift, ResourcesCoverWhatTheMacroLeavesNeed)
             const auto need = needs.find(tag);
             if (need == needs.end())
             {
+                EXPECT_TRUE(
+                    quiet.contains(tag) || builtin.builtinNodes().contains(tag) || tag == "SubTree")
+                    << skill.name << " uses " << tag
+                    << ", which this test does not know: say what it takes control of";
                 continue;
             }
             // Both arms are taken together, so either arm name stands for the pair.

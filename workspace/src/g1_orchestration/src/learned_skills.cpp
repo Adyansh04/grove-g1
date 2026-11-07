@@ -8,6 +8,7 @@
 #include <tinyxml2.h>
 
 #include <algorithm>
+#include <array>
 #include <behaviortree_cpp/contrib/json.hpp>
 #include <cmath>
 #include <cstdint>
@@ -19,6 +20,7 @@
 #include <utility>
 #include <vector>
 
+#include "g1_orchestration/text_values.hpp"
 #include "g1_orchestration/xml_canonical.hpp"
 
 namespace g1_orchestration
@@ -33,9 +35,15 @@ constexpr std::size_t kMaxArgs         = 8;
 constexpr std::size_t kMaxDescription  = 600;
 constexpr std::size_t kMaxArgNameChars = 32;
 constexpr std::size_t kMaxBodyBytes    = 16384;
-constexpr int         kMaxAttempts     = 3;
+constexpr std::size_t kMaxTaughtFor    = 1000;
+constexpr std::size_t kMaxArgText      = 300;
+constexpr std::size_t kMaxArgChoices   = 16;
+constexpr std::size_t kMaxChoiceChars  = 64;
 /// After an input in `learnable_leaves`: it takes a world-model id.
 constexpr std::string_view kWorldIdMark = "(world_id)";
+/// Leaves with one try, as the library's WalkStraight and TurnInPlace run them: a predicted
+/// collision's stop must reach the agent, never be tried again or passed over.
+constexpr std::array<std::string_view, 2> kOneTry = { "DriveStraight", "TurnBy" };
 
 bool isSkillName(std::string_view name)
 {
@@ -62,17 +70,6 @@ std::string_view boundArg(std::string_view value)
         return value.substr(1, value.size() - 2);
     }
     return {};
-}
-
-std::optional<std::int64_t> wholeNumber(const char* text)
-{
-    std::istringstream in(text);
-    std::int64_t       n = 0;
-    if (in >> n && in.eof())
-    {
-        return n;
-    }
-    return std::nullopt;
 }
 
 /// "a or b or c".
@@ -134,6 +131,16 @@ public:
             {
                 holds_.insert(leaf->second);
             }
+            if (std::ranges::find(kOneTry, tag) != kOneTry.end() && !masking_.empty())
+            {
+                add(code::kForbiddenNode,
+                    node,
+                    std::format(
+                        "{} has one try: its collision stop must reach the agent, so it may not "
+                        "sit under {}",
+                        tag,
+                        masking_.back()));
+            }
         }
         else
         {
@@ -145,9 +152,20 @@ public:
                     tag,
                     leafList()));
         }
+        // What would try a failed child again, or pass its failure over.
+        const bool masks =
+            tag == "RetryUntilSuccessful" || tag == "Fallback" || tag == "ForceSuccess";
+        if (masks)
+        {
+            masking_.push_back(tag);
+        }
         for (const auto* child : children)
         {
             walk(*child, depth + 1);
+        }
+        if (masks)
+        {
+            masking_.pop_back();
         }
     }
 
@@ -203,7 +221,7 @@ private:
         {
             const char* text = node.Attribute("num_attempts");
             const auto  n    = text != nullptr ? wholeNumber(text) : std::nullopt;
-            if (!n || *n < 1 || *n > kMaxAttempts)
+            if (!n || *n < kMinRetryAttempts || *n > kMaxRetryAttempts)
             {
                 add(code::kBadRetries, node, "num_attempts must be a whole number from 1 to 3");
             }
@@ -250,7 +268,23 @@ private:
             }
             if (fixed != nullptr && !arg.empty())
             {
-                arg_values_.try_emplace(std::string(arg), *fixed);
+                // An argument feeding two fixed inputs may only take what both take.
+                const auto [kept, first] = arg_values_.try_emplace(std::string(arg), *fixed);
+                if (!first)
+                {
+                    std::erase_if(kept->second, [fixed](const std::string& v) {
+                        return std::ranges::find(*fixed, v) == fixed->end();
+                    });
+                    if (kept->second.empty())
+                    {
+                        add(code::kBadArg,
+                            node,
+                            std::format(
+                                "{{{}}} feeds inputs that take no value in common, so no plan can "
+                                "satisfy them",
+                                arg));
+                    }
+                }
             }
             if (!arg.empty())
             {
@@ -347,12 +381,14 @@ private:
         }
     }
 
-    const SkillDefinition*                                       definition_;
-    const Learnable*                                             learnable_;
-    std::vector<Diagnostic>*                                     problems_;
-    int                                                          nodes_ = 0;
-    NameSet                                                      holds_;
-    NameSet                                                      used_;
+    const SkillDefinition*   definition_;
+    const Learnable*         learnable_;
+    std::vector<Diagnostic>* problems_;
+    int                      nodes_ = 0;
+    NameSet                  holds_;
+    NameSet                  used_;
+    /// The wrappers above the node being checked that would retry it or pass its failure over.
+    std::vector<std::string_view>                                masking_;
     std::map<std::string, std::vector<std::string>, std::less<>> arg_values_;
 
     /// The values a leaf's input takes, or null when it takes any.
@@ -645,6 +681,24 @@ std::optional<LearnedSkill> buildLearned(
         {
             add(code::kBadArg, std::format("argument '{}': {}", arg.name, *why));
         }
+        if (arg.description.size() > kMaxArgText || arg.allowed.size() > kMaxArgChoices ||
+            std::ranges::any_of(arg.allowed, [](const std::string& value) {
+                return value.size() > kMaxChoiceChars;
+            }))
+        {
+            add(code::kTooLarge,
+                std::format(
+                    "argument '{}': its description is at most {} characters and it lists at most "
+                    "{} values of {} characters",
+                    arg.name,
+                    kMaxArgText,
+                    kMaxArgChoices,
+                    kMaxChoiceChars));
+        }
+    }
+    if (definition.taught_for.size() > kMaxTaughtFor)
+    {
+        add(code::kTooLarge, std::format("taught_for is over {} characters", kMaxTaughtFor));
     }
     if (!std::isfinite(definition.max_duration_s) || definition.max_duration_s < 1.0 ||
         definition.max_duration_s > learnable.max_duration_s)
@@ -733,6 +787,7 @@ std::optional<LearnedSkill> buildLearned(
     skill.macro          = definition.name;
     skill.max_duration_s = definition.max_duration_s;
     skill.taught_for     = definition.taught_for;
+    skill.taught_s       = definition.taught_s;
     if (check.holds().contains("base"))
     {
         skill.resources.emplace_back(kBaseResource);
@@ -784,7 +839,12 @@ std::vector<std::string> LearnedSkills::load(const NameSet& taken)
                 max_skills_));
             continue;
         }
-        std::ifstream      in(file);
+        std::ifstream in(file);
+        if (!in)
+        {
+            skipped.push_back(std::format("{}: could not be read", file.filename().string()));
+            continue;
+        }
         std::ostringstream text;
         text << in.rdbuf();
         try
@@ -836,6 +896,26 @@ LearnedSkills::define(const SkillDefinition& definition, bool keep, const NameSe
                                                          "give the new one a name of its own" });
         return problems;
     }
+    // Kept only as the draft that proved itself: the same body, never over a kept skill.
+    if (keep)
+    {
+        // When it was taught is stamped on every call, so it is no part of the body.
+        const auto body = [](SkillDefinition d) {
+            d.taught_s = 0.0;
+            return d.json();
+        };
+        const auto draft = drafts_.find(definition.name);
+        if (draft == drafts_.end() || body(draft->second.definition) != body(definition))
+        {
+            problems.push_back(Diagnostic{ code::kDuplicateName,
+                                           0,
+                                           definition.name,
+                                           definition.name + " can be kept only as the draft the "
+                                                             "robot holds, once a mission that "
+                                                             "ran it has succeeded" });
+            return problems;
+        }
+    }
     const bool replaces = kept_.contains(definition.name) || drafts_.contains(definition.name);
     if (!replaces && kept_.size() + drafts_.size() >= max_skills_)
     {
@@ -870,6 +950,7 @@ LearnedSkills::define(const SkillDefinition& definition, bool keep, const NameSe
         {
             std::ofstream out(temp);
             out << definition.json();
+            out.close();
             if (!out)
             {
                 return failed("could not write " + temp.string());
@@ -891,6 +972,11 @@ LearnedSkills::define(const SkillDefinition& definition, bool keep, const NameSe
 
 bool LearnedSkills::forget(std::string_view name)
 {
+    // A name is a file in the skills directory: "../x" or "/x" would reach outside it.
+    if (!isSkillName(name))
+    {
+        return false;
+    }
     const std::string key(name);
     const bool        draft = drafts_.erase(key) > 0;
     const bool        kept  = kept_.erase(key) > 0;

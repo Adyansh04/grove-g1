@@ -35,6 +35,10 @@ nervros_executor:
     # The most StopAll waits for the mission to halt and the action servers to go quiet, and the
     # most a halted mission waits for the same.
     stop_wait_s: 3.0
+    # For this long after a start, a stop counts a followed action server it cannot reach as not
+    # stopped (it may be one not yet discovered, still running a goal from before a restart); after
+    # it, only one that was up at some point. Seconds.
+    server_discovery_s: 30.0
     # The longest a mission may stay paused (PauseMission) before it is ended. The watchdog does
     # not count a pause, so this is what stops a forgotten one holding the robot for ever.
     max_pause_s: 600.0
@@ -81,7 +85,9 @@ nervros_executor:
       - /g1_manipulation_server/move_hand:g1_msgs/action/MoveHand
       - /g1_vla_server/grasp:g1_msgs/action/Grasp
     # The servers the agent's own motions use, outside any mission (NervROS's native steps):
-    # StopAll cancels every goal on them too.
+    # StopAll cancels every goal on them too. Nav2's backup and assisted_teleop behaviours, its
+    # waypoint follower and its docking server can also move a base, but g1_navigation starts none
+    # of them (nav2_params.yaml); a stack that does must list them here.
     agent_action_servers:
       - /navigate_through_poses:nav2_msgs/action/NavigateThroughPoses
       - /follow_path:nav2_msgs/action/FollowPath
@@ -119,14 +125,16 @@ nervros_executor:
     map_frame: map
     base_frame: base_footprint
     preview_timeout_s: 5.0
+    # The most one preview takes: the steps past it are listed without a path. NervROS waits 15 s.
+    preview_total_s: 12.0
     # Teleop: commands go to the collision monitor's input, as Nav2's do, so it still stops the
     # robot short of what it sees. Speeds stay above the gait's 0.15 m/s deadband to move at all.
     teleop_command_topic: /cmd_vel_raw
-    teleop_max_x: 0.5
-    teleop_max_y: 0.3
-    teleop_max_yaw: 0.8
-    teleop_accel_xy: 1.0
-    teleop_accel_yaw: 2.0
+    teleop_max_x_mps: 0.5
+    teleop_max_y_mps: 0.3
+    teleop_max_yaw_radps: 0.8
+    teleop_accel_xy_mps2: 1.0
+    teleop_accel_yaw_radps2: 2.0
     # A pause in commands longer than this brings the base to a stop; this long with none ends teleop.
     teleop_deadman_s: 0.4
     teleop_idle_s: 20.0

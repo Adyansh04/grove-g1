@@ -25,7 +25,10 @@ int main(int argc, char** argv)
     auto node = std::make_shared<rclcpp::Node>("g1_bt_node_model");
 
     BT::BehaviorTreeFactory      factory;
-    g1_orchestration::RosContext context{ node };
+    g1_orchestration::RosContext context{ .node      = node,
+                                          .stop      = nullptr,
+                                          .pause     = nullptr,
+                                          .arm_claim = nullptr };
     g1_orchestration::registerSkillNodes(factory, context);
 
     const std::string models = g1_orchestration::nodeModelXml(factory);

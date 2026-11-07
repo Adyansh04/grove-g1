@@ -63,6 +63,16 @@ public:
      */
     [[nodiscard]] std::vector<std::string> settle(std::chrono::duration<double> timeout) const;
 
+    /**
+     * @brief The servers the last cancelAll could not ask, and should have.
+     *
+     * A server that has been up since the fleet was made, or any while the fleet is younger than
+     * @p discovery, since after a restart a server not yet discovered can still run a goal.
+     * One never seen after that is taken as not part of this stack.
+     *
+     * @param discovery How long after the fleet was made servers are still being discovered.
+     */
+    [[nodiscard]] std::vector<std::string> unreached(std::chrono::duration<double> discovery) const;
     /// The action names followed, in the order given.
     [[nodiscard]] std::vector<std::string> names() const;
 
@@ -76,10 +86,15 @@ private:
         rclcpp_action::GenericClient::SharedPtr                            client;
         rclcpp::Subscription<action_msgs::msg::GoalStatusArray>::SharedPtr status;
         std::atomic<int>                                                   in_flight{ 0 };
+        /// Up at some point since the fleet was made: its status came, or it could be asked.
+        std::atomic<bool> seen{ false };
+        /// Asked by the latest cancelAll.
+        std::atomic<bool> asked{ false };
     };
 
-    rclcpp::Logger                       logger_;
-    std::vector<std::unique_ptr<Server>> servers_;
+    std::chrono::steady_clock::time_point created_ = std::chrono::steady_clock::now();
+    rclcpp::Logger                        logger_;
+    std::vector<std::unique_ptr<Server>>  servers_;
 };
 
 }  // namespace g1_orchestration

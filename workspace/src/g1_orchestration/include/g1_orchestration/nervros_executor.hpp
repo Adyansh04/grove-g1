@@ -120,6 +120,9 @@ private:
         std::string seen_as;
         std::string phrase;
         bool        unknown = false;
+        /// A place on this hand failed after its goal went out, and may have opened it: the next
+        /// reading of the fingers settles what it holds.
+        bool after_failed_place = false;
     };
 
     struct Hands
@@ -214,7 +217,8 @@ private:
     /// stop_mutex_.
     void awaitRelease(std::unique_lock<std::mutex>& lock);
     /// Lets go of the arms unless a hand holds something, or may: one the executor knows of, or
-    /// one whose fingers stand closed. Returns whether the arms are still held.
+    /// one whose fingers stand closed. A hand a failed place left in doubt holds nothing once its
+    /// fingers read open. Returns whether the arms are still held.
     bool letGoOfArms();
     /// StopAll's work, for the service and for the deadman: halt, cancel, wait, hold. @p cause
     /// goes into the stopped mission's result.
@@ -223,6 +227,10 @@ private:
     /// Stops the running mission once its agent has been silent past its heartbeat timeout, or
     /// a walking one once the robot can no longer walk.
     void deadman();
+    /// The reason the robot cannot walk, once that has lasted health_trip_s_; nullopt otherwise.
+    std::optional<std::string> walkTrip(std::chrono::steady_clock::rep now);
+    /// The reason the robot cannot stand, once that has lasted health_trip_s_; nullopt otherwise.
+    std::optional<std::string> standTrip(std::chrono::steady_clock::rep now);
     /// Why the robot cannot run a mission that needs @p resources now, if it cannot.
     [[nodiscard]] std::optional<std::string>
     healthRefusal(const std::set<std::string>& resources) const;
@@ -232,11 +240,10 @@ private:
     Outcome execute(const ExecuteMission::Goal& goal, const std::shared_ptr<GoalHandle>& handle);
     static Outcome rejected(const std::vector<Diagnostic>& diagnostics);
 
-    /// A factory with the real leaves, or with stand-ins that only wait, and the macros @p used,
-    /// from the skill set @p skills.
-    BT::BehaviorTreeFactory makeFactory(
-        const SkillSet& skills, bool dry_run, const Validation& validation,
-        const std::set<std::string>& used);
+    /// A factory with the real leaves, or with stand-ins that only wait, and the macros
+    /// @p validation names, from the skill set @p skills.
+    BT::BehaviorTreeFactory
+    makeFactory(const SkillSet& skills, bool dry_run, const Validation& validation);
     /// A blackboard holding what each hand holds, as "id=phrase" or empty, for the macros to read.
     BT::Blackboard::Ptr seededBlackboard();
     /// Loads @p xml into @p tree, its number arguments written as decimals, or says why not.
@@ -270,7 +277,7 @@ private:
     /// Halts the tree and spins until its cancels have gone out and the servers are quiet.
     std::string halt(BT::Tree& tree);
     /// After a halt: asks again for the goals still in flight and holds the arm, then waits for
-    /// the servers to go quiet; those that did not.
+    /// the servers to go quiet; those that did not. Nothing after a dry run, which sent no goals.
     std::vector<std::string> sweepAfterHalt();
     /// What StopAll tells the caller, from what actually happened.
     [[nodiscard]] std::string describeStop(
@@ -283,6 +290,8 @@ private:
     void noteLeafSuccess(const BT::TreeNode& node);
     /// A pick that was halted while it ran may have got as far as the grasp, and nothing will say.
     void noteLeafHalted(const BT::TreeNode& node);
+    /// A place that failed may have opened its hand first: see Held::after_failed_place.
+    void noteLeafFailed(const BT::TreeNode& node);
     void pushState();
     /// "; right hand keeps O17", or empty when both hands are; the caller holds live_mutex_.
     [[nodiscard]] std::string describeHandsLocked(const char* verb) const;
@@ -307,6 +316,7 @@ private:
     double                 feedback_period_s_;
     double                 cancel_settle_s_;
     double                 stop_wait_s_;
+    double                 server_discovery_s_;
     double                 max_pause_s_;
     MissionObserver::Level event_level_;
 
@@ -381,8 +391,12 @@ private:
     /// The client the arms are lent to, empty when they are not: claimed under this mutex like a
     /// mission, so a lend and a mission exclude each other.
     std::string lent_to_;
+    /// Whether the lend includes the base: a walk NervROS runs itself, which a fall then ends.
+    std::atomic<bool> lent_base_{ false };
     /// True while the arms a lend gave back are being let go of; released_cv_ says when it ends.
-    bool                    releasing_ = false;
+    bool releasing_ = false;
+    /// A lend is taking the arms: no mission or other lend may take or release them meanwhile.
+    bool                    lend_acquiring_ = false;
     std::condition_variable released_cv_;
     /// When the lend runs out, in steady-clock ticks; 0 when nothing is lent.
     std::atomic<std::chrono::steady_clock::rep> lent_until_{ 0 };
@@ -416,17 +430,23 @@ private:
     std::atomic<bool> mission_walks_{ false };
     /// Since when the robot has been unable to walk during it, in steady-clock ticks; 0 if able.
     std::atomic<std::chrono::steady_clock::rep> unhealthy_since_{ 0 };
+    /// Since when the robot has been unable to stand during a lend, in steady-clock ticks; 0 if able.
+    std::atomic<std::chrono::steady_clock::rep> unsteady_since_{ 0 };
     double                                      health_trip_s_ = 0.5;
-    std::atomic<bool>                           shutting_down_{ false };
-    std::mutex                                  halted_mutex_;
-    std::condition_variable                     halted_cv_;
-    bool                                        halted_ = true;
+    /// Whether kept skills are written to disk (learned_skills_dir is set).
+    bool                    skills_persist_ = false;
+    std::atomic<bool>       shutting_down_{ false };
+    std::mutex              halted_mutex_;
+    std::condition_variable halted_cv_;
+    bool                    halted_ = true;
 
     /// Guards worker_, which the action callback and shutdown() both touch.
     std::mutex worker_mutex_;
     /// Last, so they join before anything they use is destroyed. releaser_ lets go of the arms
     /// after a lend; a new one is started only after the last has finished.
     std::jthread worker_;
+    /// Guards releaser_, which takeBack() starts from several threads and shutdown() joins.
+    std::mutex   releaser_mutex_;
     std::jthread releaser_;
 };
 

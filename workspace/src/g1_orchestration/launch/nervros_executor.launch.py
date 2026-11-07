@@ -3,6 +3,9 @@ cancels the motions NervROS runs itself if it goes quiet.
 
 Starts nothing else: the simulator, Nav2, MoveIt and the skill servers come from g1_bringup, and
 the executor takes the arms itself when a mission needs them.
+
+Example:
+    ros2 launch g1_orchestration nervros_executor.launch.py hands_empty_on_attach:=true
 """
 
 import os
@@ -22,13 +25,13 @@ WATCHDOG_PARAMS = os.path.join(
 )
 
 
-def _defaults():
+def _defaults() -> dict:
     """Argument defaults come from the config file, so it stays the one place to edit."""
     with open(PARAMS_FILE) as params:
         return yaml.safe_load(params)["nervros_executor"]["ros__parameters"]
 
 
-def generate_launch_description():
+def generate_launch_description() -> LaunchDescription:
     defaults = _defaults()
 
     arguments = [
@@ -96,11 +99,14 @@ def generate_launch_description():
         ],
     )
 
+    # Started again if it dies: without it nothing cancels NervROS's goals once it is gone.
     watchdog = Node(
         package="nervros_watchdog",
         executable="nervros_watchdog",
         output="screen",
         parameters=[WATCHDOG_PARAMS],
+        respawn=True,
+        respawn_delay=2.0,
     )
 
     return LaunchDescription(arguments + [executor, watchdog])

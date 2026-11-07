@@ -16,6 +16,7 @@
 #include <array>
 #include <behaviortree_cpp/contrib/json.hpp>
 #include <cmath>
+#include <cstdint>
 #include <filesystem>
 #include <format>
 #include <limits>
@@ -33,6 +34,7 @@
 #include "g1_orchestration/macro_library.hpp"
 #include "g1_orchestration/registration.hpp"
 #include "g1_orchestration/skill_nodes.hpp"
+#include "g1_orchestration/text_values.hpp"
 
 namespace g1_orchestration
 {
@@ -44,6 +46,18 @@ using Seconds = std::chrono::duration<double>;
 using Clock   = std::chrono::steady_clock;
 
 constexpr const char* kPackage = "g1_orchestration";
+
+/// What a mission goal is told once the executor is shutting down.
+Diagnostic shuttingDownDiagnostic()
+{
+    return { code::kShuttingDown,
+             0,
+             "",
+             "The executor is shutting down and takes no more missions." };
+}
+
+/// The longest shutdown waits for teleop to ramp the base down, in seconds.
+constexpr int kTeleopStopWaitS = 3;
 
 /// What the macros read from held_left and held_right for a hand that may hold something they
 /// cannot name. An id from the detector is a slug, so it can never be this.
@@ -92,17 +106,6 @@ Clock::duration inClockUnits(double seconds)
     return std::chrono::duration_cast<Clock::duration>(Seconds(seconds));
 }
 
-std::string join(const std::vector<std::string>& words)
-{
-    std::string out;
-    for (const std::string& word : words)
-    {
-        out += out.empty() ? "" : ", ";
-        out += word;
-    }
-    return out;
-}
-
 MissionObserver::Level parseLevel(const std::string& level)
 {
     if (level == "steps")
@@ -137,6 +140,21 @@ struct StepNodes
     BT::TreeNode*    top     = nullptr;
     BT::SubTreeNode* subtree = nullptr;
 };
+
+/// Whether the grasp or the place of @p step has sent its goal. From then on the step ends before a
+/// pause takes hold: halted half way it can leave an object in the air, and halted after the grasp
+/// it would start again with a full hand.
+bool graspUnderWay(const BT::TreeNode* step)
+{
+    bool begun = false;
+    BT::applyRecursiveVisitor(step, [&begun](const BT::TreeNode* node) {
+        const std::string& kind   = node->registrationName();
+        const auto*        report = dynamic_cast<const LeafReport*>(node);
+        begun                     = begun ||
+                ((kind == "Pick" || kind == "Place") && report != nullptr && report->goalSent());
+    });
+    return begun;
+}
 
 /// Step @p name under @p node, which is @p top's or the top of a step itself; with no name, the
 /// step that runs.
@@ -233,6 +251,8 @@ MissionExecutor::MissionExecutor(
     cancel_settle_s_ =
         positive(declare_parameter<double>("cancel_settle_s", 0.5), "cancel_settle_s");
     stop_wait_s_ = positive(declare_parameter<double>("stop_wait_s", 3.0), "stop_wait_s");
+    server_discovery_s_ =
+        positive(declare_parameter<double>("server_discovery_s", 30.0), "server_discovery_s");
     max_pause_s_ = positive(declare_parameter<double>("max_pause_s", 600.0), "max_pause_s");
     event_level_ = parseLevel(declare_parameter<std::string>("event_level", "steps"));
     const double authority_timeout_s =
@@ -250,11 +270,20 @@ MissionExecutor::MissionExecutor(
         positive(declare_parameter<double>("finger_read_timeout_s", 2.0), "finger_read_timeout_s");
 
     Limits limits;
-    limits.max_depth = static_cast<int>(declare_parameter<int>("max_tree_depth", limits.max_depth));
-    limits.max_nodes = static_cast<int>(declare_parameter<int>("max_tree_nodes", limits.max_nodes));
-    limits.max_steps = static_cast<int>(declare_parameter<int>("max_tree_steps", limits.max_steps));
+    // A limit of zero or less would turn its check off: a negative byte cap wraps to no cap.
+    const auto above_zero = [this](const char* name, std::int64_t fallback) {
+        const std::int64_t value = declare_parameter<std::int64_t>(name, fallback);
+        if (value <= 0)
+        {
+            throw std::invalid_argument(std::string(name) + " must be above 0");
+        }
+        return value;
+    };
+    limits.max_depth = static_cast<int>(above_zero("max_tree_depth", limits.max_depth));
+    limits.max_nodes = static_cast<int>(above_zero("max_tree_nodes", limits.max_nodes));
+    limits.max_steps = static_cast<int>(above_zero("max_tree_steps", limits.max_steps));
     limits.max_bytes = static_cast<std::size_t>(
-        declare_parameter<int>("max_xml_bytes", static_cast<int>(limits.max_bytes)));
+        above_zero("max_xml_bytes", static_cast<std::int64_t>(limits.max_bytes)));
     limits.max_duration_s = max_duration_cap_s_;
 
     const std::string catalog_file =
@@ -296,6 +325,7 @@ MissionExecutor::MissionExecutor(
     const auto max_learned = static_cast<std::size_t>(
         std::max<std::int64_t>(0, declare_parameter<int>("max_learned_skills", 32)));
     const std::string learned_dir = declare_parameter<std::string>("learned_skills_dir", "");
+    skills_persist_               = !learned_dir.empty();
     repertoire_                   = std::make_unique<Repertoire>(
         std::move(catalog),
         std::move(library),
@@ -313,7 +343,8 @@ MissionExecutor::MissionExecutor(
         authority_ = std::make_shared<ControllerManagerAuthority>(
             get_logger(),
             authority_timeout_s,
-            std::move(fingers));
+            std::move(fingers),
+            [this] { return stop_requested_.load(); });
     }
 
     action_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
@@ -394,17 +425,21 @@ MissionExecutor::MissionExecutor(
     preview.base_frame   = declare_parameter<std::string>("base_frame", "base_footprint");
     preview.timeout_s =
         positive(declare_parameter<double>("preview_timeout_s", 5.0), "preview_timeout_s");
+    preview.total_s =
+        positive(declare_parameter<double>("preview_total_s", 12.0), "preview_total_s");
     preview_ = std::make_unique<MissionPreview>(*this, std::move(preview), preview_clients_group_);
 
     TeleopDriver::Params teleop;
     teleop.command_topic = declare_parameter<std::string>("teleop_command_topic", "/cmd_vel_raw");
-    teleop.max_x         = positive(declare_parameter<double>("teleop_max_x", 0.5), "teleop_max_x");
-    teleop.max_y         = positive(declare_parameter<double>("teleop_max_y", 0.3), "teleop_max_y");
-    teleop.max_yaw = positive(declare_parameter<double>("teleop_max_yaw", 0.8), "teleop_max_yaw");
+    teleop.max_x = positive(declare_parameter<double>("teleop_max_x_mps", 0.5), "teleop_max_x_mps");
+    teleop.max_y = positive(declare_parameter<double>("teleop_max_y_mps", 0.3), "teleop_max_y_mps");
+    teleop.max_yaw =
+        positive(declare_parameter<double>("teleop_max_yaw_radps", 0.8), "teleop_max_yaw_radps");
     teleop.accel_xy =
-        positive(declare_parameter<double>("teleop_accel_xy", 1.0), "teleop_accel_xy");
-    teleop.accel_yaw =
-        positive(declare_parameter<double>("teleop_accel_yaw", 2.0), "teleop_accel_yaw");
+        positive(declare_parameter<double>("teleop_accel_xy_mps2", 1.0), "teleop_accel_xy_mps2");
+    teleop.accel_yaw = positive(
+        declare_parameter<double>("teleop_accel_yaw_radps2", 2.0),
+        "teleop_accel_yaw_radps2");
     teleop.deadman_s =
         positive(declare_parameter<double>("teleop_deadman_s", 0.4), "teleop_deadman_s");
     teleop.idle_s  = positive(declare_parameter<double>("teleop_idle_s", 20.0), "teleop_idle_s");
@@ -563,6 +598,17 @@ void MissionExecutor::shutdown()
         shutting_down_ = true;
         halting_       = true;
     }
+    if (teleop_)
+    {
+        // Ramped down while the node still spins: a Twist left standing would drive the base on
+        // until its consumer's own staleness limit.
+        teleop_->disable("the executor is shutting down");
+        const auto until = Clock::now() + std::chrono::seconds(kTeleopStopWaitS);
+        while (teleop_->busy() && Clock::now() < until)
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        }
+    }
     {
         const std::lock_guard<std::mutex> lock(worker_mutex_);
         if (worker_.joinable())
@@ -570,9 +616,14 @@ void MissionExecutor::shutdown()
             worker_.join();
         }
     }
-    if (releaser_.joinable())
+    // Before the releaser is joined: taking a lend back lets go of the arms on that thread.
+    (void)takeBack("the executor is shutting down");
     {
-        releaser_.join();
+        const std::lock_guard<std::mutex> lock(releaser_mutex_);
+        if (releaser_.joinable())
+        {
+            releaser_.join();
+        }
     }
     if (letGoOfArms())
     {
@@ -629,6 +680,7 @@ void MissionExecutor::handleAccepted(const std::shared_ptr<GoalHandle>& handle)
         auto result            = std::make_shared<ExecuteMission::Result>();
         result->outcome        = ExecuteMission::Result::OUTCOME_ERROR;
         result->failure_reason = "the executor could not start the mission: " + what;
+        result->cause          = ExecuteMission::Result::CAUSE_EXECUTOR;
         handle->abort(result);
     }
     catch (...)
@@ -640,28 +692,36 @@ void MissionExecutor::handleAccepted(const std::shared_ptr<GoalHandle>& handle)
 void MissionExecutor::startMission(const std::shared_ptr<GoalHandle>& handle)
 {
     const std::lock_guard<std::mutex> worker_lock(worker_mutex_);
-    bool                              refused_shutting_down = false;
-    bool                              refused_busy          = false;
-    bool                              refused_teleop        = false;
-    std::string                       lent_to;
+    enum class Refusal : std::uint8_t
+    {
+        kNone,
+        kShuttingDown,
+        kBusy,
+        kTeleop,
+        kLent,
+    };
+    Refusal     refusal = Refusal::kNone;
+    std::string lent_to;
     {
         // The check and the claim are one step, and the stop flags are cleared with the claim: a
         // stop that comes later is for this mission, and one that came earlier was not.
         const std::lock_guard<std::mutex> lock(stop_mutex_);
+        const bool executes = handle->get_goal()->mode == ExecuteMission::Goal::MODE_EXECUTE;
         if (shutting_down_)
         {
-            refused_shutting_down = true;
+            refusal = Refusal::kShuttingDown;
         }
         else if (running_)
         {
-            refused_busy = true;
+            refusal = Refusal::kBusy;
         }
-        else if (teleop_->active() && handle->get_goal()->mode == ExecuteMission::Goal::MODE_EXECUTE)
+        else if (teleop_->busy() && executes)
         {
-            refused_teleop = true;
+            refusal = Refusal::kTeleop;
         }
-        else if (!lent_to_.empty() && handle->get_goal()->mode == ExecuteMission::Goal::MODE_EXECUTE)
+        else if (!lent_to_.empty() && executes)
         {
+            refusal = Refusal::kLent;
             lent_to = lent_to_;
         }
         else
@@ -671,65 +731,57 @@ void MissionExecutor::startMission(const std::shared_ptr<GoalHandle>& handle)
             stop_requested_ = false;
             halting_        = false;
             pause_wanted_   = false;
+            // With running_, or a stop landing between them would find the mission halted.
+            const std::lock_guard<std::mutex> halted_lock(halted_mutex_);
+            halted_ = false;
         }
     }
-    if (refused_shutting_down)
+    switch (refusal)
     {
-        rejectGoal(
-            handle,
-            { code::kShuttingDown,
-              0,
-              "",
-              "The executor is shutting down and takes no more missions." },
-            "the executor is shutting down");
-        return;
-    }
-    if (!lent_to.empty())
-    {
-        rejectGoal(
-            handle,
-            { code::kBusy,
-              0,
-              "",
-              "The arms are lent to " + lent_to +
-                  " for a motion of its own; it gives them back when it is done." },
-            "the arms are lent to " + lent_to);
-        return;
-    }
-    if (refused_teleop)
-    {
-        rejectGoal(
-            handle,
-            { code::kTeleopActive,
-              0,
-              "",
-              "The base is being driven by hand. End teleop before sending a mission." },
-            "teleop is driving the base");
-        return;
-    }
-    if (refused_busy)
-    {
-        std::string current;
+        case Refusal::kShuttingDown:
+            rejectGoal(handle, shuttingDownDiagnostic(), "the executor is shutting down");
+            return;
+        case Refusal::kLent:
+            rejectGoal(
+                handle,
+                { code::kBusy,
+                  0,
+                  "",
+                  "The arms are lent to " + lent_to +
+                      " for a motion of its own; it gives them back when it is done." },
+                "the arms are lent to " + lent_to);
+            return;
+        case Refusal::kTeleop:
+            rejectGoal(
+                handle,
+                { code::kTeleopActive,
+                  0,
+                  "",
+                  "The base is being driven by hand. End teleop before sending a mission." },
+                "teleop is driving the base");
+            return;
+        case Refusal::kBusy:
         {
-            const std::lock_guard<std::mutex> lock(live_mutex_);
-            current = mission_id_;
+            std::string current;
+            {
+                const std::lock_guard<std::mutex> lock(live_mutex_);
+                current = mission_id_;
+            }
+            rejectGoal(
+                handle,
+                { code::kBusy,
+                  0,
+                  current,
+                  "A mission is already running. Wait for it to finish, or stop it, before "
+                  "sending another." },
+                "a mission is already running (" + current + "); the executor runs one at a time");
+            return;
         }
-        rejectGoal(
-            handle,
-            { code::kBusy,
-              0,
-              current,
-              "A mission is already running. Wait for it to finish, or stop it, before sending "
-              "another." },
-            "a mission is already running (" + current + "); the executor runs one at a time");
-        return;
+        case Refusal::kNone:
+            break;
     }
     try
     {
-        {
-            const std::lock_guard<std::mutex> lock(halted_mutex_);
-            halted_ = false;
-        }
         if (worker_.joinable())
         {
             worker_.join();
@@ -777,9 +829,8 @@ void MissionExecutor::onValidate(
         Validation validation = skills->validator.validate(request->tree_xml);
         if (validation.ok())
         {
-            BT::BehaviorTreeFactory factory =
-                makeFactory(*skills, /*dry_run=*/true, validation, validation.macros);
-            BT::Tree tree;
+            BT::BehaviorTreeFactory factory = makeFactory(*skills, /*dry_run=*/true, validation);
+            BT::Tree                tree;
             if (auto problem =
                     load(*skills, factory, request->tree_xml, BT::Blackboard::create(), tree))
             {
@@ -839,10 +890,13 @@ void MissionExecutor::onDefineSkill(
             repertoire_->define(SkillDefinition::fromJson(definition.dump()), request->keep);
         response->ok               = problems.empty();
         response->diagnostics_json = diagnosticsJson(problems);
-        response->message =
-            problems.empty() ?
-                std::format("{} is {}", request->name, request->keep ? "kept" : "a draft") :
-                problems.front().message;
+        // Without a directory a kept skill lives in memory only, and is gone after a restart.
+        const char* outcome =
+            !request->keep  ? "a draft" :
+            skills_persist_ ? "kept" :
+                              "kept for this run only: learned_skills_dir is not set";
+        response->message = problems.empty() ? std::format("{} is {}", request->name, outcome) :
+                                               problems.front().message;
         if (problems.empty())
         {
             RCLCPP_INFO(
@@ -941,9 +995,27 @@ MissionExecutor::stopEverything(const std::string& reason, std::uint8_t cause)
             std::unique_lock<std::mutex> lock(halted_mutex_);
             halted = halted_cv_.wait_until(lock, deadline, [this] { return halted_; });
         }
-        leaf_asked                    = std::max(leaf_asked, leaf_servers_->cancelAll());
-        arm_asked                     = std::max(arm_asked, arm_controller_->cancelAll());
-        std::vector<std::string> busy = leaf_servers_->settle(remaining());
+        leaf_asked = std::max(leaf_asked, leaf_servers_->cancelAll());
+        arm_asked  = std::max(arm_asked, arm_controller_->cancelAll());
+        // One that could not be asked may still run a goal (a server not yet discovered after a
+        // restart): asked again until the deadline.
+        const auto discovery = Seconds(server_discovery_s_);
+        const auto unreached = [this, discovery] {
+            std::vector<std::string> names = leaf_servers_->unreached(discovery);
+            for (std::string& name : arm_controller_->unreached(discovery))
+            {
+                names.push_back(std::move(name));
+            }
+            return names;
+        };
+        while (!unreached().empty() && Clock::now() < deadline)
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            leaf_asked = std::max(leaf_asked, leaf_servers_->cancelAll());
+            arm_asked  = std::max(arm_asked, arm_controller_->cancelAll());
+        }
+        const std::vector<std::string> missed = unreached();
+        std::vector<std::string>       busy   = leaf_servers_->settle(remaining());
         for (std::string& server : arm_controller_->settle(remaining()))
         {
             busy.push_back(std::move(server));
@@ -962,10 +1034,16 @@ MissionExecutor::stopEverything(const std::string& reason, std::uint8_t cause)
         }
         pushState();
 
-        response.ok = halted && busy.empty();
+        // Following no skill servers or no arm controller, a stop cannot say the robot is still.
+        const bool followed = leaf_servers_->size() > 0 && arm_controller_->size() > 0;
+        response.ok         = halted && busy.empty() && missed.empty() && followed;
         response.state_after =
             "holding posture" + (hands.empty() ? std::string("; hands empty") : hands);
         response.message = describeStop(mission, halted, leaf_asked, arm_asked, busy);
+        if (!missed.empty())
+        {
+            response.message += "; could not reach " + join(missed) + ", which may still move";
+        }
     }
     catch (const std::exception& e)
     {
@@ -977,9 +1055,59 @@ MissionExecutor::stopEverything(const std::string& reason, std::uint8_t cause)
     return response;
 }
 
+std::optional<std::string> MissionExecutor::walkTrip(Clock::rep now)
+{
+    // A fall, or the safety controller handing the legs to a freeze. A blip in a reading does not
+    // count; one that lasts does.
+    const Health health = health_->now();
+    if (health.can_walk)
+    {
+        unhealthy_since_ = 0;
+        return std::nullopt;
+    }
+    Clock::rep since = 0;
+    if (unhealthy_since_.compare_exchange_strong(since, now) ||
+        now - since < inClockUnits(health_trip_s_).count())
+    {
+        return std::nullopt;
+    }
+    return health.reason;
+}
+
+std::optional<std::string> MissionExecutor::standTrip(Clock::rep now)
+{
+    const Health health = health_->now();
+    if (health.can_stand)
+    {
+        unsteady_since_ = 0;
+        return std::nullopt;
+    }
+    Clock::rep since = 0;
+    if (unsteady_since_.compare_exchange_strong(since, now) ||
+        now - since < inClockUnits(health_trip_s_).count())
+    {
+        return std::nullopt;
+    }
+    return health.reason;
+}
+
 void MissionExecutor::deadman()
 {
     checkLend();
+    // Teleop is not a mission, so the watch below would not see it: a fallen robot is not driven.
+    if (teleop_ && teleop_->active() && health_)
+    {
+        if (const auto why = walkTrip(Clock::now().time_since_epoch().count()))
+        {
+            RCLCPP_ERROR(
+                get_logger(),
+                "the robot can no longer walk: %s; ending teleop",
+                why->c_str());
+            teleop_->disable("the robot can no longer walk: " + *why);
+            unhealthy_since_ = 0;
+            pushState();
+        }
+    }
     if (!running_ || deadman_fired_)
     {
         return;
@@ -997,21 +1125,12 @@ void MissionExecutor::deadman()
     }
     else if (health_ && mission_walks_)
     {
-        // A fall mid-walk, or the safety controller handing the legs to a freeze. A blip in a
-        // reading does not stop a mission; one that lasts does.
-        const Health health = health_->now();
-        if (health.can_walk)
-        {
-            unhealthy_since_ = 0;
-            return;
-        }
-        Clock::rep since = 0;
-        if (unhealthy_since_.compare_exchange_strong(since, now) ||
-            now - since < inClockUnits(health_trip_s_).count())
+        const auto why = walkTrip(now);
+        if (!why)
         {
             return;
         }
-        reason = "the robot can no longer walk: " + health.reason;
+        reason = "the robot can no longer walk: " + *why;
         cause  = ExecuteMission::Result::CAUSE_ROBOT;
     }
     if (reason.empty() || deadman_fired_.exchange(true))
@@ -1029,6 +1148,18 @@ void MissionExecutor::onLend(
     const std::string& client = request->client;
     if (!request->lend)
     {
+        std::string holder;
+        {
+            const std::lock_guard<std::mutex> lock(stop_mutex_);
+            holder = lent_to_;
+        }
+        // Only the borrower gives them back; a stop ends anyone's lend.
+        if (!holder.empty() && holder != client)
+        {
+            response->granted = false;
+            response->reason  = "they are lent to " + holder;
+            return;
+        }
         response->granted = true;
         response->reason  = takeBack(client + " gave them back") ? "" : "nothing was lent";
         return;
@@ -1049,6 +1180,9 @@ void MissionExecutor::onLend(
         refuse(*why);
         return;
     }
+    const double limit_s = std::isfinite(request->max_s) && request->max_s > 0.0 ?
+                               std::min(request->max_s, max_lend_s_) :
+                               max_lend_s_;
     {
         // Claimed as a mission is, under the same lock: a lend and a mission exclude each other.
         std::unique_lock<std::mutex> lock(stop_mutex_);
@@ -1063,7 +1197,7 @@ void MissionExecutor::onLend(
             refuse("a mission is running");
             return;
         }
-        if (teleop_->active())
+        if (teleop_->busy())
         {
             refuse("the base is being driven by hand");
             return;
@@ -1073,22 +1207,37 @@ void MissionExecutor::onLend(
             refuse("they are lent to " + lent_to_);
             return;
         }
-        lent_to_ = client;
+        lent_to_        = client;
+        lend_acquiring_ = true;
+        lent_base_      = wanted.contains(kBaseResource);
+        // With the borrower, so a stop cannot leave a deadline standing for nobody.
+        heartbeat_ticks_ = Clock::now().time_since_epoch().count();
+        lent_until_      = (Clock::now() + inClockUnits(limit_s)).time_since_epoch().count();
     }
+    // Until this returns, no mission or other lend takes the arms: a stop that comes while they
+    // are being taken is settled here, and a release of its own must not land under the next owner.
+    struct Settled
+    {
+        MissionExecutor* self;
+        ~Settled()
+        {
+            {
+                const std::lock_guard<std::mutex> lock(self->stop_mutex_);
+                self->lend_acquiring_ = false;
+            }
+            self->released_cv_.notify_all();
+        }
+    } const settled{ this };
     {
         const std::lock_guard<std::mutex> lock(heartbeat_mutex_);
         heartbeat_client_ = client;
     }
-    heartbeat_ticks_     = Clock::now().time_since_epoch().count();
-    const double limit_s = std::isfinite(request->max_s) && request->max_s > 0.0 ?
-                               std::min(request->max_s, max_lend_s_) :
-                               max_lend_s_;
-    lent_until_          = (Clock::now() + inClockUnits(limit_s)).time_since_epoch().count();
-    bool held            = false;
+    bool held = false;
     {
         const std::lock_guard<std::mutex> lock(live_mutex_);
         held = arms_held_;
     }
+    bool hands_unknown = false;
     if (arms && !held)
     {
         Acquired taken = Acquired::kFailed;
@@ -1114,7 +1263,19 @@ void MissionExecutor::onLend(
             hands_.left.unknown  = hands_.left.id.empty();
             hands_.right.unknown = hands_.right.id.empty();
             syncBlackboardLocked();
+            hands_unknown = true;
         }
+    }
+    if (hands_unknown)
+    {
+        // The borrower checked the hands before it asked, against a state that said empty: lent
+        // now, it could open one that holds something.
+        (void)takeBack("what the hands hold is not known");
+        pushState();
+        refuse(
+            "the arms were taken before this lend, so what each hand holds is not known; free them "
+            "with deactivate_arm once the hands are looked at");
+        return;
     }
     bool stopped_meanwhile = false;
     {
@@ -1148,10 +1309,11 @@ bool MissionExecutor::takeBack(const std::string& why)
         {
             return false;
         }
-        client     = std::exchange(lent_to_, std::string());
-        releasing_ = true;
+        client      = std::exchange(lent_to_, std::string());
+        releasing_  = true;
+        lent_base_  = false;
+        lent_until_ = 0;
     }
-    lent_until_ = 0;
     RCLCPP_INFO(get_logger(), "took back what %s borrowed: %s", client.c_str(), why.c_str());
     {
         const std::lock_guard<std::mutex> lock(live_mutex_);
@@ -1159,6 +1321,7 @@ bool MissionExecutor::takeBack(const std::string& why)
     }
     // Off the caller's thread, which may be StopAll's or the deadman's. No lend is granted while
     // releasing_ is set, so the last releaser has finished and the assignment does not wait.
+    const std::lock_guard<std::mutex> releaser_lock(releaser_mutex_);
     releaser_ = std::jthread([this] {
         (void)letGoOfArms();
         {
@@ -1173,7 +1336,7 @@ bool MissionExecutor::takeBack(const std::string& why)
 
 void MissionExecutor::awaitRelease(std::unique_lock<std::mutex>& lock)
 {
-    released_cv_.wait(lock, [this] { return !releasing_; });
+    released_cv_.wait(lock, [this] { return !releasing_ && !lend_acquiring_; });
 }
 
 bool MissionExecutor::letGoOfArms()
@@ -1191,25 +1354,41 @@ bool MissionExecutor::letGoOfArms()
         {
             return false;
         }
-        if (mayHoldSomethingLocked())
+        const bool in_doubt = hands_.left.after_failed_place || hands_.right.after_failed_place;
+        if (!in_doubt && mayHoldSomethingLocked())
         {
             return kept();
         }
     }
     // A hand closed by something the executor does not follow, a borrower's grip or a grasp
-    // policy, may hold what it closed on, and a released hand drops it.
+    // policy, may hold what it closed on, and a released hand drops it. One a failed place left
+    // open put its object down or dropped it: it holds nothing either way.
     const ClosedHands closed = authority_->closedHands();
     {
         const std::lock_guard<std::mutex> lock(live_mutex_);
-        hands_.left.unknown  = hands_.left.unknown || closed.left;
-        hands_.right.unknown = hands_.right.unknown || closed.right;
+        for (auto [hand, shut] :
+             { std::pair{ &hands_.left, closed.left }, std::pair{ &hands_.right, closed.right } })
+        {
+            if (hand->after_failed_place && !shut)
+            {
+                *hand = Held{};
+            }
+            hand->after_failed_place = false;
+            hand->unknown            = hand->unknown || (shut && hand->id.empty());
+        }
+        syncBlackboardLocked();
         if (mayHoldSomethingLocked())
         {
-            syncBlackboardLocked();
             return kept();
         }
     }
-    authority_->release();
+    if (!authority_->release())
+    {
+        RCLCPP_ERROR(
+            get_logger(),
+            "the arms stay held: controller_manager would not take them back");
+        return true;
+    }
     const std::lock_guard<std::mutex> lock(live_mutex_);
     arms_held_ = false;
     return false;
@@ -1224,15 +1403,34 @@ void MissionExecutor::checkLend()
     }
     const Clock::rep now    = Clock::now().time_since_epoch().count();
     const Clock::rep silent = now - heartbeat_ticks_.load();
+    std::string      why;
     if (now >= until)
     {
-        (void)takeBack("its time ran out");
+        why = "its time ran out";
     }
     else if (silent >= inClockUnits(lend_heartbeat_timeout_s_).count())
     {
-        (void)takeBack(
-            std::format("no heartbeat for {:.1f} s", Seconds(Clock::duration(silent)).count()));
+        why = std::format("no heartbeat for {:.1f} s", Seconds(Clock::duration(silent)).count());
     }
+    // A fall during a borrowed arm move ends it, as it ends a walking mission; a lent base ends
+    // as a walk does, once the robot can no longer walk.
+    else if (
+        const auto tripped = !health_   ? std::nullopt :
+                             lent_base_ ? walkTrip(now) :
+                                          standTrip(now))
+    {
+        why = (lent_base_ ? "the robot can no longer walk: " : "the robot can no longer stand: ") +
+              *tripped;
+    }
+    else
+    {
+        return;
+    }
+    // The borrower's motion ends with its lend, as for a stop: its goals are cancelled and the arm
+    // controller holds where it is. Taking the arms back alone would not end a move under way.
+    (void)leaf_servers_->cancelAll();
+    (void)arm_controller_->cancelAll();
+    (void)takeBack(why);
 }
 
 std::optional<std::string>
@@ -1260,7 +1458,8 @@ void MissionExecutor::onPreview(
 {
     try
     {
-        const Validation validation = repertoire_->current()->validator.validate(request->tree_xml);
+        const auto       current    = repertoire_->current();
+        const Validation validation = current->validator.validate(request->tree_xml);
         if (!validation.ok())
         {
             response->ok = false;
@@ -1268,8 +1467,19 @@ void MissionExecutor::onPreview(
                 "the mission is not valid: " + validation.diagnostics.front().message;
             return;
         }
+        // Each skill that may move the base, a taught one included, which the preview cannot
+        // follow unless it knows the macro.
+        std::set<std::string> walkers;
+        for (const Skill& skill : current->validator.catalog().skills())
+        {
+            if (std::ranges::find(skill.resources, kBaseResource) != skill.resources.end())
+            {
+                walkers.insert(skill.macro);
+            }
+        }
         std::string why;
-        response->steps   = preview_->preview(missionSteps(request->tree_xml), why);
+        const bool  idle  = !running_ && lent_until_.load() == 0 && !teleop_->busy();
+        response->steps   = preview_->preview(missionSteps(request->tree_xml), why, idle, walkers);
         response->ok      = why.empty();
         response->message = why;
     }
@@ -1307,11 +1517,12 @@ void MissionExecutor::onTeleop(
             response->message = "a mission is running; wait for it or stop it first";
             return;
         }
+        // A walk NervROS runs itself borrows the base: two would drive it at once.
         if (!lent_to_.empty())
         {
             response->ok = false;
             response->message =
-                "the arms are lent to " + lent_to_ + "; wait for it or stop it first";
+                "the robot is lent to " + lent_to_ + "; wait for it or stop it first";
             return;
         }
         teleop_->enable();
@@ -1404,6 +1615,7 @@ void MissionExecutor::run(const std::shared_ptr<GoalHandle>& handle)
         RCLCPP_ERROR(get_logger(), "mission %s aborted: %s", goal->mission_id.c_str(), e.what());
         outcome.code   = ExecuteMission::Result::OUTCOME_ERROR;
         outcome.reason = e.what();
+        outcome.cause  = ExecuteMission::Result::CAUSE_EXECUTOR;
     }
 
     // The arms go back only when both hands are empty, and the state is idle before the result
@@ -1493,14 +1705,18 @@ MissionExecutor::Outcome MissionExecutor::rejected(const std::vector<Diagnostic>
     return outcome;
 }
 
-BT::BehaviorTreeFactory MissionExecutor::makeFactory(
-    const SkillSet& skills, bool dry_run, const Validation& validation,
-    const std::set<std::string>& used)
+BT::BehaviorTreeFactory
+MissionExecutor::makeFactory(const SkillSet& skills, bool dry_run, const Validation& validation)
 {
     BT::BehaviorTreeFactory factory;
     if (!dry_run)
     {
-        registerSkillNodes(factory, RosContext{ skills_node_, &halting_, &pause_gate_ });
+        registerSkillNodes(
+            factory,
+            RosContext{ .node      = skills_node_,
+                        .stop      = &halting_,
+                        .pause     = &pause_gate_,
+                        .arm_claim = nullptr });
     }
     else
     {
@@ -1552,7 +1768,7 @@ BT::BehaviorTreeFactory MissionExecutor::makeFactory(
                 });
         }
     }
-    for (const std::string& id : used)
+    for (const std::string& id : validation.macros)
     {
         factory.registerBehaviorTreeFromText(skills.validator.library().find(id)->xml);
     }
@@ -1636,6 +1852,7 @@ bool MissionExecutor::takeAuthority(
         {
             outcome.code   = ExecuteMission::Result::OUTCOME_ERROR;
             outcome.reason = "the arms could not be taken; is the control stack up?";
+            outcome.cause  = ExecuteMission::Result::CAUSE_ROBOT;
             return false;
         }
         const std::lock_guard<std::mutex> lock(live_mutex_);
@@ -1672,13 +1889,9 @@ bool MissionExecutor::takeAuthority(
 MissionExecutor::Outcome
 MissionExecutor::execute(const ExecuteMission::Goal& goal, const std::shared_ptr<GoalHandle>& handle)
 {
-    const Diagnostic shutting_down{ code::kShuttingDown,
-                                    0,
-                                    "",
-                                    "The executor is shutting down and takes no more missions." };
     if (shutting_down_)
     {
-        return rejected({ shutting_down });
+        return rejected({ shuttingDownDiagnostic() });
     }
     if (goal.mode > ExecuteMission::Goal::MODE_DRY_RUN)
     {
@@ -1687,14 +1900,19 @@ MissionExecutor::execute(const ExecuteMission::Goal& goal, const std::shared_ptr
     }
     const bool execute_mode = goal.mode == ExecuteMission::Goal::MODE_EXECUTE;
     // The deadman's clock starts at acceptance: taking the arms can take seconds. The agent
-    // asks for its timeout, but a long one would be no deadman at all.
+    // asks for its timeout, but a long one would be no deadman at all. Only a mission that moves
+    // takes the heartbeat over: a dry run or a check may come during a lend, whose borrower's
+    // heartbeats keep the lend.
+    if (execute_mode)
     {
-        const std::lock_guard<std::mutex> lock(heartbeat_mutex_);
-        heartbeat_client_ = goal.heartbeat_client;
+        {
+            const std::lock_guard<std::mutex> lock(heartbeat_mutex_);
+            heartbeat_client_ = goal.heartbeat_client;
+        }
+        deadman_fired_   = false;
+        unhealthy_since_ = 0;
+        heartbeat_ticks_ = Clock::now().time_since_epoch().count();
     }
-    deadman_fired_   = false;
-    unhealthy_since_ = 0;
-    heartbeat_ticks_ = Clock::now().time_since_epoch().count();
     heartbeat_timeout_ticks_ =
         execute_mode && std::isfinite(goal.heartbeat_timeout_s) && goal.heartbeat_timeout_s > 0.0F ?
             inClockUnits(
@@ -1703,17 +1921,47 @@ MissionExecutor::execute(const ExecuteMission::Goal& goal, const std::shared_ptr
             0;
 
     // The skills it is checked and built against stay its own, whatever the robot learns meanwhile.
-    mission_skills_             = repertoire_->current();
-    const SkillSet&  skills     = *mission_skills_;
+    mission_skills_         = repertoire_->current();
+    const SkillSet& skills  = *mission_skills_;
+    const auto&     version = skills.validator.catalog().version();
+    if (!goal.catalog_version.empty() && goal.catalog_version != version)
+    {
+        return rejected({ Diagnostic{ code::kCatalogChanged,
+                                      0,
+                                      "",
+                                      std::format(
+                                          "the robot's skills changed since the plan was approved "
+                                          "(catalog {}, now {}): "
+                                          "plan it again",
+                                          goal.catalog_version,
+                                          version) } });
+    }
     const Validation validation = skills.validator.validate(goal.tree_xml, goal.tree_sha256);
     if (!validation.ok())
     {
         return rejected(validation.diagnostics);
     }
-    BT::BehaviorTreeFactory factory =
-        makeFactory(skills, !execute_mode, validation, validation.macros);
-    BT::Tree   tree;
-    const auto blackboard = seededBlackboard();
+    if (goal.mode == ExecuteMission::Goal::MODE_DRY_RUN)
+    {
+        // A stand-in leaf never fails, so a loop that ends on a failure would run to its timeout.
+        for (const std::string& id : validation.macros)
+        {
+            const Macro* macro = skills.validator.library().find(id);
+            if (macro != nullptr &&
+                (std::ranges::find(macro->tags, "KeepRunningUntilFailure") != macro->tags.end() ||
+                 std::ranges::find(macro->tags, "Repeat") != macro->tags.end()))
+            {
+                return rejected({ { code::kBadMode,
+                                    0,
+                                    "",
+                                    id + " loops until a leaf fails, which a dry run's stand-ins "
+                                         "never do. Validate it instead." } });
+            }
+        }
+    }
+    BT::BehaviorTreeFactory factory = makeFactory(skills, !execute_mode, validation);
+    BT::Tree                tree;
+    const auto              blackboard = seededBlackboard();
     if (!execute_mode)
     {
         // A dry run's stand-ins hand nothing on, and the macros' scripts read what a later step
@@ -1767,11 +2015,29 @@ MissionExecutor::execute(const ExecuteMission::Goal& goal, const std::shared_ptr
     // Taking the arms can take seconds; not for a mission the executor is about to drop.
     if (shutting_down_)
     {
-        return rejected({ shutting_down });
+        return rejected({ shuttingDownDiagnostic() });
+    }
+    // A stop while the mission was being checked, or while it took the arms, ends it before the
+    // tree runs; finish() lets go of what was taken.
+    const auto stopped = [this] {
+        Outcome out;
+        out.code = ExecuteMission::Result::OUTCOME_CANCELED;
+        const std::lock_guard<std::mutex> lock(stop_mutex_);
+        out.reason = "stopped: " + stop_reason_;
+        out.cause  = stop_cause_;
+        return out;
+    };
+    if (stop_requested_)
+    {
+        return stopped();
     }
     if (execute_mode && !takeAuthority(skills, validation, outcome))
     {
         return outcome;
+    }
+    if (stop_requested_)
+    {
+        return stopped();
     }
 
     const double limit_s = watchdogLimitS(
@@ -1805,6 +2071,7 @@ MissionExecutor::execute(const ExecuteMission::Goal& goal, const std::shared_ptr
     // mission that picks and then places is not refused for a hand it has not really filled.
     hooks.on_success = [this](const BT::TreeNode& node) { noteLeafSuccess(node); };
     hooks.on_halt    = [this](const BT::TreeNode& node) { noteLeafHalted(node); };
+    hooks.on_failure = [this](const BT::TreeNode& node) { noteLeafFailed(node); };
     auto observer    = std::make_unique<MissionObserver>(
         tree.rootNode(),
         get_clock(),
@@ -1855,6 +2122,7 @@ MissionExecutor::execute(const ExecuteMission::Goal& goal, const std::shared_ptr
     {
         outcome.code   = ExecuteMission::Result::OUTCOME_ERROR;
         outcome.reason = "the tree threw: " + thrown;
+        outcome.cause  = ExecuteMission::Result::CAUSE_EXECUTOR;
         return outcome;
     }
     switch (ended)
@@ -1889,6 +2157,7 @@ MissionExecutor::execute(const ExecuteMission::Goal& goal, const std::shared_ptr
         case Ended::kPausedTooLong:
             outcome.code   = ExecuteMission::Result::OUTCOME_CANCELED;
             outcome.reason = std::format("paused for longer than {:.0f} s", max_pause_s_) + tail;
+            outcome.cause  = ExecuteMission::Result::CAUSE_EXECUTOR;
             running_step(outcome);
             return outcome;
     }
@@ -2055,11 +2324,11 @@ bool MissionExecutor::followPause(
         busy && mission_skills_ ?
             mission_skills_->validator.catalog().findByMacro(nodes.subtree->subtreeID()) :
             nullptr;
-    // Halted half way, a pick or a place could leave an object in the air: the one running when
-    // the pause came ends first, and the gate holds the next step until then. Until it ends the
-    // robot still moves, so it is not reported paused.
+    // Once its grasp or place has begun, a pick or a place ends first, and the gate holds the next
+    // step until then; before that it is halted like any step. Until it ends the robot still moves,
+    // so it is not reported paused.
     if (skill != nullptr && skill->risk == "manipulation" &&
-        (pausing.finishing.empty() || pausing.finishing == step))
+        (pausing.finishing == step || (pausing.finishing.empty() && graspUnderWay(nodes.subtree))))
     {
         if (pausing.finishing.empty())
         {
@@ -2070,7 +2339,9 @@ bool MissionExecutor::followPause(
         }
         return true;
     }
-    // Halted from its top, the step starts afresh on resume: its timeout and retries too.
+    // Halted from its top, the step starts afresh on resume: its timeout and retries too. The
+    // watchdog stands down first: tripped during the halt, it would stop the mission for good.
+    deadline_ticks_ = 0;
     pause_gate_.close();
     if (busy && nodes.top != nullptr)
     {
@@ -2086,9 +2357,8 @@ bool MissionExecutor::followPause(
         }
     }
     pausing.finishing.clear();
-    pausing.since   = Clock::now();
-    paused_         = true;
-    deadline_ticks_ = 0;
+    pausing.since = Clock::now();
+    paused_       = true;
     RCLCPP_INFO(get_logger(), "paused%s%s", busy ? " during " : "", busy ? step.c_str() : "");
     note(busy ? "paused during " + step : std::string("paused"));
     return false;
@@ -2118,14 +2388,19 @@ void MissionExecutor::spinLeaves(Seconds span)
 
 std::vector<std::string> MissionExecutor::sweepAfterHalt()
 {
-    // A goal sent just before the halt can have been accepted only after it, when the leaf no
-    // longer had a handle to cancel it by: whatever is still in flight now is asked to stop. And
-    // as for a stop, the arm's controller holds the arm where it is, which a skill server that
-    // runs its trajectory to the end would not.
-    if (!leaf_servers_->busy().empty())
+    // A dry run sends no goals: sweeping after it would stop a borrower's real motion.
     {
-        (void)leaf_servers_->cancelAll();
+        const std::lock_guard<std::mutex> lock(live_mutex_);
+        if (dry_running_)
+        {
+            return {};
+        }
     }
+    // A goal sent just before the halt can have been accepted only after it, when the leaf no
+    // longer had a handle to cancel it by: whatever is still in flight now is asked to stop, even
+    // if no status has said so yet. And as for a stop, the arm's controller holds the arm where it
+    // is, which a skill server that runs its trajectory to the end would not.
+    (void)leaf_servers_->cancelAll();
     (void)arm_controller_->cancelAll();
     const auto deadline  = Clock::now() + inClockUnits(stop_wait_s_);
     const auto remaining = [&deadline] {
@@ -2255,6 +2530,22 @@ void MissionExecutor::noteLeafHalted(const BT::TreeNode& node)
     }
 }
 
+void MissionExecutor::noteLeafFailed(const BT::TreeNode& node)
+{
+    // Only one whose goal went out can have opened the hand.
+    const auto* report = dynamic_cast<const LeafReport*>(&node);
+    if (node.registrationName() != "Place" || (report != nullptr && !report->goalSent()))
+    {
+        return;
+    }
+    const std::string                 arm = node.getInput<std::string>("arm").value_or("right");
+    const std::lock_guard<std::mutex> lock(live_mutex_);
+    if (!dry_running_)
+    {
+        (arm == "left" ? hands_.left : hands_.right).after_failed_place = true;
+    }
+}
+
 void MissionExecutor::syncBlackboardLocked()
 {
     if (mission_blackboard_)
@@ -2312,7 +2603,7 @@ void MissionExecutor::pushState()
         state.boot_id      = boot_id_;
         state.mission_id   = mission_id_;
         state.mission_step = mission_step_;
-        state.teleop       = teleop_ && teleop_->active();
+        state.teleop       = teleop_ && teleop_->busy();
         if (base_held_ || state.teleop)
         {
             state.resources_held.emplace_back(kBaseResource);
@@ -2341,7 +2632,8 @@ void MissionExecutor::pushState()
         state.paused        = paused_;
         if (!note_.empty())
         {
-            state.message = note_;
+            // NervROS reads an unknown hand from the message only, so a note keeps it.
+            state.message = note_ + describeHandsLocked("holds");
         }
         else if (stopped_)
         {

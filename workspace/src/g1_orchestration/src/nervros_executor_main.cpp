@@ -22,9 +22,9 @@ std::atomic<bool> g_interrupted{ false };
 
 void onSignal(int) { g_interrupted = true; }
 
-/// One thread for each callback group that may be busy at once: the mission's action, StopAll,
-/// the queries, the servers' status, and the state timer.
-constexpr std::size_t kExecutorThreads = 5;
+/// More threads than callback groups that can block at once (the mission, StopAll, queries,
+/// preview, lend, the state timer), so StopAll and the servers' status always find a free one.
+constexpr std::size_t kExecutorThreads = 10;
 
 }  // namespace
 

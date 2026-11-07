@@ -36,7 +36,8 @@ public:
 
 /**
  * @brief Tells the world model whether a viewpoint was reached, so it can drop unreachable ones
- * and write off targets that stay unseen. Always succeeds.
+ * and write off targets that stay unseen. Fails only when `viewpoint_id` is missing; a report the
+ * world model does not take is logged, and the leaf still succeeds.
  */
 class ReportViewpoint : public ServiceLeaf
 {
@@ -48,7 +49,7 @@ public:
 
 /**
  * @brief Turns a target named in words ("dustbin", "O12", "kitchen") into a reachable pose
- * facing it, for NavigateToPose. Replaces the literal x;y;yaw goals missions used to carry.
+ * facing it, for NavigateToPose.
  */
 class ResolveTarget : public ServiceLeaf
 {

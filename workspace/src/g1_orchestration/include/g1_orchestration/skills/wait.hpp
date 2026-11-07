@@ -20,7 +20,7 @@ namespace g1_orchestration
 
 /**
  * @brief Succeeds once `seconds` have gone by; fails at once when the mission winds down.
- *        Ticked like any leaf, so it never blocks the tree.
+ *        Ticked like any leaf, so it never blocks the tree. A pause holds it before it starts.
  */
 class Wait : public BT::StatefulActionNode, public LeafReport
 {
@@ -38,7 +38,12 @@ public:
 private:
     using Clock = std::chrono::steady_clock;
 
+    /// Starts the wait once no pause holds it: checks `seconds` and sets when it ends.
+    BT::NodeStatus begin();
+
     const std::atomic<bool>* stop_;
+    const PauseGate*         pause_;
+    bool                     waiting_ = false;  ///< Held by a pause before it began.
     Clock::time_point        until_{};
 };
 

@@ -60,6 +60,11 @@ public:
     /// Brings the base to a stop at the deceleration limit and ends teleop.
     void               disable(const std::string& why);
     [[nodiscard]] bool active() const;
+    /**
+     * @brief Whether teleop still writes the base's velocity: while active, and while it ramps
+     *        the base down after being disabled.
+     */
+    [[nodiscard]] bool busy() const;
 
     /// One control period: the output moved toward @p target (zero when it is stale), within
     /// the speed limits and no faster than the acceleration limits allow over @p dt.

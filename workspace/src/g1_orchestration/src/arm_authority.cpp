@@ -5,6 +5,7 @@
 
 #include "g1_orchestration/arm_authority.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <controller_manager_msgs/srv/list_controllers.hpp>
 #include <controller_manager_msgs/srv/set_hardware_component_state.hpp>
@@ -35,13 +36,15 @@ constexpr const char* kListService      = "/controller_manager/list_controllers"
 /// The one controller_manager state that means a controller is holding its joints.
 constexpr const char* kActiveState = "active";
 
-/// Shorter than the arm's budget so an absent hand fails fast. Mirrors activate_arm's
-/// HAND_ACTIVATE_TIMEOUT_S.
-constexpr double kHandTimeoutS = 5.0;
+/// How often the settle looks for a stop.
+constexpr std::chrono::milliseconds kSettleSlice{ 100 };
 
-/// Settle after the switch: the handover moves the joints, and MoveIt rejects a plan whose start
-/// state is off by more than allowed_start_tolerance.
-constexpr double kAcquireSettleS = 3.0;
+/// What a switch leaves of the client's budget for discovery and the answer, in seconds: the
+/// server gives up first, so even its refusal arrives.
+constexpr int kSwitchAnswerMarginS = 2;
+
+std::map<std::string, std::string>
+controllerStates(const rclcpp::Node::SharedPtr& node, double timeout_s);
 
 bool setComponentState(
     const rclcpp::Node::SharedPtr& node, const std::string& component, uint8_t state_id,
@@ -66,10 +69,21 @@ bool switchController(
     request->deactivate_controllers = deactivate;
     request->strictness             = strictness;
     request->activate_asap          = true;
-    request->timeout.sec            = static_cast<int>(timeout_s);
+    request->timeout.sec = std::max(1, static_cast<int>(timeout_s) - kSwitchAnswerMarginS);
 
     const auto response = callService<SwitchController>(node, kSwitchService, request, timeout_s);
-    return response != nullptr && response->ok;
+    if (response != nullptr)
+    {
+        return response->ok;
+    }
+    // No answer is not no swap: one made after the wait would leave the arm switched untracked.
+    const auto states = controllerStates(node, timeout_s);
+    const auto active = [&states](const std::string& name) {
+        const auto it = states.find(name);
+        return it != states.end() && it->second == kActiveState;
+    };
+    return !states.empty() && std::ranges::all_of(activate, active) &&
+           std::ranges::none_of(deactivate, active);
 }
 
 // Controller states by name; empty if controller_manager did not answer.
@@ -93,16 +107,9 @@ controllerStates(const rclcpp::Node::SharedPtr& node, double timeout_s)
     return states;
 }
 
-/// How a swap ended: not made, made now, or found already made.
-enum class Swap : std::uint8_t
-{
-    kFailed,
-    kSwitched,
-    kAlreadyHeld,
-};
-
-// Trades `outgoing` for `incoming` over the same joints, in one switch or not at all.
-Swap swapArmController(
+// Trades `outgoing` for `incoming` over the same joints, in one switch or not at all: kTaken when
+// made now, kAlready when found made.
+Acquired swapArmController(
     const rclcpp::Node::SharedPtr& node, const std::string& incoming, const std::string& outgoing,
     const rclcpp::Logger& logger, double timeout_s)
 {
@@ -111,7 +118,7 @@ Swap swapArmController(
     if (states.empty())
     {
         RCLCPP_ERROR(logger, "controller_manager did not list its controllers; not switching");
-        return Swap::kFailed;
+        return Acquired::kFailed;
     }
 
     const auto state_of = [&states](const std::string& name) {
@@ -127,11 +134,11 @@ Swap swapArmController(
             "%s cannot take the arms, so %s keeps them",
             incoming.c_str(),
             outgoing.c_str());
-        return Swap::kFailed;
+        return Acquired::kFailed;
     }
     if (plan.already_held)
     {
-        return Swap::kAlreadyHeld;
+        return Acquired::kAlready;
     }
     return switchController(
                node,
@@ -139,8 +146,8 @@ Swap swapArmController(
                plan.displace ? std::vector<std::string>{ outgoing } : std::vector<std::string>{},
                timeout_s,
                SwitchController::Request::STRICT) ?
-               Swap::kSwitched :
-               Swap::kFailed;
+               Acquired::kTaken :
+               Acquired::kFailed;
 }
 
 }  // namespace
@@ -171,7 +178,8 @@ const std::vector<ControlledPart>& controlledParts()
     return parts;
 }
 
-Acquired acquireArm(const rclcpp::Logger& logger, double timeout_s)
+Acquired
+acquireArm(const rclcpp::Logger& logger, double timeout_s, const std::function<bool()>& stopped)
 {
     const rclcpp::Node::SharedPtr      node  = makeClientNode("g1_arm_authority_client");
     const std::vector<ControlledPart>& parts = controlledParts();
@@ -188,32 +196,31 @@ Acquired acquireArm(const rclcpp::Logger& logger, double timeout_s)
                                      "active",
                                      timeout_s);
 
-    const Swap swapped =
+    const Acquired swapped =
         component_ready ?
             swapArmController(node, arm.controller, arm.displaces, logger, timeout_s) :
-            Swap::kFailed;
-    if (swapped == Swap::kFailed)
+            Acquired::kFailed;
+    if (swapped == Acquired::kFailed)
     {
         RCLCPP_ERROR(logger, "could not acquire the arm. Is the control stack up?");
         return Acquired::kFailed;
     }
 
+    // Both hands in one switch, each whose component came up: an absent hand costs one wait.
+    std::vector<std::string> hands;
     for (std::size_t i = 1; i < parts.size(); ++i)
     {
         const ControlledPart& hand = parts[i];
-        // BEST_EFFORT is safe here: nothing is displaced, so there is no pair to half-apply.
-        if (!setComponentState(
+        if (setComponentState(
                 node,
                 hand.component,
                 lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE,
                 "active",
-                kHandTimeoutS) ||
-            !switchController(
-                node,
-                { hand.controller },
-                {},
-                kHandTimeoutS,
-                SwitchController::Request::BEST_EFFORT))
+                kHandTimeoutS))
+        {
+            hands.push_back(hand.controller);
+        }
+        else
         {
             RCLCPP_WARN(
                 logger,
@@ -221,46 +228,69 @@ Acquired acquireArm(const rclcpp::Logger& logger, double timeout_s)
                 hand.component.c_str());
         }
     }
+    // BEST_EFFORT is safe here: nothing is displaced, so there is no pair to half-apply.
+    if (!hands.empty() &&
+        !switchController(node, hands, {}, kHandTimeoutS, SwitchController::Request::BEST_EFFORT))
+    {
+        RCLCPP_WARN(logger, "the hands' controllers did not all start; a hand may not move");
+    }
 
-    rclcpp::sleep_for(std::chrono::duration_cast<std::chrono::nanoseconds>(
-        std::chrono::duration<double>(kAcquireSettleS)));
-    return swapped == Swap::kAlreadyHeld ? Acquired::kAlready : Acquired::kTaken;
+    // Only a switch moves the joints; a stop does not wait the settle out.
+    if (swapped == Acquired::kTaken)
+    {
+        const auto until = std::chrono::steady_clock::now() +
+                           std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                               std::chrono::duration<double>(kAcquireSettleS));
+        while (std::chrono::steady_clock::now() < until && !(stopped && stopped()))
+        {
+            rclcpp::sleep_for(kSettleSlice);
+        }
+    }
+    return swapped;
 }
 
-void releaseArm(const rclcpp::Logger& logger, double timeout_s)
+bool releaseArm(const rclcpp::Logger& logger, double timeout_s)
 {
     const rclcpp::Node::SharedPtr      node  = makeClientNode("g1_arm_authority_client");
     const std::vector<ControlledPart>& parts = controlledParts();
-    // std::ranges::reverse_view breaks clang-tidy's Clang-14 parser against libstdc++ here.
-    // NOLINTNEXTLINE(modernize-loop-convert)
-    for (auto it = parts.rbegin(); it != parts.rend(); ++it)
+
+    // The freeze returns in the same switch, or no switch is made: an unowned joint is unpowered.
+    const ControlledPart& arm = parts.front();
+    if (swapArmController(node, arm.displaces, arm.controller, logger, timeout_s) ==
+        Acquired::kFailed)
     {
-        if (it->displaces.empty())
+        RCLCPP_ERROR(
+            logger,
+            "the arms stay with %s: they could not be handed back to %s",
+            arm.controller.c_str(),
+            arm.displaces.c_str());
+        return false;
+    }
+
+    bool hands_down = true;
+    for (std::size_t i = parts.size() - 1; i > 0; --i)
+    {
+        const ControlledPart& hand    = parts[i];
+        const bool            stopped = switchController(
+            node,
+            {},
+            { hand.controller },
+            timeout_s,
+            SwitchController::Request::BEST_EFFORT);
+        const bool inactive = setComponentState(
+            node,
+            hand.component,
+            lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE,
+            "inactive",
+            timeout_s);
+        if (!stopped || !inactive)
         {
-            switchController(
-                node,
-                {},
-                { it->controller },
-                timeout_s,
-                SwitchController::Request::BEST_EFFORT);
-        }
-        else
-        {
-            // The displaced controller returns in the same switch, or no switch is made: an
-            // unowned joint is unpowered.
-            swapArmController(node, it->displaces, it->controller, logger, timeout_s);
-        }
-        if (!it->component.empty())
-        {
-            setComponentState(
-                node,
-                it->component,
-                lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE,
-                "inactive",
-                timeout_s);
+            RCLCPP_WARN(logger, "%s did not go down cleanly", hand.component.c_str());
+            hands_down = false;
         }
     }
-    RCLCPP_INFO(logger, "arm and hands released");
+    RCLCPP_INFO(logger, hands_down ? "arm and hands released" : "arm released; see the hands above");
+    return true;
 }
 
 }  // namespace g1_orchestration

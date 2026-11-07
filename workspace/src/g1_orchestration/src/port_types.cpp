@@ -5,8 +5,27 @@
 
 #include "g1_orchestration/port_types.hpp"
 
+#include <cmath>
 #include <string>
 #include <vector>
+
+namespace
+{
+
+/// @p text as a number, refused unless finite: a NaN or an infinity would reach a goal.
+double finite(BT::StringView text, const char* what)
+{
+    const double value = BT::convertFromString<double>(text);
+    if (!std::isfinite(value))
+    {
+        throw BT::RuntimeError(
+            std::string(what) + " takes finite numbers, got: ",
+            std::string(text));
+    }
+    return value;
+}
+
+}  // namespace
 
 namespace BT
 {
@@ -20,9 +39,9 @@ g1_orchestration::Station convertFromString(StringView str)
         throw RuntimeError("a station is 'x;y;yaw', got: ", std::string(str));
     }
     g1_orchestration::Station station;
-    station.x   = convertFromString<double>(parts[0]);
-    station.y   = convertFromString<double>(parts[1]);
-    station.yaw = convertFromString<double>(parts[2]);
+    station.x   = finite(parts[0], "a station");
+    station.y   = finite(parts[1], "a station");
+    station.yaw = finite(parts[2], "a station");
     return station;
 }
 
@@ -35,9 +54,9 @@ g1_orchestration::Point3 convertFromString(StringView str)
         throw RuntimeError("a point is 'x;y;z', got: ", std::string(str));
     }
     g1_orchestration::Point3 point;
-    point.x = convertFromString<double>(parts[0]);
-    point.y = convertFromString<double>(parts[1]);
-    point.z = convertFromString<double>(parts[2]);
+    point.x = finite(parts[0], "a point");
+    point.y = finite(parts[1], "a point");
+    point.z = finite(parts[2], "a point");
     return point;
 }
 

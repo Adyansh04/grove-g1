@@ -63,6 +63,7 @@ ServerFleet::ServerFleet(
             server->name + "/_action/status",
             statusQos(),
             [raw](const action_msgs::msg::GoalStatusArray::ConstSharedPtr& msg) {
+                raw->seen      = true;
                 raw->in_flight = static_cast<int>(std::ranges::count_if(
                     msg->status_list,
                     [](const action_msgs::msg::GoalStatus& s) { return inFlight(s.status); }));
@@ -81,9 +82,12 @@ std::size_t ServerFleet::cancelAll()
         {
             // A request nobody answers stays pending in the client, so only ask a server that is
             // there.
+            server->asked = false;
             if (server->client->action_server_is_ready())
             {
+                server->seen = true;
                 (void)server->client->async_cancel_all_goals();
+                server->asked = true;
                 ++asked;
             }
         }
@@ -97,6 +101,20 @@ std::size_t ServerFleet::cancelAll()
         }
     }
     return asked;
+}
+
+std::vector<std::string> ServerFleet::unreached(std::chrono::duration<double> discovery) const
+{
+    const bool               discovering = std::chrono::steady_clock::now() - created_ < discovery;
+    std::vector<std::string> names;
+    for (const auto& server : servers_)
+    {
+        if (!server->asked && (server->seen || discovering))
+        {
+            names.push_back(server->name);
+        }
+    }
+    return names;
 }
 
 std::vector<std::string> ServerFleet::busy() const

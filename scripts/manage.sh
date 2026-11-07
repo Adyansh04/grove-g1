@@ -59,6 +59,22 @@ function check_simulator_checkout() {
     fi
 }
 
+# The image CI published for this checkout's Dockerfile, pulled once. Built here only when there is
+# none, such as for a Dockerfile edit CI has not built yet.
+function ensure_image() {
+    DEV_IMAGE_TAG=$("$ROOT/scripts/dev-image-tag.sh")
+    export DEV_IMAGE_TAG
+    local image="${DEV_IMAGE_REPO:-ghcr.io/adyansh04/grove-g1-dev}:${DEV_IMAGE_TAG}"
+    docker image inspect "$image" >/dev/null 2>&1 && return
+    # A missing tag is expected after a Dockerfile edit, and Compose may still exit 0 on it, so
+    # the image is checked for, not the pull's status.
+    docker compose pull "${SERVICE_NAME}" || true
+    if ! docker image inspect "$image" >/dev/null 2>&1; then
+        echo "No published image matches this Dockerfile; building $image here."
+        docker compose build "${SERVICE_NAME}"
+    fi
+}
+
 # Runs a command in the container, in /root/workspace with ROS and the workspace sourced.
 function in_container() {
     local tty=()
@@ -137,10 +153,10 @@ function print_usage() {
 Usage: $0 <command> [args]
 .env is loaded first when present; otherwise the shell environment and Compose defaults apply.
 
-  start                 Build and start the container in detached mode.
+  start                 Start the container on the published image (built here if none matches).
   stop                  Stop the running container.
   restart               Restart the container.
-  recreate              Stop, remove, and rebuild the container from scratch.
+  recreate              Remove the container and start a new one from the image.
   logs                  Follow the container's log output.
   exec [cmd...]         A shell in /root/workspace with the workspace sourced, or run cmd there.
   build [pkg...]        colcon build the named packages, or the whole workspace.
@@ -159,7 +175,8 @@ case "$ACTION" in
         echo "Granting GUI access (X11)..."
         xhost +local:docker 2>/dev/null || true
         check_simulator_checkout
-        docker compose up -d --build "${SERVICE_NAME}"
+        ensure_image
+        docker compose up -d "${SERVICE_NAME}"
         echo
         echo "Active services:"
         docker compose ps
@@ -183,7 +200,8 @@ case "$ACTION" in
         xhost +local:docker 2>/dev/null || true
         check_simulator_checkout
         docker compose down
-        docker compose up -d --build "${SERVICE_NAME}"
+        ensure_image
+        docker compose up -d "${SERVICE_NAME}"
         echo
         echo "Active services:"
         docker compose ps

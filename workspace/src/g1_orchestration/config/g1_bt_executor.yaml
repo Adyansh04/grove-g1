@@ -5,3 +5,14 @@ g1_bt_executor:
     # ZeroMQ port Groot2 connects to for live monitoring; 0 disables the publisher.
     # The container uses host networking, so the editor reaches it on localhost.
     groot2_port: 1667
+    # Before letting go of arms it took, the run reads the fingers once (as nervros_executor does):
+    # a hand whose finger_joints stand past finger_closed_rad (rad) may hold something, and the
+    # arms then stay held, since a released hand drops it.
+    finger_joints:
+      - left_hand_index_0_joint
+      - left_hand_middle_0_joint
+      - right_hand_index_0_joint
+      - right_hand_middle_0_joint
+    finger_closed_rad: 0.3
+    # s to wait for /joint_states; with none, both hands count as closed.
+    finger_read_timeout_s: 2.0

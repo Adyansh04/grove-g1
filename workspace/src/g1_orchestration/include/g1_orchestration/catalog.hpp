@@ -36,6 +36,8 @@ struct SkillArg
     /// or "number" (a decimal from `min` to `max`). A world_id with "phrase" also takes plain
     /// words the world model searches for, such as red mug.
     std::string format;
+    /// For a world_id, what it names: "object", "room", or "" for either.
+    std::string names;
     std::string description;
     /// The only values allowed, or empty when any is.
     std::vector<std::string> allowed;
@@ -75,6 +77,8 @@ struct Skill
     std::string learned;
     /// For a learned skill: the operator's request it was taught for.
     std::string taught_for;
+    /// For a learned skill: when it was last taught or kept, in seconds since 1970.
+    double taught_s = 0.0;
 
     /// Whether running it needs the arms.
     [[nodiscard]] bool needsArms() const;

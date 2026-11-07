@@ -17,6 +17,7 @@
 #include <tf2_ros/transform_listener.h>
 
 #include <canopy_msgs/srv/get_approach_pose.hpp>
+#include <chrono>
 #include <memory>
 #include <nav2_msgs/action/compute_path_to_pose.hpp>
 #include <nav2_msgs/srv/clear_entire_costmap.hpp>
@@ -24,6 +25,7 @@
 #include <optional>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -48,6 +50,8 @@ public:
         std::string base_frame;
         /// Budget for each planner and world-model call.
         double timeout_s = 5.0;
+        /// The most one whole preview takes: the steps past it are listed without a path.
+        double total_s = 12.0;
     };
 
     MissionPreview(rclcpp::Node& node, Params params, const rclcpp::CallbackGroup::SharedPtr& group);
@@ -55,10 +59,16 @@ public:
     /**
      * @brief The preview of @p steps; blocks on the planner, so call it from a callback group
      *        other than the one given to the constructor.
+     * @param may_clear Whether a refused walk may clear the live global costmap and ask again, as
+     *        the walk itself does: never while something moves the robot, whose navigation would
+     *        lose the obstacles it plans around.
+     * @param walkers The macros of the skills that may move the base: one it cannot follow
+     *        leaves the robot where the steps after it are not previewed from.
      * @return The steps, or why there is no preview at all (no robot pose).
      */
-    [[nodiscard]] std::vector<nervros_interfaces::msg::StepPreview>
-    preview(const std::vector<MissionStep>& steps, std::string& why);
+    [[nodiscard]] std::vector<nervros_interfaces::msg::StepPreview> preview(
+        const std::vector<MissionStep>& steps, std::string& why, bool may_clear,
+        const std::set<std::string>& walkers = {});
 
     /// Where a straight walk of @p metres (negative is backward) ends.
     [[nodiscard]] static Station walkEnd(const Station& from, double metres);
@@ -76,8 +86,15 @@ private:
     [[nodiscard]] std::optional<nav_msgs::msg::Path>
     plan(const Station& from, const Station& to, std::string& why);
     [[nodiscard]] geometry_msgs::msg::PoseStamped stamped(const Station& station) const;
+    /// The wait for one call: its own budget, cut to what is left of the whole preview's.
+    [[nodiscard]] std::chrono::duration<double> wait() const;
 
-    Params                                                                 params_;
+    Params params_;
+    /// When the preview being made must be done.
+    std::chrono::steady_clock::time_point deadline_ = std::chrono::steady_clock::time_point::max();
+    /// Set once the world model or the planner did not answer in the preview being made.
+    bool                                                                   approach_absent_ = false;
+    bool                                                                   planner_absent_  = false;
     rclcpp::Clock::SharedPtr                                               clock_;
     tf2_ros::Buffer                                                        buffer_;
     tf2_ros::TransformListener                                             listener_;

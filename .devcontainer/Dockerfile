@@ -1,5 +1,7 @@
 
-ARG BASE_IMAGE=adyansh04/ros-dev:jazzy
+# Pinned by digest: the tag moves, and the published image's tag (scripts/dev-image-tag.sh) hashes
+# this file, so the same tag must always mean the same base.
+ARG BASE_IMAGE=adyansh04/ros-dev:jazzy-latest@sha256:f78b9a41143f1e2bfa5d02c719688f42c4cd37b07312c5717f7c37d4a32c7903
 FROM ${BASE_IMAGE}
 
 ARG ROS_DISTRO=jazzy
@@ -22,6 +24,11 @@ RUN apt-get update && apt-get install -y \
     update-alternatives --install /usr/bin/run-clang-tidy run-clang-tidy /usr/bin/run-clang-tidy-${LLVM_VERSION} 100 && \
     (python3 -m pip install --no-cache-dir --break-system-packages ruff==${RUFF_VERSION} || \
      python3 -m pip install --no-cache-dir ruff==${RUFF_VERSION}) && \
+    rm -rf /var/lib/apt/lists/*
+
+# NervROS's .cargo/config.toml links with clang and mold, so the agent also builds in here.
+RUN apt-get update && apt-get install -y clang-${LLVM_VERSION} mold && \
+    update-alternatives --install /usr/bin/clang clang /usr/bin/clang-${LLVM_VERSION} 100 && \
     rm -rf /var/lib/apt/lists/*
 
 # ============================================================================

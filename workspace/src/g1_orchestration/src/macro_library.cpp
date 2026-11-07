@@ -136,6 +136,11 @@ void readMacros(std::string_view text, const std::filesystem::path& file, std::v
         }
     }
 
+    // Registering a macro registers its whole file, so a second tree would ride along unchecked.
+    if (trees.size() > 1)
+    {
+        fail(file, "holds more than one <BehaviorTree>; a macro file defines exactly one");
+    }
     for (const Macro& model : models)
     {
         if (std::ranges::none_of(trees, [&model](const Macro& m) { return m.id == model.id; }))

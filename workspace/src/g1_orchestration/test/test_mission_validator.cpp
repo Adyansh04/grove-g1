@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <behaviortree_cpp/contrib/json.hpp>
+#include <format>
 #include <fstream>
 #include <iterator>
 #include <stdexcept>
@@ -127,6 +128,52 @@ TEST(MissionValidator, AcceptsAMissionTheWayTheCompilerWritesIt)
     EXPECT_EQ(validation.steps.size(), 4U);
     // 2 x 240 for the retried walk, then 420, 240 and 360.
     EXPECT_DOUBLE_EQ(validation.worst_case_s, 1500.0);
+}
+
+TEST(MacroLibrary, AFileWithTwoTreesIsRefused)
+{
+    const std::string two = R"(<root BTCPP_format="4">
+  <BehaviorTree ID="A"><Wait seconds="1"/></BehaviorTree>
+  <BehaviorTree ID="B"><Wait seconds="1"/></BehaviorTree>
+  <TreeNodesModel><SubTree ID="A"/><SubTree ID="B"/></TreeNodesModel>
+</root>)";
+    EXPECT_THROW(MacroLibrary::parse(two, "two.xml"), std::runtime_error);
+}
+
+TEST(MissionValidator, AChoiceListCanNarrowTheCatalogsValuesButNotWidenThem)
+{
+    Catalog catalog = Catalog::load(std::string(G1_CONFIG_DIR) + "/catalog.yaml");
+    EXPECT_THROW(catalog.restrict("PickObject.arm=left|right|both"), std::runtime_error);
+    EXPECT_THROW(catalog.restrict("WalkStraight.distance_m=1|2"), std::runtime_error);
+    EXPECT_NO_THROW(catalog.restrict("PickObject.arm=left"));
+}
+
+TEST(MissionValidator, AWorldIdSaysWhatItNamesAndNothingElseDoes)
+{
+    const Catalog catalog = Catalog::load(std::string(G1_CONFIG_DIR) + "/catalog.yaml");
+    EXPECT_NE(catalog.json().find(R"("names":"object")"), std::string::npos);
+    const auto skill = [](std::string_view names) {
+        return std::format(
+            R"(
+skills:
+  - name: Wave
+    description: Waves.
+    args:
+      - name: arm
+        type: string{}
+        description: Which.
+    requires: []
+    effects: []
+    resources: [left_arm]
+    idempotent: true
+    risk: motion
+    max_duration_s: 10
+    template: Wave
+)",
+            names);
+    };
+    EXPECT_NO_THROW((void)Catalog::parse(skill("")));
+    EXPECT_THROW((void)Catalog::parse(skill("\n        names: object")), std::runtime_error);
 }
 
 TEST(MissionValidator, AnArgumentLimitedToTheNamesTheDetectorKnowsRefusesOthers)
@@ -497,6 +544,19 @@ TEST(MissionValidator, RejectsANameThatCouldConfuseAPath)
             std::string(R"(<Sequence><SubTree ID="GoToPose" station="1;2;0" name=")") + name +
             "\"/></Sequence>");
         EXPECT_THAT(codesOf(check(xml)), ::testing::Contains("BAD_NAME")) << name;
+    }
+}
+
+TEST(MissionValidator, RejectsAStepWithNoStepName)
+{
+    for (const char* step : { R"(<SubTree ID="GoToPose" station="1;2;0"/>)",
+                              R"(<SubTree ID="GoToPose" name="walk_there" station="1;2;0"/>)",
+                              R"(<SubTree ID="GoToPose" name="s_GoToPose" station="1;2;0"/>)" })
+    {
+        EXPECT_THAT(
+            codesOf(check(mission(std::string("<Sequence>") + step + "</Sequence>"))),
+            ::testing::Contains("BAD_NAME"))
+            << step << ": the preview and the report would not follow it";
     }
 }
 

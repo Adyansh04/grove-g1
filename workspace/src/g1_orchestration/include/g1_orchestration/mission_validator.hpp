@@ -65,6 +65,7 @@ inline constexpr const char* kShuttingDown       = "SHUTTING_DOWN";
 inline constexpr const char* kBadMode            = "BAD_MODE";
 inline constexpr const char* kRobotCannotMove    = "ROBOT_CANNOT_MOVE";
 inline constexpr const char* kTeleopActive       = "TELEOP_ACTIVE";
+inline constexpr const char* kCatalogChanged     = "CATALOG_CHANGED";
 }  // namespace code
 
 /// Whether @p tag is a control node a Mission tree, or a taught skill's body, may use: Sequence,
