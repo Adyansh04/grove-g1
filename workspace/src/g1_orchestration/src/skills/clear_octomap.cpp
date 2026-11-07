@@ -43,7 +43,8 @@ BT::NodeStatus ClearOctomap::call()
         client_node,
         service,
         std::make_shared<std_srvs::srv::Empty::Request>(),
-        timeout_s);
+        timeout_s,
+        stopFlag());
     if (response == nullptr)
     {
         RCLCPP_WARN(

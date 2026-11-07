@@ -2,6 +2,9 @@
 
 Starts nothing else: the sim, Nav2 and MoveIt come from g1_bringup, and launching them here too
 would put two writers on one low-level channel.
+
+Example:
+    ros2 launch g1_orchestration mission.launch.py tree:=pick_and_place.xml
 """
 
 import os
@@ -18,13 +21,13 @@ PARAMS_FILE = os.path.join(SHARE, "config", "g1_bt_executor.yaml")
 TREES_DIR = os.path.join(SHARE, "trees")
 
 
-def _defaults():
+def _defaults() -> dict:
     """Argument defaults come from the config file, so it stays the one place to edit."""
     with open(PARAMS_FILE) as params:
         return yaml.safe_load(params)["g1_bt_executor"]["ros__parameters"]
 
 
-def generate_launch_description():
+def generate_launch_description() -> LaunchDescription:
     defaults = _defaults()
 
     arguments = [

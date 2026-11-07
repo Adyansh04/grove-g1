@@ -1,14 +1,20 @@
 <?xml version="1.0"?>
 <!--
   Move one arm to a named pose of g1.srdf and hold it there. Retried once, since OMPL sometimes
-  samples a path that clips the live octomap.
+  samples a path that clips the live octomap. An arm whose hand holds something (held_left or
+  held_right in the root blackboard, "?" when it may) only goes to carry: any other pose risks
+  driving the object into the body or dropping it.
 -->
 <root BTCPP_format="4">
   <BehaviorTree ID="ArmTo">
     <Timeout name="give_up_after_the_limit" msec="60000">
-      <RetryUntilSuccessful name="move_with_a_retry" num_attempts="2">
-        <SetArmPosture name="move_the_arm" group="{arm}" named_target="{pose}"/>
-      </RetryUntilSuccessful>
+      <Sequence name="arm_to">
+        <ScriptCondition name="hand_must_be_empty_unless_carrying"
+                         code="pose == 'carry' || (arm == 'left_arm' ? @held_left : @held_right) == ''"/>
+        <RetryUntilSuccessful name="move_with_a_retry" num_attempts="2">
+          <SetArmPosture name="move_the_arm" group="{arm}" named_target="{pose}"/>
+        </RetryUntilSuccessful>
+      </Sequence>
     </Timeout>
   </BehaviorTree>
 

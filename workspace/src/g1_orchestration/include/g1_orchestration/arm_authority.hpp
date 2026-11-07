@@ -12,6 +12,7 @@
  */
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <rclcpp/rclcpp.hpp>
 #include <string>
@@ -64,6 +65,15 @@ struct ArmSwitchPlan
  */
 ArmSwitchPlan planArmSwitch(const std::string& incoming_state, const std::string& outgoing_state);
 
+/// Shorter than the arm's budget so an absent hand fails fast, in seconds. Equal to activate_arm's
+/// HAND_ACTIVATE_TIMEOUT_S, which a drift test holds.
+inline constexpr double kHandTimeoutS = 5.0;
+
+/// Settle after the switch, in seconds: the handover moves the joints, and MoveIt rejects a plan
+/// whose start state is off by more than allowed_start_tolerance. Equal to activate_arm's SETTLE_S,
+/// which a drift test holds.
+inline constexpr double kAcquireSettleS = 3.0;
+
 /**
  * @brief How acquireArm found the arm.
  */
@@ -82,20 +92,24 @@ enum class Acquired : std::uint8_t
  *
  * @param logger Where progress and failures are reported.
  * @param timeout_s Per-step service budget.
+ * @param stopped Whether a stop came: the settle after a switch ends early then.
  * @return kFailed only if the arm could not be acquired; a hand that fails only warns. kAlready
  *         says the arm was taken before this call, so what its hands hold is not known.
  */
-Acquired acquireArm(const rclcpp::Logger& logger, double timeout_s);
+Acquired acquireArm(
+    const rclcpp::Logger& logger, double timeout_s, const std::function<bool()>& stopped = {});
 
 /**
- * @brief Hands each part back, in reverse: controllers first, then components.
+ * @brief Hands the arm back to its freeze controller, then each hand.
  *
- * Best-effort, and does not stop partway: it also runs on the failure path.
+ * The hands are touched only once the arm is back with its freeze: when that swap fails, the
+ * trajectory controller still holds the arm, and it is reported held rather than free.
  *
  * @param logger Where failures are reported.
  * @param timeout_s Per-step service budget.
+ * @return False when the arm could not be handed back. A hand that fails to go down only warns.
  */
-void releaseArm(const rclcpp::Logger& logger, double timeout_s);
+[[nodiscard]] bool releaseArm(const rclcpp::Logger& logger, double timeout_s);
 
 }  // namespace g1_orchestration
 

@@ -62,9 +62,11 @@ private:
     /// Drops the client node and everything it owns.
     void reset();
 
-    rclcpp::Node::SharedPtr                                             node_;
-    const std::atomic<bool>*                                            stop_;
-    rclcpp::Node::SharedPtr                                             client_node_;
+    rclcpp::Node::SharedPtr  node_;
+    const std::atomic<bool>* stop_;
+    const PauseGate*         pause_;
+    bool                     waiting_{ false };  ///< Held by a pause before it began.
+    rclcpp::Node::SharedPtr  client_node_;
     std::optional<rclcpp::executors::SingleThreadedExecutor>            executor_;
     rclcpp::Client<rcl_interfaces::srv::SetParameters>::SharedPtr       set_phrases_;
     rclcpp::Subscription<vision_msgs::msg::Detection3DArray>::SharedPtr objects_sub_;

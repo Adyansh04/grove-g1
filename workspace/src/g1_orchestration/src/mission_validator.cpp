@@ -10,7 +10,6 @@
 #include <algorithm>
 #include <behaviortree_cpp/contrib/json.hpp>
 #include <cctype>
-#include <charconv>
 #include <cmath>
 #include <cstdint>
 #include <format>
@@ -25,6 +24,7 @@
 #include <vector>
 
 #include "g1_orchestration/sha256.hpp"
+#include "g1_orchestration/text_values.hpp"
 #include "g1_orchestration/xml_canonical.hpp"
 
 namespace g1_orchestration
@@ -35,8 +35,6 @@ namespace
 
 constexpr std::string_view kMissionTree = "Mission";
 
-constexpr int         kMinAttempts   = 1;
-constexpr int         kMaxAttempts   = 3;
 constexpr std::size_t kMaxNameLength = 64;
 constexpr std::size_t kMaxArgLength  = 200;
 constexpr std::size_t kMaxPhrase     = 80;
@@ -80,38 +78,15 @@ bool validName(std::string_view name)
     });
 }
 
-std::string join(const std::vector<std::string>& words)
+/// Whether @p name is a step's: s, its number and an underscore, then the rest, as s1_PickObject.
+bool isStepName(std::string_view name)
 {
-    std::string out;
-    for (const std::string& word : words)
-    {
-        out += out.empty() ? "" : ", ";
-        out += word;
-    }
-    return out;
-}
-
-/// The whole of @p text as an integer, or nothing.
-std::optional<std::int64_t> wholeNumber(std::string_view text)
-{
-    std::int64_t value      = 0;
-    const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
-    if (error != std::errc() || end != text.data() + text.size())
-    {
-        return std::nullopt;
-    }
-    return value;
-}
-
-std::optional<double> realNumber(std::string_view text)
-{
-    double value            = 0.0;
-    const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
-    if (error != std::errc() || end != text.data() + text.size() || !std::isfinite(value))
-    {
-        return std::nullopt;
-    }
-    return value;
+    const auto underscore = name.find('_');
+    return name.starts_with('s') && underscore != std::string_view::npos && underscore >= 2 &&
+           underscore + 1 < name.size() &&
+           std::ranges::all_of(name.substr(1, underscore - 1), [](char c) {
+               return std::isdigit(static_cast<unsigned char>(c)) != 0;
+           });
 }
 
 /// Whether @p value is "x;y;yaw": three finite numbers, the position within the map's reach.
@@ -659,7 +634,7 @@ private:
     {
         const char* text = node.Attribute("num_attempts");
         const auto  n    = text != nullptr ? wholeNumber(text) : std::nullopt;
-        if (n && *n >= kMinAttempts && *n <= kMaxAttempts)
+        if (n && *n >= kMinRetryAttempts && *n <= kMaxRetryAttempts)
         {
             return static_cast<double>(*n);
         }
@@ -667,8 +642,8 @@ private:
             node,
             std::format(
                 "num_attempts must be a whole number from {} to {}{}.",
-                kMinAttempts,
-                kMaxAttempts,
+                kMinRetryAttempts,
+                kMaxRetryAttempts,
                 text == nullptr ? " (it is missing)" : ""));
         return 1.0;
     }
@@ -769,7 +744,17 @@ private:
                 std::format("Two steps are named {}. Give each step its own name.", instance));
         }
         out_->steps.emplace(instance, id);
-        checkName(node);
+        // The preview, the report and the step events follow a step by its number.
+        if (const char* name = node.Attribute("name"); name == nullptr || !isStepName(name))
+        {
+            add(code::kBadName,
+                node,
+                "Name each step s, its number and its skill, such as s1_PickObject.");
+        }
+        else
+        {
+            checkName(node);
+        }
 
         for (const tinyxml2::XMLAttribute* a = node.FirstAttribute(); a != nullptr; a = a->Next())
         {

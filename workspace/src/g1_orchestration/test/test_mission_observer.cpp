@@ -58,6 +58,32 @@ public:
     void           onHalted() override {}
 };
 
+/// Hangs on its first try; on the next it fails at once, from idle, and says why.
+class Flaky : public BT::StatefulActionNode, public g1_orchestration::LeafReport
+{
+public:
+    Flaky(const std::string& name, const BT::NodeConfig& config)
+      : BT::StatefulActionNode(name, config)
+    {}
+
+    static BT::PortsList providedPorts() { return { BT::InputPort<std::string>("why") }; }
+
+    BT::NodeStatus onStart() override
+    {
+        if (tries_++ == 0)
+        {
+            return BT::NodeStatus::RUNNING;
+        }
+        setFailureText(getInput<std::string>("why").value_or(""));
+        return BT::NodeStatus::FAILURE;
+    }
+    BT::NodeStatus onRunning() override { return BT::NodeStatus::RUNNING; }
+    void           onHalted() override {}
+
+private:
+    int tries_ = 0;
+};
+
 struct Rig
 {
     BT::BehaviorTreeFactory  factory;
@@ -74,6 +100,7 @@ struct Rig
         factory.registerSimpleAction("Nope", [](BT::TreeNode&) { return BT::NodeStatus::FAILURE; });
         factory.registerNodeType<Reporting>("Reporting");
         factory.registerNodeType<Forever>("Forever");
+        factory.registerNodeType<Flaky>("Flaky");
     }
 
     void load(const std::string& mission, const std::string& macros = "")
@@ -94,7 +121,7 @@ struct Rig
             tree.rootNode(),
             std::make_shared<rclcpp::Clock>(RCL_SYSTEM_TIME),
             level,
-            std::set<std::string>{ "Pick", "Ok", "Nope", "Reporting", "Forever" },
+            std::set<std::string>{ "Pick", "Ok", "Nope", "Reporting", "Forever", "Flaky" },
             std::move(hooks));
     }
 
@@ -350,6 +377,39 @@ TEST(MissionObserver, ATimeoutThatOnlyPassesOnItsChildsFailureIsNotATimeout)
         << "the leaf, not the Timeout that carried its failure up";
     EXPECT_FALSE(observer->failure()->timed_out);
     EXPECT_EQ(observer->failure()->reason, "the grasp missed");
+}
+
+TEST(MissionObserver, AnOptionalStepThatRanOutOfTimeFailedAndSaysSo)
+{
+    Rig rig;
+    rig.load(
+        R"(<ForceSuccess><Timeout msec="60"><SubTree ID="Hang" name="s2_Hang"/></Timeout></ForceSuccess>)",
+        R"(<root BTCPP_format="4"><BehaviorTree ID="Hang"><Forever name="stuck"/></BehaviorTree></root>)");
+    auto observer = rig.watch(MissionObserver::Level::kSteps);
+
+    EXPECT_EQ(rig.run(), BT::NodeStatus::SUCCESS) << "optional: the mission goes on";
+
+    const auto events = observer->takeEvents();
+    const auto failed = std::ranges::find_if(events, [](const auto& e) {
+        return e.name == "s2_Hang" && e.status == 3U;
+    });
+    ASSERT_NE(failed, events.end()) << "a halt alone would leave the step with no end";
+    EXPECT_EQ(failed->prev_status, 1U);
+}
+
+TEST(MissionObserver, ARetryThatFailsAtOnceIsNoTimeoutOfTheTryBefore)
+{
+    Rig rig;
+    // The first try runs out of time; the second fails straight from idle, as with no server.
+    rig.load(
+        R"(<RetryUntilSuccessful num_attempts="2"><Timeout msec="60"><Flaky name="leaf" why="no server"/></Timeout></RetryUntilSuccessful>)");
+    auto observer = rig.watch(MissionObserver::Level::kSteps);
+
+    EXPECT_EQ(rig.run(), BT::NodeStatus::FAILURE);
+
+    ASSERT_TRUE(observer->failure().has_value());
+    EXPECT_FALSE(observer->failure()->timed_out) << "the second try failed by itself";
+    EXPECT_EQ(observer->failure()->reason, "no server");
 }
 
 int main(int argc, char** argv)

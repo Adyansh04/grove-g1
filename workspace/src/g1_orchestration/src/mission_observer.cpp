@@ -45,8 +45,9 @@ bool isStepNode(const BT::TreeNode& node)
     return node.registrationName() == "SubTree" && !stepIdOf(node.name()).empty();
 }
 
-/// The step a decorator wraps: a step's Timeout, Retry and ForceSuccess have no name of their own.
-std::string stepBelow(const BT::TreeNode& node)
+/// The step node a decorator wraps, or null: a step's Timeout, Retry and ForceSuccess have no
+/// name of their own.
+const BT::TreeNode* stepNodeBelow(const BT::TreeNode& node)
 {
     const BT::TreeNode* below = &node;
     while (const auto* decorator = dynamic_cast<const BT::DecoratorNode*>(below))
@@ -54,14 +55,21 @@ std::string stepBelow(const BT::TreeNode& node)
         below = decorator->child();
         if (below == nullptr)
         {
-            return {};
+            return nullptr;
         }
         if (isStepNode(*below))
         {
-            return stepIdOf(below->name());
+            return below;
         }
     }
-    return {};
+    return nullptr;
+}
+
+/// The id of the step a decorator wraps, or empty.
+std::string stepBelow(const BT::TreeNode& node)
+{
+    const BT::TreeNode* step = stepNodeBelow(node);
+    return step == nullptr ? std::string() : stepIdOf(step->name());
 }
 
 }  // namespace
@@ -93,14 +101,20 @@ void MissionObserver::callback(
 {
     const bool step_started = isStepNode(node) && status == BT::NodeStatus::RUNNING;
     const bool succeeded    = status == BT::NodeStatus::SUCCESS && prev != BT::NodeStatus::SUCCESS;
-    const bool halted       = prev == BT::NodeStatus::RUNNING && status == BT::NodeStatus::IDLE;
+    const bool failed = status == BT::NodeStatus::FAILURE && prev != BT::NodeStatus::FAILURE &&
+                        node.type() == BT::NodeType::ACTION;
+    const bool halted = prev == BT::NodeStatus::RUNNING && status == BT::NodeStatus::IDLE;
     {
         const std::lock_guard<std::mutex> lock(mutex_);
         const std::string&                path = node.fullPath();
+        // Ticked again: a halt of an earlier try says nothing of how this one ends.
+        if (status == BT::NodeStatus::RUNNING || prev == BT::NodeStatus::IDLE)
+        {
+            halted_.erase(path);
+        }
         if (status == BT::NodeStatus::RUNNING)
         {
             running_.insert(path);
-            halted_.erase(path);
         }
         else if (prev == BT::NodeStatus::RUNNING)
         {
@@ -118,23 +132,22 @@ void MissionObserver::callback(
         // A leaf that failed, or a Timeout that ran out. The last of these before the tree fails
         // is what ended it: an earlier one may have been retried, or made optional. A Timeout
         // passing on its child's failure is not one.
-        if (status == BT::NodeStatus::FAILURE &&
-            (node.type() == BT::NodeType::ACTION || node.type() == BT::NodeType::CONDITION ||
-             (node.registrationName() == "Timeout" && ranOut(node))))
+        const bool ran_out = status == BT::NodeStatus::FAILURE &&
+                             node.registrationName() == "Timeout" && ranOut(node);
+        if (status == BT::NodeStatus::FAILURE && (node.type() == BT::NodeType::ACTION ||
+                                                  node.type() == BT::NodeType::CONDITION || ran_out))
         {
             failure_ = describe(node);
         }
         if (wanted(node, prev, status))
         {
-            nervros_interfaces::msg::NodeEvent event;
-            event.stamp           = clock_->now();
-            event.uid             = node.UID();
-            event.path            = path;
-            event.name            = node.name();
-            event.registration_id = node.registrationName();
-            event.prev_status     = static_cast<std::uint8_t>(prev);
-            event.status          = static_cast<std::uint8_t>(status);
-            events_.push_back(std::move(event));
+            push(node, prev, status);
+        }
+        // The step a Timeout ran out on was only halted, which says nothing of how it ended: it
+        // failed, though a ForceSuccess above may pass it over.
+        if (const BT::TreeNode* step = ran_out ? stepNodeBelow(node) : nullptr)
+        {
+            push(*step, BT::NodeStatus::RUNNING, BT::NodeStatus::FAILURE);
         }
     }
     // Outside the lock: the executor takes its own locks and publishes.
@@ -146,10 +159,27 @@ void MissionObserver::callback(
     {
         hooks_.on_success(node);
     }
+    if (failed && hooks_.on_failure)
+    {
+        hooks_.on_failure(node);
+    }
     if (halted && hooks_.on_halt)
     {
         hooks_.on_halt(node);
     }
+}
+
+void MissionObserver::push(const BT::TreeNode& node, BT::NodeStatus prev, BT::NodeStatus status)
+{
+    nervros_interfaces::msg::NodeEvent event;
+    event.stamp           = clock_->now();
+    event.uid             = node.UID();
+    event.path            = node.fullPath();
+    event.name            = node.name();
+    event.registration_id = node.registrationName();
+    event.prev_status     = static_cast<std::uint8_t>(prev);
+    event.status          = static_cast<std::uint8_t>(status);
+    events_.push_back(std::move(event));
 }
 
 bool MissionObserver::ranOut(const BT::TreeNode& timeout) const

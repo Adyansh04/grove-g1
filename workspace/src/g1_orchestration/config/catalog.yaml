@@ -10,6 +10,7 @@
 #   template        ID of the macro subtree; what a mission's <SubTree ID="..."> says.
 #   args[].type     string, or world_id for an id from the world model (canopy: R2, O17), which a
 #                   planner checks against the live world model. The executor checks its shape.
+#   args[].names    For a world_id: object or room, the one kind it takes; either when left out.
 #   args[].format   How the executor checks a string beyond its type: id (letters, digits and
 #                   underscores), phrase (plain words), station (x;y;yaw). A world_id with phrase
 #                   also takes plain words the world model searches for (kitchen, red mug).
@@ -274,7 +275,8 @@ skills:
       Move one arm to a named pose and hold it there: home (down by the side), ready (raised,
       elbow bent), reach_front (out in front), carry (close in front, as when carrying something),
       tucked (folded against the body) or zero. Use it for "raise your right arm" or "hold your
-      left arm out"; TuckForTravel folds both arms for walking.
+      left arm out"; TuckForTravel folds both arms for walking. An arm whose hand holds something
+      only goes to carry.
     args:
       - name: arm
         type: string
@@ -306,10 +308,11 @@ skills:
         description: Which hand.
       - name: target
         type: world_id
+        names: object
         format: phrase
         description: >-
           The id of an object in the world model, such as O17, or what it is in plain words.
-    requires: []
+    requires: ["hand_empty(arm)"]
     effects: []
     resources: [left_arm, right_arm]
     idempotent: true

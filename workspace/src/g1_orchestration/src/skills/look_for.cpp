@@ -54,6 +54,7 @@ LookFor::LookFor(const std::string& name, const BT::NodeConfig& config, RosConte
   : BT::StatefulActionNode(name, config)
   , node_(std::move(context.node))
   , stop_(context.stop)
+  , pause_(context.pause)
 {}
 
 BT::PortsList LookFor::providedPorts()
@@ -86,6 +87,11 @@ BT::PortsList LookFor::providedPorts()
 BT::NodeStatus LookFor::onStart()
 {
     setFailureText({});
+    waiting_ = heldByPause(pause_, *this);
+    if (waiting_)
+    {
+        return BT::NodeStatus::RUNNING;
+    }
     if (windingDown(stop_))
     {
         setFailureText("stopped");
@@ -155,9 +161,21 @@ BT::NodeStatus LookFor::onStart()
 
 BT::NodeStatus LookFor::onRunning()
 {
+    if (waiting_)
+    {
+        if (windingDown(stop_))
+        {
+            waiting_ = false;
+            setFailureText("stopped");
+            return BT::NodeStatus::FAILURE;
+        }
+        return heldByPause(pause_, *this) ? BT::NodeStatus::RUNNING : onStart();
+    }
     executor_->spin_some();
     pumpWrite();
-    if (std::ranges::all_of(wanted_, [this](const std::string& id) { return seen_.contains(id); }))
+    // Only once the write is over: an earlier step's phrases may have left the same ids behind.
+    if (write_ == Write::kDone &&
+        std::ranges::all_of(wanted_, [this](const std::string& id) { return seen_.contains(id); }))
     {
         reset();
         return BT::NodeStatus::SUCCESS;
@@ -199,6 +217,10 @@ void LookFor::pumpWrite()
             // rclcpp matches the callback signature exactly, so the future is taken by value.
             // NOLINTNEXTLINE(performance-unnecessary-value-param)
             [this](rclcpp::Client<SetParameters>::SharedFuture reply) {
+                if (write_ == Write::kDone)
+                {
+                    return;  // Past its budget already: the wait for the objects has begun.
+                }
                 const auto& response = reply.get();
                 finishWrite(
                     response != nullptr && !response->results.empty() &&
@@ -224,7 +246,9 @@ void LookFor::finishWrite(bool taken)
             name().c_str(),
             detector_.c_str());
     }
-    write_    = Write::kDone;
+    write_ = Write::kDone;
+    // Detections from before the write belong to the old phrases.
+    seen_.clear();
     deadline_ = Clock::now() + seconds(timeout_s_);
 }
 

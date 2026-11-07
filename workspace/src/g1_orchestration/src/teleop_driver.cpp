@@ -91,6 +91,12 @@ bool TeleopDriver::active() const
     return active_;
 }
 
+bool TeleopDriver::busy() const
+{
+    const std::lock_guard<std::mutex> lock(mutex_);
+    return active_ || stopping_;
+}
+
 Velocity
 TeleopDriver::step(const Velocity& current, const Velocity& target, double dt, const Params& params)
 {

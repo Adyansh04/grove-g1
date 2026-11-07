@@ -70,6 +70,8 @@ private:
     std::string        finishing_;
 };
 
+struct ArmClaim;
+
 /**
  * @brief What every leaf here needs from the tree.
  */
@@ -82,10 +84,19 @@ struct RosContext
     const std::atomic<bool>* stop = nullptr;
     /// Closed while the mission is paused. Null in a tree that runs without an executor.
     const PauseGate* pause = nullptr;
+    /// The arms this run took, for the trees g1_bt_executor runs, which take and release them
+    /// themselves. Null elsewhere: a mission may not touch the arms' authority.
+    std::shared_ptr<ArmClaim> arm_claim = nullptr;
 };
 
 /// Whether a leaf should refuse to start what it is about to: the mission is winding down.
 inline bool windingDown(const std::atomic<bool>* stop) { return stop != nullptr && stop->load(); }
+
+/// Whether a pause holds @p leaf back from starting its work; false without a gate.
+inline bool heldByPause(const PauseGate* pause, const BT::TreeNode& leaf)
+{
+    return pause != nullptr && pause->holds(leaf.fullPath());
+}
 
 /**
  * @brief How a goal ended, in words, for a leaf's failure text.
@@ -192,7 +203,7 @@ protected:
     const PauseGate*         pause_;
 
 private:
-    [[nodiscard]] bool held() const { return pause_ != nullptr && pause_->holds(fullPath()); }
+    [[nodiscard]] bool held() const { return heldByPause(pause_, *this); }
 
     /**
      * @brief Waits for the server, in short slices so that a stop is seen within one of them.
@@ -276,6 +287,18 @@ private:
             }
             return BT::NodeStatus::FAILURE;
         }
+        // Filling a goal can block (MoveHand asks the world model), and a stop or a pause may have
+        // come meanwhile: neither may let it out.
+        if (windingDown(stop_))
+        {
+            setFailureText("stopped");
+            return BT::NodeStatus::FAILURE;
+        }
+        if (held())
+        {
+            waiting_ = true;
+            return BT::NodeStatus::RUNNING;
+        }
 
         std::uint64_t sent = 0;
         {
@@ -292,6 +315,36 @@ private:
             if (sent == goals_)
             {
                 result_ = result;
+            }
+        };
+        // A halt before the server answered had nothing to cancel yet: the goal is cancelled the
+        // moment its acceptance arrives, or it would run on beside the next step.
+        options.goal_response_callback = [this, sent](const typename GoalHandle::SharedPtr& handle) {
+            bool halted = false;
+            {
+                const std::lock_guard<std::mutex> lock(mutex_);
+                halted = sent != goals_;
+            }
+            if (handle == nullptr || !halted)
+            {
+                return;
+            }
+            RCLCPP_WARN(
+                node_->get_logger(),
+                "[%s] halted before %s answered; cancelling the goal",
+                name().c_str(),
+                action_name_.c_str());
+            try
+            {
+                client_->async_cancel_goal(handle);
+            }
+            catch (const std::exception& e)
+            {
+                RCLCPP_WARN(
+                    node_->get_logger(),
+                    "[%s] cancel not sent: %s",
+                    name().c_str(),
+                    e.what());
             }
         };
         options.feedback_callback = [this](
