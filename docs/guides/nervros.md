@@ -613,10 +613,11 @@ apartment stack with the arm (as `nervros.sh app` starts it) and the local model
 
 ```bash
 cargo run -p nervros-cli -- --profile ../g1_bringup/config/nervros/nervros.toml \
-  eval ../g1_bringup/config/nervros/eval/apartment.toml
+  eval ../g1_bringup/config/nervros/eval/apartment.toml --live
 ```
 
-- Each case runs in a fresh session with every approval granted. The robot carries its place and
+- Each case runs in a fresh session with every approval granted, so `--live` is required and is
+  only for the simulator. The robot carries its place and
   what it holds from case to case.
 - Moves and turns are judged on where the simulator says the pelvis is, not on the robot's own
   estimate.
