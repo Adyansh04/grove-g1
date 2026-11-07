@@ -26,6 +26,11 @@ RUN apt-get update && apt-get install -y \
      python3 -m pip install --no-cache-dir ruff==${RUFF_VERSION}) && \
     rm -rf /var/lib/apt/lists/*
 
+# NervROS's .cargo/config.toml links with clang and mold, so the agent also builds in here.
+RUN apt-get update && apt-get install -y clang-${LLVM_VERSION} mold && \
+    update-alternatives --install /usr/bin/clang clang /usr/bin/clang-${LLVM_VERSION} 100 && \
+    rm -rf /var/lib/apt/lists/*
+
 # ============================================================================
 # PROJECT-SPECIFIC CUSTOMIZATION
 # ============================================================================
