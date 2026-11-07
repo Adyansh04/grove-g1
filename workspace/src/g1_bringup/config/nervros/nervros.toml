@@ -45,6 +45,29 @@ matches = "/nervros_executor/*"
 then = "deny"
 reason = "missions go through run_mission, where they are checked and approved"
 
+# The G1's own skill servers move the arms, the hands and the base outside the executor, which
+# keeps what each hand holds (a released Dex3 drops it) and runs the keep-out checks of a mission.
+[[policy.rule]]
+tool = "action_goal"
+arg = "action"
+matches = "/g1_manipulation_server/*"
+then = "deny"
+reason = "arm and hand moves go through run_mission, which keeps track of what each hand holds"
+
+[[policy.rule]]
+tool = "action_goal"
+arg = "action"
+matches = "/g1_vla_server/*"
+then = "deny"
+reason = "a grasp goes through run_mission, which keeps track of what each hand holds"
+
+[[policy.rule]]
+tool = "action_goal"
+arg = "action"
+matches = "/g1_base_approach/*"
+then = "deny"
+reason = "the base approach moves the robot unchecked against keep-out zones; use run_mission"
+
 # canopy's detector reads the world model's still frames, and SAM 3.1 marks one up to its 8 s
 # max_image_age_s plus a few seconds of inference after it was taken.
 [look]
@@ -294,7 +317,7 @@ watch = [
     { name = "head camera", topic = "/camera/color/camera_info", type = "sensor_msgs/msg/CameraInfo", min_hz = 1.0 },
     { name = "lidar", topic = "/scan", type = "sensor_msgs/msg/LaserScan", min_hz = 2.0 },
 ]
-nodes = ["detector_chest", "detector_head", "nervros_executor", "g1_manipulation_server", "controller_server"]
+nodes = ["detector_chest", "detector_head", "g1_detector", "nervros_executor", "g1_manipulation_server", "controller_server"]
 
 [models]
 file = "models.toml"
