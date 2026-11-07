@@ -23,6 +23,7 @@
 #include <vector>
 
 #include "g1_orchestration/sha256.hpp"
+#include "g1_orchestration/text_values.hpp"
 
 namespace g1_orchestration
 {
@@ -147,6 +148,12 @@ SkillArg parseArg(const YAML::Node& node, const std::string& skill)
     arg.format       = node["format"].IsDefined() ? text(node, "format", where) : "";
     arg.allowed      = words(node, "enum", where + " arg " + arg.name, false);
     arg.default_from = node["default_from"].IsDefined() ? text(node, "default_from", where) : "";
+    arg.names        = node["names"].IsDefined() ? text(node, "names", where) : "";
+    if (!arg.names.empty() &&
+        (arg.type != "world_id" || (arg.names != "object" && arg.names != "room")))
+    {
+        fail(where + " arg " + arg.name, "names is object or room, on a world_id only");
+    }
     if (!knownFormats().contains(arg.format))
     {
         fail(where + " arg " + arg.name, "unknown format '" + arg.format + "'");
@@ -255,6 +262,10 @@ nlohmann::ordered_json toJson(const SkillArg& arg)
     {
         json["format"] = arg.format;
     }
+    if (!arg.names.empty())
+    {
+        json["names"] = arg.names;
+    }
     if (arg.format == "number")
     {
         json["min"] = arg.min;
@@ -303,6 +314,7 @@ nlohmann::ordered_json toJson(const Skill& skill)
     {
         json["learned"]    = skill.learned;
         json["taught_for"] = skill.taught_for;
+        json["taught_s"]   = skill.taught_s;
     }
     return json;
 }
@@ -411,6 +423,28 @@ void Catalog::restrict(std::string_view choice)
         const auto arg = std::ranges::find(skill.args, arg_name, &SkillArg::name);
         if (skill.name == skill_name && arg != skill.args.end())
         {
+            if (arg->format == "number")
+            {
+                fail(
+                    "arg_choices",
+                    std::format("{}.{} is a number: it has no list", skill_name, arg_name));
+            }
+            // A list only narrows: a value the catalog does not allow is one the leaf may misread.
+            for (const std::string& value : values)
+            {
+                if (!arg->allowed.empty() &&
+                    std::ranges::find(arg->allowed, value) == arg->allowed.end())
+                {
+                    fail(
+                        "arg_choices",
+                        std::format(
+                            "{} is not one of {}.{}'s values ({})",
+                            value,
+                            skill_name,
+                            arg_name,
+                            join(arg->allowed)));
+                }
+            }
             // Narrowing a list the catalog already had keeps its rule: no output stands in.
             arg->narrowed = arg->narrowed || arg->allowed.empty();
             arg->allowed  = std::move(values);

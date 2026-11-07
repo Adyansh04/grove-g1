@@ -1,12 +1,18 @@
 <?xml version="1.0"?>
 <!--
   Bring one hand to just above an object of the world model, 10 cm over its top, as a reach
-  without a grasp: the object itself would be in the way of the hand.
+  without a grasp: the object itself would be in the way of the hand. Not with something in that
+  hand (held_left or held_right in the root blackboard): every arm move with an object in hand
+  risks dropping it.
 -->
 <root BTCPP_format="4">
   <BehaviorTree ID="HandTo">
     <Timeout name="give_up_after_the_limit" msec="60000">
-      <MoveHand name="reach_above_it" arm="{arm}" target="{target}" mode="reach" offset_z="0.10"/>
+      <Sequence name="hand_to">
+        <ScriptCondition name="hand_must_be_empty_to_reach"
+                         code="(arm == 'left' ? @held_left : @held_right) == ''"/>
+        <MoveHand name="reach_above_it" arm="{arm}" target="{target}" mode="reach" offset_z="0.10"/>
+      </Sequence>
     </Timeout>
   </BehaviorTree>
 

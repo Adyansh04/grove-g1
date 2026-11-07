@@ -8,7 +8,13 @@
 # trailing newlines removed, which is exactly what is sent: the executor hashes the bytes it gets.
 set -euo pipefail
 
-file=${1:?usage: send_mission.sh <mission.xml> [execute|validate|dry-run|check] [max_duration_s]}
+usage="usage: send_mission.sh <mission.xml> [execute|validate|dry-run|check] [max_duration_s]"
+if [[ ${1:-} == -h || ${1:-} == --help ]]; then
+    echo "$usage"
+    exit 0
+fi
+
+file=${1:?$usage}
 mode_name=${2:-execute}
 max_duration_s=${3:-0}
 case "$mode_name" in

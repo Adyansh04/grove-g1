@@ -101,7 +101,7 @@ BT::NodeStatus NextViewpoint::call()
         std::chrono::steady_clock::now() + std::chrono::duration<double>(timeout_s);
     for (;;)
     {
-        const auto response = callService<Service>(client, service, request, timeout_s);
+        const auto response = callService<Service>(client, service, request, timeout_s, stopFlag());
         if (response == nullptr)
         {
             setOutput("outcome", std::string("error"));
@@ -147,7 +147,19 @@ BT::NodeStatus NextViewpoint::call()
             setOutput("outcome", std::string("error"));
             return BT::NodeStatus::FAILURE;
         }
-        std::this_thread::sleep_for(std::chrono::duration<double>(retry_s));
+        // In slices, so a stop ends the wait for the world model within one.
+        const auto retry_at =
+            std::chrono::steady_clock::now() + std::chrono::duration<double>(retry_s);
+        while (std::chrono::steady_clock::now() < retry_at && !windingDown(stopFlag()))
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        if (windingDown(stopFlag()))
+        {
+            setFailureText("stopped");
+            setOutput("outcome", std::string("error"));
+            return BT::NodeStatus::FAILURE;
+        }
     }
 }
 
@@ -173,15 +185,23 @@ BT::PortsList ReportViewpoint::providedPorts()
 
 BT::NodeStatus ReportViewpoint::call()
 {
-    using Service         = canopy_msgs::srv::ReportViewpoint;
+    using Service = canopy_msgs::srv::ReportViewpoint;
+    const auto id = getInput<int>("viewpoint_id");
+    if (!id || *id < 0)
+    {
+        setFailureText("viewpoint_id is missing: wire it from NextViewpoint");
+        return BT::NodeStatus::FAILURE;
+    }
     auto request          = std::make_shared<Service::Request>();
-    request->viewpoint_id = static_cast<std::uint32_t>(getInput<int>("viewpoint_id").value_or(0));
+    request->viewpoint_id = static_cast<std::uint32_t>(*id);
     request->reached      = getInput<bool>("reached").value_or(true);
     const auto response   = callService<Service>(
         makeClientNode("g1_report_viewpoint_client"),
         getInput<std::string>("service").value_or(std::string(kWorldModel) + "/report_viewpoint"),
         request,
-        getInput<double>("timeout_s").value_or(5.0));
+        getInput<double>("timeout_s").value_or(5.0),
+        stopFlag());
+    // Best effort: a lost report costs the world model a hint, not the exploration its walk.
     if (response == nullptr)
     {
         RCLCPP_WARN(node_->get_logger(), "[%s] report not delivered", name().c_str());
@@ -236,7 +256,8 @@ BT::NodeStatus ResolveTarget::call()
         makeClientNode("g1_resolve_target_client"),
         getInput<std::string>("service").value_or(std::string(kWorldModel) + "/get_approach_pose"),
         request,
-        getInput<double>("timeout_s").value_or(10.0));
+        getInput<double>("timeout_s").value_or(10.0),
+        stopFlag());
     if (response == nullptr || !response->success)
     {
         const std::string why =
@@ -301,7 +322,8 @@ BT::NodeStatus SaveWorld::call()
         makeClientNode("g1_save_world_client"),
         getInput<std::string>("service").value_or(std::string(kWorldModel) + "/save"),
         std::make_shared<Service::Request>(),
-        getInput<double>("timeout_s").value_or(20.0));
+        getInput<double>("timeout_s").value_or(20.0),
+        stopFlag());
     if (response == nullptr || !response->success)
     {
         const std::string why = response == nullptr ? "no answer" : response->message;
@@ -345,6 +367,12 @@ bool TurnTo::fillGoal(Goal& goal)
     if (!yaw)
     {
         RCLCPP_ERROR(node_->get_logger(), "[%s] %s", name().c_str(), yaw.error().c_str());
+        return false;
+    }
+    // A NaN or infinite yaw would make the target and the time allowed NaN too.
+    if (!std::isfinite(*yaw))
+    {
+        setFailureText("yaw takes a finite number");
         return false;
     }
     const std::string frame   = getInput<std::string>("frame").value_or("map");

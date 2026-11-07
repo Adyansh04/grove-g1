@@ -1,14 +1,15 @@
 <?xml version="1.0"?>
 <!--
-  Grasp the block with a learned policy instead of a planned pick, then carry and tuck. No
+  Grasp the block with a learned policy instead of a planned pick, then hold it close at carry. No
   navigation; same world as pick_and_place_in_place.xml, so the two grasps compare directly.
 
   The retry resamples the policy's stochastic action head. A failed Grasp leaves the arm where
-  it stopped; if both attempts fail the postures are skipped and only the executor's release runs.
+  it stopped. The tree ends holding the block, so the arms are kept: tucking would drive it into
+  the body, and a released hand would drop it.
 -->
 <root BTCPP_format="4" main_tree_to_execute="VlaGraspInPlace">
   <BehaviorTree ID="VlaGraspInPlace">
-    <Sequence name="grasp_and_tuck">
+    <Sequence name="grasp_and_hold">
       <AcquireArm name="take_the_arm"/>
 
       <RetryUntilSuccessful name="grasp_with_one_retry" num_attempts="2">
@@ -17,8 +18,6 @@
       </RetryUntilSuccessful>
 
       <SetArmPosture name="hold_it_close" group="right_arm" named_target="carry"/>
-      <SetArmPosture name="tuck_away" group="right_arm" named_target="tucked"/>
-      <ReleaseArm name="hand_the_arm_back"/>
     </Sequence>
   </BehaviorTree>
 </root>

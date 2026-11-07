@@ -54,6 +54,7 @@ target_link_libraries(g1_mission_validation PUBLIC
 
 add_library(g1_bt_nodes
   src/arm_authority.cpp
+  src/authority_port.cpp
   src/port_types.cpp
   src/registration.cpp
   src/service_leaf.cpp
@@ -90,13 +91,13 @@ target_link_libraries(g1_bt_nodes PUBLIC
   ${lifecycle_msgs_TARGETS}
   ${nav2_msgs_TARGETS}
   ${rcl_interfaces_TARGETS}
+  ${sensor_msgs_TARGETS}
   ${std_srvs_TARGETS}
   ${vision_msgs_TARGETS}
 )
 
 # The mission executor: the node's logic without its main, so tests can run it in-process.
 add_library(g1_mission_executor
-  src/authority_port.cpp
   src/mission_observer.cpp
   src/mission_preview.cpp
   src/nervros_executor.cpp
@@ -153,7 +154,7 @@ if(BUILD_TESTING)
   target_compile_definitions(test_tree_loads PRIVATE
     G1_TREES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/trees")
 
-  # The action leaf base against a real server; the only test here that needs a ROS graph.
+  # The action leaf base against a real server.
   ament_add_gmock(test_action_leaf test/test_action_leaf.cpp TIMEOUT 120)
   target_link_libraries(test_action_leaf g1_bt_nodes)
 
@@ -203,11 +204,18 @@ if(BUILD_TESTING)
     G1_CONFIG_DIR="${CMAKE_CURRENT_SOURCE_DIR}/config"
     G1_TREES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/trees")
 
-  # controlledParts() against g1_bringup's activate_arm script, the other implementation.
+  # controlledParts() and the acquire timeouts against g1_bringup's activate_arm script, the other
+  # implementation. Read by path: g1_bringup test-depends on this package, so it cannot be declared.
   ament_add_gmock(test_authority_drift test/test_authority_drift.cpp)
   target_link_libraries(test_authority_drift g1_bt_nodes)
   target_compile_definitions(test_authority_drift PRIVATE
     G1_ACTIVATE_ARM_SCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/../g1_bringup/scripts/activate_arm")
+
+  # These stand up a ROS graph on one DDS domain, and two of them serve the same action names:
+  # run in parallel, a goal from one could reach the other's server.
+  set_tests_properties(
+    test_tree_loads test_action_leaf test_node_model test_catalog_drift test_nervros_executor
+    PROPERTIES RUN_SERIAL TRUE)
 
   # ament_cmake_xmllint only globs *.xml, so the Groot2 project file needs its own check.
   find_program(XMLLINT_EXECUTABLE xmllint)
@@ -220,6 +228,14 @@ if(BUILD_TESTING)
   else()
     message(WARNING "xmllint not found; skipping xmllint_btproj_${PROJECT_NAME}")
   endif()
+
+  # Against the simulator: a stop, a pause and a lend on the real controllers, Nav2 and the arm
+  # stack, under the lock every suite that starts a simulator shares.
+  find_package(launch_testing_ament_cmake REQUIRED)
+  add_launch_test(test/test_nervros_executor_sim.launch.py TARGET test_nervros_executor_sim
+    TIMEOUT 900)
+  set_tests_properties(test_nervros_executor_sim PROPERTIES
+    LABELS simulator RESOURCE_LOCK mujoco_sim COST 95)
 
   g1_add_lint_tests()
 endif()

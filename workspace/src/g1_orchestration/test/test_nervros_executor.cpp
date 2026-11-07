@@ -81,13 +81,14 @@ public:
         return already_active ? g1_orchestration::Acquired::kAlready :
                                 g1_orchestration::Acquired::kTaken;
     }
-    void release() override
+    bool release() override
     {
         // Counts a take that lands while a release is still under way.
         releasing = true;
         std::this_thread::sleep_for(std::chrono::milliseconds(release_delay_ms.load()));
         ++released;
         releasing = false;
+        return release_ok;
     }
     g1_orchestration::ClosedHands closedHands() override
     {
@@ -102,6 +103,8 @@ public:
     std::atomic<bool> releasing{ false };
     std::atomic<int>  overlaps{ 0 };
     std::atomic<bool> acquire_ok{ true };
+    /// False: controller_manager refuses to take the arms back.
+    std::atomic<bool> release_ok{ true };
     /// The arms were taken by someone else before the executor came.
     std::atomic<bool> already_active{ false };
     std::atomic<int>  acquire_delay_ms{ 0 };
@@ -348,6 +351,8 @@ public:
             { "dry_run_time_scale", 0.0005 },
             { "cancel_settle_s", 0.1 },
             { "stop_wait_s", 1.5 },
+            // The fake fleet has servers that never come up: past this they are not waited for.
+            { "server_discovery_s", 0.05 },
             { "stop_action_servers",
               std::vector<std::string>{
                   "/navigate_to_pose:nav2_msgs/action/NavigateToPose",
@@ -774,6 +779,18 @@ TEST(NervrosExecutor, RejectsAMissionWhoseHashIsNotTheApprovedOne)
     EXPECT_EQ(diagnostics(*run->result).at(0).at("code"), "HASH_MISMATCH");
 }
 
+TEST(NervrosExecutor, RejectsAMissionApprovedAgainstSkillsThatHaveChanged)
+{
+    Harness harness;
+    auto    goal = makeGoal(mission("<Sequence>" + kTuck + "</Sequence>"));
+
+    goal.catalog_version = "an-older-one";
+    const auto stale     = harness.execute(goal);
+    EXPECT_EQ(stale->result->outcome, ExecuteMission::Result::OUTCOME_REJECTED);
+    EXPECT_EQ(diagnostics(*stale->result).at(0).at("code"), "CATALOG_CHANGED");
+    EXPECT_EQ(harness.authority->acquired, 0);
+}
+
 TEST(NervrosExecutor, ValidateModeChecksAndLoadsWithoutRunning)
 {
     Harness harness;
@@ -828,6 +845,19 @@ TEST(NervrosExecutor, ADryRunWalksTheWholeMissionAndReportsItsStepsWithoutTouchi
     EXPECT_THAT(steps, ::testing::Contains("s2_GoToPose"));
     EXPECT_THAT(steps, ::testing::Contains("s1_PickObject"));
     EXPECT_GT(run->result->elapsed_s, 0.0F);
+}
+
+TEST(NervrosExecutor, ADryRunOfAMacroThatLoopsUntilALeafFailsIsRefused)
+{
+    Harness           harness;
+    const std::string explore = R"(<SubTree ID="ExploreBuilding" name="s1_ExploreBuilding"/>)";
+
+    const auto run = harness.execute(makeGoal(
+        mission("<Sequence>" + explore + "</Sequence>"),
+        ExecuteMission::Goal::MODE_DRY_RUN));
+
+    EXPECT_EQ(run->result->outcome, ExecuteMission::Result::OUTCOME_REJECTED);
+    EXPECT_THAT(run->result->failure_reason, ::testing::HasSubstr("loops until a leaf fails"));
 }
 
 TEST(NervrosExecutor, TheEventsNameEachNodeTheWayThePlannerNamedTheStep)
@@ -1015,6 +1045,22 @@ TEST(NervrosExecutor, TakesTheArmsOnceAndGivesThemBackWhenTheHandsAreEmpty)
     const RobotState state =
         harness.stateWhere([](const RobotState& s) { return s.resources_held.empty(); });
     EXPECT_THAT(state.resources_held, ::testing::IsEmpty());
+}
+
+TEST(NervrosExecutor, ArmsThatCouldNotBeHandedBackAreStillReportedHeld)
+{
+    FakeRobot robot;
+    Harness   harness;
+    harness.authority->release_ok = false;
+
+    const auto run = harness.execute(makeGoal(mission("<Sequence>" + kTuck + "</Sequence>")));
+
+    EXPECT_EQ(run->result->outcome, ExecuteMission::Result::OUTCOME_SUCCESS)
+        << run->result->failure_reason;
+    EXPECT_EQ(harness.authority->released, 1);
+    const RobotState state =
+        harness.stateWhere([](const RobotState& s) { return !s.resources_held.empty(); });
+    EXPECT_THAT(state.resources_held, ::testing::Not(::testing::IsEmpty()));
 }
 
 TEST(NervrosExecutor, ADriveOnlyMissionTakesNoArmsAndLeavesAnyItDoesNotOwnAlone)
@@ -1447,7 +1493,7 @@ TEST(NervrosExecutor, StopAllWithNothingFollowedDoesNotClaimToHaveCancelledAnyth
 
     const auto stopped = harness.stopAll("button");
 
-    EXPECT_TRUE(stopped->ok) << stopped->message;
+    EXPECT_FALSE(stopped->ok) << stopped->message;
     EXPECT_THAT(stopped->message, ::testing::HasSubstr("no skill action servers are followed"));
     EXPECT_THAT(stopped->message, ::testing::HasSubstr("arm controller is not followed"));
     EXPECT_THAT(stopped->message, ::testing::Not(::testing::HasSubstr("cancel sent")));
@@ -1625,6 +1671,36 @@ TEST(NervrosExecutor, APlaceClearsTheHandThatDidItAndTheArmsGoOnceBothHandsAreKn
             EXPECT_EQ(phrase.find('?'), std::string::npos) << phrase;
         }
     }
+}
+
+TEST(NervrosExecutor, APlaceThatFailsWithTheHandOpenLeavesItHoldingNothing)
+{
+    FakeRobot robot;
+    Harness   harness;
+    ASSERT_EQ(
+        harness.execute(makeGoal(mission("<Sequence>" + kPick + "</Sequence>")))->result->outcome,
+        ExecuteMission::Result::OUTCOME_SUCCESS);
+    robot.place->succeeds = false;
+
+    // Failed with the fingers still closed: the block may still be in the hand.
+    harness.authority->right_closed = true;
+    const auto held = harness.execute(makeGoal(mission("<Sequence>" + kPlace + "</Sequence>")));
+
+    ASSERT_EQ(held->result->outcome, ExecuteMission::Result::OUTCOME_FAILURE);
+    EXPECT_EQ(harness.authority->released, 0);
+    EXPECT_EQ(
+        harness.stateWhere([](const RobotState& s) { return s.mission_id.empty(); }).holding_right,
+        "red_block");
+
+    // Failed with the fingers open: the place opened the hand, so it holds nothing now.
+    harness.authority->right_closed = false;
+    const auto opened = harness.execute(makeGoal(mission("<Sequence>" + kPlace + "</Sequence>")));
+
+    ASSERT_EQ(opened->result->outcome, ExecuteMission::Result::OUTCOME_FAILURE);
+    EXPECT_EQ(harness.authority->released, 1);
+    const RobotState state = harness.stateWhere(
+        [](const RobotState& s) { return s.mission_id.empty() && s.holding_right.empty(); });
+    EXPECT_TRUE(state.holding_right.empty());
 }
 
 TEST(NervrosExecutor, LettingGoOfTheArmsSettlesWhatTheHandsHold)
@@ -2164,6 +2240,36 @@ TEST(NervrosExecutor, APreviewChainsTurnsAndWalksFromTheRobotsPoseWithoutMovingI
     EXPECT_TRUE(response->steps[2].path.poses.empty());
 }
 
+TEST(NervrosExecutor, APreviewDrawsNothingFromAStartItCannotTell)
+{
+    Harness                              harness({ rclcpp::Parameter("preview_timeout_s", 0.3) });
+    tf2_ros::StaticTransformBroadcaster  tf(harness.client_node);
+    geometry_msgs::msg::TransformStamped pose;
+    pose.header.frame_id      = "map";
+    pose.child_frame_id       = "base_footprint";
+    pose.transform.rotation.w = 1.0;
+    tf.sendTransform(pose);
+
+    auto preview = harness.client_node->create_client<nervros_interfaces::srv::PreviewMission>(
+        "/nervros_executor/preview_mission");
+    ASSERT_TRUE(preview->wait_for_service(20s));
+    auto request = std::make_shared<nervros_interfaces::srv::PreviewMission::Request>();
+    // The world model does not answer here, so the walk to O12 has no end the preview can tell.
+    request->tree_xml = mission(
+        R"(<Sequence><SubTree ID="GoToTarget" name="s1_GoToTarget" target="O12"/>)"
+        R"(<SubTree ID="WalkStraight" name="s2_WalkStraight" direction="forward" distance_m="1.0"/></Sequence>)");
+    auto reply = preview->async_send_request(request);
+    ASSERT_EQ(reply.wait_for(30s), std::future_status::ready);
+    const auto response = reply.get();
+
+    ASSERT_TRUE(response->ok) << response->message;
+    ASSERT_EQ(response->steps.size(), 2U);
+    EXPECT_THAT(response->steps[0].note, ::testing::HasSubstr("no path"));
+    EXPECT_TRUE(response->steps[1].goal.header.frame_id.empty())
+        << "the walk would be drawn from where the robot stands now";
+    EXPECT_THAT(response->steps[1].note, ::testing::HasSubstr("not predicted"));
+}
+
 // --- step outputs ----------------------------------------------------------------------------
 
 TEST(NervrosExecutor, AStepTakesTheIdAnEarlierStepFound)
@@ -2273,6 +2379,30 @@ TEST(NervrosExecutor, APauseLetsAPickEndAndHoldsTheStepAfterIt)
     EXPECT_EQ(robot.pick->goals, 1) << "the pick was not done twice";
 }
 
+TEST(NervrosExecutor, APauseBeforeAPicksGraspHaltsTheStepAtOnce)
+{
+    FakeRobot robot;
+    robot.approach->duration_ms = 3000;
+    Harness harness;
+    harness.start(makeGoal(mission("<Sequence>" + kPick + "</Sequence>")));
+    ASSERT_TRUE(waitFor([&robot] { return robot.approach->goals == 1; }));
+
+    (void)harness.pause(true);
+
+    const RobotState paused = harness.stateWhere([](const RobotState& s) { return s.paused; });
+    EXPECT_THAT(paused.message, ::testing::HasSubstr("paused during s1_PickObject"));
+    EXPECT_GE(robot.approach->cancels, 1) << "the approach stopped, not run to its end";
+    EXPECT_EQ(robot.pick->goals, 0);
+
+    robot.approach->duration_ms = 0;
+    (void)harness.pause(false);
+    const auto run = harness.finished();
+
+    ASSERT_EQ(run->result->outcome, ExecuteMission::Result::OUTCOME_SUCCESS)
+        << run->result->failure_reason;
+    EXPECT_EQ(robot.pick->goals, 1);
+}
+
 TEST(NervrosExecutor, APauseCancelsTheArmControllersGoalSoTheArmHolds)
 {
     FakeRobot robot;
@@ -2304,7 +2434,7 @@ TEST(NervrosExecutor, APauseHaltsAStepWhateverItIsNamed)
     FakeRobot robot;
     robot.navigate->duration_ms = 3000;
     Harness           harness;
-    const std::string walk = R"(<SubTree ID="GoToPose" name="walk_there" station="1.0;2.0;0.5"/>)";
+    const std::string walk = R"(<SubTree ID="GoToPose" name="s1_GoToPose" station="1.0;2.0;0.5"/>)";
     harness.start(makeGoal(mission("<Sequence>" + walk + "</Sequence>")));
     ASSERT_TRUE(waitFor([&robot] { return robot.navigate->goals == 1; }));
 

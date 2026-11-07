@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -195,6 +196,46 @@ TEST(LearnedSkill, AnInputsValuesHoldItsLiteralsAndTheArgumentFedToIt)
     EXPECT_THAT(problems.front().message, HasSubstr("allows 'left_arm', which its leaf input"));
 }
 
+TEST(LearnedSkill, AnArgumentFeedingTwoFixedInputsMayTakeOnlyWhatBothTake)
+{
+    const Learnable rules = Learnable::parse(
+        { "MoveHand:arms:arm=left/right,mode=left/up,target(world_id)", "Wait::seconds" },
+        kPalette);
+    SkillDefinition d = pointAt();
+    d.body_xml        = R"(<MoveHand arm="{arm}" mode="{arm}" target="{object}"/>)";
+    std::vector<Diagnostic> problems;
+    EXPECT_TRUE(buildLearned(d, rules, {}, problems).has_value())
+        << "left is in both: " << (problems.empty() ? "" : problems.front().message);
+
+    d.args[1].allowed = { "left", "right" };
+    problems.clear();
+    EXPECT_FALSE(buildLearned(d, rules, {}, problems).has_value());
+    ASSERT_THAT(problems, ::testing::SizeIs(1));
+    EXPECT_THAT(problems.front().message, HasSubstr("allows 'right', which its leaf input"));
+
+    const Learnable apart = Learnable::parse(
+        { "MoveHand:arms:arm=left/right,mode=reach/point,target(world_id)", "Wait::seconds" },
+        kPalette);
+    problems.clear();
+    EXPECT_FALSE(buildLearned(d, apart, {}, problems).has_value());
+    EXPECT_THAT(problems.front().message, HasSubstr("take no value in common"));
+}
+
+TEST(LearnedSkill, TextFieldsPastTheirCapsAreRefused)
+{
+    SkillDefinition d = pointAt();
+    d.taught_for      = std::string(1001, 'x');
+    EXPECT_THAT(problemsOf(d), ::testing::Contains("TOO_LARGE"));
+
+    d                     = pointAt();
+    d.args[1].description = std::string(301, 'x');
+    EXPECT_THAT(problemsOf(d), ::testing::Contains("TOO_LARGE"));
+
+    d                 = pointAt();
+    d.args[1].allowed = std::vector<std::string>(17, "left");
+    EXPECT_THAT(problemsOf(d), ::testing::Contains("TOO_LARGE"));
+}
+
 TEST(LearnedSkill, AnArgumentTheBodyNeverUsesIsRefused)
 {
     // The plan's arm would go nowhere, and MoveHand would point with its default hand.
@@ -231,6 +272,21 @@ TEST(LearnedSkill, OnlyTheControlNodesAndLearnableLeavesWithLiteralsOrItsArgumen
 
     d.body_xml = R"(<Wait seconds="1"/><Wait seconds="1"/>)";
     EXPECT_THAT(problemsOf(d), ::testing::Contains("BAD_STRUCTURE"));
+
+    // A turn's collision stop reaches the agent: it is tried once and never passed over.
+    d.args = {};
+    for (const char* body :
+         { R"(<RetryUntilSuccessful num_attempts="2"><TurnBy degrees="90"/></RetryUntilSuccessful>)",
+           R"(<ForceSuccess><Sequence><Wait seconds="1"/><TurnBy degrees="90"/></Sequence></ForceSuccess>)",
+           R"(<Fallback><TurnBy degrees="90"/><Wait seconds="1"/></Fallback>)" })
+    {
+        d.body_xml = body;
+        EXPECT_THAT(problemsOf(d), ::testing::Contains("FORBIDDEN_NODE")) << body;
+    }
+    d.body_xml = R"(<Timeout msec="5000"><TurnBy degrees="90"/></Timeout>)";
+    std::vector<Diagnostic> problems;
+    EXPECT_TRUE(buildLearned(d, learnable(), {}, problems).has_value())
+        << "a time limit alone passes: " << problems.size() << " problems";
 }
 
 TEST(LearnedSkill, ItsNameArgumentsAndTimeAreChecked)
@@ -286,6 +342,31 @@ TEST(LearnedSkills, ADraftIsKeptOnDiskAndLoadsAgainUntilForgotten)
     std::filesystem::remove_all(dir);
 }
 
+TEST(LearnedSkills, ForgetTouchesNoFileOutsideTheSkills)
+{
+    const auto dir = std::filesystem::temp_directory_path() / "g1_learned_skills_forget";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir / "skills");
+    std::ofstream(dir / "outside.json") << "{}";
+    LearnedSkills skills(dir / "skills", learnable(), 4);
+    EXPECT_FALSE(skills.forget("../outside"));
+    EXPECT_TRUE(std::filesystem::exists(dir / "outside.json"));
+    std::filesystem::remove_all(dir);
+}
+
+TEST(LearnedSkills, OnlyTheDraftItselfIsKept)
+{
+    LearnedSkills skills({}, learnable(), 4);
+    EXPECT_THAT(skills.define(pointAt(), /*keep=*/true, {}), ::testing::SizeIs(1))
+        << "nothing was drafted";
+    ASSERT_TRUE(skills.define(pointAt(), /*keep=*/false, {}).empty());
+    SkillDefinition changed = pointAt();
+    changed.taught_for      = "point at the blue cup";
+    EXPECT_THAT(skills.define(changed, /*keep=*/true, {}), ::testing::SizeIs(1))
+        << "a body other than the draft's";
+    EXPECT_TRUE(skills.define(pointAt(), /*keep=*/true, {}).empty());
+}
+
 TEST(LearnedSkills, AFileNotNamedForItsSkillOrOverTheCapIsLeftOut)
 {
     const auto dir = std::filesystem::temp_directory_path() / "g1_learned_skills_files";
@@ -293,6 +374,7 @@ TEST(LearnedSkills, AFileNotNamedForItsSkillOrOverTheCapIsLeftOut)
     std::filesystem::create_directories(dir);
     {
         LearnedSkills writer(dir, learnable(), 4);
+        ASSERT_TRUE(writer.define(pointAt(), /*keep=*/false, {}).empty());
         ASSERT_TRUE(writer.define(pointAt(), /*keep=*/true, {}).empty());
     }
     std::filesystem::copy_file(dir / "PointAt.json", dir / "OldCopy.json");
@@ -323,6 +405,7 @@ TEST(Repertoire, ALearnedSkillJoinsTheSetAndAMissionStartedBeforeKeepsItsOwn)
     look.name              = "LookAround";
     look.args              = {};
     look.body_xml          = R"(<Sequence><TurnBy degrees="90"/><Wait seconds="1"/></Sequence>)";
+    look.taught_s          = 1700000000.5;
     ASSERT_TRUE(repertoire.define(look, /*keep=*/false).empty());
 
     const auto        after   = repertoire.current();
@@ -333,6 +416,8 @@ TEST(Repertoire, ALearnedSkillJoinsTheSetAndAMissionStartedBeforeKeepsItsOwn)
     EXPECT_FALSE(before->validator.validate(mission).ok());
     EXPECT_NE(before->validator.catalog().version(), after->validator.catalog().version());
     EXPECT_THAT(after->catalog_json, HasSubstr(R"("learned":"draft")"));
+    EXPECT_THAT(after->catalog_json, HasSubstr(R"("taught_s":1700000000.5)"))
+        << "NervROS counts a taught skill's runs from then";
     EXPECT_THAT(after->catalog_json, HasSubstr(R"("learnable")"));
     EXPECT_THAT(after->palette_xml, HasSubstr(R"(SubTree ID="LookAround")"));
 

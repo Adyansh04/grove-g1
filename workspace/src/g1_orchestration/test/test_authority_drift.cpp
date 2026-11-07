@@ -7,6 +7,7 @@
 
 #include <gmock/gmock.h>
 
+#include <format>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -47,6 +48,19 @@ TEST(AuthorityDrift, EveryNameThisPackageUsesAppearsInTheScript)
                 << part.displaces << " is not named in activate_arm";
         }
     }
+}
+
+TEST(AuthorityDrift, TheTimeoutsEqualTheScripts)
+{
+    const std::string script = readScript();
+
+    EXPECT_THAT(
+        script,
+        ::testing::HasSubstr(std::format("SETTLE_S = {:.1f}", g1_orchestration::kAcquireSettleS)));
+    EXPECT_THAT(
+        script,
+        ::testing::HasSubstr(
+            std::format("HAND_ACTIVATE_TIMEOUT_S = {:.1f}", g1_orchestration::kHandTimeoutS)));
 }
 
 TEST(AuthorityDrift, TheArmsAreNeverUnowned)
