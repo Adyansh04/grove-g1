@@ -513,7 +513,8 @@ and node substitution are PRO-only. The editor itself is unrestricted.
 
 ## Tests
 
-None need a simulator. `./scripts/manage.sh test g1_orchestration` runs all of them.
+`./scripts/manage.sh test g1_orchestration` runs all but the simulator suite;
+`./scripts/manage.sh test --sim g1_orchestration` runs that one, after `clean-stack.sh`.
 
 | Test | Covers |
 |---|---|
@@ -528,3 +529,4 @@ None need a simulator. `./scripts/manage.sh test g1_orchestration` runs all of t
 | `test_catalog_drift` | Catalog, macros and leaves agree: same names, ports, limits and resources. Every macro loads with its leaves registered. The JSON has the shape the agent reads. `stop_action_servers` covers every action server a leaf uses. |
 | `test_mission_observer` | Events at both levels. Halts against resets. The running step. Which failure ends a mission: the last leaf, not a retried one, with the step and the leaf's own words. |
 | `test_nervros_executor` | The node against stand-in skill servers, a detector and costmap services. Refusals with diagnostics (bytes that are not UTF-8 included). Dry runs. One mission at a time. Cancel, watchdog and cap. A tick stuck waiting for a server that a stop, a cancel or the watchdog still ends. What `StopAll` says it did. Arms taken once and kept while a hand holds an object or may. A pick then a place as two missions or one. |
+| `test_nervros_executor_sim` | The node on the simulator with Nav2 and the arm stack: `StopAll` ends a walk and the base stands; a pause holds a walk and a resume carries it on; arms lent, kept alive by heartbeats and given back are taken again by the next mission. |

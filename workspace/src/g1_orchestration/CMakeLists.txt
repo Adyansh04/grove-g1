@@ -229,6 +229,14 @@ if(BUILD_TESTING)
     message(WARNING "xmllint not found; skipping xmllint_btproj_${PROJECT_NAME}")
   endif()
 
+  # Against the simulator: a stop, a pause and a lend on the real controllers, Nav2 and the arm
+  # stack, under the lock every suite that starts a simulator shares.
+  find_package(launch_testing_ament_cmake REQUIRED)
+  add_launch_test(test/test_nervros_executor_sim.launch.py TARGET test_nervros_executor_sim
+    TIMEOUT 900)
+  set_tests_properties(test_nervros_executor_sim PROPERTIES
+    LABELS simulator RESOURCE_LOCK mujoco_sim COST 95)
+
   g1_add_lint_tests()
 endif()
 
