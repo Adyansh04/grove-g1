@@ -77,12 +77,12 @@ timeout, ramp or damping that is not above zero.
 
 | Parameter | Default | Shipped | Meaning |
 |---|---|---|---|
-| `domain_id` | required | 1 | SDK DDS domain. Must match the simulator's and the hand components'. |
+| `domain_id` | required | 1, 0 on hardware | SDK DDS domain. Must match the simulator's, or the robot's own, and the hand components'. |
 | `network_interface` | `""` | `""` | Must stay empty: a non-empty value makes the SDK discard `CYCLONEDDS_URI`. |
 | `lowstate_timeout_ms` | required | 100 | `rt/lowstate` older than this errors the component while active. |
 | `release_ramp_s` | required | 0.5 | Seconds over which stiffness fades to zero on release. |
 | `release_kd` | required | 2.0 | Damping held through the release ramp. |
-| `release_motion_mode` | `false` | `false` | Ask the onboard motion service to release the motors on activate. Hardware needs `true`, or `rt/lowcmd` is ignored. |
+| `release_motion_mode` | `false` | `false`, `true` on hardware | Ask the onboard motion service to release the motors on activate. Hardware needs `true`, or `rt/lowcmd` is ignored. |
 | `motor_temp_warn_threshold` | 120 | 120 | Winding temperature in °C at which `/diagnostics` reports WARN. |
 | `position_only_kp` / `position_only_kd` | required, per joint | kp/kd 10/1 legs and waist, 300/4 shoulders and elbows, 150/3 wrists | Gains for the position-only branch. |
 
@@ -94,9 +94,9 @@ URDF's 25 Nm and 5 Nm (wrist pitch and yaw) limits. Check them before running on
 
 ## Safety model
 
-- Entry is a software call, not the L2+R2 debug mode. With `release_motion_mode`, `MotionSwitcherClient::ReleaseMode()` is retried until `CheckMode` reports no active mode, and activation fails if one survives.
+- Entry is a software call, not the L2+R2 debug mode. With `release_motion_mode`, `MotionSwitcherClient::ReleaseMode()` is retried until `CheckMode` reports no active mode, and activation fails if one survives. A failed query (a timeout leaves the mode name empty) is never read as released.
 - Activation waits up to 10 s for a first `rt/lowstate` and fails without one. Commands are seeded at the measured position with zero gains, so nothing moves until a controller supplies stiffness.
-- Deactivate runs a damped release ramp: stiffness to zero over `release_ramp_s` with `release_kd` held. It then sends a disabled frame. `on_error` and `on_shutdown` run the same path, because `controller_manager` does not guarantee `on_deactivate` runs before the process exits.
+- Deactivate runs a damped release ramp: stiffness to zero over `release_ramp_s` with `release_kd` held. It then sends a disabled frame. It logs `motors released` when done. `on_error` and `on_shutdown` run the same path, because `controller_manager` does not guarantee `on_deactivate` runs before the process exits.
 
 ## Deviations from upstream
 

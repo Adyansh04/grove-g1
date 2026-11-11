@@ -23,6 +23,11 @@ if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
   ament_lint_auto_find_test_dependencies()
   find_package(launch_testing_ament_cmake REQUIRED)
+  find_package(ament_cmake_pytest REQUIRED)
+
+  # No simulator: the hardware interlocks of control.launch.py, read from the source tree.
+  ament_add_pytest_test(test_control_launch_hardware test/test_control_launch_hardware.py
+    ENV "G1_CONTROL_LAUNCH=${CMAKE_CURRENT_SOURCE_DIR}/launch/control.launch.py")
 
   # MuJoCo syncs to CPU time and the policy runs on wall timers, so the simulator suites are load
   # sensitive: RESOURCE_LOCK serialises them within this ctest run and COST starts the heavy ones

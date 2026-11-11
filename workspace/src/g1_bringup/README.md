@@ -33,7 +33,8 @@ flowchart LR
 |---|---|
 | `bringup.launch.py` | What an operator runs. Stages exactly one simulator and composes the optional stacks beside it. None of them starts a simulator of its own. |
 | `sim.launch.py` | `unitree_mujoco` and `control.launch.py`, plus the sensor relay and odometry with `sensors:=true`. Checks the DDS environment first. Works standalone. |
-| `control.launch.py` | `robot_state_publisher`, `ros2_control_node` and the spawners. No simulator, so it carries to hardware unchanged. `joint_state_broadcaster` publishes all 29 body joints. |
+| `control.launch.py` | `robot_state_publisher`, `ros2_control_node` and the spawners. Included by `sim.launch.py`, and run directly on the robot with `hardware:=true`. `joint_state_broadcaster` publishes all 29 body joints. |
+| `robot_sensors.launch.py` | On the robot's Orin, beside `control.launch.py hardware:=true`: the head D435i (`config/robot_camera.yaml`) and the Mid360 odometry chain. `camera` and `lidar` (both `true`) turn each off. |
 | `rviz.launch.py` | RViz on a caller-supplied config. |
 | `activate_arm.launch.py`, `deactivate_arm.launch.py` | Run `scripts/activate_arm` and `scripts/deactivate_arm`. |
 | `world_model.launch.py` | canopy's world model on the G1's topics. Arguments below. |
@@ -99,6 +100,7 @@ The other launch files:
 - `sim.launch.py` takes `headless`, `world`, `sensors`, `cameras`, `odometry`, `pin_pelvis` and `sim_start_delay_s` (default `2.0`) with the meanings above. It also takes `rviz`, to open `g1_sensors.rviz` with sensors on.
 - `rviz.launch.py` takes `rviz_config` (required) and `node_name` (`rviz2`).
 - `control.launch.py` takes `pin_pelvis`, which `sim.launch.py` sets, and `controllers_overrides` (empty): a params file layered over `g1_controllers`' controller config. `sim.launch.py` passes it on for tests such as `test_emergency_freeze`.
+- `control.launch.py` also takes `hardware` (`false`), `robot_address` (empty) and `hands` (`true`), described in [Running on the robot](#running-on-the-robot).
 
 `world_model.launch.py` starts canopy with the G1's odometry and LiDAR topics and its own
 `config/world_model.yaml`. Its arguments:
@@ -126,6 +128,43 @@ ros2 launch g1_bringup bringup.launch.py --show-args                          # 
 ```
 
 The [guides](../../../docs/guides/) cover each combination in full.
+
+## Running on the robot
+
+`control.launch.py hardware:=true` drives the physical G1. Run it on the robot's Orin, where
+`scripts/robot.sh` builds and runs the robot-side packages in their own image:
+
+```bash
+./scripts/robot.sh exec ros2 launch g1_bringup control.launch.py hardware:=true \
+  robot_address:=192.168.123.164 hands:=false
+```
+
+- `hardware:=true` points the SDK at the robot's own DDS domain, releases Unitree's onboard
+  controller (a robot reboot gives it back), layers `g1_controllers`'
+  `lowcmd_controllers_hardware.yaml` on, and starts with every joint frozen where it hangs. The
+  policy is loaded but inactive.
+- `robot_address` is this machine's IPv4 address on the robot's network (`192.168.123.0/24`).
+  The SDK's DDS is pinned to it, since a network interface that carries a second address would
+  otherwise be bound by the wrong one.
+- `hands:=false` leaves out the Dex3 components and their controllers, for a robot without them.
+- It refuses to start if `ROS_DOMAIN_ID` is the robot's own domain (any ROS topic named `/lowcmd`
+  would reach the motors), if the RMW is not `rmw_fastrtps_cpp`, or if `robot_address` is not an
+  address of this machine.
+- Ctrl-C ramps the stiffness to zero over 0.5 s and disables the motors. The log line
+  `motors released` confirms it. A standing robot then falls into its stand.
+
+Start the robot hanging in its stand, feet on the ground. To stand it up under the policy, trade
+the leg freeze for the policy in one switch, then raise its blend from the held pose:
+
+```bash
+ros2 control switch_controllers --deactivate locomotion_freeze_controller \
+  --activate locomotion_safety_controller agile_controller --strict
+ros2 param set /locomotion_safety_controller blend_ratio 1.0
+```
+
+`waist_yaw` is not the policy's; `waist_freeze_controller` holds it where it was at start. If it
+reads far from 0, deactivate that controller, turn the torso straight by hand, and activate it
+again before the policy goes in.
 
 ## Operating notes
 

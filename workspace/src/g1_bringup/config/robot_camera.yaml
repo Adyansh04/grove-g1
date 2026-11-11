@@ -1,0 +1,19 @@
+# The head D435i on the robot's Orin: realsense2_camera's node, started by
+# robot_sensors.launch.py. Its topics are the simulator's: /camera/color/image_raw and
+# /camera/aligned_depth_to_color/image_raw, with their camera_info and compressed variants.
+camera:
+  ros__parameters:
+    # Frame ids follow it: camera_color_optical_frame and camera_depth_optical_frame, the URDF's.
+    camera_name: "camera"
+    # Width, height, fps. The head camera's USB 2 link carries colour and depth together at this.
+    rgb_camera.color_profile: "640,480,15"
+    depth_module.depth_profile: "640,480,15"
+    # Depth resampled into the colour camera's frame and size, as the simulator publishes it.
+    align_depth.enable: true
+    enable_gyro: true
+    enable_accel: true
+    # One camera/imu topic: accel interpolated onto the gyro's samples.
+    unite_imu_method: 2
+    # The URDF owns the camera frames; the driver's own transforms would fight
+    # robot_state_publisher's.
+    publish_tf: false
