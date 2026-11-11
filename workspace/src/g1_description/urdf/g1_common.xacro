@@ -112,6 +112,12 @@
 
   <xacro:property name="dex3_params" value="${xacro.load_yaml('../config/dex3_params.yaml')}"/>
 
+  <!-- hardware:=true points the SDK components at the physical G1 instead of the simulator;
+       hands:=false leaves the Dex3 components out, for a robot without them. -->
+  <xacro:arg name="hardware" default="false"/>
+  <xacro:arg name="hands" default="true"/>
+  <xacro:property name="on_hardware" value="${'$(arg hardware)' == 'true'}"/>
+
   <xacro:macro name="g1_hand_joint" params="name">
     <joint name="${name}">
       <command_interface name="position"/>
@@ -136,7 +142,7 @@
       <hardware>
         <plugin>g1_hand_interface/G1Dex3System</plugin>
         <param name="side">${side}</param>
-        <param name="domain_id">${dex3_params.system.domain_id}</param>
+        <param name="domain_id">${dex3_params.hardware.domain_id if on_hardware else dex3_params.system.domain_id}</param>
         <param name="network_interface">${dex3_params.system.network_interface}</param>
         <param name="kp">${dex3_params.system.kp}</param>
         <param name="kd">${dex3_params.system.kd}</param>
@@ -156,8 +162,10 @@
     </ros2_control>
   </xacro:macro>
 
-  <xacro:g1_dex3_hand side="left"/>
-  <xacro:g1_dex3_hand side="right"/>
+  <xacro:if value="$(arg hands)">
+    <xacro:g1_dex3_hand side="left"/>
+    <xacro:g1_dex3_hand side="right"/>
+  </xacro:if>
 
   <!-- The point the Dex3 closes on. Pose goals target it rather than the palm origin, which
        would put the object through the fingers. Orientation is the palm's; y mirrors.

@@ -3,6 +3,10 @@
 # Consumed by urdf/g1_common.xacro via xacro.load_yaml: ros2_control plugins only see parameters
 # that arrive as <ros2_control><param> tags.
 
+# The physical G1 (xacro arg hardware:=true). Must match lowcmd_params.yaml's hardware.domain_id.
+hardware:
+  domain_id: 0
+
 # Common to both hands.
 system:
   # Must match lowcmd_params.yaml. ChannelFactory is per process and only its first Init

@@ -35,7 +35,7 @@ own YAML.
 
 ## Components and frames
 
-The xacro emits three `<ros2_control>` blocks:
+The xacro emits three `<ros2_control>` blocks, or only the body's with `hands:=false`:
 
 | Component | Plugin | Joints |
 |---|---|---|
@@ -58,6 +58,13 @@ It also adds frames to Unitree's URDF:
 - `config/dex3_params.yaml` sets the hand parameters, described in [g1_hand_interface](../g1_hand_interface/README.md#parameters), and each finger's `min` and `max`, copied from the URDF.
 
 The hands' `domain_id` and `network_interface` must equal the body component's.
+
+Two xacro arguments pick the target. `g1_bringup`'s `control.launch.py` passes both:
+
+| Argument | Default | Meaning |
+|---|---|---|
+| `hardware` | `false` | `true` takes `domain_id` and `release_motion_mode` from the `hardware:` sections of both YAML files: the robot's own DDS domain, and the onboard controller released. `false` is the simulator. |
+| `hands` | `true` | `false` leaves out both Dex3 components, for a robot without them. |
 
 ## Inspecting the model
 

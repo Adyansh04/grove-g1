@@ -21,6 +21,13 @@ system:
   # in unitree_mujoco, so sim leaves it false; hardware must set it true or rt/lowcmd is ignored.
   release_motion_mode: false
 
+# The physical G1, selected by the xacro arg hardware:=true (control.launch.py hardware:=true).
+# These replace their system: values; everything else in system: applies to both.
+hardware:
+  # The robot's own DDS domain, where Unitree's services publish rt/lowstate. ROS stays off it.
+  domain_id: 0
+  release_motion_mode: true
+
 # Gains for joints a controller claims position-only. Legs and waist keep the upstream 10/1.
 # arm_trajectory_controller claims the arms this way, so MoveIt runs on these: with no gravity
 # compensation, stiffness is what holds the arm on its planned path. kd scales with sqrt(kp).

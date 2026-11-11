@@ -40,11 +40,24 @@ EXPECTED_BODY_JOINTS = [
 ]
 
 
-def _expand(xacro_path):
+def _expand(xacro_path, *args):
     with tempfile.NamedTemporaryFile(suffix=".urdf", delete=False) as tmp:
         out_path = tmp.name
-    subprocess.run(["xacro", xacro_path, "-o", out_path], check=True)
+    subprocess.run(["xacro", xacro_path, *args, "-o", out_path], check=True)
     return out_path
+
+
+def _components(*args):
+    """Return the expanded description's ros2_control blocks by name, as their hardware params."""
+    path = _expand(os.environ["G1_LOWCMD_XACRO"], *args)
+    try:
+        root = ET.parse(path).getroot()
+    finally:
+        os.remove(path)
+    return {
+        c.get("name"): {p.get("name"): p.text for p in c.findall("hardware/param")}
+        for c in root.findall("ros2_control")
+    }
 
 
 @pytest.fixture(scope="module")
@@ -115,3 +128,21 @@ def test_each_hand_is_its_own_component_in_wire_order(expanded_urdf_path, side):
         assert [c.get("name") for c in joint.findall("command_interface")] == ["position"]
         limits = {p.get("name"): float(p.text) for p in joint.findall("param")}
         assert limits["min"] < limits["max"]
+
+
+def test_sim_never_releases_an_onboard_controller():
+    body = _components()["G1LowCmdSystem"]
+    assert body["release_motion_mode"] == "False"
+    assert body["domain_id"] == "1"
+
+
+def test_hardware_points_the_body_and_both_hands_at_the_robots_domain():
+    components = _components("hardware:=true")
+    assert set(components) == {"G1LowCmdSystem", "G1Dex3SystemLeft", "G1Dex3SystemRight"}
+    assert components["G1LowCmdSystem"]["release_motion_mode"] == "True"
+    for name, params in components.items():
+        assert params["domain_id"] == "0", name
+
+
+def test_no_hands_leaves_only_the_body_component():
+    assert set(_components("hardware:=true", "hands:=false")) == {"G1LowCmdSystem"}

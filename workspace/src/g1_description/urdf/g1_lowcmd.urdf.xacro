@@ -27,12 +27,12 @@
   <ros2_control name="G1LowCmdSystem" type="system">
     <hardware>
       <plugin>g1_hardware_interface/G1LowCmdSystem</plugin>
-      <param name="domain_id">${lowcmd.system.domain_id}</param>
+      <param name="domain_id">${lowcmd.hardware.domain_id if on_hardware else lowcmd.system.domain_id}</param>
       <param name="network_interface">${lowcmd.system.network_interface}</param>
       <param name="lowstate_timeout_ms">${lowcmd.system.lowstate_timeout_ms}</param>
       <param name="release_ramp_s">${lowcmd.system.release_ramp_s}</param>
       <param name="release_kd">${lowcmd.system.release_kd}</param>
-      <param name="release_motion_mode">${lowcmd.system.release_motion_mode}</param>
+      <param name="release_motion_mode">${lowcmd.hardware.release_motion_mode if on_hardware else lowcmd.system.release_motion_mode}</param>
       <param name="motor_temp_warn_threshold">${lowcmd.system.motor_temp_warn_threshold}</param>
     </hardware>
 
