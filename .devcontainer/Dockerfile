@@ -102,24 +102,6 @@ RUN mkdir -p /etc/cyclonedds && \
 </CycloneDDS>
 EOF
 
-RUN cat > /etc/cyclonedds/cyclonedds.hardware.xml <<'EOF'
-<?xml version="1.0" encoding="UTF-8" ?>
-<CycloneDDS xmlns="https://cdds.io/config"
-            xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-            xsi:schemaLocation="https://cdds.io/config https://raw.githubusercontent.com/eclipse-cyclonedds/cyclonedds/master/etc/cyclonedds.xsd">
-  <Domain id="any">
-    <General>
-      <Interfaces>
-        <NetworkInterface name="${GROVE_G1_ROBOT_NIC:-eth0}" priority="default" multicast="default" />
-      </Interfaces>
-    </General>
-    <Discovery>
-      <MaxAutoParticipantIndex>60</MaxAutoParticipantIndex>
-    </Discovery>
-  </Domain>
-</CycloneDDS>
-EOF
-
 # ROS runs fastrtps and never loads a CycloneDDS RMW: unitree_sdk2 links its own CycloneDDS
 # inside the hardware component, and two libddsc.so.0 of different ABIs corrupt the heap.
 ENV RMW_IMPLEMENTATION=rmw_fastrtps_cpp

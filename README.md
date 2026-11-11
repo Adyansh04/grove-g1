@@ -194,17 +194,13 @@ The container runs privileged, on the host network, with `/dev` mounted: DDS dis
 simulator and the ROS graph runs over loopback, and device access has to work. Project
 dependencies go in `.devcontainer/Dockerfile`, followed by `./scripts/manage.sh recreate`.
 
-To point the container at a real G1, set three variables in `.env`; no rebuild is needed:
-
-| Variable | Sets |
-|---|---|
-| `GROVE_G1_CYCLONEDDS_URI=file:///etc/cyclonedds/cyclonedds.hardware.xml` | the hardware DDS profile |
-| `GROVE_G1_ROBOT_NIC` | the network interface that reaches the robot |
-| `GROVE_G1_ROS_DOMAIN_ID` | the robot's domain |
-
-They carry a prefix because the base image's `/etc/profile.d/10-ros-env.sh` overwrites the plain
-names. `sim.launch.py` refuses to start unless `CYCLONEDDS_URI` pins loopback, so the simulator
-cannot come up pointed at a robot.
+The real G1 is driven from its own Orin, not from this container. The Orin runs the control loop
+and the sensor drivers in `robot/Dockerfile`'s image, which `scripts/robot.sh` builds here, loads
+onto the Orin over the robot's Ethernet and runs there; `g1_bringup`'s
+[Running on the robot](workspace/src/g1_bringup/README.md#running-on-the-robot) has the steps.
+ROS stays on domain 1 on both machines. Only the hardware component reaches the robot's own DDS
+domain, pinned to the address given as `robot_address`. `sim.launch.py` refuses to start unless
+`CYCLONEDDS_URI` pins loopback, so the simulator cannot come up pointed at a robot.
 
 ## Tests
 
