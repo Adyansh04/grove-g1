@@ -121,6 +121,11 @@ simulation only, welds it and runs `locomotion_freeze_controller` in the policy'
 (`--activate-as-group`). A chainable controller's reference interfaces only become claimable inside
 the switch that activates it.
 
+On the robot, `control.launch.py hardware:=true` layers `config/lowcmd_controllers_hardware.yaml`
+over the controller config and leaves the policy inactive. That file starts the safety controller
+at `blend_ratio` 0 with a blend speed of 0.25 per second, so the policy takes over from the held
+pose only as the ratio is raised by hand, and holds the arms at 40/1 instead of MoveIt's 300/4.
+
 ## What simulation does not validate
 
 - Displacement. `test_agile_walk` runs with `sensors:=false`, so no simulator ground truth reaches ROS and it asserts uprightness rather than distance travelled. The gait envelope is measured against MuJoCo directly instead.

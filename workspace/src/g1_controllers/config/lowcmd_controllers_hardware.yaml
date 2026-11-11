@@ -1,0 +1,20 @@
+# Layered over lowcmd_controllers.yaml by g1_bringup's control.launch.py hardware:=true.
+#
+# First contact with the physical G1: the legs start frozen (control.launch.py), the policy holds
+# its activation pose until its blend is raised by hand, and the arms hold softly. The sim values
+# these replace were tuned against MuJoCo, where nothing breaks.
+
+locomotion_safety_controller:
+  ros__parameters:
+    # Hold the activation pose. Raise it in steps once the policy's targets look sane, e.g.
+    # `ros2 param set /locomotion_safety_controller blend_ratio 0.2`.
+    blend_ratio: 0.0
+    # Per second, so a full blend takes at least 4 s rather than the sim's 0.05 s.
+    max_blend_ratio_speed: 0.25
+
+arm_freeze_controller:
+  ros__parameters:
+    # Soft for a first hold on the stand. The sim's 300/4 is MoveIt's tracking stiffness, which
+    # asks more torque than the shoulders' 25 Nm at 0.1 rad of error.
+    kp: 40.0
+    kd: 1.0
