@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!-- ROS 2 (Fast DDS) on the robot's Orin: its Ethernet address and shared memory, nothing else.
+     Announcing every interface sends the other machine's data to addresses it cannot reach: both
+     machines carry Docker's bridge at 172.17.0.1. -->
+<profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+  <transport_descriptors>
+    <transport_descriptor>
+      <transport_id>robot_lan</transport_id>
+      <type>UDPv4</type>
+      <interfaceWhiteList><address>192.168.123.164</address></interfaceWhiteList>
+    </transport_descriptor>
+    <transport_descriptor>
+      <transport_id>shm</transport_id>
+      <type>SHM</type>
+    </transport_descriptor>
+  </transport_descriptors>
+  <participant profile_name="robot_lan" is_default_profile="true">
+    <rtps>
+      <userTransports>
+        <transport_id>robot_lan</transport_id>
+        <transport_id>shm</transport_id>
+      </userTransports>
+      <useBuiltinTransports>false</useBuiltinTransports>
+    </rtps>
+  </participant>
+</profiles>

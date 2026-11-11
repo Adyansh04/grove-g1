@@ -132,12 +132,20 @@ The [guides](../../../docs/guides/) cover each combination in full.
 ## Running on the robot
 
 `control.launch.py hardware:=true` drives the physical G1. Run it on the robot's Orin, where
-`scripts/robot.sh` builds and runs the robot-side packages in their own image:
+`scripts/robot.sh` builds and runs the robot-side packages in their own image, detached from the
+operator's session:
 
 ```bash
-./scripts/robot.sh exec ros2 launch g1_bringup control.launch.py hardware:=true \
-  robot_address:=192.168.123.164 hands:=false
+./scripts/robot.sh start control           # control.launch.py hardware:=true, logs on the Orin
+./scripts/robot.sh start sensors           # robot_sensors.launch.py
+./scripts/robot.sh stop control            # Ctrl-C's release, then exits
+./scripts/robot.sh operator ros2 control list_controllers
 ```
+
+Robot work runs on ROS domain 7, so a simulator on the operator's machine (domain 1) never meets
+the robot's graph. Fast DDS on both machines is pinned to the robot's network
+(`robot/fastdds/`): announcing every interface sends data to the Docker bridge address both
+machines carry.
 
 - `hardware:=true` points the SDK at the robot's own DDS domain, releases Unitree's onboard
   controller (a robot reboot gives it back), layers `g1_controllers`'
@@ -150,16 +158,18 @@ The [guides](../../../docs/guides/) cover each combination in full.
 - It refuses to start if `ROS_DOMAIN_ID` is the robot's own domain (any ROS topic named `/lowcmd`
   would reach the motors), if the RMW is not `rmw_fastrtps_cpp`, or if `robot_address` is not an
   address of this machine.
-- Ctrl-C ramps the stiffness to zero over 0.5 s and disables the motors. The log line
-  `motors released` confirms it. A standing robot then falls into its stand.
+- Stopping it (`robot.sh stop control`, or Ctrl-C) ramps the stiffness to zero over 0.5 s and
+  disables the motors. The log line `motors released` confirms it. A standing robot then falls
+  into its stand.
 
 Start the robot hanging in its stand, feet on the ground. To stand it up under the policy, trade
 the leg freeze for the policy in one switch, then raise its blend from the held pose:
 
 ```bash
-ros2 control switch_controllers --deactivate locomotion_freeze_controller \
+./scripts/robot.sh operator ros2 control switch_controllers \
+  --deactivate locomotion_freeze_controller \
   --activate locomotion_safety_controller agile_controller --strict
-ros2 param set /locomotion_safety_controller blend_ratio 1.0
+./scripts/robot.sh operator ros2 param set /locomotion_safety_controller blend_ratio 1.0
 ```
 
 `waist_yaw` is not the policy's; `waist_freeze_controller` holds it where it was at start. If it
