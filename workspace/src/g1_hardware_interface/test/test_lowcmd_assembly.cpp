@@ -150,5 +150,18 @@ TEST(FillReleaseCmd, NeverCommandsTorque)
     EXPECT_FLOAT_EQ(motor.dq(), 0.0F);
 }
 
+TEST(ReadOnboardMode, AFailedQueryIsNeverReleasedEvenWithNoName)
+{
+    // 3104 is the SDK's client timeout, measured against a robot on an unrouted address.
+    EXPECT_EQ(readOnboardMode(3104, ""), OnboardMode::kUnknown);
+    EXPECT_EQ(readOnboardMode(3104, "ai"), OnboardMode::kUnknown);
+}
+
+TEST(ReadOnboardMode, ANamedModeIsHeldAndNoneIsReleased)
+{
+    EXPECT_EQ(readOnboardMode(0, "ai"), OnboardMode::kHeld);
+    EXPECT_EQ(readOnboardMode(0, ""), OnboardMode::kReleased);
+}
+
 }  // namespace
 }  // namespace g1_hardware_interface

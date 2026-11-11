@@ -3,12 +3,14 @@
 
 /**
  * @file lowcmd_assembly.hpp
- * @brief rt/lowcmd mode table, per-motor packing and checksum, testable without the component.
+ * @brief rt/lowcmd mode table, per-motor packing and checksum, and the reading of the onboard
+ * motion-mode query, testable without the component.
  */
 
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <string_view>
 #include <unitree/idl/hg/LowCmd_.hpp>
 
 namespace g1_hardware_interface
@@ -113,6 +115,39 @@ void fillReleaseCmd(
  * @note bit_cast rather than a uint32_t* cast, which GCC 13 optimises fields out of at -O2.
  */
 void computeLowCmdCrc(unitree_hg::msg::dds_::LowCmd_& cmd);
+
+/**
+ * @brief What one `MotionSwitcherClient::CheckMode` answer says about the onboard controller.
+ */
+enum class OnboardMode : std::uint8_t
+{
+    /// The query succeeded and no onboard mode holds the motors.
+    kReleased,
+    /// The query succeeded and an onboard mode still holds them.
+    kHeld,
+    /// The query failed, so its mode name is no answer at all.
+    kUnknown,
+};
+
+/**
+ * @brief Reads a CheckMode result.
+ *
+ * A failed query (a timeout, the service unreachable) leaves the name empty, which must never
+ * read as released: rt/lowcmd would then fight an onboard controller for the motors.
+ *
+ * @param check_rc CheckMode's return code, 0 on success.
+ * @param mode_name The mode name it filled in, empty when none is active.
+ * @return Released only for a successful query that names no mode.
+ */
+[[nodiscard]] constexpr OnboardMode
+readOnboardMode(std::int32_t check_rc, std::string_view mode_name) noexcept
+{
+    if (check_rc != 0)
+    {
+        return OnboardMode::kUnknown;
+    }
+    return mode_name.empty() ? OnboardMode::kReleased : OnboardMode::kHeld;
+}
 
 }  // namespace g1_hardware_interface
 

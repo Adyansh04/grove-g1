@@ -314,22 +314,33 @@ bool G1LowCmdSystem::releaseOnboardMotionMode()
     std::string name;
     for (int attempt = 0; attempt < kMotionSwitchAttempts; ++attempt)
     {
-        switcher.CheckMode(form, name);
-        if (name.empty())
+        name.clear();
+        const std::int32_t check_rc = switcher.CheckMode(form, name);
+        switch (readOnboardMode(check_rc, name))
         {
-            RCLCPP_INFO(logger_, "no onboard motion mode holds the motors, rt/lowcmd is ours");
-            return true;
+            case OnboardMode::kReleased:
+                RCLCPP_INFO(logger_, "no onboard motion mode holds the motors, rt/lowcmd is ours");
+                return true;
+            case OnboardMode::kUnknown:
+                RCLCPP_WARN(logger_, "motion mode query failed (code %d), asking again", check_rc);
+                break;
+            case OnboardMode::kHeld:
+                RCLCPP_WARN(logger_, "onboard mode '%s' still active, releasing", name.c_str());
+                if (const std::int32_t release_rc = switcher.ReleaseMode(); release_rc != 0)
+                {
+                    RCLCPP_WARN(logger_, "release request failed (code %d)", release_rc);
+                }
+                break;
         }
-        RCLCPP_WARN(logger_, "onboard mode '%s' still active, releasing", name.c_str());
-        switcher.ReleaseMode();
         std::this_thread::sleep_for(kMotionSwitchBackoff);
     }
 
     RCLCPP_ERROR(
         logger_,
-        "onboard mode '%s' survived %d release attempts -- refusing to fight it for the motors",
-        name.c_str(),
-        kMotionSwitchAttempts);
+        "no confirmed release of the onboard motion mode after %d attempts (last mode '%s') -- "
+        "refusing to fight it for the motors",
+        kMotionSwitchAttempts,
+        name.c_str());
     return false;
 }
 
@@ -683,6 +694,11 @@ void G1LowCmdSystem::releaseSynchronously()
             jd.position_state);
     }
     publishLowCmd();
+    // The operator's confirmation that a stop reached the motors before the process ended.
+    RCLCPP_INFO(
+        logger_,
+        "motors released: stiffness ramped to zero over %.2f s, then disabled",
+        release_ramp_s_);
 }
 
 }  // namespace g1_hardware_interface
