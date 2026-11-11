@@ -84,7 +84,7 @@ build_packages() {
 container_up() {
     # Idles until a command is exec'd into it; privileged for real-time scheduling and USB.
     on_robot "docker ps -a --format '{{.Names}}' | grep -qx $CONTAINER || \
-        docker run -d --name $CONTAINER --restart unless-stopped --privileged \
+        docker run -d --name $CONTAINER --restart unless-stopped --privileged --ulimit rtprio=99 \
             --network host --ipc host -v /dev:/dev -v \$HOME/$REMOTE_WS:/root/workspace \
             $IMAGE sleep infinity"
     on_robot "docker start $CONTAINER >/dev/null && docker ps --filter name=$CONTAINER --format '{{.Names}}: {{.Status}}'"
