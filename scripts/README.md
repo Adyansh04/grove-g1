@@ -5,6 +5,7 @@ Host-side scripts, run from the repository root.
 | Script | What it does |
 |---|---|
 | `manage.sh` | Runs the dev container and the everyday commands inside it: `start`, `stop`, `restart`, `recreate`, `logs`, `exec`, `build`, `test [--sim]`, `format`, `lint`. |
+| `robot.sh` | The robot side, on the G1's Orin, which needs no internet: `image` builds `robot/Dockerfile` for arm64 here and loads it there, `sync` copies the robot-side packages, `build` builds them there, `up`/`down` start or remove the idle container, `exec` runs a command in it. Taking the motors stays a separate `control.launch.py hardware:=true`. |
 | `clean-stack.sh` | Tears down whatever stack is running, host or container, and exits non-zero unless the ROS graph is empty. Run it between launches. |
 | `demos/*.sh` | One launcher per guide in [`docs/guides/`](../docs/guides). Opens a demo's commands in split panes. `stop` ends it. |
 | `serve.sh` | Starts a model server on the host: `groot` (5555), `graspgen` (5556), `vision` (5560) or `canopy` (5561). |
