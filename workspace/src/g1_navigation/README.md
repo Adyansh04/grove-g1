@@ -14,7 +14,7 @@ flowchart TB
     AMCL -- "map to odom" --> NAV2
     ODOM["g1_odometry_publisher"] -- "odom to base_footprint" --> NAV2
     NAV2["Nav2"] -- "/cmd_vel_raw" --> MON["collision_monitor"]
-    RELAY -- "/livox/lidar, 0.05 to 0.60 m" --> MON
+    RELAY -- "/livox/lidar, 0.15 to 0.60 m" --> MON
     MON -- "/cmd_vel" --> POL["the walking policy"]
     APPR["g1_base_approach"] -- "/cmd_vel" --> POL
 ```
@@ -87,10 +87,13 @@ Nav2's controller and behaviors publish `/cmd_vel_raw`. `collision_monitor` pass
 It reads the LiDAR's cloud in two bands, and never between them, where a hand carries. (A scan source
 saw the carried mug and slowed every carry to a stop.)
 
-- 0.05 to 0.60 m, below the costmaps' band, for a crate, a step or a chair's legs.
+- 0.15 to 0.60 m, for a crate, a step or a chair's legs. It starts above the floor returns, as the
+  costmaps' `min_obstacle_height` does.
 - 1.05 to 1.40 m, for a wall or a person up close. With MoveIt up (`collision_high_cloud`, which
   `bringup.launch.py` sets), this band reads `/filtered_cloud`, MoveIt's cloud less the robot and
-  what it holds: something lifted off a desk or a counter rides above 1.05 m.
+  what it holds: something lifted off a desk or a counter rides above 1.05 m. That cloud arrives
+  1.2 to 1.7 s after its sweep, so this source's timeout is 2.5 s rather than the monitor's 1.0 s:
+  past it the monitor takes the band for blind and stops every command.
 
 The monitor's limits:
 
@@ -117,8 +120,10 @@ map; after changing a map, make it again in the container:
 python3 scripts/make_route_graph.py maps/apartment.yaml config/route_graph_apartment.geojson
 ```
 
-The simulated sweep never sees the robot's own links. The real one will see its legs and arms in
-these bands, so filter them before trusting it on hardware.
+The simulated sweep never sees the robot's own links. The real one does: about 330 returns a sweep
+from the head and shoulders, 1.08 to 1.12 m up inside the body circle. So on the robot the high band
+must read `/filtered_cloud`, with MoveIt up, or the monitor stops every command. The low band saw
+none of the body in 45 s of standing.
 
 Nav2 is not the only `/cmd_vel` writer. `nav2.launch.py` also starts `g1_locomotion`'s
 `g1_base_approach`. It walks the last stretch, because Nav2 stops within 0.5 m of a goal
@@ -129,7 +134,9 @@ The mission tree runs `NavigateToPose` and `ApproachObject` in sequence, never t
 
 - Nav2 runs uncomposed while the scan and localization nodes compose. Composed, the costmaps come up on `Costmap2DROS` defaults instead of the params file, and `controller_server` hangs activating. So `nav2.launch.py` rejects `use_composition:=true`, and `nav_stack.launch.py` always passes `false`.
 - `z_voxels` is 16, the voxel grid's maximum, so the column height comes from `z_resolution`: 16 x 0.125 m = 2.0 m. The column must contain the sensor at 1.22 m, or `VoxelLayer` rejects every cloud.
-- `obstacle_max_range` is 3.0 m, well inside the sensor's reach. Attitude error times range is height error, so distant floor returns cross `min_obstacle_height` and mark as obstacles. The value is the simulator's. Re-measure it on the robot.
+- `obstacle_max_range` is 3.0 m, well inside the sensor's reach. Attitude error times range is height error, so distant floor returns cross `min_obstacle_height` and mark as obstacles. On the robot, standing, floor returns 0.6 to 3 m out sit at +3 cm (5th percentile -1.4 cm), hence `min_obstacle_height` 0.15 m.
+- Each observation source raytraces only to its own points inside its height band. `lidar` drops the floor, so on its own no ray reached the floor and marks near the robot below the LiDAR never cleared: a stand or a person passing left the robot boxed in. `lidar_clear` clears with the whole cloud and marks nothing.
+- `max_obstacle_height` is 1.35 m, the robot's 1.32 m and a margin. The LiDAR hangs at 1.22 m and casts no ray higher near the robot, so nothing could clear what it marked above that.
 - `obstacle_min_range` is 0.6 m. It keeps the carried object and the robot's own arms off the costmap. Anything the base can hit shows up beyond it.
 - AMCL uses `OmniMotionModel` because the robot strafes: `g1_base_approach` commands lateral velocity and the gait drifts sideways. The alphas stay at Nav2's defaults, since neither simulated odometry source says anything about the real robot's noise.
 

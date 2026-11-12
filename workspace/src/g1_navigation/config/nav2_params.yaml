@@ -123,16 +123,18 @@ local_costmap:
         mark_threshold: 0
         # The raw cloud, not /scan, whose 0.30 m floor cut hides low obstacles. Height limits
         # apply after the transform into the global frame, so they are gravity-aligned.
-        observation_sources: lidar
+        observation_sources: lidar lidar_clear
         lidar:
           topic: /livox/lidar
           data_type: "PointCloud2"
           clearing: True
           marking: True
-          # Clears the floor returns; at 0.0 the whole floor marks as obstacle.
-          min_obstacle_height: 0.08
-          # Below the ceiling and light fixtures; the robot is about 1.3 m tall.
-          max_obstacle_height: 1.80
+          # Clears the floor returns. On the robot they sit 0.6 to 3 m out at +3 cm, give or take
+          # 3 cm, so 0.08 marked the floor near the robot.
+          min_obstacle_height: 0.15
+          # The robot's height, 1.32 m, with a margin. The LiDAR hangs at 1.22 m and casts no ray
+          # higher near the robot, so nothing could clear what it marked above that.
+          max_obstacle_height: 1.35
           # Above obstacle_max_range so anything marked can be cleared. Far beams are too sparse
           # to clear without spoke gaps.
           raytrace_max_range: 6.0
@@ -143,6 +145,18 @@ local_costmap:
           # Keeps the carried object and the robot's own arms off the costmap. Anything the base
           # can hit appears beyond 0.6 m.
           obstacle_min_range: 0.6
+        # Clearing only, with the floor: a source raytraces only to its own points inside its height
+        # band, so with `lidar` alone no ray reached the floor and marks near the robot below the
+        # LiDAR never cleared.
+        lidar_clear:
+          topic: /livox/lidar
+          data_type: "PointCloud2"
+          clearing: True
+          marking: False
+          min_obstacle_height: -0.50
+          max_obstacle_height: 2.0
+          raytrace_max_range: 6.0
+          raytrace_min_range: 0.0
       # NervROS's keep-out zones; see costmap_filter_info_server.
       filters: ["keepout_filter"]
       keepout_filter:
@@ -168,19 +182,28 @@ global_costmap:
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True
-        # The observation source matches local_costmap's; see the comments there.
-        observation_sources: lidar
+        # The observation sources match local_costmap's; see the comments there.
+        observation_sources: lidar lidar_clear
         lidar:
           topic: /livox/lidar
           data_type: "PointCloud2"
           clearing: True
           marking: True
-          min_obstacle_height: 0.08
-          max_obstacle_height: 1.80
+          min_obstacle_height: 0.15
+          max_obstacle_height: 1.35
           raytrace_max_range: 6.0
           raytrace_min_range: 0.0
           obstacle_max_range: 3.0
           obstacle_min_range: 0.6
+        lidar_clear:
+          topic: /livox/lidar
+          data_type: "PointCloud2"
+          clearing: True
+          marking: False
+          min_obstacle_height: -0.50
+          max_obstacle_height: 2.0
+          raytrace_max_range: 6.0
+          raytrace_min_range: 0.0
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
         map_subscribe_transient_local: True
@@ -303,7 +326,8 @@ collision_monitor:
     low_cloud:
       type: pointcloud
       topic: /livox/lidar
-      min_height: 0.05
+      # Above the floor returns, as the costmaps' min_obstacle_height.
+      min_height: 0.15
       max_height: 0.60
       enabled: true
     high_cloud:
@@ -312,6 +336,10 @@ collision_monitor:
       min_height: 1.05
       max_height: 1.40
       enabled: true
+      # MoveIt's /filtered_cloud (collision_high_cloud) arrives 1.2 to 1.7 s after its sweep; under
+      # the global 1.0 s the band reads as blind and every command stops. base_shift_correction
+      # moves its points with the robot meanwhile.
+      source_timeout: 2.5
 
 # Names the mask NervROS publishes from its keep-out zones (the G1 profile's [nav2] keepout_mask)
 # for both costmaps' keepout filters, which read it only with nav2.launch.py's keepout:=true:
