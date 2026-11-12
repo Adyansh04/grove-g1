@@ -185,7 +185,7 @@ Development happens in the dev container: Docker Compose runs it, and
 | Setting | Value |
 |---|---|
 | ROS distro | Jazzy, pinned in `.env` |
-| Middleware | `rmw_fastrtps_cpp`, image-wide. The Unitree SDK carries its own CycloneDDS, pinned to loopback, and ROS must not load a second one. |
+| Middleware | `rmw_zenoh_cpp`, image-wide; the container's main process is its Zenoh router. The Unitree SDK carries its own CycloneDDS, pinned to loopback, and ROS must not load a second one. |
 | `ROS_DOMAIN_ID` | 1 |
 | C++ | C++20 on GCC 13.3 |
 | Paths | `/root/workspace` (this repo's `workspace/`), `/root/data` (shared data) |

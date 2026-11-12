@@ -35,7 +35,8 @@ RUN apt-get update && apt-get install -y clang-${LLVM_VERSION} mold && \
 # PROJECT-SPECIFIC CUSTOMIZATION
 # ============================================================================
 
-# ros2_control plus unitree_sdk2/mujoco build deps. Mesa GL is for headless Xvfb.
+# ros2_control, the Zenoh RMW, and the unitree_sdk2/mujoco build deps. Mesa GL is for headless
+# Xvfb.
 RUN apt-get update && apt-get install -y \
         libboost-all-dev \
         libeigen3-dev \
@@ -48,6 +49,7 @@ RUN apt-get update && apt-get install -y \
         ros-${ROS_DISTRO}-launch-testing \
         ros-${ROS_DISTRO}-launch-testing-ament-cmake \
         ros-${ROS_DISTRO}-realtime-tools \
+        ros-${ROS_DISTRO}-rmw-zenoh-cpp \
         ros-${ROS_DISTRO}-ros2-control \
         ros-${ROS_DISTRO}-ros2-controllers \
         ros-${ROS_DISTRO}-ros2launch \
@@ -102,9 +104,10 @@ RUN mkdir -p /etc/cyclonedds && \
 </CycloneDDS>
 EOF
 
-# ROS runs fastrtps and never loads a CycloneDDS RMW: unitree_sdk2 links its own CycloneDDS
-# inside the hardware component, and two libddsc.so.0 of different ABIs corrupt the heap.
-ENV RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+# ROS runs on Zenoh and never loads a CycloneDDS RMW: unitree_sdk2 links its own CycloneDDS
+# inside the hardware component, and two libddsc.so.0 of different ABIs corrupt the heap. Nodes
+# find each other through the container's Zenoh router (docker-compose.yml).
+ENV RMW_IMPLEMENTATION=rmw_zenoh_cpp
 ENV CYCLONEDDS_URI=file:///etc/cyclonedds/cyclonedds.xml
 ENV ROS_DOMAIN_ID=1
 
