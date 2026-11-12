@@ -155,9 +155,10 @@ machines carry.
   The SDK's DDS is pinned to it, since a network interface that carries a second address would
   otherwise be bound by the wrong one.
 - `hands:=false` leaves out the Dex3 components and their controllers, for a robot without them.
-- It refuses to start if `ROS_DOMAIN_ID` is the robot's own domain (any ROS topic named `/lowcmd`
-  would reach the motors), if the RMW is not `rmw_fastrtps_cpp`, or if `robot_address` is not an
-  address of this machine.
+- It refuses to start if `ROS_DOMAIN_ID` is the robot's own domain (on a DDS RMW, a ROS topic
+  named `/lowcmd` would reach the motors), if the RMW is `rmw_cyclonedds_cpp` (a second
+  CycloneDDS beside the SDK's corrupts the heap), or if `robot_address` is not an address of this
+  machine.
 - Stopping it (`robot.sh stop control`, or Ctrl-C) ramps the stiffness to zero over 0.5 s and
   disables the motors. The log line `motors released` confirms it. A standing robot then falls
   into its stand.
@@ -178,7 +179,7 @@ again before the policy goes in.
 
 ## Operating notes
 
-- `sim.launch.py` refuses to start unless `RMW_IMPLEMENTATION=rmw_fastrtps_cpp`, `ROS_DOMAIN_ID=1` and `CYCLONEDDS_URI` names a config pinned to the `lo` interface. The container sets all three. The [root README](../../../README.md) says why.
+- `sim.launch.py` refuses to start on `rmw_cyclonedds_cpp`, or unless `ROS_DOMAIN_ID=1` and `CYCLONEDDS_URI` names a config pinned to the `lo` interface. The container sets both. The [root README](../../../README.md) says why.
 - With the viewer open (`headless:=false`), restart the simulator rather than resetting or reloading it.
   - Reset (Backspace) re-applies the startup welds, and nothing releases them again.
   - Reload with sensors on stops the sensors for good and can crash the simulator.
