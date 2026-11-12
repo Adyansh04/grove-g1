@@ -7,5 +7,6 @@ livox_lidar_publisher:
     data_src: 0
     output_data_type: 0
     publish_freq: 10.0
-    # What the URDF calls the sensor, and what the sim publishes.
-    frame_id: "mid360_link"
+    # g1_description's mid360_lidar: Unitree's mid360_link (the sim's frame) with the real robot's
+    # mount correction.
+    frame_id: "mid360_lidar"
