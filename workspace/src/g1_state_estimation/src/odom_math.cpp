@@ -220,4 +220,21 @@ std::array<double, 36> diagonalCovariance(double value)
     return covariance;
 }
 
+std::optional<double> heightFromFeet(
+    std::span<const Pose3d> feet_in_body, const Quaternion& tilt, double sole_below_foot_m)
+{
+    const Pose3d          level{ .x = 0.0, .y = 0.0, .z = 0.0, .q = tilt };
+    std::optional<double> height;
+    for (const Pose3d& foot : feet_in_body)
+    {
+        const double below = -composePose(level, foot).z;
+        height             = std::max(height.value_or(below), below);
+    }
+    if (height.has_value())
+    {
+        *height += sole_below_foot_m;
+    }
+    return height;
+}
+
 }  // namespace g1_state_estimation

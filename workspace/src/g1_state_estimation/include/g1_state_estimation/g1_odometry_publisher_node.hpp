@@ -98,6 +98,9 @@ private:
      * @return False while the transform is unavailable.
      */
     bool lookUpLidarBodyOffset();
+    /// The pelvis height above the floor from the lower foot in TF, levelled by @p tilt; nothing
+    /// when no feet are configured or TF has none yet.
+    std::optional<double> heightFromFeetInTf(const Quaternion& tilt);
 
     /**
      * @brief Shared tail of the position callbacks: staleness bookkeeping against a new stamp.
@@ -128,7 +131,9 @@ private:
     /// full pose; set, the pose is split into two edges (see GroundSplit).
     std::string pelvis_frame_id_;
     /// Frame FAST-LIO reports the pose of (`mid360_imu`). Empty means the published body itself.
-    std::string lidar_body_frame_id_;
+    std::string              lidar_body_frame_id_;
+    std::vector<std::string> foot_frame_ids_;
+    double                   sole_below_foot_m_ = 0.0;
     /// Beyond this the heading is ill-conditioned and the last good one is held instead.
     double                 max_tilt_rad_     = 0.0;
     double                 start_height_m_   = 0.0;

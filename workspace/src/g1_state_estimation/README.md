@@ -91,6 +91,8 @@ disconnected root off `/tf`.
 | `pelvis_frame_id` | `""` | Empty publishes one edge. Naming a link splits it in two. Both shipped configs set `pelvis`. |
 | `lidar_body_frame_id` | `""` | `fast_lio` only: the frame FAST-LIO reports the pose of. Empty means the pose is already that of the published body. The fast_lio config sets `mid360_imu`. |
 | `start_height_m` | `0.0` | `fast_lio` only: body height above the floor at the origin latch. The fast_lio config sets `0.729`. |
+| `foot_frame_ids` | `[]` | Feet whose lower one gives the pelvis height above the floor, through TF, so the published height ignores the LiDAR odometry's z drift on a walking robot. Needs `pelvis_frame_id`. Empty takes the height from the odometry. The fast_lio config sets both `*_ankle_roll_link`. |
+| `sole_below_foot_m` | `0.0` | How far the sole sits below each foot frame's origin, metres. The fast_lio config sets `0.035`. |
 | `max_tilt_deg` | `80.0` | Past this tilt the last well-conditioned heading is held. The attitude is still published, since a fallen robot really is tilted. The origin latch waits until the pelvis is within this tilt of upright. Must be in (0, 180). |
 | `publish_rate_hz` | `50.0` | Must be positive. |
 | `publish_odom_msg` | `true` | Publish `~/odom` as well as TF. |

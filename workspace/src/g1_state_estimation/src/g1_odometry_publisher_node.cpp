@@ -53,6 +53,10 @@ G1OdometryPublisher::G1OdometryPublisher(const rclcpp::NodeOptions& options)
     declare_parameter<std::string>("lidar_body_frame_id", "");
     // fast_lio only: body height above the floor at the latch. FAST-LIO's origin knows no floor.
     declare_parameter<double>("start_height_m", 0.0);
+    // Feet in TF give the pelvis height above the floor on a walking robot, whatever the LiDAR
+    // odometry's z drifts to; empty takes it from the odometry.
+    declare_parameter<std::vector<std::string>>("foot_frame_ids", std::vector<std::string>{});
+    declare_parameter<double>("sole_below_foot_m", 0.0);
     // Per-sample slerp toward the IMU's tilt; must stay slow, see levelledAttitude().
     declare_parameter<double>("tilt_correction_gain", 0.05);
     declare_parameter<double>("publish_rate_hz", 50.0);
@@ -98,11 +102,20 @@ bool G1OdometryPublisher::readParameters()
     base_frame_id_        = get_parameter("base_frame_id").as_string();
     pelvis_frame_id_      = get_parameter("pelvis_frame_id").as_string();
     lidar_body_frame_id_  = get_parameter("lidar_body_frame_id").as_string();
-    max_tilt_rad_         = get_parameter("max_tilt_deg").as_double() * M_PI / 180.0;
-    publish_rate_hz_      = get_parameter("publish_rate_hz").as_double();
-    publish_odom_msg_     = get_parameter("publish_odom_msg").as_bool();
-    source_timeout_s_     = get_parameter("source_timeout_ms").as_double() / 1000.0;
-    wall_timeout_s_       = get_parameter("wall_timeout_ms").as_double() / 1000.0;
+    foot_frame_ids_       = get_parameter("foot_frame_ids").as_string_array();
+    sole_below_foot_m_    = get_parameter("sole_below_foot_m").as_double();
+    if (!foot_frame_ids_.empty() && pelvis_frame_id_.empty())
+    {
+        RCLCPP_ERROR(
+            get_logger(),
+            "foot_frame_ids needs pelvis_frame_id: the height is the pelvis's");
+        return false;
+    }
+    max_tilt_rad_     = get_parameter("max_tilt_deg").as_double() * M_PI / 180.0;
+    publish_rate_hz_  = get_parameter("publish_rate_hz").as_double();
+    publish_odom_msg_ = get_parameter("publish_odom_msg").as_bool();
+    source_timeout_s_ = get_parameter("source_timeout_ms").as_double() / 1000.0;
+    wall_timeout_s_   = get_parameter("wall_timeout_ms").as_double() / 1000.0;
 
     if (publish_rate_hz_ <= 0.0)
     {
@@ -271,6 +284,42 @@ G1OdometryPublisher::on_shutdown(const rclcpp_lifecycle::State&)
     tf_listener_.reset();
     tf_buffer_.reset();
     return CallbackReturn::SUCCESS;
+}
+
+std::optional<double> G1OdometryPublisher::heightFromFeetInTf(const Quaternion& tilt)
+{
+    if (foot_frame_ids_.empty())
+    {
+        return std::nullopt;
+    }
+    std::vector<Pose3d> feet;
+    feet.reserve(foot_frame_ids_.size());
+    try
+    {
+        for (const std::string& foot : foot_frame_ids_)
+        {
+            // The newest leg state: the height is wanted now, not at a scan's start.
+            const auto tf = tf_buffer_->lookupTransform(pelvis_frame_id_, foot, tf2::TimePointZero);
+            feet.push_back(Pose3d{ .x = tf.transform.translation.x,
+                                   .y = tf.transform.translation.y,
+                                   .z = tf.transform.translation.z,
+                                   .q = Quaternion{ tf.transform.rotation.x,
+                                                    tf.transform.rotation.y,
+                                                    tf.transform.rotation.z,
+                                                    tf.transform.rotation.w } });
+        }
+    }
+    catch (const tf2::TransformException& e)
+    {
+        RCLCPP_WARN_THROTTLE(
+            get_logger(),
+            steady_clock_,
+            5000,
+            "No feet in TF (%s): the pelvis height follows the LiDAR odometry.",
+            e.what());
+        return std::nullopt;
+    }
+    return heightFromFeet(feet, tilt, sole_below_foot_m_);
 }
 
 bool G1OdometryPublisher::lookUpLidarBodyOffset()
@@ -590,8 +639,12 @@ void G1OdometryPublisher::onTimer()
     }
     else
     {
-        const GroundSplit split =
+        GroundSplit split =
             splitGroundProjection(pose_.x, pose_.y, pose_z_, orientation, pose_.yaw);
+        if (const std::optional<double> height = heightFromFeetInTf(split.tilt))
+        {
+            split.child_z = *height;
+        }
         const Quaternion heading = yawToQuaternion(split.footprint.yaw);
 
         tf.transform.translation.x = split.footprint.x;
