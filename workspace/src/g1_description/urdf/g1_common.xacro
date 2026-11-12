@@ -107,8 +107,8 @@
   </joint>
 
   <!-- The frame the Mid360's data carries: Unitree's mid360_link in the simulator. On the real
-       G1 the lidar sits pitched from that mount; measured 12 Nov 2026 as the 16.49 deg between
-       the Livox IMU's gravity and the pelvis IMU's carried through this URDF, all about y. -->
+       G1 the lidar sits 16.49 deg off that mount, all about y: the angle between the Livox IMU's
+       gravity and the pelvis IMU's carried through this URDF. -->
   <xacro:property name="mid360_hardware_pitch_rad" value="0.2878"/>
   <link name="mid360_lidar"/>
   <joint name="mid360_lidar_joint" type="fixed">

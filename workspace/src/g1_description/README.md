@@ -48,7 +48,8 @@ It also adds frames to Unitree's URDF:
 |---|---|---|
 | `camera_depth_optical_frame`, `camera_color_optical_frame` | `d435_link` | REP 103 optical frames of the head camera. |
 | `chest_camera_link` and its two optical frames | `torso_link` | The chest camera, placed by `cameras.yaml`. |
-| `mid360_imu` | `mid360_link` | The Mid360's built-in IMU, FAST-LIO's body frame. |
+| `mid360_lidar` | `mid360_link` | Where the Mid360 really points, and the frame its driver stamps: `mid360_link` itself in simulation, pitched 0.2878 rad (16.5 degrees) about y with `hardware:=true`, measured on the robot as the angle between the Livox IMU's gravity and the pelvis IMU's. |
+| `mid360_imu` | `mid360_lidar` | The Mid360's built-in IMU, FAST-LIO's body frame. |
 | `left_hand_grasp_frame`, `right_hand_grasp_frame` | `*_hand_palm_link` | Where the Dex3 closes. Pose goals target it rather than the palm origin. |
 | `d435_visual`, `chest_camera_visual`, `mid360_visual` | their sensor links | Bodies for RViz. Visual only, so they stay out of MoveIt's planning scene. |
 
@@ -63,7 +64,7 @@ Two xacro arguments pick the target. `g1_bringup`'s `control.launch.py` passes b
 
 | Argument | Default | Meaning |
 |---|---|---|
-| `hardware` | `false` | `true` takes `domain_id` and `release_motion_mode` from the `hardware:` sections of both YAML files: the robot's own DDS domain, and the onboard controller released. `false` is the simulator. |
+| `hardware` | `false` | `true` takes `domain_id` and `release_motion_mode` from the `hardware:` sections of both YAML files: the robot's own DDS domain, and the onboard controller released. It also turns on the real Mid360 mount (`mid360_lidar`). `false` is the simulator. |
 | `hands` | `true` | `false` leaves out both Dex3 components, for a robot without them. |
 
 ## Inspecting the model
