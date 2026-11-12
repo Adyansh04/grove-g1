@@ -64,12 +64,18 @@ sim:       g1_sensor_relay --> /livox/lidar --> g1_livox_bridge --> /livox/custo
 FAST-LIO needs the CustomMsg for its per-point timestamps. The costmaps, MoveIt's octomap and
 `pointcloud_to_laserscan` read the PointCloud2. The driver emits one format per run, so on hardware
 it runs in CustomMsg mode and `g1_livox_pointcloud` republishes. That is a separate node so a
-FAST-LIO failure cannot take `/livox/lidar` with it. It takes `custom_msg_topic` and `cloud_topic`.
+FAST-LIO failure cannot take `/livox/lidar` with it. It takes `custom_msg_topic`, `cloud_topic` and
+`min_range_m` (0.1 m): it drops the driver's no-echo returns, which sit at the sensor itself and
+make up about a third of every sweep.
 
 FAST-LIO fuses the Mid360's own IMU on both tracks. It is rigid with the laser, so both configs
 carry Livox's published lidar-in-IMU offset and `lidar_body_frame_id` is `mid360_imu`. The pelvis IMU
 cannot stand in. Three moving waist joints separate it from the sensor, and FAST-LIO takes one
 constant extrinsic.
+
+The driver stamps the Mid360's data in `mid360_lidar` (`livox_driver.yaml`), the frame
+`g1_description` puts at the real sensor: Unitree's `mid360_link` in simulation, pitched 16.5 degrees
+on the robot. `mid360_imu` hangs off it.
 
 ## Frames
 

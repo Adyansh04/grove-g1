@@ -4,3 +4,7 @@ g1_livox_pointcloud:
   ros__parameters:
     custom_msg_topic: "/livox/custom_msg"
     cloud_topic: "/livox/lidar"
+    # Metres. The driver reports a return with no echo as a point at the sensor itself, about a
+    # third of every sweep on the G1; at the head's height they fill the collision monitor's body
+    # circle. The Mid360 measures nothing nearer than 0.1 m.
+    min_range_m: 0.1

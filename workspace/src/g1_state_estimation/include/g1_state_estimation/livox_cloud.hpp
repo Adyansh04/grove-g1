@@ -16,9 +16,16 @@ namespace g1_state_estimation
  * @brief Fills @p cloud with @p custom's points as xyz + intensity, keeping header and frame.
  *
  * Per-point time and line are dropped; only FAST-LIO uses them, from the CustomMsg itself.
+ * Points nearer the sensor than @p min_range_m are dropped: the driver reports a return with no
+ * echo as a point at the sensor's origin.
+ *
+ * @param custom       The driver's message.
+ * @param[out] cloud   Overwritten; its earlier contents are discarded.
+ * @param min_range_m  Smallest kept distance from the sensor, metres. 0 keeps every point.
  */
 void toPointCloud2(
-    const livox_ros_driver2::msg::CustomMsg& custom, sensor_msgs::msg::PointCloud2& cloud);
+    const livox_ros_driver2::msg::CustomMsg& custom, sensor_msgs::msg::PointCloud2& cloud,
+    double min_range_m);
 
 }  // namespace g1_state_estimation
 
