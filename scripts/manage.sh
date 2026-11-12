@@ -112,7 +112,10 @@ function run_tests() {
             echo "no package matches: ${*:2}" >&2
             exit 1
         fi
-        for package in "${packages[@]}"; do rm -rf "build/$package/test_results"; done
+        # ctest keeps a Testing/ folder of its own, which colcon test-result reads as well.
+        for package in "${packages[@]}"; do
+            rm -rf "build/${package:?}/test_results" "build/${package:?}/Testing"
+        done
         status=0
         colcon test --packages-select "${packages[@]}" --executor sequential \
             --return-code-on-test-failure --ctest-args "${labels[@]}" || status=$?
