@@ -8,6 +8,7 @@ Asks the host vision server's `ground` endpoint and writes the answer onto the d
 import rclpy
 from canopy_perception.host_clients import VisionClient, image_to_array
 from rcl_interfaces.srv import SetParameters
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.parameter import Parameter
 from rclpy.qos import qos_profile_sensor_data
@@ -127,12 +128,17 @@ def main():
     node = InstructionGrounder()
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
         node.close()
         node.destroy_node()
-        rclpy.try_shutdown()
+        try:
+            rclpy.try_shutdown()
+        except RuntimeError:
+            # SIGINT's handler thread can finish the same shutdown first (ros2/rclpy#1352).
+            if rclpy.ok():
+                raise
 
 
 if __name__ == "__main__":
