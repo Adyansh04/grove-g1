@@ -58,9 +58,10 @@ sweep() {
 }
 
 # The NervROS agent runs on the host, outside the stack, and outlives it: neither its node nor the
-# topics it only listens to are leftovers.
+# topics it only listens to are leftovers. The ros2 calls are cut off with SIGINT: on rmw_zenoh
+# one can ignore SIGTERM.
 HOST_AGENT=/nervros
-graph_nodes() { timeout 25 ros2 node list 2>/dev/null | grep -v '^$' | grep -vx "$HOST_AGENT"; }
+graph_nodes() { timeout -s INT -k 5 25 ros2 node list 2>/dev/null | grep -v '^$' | grep -vx "$HOST_AGENT"; }
 
 # The named sweep first, so ordinary runs report something recognisable, then the broad one.
 total=0
@@ -98,13 +99,13 @@ fi
 echo "killed $total process(es) in total, inside the container"
 
 nodes=$(graph_nodes)
-if timeout 25 ros2 node list 2>/dev/null | grep -qx "$HOST_AGENT"; then
+if timeout -s INT -k 5 25 ros2 node list 2>/dev/null | grep -qx "$HOST_AGENT"; then
     # It publishes only /rosout and /parameter_events, so with it up only published topics count.
-    topics=$(timeout 25 ros2 topic list -v 2>/dev/null \
+    topics=$(timeout -s INT -k 5 25 ros2 topic list -v 2>/dev/null \
         | sed -n '/^Published topics:/,/^$/s/^ \* \([^ ]*\) .*/\1/p' \
         | grep -vE '^/parameter_events$|^/rosout$')
 else
-    topics=$(timeout 25 ros2 topic list 2>/dev/null | grep -vE '^/parameter_events$|^/rosout$')
+    topics=$(timeout -s INT -k 5 25 ros2 topic list 2>/dev/null | grep -vE '^/parameter_events$|^/rosout$')
 fi
 
 echo "--- ros2 node list (want: empty) ---"

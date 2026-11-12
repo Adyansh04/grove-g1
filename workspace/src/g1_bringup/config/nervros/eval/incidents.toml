@@ -54,7 +54,7 @@ expect = { reply_has = ["twice", "duplicate", "two copies", "same name"], missio
 [[case]]
 id = "detector-too-slow"
 # /rosout is transient local, so its readers match only a publisher that is too.
-inject = '''docker exec ros_dev_jazzy bash -c 'source /opt/ros/jazzy/setup.bash && for i in 1 2 3; do timeout 15 ros2 topic pub --once --qos-durability transient_local --qos-reliability reliable /rosout rcl_interfaces/msg/Log "{level: 30, name: detector_chest, msg: \"the newest camera frame is 9.4 s old; not asking about it\"}"; done' '''
+inject = '''docker exec ros_dev_jazzy bash -c 'source /opt/ros/jazzy/setup.bash && for i in 1 2 3; do timeout -s INT -k 5 15 ros2 topic pub --once --qos-durability transient_local --qos-reliability reliable /rosout rcl_interfaces/msg/Log "{level: 30, name: detector_chest, msg: \"the newest camera frame is 9.4 s old; not asking about it\"}"; done' '''
 say = ["The robot finds no objects at all. Why?"]
 max_s = 240
 expect = { reply_has = ["too much", "too many", "overwhelm", "fewer"], mission = "none" }
