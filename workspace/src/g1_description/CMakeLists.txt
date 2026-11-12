@@ -9,8 +9,16 @@ find_package(ament_cmake REQUIRED)
 
 install(DIRECTORY urdf config DESTINATION share/${PROJECT_NAME})
 
-# Copied at configure time rather than committed
-set(G1_VENDOR_MESHES "/opt/unitree_robotics/unitree_mujoco/unitree_robots/g1/meshes"
+# Copied at configure time rather than committed: from the unitree_mujoco checkout in the workspace
+# when there is one, so a mesh added to the fork installs without an image rebuild; else from the
+# image's copy.
+set(_g1_fork_meshes "${CMAKE_CURRENT_SOURCE_DIR}/../../vendor/unitree_mujoco/unitree_robots/g1/meshes")
+if(EXISTS "${_g1_fork_meshes}")
+  set(_g1_default_meshes "${_g1_fork_meshes}")
+else()
+  set(_g1_default_meshes "/opt/unitree_robotics/unitree_mujoco/unitree_robots/g1/meshes")
+endif()
+set(G1_VENDOR_MESHES "${_g1_default_meshes}"
     CACHE PATH "Directory holding the vendored G1 visual meshes")
 
 if(EXISTS "${G1_VENDOR_MESHES}")

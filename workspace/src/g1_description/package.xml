@@ -4,9 +4,10 @@
   <name>g1_description</name>
   <version>0.1.0</version>
   <description>
-    Unitree G1 (hand-equipped, 29-DoF) URDF, vendored kinematics-only, plus the
+    Unitree G1 (hand-equipped, 29-DoF) URDFs, vendored kinematics-only, plus the
     xacro wrappers that add the ros2_control blocks: all 29 body motors on
-    G1LowCmdSystem, and seven finger joints per hand on a G1Dex3System each.
+    G1LowCmdSystem, and per hand either seven Dex3 finger joints on a G1Dex3System
+    or six Inspire RH56DFQ actuators on a G1InspireSystem.
   </description>
   <maintainer email="gupta.adyansh@gmail.com">Adyansh</maintainer>
   <license>BSD-3-Clause</license>
