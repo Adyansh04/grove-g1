@@ -1,0 +1,23 @@
+# Laid over g1_manipulation_server.yaml by manipulation.launch.py with hand_model:=inspire: the
+# Inspire RH56DFQ's closing and grip, where they differ from the Dex3's. Spans are measured from
+# the URDF between the thumb tip and the index and middle tips, along g1_moveit_config's `open` to
+# `closed` (rotation held at 1.3 rad, so a close only bends).
+g1_manipulation_server:
+  ros__parameters:
+    # The palm face is about 57 mm above the grasp frame, so the fingers can take an object a
+    # little deeper than the Dex3's 26 mm without the palm meeting its top.
+    grasp_depth_below_top_m: 0.035
+
+    # m. Thumb tip to the index and middle tips: 137 mm at `open`, 12 mm at `closed`, nearly
+    # linear in between. The widest object is the open span less both pads' radii and a margin.
+    hand_span_open_m: 0.137
+    hand_span_closed_m: 0.012
+    max_grasp_width_m: 0.110
+    grip_max_width_m: 0.110
+
+    # The hand stops each finger at its own force limit (g1_description's inspire_params.yaml,
+    # 300 g), so a close past contact presses no harder. A finger reads as pressing 0.08 rad short
+    # of its target with 0.03 N m: 60 g at the 50 mm the effort is reported at.
+    grip_min_position_error_rad: 0.08
+    grip_min_effort_nm: 0.03
+

@@ -97,6 +97,8 @@ bool G1ManipulationServer::isHolding(const ArmContext& arm, std::string& why, bo
     // Against the last close, not `closed`: a close onto a measured width stops short on purpose.
     // After holdCurrentGrip the fingers sit short of these by construction, so effort decides.
     const std::map<std::string, double> targets = handTargetsAt(*hand, last_close_fraction_);
+    const std::map<std::string, double> open    = handTargetsAt(*hand, 0.0);
+    const std::map<std::string, double> closed  = handTargetsAt(*hand, 1.0);
     std::vector<std::string>            joints;
     joints.reserve(targets.size());
     for (const auto& entry : targets)
@@ -119,8 +121,13 @@ bool G1ManipulationServer::isHolding(const ArmContext& arm, std::string& why, bo
     fingers.reserve(joints.size());
     for (std::size_t i = 0; i < joints.size(); ++i)
     {
-        fingers.push_back(
-            { joints[i], targets.at(joints[i]), measured->position[i], measured->effort[i] });
+        // A joint the close does not move, such as a thumb's rotation, says nothing about a grip.
+        const bool closes = std::abs(closed.at(joints[i]) - open.at(joints[i])) > 1e-6;
+        fingers.push_back({ .name     = joints[i],
+                            .target   = targets.at(joints[i]),
+                            .position = measured->position[i],
+                            .effort   = measured->effort[i],
+                            .closes   = closes });
     }
     const GripVerdict verdict =
         verifyGrip(fingers, grip_min_position_error_rad_, grip_min_effort_nm_);

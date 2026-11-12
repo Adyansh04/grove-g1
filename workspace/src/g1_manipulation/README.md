@@ -89,6 +89,9 @@ close, so pose goals are given for it directly.
 - The right hand's fingers close toward palm +y and the left's toward -y. That is why `grasp_rpy` is a roll and the left hand mirrors it.
 - A top grasp aims `grasp_depth_below_top_m` under the top face, but never lower than `min_grip_height_m` above the surface, because the thumb hangs 63 mm below the frame.
 - The hand takes objects 20 to 75 mm across.
+- The Inspire hand's frame sits at palm (0.160, ±0.072, 0.022), between its opposed thumb's tip and
+  the index and middle tips. Its thumb hangs 39 mm below the frame, and it takes objects up to
+  110 mm across.
 
 ```bash
 ros2 run tf2_ros tf2_echo right_hand_palm_link right_hand_grasp_frame
@@ -100,7 +103,9 @@ The hand controller has no goal tolerances, so a blocked finger reports success.
 reads a grip from `/joint_states` instead. A finger presses when it is at least
 `grip_min_position_error_rad` short of its target and pushes at least `grip_min_effort_nm`.
 
-- After the close, the thumb must press with the index or middle finger, or the pick fails.
+- A joint the close does not move, the same in `open` and `closed` (the Dex3's thumb roll, the
+  Inspire thumb's rotation), says nothing about a grip and is left out.
+- After the close, the thumb must press with another finger, or the pick fails.
 - After the lift, the result is only logged. A cradled object loads the fingers too little to tell held from dropped.
 
 ## Where a grasp comes from
@@ -124,6 +129,7 @@ explained in comments. `config/g1_object_pose_source.yaml` holds the source's fr
 | `object_source` | `sim_ground_truth` | See above. |
 | `object_timeout_ms` | 1000.0 | How old a pose may be. Bringup passes 8000 with perception. |
 | `min_grip_height_m` | 0.080 | Lowest grip above the surface. Bringup passes 0.035 for the navigation world, whose ball sits where the thumb hangs past the desk edge. |
+| `hand_model` | `G1_HAND_MODEL`, else `dex3` | The hands: the model the skills plan against, and `config/g1_manipulation_server_<hand>.yaml` laid over the Dex3's parameters: the Inspire hand's spans, grip thresholds and grasp depth. |
 | `grasp_source` | `fixed_top_down` | See above. |
 | `generated_grasp_arms` | `[right]` | The arms a `generated` source serves; GraspGenX describes the right Dex3 only, so the left still grasps from the object's box. |
 | `max_grasp_width_m` | 0.090 | The widest object a hand closes round; a wider one is refused before the arm moves. |
