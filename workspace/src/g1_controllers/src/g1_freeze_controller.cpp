@@ -16,6 +16,12 @@
 namespace g1_controllers
 {
 
+double rampedPosition(double start, double goal, double elapsed_s, double ramp_s)
+{
+    const double fraction = ramp_s > 0.0 ? std::clamp(elapsed_s / ramp_s, 0.0, 1.0) : 1.0;
+    return start + (fraction * (goal - start));
+}
+
 controller_interface::CallbackReturn G1FreezeController::on_init()
 {
     auto_declare<std::vector<std::string>>("joints", {});
@@ -178,12 +184,10 @@ controller_interface::return_type
 G1FreezeController::update(const rclcpp::Time& /*time*/, const rclcpp::Duration& period)
 {
     elapsed_s_ += period.seconds();
-    const double fraction =
-        ramp_duration_s_ > 0.0 ? std::min(1.0, elapsed_s_ / ramp_duration_s_) : 1.0;
     for (std::size_t i = 0; i < joint_names_.size(); ++i)
     {
         const double position =
-            frozen_positions_[i] + (fraction * (goal_positions_[i] - frozen_positions_[i]));
+            rampedPosition(frozen_positions_[i], goal_positions_[i], elapsed_s_, ramp_duration_s_);
         (void)command_interfaces_[position_command_indices_[i]].set_value(position);
         (void)command_interfaces_[velocity_command_indices_[i]].set_value(0.0);
         (void)command_interfaces_[effort_command_indices_[i]].set_value(0.0);

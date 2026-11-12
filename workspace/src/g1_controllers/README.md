@@ -147,6 +147,7 @@ pose only as the ratio is raised by hand, and holds the arms at 40/1 instead of 
 | `test_agile_policy` | The ONNX contract and both joint tables, against the installed policy. |
 | `test_safety_blend` | The blend-and-slew arithmetic, including that the rate clamp survives a blend-ratio step. |
 | `test_freeze_pluginlib` | All three controllers resolve through pluginlib, the path `controller_manager` uses. |
+| `test_freeze_ramp` | The ramp to `target_positions`: from the activation pose, halfway at half time, holding the target after it, and no motion without a target. |
 | `test_joint_ownership` | Reads this package's controller config against `g1_description`'s joint list. Every body motor has exactly one owner whether the arm is frozen or acquired. The arm pair claims identical joints. The emergency freeze claims the safety controller's joints, and its switch deactivates every controller chained into the safety controller. |
 
 Behaviour is covered by two `g1_bringup` tests. Both need the simulator: see

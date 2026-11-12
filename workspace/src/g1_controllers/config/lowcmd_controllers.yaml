@@ -68,7 +68,8 @@ imu_sensor_broadcaster:
     sensor_name: imu
     frame_id: pelvis
 
-# Neither the policy nor MoveIt commands waist yaw, so it is held for the whole session.
+# Neither the policy nor MoveIt commands waist yaw, so it is held for the whole session. Without
+# target_positions and ramp_duration_s it holds where it starts; the hardware file sets both.
 waist_freeze_controller:
   ros__parameters:
     kp: 10.0

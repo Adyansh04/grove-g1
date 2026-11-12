@@ -99,6 +99,10 @@ if(BUILD_TESTING)
   ament_add_gmock(test_safety_blend test/test_safety_blend.cpp)
   target_link_libraries(test_safety_blend g1_safety_controller)
 
+  # The ramp to a target is the only motion a freeze controller commands.
+  ament_add_gmock(test_freeze_ramp test/test_freeze_ramp.cpp)
+  target_link_libraries(test_freeze_ramp g1_freeze_controller)
+
   # Loads the installed policy, so it pins the ONNX contract and the joint tables together.
   ament_add_gmock(test_agile_policy test/test_agile_policy.cpp)
   target_link_libraries(test_agile_policy g1_agile_policy ament_index_cpp::ament_index_cpp)

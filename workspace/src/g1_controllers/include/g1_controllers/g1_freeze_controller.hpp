@@ -16,6 +16,19 @@ namespace g1_controllers
 {
 
 /**
+ * @brief Where a linear ramp from @p start to @p goal stands after @p elapsed_s of @p ramp_s.
+ *
+ * Holds @p goal once the ramp ends. A non-positive @p ramp_s is already at @p goal.
+ *
+ * @param start      Position the ramp starts from, radians.
+ * @param goal       Position it ends at, radians.
+ * @param elapsed_s  Time since the ramp started, seconds.
+ * @param ramp_s     The ramp's length, seconds.
+ * @return The position to command, radians.
+ */
+[[nodiscard]] double rampedPosition(double start, double goal, double elapsed_s, double ramp_s);
+
+/**
  * @brief Holds every claimed joint at the position it had when this controller activated, or at
  * a configured target reached by a linear ramp from there.
  *
