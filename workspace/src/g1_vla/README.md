@@ -34,6 +34,8 @@ read at runtime, on a slow path with no timing or safety role. It speaks the pol
 protocol directly, so the container never needs the model's dependencies.
 
 `vla.launch.py` starts the server and the engine chosen by `engine:=mock|groot` (default `mock`).
+It refuses `hand_model:=inspire` (or `G1_HAND_MODEL=inspire`): GR00T's G1 embodiment and the
+adapter map the Dex3's seven finger joints.
 
 `execution_mode:=trajectory|servo` (default `trajectory`) sets how a validated chunk runs:
 
