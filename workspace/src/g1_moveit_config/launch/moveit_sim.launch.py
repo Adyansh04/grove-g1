@@ -10,7 +10,7 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import EnvironmentVariable, LaunchConfiguration
 
 BRINGUP_LAUNCH = os.path.join(get_package_share_directory("g1_bringup"), "launch", "sim.launch.py")
 MOVE_GROUP_LAUNCH = os.path.join(
@@ -34,8 +34,9 @@ def _setup(context, *args, **kwargs):
             world=LaunchConfiguration("world"),
             pin_pelvis=LaunchConfiguration("pin_pelvis"),
             sim_start_delay_s=LaunchConfiguration("sim_start_delay_s"),
+            hand_model=LaunchConfiguration("hand_model"),
         ),
-        _include(MOVE_GROUP_LAUNCH),
+        _include(MOVE_GROUP_LAUNCH, hand_model=LaunchConfiguration("hand_model")),
     ]
 
 
@@ -51,6 +52,13 @@ def generate_launch_description():
                 "world",
                 default_value="navigation",
                 description="Which scene to stage. Only matters for what the robot can bump into.",
+            ),
+            DeclareLaunchArgument(
+                "hand_model",
+                default_value=EnvironmentVariable("G1_HAND_MODEL", default_value="dex3"),
+                choices=["dex3", "inspire"],
+                description="The hands, 'dex3' or 'inspire', for the simulator and move_group "
+                "alike. Defaults to G1_HAND_MODEL, else dex3.",
             ),
             DeclareLaunchArgument(
                 "sensors",

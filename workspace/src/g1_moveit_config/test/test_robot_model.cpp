@@ -16,12 +16,29 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
 
 namespace
 {
-constexpr const char* kUrdfPath = G1_TEST_URDF_PATH;
-constexpr const char* kSrdfPath = G1_TEST_SRDF_PATH;
+constexpr const char*      kUrdfPath  = G1_TEST_URDF_PATH;
+constexpr const char*      kSrdfPath  = G1_TEST_SRDF_PATH;
+constexpr std::string_view kHandModel = G1_TEST_HAND_MODEL;
+
+/// The thumb tip's and the finger tips' links, which a hand closed on a small object brings
+/// together, for the side's hand model.
+std::vector<std::pair<std::string, std::string>> tipPairs(const std::string& side)
+{
+    if (kHandModel == "inspire")
+    {
+        const std::string prefix = side == "left" ? "L_" : "R_";
+        return { { prefix + "index_intermediate", prefix + "thumb_distal" },
+                 { prefix + "middle_intermediate", prefix + "thumb_distal" } };
+    }
+    return { { side + "_hand_index_1_link", side + "_hand_thumb_2_link" },
+             { side + "_hand_middle_1_link", side + "_hand_thumb_2_link" } };
+}
 
 const std::vector<std::string> kLeftArm = {
     "left_shoulder_pitch_joint", "left_shoulder_roll_joint", "left_shoulder_yaw_joint",
@@ -37,7 +54,8 @@ const std::vector<std::string> kRightArm = {
 
 /// Links that can reach the other arm; their cross-arm pairs must stay enabled for both_arms.
 const std::vector<std::string> kReachingLinks = {
-    "elbow_link", "wrist_roll_link", "wrist_pitch_link", "wrist_yaw_link", "hand_palm_link",
+    "elbow_link",     "wrist_roll_link", "wrist_pitch_link",
+    "wrist_yaw_link", "hand_palm_link",  "hand_base_link",
 };
 
 /// Room every joint of a named posture needs before self-collision: an arm drooping under load
@@ -146,11 +164,40 @@ TEST_F(RobotModelTest, TheThumbTipMayTouchTheFingerTips)
     }
     for (const std::string& side : { "left", "right" })
     {
-        for (const std::string& finger : { "index", "middle" })
+        for (const auto& [finger, thumb] : tipPairs(side))
         {
-            const std::string tip = side + "_hand_" + finger + "_1_link";
-            EXPECT_TRUE(disabled.contains({ tip, side + "_hand_thumb_2_link" }))
-                << tip << " / " << side << "_hand_thumb_2_link is checked";
+            EXPECT_TRUE(disabled.contains({ finger, thumb }))
+                << finger << " / " << thumb << " is checked";
+        }
+    }
+}
+
+TEST_F(RobotModelTest, TheHandPosturesAreFreeOfSelfCollision)
+{
+    // A hand posture in self-collision makes every plan that starts from it fail at its start.
+    planning_scene::PlanningScene scene(model_);
+    for (const std::string& side : { "left", "right" })
+    {
+        const auto* hand = model_->getJointModelGroup(side + "_hand");
+        ASSERT_NE(hand, nullptr) << side;
+        for (const std::string& posture : { "open", "pinch_ready", "closed" })
+        {
+            moveit::core::RobotState state(model_);
+            state.setToDefaultValues();
+            ASSERT_TRUE(state.setToDefaultValues(hand, posture)) << side << " " << posture;
+            state.update();
+            collision_detection::CollisionRequest request;
+            request.contacts     = true;
+            request.max_contacts = 10;
+            request.group_name   = side + "_hand";
+            collision_detection::CollisionResult result;
+            scene.checkSelfCollision(request, result, state);
+            std::string pairs;
+            for (const auto& [pair, contacts] : result.contacts)
+            {
+                pairs += " " + pair.first + "/" + pair.second;
+            }
+            EXPECT_FALSE(result.collision) << side << " " << posture << " collides:" << pairs;
         }
     }
 }
@@ -311,10 +358,15 @@ TEST_F(RobotModelTest, TheArmsCanStillCollideWithEachOther)
     // the hands through one another and report success.
     for (const auto& pair : srdf_->getDisabledCollisionPairs())
     {
-        const bool left_then_right =
-            pair.link1_.rfind("left_", 0) == 0 && pair.link2_.rfind("right_", 0) == 0;
-        const bool right_then_left =
-            pair.link1_.rfind("right_", 0) == 0 && pair.link2_.rfind("left_", 0) == 0;
+        // The Inspire hand's links are L_ and R_.
+        const auto is_left = [](const std::string& link) {
+            return link.rfind("left_", 0) == 0 || link.rfind("L_", 0) == 0;
+        };
+        const auto is_right = [](const std::string& link) {
+            return link.rfind("right_", 0) == 0 || link.rfind("R_", 0) == 0;
+        };
+        const bool left_then_right = is_left(pair.link1_) && is_right(pair.link2_);
+        const bool right_then_left = is_right(pair.link1_) && is_left(pair.link2_);
         if (!left_then_right && !right_then_left)
         {
             continue;

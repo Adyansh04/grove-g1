@@ -1,12 +1,18 @@
 <?xml version="1.0"?>
-<robot name="g1_29dof_with_hand_rev_1_0">
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="g1_29dof_with_hand_rev_1_0">
   <!-- Hand-written against g1_description's g1_lowcmd.urdf.xacro, except the generated
-       disable_collisions block at the bottom. XML comments cannot contain a double hyphen: one
-       makes move_group fail at launch.
+       disable_collisions blocks. XML comments cannot contain a double hyphen: one makes
+       move_group fail at launch.
+
+       hand_model picks the hands' part, as it picks them in the description: dex3, Unitree's
+       Dex3-1, or inspire, Inspire's RH56DFQ. The arms' part is the same for both.
 
        No virtual joint: the vendored URDF's floating base is commented out, so MoveIt plans in
        `pelvis`. Scene objects fixed in `odom`, or reaching while walking, need a floating
        virtual joint to `odom`. -->
+
+  <xacro:arg name="hand_model" default="dex3"/>
+  <xacro:property name="inspire" value="${'$(arg hand_model)' == 'inspire'}"/>
 
   <!-- Rooted at torso_link: the waist joints belong to waist_freeze_controller and the balance
        policy, so a group spanning them would plan motion nothing executes. Tipped at the palm,
@@ -29,6 +35,7 @@
     <group name="right_arm"/>
   </group>
 
+  <xacro:unless value="${inspire}">
   <!-- One group per Dex3 hand, in Dex3 wire order. Never part of an arm group: the hand is a
        separate device with its own topics and controller. -->
   <group name="left_hand">
@@ -49,6 +56,41 @@
     <joint name="right_hand_index_0_joint"/>
     <joint name="right_hand_index_1_joint"/>
   </group>
+  </xacro:unless>
+  <xacro:if value="${inspire}">
+  <!-- One group per Inspire hand: its base, the six actuated joints in the hand's register order,
+       then the six coupled ones, whose links a grasp touches. Never part of an arm group. -->
+  <group name="left_hand">
+    <joint name="L_base_link_joint"/>
+    <joint name="L_pinky_proximal_joint"/>
+    <joint name="L_ring_proximal_joint"/>
+    <joint name="L_middle_proximal_joint"/>
+    <joint name="L_index_proximal_joint"/>
+    <joint name="L_thumb_proximal_pitch_joint"/>
+    <joint name="L_thumb_proximal_yaw_joint"/>
+    <joint name="L_pinky_intermediate_joint"/>
+    <joint name="L_ring_intermediate_joint"/>
+    <joint name="L_middle_intermediate_joint"/>
+    <joint name="L_index_intermediate_joint"/>
+    <joint name="L_thumb_intermediate_joint"/>
+    <joint name="L_thumb_distal_joint"/>
+  </group>
+  <group name="right_hand">
+    <joint name="R_base_link_joint"/>
+    <joint name="R_pinky_proximal_joint"/>
+    <joint name="R_ring_proximal_joint"/>
+    <joint name="R_middle_proximal_joint"/>
+    <joint name="R_index_proximal_joint"/>
+    <joint name="R_thumb_proximal_pitch_joint"/>
+    <joint name="R_thumb_proximal_yaw_joint"/>
+    <joint name="R_pinky_intermediate_joint"/>
+    <joint name="R_ring_intermediate_joint"/>
+    <joint name="R_middle_intermediate_joint"/>
+    <joint name="R_index_intermediate_joint"/>
+    <joint name="R_thumb_intermediate_joint"/>
+    <joint name="R_thumb_distal_joint"/>
+  </group>
+  </xacro:if>
 
   <!-- Lets attachObject derive its touch links and RViz offer the hand as the arm's gripper.
        SRDF has no two-tip end effector, so a two-handed grasp attaches to one arm and lists the
@@ -283,6 +325,7 @@
     <joint name="right_wrist_yaw_joint" value="0.00"/>
   </group_state>
 
+  <xacro:unless value="${inspire}">
   <!-- Hand postures: reach in pinch_ready, close, attach, move, place, open, detach. The hands
        mirror by sign, as the URDF limits do.
 
@@ -352,6 +395,69 @@
     <joint name="right_hand_index_0_joint" value="1.20"/>
     <joint name="right_hand_index_1_joint" value="1.40"/>
   </group_state>
+  </xacro:unless>
+  <xacro:if value="${inspire}">
+  <!-- Inspire hand postures, the same names and uses as the Dex3's. Both hands close with
+       positive angles.
+
+       `open`: fingers straight and the thumb turned to oppose them (rotation 1.3 rad), but not
+       bent, so a close only bends; the thumb tip hangs 111 mm out from the palm face.
+
+       `pinch_ready` is `open`: the thumb cannot fold back further than straight.
+
+       `closed` stops 4.7 mm short of the thumb's contact capsules meeting the index and middle
+       fingers' in the simulator, since the grip check reads a finger stopped short of `closed` as
+       holding something. Thumb tip to the index and middle tips: 137 mm at open, 6 mm at closed,
+       about linear in between. -->
+  <group_state name="open" group="left_hand">
+    <joint name="L_pinky_proximal_joint" value="0.00"/>
+    <joint name="L_ring_proximal_joint" value="0.00"/>
+    <joint name="L_middle_proximal_joint" value="0.00"/>
+    <joint name="L_index_proximal_joint" value="0.00"/>
+    <joint name="L_thumb_proximal_pitch_joint" value="0.00"/>
+    <joint name="L_thumb_proximal_yaw_joint" value="1.30"/>
+  </group_state>
+  <group_state name="pinch_ready" group="left_hand">
+    <joint name="L_pinky_proximal_joint" value="0.00"/>
+    <joint name="L_ring_proximal_joint" value="0.00"/>
+    <joint name="L_middle_proximal_joint" value="0.00"/>
+    <joint name="L_index_proximal_joint" value="0.00"/>
+    <joint name="L_thumb_proximal_pitch_joint" value="0.00"/>
+    <joint name="L_thumb_proximal_yaw_joint" value="1.30"/>
+  </group_state>
+  <group_state name="closed" group="left_hand">
+    <joint name="L_pinky_proximal_joint" value="0.80"/>
+    <joint name="L_ring_proximal_joint" value="0.80"/>
+    <joint name="L_middle_proximal_joint" value="0.80"/>
+    <joint name="L_index_proximal_joint" value="0.80"/>
+    <joint name="L_thumb_proximal_pitch_joint" value="0.22"/>
+    <joint name="L_thumb_proximal_yaw_joint" value="1.30"/>
+  </group_state>
+  <group_state name="open" group="right_hand">
+    <joint name="R_pinky_proximal_joint" value="0.00"/>
+    <joint name="R_ring_proximal_joint" value="0.00"/>
+    <joint name="R_middle_proximal_joint" value="0.00"/>
+    <joint name="R_index_proximal_joint" value="0.00"/>
+    <joint name="R_thumb_proximal_pitch_joint" value="0.00"/>
+    <joint name="R_thumb_proximal_yaw_joint" value="1.30"/>
+  </group_state>
+  <group_state name="pinch_ready" group="right_hand">
+    <joint name="R_pinky_proximal_joint" value="0.00"/>
+    <joint name="R_ring_proximal_joint" value="0.00"/>
+    <joint name="R_middle_proximal_joint" value="0.00"/>
+    <joint name="R_index_proximal_joint" value="0.00"/>
+    <joint name="R_thumb_proximal_pitch_joint" value="0.00"/>
+    <joint name="R_thumb_proximal_yaw_joint" value="1.30"/>
+  </group_state>
+  <group_state name="closed" group="right_hand">
+    <joint name="R_pinky_proximal_joint" value="0.80"/>
+    <joint name="R_ring_proximal_joint" value="0.80"/>
+    <joint name="R_middle_proximal_joint" value="0.80"/>
+    <joint name="R_index_proximal_joint" value="0.80"/>
+    <joint name="R_thumb_proximal_pitch_joint" value="0.22"/>
+    <joint name="R_thumb_proximal_yaw_joint" value="1.30"/>
+  </group_state>
+  </xacro:if>
 
   <!-- Generated: links joined by a joint (Adjacent) and links touching at rest per
        /check_state_validity (Default). Without them the start state is in collision and
@@ -365,21 +471,6 @@
   <disable_collisions link1="left_ankle_pitch_link" link2="left_knee_link" reason="Default"/>
   <disable_collisions link1="left_elbow_link" link2="left_shoulder_yaw_link" reason="Default"/>
   <disable_collisions link1="left_elbow_link" link2="left_wrist_roll_link" reason="Adjacent"/>
-  <disable_collisions link1="left_hand_index_0_link" link2="left_hand_index_1_link" reason="Adjacent"/>
-  <disable_collisions link1="left_hand_index_0_link" link2="left_hand_palm_link" reason="Default"/>
-  <disable_collisions link1="left_hand_middle_0_link" link2="left_hand_middle_1_link" reason="Adjacent"/>
-  <disable_collisions link1="left_hand_middle_0_link" link2="left_hand_palm_link" reason="Default"/>
-  <disable_collisions link1="left_hand_palm_link" link2="left_hand_thumb_0_link" reason="Adjacent"/>
-  <disable_collisions link1="left_hand_palm_link" link2="left_wrist_yaw_link" reason="Default"/>
-  <disable_collisions link1="left_hand_thumb_0_link" link2="left_hand_thumb_1_link" reason="Adjacent"/>
-  <disable_collisions link1="left_hand_thumb_1_link" link2="left_hand_thumb_2_link" reason="Adjacent"/>
-  <!-- Added by hand, with its right-hand twin: the closing thumb reaches back over the wrist,
-       so left checked, every plan made with a closed hand starts in collision. -->
-  <disable_collisions link1="left_hand_thumb_1_link" link2="left_wrist_roll_link" reason="Never"/>
-  <!-- Also by hand, with the right-hand twins: closed on a small object the thumb tip meets the
-       finger tips, and every lift from that grip was refused as starting in collision. -->
-  <disable_collisions link1="left_hand_index_1_link" link2="left_hand_thumb_2_link" reason="Never"/>
-  <disable_collisions link1="left_hand_middle_1_link" link2="left_hand_thumb_2_link" reason="Never"/>
   <disable_collisions link1="left_hip_pitch_link" link2="left_hip_roll_link" reason="Adjacent"/>
   <disable_collisions link1="left_hip_roll_link" link2="left_hip_yaw_link" reason="Adjacent"/>
   <disable_collisions link1="left_hip_yaw_link" link2="left_knee_link" reason="Adjacent"/>
@@ -397,17 +488,6 @@
   <disable_collisions link1="right_ankle_pitch_link" link2="right_knee_link" reason="Default"/>
   <disable_collisions link1="right_elbow_link" link2="right_shoulder_yaw_link" reason="Default"/>
   <disable_collisions link1="right_elbow_link" link2="right_wrist_roll_link" reason="Adjacent"/>
-  <disable_collisions link1="right_hand_index_0_link" link2="right_hand_index_1_link" reason="Adjacent"/>
-  <disable_collisions link1="right_hand_index_0_link" link2="right_hand_palm_link" reason="Default"/>
-  <disable_collisions link1="right_hand_middle_0_link" link2="right_hand_middle_1_link" reason="Adjacent"/>
-  <disable_collisions link1="right_hand_middle_0_link" link2="right_hand_palm_link" reason="Default"/>
-  <disable_collisions link1="right_hand_palm_link" link2="right_hand_thumb_0_link" reason="Adjacent"/>
-  <disable_collisions link1="right_hand_palm_link" link2="right_wrist_yaw_link" reason="Default"/>
-  <disable_collisions link1="right_hand_thumb_0_link" link2="right_hand_thumb_1_link" reason="Adjacent"/>
-  <disable_collisions link1="right_hand_thumb_1_link" link2="right_hand_thumb_2_link" reason="Adjacent"/>
-  <disable_collisions link1="right_hand_thumb_1_link" link2="right_wrist_roll_link" reason="Never"/>
-  <disable_collisions link1="right_hand_index_1_link" link2="right_hand_thumb_2_link" reason="Never"/>
-  <disable_collisions link1="right_hand_middle_1_link" link2="right_hand_thumb_2_link" reason="Never"/>
   <disable_collisions link1="right_hip_pitch_link" link2="right_hip_roll_link" reason="Adjacent"/>
   <disable_collisions link1="right_hip_roll_link" link2="right_hip_yaw_link" reason="Adjacent"/>
   <disable_collisions link1="right_hip_yaw_link" link2="right_knee_link" reason="Adjacent"/>
@@ -422,4 +502,72 @@
   <disable_collisions link1="torso_link" link2="right_shoulder_pitch_link" reason="Adjacent"/>
   <disable_collisions link1="waist_roll_link" link2="torso_link" reason="Adjacent"/>
   <disable_collisions link1="waist_yaw_link" link2="waist_roll_link" reason="Adjacent"/>
+
+  <!-- The Dex3 hands' pairs, generated the same way, and three kinds added by hand below. -->
+  <xacro:unless value="${inspire}">
+    <disable_collisions link1="left_hand_index_0_link" link2="left_hand_index_1_link" reason="Adjacent"/>
+    <disable_collisions link1="left_hand_index_0_link" link2="left_hand_palm_link" reason="Default"/>
+    <disable_collisions link1="left_hand_middle_0_link" link2="left_hand_middle_1_link" reason="Adjacent"/>
+    <disable_collisions link1="left_hand_middle_0_link" link2="left_hand_palm_link" reason="Default"/>
+    <disable_collisions link1="left_hand_palm_link" link2="left_hand_thumb_0_link" reason="Adjacent"/>
+    <disable_collisions link1="left_hand_palm_link" link2="left_wrist_yaw_link" reason="Default"/>
+    <disable_collisions link1="left_hand_thumb_0_link" link2="left_hand_thumb_1_link" reason="Adjacent"/>
+    <disable_collisions link1="left_hand_thumb_1_link" link2="left_hand_thumb_2_link" reason="Adjacent"/>
+    <!-- Added by hand, with its right-hand twin: the closing thumb reaches back over the wrist,
+         so left checked, every plan made with a closed hand starts in collision. -->
+    <disable_collisions link1="left_hand_thumb_1_link" link2="left_wrist_roll_link" reason="Never"/>
+    <!-- Also by hand, with the right-hand twins: closed on a small object the thumb tip meets the
+         finger tips, and every lift from that grip was refused as starting in collision. -->
+    <disable_collisions link1="left_hand_index_1_link" link2="left_hand_thumb_2_link" reason="Never"/>
+    <disable_collisions link1="left_hand_middle_1_link" link2="left_hand_thumb_2_link" reason="Never"/>
+    <disable_collisions link1="right_hand_index_0_link" link2="right_hand_index_1_link" reason="Adjacent"/>
+    <disable_collisions link1="right_hand_index_0_link" link2="right_hand_palm_link" reason="Default"/>
+    <disable_collisions link1="right_hand_middle_0_link" link2="right_hand_middle_1_link" reason="Adjacent"/>
+    <disable_collisions link1="right_hand_middle_0_link" link2="right_hand_palm_link" reason="Default"/>
+    <disable_collisions link1="right_hand_palm_link" link2="right_hand_thumb_0_link" reason="Adjacent"/>
+    <disable_collisions link1="right_hand_palm_link" link2="right_wrist_yaw_link" reason="Default"/>
+    <disable_collisions link1="right_hand_thumb_0_link" link2="right_hand_thumb_1_link" reason="Adjacent"/>
+    <disable_collisions link1="right_hand_thumb_1_link" link2="right_hand_thumb_2_link" reason="Adjacent"/>
+    <disable_collisions link1="right_hand_thumb_1_link" link2="right_wrist_roll_link" reason="Never"/>
+    <disable_collisions link1="right_hand_index_1_link" link2="right_hand_thumb_2_link" reason="Never"/>
+    <disable_collisions link1="right_hand_middle_1_link" link2="right_hand_thumb_2_link" reason="Never"/>
+  </xacro:unless>
+
+  <!-- The Inspire hands' pairs: links joined by a joint, from collisions_updater (none touch at
+       rest). -->
+  <xacro:if value="${inspire}">
+    <disable_collisions link1="L_hand_base_link" link2="L_index_proximal" reason="Adjacent"/>
+    <disable_collisions link1="L_hand_base_link" link2="L_middle_proximal" reason="Adjacent"/>
+    <disable_collisions link1="L_hand_base_link" link2="L_pinky_proximal" reason="Adjacent"/>
+    <disable_collisions link1="L_hand_base_link" link2="L_ring_proximal" reason="Adjacent"/>
+    <disable_collisions link1="L_hand_base_link" link2="L_thumb_proximal_base" reason="Adjacent"/>
+    <disable_collisions link1="L_hand_base_link" link2="left_wrist_yaw_link" reason="Adjacent"/>
+    <disable_collisions link1="L_index_intermediate" link2="L_index_proximal" reason="Adjacent"/>
+    <disable_collisions link1="L_middle_intermediate" link2="L_middle_proximal" reason="Adjacent"/>
+    <disable_collisions link1="L_pinky_intermediate" link2="L_pinky_proximal" reason="Adjacent"/>
+    <disable_collisions link1="L_ring_intermediate" link2="L_ring_proximal" reason="Adjacent"/>
+    <disable_collisions link1="L_thumb_distal" link2="L_thumb_intermediate" reason="Adjacent"/>
+    <disable_collisions link1="L_thumb_intermediate" link2="L_thumb_proximal" reason="Adjacent"/>
+    <disable_collisions link1="L_thumb_proximal" link2="L_thumb_proximal_base" reason="Adjacent"/>
+    <disable_collisions link1="R_hand_base_link" link2="R_index_proximal" reason="Adjacent"/>
+    <disable_collisions link1="R_hand_base_link" link2="R_middle_proximal" reason="Adjacent"/>
+    <disable_collisions link1="R_hand_base_link" link2="R_pinky_proximal" reason="Adjacent"/>
+    <disable_collisions link1="R_hand_base_link" link2="R_ring_proximal" reason="Adjacent"/>
+    <disable_collisions link1="R_hand_base_link" link2="R_thumb_proximal_base" reason="Adjacent"/>
+    <disable_collisions link1="R_hand_base_link" link2="right_wrist_yaw_link" reason="Adjacent"/>
+    <disable_collisions link1="R_index_intermediate" link2="R_index_proximal" reason="Adjacent"/>
+    <disable_collisions link1="R_middle_intermediate" link2="R_middle_proximal" reason="Adjacent"/>
+    <disable_collisions link1="R_pinky_intermediate" link2="R_pinky_proximal" reason="Adjacent"/>
+    <disable_collisions link1="R_ring_intermediate" link2="R_ring_proximal" reason="Adjacent"/>
+    <disable_collisions link1="R_thumb_distal" link2="R_thumb_intermediate" reason="Adjacent"/>
+    <disable_collisions link1="R_thumb_intermediate" link2="R_thumb_proximal" reason="Adjacent"/>
+    <disable_collisions link1="R_thumb_proximal" link2="R_thumb_proximal_base" reason="Adjacent"/>
+    <!-- Added by hand, as for the Dex3: closed on a small object the thumb tip meets the index
+         and middle tips, and a hand checked against itself there refuses every lift from that
+         grip as starting in collision. -->
+    <disable_collisions link1="L_index_intermediate" link2="L_thumb_distal" reason="Never"/>
+    <disable_collisions link1="L_middle_intermediate" link2="L_thumb_distal" reason="Never"/>
+    <disable_collisions link1="R_index_intermediate" link2="R_thumb_distal" reason="Never"/>
+    <disable_collisions link1="R_middle_intermediate" link2="R_thumb_distal" reason="Never"/>
+  </xacro:if>
 </robot>
