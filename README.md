@@ -49,6 +49,14 @@ adds the arms, lives on the
 
 ## Demos
 
+### On the real G1
+
+https://github.com/user-attachments/assets/16464c19-40bb-46f4-987f-ad91a70fb8c9
+
+*Nav2 walks the real G1 to two goals on a map made with slam_toolbox on FAST-LIO odometry, then
+MoveIt moves both arms three times. A phone films the robot beside both RViz views; the stretches
+where nothing moves are cut.*
+
 ### Navigation with Nav2
 
 ![Nav2 demo](docs/media/grove_nav2_demo.gif)
