@@ -20,7 +20,7 @@ from launch.actions import (
 from launch.event_handlers import OnProcessExit, OnShutdown
 from launch.events import Shutdown
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import EnvironmentVariable, LaunchConfiguration
 from launch_ros.actions import LifecycleNode, Node
 
 BRINGUP_SHARE = get_package_share_directory("g1_bringup")
@@ -430,11 +430,11 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "hand_model",
-                default_value="dex3",
+                default_value=EnvironmentVariable("G1_HAND_MODEL", default_value="dex3"),
                 choices=list(HAND_MODELS),
                 description="The hands on the simulated G1: 'dex3', Unitree's Dex3-1, or "
                 "'inspire', Inspire's RH56DFQ, which the simulator serves on the serial ports "
-                "g1_description's inspire_params.yaml names. Passed on to control.launch.py.",
+                "g1_description's inspire_params.yaml names. Passed on to control.launch.py. Defaults to G1_HAND_MODEL, else dex3.",
             ),
             DeclareLaunchArgument(
                 "rviz",

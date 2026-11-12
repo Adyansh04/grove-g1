@@ -23,7 +23,7 @@ from launch.actions import (
 )
 from launch.event_handlers import OnProcessExit
 from launch.events import Shutdown
-from launch.substitutions import Command, FindExecutable, LaunchConfiguration
+from launch.substitutions import Command, EnvironmentVariable, FindExecutable, LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
@@ -262,11 +262,11 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "hand_model",
-                default_value="dex3",
+                default_value=EnvironmentVariable("G1_HAND_MODEL", default_value="dex3"),
                 choices=list(HAND_MODELS),
                 description="The hands the robot wears: 'dex3', Unitree's Dex3-1 on its DDS "
                 "channels, or 'inspire', Inspire's RH56DFQ on an RS485 line per hand. Picks the "
-                "description and the hand controllers' joints.",
+                "description and the hand controllers' joints. Defaults to G1_HAND_MODEL, else dex3.",
             ),
             OpaqueFunction(function=_launch_setup),
         ]
