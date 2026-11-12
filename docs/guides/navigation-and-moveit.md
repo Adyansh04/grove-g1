@@ -142,6 +142,45 @@ before the arms move.
 With both MoveIt and Nav2 up, `rviz:=true` opens two windows: MoveIt's for the arm, and one on the
 navigation config for the map and costmaps.
 
+## On the real robot
+
+The robot's side (control, the LiDAR and FAST-LIO) runs on the G1's Orin. Nav2, MoveIt and RViz run
+on this machine and reach the robot through `scripts/robot.sh operator`, which runs a command in the
+development container on the robot's ROS domain. Two launcher sections open everything at once,
+with the robot hanging in its stand, feet on the ground:
+
+```bash
+./scripts/demos/navigation-and-moveit.sh robot-mapping
+./scripts/demos/navigation-and-moveit.sh robot-navigate map:=/root/data/maps/<name>.yaml
+```
+
+Both also start the robot's side: its container, control, which turns the waist straight as it
+starts, and the sensors; the other panes wait on what they need. Press Enter in the `stand` pane to
+hand the legs to the policy; it reloads the policy's controllers if their spawner hung. Then take
+the stand away.
+
+- `robot-mapping` adds SLAM, RViz and teleop (the teleop pane waits until the robot stands). Walk
+  the robot round slowly, then press Enter in the `save map` pane: it saves
+  `data/maps/map_<date>_<time>`, outside the repository. The scan's 0.30 to 1.50 m band sees legs, so
+  the map keeps the footsteps of anyone who walked beside the robot: set those specks to free (254)
+  in the `.pgm` before navigating on it.
+- `robot-navigate` adds MoveIt, AMCL and Nav2 on that map, and RViz for each. Give the robot its
+  start with 2D Pose Estimate in the navigation RViz, then send goals with 2D Goal Pose. Press
+  Enter in the `arm` pane to hand the arms to MoveIt before it executes. MoveIt starts first
+  because on the robot the collision monitor's high band reads its filtered cloud: the raw one
+  holds the robot's own head ([g1_navigation](../../workspace/src/g1_navigation/README.md)).
+
+`stop` ends this machine's side. With the robot back in its stand, stop the robot's side; it asks
+first, puts the arms and legs back on their freezes, and releases the motors:
+
+```bash
+./scripts/demos/navigation-and-moveit.sh stop
+./scripts/robot.sh release
+```
+
+MoveIt's model carries the Dex3 hands, so on a robot without them (`hands:=false`) it lacks their
+joint states and does not plan.
+
 ## Checking the graph
 
 From a second container shell:

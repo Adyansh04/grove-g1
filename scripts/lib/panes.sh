@@ -13,9 +13,11 @@
 #   open_panes
 #
 # `container` runs a command in the dev container, in /root/workspace with the workspace sourced,
-# and it may start with the wait_for_* helpers below. `host` runs one on the host, from the
-# repository root. `staged` is for a one-shot such as a goal: it waits, then sends the command
-# each time Enter is pressed. A pane stays open in a shell once its command ends or is stopped.
+# and it may start with the wait_for_* helpers below. `robot` runs one there too, but on the real
+# robot's ROS domain, through `robot.sh operator`. `host` runs one on the host, from the
+# repository root. `staged` (and `robot_staged`, `host_staged`) is for a one-shot such as a goal:
+# it waits, then sends the command each time Enter is pressed. A pane stays open in a shell once
+# its command ends or is stopped.
 
 set -euo pipefail
 
@@ -78,11 +80,20 @@ host() {
     add_pane host "$1" "$2"
 }
 
-# staged <title> <wait, or ""> <command>
-staged() {
-    add_pane container "$1" "${2:+$2 && }send_on_enter $(printf '%q' "$3")" \
-        "$3${2:+   # once $2 returns; Enter sends it}"
+robot() {
+    add_pane robot "$1" "$2"
 }
+
+# staged_in <container|robot|host> <title> <wait, or ""> <command>
+staged_in() {
+    add_pane "$1" "$2" "${3:+$3 && }send_on_enter $(printf '%q' "$4")" \
+        "$4${3:+   # once $3 returns; Enter sends it}"
+}
+
+# staged <title> <wait, or ""> <command>, in the container; robot_staged and host_staged likewise.
+staged() { staged_in container "$@"; }
+robot_staged() { staged_in robot "$@"; }
+host_staged() { staged_in host "$@"; }
 
 # --- Run inside the container panes -------------------------------------------------------------
 
@@ -137,17 +148,26 @@ send_on_enter() {
 # What a pane runs. Ctrl-C ends the command, not the pane: `trap :` is reset for the command
 # itself, which still gets the signal.
 pane_script() {
-    local i=$1 banner body
+    local i=$1 banner body helpers
     banner=$(printf 'printf %q %q %q\n' '\n\e[1m%s\e[0m\n$ %s\n\n' "${PANE_TITLES[i]}" "${PANE_SHOWN[i]}")
+    helpers=$(declare -f wait_for wait_for_nav2 wait_for_service wait_for_controller wait_for_port \
+        wait_for_arm send_on_enter)
     printf '#!/usr/bin/env bash\nprintf %q %q\n' '\e]0;%s\a' "${PANE_TITLES[i]}"
-    if [[ "${PANE_WHERE[i]}" == host ]]; then
-        printf 'cd %q\ntrap : INT\n%s\n%s\nexec "${SHELL:-bash}"\n' "$ROOT" "$banner" "${PANE_COMMANDS[i]}"
-    else
-        body=$(printf 'trap : INT\n%s\n%s\n%s\nexec bash\n' \
-            "$(declare -f wait_for wait_for_nav2 wait_for_service wait_for_controller wait_for_port \
-                wait_for_arm send_on_enter)" "$banner" "${PANE_COMMANDS[i]}")
-        printf 'exec %q exec bash -c %q\n' "$ROOT/scripts/manage.sh" "$body"
-    fi
+    case "${PANE_WHERE[i]}" in
+        host)
+            printf 'cd %q\ntrap : INT\n%s\n%s\n%s\nexec "${SHELL:-bash}"\n' "$ROOT" "$helpers" "$banner" \
+                "${PANE_COMMANDS[i]}"
+            ;;
+        container)
+            body=$(printf 'trap : INT\n%s\n%s\n%s\nexec bash\n' "$helpers" "$banner" "${PANE_COMMANDS[i]}")
+            printf 'exec %q exec bash -c %q\n' "$ROOT/scripts/manage.sh" "$body"
+            ;;
+        robot)
+            # robot.sh operator runs its argument as shell code, on the robot's domain and router.
+            body=$(printf 'trap : INT\n%s\n%s\n%s\nexec bash\n' "$helpers" "$banner" "${PANE_COMMANDS[i]}")
+            printf 'exec %q operator %q\n' "$ROOT/scripts/robot.sh" "$body"
+            ;;
+    esac
 }
 
 tilix_terminal() {
@@ -182,13 +202,15 @@ tilix_session() {
         "$1" "$(cat /proc/sys/kernel/random/uuid)" "$child"
 }
 
-# Whether a pane opens RViz or the simulator's viewer, going by the last value it gives each.
+# Whether a pane opens RViz or the simulator's viewer, going by the last value it gives each, or
+# starts RViz itself.
 needs_display() {
     local command rviz headless
     for command in "${PANE_COMMANDS[@]}"; do
         rviz=$(grep -o 'rviz:=[a-z]*' <<<"$command" | tail -n 1 || true)
         headless=$(grep -o 'headless:=[a-z]*' <<<"$command" | tail -n 1 || true)
-        if [[ "$rviz" == rviz:=true || "$headless" == headless:=false ]]; then
+        if [[ "$rviz" == rviz:=true || "$headless" == headless:=false || "$command" == *rviz2* ||
+            "$command" == *moveit_rviz* ]]; then
             return 0
         fi
     done
@@ -198,8 +220,11 @@ needs_display() {
 print_panes() {
     local i where
     for i in "${!PANE_COMMANDS[@]}"; do
-        where="on the host, from the repository root"
-        [[ "${PANE_WHERE[i]}" == host ]] || where="in the container: ./scripts/manage.sh exec"
+        case "${PANE_WHERE[i]}" in
+            host) where="on the host, from the repository root" ;;
+            container) where="in the container: ./scripts/manage.sh exec" ;;
+            robot) where="on the robot's domain: ./scripts/robot.sh operator" ;;
+        esac
         printf '# %s, %s\n%s\n\n' "${PANE_TITLES[i]}" "$where" "${PANE_SHOWN[i]}"
     done
     echo "# The wait_for_* and send_on_enter helpers are in scripts/lib/panes.sh."
@@ -211,7 +236,7 @@ open_panes() {
         print_panes
         return
     fi
-    if [[ " ${PANE_WHERE[*]} " == *" container "* ]]; then
+    if [[ " ${PANE_WHERE[*]} " == *" container "* || " ${PANE_WHERE[*]} " == *" robot "* ]]; then
         if ! "$ROOT/scripts/manage.sh" exec true 2>/dev/null; then
             echo "The dev container is not running; start it with ./scripts/manage.sh start." >&2
             exit 1

@@ -16,6 +16,11 @@
 #                    `control` takes the motors, `sensors` starts the camera and lidar
 #   stop <stack>     stop it with SIGINT, as Ctrl-C would; control releases the motors first
 #   log <stack>      follow its log
+#   stand            the legs from their freeze to the policy, blended in over 4 s: the robot in
+#                    its stand, feet on the ground
+#   arm acquire|release  the arms between their freeze and MoveIt's trajectory controller
+#   release [--yes]  arms and legs back to their freezes, then stop sensors and control; asks
+#                    first, since a robot that stands when control stops falls
 #   operator [cmd]   a shell, or cmd, in the dev container on the robot's domain and router
 #   exec [cmd]       a shell, or cmd, in the robot container, with a terminal
 #   ssh              a shell on the Orin
@@ -124,11 +129,14 @@ container_up() {
     on_robot "docker start $CONTAINER >/dev/null && docker ps --filter name=$CONTAINER --format '{{.Names}}: {{.Status}}'"
 }
 
+stack_running() {
+    on_robot "docker exec $CONTAINER pgrep -f $(stack_pattern "$1")" >/dev/null
+}
+
 stack_start() {
-    local launch pattern
+    local launch
     launch="$(stack_launch "$1") ${*:2}"
-    pattern="$(stack_pattern "$1")"
-    if on_robot "docker exec $CONTAINER pgrep -f $pattern" >/dev/null; then
+    if stack_running "$1"; then
         echo "$1 is already running." >&2
         exit 1
     fi
@@ -182,6 +190,65 @@ operator_shell() {
         "$DEV_CONTAINER" bash -lc "cd /root/workspace && source install/setup.bash && ${*:-bash}"
 }
 
+# ros2 CLI calls on the robot's domain, cut off with SIGINT: on rmw_zenoh one can ignore SIGTERM.
+readonly ROS2="timeout -s INT -k 5 30 ros2"
+# A line of `ros2 control list_controllers` for a controller in the active state; \< keeps
+# "inactive" out.
+active() {
+    printf "grep -qE '^%s .*\\<active\\>' <<<\"\$listed\"" "$1"
+}
+
+stand_up() {
+    # A spawner can hang on the Zenoh link at start and leave the policy's controllers unloaded:
+    # load whatever is missing, inactive, the safety controller first since the policy chains into
+    # it. The blend goes to 0 before the switch, so the policy takes over from the held pose even
+    # when an earlier stand left it at 1.
+    operator_shell "set -e
+listed=\$($ROS2 control list_controllers)
+for c in locomotion_safety_controller agile_controller; do
+    grep -q \"^\$c \" <<<\"\$listed\" || $ROS2 control load_controller --set-state inactive \$c
+done
+$(active locomotion_freeze_controller) || { echo 'The legs are not frozen: start control first, or the robot already stands.' >&2; exit 1; }
+$ROS2 param set /locomotion_safety_controller blend_ratio 0.0
+$ROS2 control switch_controllers --deactivate locomotion_freeze_controller \\
+    --activate locomotion_safety_controller agile_controller --strict
+$ROS2 param set /locomotion_safety_controller blend_ratio 1.0
+echo 'The policy is blending in over 4 s.'"
+}
+
+arm_switch() {
+    local from to
+    case "${1:-}" in
+        acquire) from=arm_freeze_controller to=arm_trajectory_controller ;;
+        release) from=arm_trajectory_controller to=arm_freeze_controller ;;
+        *) echo "Usage: robot.sh arm acquire|release" >&2; exit 1 ;;
+    esac
+    operator_shell "$ROS2 control switch_controllers --deactivate $from --activate $to --strict"
+}
+
+release_robot() {
+    if [[ "${1:-}" != --yes ]]; then
+        local answer
+        read -r -p "Does the robot hang in its stand? Stopping control drops a standing robot. [y/N] " \
+            answer </dev/tty
+        [[ "$answer" == [yY]* ]] || { echo "Nothing released." >&2; exit 1; }
+    fi
+    if stack_running control; then
+        # Arms, then legs, each back to its freeze; one already there stays.
+        operator_shell "listed=\$($ROS2 control list_controllers)
+if $(active arm_trajectory_controller); then
+    $ROS2 control switch_controllers --deactivate arm_trajectory_controller \\
+        --activate arm_freeze_controller --strict
+fi
+if $(active locomotion_safety_controller); then
+    $ROS2 control switch_controllers --deactivate locomotion_safety_controller agile_controller \\
+        --activate locomotion_freeze_controller --strict
+fi"
+    fi
+    if stack_running sensors; then stack_stop sensors; fi
+    if stack_running control; then stack_stop control; fi
+}
+
 main() {
     local command="${1:-help}"
     (( $# )) && shift
@@ -195,6 +262,9 @@ main() {
         start) stack_start "${1:?start control|sensors}" "${@:2}" ;;
         stop) stack_stop "${1:?stop control|sensors}" ;;
         log) ssh -t "${SSH_OPTS[@]}" "$ROBOT" tail -n 40 -f "$REMOTE_WS/log/${1:?log control|sensors}.log" ;;
+        stand) stand_up ;;
+        arm) arm_switch "$@" ;;
+        release) release_robot "$@" ;;
         operator) operator_shell "$@" ;;
         exec) ssh -t "${SSH_OPTS[@]}" "$ROBOT" docker exec -it "$CONTAINER" bash -ic "'${*:-bash}'" ;;
         ssh) ssh -t "${SSH_OPTS[@]}" "$ROBOT" ;;

@@ -151,8 +151,8 @@ that link, so its graph (domain 1) never meets the robot's. A new robot image ne
 
 - `hardware:=true` points the SDK at the robot's own DDS domain, releases Unitree's onboard
   controller (a robot reboot gives it back), layers `g1_controllers`'
-  `lowcmd_controllers_hardware.yaml` on, and starts with every joint frozen where it hangs. The
-  policy is loaded but inactive.
+  `lowcmd_controllers_hardware.yaml` on, and starts with every joint frozen where it hangs, waist yaw
+  apart (below). The policy is loaded but inactive.
 - `robot_address` is this machine's IPv4 address on the robot's network (`192.168.123.0/24`).
   The SDK's DDS is pinned to it, since a network interface that carries a second address would
   otherwise be bound by the wrong one.
@@ -165,19 +165,23 @@ that link, so its graph (domain 1) never meets the robot's. A new robot image ne
   disables the motors. The log line `motors released` confirms it. A standing robot then falls
   into its stand.
 
-Start the robot hanging in its stand, feet on the ground. To stand it up under the policy, trade
-the leg freeze for the policy in one switch, then raise its blend from the held pose:
+Start the robot hanging in its stand, feet on the ground. `robot.sh stand` trades the leg freeze
+for the policy in one switch and blends the policy in from the held pose over 4 s. It first loads
+the policy's controllers by hand, inactive, if a spawner hung on the Zenoh link at start and left
+them out of `list_controllers`.
 
 ```bash
-./scripts/robot.sh operator ros2 control switch_controllers \
-  --deactivate locomotion_freeze_controller \
-  --activate locomotion_safety_controller agile_controller --strict
-./scripts/robot.sh operator ros2 param set /locomotion_safety_controller blend_ratio 1.0
+./scripts/robot.sh stand
+./scripts/robot.sh arm acquire     # the arms to MoveIt's trajectory controller; `release` returns them
+./scripts/robot.sh release         # in its stand: arms and legs back to freeze, then stop everything
 ```
 
-`waist_yaw` is not the policy's; `waist_freeze_controller` holds it where it was at start. If it
-reads far from 0, deactivate that controller, turn the torso straight by hand, and activate it
-again before the policy goes in.
+`release` asks first, since a robot that stands when control stops falls. The navigation guide's
+launcher runs these from split panes ([On the real robot](../../../docs/guides/navigation-and-moveit.md#on-the-real-robot)).
+
+`waist_yaw` is not the policy's. On the robot `waist_freeze_controller` turns it to 0 over 3 s as
+control starts, from wherever the torso hangs, so the robot stands up straight; the waist moves by
+itself then (`lowcmd_controllers_hardware.yaml`). In simulation it holds where it starts.
 
 ## Operating notes
 
