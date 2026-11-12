@@ -9,6 +9,12 @@
        package:// for RViz. Additions go in this file, so it stays diffable against upstream. -->
   <xacro:include filename="g1_29dof_with_hand_rev_1_0.urdf"/>
 
+  <!-- hardware:=true points the SDK components at the physical G1 instead of the simulator;
+       hands:=false leaves the Dex3 components out, for a robot without them. -->
+  <xacro:arg name="hardware" default="false"/>
+  <xacro:arg name="hands" default="true"/>
+  <xacro:property name="on_hardware" value="${'$(arg hardware)' == 'true'}"/>
+
   <!-- REP 103 optical frames (z forward, x right, y down), which ROS depth consumers assume.
        d435_link is a body frame, and a depth image stamped in it projects rotated 90 degrees. -->
   <link name="camera_depth_optical_frame"/>
@@ -100,23 +106,28 @@
     <child link="mid360_visual"/>
   </joint>
 
+  <!-- The frame the Mid360's data carries: Unitree's mid360_link in the simulator. On the real
+       G1 the lidar sits pitched from that mount; measured 12 Nov 2026 as the 16.49 deg between
+       the Livox IMU's gravity and the pelvis IMU's carried through this URDF, all about y. -->
+  <xacro:property name="mid360_hardware_pitch_rad" value="0.2878"/>
+  <link name="mid360_lidar"/>
+  <joint name="mid360_lidar_joint" type="fixed">
+    <parent link="mid360_link"/>
+    <child link="mid360_lidar"/>
+    <origin xyz="0 0 0" rpy="0 ${mid360_hardware_pitch_rad if on_hardware else 0.0} 0"/>
+  </joint>
+
   <!-- The Mid360's built-in IMU, FAST-LIO's "body" frame. The inverse of Livox's published
        LiDAR-in-IMU offset [-0.011, -0.02329, 0.04412], since the parent here is the LiDAR. No
        rotation: both sit in one housing. -->
   <link name="mid360_imu"/>
   <joint name="mid360_imu_joint" type="fixed">
-    <parent link="mid360_link"/>
+    <parent link="mid360_lidar"/>
     <child link="mid360_imu"/>
     <origin xyz="0.011 0.02329 -0.04412" rpy="0 0 0"/>
   </joint>
 
   <xacro:property name="dex3_params" value="${xacro.load_yaml('../config/dex3_params.yaml')}"/>
-
-  <!-- hardware:=true points the SDK components at the physical G1 instead of the simulator;
-       hands:=false leaves the Dex3 components out, for a robot without them. -->
-  <xacro:arg name="hardware" default="false"/>
-  <xacro:arg name="hands" default="true"/>
-  <xacro:property name="on_hardware" value="${'$(arg hardware)' == 'true'}"/>
 
   <xacro:macro name="g1_hand_joint" params="name">
     <joint name="${name}">

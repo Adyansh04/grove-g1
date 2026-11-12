@@ -36,8 +36,8 @@
       b_gyr_cov: 0.0001
       fov_degree: 360.0
       det_range: 100.0
-      # DIFFERS (hardware: true). The simulated extrinsic is exact, and estimating it online
-      # lets the filter wander off it and diverge.
+      # Exact here as on the robot, and estimating it online lets the filter wander off and
+      # diverge.
       extrinsic_est_en: false
       # As in the hardware config. Identity rotation: both sensors flip together with the
       # mount, which lives in the URDF.

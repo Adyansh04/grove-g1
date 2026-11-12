@@ -125,6 +125,14 @@ private:
     std::optional<vision_msgs::msg::Detection3DArray>                   last_;
 };
 
+/// The broadcasters hold the latched publishers, so they are kept for the run and dropped before
+/// rclcpp::shutdown: rmw_zenoh aborts a process whose publishers are destroyed at exit.
+std::vector<std::shared_ptr<tf2_ros::StaticTransformBroadcaster>>& keptBroadcasters()
+{
+    static std::vector<std::shared_ptr<tf2_ros::StaticTransformBroadcaster>> kept;
+    return kept;
+}
+
 /// Publishes one static edge so the node has a real transform to apply.
 std::shared_ptr<rclcpp::Node>
 staticTf(const std::string& parent, const std::string& child, double x, double y, double z)
@@ -141,9 +149,7 @@ staticTf(const std::string& parent, const std::string& child, double x, double y
     tf.transform.rotation.w    = 1.0;
     caster->sendTransform(tf);
     node->set_parameter(rclcpp::Parameter("use_sim_time", false));
-    // The latched publisher lives in the broadcaster, so it is kept for the whole run.
-    static std::vector<std::shared_ptr<tf2_ros::StaticTransformBroadcaster>> keep;
-    keep.push_back(caster);
+    keptBroadcasters().push_back(caster);
     return node;
 }
 
@@ -306,6 +312,7 @@ int main(int argc, char** argv)
     ::testing::InitGoogleMock(&argc, argv);
     rclcpp::init(argc, argv);
     const int result = RUN_ALL_TESTS();
+    keptBroadcasters().clear();
     rclcpp::shutdown();
     return result;
 }

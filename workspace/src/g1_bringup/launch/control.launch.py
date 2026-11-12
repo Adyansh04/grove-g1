@@ -103,11 +103,12 @@ def _hardware_problems(robot_address, environ):
     """Why the hardware stack must not start, before any process runs; empty when it may."""
     problems = []
     rmw = environ.get("RMW_IMPLEMENTATION")
-    if rmw != "rmw_fastrtps_cpp":
+    if rmw == "rmw_cyclonedds_cpp":
         problems.append(
             f"RMW_IMPLEMENTATION={rmw!r}: ROS must not load a second CycloneDDS beside the SDK's."
         )
-    # ROS on the robot's domain would turn any ROS topic named /lowcmd into a motor command.
+    # On a DDS RMW, ROS on the robot's domain would turn a ROS topic named /lowcmd into a motor
+    # command.
     robot_domain = _robot_domain_id()
     if environ.get("ROS_DOMAIN_ID", "0") == str(robot_domain):
         problems.append(

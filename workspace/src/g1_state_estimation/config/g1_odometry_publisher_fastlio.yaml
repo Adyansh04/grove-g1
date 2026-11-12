@@ -20,6 +20,11 @@ g1_odometry_publisher:
     # changes: a few centimetres high lifts floor returns toward the costmap's 0.08 m cut.
     start_height_m: 0.729
 
+    # The pelvis height above the floor from the lower foot, so FAST-LIO's z drift while walking
+    # (0.2-0.9 m on the robot) cannot lift floor returns into the costmap or the scan. The sole is
+    # 0.035 m below each ankle_roll_link: the URDF's contact spheres sit 0.03 m down, 0.005 m wide.
+    foot_frame_ids: ["left_ankle_roll_link", "right_ankle_roll_link"]
+    sole_below_foot_m: 0.035
     max_tilt_deg: 80.0
 
     # Slerp fraction per LiDAR sample toward the pelvis IMU's tilt: ~2 s at 10 Hz, slower than

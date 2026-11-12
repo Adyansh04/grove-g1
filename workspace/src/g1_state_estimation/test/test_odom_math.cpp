@@ -5,6 +5,7 @@
 
 #include <gmock/gmock.h>
 
+#include <array>
 #include <cmath>
 #include <limits>
 
@@ -12,6 +13,7 @@
 
 using g1_state_estimation::composePose;
 using g1_state_estimation::GroundSplit;
+using g1_state_estimation::heightFromFeet;
 using g1_state_estimation::invertPose;
 using g1_state_estimation::isStale;
 using g1_state_estimation::OdometrySource;
@@ -432,4 +434,29 @@ TEST(InvertRotation, ComposesToIdentity)
     const Quaternion r = composeRotation(q, invertRotation(q));
     EXPECT_NEAR(std::abs(r.w), 1.0, 1e-9);
     EXPECT_NEAR(tiltFromVertical(r), 0.0, 1e-9);
+}
+
+TEST(HeightFromFeet, TheLowerFootIsTheOneOnTheFloor)
+{
+    // Mid-step: the swing foot is 6 cm up, so the stance foot's 0.69 m below the body counts.
+    const std::array<Pose3d, 2> feet{ makePose(0.0, 0.1, -0.69, 0, 0, 0),
+                                      makePose(0.2, -0.1, -0.63, 0, 0, 0) };
+    const auto                  height = heightFromFeet(feet, Quaternion{}, 0.035);
+    ASSERT_TRUE(height.has_value());
+    EXPECT_NEAR(*height, 0.725, 1e-9);
+}
+
+TEST(HeightFromFeet, LevelsTheFeetByTheBodyTilt)
+{
+    // Body pitched 10 deg: a foot straight below in the body frame sits higher once levelled.
+    const std::array<Pose3d, 1> feet{ makePose(0.0, 0.0, -0.7, 0, 0, 0) };
+    const Quaternion            pitched = makePose(0, 0, 0, 0.0, 10.0 * M_PI / 180.0, 0.0).q;
+    const auto                  height  = heightFromFeet(feet, pitched, 0.0);
+    ASSERT_TRUE(height.has_value());
+    EXPECT_NEAR(*height, 0.7 * std::cos(10.0 * M_PI / 180.0), 1e-9);  // nanometres
+}
+
+TEST(HeightFromFeet, NoFeetGiveNoHeight)
+{
+    EXPECT_FALSE(heightFromFeet(std::span<const Pose3d>{}, Quaternion{}, 0.035).has_value());
 }

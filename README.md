@@ -185,7 +185,7 @@ Development happens in the dev container: Docker Compose runs it, and
 | Setting | Value |
 |---|---|
 | ROS distro | Jazzy, pinned in `.env` |
-| Middleware | `rmw_fastrtps_cpp`, image-wide. The Unitree SDK carries its own CycloneDDS, pinned to loopback, and ROS must not load a second one. |
+| Middleware | `rmw_zenoh_cpp`, image-wide; the container's main process is its Zenoh router. The Unitree SDK carries its own CycloneDDS, pinned to loopback, and ROS must not load a second one. |
 | `ROS_DOMAIN_ID` | 1 |
 | C++ | C++20 on GCC 13.3 |
 | Paths | `/root/workspace` (this repo's `workspace/`), `/root/data` (shared data) |
@@ -198,10 +198,11 @@ The real G1 is driven from its own Orin, not from this container. The Orin runs 
 and the sensor drivers in `robot/Dockerfile`'s image, which `scripts/robot.sh` builds here, loads
 onto the Orin over the robot's Ethernet and runs there; `g1_bringup`'s
 [Running on the robot](workspace/src/g1_bringup/README.md#running-on-the-robot) has the steps.
-Robot work runs on ROS domain 7 (`robot.sh operator` opens it here), apart from the simulator's
-domain 1. Only the hardware component reaches the robot's own DDS domain, pinned to the address
-given as `robot_address`. `sim.launch.py` refuses to start unless
-`CYCLONEDDS_URI` pins loopback, so the simulator cannot come up pointed at a robot.
+Robot work runs on ROS domain 7 through Zenoh routers of its own (`robot.sh operator` opens it
+here), apart from the simulator's domain 1 and router. Only the hardware component reaches the
+robot's own DDS domain, pinned to the address given as `robot_address`. `sim.launch.py` refuses
+to start unless `CYCLONEDDS_URI` pins loopback, so the simulator cannot come up pointed at a
+robot.
 
 ## Tests
 

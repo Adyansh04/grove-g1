@@ -82,7 +82,7 @@ verify_clean() {
     echo "  workspace processes still alive: $n"
     # --no-daemon: the daemon's cached graph lists nodes that died minutes ago. A duplicate
     # name means an orphan is still running.
-    dup=$(timeout 25 ros2 node list --no-daemon 2>/dev/null | sort | uniq -d)
+    dup=$(timeout -s INT -k 5 25 ros2 node list --no-daemon 2>/dev/null | sort | uniq -d)
     if [ -n "$dup" ]; then
         echo "  DUPLICATE NODES (orphans alive):"; echo "$dup" | sed 's|^|    |'
     else

@@ -1,6 +1,6 @@
 # The runtime for the G1's Orin (arm64): ros2_control with the balance policy, the lidar and
-# camera drivers, and later the link to the operator's machine. It holds dependencies only; the
-# robot-side packages are synced onto the Orin and built there, in this image, by
+# camera drivers, and the Zenoh router the operator's machine links to. It holds dependencies
+# only; the robot-side packages are synced onto the Orin and built there, in this image, by
 # scripts/robot.sh. Built on the PC under QEMU, since the Orin has no internet:
 #
 #   ./scripts/robot.sh image
@@ -35,6 +35,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ros-${ROS_DISTRO}-realsense2-camera \
         ros-${ROS_DISTRO}-realsense2-description \
         ros-${ROS_DISTRO}-realtime-tools \
+        ros-${ROS_DISTRO}-rmw-zenoh-cpp \
         ros-${ROS_DISTRO}-robot-state-publisher \
         ros-${ROS_DISTRO}-ros2-control \
         ros-${ROS_DISTRO}-ros2-controllers \
@@ -80,9 +81,9 @@ RUN git init -q /tmp/Livox-SDK2 && \
     ldconfig && \
     rm -rf /tmp/Livox-SDK2
 
-# ROS stays on fastrtps and off the robot's own DDS domain 0, as in the dev image: unitree_sdk2
-# brings its own CycloneDDS, and two of different ABIs in one process corrupt the heap.
-ENV RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+# ROS runs on Zenoh, as in the dev image: unitree_sdk2 brings its own CycloneDDS, and two of
+# different ABIs in one process corrupt the heap.
+ENV RMW_IMPLEMENTATION=rmw_zenoh_cpp
 ENV ROS_DOMAIN_ID=1
 
 RUN echo 'source /opt/ros/jazzy/setup.bash' >> /root/.bashrc && \

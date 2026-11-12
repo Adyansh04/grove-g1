@@ -72,6 +72,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ros-${ROS_DISTRO}-pointcloud-to-laserscan \
         ros-${ROS_DISTRO}-realsense2-description \
         ros-${ROS_DISTRO}-realtime-tools \
+        ros-${ROS_DISTRO}-rmw-zenoh-cpp \
         ros-${ROS_DISTRO}-ros2-control \
         ros-${ROS_DISTRO}-ros2-controllers \
         ros-${ROS_DISTRO}-slam-toolbox \
@@ -147,8 +148,9 @@ RUN mkdir -p /etc/cyclonedds && \
       '  </Interfaces></General></Domain>' \
       '</CycloneDDS>' > /etc/cyclonedds/cyclonedds.xml
 
-# RMW_IMPLEMENTATION must match .devcontainer/Dockerfile; ci.yml checks that it does.
-ENV RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+# RMW_IMPLEMENTATION must match .devcontainer/Dockerfile; ci.yml checks that it does. The tests
+# reach each other through a Zenoh router that ci.yml starts.
+ENV RMW_IMPLEMENTATION=rmw_zenoh_cpp
 ENV CYCLONEDDS_URI=file:///etc/cyclonedds/cyclonedds.xml
 ENV ROS_DOMAIN_ID=1
 ENV CMAKE_C_COMPILER_LAUNCHER=ccache

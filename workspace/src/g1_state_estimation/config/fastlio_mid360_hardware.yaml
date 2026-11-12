@@ -35,7 +35,9 @@
       b_gyr_cov: 0.0001
       fov_degree: 360.0
       det_range: 100.0
-      extrinsic_est_en: true
+      # The IMU sits in the Mid360's housing, so the extrinsic is fixed; estimating it online
+      # gives the filter a way to wander off and diverge.
+      extrinsic_est_en: false
       # Livox's lidar-in-IMU pose. The upside-down mount flips both together, so it lives in
       # the URDF (mid360_joint), not here.
       extrinsic_T: [-0.011, -0.02329, 0.04412]

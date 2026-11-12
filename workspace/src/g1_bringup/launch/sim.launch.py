@@ -63,7 +63,6 @@ FASTLIO_EXTRA_DELAY_S = 10.0
 WORLDS = ("navigation", "perception", "manipulation", "tabletop", "lio", "apartment")
 ODOMETRY_SOURCES = ("ground_truth", "fast_lio")
 
-EXPECTED_RMW = "rmw_fastrtps_cpp"
 EXPECTED_DOMAIN_ID = "1"
 
 
@@ -110,15 +109,17 @@ def _cyclonedds_problems(uri):
 
 
 def _check_environment(context, *args, **kwargs):
-    """Fails the launch before anything starts; an RMW or domain mismatch otherwise shows up only
-    as an empty graph."""
+    """Fails the launch before anything starts: a CycloneDDS RMW corrupts the heap, and a domain
+    mismatch otherwise shows up only as an empty graph."""
     problems = []
 
     # ROS must not load a second CycloneDDS: the hardware component reaches the wire through
     # unitree_sdk2's own, and the two ship libddsc.so.0 with different ABIs.
     rmw = os.environ.get("RMW_IMPLEMENTATION")
-    if rmw != EXPECTED_RMW:
-        problems.append(f"RMW_IMPLEMENTATION={rmw!r}, expected {EXPECTED_RMW!r}.")
+    if rmw == "rmw_cyclonedds_cpp":
+        problems.append(
+            f"RMW_IMPLEMENTATION={rmw!r}: ROS must not load a second CycloneDDS beside the SDK's."
+        )
 
     problems += _cyclonedds_problems(os.environ.get("CYCLONEDDS_URI"))
 

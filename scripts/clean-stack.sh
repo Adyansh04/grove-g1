@@ -9,8 +9,8 @@
 #
 # Matches full command lines: `pgrep -x` reads /proc/PID/comm, truncated to 15 characters, so
 # names like ros2_control_node never match. Loops until the graph is empty, since launch respawns
-# children and DDS reports dead nodes for seconds. Skips its own ancestry, whose command lines
-# contain the same patterns.
+# children and the graph reports dead nodes for seconds. Skips its own ancestry, whose command
+# lines contain the same patterns, and the Zenoh routers.
 set -u
 
 CONTAINER=${CONTAINER:-ros_dev_jazzy}
@@ -48,6 +48,8 @@ sweep() {
         case "$protected" in *" $pid "*) continue ;; esac
         cmd=$(tr '\0' ' ' < "$proc/cmdline" 2>/dev/null) || continue
         [ -z "$cmd" ] && continue
+        # The container's router is its main process: killing it stops the container.
+        case "$cmd" in *rmw_zenohd*) continue ;; esac
         if printf '%s' "$cmd" | grep -qE "$pattern"; then
             kill -9 "$pid" 2>/dev/null && killed=$((killed + 1))
         fi
@@ -56,9 +58,10 @@ sweep() {
 }
 
 # The NervROS agent runs on the host, outside the stack, and outlives it: neither its node nor the
-# topics it only listens to are leftovers.
+# topics it only listens to are leftovers. The ros2 calls are cut off with SIGINT: on rmw_zenoh
+# one can ignore SIGTERM.
 HOST_AGENT=/nervros
-graph_nodes() { timeout 25 ros2 node list 2>/dev/null | grep -v '^$' | grep -vx "$HOST_AGENT"; }
+graph_nodes() { timeout -s INT -k 5 25 ros2 node list 2>/dev/null | grep -v '^$' | grep -vx "$HOST_AGENT"; }
 
 # The named sweep first, so ordinary runs report something recognisable, then the broad one.
 total=0
@@ -95,20 +98,14 @@ fi
 
 echo "killed $total process(es) in total, inside the container"
 
-# kill -9 leaves Fast DDS shared-memory segments behind; stale ones break delivery on later runs
-# without any error.
-shm=$(ls /dev/shm/fastrtps_* /dev/shm/sem.fastrtps_* 2>/dev/null | wc -l)
-rm -f /dev/shm/fastrtps_* /dev/shm/sem.fastrtps_* 2>/dev/null
-echo "cleared $shm stale DDS shared-memory segment(s)"
-
 nodes=$(graph_nodes)
-if timeout 25 ros2 node list 2>/dev/null | grep -qx "$HOST_AGENT"; then
+if timeout -s INT -k 5 25 ros2 node list 2>/dev/null | grep -qx "$HOST_AGENT"; then
     # It publishes only /rosout and /parameter_events, so with it up only published topics count.
-    topics=$(timeout 25 ros2 topic list -v 2>/dev/null \
+    topics=$(timeout -s INT -k 5 25 ros2 topic list -v 2>/dev/null \
         | sed -n '/^Published topics:/,/^$/s/^ \* \([^ ]*\) .*/\1/p' \
         | grep -vE '^/parameter_events$|^/rosout$')
 else
-    topics=$(timeout 25 ros2 topic list 2>/dev/null | grep -vE '^/parameter_events$|^/rosout$')
+    topics=$(timeout -s INT -k 5 25 ros2 topic list 2>/dev/null | grep -vE '^/parameter_events$|^/rosout$')
 fi
 
 echo "--- ros2 node list (want: empty) ---"

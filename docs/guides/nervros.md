@@ -73,15 +73,16 @@ workspace/src/nervros/scripts/local-llm.sh start
 python3 workspace/src/canopy/editor/canopy_editor.py data/worlds/nervros-apartment &   # the world editor
 cd workspace/src/nervros
 ./scripts/build-overlay.sh ../g1_msgs ../canopy/canopy_msgs
-export NERVROS_UDP_ONLY=1 NERVROS_EXTRA_IDL_PACKAGES="g1_msgs;canopy_msgs" ROS_DOMAIN_ID=1 \
-  ROS_PACKAGE_PATH=$PWD/../../build
+export RMW_IMPLEMENTATION=rmw_zenoh_cpp NERVROS_EXTRA_IDL_PACKAGES="g1_msgs;canopy_msgs" \
+  ROS_DOMAIN_ID=1 ROS_PACKAGE_PATH=$PWD/../../build
 export CARGO_TARGET_DIR=~/.cache/nervros/target   # outside the colcon workspace
 source scripts/ros-env.sh
 cargo run -p nervros-gui -- --profile ../g1_bringup/config/nervros/nervros.toml
 ```
 
-- `NERVROS_UDP_ONLY=1` turns Fast DDS shared memory off. The container runs as root, and shared
-  memory between two users fails without an error: topics appear, but no data arrives.
+- `RMW_IMPLEMENTATION=rmw_zenoh_cpp` is the container's middleware: the agent finds the stack
+  through the container's Zenoh router, over the host network. The host needs it once:
+  `sudo apt install ros-jazzy-rmw-zenoh-cpp`.
 - `ROS_PACKAGE_PATH` points at the colcon build, where the viewer finds the G1's meshes. `install/`
   only links to the container's paths.
 - The profile, `g1_bringup/config/nervros/nervros.toml`, names the G1's cameras, detectors, world
@@ -558,7 +559,6 @@ fallen into before:
 
 | Playbook | What it checks |
 |---|---|
-| `stale-shared-memory` | `g1_object_geometry` finding no depth frame for a mask's stamp again and again, while the chest camera's images come under 6 Hz and its `camera_info` keeps its rate: Fast DDS shared memory left stale by `kill -9`. A loaded machine also makes depth miss its masks now and then; the dropped images tell the two apart. |
 | `detector-too-slow` | A detector skipping frames as too old: it is asked about too much at once. |
 | `robot-lost` | `map` to `pelvis` against the relay's `base_state`, the simulator's truth: more than 1 m or 30 degrees apart, since a map starts where the robot stood when it was made, up to half a metre from the simulator's origin. |
 | `robot-down`, `fell-at-start` | The executor's `can_move`, and the odometry, the locomotion safety trip and Nav2's aborted bring-up in the log. |

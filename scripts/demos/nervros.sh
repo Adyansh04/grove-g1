@@ -77,10 +77,11 @@ ARM_EXECUTOR="wait_for_nav2 && wait_for_arm && ros2 launch g1_orchestration nerv
 # The real detector finds anything by phrase, so no argument is pinned.
 FETCH_EXECUTOR="wait_for_nav2 && wait_for_arm && ros2 launch g1_orchestration nervros_executor.launch.py hands_empty_on_attach:=true $LEARNED"
 PROFILE="$ROOT/workspace/src/g1_bringup/config/nervros/nervros.toml"
-# The graph runs as root in the container: host shared memory would fail, so UDP only. The build
-# goes outside the colcon workspace, which would otherwise crawl its tens of gigabytes. The viewer
-# finds the G1's meshes in the colcon build: install/ only links to container paths.
-AGENT_ENV="cd workspace/src/nervros && ./scripts/build-overlay.sh ../g1_msgs ../canopy/canopy_msgs && export NERVROS_UDP_ONLY=1 NERVROS_EXTRA_IDL_PACKAGES='g1_msgs;canopy_msgs' ROS_DOMAIN_ID=1 ROS_PACKAGE_PATH=$ROOT/workspace/build CARGO_TARGET_DIR=\$HOME/.cache/nervros/target && source scripts/ros-env.sh"
+# The agent takes the container's RMW, whatever the image runs, and reaches its router over the
+# host network. The build goes outside the colcon workspace, which would otherwise crawl its tens
+# of gigabytes. The viewer finds the G1's meshes in the colcon build: install/ only links to
+# container paths.
+AGENT_ENV="cd workspace/src/nervros && ./scripts/build-overlay.sh ../g1_msgs ../canopy/canopy_msgs && export RMW_IMPLEMENTATION=\$($ROOT/scripts/manage.sh exec printenv RMW_IMPLEMENTATION) NERVROS_EXTRA_IDL_PACKAGES='g1_msgs;canopy_msgs' ROS_DOMAIN_ID=1 ROS_PACKAGE_PATH=$ROOT/workspace/build CARGO_TARGET_DIR=\$HOME/.cache/nervros/target && source scripts/ros-env.sh"
 
 # The copy is made once and then kept, with whatever the robot adds to it; delete
 # data/worlds/nervros-apartment to start again from the committed map. The explore world starts

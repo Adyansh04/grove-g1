@@ -13,6 +13,15 @@ services:
     tty: true
     stdin_open: true
 
+    # The container's main process is its Zenoh router: every ROS process here, and the host's
+    # NervROS agent on the host network, finds the others through it. tini (init) forwards
+    # docker stop's SIGTERM and reaps orphans such as the ros2 daemon.
+    init: true
+    command:
+      - bash
+      - -c
+      - source /opt/ros/${ROS_DISTRO:-jazzy}/setup.bash && exec ros2 run rmw_zenoh_cpp rmw_zenohd
+
     # Container name includes the ROS distro for clarity
     container_name: ${CONTAINER_PREFIX:-ros_dev}_${ROS_DISTRO:-jazzy}
 

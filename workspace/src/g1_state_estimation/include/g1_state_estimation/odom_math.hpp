@@ -8,6 +8,8 @@
 
 #include <array>
 #include <cstddef>
+#include <optional>
+#include <span>
 #include <string>
 
 namespace g1_state_estimation
@@ -140,6 +142,17 @@ struct GroundSplit
  *               caller mid-fall can hold the last well-conditioned heading instead.
  */
 GroundSplit splitGroundProjection(double x, double y, double z, const Quaternion& q, double yaw);
+
+/**
+ * @brief The body's height above the floor from its feet: the lower foot is the one on the floor.
+ *
+ * @param feet_in_body       Each foot frame's pose in the body frame, metres.
+ * @param tilt               The body's roll and pitch (no heading), which levels the feet.
+ * @param sole_below_foot_m  How far the sole sits below a foot frame's origin, metres.
+ * @return The height in metres, or nothing when no foot is given.
+ */
+[[nodiscard]] std::optional<double> heightFromFeet(
+    std::span<const Pose3d> feet_in_body, const Quaternion& tilt, double sole_below_foot_m);
 
 /**
  * @brief Recombines a heading with a tilt, the inverse of splitGroundProjection().

@@ -5,6 +5,8 @@
 
 #include "g1_controllers/g1_freeze_controller.hpp"
 
+#include <algorithm>
+#include <cmath>
 #include <pluginlib/class_list_macros.hpp>
 #include <string_view>
 
@@ -19,15 +21,19 @@ controller_interface::CallbackReturn G1FreezeController::on_init()
     auto_declare<std::vector<std::string>>("joints", {});
     auto_declare<double>("kp", 0.0);
     auto_declare<double>("kd", 0.0);
+    auto_declare<std::vector<double>>("target_positions", {});
+    auto_declare<double>("ramp_duration_s", 0.0);
     return controller_interface::CallbackReturn::SUCCESS;
 }
 
 controller_interface::CallbackReturn
 G1FreezeController::on_configure(const rclcpp_lifecycle::State& /*previous_state*/)
 {
-    joint_names_ = get_node()->get_parameter("joints").as_string_array();
-    kp_          = get_node()->get_parameter("kp").as_double();
-    kd_          = get_node()->get_parameter("kd").as_double();
+    joint_names_      = get_node()->get_parameter("joints").as_string_array();
+    kp_               = get_node()->get_parameter("kp").as_double();
+    kd_               = get_node()->get_parameter("kd").as_double();
+    target_positions_ = get_node()->get_parameter("target_positions").as_double_array();
+    ramp_duration_s_  = get_node()->get_parameter("ramp_duration_s").as_double();
 
     if (joint_names_.empty())
     {
@@ -41,7 +47,30 @@ G1FreezeController::on_configure(const rclcpp_lifecycle::State& /*previous_state
         return controller_interface::CallbackReturn::ERROR;
     }
 
+    if (!target_positions_.empty())
+    {
+        const bool finite = std::ranges::all_of(target_positions_, [](const double position) {
+            return std::isfinite(position);
+        });
+        if (target_positions_.size() != joint_names_.size() || !finite)
+        {
+            RCLCPP_ERROR(
+                get_node()->get_logger(),
+                "target_positions must hold one finite position per joint (%zu), got %zu",
+                joint_names_.size(),
+                target_positions_.size());
+            return controller_interface::CallbackReturn::ERROR;
+        }
+        // Ramp, don't snap: a target with no ramp would step the joint from wherever it hangs.
+        if (!(ramp_duration_s_ > 0.0) || !std::isfinite(ramp_duration_s_))
+        {
+            RCLCPP_ERROR(get_node()->get_logger(), "target_positions need ramp_duration_s > 0");
+            return controller_interface::CallbackReturn::ERROR;
+        }
+    }
+
     frozen_positions_.assign(joint_names_.size(), 0.0);
+    goal_positions_.assign(joint_names_.size(), 0.0);
     return controller_interface::CallbackReturn::SUCCESS;
 }
 
@@ -122,9 +151,14 @@ G1FreezeController::on_activate(const rclcpp_lifecycle::State& /*previous_state*
             return controller_interface::CallbackReturn::ERROR;
         }
         frozen_positions_[i] = position.value();
+        goal_positions_[i]   = target_positions_.empty() ? position.value() : target_positions_[i];
     }
+    elapsed_s_ = 0.0;
 
-    RCLCPP_INFO(get_node()->get_logger(), "holding %zu joints", joint_names_.size());
+    RCLCPP_INFO(
+        get_node()->get_logger(),
+        target_positions_.empty() ? "holding %zu joints" : "moving %zu joints to their targets",
+        joint_names_.size());
     return controller_interface::CallbackReturn::SUCCESS;
 }
 
@@ -141,11 +175,16 @@ G1FreezeController::on_deactivate(const rclcpp_lifecycle::State& /*previous_stat
 }
 
 controller_interface::return_type
-G1FreezeController::update(const rclcpp::Time& /*time*/, const rclcpp::Duration& /*period*/)
+G1FreezeController::update(const rclcpp::Time& /*time*/, const rclcpp::Duration& period)
 {
+    elapsed_s_ += period.seconds();
+    const double fraction =
+        ramp_duration_s_ > 0.0 ? std::min(1.0, elapsed_s_ / ramp_duration_s_) : 1.0;
     for (std::size_t i = 0; i < joint_names_.size(); ++i)
     {
-        (void)command_interfaces_[position_command_indices_[i]].set_value(frozen_positions_[i]);
+        const double position =
+            frozen_positions_[i] + (fraction * (goal_positions_[i] - frozen_positions_[i]));
+        (void)command_interfaces_[position_command_indices_[i]].set_value(position);
         (void)command_interfaces_[velocity_command_indices_[i]].set_value(0.0);
         (void)command_interfaces_[effort_command_indices_[i]].set_value(0.0);
         (void)command_interfaces_[kp_command_indices_[i]].set_value(kp_);

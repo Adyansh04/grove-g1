@@ -197,6 +197,10 @@ jobs:
         run: |
           source /opt/ros/jazzy/setup.bash
           source install/setup.bash
+          # The suites find each other through a Zenoh router, as in the dev container.
+          /opt/ros/jazzy/lib/rmw_zenoh_cpp/rmw_zenohd > zenohd.log 2>&1 &
+          router=$!
+          trap 'kill "$router"' EXIT
           colcon test \
             --packages-select-regex '^(g1_|canopy)' \
             --executor sequential \
@@ -259,6 +263,9 @@ jobs:
         run: |
           source /opt/ros/jazzy/setup.bash
           source install/setup.bash
+          /opt/ros/jazzy/lib/rmw_zenoh_cpp/rmw_zenohd > zenohd.log 2>&1 &
+          router=$!
+          trap 'kill "$router"' EXIT
           colcon test --packages-select-regex '^(g1_|canopy)' --executor sequential \
             --ctest-args -LE simulator
 

@@ -5,7 +5,7 @@ import os
 
 import pytest
 
-SAFE = {"RMW_IMPLEMENTATION": "rmw_fastrtps_cpp", "ROS_DOMAIN_ID": "1"}
+SAFE = {"RMW_IMPLEMENTATION": "rmw_zenoh_cpp", "ROS_DOMAIN_ID": "1"}
 
 
 @pytest.fixture(scope="module")
@@ -16,14 +16,17 @@ def control_launch():
     return module
 
 
-def test_a_local_address_off_the_robots_domain_may_start(control_launch):
-    assert control_launch._hardware_problems("127.0.0.1", SAFE) == []
+# Unset is Jazzy's default, rmw_fastrtps_cpp: no CycloneDDS either.
+@pytest.mark.parametrize("rmw", ["rmw_zenoh_cpp", "rmw_fastrtps_cpp", None])
+def test_a_local_address_off_the_robots_domain_may_start(control_launch, rmw):
+    environ = {"ROS_DOMAIN_ID": "1", **({"RMW_IMPLEMENTATION": rmw} if rmw else {})}
+    assert control_launch._hardware_problems("127.0.0.1", environ) == []
 
 
 # ROS_DOMAIN_ID unset is domain 0 too.
 @pytest.mark.parametrize("domain", [{"ROS_DOMAIN_ID": "0"}, {}])
 def test_ros_on_the_robots_domain_is_refused(control_launch, domain):
-    environ = {"RMW_IMPLEMENTATION": "rmw_fastrtps_cpp", **domain}
+    environ = {"RMW_IMPLEMENTATION": "rmw_zenoh_cpp", **domain}
     problems = control_launch._hardware_problems("127.0.0.1", environ)
     assert any("ROS_DOMAIN_ID" in problem for problem in problems)
 

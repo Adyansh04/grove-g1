@@ -108,6 +108,10 @@ freeze has loaded, is logged and sent again each second while the hold lasts.
 The arm value matches the position-only gains of the shoulders and elbows, so the MoveIt handover
 keeps their stiffness. `on_configure` rejects an empty joint list and non-positive gains.
 
+Optional `target_positions` (radians, one per joint) with a positive `ramp_duration_s` (seconds)
+move the joints linearly from the activation pose to the targets, then hold them there. On hardware
+the waist ramps straight over 3 s, since the robot hangs twisted in the stand.
+
 ## Running
 
 ```bash

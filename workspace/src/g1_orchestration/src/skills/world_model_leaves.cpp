@@ -36,7 +36,8 @@ double yawOf(const geometry_msgs::msg::Quaternion& q)
     return std::atan2(2.0 * ((q.w * q.z) + (q.x * q.y)), 1.0 - (2.0 * ((q.y * q.y) + (q.z * q.z))));
 }
 
-/// One TF listener for every TurnTo in the process, on the tree's node.
+/// One TF listener for every TurnTo in the process, on the tree's node. It goes at
+/// rclcpp::shutdown: left to the static destructors, rmw_zenoh aborts the process at exit.
 std::shared_ptr<tf2_ros::Buffer> sharedTf(const rclcpp::Node::SharedPtr& node)
 {
     static std::mutex                                  mutex;
@@ -47,6 +48,10 @@ std::shared_ptr<tf2_ros::Buffer> sharedTf(const rclcpp::Node::SharedPtr& node)
     {
         buffer   = std::make_shared<tf2_ros::Buffer>(node->get_clock());
         listener = std::make_shared<tf2_ros::TransformListener>(*buffer);
+        node->get_node_base_interface()->get_context()->add_pre_shutdown_callback([] {
+            const std::lock_guard<std::mutex> release(mutex);
+            listener.reset();
+        });
     }
     return buffer;
 }

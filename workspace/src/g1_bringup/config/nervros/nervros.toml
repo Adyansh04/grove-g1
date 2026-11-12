@@ -13,8 +13,6 @@ diagnostics = "/diagnostics"
 
 [ros]
 domain_id = 1
-# The container runs as root; Fast DDS shared memory between users fails without an error.
-transport = "udp"
 interfaces = [
     "/opt/ros/jazzy",
     "../../../g1_msgs",

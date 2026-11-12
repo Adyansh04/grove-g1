@@ -17,6 +17,7 @@ import numpy as np
 import rclpy
 import tf2_ros
 import zmq
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import Image, JointState
@@ -398,12 +399,17 @@ def main():
     node = GrootAdapter()
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
         node._client.close()
         node.destroy_node()
-        rclpy.try_shutdown()
+        try:
+            rclpy.try_shutdown()
+        except RuntimeError:
+            # SIGINT's handler thread can finish the same shutdown first (ros2/rclpy#1352).
+            if rclpy.ok():
+                raise
 
 
 if __name__ == "__main__":

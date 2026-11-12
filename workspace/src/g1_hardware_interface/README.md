@@ -22,7 +22,7 @@ flowchart LR
 
 It reaches the wire through unitree_sdk2's own CycloneDDS, not through ROS. `CMakeLists.txt` pins
 `DT_RPATH` at the SDK's `lib/` because ROS's CycloneDDS has the same SONAME and a different ABI. ROS
-itself runs `rmw_fastrtps_cpp` image-wide for the same reason.
+itself runs `rmw_zenoh_cpp`, which loads no CycloneDDS, image-wide for the same reason.
 
 ## Layout
 

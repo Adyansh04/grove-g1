@@ -16,10 +16,13 @@ namespace g1_controllers
 {
 
 /**
- * @brief Holds every claimed joint at the position it had when this controller activated.
+ * @brief Holds every claimed joint at the position it had when this controller activated, or at
+ * a configured target reached by a linear ramp from there.
  *
- * One `kp` and `kd` for every claimed joint. The lowcmd component leaves unclaimed joints
- * unpowered, so this is what holds the body when no policy is running.
+ * One `kp` and `kd` for every claimed joint. `target_positions` (one per joint, radians) and
+ * `ramp_duration_s` (seconds, positive whenever targets are given) are optional; without them the
+ * activation pose is held. The lowcmd component leaves unclaimed joints unpowered, so this is what
+ * holds the body when no policy is running.
  */
 class G1FreezeController : public controller_interface::ControllerInterface
 {
@@ -41,11 +44,18 @@ public:
 
 private:
     std::vector<std::string> joint_names_;
-    double                   kp_ = 0.0;
-    double                   kd_ = 0.0;
+    double                   kp_              = 0.0;
+    double                   kd_              = 0.0;
+    double                   ramp_duration_s_ = 0.0;
 
-    /// Captured in on_activate, then commanded unchanged every tick.
+    /// Configured targets; empty holds the activation pose.
+    std::vector<double> target_positions_;
+    /// Captured in on_activate: where the ramp starts.
     std::vector<double> frozen_positions_;
+    /// Where the ramp ends and the hold stays: the targets, or the activation pose.
+    std::vector<double> goal_positions_;
+    /// Seconds since activation.
+    double elapsed_s_ = 0.0;
 
     std::vector<std::size_t> position_state_indices_;
     std::vector<std::size_t> position_command_indices_;
