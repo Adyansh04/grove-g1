@@ -129,6 +129,7 @@ def _sim_args(context, navigating, want_manipulation, want_perception, want_move
             else LaunchConfiguration("sensors")
         ),
         "world": LaunchConfiguration("world"),
+        "hand_model": LaunchConfiguration("hand_model"),
         "cameras": LaunchConfiguration("cameras"),
         "odometry": LaunchConfiguration("odometry"),
         "headless": LaunchConfiguration("headless"),
@@ -487,6 +488,14 @@ def generate_launch_description():
                 description="Which source publishes odom -> base_footprint. 'fast_lio' is the "
                 "pipeline the real robot runs, over the simulated Mid360. 'ground_truth' is exact "
                 "MuJoCo state, for isolating a fault to 'not the odometry'.",
+            ),
+            DeclareLaunchArgument(
+                "hand_model",
+                default_value="dex3",
+                choices=["dex3", "inspire"],
+                description="The hands the G1 wears: 'dex3', Unitree's Dex3-1, or 'inspire', "
+                "Inspire's RH56DFQ. Picks the description, the simulator's model and the hand "
+                "controllers.",
             ),
             DeclareLaunchArgument(
                 "world",

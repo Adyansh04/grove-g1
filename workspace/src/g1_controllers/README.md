@@ -125,6 +125,10 @@ simulation only, welds it and runs `locomotion_freeze_controller` in the policy'
 (`--activate-as-group`). A chainable controller's reference interfaces only become claimable inside
 the switch that activates it.
 
+With `hand_model:=inspire`, `control.launch.py` layers `config/lowcmd_controllers_inspire.yaml`
+over the controller config: the hand controllers drive the Inspire hand's six actuated joints, in
+its register order, and the two Inspire components start inactive like the Dex3's.
+
 On the robot, `control.launch.py hardware:=true` layers `config/lowcmd_controllers_hardware.yaml`
 over the controller config and leaves the policy inactive. That file starts the safety controller
 at `blend_ratio` 0 with a blend speed of 0.25 per second, so the policy takes over from the held

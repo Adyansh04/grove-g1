@@ -34,6 +34,11 @@ CONTROLLERS_YAML = os.path.join(CONTROLLERS_SHARE, "config", "lowcmd_controllers
 HARDWARE_OVERRIDES_YAML = os.path.join(
     CONTROLLERS_SHARE, "config", "lowcmd_controllers_hardware.yaml"
 )
+# The hand controllers' joints and components for each hand model but the Dex3, the base file's.
+HAND_OVERRIDES_YAML = {
+    "inspire": os.path.join(CONTROLLERS_SHARE, "config", "lowcmd_controllers_inspire.yaml"),
+}
+HAND_MODELS = ("dex3", "inspire")
 LOWCMD_PARAMS_YAML = os.path.join(DESCRIPTION_SHARE, "config", "lowcmd_params.yaml")
 
 # Forwards SIGTERM/INT to the node, which would otherwise be orphaned, and waits until it has
@@ -138,13 +143,14 @@ def _sdk_dds_config(robot_address):
     )
 
 
-def _robot_state_publisher(hardware, hands):
+def _robot_state_publisher(hardware, hands, hand_model):
     description = Command(
         [
             FindExecutable(name="xacro"),
             " ",
             XACRO_PATH,
-            f" hardware:={str(hardware).lower()} hands:={str(hands).lower()}",
+            f" hardware:={str(hardware).lower()} hands:={str(hands).lower()}"
+            f" hand_model:={hand_model}",
         ]
     )
     return Node(
@@ -182,6 +188,7 @@ def _flag(context, name):
 def _launch_setup(context, *args, **kwargs):
     hardware = _flag(context, "hardware")
     hands = _flag(context, "hands")
+    hand_model = LaunchConfiguration("hand_model").perform(context)
     robot_address = LaunchConfiguration("robot_address").perform(context)
     if hardware:
         problems = _hardware_problems(robot_address, os.environ)
@@ -196,13 +203,14 @@ def _launch_setup(context, *args, **kwargs):
     overrides = LaunchConfiguration("controllers_overrides").perform(context)
     params_files = [
         CONTROLLERS_YAML,
+        *([HAND_OVERRIDES_YAML[hand_model]] if hand_model in HAND_OVERRIDES_YAML else []),
         *([HARDWARE_OVERRIDES_YAML] if hardware else []),
         *([overrides] if overrides else []),
     ]
     environment = {"CYCLONEDDS_URI": _sdk_dds_config(robot_address)} if hardware else {}
     control_node = _control_node(params_files, environment)
     return [
-        _robot_state_publisher(hardware, hands),
+        _robot_state_publisher(hardware, hands, hand_model),
         control_node,
         *_spawners(legs_frozen, hands),
         # Tear down the whole launch if controller_manager dies.
@@ -249,8 +257,16 @@ def generate_launch_description():
                 "hands",
                 default_value="true",
                 choices=["true", "false"],
-                description="false leaves out the Dex3 hand components and their controllers, "
-                "for a robot without Dex3 hands.",
+                description="false leaves out the hand components and their controllers, for a "
+                "robot without hands.",
+            ),
+            DeclareLaunchArgument(
+                "hand_model",
+                default_value="dex3",
+                choices=list(HAND_MODELS),
+                description="The hands the robot wears: 'dex3', Unitree's Dex3-1 on its DDS "
+                "channels, or 'inspire', Inspire's RH56DFQ on an RS485 line per hand. Picks the "
+                "description and the hand controllers' joints.",
             ),
             OpaqueFunction(function=_launch_setup),
         ]

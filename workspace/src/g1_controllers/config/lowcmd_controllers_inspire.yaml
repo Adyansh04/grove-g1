@@ -1,0 +1,34 @@
+# Layered over lowcmd_controllers.yaml by g1_bringup's control.launch.py hand_model:=inspire.
+#
+# The same two hand controllers on the Inspire RH56DFQ's six actuated joints a hand, in its
+# register order. The JTC maps by name, but g1_moveit_config's drift test pins these lists to the
+# SRDF and to the order the hand component reads its registers in.
+
+controller_manager:
+  ros__parameters:
+    # Both hands wait for the arm bracket, as the Dex3s do: a hand that is absent or unpowered
+    # fails at a point we control rather than during startup.
+    hardware_components_initial_state:
+      inactive:
+        - "G1InspireSystemLeft"
+        - "G1InspireSystemRight"
+
+left_hand_controller:
+  ros__parameters:
+    joints:
+      - L_pinky_proximal_joint
+      - L_ring_proximal_joint
+      - L_middle_proximal_joint
+      - L_index_proximal_joint
+      - L_thumb_proximal_pitch_joint
+      - L_thumb_proximal_yaw_joint
+
+right_hand_controller:
+  ros__parameters:
+    joints:
+      - R_pinky_proximal_joint
+      - R_ring_proximal_joint
+      - R_middle_proximal_joint
+      - R_index_proximal_joint
+      - R_thumb_proximal_pitch_joint
+      - R_thumb_proximal_yaw_joint

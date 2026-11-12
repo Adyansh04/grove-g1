@@ -13,7 +13,7 @@ of any table in front, and MoveIt cannot plan from a start state in collision.
 
 With --posture sides the arms hang beside the thighs instead, for exploration: at zero the
 forearms point forward, into both cameras' views, and a real detector maps the hands as objects.
---no-hands leaves the Dex3 hands alone.
+--no-hands leaves the hands alone.
 
 Python, not C++: one-shot sequencing well under 1 Hz.
 """
@@ -26,6 +26,7 @@ import rclpy
 from control_msgs.action import FollowJointTrajectory
 from controller_manager_msgs.srv import (
     ListControllers,
+    ListHardwareComponents,
     SetHardwareComponentState,
     SwitchController,
 )
@@ -53,12 +54,10 @@ BODY_HOLDERS = (
 SETTLE_S = 3.0
 BODY_TIMEOUT_S = 60.0
 
-# Best-effort: a Dex3 that is absent or not publishing state must not cost the arm, and
-# G1Dex3System refuses to activate without fresh feedback.
-HANDS = (
-    ("G1Dex3SystemLeft", "left_hand_controller"),
-    ("G1Dex3SystemRight", "right_hand_controller"),
-)
+# Best-effort: a hand that is absent or not answering must not cost the arm, and either hand's
+# component refuses to activate without fresh feedback. Each hand's component is found from the
+# joints its controller drives, so the Dex3 and the Inspire hands are acquired alike.
+HAND_CONTROLLERS = ("left_hand_controller", "right_hand_controller")
 # Shorter than the arm's: an absent hand should be reported quickly, not waited out twice.
 HAND_ACTIVATE_TIMEOUT_S = 5.0
 
@@ -204,10 +203,39 @@ def move_arms(node, name, timeout_s=20.0):
     return True
 
 
+def hand_components(node, list_client, hardware_client, timeout_s):
+    """Each hand controller with the hardware component that owns its joints, whichever hand the
+    robot wears; empty when the controller manager does not answer."""
+    lists = []
+    for client, request in (
+        (list_client, ListControllers.Request()),
+        (hardware_client, ListHardwareComponents.Request()),
+    ):
+        if not client.wait_for_service(timeout_sec=timeout_s):
+            return []
+        future = client.call_async(request)
+        rclpy.spin_until_future_complete(node, future, timeout_sec=timeout_s)
+        if not future.done() or future.result() is None:
+            return []
+        lists.append(future.result())
+    controllers, hardware = lists
+    pairs = []
+    for controller in controllers.controller:
+        wanted = set(controller.required_command_interfaces)
+        if controller.name not in HAND_CONTROLLERS or not wanted:
+            continue
+        pairs += [
+            (component.name, controller.name)
+            for component in hardware.component
+            if wanted <= {interface.name for interface in component.command_interfaces}
+        ]
+    return pairs
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--posture", choices=sorted(POSTURES), default="clear")
-    parser.add_argument("--no-hands", action="store_true", help="leave the Dex3 hands alone")
+    parser.add_argument("--no-hands", action="store_true", help="leave the hands alone")
     args = parser.parse_args(remove_ros_args(sys.argv if argv is None else argv)[1:])
     rclpy.init()
     node = Node("g1_bringup_activate_arm")
@@ -219,6 +247,9 @@ def main(argv=None):
             SwitchController, "/controller_manager/switch_controller"
         )
         list_client = node.create_client(ListControllers, "/controller_manager/list_controllers")
+        hardware_client = node.create_client(
+            ListHardwareComponents, "/controller_manager/list_hardware_components"
+        )
 
         node.get_logger().info(
             "waiting for the body to be held and the balance policy to settle..."
@@ -252,7 +283,17 @@ def main(argv=None):
             node.get_logger().error(f"failed to activate {CONTROLLER_NAME}")
             return 1
 
-        for component, controller in () if args.no_hands else HANDS:
+        hands = (
+            []
+            if args.no_hands
+            else hand_components(node, list_client, hardware_client, SERVICE_CALL_TIMEOUT_S)
+        )
+        if not args.no_hands and len(hands) != len(HAND_CONTROLLERS):
+            node.get_logger().warning(
+                f"found a component for {len(hands)} of the {len(HAND_CONTROLLERS)} hand "
+                "controllers; only those hands are acquired"
+            )
+        for component, controller in hands:
             node.get_logger().info(f"activating hand {component}...")
             if not set_component_state(
                 node,

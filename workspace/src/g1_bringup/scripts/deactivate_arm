@@ -12,6 +12,7 @@ import sys
 import rclpy
 from controller_manager_msgs.srv import (
     ListControllers,
+    ListHardwareComponents,
     SetHardwareComponentState,
     SwitchController,
 )
@@ -23,10 +24,8 @@ ARM_FREEZE_CONTROLLER = "arm_freeze_controller"
 SERVICE_CALL_TIMEOUT_S = 5.0
 
 # Released first and best-effort: a hand that never came up must not block the arm's release.
-HANDS = (
-    ("G1Dex3SystemLeft", "left_hand_controller"),
-    ("G1Dex3SystemRight", "right_hand_controller"),
-)
+# Each hand's component is found from the joints its controller drives, as in activate_arm.
+HAND_CONTROLLERS = ("left_hand_controller", "right_hand_controller")
 
 
 def switch_controller(node, client, activate, deactivate, timeout_s):
@@ -73,6 +72,35 @@ def active_controllers(node, client, timeout_s):
     return {c.name for c in result.controller if c.state == "active"} if result else None
 
 
+def hand_components(node, list_client, hardware_client, timeout_s):
+    """Each hand controller with the hardware component that owns its joints, whichever hand the
+    robot wears; empty when the controller manager does not answer."""
+    lists = []
+    for client, request in (
+        (list_client, ListControllers.Request()),
+        (hardware_client, ListHardwareComponents.Request()),
+    ):
+        if not client.wait_for_service(timeout_sec=timeout_s):
+            return []
+        future = client.call_async(request)
+        rclpy.spin_until_future_complete(node, future, timeout_sec=timeout_s)
+        if not future.done() or future.result() is None:
+            return []
+        lists.append(future.result())
+    controllers, hardware = lists
+    pairs = []
+    for controller in controllers.controller:
+        wanted = set(controller.required_command_interfaces)
+        if controller.name not in HAND_CONTROLLERS or not wanted:
+            continue
+        pairs += [
+            (component.name, controller.name)
+            for component in hardware.component
+            if wanted <= {interface.name for interface in component.command_interfaces}
+        ]
+    return pairs
+
+
 def main(argv=None):
     rclpy.init()
     node = Node("g1_bringup_deactivate_arm")
@@ -84,6 +112,9 @@ def main(argv=None):
             SetHardwareComponentState, "/controller_manager/set_hardware_component_state"
         )
         list_client = node.create_client(ListControllers, "/controller_manager/list_controllers")
+        hardware_client = node.create_client(
+            ListHardwareComponents, "/controller_manager/list_hardware_components"
+        )
 
         # Released already: switching again only failed, and read as an error.
         active = active_controllers(node, list_client, SERVICE_CALL_TIMEOUT_S)
@@ -93,7 +124,9 @@ def main(argv=None):
             )
             return 0
 
-        for component, controller in HANDS:
+        for component, controller in hand_components(
+            node, list_client, hardware_client, SERVICE_CALL_TIMEOUT_S
+        ):
             node.get_logger().info(f"releasing hand {component}...")
             switch_controller(node, controller_client, [], [controller], SERVICE_CALL_TIMEOUT_S)
             set_component_state(

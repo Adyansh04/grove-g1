@@ -26,6 +26,10 @@ from launch_ros.actions import LifecycleNode, Node
 BRINGUP_SHARE = get_package_share_directory("g1_bringup")
 STATE_SHARE = get_package_share_directory("g1_state_estimation")
 RELAY_SHARE = get_package_share_directory("g1_sensor_relay")
+# Each Inspire hand's serial port in simulation; the simulator answers on the same paths.
+INSPIRE_PARAMS = os.path.join(
+    get_package_share_directory("g1_description"), "config", "inspire_params.yaml"
+)
 # Where each camera mounts; the simulator renders from it and the URDF builds frames from it.
 CAMERA_MOUNTS = os.path.join(
     get_package_share_directory("g1_description"), "config", "cameras.yaml"
@@ -61,6 +65,17 @@ SIM_START_DELAY_S = 2.0
 FASTLIO_EXTRA_DELAY_S = 10.0
 
 WORLDS = ("navigation", "perception", "manipulation", "tabletop", "lio", "apartment")
+HAND_MODELS = ("dex3", "inspire")
+# Scenes are written for the Dex3 model. Staging swaps in another hand's model, and the palm the
+# grasp welds hang from, which the grasp weld finds the digits under.
+HAND_SUBSTITUTIONS = {
+    "dex3": (),
+    "inspire": (
+        ('<include file="g1_29dof.xml"/>', '<include file="g1_29dof_inspire.xml"/>'),
+        ('body1="left_hand_palm_link"', 'body1="L_hand_base_link"'),
+        ('body1="right_hand_palm_link"', 'body1="R_hand_base_link"'),
+    ),
+}
 ODOMETRY_SOURCES = ("ground_truth", "fast_lio")
 
 EXPECTED_DOMAIN_ID = "1"
@@ -158,10 +173,12 @@ def _scene_files(world, sensors, pin_pelvis):
     return "g1_pinned_scene.xml", []
 
 
-def _stage_file(source, target):
-    """Copies one scene into place, pointing any asset placeholders at the fetched assets."""
+def _stage_file(source, target, hand_model):
+    """Copies one scene into place, with the chosen hands and the fetched assets."""
     with open(source, encoding="utf-8") as handle:
         scene = handle.read()
+    for dex3, other in HAND_SUBSTITUTIONS[hand_model]:
+        scene = scene.replace(dex3, other)
     if ASSETS_PLACEHOLDER in scene:
         if not os.path.isdir(ASSETS_DIR):
             raise RuntimeError(
@@ -174,25 +191,28 @@ def _stage_file(source, target):
         handle.write(scene)
 
 
-def _stage_scene(world, sensors, pin_pelvis):
+def _stage_scene(world, sensors, pin_pelvis, hand_model):
     """Copies the scene and its bases into the model directory; returns the paths for cleanup."""
     mjcf_dir = os.path.join(BRINGUP_SHARE, "mjcf")
     overlay, bases = _scene_files(world, sensors, pin_pelvis)
 
     staged = os.path.join(G1_MODEL_DIR, STAGED_SCENE_NAME)
-    _stage_file(os.path.join(mjcf_dir, overlay), staged)
+    _stage_file(os.path.join(mjcf_dir, overlay), staged, hand_model)
 
     staged_paths = [staged]
     for source, staged_name in bases:
         target = os.path.join(G1_MODEL_DIR, staged_name)
-        _stage_file(os.path.join(mjcf_dir, source), target)
+        _stage_file(os.path.join(mjcf_dir, source), target, hand_model)
         staged_paths.append(target)
     return staged_paths
 
 
-def _cleanup_on_shutdown(staged_paths):
+def _cleanup_on_shutdown(staged_paths, links=()):
+    """Removes the staged files, and the links only while they are links: a port path in the
+    YAML that names a real file is left alone."""
+
     def _remove(context, *a, **k):
-        for path in staged_paths:
+        for path in [*staged_paths, *(link for link in links if os.path.islink(link))]:
             try:
                 os.remove(path)
             except OSError:
@@ -325,6 +345,7 @@ def _launch_setup(context, *args, **kwargs):
     pin_pelvis = _flag(context, "pin_pelvis")
     sensors = _flag(context, "sensors")
     world = LaunchConfiguration("world").perform(context)
+    hand_model = LaunchConfiguration("hand_model").perform(context)
     odometry = LaunchConfiguration("odometry").perform(context)
     sim_start_delay_s = float(LaunchConfiguration("sim_start_delay_s").perform(context))
 
@@ -349,6 +370,17 @@ def _launch_setup(context, *args, **kwargs):
 
     sim_env = dict(os.environ)
     sim_env["LD_LIBRARY_PATH"] = UNITREE_ROBOTICS_LIB + ":" + sim_env.get("LD_LIBRARY_PATH", "")
+    port_links = []
+    if hand_model == "inspire":
+        with open(INSPIRE_PARAMS, encoding="utf-8") as handle:
+            ports = yaml.safe_load(handle)["system"]
+        port_links = [ports["serial_port_left"], ports["serial_port_right"]]
+        sim_env["GROVE_G1_INSPIRE_PORTS"] = f"left={port_links[0]},right={port_links[1]}"
+        # A killed simulator leaves its links behind, pointing at pseudo-terminals the system may
+        # since have handed to a shell. Gone before anything can open them, and again at shutdown.
+        for link in port_links:
+            if os.path.islink(link):
+                os.remove(link)
 
     actions = []
     if sensors:
@@ -357,7 +389,9 @@ def _launch_setup(context, *args, **kwargs):
         )
         actions += _odometry_actions(odometry, sim_start_delay_s)
 
-    actions.append(_cleanup_on_shutdown(_stage_scene(world, sensors, pin_pelvis)))
+    actions.append(
+        _cleanup_on_shutdown(_stage_scene(world, sensors, pin_pelvis, hand_model), port_links)
+    )
     actions += _simulator(sim_env, headless, sim_start_delay_s)
     actions.append(
         IncludeLaunchDescription(
@@ -366,6 +400,7 @@ def _launch_setup(context, *args, **kwargs):
             ),
             launch_arguments={
                 "pin_pelvis": "true" if pin_pelvis else "false",
+                "hand_model": hand_model,
                 "controllers_overrides": LaunchConfiguration("controllers_overrides").perform(
                     context
                 ),
@@ -392,6 +427,14 @@ def generate_launch_description():
                 "objects on a pedestal, for perception; 'lio' is the walled room for scoring "
                 "odometry; 'apartment' is five furnished rooms off a hallway, built from fetched "
                 "assets (scripts/setup-world-assets.sh).",
+            ),
+            DeclareLaunchArgument(
+                "hand_model",
+                default_value="dex3",
+                choices=list(HAND_MODELS),
+                description="The hands on the simulated G1: 'dex3', Unitree's Dex3-1, or "
+                "'inspire', Inspire's RH56DFQ, which the simulator serves on the serial ports "
+                "g1_description's inspire_params.yaml names. Passed on to control.launch.py.",
             ),
             DeclareLaunchArgument(
                 "rviz",
