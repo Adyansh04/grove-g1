@@ -142,10 +142,12 @@ operator's session:
 ./scripts/robot.sh operator ros2 control list_controllers
 ```
 
-Robot work runs on ROS domain 7, so a simulator on the operator's machine (domain 1) never meets
-the robot's graph. Fast DDS on both machines is pinned to the robot's network
-(`robot/fastdds/`): announcing every interface sends data to the Docker bridge address both
-machines carry.
+Robot work runs on ROS domain 7 and has a Zenoh router on each machine. The Orin's container runs
+one as its main process (`robot.sh up` starts it, port 7447). `robot.sh operator` starts the
+operator's in the dev container, on loopback port 7448, and links it to the Orin's; the
+operator's nodes connect to it alone. The simulator's router on the operator's machine stays off
+that link, so its graph (domain 1) never meets the robot's. A new robot image needs
+`robot.sh down` and `robot.sh up` to recreate the container.
 
 - `hardware:=true` points the SDK at the robot's own DDS domain, releases Unitree's onboard
   controller (a robot reboot gives it back), layers `g1_controllers`'

@@ -2,20 +2,21 @@
 #
 # The G1's on-robot runtime: builds its arm64 image on this machine, ships it and the robot-side
 # packages to the Orin over the robot's network, builds them there and runs them detached. The
-# Orin needs no internet. Robot work has its own ROS domain, so the simulator's graph on this
-# machine never meets the robot's, and Fast DDS on both sides is pinned to the robot's network.
+# Orin needs no internet. Robot work has its own ROS domain and its own Zenoh router on this
+# machine, linked to the router of the Orin's container, so the simulator's graph never meets the
+# robot's.
 #
 # Usage: ./scripts/robot.sh <command> [args]
 #   image            build robot/Dockerfile for arm64 (QEMU) here, then `load`
 #   load             load the robot image into the Orin's Docker
-#   sync             copy the robot-side packages and the DDS profile to ~/grove-g1 on the Orin
+#   sync             copy the robot-side packages to ~/grove-g1 on the Orin
 #   build [pkg..]    colcon build them on the Orin, in the image (everything synced by default)
-#   up | down        start or remove the idle runtime container on the Orin
+#   up | down        start or remove the runtime container on the Orin, which runs its router
 #   start <stack> [arg:=value..]  run a stack detached on the Orin, with launch arguments:
 #                    `control` takes the motors, `sensors` starts the camera and lidar
 #   stop <stack>     stop it with SIGINT, as Ctrl-C would; control releases the motors first
 #   log <stack>      follow its log
-#   operator [cmd]   a shell, or cmd, in the dev container on the robot's domain and network
+#   operator [cmd]   a shell, or cmd, in the dev container on the robot's domain and router
 #   exec [cmd]       a shell, or cmd, in the robot container, with a terminal
 #   ssh              a shell on the Orin
 #
@@ -34,10 +35,12 @@ readonly KEY="${G1_ROBOT_KEY:-$HOME/.ssh/id_ed25519_robot}"
 readonly IMAGE="grove-g1-robot:local"
 readonly CONTAINER="g1-robot"
 readonly DEV_CONTAINER="ros_dev_jazzy"
-# This machine's address on the robot's network (the g1 interface).
-readonly OPERATOR_ADDRESS="${G1_OPERATOR_ADDRESS:-192.168.123.222}"
 # The ROS domain of robot work. The simulator and dev work use 1, so neither can reach the robot.
 readonly ROBOT_ROS_DOMAIN=7
+# The Orin's router listens on rmw_zenoh's default port. The operator's router, in the dev
+# container beside the simulator's (7447), takes this machine's loopback only.
+readonly ROBOT_ROUTER="tcp/$ROBOT_ADDRESS:7447"
+readonly OPERATOR_ROUTER_PORT=7448
 # The workspace on the Orin, mounted at /root/workspace in the container.
 readonly REMOTE_WS="grove-g1"
 # What runs on the robot, as paths under workspace/src: the hardware component, the controllers
@@ -89,9 +92,8 @@ load_images() {
 
 sync_packages() {
     on_robot "mkdir -p $REMOTE_WS"
-    # The packages' shared CMake settings, which they include from ../../cmake, and the DDS profile.
-    rsync -a --delete -e "ssh ${SSH_OPTS[*]}" "$ROOT/workspace/cmake" "$ROOT/robot/fastdds" \
-        "$ROBOT:$REMOTE_WS/"
+    # The packages' shared CMake settings, which they include from ../../cmake.
+    rsync -a --delete -e "ssh ${SSH_OPTS[*]}" "$ROOT/workspace/cmake" "$ROBOT:$REMOTE_WS/"
     local source
     for source in "${SOURCES[@]}"; do
         on_robot "mkdir -p $REMOTE_WS/src/$(dirname "$source")"
@@ -111,15 +113,14 @@ build_packages() {
 }
 
 container_up() {
-    # Idles until a stack starts in it. Privileged for USB; the real-time budget lets the control
-    # loop run SCHED_FIFO. ROS finds the operator by unicast, which also works over WiFi.
+    # Its main process is the Zenoh router: the stacks started in it find each other through it,
+    # and the operator's router links to it over Ethernet or WiFi. Privileged for USB; the
+    # real-time budget lets the control loop run SCHED_FIFO.
     on_robot "docker ps -a --format '{{.Names}}' | grep -qx $CONTAINER || \
-        docker run -d --name $CONTAINER --restart unless-stopped --privileged --ulimit rtprio=99 \
-            --cpu-rt-runtime=900000 -e ROS_DOMAIN_ID=$ROBOT_ROS_DOMAIN \
-            -e FASTRTPS_DEFAULT_PROFILES_FILE=/root/workspace/fastdds/robot.xml \
-            -e ROS_STATIC_PEERS=$OPERATOR_ADDRESS \
+        docker run -d --name $CONTAINER --restart unless-stopped --init --privileged \
+            --ulimit rtprio=99 --cpu-rt-runtime=900000 -e ROS_DOMAIN_ID=$ROBOT_ROS_DOMAIN \
             --network host --ipc host -v /dev:/dev -v \$HOME/$REMOTE_WS:/root/workspace \
-            $IMAGE sleep infinity"
+            $IMAGE ros2 run rmw_zenoh_cpp rmw_zenohd"
     on_robot "docker start $CONTAINER >/dev/null && docker ps --filter name=$CONTAINER --format '{{.Names}}: {{.Status}}'"
 }
 
@@ -152,6 +153,32 @@ stack_stop() {
     echo "$1 stopped."
 }
 
+router_listening() {
+    (exec 3<>"/dev/tcp/127.0.0.1/$OPERATOR_ROUTER_PORT") 2>/dev/null
+}
+
+# The operator's nodes connect to the operator's router alone, which links to the Orin's: one
+# copy of each robot topic crosses the link, and the simulator's graph stays off it.
+operator_shell() {
+    local operator_router="tcp/127.0.0.1:$OPERATOR_ROUTER_PORT"
+    if ! router_listening; then
+        local listen="listen/endpoints=[\"$operator_router\"]"
+        local connect="connect/endpoints=[\"$ROBOT_ROUTER\"]"
+        docker exec -d -e ZENOH_CONFIG_OVERRIDE="$listen;$connect" "$DEV_CONTAINER" \
+            bash -c 'source /opt/ros/jazzy/setup.bash && exec ros2 run rmw_zenoh_cpp rmw_zenohd'
+        local waited=0
+        until router_listening; do
+            (( waited++ < 50 )) || { echo "The operator's router did not start." >&2; exit 1; }
+            sleep 0.1
+        done
+    fi
+    # The dev container's login profile takes the domain from GROVE_G1_ROS_DOMAIN_ID.
+    docker exec -it -e GROVE_G1_ROS_DOMAIN_ID="$ROBOT_ROS_DOMAIN" \
+        -e ROS_DOMAIN_ID="$ROBOT_ROS_DOMAIN" \
+        -e ZENOH_CONFIG_OVERRIDE="connect/endpoints=[\"$operator_router\"]" \
+        "$DEV_CONTAINER" bash -lc "cd /root/workspace && source install/setup.bash && ${*:-bash}"
+}
+
 main() {
     local command="${1:-help}"
     (( $# )) && shift
@@ -165,12 +192,7 @@ main() {
         start) stack_start "${1:?start control|sensors}" "${@:2}" ;;
         stop) stack_stop "${1:?stop control|sensors}" ;;
         log) ssh -t "${SSH_OPTS[@]}" "$ROBOT" tail -n 40 -f "$REMOTE_WS/log/${1:?log control|sensors}.log" ;;
-        operator)
-            # The dev container's login profile takes the domain from GROVE_G1_ROS_DOMAIN_ID.
-            docker exec -it -e GROVE_G1_ROS_DOMAIN_ID="$ROBOT_ROS_DOMAIN" -e ROS_DOMAIN_ID="$ROBOT_ROS_DOMAIN" \
-                -e ROS_STATIC_PEERS="$ROBOT_ADDRESS" \
-                -e FASTRTPS_DEFAULT_PROFILES_FILE=/root/.host-repo/robot/fastdds/operator.xml \
-                "$DEV_CONTAINER" bash -lc "cd /root/workspace && source install/setup.bash && ${*:-bash}" ;;
+        operator) operator_shell "$@" ;;
         exec) ssh -t "${SSH_OPTS[@]}" "$ROBOT" docker exec -it "$CONTAINER" bash -ic "'${*:-bash}'" ;;
         ssh) ssh -t "${SSH_OPTS[@]}" "$ROBOT" ;;
         help | -h | --help) usage ;;
