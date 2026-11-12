@@ -172,8 +172,11 @@ operator_shell() {
             sleep 0.1
         done
     fi
+    # A terminal only when there is one, so scripts can run operator commands too.
+    local tty=(-i)
+    [[ -t 0 && -t 1 ]] && tty=(-it)
     # The dev container's login profile takes the domain from GROVE_G1_ROS_DOMAIN_ID.
-    docker exec -it -e GROVE_G1_ROS_DOMAIN_ID="$ROBOT_ROS_DOMAIN" \
+    docker exec "${tty[@]}" -e GROVE_G1_ROS_DOMAIN_ID="$ROBOT_ROS_DOMAIN" \
         -e ROS_DOMAIN_ID="$ROBOT_ROS_DOMAIN" \
         -e ZENOH_CONFIG_OVERRIDE="connect/endpoints=[\"$operator_router\"]" \
         "$DEV_CONTAINER" bash -lc "cd /root/workspace && source install/setup.bash && ${*:-bash}"
