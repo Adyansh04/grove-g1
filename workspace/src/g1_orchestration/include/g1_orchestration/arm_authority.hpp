@@ -6,11 +6,16 @@
  * @brief Acquiring and releasing the arm and hands, in g1_bringup's activate_arm order.
  *
  * A component goes active before its controller and inactive after it, since command interfaces
- * exist only while their component is active. test_authority_drift keeps the names in step.
+ * exist only while their component is active. Each hand's component is the one owning the joints
+ * its controller drives, so either hand model is acquired alike. test_authority_drift keeps the
+ * names in step.
  * Acquired once per tree, not per skill, so the hands never let go between pick and place; the
  * executor releases on every exit, success or failure.
  */
 
+#include <array>
+#include <controller_manager_msgs/srv/list_controllers.hpp>
+#include <controller_manager_msgs/srv/list_hardware_components.hpp>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -34,11 +39,28 @@ struct ControlledPart
 };
 
 /**
- * @brief The arm, then each hand.
- *
- * @return The parts in acquisition order; releasing walks them in reverse.
+ * @brief The arm: its trajectory controller, displacing the freeze on the body component, which is
+ *        active from bring-up.
  */
-const std::vector<ControlledPart>& controlledParts();
+[[nodiscard]] const ControlledPart& armPart();
+
+/// The hand controllers, acquired after the arm and released before it.
+inline constexpr std::array<const char*, 2> kHandControllers = {
+    "left_hand_controller",
+    "right_hand_controller",
+};
+
+/**
+ * @brief Pairs each hand controller with the hardware component owning every joint it commands.
+ *
+ * @param controllers What controller_manager's list_controllers answered.
+ * @param components What its list_hardware_components answered.
+ * @return One part per hand controller with such a component, in kHandControllers order; a hand
+ *         without one is left out.
+ */
+[[nodiscard]] std::vector<ControlledPart> pairHands(
+    const controller_manager_msgs::srv::ListControllers::Response&        controllers,
+    const controller_manager_msgs::srv::ListHardwareComponents::Response& components);
 
 /**
  * @brief What a paired switch should ask controller_manager for, given what it reports now.
@@ -87,7 +109,7 @@ enum class Acquired : std::uint8_t
 /**
  * @brief Takes the arm, then each hand.
  *
- * The arm is required; each hand is best-effort, so a missing or unpowered Dex3 leaves the arm
+ * The arm is required; each hand is best-effort, so a missing or unpowered hand leaves the arm
  * usable. Blocks, on a node of its own: spin_until_future_complete throws on an executor's node.
  *
  * @param logger Where progress and failures are reported.

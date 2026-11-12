@@ -268,8 +268,9 @@ before the operator is asked.
 ### Authority
 
 The arms and both hands are taken once, before the first tick, when any skill needs them. They are
-not taken per skill, because a released Dex3 hand goes limp and drops what it holds. `base` is a name
-only.
+not taken per skill, because a released Dex3 hand goes limp and drops what it holds. Each hand's
+component is the one owning the joints its controller drives, so the Dex3 and the Inspire hands are
+taken alike. `base` is a name only.
 
 However a mission ends (success, failure, cancel, watchdog, exception, stop), the arms are released
 only if no hand holds, or may hold, something. Otherwise they are kept, `RobotState` says so, and the
