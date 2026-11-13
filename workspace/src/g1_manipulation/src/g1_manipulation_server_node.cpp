@@ -175,7 +175,7 @@ void G1ManipulationServer::declareParameters()
     grip_check_enabled_ = declare_parameter<bool>("grip_check_enabled", grip_check_enabled_);
     object_timeout_s_   = declare_parameter<double>("object_timeout_ms", 1000.0) / 1000.0;
     max_approach_tilt_rad_ =
-        declare_parameter<double>("max_approach_tilt_deg", 75.0) * M_PI / 180.0;
+        declare_parameter<double>("max_approach_tilt_deg", 90.0) * M_PI / 180.0;
 
     // Read once, by the constructor or initialize().
     rcl_interfaces::msg::ParameterDescriptor fixed;

@@ -690,7 +690,7 @@ private:
     /// m. How far above the object's base a generated grasp's wrist and open hand must stay.
     double grasp_surface_clearance_m_{ 0.010 };
     /// m. How far above the object's base a generated grasp's closing fingers must stay.
-    double grasp_closing_clearance_m_{ 0.0 };
+    double grasp_closing_clearance_m_{ 0.005 };
     /// m. How far a generated grasp may be backed off along its approach to meet that clearance.
     double grasp_max_backoff_m_{ 0.015 };
     double min_grip_height_m_{ 0.080 };

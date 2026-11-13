@@ -41,8 +41,8 @@ g1_manipulation_server:
     pick_support_half_width_m: 0.45
     pick_support_thickness_m: 0.04
     # m. The slab's top stands this far above the object's base until the descent: a planned path
-    # touches what it avoids, and the arm sags below it on the way. No pregrasp is lower: it backs
-    # 0.12 m up an approach at least 15 degrees below level from a grasp 10 mm clear.
+    # touches what it avoids, and the arm sags below it on the way. A grasp whose pregrasp stands
+    # lower is dropped when the grasps are chosen.
     pick_support_margin_m: 0.03
     # m. A place whose lowering ends further than this from its target fails holding the object:
     # a little off still lands it, a lowering cut short would drop it in the air.
@@ -170,17 +170,19 @@ g1_manipulation_server:
     # Usable candidates kept, best first: when MoveIt finds no way to one's pregrasp, the next is
     # tried before the pick fails.
     grasp_tries: 3
-    # Past a right angle a grasp reaches up through the surface.
-    max_approach_tilt_deg: 75.0
+    # Past a right angle a grasp reaches up through the surface. Level is kept: a can, a bottle or
+    # a tall box offers almost only side grasps (at 75 degrees this filter and the next left a can
+    # 2 of its 50 candidates).
+    max_approach_tilt_deg: 90.0
     # m. A generated grasp is dropped when its wrist or its open hand, as the arm brings it in,
     # comes nearer than this to the plane of the object's base, or its hand anywhere along the
     # close comes into another object: no generator sees the table or the neighbours, and a hand
     # the arm drives into them is what breaks on the real hand.
     grasp_surface_clearance_m: 0.010
-    # m. The closing fingers may come this near the plane of the object's base: at 0 they reach
-    # under the object to the table, which a firm grasp of a cup can need, and each finger stops
-    # itself at its force limit, so the touch stays light.
-    grasp_closing_clearance_m: 0.0
+    # m. The closing fingers may come this near the plane of the object's base, nearer than the
+    # arm-carried hand, since each finger stops itself at its force limit: a light touch is fine.
+    # Not 0: fingers whose path reaches the table stall on it before they wrap the object.
+    grasp_closing_clearance_m: 0.005
     # m. A grasp that comes too near is first backed off along its own approach, 5 mm at a time,
     # up to this: seated a little shallower it still holds, since the pads meet up to 15 mm short
     # of where GraspGenX seats an object's centre.
