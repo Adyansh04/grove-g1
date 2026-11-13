@@ -125,11 +125,18 @@ def pose(model, data, snapshot: dict) -> None:
     mujoco.mj_forward(model, data)
     pelvis = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "pelvis")
     rotation = data.xmat[pelvis].reshape(3, 3)
-    for name, obj in snapshot["objects"].items():
-        body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, name)
-        if body < 0 or model.body_jntnum[body] == 0:
+    for body in range(model.nbody):
+        if model.body_jntnum[body] == 0 or body == pelvis:
             continue
-        adr = model.jnt_qposadr[model.body_jntadr[body]]
+        joint = model.body_jntadr[body]
+        if model.jnt_type[joint] != mujoco.mjtJoint.mjJNT_FREE:
+            continue
+        adr = model.jnt_qposadr[joint]
+        obj = snapshot["objects"].get(mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, body))
+        if obj is None:
+            # Not staged in that run (a world's props:= keeps a few): out of the picture.
+            data.qpos[adr : adr + 3] = (0.0, 0.0, -10.0)
+            continue
         data.qpos[adr : adr + 3] = data.xpos[pelvis] + rotation @ np.array(obj["pos"])
         data.qpos[adr + 3 : adr + 7] = quat_mul(list(data.xquat[pelvis]), obj["quat"])
     mujoco.mj_forward(model, data)
