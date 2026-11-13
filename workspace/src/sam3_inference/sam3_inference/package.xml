@@ -1,0 +1,35 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>sam3_inference</name>
+  <version>0.1.0</version>
+  <description>SAM 3.1 open-vocabulary instance segmentation from C++ with TensorRT, served as the segment_objects service.</description>
+  <maintainer email="gupta.adyansh@gmail.com">Adyansh Gupta</maintainer>
+  <license>Apache-2.0</license>
+  <!-- The SAM 3 graphs' licence; the tokenizer vocabulary is OpenAI CLIP's (resources/CLIP_LICENSE). -->
+  <license file="resources/SAM_LICENSE">SAM License</license>
+  <license file="resources/CLIP_LICENSE">MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <!-- CUDA (CUDAToolkit) and TensorRT (libnvinfer, libnvonnxparser) come from NVIDIA's apt
+       repository in the image; rosdep has no key for them. Without them only the CPU parts
+       build. -->
+  <depend>ament_index_cpp</depend>
+  <depend>cv_bridge</depend>
+  <depend>sam3_inference_msgs</depend>
+  <depend>libopencv-dev</depend>
+  <depend>rcl_interfaces</depend>
+  <depend>rclcpp</depend>
+  <depend>rclcpp_components</depend>
+  <depend>sensor_msgs</depend>
+  <depend>zlib</depend>
+
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+
+  <test_depend>ament_cmake_gtest</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
