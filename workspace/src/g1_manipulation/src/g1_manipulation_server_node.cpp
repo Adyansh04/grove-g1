@@ -107,6 +107,7 @@ void G1ManipulationServer::declareParameters()
         { "place_container_max_m", &place_container_max_m_ },
         { "grasp_depth_below_top_m", &grasp_depth_below_top_m_ },
         { "grasp_surface_clearance_m", &grasp_surface_clearance_m_ },
+        { "grasp_max_backoff_m", &grasp_max_backoff_m_ },
         { "min_grip_height_m", &min_grip_height_m_ },
         { "settle_tolerance_m", &settle_tolerance_m_ },
         { "max_grasp_offset_m", &max_grasp_offset_m_ },

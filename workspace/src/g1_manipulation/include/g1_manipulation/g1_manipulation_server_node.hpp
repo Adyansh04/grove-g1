@@ -168,7 +168,7 @@ private:
         {
             kTilted,
             kUnreachable,
-            kTouchesSupport,  ///< The arm or the closing hand reaches below the object's base.
+            kStrikes,  ///< The wrist or the closing hand meets the support or a neighbour.
             kChosen,
         };
         geometry_msgs::msg::Pose pose;
@@ -625,8 +625,10 @@ private:
     double place_edge_margin_m_{ 0.05 };
     double place_container_max_m_{ 0.40 };
     double grasp_depth_below_top_m_{ 0.020 };
-    /// m. How far above the object's base a generated grasp's arm and closing hand must stay.
-    double              grasp_surface_clearance_m_{ 0.008 };
+    /// m. How far above the object's base a generated grasp's wrist and closing hand must stay.
+    double grasp_surface_clearance_m_{ 0.010 };
+    /// m. How far a generated grasp may be backed off along its approach to meet that clearance.
+    double              grasp_max_backoff_m_{ 0.015 };
     double              min_grip_height_m_{ 0.080 };
     double              settle_tolerance_m_{ 0.010 };
     int                 settle_attempts_{ 2 };
