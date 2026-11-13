@@ -384,7 +384,7 @@ std::vector<G1ManipulationServer::GraspPlan> G1ManipulationServer::chooseGrasps(
                 if (!result.contacts.empty())
                 {
                     const auto& [first, second] = result.contacts.begin()->first;
-                    ++struck[first + " on " + second];
+                    ++struck[std::format("{} on {}", first, second)];
                 }
                 return false;
             }
@@ -457,8 +457,9 @@ std::vector<G1ManipulationServer::GraspPlan> G1ManipulationServer::chooseGrasps(
         bool   solved = false;
         bool   safe   = false;
         double back_m = 0.0;
-        for (; back_m <= grasp_max_backoff_m_ + 1e-9; back_m += kBackoffStepM)
+        for (int step = 0; step * kBackoffStepM <= grasp_max_backoff_m_ + 1e-9; ++step)
         {
+            back_m     = step * kBackoffStepM;
             plan.grasp = backed_off(goal, back_m);
             // Reset per solve: a failed setFromIK leaves the state where it gave up.
             attempt = *state;
