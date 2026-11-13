@@ -129,6 +129,7 @@ def _sim_args(context, navigating, want_manipulation, want_perception, want_move
             else LaunchConfiguration("sensors")
         ),
         "world": LaunchConfiguration("world"),
+        "props": LaunchConfiguration("props"),
         "hand_model": LaunchConfiguration("hand_model"),
         "contact_log": LaunchConfiguration("contact_log"),
         "cameras": LaunchConfiguration("cameras"),
@@ -515,6 +516,12 @@ def generate_launch_description():
                 description="The hands the G1 wears: 'dex3', Unitree's Dex3-1, or 'inspire', "
                 "Inspire's RH56DFQ. Picks the description, the simulator's model and the hand "
                 "controllers. Defaults to G1_HAND_MODEL, else inspire.",
+            ),
+            DeclareLaunchArgument(
+                "props",
+                default_value="",
+                description="Comma-separated free bodies of the world to keep (sim.launch.py's "
+                "props), for testing one object at a time. Empty keeps them all.",
             ),
             DeclareLaunchArgument(
                 "world",

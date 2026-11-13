@@ -4,6 +4,7 @@ Refuses to start outside the container's DDS environment; see README.md.
 """
 
 import os
+import re
 
 import yaml
 from ament_index_python.packages import get_package_share_directory
@@ -64,7 +65,18 @@ SIM_START_DELAY_S = 2.0
 # after spawn, it bakes in a wrong gravity and diverges.
 FASTLIO_EXTRA_DELAY_S = 10.0
 
-WORLDS = ("navigation", "perception", "manipulation", "tabletop", "grasp_eval", "lio", "apartment")
+WORLDS = (
+    "navigation",
+    "perception",
+    "manipulation",
+    "tabletop",
+    "grasp_eval",
+    "grasp_single",
+    "lio",
+    "apartment",
+)
+# The world's staged copy of its sensor config, when `props` leaves some objects out.
+STAGED_SENSOR_CONFIG = "g1_sensors.staged.yaml"
 HAND_MODELS = ("dex3", "inspire")
 # Scenes are written for the Dex3 model. Staging swaps in another hand's model, and the palm the
 # grasp welds hang from, which the grasp weld finds the digits under.
@@ -173,10 +185,23 @@ def _scene_files(world, sensors, pin_pelvis):
     return "g1_pinned_scene.xml", []
 
 
-def _stage_file(source, target, hand_model):
-    """Copies one scene into place, with the chosen hands and the fetched assets."""
+def _keep_props(scene, keep):
+    """The scene without the free bodies @p keep does not name, nor their grasp welds."""
+    for name in re.findall(r'\n    <body name="([^"]+)"[^>]*>\s*\n\s*<freejoint', scene):
+        if name not in keep:
+            scene = re.sub(
+                rf'\n    <body name="{name}"[^>]*>.*?\n    </body>', "", scene, count=1, flags=re.S
+            )
+            scene = re.sub(rf'\n\s*<weld name="grasp_[a-z]+_{name}"[^>]*/>', "", scene)
+    return scene
+
+
+def _stage_file(source, target, hand_model, keep=()):
+    """Copies one scene into place, with the chosen hands, the fetched assets and the props."""
     with open(source, encoding="utf-8") as handle:
         scene = handle.read()
+    if keep:
+        scene = _keep_props(scene, keep)
     for dex3, other in HAND_SUBSTITUTIONS[hand_model]:
         scene = scene.replace(dex3, other)
     if ASSETS_PLACEHOLDER in scene:
@@ -191,18 +216,18 @@ def _stage_file(source, target, hand_model):
         handle.write(scene)
 
 
-def _stage_scene(world, sensors, pin_pelvis, hand_model):
+def _stage_scene(world, sensors, pin_pelvis, hand_model, keep=()):
     """Copies the scene and its bases into the model directory; returns the paths for cleanup."""
     mjcf_dir = os.path.join(BRINGUP_SHARE, "mjcf")
     overlay, bases = _scene_files(world, sensors, pin_pelvis)
 
     staged = os.path.join(G1_MODEL_DIR, STAGED_SCENE_NAME)
-    _stage_file(os.path.join(mjcf_dir, overlay), staged, hand_model)
+    _stage_file(os.path.join(mjcf_dir, overlay), staged, hand_model, keep)
 
     staged_paths = [staged]
     for source, staged_name in bases:
         target = os.path.join(G1_MODEL_DIR, staged_name)
-        _stage_file(os.path.join(mjcf_dir, source), target, hand_model)
+        _stage_file(os.path.join(mjcf_dir, source), target, hand_model, keep)
         staged_paths.append(target)
     return staged_paths
 
@@ -225,7 +250,7 @@ def _cleanup_on_shutdown(staged_paths, links=()):
 # --- sensors and odometry -------------------------------------------------------------------
 
 
-def _sensor_nodes(sim_env, want_rviz, world, cameras):
+def _sensor_nodes(sim_env, want_rviz, world, cameras, keep=()):
     """Start order does not matter: the relay listens once up, and the simulator retries its
     connection every cycle."""
     # The patched simulator starts its sensor thread only when this names a config. A world with
@@ -233,6 +258,17 @@ def _sensor_nodes(sim_env, want_rviz, world, cameras):
     sensor_config = os.path.join(BRINGUP_SHARE, "config", f"sim_sensors_{world}.yaml")
     if not os.path.isfile(sensor_config):
         sensor_config = os.path.join(BRINGUP_SHARE, "config", "sim_sensors.yaml")
+    if keep:
+        # The left-out objects would be looked for and not found.
+        with open(sensor_config, encoding="utf-8") as handle:
+            config = handle.read()
+        listed = re.search(r"\nobject_bodies:\n((?:  - .*\n?)+)", config)
+        if listed:
+            kept = "".join(f"  - {name}\n" for name in keep)
+            config = config.replace(listed.group(1), kept)
+        sensor_config = os.path.join(G1_MODEL_DIR, STAGED_SENSOR_CONFIG)
+        with open(sensor_config, "w", encoding="utf-8") as handle:
+            handle.write(config)
     sim_env["GROVE_G1_SENSOR_CONFIG"] = sensor_config
     sim_env["GROVE_G1_CAMERA_MOUNTS"] = CAMERA_MOUNTS
     # Unset, the sensor config's `enabled` flags decide which cameras render.
@@ -345,6 +381,11 @@ def _launch_setup(context, *args, **kwargs):
     pin_pelvis = _flag(context, "pin_pelvis")
     sensors = _flag(context, "sensors")
     world = LaunchConfiguration("world").perform(context)
+    keep = [
+        name.strip()
+        for name in LaunchConfiguration("props").perform(context).split(",")
+        if name.strip()
+    ]
     hand_model = LaunchConfiguration("hand_model").perform(context)
     odometry = LaunchConfiguration("odometry").perform(context)
     sim_start_delay_s = float(LaunchConfiguration("sim_start_delay_s").perform(context))
@@ -389,12 +430,20 @@ def _launch_setup(context, *args, **kwargs):
     actions = []
     if sensors:
         actions += _sensor_nodes(
-            sim_env, _flag(context, "rviz"), world, LaunchConfiguration("cameras").perform(context)
+            sim_env,
+            _flag(context, "rviz"),
+            world,
+            LaunchConfiguration("cameras").perform(context),
+            keep,
         )
         actions += _odometry_actions(odometry, sim_start_delay_s)
 
     actions.append(
-        _cleanup_on_shutdown(_stage_scene(world, sensors, pin_pelvis, hand_model), port_links)
+        _cleanup_on_shutdown(
+            _stage_scene(world, sensors, pin_pelvis, hand_model, keep)
+            + ([os.path.join(G1_MODEL_DIR, STAGED_SENSOR_CONFIG)] if keep else []),
+            port_links,
+        )
     )
     actions += _simulator(sim_env, headless, sim_start_delay_s)
     actions.append(
@@ -423,13 +472,22 @@ def generate_launch_description():
                 description="Run unitree_mujoco against our own managed Xvfb (no GUI window).",
             ),
             DeclareLaunchArgument(
+                "props",
+                default_value="",
+                description="Comma-separated free bodies of the world to keep, such as "
+                "'red_cube,red_cube_left' in grasp_single; the others are left out of the scene. "
+                "Empty keeps them all.",
+            ),
+            DeclareLaunchArgument(
                 "world",
                 default_value="navigation",
                 description="Which room to stage, when sensors are on. 'navigation' is the "
                 "multi-room facility; 'perception' is the bare room test_lidar_geometry measures "
                 "against; 'manipulation' is one object at arm's length; 'tabletop' is several "
                 "objects on a pedestal, for perception; 'grasp_eval' is eight shapes on a table, four "
-                "in reach of each hand, for measuring grasps; 'lio' is the walled room for scoring "
+                "in reach of each hand, for measuring grasps; 'grasp_single' is fifteen objects, "
+                "the shapes and the apartment's props, each in front of either hand, to stage one "
+                "at a time with props; 'lio' is the walled room for scoring "
                 "odometry; 'apartment' is five furnished rooms off a hallway, built from fetched "
                 "assets (scripts/setup-world-assets.sh).",
             ),
