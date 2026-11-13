@@ -3,8 +3,10 @@
 
 Each snapshot holds the joints and the objects (in the pinned pelvis's frame) at one moment of a
 pick. The world is rebuilt from its scene with the hand model the snapshot's joints name, posed,
-and drawn offscreen from three sides of the object, labelled with grasp_eval's score where its
-results.json is beside the snapshots. A sheet of every grasp is written too.
+and drawn offscreen around the hand and the object from the front, the hand's outer side and
+above, with the rest of the robot and the other objects faded so nothing hides the grip. Each
+image is labelled with grasp_eval's score where its results.json is beside the snapshots, and a
+sheet of every grasp is written too.
 
 Host-side tooling with MuJoCo's Python bindings (the worldgen venv), after a grasp_eval run:
 
@@ -31,9 +33,16 @@ BRINGUP = pathlib.Path(__file__).resolve().parents[1]
 MODEL_DIR = BRINGUP.parents[1] / "vendor" / "unitree_mujoco" / "unitree_robots" / "g1"
 STAGED = "g1_render.staged.xml"
 WIDTH, HEIGHT = 960, 720
-# Views around the object: (azimuth, elevation) in degrees, distance in metres.
-VIEWS = {"from the robot": (0.0, -35.0), "from the side": (90.0, -15.0), "from above": (0.0, -88.0)}
-DISTANCE_M = 0.32
+# Views of the right hand, (azimuth, elevation) in degrees, mirrored for the left: MuJoCo's free
+# camera sits at azimuth 0 behind the target looking along +x, at 90 on its -y side.
+VIEWS = {
+    "from the front": (180.0, -20.0),
+    "from outside": (90.0, -15.0),
+    "from above": (180.0, -88.0),
+}
+DISTANCE_M = 0.30
+# Alpha of everything but the arm from the elbow out and the target.
+FADED = 0.15
 INSPIRE_SUBSTITUTIONS = (
     ('<include file="g1_29dof.xml"/>', '<include file="g1_29dof_inspire.xml"/>'),
     ('body1="left_hand_palm_link"', 'body1="L_hand_base_link"'),
@@ -68,6 +77,33 @@ def quat_mul(a, b):
         w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,
         w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2,
     ]
+
+
+def fade(model, target: int, side: str) -> None:
+    """Fades the other objects and the robot above the elbow, so the grip is in plain view."""
+    elbow = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, f"{side}_elbow_link")
+    for geom in range(model.ngeom):
+        body = model.geom_bodyid[geom]
+        if body == 0 or body == target:
+            continue
+        on_arm = False
+        b = body
+        while b > 0:
+            if b == elbow:
+                on_arm = True
+                break
+            b = model.body_parentid[b]
+        if not on_arm:
+            model.geom_rgba[geom, 3] = min(model.geom_rgba[geom, 3], FADED)
+
+
+def hand_body(model, side: str) -> int:
+    """The palm body of the hand on @p side: the Inspire's base link, else the Dex3's palm."""
+    for name in (f"{side[0].upper()}_hand_base_link", f"{side}_hand_palm_link"):
+        body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, name)
+        if body >= 0:
+            return body
+    raise SystemExit(f"no {side} hand in the model")
 
 
 def pose(model, data, snapshot: dict) -> None:
@@ -109,13 +145,15 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("run", type=pathlib.Path, help="a grasp_eval --out folder")
     parser.add_argument("--world", default="grasp_eval")
-    parser.add_argument("--phase", default="closed", help="closed or lifted")
+    parser.add_argument(
+        "--phase", default="closed", help="reached, closed, lifted, or hit for the worst contacts"
+    )
     args = parser.parse_args()
 
     results = {}
     if (args.run / "results.json").is_file():
         results = {r["object"]: r for r in json.loads((args.run / "results.json").read_text())}
-    snapshots = sorted((args.run / "snapshots").glob(f"*_{args.phase}.json"))
+    snapshots = sorted((args.run / "snapshots").glob(f"*_{args.phase}*.json"))
     if not snapshots:
         raise SystemExit(f"no *_{args.phase}.json under {args.run / 'snapshots'}")
     inspire = any(n.startswith("L_") for n in json.loads(snapshots[0].read_text())["joints"])
@@ -131,15 +169,20 @@ def main() -> None:
     out.mkdir(exist_ok=True)
 
     sheet_rows = []
+    rgba = model.geom_rgba.copy()
     for snap_path in snapshots:
         snapshot = json.loads(snap_path.read_text())
         name = snapshot["object"]
         pose(model, data, snapshot)
         body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, name)
+        model.geom_rgba[:] = rgba
+        fade(model, body, snapshot["side"])
+        # Between the palm and the object, so both stay in frame.
+        lookat = 0.5 * (data.xpos[body] + data.xpos[hand_body(model, snapshot["side"])])
         row = results.get(name, {})
         grasp = row.get("grasp") or {}
         caption = [
-            f"{name}, {snapshot['side']} hand, {args.phase}: {row.get('verdict', '?')}",
+            f"{name}, {snapshot['side']} hand, {snapshot['phase']}: {row.get('verdict', '?')}",
             f"table {row.get('table_peak_n', 0):.1f} N, grip off centre "
             f"{grasp.get('offset_mm', '-')} mm, digits {', '.join(grasp.get('digits', [])) or '-'}",
         ]
@@ -147,15 +190,13 @@ def main() -> None:
         for view, (azimuth, elevation) in VIEWS.items():
             camera = mujoco.MjvCamera()
             camera.type = mujoco.mjtCamera.mjCAMERA_FREE
-            camera.lookat[:] = data.xpos[body]
-            # Mirrored for the left hand, so the side view looks from outside the robot.
-            side_sign = -1.0 if snapshot["side"] == "right" else 1.0
-            camera.azimuth = azimuth * side_sign if view == "from the side" else azimuth
+            camera.lookat[:] = lookat
+            camera.azimuth = azimuth if snapshot["side"] == "right" else -azimuth
             camera.elevation = elevation
             camera.distance = DISTANCE_M
             renderer.update_scene(data, camera=camera)
             image = label(Image.fromarray(renderer.render()), [*caption, view])
-            image.save(out / f"{name}_{args.phase}_{view.replace(' ', '_')}.png")
+            image.save(out / f"{snap_path.stem}_{view.replace(' ', '_')}.png")
             images.append(image)
         sheet_rows.append(images)
 
