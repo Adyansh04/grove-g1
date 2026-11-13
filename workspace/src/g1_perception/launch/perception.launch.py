@@ -1,15 +1,15 @@
 """Runs a detector and the node that turns its masks into object poses.
 
-`mock` cuts masks from simulator ground truth and needs no GPU; `vision` asks a host model
-server: canopy's, with SAM 3.1, by default. Both publish the same mask topic, so the geometry node
-cannot tell them apart.
+`mock` cuts masks from simulator ground truth and needs no GPU; `vision` segments with SAM 3.1 in
+TensorRT, sam3_inference's node, which it starts. Both publish the same mask topic, so the
+geometry node cannot tell them apart.
 """
 
 import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
 from launch.conditions import IfCondition
 from launch.substitutions import EnvironmentVariable, EqualsSubstitution, LaunchConfiguration
 from launch_ros.actions import Node
@@ -68,6 +68,13 @@ def _nodes(context, *args, **kwargs):
         ],
     )
 
+    # The segmentation service g1_detector.yaml's segment_service names.
+    sam3 = IncludeLaunchDescription(
+        os.path.join(
+            get_package_share_directory("sam3_inference"), "launch", "sam3_segmentation.launch.py"
+        ),
+        condition=IfCondition(EqualsSubstitution(detector, "vision")),
+    )
     vision = Node(
         package="canopy_perception",
         executable="detector",
@@ -152,7 +159,7 @@ def _nodes(context, *args, **kwargs):
             ("object_poses", OBJECT_POSES),
         ],
     )
-    return [mock, vision, geometry, grounder, mock_grasps, graspgen, visualizer]
+    return [mock, sam3, vision, geometry, grounder, mock_grasps, graspgen, visualizer]
 
 
 def generate_launch_description():
@@ -163,8 +170,8 @@ def generate_launch_description():
                 default_value="mock",
                 choices=["mock", "vision"],
                 description="mock cuts masks from simulator ground truth and needs no GPU; "
-                "vision asks canopy's semantic server on the host, started by "
-                "./scripts/serve.sh canopy --detector sam3.1.",
+                "vision segments with SAM 3.1 in TensorRT (sam3_inference), which needs the "
+                "ONNX graphs in data/models/sam3.",
             ),
             DeclareLaunchArgument(
                 "phrases",

@@ -34,6 +34,7 @@
   <!-- For the adapter scripts, which talk to the host model servers so torch stays out of
        this image. -->
   <exec_depend>rclpy</exec_depend>
+  <exec_depend>sam3_inference</exec_depend>
   <exec_depend>python3-numpy</exec_depend>
   <exec_depend>python3-zmq</exec_depend>
   <exec_depend>python3-msgpack</exec_depend>
