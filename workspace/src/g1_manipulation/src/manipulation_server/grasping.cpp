@@ -15,6 +15,7 @@
 #include <chrono>
 #include <cmath>
 #include <format>
+#include <limits>
 #include <map>
 #include <memory>
 #include <moveit/collision_detection/collision_common.hpp>
@@ -120,6 +121,55 @@ std::optional<geometry_msgs::msg::Pose> G1ManipulationServer::heldPlaceGoal(
     goal.position.y += object_at.y - now.y();
     goal.position.z += object_at.z - now.z();
     return goal;
+}
+
+std::optional<double> G1ManipulationServer::handBelowHeldM(
+    MoveGroup& group, const ArmContext& arm, const moveit_msgs::msg::AttachedCollisionObject& held,
+    double held_height_m)
+{
+    const moveit::core::RobotStatePtr state = group.getCurrentState(1.0);
+    if (held.object.header.frame_id != arm.palm_link || held.object.primitive_poses.empty() ||
+        state == nullptr)
+    {
+        return std::nullopt;
+    }
+    const moveit::core::JointModelGroup* hand = state->getJointModelGroup(arm.hand_group);
+    if (hand == nullptr)
+    {
+        return std::nullopt;
+    }
+    tf2::Transform palm;
+    tf2::Transform origin;
+    tf2::Transform box;
+    tf2::fromMsg(group.getCurrentPose(arm.palm_link).pose, palm);
+    tf2::fromMsg(held.object.pose, origin);
+    tf2::fromMsg(held.object.primitive_poses.front(), box);
+    const double base_z = (palm * origin * box).getOrigin().z() - (0.5 * held_height_m);
+    // Each link's collision box, corner by corner: a few millimetres lower than its mesh at most.
+    double lowest_z = std::numeric_limits<double>::infinity();
+    for (const moveit::core::LinkModel* link : hand->getLinkModels())
+    {
+        if (link->getShapes().empty())
+        {
+            continue;
+        }
+        const Eigen::Vector3d   half  = 0.5 * link->getShapeExtentsAtOrigin();
+        const Eigen::Isometry3d frame = state->getGlobalLinkTransform(link) *
+                                        Eigen::Translation3d(link->getCenteredBoundingBoxOffset());
+        for (int corner = 0; corner < 8; ++corner)
+        {
+            const Eigen::Vector3d at(
+                (corner & 1) != 0 ? half.x() : -half.x(),
+                (corner & 2) != 0 ? half.y() : -half.y(),
+                (corner & 4) != 0 ? half.z() : -half.z());
+            lowest_z = std::min(lowest_z, (frame * at).z());
+        }
+    }
+    if (!std::isfinite(lowest_z))
+    {
+        return std::nullopt;
+    }
+    return base_z - lowest_z;
 }
 
 std::optional<g1_msgs::srv::GenerateGrasps::Response> G1ManipulationServer::requestGrasps(

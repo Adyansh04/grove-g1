@@ -108,6 +108,9 @@ void G1ManipulationServer::declareParameters()
         { "grasp_depth_below_top_m", &grasp_depth_below_top_m_ },
         { "grasp_surface_clearance_m", &grasp_surface_clearance_m_ },
         { "grasp_max_backoff_m", &grasp_max_backoff_m_ },
+        { "pick_support_half_width_m", &pick_support_half_width_m_ },
+        { "pick_support_thickness_m", &pick_support_thickness_m_ },
+        { "place_finger_clearance_m", &place_finger_clearance_m_ },
         { "min_grip_height_m", &min_grip_height_m_ },
         { "settle_tolerance_m", &settle_tolerance_m_ },
         { "max_grasp_offset_m", &max_grasp_offset_m_ },
@@ -186,6 +189,14 @@ void G1ManipulationServer::declareParameters()
         "move_hand_point_side_steps_m",
         move_hand_point_side_steps_m_,
         fixed);
+    pick_support_reach_m_ =
+        declare_parameter<std::vector<double>>("pick_support_reach_m", pick_support_reach_m_, fixed);
+    if (pick_support_reach_m_.size() != 2 || pick_support_reach_m_[0] < 0.0 ||
+        pick_support_reach_m_[1] < 0.0)
+    {
+        throw std::invalid_argument(
+            "pick_support_reach_m needs 2 lengths, toward the robot then away, not negative");
+    }
     declare_parameter<std::string>("grasp_service", "/g1_grasp_engine/generate_grasps", fixed);
     world_frame_ = declare_parameter<std::string>("world_frame", world_frame_, fixed);
     declare_parameter<bool>("publish_markers", false, fixed);
@@ -375,6 +386,7 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
             backOff(arm, *arm_group);
         }
         removeFromScene(goal->object_id);
+        removeFromScene(kPickSupportId);
         setHandContact(arm, { "<octomap>", goal->object_id }, false);
     };
     const auto fail = [&](const std::string& phase, const std::string& why) {
@@ -392,6 +404,7 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     // Once the hand has closed on the object a cancel keeps it: opening the hand would drop it,
     // and the stop behind the cancel holds the arm where it is, so nothing moves.
     const auto cancelled_holding = [&](const std::string& phase) {
+        removeFromScene(kPickSupportId);
         // The object maps itself while held, as after a finished pick.
         setHandContact(arm, { "<octomap>", goal->object_id }, false);
         setHandContact(arm, { "<octomap>", goal->object_id }, true, /*include_links=*/false);
@@ -436,6 +449,7 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
         return;
     }
     moveit_msgs::msg::CollisionObject object = publishCollisionObject(*detection, *object_pose);
+    publishSupport(*object_pose, detection->bbox.size.z);
 
     std::string                  why;
     std::vector<ConsideredGrasp> verdicts;
@@ -728,6 +742,7 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
 
     // The hand goes back to respecting the map, but the object maps itself while held, so it
     // stays exempt from its own voxels until the place.
+    removeFromScene(kPickSupportId);
     setHandContact(arm, { "<octomap>", goal->object_id }, false);
     setHandContact(arm, { "<octomap>", goal->object_id }, true, /*include_links=*/false);
     result->success = true;
@@ -942,6 +957,20 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
     goal_handle->publish_feedback(feedback);
     clearOctomapKeeping(arm, touchables);
     lowered = true;
+    // Fingers curled round the object's foot would meet the surface first: the release stops
+    // that much higher, and the object drops the rest.
+    if (const auto below = handBelowHeldM(*arm_group, arm, held, held_height);
+        below && *below + place_finger_clearance_m_ > 0.0)
+    {
+        const double raise = *below + place_finger_clearance_m_;
+        place_goal.position.z += raise;
+        preplace.position.z += raise;
+        RCLCPP_INFO(
+            get_logger(),
+            "lower: the fingers reach %.0f mm below the object's base; releasing it %.0f mm up",
+            1000.0 * *below,
+            1000.0 * raise);
+    }
     // A release a little off still lands the object, and the landing check judges it; far off,
     // the hand keeps it rather than dropping it in the air.
     if (!descendOnto(*arm_group, preplace, place_goal, arm.grasp_frame, max_place_offset_m_))

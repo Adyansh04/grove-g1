@@ -337,6 +337,20 @@ private:
         const geometry_msgs::msg::Point&                 object_at);
 
     /**
+     * @brief How far the hand reaches below the base of the object it holds, as it holds it now.
+     *
+     * Fingers curled round an object's foot meet the surface before the object does.
+     *
+     * @param held The attached object, relative to the palm.
+     * @param held_height_m Its full height.
+     * @return Metres, negative when the whole hand is above the base; nothing when the attach is
+     *         not relative to the palm or the state is not known.
+     */
+    static std::optional<double> handBelowHeldM(
+        MoveGroup& group, const ArmContext& arm,
+        const moveit_msgs::msg::AttachedCollisionObject& held, double held_height_m);
+
+    /**
      * @brief The grasp to attempt, from the configured grasp source.
      *
      * `fixed_top_down` is graspFrameGoal() approached from straight above. `generated` asks the
@@ -524,6 +538,21 @@ private:
         const Detection& detection, const geometry_msgs::msg::Pose& in_planning_frame);
 
     /**
+     * @brief Puts a slab under the object into the planning scene, standing for what it rests on.
+     *
+     * Its top is the object's base; it reaches pick_support_reach_m toward and away from the
+     * robot and pick_support_half_width_m to each side, so the arm's way to the object passes
+     * above the table rather than through its edge, which a depth map sees only from above.
+     *
+     * @param object_pose The object's pose in the planning frame.
+     * @param object_height_m The object's full height.
+     */
+    void publishSupport(const geometry_msgs::msg::Pose& object_pose, double object_height_m);
+
+    /// The id of a pick's support slab in the planning scene.
+    static constexpr const char* kPickSupportId = "pick_support";
+
+    /**
      * @brief Detaches @p object_id if attached, and removes it from the world.
      *
      * Detaching leaves a world copy at the hand, which nothing would ever move again.
@@ -628,13 +657,20 @@ private:
     /// m. How far above the object's base a generated grasp's wrist and closing hand must stay.
     double grasp_surface_clearance_m_{ 0.010 };
     /// m. How far a generated grasp may be backed off along its approach to meet that clearance.
-    double              grasp_max_backoff_m_{ 0.015 };
-    double              min_grip_height_m_{ 0.080 };
-    double              settle_tolerance_m_{ 0.010 };
-    int                 settle_attempts_{ 2 };
-    double              max_grasp_offset_m_{ 0.020 };
-    double              max_grasp_width_m_{ 0.090 };
-    double              scene_object_padding_m_{ 0.02 };
+    double grasp_max_backoff_m_{ 0.015 };
+    double min_grip_height_m_{ 0.080 };
+    double settle_tolerance_m_{ 0.010 };
+    int    settle_attempts_{ 2 };
+    double max_grasp_offset_m_{ 0.020 };
+    double max_grasp_width_m_{ 0.090 };
+    double scene_object_padding_m_{ 0.02 };
+    /// m. The pick's support slab: toward the robot and away from it, from the object's centre.
+    std::vector<double> pick_support_reach_m_{ 0.14, 0.26 };
+    /// m. The pick's support slab, to each side of the object's centre, and its thickness.
+    double pick_support_half_width_m_{ 0.25 };
+    double pick_support_thickness_m_{ 0.04 };
+    /// m. How far above the surface every finger stays when a held object is set down.
+    double              place_finger_clearance_m_{ 0.010 };
     double              max_place_offset_m_{ 0.08 };
     double              grasp_refresh_max_shift_m_{ 0.050 };
     double              reaim_clearance_m_{ 0.08 };

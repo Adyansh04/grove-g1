@@ -101,6 +101,29 @@ moveit_msgs::msg::CollisionObject G1ManipulationServer::publishCollisionObject(
     return object;
 }
 
+void G1ManipulationServer::publishSupport(
+    const geometry_msgs::msg::Pose& object_pose, double object_height_m)
+{
+    moveit_msgs::msg::CollisionObject support;
+    support.id                            = kPickSupportId;
+    support.header.frame_id               = planning_frame_;
+    const double                    back  = pick_support_reach_m_[0];
+    const double                    ahead = pick_support_reach_m_[1];
+    shape_msgs::msg::SolidPrimitive box;
+    box.type       = shape_msgs::msg::SolidPrimitive::BOX;
+    box.dimensions = { back + ahead, 2.0 * pick_support_half_width_m_, pick_support_thickness_m_ };
+    geometry_msgs::msg::Pose at;
+    at.position.x = object_pose.position.x + (0.5 * (ahead - back));
+    at.position.y = object_pose.position.y;
+    at.position.z =
+        object_pose.position.z - (0.5 * object_height_m) - (0.5 * pick_support_thickness_m_);
+    at.orientation.w = 1.0;
+    support.primitives.push_back(box);
+    support.primitive_poses.push_back(at);
+    support.operation = moveit_msgs::msg::CollisionObject::ADD;
+    planning_scene_.applyCollisionObjects({ support });
+}
+
 void G1ManipulationServer::removeFromScene(const std::string& object_id)
 {
     moveit_msgs::msg::AttachedCollisionObject detach;
