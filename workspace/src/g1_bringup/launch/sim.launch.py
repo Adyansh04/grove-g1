@@ -64,7 +64,7 @@ SIM_START_DELAY_S = 2.0
 # after spawn, it bakes in a wrong gravity and diverges.
 FASTLIO_EXTRA_DELAY_S = 10.0
 
-WORLDS = ("navigation", "perception", "manipulation", "tabletop", "lio", "apartment")
+WORLDS = ("navigation", "perception", "manipulation", "tabletop", "grasp_eval", "lio", "apartment")
 HAND_MODELS = ("dex3", "inspire")
 # Scenes are written for the Dex3 model. Staging swaps in another hand's model, and the palm the
 # grasp welds hang from, which the grasp weld finds the digits under.
@@ -354,7 +354,8 @@ def _launch_setup(context, *args, **kwargs):
             f"world:={world!r} is not a scene. Use 'navigation' (the multi-room facility), "
             "'perception' (the small room the geometry test measures against), "
             "'manipulation' (one object on a pedestal at arm's length, for the skill tests), "
-            "'tabletop' (several objects on a table, for perception), 'lio' (the walled, "
+            "'tabletop' (several objects on a table, for perception), 'grasp_eval' (eight "
+            "shapes on a table, four in reach of each hand, for measuring grasps), 'lio' (the walled, "
             "asymmetric room for scoring LiDAR-inertial odometry) or 'apartment' (five "
             "furnished rooms off a hallway, for the semantic map and exploration)."
         )
@@ -370,6 +371,9 @@ def _launch_setup(context, *args, **kwargs):
 
     sim_env = dict(os.environ)
     sim_env["LD_LIBRARY_PATH"] = UNITREE_ROBOTICS_LIB + ":" + sim_env.get("LD_LIBRARY_PATH", "")
+    contact_log = LaunchConfiguration("contact_log").perform(context)
+    if contact_log:
+        sim_env["GROVE_G1_CONTACT_LOG"] = contact_log
     port_links = []
     if hand_model == "inspire":
         with open(INSPIRE_PARAMS, encoding="utf-8") as handle:
@@ -424,7 +428,8 @@ def generate_launch_description():
                 description="Which room to stage, when sensors are on. 'navigation' is the "
                 "multi-room facility; 'perception' is the bare room test_lidar_geometry measures "
                 "against; 'manipulation' is one object at arm's length; 'tabletop' is several "
-                "objects on a pedestal, for perception; 'lio' is the walled room for scoring "
+                "objects on a pedestal, for perception; 'grasp_eval' is eight shapes on a table, four "
+                "in reach of each hand, for measuring grasps; 'lio' is the walled room for scoring "
                 "odometry; 'apartment' is five furnished rooms off a hallway, built from fetched "
                 "assets (scripts/setup-world-assets.sh).",
             ),
@@ -435,6 +440,13 @@ def generate_launch_description():
                 description="The hands on the simulated G1: 'dex3', Unitree's Dex3-1, or "
                 "'inspire', Inspire's RH56DFQ, which the simulator serves on the serial ports "
                 "g1_description's inspire_params.yaml names. Passed on to control.launch.py. Defaults to G1_HAND_MODEL, else dex3.",
+            ),
+            DeclareLaunchArgument(
+                "contact_log",
+                default_value="",
+                description="A file the simulator appends every hand contact episode and grasp "
+                "to, one JSON line each: what the hand touched, the peak force, and how centred "
+                "a grasp sits. Empty logs nothing; hard contacts (over 5 N) are printed either way.",
             ),
             DeclareLaunchArgument(
                 "rviz",
