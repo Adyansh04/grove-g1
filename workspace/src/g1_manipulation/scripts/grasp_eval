@@ -156,6 +156,20 @@ def write_snapshot(
     )
 
 
+def deepest_close(trace: list[tuple[float, dict, dict]], side: str, since: float):
+    """The traced moment the hand on @p side was closed furthest, from @p since on, or None."""
+    prefix = ("L_", "left_hand_") if side == "left" else ("R_", "right_hand_")
+    moments = [m for m in trace if m[0] >= since]
+    if not moments:
+        return None
+    return max(
+        moments,
+        key=lambda m: sum(
+            abs(q) for j, q in m[1].items() if j.startswith(prefix) and "yaw" not in j
+        ),
+    )
+
+
 def worst_hits(target: str, events: list[dict]) -> list[dict]:
     """The pick's hardest contacts with anything but its target, hardest first."""
     hits = [
@@ -281,6 +295,13 @@ def main(argv=None) -> int:
                 )
             node.spin_for(1.0)
             ended = time.time()
+            # A pick that never lifted has no closed snapshot: its furthest close stands in.
+            closed_at = snapshots / f"{name}_closed.json"
+            grasp_began = phases.get(Pick.Feedback.PHASE_GRASP)
+            if not closed_at.exists() and grasp_began is not None:
+                moment = deepest_close(node.trace, side, grasp_began)
+                if moment is not None:
+                    write_snapshot(closed_at, name, side, "closed furthest", moment[1], moment[2])
             events, offset = read_events(args.contact_log, offset)
             row = score(name, events)
             row["hits"] = []
