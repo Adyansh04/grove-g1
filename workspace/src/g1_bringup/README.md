@@ -245,6 +245,7 @@ and `g1_vla` by path lookup. `package.xml` declares none of them. Each already d
 | `config/sim_sensors.yaml` | LiDAR, IMU and camera parameters read by the patched simulator (the cameras by name and MJCF camera, mounted from `g1_description`'s `config/cameras.yaml`). The bodies that publish ground-truth poses. The grasp weld for scenes that declare one. |
 | `config/sim_sensors_apartment.yaml` | The apartment's `sim_sensors.yaml`, tracking every prop. Generated. `sim.launch.py` takes `sim_sensors_<world>.yaml` when one exists. |
 | `config/world_model.yaml` | The G1's values for canopy: the planner's radius, clearances, speeds and dwell time, and the approach standoff and margin. |
+| `config/detector_sam3.yaml` | SAM 3.1 over canopy's `detector.yaml` for `world_model.launch.py detector:=true`: the segmentation service and the G1's 47 phrases (canopy's 34 plus what its lab holds). |
 | `config/mock_detector.yaml` | The mock detector's rate (`mock_rate_hz: 2.0`) for `world_model.launch.py detector:=mock`. |
 | `config/segmenter.yaml` | The segmenter's model server (canopy's, 5561), thresholds and timeouts for `world_model.launch.py segmenter:=true`. |
 | `config/g1_sensors.rviz` | RViz without navigation. Fixed frame `odom`. |

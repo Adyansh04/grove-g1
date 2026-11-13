@@ -4,3 +4,58 @@
 /**:
   ros__parameters:
     segment_service: "/segment_objects"
+
+    # canopy's household list, then what the 13 Nov lab run showed SAM 3.1 finding reliably. Replayed
+    # over that run, this list kept 28 objects (the household list 17), among them the glass facade,
+    # a fire extinguisher, tables and suitcases. Left out on purpose: drawer unit (one per drawer),
+    # office chair (splits chairs), door (fires on cabinet doors), and cable, paper, mat, shoe and
+    # plastic bag (clutter that moves). Each phrase costs SAM 3.1's decoder about 41 ms a frame:
+    # 2.3 s a frame for these 47, 1.8 s for the 34.
+    phrases:
+      - chair
+      - armchair
+      - sofa
+      - dining table
+      - coffee table
+      - desk
+      - nightstand
+      - cabinet
+      - wardrobe
+      - bookshelf
+      - shelving unit
+      - bed
+      - clock
+      - potted plant
+      - refrigerator
+      - stove
+      - microwave
+      - kitchen counter
+      - kettle
+      - bowl
+      - mug
+      - tray
+      - television
+      - laptop
+      - book
+      - cardboard box
+      - crate
+      - trash can
+      - lamp
+      - bottle
+      - toilet
+      - sink
+      - bathtub
+      - shower
+      - fire extinguisher
+      - window
+      - glass door
+      - table
+      - workbench
+      - rolling cart
+      - banner
+      - suitcase
+      - backpack
+      - monitor
+      - whiteboard
+      - power strip
+      - broom
