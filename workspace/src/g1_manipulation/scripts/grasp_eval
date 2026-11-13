@@ -4,8 +4,9 @@
 For tuning grasps in simulation. Run it against a stack whose simulator logs its contact monitor
 (`contact_log:=<file>` on bringup.launch.py) and pass the same file: each pick is scored by what the
 hand struck on the way (peak force on the table, on the robot and on the other objects), how
-centred its grip sat, and whether the object came up. The joints and the objects are saved when the
-hand has closed and after the lift, for g1_bringup's tools/render_grasp.py to draw.
+centred its grip sat, and whether the object came up. The joints and the objects are saved on the
+grasp pose, when the hand has closed, after the lift, and at the peak of each of the worst contacts
+(the monitor stamps them with the wall clock), for g1_bringup's tools/render_grasp.py to draw.
 
     ros2 run g1_manipulation grasp_eval --contact-log /root/data/grasp-eval/contacts.jsonl \\
         --out /root/data/grasp-eval/run1 [--objects red_cube green_can]
@@ -46,9 +47,18 @@ PLACE_TIMEOUT_S = 180.0
 LIFTED_M = 0.03
 # m. Another object counts as moved once it shifted this far.
 MOVED_M = 0.01
+# s. How long to wait for every object to be seen in the pelvis frame: TF and discovery can take
+# a while in a fresh node.
+STARTUP_TIMEOUT_S = 30.0
+# The pick phases whose start is saved: on the grasp pose before the close, closed before the lift.
+MOMENTS = {Pick.Feedback.PHASE_GRASP: "reached", Pick.Feedback.PHASE_LIFT: "closed"}
 # N. Contact with the table or the robot: up to the first is a touch, past the second a strike.
 TOUCH_N = 2.0
 STRIKE_N = 5.0
+# s. The joints and objects are kept this often through a pick, to find the pose at a contact.
+TRACE_PERIOD_S = 0.05
+# The worst contacts of a pick that are saved as snapshots.
+MAX_HITS = 3
 
 
 class Evaluator(Node):
@@ -65,9 +75,16 @@ class Evaluator(Node):
         self.pick = ActionClient(self, Pick, "/g1_manipulation_server/pick")
         self.place = ActionClient(self, Place, "/g1_manipulation_server/place")
         self.phase = ""
+        #: (wall time, joints, objects) through the current pick, every TRACE_PERIOD_S.
+        self.trace: list[tuple[float, dict, dict]] = []
 
     def _joints(self, msg: JointState) -> None:
         self.joints.update(zip(msg.name, msg.position, strict=False))
+        now = time.time()
+        if not self.trace or now - self.trace[-1][0] >= TRACE_PERIOD_S:
+            self.trace.append(
+                (now, dict(self.joints), {k: dict(v) for k, v in self.objects.items()})
+            )
 
     def _objects(self, msg: Detection3DArray) -> None:
         for detection in msg.detections:
@@ -97,19 +114,7 @@ class Evaluator(Node):
         """Writes the joints and objects; from inside a callback, without spinning first."""
         if settle:
             self.spin_for(0.5)
-        path.write_text(
-            json.dumps(
-                {
-                    "object": target,
-                    "side": side,
-                    "phase": phase,
-                    "frame": FRAME,
-                    "joints": self.joints,
-                    "objects": self.objects,
-                },
-                indent=1,
-            )
-        )
+        write_snapshot(path, target, side, phase, self.joints, self.objects)
 
     def run_action(self, client: ActionClient, goal, timeout_s: float, on_phase=None):
         if not client.wait_for_server(timeout_sec=10.0):
@@ -130,6 +135,38 @@ class Evaluator(Node):
         result = handle.get_result_async()
         rclpy.spin_until_future_complete(self, result, timeout_sec=timeout_s)
         return result.result().result if result.done() else None
+
+
+def write_snapshot(
+    path: pathlib.Path, target: str, side: str, phase: str, joints: dict, objects: dict
+) -> None:
+    """Writes one moment of a pick, in the form tools/render_grasp.py reads."""
+    path.write_text(
+        json.dumps(
+            {
+                "object": target,
+                "side": side,
+                "phase": phase,
+                "frame": FRAME,
+                "joints": joints,
+                "objects": objects,
+            },
+            indent=1,
+        )
+    )
+
+
+def worst_hits(target: str, events: list[dict]) -> list[dict]:
+    """The pick's hardest contacts with anything but its target, hardest first."""
+    hits = [
+        e
+        for e in events
+        if e["event"] == "contact"
+        and e.get("wall_peak")
+        and e["peak_n"] > TOUCH_N
+        and (e["other_kind"] in ("environment", "robot") or e["other"] != target)
+    ]
+    return sorted(hits, key=lambda e: -e["peak_n"])[:MAX_HITS]
 
 
 def read_events(path: pathlib.Path, offset: int) -> tuple[list[dict], int]:
@@ -191,7 +228,12 @@ def main(argv=None) -> int:
     node = Evaluator()
     rows = []
     try:
+        deadline = time.monotonic() + STARTUP_TIMEOUT_S
         node.spin_for(3.0)
+        while time.monotonic() < deadline and (
+            not node.objects or any(name not in node.objects for name in args.objects)
+        ):
+            node.spin_for(0.5)
         names = args.objects or sorted(node.objects)
         offset = args.contact_log.stat().st_size if args.contact_log.is_file() else 0
         for name in names:
@@ -204,14 +246,22 @@ def main(argv=None) -> int:
             node.get_logger().info(f"picking {name} with the {side} hand")
             snapshots = args.out / "snapshots"
 
-            def on_phase(phase, name=name, side=side, snapshots=snapshots):
-                if phase == Pick.Feedback.PHASE_LIFT:
+            phases: dict[str, float] = {}
+
+            def on_phase(phase, name=name, side=side, snapshots=snapshots, phases=phases):
+                phases[phase] = time.time()
+                if phase in MOMENTS:
                     node.snapshot(
-                        snapshots / f"{name}_closed.json", name, side, "closed", settle=False
+                        snapshots / f"{name}_{MOMENTS[phase]}.json",
+                        name,
+                        side,
+                        MOMENTS[phase],
+                        settle=False,
                     )
 
             goal = Pick.Goal(object_id=name + args.pick_suffix, arm=side)
             began = time.monotonic()
+            node.trace.clear()
             picked = node.run_action(node.pick, goal, PICK_TIMEOUT_S, on_phase)
             node.snapshot(snapshots / f"{name}_lifted.json", name, side, "lifted")
             lifted = node.objects[name]["pos"][2] - start["pos"][2] > LIFTED_M
@@ -230,8 +280,29 @@ def main(argv=None) -> int:
                     node.place, Place.Goal(pose=pose, arm=side), PLACE_TIMEOUT_S
                 )
             node.spin_for(1.0)
+            ended = time.time()
             events, offset = read_events(args.contact_log, offset)
             row = score(name, events)
+            row["hits"] = []
+            for k, hit in enumerate(worst_hits(name, events)):
+                started = [p for p, at in phases.items() if at <= hit["wall_peak"]]
+                during = max(started, key=phases.get) if started else "before the pick"
+                if hit["wall_peak"] > ended:
+                    during = "after the pick"
+                row["hits"].append(
+                    {key: hit[key] for key in ("link", "other", "other_kind", "peak_n")}
+                    | {"phase": during}
+                )
+                moment = min(node.trace, key=lambda s: abs(s[0] - hit["wall_peak"]), default=None)
+                if moment is not None:
+                    write_snapshot(
+                        snapshots / f"{name}_hit{k}.json",
+                        name,
+                        side,
+                        f"hit {hit['link']} on {hit['other']} {hit['peak_n']:.0f} N in {during}",
+                        moment[1],
+                        moment[2],
+                    )
             row.update(
                 object=name,
                 side=side,
@@ -252,7 +323,11 @@ def main(argv=None) -> int:
             rows.append(row)
             node.get_logger().info(
                 f"{name}: {row['verdict']}, table {row['table_peak_n']:.1f} N, grip offset "
-                f"{row['grasp']['offset_mm'] if row['grasp'] else '-'} mm"
+                f"{row['grasp']['offset_mm'] if row['grasp'] else '-'} mm, worst contacts "
+                + "; ".join(
+                    f"{h['link']} on {h['other']} {h['peak_n']:.0f} N in {h['phase']}"
+                    for h in row["hits"]
+                )
             )
     finally:
         (args.out / "results.json").write_text(json.dumps(rows, indent=1, default=list))
