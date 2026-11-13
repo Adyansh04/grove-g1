@@ -449,7 +449,7 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
         return;
     }
     moveit_msgs::msg::CollisionObject object = publishCollisionObject(*detection, *object_pose);
-    publishSupport(*object_pose, detection->bbox.size.z);
+    publishSupport(arm, *object_pose, detection->bbox.size.z);
 
     std::string                  why;
     std::vector<ConsideredGrasp> verdicts;

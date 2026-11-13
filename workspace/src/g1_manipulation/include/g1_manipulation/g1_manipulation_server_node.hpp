@@ -542,12 +542,15 @@ private:
      *
      * Its top is the object's base; it reaches pick_support_reach_m toward and away from the
      * robot and pick_support_half_width_m to each side, so the arm's way to the object passes
-     * above the table rather than through its edge, which a depth map sees only from above.
+     * above the table rather than through its edge, which a depth map sees only from above. It
+     * is shortened toward the robot until the arm and hand, where they are now, clear it.
      *
+     * @param arm The arm about to reach.
      * @param object_pose The object's pose in the planning frame.
      * @param object_height_m The object's full height.
      */
-    void publishSupport(const geometry_msgs::msg::Pose& object_pose, double object_height_m);
+    void publishSupport(
+        const ArmContext& arm, const geometry_msgs::msg::Pose& object_pose, double object_height_m);
 
     /// The id of a pick's support slab in the planning scene.
     static constexpr const char* kPickSupportId = "pick_support";

@@ -3,11 +3,16 @@
  * @brief The planning scene: collision objects, the hand's allowed contacts, and the octomap.
  */
 
+#include <geometric_shapes/shapes.h>
 #include <tf2/LinearMath/Quaternion.h>
 
+#include <Eigen/Geometry>
 #include <algorithm>
 #include <chrono>
 #include <memory>
+#include <moveit/collision_detection/collision_common.hpp>
+#include <moveit/collision_detection/collision_matrix.hpp>
+#include <moveit/planning_scene/planning_scene.hpp>
 #include <moveit_msgs/msg/attached_collision_object.hpp>
 #include <moveit_msgs/msg/collision_object.hpp>
 #include <shape_msgs/msg/solid_primitive.hpp>
@@ -26,6 +31,8 @@ namespace
 
 // MoveIt treats a zero-extent primitive as degenerate and silently drops the attach.
 constexpr double kMinPrimitiveExtent = 0.005;
+// m. How much a pick's support slab is shortened at a time to clear the arm.
+constexpr double kSupportShrinkStepM = 0.02;
 
 constexpr auto kClearOctomapTimeout = std::chrono::seconds(2);
 
@@ -102,24 +109,72 @@ moveit_msgs::msg::CollisionObject G1ManipulationServer::publishCollisionObject(
 }
 
 void G1ManipulationServer::publishSupport(
-    const geometry_msgs::msg::Pose& object_pose, double object_height_m)
+    const ArmContext& arm, const geometry_msgs::msg::Pose& object_pose, double object_height_m)
 {
+    const double ahead = pick_support_reach_m_[1];
+    double       back  = pick_support_reach_m_[0];
+    const auto   slab  = [&] {
+        geometry_msgs::msg::Pose at;
+        at.position.x = object_pose.position.x + (0.5 * (ahead - back));
+        at.position.y = object_pose.position.y;
+        at.position.z =
+            object_pose.position.z - (0.5 * object_height_m) - (0.5 * pick_support_thickness_m_);
+        at.orientation.w = 1.0;
+        return at;
+    };
+    // Never round where the arm already is, or no plan could start: shortened toward the robot
+    // until the arm and hand clear it, as a hand left low beside the table's edge needs.
+    MoveGroup* group = groupFor(arm.arm_group);
+    if (const moveit::core::RobotStatePtr now =
+            group != nullptr ? group->getCurrentState(1.0) : nullptr;
+        now != nullptr)
+    {
+        planning_scene::PlanningScene               scratch(now->getRobotModel());
+        collision_detection::AllowedCollisionMatrix acm = scratch.getAllowedCollisionMatrix();
+        acm.setDefaultEntry(kPickSupportId, true);
+        for (const std::string& name : { arm.arm_group, arm.hand_group })
+        {
+            if (const auto* jmg = now->getJointModelGroup(name))
+            {
+                for (const std::string& link : jmg->getLinkModelNamesWithCollisionGeometry())
+                {
+                    acm.setEntry(kPickSupportId, link, false);
+                }
+            }
+        }
+        const double full = back;
+        for (int step = 0; full - (step * kSupportShrinkStepM) > 0.0; ++step)
+        {
+            back                                = full - (step * kSupportShrinkStepM);
+            const geometry_msgs::msg::Point& p  = slab().position;
+            Eigen::Isometry3d                at = Eigen::Isometry3d::Identity();
+            at.translation()                    = Eigen::Vector3d(p.x, p.y, p.z);
+            scratch.getWorldNonConst()->removeObject(kPickSupportId);
+            scratch.getWorldNonConst()->addToObject(
+                kPickSupportId,
+                std::make_shared<const shapes::Box>(
+                    back + ahead,
+                    2.0 * pick_support_half_width_m_,
+                    pick_support_thickness_m_),
+                at);
+            collision_detection::CollisionRequest request;
+            collision_detection::CollisionResult  result;
+            scratch.getCollisionEnv()->checkRobotCollision(request, result, *now, acm);
+            if (!result.collision)
+            {
+                break;
+            }
+            back = 0.0;
+        }
+    }
     moveit_msgs::msg::CollisionObject support;
-    support.id                            = kPickSupportId;
-    support.header.frame_id               = planning_frame_;
-    const double                    back  = pick_support_reach_m_[0];
-    const double                    ahead = pick_support_reach_m_[1];
+    support.id              = kPickSupportId;
+    support.header.frame_id = planning_frame_;
     shape_msgs::msg::SolidPrimitive box;
     box.type       = shape_msgs::msg::SolidPrimitive::BOX;
     box.dimensions = { back + ahead, 2.0 * pick_support_half_width_m_, pick_support_thickness_m_ };
-    geometry_msgs::msg::Pose at;
-    at.position.x = object_pose.position.x + (0.5 * (ahead - back));
-    at.position.y = object_pose.position.y;
-    at.position.z =
-        object_pose.position.z - (0.5 * object_height_m) - (0.5 * pick_support_thickness_m_);
-    at.orientation.w = 1.0;
     support.primitives.push_back(box);
-    support.primitive_poses.push_back(at);
+    support.primitive_poses.push_back(slab());
     support.operation = moveit_msgs::msg::CollisionObject::ADD;
     planning_scene_.applyCollisionObjects({ support });
 }
