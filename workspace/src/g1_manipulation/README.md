@@ -64,14 +64,14 @@ The source's other parameters:
 
 The steps follow the feedback phases.
 
-1. `locating`: read the object, refuse it when it is wider than `max_grasp_width_m` across its narrower side, add its box to the planning scene and choose a grasp: for generated grasps up to `grasp_tries` of the best `max_grasp_candidates` that approach no steeper than `max_approach_tilt_deg`, not back at the robot (`min_approach_forward`), and solve at the grasp, those that also solve at the pregrasp first.
+1. `locating`: read the object, refuse it when it is wider than `max_grasp_width_m` across its narrower side, and add its box to the planning scene. A hand lower than `arm_clear_height_m` above the object's base lifts straight up first. A slab (`pick_support_*`) stands for the table under the object, its top `pick_support_margin_m` above the object's base until the descent, since the arm sags below its planned path. Then choose a grasp: for generated grasps up to `grasp_tries` of the best `max_grasp_candidates` that approach no steeper than `max_approach_tilt_deg`, not back at the robot (`min_approach_forward`), grip within `max_grip_offset_m` of the object's centre, and solve at the grasp. Those seated as generated come first, then those backed off along their approach (up to `grasp_max_backoff_m`) to clear the table, and last those that do not solve at the pregrasp.
 2. `pregrasp`: move the hand to `pinch_ready` and the arm to `approach_height_m` above the grasp (the next generated grasp's pregrasp when MoveIt finds no way to one), then settle out the arm's gravity droop in clear air.
 3. `approach`:
    - Re-read the object and follow a shift under `grasp_refresh_max_shift_m`.
    - Plan to a staging point `reaim_clearance_m` above the grasp while the object is still in the scene.
-   - Remove the object, clear the octomap, exempt the hand from it and walk the last stretch as a straight line.
-   - A miss backs straight up and retries from staging, up to `settle_attempts` more times. If it is still more than `max_grasp_offset_m` off, the pick is refused.
-4. `grasp`: start outside the widest measured side and creep in `grip_search_step_m` at a time until the thumb opposes a finger. Then hold every finger at its stall plus `grip_hold_bias_rad`. If the grip check below passes, attach the object to the palm.
+   - Remove the object, lower the slab to the object's base, clear the octomap, exempt the hand from it and walk the last stretch as a straight line.
+   - A miss backs straight up and retries from staging, up to `settle_attempts` more times, re-aiming for the arm's sag but never below the grasp. A hand that ends its line well above the grasp rests on something, and the pick is refused there. If it is still more than `max_grasp_offset_m` off, the pick is refused.
+4. `grasp`: start outside the widest measured side and creep in `grip_search_step_m` at a time until the thumb opposes a finger. A joint counts as pressing when it stalls `grip_min_position_error_rad` short of its target, or `grip_min_error_share` of its own travel for a joint with a short close such as the Inspire thumb, while pushing `grip_min_effort_nm`. Then hold every finger at its stall plus `grip_hold_bias_rad`. If the grip check below passes, attach the object to the palm.
 5. `lift`: straight up by `lift_height_m`. The held object stays exempt from the voxels it casts. Seen in the first frame after the lift without having risen half of `lift_height_m`, the object was left behind and the pick fails: a cradled object loads the fingers too little to tell.
 
 ## How a place runs
@@ -89,9 +89,29 @@ close, so pose goals are given for it directly.
 - The right hand's fingers close toward palm +y and the left's toward -y. That is why `grasp_rpy` is a roll and the left hand mirrors it.
 - A top grasp aims `grasp_depth_below_top_m` under the top face, but never lower than `min_grip_height_m` above the surface, because the thumb hangs 63 mm below the frame.
 - The hand takes objects 20 to 75 mm across.
+- The Inspire hand's frame sits at palm (0.160, ±0.072, 0.022), between its opposed thumb's tip and
+  the index and middle tips. Its thumb hangs 39 mm below the frame, and it takes objects up to
+  110 mm across.
 
 ```bash
 ros2 run tf2_ros tf2_echo right_hand_palm_link right_hand_grasp_frame
+```
+
+## Measuring grasps in simulation
+
+`grasp_eval` picks each object in turn, sets it back where it stood, and scores every grasp from
+the simulator's contact monitor: the peak force on the table, on the robot and on the other objects,
+how far the grip's contact centroid sits from the object's centre, and whether the object came up.
+Under 2 N on the table passes as a touch, over 5 N (the Inspire finger is rated 4 N) fails. It saves
+the joints and objects when the hand has closed and after the lift; `g1_bringup`'s
+`tools/render_grasp.py` draws them.
+
+```bash
+ros2 launch g1_bringup bringup.launch.py world:=grasp_eval moveit:=true manipulation:=true \
+  pin_pelvis:=true odometry:=ground_truth activate_arm:=true activate_arm_delay_s:=40.0 \
+  contact_log:=/root/data/grasp-eval/contacts.jsonl
+ros2 run g1_manipulation grasp_eval --contact-log /root/data/grasp-eval/contacts.jsonl \
+  --out /root/data/grasp-eval/run1
 ```
 
 ## Grip check
@@ -100,7 +120,9 @@ The hand controller has no goal tolerances, so a blocked finger reports success.
 reads a grip from `/joint_states` instead. A finger presses when it is at least
 `grip_min_position_error_rad` short of its target and pushes at least `grip_min_effort_nm`.
 
-- After the close, the thumb must press with the index or middle finger, or the pick fails.
+- A joint the close does not move, the same in `open` and `closed` (the Dex3's thumb roll, the
+  Inspire thumb's rotation), says nothing about a grip and is left out.
+- After the close, the thumb must press with another finger, or the pick fails.
 - After the lift, the result is only logged. A cradled object loads the fingers too little to tell held from dropped.
 
 ## Where a grasp comes from
@@ -124,6 +146,7 @@ explained in comments. `config/g1_object_pose_source.yaml` holds the source's fr
 | `object_source` | `sim_ground_truth` | See above. |
 | `object_timeout_ms` | 1000.0 | How old a pose may be. Bringup passes 8000 with perception. |
 | `min_grip_height_m` | 0.080 | Lowest grip above the surface. Bringup passes 0.035 for the navigation world, whose ball sits where the thumb hangs past the desk edge. |
+| `hand_model` | `G1_HAND_MODEL`, else `dex3` | The hands: the model the skills plan against, and `config/g1_manipulation_server_<hand>.yaml` laid over the Dex3's parameters: the Inspire hand's spans, grip thresholds and grasp depth. |
 | `grasp_source` | `fixed_top_down` | See above. |
 | `generated_grasp_arms` | `[right]` | The arms a `generated` source serves; GraspGenX describes the right Dex3 only, so the left still grasps from the object's box. |
 | `max_grasp_width_m` | 0.090 | The widest object a hand closes round; a wider one is refused before the arm moves. |

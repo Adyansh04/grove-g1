@@ -41,36 +41,50 @@ if(BUILD_TESTING)
   # in g1_navigation alongside the navigation ones.
   ament_add_pytest_test(test_launch_threading test/test_launch_threading.py ENV ${_pytest_env})
 
-  # move_group plans against the expanded xacro, so the model test expands it too.
-  set(_expanded_urdf "${CMAKE_CURRENT_BINARY_DIR}/g1_expanded.urdf")
+  # move_group plans against the expanded xacros, so the model test expands them too, once per
+  # hand model, and runs once per model.
   set(_description_dir "${CMAKE_CURRENT_SOURCE_DIR}/../g1_description")
-  add_custom_command(
-    OUTPUT ${_expanded_urdf}
-    COMMAND xacro ${_description_dir}/urdf/g1_lowcmd.urdf.xacro -o ${_expanded_urdf}
-    DEPENDS ${_description_dir}/urdf/g1_lowcmd.urdf.xacro
-            ${_description_dir}/urdf/g1_common.xacro
-            ${_description_dir}/urdf/g1_29dof_with_hand_rev_1_0.urdf
-            ${_description_dir}/config/lowcmd_params.yaml
-            ${_description_dir}/config/dex3_params.yaml
-    COMMENT "Expanding g1_lowcmd.urdf.xacro for test_robot_model"
-    VERBATIM
+  set(_model_inputs
+    ${_description_dir}/urdf/g1_lowcmd.urdf.xacro
+    ${_description_dir}/urdf/g1_common.xacro
+    ${_description_dir}/urdf/g1_29dof_with_hand_rev_1_0.urdf
+    ${_description_dir}/urdf/g1_29dof_rev_1_0_with_inspire_hand_DFQ.urdf
+    ${_description_dir}/config/lowcmd_params.yaml
+    ${_description_dir}/config/dex3_params.yaml
+    ${_description_dir}/config/inspire_params.yaml
+    ${CMAKE_CURRENT_SOURCE_DIR}/config/g1.srdf.xacro
   )
-  add_custom_target(g1_moveit_config_expanded_urdf ALL DEPENDS ${_expanded_urdf})
+  foreach(_hands dex3 inspire)
+    set(_urdf "${CMAKE_CURRENT_BINARY_DIR}/g1_${_hands}.urdf")
+    set(_srdf "${CMAKE_CURRENT_BINARY_DIR}/g1_${_hands}.srdf")
+    add_custom_command(
+      OUTPUT ${_urdf} ${_srdf}
+      COMMAND xacro ${_description_dir}/urdf/g1_lowcmd.urdf.xacro hand_model:=${_hands}
+              -o ${_urdf}
+      COMMAND xacro ${CMAKE_CURRENT_SOURCE_DIR}/config/g1.srdf.xacro hand_model:=${_hands}
+              -o ${_srdf}
+      DEPENDS ${_model_inputs}
+      COMMENT "Expanding the description and its semantics with hand_model:=${_hands}"
+      VERBATIM
+    )
+    add_custom_target(g1_moveit_config_expanded_${_hands} ALL DEPENDS ${_urdf} ${_srdf})
 
-  ament_add_gmock(test_robot_model test/test_robot_model.cpp)
-  if(TARGET test_robot_model)
-    target_compile_features(test_robot_model PUBLIC cxx_std_20)
-    add_dependencies(test_robot_model g1_moveit_config_expanded_urdf)
-    target_compile_definitions(test_robot_model PRIVATE
-      G1_TEST_URDF_PATH="${_expanded_urdf}"
-      G1_TEST_SRDF_PATH="${CMAKE_CURRENT_SOURCE_DIR}/config/g1.srdf")
-    target_link_libraries(test_robot_model
-      moveit_core::moveit_robot_model
-      moveit_core::moveit_robot_state
-      moveit_core::moveit_planning_scene
-      urdf::urdf
-      srdfdom::srdfdom)
-  endif()
+    ament_add_gmock(test_robot_model_${_hands} test/test_robot_model.cpp)
+    if(TARGET test_robot_model_${_hands})
+      target_compile_features(test_robot_model_${_hands} PUBLIC cxx_std_20)
+      add_dependencies(test_robot_model_${_hands} g1_moveit_config_expanded_${_hands})
+      target_compile_definitions(test_robot_model_${_hands} PRIVATE
+        G1_TEST_URDF_PATH="${_urdf}"
+        G1_TEST_SRDF_PATH="${_srdf}"
+        G1_TEST_HAND_MODEL="${_hands}")
+      target_link_libraries(test_robot_model_${_hands}
+        moveit_core::moveit_robot_model
+        moveit_core::moveit_robot_state
+        moveit_core::moveit_planning_scene
+        urdf::urdf
+        srdfdom::srdfdom)
+    endif()
+  endforeach()
 
   # Simulator suites share g1_bringup's RESOURCE_LOCK: two on one DDS graph and one simulator
   # are flaky.
@@ -78,14 +92,18 @@ if(BUILD_TESTING)
   # The balance policy holds the robot up, not a pinned pelvis, and has to settle first.
   add_launch_test(test/test_moveit_lowcmd.launch.py TARGET test_moveit_lowcmd TIMEOUT 500)
   set_tests_properties(test_moveit_lowcmd PROPERTIES
-    RESOURCE_LOCK mujoco_sim LABELS simulator COST 95)
+    RESOURCE_LOCK mujoco_sim LABELS simulator
+    # Tuned on the Dex3; the Inspire hands have their own grasp evaluation.
+    ENVIRONMENT "G1_HAND_MODEL=dex3" COST 95)
 
   # The octomap has to fill from the LiDAR before anything is asserted, and the tests wait for
   # it themselves: launch_testing's startup timeout caps SIM_SETTLE_S.
   add_launch_test(test/test_octomap_blocks_a_plan.launch.py
     TARGET test_octomap_blocks_a_plan TIMEOUT 500)
   set_tests_properties(test_octomap_blocks_a_plan PROPERTIES
-    RESOURCE_LOCK mujoco_sim LABELS simulator COST 95)
+    RESOURCE_LOCK mujoco_sim LABELS simulator
+    # Tuned on the Dex3; the Inspire hands have their own grasp evaluation.
+    ENVIRONMENT "G1_HAND_MODEL=dex3" COST 95)
 
   g1_add_lint_tests()
 endif()

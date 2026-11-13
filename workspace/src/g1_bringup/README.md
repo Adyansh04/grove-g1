@@ -57,6 +57,9 @@ flowchart LR
 | `cameras` | empty | Which cameras render: `head` (manipulation's), `chest` (mapping's) or `head,chest`. Empty keeps the world's sensor config: the head camera alone. Mounts are in `g1_description`'s `config/cameras.yaml`. |
 | `odometry` | `fast_lio` | What publishes `odom` to `base_footprint`: `fast_lio`, the LiDAR-inertial pipeline the robot runs, or `ground_truth`, the simulator's exact pose, for ruling the odometry out. |
 | `world` | `navigation` | The scene, staged only with sensors on (otherwise a bare floor). Values are in the next table. |
+| `props` | empty | The world's free bodies to keep, comma separated, such as `red_cube,red_cube_left`; the others are left out of the staged scene. Empty keeps them all. |
+| `contact_log` | empty | A file the simulator appends each hand contact (what it met, peak force) and each grasp (how centred) to, as JSON lines, for `g1_manipulation`'s `grasp_eval`. Contacts over 5 N with the table or the robot are printed either way. |
+| `hand_model` | `G1_HAND_MODEL`, else `inspire` | The hands: `inspire`, Inspire's RH56DFQ, which the robot wears, or `dex3`, Unitree's Dex3-1. The simulator suites run with `dex3`, which they were tuned on. Picks the description, the simulator's robot model and the hand controllers' joints. With `inspire` the scenes are staged with the Inspire model, their grasp welds hang from its palm, and the simulator answers each hand's RS485 line on the pseudo-terminal `g1_description`'s `inspire_params.yaml` names. |
 | `headless` | `true` | `false` shows the MuJoCo viewer. See the viewer note under Operating notes. |
 | `pin_pelvis` | `false` | Weld the robot in place and freeze the legs instead of running the policy, to exercise the arms alone. `mode:=none` only. |
 | `sim_start_delay_s` | empty | Seconds to delay the simulator. Empty means 2.0, or 4.0 when navigation or MoveIt starts alongside it. |
@@ -69,6 +72,8 @@ Values of `world`:
 | `perception` | An 8 by 8 m room of known geometry. |
 | `manipulation` | One object on a pedestal at arm's length. |
 | `tabletop` | Several objects on a pedestal. |
+| `grasp_eval` | Eight shapes on a table, four in reach of each hand: a cube, a can, a ball, a turned tall box, a tuna can, a bottle, a small cube and an L-shaped block. For measuring grasps with `contact_log` and `g1_manipulation`'s `grasp_eval`. |
+| `grasp_single` | `grasp_eval`'s eight shapes and the apartment's six props (a mug, a serum box, toys and figures), each in front of either hand (`<name>` on the right, `<name>_left` on the left), to stage one at a time with `props`. |
 | `lio` | A walled room for scoring odometry. |
 | `apartment` | Five furnished rooms off a hallway, see [worlds/README.md](worlds/README.md). |
 
@@ -97,10 +102,10 @@ Localization has a committed map for `navigation` and `apartment` only.
 
 The other launch files:
 
-- `sim.launch.py` takes `headless`, `world`, `sensors`, `cameras`, `odometry`, `pin_pelvis` and `sim_start_delay_s` (default `2.0`) with the meanings above. It also takes `rviz`, to open `g1_sensors.rviz` with sensors on.
+- `sim.launch.py` takes `headless`, `world`, `hand_model`, `sensors`, `cameras`, `odometry`, `pin_pelvis` and `sim_start_delay_s` (default `2.0`) with the meanings above. It also takes `rviz`, to open `g1_sensors.rviz` with sensors on.
 - `rviz.launch.py` takes `rviz_config` (required) and `node_name` (`rviz2`).
 - `control.launch.py` takes `pin_pelvis`, which `sim.launch.py` sets, and `controllers_overrides` (empty): a params file layered over `g1_controllers`' controller config. `sim.launch.py` passes it on for tests such as `test_emergency_freeze`.
-- `control.launch.py` also takes `hardware` (`false`), `robot_address` (empty) and `hands` (`true`), described in [Running on the robot](#running-on-the-robot).
+- `control.launch.py` also takes `hardware` (`false`), `robot_address` (empty), `hands` (`true`) and `hand_model` (`dex3`), described in [Running on the robot](#running-on-the-robot). `hand_model:=inspire` layers `g1_controllers`' `lowcmd_controllers_inspire.yaml` on.
 
 `world_model.launch.py` starts canopy with the G1's odometry and LiDAR topics and its own
 `config/world_model.yaml`. Its arguments:
@@ -156,7 +161,8 @@ that link, so its graph (domain 1) never meets the robot's. A new robot image ne
 - `robot_address` is this machine's IPv4 address on the robot's network (`192.168.123.0/24`).
   The SDK's DDS is pinned to it, since a network interface that carries a second address would
   otherwise be bound by the wrong one.
-- `hands:=false` leaves out the Dex3 components and their controllers, for a robot without them.
+- `hands:=false` leaves out the hand components and their controllers, for a robot without hands.
+  `hand_model:=inspire` drives Inspire hands, one RS485 line each, instead of the Dex3.
 - It refuses to start if `ROS_DOMAIN_ID` is the robot's own domain (on a DDS RMW, a ROS topic
   named `/lowcmd` would reach the motors), if the RMW is `rmw_cyclonedds_cpp` (a second
   CycloneDDS beside the SDK's corrupts the heap), or if `robot_address` is not an address of this
@@ -203,10 +209,10 @@ ros2 launch g1_bringup deactivate_arm.launch.py
 `activate_arm`:
 
 1. Swaps `arm_freeze_controller` for `arm_trajectory_controller` in one switch, because a joint `G1LowCmdSystem` sees unclaimed is left unpowered ([g1_controllers](../g1_controllers/README.md) has the ownership table).
-2. Activates each Dex3, component before controller, best-effort. A missing hand logs a warning and leaves the arm usable.
+2. Activates each hand, component before controller, best-effort. The component is the one owning the joints its controller drives, so either hand model works. A missing hand logs a warning and leaves the arm usable.
 3. Ramps both arms out to the sides over four seconds without planning, so MoveIt starts from a state out of collision with the octomap. If that move fails the script exits non-zero.
 
-`--posture sides` hangs the arms beside the thighs instead. `--no-hands` leaves the Dex3 alone.
+`--posture sides` hangs the arms beside the thighs instead. `--no-hands` leaves the hands alone.
 `arms_at_sides` passes both.
 
 `deactivate_arm` releases the hands, then swaps the freeze back in, again in one switch.

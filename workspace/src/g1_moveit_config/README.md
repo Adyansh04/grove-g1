@@ -1,7 +1,7 @@
 # g1_moveit_config
 
-MoveIt 2 planning for the G1's two 7-DoF arms and its Dex3 hands, layered on the controllers the
-control stack already runs. `ament_cmake`. Configuration and launch only: `move_group` and
+MoveIt 2 planning for the G1's two 7-DoF arms and its hands, Dex3 or Inspire RH56DFQ, layered on
+the controllers the control stack already runs. `ament_cmake`. Configuration and launch only: `move_group` and
 `servo_node` are upstream.
 
 ```mermaid
@@ -11,10 +11,10 @@ flowchart LR
     MG -- "FollowJointTrajectory" --> HC["left/right_hand_controller"]
     POL["balance policy<br/>legs + waist roll, pitch"] --> HW["G1LowCmdSystem"]
     JTC --> HW
-    HC --> HH["G1Dex3System (one per hand)"]
+    HC --> HH["G1Dex3System or G1InspireSystem<br/>(one per hand)"]
     HW -- "rt/lowcmd" --> SIM["unitree_mujoco<br/>(the robot on hardware)"]
     SIM -- "rt/lowstate" --> HW
-    HH -- "rt/dex3/side/cmd" --> SIM
+    HH -- "rt/dex3/side/cmd or RS485" --> SIM
 ```
 
 MoveIt adds no command path. It is another client of actions the controllers already serve, so the
@@ -24,18 +24,19 @@ arm channel and each hand's topic keep exactly one writer.
 
 | File | Starts |
 |---|---|
-| `move_group.launch.py` | `move_group`, planning against the description `robot_state_publisher` loads. With `servo:=true` (default `false`) it also starts `servo_node`. Servo streams onto the controller `move_group` executes through, so do not run it during a planned motion. `bringup.launch.py` sets it with `vla_execution_mode:=servo`. Nothing sim-specific. |
-| `moveit_sim.launch.py` | `g1_bringup`'s `sim.launch.py` plus `move_group`. Arguments: `headless` (`true`), `world` (`navigation`), `sensors` (`false`), `pin_pelvis` (`false`), `sim_start_delay_s` (`4.0`). |
-| `moveit_rviz.launch.py` | RViz with the MotionPlanning panel on `both_arms`. Argument: `rviz_config`, default `config/g1_moveit.rviz`. |
+| `move_group.launch.py` | `move_group`, planning against the description `robot_state_publisher` loads. `hand_model` (`dex3` or `inspire`, default from `G1_HAND_MODEL`, else `dex3`) picks the hands in the description and the SRDF, and lays `config/moveit_hand_controllers_<hand>.yaml` over the Dex3's hand controllers. With `servo:=true` (default `false`) it also starts `servo_node`. Servo streams onto the controller `move_group` executes through, so do not run it during a planned motion. `bringup.launch.py` sets it with `vla_execution_mode:=servo`. Nothing sim-specific. |
+| `moveit_sim.launch.py` | `g1_bringup`'s `sim.launch.py` plus `move_group`. Arguments: `headless` (`true`), `world` (`navigation`), `hand_model` (as above), `sensors` (`false`), `pin_pelvis` (`false`), `sim_start_delay_s` (`4.0`). |
+| `moveit_rviz.launch.py` | RViz with the MotionPlanning panel on `both_arms`. Arguments: `rviz_config`, default `config/g1_moveit.rviz`, and `hand_model` (as above). |
 
 ## Config
 
 | File | Holds |
 |---|---|
-| `g1.srdf` | Planning groups, end effectors, named poses, collision matrix. |
+| `g1.srdf.xacro` | Planning groups, end effectors, named poses, collision matrix. The hands' part follows the `hand_model` xacro argument; the arms' part is the same for both. |
 | `kinematics.yaml` | `pick_ik` per arm, none for `both_arms`. |
 | `joint_limits.yaml` | The velocity and acceleration limits trajectories are timed against. |
-| `moveit_controllers.yaml` | The three `FollowJointTrajectory` controllers, and `moveit_manage_controllers: false`. |
+| `moveit_controllers.yaml` | The three `FollowJointTrajectory` controllers, and `moveit_manage_controllers: false`. The hand controllers' joints are the Dex3's. |
+| `moveit_hand_controllers_inspire.yaml` | The hand controllers on the Inspire hand's six actuated joints, laid over the Dex3's with `hand_model:=inspire`. |
 | `ompl_planning.yaml` | RRTConnect on the arm groups. |
 | `sensors_3d.yaml` | `/livox/lidar` into a 25 mm octomap. |
 | `servo.yaml` | MoveIt Servo on `both_arms`. Takes `control_msgs/JointJog` on `/servo_node/delta_joint_cmds` and `geometry_msgs/TwistStamped` on `/servo_node/delta_twist_cmds`, and streams to `/arm_trajectory_controller/joint_trajectory`. |
@@ -102,13 +103,21 @@ Arm posture disturbs the gait, so manipulate standing still and walk in `tucked`
 one arm at a time. `both_arms` fails to execute them on this stack (see the
 [navigation and arm planning guide](../../../docs/guides/navigation-and-moveit.md)).
 
-The hands have three postures each, on `left_hand` and `right_hand`:
+The hands have three postures each, on `left_hand` and `right_hand`. For the Dex3:
 
 | Pose | What it is |
 |---|---|
 | `open` | Every finger joint at 0: fingers straight, thumb mid-range. |
 | `pinch_ready` | What a pick descends in: fingers open, thumb pulled back behind the object's near face. |
 | `closed` | The thumb swung forward against the curled fingers, short of the end stops so both can press into an object. |
+
+For the Inspire hand, whose group also holds its base and its six coupled joints:
+
+| Pose | What it is |
+|---|---|
+| `open` | Fingers straight, the thumb turned to oppose them (rotation 1.3 rad) but not bent, so a close only bends. |
+| `pinch_ready` | The same as `open`: the thumb cannot fold back further than straight. Its tip hangs 39 mm below the grasp frame. |
+| `closed` | Fingers at 0.80 rad and the thumb bent 0.22 rad, stopping 4.7 mm short of thumb-to-finger contact in the simulator. Thumb tip to the index and middle tips: 137 mm at `open`, 12 mm at `closed`. |
 
 At `open` the thumb reaches the table before the object does. Even retracted in `pinch_ready`, the
 hand hangs 113 mm below the palm origin, 63 mm below the grasp frame. That is the clearance
@@ -208,7 +217,7 @@ camera relay's best-effort images.
 
 ## Collision matrix
 
-The `disable_collisions` block in `config/g1.srdf` is not the Setup Assistant's. `collisions_updater`
+The `disable_collisions` blocks in `config/g1.srdf.xacro` are not the Setup Assistant's. `collisions_updater`
 does not finish on this model, because 38 of the URDF's 52 collision elements are full visual
 meshes, about 525k triangles.
 
@@ -218,15 +227,18 @@ The block holds 56 pairs, none sampled:
 - Links touching at rest (from `/check_state_validity`).
 - Each hand's thumb-over-wrist pair, which a closing hand always touches.
 
-It contains no cross-arm pair, because `both_arms` exists to collision-check one arm against the
+The Inspire hands' block holds the pairs joined by a joint, from `collisions_updater` without
+sampling (no hand pair touches at rest), and each thumb tip against the index and middle tips.
+
+Neither contains a cross-arm pair, because `both_arms` exists to collision-check one arm against the
 other. `test_robot_model` asserts those stay enabled.
 
 ## Tests
 
 | Test | Needs a simulator | Covers |
 |---|---|---|
-| `test_moveit_config_drift` | no | This package against `g1_controllers`' controller config and `g1_description`'s hand clamp. The hands' postures and the dual-arm group. The composite-group solver rule. The octomap sensor config. |
-| `test_robot_model` | no | The planning frame. No hand or waist joints in an arm group. The collision matrix's adjacent, cross-arm and thumb-to-fingertip pairs. The end effectors and the named poses. |
+| `test_moveit_config_drift` | no | This package against `g1_controllers`' controller config and `g1_description`'s hand clamps, for both hand models. The hands' postures and the dual-arm group. The composite-group solver rule. The octomap sensor config. |
+| `test_robot_model_dex3`, `test_robot_model_inspire` | no | Per hand model: the planning frame. No hand or waist joints in an arm group. The collision matrix's adjacent, cross-arm and thumb-to-fingertip pairs. The end effectors and the named poses, the hands' free of self-collision. |
 | `test_launch_threading` | no | What `g1_bringup`'s `moveit:=true` branch stages, the RViz choice, and that a workspace without this package still launches. |
 | `test_octomap_blocks_a_plan` | yes | The octomap fills from the LiDAR and MoveIt collision-checks against it: a reach into a mapped obstacle is rejected, with `<octomap>` named in the contact. |
 | `test_moveit_lowcmd` | yes | MoveIt with the pelvis unpinned. Every motor claimed before the acquire. The freeze traded for the trajectory controller and back. Both arms moving without the balance policy losing the robot. Both hands activating. The left hand closing and opening through MoveIt. |

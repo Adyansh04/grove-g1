@@ -1,0 +1,63 @@
+# Hardware parameters for g1_inspire_hand/G1InspireSystem, one component per Inspire RH56DFQ hand
+# (xacro arg hand_model:=inspire).
+#
+# Consumed by urdf/g1_common.xacro via xacro.load_yaml: ros2_control plugins only see parameters
+# that arrive as <ros2_control><param> tags.
+
+# Both hands, in the simulator. The hardware: section below replaces the values it names.
+system:
+  # Pseudo-terminals the unitree_mujoco fork answers on as the hands, beside the sensor socket.
+  # g1_bringup's sim.launch.py reads these two and hands them to the simulator.
+  serial_port_left: "/tmp/g1_inspire_left"
+  serial_port_right: "/tmp/g1_inspire_right"
+
+  # "inspire" is the hand's own frame (EB 90 header, byte-sum checksum), what Unitree's G1 hand
+  # service speaks; "modbus_rtu" is Modbus RTU, which newer firmware also answers.
+  protocol: "inspire"
+  baud_rate: 115200
+  slave_id: 1
+
+  # Hz. Each cycle writes the targets when they changed and reads angle and force: about 10 ms of
+  # bus time at 115200 baud, so the hardware tops out near 100 Hz.
+  io_rate_hz: 50.0
+  # ms. A reply later than this counts as lost; a full state read takes about 6 ms.
+  response_timeout_ms: 25.0
+  # ms. No good state read for this long, once active, errors the component.
+  state_timeout_ms: 300.0
+  # Every Nth cycle also reads current, error, status and temperature.
+  diagnostics_every: 10
+
+  # SPEED_SET, 0 to 1000, written at activation: the hand's own speed limit. 1000 closes a finger
+  # in about 0.2 s unloaded; the slew below is what limits a commanded move.
+  speed: 1000
+  # FORCE_SET, grams at the fingertip, written at activation: a closing finger stops when it
+  # presses this hard. The DFQ is rated 400 g a finger and 600 g at the thumb; much nearer that,
+  # a stalled finger latches a locked-rotor error and ignores targets until cleared.
+  force_limit_g: 300
+  # rad/s. Slew on the commanded angle, so a large trajectory step is still a ramp.
+  max_joint_velocity_rad_s: 3.0
+
+# The physical G1 (hardware:=true): each hand's USB to RS485 adapter on the development computer.
+# Unitree's service drives the right hand on ttyUSB1 and the left on ttyUSB2; USB numbering follows
+# plug order, so check them on the robot.
+hardware:
+  serial_port_left: "/dev/ttyUSB2"
+  serial_port_right: "/dev/ttyUSB1"
+
+# Per actuator, in the hand's register order: pinky, ring, middle, index, thumb bend, thumb
+# rotation. The component refuses a xacro that reorders them. The mimic joints have no actuator
+# of their own and follow from the URDF.
+#
+# open_rad is the joint angle at ANGLE 1000 (open) and closed_rad at ANGLE 0, linear between:
+# Unitree's mapping in xr_teleoperate, to calibrate against the real hand. lever_arm_m turns the
+# finger force the hand reports into the joint's effort state, N m, as that force acting this far
+# from the joint: about mid-phalanx, where a grasp touches.
+actuators:
+  pinky_proximal_joint:       { open_rad:  0.0, closed_rad: 1.7, lever_arm_m: 0.05 }
+  ring_proximal_joint:        { open_rad:  0.0, closed_rad: 1.7, lever_arm_m: 0.05 }
+  middle_proximal_joint:      { open_rad:  0.0, closed_rad: 1.7, lever_arm_m: 0.05 }
+  index_proximal_joint:       { open_rad:  0.0, closed_rad: 1.7, lever_arm_m: 0.05 }
+  # Bend stops at 0.5 rad, where the coupled thumb joints reach their limits.
+  thumb_proximal_pitch_joint: { open_rad:  0.0, closed_rad: 0.5, lever_arm_m: 0.07 }
+  # Rotation: -0.1 rad lies the thumb beside the index, 1.3 rad opposes it to the fingers.
+  thumb_proximal_yaw_joint:   { open_rad: -0.1, closed_rad: 1.3, lever_arm_m: 0.03 }

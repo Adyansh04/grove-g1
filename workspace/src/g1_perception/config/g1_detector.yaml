@@ -1,9 +1,11 @@
 # The detector client, loaded by g1_perception/launch/perception.launch.py with detector:=vision.
 g1_detector:
   ros__parameters:
-    # canopy's semantic server runs on the host, since it needs torch and CUDA; compose is
-    # host-networked. Start it with SAM 3.1: ./scripts/serve.sh canopy --detector sam3.1. 5560 is
-    # the vision server (./scripts/serve.sh vision), which keeps Grounded SAM 2 as the alternative.
+    # SAM 3.1 in TensorRT, sam3_inference's node, which perception.launch.py starts beside this.
+    segment_service: "/segment_objects"
+
+    # A host model server segments instead with an empty segment_service: 5560 is the vision
+    # server (./scripts/serve.sh vision), which keeps Grounded SAM 2 as the alternative.
     server_address: "tcp://127.0.0.1:5561"
 
     # Well past the slowest inference: this is what a stalled server costs before the node

@@ -101,7 +101,23 @@ def canopy(context):
     ]
     if mock:
         actions += mock_detectors(cameras, LaunchConfiguration("world").perform(context))
-    if LaunchConfiguration("segmenter").perform(context).lower() in ("true", "1"):
+    segmenter = LaunchConfiguration("segmenter").perform(context).lower() in ("true", "1")
+    # One SAM 3.1 node serves the detectors and the segmenter; sam3:=false leaves it to another
+    # launch, such as bringup's perception with detector:=vision.
+    sam3 = LaunchConfiguration("sam3").perform(context).lower() in ("true", "1")
+    if sam3 and (detector.lower() in ("true", "1") or segmenter):
+        actions.append(
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(
+                    os.path.join(
+                        get_package_share_directory("sam3_inference"),
+                        "launch",
+                        "sam3_segmentation.launch.py",
+                    )
+                )
+            )
+        )
+    if segmenter:
         actions.append(
             Node(
                 package="canopy_perception",
@@ -142,8 +158,9 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "detector",
                 default_value="false",
-                description="true: canopy's detector against the host semantic server; mock: "
-                "masks from the simulator's ground truth.",
+                description="true: canopy's detector, segmenting with SAM 3.1 in TensorRT and "
+                "embedding through the host semantic server; mock: masks from the simulator's "
+                "ground truth.",
             ),
             DeclareLaunchArgument(
                 "world",
@@ -152,15 +169,23 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "detector_params",
-                default_value="",
-                description="A YAML over canopy's detector.yaml for the real detector, such as "
-                "config/detector_yoloe.yaml.",
+                default_value=os.path.join(SHARE, "config", "detector_sam3.yaml"),
+                description="A YAML over canopy's detector.yaml for the real detector. The "
+                "default segments with SAM 3.1 in TensorRT; canopy's config/detector_yoloe.yaml "
+                "asks the semantic server's YOLOE-26 instead.",
             ),
             DeclareLaunchArgument("describe", default_value="false"),
             DeclareLaunchArgument(
                 "segmenter",
                 default_value="false",
                 description="true: canopy's segmenter, text-prompted masks on request.",
+            ),
+            DeclareLaunchArgument(
+                "sam3",
+                default_value="true",
+                choices=["true", "false"],
+                description="Start sam3_inference's node for detector:=true or segmenter:=true; "
+                "false when another launch already runs it.",
             ),
             DeclareLaunchArgument("rviz", default_value="false"),
             OpaqueFunction(function=canopy),

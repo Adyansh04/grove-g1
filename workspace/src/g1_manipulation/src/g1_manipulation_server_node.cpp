@@ -19,6 +19,8 @@
 #include <thread>
 #include <vector>
 
+#include "g1_manipulation/grasp_filter.hpp"
+
 namespace g1_manipulation
 {
 
@@ -83,6 +85,7 @@ G1ManipulationServer::G1ManipulationServer(const rclcpp::NodeOptions& options)
     }
     get_scene_     = create_client<moveit_msgs::srv::GetPlanningScene>("/get_planning_scene");
     apply_scene_   = create_client<moveit_msgs::srv::ApplyPlanningScene>("/apply_planning_scene");
+    check_state_   = create_client<moveit_msgs::srv::GetStateValidity>("/check_state_validity");
     clear_octomap_ = create_client<std_srvs::srv::Empty>("/clear_octomap");
 }
 
@@ -104,11 +107,20 @@ void G1ManipulationServer::declareParameters()
         { "place_edge_margin_m", &place_edge_margin_m_ },
         { "place_container_max_m", &place_container_max_m_ },
         { "grasp_depth_below_top_m", &grasp_depth_below_top_m_ },
+        { "grasp_surface_clearance_m", &grasp_surface_clearance_m_ },
+        { "grasp_closing_clearance_m", &grasp_closing_clearance_m_ },
+        { "grasp_max_backoff_m", &grasp_max_backoff_m_ },
+        { "pick_support_half_width_m", &pick_support_half_width_m_ },
+        { "pick_support_thickness_m", &pick_support_thickness_m_ },
+        { "pick_support_margin_m", &pick_support_margin_m_ },
+        { "place_finger_clearance_m", &place_finger_clearance_m_ },
+        { "arm_clear_height_m", &arm_clear_height_m_ },
         { "min_grip_height_m", &min_grip_height_m_ },
         { "settle_tolerance_m", &settle_tolerance_m_ },
         { "max_grasp_offset_m", &max_grasp_offset_m_ },
         { "max_grasp_width_m", &max_grasp_width_m_ },
         { "min_approach_forward", &min_approach_forward_ },
+        { "max_grip_offset_m", &max_grip_offset_m_ },
         { "scene_object_padding_m", &scene_object_padding_m_ },
         { "max_place_offset_m", &max_place_offset_m_ },
         { "grasp_refresh_max_shift_m", &grasp_refresh_max_shift_m_ },
@@ -127,6 +139,7 @@ void G1ManipulationServer::declareParameters()
         { "grip_hold_bias_rad", &grip_hold_bias_rad_ },
         { "grip_min_position_error_rad", &grip_min_position_error_rad_ },
         { "grip_min_effort_nm", &grip_min_effort_nm_ },
+        { "grip_min_error_share", &grip_min_error_share_ },
         { "place_tolerance_m", &place_tolerance_m_ },
         { "place_footprint_margin_m", &place_footprint_margin_m_ },
         { "place_confirm_timeout_s", &place_confirm_timeout_s_ },
@@ -162,7 +175,7 @@ void G1ManipulationServer::declareParameters()
     grip_check_enabled_ = declare_parameter<bool>("grip_check_enabled", grip_check_enabled_);
     object_timeout_s_   = declare_parameter<double>("object_timeout_ms", 1000.0) / 1000.0;
     max_approach_tilt_rad_ =
-        declare_parameter<double>("max_approach_tilt_deg", 75.0) * M_PI / 180.0;
+        declare_parameter<double>("max_approach_tilt_deg", 90.0) * M_PI / 180.0;
 
     // Read once, by the constructor or initialize().
     rcl_interfaces::msg::ParameterDescriptor fixed;
@@ -182,6 +195,14 @@ void G1ManipulationServer::declareParameters()
         "move_hand_point_side_steps_m",
         move_hand_point_side_steps_m_,
         fixed);
+    pick_support_reach_m_ =
+        declare_parameter<std::vector<double>>("pick_support_reach_m", pick_support_reach_m_, fixed);
+    if (pick_support_reach_m_.size() != 2 || pick_support_reach_m_[0] < 0.0 ||
+        pick_support_reach_m_[1] < 0.0)
+    {
+        throw std::invalid_argument(
+            "pick_support_reach_m needs 2 lengths, toward the robot then away, not negative");
+    }
     declare_parameter<std::string>("grasp_service", "/g1_grasp_engine/generate_grasps", fixed);
     world_frame_ = declare_parameter<std::string>("world_frame", world_frame_, fixed);
     declare_parameter<bool>("publish_markers", false, fixed);
@@ -197,6 +218,7 @@ void G1ManipulationServer::declareParameters()
             std::to_string(offset.size()));
     }
     std::ranges::copy(offset, graspgen_offset_.begin());
+    graspgen_offset_mirrored_ = mirroredGripperOffset(graspgen_offset_);
     if (grasp_rpy_.size() != 3)
     {
         throw std::invalid_argument("grasp_rpy needs exactly 3 entries");
@@ -370,7 +392,8 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
             backOff(arm, *arm_group);
         }
         removeFromScene(goal->object_id);
-        setHandContact(arm, { "<octomap>", goal->object_id }, false);
+        removeFromScene(kPickSupportId);
+        setHandContact(arm, { "<octomap>", goal->object_id, kPickSupportId }, false);
     };
     const auto fail = [&](const std::string& phase, const std::string& why) {
         clean_up();
@@ -387,8 +410,9 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     // Once the hand has closed on the object a cancel keeps it: opening the hand would drop it,
     // and the stop behind the cancel holds the arm where it is, so nothing moves.
     const auto cancelled_holding = [&](const std::string& phase) {
+        removeFromScene(kPickSupportId);
         // The object maps itself while held, as after a finished pick.
-        setHandContact(arm, { "<octomap>", goal->object_id }, false);
+        setHandContact(arm, { "<octomap>", goal->object_id, kPickSupportId }, false);
         setHandContact(arm, { "<octomap>", goal->object_id }, true, /*include_links=*/false);
         result->success = false;
         result->message =
@@ -431,6 +455,36 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
         return;
     }
     moveit_msgs::msg::CollisionObject object = publishCollisionObject(*detection, *object_pose);
+    // A hand by or below the table top would sweep its edge on the way to the object: straight up
+    // first, so the reach comes down from above.
+    if (geometry_msgs::msg::Pose hand = arm_group->getCurrentPose(arm.grasp_frame).pose;
+        hand.position.z <
+        object_pose->position.z - (0.5 * detection->bbox.size.z) + arm_clear_height_m_)
+    {
+        hand.position.z =
+            object_pose->position.z - (0.5 * detection->bbox.size.z) + arm_clear_height_m_;
+        // A hand by the table's edge stands in voxels it casts itself, which fail the line at its
+        // start: exempt for this move alone, as a lift away from the table.
+        setHandContact(arm, { "<octomap>" }, true);
+        const double raised = moveStraight(*arm_group, hand, arm.grasp_frame, "clear", 0.0);
+        setHandContact(arm, { "<octomap>" }, false);
+        if (raised <= 0.0)
+        {
+            fail(Pick::Feedback::PHASE_LOCATING, "could not raise the hand clear of the table");
+            return;
+        }
+    }
+    publishSupport(arm, *object_pose, detection->bbox.size.z, pick_support_margin_m_);
+    // pinch_ready, not open: an open thumb hangs low enough to ground on the table first. Opened
+    // before the grasps are chosen, whose pregrasps are checked with the hand as it will be.
+    if (!moveHandTo(*hand_group, "pinch_ready"))
+    {
+        fail(Pick::Feedback::PHASE_LOCATING, "the hand would not open to pinch_ready");
+        return;
+    }
+    // The walk leaves voxels where the arm's own links were, and a state inside them fails every
+    // check and plan before it is searched: the map is rebuilt from where the arm is now.
+    clearOctomap();
 
     std::string                  why;
     std::vector<ConsideredGrasp> verdicts;
@@ -454,15 +508,6 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     }
     feedback->phase = Pick::Feedback::PHASE_PREGRASP;
     goal_handle->publish_feedback(feedback);
-    // pinch_ready, not open: an open thumb hangs low enough to ground on the table first.
-    if (!moveHandTo(*hand_group, "pinch_ready"))
-    {
-        fail(Pick::Feedback::PHASE_PREGRASP, "the hand would not open to pinch_ready");
-        return;
-    }
-    // The walk leaves voxels where the arm's own links were, and a start state inside them
-    // fails every plan before it is searched: the map is rebuilt from where the arm is now.
-    clearOctomap();
     // A pregrasp that solves can still have no collision-free way to it: the next one may.
     const auto first_reached = [&]() -> const GraspPlan* {
         for (const GraspPlan& plan : plans)
@@ -585,6 +630,8 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     // Then remove-descend-close-attach, as MoveIt's own pick does. Contact is allowed only for
     // the last few centimetres: exempt all skill long, a plan could route through the table.
     removeFromScene(goal->object_id);
+    // The grasp stands closer to the table than the margin allows; the descent is a short line.
+    publishSupport(arm, *object_pose, detection->bbox.size.z, 0.0);
     clearOctomapKeeping(arm, { "<octomap>" });
     descended = true;
     if (!descendOnto(*arm_group, pregrasp_goal, descent_goal, arm.grasp_frame, max_grasp_offset_m_))
@@ -630,8 +677,9 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
         attached.touch_links.push_back(side + wrist);
     }
     planning_scene_.applyAttachedCollisionObject(attached);
-    // The object still sits in the surface's voxels, so the lift starts exempt from them.
-    setHandContact(arm, { "<octomap>", goal->object_id }, true);
+    // The object still sits in the surface's voxels, and the fingers may rest on the table under
+    // it, so the lift starts exempt from both.
+    setHandContact(arm, { "<octomap>", goal->object_id, kPickSupportId }, true);
 
     if (goal_handle->is_canceling())
     {
@@ -723,7 +771,8 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
 
     // The hand goes back to respecting the map, but the object maps itself while held, so it
     // stays exempt from its own voxels until the place.
-    setHandContact(arm, { "<octomap>", goal->object_id }, false);
+    removeFromScene(kPickSupportId);
+    setHandContact(arm, { "<octomap>", goal->object_id, kPickSupportId }, false);
     setHandContact(arm, { "<octomap>", goal->object_id }, true, /*include_links=*/false);
     result->success = true;
     result->message = "picked " + goal->object_id + " with the " + goal->arm + " hand, " + grip;
@@ -937,6 +986,20 @@ void G1ManipulationServer::executePlace(const std::shared_ptr<GoalHandle<Place>>
     goal_handle->publish_feedback(feedback);
     clearOctomapKeeping(arm, touchables);
     lowered = true;
+    // Fingers curled round the object's foot would meet the surface first: the release stops
+    // that much higher, and the object drops the rest.
+    if (const auto below = handBelowHeldM(*arm_group, arm, held, held_height);
+        below && *below + place_finger_clearance_m_ > 0.0)
+    {
+        const double raise = *below + place_finger_clearance_m_;
+        place_goal.position.z += raise;
+        preplace.position.z += raise;
+        RCLCPP_INFO(
+            get_logger(),
+            "lower: the fingers reach %.0f mm below the object's base; releasing it %.0f mm up",
+            1000.0 * *below,
+            1000.0 * raise);
+    }
     // A release a little off still lands the object, and the landing check judges it; far off,
     // the hand keeps it rather than dropping it in the air.
     if (!descendOnto(*arm_group, preplace, place_goal, arm.grasp_frame, max_place_offset_m_))

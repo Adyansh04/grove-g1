@@ -33,6 +33,20 @@ applyGripperOffset(const geometry_msgs::msg::Pose& generated, const std::array<d
     return out;
 }
 
+std::array<double, 6> mirroredGripperOffset(const std::array<double, 6>& xyz_rpy)
+{
+    tf2::Matrix3x3 r;
+    r.setRPY(xyz_rpy[3], xyz_rpy[4], xyz_rpy[5]);
+    // diag(-1, 1, 1) * r * diag(1, -1, 1): the gripper's x reversed, the grasp frame's y.
+    const tf2::Matrix3x3
+        mirrored(-r[0][0], r[0][1], -r[0][2], r[1][0], -r[1][1], r[1][2], r[2][0], -r[2][1], r[2][2]);
+    double roll  = 0.0;
+    double pitch = 0.0;
+    double yaw   = 0.0;
+    mirrored.getRPY(roll, pitch, yaw);
+    return { -xyz_rpy[0], xyz_rpy[1], xyz_rpy[2], roll, pitch, yaw };
+}
+
 std::array<double, 3> approachAxis(const geometry_msgs::msg::Pose& generated)
 {
     const tf2::Matrix3x3 rotation(asTransform(generated).getRotation());

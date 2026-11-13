@@ -31,7 +31,8 @@ case "$VARIANT" in
         ;;
     real)
         container bringup "$BRINGUP"
-        # SAM 3.1 leaves no room for the offline describer on a 12 GB GPU.
+        # SAM 3.1 (in TensorRT, started by the launch) leaves no room for the offline describer on a
+        # 12 GB GPU; the server only embeds and describes.
         host server "./scripts/serve.sh canopy --describer gemini"
         container canopy "wait_for_port 'the semantic server' 5561 && ros2 launch g1_bringup world_model.launch.py$WORLD rviz:=true detector:=true describe:=true $CAMERAS$LAUNCH_ARGS"
         container explore "$EXPLORE"

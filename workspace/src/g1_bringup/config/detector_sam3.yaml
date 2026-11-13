@@ -1,0 +1,6 @@
+# Over canopy's detector.yaml for world_model.launch.py detector:=true: the masks come from SAM 3.1
+# in TensorRT (sam3_inference, which the launch starts), and only the embeddings from the host
+# semantic server (./scripts/serve.sh canopy).
+/**:
+  ros__parameters:
+    segment_service: "/segment_objects"

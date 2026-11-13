@@ -29,7 +29,7 @@
 # "cpu-rt-runtime": 950000 in its /etc/docker/daemon.json, then a Docker restart.
 #
 # Environment: G1_ROBOT (default unitree@192.168.123.164), G1_ROBOT_KEY (default
-# ~/.ssh/id_ed25519_robot).
+# ~/.ssh/id_ed25519_robot), G1_HAND_MODEL (default inspire, the hands this G1 wears).
 
 set -euo pipefail
 
@@ -42,6 +42,9 @@ readonly CONTAINER="g1-robot"
 readonly DEV_CONTAINER="ros_dev_jazzy"
 # The ROS domain of robot work. The simulator and dev work use 1, so neither can reach the robot.
 readonly ROBOT_ROS_DOMAIN=7
+# The hands this G1 wears. Every launch on the robot and in the operator's shells takes its
+# hand_model default from G1_HAND_MODEL, so MoveIt and the robot model carry the real hands.
+readonly HAND_MODEL="${G1_HAND_MODEL:-inspire}"
 # The Orin's router listens on rmw_zenoh's default port. The operator's router, in the dev
 # container beside the simulator's (7447), takes this machine's loopback only.
 readonly ROBOT_ROUTER="tcp/$ROBOT_ADDRESS:7447"
@@ -67,6 +70,7 @@ on_robot() {
 
 stack_launch() {
     case "$1" in
+        # No hand components until each hand's RS485 line is checked on the robot.
         control) echo "ros2 launch g1_bringup control.launch.py hardware:=true" \
             "robot_address:=$ROBOT_ADDRESS hands:=false" ;;
         sensors) echo "ros2 launch g1_bringup robot_sensors.launch.py" ;;
@@ -140,7 +144,7 @@ stack_start() {
         echo "$1 is already running." >&2
         exit 1
     fi
-    on_robot "mkdir -p $REMOTE_WS/log && docker exec -d $CONTAINER bash -c \
+    on_robot "mkdir -p $REMOTE_WS/log && docker exec -d -e G1_HAND_MODEL=$HAND_MODEL $CONTAINER bash -c \
         'source /opt/ros/jazzy/setup.bash && source /root/workspace/install/setup.bash && \
          exec $launch > /root/workspace/log/$1.log 2>&1'"
     echo "$1 started; ./scripts/robot.sh log $1 follows it."
@@ -185,7 +189,7 @@ operator_shell() {
     [[ -t 0 && -t 1 ]] && tty=(-it)
     # The dev container's login profile takes the domain from GROVE_G1_ROS_DOMAIN_ID.
     docker exec "${tty[@]}" -e GROVE_G1_ROS_DOMAIN_ID="$ROBOT_ROS_DOMAIN" \
-        -e ROS_DOMAIN_ID="$ROBOT_ROS_DOMAIN" \
+        -e ROS_DOMAIN_ID="$ROBOT_ROS_DOMAIN" -e G1_HAND_MODEL="$HAND_MODEL" \
         -e ZENOH_CONFIG_OVERRIDE="connect/endpoints=[\"$operator_router\"]" \
         "$DEV_CONTAINER" bash -lc "cd /root/workspace && source install/setup.bash && ${*:-bash}"
 }
@@ -266,7 +270,8 @@ main() {
         arm) arm_switch "$@" ;;
         release) release_robot "$@" ;;
         operator) operator_shell "$@" ;;
-        exec) ssh -t "${SSH_OPTS[@]}" "$ROBOT" docker exec -it "$CONTAINER" bash -ic "'${*:-bash}'" ;;
+        exec) ssh -t "${SSH_OPTS[@]}" "$ROBOT" docker exec -it -e G1_HAND_MODEL="$HAND_MODEL" \
+            "$CONTAINER" bash -ic "'${*:-bash}'" ;;
         ssh) ssh -t "${SSH_OPTS[@]}" "$ROBOT" ;;
         help | -h | --help) usage ;;
         *) usage >&2; exit 1 ;;

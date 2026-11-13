@@ -8,9 +8,9 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.conditions import IfCondition
-from launch.substitutions import EqualsSubstitution, LaunchConfiguration
+from launch.substitutions import EnvironmentVariable, EqualsSubstitution, LaunchConfiguration
 from launch_ros.actions import Node
 from moveit_configs_utils import MoveItConfigsBuilder
 
@@ -34,7 +34,7 @@ def _moveit_config():
         .robot_description(
             file_path=os.path.join(DESCRIPTION_SHARE, "urdf", "g1_lowcmd.urdf.xacro")
         )
-        .robot_description_semantic(file_path=_config(MOVEIT_SHARE, "g1.srdf"))
+        .robot_description_semantic(file_path=_config(MOVEIT_SHARE, "g1.srdf.xacro"))
         .joint_limits(file_path=_config(SHARE, "joint_limits.yaml"))
         # Named, or the builder assembles every pipeline it knows and pilz fails the launch.
         .planning_pipelines(pipelines=["ompl"], default_planning_pipeline="ompl")
@@ -83,9 +83,28 @@ def _groot_engine():
     )
 
 
+def _refuse_other_hands(context, *args, **kwargs):
+    """The policy and its adapter speak the Dex3's seven finger joints, and nothing else."""
+    hand_model = LaunchConfiguration("hand_model").perform(context)
+    if hand_model != "dex3":
+        raise RuntimeError(
+            f"g1_vla drives the Dex3 hands: GR00T's G1 embodiment and g1_vla's adapter map their "
+            f"seven finger joints. hand_model:={hand_model} has no policy here."
+        )
+    return []
+
+
 def generate_launch_description():
     return LaunchDescription(
         [
+            DeclareLaunchArgument(
+                "hand_model",
+                default_value=EnvironmentVariable("G1_HAND_MODEL", default_value="inspire"),
+                choices=["dex3", "inspire"],
+                description="The hands the robot wears. Only 'dex3' has a policy; any other is "
+                "refused. Defaults to G1_HAND_MODEL, else inspire.",
+            ),
+            OpaqueFunction(function=_refuse_other_hands),
             DeclareLaunchArgument(
                 "execution_mode",
                 default_value="trajectory",

@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>g1_inspire_hand</name>
+  <version>0.1.0</version>
+  <description>ros2_control system interface for the Inspire RH56DFQ hand on the G1, over RS485.</description>
+  <maintainer email="gupta.adyansh@gmail.com">Adyansh Gupta</maintainer>
+  <license>BSD-3-Clause</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>hardware_interface</depend>
+  <depend>pluginlib</depend>
+  <depend>rclcpp</depend>
+  <depend>rclcpp_lifecycle</depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_cmake_lint_cmake</test_depend>
+  <test_depend>ament_cmake_xmllint</test_depend>
+  <test_depend>ament_cmake_gmock</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

@@ -1,0 +1,42 @@
+# Laid over g1_manipulation_server.yaml by manipulation.launch.py with hand_model:=inspire: the
+# Inspire RH56DFQ's closing and grip, where they differ from the Dex3's. Spans are measured from
+# the URDF between the thumb tip and the index and middle tips, along g1_moveit_config's `open` to
+# `closed` (rotation held at 1.3 rad, so a close only bends).
+g1_manipulation_server:
+  ros__parameters:
+    # GraspGenX's `inspire_hand` frame to the right grasp frame, from its description's URDF and
+    # g1_description's: the grasp frame sits 162 mm along the approach, beside its fingertip point
+    # (150 mm), and the approach runs 45 degrees between the fingers and the palm's normal.
+    graspgen_to_grasp_frame_xyz_rpy: [0.0007, 0.012, 0.1619, 1.5708, -0.7854, -3.1416]
+    # The left hand takes the right hand's grasps mirrored, as g1_perception's Inspire overlay
+    # answers it (mirror_other_hand).
+    generated_grasp_arms: [right, left]
+
+    # Palm-down, the palm face is about 57 mm above the grasp frame, so the fingers can take an
+    # object a little deeper than the Dex3's 26 mm without the palm meeting its top.
+    grasp_depth_below_top_m: 0.035
+
+    # m. Thumb tip to the index and middle tips: 137 mm at `open`, 12 mm at `closed`, nearly
+    # linear in between. The widest object is the open span less both pads' radii and a margin.
+    hand_span_open_m: 0.137
+    hand_span_closed_m: 0.012
+    max_grasp_width_m: 0.110
+    grip_max_width_m: 0.110
+    # m. Searched past the narrowest side down to `closed`: a generated grasp often seats the
+    # object deeper in the hand than where the pads meet, where they first touch it far narrower
+    # than its width, and each finger stops itself at its force limit.
+    grip_search_beyond_m: 0.15
+
+    # The hand stops each finger at its own force limit (g1_description's inspire_params.yaml,
+    # 300 g), so a close past contact presses no harder. A finger reads as pressing 0.08 rad short
+    # of its target with 0.03 N m: 60 g at the 50 mm the effort is reported at.
+    grip_min_position_error_rad: 0.08
+    grip_min_effort_nm: 0.03
+    # rad. A held grip is commanded this far past where each finger stopped, so it reads as
+    # pressing (above grip_min_position_error_rad) while the force limit keeps it at 300 g.
+    grip_hold_bias_rad: 0.15
+
+    # m. The hand's fingers reach 15 mm past where its pads meet, so a hand left low by the arm's
+    # sag drives them into the table: the descent re-aims until it is this close to its goal.
+    settle_tolerance_m: 0.005
+

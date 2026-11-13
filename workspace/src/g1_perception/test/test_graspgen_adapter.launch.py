@@ -9,6 +9,7 @@ import sys
 import unittest
 
 import launch_testing
+import numpy as np
 import pytest
 import rclpy
 from canopy_msgs.msg import InstanceMask, InstanceMaskArray
@@ -28,16 +29,18 @@ DEPTH_TOPIC = "/camera/aligned_depth_to_color/image_raw"
 INFO_TOPIC = "/camera/aligned_depth_to_color/camera_info"
 MASK_TOPIC = "/g1_object_geometry/tracked_masks"
 SERVICE = "/g1_graspgen_adapter/generate_grasps"
+MIRRORING_SERVICE = "/g1_graspgen_adapter_mirroring/generate_grasps"
+# Both adapters subscribe to the same camera and masks.
+ADAPTERS = 2
 WIDTH, HEIGHT = 64, 48
 OBJECT_ID = "red_block_0"
 
 
-@pytest.mark.launch_test
-def generate_test_description():
-    adapter = Node(
+def _adapter(name, mirror_other_hand):
+    return Node(
         package="g1_perception",
         executable="g1_graspgen_adapter",
-        name="g1_graspgen_adapter",
+        name=name,
         output="screen",
         remappings=[
             ("tracked_masks", MASK_TOPIC),
@@ -65,14 +68,37 @@ def generate_test_description():
                 "gripper_type": 2,
                 "fingertip_depth_m": 0.07,
                 "hand": "right",
+                "mirror_other_hand": mirror_other_hand,
             }
         ],
     )
+
+
+def _rotation(q):
+    """A geometry_msgs Quaternion as a 3x3 rotation matrix."""
+    x, y, z, w = q.x, q.y, q.z, q.w
+    return np.array(
+        [
+            [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+            [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+            [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+        ]
+    )
+
+
+@pytest.mark.launch_test
+def generate_test_description():
     return LaunchDescription(
         [
             ExecuteProcess(cmd=[sys.executable, STUB, str(PORT)], output="screen"),
             # The adapter asks the server for its health in its constructor, so bind first.
-            TimerAction(period=3.0, actions=[adapter]),
+            TimerAction(
+                period=3.0,
+                actions=[
+                    _adapter("g1_graspgen_adapter", False),
+                    _adapter("g1_graspgen_adapter_mirroring", True),
+                ],
+            ),
             launch_testing.actions.ReadyToTest(),
         ]
     )
@@ -87,8 +113,10 @@ class TestGraspGenAdapter(unittest.TestCase):
         cls.info = cls.node.create_publisher(CameraInfo, INFO_TOPIC, qos_profile_sensor_data)
         cls.masks = cls.node.create_publisher(InstanceMaskArray, MASK_TOPIC, 2)
         cls.client = cls.node.create_client(GenerateGrasps, SERVICE)
-        if not cls.client.wait_for_service(timeout_sec=60.0):
-            raise AssertionError("the adapter never came up")
+        cls.mirroring = cls.node.create_client(GenerateGrasps, MIRRORING_SERVICE)
+        for client in (cls.client, cls.mirroring):
+            if not client.wait_for_service(timeout_sec=60.0):
+                raise AssertionError("an adapter never came up")
 
     @classmethod
     def tearDownClass(cls):
@@ -96,11 +124,11 @@ class TestGraspGenAdapter(unittest.TestCase):
         rclpy.shutdown()
 
     def _await_subscribers(self, timeout_s=30.0):
-        """Waits for the adapter to match all three publishers; earlier messages are lost."""
+        """Waits for the adapters to match all three publishers; earlier messages are lost."""
         deadline = self.node.get_clock().now().nanoseconds + int(timeout_s * 1e9)
         while self.node.get_clock().now().nanoseconds < deadline:
             if all(
-                publisher.get_subscription_count() > 0
+                publisher.get_subscription_count() >= ADAPTERS
                 for publisher in (self.depth, self.info, self.masks)
             ):
                 return True
@@ -154,11 +182,11 @@ class TestGraspGenAdapter(unittest.TestCase):
             rclpy.spin_once(self.node, timeout_sec=0.1)
         return depth
 
-    def _call(self, object_id=OBJECT_ID, hand="right"):
+    def _call(self, object_id=OBJECT_ID, hand="right", client=None):
         request = GenerateGrasps.Request()
         request.object_id = object_id
         request.hand = hand
-        future = self.client.call_async(request)
+        future = (client or self.client).call_async(request)
         rclpy.spin_until_future_complete(self.node, future, timeout_sec=30.0)
         self.assertIsNotNone(future.result(), "the adapter never answered")
         return future.result()
@@ -194,13 +222,14 @@ class TestGraspGenAdapter(unittest.TestCase):
         self.assertIn("green_cylinder_0", result.message)
         self.assertIn(OBJECT_ID, result.message)
 
-    def test_04_the_left_hand_is_refused_rather_than_mirrored(self):
+    def test_04_the_left_hand_is_refused_unless_mirroring_is_on(self):
         self._publish_scene()
 
         result = self._call(hand="left")
 
         self.assertFalse(result.ok)
         self.assertIn("right", result.message)
+        self.assertIn("mirror_other_hand", result.message)
 
     def test_05_the_bare_name_on_objects_is_the_track_it_names(self):
         self._publish_scene()
@@ -221,6 +250,30 @@ class TestGraspGenAdapter(unittest.TestCase):
 
         self.assertFalse(result.ok)
         self.assertIn("behind the camera", result.message)
+
+    def test_07_the_other_hand_gets_the_mirror_image_of_its_grasps(self):
+        self._publish_scene()
+
+        right = self._call(hand="right", client=self.mirroring)
+        left = self._call(hand="left", client=self.mirroring)
+
+        self.assertTrue(right.ok, right.message)
+        self.assertTrue(left.ok, left.message)
+        self.assertIn("mirrored", left.message)
+        # The stub grasps the centroid of the points it is sent: the mirrored scene's, reflected
+        # back, is the object's own.
+        at, expected = left.grasps[0].position, right.grasps[0].position
+        self.assertAlmostEqual(at.x, expected.x, places=4)
+        self.assertAlmostEqual(at.y, expected.y, places=4)
+        self.assertAlmostEqual(at.z, expected.z, places=4)
+        # Its 1 cm offset along the camera's x comes back reversed.
+        self.assertAlmostEqual(left.grasps[1].position.x, right.grasps[1].position.x - 0.02, 4)
+        # The tilted grasp's approach (+z) is the right one's reflected through the camera's y-z
+        # plane, and the frame stays right-handed.
+        right_axes = _rotation(right.grasps[1].orientation)
+        left_axes = _rotation(left.grasps[1].orientation)
+        np.testing.assert_allclose(left_axes[:, 2], right_axes[:, 2] * [-1, 1, 1], atol=1e-4)
+        self.assertAlmostEqual(float(np.linalg.det(left_axes)), 1.0, places=4)
 
 
 @launch_testing.post_shutdown_test()

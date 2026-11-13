@@ -21,10 +21,11 @@ constexpr double kMinError  = 0.08;
 constexpr double kMinEffort = 0.10;
 
 /// The right hand's seven joints at their commanded `closed` posture, reached with no load.
+/// thumb_0 rolls the thumb and is the same in `open` and `closed`, so the caller marks it.
 std::vector<JointGrip> emptyHand()
 {
     return {
-        { "right_hand_thumb_0_joint", 0.00, 0.00, 0.0 },
+        { "right_hand_thumb_0_joint", 0.00, 0.00, 0.0, false },
         { "right_hand_thumb_1_joint", 0.00, 0.00, 0.0 },
         { "right_hand_thumb_2_joint", -1.40, -1.40, 0.0 },
         { "right_hand_middle_0_joint", 1.20, 1.20, 0.0 },
@@ -116,7 +117,8 @@ TEST(GripCheck, TorqueAtTheTargetIsNotAGrip)
 
 TEST(GripCheck, ThumbRollDoesNotCountAsAFinger)
 {
-    // thumb_0 rolls the thumb and can stall on its own travel with the hand empty.
+    // A joint the close does not move, such as thumb_0's roll, can stall on its own travel with
+    // the hand empty.
     std::vector<JointGrip> hand = emptyHand();
     load(hand, "thumb_0", 0.5, 1.0);
     load(hand, "index_1", 0.5, 1.0);
@@ -152,3 +154,81 @@ TEST(GripCheck, NonFiniteReadingsAreNotAGrip)
 }
 
 }  // namespace
+
+/// An Inspire right hand at its `closed` posture, empty: four fingers and the thumb's bend close,
+/// and the thumb's rotation is held at 1.3 rad by both postures.
+std::vector<JointGrip> emptyInspireHand()
+{
+    return {
+        { "R_pinky_proximal_joint", 0.80, 0.80, 0.0 },
+        { "R_ring_proximal_joint", 0.80, 0.80, 0.0 },
+        { "R_middle_proximal_joint", 0.80, 0.80, 0.0 },
+        { "R_index_proximal_joint", 0.80, 0.80, 0.0 },
+        { "R_thumb_proximal_pitch_joint", 0.22, 0.22, 0.0 },
+        { "R_thumb_proximal_yaw_joint", 1.30, 1.30, 0.0, false },
+    };
+}
+
+TEST(GripCheck, AnInspireThumbAgainstTheIndexIsAnOpposedGrip)
+{
+    std::vector<JointGrip> hand = emptyInspireHand();
+    load(hand, "thumb_proximal_pitch", 0.10, 0.20);
+    load(hand, "index_proximal", 0.30, 0.15);
+
+    const auto verdict = verifyGrip(hand, kMinError, kMinEffort);
+    EXPECT_TRUE(verdict.holding);
+    EXPECT_TRUE(verdict.opposed);
+}
+
+TEST(GripCheck, RingAndPinkyAloneHoldButOpposeNothing)
+{
+    std::vector<JointGrip> hand = emptyInspireHand();
+    load(hand, "ring_proximal", 0.30, 0.15);
+    load(hand, "pinky_proximal", 0.30, 0.15);
+
+    const auto verdict = verifyGrip(hand, kMinError, kMinEffort);
+    EXPECT_TRUE(verdict.holding);
+    EXPECT_FALSE(verdict.opposed);
+}
+
+TEST(GripCheck, AnInspireThumbRotationStalledOnItsTravelIsNotAFinger)
+{
+    std::vector<JointGrip> hand = emptyInspireHand();
+    load(hand, "thumb_proximal_yaw", 0.40, 0.30);
+    load(hand, "index_proximal", 0.30, 0.15);
+
+    EXPECT_FALSE(verifyGrip(hand, kMinError, kMinEffort).holding);
+}
+
+TEST(GripCheck, AShortThumbBlockedByTheObjectCountsWithItsOwnThreshold)
+{
+    std::vector<JointGrip> hand = emptyHand();
+    load(hand, "thumb_2", 0.06, 0.20);  // 0.06 rad short of a 0.22 rad bend: under kMinError
+    load(hand, "index_1", 0.57, 0.86);
+    EXPECT_FALSE(verifyGrip(hand, kMinError, kMinEffort).opposed);
+
+    for (JointGrip& joint : hand)
+    {
+        if (joint.name.find("thumb_2") != std::string::npos)
+        {
+            joint.min_error_rad = 0.033;  // 0.15 of the thumb's 0.22 rad travel
+        }
+    }
+    const auto verdict = verifyGrip(hand, kMinError, kMinEffort);
+    EXPECT_TRUE(verdict.opposed);
+}
+
+TEST(GripCheck, AFreeShortThumbStillReadsUnloaded)
+{
+    std::vector<JointGrip> hand = emptyHand();
+    load(hand, "thumb_2", 0.01, 0.01);  // settled at its target, pushing nothing
+    load(hand, "index_1", 0.57, 0.86);
+    for (JointGrip& joint : hand)
+    {
+        if (joint.name.find("thumb_2") != std::string::npos)
+        {
+            joint.min_error_rad = 0.033;
+        }
+    }
+    EXPECT_FALSE(verifyGrip(hand, kMinError, kMinEffort).opposed);
+}

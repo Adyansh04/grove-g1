@@ -5,15 +5,39 @@
        looks up by name, and both hands. Geometry-only consumers (RViz, the sensor-extrinsic
        test) load this file so they cannot claim the body motors. -->
 
-  <!-- Unitree's URDF, byte-for-byte (CRLF included) apart from mesh paths rewritten to
-       package:// for RViz. Additions go in this file, so it stays diffable against upstream. -->
-  <xacro:include filename="g1_29dof_with_hand_rev_1_0.urdf"/>
-
   <!-- hardware:=true points the SDK components at the physical G1 instead of the simulator;
-       hands:=false leaves the Dex3 components out, for a robot without them. -->
+       hands:=false leaves the hand components out. hand_model picks the hands the robot wears:
+       dex3, Unitree's three-finger hand, or inspire, Inspire Robots' RH56DFQ five-finger hand. -->
   <xacro:arg name="hardware" default="false"/>
   <xacro:arg name="hands" default="true"/>
+  <xacro:arg name="hand_model" default="inspire"/>
   <xacro:property name="on_hardware" value="${'$(arg hardware)' == 'true'}"/>
+  <xacro:property name="inspire" value="${'$(arg hand_model)' == 'inspire'}"/>
+
+  <!-- Unitree's URDFs (unitree_ros robots/g1_description), byte-for-byte apart from mesh paths
+       rewritten to package:// for RViz. Additions go in this file, so they stay diffable. -->
+  <xacro:if value="${inspire}">
+    <xacro:include filename="g1_29dof_rev_1_0_with_inspire_hand_DFQ.urdf"/>
+  </xacro:if>
+  <xacro:unless value="${inspire}">
+    <xacro:include filename="g1_29dof_with_hand_rev_1_0.urdf"/>
+  </xacro:unless>
+
+  <!-- The stack names the palm <side>_hand_palm_link for either hand: the arms' MoveIt chains end
+       there and the grasp frame hangs from it. The Inspire model has no such link, so it gets an
+       empty frame where the Dex3 palm sits, which keeps arm poses meaning the same for both. -->
+  <xacro:if value="${inspire}">
+    <xacro:macro name="g1_inspire_palm_frame" params="side mirror">
+      <link name="${side}_hand_palm_link"/>
+      <joint name="${side}_hand_palm_joint" type="fixed">
+        <parent link="${side}_wrist_yaw_link"/>
+        <child link="${side}_hand_palm_link"/>
+        <origin xyz="0.0415 ${-mirror * 0.003} 0" rpy="0 0 0"/>
+      </joint>
+    </xacro:macro>
+    <xacro:g1_inspire_palm_frame side="left" mirror="-1"/>
+    <xacro:g1_inspire_palm_frame side="right" mirror="1"/>
+  </xacro:if>
 
   <!-- REP 103 optical frames (z forward, x right, y down), which ROS depth consumers assume.
        d435_link is a body frame, and a depth image stamped in it projects rotated 90 degrees. -->
@@ -173,24 +197,84 @@
     </ros2_control>
   </xacro:macro>
 
-  <xacro:if value="$(arg hands)">
+  <xacro:if value="${'$(arg hands)' == 'true' and not inspire}">
     <xacro:g1_dex3_hand side="left"/>
     <xacro:g1_dex3_hand side="right"/>
   </xacro:if>
 
-  <!-- The point the Dex3 closes on. Pose goals target it rather than the palm origin, which
-       would put the object through the fingers. Orientation is the palm's; y mirrors.
-       x = 0.090: past the retracted thumb's surface (x 0.046 at pinch_ready), within the closed
-       thumb's reach (x 0.091).
-       y = 0.050: where fingers and thumb meet; the hand hangs 63 mm below it, which
-       g1_manipulation's min_grip_height_m allows for. -->
+  <xacro:property name="inspire_params" value="${xacro.load_yaml('../config/inspire_params.yaml')}"/>
+  <xacro:property name="inspire_system" value="${inspire_params.system}"/>
 
+  <xacro:macro name="g1_inspire_joint" params="prefix suffix">
+    <xacro:property name="actuator" value="${inspire_params.actuators[suffix]}"/>
+    <joint name="${prefix}_${suffix}">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+      <state_interface name="effort"/>
+      <param name="open_rad">${actuator.open_rad}</param>
+      <param name="closed_rad">${actuator.closed_rad}</param>
+      <param name="lever_arm_m">${actuator.lever_arm_m}</param>
+    </joint>
+  </xacro:macro>
+
+  <!-- One component per Inspire RH56DFQ hand, each on its own RS485 line, so a fault on one hand
+       takes down neither the arms nor the other hand. The six actuated joints only, in the hand's
+       register order, which G1InspireSystem refuses to init without; robot_state_publisher and
+       MoveIt derive the six coupled joints from the URDF's mimic tags. -->
+  <xacro:macro name="g1_inspire_hand" params="side prefix">
+    <xacro:property name="port_key" value="${'serial_port_' + side}"/>
+    <ros2_control name="G1InspireSystem${'Left' if side == 'left' else 'Right'}" type="system">
+      <hardware>
+        <plugin>g1_inspire_hand/G1InspireSystem</plugin>
+        <param name="side">${side}</param>
+        <param name="serial_port">${inspire_params.hardware[port_key] if on_hardware else inspire_system[port_key]}</param>
+        <param name="protocol">${inspire_system.protocol}</param>
+        <param name="baud_rate">${inspire_system.baud_rate}</param>
+        <param name="slave_id">${inspire_system.slave_id}</param>
+        <param name="io_rate_hz">${inspire_system.io_rate_hz}</param>
+        <param name="response_timeout_ms">${inspire_system.response_timeout_ms}</param>
+        <param name="state_timeout_ms">${inspire_system.state_timeout_ms}</param>
+        <param name="diagnostics_every">${inspire_system.diagnostics_every}</param>
+        <param name="speed">${inspire_system.speed}</param>
+        <param name="force_limit_g">${inspire_system.force_limit_g}</param>
+        <param name="max_joint_velocity_rad_s">${inspire_system.max_joint_velocity_rad_s}</param>
+      </hardware>
+
+      <xacro:g1_inspire_joint prefix="${prefix}" suffix="pinky_proximal_joint"/>
+      <xacro:g1_inspire_joint prefix="${prefix}" suffix="ring_proximal_joint"/>
+      <xacro:g1_inspire_joint prefix="${prefix}" suffix="middle_proximal_joint"/>
+      <xacro:g1_inspire_joint prefix="${prefix}" suffix="index_proximal_joint"/>
+      <xacro:g1_inspire_joint prefix="${prefix}" suffix="thumb_proximal_pitch_joint"/>
+      <xacro:g1_inspire_joint prefix="${prefix}" suffix="thumb_proximal_yaw_joint"/>
+    </ros2_control>
+  </xacro:macro>
+
+  <xacro:if value="${'$(arg hands)' == 'true' and inspire}">
+    <xacro:g1_inspire_hand side="left" prefix="L"/>
+    <xacro:g1_inspire_hand side="right" prefix="R"/>
+  </xacro:if>
+
+  <!-- The point the hand closes on. Pose goals target it rather than the palm origin, which would
+       put the object through the fingers. Orientation is the palm's; y mirrors.
+
+       Dex3: x = 0.090, past the retracted thumb's surface (x 0.046 at pinch_ready) and within the
+       closed thumb's reach (x 0.091); y = 0.050, where fingers and thumb meet. The hand hangs
+       63 mm below it, which g1_manipulation's min_grip_height_m allows for.
+
+       Inspire: the midpoint between the opposed thumb's tip and the index and middle tips, which
+       stays within 12 mm of this from 40 to 80 mm across; z 0.022 is between those two fingers. -->
   <xacro:macro name="g1_grasp_frame" params="side mirror">
     <link name="${side}_hand_grasp_frame"/>
     <joint name="${side}_hand_grasp_frame_joint" type="fixed">
       <parent link="${side}_hand_palm_link"/>
       <child link="${side}_hand_grasp_frame"/>
-      <origin xyz="0.090 ${mirror * 0.050} 0" rpy="0 0 0"/>
+      <xacro:if value="${inspire}">
+        <origin xyz="0.160 ${mirror * 0.072} 0.022" rpy="0 0 0"/>
+      </xacro:if>
+      <xacro:unless value="${inspire}">
+        <origin xyz="0.090 ${mirror * 0.050} 0" rpy="0 0 0"/>
+      </xacro:unless>
     </joint>
   </xacro:macro>
 

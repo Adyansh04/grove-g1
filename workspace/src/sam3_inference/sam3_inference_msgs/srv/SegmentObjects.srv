@@ -1,0 +1,20 @@
+# Open-vocabulary instance segmentation of one image.
+
+# Image to segment; empty to take the newest image of the configured camera, refused when that one is
+# older than the server's max_image_age_s.
+sensor_msgs/Image image
+
+# Phrases to look for, e.g. "red cube", "t connector".
+string[] prompts
+
+# Instances scoring below this are left out; 0 uses the configured threshold.
+float32 min_score
+---
+bool success
+string message
+
+# The header of the image that was segmented.
+std_msgs/Header header
+
+# Valid only when success is true. Prompts in request order, best first within each prompt.
+sam3_inference_msgs/Segment[] segments

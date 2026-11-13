@@ -14,10 +14,23 @@ import msgpack_numpy as mnp
 import numpy as np
 
 INSTANCE_ID = 1
-# Two grasps, descending score, at distinguishable positions so a test can tell them apart.
+# Two grasps, descending score, placed off the masked points' centroid so a test can tell which
+# scene was sent. The first is the camera's frame turned half a turn about its x; the second is
+# tilted 30 degrees about the camera's y, so a reflection of it shows.
+TILT = np.radians(30.0)
 GRASPS = [
-    ([0.10, -0.20, 0.55], 0.91),
-    ([0.11, -0.21, 0.56], 0.64),
+    ([0.0, 0.0, 0.0], np.diag([1.0, -1.0, -1.0]), 0.91),
+    (
+        [0.01, -0.01, 0.01],
+        np.array(
+            [
+                [np.cos(TILT), 0.0, np.sin(TILT)],
+                [0.0, -1.0, 0.0],
+                [np.sin(TILT), 0.0, -np.cos(TILT)],
+            ]
+        ),
+        0.64,
+    ),
 ]
 
 
@@ -47,17 +60,26 @@ def _complaint(data):
     return None
 
 
+def _centroid(depth, intrinsics, mask):
+    """The masked pixels back-projected as GraspGenX does, x = (u - cx) z / fx, and averaged."""
+    rows, cols = np.nonzero(mask == INSTANCE_ID)
+    z = depth[rows, cols].astype(np.float64)
+    x = (cols - intrinsics[0, 2]) * z / intrinsics[0, 0]
+    y = (rows - intrinsics[1, 2]) * z / intrinsics[1, 1]
+    return np.array([x.mean(), y.mean(), z.mean()])
+
+
 def _infer_scene_depth(data):
     complaint = _complaint(data)
     if complaint is not None:
         return {"error": f"ValueError: {complaint}"}
     poses = []
     scores = []
-    for translation, score in GRASPS:
+    centroid = _centroid(data["depth"], data["intrinsics"], data["instance_mask"])
+    for offset, rotation, score in GRASPS:
         matrix = np.eye(4, dtype=np.float32)
-        # Reaching down: the approach axis is +z of the grasp frame, so it points at the floor.
-        matrix[:3, :3] = np.diag([1.0, -1.0, -1.0])
-        matrix[:3, 3] = translation
+        matrix[:3, :3] = rotation
+        matrix[:3, 3] = centroid + np.asarray(offset)
         poses.append(matrix)
         scores.append(score)
     return {

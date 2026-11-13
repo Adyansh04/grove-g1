@@ -16,8 +16,8 @@ detector is asked about too much to answer in time.
    (`detector_head`, `detector_chest`): one that is missing is down, and the operator restarts the
    world model stack. If it runs, call `log_tail` for it.
    "The newest camera frame is N s old; not asking about it" on a loop means the detector's
-   answers come too late: SAM 3.1 takes about 0.45 s a frame and 40 ms a phrase, shared with the
-   world model's mapping, and a frame older than 2.5 s is not asked about. Ask for fewer things at
+   answers come too late: SAM 3.1 takes a few tenths of a second a frame, shared with the world
+   model's mapping and the simulator's GPU, and a frame older than 2.5 s is not asked about. Ask for fewer things at
    a time, such as `look` with one `question`, or tell the operator to narrow the detector's
    phrase list.
 4. Otherwise, check where the robot is (the `lost-on-the-map` skill): an empty list often means

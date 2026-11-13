@@ -9,8 +9,16 @@ find_package(ament_cmake REQUIRED)
 
 install(DIRECTORY urdf config DESTINATION share/${PROJECT_NAME})
 
-# Copied at configure time rather than committed
-set(G1_VENDOR_MESHES "/opt/unitree_robotics/unitree_mujoco/unitree_robots/g1/meshes"
+# Copied at configure time rather than committed: from the unitree_mujoco checkout in the workspace
+# when there is one, so a mesh added to the fork installs without an image rebuild; else from the
+# image's copy.
+set(_g1_fork_meshes "${CMAKE_CURRENT_SOURCE_DIR}/../../vendor/unitree_mujoco/unitree_robots/g1/meshes")
+if(EXISTS "${_g1_fork_meshes}")
+  set(_g1_default_meshes "${_g1_fork_meshes}")
+else()
+  set(_g1_default_meshes "/opt/unitree_robotics/unitree_mujoco/unitree_robots/g1/meshes")
+endif()
+set(G1_VENDOR_MESHES "${_g1_default_meshes}"
     CACHE PATH "Directory holding the vendored G1 visual meshes")
 
 if(EXISTS "${G1_VENDOR_MESHES}")
@@ -47,6 +55,8 @@ if(BUILD_TESTING)
   # The sensor mounts are duplicated in the simulator, which links no ROS and cannot read TF.
   ament_add_pytest_test(test_sensor_mounts test/test_sensor_mounts.py)
   ament_add_pytest_test(test_motor_order test/test_motor_order.py)
+  # The Inspire hands are generated into the simulator's model; this holds the copies equal.
+  ament_add_pytest_test(test_inspire_sim test/test_inspire_sim.py)
 
   # ament_cmake_xmllint only covers package.xml, and xacro accepts a double hyphen inside a
   # comment, which is illegal XML and breaks the next strict parser to read the file.

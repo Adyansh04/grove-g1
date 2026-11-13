@@ -132,6 +132,25 @@ RUN mkdir -p /opt/onnxruntime && \
     echo /opt/onnxruntime/lib > /etc/ld.so.conf.d/onnxruntime.conf && \
     ldconfig
 
+# --- SAM 3.1 segmentation deps ---------------------------------
+
+# CUDA 13 and TensorRT 11 from NVIDIA's Ubuntu 24.04 repository: sam3_inference runs SAM 3.1 as
+# TensorRT engines from C++. The host driver must be 580 or newer for CUDA 13. The base image
+# already lists that repository; a second entry from cuda-keyring makes apt refuse both.
+ARG CUDA_VERSION=13-4
+ARG TENSORRT_VERSION=11.4.0.106-1+cuda13.4
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      cuda-nvcc-${CUDA_VERSION} \
+      cuda-cudart-dev-${CUDA_VERSION} \
+      libnvinfer11=${TENSORRT_VERSION} \
+      libnvinfer-headers-dev=${TENSORRT_VERSION} \
+      libnvinfer-dev=${TENSORRT_VERSION} \
+      libnvonnxparsers11=${TENSORRT_VERSION} \
+      libnvonnxparsers-dev=${TENSORRT_VERSION} \
+      libnvinfer-bin=${TENSORRT_VERSION} && \
+    rm -rf /var/lib/apt/lists/*
+ENV PATH=/usr/local/cuda/bin:${PATH}
+
 # teleop_twist_keyboard for manual velocity testing via ~/cmd_vel.
 RUN apt-get update && apt-get install -y ros-${ROS_DISTRO}-teleop-twist-keyboard \
     && rm -rf /var/lib/apt/lists/*

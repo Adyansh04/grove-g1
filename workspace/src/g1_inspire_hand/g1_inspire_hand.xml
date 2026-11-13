@@ -1,0 +1,9 @@
+<library path="g1_inspire_system">
+  <class name="g1_inspire_hand/G1InspireSystem"
+         type="g1_inspire_hand::G1InspireSystem"
+         base_class_type="hardware_interface::SystemInterface">
+    <description>
+      One Inspire RH56DFQ hand on its own RS485 line: the hand's own frame or Modbus RTU.
+    </description>
+  </class>
+</library>

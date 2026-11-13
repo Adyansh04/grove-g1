@@ -26,7 +26,7 @@ else
 fi
 
 # Our packages. The vendored ones' lint targets fail by design.
-OUR_PACKAGES='^(g1_|canopy)'
+OUR_PACKAGES='^(g1_|canopy|sam3_)'
 
 # Run before every command in the container: ROS, then the workspace once it has been built.
 IN_WORKSPACE='source "/opt/ros/$ROS_DISTRO/setup.bash" && cd /root/workspace && if [[ -f install/setup.bash ]]; then source install/setup.bash; fi'
@@ -37,8 +37,10 @@ IN_WORKSPACE='source "/opt/ros/$ROS_DISTRO/setup.bash" && cd /root/workspace && 
 # canopy's files are held to canopy's own settings.
 STYLE_SOURCES='
     shopt -s globstar nullglob
-    cpp=(src/g1_*/include/**/*.hpp src/g1_*/src/**/*.cpp src/g1_*/test/**/*.cpp)
-    python=(src/g1_*/{launch,scripts,test,tools} src/canopy/{editor,servers} /root/.host-repo/servers)
+    cpp=(src/{g1_*,sam3_inference/*}/include/**/*.hpp src/{g1_*,sam3_inference/*}/src/**/*.cpp
+        src/{g1_*,sam3_inference/*}/test/**/*.cpp)
+    python=(src/g1_*/{launch,scripts,test,tools} src/sam3_inference/*/{launch,scripts}
+        src/canopy/{editor,servers} /root/.host-repo/servers)
     for file in src/g1_*/scripts/*; do
         if [[ -f $file && $file != *.* ]] && head -c 32 "$file" | grep -q "^#!.*python"; then
             python+=("$file")

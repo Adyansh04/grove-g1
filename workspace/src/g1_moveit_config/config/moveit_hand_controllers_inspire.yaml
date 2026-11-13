@@ -1,0 +1,28 @@
+# Laid over moveit_controllers.yaml by move_group.launch.py with hand_model:=inspire: the same two
+# hand controllers on the Inspire hand's six actuated joints, in its register order. Same lists as
+# g1_controllers' lowcmd_controllers_inspire.yaml; test_moveit_config_drift compares them.
+
+moveit_simple_controller_manager:
+  left_hand_controller:
+    type: FollowJointTrajectory
+    action_ns: follow_joint_trajectory
+    default: false
+    joints:
+      - L_pinky_proximal_joint
+      - L_ring_proximal_joint
+      - L_middle_proximal_joint
+      - L_index_proximal_joint
+      - L_thumb_proximal_pitch_joint
+      - L_thumb_proximal_yaw_joint
+
+  right_hand_controller:
+    type: FollowJointTrajectory
+    action_ns: follow_joint_trajectory
+    default: false
+    joints:
+      - R_pinky_proximal_joint
+      - R_ring_proximal_joint
+      - R_middle_proximal_joint
+      - R_index_proximal_joint
+      - R_thumb_proximal_pitch_joint
+      - R_thumb_proximal_yaw_joint

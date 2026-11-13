@@ -2,7 +2,8 @@
 """Asks the host GraspGenX server for 6-DoF grasps on a tracked object.
 
 Sends a depth frame, its intrinsics and an instance mask; grasps come back per instance in the
-camera frame. The Dex3-1 reaches the model only as its 12-number sweep volume.
+camera frame. The hand reaches the model only as its 12-number sweep volume, which describes one
+hand; with mirror_other_hand the other hand's grasps are that hand's in the mirrored scene.
 
 Python because it is a ZMQ and msgpack client; see the package README.
 """
@@ -20,6 +21,8 @@ from g1_msgs.srv import GenerateGrasps
 from g1_perception.host_clients import GraspClient
 
 MASK_QOS = 2
+# Reflects x: on a pose's left, through the camera's y-z plane; on its right, the gripper's own x.
+MIRROR_X = np.diag([-1.0, 1.0, 1.0, 1.0])
 
 
 def phrase_of(label):
@@ -65,6 +68,39 @@ def pose_from_matrix(matrix):
     return pose
 
 
+def mirror_scene(depth, mask, intrinsics):
+    """The scene reflected through the camera's y-z plane, every point's x reversed.
+
+    Columns are reversed about the principal point, so back-projecting the result gives the
+    original points with x negated.
+
+    Args:
+        depth: (H, W) depth frame in metres.
+        mask: (H, W) instance mask.
+        intrinsics: 3x3 camera matrix, in pixels.
+
+    Returns:
+        The mirrored depth, mask and camera matrix.
+    """
+    mirrored = np.array(intrinsics, dtype=np.float32)
+    mirrored[0, 2] = (depth.shape[1] - 1) - mirrored[0, 2]
+    mirrored[0, 1] = -mirrored[0, 1]
+    return np.ascontiguousarray(depth[:, ::-1]), np.ascontiguousarray(mask[:, ::-1]), mirrored
+
+
+def mirror_grasps(grasps):
+    """Grasps found in the mirrored scene, reflected back as the other hand's.
+
+    Args:
+        grasps: (N, 4, 4) gripper poses in the mirrored camera frame.
+
+    Returns:
+        (N, 4, 4) proper poses in the camera frame: each reflected through the camera's y-z plane
+        with its own x axis reversed, so the frame stays right-handed.
+    """
+    return MIRROR_X @ grasps @ MIRROR_X
+
+
 class GraspGenAdapter(Node):
     def __init__(self):
         super().__init__(
@@ -72,6 +108,7 @@ class GraspGenAdapter(Node):
         )
         self._address = self._param("server_address", "tcp://127.0.0.1:5556")
         self._hand = str(self._param("hand", "right"))
+        self._mirror_other_hand = bool(self._param("mirror_other_hand", False))
         self._max_grasps = int(self._param("max_grasps", 100))
         self._num_samples = int(self._param("num_grasps_sampled", 200))
         self._min_object_points = int(self._param("min_object_points", 100))
@@ -202,10 +239,11 @@ class GraspGenAdapter(Node):
 
     def _on_request(self, request, response):
         response.ok = False
-        if request.hand and request.hand != self._hand:
+        mirrored = bool(request.hand) and request.hand != self._hand
+        if mirrored and not self._mirror_other_hand:
             response.message = (
                 f"grasps are generated for the {self._hand} hand only: the sweep volume this "
-                f"adapter carries describes that hand, and mirroring it is not the same gripper"
+                "adapter carries describes that hand, and mirror_other_hand is off"
             )
             return response
 
@@ -248,6 +286,8 @@ class GraspGenAdapter(Node):
         frame = np.frombuffer(depth.data, dtype=np.float32).reshape(depth.height, depth.step // 4)
         frame = np.nan_to_num(frame[:, : depth.width], nan=0.0, posinf=0.0, neginf=0.0)
         intrinsics = np.asarray(self._info.k, dtype=np.float32).reshape(3, 3)
+        if mirrored:
+            frame, instance_mask, intrinsics = mirror_scene(frame, instance_mask, intrinsics)
 
         try:
             reply = self._client.call(
@@ -274,11 +314,15 @@ class GraspGenAdapter(Node):
             return response
         index = [int(value) for value in instance_ids].index(1)
         grasps = np.asarray(reply["grasps"][index], dtype=np.float64).reshape(-1, 4, 4)
+        if mirrored:
+            grasps = mirror_grasps(grasps)
         scores = np.asarray(reply["confidences"][index], dtype=np.float64).reshape(-1)
 
         order = np.argsort(-scores)[: self._max_grasps]
         response.ok = True
-        response.message = f"{len(order)} grasps on '{wanted}'"
+        response.message = f"{len(order)} grasps on '{wanted}'" + (
+            f", mirrored from the {self._hand} hand's" if mirrored else ""
+        )
         response.header = depth.header
         response.grasps = [pose_from_matrix(grasps[i]) for i in order]
         response.scores = [float(scores[i]) for i in order]

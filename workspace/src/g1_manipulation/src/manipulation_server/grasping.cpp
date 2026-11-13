@@ -3,16 +3,25 @@
  * @brief Choosing a grasp: the top-down goal, generated candidates, and the plan drawn in RViz.
  */
 
+#include <geometric_shapes/shapes.h>
 #include <tf2/LinearMath/Matrix3x3.h>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2/LinearMath/Transform.h>
 #include <tf2/LinearMath/Vector3.h>
 
+#include <Eigen/Geometry>
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <format>
+#include <limits>
+#include <map>
 #include <memory>
+#include <moveit/collision_detection/collision_common.hpp>
+#include <moveit/collision_detection/collision_matrix.hpp>
+#include <moveit/planning_scene/planning_scene.hpp>
+#include <optional>
 #include <string>
 #include <tf2/utils.hpp>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
@@ -29,9 +38,32 @@ namespace
 {
 
 constexpr double kCandidateArrowLengthM = 0.06;
-constexpr double kGraspAxisLengthM      = 0.05;
-constexpr double kLabelHeightM          = 0.02;
-constexpr double kLabelLiftM            = 0.03;
+// What the object rests on, in the scratch scene that checks a hand's clearance of it: slabs under
+// the object's base, as wide as a hand reaches round it, one for the hand as the arm brings it and
+// one for the closing fingers. Only the hand and the wrist are checked against them; the rest of
+// the arm, which hangs beside the body, meets the pick's own narrower slab.
+constexpr const char* kSupportId        = "support";
+constexpr const char* kClosingSupportId = "support_closing";
+// The pick's own slab under the rest of the arm, as publishSupport() puts it in the planning
+// scene: a forearm the descent would drive into it fails the descent, so it fails the candidate.
+constexpr const char* kArmSupportId  = "support_arm";
+constexpr double      kSupportSideM  = 0.6;
+constexpr double      kSupportDepthM = 0.2;
+// m. Padding on the other objects in that scene, and how near a detection's centre must lie to the
+// target's to be the target itself, listed again under its bare name.
+constexpr double kNeighbourPaddingM = 0.01;
+constexpr double kSameObjectM       = 0.02;
+// Shares of the deepest close checked: fingers sweep out along the approach before curling back.
+constexpr std::array<double, 5> kCloseShares = { 0.0, 0.25, 0.5, 0.75, 1.0 };
+// Kinematic solves tried per pregrasp before it counts as blocked: one from the arm as it stands,
+// the rest from random seeds, since one solve's elbow can collide where another's does not.
+constexpr int kPregraspSeeds = 3;
+// m. Steps a grasp that would strike is backed off along its approach, up to
+// grasp_max_backoff_m.
+constexpr double kBackoffStepM     = 0.005;
+constexpr double kGraspAxisLengthM = 0.05;
+constexpr double kLabelHeightM     = 0.02;
+constexpr double kLabelLiftM       = 0.03;
 
 geometry_msgs::msg::Point offsetBy(const geometry_msgs::msg::Point& from, const tf2::Vector3& by)
 {
@@ -98,6 +130,72 @@ std::optional<geometry_msgs::msg::Pose> G1ManipulationServer::heldPlaceGoal(
     goal.position.y += object_at.y - now.y();
     goal.position.z += object_at.z - now.z();
     return goal;
+}
+
+std::optional<double> G1ManipulationServer::handBelowHeldM(
+    MoveGroup& group, const ArmContext& arm, const moveit_msgs::msg::AttachedCollisionObject& held,
+    double held_height_m)
+{
+    const moveit::core::RobotStatePtr state = group.getCurrentState(1.0);
+    if (held.object.header.frame_id != arm.palm_link || held.object.primitive_poses.empty() ||
+        state == nullptr)
+    {
+        return std::nullopt;
+    }
+    const moveit::core::JointModelGroup* hand = state->getJointModelGroup(arm.hand_group);
+    if (hand == nullptr)
+    {
+        return std::nullopt;
+    }
+    tf2::Transform palm;
+    tf2::Transform origin;
+    tf2::Transform box;
+    tf2::fromMsg(group.getCurrentPose(arm.palm_link).pose, palm);
+    tf2::fromMsg(held.object.pose, origin);
+    tf2::fromMsg(held.object.primitive_poses.front(), box);
+    const double base_z = (palm * origin * box).getOrigin().z() - (0.5 * held_height_m);
+    // Each link's collision box, corner by corner: a few millimetres lower than its mesh at most.
+    // Through the release too: fingers curled under an object sweep lower as they open.
+    std::map<std::string, double> open;
+    hand->getVariableDefaultPositions("pinch_ready", open);
+    std::map<std::string, double> grip;
+    for (const auto& [joint, value] : open)
+    {
+        grip[joint] = state->getVariablePosition(joint);
+    }
+    double lowest_z = std::numeric_limits<double>::infinity();
+    for (const double share : kCloseShares)
+    {
+        for (const auto& [joint, from] : grip)
+        {
+            state->setVariablePosition(joint, from + (share * (open[joint] - from)));
+        }
+        state->update();
+        for (const moveit::core::LinkModel* link : hand->getLinkModels())
+        {
+            if (link->getShapes().empty())
+            {
+                continue;
+            }
+            const Eigen::Vector3d   half = 0.5 * link->getShapeExtentsAtOrigin();
+            const Eigen::Isometry3d frame =
+                state->getGlobalLinkTransform(link) *
+                Eigen::Translation3d(link->getCenteredBoundingBoxOffset());
+            for (int corner = 0; corner < 8; ++corner)
+            {
+                const Eigen::Vector3d at(
+                    (corner & 1) != 0 ? half.x() : -half.x(),
+                    (corner & 2) != 0 ? half.y() : -half.y(),
+                    (corner & 4) != 0 ? half.z() : -half.z());
+                lowest_z = std::min(lowest_z, (frame * at).z());
+            }
+        }
+    }
+    if (!std::isfinite(lowest_z))
+    {
+        return std::nullopt;
+    }
+    return base_z - lowest_z;
 }
 
 std::optional<g1_msgs::srv::GenerateGrasps::Response> G1ManipulationServer::requestGrasps(
@@ -202,7 +300,154 @@ std::vector<G1ManipulationServer::GraspPlan> G1ManipulationServer::chooseGrasps(
         why = "no current state to solve a grasp against";
         return {};
     }
-    const moveit::core::JointModelGroup* jmg = state->getJointModelGroup(arm.arm_group);
+    const moveit::core::JointModelGroup* jmg      = state->getJointModelGroup(arm.arm_group);
+    const moveit::core::JointModelGroup* hand_jmg = state->getJointModelGroup(arm.hand_group);
+    std::map<std::string, double>        open;
+    std::map<std::string, double>        closed;
+    if (hand_jmg == nullptr || !hand_jmg->getVariableDefaultPositions("open", open) ||
+        !hand_jmg->getVariableDefaultPositions("closed", closed))
+    {
+        why = "no '" + arm.hand_group + "' group with open and closed states";
+        return {};
+    }
+    // No generator sees what the object stands on. The arm carries the hand in, so the wrist and
+    // the open hand keep their margin from the object's base; the closing fingers may reach under
+    // the object as far as theirs, a touch each finger's force limit keeps light.
+    planning_scene::PlanningScene support(state->getRobotModel());
+    const double                  base_z = object_pose.position.z - (0.5 * detection.bbox.size.z);
+    for (const auto& [id, clearance_m] :
+         { std::pair{ kSupportId, grasp_surface_clearance_m_ },
+           std::pair{ kClosingSupportId, grasp_closing_clearance_m_ } })
+    {
+        Eigen::Isometry3d slab = Eigen::Isometry3d::Identity();
+        slab.translation()     = Eigen::Vector3d(
+            object_pose.position.x,
+            object_pose.position.y,
+            base_z + clearance_m - (0.5 * kSupportDepthM));
+        support.getWorldNonConst()->addToObject(
+            id,
+            std::make_shared<const shapes::Box>(kSupportSideM, kSupportSideM, kSupportDepthM),
+            slab);
+    }
+    {
+        Eigen::Isometry3d slab = Eigen::Isometry3d::Identity();
+        slab.translation()     = Eigen::Vector3d(
+            object_pose.position.x + (0.5 * (pick_support_reach_m_[1] - pick_support_reach_m_[0])),
+            object_pose.position.y,
+            base_z - (0.5 * pick_support_thickness_m_));
+        support.getWorldNonConst()->addToObject(
+            kArmSupportId,
+            std::make_shared<const shapes::Box>(
+                pick_support_reach_m_[0] + pick_support_reach_m_[1],
+                2.0 * pick_support_half_width_m_,
+                pick_support_thickness_m_),
+            slab);
+    }
+    std::vector<std::string> guarded = hand_jmg->getLinkModelNamesWithCollisionGeometry();
+    std::vector<std::string> upper_arm;
+    for (const std::string& link : jmg->getLinkModelNamesWithCollisionGeometry())
+    {
+        (link.find("wrist") != std::string::npos ? guarded : upper_arm).push_back(link);
+    }
+    const auto guard =
+        [&guarded](collision_detection::AllowedCollisionMatrix& matrix, const std::string& body) {
+            matrix.setDefaultEntry(body, true);
+            for (const std::string& link : guarded)
+            {
+                matrix.setEntry(body, link, false);
+            }
+        };
+    collision_detection::AllowedCollisionMatrix acm = support.getAllowedCollisionMatrix();
+    // The other objects in view, so the hand neither lands on nor closes into a neighbour. Wider
+    // ones are surfaces, which the slab stands for.
+    vision_msgs::msg::Detection3DArray seen;
+    {
+        const std::lock_guard<std::mutex> lock(objects_mutex_);
+        seen = objects_;
+    }
+    int neighbours = 0;
+    for (const Detection& other : seen.detections)
+    {
+        if (other.results.empty() ||
+            std::max(other.bbox.size.x, other.bbox.size.y) > place_container_max_m_)
+        {
+            continue;
+        }
+        const auto at = toPlanningFrame(other.results.front().pose.pose, seen.header.frame_id);
+        if (!at || std::hypot(
+                       at->position.x - object_pose.position.x,
+                       at->position.y - object_pose.position.y,
+                       at->position.z - object_pose.position.z) < kSameObjectM)
+        {
+            continue;
+        }
+        Eigen::Isometry3d box = Eigen::Isometry3d::Identity();
+        box.translation()     = Eigen::Vector3d(at->position.x, at->position.y, at->position.z);
+        box.linear()          = Eigen::Quaterniond(
+                           at->orientation.w,
+                           at->orientation.x,
+                           at->orientation.y,
+                           at->orientation.z)
+                           .normalized()
+                           .toRotationMatrix();
+        const std::string name = "neighbour_" + std::to_string(neighbours++);
+        support.getWorldNonConst()->addToObject(
+            name,
+            std::make_shared<const shapes::Box>(
+                other.bbox.size.x + (2.0 * kNeighbourPaddingM),
+                other.bbox.size.y + (2.0 * kNeighbourPaddingM),
+                other.bbox.size.z + (2.0 * kNeighbourPaddingM)),
+            box);
+        guard(acm, name);
+    }
+    collision_detection::AllowedCollisionMatrix arriving = acm;
+    guard(arriving, kSupportId);
+    arriving.setDefaultEntry(kClosingSupportId, true);
+    arriving.setDefaultEntry(kArmSupportId, true);
+    for (const std::string& link : upper_arm)
+    {
+        arriving.setEntry(kArmSupportId, link, false);
+    }
+    collision_detection::AllowedCollisionMatrix closing = acm;
+    guard(closing, kClosingSupportId);
+    closing.setDefaultEntry(kSupportId, true);
+    closing.setDefaultEntry(kArmSupportId, true);
+    const double deepest = closeFractions(
+                               std::max(detection.bbox.size.x, detection.bbox.size.y),
+                               std::min(detection.bbox.size.x, detection.bbox.size.y))
+                               .second;
+    // What blocked the candidates, so a pick with none left says what to move.
+    std::map<std::string, int> struck;
+    const auto                 clears = [&](moveit::core::RobotState& candidate) {
+        for (const double share : kCloseShares)
+        {
+            for (const auto& [joint, from] : open)
+            {
+                if (const auto to = closed.find(joint); to != closed.end())
+                {
+                    candidate.setVariablePosition(
+                        joint,
+                        from + (share * deepest * (to->second - from)));
+                }
+            }
+            candidate.update();
+            collision_detection::CollisionRequest request;
+            request.contacts = true;
+            collision_detection::CollisionResult result;
+            support.getCollisionEnv()
+                ->checkRobotCollision(request, result, candidate, share > 0.0 ? closing : arriving);
+            if (result.collision)
+            {
+                if (!result.contacts.empty())
+                {
+                    const auto& [first, second] = result.contacts.begin()->first;
+                    ++struck[std::format("{} on {}", first, second)];
+                }
+                return false;
+            }
+        }
+        return true;
+    };
     // One scratch state for every candidate: a RobotState copy allocates per joint and link.
     moveit::core::RobotState attempt(*state);
 
@@ -214,10 +459,17 @@ std::vector<G1ManipulationServer::GraspPlan> G1ManipulationServer::chooseGrasps(
             }
         };
     int                    considered = 0;
+    int                    tilted     = 0;
+    int                    backward   = 0;
+    int                    off_centre = 0;
+    int                    blocked    = 0;
     int                    reachable  = 0;
+    int                    clear      = 0;
     std::vector<GraspPlan> plans;
-    // Solvable at the grasp only: a 50 ms solve near the edge of reach misses pregrasps OMPL's
-    // own goal sampling finds, so these follow the ones that solve at both ends.
+    // Backed off: the pads meet short of the object's centre, so these follow the ones seated as
+    // generated. Solvable at the grasp only: a 50 ms solve near the edge of reach misses
+    // pregrasps OMPL's own goal sampling finds, so these come last.
+    std::vector<GraspPlan> backed;
     std::vector<GraspPlan> grasp_only;
     for (std::size_t i = 0; i < response->grasps.size() && considered < max_grasp_candidates_ &&
                             std::cmp_less(plans.size(), grasp_tries_);
@@ -242,67 +494,171 @@ std::vector<G1ManipulationServer::GraspPlan> G1ManipulationServer::chooseGrasps(
         // surface.
         // Coming back at the robot from beyond the object, the hand reaches round it: rarely
         // reachable, and the reach sweeps the object.
-        if (approachTiltRad(*in_planning_frame) > max_approach_tilt_rad_ ||
-            approachAxis(*in_planning_frame)[0] < min_approach_forward_)
+        const bool too_steep = approachTiltRad(*in_planning_frame) > max_approach_tilt_rad_;
+        if (too_steep || approachAxis(*in_planning_frame)[0] < min_approach_forward_)
         {
             record(*in_planning_frame, ConsideredGrasp::Verdict::kTilted);
+            ++(too_steep ? tilted : backward);
             continue;
         }
 
-        const geometry_msgs::msg::Pose goal =
-            applyGripperOffset(*in_planning_frame, graspgen_offset_);
+        // The generator describes the right hand; the left's grasps come back mirrored.
+        const geometry_msgs::msg::Pose goal = applyGripperOffset(
+            *in_planning_frame,
+            arm.is_left ? graspgen_offset_mirrored_ : graspgen_offset_);
+        // A grip by a rim or an edge holds on the close and slips out in the lift.
+        if (std::hypot(
+                goal.position.x - object_pose.position.x,
+                goal.position.y - object_pose.position.y,
+                goal.position.z - object_pose.position.z) > max_grip_offset_m_)
+        {
+            record(*in_planning_frame, ConsideredGrasp::Verdict::kOffCentre);
+            ++off_centre;
+            continue;
+        }
         // Back along the approach, not straight up: a side grasp has a ceiling above it.
         const std::array<double, 3> axis = approachAxis(*in_planning_frame);
-        GraspPlan                   plan;
-        plan.grasp     = goal;
-        plan.pregrasp  = goal;
+        const auto backed_off            = [&axis](geometry_msgs::msg::Pose pose, double by_m) {
+            pose.position.x -= axis[0] * by_m;
+            pose.position.y -= axis[1] * by_m;
+            pose.position.z -= axis[2] * by_m;
+            return pose;
+        };
+        GraspPlan plan;
         plan.candidate = *in_planning_frame;
-        plan.pregrasp.position.x -= axis[0] * approach_standoff_m_;
-        plan.pregrasp.position.y -= axis[1] * approach_standoff_m_;
-        plan.pregrasp.position.z -= axis[2] * approach_standoff_m_;
-        // Reset per solve: a failed setFromIK leaves the state where it gave up.
-        attempt = *state;
-        if (!attempt.setFromIK(jmg, goal, arm.grasp_frame, ik_timeout_s_))
+        // A grasp seated a little shallower still holds, where one driven into the table breaks a
+        // finger: backed off along its own approach until the hand clears, within the limit.
+        bool   solved = false;
+        bool   safe   = false;
+        double back_m = 0.0;
+        for (int step = 0; step * kBackoffStepM <= grasp_max_backoff_m_ + 1e-9; ++step)
+        {
+            back_m     = step * kBackoffStepM;
+            plan.grasp = backed_off(goal, back_m);
+            // Reset per solve: a failed setFromIK leaves the state where it gave up.
+            attempt = *state;
+            if (!attempt.setFromIK(jmg, plan.grasp, arm.grasp_frame, ik_timeout_s_))
+            {
+                continue;
+            }
+            solved = true;
+            if (clears(attempt))
+            {
+                safe = true;
+                break;
+            }
+        }
+        if (!solved)
         {
             record(*in_planning_frame, ConsideredGrasp::Verdict::kUnreachable);
             continue;
         }
         ++reachable;
-        plan.origin = std::format(
-            "generated candidate {} of {}, score {:.2f}",
+        if (!safe)
+        {
+            record(*in_planning_frame, ConsideredGrasp::Verdict::kStrikes);
+            continue;
+        }
+        ++clear;
+        plan.pregrasp = backed_off(plan.grasp, approach_standoff_m_);
+        plan.origin   = std::format(
+            "generated candidate {} of {}, score {:.2f}{}",
             i,
             response->grasps.size(),
-            i < response->scores.size() ? response->scores[i] : 0.0F);
-        attempt = *state;
-        if (attempt.setFromIK(jmg, plan.pregrasp, arm.grasp_frame, ik_timeout_s_))
+            i < response->scores.size() ? response->scores[i] : 0.0F,
+            back_m > 0.0 ? std::format(", backed off {:.0f} mm", 1000.0 * back_m) : "");
+        // The planner fails a pregrasp the arm cannot stand at only after its whole budget, and a
+        // solve from kinematics alone may put the arm through the scene or the robot: a few
+        // solves, from the arm as it is and from random seeds, until one stands clear.
+        bool        pregrasp_solved = false;
+        std::string pregrasp_touches;
+        for (int seed = 0; seed < kPregraspSeeds; ++seed)
         {
-            plans.push_back(std::move(plan));
+            attempt = *state;
+            if (seed > 0)
+            {
+                attempt.setToRandomPositions(jmg);
+            }
+            if (!attempt.setFromIK(jmg, plan.pregrasp, arm.grasp_frame, ik_timeout_s_))
+            {
+                continue;
+            }
+            pregrasp_solved = true;
+            attempt.update();
+            const std::optional<std::string> pairs = touching(attempt, arm.arm_group);
+            if (!pairs || pairs->empty())
+            {
+                pregrasp_touches.clear();
+                break;
+            }
+            pregrasp_touches = *pairs;
+        }
+        if (!pregrasp_solved)
+        {
+            grasp_only.push_back(std::move(plan));
+            continue;
+        }
+        if (!pregrasp_touches.empty())
+        {
+            RCLCPP_INFO(
+                get_logger(),
+                "skipping the %s: at its pregrasp %s",
+                plan.origin.c_str(),
+                pregrasp_touches.c_str());
+            ++blocked;
+            continue;
+        }
+        if (back_m > 0.0)
+        {
+            backed.push_back(std::move(plan));
         }
         else
         {
-            grasp_only.push_back(std::move(plan));
+            plans.push_back(std::move(plan));
         }
     }
-    for (GraspPlan& plan : grasp_only)
+    for (std::vector<GraspPlan>* fallback : { &backed, &grasp_only })
     {
-        if (std::cmp_greater_equal(plans.size(), grasp_tries_))
+        for (GraspPlan& plan : *fallback)
         {
-            break;
+            if (std::cmp_greater_equal(plans.size(), grasp_tries_))
+            {
+                break;
+            }
+            plans.push_back(std::move(plan));
         }
-        plans.push_back(std::move(plan));
     }
     // The first is the one drawn as chosen; the rest wait in case MoveIt finds no way to it.
     if (!plans.empty())
     {
         record(plans.front().candidate, ConsideredGrasp::Verdict::kChosen);
     }
+    // Each filter's share, so a pick that keeps few grasps says which one to look at.
+    const std::string breakdown = std::format(
+        "{} of {} offered considered: {} approach past level, {} back at the robot, {} grip off "
+        "centre, {} reachable at the grasp, {} of those clear of the table and the neighbours, {} "
+        "of those blocked at the pregrasp",
+        considered,
+        response->grasps.size(),
+        tilted,
+        backward,
+        off_centre,
+        reachable,
+        clear,
+        blocked);
+    RCLCPP_INFO(
+        get_logger(),
+        "grasps for '%s': %s; %zu kept",
+        idOf(detection).c_str(),
+        breakdown.c_str(),
+        plans.size());
     if (plans.empty())
     {
-        why = std::format(
-            "none of the {} candidates considered were usable ({} reachable) out of {} offered",
-            considered,
-            reachable,
-            response->grasps.size());
+        why = "no candidate was usable: " + breakdown;
+        for (const auto& [pair, count] : struck)
+        {
+            why += std::format("; {}: {}", pair, count);
+        }
     }
     return plans;
 }
@@ -326,7 +682,9 @@ void G1ManipulationServer::publishGraspPlan(
             -axis[1] * kCandidateArrowLengthM,
             -axis[2] * kCandidateArrowLengthM);
         const bool chosen = candidate.verdict == ConsideredGrasp::Verdict::kChosen;
-        const bool tilted = candidate.verdict == ConsideredGrasp::Verdict::kTilted;
+        const bool tilted = candidate.verdict == ConsideredGrasp::Verdict::kTilted ||
+                            candidate.verdict == ConsideredGrasp::Verdict::kOffCentre ||
+                            candidate.verdict == ConsideredGrasp::Verdict::kStrikes;
         markers.markers.push_back(arrow(
             planning_frame_,
             "candidates",

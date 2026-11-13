@@ -1,10 +1,12 @@
 """Numbers that must agree across packages, where neither package's own tests can see the pair.
 
 MoveIt's idea of the arm lives here, the controllers' in g1_controllers and the hand's speed
-clamp in g1_description. No simulator, no ROS graph.
+clamp in g1_description. No simulator, no ROS graph. Each hand model is checked: the SRDF is a
+xacro whose hand part follows hand_model, as the description's does.
 """
 
 import os
+import subprocess
 import xml.etree.ElementTree as ET
 
 import pytest
@@ -32,15 +34,47 @@ ARM_JOINTS = [
     )
 ]
 
-# Dex3 wire order. HandCmd.motor_cmd is a positional array, so this order is the contract and
-# not a convention: the SRDF group, the controller and the hardware component must all agree.
+# The hand components write positionally (the Dex3's HandCmd.motor_cmd, the Inspire's register
+# block), so these orders are the contract and not a convention: the SRDF group, the controller
+# and the hardware component must all agree.
 HAND_JOINTS = {
-    side: [
-        f"{side}_hand_{joint}_joint"
-        for joint in ("thumb_0", "thumb_1", "thumb_2", "middle_0", "middle_1", "index_0", "index_1")
-    ]
-    for side in ("left", "right")
+    "dex3": {
+        side: [
+            f"{side}_hand_{joint}_joint"
+            for joint in (
+                "thumb_0",
+                "thumb_1",
+                "thumb_2",
+                "middle_0",
+                "middle_1",
+                "index_0",
+                "index_1",
+            )
+        ]
+        for side in ("left", "right")
+    },
+    "inspire": {
+        side: [
+            f"{prefix}_{joint}"
+            for joint in (
+                "pinky_proximal_joint",
+                "ring_proximal_joint",
+                "middle_proximal_joint",
+                "index_proximal_joint",
+                "thumb_proximal_pitch_joint",
+                "thumb_proximal_yaw_joint",
+            )
+        ]
+        for side, prefix in (("left", "L"), ("right", "R"))
+    },
 }
+HAND_MODELS = sorted(HAND_JOINTS)
+# Where each model's hand controllers live: the base files for the Dex3, an overlay otherwise.
+HAND_CONTROLLER_FILES = {
+    "dex3": ("lowcmd_controllers.yaml", "moveit_controllers.yaml"),
+    "inspire": ("lowcmd_controllers_inspire.yaml", "moveit_hand_controllers_inspire.yaml"),
+}
+HAND_PARAMS = {"dex3": "dex3_params.yaml", "inspire": "inspire_params.yaml"}
 
 
 def _load(directory, name):
@@ -68,9 +102,24 @@ def kinematics():
     return _load(MOVEIT_CONFIG_DIR, "kinematics.yaml")
 
 
+def _srdf(hand_model):
+    expanded = subprocess.run(
+        ["xacro", os.path.join(MOVEIT_CONFIG_DIR, "g1.srdf.xacro"), f"hand_model:={hand_model}"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    return ET.fromstring(expanded)
+
+
 @pytest.fixture(scope="module")
 def srdf():
-    return ET.parse(os.path.join(MOVEIT_CONFIG_DIR, "g1.srdf")).getroot()
+    return _srdf("dex3")
+
+
+@pytest.fixture(scope="module", params=HAND_MODELS)
+def hand_model(request):
+    return request.param
 
 
 def test_moveit_drives_the_controller_bringup_actually_runs(moveit_controllers, controllers):
@@ -97,14 +146,15 @@ def test_partial_joint_goals_stay_enabled(controllers):
     assert params["allow_partial_joints_goal"] is True
 
 
-def test_planned_hand_speed_stays_under_the_clamp(joint_limits):
-    """G1Dex3System slew-clamps every finger; plan faster and the motion is silently stretched
-    until the controller aborts on its goal-time tolerance.
+def test_planned_hand_speed_stays_under_the_clamp(joint_limits, hand_model):
+    """Each hand component slew-clamps every finger; plan faster and the motion is silently
+    stretched until the controller aborts on its goal-time tolerance.
 
     The body component has no such clamp, so there is nothing to check the arm against.
     """
-    clamp = _load(DESCRIPTION_CONFIG_DIR, "dex3_params.yaml")["system"]["max_joint_velocity_rad_s"]
-    for joint in HAND_JOINTS["left"] + HAND_JOINTS["right"]:
+    params = _load(DESCRIPTION_CONFIG_DIR, HAND_PARAMS[hand_model])
+    clamp = params["system"]["max_joint_velocity_rad_s"]
+    for joint in HAND_JOINTS[hand_model]["left"] + HAND_JOINTS[hand_model]["right"]:
         limits = joint_limits[joint]
         assert limits["has_velocity_limits"] is True, joint
         assert limits["max_velocity"] < clamp, (
@@ -123,32 +173,43 @@ def test_every_arm_joint_has_an_acceleration_limit(joint_limits):
 
 
 def test_joint_limits_cover_exactly_what_we_command(joint_limits):
-    """Everything MoveIt commands and nothing else: the arms plus both hands.
+    """Everything MoveIt commands and nothing else: the arms plus both hands of either model.
 
     A joint missing here is timed against no limit at all; a leg or waist joint here would claim
     a limit on something the balance policy or the waist freeze owns.
     """
-    expected = ARM_JOINTS + HAND_JOINTS["left"] + HAND_JOINTS["right"]
+    expected = ARM_JOINTS + [
+        joint for hands in HAND_JOINTS.values() for side in hands.values() for joint in side
+    ]
     assert sorted(joint_limits) == sorted(expected)
 
 
 @pytest.mark.parametrize("side", ["left", "right"])
-def test_the_hand_agrees_across_srdf_controller_and_moveit(
-    side, srdf, controllers, moveit_controllers
-):
-    """Three files have to name the same seven joints in the same order.
+def test_the_hand_agrees_across_srdf_controller_and_moveit(side, hand_model):
+    """Three files have to name the same actuated joints in the same order.
 
-    The JTC remaps by name, but G1Dex3System writes HandCmd.motor_cmd positionally. MoveIt's
-    RobotModel sorts a joint-list group, so only the files can pin this order.
+    The JTC remaps by name, but the hand components write positionally. MoveIt's RobotModel sorts
+    a joint-list group, so only the files can pin this order. An Inspire group also lists its
+    base and its six coupled joints, after the actuated ones, which no controller commands.
     """
-    group = next(g for g in srdf.findall("group") if g.get("name") == f"{side}_hand")
-    controller = f"{side}_hand_controller"
+    expected = HAND_JOINTS[hand_model][side]
+    group = next(g for g in _srdf(hand_model).findall("group") if g.get("name") == f"{side}_hand")
+    listed = [j.get("name") for j in group.findall("joint")]
+    assert [j for j in listed if j in expected] == expected
+    assert all(
+        j.endswith(("base_link_joint", "intermediate_joint", "distal_joint"))
+        for j in listed
+        if j not in expected
+    ), listed
 
-    assert [j.get("name") for j in group.findall("joint")] == HAND_JOINTS[side]
-    assert controllers[controller]["ros__parameters"]["joints"] == HAND_JOINTS[side]
+    lowcmd, moveit = HAND_CONTROLLER_FILES[hand_model]
+    controller = f"{side}_hand_controller"
     assert (
-        moveit_controllers["moveit_simple_controller_manager"][controller]["joints"]
-        == HAND_JOINTS[side]
+        _load(CONTROLLERS_CONFIG_DIR, lowcmd)[controller]["ros__parameters"]["joints"] == expected
+    )
+    assert (
+        _load(MOVEIT_CONFIG_DIR, moveit)["moveit_simple_controller_manager"][controller]["joints"]
+        == expected
     )
 
 
@@ -165,18 +226,20 @@ def test_the_hand_is_driven_as_a_trajectory_not_a_gripper_command(side, moveit_c
 
 
 @pytest.mark.parametrize("side", ["left", "right"])
-def test_each_hand_has_an_open_and_a_closed_posture(side, srdf):
-    """The postures a pick and place needs, each naming all seven joints.
+def test_each_hand_has_an_open_and_a_closed_posture(side, hand_model):
+    """The postures a pick and place needs, each naming every actuated joint.
 
-    A pick descends in pinch_ready, because at `open` the thumb reaches the table first.
+    A Dex3 pick descends in pinch_ready, because at `open` its thumb reaches the table first.
     """
     states = {
-        s.get("name"): s for s in srdf.findall("group_state") if s.get("group") == f"{side}_hand"
+        s.get("name"): s
+        for s in _srdf(hand_model).findall("group_state")
+        if s.get("group") == f"{side}_hand"
     }
     assert set(states) == {"open", "closed", "pinch_ready"}
     for name, state in states.items():
         named = {j.get("name") for j in state.findall("joint")}
-        assert named == set(HAND_JOINTS[side]), f"{side} {name} does not cover the hand"
+        assert named == set(HAND_JOINTS[hand_model][side]), f"{side} {name} does not cover the hand"
 
 
 def test_chain_groups_have_a_solver_and_the_composite_one_does_not(srdf, kinematics):

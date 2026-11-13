@@ -1,0 +1,14 @@
+# Laid over g1_graspgen_adapter.yaml by perception.launch.py with hand_model:=inspire: GraspGenX's
+# own `inspire_hand` description, a right hand like the Dex3's, in place of the Dex3's.
+g1_graspgen_adapter:
+  ros__parameters:
+    # From the description's config.json: gripper-frame boxes, fingers open then half closed, each
+    # extents then offset.
+    sweep_volume: [0.08, 0.045, 0.04, 0.0, 0.0, 0.135, 0.04, 0.045, 0.035, 0.0, 0.0, 0.118]
+    # revolute_3f, the description's own type.
+    gripper_type: 2
+    # Gripper base to fingertips along the approach axis, the description's fingertip point.
+    fingertip_depth_m: 0.15
+    # The left RH56DFQ is the right one's mirror image, so it takes the right hand's grasps found in
+    # the mirrored scene. g1_manipulation's Inspire overlay asks for both hands' (drift-tested).
+    mirror_other_hand: true

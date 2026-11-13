@@ -97,6 +97,8 @@ bool G1ManipulationServer::isHolding(const ArmContext& arm, std::string& why, bo
     // Against the last close, not `closed`: a close onto a measured width stops short on purpose.
     // After holdCurrentGrip the fingers sit short of these by construction, so effort decides.
     const std::map<std::string, double> targets = handTargetsAt(*hand, last_close_fraction_);
+    const std::map<std::string, double> open    = handTargetsAt(*hand, 0.0);
+    const std::map<std::string, double> closed  = handTargetsAt(*hand, 1.0);
     std::vector<std::string>            joints;
     joints.reserve(targets.size());
     for (const auto& entry : targets)
@@ -119,8 +121,18 @@ bool G1ManipulationServer::isHolding(const ArmContext& arm, std::string& why, bo
     fingers.reserve(joints.size());
     for (std::size_t i = 0; i < joints.size(); ++i)
     {
+        // A joint the close does not move, such as a thumb's rotation, says nothing about a grip.
+        const double travel = std::abs(closed.at(joints[i]) - open.at(joints[i]));
+        // A short close, such as the Inspire thumb's 0.22 rad bend, stops on an object less far
+        // from its target than a finger does.
         fingers.push_back(
-            { joints[i], targets.at(joints[i]), measured->position[i], measured->effort[i] });
+            { .name     = joints[i],
+              .target   = targets.at(joints[i]),
+              .position = measured->position[i],
+              .effort   = measured->effort[i],
+              .closes   = travel > 1e-6,
+              .min_error_rad =
+                  std::min(grip_min_position_error_rad_, grip_min_error_share_ * travel) });
     }
     const GripVerdict verdict =
         verifyGrip(fingers, grip_min_position_error_rad_, grip_min_effort_nm_);
@@ -292,8 +304,8 @@ bool G1ManipulationServer::waitForHandToSettle(MoveGroup& hand)
     return false;
 }
 
-bool G1ManipulationServer::closeHandOn(
-    MoveGroup& hand, const ArmContext& arm, double widest_m, double narrowest_m)
+std::pair<double, double>
+G1ManipulationServer::closeFractions(double widest_m, double narrowest_m) const
 {
     const double range       = hand_span_open_m_ - hand_span_closed_m_;
     const auto   fraction_at = [&](double span) {
@@ -306,7 +318,15 @@ bool G1ManipulationServer::closeHandOn(
     // Stop a little past the narrowest side: with no contact by then the object is not between
     // the fingers, and closing further only sweeps it away.
     const double stop_span = std::max(hand_span_closed_m_, narrowest_m - grip_search_beyond_m_);
-    const double stop      = std::max(start, fraction_at(stop_span));
+    return { start, std::max(start, fraction_at(stop_span)) };
+}
+
+bool G1ManipulationServer::closeHandOn(
+    MoveGroup& hand, const ArmContext& arm, double widest_m, double narrowest_m)
+{
+    const double range       = hand_span_open_m_ - hand_span_closed_m_;
+    const auto [start, stop] = closeFractions(widest_m, narrowest_m);
+    const double stop_span   = std::max(hand_span_closed_m_, narrowest_m - grip_search_beyond_m_);
     RCLCPP_INFO(
         get_logger(),
         "closing for an object %.0f to %.0f mm across, from %.0f%% of the way to closed, then "

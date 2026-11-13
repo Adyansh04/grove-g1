@@ -1,17 +1,17 @@
 """Runs a detector and the node that turns its masks into object poses.
 
-`mock` cuts masks from simulator ground truth and needs no GPU; `vision` asks a host model
-server: canopy's, with SAM 3.1, by default. Both publish the same mask topic, so the geometry node
-cannot tell them apart.
+`mock` cuts masks from simulator ground truth and needs no GPU; `vision` segments with SAM 3.1 in
+TensorRT, sam3_inference's node, which it starts; `server` asks a host model server instead, such
+as Grounded SAM 2. All publish the same mask topic, so the geometry node cannot tell them apart.
 """
 
 import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
 from launch.conditions import IfCondition
-from launch.substitutions import EqualsSubstitution, LaunchConfiguration
+from launch.substitutions import EnvironmentVariable, EqualsSubstitution, LaunchConfiguration
 from launch_ros.actions import Node
 
 SHARE = get_package_share_directory("g1_perception")
@@ -40,6 +40,8 @@ def _nodes(context, *args, **kwargs):
         if phrase.strip()
     ]
     detector = LaunchConfiguration("detector")
+    asks = detector.perform(context)
+    hand_model = LaunchConfiguration("hand_model").perform(context)
 
     mock = Node(
         package="canopy_perception",
@@ -67,13 +69,24 @@ def _nodes(context, *args, **kwargs):
         ],
     )
 
+    # The segmentation service g1_detector.yaml's segment_service names.
+    sam3 = IncludeLaunchDescription(
+        os.path.join(
+            get_package_share_directory("sam3_inference"), "launch", "sam3_segmentation.launch.py"
+        ),
+        condition=IfCondition(EqualsSubstitution(detector, "vision")),
+    )
     vision = Node(
         package="canopy_perception",
         executable="detector",
         name="g1_detector",
         output="screen",
-        condition=IfCondition(EqualsSubstitution(detector, "vision")),
-        parameters=[_config("g1_detector.yaml"), {"phrases": phrases}],
+        condition=IfCondition("true" if asks in ("vision", "server") else "false"),
+        parameters=[
+            _config("g1_detector.yaml"),
+            # A host server segments in place of sam3_inference's service.
+            {"phrases": phrases, **({"segment_service": ""} if asks == "server" else {})},
+        ],
         remappings=[("color/image_raw", COLOR_IMAGE), ("~/instance_masks", MASK_TOPIC)],
     )
 
@@ -119,7 +132,15 @@ def _nodes(context, *args, **kwargs):
         name="g1_graspgen_adapter",
         output="screen",
         condition=IfCondition(EqualsSubstitution(grasp_engine, "graspgen")),
-        parameters=[_config("g1_graspgen_adapter.yaml")],
+        parameters=[
+            _config("g1_graspgen_adapter.yaml"),
+            # The hand's own description where it is not the Dex3, whose is the base file's.
+            *(
+                [_config(f"g1_graspgen_adapter_{hand_model}.yaml")]
+                if os.path.isfile(_config(f"g1_graspgen_adapter_{hand_model}.yaml"))
+                else []
+            ),
+        ],
         remappings=[
             ("tracked_masks", TRACKED_MASKS),
             ("depth/image_raw", DEPTH_IMAGE),
@@ -143,7 +164,7 @@ def _nodes(context, *args, **kwargs):
             ("object_poses", OBJECT_POSES),
         ],
     )
-    return [mock, vision, geometry, grounder, mock_grasps, graspgen, visualizer]
+    return [mock, sam3, vision, geometry, grounder, mock_grasps, graspgen, visualizer]
 
 
 def generate_launch_description():
@@ -152,10 +173,11 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "detector",
                 default_value="mock",
-                choices=["mock", "vision"],
+                choices=["mock", "vision", "server"],
                 description="mock cuts masks from simulator ground truth and needs no GPU; "
-                "vision asks canopy's semantic server on the host, started by "
-                "./scripts/serve.sh canopy --detector sam3.1.",
+                "vision segments with SAM 3.1 in TensorRT (sam3_inference), which needs the "
+                "ONNX graphs in data/models/sam3; server asks a host model server on port "
+                "5561, such as Grounded SAM 2.",
             ),
             DeclareLaunchArgument(
                 "phrases",
@@ -204,6 +226,13 @@ def generate_launch_description():
                 default_value="false",
                 description="Runs g1_perception_visualizer, which draws the masks and boxes on "
                 "the camera image and ground truth for RViz. false starts nothing.",
+            ),
+            DeclareLaunchArgument(
+                "hand_model",
+                default_value=EnvironmentVariable("G1_HAND_MODEL", default_value="inspire"),
+                choices=["dex3", "inspire"],
+                description="The hands, 'dex3' or 'inspire': which gripper description the grasp "
+                "generator is asked for. Defaults to G1_HAND_MODEL, else inspire.",
             ),
             OpaqueFunction(function=_nodes),
         ]

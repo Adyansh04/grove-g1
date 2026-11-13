@@ -31,6 +31,7 @@
 #include <moveit_msgs/msg/collision_object.hpp>
 #include <moveit_msgs/srv/apply_planning_scene.hpp>
 #include <moveit_msgs/srv/get_planning_scene.hpp>
+#include <moveit_msgs/srv/get_state_validity.hpp>
 #include <mutex>
 #include <optional>
 #include <rclcpp/rclcpp.hpp>
@@ -167,7 +168,9 @@ private:
         enum class Verdict : std::uint8_t
         {
             kTilted,
+            kOffCentre,  ///< The grip point lies too far from the object's centre.
             kUnreachable,
+            kStrikes,  ///< The wrist or the closing hand meets the support or a neighbour.
             kChosen,
         };
         geometry_msgs::msg::Pose pose;
@@ -336,12 +339,29 @@ private:
         const geometry_msgs::msg::Point&                 object_at);
 
     /**
+     * @brief How far the hand reaches below the base of the object it holds, as it holds it now.
+     *
+     * Fingers curled round an object's foot meet the surface before the object does, and sweep
+     * lower still as they open to `pinch_ready` at the release: the deepest of both counts.
+     *
+     * @param held The attached object, relative to the palm.
+     * @param held_height_m Its full height.
+     * @return Metres, negative when the whole hand is above the base; nothing when the attach is
+     *         not relative to the palm or the state is not known.
+     */
+    static std::optional<double> handBelowHeldM(
+        MoveGroup& group, const ArmContext& arm,
+        const moveit_msgs::msg::AttachedCollisionObject& held, double held_height_m);
+
+    /**
      * @brief The grasp to attempt, from the configured grasp source.
      *
      * `fixed_top_down` is graspFrameGoal() approached from straight above. `generated` asks the
      * grasp service and keeps up to `grasp_tries` candidates that are scored, not reaching up
-     * through the surface, and solvable at the grasp: those that also solve at the pregrasp first,
-     * each group best first. There is no fallback between the two sources.
+     * through the surface, and solvable at the grasp, with nothing in the planning scene touching
+     * the arm at their pregrasp: those seated as generated first, then those backed off, then those
+     * that do not solve at the pregrasp, each group best first. There is no fallback between the
+     * two sources.
      *
      * @param[out] why Why there is nothing to attempt, when it returns nothing.
      * @param[out] verdicts Every candidate the filter judged, for drawing; null skips the record.
@@ -397,6 +417,7 @@ private:
      * @brief Walks @p link toward @p pose in a straight line, however far it gets.
      *
      * Waits settle_wait_s after executing, since the controller reports done before the arm stops.
+     * A line that cannot start is logged with what the arm touches where it stands.
      *
      * @param min_fraction Below this the line is not executed, leaving the arm where it was.
      * @return The fraction the line covered, or 0 if it could not be walked or executed.
@@ -404,6 +425,24 @@ private:
     double moveStraight(
         MoveGroup& group, const geometry_msgs::msg::Pose& pose, const std::string& link,
         const std::string& what, double min_fraction);
+
+    /**
+     * @brief What @p group's arm touches where it stands, by move_group's state check.
+     *
+     * @return The touching pairs, "a on b" joined by "; ", or why the check could not say.
+     */
+    std::string touchingNow(MoveGroup& group);
+
+    /**
+     * @brief What a robot state touches in move_group's planning scene, octomap included.
+     *
+     * @param state The state to check.
+     * @param group_name The planning group the check is for.
+     * @return Empty when the state is valid, the touching pairs ("a on b" joined by "; ") or what
+     *         else is wrong when it is not, and nothing when move_group could not be asked.
+     */
+    std::optional<std::string>
+    touching(const moveit::core::RobotState& state, const std::string& group_name);
 
     /**
      * @brief The point reaim_clearance_m back up the approach axis from @p grasp.
@@ -439,6 +478,8 @@ private:
      *
      * Every attempt starts from the staging point on the @p pregrasp axis and walks the last
      * stretch as a straight line: a sideways correction at object height pushes the object away.
+     * A re-aim makes up for the arm's sag and never aims below @p grasp; a hand that ends its line
+     * well above @p grasp rests on something, and the descent is refused there.
      *
      * @param max_offset_m Still this far off after the last attempt, the descent is refused.
      */
@@ -489,6 +530,16 @@ private:
     bool closeHandOn(MoveGroup& hand, const ArmContext& arm, double widest_m, double narrowest_m);
 
     /**
+     * @brief Where closeHandOn() starts and where it gives up, as fractions of `open` to `closed`.
+     *
+     * @param widest_m The object's widest horizontal side, metres.
+     * @param narrowest_m Its narrowest horizontal side, metres.
+     * @return The start and the deepest close, start first.
+     */
+    [[nodiscard]] std::pair<double, double>
+    closeFractions(double widest_m, double narrowest_m) const;
+
+    /**
      * @brief Re-commands each finger to where it stalled plus grip_hold_bias_rad.
      *
      * Equal bias means equal force, kp times the bias, so no finger out-pushes the others and walks
@@ -511,6 +562,27 @@ private:
      */
     moveit_msgs::msg::CollisionObject publishCollisionObject(
         const Detection& detection, const geometry_msgs::msg::Pose& in_planning_frame);
+
+    /**
+     * @brief Puts a slab under the object into the planning scene, standing for what it rests on.
+     *
+     * Its top stands margin_m above the object's base; it reaches pick_support_reach_m toward
+     * and away from the robot and pick_support_half_width_m to each side, so the arm's way to the
+     * object passes above the table rather than through its edge, which a depth map sees only
+     * from above. It is shortened toward the robot until the arm and hand, where they are now,
+     * clear it. Publishing it again replaces it.
+     *
+     * @param arm The arm about to reach.
+     * @param object_pose The object's pose in the planning frame.
+     * @param object_height_m The object's full height.
+     * @param margin_m How far above the object's base its top stands, in metres.
+     */
+    void publishSupport(
+        const ArmContext& arm, const geometry_msgs::msg::Pose& object_pose, double object_height_m,
+        double margin_m);
+
+    /// The id of a pick's support slab in the planning scene.
+    static constexpr const char* kPickSupportId = "pick_support";
 
     /**
      * @brief Detaches @p object_id if attached, and removes it from the world.
@@ -592,6 +664,7 @@ private:
     rclcpp::Client<g1_msgs::srv::GenerateGrasps>::SharedPtr         grasps_;
     rclcpp::Client<moveit_msgs::srv::GetPlanningScene>::SharedPtr   get_scene_;
     rclcpp::Client<moveit_msgs::srv::ApplyPlanningScene>::SharedPtr apply_scene_;
+    rclcpp::Client<moveit_msgs::srv::GetStateValidity>::SharedPtr   check_state_;
     rclcpp::Client<std_srvs::srv::Empty>::SharedPtr                 clear_octomap_;
 
     rclcpp_action::Server<Pick>::SharedPtr          pick_server_;
@@ -606,20 +679,38 @@ private:
 
     // Defaults for the parameters of the same name; config/g1_manipulation_server.yaml documents
     // each one.
-    double              object_timeout_s_{ 1.0 };
-    double              approach_height_m_{ 0.22 };
-    double              place_approach_height_m_{ 0.15 };
-    double              place_reach_m_{ 0.35 };
-    double              place_side_m_{ 0.15 };
-    double              place_edge_margin_m_{ 0.05 };
-    double              place_container_max_m_{ 0.40 };
-    double              grasp_depth_below_top_m_{ 0.020 };
-    double              min_grip_height_m_{ 0.080 };
-    double              settle_tolerance_m_{ 0.010 };
-    int                 settle_attempts_{ 2 };
-    double              max_grasp_offset_m_{ 0.020 };
-    double              max_grasp_width_m_{ 0.090 };
-    double              scene_object_padding_m_{ 0.02 };
+    double object_timeout_s_{ 1.0 };
+    double approach_height_m_{ 0.22 };
+    double place_approach_height_m_{ 0.15 };
+    double place_reach_m_{ 0.35 };
+    double place_side_m_{ 0.15 };
+    double place_edge_margin_m_{ 0.05 };
+    double place_container_max_m_{ 0.40 };
+    double grasp_depth_below_top_m_{ 0.020 };
+    /// m. How far above the object's base a generated grasp's wrist and open hand must stay.
+    double grasp_surface_clearance_m_{ 0.010 };
+    /// m. How far above the object's base a generated grasp's closing fingers must stay.
+    double grasp_closing_clearance_m_{ 0.005 };
+    /// m. How far a generated grasp may be backed off along its approach to meet that clearance.
+    double grasp_max_backoff_m_{ 0.015 };
+    double min_grip_height_m_{ 0.080 };
+    double settle_tolerance_m_{ 0.010 };
+    int    settle_attempts_{ 2 };
+    double max_grasp_offset_m_{ 0.020 };
+    double max_grasp_width_m_{ 0.090 };
+    double scene_object_padding_m_{ 0.02 };
+    /// m. The pick's support slab: toward the robot and away from it, from the object's centre.
+    std::vector<double> pick_support_reach_m_{ 0.14, 0.26 };
+    /// m. The pick's support slab, to each side of the object's centre, and its thickness.
+    double pick_support_half_width_m_{ 0.45 };
+    double pick_support_thickness_m_{ 0.04 };
+    /// m. How far the slab's top stands above the object's base until the descent.
+    double pick_support_margin_m_{ 0.03 };
+    /// m. A pick whose grasp frame stands lower than this above the object's base first lifts it
+    /// straight up to this height.
+    double arm_clear_height_m_{ 0.10 };
+    /// m. How far above the surface every finger stays when a held object is set down.
+    double              place_finger_clearance_m_{ 0.020 };
     double              max_place_offset_m_{ 0.08 };
     double              grasp_refresh_max_shift_m_{ 0.050 };
     double              reaim_clearance_m_{ 0.08 };
@@ -667,10 +758,18 @@ private:
     int                      move_hand_orientations_{ 32 };
     std::string              move_hand_left_shoulder_{ "left_shoulder_pitch_link" };
     std::string              move_hand_right_shoulder_{ "right_shoulder_pitch_link" };
+    /// m. A generated grasp whose grip point lies further than this from the object's centre is
+    /// skipped.
+    double max_grip_offset_m_{ 0.03 };
+    /// A grip joint reads as blocked this share of its own close short of its target, when that
+    /// is less than grip_min_position_error_rad.
+    double grip_min_error_share_{ 0.15 };
     /// m. The steps out to its own side a pointing hand tries; see pointingHands().
     std::vector<double> move_hand_point_side_steps_m_{ 0.06, 0.12, 0.18 };
-    /// Generator gripper frame to `<side>_hand_grasp_frame`; see grasp_filter.hpp.
+    /// Generator gripper frame to `right_hand_grasp_frame`; see grasp_filter.hpp.
     std::array<double, 6> graspgen_offset_{};
+    /// The left hand's, for the grasps the adapter mirrors; see mirroredGripperOffset().
+    std::array<double, 6> graspgen_offset_mirrored_{};
 
     /// Where the last close was commanded to, as a fraction of `open` to `closed`. The grip check
     /// measures against this, since a close onto a measured width stops short of `closed`.

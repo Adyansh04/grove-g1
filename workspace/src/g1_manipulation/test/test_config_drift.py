@@ -30,3 +30,32 @@ def test_one_width_splits_tables_from_objects():
         )["place_container_max_m"],
     }
     assert len(set(widths.values())) == 1, widths
+
+
+def _merged(package, base, overlay, node):
+    parameters = dict(_parameters(package, base, node))
+    if overlay:
+        parameters.update(_parameters(package, overlay, node))
+    return parameters
+
+
+def test_every_hand_given_generated_grasps_is_one_the_adapter_answers():
+    # The server asks the adapter for each arm in generated_grasp_arms; the adapter answers its
+    # own hand, and the other only when it mirrors. A disagreement fails every pick on that side.
+    for overlay in ("", "_inspire"):
+        server = _merged(
+            "g1_manipulation",
+            "g1_manipulation_server.yaml",
+            overlay and f"g1_manipulation_server{overlay}.yaml",
+            "g1_manipulation_server",
+        )
+        adapter = _merged(
+            "g1_perception",
+            "g1_graspgen_adapter.yaml",
+            overlay and f"g1_graspgen_adapter{overlay}.yaml",
+            "g1_graspgen_adapter",
+        )
+        answered = {adapter["hand"]} | (
+            {"left", "right"} if adapter.get("mirror_other_hand", False) else set()
+        )
+        assert set(server["generated_grasp_arms"]) <= answered, (overlay, server, adapter)

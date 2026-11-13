@@ -1,6 +1,8 @@
 """Pick and place skills, and the object-pose source they read.
 
 Starts neither the simulator nor move_group; g1_bringup launches both alongside this.
+
+    ros2 launch g1_manipulation manipulation.launch.py hand_model:=inspire
 """
 
 import os
@@ -8,8 +10,8 @@ from typing import List
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
-from launch.substitutions import LaunchConfiguration, PythonExpression
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.substitutions import EnvironmentVariable, LaunchConfiguration, PythonExpression
 from launch_ros.actions import LifecycleNode, Node
 from launch_ros.parameter_descriptions import ParameterValue
 from moveit_configs_utils import MoveItConfigsBuilder
@@ -23,16 +25,20 @@ def _config(share, name):
     return os.path.join(share, "config", name)
 
 
-def _moveit_config():
+def _moveit_config(hand_model):
     """MoveGroupInterface reads the description, semantics and kinematics from its own node's
     parameters; without them every plan fails against an empty model, and the error does not
     say so."""
+    mappings = {"hand_model": hand_model}
     return (
         MoveItConfigsBuilder("g1", package_name="g1_moveit_config")
         .robot_description(
-            file_path=os.path.join(DESCRIPTION_SHARE, "urdf", "g1_lowcmd.urdf.xacro")
+            file_path=os.path.join(DESCRIPTION_SHARE, "urdf", "g1_lowcmd.urdf.xacro"),
+            mappings=mappings,
         )
-        .robot_description_semantic(file_path=_config(MOVEIT_SHARE, "g1.srdf"))
+        .robot_description_semantic(
+            file_path=_config(MOVEIT_SHARE, "g1.srdf.xacro"), mappings=mappings
+        )
         .robot_description_kinematics(file_path=_config(MOVEIT_SHARE, "kinematics.yaml"))
         .joint_limits(file_path=_config(MOVEIT_SHARE, "joint_limits.yaml"))
         # Named, or the builder assembles every pipeline it knows and pilz fails the launch.
@@ -74,9 +80,10 @@ def _object_source():
     )
 
 
-def generate_launch_description():
-    object_source = _object_source()
-
+def _server(context, *args, **kwargs):
+    """The skills, with the hand's own closing and grip parameters laid over the Dex3's."""
+    hand_model = LaunchConfiguration("hand_model").perform(context)
+    hand_overlay = _config(SHARE, f"g1_manipulation_server_{hand_model}.yaml")
     # No `name=`: it would remap every node in the process, and MoveIt's own helper nodes would
     # all become g1_manipulation_server. The server names itself.
     server = Node(
@@ -84,22 +91,46 @@ def generate_launch_description():
         executable="g1_manipulation_server",
         output="screen",
         parameters=[
-            _moveit_config().to_dict(),
+            _moveit_config(hand_model).to_dict(),
             _config(SHARE, "g1_manipulation_server.yaml"),
+            *([hand_overlay] if os.path.isfile(hand_overlay) else []),
             {
                 "object_timeout_ms": LaunchConfiguration("object_timeout_ms"),
                 "min_grip_height_m": LaunchConfiguration("min_grip_height_m"),
                 "grasp_source": LaunchConfiguration("grasp_source"),
                 "publish_markers": LaunchConfiguration("visualization"),
-                "graspgen_to_grasp_frame_xyz_rpy": ParameterValue(
-                    LaunchConfiguration("grasp_offset"), value_type=List[float]
-                ),
             },
+            # Empty keeps the hand's own offset from the YAML.
+            *(
+                [
+                    {
+                        "graspgen_to_grasp_frame_xyz_rpy": ParameterValue(
+                            LaunchConfiguration("grasp_offset"), value_type=List[float]
+                        )
+                    }
+                ]
+                if LaunchConfiguration("grasp_offset").perform(context)
+                else []
+            ),
         ],
     )
+    return [server]
+
+
+def generate_launch_description():
+    object_source = _object_source()
 
     return LaunchDescription(
         [
+            DeclareLaunchArgument(
+                "hand_model",
+                default_value=EnvironmentVariable("G1_HAND_MODEL", default_value="inspire"),
+                choices=["dex3", "inspire"],
+                description="The hands the robot wears: 'dex3' or 'inspire'. Picks the model the "
+                "skills plan against and lays config/g1_manipulation_server_<hand>.yaml, the "
+                "hand's own closing and grip parameters, over the Dex3's. Defaults to "
+                "G1_HAND_MODEL, else inspire.",
+            ),
             DeclareLaunchArgument(
                 "object_source",
                 default_value="sim_ground_truth",
@@ -117,11 +148,10 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "grasp_offset",
-                default_value="[0.0, 0.0, 0.07, 1.5707963, 0.0, 3.1415927]",
+                default_value="",
                 description="The generator's gripper frame to <side>_hand_grasp_frame, xyz then "
-                "rpy: GraspGenX's fingertip point, 7 cm along its approach, on the grasp frame, "
-                "with the Dex3 palm's axes from its own description. The tabletop block is picked "
-                "with three fingers pressing.",
+                "rpy, as '[x, y, z, roll, pitch, yaw]'. Empty keeps the hand's own from "
+                "config/g1_manipulation_server*.yaml.",
             ),
             DeclareLaunchArgument(
                 "object_timeout_ms",
@@ -143,6 +173,6 @@ def generate_launch_description():
                 "for RViz. false creates neither publisher.",
             ),
             object_source,
+            OpaqueFunction(function=_server),
         ]
-        + [server]
     )

@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <chrono>
 #include <controller_manager_msgs/srv/list_controllers.hpp>
+#include <controller_manager_msgs/srv/list_hardware_components.hpp>
 #include <controller_manager_msgs/srv/set_hardware_component_state.hpp>
 #include <controller_manager_msgs/srv/switch_controller.hpp>
 #include <cstdint>
@@ -26,12 +27,14 @@ namespace
 {
 
 using ListControllers           = controller_manager_msgs::srv::ListControllers;
+using ListHardwareComponents    = controller_manager_msgs::srv::ListHardwareComponents;
 using SetHardwareComponentState = controller_manager_msgs::srv::SetHardwareComponentState;
 using SwitchController          = controller_manager_msgs::srv::SwitchController;
 
 constexpr const char* kComponentService = "/controller_manager/set_hardware_component_state";
 constexpr const char* kSwitchService    = "/controller_manager/switch_controller";
 constexpr const char* kListService      = "/controller_manager/list_controllers";
+constexpr const char* kHardwareService  = "/controller_manager/list_hardware_components";
 
 /// The one controller_manager state that means a controller is holding its joints.
 constexpr const char* kActiveState = "active";
@@ -150,6 +153,26 @@ Acquired swapArmController(
                Acquired::kFailed;
 }
 
+// The hands as the running stack has them; empty if controller_manager did not answer.
+std::vector<ControlledPart> handParts(const rclcpp::Node::SharedPtr& node, double timeout_s)
+{
+    const auto controllers = callService<ListControllers>(
+        node,
+        kListService,
+        std::make_shared<ListControllers::Request>(),
+        timeout_s);
+    const auto components = callService<ListHardwareComponents>(
+        node,
+        kHardwareService,
+        std::make_shared<ListHardwareComponents::Request>(),
+        timeout_s);
+    if (controllers == nullptr || components == nullptr)
+    {
+        return {};
+    }
+    return pairHands(*controllers, *components);
+}
+
 }  // namespace
 
 ArmSwitchPlan planArmSwitch(const std::string& incoming_state, const std::string& outgoing_state)
@@ -166,26 +189,53 @@ ArmSwitchPlan planArmSwitch(const std::string& incoming_state, const std::string
     return plan;
 }
 
-const std::vector<ControlledPart>& controlledParts()
+const ControlledPart& armPart()
 {
     // Mirrors g1_bringup/scripts/activate_arm (test_authority_drift). The arm's motors belong to
     // the always-active body component, so the arm is acquired by a controller switch alone.
-    static const std::vector<ControlledPart> parts = {
-        { "", "arm_trajectory_controller", "arm_freeze_controller" },
-        { "G1Dex3SystemLeft", "left_hand_controller", "" },
-        { "G1Dex3SystemRight", "right_hand_controller", "" },
-    };
-    return parts;
+    static const ControlledPart arm{ "", "arm_trajectory_controller", "arm_freeze_controller" };
+    return arm;
+}
+
+std::vector<ControlledPart> pairHands(
+    const ListControllers::Response& controllers, const ListHardwareComponents::Response& components)
+{
+    std::vector<ControlledPart> hands;
+    for (const char* name : kHandControllers)
+    {
+        const auto controller =
+            std::ranges::find_if(controllers.controller, [name](const auto& state) {
+                return state.name == name;
+            });
+        if (controller == controllers.controller.end() ||
+            controller->required_command_interfaces.empty())
+        {
+            continue;
+        }
+        const auto owner = std::ranges::find_if(components.component, [&](const auto& component) {
+            return std::ranges::all_of(
+                controller->required_command_interfaces,
+                [&component](const std::string& wanted) {
+                    return std::ranges::any_of(
+                        component.command_interfaces,
+                        [&wanted](const auto& owned) { return owned.name == wanted; });
+                });
+        });
+        if (owner != components.component.end())
+        {
+            hands.push_back({ owner->name, name, "" });
+        }
+    }
+    return hands;
 }
 
 Acquired
 acquireArm(const rclcpp::Logger& logger, double timeout_s, const std::function<bool()>& stopped)
 {
-    const rclcpp::Node::SharedPtr      node  = makeClientNode("g1_arm_authority_client");
-    const std::vector<ControlledPart>& parts = controlledParts();
+    const rclcpp::Node::SharedPtr node = makeClientNode("g1_arm_authority_client");
 
     // Component before controller: its command interfaces exist only while it is active.
-    const ControlledPart& arm = parts.front();
+    const ControlledPart& arm = armPart();
     RCLCPP_INFO(logger, "acquiring %s", arm.controller.c_str());
 
     const bool component_ready =
@@ -208,9 +258,8 @@ acquireArm(const rclcpp::Logger& logger, double timeout_s, const std::function<b
 
     // Both hands in one switch, each whose component came up: an absent hand costs one wait.
     std::vector<std::string> hands;
-    for (std::size_t i = 1; i < parts.size(); ++i)
+    for (const ControlledPart& hand : handParts(node, timeout_s))
     {
-        const ControlledPart& hand = parts[i];
         if (setComponentState(
                 node,
                 hand.component,
@@ -251,11 +300,10 @@ acquireArm(const rclcpp::Logger& logger, double timeout_s, const std::function<b
 
 bool releaseArm(const rclcpp::Logger& logger, double timeout_s)
 {
-    const rclcpp::Node::SharedPtr      node  = makeClientNode("g1_arm_authority_client");
-    const std::vector<ControlledPart>& parts = controlledParts();
+    const rclcpp::Node::SharedPtr node = makeClientNode("g1_arm_authority_client");
 
     // The freeze returns in the same switch, or no switch is made: an unowned joint is unpowered.
-    const ControlledPart& arm = parts.front();
+    const ControlledPart& arm = armPart();
     if (swapArmController(node, arm.displaces, arm.controller, logger, timeout_s) ==
         Acquired::kFailed)
     {
@@ -267,25 +315,25 @@ bool releaseArm(const rclcpp::Logger& logger, double timeout_s)
         return false;
     }
 
-    bool hands_down = true;
-    for (std::size_t i = parts.size() - 1; i > 0; --i)
+    bool                              hands_down = true;
+    const std::vector<ControlledPart> hand_parts = handParts(node, timeout_s);
+    for (auto hand = hand_parts.rbegin(); hand != hand_parts.rend(); ++hand)
     {
-        const ControlledPart& hand    = parts[i];
-        const bool            stopped = switchController(
+        const bool stopped = switchController(
             node,
             {},
-            { hand.controller },
+            { hand->controller },
             timeout_s,
             SwitchController::Request::BEST_EFFORT);
         const bool inactive = setComponentState(
             node,
-            hand.component,
+            hand->component,
             lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE,
             "inactive",
             timeout_s);
         if (!stopped || !inactive)
         {
-            RCLCPP_WARN(logger, "%s did not go down cleanly", hand.component.c_str());
+            RCLCPP_WARN(logger, "%s did not go down cleanly", hand->component.c_str());
             hands_down = false;
         }
     }

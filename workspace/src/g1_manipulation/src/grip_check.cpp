@@ -16,16 +16,15 @@ namespace
 {
 
 /// Which finger a joint belongs to, or empty for one that says nothing about a grip.
-std::string fingerOf(const std::string& joint)
+std::string fingerOf(const JointGrip& joint)
 {
-    // thumb_0 rolls the thumb rather than closing it, and can stall on its travel in an empty hand.
-    if (joint.find("thumb_0") != std::string::npos)
+    if (!joint.closes)
     {
         return {};
     }
-    for (const char* finger : { "thumb", "index", "middle" })
+    for (const char* finger : { "thumb", "index", "middle", "ring", "pinky" })
     {
-        if (joint.find(finger) != std::string::npos)
+        if (joint.name.find(finger) != std::string::npos)
         {
             return finger;
         }
@@ -40,7 +39,8 @@ bool isLoaded(const JointGrip& joint, double min_error_rad, double min_effort_nm
     {
         return false;
     }
-    return std::abs(joint.target - joint.position) >= min_error_rad &&
+    const double short_rad = joint.min_error_rad > 0.0 ? joint.min_error_rad : min_error_rad;
+    return std::abs(joint.target - joint.position) >= short_rad &&
            std::abs(joint.effort) >= min_effort_nm;
 }
 
@@ -58,7 +58,7 @@ verifyGrip(const std::vector<JointGrip>& joints, double min_error_rad, double mi
     double strongest_short = 0.0;
     for (const JointGrip& joint : joints)
     {
-        const std::string finger = fingerOf(joint.name);
+        const std::string finger = fingerOf(joint);
         if (!finger.empty() && std::isfinite(joint.effort) && std::isfinite(joint.target) &&
             std::isfinite(joint.position) && std::abs(joint.effort) > strongest)
         {

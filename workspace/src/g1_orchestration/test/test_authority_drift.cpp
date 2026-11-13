@@ -30,23 +30,15 @@ std::string readScript()
 
 TEST(AuthorityDrift, EveryNameThisPackageUsesAppearsInTheScript)
 {
-    const std::string script = readScript();
-
-    for (const g1_orchestration::ControlledPart& part : g1_orchestration::controlledParts())
+    const std::string                       script = readScript();
+    const g1_orchestration::ControlledPart& arm    = g1_orchestration::armPart();
+    for (const std::string& name : { arm.controller, arm.displaces })
     {
-        // Empty names are skipped: an empty string matches anything.
-        if (!part.component.empty())
-        {
-            EXPECT_THAT(script, ::testing::HasSubstr(part.component))
-                << part.component << " is not named in activate_arm";
-        }
-        EXPECT_THAT(script, ::testing::HasSubstr(part.controller))
-            << part.controller << " is not named in activate_arm";
-        if (!part.displaces.empty())
-        {
-            EXPECT_THAT(script, ::testing::HasSubstr(part.displaces))
-                << part.displaces << " is not named in activate_arm";
-        }
+        EXPECT_THAT(script, ::testing::HasSubstr(name)) << name << " is not named in activate_arm";
+    }
+    for (const char* hand : g1_orchestration::kHandControllers)
+    {
+        EXPECT_THAT(script, ::testing::HasSubstr(hand)) << hand << " is not named in activate_arm";
     }
 }
 
@@ -67,10 +59,10 @@ TEST(AuthorityDrift, TheArmsAreNeverUnowned)
 {
     // An unclaimed joint is unpowered, so the freeze must leave in the same switch the
     // trajectory controller arrives in.
-    const auto& parts = g1_orchestration::controlledParts();
-    EXPECT_TRUE(parts.front().component.empty())
+    const g1_orchestration::ControlledPart& arm = g1_orchestration::armPart();
+    EXPECT_TRUE(arm.component.empty())
         << "the body component is active from bring-up and must not be cycled";
-    EXPECT_EQ(parts.front().displaces, "arm_freeze_controller");
+    EXPECT_EQ(arm.displaces, "arm_freeze_controller");
 }
 
 TEST(ArmSwitch, AnIncomingControllerThatIsNotLoadedSwitchesNothingAtAll)
@@ -110,4 +102,76 @@ int main(int argc, char** argv)
 {
     ::testing::InitGoogleMock(&argc, argv);
     return RUN_ALL_TESTS();
+}
+
+namespace
+{
+
+using controller_manager_msgs::srv::ListControllers;
+using controller_manager_msgs::srv::ListHardwareComponents;
+
+ListHardwareComponents::Response
+components(const std::vector<std::pair<std::string, std::vector<std::string>>>& owned)
+{
+    ListHardwareComponents::Response response;
+    for (const auto& [name, interfaces] : owned)
+    {
+        controller_manager_msgs::msg::HardwareComponentState component;
+        component.name = name;
+        for (const std::string& interface : interfaces)
+        {
+            controller_manager_msgs::msg::HardwareInterface command;
+            command.name = interface;
+            component.command_interfaces.push_back(command);
+        }
+        response.component.push_back(component);
+    }
+    return response;
+}
+
+ListControllers::Response
+controllers(const std::vector<std::pair<std::string, std::vector<std::string>>>& required)
+{
+    ListControllers::Response response;
+    for (const auto& [name, interfaces] : required)
+    {
+        controller_manager_msgs::msg::ControllerState state;
+        state.name                        = name;
+        state.required_command_interfaces = interfaces;
+        response.controller.push_back(state);
+    }
+    return response;
+}
+
+}  // namespace
+
+TEST(HandPairing, EachHandControllerGetsTheComponentOwningItsJoints)
+{
+    // Inspire names, listed right before left and among the body: the joints decide, not order.
+    const auto pairs = g1_orchestration::pairHands(
+        controllers({
+            { "arm_trajectory_controller", { "left_elbow_joint/position" } },
+            { "right_hand_controller", { "R_index_proximal_joint/position" } },
+            { "left_hand_controller", { "L_index_proximal_joint/position" } },
+        }),
+        components({
+            { "G1LowCmdSystem", { "left_elbow_joint/position" } },
+            { "G1InspireSystemRight", { "R_index_proximal_joint/position" } },
+            { "G1InspireSystemLeft", { "L_index_proximal_joint/position" } },
+        }));
+    ASSERT_EQ(pairs.size(), 2U);
+    EXPECT_EQ(pairs[0].component, "G1InspireSystemLeft");
+    EXPECT_EQ(pairs[0].controller, "left_hand_controller");
+    EXPECT_EQ(pairs[1].component, "G1InspireSystemRight");
+    EXPECT_TRUE(pairs[1].displaces.empty());
+}
+
+TEST(HandPairing, AHandWithoutAComponentOrAControllerIsLeftOut)
+{
+    // hands:=false loads no hand controllers; a component may also cover only part of a hand.
+    EXPECT_TRUE(g1_orchestration::pairHands(controllers({}), components({})).empty());
+    const auto partial = g1_orchestration::pairHands(
+        controllers({ { "left_hand_controller", { "a/position", "b/position" } } }),
+        components({ { "G1Dex3SystemLeft", { "a/position" } } }));
+    EXPECT_TRUE(partial.empty());
 }

@@ -1,0 +1,34 @@
+/**/sam3_segmentation:
+  ros__parameters:
+    # The ONNX graphs from scripts/export_sam3.py; engines are built from them into engine_dir on
+    # the first start on a GPU (minutes), and again when a graph or the TensorRT version changes.
+    model_dir: "/root/data/models/sam3"
+    engine_dir: "/root/data/models/sam3/engines"
+    # Must equal export_sam3.py's --suffix (".bf16" with --bf16 --suffix .bf16); empty for
+    # unsuffixed fp32 graphs.
+    precision_suffix: ".bf16"
+    # Scratch memory TensorRT's builder may use when it builds an engine, MiB.
+    engine_workspace_mb: 2048
+    # Distinct prompts whose text features stay on the GPU; the cache is emptied beyond this.
+    max_cached_prompts: 64
+    # Empty: the package's copy of CLIP's vocabulary.
+    vocabulary: ""
+    # Camera topic for requests without an image; empty (the default) subscribes to nothing, so a
+    # request must carry its image. Relative topics resolve in the node's namespace.
+    image_topic: ""
+    # Must equal what the client calls: canopy_perception's detector `segment_service`.
+    service: "segment_objects"
+    # SAM 3's own processor keeps instances above 0.5; a request's min_score overrides it.
+    min_score: 0.5
+    # A request without an image uses the camera's newest one only if it is this fresh, seconds.
+    max_image_age_s: 1.0
+    # The engines (about 2.6 GB of GPU memory) are freed after this long without a request; 0 keeps
+    # them loaded, seconds. Loading them again costs 2.5 to 3.3 s on the next request.
+    idle_unload_s: 0.0
+    # How often the idle time is checked, seconds.
+    idle_check_s: 5.0
+    # After a failed load, requests are answered with its reason for this long before the next try,
+    # seconds: a build that fails late is not started again for every waiting request.
+    load_retry_s: 60.0
+    # Load the engines at start instead of on the first request.
+    preload: true
