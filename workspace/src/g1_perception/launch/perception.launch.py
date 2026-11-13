@@ -11,7 +11,7 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.conditions import IfCondition
-from launch.substitutions import EqualsSubstitution, LaunchConfiguration
+from launch.substitutions import EnvironmentVariable, EqualsSubstitution, LaunchConfiguration
 from launch_ros.actions import Node
 
 SHARE = get_package_share_directory("g1_perception")
@@ -40,6 +40,7 @@ def _nodes(context, *args, **kwargs):
         if phrase.strip()
     ]
     detector = LaunchConfiguration("detector")
+    hand_model = LaunchConfiguration("hand_model").perform(context)
 
     mock = Node(
         package="canopy_perception",
@@ -119,7 +120,15 @@ def _nodes(context, *args, **kwargs):
         name="g1_graspgen_adapter",
         output="screen",
         condition=IfCondition(EqualsSubstitution(grasp_engine, "graspgen")),
-        parameters=[_config("g1_graspgen_adapter.yaml")],
+        parameters=[
+            _config("g1_graspgen_adapter.yaml"),
+            # The hand's own description where it is not the Dex3, whose is the base file's.
+            *(
+                [_config(f"g1_graspgen_adapter_{hand_model}.yaml")]
+                if os.path.isfile(_config(f"g1_graspgen_adapter_{hand_model}.yaml"))
+                else []
+            ),
+        ],
         remappings=[
             ("tracked_masks", TRACKED_MASKS),
             ("depth/image_raw", DEPTH_IMAGE),
@@ -204,6 +213,13 @@ def generate_launch_description():
                 default_value="false",
                 description="Runs g1_perception_visualizer, which draws the masks and boxes on "
                 "the camera image and ground truth for RViz. false starts nothing.",
+            ),
+            DeclareLaunchArgument(
+                "hand_model",
+                default_value=EnvironmentVariable("G1_HAND_MODEL", default_value="dex3"),
+                choices=["dex3", "inspire"],
+                description="The hands, 'dex3' or 'inspire': which gripper description the grasp "
+                "generator is asked for. Defaults to G1_HAND_MODEL, else dex3.",
             ),
             OpaqueFunction(function=_nodes),
         ]

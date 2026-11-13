@@ -1,7 +1,7 @@
 # Pick and place skills, loaded by g1_manipulation/launch/manipulation.launch.py.
 #
-# `object_timeout_ms`, `grasp_source`, `min_grip_height_m` and `graspgen_to_grasp_frame_xyz_rpy`
-# are launch arguments, because their right values depend on what the stack is launched with.
+# `object_timeout_ms`, `grasp_source` and `min_grip_height_m` are launch arguments, and so may be
+# `graspgen_to_grasp_frame_xyz_rpy`; they, because their right values depend on what the stack is launched with.
 # Everything else except velocity_scaling, grasp_rpy, grasp_service, publish_markers and
 # world_frame can be set live between goals.
 g1_manipulation_server:
@@ -127,6 +127,11 @@ g1_manipulation_server:
     planning_time_s: 10.0
     # Samples within planning_time_s: ValidateSolution rejects some paths OMPL accepts, quickly.
     planning_attempts: 5
+
+    # The generator's gripper frame to <side>_hand_grasp_frame, xyz then rpy: GraspGenX's
+    # fingertip point, 7 cm along its approach, on the grasp frame, with the Dex3 palm's axes from
+    # its own description. The tabletop block is picked with three fingers pressing.
+    graspgen_to_grasp_frame_xyz_rpy: [0.0, 0.0, 0.07, 1.5707963, 0.0, 3.1415927]
 
     # Right hand's orientation at a top grasp; the left mirrors the roll.
     grasp_rpy: [-1.5707963, 0.0, 0.0]

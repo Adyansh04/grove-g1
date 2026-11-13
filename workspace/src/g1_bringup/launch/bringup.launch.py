@@ -130,6 +130,7 @@ def _sim_args(context, navigating, want_manipulation, want_perception, want_move
         ),
         "world": LaunchConfiguration("world"),
         "hand_model": LaunchConfiguration("hand_model"),
+        "contact_log": LaunchConfiguration("contact_log"),
         "cameras": LaunchConfiguration("cameras"),
         "odometry": LaunchConfiguration("odometry"),
         "headless": LaunchConfiguration("headless"),
@@ -169,16 +170,24 @@ def _moveit():
     )
 
 
-def _manipulation(want_perception, visualization, world):
+def _min_grip_height_m(world, hand_model):
+    """How low a grip may go above the surface, for the hand: the Dex3's thumb hangs 63 mm below
+    its grasp frame and the Inspire's opposed thumb 47 mm, its pad included."""
+    if hand_model == "inspire":
+        return "0.060"
+    # The navigation desk's ball sits by the edge, where the thumb hangs past the desk; the
+    # apartment's mug is 81 mm tall, so the fingers take it 26 mm below its rim.
+    return "0.035" if world in ("navigation", "apartment") else "0.080"
+
+
+def _manipulation(want_perception, visualization, world, hand_model):
     return _include(
         os.path.join(_share("g1_manipulation"), "launch", "manipulation.launch.py"),
         object_source="perception" if want_perception else LaunchConfiguration("object_source"),
         # Perception's poses arrive seconds late when the detector shares the GPU with the
         # simulator. The scenes are static, so an old pose is still a true one.
         object_timeout_ms="8000.0" if want_perception else "1000.0",
-        # The navigation desk's ball sits by the edge, where the thumb hangs past the desk; the
-        # apartment's mug is 81 mm tall, so the fingers take it 26 mm below its rim.
-        min_grip_height_m="0.035" if world in ("navigation", "apartment") else "0.080",
+        min_grip_height_m=_min_grip_height_m(world, hand_model),
         grasp_source=LaunchConfiguration("grasp_source"),
         grasp_offset=LaunchConfiguration("grasp_offset"),
         visualization=visualization,
@@ -303,7 +312,10 @@ def _setup(context, *args, **kwargs):
     if want_manipulation:
         actions.append(
             _manipulation(
-                want_perception, visualization, LaunchConfiguration("world").perform(context)
+                want_perception,
+                visualization,
+                LaunchConfiguration("world").perform(context),
+                LaunchConfiguration("hand_model").perform(context),
             )
         )
     if want_vla:
@@ -422,9 +434,9 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "grasp_offset",
-                default_value="[0.0, 0.0, 0.07, 1.5707963, 0.0, 3.1415927]",
+                default_value="",
                 description="The grasp generator's gripper frame to this robot's grasp frame, xyz "
-                "then rpy, measured for GraspGenX's Dex3 (see g1_manipulation's launch).",
+                "then rpy. Empty keeps the hand's own (see g1_manipulation's launch).",
             ),
             DeclareLaunchArgument(
                 "grasp_engine",
@@ -488,6 +500,12 @@ def generate_launch_description():
                 description="Which source publishes odom -> base_footprint. 'fast_lio' is the "
                 "pipeline the real robot runs, over the simulated Mid360. 'ground_truth' is exact "
                 "MuJoCo state, for isolating a fault to 'not the odometry'.",
+            ),
+            DeclareLaunchArgument(
+                "contact_log",
+                default_value="",
+                description="A file the simulator appends each hand contact and grasp to, as JSON "
+                "lines (see sim.launch.py). Empty logs nothing.",
             ),
             DeclareLaunchArgument(
                 "hand_model",

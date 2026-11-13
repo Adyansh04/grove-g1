@@ -99,10 +99,19 @@ def _server(context, *args, **kwargs):
                 "min_grip_height_m": LaunchConfiguration("min_grip_height_m"),
                 "grasp_source": LaunchConfiguration("grasp_source"),
                 "publish_markers": LaunchConfiguration("visualization"),
-                "graspgen_to_grasp_frame_xyz_rpy": ParameterValue(
-                    LaunchConfiguration("grasp_offset"), value_type=List[float]
-                ),
             },
+            # Empty keeps the hand's own offset from the YAML.
+            *(
+                [
+                    {
+                        "graspgen_to_grasp_frame_xyz_rpy": ParameterValue(
+                            LaunchConfiguration("grasp_offset"), value_type=List[float]
+                        )
+                    }
+                ]
+                if LaunchConfiguration("grasp_offset").perform(context)
+                else []
+            ),
         ],
     )
     return [server]
@@ -139,11 +148,10 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "grasp_offset",
-                default_value="[0.0, 0.0, 0.07, 1.5707963, 0.0, 3.1415927]",
+                default_value="",
                 description="The generator's gripper frame to <side>_hand_grasp_frame, xyz then "
-                "rpy: GraspGenX's fingertip point, 7 cm along its approach, on the grasp frame, "
-                "with the Dex3 palm's axes from its own description. The tabletop block is picked "
-                "with three fingers pressing.",
+                "rpy, as '[x, y, z, roll, pitch, yaw]'. Empty keeps the hand's own from "
+                "config/g1_manipulation_server*.yaml.",
             ),
             DeclareLaunchArgument(
                 "object_timeout_ms",
