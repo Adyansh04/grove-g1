@@ -290,6 +290,7 @@ def main(argv=None) -> int:
                     pose.pose.orientation.y,
                     pose.pose.orientation.z,
                 ) = start["quat"]
+                phases["place"] = time.time()
                 placed = node.run_action(
                     node.place, Place.Goal(pose=pose, arm=side), PLACE_TIMEOUT_S
                 )
