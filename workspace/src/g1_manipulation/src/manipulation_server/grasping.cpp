@@ -460,6 +460,7 @@ std::vector<G1ManipulationServer::GraspPlan> G1ManipulationServer::chooseGrasps(
         };
     int                    considered = 0;
     int                    tilted     = 0;
+    int                    backward   = 0;
     int                    off_centre = 0;
     int                    blocked    = 0;
     int                    reachable  = 0;
@@ -493,11 +494,11 @@ std::vector<G1ManipulationServer::GraspPlan> G1ManipulationServer::chooseGrasps(
         // surface.
         // Coming back at the robot from beyond the object, the hand reaches round it: rarely
         // reachable, and the reach sweeps the object.
-        if (approachTiltRad(*in_planning_frame) > max_approach_tilt_rad_ ||
-            approachAxis(*in_planning_frame)[0] < min_approach_forward_)
+        const bool too_steep = approachTiltRad(*in_planning_frame) > max_approach_tilt_rad_;
+        if (too_steep || approachAxis(*in_planning_frame)[0] < min_approach_forward_)
         {
             record(*in_planning_frame, ConsideredGrasp::Verdict::kTilted);
-            ++tilted;
+            ++(too_steep ? tilted : backward);
             continue;
         }
 
@@ -634,12 +635,13 @@ std::vector<G1ManipulationServer::GraspPlan> G1ManipulationServer::chooseGrasps(
     }
     // Each filter's share, so a pick that keeps few grasps says which one to look at.
     const std::string breakdown = std::format(
-        "{} of {} offered considered: {} approach too steep or from beyond, {} grip off centre, "
-        "{} reachable at the grasp, {} of those clear of the table and the neighbours, {} of "
-        "those blocked at the pregrasp",
+        "{} of {} offered considered: {} approach past level, {} back at the robot, {} grip off "
+        "centre, {} reachable at the grasp, {} of those clear of the table and the neighbours, {} "
+        "of those blocked at the pregrasp",
         considered,
         response->grasps.size(),
         tilted,
+        backward,
         off_centre,
         reachable,
         clear,
