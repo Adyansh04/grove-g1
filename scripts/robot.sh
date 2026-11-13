@@ -196,6 +196,9 @@ operator_shell() {
 
 # ros2 CLI calls on the robot's domain, cut off with SIGINT: on rmw_zenoh one can ignore SIGTERM.
 readonly ROS2="timeout -s INT -k 5 30 ros2"
+# `param set` finds its node through the CLI daemon, which goes stale when the operator's router
+# restarts (an Orin reboot) and then reports the controllers' nodes missing.
+readonly PARAM_SET="param set --no-daemon"
 # A line of `ros2 control list_controllers` for a controller in the active state; \< keeps
 # "inactive" out.
 active() {
@@ -213,10 +216,10 @@ for c in locomotion_safety_controller agile_controller; do
     grep -q \"^\$c \" <<<\"\$listed\" || $ROS2 control load_controller --set-state inactive \$c
 done
 $(active locomotion_freeze_controller) || { echo 'The legs are not frozen: start control first, or the robot already stands.' >&2; exit 1; }
-$ROS2 param set /locomotion_safety_controller blend_ratio 0.0
+$ROS2 $PARAM_SET /locomotion_safety_controller blend_ratio 0.0
 $ROS2 control switch_controllers --deactivate locomotion_freeze_controller \\
     --activate locomotion_safety_controller agile_controller --strict
-$ROS2 param set /locomotion_safety_controller blend_ratio 1.0
+$ROS2 $PARAM_SET /locomotion_safety_controller blend_ratio 1.0
 echo 'The policy is blending in over 4 s.'"
 }
 
