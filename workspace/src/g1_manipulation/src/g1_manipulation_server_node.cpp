@@ -108,6 +108,7 @@ void G1ManipulationServer::declareParameters()
         { "place_container_max_m", &place_container_max_m_ },
         { "grasp_depth_below_top_m", &grasp_depth_below_top_m_ },
         { "grasp_surface_clearance_m", &grasp_surface_clearance_m_ },
+        { "grasp_closing_clearance_m", &grasp_closing_clearance_m_ },
         { "grasp_max_backoff_m", &grasp_max_backoff_m_ },
         { "pick_support_half_width_m", &pick_support_half_width_m_ },
         { "pick_support_thickness_m", &pick_support_thickness_m_ },
@@ -391,7 +392,7 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
         }
         removeFromScene(goal->object_id);
         removeFromScene(kPickSupportId);
-        setHandContact(arm, { "<octomap>", goal->object_id }, false);
+        setHandContact(arm, { "<octomap>", goal->object_id, kPickSupportId }, false);
     };
     const auto fail = [&](const std::string& phase, const std::string& why) {
         clean_up();
@@ -410,7 +411,7 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     const auto cancelled_holding = [&](const std::string& phase) {
         removeFromScene(kPickSupportId);
         // The object maps itself while held, as after a finished pick.
-        setHandContact(arm, { "<octomap>", goal->object_id }, false);
+        setHandContact(arm, { "<octomap>", goal->object_id, kPickSupportId }, false);
         setHandContact(arm, { "<octomap>", goal->object_id }, true, /*include_links=*/false);
         result->success = false;
         result->message =
@@ -675,8 +676,9 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
         attached.touch_links.push_back(side + wrist);
     }
     planning_scene_.applyAttachedCollisionObject(attached);
-    // The object still sits in the surface's voxels, so the lift starts exempt from them.
-    setHandContact(arm, { "<octomap>", goal->object_id }, true);
+    // The object still sits in the surface's voxels, and the fingers may rest on the table under
+    // it, so the lift starts exempt from both.
+    setHandContact(arm, { "<octomap>", goal->object_id, kPickSupportId }, true);
 
     if (goal_handle->is_canceling())
     {
@@ -769,7 +771,7 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     // The hand goes back to respecting the map, but the object maps itself while held, so it
     // stays exempt from its own voxels until the place.
     removeFromScene(kPickSupportId);
-    setHandContact(arm, { "<octomap>", goal->object_id }, false);
+    setHandContact(arm, { "<octomap>", goal->object_id, kPickSupportId }, false);
     setHandContact(arm, { "<octomap>", goal->object_id }, true, /*include_links=*/false);
     result->success = true;
     result->message = "picked " + goal->object_id + " with the " + goal->arm + " hand, " + grip;

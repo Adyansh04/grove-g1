@@ -168,11 +168,15 @@ g1_manipulation_server:
     grasp_tries: 3
     # Past a right angle a grasp reaches up through the surface.
     max_approach_tilt_deg: 75.0
-    # m. A generated grasp is dropped when its wrist, or its hand anywhere along the close down to
-    # the object's narrowest side, comes nearer than this to the plane of the object's base, or
-    # into another object: no generator sees the table or the neighbours, and a finger driven into
-    # them is what breaks on the real hand.
+    # m. A generated grasp is dropped when its wrist or its open hand, as the arm brings it in,
+    # comes nearer than this to the plane of the object's base, or its hand anywhere along the
+    # close comes into another object: no generator sees the table or the neighbours, and a hand
+    # the arm drives into them is what breaks on the real hand.
     grasp_surface_clearance_m: 0.010
+    # m. The closing fingers may come this near the plane of the object's base: at 0 they reach
+    # under the object to the table, which a firm grasp of a cup can need, and each finger stops
+    # itself at its force limit, so the touch stays light.
+    grasp_closing_clearance_m: 0.0
     # m. A grasp that comes too near is first backed off along its own approach, 5 mm at a time,
     # up to this: seated a little shallower it still holds, since the pads meet up to 15 mm short
     # of where GraspGenX seats an object's centre.
