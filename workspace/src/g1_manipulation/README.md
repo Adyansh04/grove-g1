@@ -70,8 +70,8 @@ The steps follow the feedback phases.
    - Re-read the object and follow a shift under `grasp_refresh_max_shift_m`.
    - Plan to a staging point `reaim_clearance_m` above the grasp while the object is still in the scene.
    - Remove the object, lower the slab to the object's base, clear the octomap, exempt the hand from it and walk the last stretch as a straight line.
-   - A miss backs straight up and retries from staging, up to `settle_attempts` more times. If it is still more than `max_grasp_offset_m` off, the pick is refused.
-4. `grasp`: start outside the widest measured side and creep in `grip_search_step_m` at a time until the thumb opposes a finger. Then hold every finger at its stall plus `grip_hold_bias_rad`. If the grip check below passes, attach the object to the palm.
+   - A miss backs straight up and retries from staging, up to `settle_attempts` more times, re-aiming for the arm's sag but never below the grasp. A hand that ends its line well above the grasp rests on something, and the pick is refused there. If it is still more than `max_grasp_offset_m` off, the pick is refused.
+4. `grasp`: start outside the widest measured side and creep in `grip_search_step_m` at a time until the thumb opposes a finger. A joint counts as pressing when it stalls `grip_min_position_error_rad` short of its target, or `grip_min_error_share` of its own travel for a joint with a short close such as the Inspire thumb, while pushing `grip_min_effort_nm`. Then hold every finger at its stall plus `grip_hold_bias_rad`. If the grip check below passes, attach the object to the palm.
 5. `lift`: straight up by `lift_height_m`. The held object stays exempt from the voxels it casts. Seen in the first frame after the lift without having risen half of `lift_height_m`, the object was left behind and the pick fails: a cradled object loads the fingers too little to tell.
 
 ## How a place runs
