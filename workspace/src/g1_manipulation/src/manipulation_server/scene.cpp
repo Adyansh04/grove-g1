@@ -164,7 +164,16 @@ void G1ManipulationServer::publishSupport(
             {
                 break;
             }
-            back = 0.0;
+            back = -1.0;
+        }
+        // Even at the object's edge the slab would take the hand in: no slab, the map only.
+        if (back < 0.0)
+        {
+            RCLCPP_INFO(
+                get_logger(),
+                "the %s hand stands where the table's slab would go; planning without it",
+                arm.is_left ? "left" : "right");
+            return;
         }
     }
     moveit_msgs::msg::CollisionObject support;
