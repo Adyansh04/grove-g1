@@ -108,6 +108,8 @@ install(TARGETS
   g1_manipulation_server_node
   EXPORT export_${PROJECT_NAME} DESTINATION lib)
 install(TARGETS g1_object_pose_source g1_manipulation_server DESTINATION lib/${PROJECT_NAME})
+# Scores grasps in simulation against the simulator's contact monitor; see its docstring.
+install(PROGRAMS scripts/grasp_eval DESTINATION lib/${PROJECT_NAME})
 
 # --- tests -----------------------------------------------------------------
 
