@@ -65,7 +65,8 @@ EXPLORING="ros2 launch g1_bringup bringup.launch.py mode:=localization nav:=true
 # SLAM builds the map as the robot explores; canopy saves its floor plan with the world.
 MAPPING="ros2 launch g1_bringup bringup.launch.py mode:=mapping nav:=true keepout:=true world:=$SIM_WORLD headless:=true rviz:=false arms_at_sides:=true cameras:=head,chest$LAUNCH_ARGS"
 MAPPED=/root/data/worlds/$MAP_NAME
-CANOPY="ros2 launch g1_bringup world_model.launch.py rviz:=false detector:=mock cameras:=head,chest segmenter:=true world_dir:="
+# No SAM 3.1 of its own: no GPU room beside the local model, and fetch's perception runs one.
+CANOPY="ros2 launch g1_bringup world_model.launch.py rviz:=false detector:=mock cameras:=head,chest segmenter:=true sam3:=false world_dir:="
 # Both stacks take the arms themselves at start with empty hands, so the executor may trust them.
 # Skills the agent teaches and keeps stay with the robot, in data/ beside its worlds.
 LEARNED="learned_skills_dir:=/root/data/skills/g1"
@@ -136,9 +137,8 @@ case "$VARIANT" in
         container bringup "$FETCH"
         container canopy "$CANOPY$SAVED"
         container executor "$FETCH_EXECUTOR"
-        # Claude talks (models.toml), so the GPU holds SAM 3.1 and GraspGenX beside the simulator.
-        # Only masks: the embedder's memory goes to the simulator and GraspGenX instead.
-        host detector "./scripts/serve.sh canopy --embedder none"
+        # Claude talks (models.toml), so the GPU holds SAM 3.1 (in TensorRT, started by the
+        # bringup's perception) and GraspGenX beside the simulator.
         host grasps "./scripts/serve.sh graspgen"
         host editor "python3 workspace/src/canopy/editor/canopy_editor.py data/worlds/$SAVED_NAME"
         host nervros "$AGENT_ENV && cargo run -p nervros-gui -- --profile $PROFILE"

@@ -1,12 +1,12 @@
-# canopy's segmenter on the G1, for world_model.launch.py segmenter:=true. It asks canopy's
-# semantic server run with SAM 3.1 (./scripts/serve.sh canopy --detector sam3.1), whose floor masks
-# matched the simulator's truth at IoU 0.97 on the apartment's renders. The cameras come from the
-# launch's cameras.
+# canopy's segmenter on the G1, for world_model.launch.py segmenter:=true. It asks SAM 3.1 in
+# TensorRT (sam3_inference, which the launch starts), whose floor masks matched the simulator's
+# truth at IoU 0.97 on the apartment's renders. The cameras come from the launch's cameras.
 /**:
   ros__parameters:
+    segment_service: "/segment_objects"
     server_address: tcp://127.0.0.1:5561
     max_image_age_s: 2.0
     box_threshold: 0.30
     text_threshold: 0.25
-    # Well past a first request's warm-up.
+    # Well past a first request's warm-up; also how long a service answer is waited for.
     zmq_timeout_ms: 30000
