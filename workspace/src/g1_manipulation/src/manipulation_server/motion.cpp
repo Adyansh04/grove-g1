@@ -9,6 +9,7 @@
 #include <memory>
 #include <moveit/robot_state/conversions.hpp>
 #include <moveit_msgs/msg/contact_information.hpp>
+#include <optional>
 #include <string>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <thread>
@@ -105,33 +106,48 @@ double G1ManipulationServer::moveStraight(
 std::string G1ManipulationServer::touchingNow(MoveGroup& group)
 {
     const moveit::core::RobotStatePtr now = group.getCurrentState(1.0);
-    if (now == nullptr || !check_state_->wait_for_service(std::chrono::milliseconds(200)))
+    if (now == nullptr)
     {
-        return "no state check to ask";
+        return "no current state to check";
+    }
+    const std::optional<std::string> found = touching(*now, group.getName());
+    if (!found)
+    {
+        return "the state check could not be asked";
+    }
+    return found->empty() ? "nothing; the path is blocked further on or out of reach" : *found;
+}
+
+std::optional<std::string>
+G1ManipulationServer::touching(const moveit::core::RobotState& state, const std::string& group_name)
+{
+    if (!check_state_->wait_for_service(std::chrono::milliseconds(200)))
+    {
+        return std::nullopt;
     }
     auto request        = std::make_shared<moveit_msgs::srv::GetStateValidity::Request>();
-    request->group_name = group.getName();
-    moveit::core::robotStateToRobotStateMsg(*now, request->robot_state);
+    request->group_name = group_name;
+    moveit::core::robotStateToRobotStateMsg(state, request->robot_state);
     auto answer = check_state_->async_send_request(request);
     if (answer.wait_for(kStateCheckTimeout) != std::future_status::ready)
     {
-        return "the state check did not answer";
+        return std::nullopt;
     }
     const auto response = answer.get();
     if (response->valid)
     {
-        return "nothing; the path is blocked further on or out of reach";
+        return std::string();
     }
-    std::string touching;
+    std::string pairs;
     for (const moveit_msgs::msg::ContactInformation& contact : response->contacts)
     {
         const std::string pair = contact.contact_body_1 + " on " + contact.contact_body_2;
-        if (touching.find(pair) == std::string::npos)
+        if (pairs.find(pair) == std::string::npos)
         {
-            touching += (touching.empty() ? "" : "; ") + pair;
+            pairs += (pairs.empty() ? "" : "; ") + pair;
         }
     }
-    return touching.empty() ? "a state outside its bounds or constraints" : touching;
+    return pairs.empty() ? "a state outside its bounds or constraints" : pairs;
 }
 
 geometry_msgs::msg::Pose G1ManipulationServer::stagingPose(

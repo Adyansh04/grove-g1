@@ -21,6 +21,7 @@
 #include <moveit/collision_detection/collision_common.hpp>
 #include <moveit/collision_detection/collision_matrix.hpp>
 #include <moveit/planning_scene/planning_scene.hpp>
+#include <optional>
 #include <string>
 #include <tf2/utils.hpp>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
@@ -49,6 +50,9 @@ constexpr double kNeighbourPaddingM = 0.01;
 constexpr double kSameObjectM       = 0.02;
 // Shares of the deepest close checked: fingers sweep out along the approach before curling back.
 constexpr std::array<double, 5> kCloseShares = { 0.0, 0.25, 0.5, 0.75, 1.0 };
+// Kinematic solves tried per pregrasp before it counts as blocked: one from the arm as it stands,
+// the rest from random seeds, since one solve's elbow can collide where another's does not.
+constexpr int kPregraspSeeds = 3;
 // m. Steps a grasp that would strike is backed off along its approach, up to
 // grasp_max_backoff_m.
 constexpr double kBackoffStepM     = 0.005;
@@ -420,6 +424,7 @@ std::vector<G1ManipulationServer::GraspPlan> G1ManipulationServer::chooseGrasps(
         };
     int                    considered = 0;
     int                    off_centre = 0;
+    int                    blocked    = 0;
     int                    reachable  = 0;
     int                    clear      = 0;
     std::vector<GraspPlan> plans;
@@ -523,12 +528,48 @@ std::vector<G1ManipulationServer::GraspPlan> G1ManipulationServer::chooseGrasps(
             response->grasps.size(),
             i < response->scores.size() ? response->scores[i] : 0.0F,
             back_m > 0.0 ? std::format(", backed off {:.0f} mm", 1000.0 * back_m) : "");
-        attempt = *state;
-        if (!attempt.setFromIK(jmg, plan.pregrasp, arm.grasp_frame, ik_timeout_s_))
+        // The planner fails a pregrasp the arm cannot stand at only after its whole budget, and a
+        // solve from kinematics alone may put the arm through the scene or the robot: a few
+        // solves, from the arm as it is and from random seeds, until one stands clear.
+        bool        pregrasp_solved = false;
+        std::string pregrasp_touches;
+        for (int seed = 0; seed < kPregraspSeeds; ++seed)
+        {
+            attempt = *state;
+            if (seed > 0)
+            {
+                attempt.setToRandomPositions(jmg);
+            }
+            if (!attempt.setFromIK(jmg, plan.pregrasp, arm.grasp_frame, ik_timeout_s_))
+            {
+                continue;
+            }
+            pregrasp_solved = true;
+            attempt.update();
+            const std::optional<std::string> pairs = touching(attempt, arm.arm_group);
+            if (!pairs || pairs->empty())
+            {
+                pregrasp_touches.clear();
+                break;
+            }
+            pregrasp_touches = *pairs;
+        }
+        if (!pregrasp_solved)
         {
             grasp_only.push_back(std::move(plan));
+            continue;
         }
-        else if (back_m > 0.0)
+        if (!pregrasp_touches.empty())
+        {
+            RCLCPP_INFO(
+                get_logger(),
+                "skipping the %s: at its pregrasp %s",
+                plan.origin.c_str(),
+                pregrasp_touches.c_str());
+            ++blocked;
+            continue;
+        }
+        if (back_m > 0.0)
         {
             backed.push_back(std::move(plan));
         }
@@ -558,11 +599,12 @@ std::vector<G1ManipulationServer::GraspPlan> G1ManipulationServer::chooseGrasps(
         why = std::format(
             "none of the {} candidates considered were usable ({} gripping too far from its "
             "centre, {} reachable, {} of those clear of what the object stands on and its "
-            "neighbours) out of {} offered",
+            "neighbours, {} of those with something at their pregrasp) out of {} offered",
             considered,
             off_centre,
             reachable,
             clear,
+            blocked,
             response->grasps.size());
         for (const auto& [pair, count] : struck)
         {

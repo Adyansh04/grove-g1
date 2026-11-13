@@ -358,8 +358,10 @@ private:
      *
      * `fixed_top_down` is graspFrameGoal() approached from straight above. `generated` asks the
      * grasp service and keeps up to `grasp_tries` candidates that are scored, not reaching up
-     * through the surface, and solvable at the grasp: those that also solve at the pregrasp first,
-     * each group best first. There is no fallback between the two sources.
+     * through the surface, and solvable at the grasp, with nothing in the planning scene touching
+     * the arm at their pregrasp: those seated as generated first, then those backed off, then those
+     * that do not solve at the pregrasp, each group best first. There is no fallback between the
+     * two sources.
      *
      * @param[out] why Why there is nothing to attempt, when it returns nothing.
      * @param[out] verdicts Every candidate the filter judged, for drawing; null skips the record.
@@ -430,6 +432,17 @@ private:
      * @return The touching pairs, "a on b" joined by "; ", or why the check could not say.
      */
     std::string touchingNow(MoveGroup& group);
+
+    /**
+     * @brief What a robot state touches in move_group's planning scene, octomap included.
+     *
+     * @param state The state to check.
+     * @param group_name The planning group the check is for.
+     * @return Empty when the state is valid, the touching pairs ("a on b" joined by "; ") or what
+     *         else is wrong when it is not, and nothing when move_group could not be asked.
+     */
+    std::optional<std::string>
+    touching(const moveit::core::RobotState& state, const std::string& group_name);
 
     /**
      * @brief The point reaim_clearance_m back up the approach axis from @p grasp.

@@ -473,6 +473,16 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
         }
     }
     publishSupport(arm, *object_pose, detection->bbox.size.z, pick_support_margin_m_);
+    // pinch_ready, not open: an open thumb hangs low enough to ground on the table first. Opened
+    // before the grasps are chosen, whose pregrasps are checked with the hand as it will be.
+    if (!moveHandTo(*hand_group, "pinch_ready"))
+    {
+        fail(Pick::Feedback::PHASE_LOCATING, "the hand would not open to pinch_ready");
+        return;
+    }
+    // The walk leaves voxels where the arm's own links were, and a state inside them fails every
+    // check and plan before it is searched: the map is rebuilt from where the arm is now.
+    clearOctomap();
 
     std::string                  why;
     std::vector<ConsideredGrasp> verdicts;
@@ -496,15 +506,6 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     }
     feedback->phase = Pick::Feedback::PHASE_PREGRASP;
     goal_handle->publish_feedback(feedback);
-    // pinch_ready, not open: an open thumb hangs low enough to ground on the table first.
-    if (!moveHandTo(*hand_group, "pinch_ready"))
-    {
-        fail(Pick::Feedback::PHASE_PREGRASP, "the hand would not open to pinch_ready");
-        return;
-    }
-    // The walk leaves voxels where the arm's own links were, and a start state inside them
-    // fails every plan before it is searched: the map is rebuilt from where the arm is now.
-    clearOctomap();
     // A pregrasp that solves can still have no collision-free way to it: the next one may.
     const auto first_reached = [&]() -> const GraspPlan* {
         for (const GraspPlan& plan : plans)
