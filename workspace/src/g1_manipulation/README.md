@@ -97,6 +97,23 @@ close, so pose goals are given for it directly.
 ros2 run tf2_ros tf2_echo right_hand_palm_link right_hand_grasp_frame
 ```
 
+## Measuring grasps in simulation
+
+`grasp_eval` picks each object in turn, sets it back where it stood, and scores every grasp from
+the simulator's contact monitor: the peak force on the table, on the robot and on the other objects,
+how far the grip's contact centroid sits from the object's centre, and whether the object came up.
+Under 2 N on the table passes as a touch, over 5 N (the Inspire finger is rated 4 N) fails. It saves
+the joints and objects when the hand has closed and after the lift; `g1_bringup`'s
+`tools/render_grasp.py` draws them.
+
+```bash
+ros2 launch g1_bringup bringup.launch.py world:=grasp_eval moveit:=true manipulation:=true \
+  pin_pelvis:=true odometry:=ground_truth activate_arm:=true activate_arm_delay_s:=40.0 \
+  contact_log:=/root/data/grasp-eval/contacts.jsonl
+ros2 run g1_manipulation grasp_eval --contact-log /root/data/grasp-eval/contacts.jsonl \
+  --out /root/data/grasp-eval/run1
+```
+
 ## Grip check
 
 The hand controller has no goal tolerances, so a blocked finger reports success. `grip_check.hpp`

@@ -57,7 +57,8 @@ flowchart LR
 | `cameras` | empty | Which cameras render: `head` (manipulation's), `chest` (mapping's) or `head,chest`. Empty keeps the world's sensor config: the head camera alone. Mounts are in `g1_description`'s `config/cameras.yaml`. |
 | `odometry` | `fast_lio` | What publishes `odom` to `base_footprint`: `fast_lio`, the LiDAR-inertial pipeline the robot runs, or `ground_truth`, the simulator's exact pose, for ruling the odometry out. |
 | `world` | `navigation` | The scene, staged only with sensors on (otherwise a bare floor). Values are in the next table. |
-| `hand_model` | `dex3` | The hands: `dex3`, Unitree's Dex3-1, or `inspire`, Inspire's RH56DFQ. Picks the description, the simulator's robot model and the hand controllers' joints. With `inspire` the scenes are staged with the Inspire model, their grasp welds hang from its palm, and the simulator answers each hand's RS485 line on the pseudo-terminal `g1_description`'s `inspire_params.yaml` names. |
+| `contact_log` | empty | A file the simulator appends each hand contact (what it met, peak force) and each grasp (how centred) to, as JSON lines, for `g1_manipulation`'s `grasp_eval`. Contacts over 5 N with the table or the robot are printed either way. |
+| `hand_model` | `G1_HAND_MODEL`, else `inspire` | The hands: `inspire`, Inspire's RH56DFQ, which the robot wears, or `dex3`, Unitree's Dex3-1. The simulator suites run with `dex3`, which they were tuned on. Picks the description, the simulator's robot model and the hand controllers' joints. With `inspire` the scenes are staged with the Inspire model, their grasp welds hang from its palm, and the simulator answers each hand's RS485 line on the pseudo-terminal `g1_description`'s `inspire_params.yaml` names. |
 | `headless` | `true` | `false` shows the MuJoCo viewer. See the viewer note under Operating notes. |
 | `pin_pelvis` | `false` | Weld the robot in place and freeze the legs instead of running the policy, to exercise the arms alone. `mode:=none` only. |
 | `sim_start_delay_s` | empty | Seconds to delay the simulator. Empty means 2.0, or 4.0 when navigation or MoveIt starts alongside it. |
@@ -70,6 +71,7 @@ Values of `world`:
 | `perception` | An 8 by 8 m room of known geometry. |
 | `manipulation` | One object on a pedestal at arm's length. |
 | `tabletop` | Several objects on a pedestal. |
+| `grasp_eval` | Eight shapes on a table, four in reach of each hand: a cube, a can, a ball, a turned tall box, a tuna can, a bottle, a small cube and an L-shaped block. For measuring grasps with `contact_log` and `g1_manipulation`'s `grasp_eval`. |
 | `lio` | A walled room for scoring odometry. |
 | `apartment` | Five furnished rooms off a hallway, see [worlds/README.md](worlds/README.md). |
 

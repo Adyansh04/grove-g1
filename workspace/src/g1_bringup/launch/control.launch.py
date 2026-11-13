@@ -262,11 +262,11 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "hand_model",
-                default_value=EnvironmentVariable("G1_HAND_MODEL", default_value="dex3"),
+                default_value=EnvironmentVariable("G1_HAND_MODEL", default_value="inspire"),
                 choices=list(HAND_MODELS),
                 description="The hands the robot wears: 'dex3', Unitree's Dex3-1 on its DDS "
                 "channels, or 'inspire', Inspire's RH56DFQ on an RS485 line per hand. Picks the "
-                "description and the hand controllers' joints. Defaults to G1_HAND_MODEL, else dex3.",
+                "description and the hand controllers' joints. Defaults to G1_HAND_MODEL, else inspire.",
             ),
             OpaqueFunction(function=_launch_setup),
         ]

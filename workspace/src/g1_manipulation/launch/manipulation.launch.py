@@ -124,12 +124,12 @@ def generate_launch_description():
         [
             DeclareLaunchArgument(
                 "hand_model",
-                default_value=EnvironmentVariable("G1_HAND_MODEL", default_value="dex3"),
+                default_value=EnvironmentVariable("G1_HAND_MODEL", default_value="inspire"),
                 choices=["dex3", "inspire"],
                 description="The hands the robot wears: 'dex3' or 'inspire'. Picks the model the "
                 "skills plan against and lays config/g1_manipulation_server_<hand>.yaml, the "
                 "hand's own closing and grip parameters, over the Dex3's. Defaults to "
-                "G1_HAND_MODEL, else dex3.",
+                "G1_HAND_MODEL, else inspire.",
             ),
             DeclareLaunchArgument(
                 "object_source",

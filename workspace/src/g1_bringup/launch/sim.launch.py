@@ -435,11 +435,11 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "hand_model",
-                default_value=EnvironmentVariable("G1_HAND_MODEL", default_value="dex3"),
+                default_value=EnvironmentVariable("G1_HAND_MODEL", default_value="inspire"),
                 choices=list(HAND_MODELS),
                 description="The hands on the simulated G1: 'dex3', Unitree's Dex3-1, or "
                 "'inspire', Inspire's RH56DFQ, which the simulator serves on the serial ports "
-                "g1_description's inspire_params.yaml names. Passed on to control.launch.py. Defaults to G1_HAND_MODEL, else dex3.",
+                "g1_description's inspire_params.yaml names. Passed on to control.launch.py. Defaults to G1_HAND_MODEL, else inspire.",
             ),
             DeclareLaunchArgument(
                 "contact_log",

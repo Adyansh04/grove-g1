@@ -509,11 +509,11 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "hand_model",
-                default_value=EnvironmentVariable("G1_HAND_MODEL", default_value="dex3"),
+                default_value=EnvironmentVariable("G1_HAND_MODEL", default_value="inspire"),
                 choices=["dex3", "inspire"],
                 description="The hands the G1 wears: 'dex3', Unitree's Dex3-1, or 'inspire', "
                 "Inspire's RH56DFQ. Picks the description, the simulator's model and the hand "
-                "controllers. Defaults to G1_HAND_MODEL, else dex3.",
+                "controllers. Defaults to G1_HAND_MODEL, else inspire.",
             ),
             DeclareLaunchArgument(
                 "world",

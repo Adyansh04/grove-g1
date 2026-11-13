@@ -135,7 +135,9 @@ if(BUILD_TESTING)
   add_launch_test(test/test_perception_objects.launch.py TARGET test_perception_objects
     TIMEOUT 500)
   set_tests_properties(test_perception_objects PROPERTIES
-    LABELS simulator RESOURCE_LOCK mujoco_sim COST 85)
+    LABELS simulator
+    # Tuned on the Dex3; the Inspire hands have their own grasp evaluation.
+    ENVIRONMENT "G1_HAND_MODEL=dex3" RESOURCE_LOCK mujoco_sim COST 85)
 
   g1_add_lint_tests()
 endif()

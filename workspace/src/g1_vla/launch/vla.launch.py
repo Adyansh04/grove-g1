@@ -99,10 +99,10 @@ def generate_launch_description():
         [
             DeclareLaunchArgument(
                 "hand_model",
-                default_value=EnvironmentVariable("G1_HAND_MODEL", default_value="dex3"),
+                default_value=EnvironmentVariable("G1_HAND_MODEL", default_value="inspire"),
                 choices=["dex3", "inspire"],
                 description="The hands the robot wears. Only 'dex3' has a policy; any other is "
-                "refused. Defaults to G1_HAND_MODEL, else dex3.",
+                "refused. Defaults to G1_HAND_MODEL, else inspire.",
             ),
             OpaqueFunction(function=_refuse_other_hands),
             DeclareLaunchArgument(

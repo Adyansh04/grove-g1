@@ -142,13 +142,17 @@ if(BUILD_TESTING)
   add_launch_test(test/test_generated_grasp_pick.launch.py TARGET test_generated_grasp_pick
     TIMEOUT 600)
   set_tests_properties(test_generated_grasp_pick PROPERTIES
-    LABELS simulator RESOURCE_LOCK mujoco_sim COST 95)
+    LABELS simulator
+    # Tuned on the Dex3; the Inspire hands have their own grasp evaluation.
+    ENVIRONMENT "G1_HAND_MODEL=dex3" RESOURCE_LOCK mujoco_sim COST 95)
 
   # Longer than the generated-grasp suite: it adds a place, and a deliberate miss that runs a
   # whole pick before the grip check turns it down.
   add_launch_test(test/test_pick_place.launch.py TARGET test_pick_place TIMEOUT 900)
   set_tests_properties(test_pick_place PROPERTIES
-    LABELS simulator RESOURCE_LOCK mujoco_sim COST 99)
+    LABELS simulator
+    # Tuned on the Dex3; the Inspire hands have their own grasp evaluation.
+    ENVIRONMENT "G1_HAND_MODEL=dex3" RESOURCE_LOCK mujoco_sim COST 99)
 
   g1_add_lint_tests()
 endif()

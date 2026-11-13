@@ -11,7 +11,7 @@
        `pelvis`. Scene objects fixed in `odom`, or reaching while walking, need a floating
        virtual joint to `odom`. -->
 
-  <xacro:arg name="hand_model" default="dex3"/>
+  <xacro:arg name="hand_model" default="inspire"/>
   <xacro:property name="inspire" value="${'$(arg hand_model)' == 'inspire'}"/>
 
   <!-- Rooted at torso_link: the waist joints belong to waist_freeze_controller and the balance

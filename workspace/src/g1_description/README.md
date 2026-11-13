@@ -73,7 +73,7 @@ Three xacro arguments pick the target. `g1_bringup`'s `control.launch.py` passes
 |---|---|---|
 | `hardware` | `false` | `true` takes the `hardware:` sections of the YAML files: the robot's own DDS domain, the onboard controller released, and the Inspire hands' serial ports on the robot. It also turns on the real Mid360 mount (`mid360_lidar`). `false` is the simulator. |
 | `hands` | `true` | `false` leaves out both hand components, for a robot without hands. |
-| `hand_model` | `dex3` | `dex3` is Unitree's three-finger Dex3-1; `inspire` is Inspire Robots' five-finger RH56DFQ, with Unitree's model of it. Either way the stack sees the same palm and grasp frame names. |
+| `hand_model` | `inspire` | `inspire` is Inspire Robots' five-finger RH56DFQ, with Unitree's model of it, which the robot wears; `dex3` is Unitree's three-finger Dex3-1. Either way the stack sees the same palm and grasp frame names. |
 
 ## Inspecting the model
 

@@ -216,10 +216,10 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "hand_model",
-                default_value=EnvironmentVariable("G1_HAND_MODEL", default_value="dex3"),
+                default_value=EnvironmentVariable("G1_HAND_MODEL", default_value="inspire"),
                 choices=["dex3", "inspire"],
                 description="The hands, 'dex3' or 'inspire': which gripper description the grasp "
-                "generator is asked for. Defaults to G1_HAND_MODEL, else dex3.",
+                "generator is asked for. Defaults to G1_HAND_MODEL, else inspire.",
             ),
             OpaqueFunction(function=_nodes),
         ]

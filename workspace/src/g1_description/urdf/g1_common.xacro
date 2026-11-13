@@ -10,7 +10,7 @@
        dex3, Unitree's three-finger hand, or inspire, Inspire Robots' RH56DFQ five-finger hand. -->
   <xacro:arg name="hardware" default="false"/>
   <xacro:arg name="hands" default="true"/>
-  <xacro:arg name="hand_model" default="dex3"/>
+  <xacro:arg name="hand_model" default="inspire"/>
   <xacro:property name="on_hardware" value="${'$(arg hardware)' == 'true'}"/>
   <xacro:property name="inspire" value="${'$(arg hand_model)' == 'inspire'}"/>
 

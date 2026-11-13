@@ -135,11 +135,11 @@ def _hand_model_argument():
     """The hands the robot wears, by default from G1_HAND_MODEL, which robot.sh sets on the robot."""
     return DeclareLaunchArgument(
         "hand_model",
-        default_value=EnvironmentVariable("G1_HAND_MODEL", default_value="dex3"),
+        default_value=EnvironmentVariable("G1_HAND_MODEL", default_value="inspire"),
         choices=["dex3", "inspire"],
         description="The hands the robot wears: 'dex3', Unitree's Dex3-1, or 'inspire', "
         "Inspire's RH56DFQ. Picks the description, the SRDF's hand groups and the hand "
-        "controllers. Defaults to G1_HAND_MODEL, else dex3.",
+        "controllers. Defaults to G1_HAND_MODEL, else inspire.",
     )
 
 

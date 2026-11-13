@@ -55,10 +55,10 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "hand_model",
-                default_value=EnvironmentVariable("G1_HAND_MODEL", default_value="dex3"),
+                default_value=EnvironmentVariable("G1_HAND_MODEL", default_value="inspire"),
                 choices=["dex3", "inspire"],
                 description="The hands, 'dex3' or 'inspire', for the simulator and move_group "
-                "alike. Defaults to G1_HAND_MODEL, else dex3.",
+                "alike. Defaults to G1_HAND_MODEL, else inspire.",
             ),
             DeclareLaunchArgument(
                 "sensors",

@@ -45,16 +45,22 @@ if(BUILD_TESTING)
   # simulator flake. Higher COST runs first.
   add_launch_test(test/test_scan_pipeline.launch.py TARGET test_scan_pipeline TIMEOUT 200)
   set_tests_properties(test_scan_pipeline PROPERTIES
-    RESOURCE_LOCK mujoco_sim LABELS simulator COST 50)
+    RESOURCE_LOCK mujoco_sim LABELS simulator
+    # Tuned on the Dex3; the Inspire hands have their own grasp evaluation.
+    ENVIRONMENT "G1_HAND_MODEL=dex3" COST 50)
 
   add_launch_test(test/test_slam_map.launch.py TARGET test_slam_map TIMEOUT 240)
   set_tests_properties(test_slam_map PROPERTIES
-    RESOURCE_LOCK mujoco_sim LABELS simulator COST 60)
+    RESOURCE_LOCK mujoco_sim LABELS simulator
+    # Tuned on the Dex3; the Inspire hands have their own grasp evaluation.
+    ENVIRONMENT "G1_HAND_MODEL=dex3" COST 60)
 
   # The acceptance gate and the only suite that drives the robot; first, on the quietest machine.
   add_launch_test(test/test_navigate_to_pose.launch.py TARGET test_navigate_to_pose TIMEOUT 500)
   set_tests_properties(test_navigate_to_pose PROPERTIES
-    RESOURCE_LOCK mujoco_sim LABELS simulator COST 100)
+    RESOURCE_LOCK mujoco_sim LABELS simulator
+    # Tuned on the Dex3; the Inspire hands have their own grasp evaluation.
+    ENVIRONMENT "G1_HAND_MODEL=dex3" COST 100)
 
   g1_add_lint_tests()
 endif()

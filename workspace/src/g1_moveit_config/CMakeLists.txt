@@ -92,14 +92,18 @@ if(BUILD_TESTING)
   # The balance policy holds the robot up, not a pinned pelvis, and has to settle first.
   add_launch_test(test/test_moveit_lowcmd.launch.py TARGET test_moveit_lowcmd TIMEOUT 500)
   set_tests_properties(test_moveit_lowcmd PROPERTIES
-    RESOURCE_LOCK mujoco_sim LABELS simulator COST 95)
+    RESOURCE_LOCK mujoco_sim LABELS simulator
+    # Tuned on the Dex3; the Inspire hands have their own grasp evaluation.
+    ENVIRONMENT "G1_HAND_MODEL=dex3" COST 95)
 
   # The octomap has to fill from the LiDAR before anything is asserted, and the tests wait for
   # it themselves: launch_testing's startup timeout caps SIM_SETTLE_S.
   add_launch_test(test/test_octomap_blocks_a_plan.launch.py
     TARGET test_octomap_blocks_a_plan TIMEOUT 500)
   set_tests_properties(test_octomap_blocks_a_plan PROPERTIES
-    RESOURCE_LOCK mujoco_sim LABELS simulator COST 95)
+    RESOURCE_LOCK mujoco_sim LABELS simulator
+    # Tuned on the Dex3; the Inspire hands have their own grasp evaluation.
+    ENVIRONMENT "G1_HAND_MODEL=dex3" COST 95)
 
   g1_add_lint_tests()
 endif()

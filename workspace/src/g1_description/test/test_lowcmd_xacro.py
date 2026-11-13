@@ -62,7 +62,8 @@ def _components(*args):
 
 @pytest.fixture(scope="module")
 def expanded_urdf_path():
-    path = _expand(os.environ["G1_LOWCMD_XACRO"])
+    # The Dex3 description, which the wire-order tests below are about.
+    path = _expand(os.environ["G1_LOWCMD_XACRO"], "hand_model:=dex3")
     yield path
     os.remove(path)
 
@@ -131,13 +132,13 @@ def test_each_hand_is_its_own_component_in_wire_order(expanded_urdf_path, side):
 
 
 def test_sim_never_releases_an_onboard_controller():
-    body = _components()["G1LowCmdSystem"]
+    body = _components("hand_model:=dex3")["G1LowCmdSystem"]
     assert body["release_motion_mode"] == "False"
     assert body["domain_id"] == "1"
 
 
 def test_hardware_points_the_body_and_both_hands_at_the_robots_domain():
-    components = _components("hardware:=true")
+    components = _components("hardware:=true", "hand_model:=dex3")
     assert set(components) == {"G1LowCmdSystem", "G1Dex3SystemLeft", "G1Dex3SystemRight"}
     assert components["G1LowCmdSystem"]["release_motion_mode"] == "True"
     for name, params in components.items():
@@ -173,6 +174,8 @@ def test_inspire_hands_replace_the_dex3_components():
         "G1InspireSystemRight",
     }
     assert set(_components("hand_model:=inspire", "hands:=false")) == {"G1LowCmdSystem"}
+    # Unless told otherwise, the robot wears the Inspire hands.
+    assert "G1InspireSystemLeft" in _components()
 
 
 @pytest.mark.parametrize("side,prefix", [("left", "L"), ("right", "R")])
@@ -231,7 +234,7 @@ def test_both_hand_models_name_the_palm_and_grasp_frames_alike(hand_model):
 
 
 def test_the_hand_models_share_no_hand_links():
-    dex3 = {link.get("name") for link in _robot().findall("link")}
+    dex3 = {link.get("name") for link in _robot("hand_model:=dex3").findall("link")}
     inspire = {link.get("name") for link in _robot("hand_model:=inspire").findall("link")}
     assert not any(name.startswith(("L_", "R_")) for name in dex3)
     assert not any("_hand_thumb_" in name or "_hand_index_" in name for name in inspire)
