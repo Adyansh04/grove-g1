@@ -31,14 +31,18 @@ In `config/sam3_segmentation.yaml`. The ones worth knowing:
 
 ## Models
 
-The graphs are exported once from Meta's SAM 3.1 checkpoint (gated on Hugging Face: request
-access at https://huggingface.co/facebook/sam3.1). The export needs torch and Meta's `sam3`
-package, which canopy's model server environment has (`workspace/src/canopy/servers/setup.sh`):
+The graphs are exported once, on the host, from Meta's SAM 3.1 checkpoint (gated on Hugging Face:
+request access at https://huggingface.co/facebook/sam3.1 and sign in with `hf auth login`). The
+export needs torch and Meta's `sam3` package in a virtualenv of its own:
 
 ```bash
-~/.local/share/canopy/.venv/bin/python workspace/src/sam3_inference/sam3_inference/scripts/export_sam3.py \
-    --checkpoint ~/.local/share/canopy/weights/sam3.1_multiplex.pt --out data/models/sam3 \
-    --bf16 --suffix .bf16
+uv venv --python 3.12 ~/.local/share/sam3-export
+VIRTUAL_ENV=~/.local/share/sam3-export uv pip install torch==2.9.0 onnx onnxruntime \
+    huggingface_hub timm iopath einops pycocotools "setuptools<81" \
+    "sam3 @ git+https://github.com/facebookresearch/sam3.git@2345a4ad109ac29c569da749c91d84f10dc08c40"
+~/.local/share/sam3-export/bin/hf download facebook/sam3.1 sam3.1_multiplex.pt --local-dir data/models
+~/.local/share/sam3-export/bin/python workspace/src/sam3_inference/sam3_inference/scripts/export_sam3.py \
+    --checkpoint data/models/sam3.1_multiplex.pt --out data/models/sam3 --bf16 --suffix .bf16
 ```
 
 The tokenizer reads CLIP's BPE vocabulary, which ships in `resources/`.

@@ -122,30 +122,32 @@ A NervROS mission gets this sequence as one skill, `GoToTarget`: it takes an id 
 
 ## With real models
 
-The host semantic server serves detection (SAM 3.1), image embeddings (SigLIP 2) and object and
-room descriptions (Gemini on its free tier):
+Detection is SAM 3.1 in TensorRT, which the launch starts beside the world model; the host
+semantic server serves image embeddings (SigLIP 2) and object and room descriptions (Gemini on its
+free tier):
 
 ```bash
 ./workspace/src/canopy/servers/setup.sh   # once
 ./scripts/serve.sh canopy --describer gemini
 ```
 
-- SAM 3.1's weights are gated: request access at https://huggingface.co/facebook/sam3.1 and sign
-  in with `hf auth login` before the setup.
+- SAM 3.1 needs its ONNX graphs in `data/models/sam3`, exported once from its gated checkpoint
+  ([sam3_inference's README](../../workspace/src/sam3_inference/sam3_inference/README.md)).
 - Gemini needs a free API key in `~/.config/canopy/gemini.env`. The free tier limits each model
   separately, so the server spreads the calls over several, each under its own caps (canopy's
   `servers/README.md` lists them).
 
 Then launch the world model with `detector:=true describe:=true` in place of the mock. A detector
-per camera asks the server about the frames the robot took standing still, each object gets a name
-and a caption, and a room whose objects do not settle its type is typed from those frames.
+per camera asks SAM 3.1 about the frames the robot took standing still and the server for their
+embeddings, each object gets a name and a caption, and a room whose objects do not settle its type
+is typed from those frames.
 
-SAM 3.1 and SigLIP 2 use about 8.5 GB of VRAM while mapping. On a 12 GB GPU that leaves no room
-beside the simulator for the offline describer (Qwen3.5-4B in llama.cpp, about 4 GB), hence
+SAM 3.1's engines and SigLIP 2 take about 3.5 GB of VRAM. Beside the simulator on a 12 GB GPU that
+leaves no room for the offline describer (Qwen3.5-4B in llama.cpp, about 4 GB), hence
 `--describer gemini`; past Gemini's daily limits, an object keeps its detector's word. YOLOE-26
-needs about 1.7 GB and leaves room for the offline describer: serve with
+needs about 1.7 GB with SigLIP 2 and leaves room for the offline describer: serve with
 `./scripts/serve.sh canopy --detector yoloe`, which starts the offline VLM first, and launch with
-`detector_params:=/root/workspace/src/canopy/canopy_perception/config/detector_yoloe.yaml`.
+`detector_params:=/root/workspace/src/canopy/canopy_perception/config/detector_yoloe.yaml sam3:=false`.
 
 The acceptance test (`g1_bringup`'s `test_explore_apartment`) runs this way with
 `G1_EXPLORE_TEST_DETECTOR=semantic`, and `G1_EXPLORE_TEST_DETECTOR_PARAMS` for YOLOE's list. These

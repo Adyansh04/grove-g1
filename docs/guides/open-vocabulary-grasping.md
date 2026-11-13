@@ -3,7 +3,8 @@
 Name an object in plain text and get its 3D pose, with no dataset and no training. It works in two
 halves:
 
-1. SAM 3.1, on the host, turns an RGB frame plus a list of noun phrases into one mask per object.
+1. SAM 3.1, in TensorRT beside the stack, turns an RGB frame plus a list of noun phrases into one
+   mask per object.
 2. `g1_perception`, in the container, lifts those masks into the object poses the manipulation
    skills consume.
 
@@ -64,29 +65,21 @@ phrase is in view, so it never jumps between objects.
 The switch behind all four is `visualization`, which follows `rviz`. `visualization:=false` keeps
 them off with RViz open, and then none of their nodes or publishers exist.
 
-## The detector server
+## The detector
 
-SAM 3.1 runs in canopy's semantic server, which also serves the world model's detector. On the
-host, with `uv`; its checkpoint is gated, so first request access at
-https://huggingface.co/facebook/sam3.1 and sign in with `hf auth login`:
+SAM 3.1 runs in C++ with TensorRT in the stack: `detector:=vision` starts sam3_inference's node
+beside canopy's detector, which asks it through its `segment_objects` service. It needs SAM 3.1's
+image detector exported once as ONNX graphs into `data/models/sam3`
+([sam3_inference's README](../../workspace/src/sam3_inference/sam3_inference/README.md); the
+checkpoint is gated, so first request access at https://huggingface.co/facebook/sam3.1). On its
+first start on a GPU it builds TensorRT engines from them, in about two minutes, and loads them in
+about a second after that.
 
-```bash
-workspace/src/canopy/servers/setup.sh
-./scripts/serve.sh canopy --detector sam3.1 --embedder none --describer none
-```
-
-Compose is host-networked, so the container reaches it at `tcp://127.0.0.1:5561`. Without the
-embedder and describers it needs about 5.6 GB of VRAM on top of the simulator's. On a laptop RTX
-4080 it answers in about 0.45 s for the frame plus 0.04 s for each phrase, so ask only for what the
-task needs. To check it against saved frames without binding a socket:
-
-```bash
-~/.local/share/canopy/.venv/bin/python workspace/src/canopy/servers/semantic_server.py \
-  --detector sam3.1 --embedder none --describer none \
-  --self-test frame.png --phrases "red block,green cylinder"
-```
-
-Run it on frames from a new scene before trusting the detector there.
+The engines take about 2.6 GB of VRAM on top of the simulator's. On an RTX 5090 a request takes
+about 36 ms for the frame plus 4.5 ms for each phrase. Checked against Meta's PyTorch SAM 3.1 on
+the same frames of the grasping table, every instance matched at a mean mask IoU of 0.999 and
+scores within 0.015 of each other. Run it on frames from a new scene before trusting the detector
+there.
 
 ## The protocol
 
@@ -109,11 +102,11 @@ socket, so the server answers even when it cannot do the work.
 
 ## Swapping the model
 
-Every server answers `segment` with the same instance masks, so nothing in the ROS workspace
-changes with the model. Grounding DINO with SAM 2.1 runs in grove-g1's vision server
-(`./scripts/setup-vision.sh`, then `./scripts/serve.sh vision`, on 5560); the `gsam2` variant runs
-it on 5561, where the detector already looks. `./scripts/serve.sh canopy --detector yoloe` serves
-YOLOE-26 there instead.
+Every host server answers `segment` with the same instance masks, and `detector:=server` asks the
+one on 5561 instead of SAM 3.1's service, so nothing else in the ROS workspace changes with the
+model. Grounding DINO with SAM 2.1 runs in grove-g1's vision server (`./scripts/setup-vision.sh`,
+then `./scripts/serve.sh vision`, on 5560); the `gsam2` variant runs it on 5561.
+`./scripts/serve.sh canopy --detector yoloe` serves YOLOE-26 there instead.
 
 How they compare on 88 close-ups of the apartment's small objects, rendered from the G1's cameras,
 and live in the tabletop world:
@@ -199,7 +192,7 @@ gripper.
 A detector takes a noun phrase. Turning "pick up the mug to the left of the bowl" into one is a
 different job, and a vision-language model does it, in the vision server. Beside SAM 3.1 it needs
 no segmentation model of its own, and in bfloat16 it takes about 4.5 GB, where float32's 8.5 GB
-and SAM 3.1's 5.6 GB do not fit on a 12 GB GPU:
+and SAM 3.1's 2.6 GB do not fit on a 12 GB GPU:
 
 ```bash
 ./scripts/serve.sh vision --backend none --vlm Qwen/Qwen3-VL-2B-Instruct --dtype bfloat16
