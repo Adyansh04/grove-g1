@@ -478,6 +478,8 @@ private:
      *
      * Every attempt starts from the staging point on the @p pregrasp axis and walks the last
      * stretch as a straight line: a sideways correction at object height pushes the object away.
+     * A re-aim makes up for the arm's sag and never aims below @p grasp; a hand that ends its line
+     * well above @p grasp rests on something, and the descent is refused there.
      *
      * @param max_offset_m Still this far off after the last attempt, the descent is refused.
      */

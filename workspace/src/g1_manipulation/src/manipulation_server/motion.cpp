@@ -3,6 +3,7 @@
  * @brief Moving the arm: planning, straight lines, settling above a target and descending.
  */
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <future>
@@ -25,6 +26,9 @@ namespace
 
 // move_group answers a state check within milliseconds; this only guards a stalled server.
 constexpr auto kStateCheckTimeout = std::chrono::seconds(2);
+// m. A hand left this far above its goal by a line walked to its end is resting on something: an
+// arm only sags below a goal, never above it.
+constexpr double kBlockedRiseM = 0.010;
 
 }  // namespace
 
@@ -258,6 +262,16 @@ bool G1ManipulationServer::descendOnto(
         // rest in the residual, and adding that aims the hand into the surface.
         if (walked >= 1.0)
         {
+            // Pushing on would press the fingers into the object or the table below them.
+            if (residual->z < -kBlockedRiseM)
+            {
+                RCLCPP_ERROR(
+                    get_logger(),
+                    "approach: the hand stopped %.0f mm above the grasp at the end of its line; "
+                    "something is under it, so it goes no lower",
+                    -residual->z * 1000.0);
+                return false;
+            }
             RCLCPP_INFO(
                 get_logger(),
                 "approach: %.0f mm off, re-aiming by (%+.0f %+.0f %+.0f) mm",
@@ -267,7 +281,8 @@ bool G1ManipulationServer::descendOnto(
                 residual->z * 1000.0);
             commanded.position.x += residual->x;
             commanded.position.y += residual->y;
-            commanded.position.z += residual->z;
+            // Up for sag only: never aimed below the grasp the clearance check passed.
+            commanded.position.z = std::max(grasp.position.z, commanded.position.z + residual->z);
         }
         else
         {
