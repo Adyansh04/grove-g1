@@ -4,11 +4,11 @@
 The models need torch and CUDA, which the ROS image does not carry, so g1_detector talks to this
 server over ZMQ, as servers/groot_server.py does for the policy.
 
-SAM 3.1, g1_detector's default, runs in canopy's semantic server (./scripts/serve.sh canopy
---detector sam3.1, port 5561), which speaks this protocol too. This server keeps the alternatives, chosen with --backend:
+SAM 3.1, g1_detector's default, runs in TensorRT in the stack (sam3_inference). This server keeps
+the alternatives, which g1_detector asks with detector:=server, chosen with --backend:
 
   grounded-sam2  Grounding DINO boxes refined into masks by SAM 2.1. Ungated; the default here.
-  none           No segmentation: only `ground`, beside canopy's SAM 3.1.
+  none           No segmentation: only `ground`, beside SAM 3.1.
 
     ./scripts/serve.sh vision                 # --port 5560
     ./scripts/serve.sh vision --backend none --vlm Qwen/Qwen3-VL-2B-Instruct --dtype bfloat16

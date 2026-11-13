@@ -4,9 +4,10 @@
 #   ./scripts/serve.sh groot [args]      the GR00T policy for learned grasping, on 5555
 #   ./scripts/serve.sh vision [args]     Grounded SAM 2 masks and instruction grounding, on 5560
 #   ./scripts/serve.sh graspgen [args]   GraspGenX grasps for the Dex3-1, on 5556
-#   ./scripts/serve.sh canopy [args]     canopy's semantic server on 5561 (SAM 3.1, or YOLOE-26 with
-#                                        --detector yoloe), and the offline VLM with YOLOE or when
-#                                        a --describer list names openai
+#   ./scripts/serve.sh canopy [args]     canopy's semantic server on 5561: embeddings and
+#                                        describers (SAM 3.1 runs in TensorRT in the stack), YOLOE-26
+#                                        masks with --detector yoloe, and the offline VLM with YOLOE
+#                                        or when a --describer list names openai
 #
 # The arguments go to the server after the defaults here, so they override them:
 #   ./scripts/serve.sh vision --vlm Qwen/Qwen3-VL-2B-Instruct
@@ -53,9 +54,9 @@ case "$server" in
     canopy)
         require "$CANOPY_HOME/.venv/bin/python" workspace/src/canopy/servers/setup.sh
         # The offline describer's 4 GB fit beside YOLOE but not beside SAM 3.1 and the simulator: it
-        # starts with YOLOE or a --describer list naming openai; beside SAM 3.1 one left up stops.
+        # starts with YOLOE or a --describer list naming openai; otherwise one left up stops.
         describers=""
-        detector="sam3.1"
+        detector=""
         previous=""
         for arg in "$@"; do
             [[ "$previous" == --describer ]] && describers="$arg"
@@ -66,9 +67,11 @@ case "$server" in
         done
         if [[ "$describers" == *openai* || ( -z "$describers" && "$detector" == yoloe* ) ]]; then
             "$CANOPY/servers/start-vlm.sh" start
-        elif [[ "$detector" == sam3.1 ]]; then
+        else
             "$CANOPY/servers/start-vlm.sh" stop >/dev/null
         fi
+        # SAM 3.1 segments in the stack, so the server only embeds and describes unless asked.
+        [[ -n "$detector" ]] || set -- --detector none "$@"
         # Keys kept in ~/api_keys win over canopy's default; a later --set still overrides them.
         keys=()
         [[ -f "$HOME/api_keys/gemini.env" ]] && keys=(--set "gemini.key_file=$HOME/api_keys/gemini.env")
