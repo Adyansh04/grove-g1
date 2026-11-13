@@ -129,6 +129,8 @@ void G1ManipulationServer::publishSupport(
             group != nullptr ? group->getCurrentState(1.0) : nullptr;
         now != nullptr)
     {
+        // The links' poses, which a state straight from the monitor has not computed yet.
+        now->update();
         planning_scene::PlanningScene               scratch(now->getRobotModel());
         collision_detection::AllowedCollisionMatrix acm = scratch.getAllowedCollisionMatrix();
         acm.setDefaultEntry(kPickSupportId, true);
