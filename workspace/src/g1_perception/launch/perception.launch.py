@@ -1,8 +1,8 @@
 """Runs a detector and the node that turns its masks into object poses.
 
 `mock` cuts masks from simulator ground truth and needs no GPU; `vision` segments with SAM 3.1 in
-TensorRT, sam3_inference's node, which it starts. Both publish the same mask topic, so the
-geometry node cannot tell them apart.
+TensorRT, sam3_inference's node, which it starts; `server` asks a host model server instead, such
+as Grounded SAM 2. All publish the same mask topic, so the geometry node cannot tell them apart.
 """
 
 import os
@@ -40,6 +40,7 @@ def _nodes(context, *args, **kwargs):
         if phrase.strip()
     ]
     detector = LaunchConfiguration("detector")
+    asks = detector.perform(context)
     hand_model = LaunchConfiguration("hand_model").perform(context)
 
     mock = Node(
@@ -80,8 +81,12 @@ def _nodes(context, *args, **kwargs):
         executable="detector",
         name="g1_detector",
         output="screen",
-        condition=IfCondition(EqualsSubstitution(detector, "vision")),
-        parameters=[_config("g1_detector.yaml"), {"phrases": phrases}],
+        condition=IfCondition("true" if asks in ("vision", "server") else "false"),
+        parameters=[
+            _config("g1_detector.yaml"),
+            # A host server segments in place of sam3_inference's service.
+            {"phrases": phrases, **({"segment_service": ""} if asks == "server" else {})},
+        ],
         remappings=[("color/image_raw", COLOR_IMAGE), ("~/instance_masks", MASK_TOPIC)],
     )
 
@@ -168,10 +173,11 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "detector",
                 default_value="mock",
-                choices=["mock", "vision"],
+                choices=["mock", "vision", "server"],
                 description="mock cuts masks from simulator ground truth and needs no GPU; "
                 "vision segments with SAM 3.1 in TensorRT (sam3_inference), which needs the "
-                "ONNX graphs in data/models/sam3.",
+                "ONNX graphs in data/models/sam3; server asks a host model server on port "
+                "5561, such as Grounded SAM 2.",
             ),
             DeclareLaunchArgument(
                 "phrases",

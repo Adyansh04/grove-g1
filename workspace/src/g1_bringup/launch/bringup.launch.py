@@ -408,10 +408,11 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "detector",
                 default_value="mock",
-                choices=["mock", "vision"],
+                choices=["mock", "vision", "server"],
                 description="Which detector perception runs: 'mock' cuts masks from simulator "
-                "ground truth and needs no GPU, 'vision' asks canopy's semantic server on the "
-                "host, run with SAM 3.1.",
+                "ground truth and needs no GPU, 'vision' segments with SAM 3.1 in TensorRT "
+                "(sam3_inference), 'server' asks a host model server on port 5561, such as "
+                "Grounded SAM 2 (./scripts/serve.sh vision --port 5561).",
             ),
             DeclareLaunchArgument(
                 "grasp_source",

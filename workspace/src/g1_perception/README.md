@@ -24,7 +24,7 @@ flowchart LR
 
 | Node | Does |
 |---|---|
-| `g1_detector` | canopy_perception's `detector`, configured by `config/g1_detector.yaml`. Sends camera frames and the phrase list to canopy's semantic server on the host, run with SAM 3.1 (Grounded SAM 2 from the vision server can stand in). Publishes the instance masks it answers with. |
+| `g1_detector` | canopy_perception's `detector`, configured by `config/g1_detector.yaml`. With `detector:=vision`, sends camera frames and the phrase list to SAM 3.1 in TensorRT, sam3_inference's `sam3_segmentation` node, which the launch starts beside it; with `detector:=server`, to a host model server on 5561 instead (Grounded SAM 2 from the vision server). Publishes the instance masks it answers with. |
 | `g1_detector` (mock) | canopy_perception's `mock_detector`: cuts the same masks out of simulator ground truth against the real rendered depth. No GPU, no server, no network. Simulation only. Launched as `g1_detector` too, so a tree writes the same `phrases` whichever detector runs. |
 | `g1_object_geometry` | Deprojects each mask, finds the surface the object stands on, fits a box, and tracks it across frames so an id keeps naming one object. |
 | `g1_graspgen_adapter` | Sends the depth frame, its intrinsics and one object's mask to [GraspGenX](https://github.com/NVlabs/GraspGenX) on the host and serves the grasps it answers with. The Dex3-1 goes as its sweep volume (`sweep_volume`, twelve numbers), not by name. Poses come back in the generator's own gripper frame, so the arm side applies one measured offset. Left-hand requests are refused, since mirroring a sweep volume describes a different gripper. A bare name such as `toy_robot` is the one track of it in view, as on `/objects`; masks more than `max_mask_age_s` behind the newest depth frame are refused. Python, see below. |
@@ -108,7 +108,8 @@ view (at most `max_surface_extent_m` across), for PlaceOn to set things down on.
 
 | Key | Default |
 |---|---|
-| `server_address` | `tcp://127.0.0.1:5561` (canopy's SAM 3.1 server) |
+| `segment_service` | `/segment_objects` (sam3_inference's SAM 3.1); `detector:=server` clears it |
+| `server_address` | `tcp://127.0.0.1:5561`, the host server `detector:=server` asks |
 | `zmq_timeout_ms` | 20000 |
 | `detect_rate_hz` | 1.0 |
 | `max_image_age_s` | 2.5 |
@@ -149,9 +150,7 @@ ros2 launch g1_bringup bringup.launch.py world:=tabletop pin_pelvis:=true \
   odometry:=ground_truth moveit:=true manipulation:=true perception:=true detector:=mock
 ```
 
-Against the real models, after starting canopy's semantic server with SAM 3.1
-(`workspace/src/canopy/servers/setup.sh` once, then
-`./scripts/serve.sh canopy --detector sam3.1 --embedder none --describer none`):
+Against SAM 3.1, once its ONNX graphs are in `data/models/sam3` (sam3_inference's README):
 
 ```bash
 ros2 launch g1_bringup bringup.launch.py world:=tabletop pin_pelvis:=true \
