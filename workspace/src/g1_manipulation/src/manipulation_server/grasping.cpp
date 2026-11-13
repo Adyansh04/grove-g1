@@ -423,8 +423,10 @@ std::vector<G1ManipulationServer::GraspPlan> G1ManipulationServer::chooseGrasps(
     int                    reachable  = 0;
     int                    clear      = 0;
     std::vector<GraspPlan> plans;
-    // Solvable at the grasp only: a 50 ms solve near the edge of reach misses pregrasps OMPL's
-    // own goal sampling finds, so these follow the ones that solve at both ends.
+    // Backed off: the pads meet short of the object's centre, so these follow the ones seated as
+    // generated. Solvable at the grasp only: a 50 ms solve near the edge of reach misses
+    // pregrasps OMPL's own goal sampling finds, so these come last.
+    std::vector<GraspPlan> backed;
     std::vector<GraspPlan> grasp_only;
     for (std::size_t i = 0; i < response->grasps.size() && considered < max_grasp_candidates_ &&
                             std::cmp_less(plans.size(), grasp_tries_);
@@ -522,22 +524,29 @@ std::vector<G1ManipulationServer::GraspPlan> G1ManipulationServer::chooseGrasps(
             i < response->scores.size() ? response->scores[i] : 0.0F,
             back_m > 0.0 ? std::format(", backed off {:.0f} mm", 1000.0 * back_m) : "");
         attempt = *state;
-        if (attempt.setFromIK(jmg, plan.pregrasp, arm.grasp_frame, ik_timeout_s_))
-        {
-            plans.push_back(std::move(plan));
-        }
-        else
+        if (!attempt.setFromIK(jmg, plan.pregrasp, arm.grasp_frame, ik_timeout_s_))
         {
             grasp_only.push_back(std::move(plan));
         }
-    }
-    for (GraspPlan& plan : grasp_only)
-    {
-        if (std::cmp_greater_equal(plans.size(), grasp_tries_))
+        else if (back_m > 0.0)
         {
-            break;
+            backed.push_back(std::move(plan));
         }
-        plans.push_back(std::move(plan));
+        else
+        {
+            plans.push_back(std::move(plan));
+        }
+    }
+    for (std::vector<GraspPlan>* fallback : { &backed, &grasp_only })
+    {
+        for (GraspPlan& plan : *fallback)
+        {
+            if (std::cmp_greater_equal(plans.size(), grasp_tries_))
+            {
+                break;
+            }
+            plans.push_back(std::move(plan));
+        }
     }
     // The first is the one drawn as chosen; the rest wait in case MoveIt finds no way to it.
     if (!plans.empty())
