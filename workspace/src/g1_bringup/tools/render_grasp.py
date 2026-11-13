@@ -32,6 +32,8 @@ from PIL import Image, ImageDraw, ImageFont  # noqa: E402
 BRINGUP = pathlib.Path(__file__).resolve().parents[1]
 MODEL_DIR = BRINGUP.parents[1] / "vendor" / "unitree_mujoco" / "unitree_robots" / "g1"
 STAGED = "g1_render.staged.xml"
+# The fetched world assets (scripts/setup-world-assets.sh), as sim.launch.py's GROVE_ASSETS_DIR.
+ASSETS_DIR = BRINGUP.parents[1] / "assets"
 WIDTH, HEIGHT = 960, 720
 # Views of the right hand, (azimuth, elevation) in degrees, mirrored for the left: MuJoCo's free
 # camera sits at azimuth 0 behind the target looking along +x, at 90 on its -y side.
@@ -63,6 +65,7 @@ def stage(world: str, inspire: bool) -> pathlib.Path:
     if inspire:
         for old, new in INSPIRE_SUBSTITUTIONS:
             scene = scene.replace(old, new)
+    scene = scene.replace("@GROVE_ASSETS@", os.environ.get("GROVE_ASSETS_DIR", str(ASSETS_DIR)))
     path = MODEL_DIR / STAGED
     path.write_text(scene)
     return path
