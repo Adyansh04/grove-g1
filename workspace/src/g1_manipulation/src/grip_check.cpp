@@ -39,7 +39,8 @@ bool isLoaded(const JointGrip& joint, double min_error_rad, double min_effort_nm
     {
         return false;
     }
-    return std::abs(joint.target - joint.position) >= min_error_rad &&
+    const double short_rad = joint.min_error_rad > 0.0 ? joint.min_error_rad : min_error_rad;
+    return std::abs(joint.target - joint.position) >= short_rad &&
            std::abs(joint.effort) >= min_effort_nm;
 }
 

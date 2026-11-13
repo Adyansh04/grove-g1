@@ -26,6 +26,9 @@ struct JointGrip
     /// False for a joint the close does not move, such as a thumb's rotation: it can stall on its
     /// travel in an empty hand and says nothing about a grip.
     bool closes{ true };
+    /// rad. How far short of its target this joint reads as blocked, for a joint whose close is
+    /// shorter than the hand's others; 0 takes verifyGrip()'s @p min_error_rad.
+    double min_error_rad{ 0.0 };
 };
 
 struct GripVerdict
@@ -42,8 +45,9 @@ struct GripVerdict
  * @brief Whether at least two of the hand's fingers, the thumb counting as one, are pressing on
  *        something.
  *
- * A joint is loaded when it is at least @p min_error_rad short of its target and pushing at least
- * @p min_effort_nm: short alone is a slack drive, pushing alone a finger holding at its target.
+ * A joint is loaded when it is at least @p min_error_rad (or its own JointGrip::min_error_rad)
+ * short of its target and pushing at least @p min_effort_nm: short alone is a slack drive, pushing
+ * alone a finger holding at its target.
  * Two distinct fingers, not two joints: one finger jammed against the table reads like a grip.
  *
  * @param joints Every joint of one hand, in any order. Those that do not close are ignored, and a

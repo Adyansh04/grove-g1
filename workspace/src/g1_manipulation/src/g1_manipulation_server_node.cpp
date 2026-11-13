@@ -139,6 +139,7 @@ void G1ManipulationServer::declareParameters()
         { "grip_hold_bias_rad", &grip_hold_bias_rad_ },
         { "grip_min_position_error_rad", &grip_min_position_error_rad_ },
         { "grip_min_effort_nm", &grip_min_effort_nm_ },
+        { "grip_min_error_share", &grip_min_error_share_ },
         { "place_tolerance_m", &place_tolerance_m_ },
         { "place_footprint_margin_m", &place_footprint_margin_m_ },
         { "place_confirm_timeout_s", &place_confirm_timeout_s_ },

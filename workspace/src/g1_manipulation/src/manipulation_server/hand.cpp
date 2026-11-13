@@ -122,12 +122,17 @@ bool G1ManipulationServer::isHolding(const ArmContext& arm, std::string& why, bo
     for (std::size_t i = 0; i < joints.size(); ++i)
     {
         // A joint the close does not move, such as a thumb's rotation, says nothing about a grip.
-        const bool closes = std::abs(closed.at(joints[i]) - open.at(joints[i])) > 1e-6;
-        fingers.push_back({ .name     = joints[i],
-                            .target   = targets.at(joints[i]),
-                            .position = measured->position[i],
-                            .effort   = measured->effort[i],
-                            .closes   = closes });
+        const double travel = std::abs(closed.at(joints[i]) - open.at(joints[i]));
+        // A short close, such as the Inspire thumb's 0.22 rad bend, stops on an object less far
+        // from its target than a finger does.
+        fingers.push_back(
+            { .name     = joints[i],
+              .target   = targets.at(joints[i]),
+              .position = measured->position[i],
+              .effort   = measured->effort[i],
+              .closes   = travel > 1e-6,
+              .min_error_rad =
+                  std::min(grip_min_position_error_rad_, grip_min_error_share_ * travel) });
     }
     const GripVerdict verdict =
         verifyGrip(fingers, grip_min_position_error_rad_, grip_min_effort_nm_);

@@ -761,6 +761,9 @@ private:
     /// m. A generated grasp whose grip point lies further than this from the object's centre is
     /// skipped.
     double max_grip_offset_m_{ 0.03 };
+    /// A grip joint reads as blocked this share of its own close short of its target, when that
+    /// is less than grip_min_position_error_rad.
+    double grip_min_error_share_{ 0.15 };
     /// m. The steps out to its own side a pointing hand tries; see pointingHands().
     std::vector<double> move_hand_point_side_steps_m_{ 0.06, 0.12, 0.18 };
     /// Generator gripper frame to `right_hand_grasp_frame`; see grasp_filter.hpp.
