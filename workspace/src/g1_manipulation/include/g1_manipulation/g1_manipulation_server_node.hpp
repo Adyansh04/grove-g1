@@ -710,7 +710,7 @@ private:
     /// straight up to this height.
     double arm_clear_height_m_{ 0.10 };
     /// m. How far above the surface every finger stays when a held object is set down.
-    double              place_finger_clearance_m_{ 0.010 };
+    double              place_finger_clearance_m_{ 0.020 };
     double              max_place_offset_m_{ 0.08 };
     double              grasp_refresh_max_shift_m_{ 0.050 };
     double              reaim_clearance_m_{ 0.08 };

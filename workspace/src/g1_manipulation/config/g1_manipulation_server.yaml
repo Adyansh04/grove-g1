@@ -49,8 +49,8 @@ g1_manipulation_server:
     max_place_offset_m: 0.08
     # m. Every finger stays this far above the surface a held object is set down on: fingers curled
     # round its foot would meet the surface first, so the release stops higher and the object
-    # drops the rest.
-    place_finger_clearance_m: 0.010
+    # drops the rest. At 10 mm a curled middle finger still met the table (8-12 N in simulation).
+    place_finger_clearance_m: 0.020
     # GraspGenX describes the right hand. The left takes generated grasps only where
     # g1_perception's adapter mirrors them (mirror_other_hand, held equal by test_config_drift);
     # otherwise it grasps from the object's box.
