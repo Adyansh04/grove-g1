@@ -111,6 +111,7 @@ void G1ManipulationServer::declareParameters()
         { "pick_support_half_width_m", &pick_support_half_width_m_ },
         { "pick_support_thickness_m", &pick_support_thickness_m_ },
         { "place_finger_clearance_m", &place_finger_clearance_m_ },
+        { "arm_clear_height_m", &arm_clear_height_m_ },
         { "min_grip_height_m", &min_grip_height_m_ },
         { "settle_tolerance_m", &settle_tolerance_m_ },
         { "max_grasp_offset_m", &max_grasp_offset_m_ },
@@ -189,8 +190,7 @@ void G1ManipulationServer::declareParameters()
         "move_hand_point_side_steps_m",
         move_hand_point_side_steps_m_,
         fixed);
-    failed_pick_rest_state_ =
-        declare_parameter<std::string>("failed_pick_rest_state", failed_pick_rest_state_, fixed);
+    arm_clear_state_ = declare_parameter<std::string>("arm_clear_state", arm_clear_state_, fixed);
     pick_support_reach_m_ =
         declare_parameter<std::vector<double>>("pick_support_reach_m", pick_support_reach_m_, fixed);
     if (pick_support_reach_m_.size() != 2 || pick_support_reach_m_[0] < 0.0 ||
@@ -391,13 +391,13 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
         removeFromScene(kPickSupportId);
         setHandContact(arm, { "<octomap>", goal->object_id }, false);
         // A failed reach can leave the hand low by the table, where no next plan starts clear.
-        arm_group->setNamedTarget(failed_pick_rest_state_);
+        arm_group->setNamedTarget(arm_clear_state_);
         if (arm_group->move() != moveit::core::MoveItErrorCode::SUCCESS)
         {
             RCLCPP_WARN(
                 get_logger(),
                 "could not take the arm to '%s' after the failed pick",
-                failed_pick_rest_state_.c_str());
+                arm_clear_state_.c_str());
         }
     };
     const auto fail = [&](const std::string& phase, const std::string& why) {
@@ -460,6 +460,18 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
         return;
     }
     moveit_msgs::msg::CollisionObject object = publishCollisionObject(*detection, *object_pose);
+    // A hand by or below the table top would sweep its edge on the way to the object: up to the
+    // clear pose first, from where the reach comes down from above.
+    if (const double base_z = object_pose->position.z - (0.5 * detection->bbox.size.z);
+        arm_group->getCurrentPose(arm.grasp_frame).pose.position.z < base_z + arm_clear_height_m_)
+    {
+        arm_group->setNamedTarget(arm_clear_state_);
+        if (arm_group->move() != moveit::core::MoveItErrorCode::SUCCESS)
+        {
+            fail(Pick::Feedback::PHASE_LOCATING, "could not raise the arm clear of the table first");
+            return;
+        }
+    }
     publishSupport(arm, *object_pose, detection->bbox.size.z);
 
     std::string                  why;

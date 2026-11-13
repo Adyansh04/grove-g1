@@ -672,8 +672,12 @@ private:
     /// m. The pick's support slab, to each side of the object's centre, and its thickness.
     double pick_support_half_width_m_{ 0.25 };
     double pick_support_thickness_m_{ 0.04 };
-    /// The arm group's named state a failed pick returns the arm to.
-    std::string failed_pick_rest_state_{ "ready" };
+    /// The arm group's named state, hand high in front, a pick starts from when its hand is low
+    /// by the table, and a failed pick ends in.
+    std::string arm_clear_state_{ "carry" };
+    /// m. A pick whose grasp frame stands lower than this above the object's base starts by going
+    /// to arm_clear_state.
+    double arm_clear_height_m_{ 0.10 };
     /// m. How far above the surface every finger stays when a held object is set down.
     double              place_finger_clearance_m_{ 0.010 };
     double              max_place_offset_m_{ 0.08 };
