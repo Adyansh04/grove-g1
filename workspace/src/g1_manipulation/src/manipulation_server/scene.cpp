@@ -109,7 +109,8 @@ moveit_msgs::msg::CollisionObject G1ManipulationServer::publishCollisionObject(
 }
 
 void G1ManipulationServer::publishSupport(
-    const ArmContext& arm, const geometry_msgs::msg::Pose& object_pose, double object_height_m)
+    const ArmContext& arm, const geometry_msgs::msg::Pose& object_pose, double object_height_m,
+    double margin_m)
 {
     const double ahead = pick_support_reach_m_[1];
     double       back  = pick_support_reach_m_[0];
@@ -117,8 +118,8 @@ void G1ManipulationServer::publishSupport(
         geometry_msgs::msg::Pose at;
         at.position.x = object_pose.position.x + (0.5 * (ahead - back));
         at.position.y = object_pose.position.y;
-        at.position.z =
-            object_pose.position.z - (0.5 * object_height_m) - (0.5 * pick_support_thickness_m_);
+        at.position.z = object_pose.position.z - (0.5 * object_height_m) + margin_m -
+                        (0.5 * pick_support_thickness_m_);
         at.orientation.w = 1.0;
         return at;
     };
@@ -171,11 +172,20 @@ void G1ManipulationServer::publishSupport(
         // Even at the object's edge the slab would take the hand in: no slab, the map only.
         if (back < 0.0)
         {
-            RCLCPP_INFO(
+            RCLCPP_WARN(
                 get_logger(),
                 "the %s hand stands where the table's slab would go; planning without it",
                 arm.is_left ? "left" : "right");
+            removeFromScene(kPickSupportId);
             return;
+        }
+        if (back < full)
+        {
+            RCLCPP_WARN(
+                get_logger(),
+                "the %s hand stands in the table's slab; shortened it by %.0f mm toward the robot",
+                arm.is_left ? "left" : "right",
+                1000.0 * (full - back));
         }
     }
     moveit_msgs::msg::CollisionObject support;

@@ -541,17 +541,20 @@ private:
     /**
      * @brief Puts a slab under the object into the planning scene, standing for what it rests on.
      *
-     * Its top is the object's base; it reaches pick_support_reach_m toward and away from the
-     * robot and pick_support_half_width_m to each side, so the arm's way to the object passes
-     * above the table rather than through its edge, which a depth map sees only from above. It
-     * is shortened toward the robot until the arm and hand, where they are now, clear it.
+     * Its top stands margin_m above the object's base; it reaches pick_support_reach_m toward
+     * and away from the robot and pick_support_half_width_m to each side, so the arm's way to the
+     * object passes above the table rather than through its edge, which a depth map sees only
+     * from above. It is shortened toward the robot until the arm and hand, where they are now,
+     * clear it. Publishing it again replaces it.
      *
      * @param arm The arm about to reach.
      * @param object_pose The object's pose in the planning frame.
      * @param object_height_m The object's full height.
+     * @param margin_m How far above the object's base its top stands, in metres.
      */
     void publishSupport(
-        const ArmContext& arm, const geometry_msgs::msg::Pose& object_pose, double object_height_m);
+        const ArmContext& arm, const geometry_msgs::msg::Pose& object_pose, double object_height_m,
+        double margin_m);
 
     /// The id of a pick's support slab in the planning scene.
     static constexpr const char* kPickSupportId = "pick_support";
@@ -671,8 +674,10 @@ private:
     /// m. The pick's support slab: toward the robot and away from it, from the object's centre.
     std::vector<double> pick_support_reach_m_{ 0.14, 0.26 };
     /// m. The pick's support slab, to each side of the object's centre, and its thickness.
-    double pick_support_half_width_m_{ 0.25 };
+    double pick_support_half_width_m_{ 0.45 };
     double pick_support_thickness_m_{ 0.04 };
+    /// m. How far the slab's top stands above the object's base until the descent.
+    double pick_support_margin_m_{ 0.03 };
     /// m. A pick whose grasp frame stands lower than this above the object's base first lifts it
     /// straight up to this height.
     double arm_clear_height_m_{ 0.10 };

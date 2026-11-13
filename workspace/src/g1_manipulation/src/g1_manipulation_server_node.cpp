@@ -110,6 +110,7 @@ void G1ManipulationServer::declareParameters()
         { "grasp_max_backoff_m", &grasp_max_backoff_m_ },
         { "pick_support_half_width_m", &pick_support_half_width_m_ },
         { "pick_support_thickness_m", &pick_support_thickness_m_ },
+        { "pick_support_margin_m", &pick_support_margin_m_ },
         { "place_finger_clearance_m", &place_finger_clearance_m_ },
         { "arm_clear_height_m", &arm_clear_height_m_ },
         { "min_grip_height_m", &min_grip_height_m_ },
@@ -464,7 +465,7 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
             return;
         }
     }
-    publishSupport(arm, *object_pose, detection->bbox.size.z);
+    publishSupport(arm, *object_pose, detection->bbox.size.z, pick_support_margin_m_);
 
     std::string                  why;
     std::vector<ConsideredGrasp> verdicts;
@@ -619,6 +620,8 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     // Then remove-descend-close-attach, as MoveIt's own pick does. Contact is allowed only for
     // the last few centimetres: exempt all skill long, a plan could route through the table.
     removeFromScene(goal->object_id);
+    // The grasp stands closer to the table than the margin allows; the descent is a short line.
+    publishSupport(arm, *object_pose, detection->bbox.size.z, 0.0);
     clearOctomapKeeping(arm, { "<octomap>" });
     descended = true;
     if (!descendOnto(*arm_group, pregrasp_goal, descent_goal, arm.grasp_frame, max_grasp_offset_m_))

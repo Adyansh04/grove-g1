@@ -64,12 +64,12 @@ The source's other parameters:
 
 The steps follow the feedback phases.
 
-1. `locating`: read the object, refuse it when it is wider than `max_grasp_width_m` across its narrower side, add its box to the planning scene and choose a grasp: for generated grasps up to `grasp_tries` of the best `max_grasp_candidates` that approach no steeper than `max_approach_tilt_deg`, not back at the robot (`min_approach_forward`), and solve at the grasp, those that also solve at the pregrasp first.
+1. `locating`: read the object, refuse it when it is wider than `max_grasp_width_m` across its narrower side, and add its box to the planning scene. A hand lower than `arm_clear_height_m` above the object's base lifts straight up first. A slab (`pick_support_*`) stands for the table under the object, its top `pick_support_margin_m` above the object's base until the descent, since the arm sags below its planned path. Then choose a grasp: for generated grasps up to `grasp_tries` of the best `max_grasp_candidates` that approach no steeper than `max_approach_tilt_deg`, not back at the robot (`min_approach_forward`), and solve at the grasp, those that also solve at the pregrasp first.
 2. `pregrasp`: move the hand to `pinch_ready` and the arm to `approach_height_m` above the grasp (the next generated grasp's pregrasp when MoveIt finds no way to one), then settle out the arm's gravity droop in clear air.
 3. `approach`:
    - Re-read the object and follow a shift under `grasp_refresh_max_shift_m`.
    - Plan to a staging point `reaim_clearance_m` above the grasp while the object is still in the scene.
-   - Remove the object, clear the octomap, exempt the hand from it and walk the last stretch as a straight line.
+   - Remove the object, lower the slab to the object's base, clear the octomap, exempt the hand from it and walk the last stretch as a straight line.
    - A miss backs straight up and retries from staging, up to `settle_attempts` more times. If it is still more than `max_grasp_offset_m` off, the pick is refused.
 4. `grasp`: start outside the widest measured side and creep in `grip_search_step_m` at a time until the thumb opposes a finger. Then hold every finger at its stall plus `grip_hold_bias_rad`. If the grip check below passes, attach the object to the palm.
 5. `lift`: straight up by `lift_height_m`. The held object stays exempt from the voxels it casts. Seen in the first frame after the lift without having risen half of `lift_height_m`, the object was left behind and the pick fails: a cradled object loads the fingers too little to tell.

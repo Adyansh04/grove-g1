@@ -29,17 +29,21 @@ g1_manipulation_server:
     # m. Added to each side of the object's box in the planning scene, not to its height: the
     # measured box runs short and the arm lags its plan, so an unpadded box gets brushed.
     scene_object_padding_m: 0.02
-    # m. While a pick runs, a slab stands for what the object rests on: its top at the object's
-    # base, reaching this far toward the robot and away from it, this far to each side, and this
-    # thick. A depth map sees a table only from above, so a planned reach could pass through its
-    # edge; the slab keeps the arm's way above it, and stops short of the robot's own body.
     # m. A pick whose grasp frame stands lower than this above the object's base first lifts it
     # straight up to this height, so its reach comes down from above rather than sweeping the
     # table's edge from below.
     arm_clear_height_m: 0.10
+    # m. While a pick runs, a slab stands for what the object rests on: its top at the object's
+    # base, reaching this far toward the robot and away from it, this far to each side (as wide as
+    # a table, since a hand coming over its edge passes beside the object), and this thick. A
+    # depth map sees a table only from above, so a planned reach could pass through its edge.
     pick_support_reach_m: [0.14, 0.26]
-    pick_support_half_width_m: 0.25
+    pick_support_half_width_m: 0.45
     pick_support_thickness_m: 0.04
+    # m. The slab's top stands this far above the object's base until the descent: a planned path
+    # touches what it avoids, and the arm sags below it on the way. No pregrasp is lower: it backs
+    # 0.12 m up an approach at least 15 degrees below level from a grasp 10 mm clear.
+    pick_support_margin_m: 0.03
     # m. A place whose lowering ends further than this from its target fails holding the object:
     # a little off still lands it, a lowering cut short would drop it in the air.
     max_place_offset_m: 0.08
