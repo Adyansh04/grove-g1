@@ -189,6 +189,8 @@ void G1ManipulationServer::declareParameters()
         "move_hand_point_side_steps_m",
         move_hand_point_side_steps_m_,
         fixed);
+    failed_pick_rest_state_ =
+        declare_parameter<std::string>("failed_pick_rest_state", failed_pick_rest_state_, fixed);
     pick_support_reach_m_ =
         declare_parameter<std::vector<double>>("pick_support_reach_m", pick_support_reach_m_, fixed);
     if (pick_support_reach_m_.size() != 2 || pick_support_reach_m_[0] < 0.0 ||
@@ -388,6 +390,15 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
         removeFromScene(goal->object_id);
         removeFromScene(kPickSupportId);
         setHandContact(arm, { "<octomap>", goal->object_id }, false);
+        // A failed reach can leave the hand low by the table, where no next plan starts clear.
+        arm_group->setNamedTarget(failed_pick_rest_state_);
+        if (arm_group->move() != moveit::core::MoveItErrorCode::SUCCESS)
+        {
+            RCLCPP_WARN(
+                get_logger(),
+                "could not take the arm to '%s' after the failed pick",
+                failed_pick_rest_state_.c_str());
+        }
     };
     const auto fail = [&](const std::string& phase, const std::string& why) {
         clean_up();

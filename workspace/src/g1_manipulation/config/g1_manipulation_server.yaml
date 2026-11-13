@@ -33,6 +33,9 @@ g1_manipulation_server:
     # base, reaching this far toward the robot and away from it, this far to each side, and this
     # thick. A depth map sees a table only from above, so a planned reach could pass through its
     # edge; the slab keeps the arm's way above it, and stops short of the robot's own body.
+    # The arm's named state (g1_moveit_config's SRDF) a failed pick ends in: a hand left low by
+    # the table would start the next reach in the table's place.
+    failed_pick_rest_state: "ready"
     pick_support_reach_m: [0.14, 0.26]
     pick_support_half_width_m: 0.25
     pick_support_thickness_m: 0.04
