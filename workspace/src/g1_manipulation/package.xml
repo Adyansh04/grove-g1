@@ -16,6 +16,7 @@
   <depend>rclcpp_action</depend>
   <depend>rclcpp_lifecycle</depend>
   <depend>g1_msgs</depend>
+  <depend>geometric_shapes</depend>
   <depend>geometry_msgs</depend>
   <depend>lifecycle_msgs</depend>
   <depend>std_srvs</depend>

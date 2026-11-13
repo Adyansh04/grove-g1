@@ -3,16 +3,23 @@
  * @brief Choosing a grasp: the top-down goal, generated candidates, and the plan drawn in RViz.
  */
 
+#include <geometric_shapes/shapes.h>
 #include <tf2/LinearMath/Matrix3x3.h>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2/LinearMath/Transform.h>
 #include <tf2/LinearMath/Vector3.h>
 
+#include <Eigen/Geometry>
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <format>
+#include <map>
 #include <memory>
+#include <moveit/collision_detection/collision_common.hpp>
+#include <moveit/collision_detection/collision_matrix.hpp>
+#include <moveit/planning_scene/planning_scene.hpp>
 #include <string>
 #include <tf2/utils.hpp>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
@@ -29,9 +36,16 @@ namespace
 {
 
 constexpr double kCandidateArrowLengthM = 0.06;
-constexpr double kGraspAxisLengthM      = 0.05;
-constexpr double kLabelHeightM          = 0.02;
-constexpr double kLabelLiftM            = 0.03;
+// What the object rests on, in the scratch scene that checks a hand's clearance of it: a slab under
+// the object's base, wide enough for any hand pose that reaches it.
+constexpr const char* kSupportId     = "support";
+constexpr double      kSupportSideM  = 1.2;
+constexpr double      kSupportDepthM = 0.2;
+// Shares of the deepest close checked: fingers sweep out along the approach before curling back.
+constexpr std::array<double, 5> kCloseShares      = { 0.0, 0.25, 0.5, 0.75, 1.0 };
+constexpr double                kGraspAxisLengthM = 0.05;
+constexpr double                kLabelHeightM     = 0.02;
+constexpr double                kLabelLiftM       = 0.03;
 
 geometry_msgs::msg::Point offsetBy(const geometry_msgs::msg::Point& from, const tf2::Vector3& by)
 {
@@ -202,7 +216,65 @@ std::vector<G1ManipulationServer::GraspPlan> G1ManipulationServer::chooseGrasps(
         why = "no current state to solve a grasp against";
         return {};
     }
-    const moveit::core::JointModelGroup* jmg = state->getJointModelGroup(arm.arm_group);
+    const moveit::core::JointModelGroup* jmg      = state->getJointModelGroup(arm.arm_group);
+    const moveit::core::JointModelGroup* hand_jmg = state->getJointModelGroup(arm.hand_group);
+    std::map<std::string, double>        open;
+    std::map<std::string, double>        closed;
+    if (hand_jmg == nullptr || !hand_jmg->getVariableDefaultPositions("open", open) ||
+        !hand_jmg->getVariableDefaultPositions("closed", closed))
+    {
+        why = "no '" + arm.hand_group + "' group with open and closed states";
+        return {};
+    }
+    // No generator sees what the object stands on: each candidate's arm and hand, through the
+    // close down to the object's narrowest side, must clear its base by the margin.
+    planning_scene::PlanningScene support(state->getRobotModel());
+    Eigen::Isometry3d             slab = Eigen::Isometry3d::Identity();
+    slab.translation()                 = Eigen::Vector3d(
+        object_pose.position.x,
+        object_pose.position.y,
+        object_pose.position.z - (0.5 * detection.bbox.size.z) + grasp_surface_clearance_m_ -
+            (0.5 * kSupportDepthM));
+    support.getWorldNonConst()->addToObject(
+        kSupportId,
+        std::make_shared<const shapes::Box>(kSupportSideM, kSupportSideM, kSupportDepthM),
+        slab);
+    collision_detection::AllowedCollisionMatrix acm = support.getAllowedCollisionMatrix();
+    acm.setDefaultEntry(kSupportId, true);
+    for (const moveit::core::JointModelGroup* group : { jmg, hand_jmg })
+    {
+        for (const std::string& link : group->getLinkModelNamesWithCollisionGeometry())
+        {
+            acm.setEntry(kSupportId, link, false);
+        }
+    }
+    const double deepest = closeFractions(
+                               std::max(detection.bbox.size.x, detection.bbox.size.y),
+                               std::min(detection.bbox.size.x, detection.bbox.size.y))
+                               .second;
+    const auto clears_support = [&](moveit::core::RobotState& candidate) {
+        for (const double share : kCloseShares)
+        {
+            for (const auto& [joint, from] : open)
+            {
+                if (const auto to = closed.find(joint); to != closed.end())
+                {
+                    candidate.setVariablePosition(
+                        joint,
+                        from + (share * deepest * (to->second - from)));
+                }
+            }
+            candidate.update();
+            collision_detection::CollisionRequest request;
+            collision_detection::CollisionResult  result;
+            support.getCollisionEnv()->checkRobotCollision(request, result, candidate, acm);
+            if (result.collision)
+            {
+                return false;
+            }
+        }
+        return true;
+    };
     // One scratch state for every candidate: a RobotState copy allocates per joint and link.
     moveit::core::RobotState attempt(*state);
 
@@ -215,6 +287,7 @@ std::vector<G1ManipulationServer::GraspPlan> G1ManipulationServer::chooseGrasps(
         };
     int                    considered = 0;
     int                    reachable  = 0;
+    int                    clear      = 0;
     std::vector<GraspPlan> plans;
     // Solvable at the grasp only: a 50 ms solve near the edge of reach misses pregrasps OMPL's
     // own goal sampling finds, so these follow the ones that solve at both ends.
@@ -270,6 +343,12 @@ std::vector<G1ManipulationServer::GraspPlan> G1ManipulationServer::chooseGrasps(
             continue;
         }
         ++reachable;
+        if (!clears_support(attempt))
+        {
+            record(*in_planning_frame, ConsideredGrasp::Verdict::kTouchesSupport);
+            continue;
+        }
+        ++clear;
         plan.origin = std::format(
             "generated candidate {} of {}, score {:.2f}",
             i,
@@ -301,9 +380,11 @@ std::vector<G1ManipulationServer::GraspPlan> G1ManipulationServer::chooseGrasps(
     if (plans.empty())
     {
         why = std::format(
-            "none of the {} candidates considered were usable ({} reachable) out of {} offered",
+            "none of the {} candidates considered were usable ({} reachable, {} of those clear "
+            "of what the object stands on) out of {} offered",
             considered,
             reachable,
+            clear,
             response->grasps.size());
     }
     return plans;
@@ -328,7 +409,8 @@ void G1ManipulationServer::publishGraspPlan(
             -axis[1] * kCandidateArrowLengthM,
             -axis[2] * kCandidateArrowLengthM);
         const bool chosen = candidate.verdict == ConsideredGrasp::Verdict::kChosen;
-        const bool tilted = candidate.verdict == ConsideredGrasp::Verdict::kTilted;
+        const bool tilted = candidate.verdict == ConsideredGrasp::Verdict::kTilted ||
+                            candidate.verdict == ConsideredGrasp::Verdict::kTouchesSupport;
         markers.markers.push_back(arrow(
             planning_frame_,
             "candidates",

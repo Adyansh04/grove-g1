@@ -168,6 +168,7 @@ private:
         {
             kTilted,
             kUnreachable,
+            kTouchesSupport,  ///< The arm or the closing hand reaches below the object's base.
             kChosen,
         };
         geometry_msgs::msg::Pose pose;
@@ -489,6 +490,16 @@ private:
     bool closeHandOn(MoveGroup& hand, const ArmContext& arm, double widest_m, double narrowest_m);
 
     /**
+     * @brief Where closeHandOn() starts and where it gives up, as fractions of `open` to `closed`.
+     *
+     * @param widest_m The object's widest horizontal side, metres.
+     * @param narrowest_m Its narrowest horizontal side, metres.
+     * @return The start and the deepest close, start first.
+     */
+    [[nodiscard]] std::pair<double, double>
+    closeFractions(double widest_m, double narrowest_m) const;
+
+    /**
      * @brief Re-commands each finger to where it stalled plus grip_hold_bias_rad.
      *
      * Equal bias means equal force, kp times the bias, so no finger out-pushes the others and walks
@@ -606,14 +617,16 @@ private:
 
     // Defaults for the parameters of the same name; config/g1_manipulation_server.yaml documents
     // each one.
-    double              object_timeout_s_{ 1.0 };
-    double              approach_height_m_{ 0.22 };
-    double              place_approach_height_m_{ 0.15 };
-    double              place_reach_m_{ 0.35 };
-    double              place_side_m_{ 0.15 };
-    double              place_edge_margin_m_{ 0.05 };
-    double              place_container_max_m_{ 0.40 };
-    double              grasp_depth_below_top_m_{ 0.020 };
+    double object_timeout_s_{ 1.0 };
+    double approach_height_m_{ 0.22 };
+    double place_approach_height_m_{ 0.15 };
+    double place_reach_m_{ 0.35 };
+    double place_side_m_{ 0.15 };
+    double place_edge_margin_m_{ 0.05 };
+    double place_container_max_m_{ 0.40 };
+    double grasp_depth_below_top_m_{ 0.020 };
+    /// m. How far above the object's base a generated grasp's arm and closing hand must stay.
+    double              grasp_surface_clearance_m_{ 0.008 };
     double              min_grip_height_m_{ 0.080 };
     double              settle_tolerance_m_{ 0.010 };
     int                 settle_attempts_{ 2 };

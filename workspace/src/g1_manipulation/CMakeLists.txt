@@ -7,6 +7,7 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/g1_common.cmake)
 
 find_package(ament_cmake REQUIRED)
 find_package(g1_msgs REQUIRED)
+find_package(geometric_shapes REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(lifecycle_msgs REQUIRED)
 find_package(moveit_core REQUIRED)
@@ -74,6 +75,7 @@ target_link_libraries(g1_manipulation_server_node PUBLIC
   rclcpp_action::rclcpp_action
   tf2::tf2
   tf2_geometry_msgs::tf2_geometry_msgs
+  geometric_shapes::geometric_shapes
   moveit_core::moveit_planning_scene
   moveit_ros_planning_interface::moveit_move_group_interface
   moveit_ros_planning_interface::moveit_planning_scene_interface

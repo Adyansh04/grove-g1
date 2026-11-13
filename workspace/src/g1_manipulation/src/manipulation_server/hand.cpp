@@ -299,8 +299,8 @@ bool G1ManipulationServer::waitForHandToSettle(MoveGroup& hand)
     return false;
 }
 
-bool G1ManipulationServer::closeHandOn(
-    MoveGroup& hand, const ArmContext& arm, double widest_m, double narrowest_m)
+std::pair<double, double>
+G1ManipulationServer::closeFractions(double widest_m, double narrowest_m) const
 {
     const double range       = hand_span_open_m_ - hand_span_closed_m_;
     const auto   fraction_at = [&](double span) {
@@ -313,7 +313,15 @@ bool G1ManipulationServer::closeHandOn(
     // Stop a little past the narrowest side: with no contact by then the object is not between
     // the fingers, and closing further only sweeps it away.
     const double stop_span = std::max(hand_span_closed_m_, narrowest_m - grip_search_beyond_m_);
-    const double stop      = std::max(start, fraction_at(stop_span));
+    return { start, std::max(start, fraction_at(stop_span)) };
+}
+
+bool G1ManipulationServer::closeHandOn(
+    MoveGroup& hand, const ArmContext& arm, double widest_m, double narrowest_m)
+{
+    const double range       = hand_span_open_m_ - hand_span_closed_m_;
+    const auto [start, stop] = closeFractions(widest_m, narrowest_m);
+    const double stop_span   = std::max(hand_span_closed_m_, narrowest_m - grip_search_beyond_m_);
     RCLCPP_INFO(
         get_logger(),
         "closing for an object %.0f to %.0f mm across, from %.0f%% of the way to closed, then "
