@@ -25,6 +25,19 @@ namespace g1_manipulation
 applyGripperOffset(const geometry_msgs::msg::Pose& generated, const std::array<double, 6>& xyz_rpy);
 
 /**
+ * @brief The gripper offset for the hand a generator answers by mirroring.
+ *
+ * g1_perception's grasp adapter answers the hand its generator does not describe with grasps found
+ * in the mirrored scene, each reflected back through the camera's y-z plane with the gripper's own
+ * x axis reversed. For hands whose grasp frames mirror each other through their x-z planes, as the
+ * G1's do, this is the offset from such a grasp to the other hand's grasp frame.
+ *
+ * @param xyz_rpy Offset of the hand the generator describes, as for applyGripperOffset().
+ * @return The other hand's offset, metres then radians.
+ */
+[[nodiscard]] std::array<double, 6> mirroredGripperOffset(const std::array<double, 6>& xyz_rpy);
+
+/**
  * @brief Angle between a generated grasp's approach axis and straight down, in radians.
  *
  * The approach is the gripper frame's +z. Zero reaches straight down; past a right angle the hand

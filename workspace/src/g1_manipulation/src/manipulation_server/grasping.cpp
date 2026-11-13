@@ -249,8 +249,10 @@ std::vector<G1ManipulationServer::GraspPlan> G1ManipulationServer::chooseGrasps(
             continue;
         }
 
-        const geometry_msgs::msg::Pose goal =
-            applyGripperOffset(*in_planning_frame, graspgen_offset_);
+        // The generator describes the right hand; the left's grasps come back mirrored.
+        const geometry_msgs::msg::Pose goal = applyGripperOffset(
+            *in_planning_frame,
+            arm.is_left ? graspgen_offset_mirrored_ : graspgen_offset_);
         // Back along the approach, not straight up: a side grasp has a ceiling above it.
         const std::array<double, 3> axis = approachAxis(*in_planning_frame);
         GraspPlan                   plan;

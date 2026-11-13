@@ -9,13 +9,15 @@ string HAND_RIGHT=right
 string hand
 ---
 bool ok
-# Why there are none. An unknown object lists what is being reported; an unsupported hand is
-# refused, never mirrored.
+# Why there are none. An unknown object lists what is being reported; a hand the generator does
+# not describe is refused, unless the server answers it with mirrored grasps.
 string message
 # Frame of every pose below, and the stamp of the depth frame they came from.
 std_msgs/Header header
 # Best first, as poses of the GENERATOR's gripper frame, which is not in this robot's URDF: the
-# consumer applies its measured offset to reach its own grasp frame.
+# consumer applies its measured offset to reach its own grasp frame. For a hand answered by
+# mirroring, each is the described hand's grasp in the mirrored scene, reflected back through the
+# camera's y-z plane with its own x axis reversed.
 geometry_msgs/Pose[] grasps
 # Confidence in [0, 1], one per grasp.
 float32[] scores

@@ -8,6 +8,9 @@ g1_manipulation_server:
     # g1_description's: the grasp frame sits 162 mm along the approach, beside its fingertip point
     # (150 mm), and the approach runs 45 degrees between the fingers and the palm's normal.
     graspgen_to_grasp_frame_xyz_rpy: [0.0007, 0.012, 0.1619, 1.5708, -0.7854, -3.1416]
+    # The left hand takes the right hand's grasps mirrored, as g1_perception's Inspire overlay
+    # answers it (mirror_other_hand).
+    generated_grasp_arms: [right, left]
 
     # Palm-down, the palm face is about 57 mm above the grasp frame, so the fingers can take an
     # object a little deeper than the Dex3's 26 mm without the palm meeting its top.

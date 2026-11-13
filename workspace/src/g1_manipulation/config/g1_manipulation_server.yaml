@@ -32,8 +32,9 @@ g1_manipulation_server:
     # m. A place whose lowering ends further than this from its target fails holding the object:
     # a little off still lands it, a lowering cut short would drop it in the air.
     max_place_offset_m: 0.08
-    # GraspGenX describes the right Dex3 only: with grasp_source generated, the left hand still
-    # grasps from the object's box.
+    # GraspGenX describes the right hand. The left takes generated grasps only where
+    # g1_perception's adapter mirrors them (mirror_other_hand, held equal by test_config_drift);
+    # otherwise it grasps from the object's box.
     generated_grasp_arms: [right]
 
     # How far the object may shift between being located and the descent, and still be followed.
@@ -128,9 +129,10 @@ g1_manipulation_server:
     # Samples within planning_time_s: ValidateSolution rejects some paths OMPL accepts, quickly.
     planning_attempts: 5
 
-    # The generator's gripper frame to <side>_hand_grasp_frame, xyz then rpy: GraspGenX's
-    # fingertip point, 7 cm along its approach, on the grasp frame, with the Dex3 palm's axes from
-    # its own description. The tabletop block is picked with three fingers pressing.
+    # The generator's gripper frame to right_hand_grasp_frame, xyz then rpy, the left hand's
+    # mirrored from it: GraspGenX's fingertip point, 7 cm along its approach, on the grasp frame,
+    # with the Dex3 palm's axes from its own description. The tabletop block is picked with three
+    # fingers pressing.
     graspgen_to_grasp_frame_xyz_rpy: [0.0, 0.0, 0.07, 1.5707963, 0.0, 3.1415927]
 
     # Right hand's orientation at a top grasp; the left mirrors the roll.

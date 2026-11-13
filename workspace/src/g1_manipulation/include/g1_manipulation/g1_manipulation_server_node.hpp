@@ -669,8 +669,10 @@ private:
     std::string              move_hand_right_shoulder_{ "right_shoulder_pitch_link" };
     /// m. The steps out to its own side a pointing hand tries; see pointingHands().
     std::vector<double> move_hand_point_side_steps_m_{ 0.06, 0.12, 0.18 };
-    /// Generator gripper frame to `<side>_hand_grasp_frame`; see grasp_filter.hpp.
+    /// Generator gripper frame to `right_hand_grasp_frame`; see grasp_filter.hpp.
     std::array<double, 6> graspgen_offset_{};
+    /// The left hand's, for the grasps the adapter mirrors; see mirroredGripperOffset().
+    std::array<double, 6> graspgen_offset_mirrored_{};
 
     /// Where the last close was commanded to, as a fraction of `open` to `closed`. The grip check
     /// measures against this, since a close onto a measured width stops short of `closed`.

@@ -19,6 +19,8 @@
 #include <thread>
 #include <vector>
 
+#include "g1_manipulation/grasp_filter.hpp"
+
 namespace g1_manipulation
 {
 
@@ -197,6 +199,7 @@ void G1ManipulationServer::declareParameters()
             std::to_string(offset.size()));
     }
     std::ranges::copy(offset, graspgen_offset_.begin());
+    graspgen_offset_mirrored_ = mirroredGripperOffset(graspgen_offset_);
     if (grasp_rpy_.size() != 3)
     {
         throw std::invalid_argument("grasp_rpy needs exactly 3 entries");

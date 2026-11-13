@@ -9,3 +9,6 @@ g1_graspgen_adapter:
     gripper_type: 2
     # Gripper base to fingertips along the approach axis, the description's fingertip point.
     fingertip_depth_m: 0.15
+    # The left RH56DFQ is the right one's mirror image, so it takes the right hand's grasps found in
+    # the mirrored scene. g1_manipulation's Inspire overlay asks for both hands' (drift-tested).
+    mirror_other_hand: true
