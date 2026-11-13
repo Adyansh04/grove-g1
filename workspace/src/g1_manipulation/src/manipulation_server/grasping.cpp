@@ -419,6 +419,7 @@ std::vector<G1ManipulationServer::GraspPlan> G1ManipulationServer::chooseGrasps(
             }
         };
     int                    considered = 0;
+    int                    off_centre = 0;
     int                    reachable  = 0;
     int                    clear      = 0;
     std::vector<GraspPlan> plans;
@@ -459,6 +460,16 @@ std::vector<G1ManipulationServer::GraspPlan> G1ManipulationServer::chooseGrasps(
         const geometry_msgs::msg::Pose goal = applyGripperOffset(
             *in_planning_frame,
             arm.is_left ? graspgen_offset_mirrored_ : graspgen_offset_);
+        // A grip by a rim or an edge holds on the close and slips out in the lift.
+        if (std::hypot(
+                goal.position.x - object_pose.position.x,
+                goal.position.y - object_pose.position.y,
+                goal.position.z - object_pose.position.z) > max_grip_offset_m_)
+        {
+            record(*in_planning_frame, ConsideredGrasp::Verdict::kOffCentre);
+            ++off_centre;
+            continue;
+        }
         // Back along the approach, not straight up: a side grasp has a ceiling above it.
         const std::array<double, 3> axis = approachAxis(*in_planning_frame);
         const auto backed_off            = [&axis](geometry_msgs::msg::Pose pose, double by_m) {
@@ -536,9 +547,11 @@ std::vector<G1ManipulationServer::GraspPlan> G1ManipulationServer::chooseGrasps(
     if (plans.empty())
     {
         why = std::format(
-            "none of the {} candidates considered were usable ({} reachable, {} of those clear "
-            "of what the object stands on and its neighbours) out of {} offered",
+            "none of the {} candidates considered were usable ({} gripping too far from its "
+            "centre, {} reachable, {} of those clear of what the object stands on and its "
+            "neighbours) out of {} offered",
             considered,
+            off_centre,
             reachable,
             clear,
             response->grasps.size());
@@ -570,6 +583,7 @@ void G1ManipulationServer::publishGraspPlan(
             -axis[2] * kCandidateArrowLengthM);
         const bool chosen = candidate.verdict == ConsideredGrasp::Verdict::kChosen;
         const bool tilted = candidate.verdict == ConsideredGrasp::Verdict::kTilted ||
+                            candidate.verdict == ConsideredGrasp::Verdict::kOffCentre ||
                             candidate.verdict == ConsideredGrasp::Verdict::kStrikes;
         markers.markers.push_back(arrow(
             planning_frame_,

@@ -180,6 +180,10 @@ g1_manipulation_server:
     # The approach axis's forward share in the planning frame, at least: under it the hand comes
     # back at the robot from beyond the object.
     min_approach_forward: -0.3
+    # m. A generated grasp whose grip point (its grasp frame) lies further than this from the
+    # object's centre is skipped: a grip by a can's rim closed but slipped out in the lift, where
+    # grips within 16 mm held.
+    max_grip_offset_m: 0.03
     # Pregrasp distance back along a generated grasp's own approach axis.
     approach_standoff_m: 0.12
     # Per candidate, so this is a filter rather than a solve.

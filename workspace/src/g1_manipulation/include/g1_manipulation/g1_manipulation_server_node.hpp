@@ -167,6 +167,7 @@ private:
         enum class Verdict : std::uint8_t
         {
             kTilted,
+            kOffCentre,  ///< The grip point lies too far from the object's centre.
             kUnreachable,
             kStrikes,  ///< The wrist or the closing hand meets the support or a neighbour.
             kChosen,
@@ -730,6 +731,9 @@ private:
     int                      move_hand_orientations_{ 32 };
     std::string              move_hand_left_shoulder_{ "left_shoulder_pitch_link" };
     std::string              move_hand_right_shoulder_{ "right_shoulder_pitch_link" };
+    /// m. A generated grasp whose grip point lies further than this from the object's centre is
+    /// skipped.
+    double max_grip_offset_m_{ 0.03 };
     /// m. The steps out to its own side a pointing hand tries; see pointingHands().
     std::vector<double> move_hand_point_side_steps_m_{ 0.06, 0.12, 0.18 };
     /// Generator gripper frame to `right_hand_grasp_frame`; see grasp_filter.hpp.
