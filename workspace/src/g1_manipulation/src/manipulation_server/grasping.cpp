@@ -40,12 +40,15 @@ namespace
 constexpr double kCandidateArrowLengthM = 0.06;
 // What the object rests on, in the scratch scene that checks a hand's clearance of it: slabs under
 // the object's base, as wide as a hand reaches round it, one for the hand as the arm brings it and
-// one for the closing fingers. Only the hand and the wrist are checked against them, since the rest
-// of the arm hangs beside the body, not over the table.
+// one for the closing fingers. Only the hand and the wrist are checked against them; the rest of
+// the arm, which hangs beside the body, meets the pick's own narrower slab.
 constexpr const char* kSupportId        = "support";
 constexpr const char* kClosingSupportId = "support_closing";
-constexpr double      kSupportSideM     = 0.6;
-constexpr double      kSupportDepthM    = 0.2;
+// The pick's own slab under the rest of the arm, as publishSupport() puts it in the planning
+// scene: a forearm the descent would drive into it fails the descent, so it fails the candidate.
+constexpr const char* kArmSupportId  = "support_arm";
+constexpr double      kSupportSideM  = 0.6;
+constexpr double      kSupportDepthM = 0.2;
 // m. Padding on the other objects in that scene, and how near a detection's centre must lie to the
 // target's to be the target itself, listed again under its bare name.
 constexpr double kNeighbourPaddingM = 0.01;
@@ -326,13 +329,25 @@ std::vector<G1ManipulationServer::GraspPlan> G1ManipulationServer::chooseGrasps(
             std::make_shared<const shapes::Box>(kSupportSideM, kSupportSideM, kSupportDepthM),
             slab);
     }
+    {
+        Eigen::Isometry3d slab = Eigen::Isometry3d::Identity();
+        slab.translation()     = Eigen::Vector3d(
+            object_pose.position.x + (0.5 * (pick_support_reach_m_[1] - pick_support_reach_m_[0])),
+            object_pose.position.y,
+            base_z - (0.5 * pick_support_thickness_m_));
+        support.getWorldNonConst()->addToObject(
+            kArmSupportId,
+            std::make_shared<const shapes::Box>(
+                pick_support_reach_m_[0] + pick_support_reach_m_[1],
+                2.0 * pick_support_half_width_m_,
+                pick_support_thickness_m_),
+            slab);
+    }
     std::vector<std::string> guarded = hand_jmg->getLinkModelNamesWithCollisionGeometry();
+    std::vector<std::string> upper_arm;
     for (const std::string& link : jmg->getLinkModelNamesWithCollisionGeometry())
     {
-        if (link.find("wrist") != std::string::npos)
-        {
-            guarded.push_back(link);
-        }
+        (link.find("wrist") != std::string::npos ? guarded : upper_arm).push_back(link);
     }
     const auto guard =
         [&guarded](collision_detection::AllowedCollisionMatrix& matrix, const std::string& body) {
@@ -388,9 +403,15 @@ std::vector<G1ManipulationServer::GraspPlan> G1ManipulationServer::chooseGrasps(
     collision_detection::AllowedCollisionMatrix arriving = acm;
     guard(arriving, kSupportId);
     arriving.setDefaultEntry(kClosingSupportId, true);
+    arriving.setDefaultEntry(kArmSupportId, true);
+    for (const std::string& link : upper_arm)
+    {
+        arriving.setEntry(kArmSupportId, link, false);
+    }
     collision_detection::AllowedCollisionMatrix closing = acm;
     guard(closing, kClosingSupportId);
     closing.setDefaultEntry(kSupportId, true);
+    closing.setDefaultEntry(kArmSupportId, true);
     const double deepest = closeFractions(
                                std::max(detection.bbox.size.x, detection.bbox.size.y),
                                std::min(detection.bbox.size.x, detection.bbox.size.y))
