@@ -461,7 +461,12 @@ void G1ManipulationServer::executePick(const std::shared_ptr<GoalHandle<Pick>>& 
     {
         hand.position.z =
             object_pose->position.z - (0.5 * detection->bbox.size.z) + arm_clear_height_m_;
-        if (moveStraight(*arm_group, hand, arm.grasp_frame, "clear", 0.0) <= 0.0)
+        // A hand by the table's edge stands in voxels it casts itself, which fail the line at its
+        // start: exempt for this move alone, as a lift away from the table.
+        setHandContact(arm, { "<octomap>" }, true);
+        const double raised = moveStraight(*arm_group, hand, arm.grasp_frame, "clear", 0.0);
+        setHandContact(arm, { "<octomap>" }, false);
+        if (raised <= 0.0)
         {
             fail(Pick::Feedback::PHASE_LOCATING, "could not raise the hand clear of the table");
             return;
