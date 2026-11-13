@@ -135,13 +135,11 @@ RUN mkdir -p /opt/onnxruntime && \
 # --- SAM 3.1 segmentation deps ---------------------------------
 
 # CUDA 13 and TensorRT 11 from NVIDIA's Ubuntu 24.04 repository: sam3_inference runs SAM 3.1 as
-# TensorRT engines from C++. The host driver must be 580 or newer for CUDA 13.
+# TensorRT engines from C++. The host driver must be 580 or newer for CUDA 13. The base image
+# already lists that repository; a second entry from cuda-keyring makes apt refuse both.
 ARG CUDA_VERSION=13-4
 ARG TENSORRT_VERSION=11.4.0.106-1+cuda13.4
-RUN curl -fsSL -o /tmp/cuda-keyring.deb \
-      https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb && \
-    dpkg -i /tmp/cuda-keyring.deb && rm /tmp/cuda-keyring.deb && \
-    apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y --no-install-recommends \
       cuda-nvcc-${CUDA_VERSION} \
       cuda-cudart-dev-${CUDA_VERSION} \
       libnvinfer11=${TENSORRT_VERSION} \
