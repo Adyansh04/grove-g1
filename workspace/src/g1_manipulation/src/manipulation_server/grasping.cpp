@@ -146,23 +146,40 @@ std::optional<double> G1ManipulationServer::handBelowHeldM(
     tf2::fromMsg(held.object.primitive_poses.front(), box);
     const double base_z = (palm * origin * box).getOrigin().z() - (0.5 * held_height_m);
     // Each link's collision box, corner by corner: a few millimetres lower than its mesh at most.
-    double lowest_z = std::numeric_limits<double>::infinity();
-    for (const moveit::core::LinkModel* link : hand->getLinkModels())
+    // Through the release too: fingers curled under an object sweep lower as they open.
+    std::map<std::string, double> open;
+    hand->getVariableDefaultPositions("pinch_ready", open);
+    std::map<std::string, double> grip;
+    for (const auto& [joint, value] : open)
     {
-        if (link->getShapes().empty())
+        grip[joint] = state->getVariablePosition(joint);
+    }
+    double lowest_z = std::numeric_limits<double>::infinity();
+    for (const double share : kCloseShares)
+    {
+        for (const auto& [joint, from] : grip)
         {
-            continue;
+            state->setVariablePosition(joint, from + (share * (open[joint] - from)));
         }
-        const Eigen::Vector3d   half  = 0.5 * link->getShapeExtentsAtOrigin();
-        const Eigen::Isometry3d frame = state->getGlobalLinkTransform(link) *
-                                        Eigen::Translation3d(link->getCenteredBoundingBoxOffset());
-        for (int corner = 0; corner < 8; ++corner)
+        state->update();
+        for (const moveit::core::LinkModel* link : hand->getLinkModels())
         {
-            const Eigen::Vector3d at(
-                (corner & 1) != 0 ? half.x() : -half.x(),
-                (corner & 2) != 0 ? half.y() : -half.y(),
-                (corner & 4) != 0 ? half.z() : -half.z());
-            lowest_z = std::min(lowest_z, (frame * at).z());
+            if (link->getShapes().empty())
+            {
+                continue;
+            }
+            const Eigen::Vector3d   half = 0.5 * link->getShapeExtentsAtOrigin();
+            const Eigen::Isometry3d frame =
+                state->getGlobalLinkTransform(link) *
+                Eigen::Translation3d(link->getCenteredBoundingBoxOffset());
+            for (int corner = 0; corner < 8; ++corner)
+            {
+                const Eigen::Vector3d at(
+                    (corner & 1) != 0 ? half.x() : -half.x(),
+                    (corner & 2) != 0 ? half.y() : -half.y(),
+                    (corner & 4) != 0 ? half.z() : -half.z());
+                lowest_z = std::min(lowest_z, (frame * at).z());
+            }
         }
     }
     if (!std::isfinite(lowest_z))

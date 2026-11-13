@@ -339,7 +339,8 @@ private:
     /**
      * @brief How far the hand reaches below the base of the object it holds, as it holds it now.
      *
-     * Fingers curled round an object's foot meet the surface before the object does.
+     * Fingers curled round an object's foot meet the surface before the object does, and sweep
+     * lower still as they open to `pinch_ready` at the release: the deepest of both counts.
      *
      * @param held The attached object, relative to the palm.
      * @param held_height_m Its full height.
