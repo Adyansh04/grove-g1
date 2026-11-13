@@ -31,6 +31,7 @@
 #include <moveit_msgs/msg/collision_object.hpp>
 #include <moveit_msgs/srv/apply_planning_scene.hpp>
 #include <moveit_msgs/srv/get_planning_scene.hpp>
+#include <moveit_msgs/srv/get_state_validity.hpp>
 #include <mutex>
 #include <optional>
 #include <rclcpp/rclcpp.hpp>
@@ -414,6 +415,7 @@ private:
      * @brief Walks @p link toward @p pose in a straight line, however far it gets.
      *
      * Waits settle_wait_s after executing, since the controller reports done before the arm stops.
+     * A line that cannot start is logged with what the arm touches where it stands.
      *
      * @param min_fraction Below this the line is not executed, leaving the arm where it was.
      * @return The fraction the line covered, or 0 if it could not be walked or executed.
@@ -421,6 +423,13 @@ private:
     double moveStraight(
         MoveGroup& group, const geometry_msgs::msg::Pose& pose, const std::string& link,
         const std::string& what, double min_fraction);
+
+    /**
+     * @brief What @p group's arm touches where it stands, by move_group's state check.
+     *
+     * @return The touching pairs, "a on b" joined by "; ", or why the check could not say.
+     */
+    std::string touchingNow(MoveGroup& group);
 
     /**
      * @brief The point reaim_clearance_m back up the approach axis from @p grasp.
@@ -640,6 +649,7 @@ private:
     rclcpp::Client<g1_msgs::srv::GenerateGrasps>::SharedPtr         grasps_;
     rclcpp::Client<moveit_msgs::srv::GetPlanningScene>::SharedPtr   get_scene_;
     rclcpp::Client<moveit_msgs::srv::ApplyPlanningScene>::SharedPtr apply_scene_;
+    rclcpp::Client<moveit_msgs::srv::GetStateValidity>::SharedPtr   check_state_;
     rclcpp::Client<std_srvs::srv::Empty>::SharedPtr                 clear_octomap_;
 
     rclcpp_action::Server<Pick>::SharedPtr          pick_server_;

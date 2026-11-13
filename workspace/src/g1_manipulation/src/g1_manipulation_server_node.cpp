@@ -85,6 +85,7 @@ G1ManipulationServer::G1ManipulationServer(const rclcpp::NodeOptions& options)
     }
     get_scene_     = create_client<moveit_msgs::srv::GetPlanningScene>("/get_planning_scene");
     apply_scene_   = create_client<moveit_msgs::srv::ApplyPlanningScene>("/apply_planning_scene");
+    check_state_   = create_client<moveit_msgs::srv::GetStateValidity>("/check_state_validity");
     clear_octomap_ = create_client<std_srvs::srv::Empty>("/clear_octomap");
 }
 

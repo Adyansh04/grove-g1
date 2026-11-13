@@ -5,6 +5,10 @@
 
 #include <chrono>
 #include <cmath>
+#include <future>
+#include <memory>
+#include <moveit/robot_state/conversions.hpp>
+#include <moveit_msgs/msg/contact_information.hpp>
 #include <string>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <thread>
@@ -14,6 +18,14 @@
 
 namespace g1_manipulation
 {
+
+namespace
+{
+
+// move_group answers a state check within milliseconds; this only guards a stalled server.
+constexpr auto kStateCheckTimeout = std::chrono::seconds(2);
+
+}  // namespace
 
 void G1ManipulationServer::setStartStateInBounds(MoveGroup& group)
 {
@@ -65,7 +77,16 @@ double G1ManipulationServer::moveStraight(
     const double                                fraction =
         group.computeCartesianPath(waypoints, cartesian_step_m_, path, /*avoid_collisions=*/true);
     group.setEndEffectorLink(previous_tip);
-    if (fraction <= 0.0 || fraction < min_fraction)
+    if (fraction <= 0.0)
+    {
+        RCLCPP_WARN(
+            get_logger(),
+            "%s: the straight line cannot start: %s",
+            what.c_str(),
+            touchingNow(group).c_str());
+        return fraction;
+    }
+    if (fraction < min_fraction)
     {
         return fraction;
     }
@@ -79,6 +100,38 @@ double G1ManipulationServer::moveStraight(
     // execute() returns before the arm has sagged into its steady-state error.
     std::this_thread::sleep_for(std::chrono::duration<double>(settle_wait_s_));
     return fraction;
+}
+
+std::string G1ManipulationServer::touchingNow(MoveGroup& group)
+{
+    const moveit::core::RobotStatePtr now = group.getCurrentState(1.0);
+    if (now == nullptr || !check_state_->wait_for_service(std::chrono::milliseconds(200)))
+    {
+        return "no state check to ask";
+    }
+    auto request        = std::make_shared<moveit_msgs::srv::GetStateValidity::Request>();
+    request->group_name = group.getName();
+    moveit::core::robotStateToRobotStateMsg(*now, request->robot_state);
+    auto answer = check_state_->async_send_request(request);
+    if (answer.wait_for(kStateCheckTimeout) != std::future_status::ready)
+    {
+        return "the state check did not answer";
+    }
+    const auto response = answer.get();
+    if (response->valid)
+    {
+        return "nothing; the path is blocked further on or out of reach";
+    }
+    std::string touching;
+    for (const moveit_msgs::msg::ContactInformation& contact : response->contacts)
+    {
+        const std::string pair = contact.contact_body_1 + " on " + contact.contact_body_2;
+        if (touching.find(pair) == std::string::npos)
+        {
+            touching += (touching.empty() ? "" : "; ") + pair;
+        }
+    }
+    return touching.empty() ? "a state outside its bounds or constraints" : touching;
 }
 
 geometry_msgs::msg::Pose G1ManipulationServer::stagingPose(
