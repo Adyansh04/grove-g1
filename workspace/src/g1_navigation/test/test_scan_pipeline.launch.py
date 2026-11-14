@@ -134,10 +134,11 @@ class ScanPipelineTest(unittest.TestCase):
         self.lookup("base_footprint", "mid360_link")
 
     def test_scan_is_dense_and_misses_are_inf(self):
-        # In a closed room every bearing sees a wall. Anything much below full coverage means
+        # In a closed room every bearing sees a wall, except the 132 of 360 a panel 0.18 m in front
+        # of the pinned robot hides inside scan.yaml's range_min (0.45 m). Much below that means
         # the height band has drifted off the walls.
         finite = [np.isfinite(np.array(s.ranges)).mean() for s in self.scans[-10:]]
-        self.assertGreater(min(finite), 0.85, f"coverage per scan: {finite}")
+        self.assertGreater(min(finite), 0.6, f"coverage per scan: {finite}")
 
         # slam_toolbox reads range_max as "something is there, at the edge" and would map a
         # phantom wall at the scan boundary; +inf is the only honest way to say nothing.

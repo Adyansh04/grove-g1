@@ -18,9 +18,9 @@ pointcloud_to_laserscan:
     angle_max: 3.141592653589793
     angle_increment: 0.017453292519943295
 
-    # The Mid360's spec minimum. The simulated sweep never sees the robot's own links; the real
-    # sensor will.
-    range_min: 0.1
+    # The costmaps' robot_radius: on the real robot the arms and shoulders return within 0.3 m, and
+    # slam_toolbox mapped them as walls around the robot, which then could not plan out.
+    range_min: 0.45
     # Spans the 18 x 18 m facility corner to corner. Shorter trims spoke artifacts in free space
     # but risks losing the far walls.
     range_max: 25.0

@@ -70,6 +70,12 @@ def _arguments():
             description="The route graph route_server walks by, a GeoJSON file; empty runs none.",
         ),
         DeclareLaunchArgument(
+            "marking_cloud",
+            default_value="/livox/lidar",
+            description="The cloud both costmaps mark obstacles from; nav_stack.launch.py passes "
+            "the tether-filtered one with tether_filter:=true. Clearing reads /livox/lidar.",
+        ),
+        DeclareLaunchArgument(
             "collision_high_cloud",
             default_value="/livox/lidar",
             description="The cloud collision_monitor's high band reads. With MoveIt up, "

@@ -31,6 +31,7 @@
   <exec_depend>nav2_rotation_shim_controller</exec_depend>
   <!-- The AMCL particle display in g1_navigation.rviz, and why that config lives here. -->
   <exec_depend>nav2_rviz_plugins</exec_depend>
+  <exec_depend>pcl_ros</exec_depend>
   <exec_depend>pointcloud_to_laserscan</exec_depend>
   <exec_depend>rclcpp_components</exec_depend>
   <exec_depend>rviz2</exec_depend>

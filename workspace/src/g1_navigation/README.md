@@ -37,6 +37,15 @@ which the bring-up entry point does not pass.
 `nav_stack.launch.py` stages no simulator. Both callers stage exactly one, and a second would put two
 writers on `rt/lowcmd`. `test_launch_threading` asserts it.
 
+`tether_filter:=true` on `nav_stack.launch.py` is for the real robot on its Ethernet tether. The
+tether hangs from the robot's back to the floor behind it and, while the robot stands, crosses 0.14
+to 0.21 m about 0.6 m behind it, which the costmaps marked as a wall. With it, `pcl_ros`'s
+`CropBox` (`tether_filter.yaml`) drops the returns in a box 0.25 to 1.0 m behind the robot, 0.45 m
+to each side and up to 0.60 m high, and the costmaps' marking and the scan read
+`/livox/lidar/tether_filtered`. The box sits in `torso_link`, which the LiDAR hangs off by static
+transforms, so no cloud waits for odometry. Clearing and `collision_monitor` read the whole cloud.
+Off by default: the simulator has no tether.
+
 `keepout:=true`, on any entry point, turns on the keepout filter in both costmaps and the speed
 filter in the global one. `scripts/demos/nervros.sh` sets it.
 
@@ -89,9 +98,10 @@ saw the carried mug and slowed every carry to a stop.)
 
 - 0.15 to 0.60 m, for a crate, a step or a chair's legs. It starts above the floor returns, as the
   costmaps' `min_obstacle_height` does.
-- 1.05 to 1.40 m, for a wall or a person up close. With MoveIt up (`collision_high_cloud`, which
-  `bringup.launch.py` sets), this band reads `/filtered_cloud`, MoveIt's cloud less the robot and
-  what it holds: something lifted off a desk or a counter rides above 1.05 m. That cloud arrives
+- 1.20 to 1.40 m, for a wall or a person up close. It starts above the real robot's shoulders,
+  which return 1.06 to 1.14 m within 0.15 m of its axis. With MoveIt up (`collision_high_cloud`,
+  which `bringup.launch.py` sets), this band reads `/filtered_cloud`, MoveIt's cloud less the robot
+  and what it holds: something lifted off a desk or a counter can rise into it. That cloud arrives
   1.2 to 1.7 s after its sweep, so this source's timeout is 2.5 s rather than the monitor's 1.0 s:
   past it the monitor takes the band for blind and stops every command.
 
@@ -138,6 +148,9 @@ The mission tree runs `NavigateToPose` and `ApproachObject` in sequence, never t
 - Each observation source raytraces only to its own points inside its height band. `lidar` drops the floor, so on its own no ray reached the floor and marks near the robot below the LiDAR never cleared: a stand or a person passing left the robot boxed in. `lidar_clear` clears with the whole cloud and marks nothing.
 - `max_obstacle_height` is 1.35 m, the robot's 1.32 m and a margin. The LiDAR hangs at 1.22 m and casts no ray higher near the robot, so nothing could clear what it marked above that.
 - `obstacle_min_range` is 0.6 m. It keeps the carried object and the robot's own arms off the costmap. Anything the base can hit shows up beyond it.
+- `/scan` drops returns nearer than 0.45 m, the costmaps' `robot_radius`. The real robot's arms
+  and shoulders return within 0.3 m, and `slam_toolbox` mapped them as walls around the robot,
+  which then could not plan its way out.
 - AMCL uses `OmniMotionModel` because the robot strafes: `g1_base_approach` commands lateral velocity and the gait drifts sideways. The alphas stay at Nav2's defaults, since neither simulated odometry source says anything about the real robot's noise.
 
 ## Configuration
@@ -147,6 +160,7 @@ The mission tree runs `NavigateToPose` and `ApproachObject` in sequence, never t
 | `config/nav2_params.yaml` | Planner, controller, costmaps, behaviors, BT navigator, collision monitor. |
 | `config/localization.yaml` | `map_server` and AMCL. |
 | `config/scan.yaml` | The point cloud to laser scan flatten, including the height band. |
+| `config/tether_filter.yaml` | The box behind the robot that `tether_filter:=true` drops from the cloud. |
 | `config/slam_mapping.yaml` | `slam_toolbox` online async. |
 | `config/g1_navigation.rviz` | RViz for the navigation modes. Fixed frame `map`. |
 | `config/navigate_to_pose.xml`, `config/navigate_through_poses.xml` | Behavior trees, with reverse recovery removed. |

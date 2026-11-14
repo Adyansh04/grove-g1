@@ -108,8 +108,8 @@ local_costmap:
       plugins: ["voxel_layer", "inflation_layer"]
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 2.5
-        inflation_radius: 0.85
+        cost_scaling_factor: 4.0
+        inflation_radius: 0.55
       voxel_layer:
         plugin: "nav2_costmap_2d::VoxelLayer"
         enabled: True
@@ -121,11 +121,12 @@ local_costmap:
         z_voxels: 16
         max_obstacle_height: 2.0
         mark_threshold: 0
-        # The raw cloud, not /scan, whose 0.30 m floor cut hides low obstacles. Height limits
-        # apply after the transform into the global frame, so they are gravity-aligned.
+        # The 3D cloud, not /scan, whose 0.30 m floor cut hides low obstacles: /livox/lidar, or with
+        # tether_filter:=true the same less a box behind the robot. Height limits apply after the
+        # transform into the global frame, so they are gravity-aligned.
         observation_sources: lidar lidar_clear
         lidar:
-          topic: /livox/lidar
+          topic: $(var marking_cloud)
           data_type: "PointCloud2"
           clearing: True
           marking: True
@@ -185,7 +186,7 @@ global_costmap:
         # The observation sources match local_costmap's; see the comments there.
         observation_sources: lidar lidar_clear
         lidar:
-          topic: /livox/lidar
+          topic: $(var marking_cloud)
           data_type: "PointCloud2"
           clearing: True
           marking: True
@@ -209,8 +210,8 @@ global_costmap:
         map_subscribe_transient_local: True
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 2.5
-        inflation_radius: 0.85
+        cost_scaling_factor: 4.0
+        inflation_radius: 0.55
       # NervROS's zones: keep-out zones through costmap_filter_info_server, slow zones through
       # the filter info NervROS publishes itself (the G1 profile's [nav2.speed_zones]). Only this
       # costmap slows the robot, so one filter publishes /speed_limit.
@@ -269,14 +270,14 @@ behavior_server:
 # The last check between Nav2 and the gait. The controller and the behaviors publish /cmd_vel_raw,
 # and this passes it to /cmd_vel slowed so the body would not reach a return within
 # time_before_collision. It reads the cloud in two bands, and never between them, where a hand
-# carries: 0.05 to 0.60 m, a crate or a chair's legs, which the costmaps (from 0.30 m up) miss
-# below 0.30 m; and 1.05 to 1.40 m, a wall or a person up close. The lidar sits upside down 1.23 m
-# up and looks at most 52 degrees down, so the low band sees nothing nearer than 0.46 m (0.92 m at
-# the floor) and it forgets what leaves its view: it slows the robot towards a low thing seen from
-# afar, but only the high band stops it at a wall (measured: the low band alone let the robot walk
-# into one). The circle is the body with a margin, not the costmaps' 0.45 m, so the close
-# approaches Nav2 plans are left alone. g1_base_approach, which closes the last decimetres to a
-# table on purpose, writes /cmd_vel itself.
+# carries: 0.15 to 0.60 m, a crate or a chair's legs; and 1.20 to 1.40 m, a wall or a person up
+# close. Both read the whole cloud, so tether_filter's box hides nothing from it. The lidar sits
+# upside down 1.23 m up and looks at most 52 degrees down, so the low band sees nothing nearer than
+# 0.46 m (0.92 m at the floor) and it forgets what leaves its view: it slows the robot towards a low
+# thing seen from afar, but only the high band stops it at a wall (measured: the low band alone let
+# the robot walk into one). The circle is the body with a margin, not the costmaps' 0.45 m, so the
+# close approaches Nav2 plans are left alone. g1_base_approach, which closes the last decimetres to
+# a table on purpose, writes /cmd_vel itself.
 collision_monitor:
   ros__parameters:
     use_sim_time: false
@@ -333,7 +334,9 @@ collision_monitor:
     high_cloud:
       type: pointcloud
       topic: /livox/lidar
-      min_height: 1.05
+      # Above the real robot's own shoulders, which return 1.06 to 1.14 m within 0.15 m of the
+      # body axis and would stop every command.
+      min_height: 1.20
       max_height: 1.40
       enabled: true
       # MoveIt's /filtered_cloud (collision_high_cloud) arrives 1.2 to 1.7 s after its sweep; under

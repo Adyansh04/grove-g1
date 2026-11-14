@@ -160,6 +160,19 @@ def test_mapping_with_nav_plans_on_the_growing_map(nav_stack):
     assert includes["nav2.launch.py"]["use_composition"] == "false"
 
 
+@pytest.mark.parametrize(
+    "tether, cloud", [("false", "/livox/lidar"), ("true", "/livox/lidar/tether_filtered")]
+)
+def test_the_scan_and_the_costmaps_read_one_cloud(nav_stack, tether, cloud):
+    """With tether_filter the scan and both costmaps mark from the filtered cloud, else the raw."""
+    result = _run_setup(nav_stack, mode="mapping", nav="true", tether_filter=tether)
+    includes = dict(_includes(result))
+    assert includes["scan.launch.py"]["cloud_topic"] == cloud
+    assert includes["nav2.launch.py"]["marking_cloud"] == cloud
+    filters = [n for n in _nodes(result) if n.node_executable == "filter_crop_box_node"]
+    assert len(filters) == (1 if tether == "true" else 0)
+
+
 # --- boundary 1: bringup.launch.py -> the stack below it ------------------------------
 
 

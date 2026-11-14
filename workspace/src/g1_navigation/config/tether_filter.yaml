@@ -1,0 +1,27 @@
+# pcl_ros's CropBox, started by nav_stack.launch.py with tether_filter:=true: the costmaps and the
+# scan read /livox/lidar less the returns inside a box behind the robot, where a tether to the robot
+# hangs. Standing, the real robot's Ethernet tether crosses 0.14 to 0.21 m about 0.6 m behind it,
+# above min_obstacle_height, and was marked as a wall behind the robot. Walking drags it flat: no
+# return between 0.10 and 0.60 m stayed with the robot over 376 walking sweeps. collision_monitor
+# reads the unfiltered cloud, so the box is only blind for planning, and only behind the robot.
+tether_filter:
+  ros__parameters:
+    use_sim_time: false
+    # The box is in torso_link, which the LiDAR hangs off by static transforms alone: no cloud waits
+    # for odometry, and the box leans and turns with the body. Its origin stands 0.767 m above
+    # base_footprint when the robot stands.
+    input_frame: "torso_link"
+    # Empty: the cloud goes back out in the LiDAR's frame, as the raw one.
+    output_frame: ""
+    # Drop what lies inside the box rather than keep it.
+    negative: true
+    keep_organized: false
+    # m in torso_link. 0.25 to 1.0 m behind the robot, 0.45 m to each side, and in base_footprint
+    # from 0.5 m below the floor to 0.60 m up: the tether falls from the robot's back to the floor
+    # within that, and from 0.60 m up the costmaps still see a wall or a table behind the robot.
+    min_x: -1.0
+    max_x: -0.25
+    min_y: -0.45
+    max_y: 0.45
+    min_z: -1.267
+    max_z: -0.167

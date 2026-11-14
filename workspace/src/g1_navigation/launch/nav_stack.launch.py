@@ -1,7 +1,8 @@
 """The navigation stack without a simulator under it.
 
-The container, the scan pipeline, SLAM or localization, and optionally Nav2 itself. Nothing here
-is sim-specific, so this is the file that carries to hardware unchanged.
+The container, the scan pipeline, SLAM or localization, optionally Nav2 itself, and with
+tether_filter:=true a crop box that keeps a real robot's tether out of the costmaps and the scan.
+Nothing here is sim-specific, so this is the file that carries to hardware unchanged.
 
 Stages NO simulator and no RViz: both callers own those decisions, and a second simulator would
 put two publishers on rt/lowcmd. test_launch_threading asserts the absence.
@@ -12,12 +13,17 @@ import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
-from launch.conditions import IfCondition
+from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import Node
+from launch_ros.actions import LoadComposableNodes, Node
+from launch_ros.descriptions import ComposableNode
 
-LAUNCH_DIR = os.path.join(get_package_share_directory("g1_navigation"), "launch")
+SHARE = get_package_share_directory("g1_navigation")
+LAUNCH_DIR = os.path.join(SHARE, "launch")
+TETHER_FILTER_PARAMS = os.path.join(SHARE, "config", "tether_filter.yaml")
+RAW_CLOUD = "/livox/lidar"
+TETHER_FILTERED_CLOUD = "/livox/lidar/tether_filtered"
 
 MODES = ("mapping", "localization")
 
@@ -31,6 +37,35 @@ def _include(name, **launch_args):
         PythonLaunchDescriptionSource(os.path.join(LAUNCH_DIR, name)),
         launch_arguments=launch_args.items(),
     )
+
+
+def _tether_filter(use_composition, container_name):
+    """pcl_ros's CropBox between the LiDAR and the costmaps and scan; see tether_filter.yaml."""
+    remappings = [("input", RAW_CLOUD), ("output", TETHER_FILTERED_CLOUD)]
+    return [
+        Node(
+            condition=UnlessCondition(use_composition),
+            package="pcl_ros",
+            executable="filter_crop_box_node",
+            name="tether_filter",
+            output="both",
+            parameters=[TETHER_FILTER_PARAMS],
+            remappings=remappings,
+        ),
+        LoadComposableNodes(
+            condition=IfCondition(use_composition),
+            target_container=container_name,
+            composable_node_descriptions=[
+                ComposableNode(
+                    package="pcl_ros",
+                    plugin="pcl_ros::CropBox",
+                    name="tether_filter",
+                    parameters=[TETHER_FILTER_PARAMS],
+                    remappings=remappings,
+                ),
+            ],
+        ),
+    ]
 
 
 def _check_mode(mode):
@@ -48,6 +83,8 @@ def _setup(context, *args, **kwargs):
 
     use_composition = LaunchConfiguration("use_composition")
     container_name = LaunchConfiguration("container_name")
+    tether = LaunchConfiguration("tether_filter").perform(context).lower() == "true"
+    cloud = TETHER_FILTERED_CLOUD if tether else RAW_CLOUD
 
     actions = [
         # Created here rather than in the leaf launches, so one container serves all of them.
@@ -58,8 +95,15 @@ def _setup(context, *args, **kwargs):
             executable=CONTAINER_EXECUTABLE,
             output="both",
         ),
-        _include("scan.launch.py", use_composition=use_composition, container_name=container_name),
+        _include(
+            "scan.launch.py",
+            cloud_topic=cloud,
+            use_composition=use_composition,
+            container_name=container_name,
+        ),
     ]
+    if tether:
+        actions += _tether_filter(use_composition, container_name)
 
     if mode == "mapping":
         # slam_toolbox stays out of the container: its 40 MB stack requirement for map
@@ -84,6 +128,7 @@ def _setup(context, *args, **kwargs):
                 "nav2.launch.py",
                 use_composition="false",
                 collision_high_cloud=LaunchConfiguration("collision_high_cloud"),
+                marking_cloud=cloud,
                 route_graph=LaunchConfiguration("route_graph"),
             )
         )
@@ -110,6 +155,14 @@ def generate_launch_description():
                 default_value="/livox/lidar",
                 description="Passed to nav2.launch.py: the cloud collision_monitor's high band "
                 "reads, /filtered_cloud when MoveIt runs.",
+            ),
+            DeclareLaunchArgument(
+                "tether_filter",
+                default_value="false",
+                choices=["true", "false"],
+                description="On the real robot with a tether: the costmaps and the scan read the "
+                "LiDAR less a box behind the robot where the tether hangs (tether_filter.yaml); "
+                "collision_monitor still reads all of it. Off in simulation, which has no tether.",
             ),
             DeclareLaunchArgument(
                 "nav",
